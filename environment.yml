@@ -33,6 +33,7 @@ dependencies:
   - pytorch::pytorch=2.1
   - pytorch::pytorch-cuda=12.1
   - pip:
+      - mpi4py
       - deepspeed==0.12.4
       - dm-tree==0.1.6
       - git+https://github.com/NVIDIA/dllogger.git
