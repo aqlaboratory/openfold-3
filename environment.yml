@@ -25,7 +25,7 @@ dependencies:
   - awscli
   - ml-collections
   - aria2
-  - mkl=2024.0
+  - mkl=2022.1
   - git
   - bioconda::hmmer
   - bioconda::hhsuite
@@ -33,7 +33,7 @@ dependencies:
   - pytorch::pytorch=2.1
   - pytorch::pytorch-cuda=12.1
   - pip:
-      - mpi4py=3.1.5
+      - mpi4py==3.1.5
       - deepspeed==0.12.4
       - dm-tree==0.1.6
       - git+https://github.com/NVIDIA/dllogger.git
