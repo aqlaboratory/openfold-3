@@ -25,7 +25,7 @@ class InputEmbedder(nn.Module):
     """
     Embeds a subset of the input features.
 
-    Implements Algorithms 3 (InputEmbedder) and 4 (relpos).
+    Implements AF2 Algorithms 3 (InputEmbedder) and 4 (relpos).
     """
 
     def __init__(
@@ -72,7 +72,7 @@ class InputEmbedder(nn.Module):
         """
         Computes relative positional encodings
 
-        Implements Algorithm 4.
+        Implements AF2 Algorithm 4.
 
         Args:
             ri:
@@ -144,7 +144,7 @@ class InputEmbedderMultimer(nn.Module):
     """
     Embeds a subset of the input features.
 
-    Implements Algorithms 3 (InputEmbedder) and 4 (relpos).
+    Implements AF2-Multimer Algorithms 3 (InputEmbedder) and 4 (relpos).
     """
 
     def __init__(
@@ -393,7 +393,7 @@ class RecyclingEmbedder(nn.Module):
     """
     Embeds the output of an iteration of the model for recycling.
 
-    Implements Algorithm 32.
+    Implements AF2 Algorithm 32.
     """
     def __init__(
         self,
@@ -495,7 +495,7 @@ class ExtraMSAEmbedder(nn.Module):
     """
     Embeds unclustered MSA sequences.
 
-    Implements Algorithm 2, line 15
+    Implements AF2 Algorithm 2, line 15
     """
     def __init__(
         self,

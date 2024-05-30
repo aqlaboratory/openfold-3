@@ -15,7 +15,7 @@ class TemplateSingleEmbedder(nn.Module):
     """
     Embeds the "template_angle_feat" feature.
 
-    Implements Algorithm 2, line 7.
+    Implements AF2 Algorithm 2, line 7.
     """
 
     def __init__(
@@ -58,7 +58,7 @@ class TemplatePairEmbedder(nn.Module):
     """
     Embeds "template_pair_feat" features.
 
-    Implements Algorithm 2, line 9.
+    Implements AF2 Algorithm 2, line 9.
     """
 
     def __init__(

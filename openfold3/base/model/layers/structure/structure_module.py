@@ -79,7 +79,7 @@ class AngleResnetBlock(nn.Module):
 
 class AngleResnet(nn.Module):
     """
-    Implements Algorithm 20, lines 11-14
+    Implements AF2 Algorithm 20, lines 11-14
     """
 
     def __init__(self, c_in, c_hidden, no_blocks, no_angles, epsilon):
@@ -210,7 +210,7 @@ class PointProjection(nn.Module):
 
 class InvariantPointAttention(nn.Module):
     """
-    Implements Algorithm 22.
+    Implements AF2 Algorithm 22.
     """
     def __init__(
         self,
@@ -514,7 +514,7 @@ class InvariantPointAttention(nn.Module):
 # whether or not the increase in test error matters in practice.
 class InvariantPointAttentionMultimer(nn.Module):
     """
-    Implements Algorithm 22.
+    Implements AF2-Multimer version of AF2 Algorithm 22.
     """
     def __init__(
         self,
@@ -737,7 +737,7 @@ class InvariantPointAttentionMultimer(nn.Module):
 
 class BackboneUpdate(nn.Module):
     """
-    Implements part of Algorithm 23.
+    Implements part of AF2 Algorithm 23.
     """
 
     def __init__(self, c_s):

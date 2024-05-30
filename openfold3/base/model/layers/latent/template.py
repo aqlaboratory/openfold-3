@@ -50,7 +50,7 @@ from openfold3.base.utils.tensor_utils import (
 
 class TemplatePointwiseAttention(nn.Module):
     """
-    Implements Algorithm 17.
+    Implements AF2 Algorithm 17.
     """
 
     def __init__(self, c_t, c_z, c_hidden, no_heads, inf, **kwargs):
@@ -340,7 +340,7 @@ class TemplatePairStackBlock(nn.Module):
 
 class TemplatePairStack(nn.Module):
     """
-    Implements Algorithm 16.
+    Implements AF2 Algorithm 16.
     """
 
     def __init__(

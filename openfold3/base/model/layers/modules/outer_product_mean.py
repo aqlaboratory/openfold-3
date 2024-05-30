@@ -26,7 +26,7 @@ from openfold3.base.utils.precision_utils import is_fp16_enabled
 
 class OuterProductMean(nn.Module):
     """
-    Implements Algorithm 10.
+    Implements AF2 Algorithm 10 / AF3 Algorithm 9.
     """
 
     def __init__(self, c_m, c_z, c_hidden, eps=1e-3):

@@ -13,9 +13,7 @@ from openfold3.base.utils.chunk_utils import ChunkSizeTuner
 
 class MSAModuleStack(nn.Module):
     """
-    Main Evoformer trunk.
-
-    Implements Algorithm 6.
+    Implements AF3 Algorithm 8.
     """
 
     def __init__(

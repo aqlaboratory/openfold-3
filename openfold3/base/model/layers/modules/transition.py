@@ -72,7 +72,7 @@ class ReLUTransition(nn.Module):
     """
     Feed-forward network applied to MSA and Pair activations after attention.
 
-    Implements Algorithm 9 and 15
+    Implements AF2 Algorithm 9 and 15
     """
     def __init__(self, c_in, n):
         """
@@ -169,6 +169,9 @@ class StructureModuleTransition(nn.Module):
 
 
 class SwiGLUTransition(nn.Module):
+    """
+    Implements AF3 Algorithm 11.
+    """
     def __init__(self, c_in: int, n: int = 4):
         """
 
@@ -270,6 +273,9 @@ class SwiGLUTransition(nn.Module):
 
 
 class ConditionedTransitionBlock(nn.Module):
+    """
+    Implements AF3 Algorithm 25.
+    """
 
     def __init__(self, c_in: int, n: int = 2):
         """

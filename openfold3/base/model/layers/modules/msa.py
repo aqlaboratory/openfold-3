@@ -289,7 +289,7 @@ class MSAAttention(nn.Module):
 
 class MSARowAttentionWithPairBias(MSAAttention):
     """
-    Implements Algorithm 7.
+    Implements AF2 Algorithm 7.
     """
 
     def __init__(self, c_m, c_z, c_hidden, no_heads, inf=1e9):
@@ -318,7 +318,7 @@ class MSARowAttentionWithPairBias(MSAAttention):
 
 class MSAColumnAttention(nn.Module):
     """
-    Implements Algorithm 8.
+    Implements AF2 Algorithm 8.
 
     By rights, this should also be a subclass of MSAAttention. Alas,
     most inheritance isn't supported by TorchScript.
@@ -472,6 +472,9 @@ class MSAColumnGlobalAttention(nn.Module):
 
 
 class MSAPairWeightedAveraging(nn.Module):
+    """
+    Implements AF3 Algorithm 10.
+    """
     def __init__(
         self,
         c_in,

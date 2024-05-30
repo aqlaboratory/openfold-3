@@ -20,7 +20,6 @@ from operator import add
 import numpy as np
 import torch
 
-from openfold3.monomer_multimer.config import NUM_RES, NUM_EXTRA_SEQ, NUM_TEMPLATES, NUM_MSA_SEQ
 from openfold3.base.np import residue_constants as rc
 from openfold3.base.utils.rigid_utils import Rotation, Rigid
 from openfold3.base.utils.geometry.rigid_matrix_vector import Rigid3Array
@@ -31,6 +30,7 @@ from openfold3.base.utils.tensor_utils import (
     tensor_tree_map,
     batched_gather,
 )
+from openfold3.systems.monomer_multimer.config import NUM_RES, NUM_EXTRA_SEQ, NUM_TEMPLATES, NUM_MSA_SEQ
 
 
 MSA_FEATURE_NAMES = [

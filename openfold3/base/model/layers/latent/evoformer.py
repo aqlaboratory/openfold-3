@@ -28,7 +28,7 @@ class EvoformerStack(nn.Module):
     """
     Main Evoformer trunk.
 
-    Implements Algorithm 6.
+    Implements AF2 Algorithm 6.
     """
 
     def __init__(
@@ -307,7 +307,7 @@ class EvoformerStack(nn.Module):
 
 class ExtraMSAStack(nn.Module):
     """
-    Implements Algorithm 18.
+    Implements AF2 Algorithm 18.
     """
     def __init__(self,
         c_m: int,

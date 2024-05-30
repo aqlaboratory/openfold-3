@@ -7,7 +7,6 @@ import time
 import numpy
 import torch
 
-from openfold3.monomer_multimer.model import AlphaFold
 from openfold3.base.np import residue_constants
 from openfold3.base.np import protein
 from openfold3.base.np import relax
@@ -15,6 +14,7 @@ from openfold3.base.utils.import_weights import (
     import_jax_weights_,
     import_openfold_weights_
 )
+from openfold3.systems.monomer_multimer.model import AlphaFold
 
 from pytorch_lightning.utilities.deepspeed import (
     convert_zero_checkpoint_to_fp32_state_dict

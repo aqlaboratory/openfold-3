@@ -19,9 +19,10 @@ import unittest
 from pathlib import Path
 
 from tests.config import consts
-from openfold3.monomer_multimer.config import model_config
-from openfold3.monomer_multimer.model import AlphaFold
+
 from openfold3.base.utils.import_weights import import_jax_weights_, import_openfold_weights_
+from openfold3.systems.monomer_multimer.config import model_config
+from openfold3.systems.monomer_multimer.model import AlphaFold
 
 
 class TestImportWeights(unittest.TestCase):

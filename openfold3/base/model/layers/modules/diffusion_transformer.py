@@ -81,6 +81,9 @@ class DiffusionTransformerBlock(nn.Module):
 
 
 class DiffusionTransformer(nn.Module):
+    """
+    Implements AF3 Algorithm 23.
+    """
     def __init__(
         self,
         c_s: int,

@@ -48,7 +48,7 @@ class AlphaFold(nn.Module):
     """
     Alphafold 2.
 
-    Implements Algorithm 2 (but with training).
+    Implements AF2 Algorithm 2 and AF2-Multimer main loop (but with training).
     """
 
     def __init__(self, config):

@@ -17,7 +17,7 @@ class Linear(nn.Linear):
     A Linear layer with built-in nonstandard initializations. Called just
     like torch.nn.Linear.
 
-    Implements the initializers in 1.11.4, plus some additional ones found
+    Implements the initializers in AF2 1.11.4, plus some additional ones found
     in the code.
     """
 

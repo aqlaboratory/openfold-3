@@ -15,9 +15,7 @@ import torch
 import wandb
 from deepspeed.utils import zero_to_fp32 
 
-from openfold3.monomer_multimer.config import model_config
 from openfold3.base.data.data_modules import OpenFoldDataModule, OpenFoldMultimerDataModule
-from openfold3.monomer_multimer.model import AlphaFold
 from openfold3.base.utils.torchscript import script_preset_
 from openfold3.base.np import residue_constants
 from openfold3.base.utils.callbacks import (
@@ -39,6 +37,9 @@ from openfold3.base.utils.import_weights import (
     import_jax_weights_,
     import_openfold_weights_
 )
+
+from openfold3.systems.monomer_multimer.model import AlphaFold
+from openfold3.systems.monomer_multimer.config import model_config
 
 
 class OpenFoldWrapper(pl.LightningModule):

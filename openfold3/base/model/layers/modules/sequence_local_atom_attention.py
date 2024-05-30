@@ -5,6 +5,9 @@ from openfold3.base.model.primitives import LayerNorm, Linear
 
 
 class AtomTransformer(nn.Module):
+    """
+    Implements AF3 Algorithm 7.
+    """
     def __init__(self, c_q, c_p, c_hidden, no_heads, no_blocks, n_transition, inf):
         """
 
@@ -79,6 +82,9 @@ class NoisyPositionEmbedder(nn.Module):
 
 
 class AtomAttentionEncoder(nn.Module):
+    """
+    Implements AF3 Algorithm 5.
+    """
     def __init__(
         self,
         c_in: int,
@@ -144,6 +150,9 @@ class AtomAttentionEncoder(nn.Module):
 
 
 class AtomAttentionDecoder(nn.Module):
+    """
+    Implements AF3 Algorithm 6.
+    """
     def __init__(
         self,
         c_q: int,

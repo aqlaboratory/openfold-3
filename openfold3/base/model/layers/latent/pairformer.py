@@ -103,9 +103,7 @@ class PairFormerBlock(nn.Module):
 
 class PairFormerStack(nn.Module):
     """
-    Main Evoformer trunk.
-
-    Implements Algorithm 6.
+    Implements AF3 Algorithm 17.
     """
 
     def __init__(

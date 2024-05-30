@@ -9,6 +9,7 @@ import openfold3
 local_rank = int(os.getenv('LOCAL_RANK', '0'))
 world_size = int(os.getenv('WORLD_SIZE', '1'))
 
+
 class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()

@@ -27,7 +27,7 @@ from openfold3.base.utils.tensor_utils import permute_final_dims
 
 class BaseTriangleMultiplicativeUpdate(nn.Module, ABC):
     """
-    Implements Algorithms 11 and 12.
+    Common base class for TriangleMultiplicativeUpdate and FusedTriangleMultiplicativeUpdate.
     """
     @abstractmethod
     def __init__(self, c_z, c_hidden, _outgoing):
@@ -102,7 +102,7 @@ class BaseTriangleMultiplicativeUpdate(nn.Module, ABC):
 
 class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
     """
-    Implements Algorithms 11 and 12.
+    Implements AF2 Algorithms 11 and 12 / AF3 Algorithms 12 and 13.
     """
     def __init__(self, c_z, c_hidden, _outgoing=True):
         """
@@ -455,21 +455,21 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
 
 class TriangleMultiplicationOutgoing(TriangleMultiplicativeUpdate):
     """
-    Implements Algorithm 11.
+    Implements AF2 Algorithm 11 / AF3 Algorithm 12.
     """
     __init__ = partialmethod(TriangleMultiplicativeUpdate.__init__, _outgoing=True)
 
 
 class TriangleMultiplicationIncoming(TriangleMultiplicativeUpdate):
     """
-    Implements Algorithm 12.
+    Implements AF2 Algorithm 12 / AF3 Algorithm 13.
     """
     __init__ = partialmethod(TriangleMultiplicativeUpdate.__init__, _outgoing=False)
 
 
 class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
     """
-    Implements Algorithms 11 and 12.
+    Implements AF2-Multimer version of AF2 Algorithm 11 and 12.
     """
 
     def __init__(self, c_z, c_hidden, _outgoing=True):
@@ -603,14 +603,14 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
 
 class FusedTriangleMultiplicationOutgoing(FusedTriangleMultiplicativeUpdate):
     """
-    Implements Algorithm 11.
+    Implements AF2-Multimer version of AF2 Algorithm 11.
     """
     __init__ = partialmethod(FusedTriangleMultiplicativeUpdate.__init__, _outgoing=True)
 
 
 class FusedTriangleMultiplicationIncoming(FusedTriangleMultiplicativeUpdate):
     """
-    Implements Algorithm 12.
+    Implements AF2-Multimer version of AF2 Algorithm 12.
     """
     __init__ = partialmethod(FusedTriangleMultiplicativeUpdate.__init__, _outgoing=False)
 

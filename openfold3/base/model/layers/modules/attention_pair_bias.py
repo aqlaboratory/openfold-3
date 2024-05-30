@@ -9,6 +9,9 @@ from openfold3.base.utils.tensor_utils import permute_final_dims
 
 
 class AttentionPairBias(Attention):
+    """
+    Implements AF3 Algorithm 24.
+    """
     def __init__(
         self,
         c_q: int,

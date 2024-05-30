@@ -39,7 +39,6 @@ if (
 
 torch.set_grad_enabled(False)
 
-from openfold3.monomer_multimer.config import model_config
 from openfold3.base.data import data_pipeline, templates
 from openfold3.base.data import feature_pipeline
 from openfold3.base.data.tools import hhsearch, hmmsearch
@@ -51,6 +50,7 @@ from openfold3.base.utils.trace_utils import (
     pad_feature_dict_seq,
     trace_model_,
 )
+from openfold3.systems.monomer_multimer.config import model_config
 
 from scripts.precompute_embeddings import EmbeddingGenerator
 from scripts.utils import add_data_args

@@ -61,6 +61,9 @@ class LayerNorm(nn.Module):
 
 
 class AdaLN(nn.Module):
+    """
+    Implements AF3 Algorithm 26.
+    """
     def __init__(self, c_in: int, eps: float = 1e-5):
         """
 

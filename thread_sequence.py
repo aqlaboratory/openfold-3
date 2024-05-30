@@ -5,7 +5,7 @@ import random
 
 import numpy
 import torch
-from openfold3.monomer_multimer.config import model_config
+
 from openfold3.base.data import feature_pipeline
 from openfold3.base.data.data_pipeline import make_sequence_features_with_custom_template
 from openfold3.base.np import protein
@@ -14,6 +14,8 @@ from openfold3.base.utils.script_utils import (load_models_from_command_line, pa
 from openfold3.base.utils.tensor_utils import (
     tensor_tree_map,
 )
+from openfold3.systems.monomer_multimer.config import model_config
+
 from scripts.utils import add_data_args
 
 logging.basicConfig()

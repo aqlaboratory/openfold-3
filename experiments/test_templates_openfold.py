@@ -55,7 +55,7 @@ sys.path.insert(0, args.of_dir)
 
 
 # openfold imports
-from openfold3.monomer_multimer import config
+from openfold3.systems.monomer_multimer import config
 
 from openfold3.base.data import data_pipeline
 from openfold3.base.data import feature_pipeline

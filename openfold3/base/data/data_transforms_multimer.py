@@ -2,10 +2,10 @@ from typing import Sequence
 
 import torch
 
-from openfold3.monomer_multimer.config import NUM_RES
 from openfold3.base.data.data_transforms import curry1
 from openfold3.base.np import residue_constants as rc
 from openfold3.base.utils.tensor_utils import masked_mean
+from openfold3.systems.monomer_multimer.config import NUM_RES
 
 
 def gumbel_noise(
