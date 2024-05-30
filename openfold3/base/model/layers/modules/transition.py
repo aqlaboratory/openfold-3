@@ -201,11 +201,6 @@ class SwiGLUTransition(nn.Module):
         Returns:
 
         """
-        if mask is None:
-            mask = x.new_ones(x.shape[:-1])
-
-        mask = mask.unsqueeze(-1)
-
         # [*, N_res/N_seq, N_res, C_in]
         x = self.layer_norm(x)
 
@@ -304,7 +299,7 @@ class ConditionedTransitionBlock(nn.Module):
         self,
         a: torch.Tensor,
         s: torch.Tensor,
-        mask: torch.Tensor
+        mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
 

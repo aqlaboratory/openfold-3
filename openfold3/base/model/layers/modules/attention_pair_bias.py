@@ -89,8 +89,10 @@ class AttentionPairBias(Attention):
                 a.shape[:-1],
             )
 
+        # [*, N_res, N_res]
+        square_mask = mask[..., None] * mask[..., None, :]
         # [*, 1, N_res, N_res]
-        mask_bias = (self.inf * (mask - 1))[:, None, :, :]
+        mask_bias = (self.inf * (square_mask - 1))[..., None, :, :]
         biases = [mask_bias]
 
         # [*, N_res, N_res, C_z]

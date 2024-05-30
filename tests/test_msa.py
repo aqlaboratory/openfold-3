@@ -19,6 +19,7 @@ from openfold3.base.model.layers.modules.msa import (
     MSARowAttentionWithPairBias,
     MSAColumnAttention,
     MSAColumnGlobalAttention,
+    MSAPairWeightedAveraging
 )
 from openfold3.base.utils.tensor_utils import tree_map
 import tests.compare_utils as compare_utils
@@ -223,6 +224,28 @@ class TestMSAColumnGlobalAttention(unittest.TestCase):
         )
 
         compare_utils.assert_max_abs_diff_small(out_gt, out_repro, consts.eps)
+
+
+class TestMSAPairWeightedAveraging(unittest.TestCase):
+    def test_shape(self):
+        batch_size = consts.batch_size
+        n_seq = consts.n_seq
+        n_res = consts.n_res
+        c_m = consts.c_m
+        c_z = consts.c_z
+        c = 52
+        no_heads = 4
+
+        mrapb = MSAPairWeightedAveraging(c_in=c_m, c_hidden=c, c_z=c_z, no_heads=no_heads)
+
+        m = torch.rand((batch_size, n_seq, n_res, c_m))
+        z = torch.rand((batch_size, n_res, n_res, c_z))
+
+        shape_before = m.shape
+        m = mrapb(m, z=z, mask=None)
+        shape_after = m.shape
+
+        self.assertTrue(shape_before == shape_after)
 
 
 if __name__ == "__main__":

@@ -83,10 +83,10 @@ class PairFormerBlock(nn.Module):
         )
 
         s = add(s,
-                self.attention_pair_bias(a=s, z=z, s=None, beta=None, mask=single_mask,
-                                         use_memory_efficient_kernel=False,
-                                         use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                                         use_lma=use_lma),
+                self.attn_pair_bias(a=s, z=z, s=None, beta=None, mask=single_mask,
+                                    use_memory_efficient_kernel=False,
+                                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                                    use_lma=use_lma),
                 inplace=inplace_safe,
                 )
 
@@ -127,46 +127,25 @@ class PairFormerStack(nn.Module):
         **kwargs,
     ):
         """
+
         Args:
             c_s:
-                Channel dimension of the output "single" embedding
             c_z:
-                Pair channel dimension
-            c_hidden_msa_att:
-                Hidden dimension in MSA attention
-            c_hidden_opm:
-                Hidden dimension in outer product mean module
+            c_hidden_pair_bias:
+            no_heads_pair_bias:
             c_hidden_mul:
-                Hidden dimension in multiplicative updates
             c_hidden_pair_att:
-                Hidden dimension in triangular attention
-            no_heads_msa:
-                Number of heads used for MSA attention
             no_heads_pair:
-                Number of heads used for pair attention
             no_blocks:
-                Number of Evoformer blocks in the stack
             transition_n:
-                Factor by which to multiply c_m to obtain the ReLUTransition
-                hidden dimension
-            msa_dropout:
-                Dropout rate for MSA activations
             pair_dropout:
-                Dropout used for pair activations
-            opm_first:
-                When True, Outer Product Mean is performed at the beginning of
-                the Evoformer block instead of after the MSA Stack.
-                Used in Multimer pipeline.
             fuse_projection_weights:
-                When True, uses FusedTriangleMultiplicativeUpdate variant in
-                the Pair Stack. Used in Multimer pipeline.
             blocks_per_ckpt:
-                Number of Evoformer blocks in each activation checkpoint
+            inf:
+            eps:
             clear_cache_between_blocks:
-                Whether to clear CUDA's GPU memory cache between blocks of the
-                stack. Slows down each block but can reduce fragmentation
             tune_chunk_size:
-                Whether to dynamically tune the module's chunk size
+            **kwargs:
         """
         super(PairFormerStack, self).__init__()
 

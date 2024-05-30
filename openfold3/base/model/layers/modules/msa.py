@@ -512,12 +512,12 @@ class MSAPairWeightedAveraging(nn.Module):
         )
 
         self.linear_v = Linear(
-            self.c_v, self.c_hidden * self.no_heads, bias=False, init="glorot"
+            self.c_in, self.c_hidden * self.no_heads, bias=False, init="glorot"
         )
         self.linear_o = Linear(c_hidden * no_heads, c_in, bias=False, init="final")
 
         self.linear_g = Linear(
-            self.c_q, self.c_hidden * self.no_heads, bias=False, init="gating"
+            self.c_in, self.c_hidden * self.no_heads, bias=False, init="gating"
         )
 
         self.sigmoid = nn.Sigmoid()
@@ -554,6 +554,7 @@ class MSAPairWeightedAveraging(nn.Module):
                 m: torch.Tensor,
                 z: Optional[torch.Tensor] = None,
                 mask: Optional[torch.Tensor] = None,
+                **kwargs
                 ) -> torch.Tensor:
         """
         Args:
