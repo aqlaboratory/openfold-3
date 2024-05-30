@@ -14,19 +14,18 @@
 
 import pickle
 import shutil
+from pathlib import Path
 
 import numpy as np
 import unittest
 
-from openfold.data.data_pipeline import DataPipeline
-from openfold.data.templates import HhsearchHitFeaturizer, HmmsearchHitFeaturizer
+from openfold3.base.data.data_pipeline import DataPipeline
+from openfold3.base.data.templates import HhsearchHitFeaturizer
 import tests.compare_utils as compare_utils
 from tests.config import consts
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
-    import jax
-    import haiku as hk
 
 
 class TestDataPipeline(unittest.TestCase):
@@ -36,19 +35,20 @@ class TestDataPipeline(unittest.TestCase):
         # time, taking forever. As such, we precompute AlphaFold's features
         # using scripts/generate_alphafold_feature_dict.py and the default
         # databases.
-        with open("tests/test_data/alphafold_feature_dict.pickle", "rb") as fp:
+        data_dir = Path(__file__).parent.resolve() / "test_data"
+        with open(str(data_dir / "alphafold_feature_dict.pickle"), "rb") as fp:
             alphafold_feature_dict = pickle.load(fp)
 
         if consts.is_multimer:
             # template_featurizer = HmmsearchHitFeaturizer(
-            #     mmcif_dir="tests/test_data/mmcifs",
+            #     mmcif_dir="str(data_dir / "mmcifs"),
             #     max_template_date="2021-12-20",
             #     max_hits=20,
             #     kalign_binary_path=shutil.which("kalign"),
             #     _zero_center_positions=False,
             # )
             template_featurizer = HhsearchHitFeaturizer(
-                mmcif_dir="tests/test_data/mmcifs",
+                mmcif_dir=str(data_dir / "mmcifs"),
                 max_template_date="2021-12-20",
                 max_hits=20,
                 kalign_binary_path=shutil.which("kalign"),
@@ -56,7 +56,7 @@ class TestDataPipeline(unittest.TestCase):
             )
         else:
             template_featurizer = HhsearchHitFeaturizer(
-                mmcif_dir="tests/test_data/mmcifs",
+                mmcif_dir=str(data_dir / "mmcifs"),
                 max_template_date="2021-12-20",
                 max_hits=20,
                 kalign_binary_path=shutil.which("kalign"),
@@ -68,8 +68,8 @@ class TestDataPipeline(unittest.TestCase):
         )
 
         openfold_feature_dict = data_pipeline.process_fasta(
-            "tests/test_data/short.fasta", 
-            "tests/test_data/alignments"
+            str(data_dir / "short.fasta"),
+            str(data_dir / "alignments")
         )
 
         openfold_feature_dict["template_all_atom_masks"] = openfold_feature_dict["template_all_atom_mask"]
@@ -114,7 +114,6 @@ class TestDataPipeline(unittest.TestCase):
                 k in checked or np.all(v == openfold_feature_dict[k])
             )
                
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -12,12 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
 import re
 import numpy as np
 import unittest
-from openfold.model.triangular_multiplicative_update import *
-from openfold.utils.tensor_utils import tree_map
+
+import torch
+
+from openfold3.base.model.layers.modules.triangular_multiplicative_update import (
+    TriangleMultiplicationOutgoing,
+    FusedTriangleMultiplicationOutgoing
+)
+from openfold3.base.utils.tensor_utils import tree_map
+
 import tests.compare_utils as compare_utils
 from tests.config import consts
 

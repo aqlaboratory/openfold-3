@@ -4,7 +4,6 @@ import os
 import torch
 import deepspeed
 
-
 local_rank = int(os.getenv('LOCAL_RANK', '0'))
 world_size = int(os.getenv('WORLD_SIZE', '1'))
 
@@ -14,7 +13,7 @@ class Model(torch.nn.Module):
 
         self.ml = torch.nn.ModuleList()
         for _ in range(4000):
-            self.ml.append(torch.nn.Linear(500, 500))
+            self.ml.append(openfold3.base.model.primitives.linear.Linear(500, 500))
 
     def forward(self, batch):
         for i, l in enumerate(self.ml):

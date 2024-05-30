@@ -6,7 +6,6 @@ import json
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
-from pytorch_lightning.callbacks import DeviceStatsMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
@@ -16,31 +15,30 @@ import torch
 import wandb
 from deepspeed.utils import zero_to_fp32 
 
-from openfold.config import model_config
-from openfold.data.data_modules import OpenFoldDataModule, OpenFoldMultimerDataModule
-from openfold.model.model import AlphaFold
-from openfold.model.torchscript import script_preset_
-from openfold.np import residue_constants
-from openfold.utils.argparse_utils import remove_arguments
-from openfold.utils.callbacks import (
+from openfold3.monomer_multimer.config import model_config
+from openfold3.base.data.data_modules import OpenFoldDataModule, OpenFoldMultimerDataModule
+from openfold3.monomer_multimer.model import AlphaFold
+from openfold3.base.utils.torchscript import script_preset_
+from openfold3.base.np import residue_constants
+from openfold3.base.utils.callbacks import (
     EarlyStoppingVerbose,
+    PerformanceLoggingCallback
 )
-from openfold.utils.exponential_moving_average import ExponentialMovingAverage
-from openfold.utils.loss import AlphaFoldLoss, lddt_ca
-from openfold.utils.lr_schedulers import AlphaFoldLRScheduler
-from openfold.utils.multi_chain_permutation import multi_chain_permutation_align
-from openfold.utils.superimposition import superimpose
-from openfold.utils.tensor_utils import tensor_tree_map
-from openfold.utils.validation_metrics import (
+from openfold3.base.utils.exponential_moving_average import ExponentialMovingAverage
+from openfold3.base.utils.loss import AlphaFoldLoss, lddt_ca
+from openfold3.base.utils.lr_schedulers import AlphaFoldLRScheduler
+from openfold3.base.utils.multi_chain_permutation import multi_chain_permutation_align
+from openfold3.base.utils.superimposition import superimpose
+from openfold3.base.utils.tensor_utils import tensor_tree_map
+from openfold3.base.utils.validation_metrics import (
     drmsd,
     gdt_ts,
     gdt_ha,
 )
-from openfold.utils.import_weights import (
+from openfold3.base.utils.import_weights import (
     import_jax_weights_,
     import_openfold_weights_
 )
-from openfold.utils.logger import PerformanceLoggingCallback
 
 
 class OpenFoldWrapper(pl.LightningModule):

@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-from setuptools import setup, Extension, find_packages
+from setuptools import setup, find_packages
 import subprocess
 
 import torch
@@ -36,6 +36,7 @@ extra_cuda_flags = [
     '--expt-relaxed-constexpr',
     '--expt-extended-lambda'
 ]
+
 
 def get_cuda_bare_metal_version(cuda_dir):
     if cuda_dir==None or torch.version.cuda==None:
@@ -81,13 +82,13 @@ if bare_metal_major != -1:
     modules = [CUDAExtension(
         name="attn_core_inplace_cuda",
         sources=[
-            "openfold/utils/kernel/csrc/softmax_cuda.cpp",
-            "openfold/utils/kernel/csrc/softmax_cuda_kernel.cu",
+            "openfold3/base/utils/kernel/csrc/softmax_cuda.cpp",
+            "openfold3/base/utils/kernel/csrc/softmax_cuda_kernel.cu",
         ],
         include_dirs=[
             os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
-                'openfold/utils/kernel/csrc/'
+                'openfold3/base/utils/kernel/csrc/'
             )
         ],
         extra_compile_args={
@@ -103,8 +104,8 @@ else:
     modules = [CppExtension(
         name="attn_core_inplace_cuda",
         sources=[
-            "openfold/utils/kernel/csrc/softmax_cuda.cpp",
-            "openfold/utils/kernel/csrc/softmax_cuda_stub.cpp",
+            "openfold3/base/utils/kernel/csrc/softmax_cuda.cpp",
+            "openfold3/base/utils/kernel/csrc/softmax_cuda_stub.cpp",
         ],
         extra_compile_args={
             'cxx': ['-O3'],
@@ -112,17 +113,17 @@ else:
     )]
 
 setup(
-    name='openfold',
-    version='2.0.0',
-    description='A PyTorch reimplementation of DeepMind\'s AlphaFold 2',
+    name='openfold3',
+    version='0.1.0',
+    description='A PyTorch reimplementation of DeepMind\'s AlphaFold 2 & 3',
     author='OpenFold Team',
     author_email='jennifer.wei@omsf.io',
     license='Apache License, Version 2.0',
-    url='https://github.com/aqlaboratory/openfold',
+    url='https://github.com/aqlaboratory/openfold3',
     packages=find_packages(exclude=["tests", "scripts"]),
     include_package_data=True,
     package_data={
-        "openfold": ['utils/kernel/csrc/*'],
+        "openfold3": ['base/utils/kernel/csrc/*'],
         "": ["resources/stereo_chemical_props.txt"]
     },
     ext_modules=modules,

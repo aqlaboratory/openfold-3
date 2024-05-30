@@ -17,21 +17,20 @@ import numpy as np
 import torch
 import unittest
 
-from openfold.utils.rigid_utils import (
+from openfold3.base.model.primitives import Linear
+
+from openfold3.base.utils.rigid_utils import (
     Rotation,
     Rigid, 
     quat_to_rot,
     rot_to_quat,
 )
-from openfold.utils.chunk_utils import chunk_layer, _chunk_slice
+from openfold3.base.utils.chunk_utils import chunk_layer, _chunk_slice
 import tests.compare_utils as compare_utils
 from tests.config import consts
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
-    import jax
-    import haiku as hk
-
 
 X_90_ROT = torch.tensor(
     [
@@ -183,14 +182,14 @@ class TestUtils(unittest.TestCase):
 
     def test_chunk_layer_tensor(self):
         x = torch.rand(2, 4, 5, 15)
-        l = torch.nn.Linear(15, 30)
+        l = Linear(15, 30)
         chunked = chunk_layer(l, {"input": x}, chunk_size=4, no_batch_dims=3)
         unchunked = l(x)
 
         self.assertTrue(torch.all(chunked == unchunked))
 
     def test_chunk_layer_dict(self):
-        class LinearDictLayer(torch.nn.Linear):
+        class LinearDictLayer(Linear):
             def forward(self, input):
                 out = super().forward(input)
                 return {"out": out, "inner": {"out": out + 1}}

@@ -8,11 +8,11 @@ from multiprocessing import cpu_count
 from shutil import copyfile
 import tempfile
 
-import openfold.data.mmcif_parsing as mmcif_parsing
-from openfold.data.data_pipeline import AlignmentRunner
-from openfold.data.parsers import parse_fasta
-from openfold.data.tools import hhsearch, hmmsearch
-from openfold.np import protein, residue_constants
+import openfold3.base.data.mmcif_parsing as mmcif_parsing
+from openfold3.base.data.data_pipeline import AlignmentRunner
+from openfold3.base.data.parsers import parse_fasta
+from openfold3.base.data.tools import hhsearch, hmmsearch
+from openfold3.base.np import residue_constants, protein
 
 from utils import add_data_args
 

@@ -19,13 +19,13 @@ from pathlib import Path
 import unittest
 import ml_collections as mlc
 
-from openfold.data import data_transforms
-from openfold.np import residue_constants
-from openfold.utils.rigid_utils import (
+from openfold3.base.data import data_transforms
+from openfold3.base.np import residue_constants
+from openfold3.base.utils.rigid_utils import (
     Rotation,
     Rigid,
 )
-from openfold.utils.loss import (
+from openfold3.base.utils.loss import (
     torsion_angle_loss,
     compute_fape,
     between_residue_bond_loss,
@@ -36,7 +36,6 @@ from openfold.utils.loss import (
     distogram_loss,
     experimentally_resolved_loss,
     violation_loss,
-    fape_loss,
     lddt_loss,
     supervised_chi_loss,
     backbone_loss,
@@ -46,7 +45,7 @@ from openfold.utils.loss import (
     compute_tm,
     chain_center_of_mass_loss
 )
-from openfold.utils.tensor_utils import (
+from openfold3.base.utils.tensor_utils import (
     tree_map,
     tensor_tree_map,
     dict_multimap,

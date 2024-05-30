@@ -19,14 +19,14 @@ import unittest
 from pathlib import Path
 
 from tests.config import consts
-from openfold.config import model_config
-from openfold.model.model import AlphaFold
-from openfold.utils.import_weights import import_jax_weights_, import_openfold_weights_
+from openfold3.monomer_multimer.config import model_config
+from openfold3.monomer_multimer.model import AlphaFold
+from openfold3.base.utils.import_weights import import_jax_weights_, import_openfold_weights_
 
 
 class TestImportWeights(unittest.TestCase):
     def test_import_jax_weights_(self):
-        npz_path = Path(__file__).parent.resolve() / f"../openfold/resources/params/params_{consts.model}.npz"
+        npz_path = Path(__file__).parent.resolve() / f"../openfold3/resources/params/params_{consts.model}.npz"
 
         c = model_config(consts.model)
         c.globals.blocks_per_ckpt = None
@@ -79,7 +79,7 @@ class TestImportWeights(unittest.TestCase):
 
     def test_import_openfold_weights_(self):
         model_name = 'initial_training'
-        pt_path = Path(__file__).parent.resolve() / f"../openfold/resources/openfold_params/{model_name}.pt"
+        pt_path = Path(__file__).parent.resolve() / f"../openfold3/resources/openfold_params/{model_name}.pt"
 
         if os.path.exists(pt_path):
             c = model_config(model_name)
@@ -88,7 +88,6 @@ class TestImportWeights(unittest.TestCase):
             model.eval()
 
             d = torch.load(pt_path)
-
             import_openfold_weights_(
                 model=model,
                 state_dict=d,

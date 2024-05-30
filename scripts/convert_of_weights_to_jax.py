@@ -19,16 +19,15 @@ import argparse
 import numpy as np
 import torch
 
-from openfold.config import model_config
-from openfold.model.model import AlphaFold
-from openfold.utils.import_weights import (
-    Param, 
-    ParamType, 
+from openfold3.monomer_multimer.config import model_config
+from openfold3.monomer_multimer.model import AlphaFold
+from openfold3.base.utils.import_weights import (
+    ParamType,
     generate_translation_dict, 
     process_translation_dict,
     import_openfold_weights_
 )
-from openfold.utils.tensor_utils import tree_map
+from openfold3.base.utils.tensor_utils import tree_map
 
 
 def reshape_fn(of_param, af_weight):
@@ -93,7 +92,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--template_npz_path", 
         type=str, 
-        default="openfold/resources/params/params_model_1_ptm.npz",
+        default="openfold3/resources/params/params_model_1_ptm.npz",
         help="""Path to an AlphaFold checkpoint w/ a superset of the OF
                 checkpoint's parameters. params_model_1_ptm.npz always works.
              """

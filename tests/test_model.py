@@ -18,10 +18,10 @@ import torch
 import torch.nn as nn
 import numpy as np
 import unittest
-from openfold.config import model_config
-from openfold.data import data_transforms
-from openfold.model.model import AlphaFold
-from openfold.utils.tensor_utils import tensor_tree_map
+from openfold3.monomer_multimer.config import model_config
+from openfold3.base.data import data_transforms
+from openfold3.monomer_multimer.model import AlphaFold
+from openfold3.base.utils.tensor_utils import tensor_tree_map
 import tests.compare_utils as compare_utils
 from tests.config import consts
 from tests.data_utils import (
