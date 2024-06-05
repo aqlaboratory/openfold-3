@@ -28,7 +28,7 @@ class OpenFoldMultiDataset(Dataset):
     def __len__(self):
         return self.virtual_epoch_len
 
-    def __getitem__(self, index) -> Any:
+    def __getitem__(self, index: tuple[int, int]) -> Any:
         dataset_idx, datapoint_idx = self.indices[index]
         return self.datasets[dataset_idx][datapoint_idx]
 
@@ -37,7 +37,7 @@ class OpenFoldMultiDataset(Dataset):
         raise NotImplementedError(
             "OpenFoldMultiDataset.resample() is not yet implemented."
         )
-        # <functions to generate index tuples self.indices>
+        # <functions to generate index tuples self.indices for (dataset_idx, datapoint_idx)>
         pass
 
     def calculate_coverage(self):
