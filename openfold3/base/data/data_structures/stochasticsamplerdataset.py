@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import Dataset
 
 
-class OpenFoldMultiDataset(Dataset):
+class OpenFoldStochasticSamplerDataset(Dataset):
     """A dataset class for combining multiple OpenFoldSingleDataset instances and iteratively sampling from them with the provided probabilities."""
 
     def __init__(
@@ -32,10 +32,10 @@ class OpenFoldMultiDataset(Dataset):
         dataset_idx, datapoint_idx = self.indices[index]
         return self.datasets[dataset_idx][datapoint_idx]
 
-    def resample(self):
+    def resample_epoch(self):
         """Resample virtual_epoch_len number of samples according to the provided probabilities."""
         raise NotImplementedError(
-            "OpenFoldMultiDataset.resample() is not yet implemented."
+            "OpenFoldStochasticSamplerDataset.resample() is not yet implemented."
         )
         # <functions to generate index tuples self.indices for (dataset_idx, datapoint_idx)>
         pass
