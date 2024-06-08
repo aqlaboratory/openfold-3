@@ -247,4 +247,4 @@ class InferenceDataset(OpenFoldSingleDataset):
         return
     
     def __len__(self):
-        return len(self.data_cache
+        return len(self.data_cache)
