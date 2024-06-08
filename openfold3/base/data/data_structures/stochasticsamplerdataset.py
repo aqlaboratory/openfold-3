@@ -34,9 +34,7 @@ class OpenFoldStochasticSamplerDataset(Dataset):
 
     def resample_epoch(self):
         """Resample virtual_epoch_len number of samples according to the provided probabilities."""
-        raise NotImplementedError(
-            "OpenFoldStochasticSamplerDataset.resample() is not yet implemented."
-        )
+        
         # <functions to generate index tuples self.indices for (dataset_idx, datapoint_idx)>
         pass
 
