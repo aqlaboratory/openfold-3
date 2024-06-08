@@ -7,7 +7,7 @@ from typing import Dict, List, Sequence
 import pytorch_lightning as pl
 import torch
 
-from openfold3.base.data.data_structures.dataloader import OpenFoldDataLoader
+from torch.utils.data import DataLoader
 from openfold3.base.data.data_structures.singledatasets import (
     DATASET_REGISTRY,
     OpenFoldSingleDataset,
@@ -22,10 +22,12 @@ class OpenFoldDataModule(pl.LightningDataModule):
     def __init__(self, data_config: List[Sequence[Dict]]) -> None:
         super().__init__()
 
-        # TODO Input argument self-assignment - only assign necessary attributes if any
-
-        # TODO Argument checks
-        # train/valid/test/predict datasets exclusivity
+        # Input argument self-assignment
+        self.batch_size = data_config["batch_size"]
+        self.num_workers = data_config["num_workers"]
+        self.data_seed = data_config["data_seed"]
+        self.virtual_epoch_len = data_config["virtual_epoch_len"]
+        self.num_virtual_epochs = data_config["num_virtual_epochs"]
 
         # Parse data_config
         dataset_classes, dataset_weights, dataset_configs, dataset_types = (
@@ -40,17 +42,15 @@ class OpenFoldDataModule(pl.LightningDataModule):
                 dataset_classes, dataset_configs, dataset_types, "train"
             )
 
-            generator = torch.Generator(device='cpu').manual_seed(
-                "<data_seed>"
-            )  # TODO add argument
+            self.generator = torch.Generator(device="cpu").manual_seed(self.data_seed)
 
             # Wrap train datasets in the sampler dataset class
             self.train_dataset = OpenFoldStochasticSamplerDataset(
                 datasets=train_datasets,
                 probabilities=dataset_weights,
-                virtual_epoch_len="<virtual_epoch_len from data config>",  # TODO add argument
-                num_virtual_epochs="<num_virtual_epochs from data config>",  # TODO add argument
-                generator=generator,
+                virtual_epoch_len=self.virtual_epoch_len,
+                num_virtual_epochs=self.num_virtual_epochs,
+                generator=self.generator,
             )
 
             # Currently only one valid dataset is supported
@@ -99,6 +99,17 @@ class OpenFoldDataModule(pl.LightningDataModule):
                 ]
             )
         )
+        dataset_types_unique = set(dataset_types)
+        if (len(dataset_types_unique) == 2) & (
+            ("train" not in dataset_types) | ("valid" not in dataset_types)
+        ):
+            raise ValueError(
+                f"An unsupported combination of dataset types was found in data_config: {dataset_types_unique}. The supported dataset combinations are: ['train'], ['train', 'valid'], ['test'], ['predict']."
+            )
+        elif (len(dataset_types_unique) == 1) & ("valid" in dataset_types):
+            raise ValueError(
+                "Validation dataset(s) were provided without any training datasets. The supported dataset combinations are: ['train'], ['train', 'valid'], ['test'], ['predict']."
+            )
 
         return dataset_classes, dataset_weights, dataset_configs, dataset_types
 
@@ -133,21 +144,45 @@ class OpenFoldDataModule(pl.LightningDataModule):
             )
         return datasets
 
-    def train_dataloader(self) -> OpenFoldDataLoader:
-        # TODO refactor OpneFoldDataLoader and add arguments
-        return OpenFoldDataLoader(self.train_dataset, "<other arguments>")
+    def generate_dataloader(self, stage: str):
+        """Wrap the appropriate dataset in a DataLoader and return it.
 
-    def val_dataloader(self) -> OpenFoldDataLoader:
-        # TODO refactor OpneFoldDataLoader and add arguments
-        return OpenFoldDataLoader(self.valid_dataset, "<other arguments>")
+        Args:
+            stage (str): Type of DataLoader to return, one of train, valid, test, predict.
 
-    def test_dataloader(self) -> OpenFoldDataLoader:
-        # TODO refactor OpneFoldDataLoader and add arguments
-        return OpenFoldDataLoader(self.test_dataset, "<other arguments>")
+        Returns:
+            DataLoader: DataLoader object.
+        """
+        dataset = (
+            self.train_dataset
+            if stage == "train"
+            else self.valid_dataset
+            if stage == "valid"
+            else self.test_dataset
+            if stage == "test"
+            else self.predict_dataset
+        )
 
-    def predict_dataloader(self) -> OpenFoldDataLoader:
-        # TODO refactor OpneFoldDataLoader and add arguments
-        return OpenFoldDataLoader(self.predict_dataset, "<other arguments>")
+        # TODO refactor OpenFoldDataLoader and add arguments
+        return DataLoader(
+            dataset=dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            collate_fn=openfold_batch_collator,
+            generator=self.generator,
+        )
+
+    def train_dataloader(self) -> DataLoader:
+        return self.generate_dataloader("train")
+
+    def val_dataloader(self) -> DataLoader:
+        return self.generate_dataloader("valid")
+
+    def test_dataloader(self) -> DataLoader:
+        return self.generate_dataloader("test")
+
+    def predict_dataloader(self) -> DataLoader:
+        return self.generate_dataloader("predict")
 
 
 def openfold_batch_collator(prots):

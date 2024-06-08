@@ -266,6 +266,12 @@ class OpenFoldWrapper(pl.LightningModule):
                 self.model, jax_path, version=model_version
         )
 
+    def on_train_epoch_start(self) -> None:
+        """Resample epoch_len number of samples for the training datasets at the start of each epoch.
+        """
+        self.trainer.train_dataloader.dataset.resample_epoch()
+
+
 def get_model_state_dict_from_ds_checkpoint(checkpoint_dir):
     latest_path = os.path.join(checkpoint_dir, 'latest')
     if os.path.isfile(latest_path):
@@ -278,6 +284,7 @@ def get_model_state_dict_from_ds_checkpoint(checkpoint_dir):
     _DS_CHECKPOINT_VERSION = 2  # based on manual parsing of checkpoint files
     state_file = zero_to_fp32.get_model_state_file(ds_checkpoint_dir, _DS_CHECKPOINT_VERSION)
     return torch.load(state_file)
+
 
 def main(args):
     if(args.seed is not None):
