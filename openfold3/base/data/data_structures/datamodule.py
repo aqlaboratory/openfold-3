@@ -1,14 +1,13 @@
 # TODO add license
 
-from functools import partial
-import json
-from typing import Optional, Dict, List, Set, Tuple, Sequence
 import warnings
+from functools import partial
+from typing import Dict, List, Sequence
 
-import ml_collections as mlc
 import pytorch_lightning as pl
 import torch
-from openfold3.base.utils.tensor_utils import dict_multimap
+
+from openfold3.base.data.data_structures.dataloader import OpenFoldDataLoader
 from openfold3.base.data.data_structures.singledatasets import (
     DATASET_REGISTRY,
     OpenFoldSingleDataset,
@@ -16,7 +15,7 @@ from openfold3.base.data.data_structures.singledatasets import (
 from openfold3.base.data.data_structures.stochasticsamplerdataset import (
     OpenFoldStochasticSamplerDataset,
 )
-from openfold3.base.data.data_structures.dataloader import OpenFoldDataLoader
+from openfold3.base.utils.tensor_utils import dict_multimap
 
 
 class OpenFoldDataModule(pl.LightningDataModule):
@@ -128,7 +127,7 @@ class OpenFoldDataModule(pl.LightningDataModule):
             )
             if dataset_type == type_to_init
         ]
-        if (type_to_init in ['valid', 'test', 'predict']) & (len(datasets) > 1):
+        if (type_to_init in ["valid", "test", "predict"]) & (len(datasets) > 1):
             warnings.warn(
                 f"{len(datasets)} {type_to_init} datasets were found, using only the first one."
             )

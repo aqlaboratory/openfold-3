@@ -75,6 +75,7 @@ class WeightedPDBDataset(OpenFoldSingleDataset):
         #     self.data_cache = json.load(f)
 
         # Calculate datapoint probabilities
+        self.calculate_datapoint_probabilities()
 
     @property
     def preprocessing_pipeline(self):
@@ -87,6 +88,7 @@ class WeightedPDBDataset(OpenFoldSingleDataset):
     def calculate_datapoint_probabilities(self):
         """Implements equation 1 from section 2.5.1 of the AF3 SI.
         """
+        self.datapoint_probabilities = "<...>" # TODO
         return
     
     def __len__(self):

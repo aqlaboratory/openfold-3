@@ -7,7 +7,7 @@ from torch.utils.data import Dataset
 
 
 class OpenFoldStochasticSamplerDataset(Dataset):
-    """A dataset class for combining multiple OpenFoldSingleDataset instances and iteratively sampling from them with the provided probabilities."""
+    """A dataset class for combining multiple OpenFoldSingleDataset instances and sampling from them with the provided probabilities."""
 
     def __init__(
         self,
