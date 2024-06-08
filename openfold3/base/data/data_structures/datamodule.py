@@ -40,7 +40,7 @@ class OpenFoldDataModule(pl.LightningDataModule):
                 dataset_classes, dataset_configs, dataset_types, "train"
             )
 
-            generator = torch.Generator().manual_seed(
+            generator = torch.Generator(device='cpu').manual_seed(
                 "<data_seed>"
             )  # TODO add argument
 
