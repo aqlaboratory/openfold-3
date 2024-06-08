@@ -36,6 +36,8 @@ class PreprocessingPipeline(ABC):
         return self.forward(index=index)
 
 
+# QUESTION can we have separate pipelines for each molecule type and composite pipelines like BioAssemblyPreprocessingPipeline and TFDNAPreprocessingPipeline calling the appropriate sub-pipelines?
+
 class BioAssemblyPreprocessingPipeline(PreprocessingPipeline):
     def forward(self, index: int) -> dict:
         """_summary_

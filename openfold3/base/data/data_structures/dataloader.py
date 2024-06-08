@@ -1,11 +1,12 @@
 # TODO add license
 
 import torch
+from torch.utils.data import DataLoader
 from openfold3.base.utils.tensor_utils import tensor_tree_map
 
 
 # TODO yet to refactor
-class OpenFoldDataLoader(torch.utils.data.DataLoader):
+class OpenFoldDataLoader(DataLoader):
     def __init__(self, *args, config, stage="train", generator=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.config = config

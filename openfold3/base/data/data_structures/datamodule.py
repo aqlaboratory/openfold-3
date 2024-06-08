@@ -3,43 +3,49 @@
 from functools import partial
 import json
 from typing import Optional, Dict, List, Set, Tuple, Sequence
+import warnings
 
 import ml_collections as mlc
 import pytorch_lightning as pl
-from pytorch_lightning.utilities.types import TRAIN_DATALOADERS
 import torch
 from openfold3.base.utils.tensor_utils import dict_multimap
-from openfold3.base.data.data_structures.singledatasets import DATASET_REGISTRY
+from openfold3.base.data.data_structures.singledatasets import (
+    DATASET_REGISTRY,
+    OpenFoldSingleDataset,
+)
 from openfold3.base.data.data_structures.stochasticsamplerdataset import (
     OpenFoldStochasticSamplerDataset,
 )
+from openfold3.base.data.data_structures.dataloader import OpenFoldDataLoader
 
 
 class OpenFoldDataModule(pl.LightningDataModule):
     def __init__(self, data_config: List[Sequence[Dict]]) -> None:
         super().__init__()
 
-        # TODO Input argument self-assignment - only assign necessary attributes
-        
+        # TODO Input argument self-assignment - only assign necessary attributes if any
+
         # TODO Argument checks
+        # train/valid/test/predict datasets exclusivity
 
         # Parse data_config
         dataset_classes, dataset_weights, dataset_configs, dataset_types = (
             self.parse_data_config(data_config)
         )
 
-        # Initialize datasets 
+        # Initialize datasets
         # QUESTION do we want to support validation/testing/prediction on multiple datasets?
         if ("train" in dataset_types) | ("valid" in dataset_types):
-            train_datasets = [
-                DATASET_REGISTRY[dataset_class](dataset_config)
-                for dataset_class, dataset_config in zip(dataset_classes, dataset_configs)
-            ]
+            # Initialize train datasets
+            train_datasets = self.init_datasets(
+                dataset_classes, dataset_configs, dataset_types, "train"
+            )
 
             generator = torch.Generator().manual_seed(
                 "<data_seed>"
             )  # TODO add argument
 
+            # Wrap train datasets in the sampler dataset class
             self.train_dataset = OpenFoldStochasticSamplerDataset(
                 datasets=train_datasets,
                 probabilities=dataset_weights,
@@ -48,19 +54,31 @@ class OpenFoldDataModule(pl.LightningDataModule):
                 generator=generator,
             )
 
-            self.valid_dataset = "<SingleDataset>"
+            # Currently only one valid dataset is supported
+            self.valid_dataset = self.init_datasets(
+                dataset_classes, dataset_configs, dataset_types, "valid"
+            )[0]
 
-        elif ("test" in dataset_types):
-            self.test_dataset = "<SingleDataset>"
+        elif "test" in dataset_types:
+            # Currently only one test dataset is supported
+            self.test_dataset = self.init_datasets(
+                dataset_classes, dataset_configs, dataset_types, "test"
+            )[0]
 
-        elif ("predict" in dataset_types):
-            self.predict_dataset = "<SingleDataset>"
+        elif "predict" in dataset_types:
+            # Currently only one predict dataset is supported
+            self.predict_dataset = self.init_datasets(
+                dataset_classes, dataset_configs, dataset_types, "predict"
+            )[0]
+
         else:
-            raise ValueError(f"No valid dataset types were found in data_config. Found: {dataset_types}")
+            raise ValueError(
+                f"No valid dataset types were found in data_config. Found: {dataset_types}"
+            )
 
     def parse_data_config(
-        self, data_config: List[Sequence[Dict]]
-    ) -> Tuple[List, List, List, Set]:
+        self, data_config: list[Sequence[dict]]
+    ) -> tuple[list, list, list, list]:
         """Parses input data_config into separate lists.
 
         Args:
@@ -69,37 +87,70 @@ class OpenFoldDataModule(pl.LightningDataModule):
         Returns:
             Tuple[List, List, List, Set]: Lists of dataset classes, weights, configurations and unique set of types.
         """
-        dataset_classes, dataset_weights, dataset_configs = list(
+        dataset_classes, dataset_weights, dataset_configs, dataset_types = list(
             zip(
                 *[
                     (
                         dataset_entry["dataset_class"],
                         dataset_entry["weight"],
                         dataset_entry["config"],
+                        dataset_entry["type"],
                     )
                     for dataset_entry in data_config
                 ]
             )
         )
 
-        dataset_types = {[dataset_entry["type"] for dataset_entry in data_config]}
-
         return dataset_classes, dataset_weights, dataset_configs, dataset_types
 
-    def train_dataloader(self) -> json.Any:
-        return super().train_dataloader()
+    def init_datasets(
+        self,
+        dataset_classes: list[Sequence[str]],
+        dataset_configs: list[Sequence[dict]],
+        dataset_types: list[Sequence[str]],
+        type_to_init: str,
+    ) -> list[Sequence[OpenFoldSingleDataset]]:
+        """Initializes datasets.
 
-    def val_dataloader(self) -> TRAIN_DATALOADERS:
-        return super().val_dataloader()
+        Args:
+            dataset_classes (list[Sequence[str]]): List of strings matching the specific OpenFoldSingleDataset classes to initialize.
+            dataset_configs (list[Sequence[dict]]): List of configs to pass each dataset class.
+            dataset_types (list[Sequence[str]]): List of dataset types, elements can be train, valid, test, predict.
+            type_to_init (str): One of train, valid, test, predict.
 
-    def test_dataloader(self) -> TRAIN_DATALOADERS:
-        return super().test_dataloader()
+        Returns:
+            list[Sequence[OpenFoldSingleDataset]]: List of initialized OpenFoldSingleDataset objects.
+        """
+        datasets = [
+            DATASET_REGISTRY[dataset_class](dataset_config)
+            for dataset_class, dataset_config, dataset_type in zip(
+                dataset_classes, dataset_configs, dataset_types
+            )
+            if dataset_type == type_to_init
+        ]
+        if (type_to_init in ['valid', 'test', 'predict']) & (len(datasets) > 1):
+            warnings.warn(
+                f"{len(datasets)} {type_to_init} datasets were found, using only the first one."
+            )
+        return datasets
 
-    def predict_dataloader(self) -> TRAIN_DATALOADERS:
-        return super().predict_dataloader()
+    def train_dataloader(self) -> OpenFoldDataLoader:
+        # TODO refactor OpneFoldDataLoader and add arguments
+        return OpenFoldDataLoader(self.train_dataset, "<other arguments>")
+
+    def val_dataloader(self) -> OpenFoldDataLoader:
+        # TODO refactor OpneFoldDataLoader and add arguments
+        return OpenFoldDataLoader(self.valid_dataset, "<other arguments>")
+
+    def test_dataloader(self) -> OpenFoldDataLoader:
+        # TODO refactor OpneFoldDataLoader and add arguments
+        return OpenFoldDataLoader(self.test_dataset, "<other arguments>")
+
+    def predict_dataloader(self) -> OpenFoldDataLoader:
+        # TODO refactor OpneFoldDataLoader and add arguments
+        return OpenFoldDataLoader(self.predict_dataset, "<other arguments>")
 
 
-class OpenFoldBatchCollator:
-    def __call__(self, prots):
-        stack_fn = partial(torch.stack, dim=0)
-        return dict_multimap(stack_fn, prots)
+def openfold_batch_collator(prots):
+    stack_fn = partial(torch.stack, dim=0)
+    return dict_multimap(stack_fn, prots)
