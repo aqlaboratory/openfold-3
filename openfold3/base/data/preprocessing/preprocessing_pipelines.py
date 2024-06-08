@@ -44,7 +44,7 @@ class BioAssemblyPreprocessingPipeline(PreprocessingPipeline):
             index (int): datapoint index
 
         Returns:
-            dict: parsed data dictionary
+            dict: parsed raw data dictionary
         """
 
         # Parse target structure mmCIF
@@ -82,3 +82,8 @@ class BioAssemblyPreprocessingPipeline(PreprocessingPipeline):
         # -> template_raw_data
         
         # return {target_raw_data, msa_raw_data, template_raw_data}
+
+
+class TFDNAPreprocessingPipeline(PreprocessingPipeline):
+    def forward(self, index: int) -> dict:
+        pass

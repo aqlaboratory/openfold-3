@@ -6,7 +6,7 @@ import json
 
 from torch.utils.data import Dataset
 
-from openfold3.base.data.preprocessing.preprocessing_pipelines import BioAssemblyPreprocessingPipeline
+from openfold3.base.data.preprocessing.preprocessing_pipelines import BioAssemblyPreprocessingPipeline, TFDNAPreprocessingPipeline
 from openfold3.base.data.feature_pipelines.feature_pipelines import AF3BioAssemblyFeaturePipeline
 
 DATASET_REGISTRY = {}
@@ -45,7 +45,7 @@ class OpenFoldSingleDataset(ABC, Dataset):
         """A function call to a FeaturePipeline instace assigned to the self.feature_pipeline attribute."""
         pass
 
-    @abstractmethod
+    @abstractmethod  # QUESTION should this be a default method return equal probabilities for all datapoints?
     def calculate_datapoint_probabilities(self) -> float:
         """Calculates datapoint probabilities from the data_cache using the dataset-specific sampling formula.
         """
@@ -59,7 +59,7 @@ class OpenFoldSingleDataset(ABC, Dataset):
 
 @register_dataset
 class WeightedPDBDataset(OpenFoldSingleDataset):
-    """Weighted PDB training dataset for AF3. 
+    """Implements a Dataset class for the Weighted PDB training dataset for AF3. 
     """
 
     def __init__(self, dataset_config) -> None:
@@ -75,8 +75,6 @@ class WeightedPDBDataset(OpenFoldSingleDataset):
         #     self.data_cache = json.load(f)
 
         # Calculate datapoint probabilities
-
-        "<assign other attributes here>"
 
     @property
     def preprocessing_pipeline(self):
@@ -96,14 +94,14 @@ class WeightedPDBDataset(OpenFoldSingleDataset):
 
 
 @register_dataset
-class TFPositiveDataset(OpenFoldSingleDataset):
-    """TF-DNA positive distillation dataset for AF3.
+class ProteinMonomerDataset(OpenFoldSingleDataset):
+    """Implements a Dataset class for the monomeric protein distillation datasets for AF3.
     """
 
     def __init__(self, data_config) -> None:
         super().__init__()
-        # self._preprocessing_pipeline = ProteinDNAPreprocessingPipeline(data_config)
-        # self._feature_pipeline = AF3ProteinDNAFeaturePipeline(data_config)
+        self._preprocessing_pipeline = "<ProteinMonomerPreprocessingPipeline(data_config)>"
+        self._feature_pipeline = "<AF3ProteinFeaturePipeline(data_config)>"
 
         with open(data_config['data_cache'], 'r') as f:
             self.data_cache = json.load(f)
@@ -124,3 +122,129 @@ class TFPositiveDataset(OpenFoldSingleDataset):
     
     def __len__(self):
         return len(self.data_cache)
+
+
+@register_dataset
+class RNADataset(OpenFoldSingleDataset):
+    """Implements a Dataset class for the RNA distillation dataset for AF3.
+    """
+
+    def __init__(self, data_config) -> None:
+        super().__init__()
+        self._preprocessing_pipeline = "<RNAPreprocessingPipeline(data_config)>"
+        self._feature_pipeline = "<AF3RNAFeaturePipeline(data_config)>"
+
+        with open(data_config['data_cache'], 'r') as f:
+            self.data_cache = json.load(f)
+
+        "<assign other attributes here>"
+
+    @property
+    def preprocessing_pipeline(self):
+        return self._preprocessing_pipeline
+
+    @property
+    def feature_pipeline(self):
+        return self._feature_pipeline
+    
+    def calculate_datapoint_probabilities(self, cache_entry) -> float:
+        # uniform sampling
+        return
+    
+    def __len__(self):
+        return len(self.data_cache)
+
+
+@register_dataset
+class TFPositiveDataset(OpenFoldSingleDataset):
+    """Implements a Datset class for the Transcription factor-DNA positive distillation dataset for AF3.
+    """
+
+    def __init__(self, data_config) -> None:
+        super().__init__()
+        self._preprocessing_pipeline = TFDNAPreprocessingPipeline(data_config)
+        self._feature_pipeline = AF3BioAssemblyFeaturePipeline(data_config)
+
+        with open(data_config['data_cache'], 'r') as f:
+            self.data_cache = json.load(f)
+
+        "<assign other attributes here>"
+
+    @property
+    def preprocessing_pipeline(self):
+        return self._preprocessing_pipeline
+
+    @property
+    def feature_pipeline(self):
+        return self._feature_pipeline
+    
+    def calculate_datapoint_probabilities(self, cache_entry) -> float:
+        # uniform sampling
+        return
+    
+    def __len__(self):
+        return len(self.data_cache)
+    
+
+@register_dataset
+class TFNegativeDataset(OpenFoldSingleDataset):
+    """Implements a Datset class for the Transcription factor-DNA negative distillation dataset for AF3.
+    """
+
+    def __init__(self, data_config) -> None:
+        super().__init__()
+        self._preprocessing_pipeline = TFDNAPreprocessingPipeline(data_config)
+        self._feature_pipeline = AF3BioAssemblyFeaturePipeline(data_config)
+
+        with open(data_config['data_cache'], 'r') as f:
+            self.data_cache = json.load(f)
+
+        "<assign other attributes here>"
+
+    @property
+    def preprocessing_pipeline(self):
+        return self._preprocessing_pipeline
+
+    @property
+    def feature_pipeline(self):
+        return self._feature_pipeline
+    
+    def calculate_datapoint_probabilities(self, cache_entry) -> float:
+        # uniform sampling
+        return
+    
+    def __len__(self):
+        return len(self.data_cache)
+    
+
+# QUESTION how to do validation/test datasets?
+
+@register_dataset
+class InferenceDataset(OpenFoldSingleDataset):
+    """Implements a Dataset class for the inference dataset for AF3.
+    """
+
+    def __init__(self, data_config) -> None:
+        super().__init__()
+        self._preprocessing_pipeline = "<InferencePreprocessingPipeline(data_config)>"
+        self._feature_pipeline = "<AF3InferenceFeaturePipeline(data_config)>"
+
+        with open(data_config['data_cache'], 'r') as f:
+            self.data_cache = json.load(f)
+
+        "<assign other attributes here>"
+
+    @property
+    def preprocessing_pipeline(self):
+        return self._preprocessing_pipeline
+
+    @property
+    def feature_pipeline(self):
+        return self._feature_pipeline
+    
+    def calculate_datapoint_probabilities(self, cache_entry) -> float:
+        # no sampling !!!
+        return
+    
+    def __len__(self):
+        return len(self.data_cache

@@ -32,10 +32,6 @@ class AF3BioAssemblyFeaturePipeline(FeaturePipeline):
         Returns:
             dict: feature dictionary (Table 5)
         """
-        # cropping (?)
-
-        # conformer generation
-
         # Featurization
         # Token features
         # Reference conformer features
@@ -44,25 +40,19 @@ class AF3BioAssemblyFeaturePipeline(FeaturePipeline):
         # Bond features
 
 
-class AF3ProteinDNAFeaturePipeline(FeaturePipeline):
-    def forward(self, parsed_features) -> dict:
-        """_summary_
+# class AF3ProteinDNAFeaturePipeline(FeaturePipeline):
+#     def forward(self, parsed_features) -> dict:
+#         """_summary_
 
-        Args:
-            parsed_features (_type_): set of coordinates from parsed mmCIF and parsed MSAs, center atom around which to crop
+#         Args:
+#             parsed_features (_type_): set of coordinates from parsed mmCIF and parsed MSAs, center atom around which to crop
 
-        Returns:
-            dict: feature dictionary (Table 5)
-        """
-        # cropping (?)
-
-        # idealized helix construction etc...
-
-        # conformer generation
-
-        # Featurization
-        # Token features
-        # Reference conformer features
-        # MSA features
-        # Template features
-        # Bond features
+#         Returns:
+#             dict: feature dictionary (Table 5)
+#         """
+#         # Featurization
+#         # Token features
+#         # Reference conformer features
+#         # MSA features
+#         # Template features
+#         # Bond features
