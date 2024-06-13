@@ -16,9 +16,9 @@ import math
 import torch
 
 import unittest
-from openfold.utils.multi_chain_permutation import (pad_features, get_least_asym_entity_or_longest_length,
-                                                    compute_permutation_alignment, split_ground_truth_labels,
-                                                    merge_labels)
+from openfold3.core.utils.multi_chain_permutation import (pad_features, get_least_asym_entity_or_longest_length,
+                                                          compute_permutation_alignment, split_ground_truth_labels,
+                                                          merge_labels)
 
 
 class TestPermutation(unittest.TestCase):

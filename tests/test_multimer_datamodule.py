@@ -16,12 +16,14 @@ import os
 import shutil
 import torch
 import unittest
-from openfold.utils.tensor_utils import tensor_tree_map
-from openfold.config import model_config
-from openfold.data.data_modules import OpenFoldMultimerDataModule
-from openfold.model.model import AlphaFold
-from openfold.utils.loss import AlphaFoldLoss
-from openfold.utils.multi_chain_permutation import multi_chain_permutation_align
+
+from openfold3.core.utils.tensor_utils import tensor_tree_map
+from openfold3.core.data.data_modules import OpenFoldMultimerDataModule
+from openfold3.core.utils.loss import AlphaFoldLoss
+from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation_align
+from openfold3.model_implementations.af2_monomer.config import model_config
+from openfold3.model_implementations.af2_monomer.model import AlphaFold
+
 from tests.config import consts
 import logging
 logger = logging.getLogger(__name__)

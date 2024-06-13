@@ -16,12 +16,12 @@ import re
 import torch
 import numpy as np
 import unittest
-from openfold.model.evoformer import (
-    MSATransition,
+from openfold3.core.model.latent.msa_stacks import (
     EvoformerStack,
     ExtraMSAStack,
 )
-from openfold.utils.tensor_utils import tree_map
+from openfold3.core.model.layers.transition import ReLUTransition
+from openfold3.core.utils.tensor_utils import tree_map
 import tests.compare_utils as compare_utils
 from tests.config import consts
 
@@ -301,7 +301,7 @@ class TestMSATransition(unittest.TestCase):
         c_m = 7
         n = 11
 
-        mt = MSATransition(c_m, n)
+        mt = ReLUTransition(c_in=c_m, n=n)
 
         m = torch.rand((batch_size, s_t, n_r, c_m))
 
@@ -355,6 +355,7 @@ class TestMSATransition(unittest.TestCase):
         )
 
         compare_utils.assert_max_abs_diff_small(out_gt, out_repro, consts.eps)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -39,17 +39,18 @@ if (
 
 torch.set_grad_enabled(False)
 
-from openfold.config import model_config
-from openfold.data import templates, feature_pipeline, data_pipeline
-from openfold.data.tools import hhsearch, hmmsearch
-from openfold.np import protein
-from openfold.utils.script_utils import (load_models_from_command_line, parse_fasta, run_model,
-                                         prep_output, relax_protein)
-from openfold.utils.tensor_utils import tensor_tree_map
-from openfold.utils.trace_utils import (
+from openfold3.core.data import data_pipeline, templates
+from openfold3.core.data import feature_pipeline
+from openfold3.core.data.tools import hhsearch, hmmsearch
+from openfold3.core.np import protein
+from openfold3.core.utils.script_utils import (load_models_from_command_line, parse_fasta, run_model,
+                                               prep_output, relax_protein)
+from openfold3.core.utils.tensor_utils import tensor_tree_map
+from openfold3.core.utils.trace_utils import (
     pad_feature_dict_seq,
     trace_model_,
 )
+from openfold3.model_implementations.af2_monomer.config import model_config
 
 from scripts.precompute_embeddings import EmbeddingGenerator
 from scripts.utils import add_data_args
@@ -415,13 +416,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--config_preset", type=str, default="model_1",
-        help="""Name of a model config preset defined in openfold/config.py"""
+        help="""Name of a model config preset defined in openfold3/config.py"""
     )
     parser.add_argument(
         "--jax_param_path", type=str, default=None,
         help="""Path to JAX model parameters. If None, and openfold_checkpoint_path
              is also None, parameters are selected automatically according to 
-             the model name from openfold/resources/params"""
+             the model name from openfold3/resources/params"""
     )
     parser.add_argument(
         "--openfold_checkpoint_path", type=str, default=None,
@@ -485,7 +486,7 @@ if __name__ == "__main__":
 
     if args.jax_param_path is None and args.openfold_checkpoint_path is None:
         args.jax_param_path = os.path.join(
-            "openfold", "resources", "params",
+            "openfold3", "resources", "params",
             "params_" + args.config_preset + ".npz"
         )
 

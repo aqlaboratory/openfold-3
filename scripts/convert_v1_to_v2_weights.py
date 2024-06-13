@@ -21,7 +21,7 @@ import os
 import shutil
 import torch
 
-from openfold.utils.import_weights import convert_deprecated_v1_keys
+from openfold3.core.utils.import_weights import convert_deprecated_v1_keys
 from deepspeed.utils.zero_to_fp32 import (
     get_optim_files, parse_optim_states, get_model_state_file
 )

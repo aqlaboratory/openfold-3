@@ -2,7 +2,6 @@ import argparse
 import ctypes
 from datetime import date
 import os
-import sys
 from pathlib import Path
 
 if 'CONDA_PREFIX' in os.environ:

@@ -16,10 +16,13 @@ import re
 import torch
 import numpy as np
 import unittest
-from openfold.model.template import (
+
+from openfold3.core.model.latent.template import (
     TemplatePointwiseAttention,
     TemplatePairStack,
 )
+from openfold3.core.model.primitives import LayerNorm
+
 import tests.compare_utils as compare_utils
 from tests.config import consts
 from tests.data_utils import random_template_feats
@@ -148,7 +151,7 @@ class TestTemplatePairStack(unittest.TestCase):
                     name="template_pair_stack",
                 )
                 act = tps(pair_act, pair_mask, is_training=False)
-            ln = hk.LayerNorm([-1], True, True, name="output_layer_norm")
+            ln = LayerNorm([-1], True, True, name="output_layer_norm")
             act = ln(act)
             return act
 

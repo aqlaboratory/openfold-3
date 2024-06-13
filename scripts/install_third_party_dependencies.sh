@@ -6,7 +6,7 @@ wget -N --no-check-certificate -P openfold/resources \
 
 # Certain tests need access to this file
 mkdir -p tests/test_data/alphafold/common
-ln -rs openfold/resources/stereo_chemical_props.txt tests/test_data/alphafold/common
+ln -rs openfold3/resources/stereo_chemical_props.txt tests/test_data/alphafold/common
 
 # Decompress test data
 gunzip -c tests/test_data/sample_feats.pickle.gz > tests/test_data/sample_feats.pickle

@@ -12,19 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import random
 import torch
 import unittest
 from tests.config import consts
 from tests.data_utils import random_asym_ids
-from openfold.model.embedders import (
+from openfold3.core.model.embedders import (
     InputEmbedder,
     InputEmbedderMultimer,
     PreembeddingEmbedder,
-    RecyclingEmbedder,
-    TemplateSingleEmbedder,
-    TemplatePairEmbedder
+    RecyclingEmbedder
 )
+from openfold3.core.model.embedders import TemplateSingleEmbedder, TemplatePairEmbedder
 
 
 class TestInputEmbedder(unittest.TestCase):

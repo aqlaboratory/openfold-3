@@ -5,15 +5,17 @@ import random
 
 import numpy
 import torch
-from openfold.config import model_config
-from openfold.data import feature_pipeline
-from openfold.data.data_pipeline import make_sequence_features_with_custom_template
-from openfold.np import protein
-from openfold.utils.script_utils import load_models_from_command_line, parse_fasta, run_model, prep_output, \
-    relax_protein
-from openfold.utils.tensor_utils import (
+
+from openfold3.core.data import feature_pipeline
+from openfold3.core.data.data_pipeline import make_sequence_features_with_custom_template
+from openfold3.core.np import protein
+from openfold3.core.utils.script_utils import (load_models_from_command_line, parse_fasta, run_model, prep_output,
+                                               relax_protein)
+from openfold3.core.utils.tensor_utils import (
     tensor_tree_map,
 )
+from openfold3.model_implementations.af2_monomer.config import model_config
+
 from scripts.utils import add_data_args
 
 logging.basicConfig()
@@ -133,7 +135,7 @@ if __name__ == "__main__":
         "--jax_param_path", type=str, default=None,
         help="""Path to JAX model parameters. If None, and openfold_checkpoint_path
              is also None, parameters are selected automatically according to 
-             the model name from openfold/resources/params"""
+             the model name from openfold3/resources/params"""
     )
     parser.add_argument(
         "--openfold_checkpoint_path", type=str, default=None,

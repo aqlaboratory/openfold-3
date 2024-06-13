@@ -55,16 +55,15 @@ sys.path.insert(0, args.of_dir)
 
 
 # openfold imports
-from openfold import config
+from openfold3.model_implementations.af2_monomer import config
 
-from openfold.data import data_pipeline
-from openfold.data import feature_pipeline
+from openfold3.core.data import data_pipeline
+from openfold3.core.data import feature_pipeline
 
-from openfold.np import protein
-from openfold.np import residue_constants
+from openfold3.core.np import protein, residue_constants
 
-from openfold.utils.tensor_utils import tensor_tree_map
-from openfold.utils.script_utils import load_models_from_command_line, run_model
+from openfold3.core.utils.tensor_utils import tensor_tree_map
+from openfold3.core.utils.script_utils import load_models_from_command_line, run_model
 
 
 # helper functions
@@ -256,7 +255,7 @@ def score_decoy(target_seq, decoy_prot, model_runner, name):
     atom_mask[0, template_idxs, :5] = decoy_prot.atom_mask[:, :5]
     atom_mask[0, projected_cb, 3] = 1
 
-    template = {"template_aatype":residue_constants.sequence_to_onehot(decoy_seq, residue_constants.HHBLITS_AA_TO_ID)[None],
+    template = {"template_aatype": residue_constants.sequence_to_onehot(decoy_seq, residue_constants.HHBLITS_AA_TO_ID)[None],
                 "template_all_atom_mask": atom_mask.astype(np.float32),
                 "template_all_atom_positions":pos.astype(np.float32),
                 "template_domain_names":np.asarray(["None"])}
@@ -264,7 +263,7 @@ def score_decoy(target_seq, decoy_prot, model_runner, name):
     pos[0, template_idxs, :5] = decoy_prot.atom_positions[:,:5]
     atom_mask[0, template_idxs, :5] = decoy_prot.atom_mask[:,:5]
 
-    template = {"template_aatype":residue_constants.sequence_to_onehot(decoy_seq, residue_constants.HHBLITS_AA_TO_ID)[None],
+    template = {"template_aatype": residue_constants.sequence_to_onehot(decoy_seq, residue_constants.HHBLITS_AA_TO_ID)[None],
                 "template_all_atom_mask": atom_mask.astype(np.float32),
                 "template_all_atom_positions": pos.astype(np.float32),
                 "template_domain_names":np.asarray(["None"])}
@@ -272,7 +271,7 @@ def score_decoy(target_seq, decoy_prot, model_runner, name):
     pos[0, template_idxs] = decoy_prot.atom_positions
     atom_mask[0, template_idxs] = decoy_prot.atom_mask
 
-    template = {"template_aatype":residue_constants.sequence_to_onehot(decoy_seq, residue_constants.HHBLITS_AA_TO_ID)[None],
+    template = {"template_aatype": residue_constants.sequence_to_onehot(decoy_seq, residue_constants.HHBLITS_AA_TO_ID)[None],
                 "template_all_atom_mask":decoy_prot.atom_mask[None].astype(np.float32),
                 "template_all_atom_positions":decoy_prot.atom_positions[None].astype(np.float32),
                 "template_domain_names":np.asarray(["None"])}

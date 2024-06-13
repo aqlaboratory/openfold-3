@@ -15,8 +15,8 @@
 import torch
 import numpy as np
 import unittest
-from openfold.model.pair_transition import PairTransition
-from openfold.utils.tensor_utils import tree_map
+from openfold3.core.model.layers import ReLUTransition
+from openfold3.core.utils.tensor_utils import tree_map
 import tests.compare_utils as compare_utils
 from tests.config import consts
 
@@ -31,7 +31,7 @@ class TestPairTransition(unittest.TestCase):
         c_z = consts.c_z
         n = 4
 
-        pt = PairTransition(c_z, n)
+        pt = ReLUTransition(c_in=c_z, n=n)
 
         batch_size = consts.batch_size
         n_res = consts.n_res
@@ -85,7 +85,7 @@ class TestPairTransition(unittest.TestCase):
             .cpu()
         )
 
-        self.assertTrue(torch.max(torch.abs(out_gt - out_repro) < consts.eps))
+        self.assertTrue(torch.max(torch.abs(out_gt - out_repro)) < consts.eps)
 
 
 if __name__ == "__main__":

@@ -15,8 +15,8 @@
 import torch
 import numpy as np
 import unittest
-from openfold.model.outer_product_mean import OuterProductMean
-from openfold.utils.tensor_utils import tree_map
+from openfold3.core.model.layers import OuterProductMean
+from openfold3.core.utils.tensor_utils import tree_map
 import tests.compare_utils as compare_utils
 from tests.config import consts
 

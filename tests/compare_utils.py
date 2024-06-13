@@ -8,9 +8,9 @@ import unittest
 import numpy as np
 import torch
 
-from openfold.config import model_config
-from openfold.model.model import AlphaFold
-from openfold.utils.import_weights import import_jax_weights_
+from openfold3.core.utils.import_weights import import_jax_weights_
+from openfold3.model_implementations.af2_monomer.config import model_config
+from openfold3.model_implementations.af2_monomer.model import AlphaFold
 
 from tests.config import consts
 
@@ -66,7 +66,7 @@ def get_alphafold_config():
 
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
-_param_path = os.path.join(dir_path, "..", f"openfold/resources/params/params_{consts.model}.npz")
+_param_path = os.path.join(dir_path, "..", f"openfold3/resources/params/params_{consts.model}.npz")
 _model = None
 
 
