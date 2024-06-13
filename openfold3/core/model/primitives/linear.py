@@ -79,6 +79,9 @@ class Linear(nn.Linear):
                     self.bias.fill_(-2.0)
                 elif init == "normal":
                     normal_init_(self.weight)
+                elif init == "fourier":
+                    normal_init_(self.weight)
+                    normal_init_(self.bias)
                 elif init == "final":
                     final_init_(self.weight)
                 else:

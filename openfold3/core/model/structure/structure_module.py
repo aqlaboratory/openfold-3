@@ -438,7 +438,7 @@ class InvariantPointAttention(nn.Module):
         # [*, H, N_res, N_res]
         pt_att = permute_final_dims(pt_att, (2, 0, 1))
 
-        if (inplace_safe):
+        if inplace_safe and attn_core_is_installed:
             a += pt_att
             del pt_att
             a += square_mask.unsqueeze(-3)

@@ -324,6 +324,10 @@ class Attention(nn.Module):
             use_memory_efficient_kernel = False
         
         if use_memory_efficient_kernel:
+            if not attn_core_is_installed:
+                raise ValueError(
+                    "Memory-efficient kernel attention_core must be installed"
+                )
             if len(biases) > 2:
                 raise ValueError(
                     "If use_memory_efficient_kernel is True, you may only "
