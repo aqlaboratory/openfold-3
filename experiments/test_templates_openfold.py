@@ -55,15 +55,15 @@ sys.path.insert(0, args.of_dir)
 
 
 # openfold imports
-from openfold3.systems.monomer_multimer import config
+from openfold3.model_implementations.af2_monomer import config
 
-from openfold3.base.data import data_pipeline
-from openfold3.base.data import feature_pipeline
+from openfold3.core.data import data_pipeline
+from openfold3.core.data import feature_pipeline
 
-from openfold3.base.np import protein, residue_constants
+from openfold3.core.np import protein, residue_constants
 
-from openfold3.base.utils.tensor_utils import tensor_tree_map
-from openfold3.base.utils.script_utils import load_models_from_command_line, run_model
+from openfold3.core.utils.tensor_utils import tensor_tree_map
+from openfold3.core.utils.script_utils import load_models_from_command_line, run_model
 
 
 # helper functions

@@ -14,7 +14,7 @@
 
 import torch
 import unittest
-from openfold3.base.model.layers.latent.pairformer import PairFormerStack
+from openfold3.core.model.latent.pairformer import PairFormerStack
 
 from tests.config import consts
 
@@ -30,7 +30,6 @@ class TestPairFormer(unittest.TestCase):
         c_hidden_mul = 19
         c_hidden_pair_att = 14
         no_heads_pair = 7
-        no_heads_msa = 3
         no_blocks = 2
         transition_n = 2
         pair_dropout = 0.25

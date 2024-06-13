@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import unittest
 
-from openfold3.base.data.data_transforms import (make_seq_mask, add_distillation_flag, make_all_atom_aatype,
+from openfold3.core.data.data_transforms import (make_seq_mask, add_distillation_flag, make_all_atom_aatype,
                                                  fix_templates_aatype, correct_msa_restypes, squeeze_features,
                                                  randomly_replace_msa_with_unknown, MSA_FEATURE_NAMES, sample_msa,
                                                  crop_extra_msa, delete_extra_msa, nearest_neighbor_clusters, make_msa_mask,

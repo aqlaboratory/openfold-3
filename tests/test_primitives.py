@@ -15,8 +15,8 @@
 import torch
 import unittest
 
-from openfold3.base.model.primitives.initialization import lecun_normal_init_
-from openfold3.base.model.primitives.attention import Attention
+from openfold3.core.model.primitives.initialization import lecun_normal_init_
+from openfold3.core.model.primitives.attention import Attention
 
 from tests.config import consts
 from tests.data_utils import random_attention_inputs

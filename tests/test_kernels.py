@@ -3,8 +3,8 @@
 import torch
 import unittest
 
-from openfold3.base.model.primitives.attention import _attention
-from openfold3.base.utils.kernel.attention_core import attention_core
+from openfold3.core.model.primitives.attention import _attention
+from openfold3.core.utils.kernel.attention_core import attention_core
 from tests.config import consts
 
 

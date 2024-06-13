@@ -18,11 +18,11 @@ import unittest
 
 import torch
 
-from openfold3.base.model.layers.modules.triangular_multiplicative_update import (
+from openfold3.core.model.layers.triangular_multiplicative_update import (
     TriangleMultiplicationOutgoing,
     FusedTriangleMultiplicationOutgoing
 )
-from openfold3.base.utils.tensor_utils import tree_map
+from openfold3.core.utils.tensor_utils import tree_map
 
 import tests.compare_utils as compare_utils
 from tests.config import consts
