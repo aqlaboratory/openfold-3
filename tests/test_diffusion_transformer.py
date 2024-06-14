@@ -14,8 +14,8 @@
 
 import torch
 import unittest
-from openfold3.base.model.layers.modules.diffusion_transformer import DiffusionTransformer
-from openfold3.base.model.layers.modules.transition import ConditionedTransitionBlock
+from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
+from openfold3.core.model.layers.transition import ConditionedTransitionBlock
 
 from tests.config import consts
 

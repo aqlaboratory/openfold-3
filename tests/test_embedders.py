@@ -16,13 +16,13 @@ import torch
 import unittest
 from tests.config import consts
 from tests.data_utils import random_asym_ids
-from openfold3.base.model.layers.embedders.input_embedders import (
+from openfold3.core.model.embedders import (
     InputEmbedder,
     InputEmbedderMultimer,
     PreembeddingEmbedder,
     RecyclingEmbedder
 )
-from openfold3.base.model.layers.embedders.template_embedders import TemplateSingleEmbedder, TemplatePairEmbedder
+from openfold3.core.model.embedders import TemplateSingleEmbedder, TemplatePairEmbedder
 
 
 class TestInputEmbedder(unittest.TestCase):

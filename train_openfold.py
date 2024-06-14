@@ -15,31 +15,31 @@ import torch
 import wandb
 from deepspeed.utils import zero_to_fp32 
 
-from openfold3.base.data.data_modules import OpenFoldDataModule, OpenFoldMultimerDataModule
-from openfold3.base.utils.torchscript import script_preset_
-from openfold3.base.np import residue_constants
-from openfold3.base.utils.callbacks import (
+from openfold3.core.data.data_modules import OpenFoldDataModule, OpenFoldMultimerDataModule
+from openfold3.core.utils.torchscript import script_preset_
+from openfold3.core.np import residue_constants
+from openfold3.core.utils.callbacks import (
     EarlyStoppingVerbose,
     PerformanceLoggingCallback
 )
-from openfold3.base.utils.exponential_moving_average import ExponentialMovingAverage
-from openfold3.base.utils.loss import AlphaFoldLoss, lddt_ca
-from openfold3.base.utils.lr_schedulers import AlphaFoldLRScheduler
-from openfold3.base.utils.multi_chain_permutation import multi_chain_permutation_align
-from openfold3.base.utils.superimposition import superimpose
-from openfold3.base.utils.tensor_utils import tensor_tree_map
-from openfold3.base.utils.validation_metrics import (
+from openfold3.core.utils.exponential_moving_average import ExponentialMovingAverage
+from openfold3.core.utils.loss import AlphaFoldLoss, lddt_ca
+from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
+from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation_align
+from openfold3.core.utils.superimposition import superimpose
+from openfold3.core.utils.tensor_utils import tensor_tree_map
+from openfold3.core.utils.validation_metrics import (
     drmsd,
     gdt_ts,
     gdt_ha,
 )
-from openfold3.base.utils.import_weights import (
+from openfold3.core.utils.import_weights import (
     import_jax_weights_,
     import_openfold_weights_
 )
 
-from openfold3.systems.monomer_multimer.model import AlphaFold
-from openfold3.systems.monomer_multimer.config import model_config
+from openfold3.model_implementations.af2_monomer.model import AlphaFold
+from openfold3.model_implementations.af2_monomer.config import model_config
 
 
 class OpenFoldWrapper(pl.LightningModule):

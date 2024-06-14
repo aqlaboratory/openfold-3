@@ -17,11 +17,11 @@ import torch
 import numpy as np
 import unittest
 
-from openfold3.base.model.layers.latent.template import (
+from openfold3.core.model.latent.template import (
     TemplatePointwiseAttention,
     TemplatePairStack,
 )
-from openfold3.base.model.primitives import LayerNorm
+from openfold3.core.model.primitives import LayerNorm
 
 import tests.compare_utils as compare_utils
 from tests.config import consts

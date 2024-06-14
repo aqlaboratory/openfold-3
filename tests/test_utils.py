@@ -17,15 +17,15 @@ import numpy as np
 import torch
 import unittest
 
-from openfold3.base.model.primitives import Linear
+from openfold3.core.model.primitives import Linear
 
-from openfold3.base.utils.rigid_utils import (
+from openfold3.core.utils.rigid_utils import (
     Rotation,
     Rigid, 
     quat_to_rot,
     rot_to_quat,
 )
-from openfold3.base.utils.chunk_utils import chunk_layer, _chunk_slice
+from openfold3.core.utils.chunk_utils import chunk_layer, _chunk_slice
 import tests.compare_utils as compare_utils
 from tests.config import consts
 

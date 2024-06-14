@@ -88,7 +88,7 @@ if bare_metal_major != -1:
         include_dirs=[
             os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
-                'openfold3/base/utils/kernel/csrc/'
+                'openfold3/core/utils/kernel/csrc/'
             )
         ],
         extra_compile_args={

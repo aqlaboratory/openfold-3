@@ -19,8 +19,8 @@ from pathlib import Path
 import numpy as np
 import unittest
 
-from openfold3.base.data.data_pipeline import DataPipeline
-from openfold3.base.data.templates import HhsearchHitFeaturizer
+from openfold3.core.data.data_pipeline import DataPipeline
+from openfold3.core.data.templates import HhsearchHitFeaturizer
 import tests.compare_utils as compare_utils
 from tests.config import consts
 

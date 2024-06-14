@@ -14,9 +14,9 @@
 
 import torch
 import unittest
-from openfold3.base.model.layers.latent.msa_module import MSAModuleStack
+from openfold3.core.model.latent import MSAModuleStack
 
-from openfold3.base.model.layers.modules.transition import SwiGLUTransition
+from openfold3.core.model.layers.transition import SwiGLUTransition
 from tests.config import consts
 
 
