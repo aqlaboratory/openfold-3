@@ -6,8 +6,8 @@ import json
 
 from torch.utils.data import Dataset
 
-from openfold3.base.data.preprocessing.preprocessing_pipelines import BioAssemblyPreprocessingPipeline, TFDNAPreprocessingPipeline
-from openfold3.base.data.featurization.feature_pipelines import AF3BioAssemblyFeaturePipeline
+from openfold3.core.data.preprocessing.preprocessing_pipelines import BioAssemblyPreprocessingPipeline, TFDNAPreprocessingPipeline
+from openfold3.core.data.featurization.feature_pipelines import AF3BioAssemblyFeaturePipeline
 
 DATASET_REGISTRY = {}
 
