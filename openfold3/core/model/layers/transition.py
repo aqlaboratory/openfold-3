@@ -243,7 +243,7 @@ class ConditionedTransitionBlock(nn.Module):
     Implements AF3 Algorithm 25.
     """
 
-    def __init__(self, c_in: int, n: int = 2):
+    def __init__(self, c_a: int, c_s: int, n: int = 2):
         """
 
         Args:
@@ -255,16 +255,17 @@ class ConditionedTransitionBlock(nn.Module):
         """
         super(ConditionedTransitionBlock, self).__init__()
 
-        self.c_in = c_in
+        self.c_a = c_a
+        self.c_s = c_s
         self.n = n
 
-        self.layer_norm = AdaLN(c_in=c_in)
+        self.layer_norm = AdaLN(c_a=self.c_a, c_s=self.c_s)
 
-        self.swiglu = SwiGLU(self.c_in, self.n * self.c_in)
+        self.swiglu = SwiGLU(self.c_a, self.n * self.c_a)
 
         self.sigmoid = nn.Sigmoid()
-        self.linear_g = Linear(self.c_in, self.c_in, init="gating_ada_zero")
-        self.linear_out = Linear(self.n * self.c_in, self.c_in, bias=False, init="final")
+        self.linear_g = Linear(self.c_s, self.c_a, init="gating_ada_zero")
+        self.linear_out = Linear(self.n * self.c_a, self.c_a, bias=False, init="final")
 
     def forward(
         self,

@@ -11,6 +11,7 @@ from .transition import ConditionedTransitionBlock
 class DiffusionTransformerBlock(nn.Module):
     def __init__(
         self,
+        c_a: int,
         c_s: int,
         c_z: int,
         c_hidden: int,
@@ -30,9 +31,10 @@ class DiffusionTransformerBlock(nn.Module):
         """
         super(DiffusionTransformerBlock, self).__init__()
 
-        self.attention_pair_bias = AttentionPairBias(c_q=c_s,
-                                                     c_k=c_s,
-                                                     c_v=c_s,
+        self.attention_pair_bias = AttentionPairBias(c_q=c_a,
+                                                     c_k=c_a,
+                                                     c_v=c_a,
+                                                     c_s=c_s,
                                                      c_z=c_z,
                                                      c_hidden=c_hidden,
                                                      no_heads=no_heads,
@@ -40,7 +42,7 @@ class DiffusionTransformerBlock(nn.Module):
                                                      gating=True,
                                                      inf=inf)
 
-        self.conditioned_transition = ConditionedTransitionBlock(c_in=c_s, n=n_transition)
+        self.conditioned_transition = ConditionedTransitionBlock(c_a=c_a, c_s=c_s, n=n_transition)
 
     def forward(self,
         a: torch.Tensor,
@@ -86,6 +88,7 @@ class DiffusionTransformer(nn.Module):
     """
     def __init__(
         self,
+        c_a: int,
         c_s: int,
         c_z: int,
         c_hidden: int,
@@ -109,6 +112,7 @@ class DiffusionTransformer(nn.Module):
 
         self.blocks = nn.ModuleList([
             DiffusionTransformerBlock(
+                c_a=c_a,
                 c_s=c_s,
                 c_z=c_z,
                 c_hidden=c_hidden,
