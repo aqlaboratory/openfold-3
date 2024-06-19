@@ -5,7 +5,7 @@ from typing import Sequence, Optional, Tuple
 import torch
 import torch.nn as nn
 
-from .pair_stack import PairStack
+from .pair_blocks import PairStackBlock
 from openfold3.core.model.layers.msa import (
     MSARowAttentionWithPairBias,
     MSAColumnAttention,
@@ -72,7 +72,7 @@ class MSABlock(nn.Module, ABC):
             c_hidden_opm,
         )
 
-        self.pair_stack = PairStack(
+        self.pair_stack = PairStackBlock(
             c_z=c_z,
             c_hidden_mul=c_hidden_mul,
             c_hidden_pair_att=c_hidden_pair_att,

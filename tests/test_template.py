@@ -17,10 +17,8 @@ import torch
 import numpy as np
 import unittest
 
-from openfold3.core.model.latent.template import (
-    TemplatePointwiseAttention,
-    TemplatePairStack,
-)
+from openfold3.core.model.latent.pair_stacks import TemplatePairStack
+from openfold3.core.model.layers.template_pointwise_attention import TemplatePointwiseAttention
 from openfold3.core.model.primitives import LayerNorm
 
 import tests.compare_utils as compare_utils

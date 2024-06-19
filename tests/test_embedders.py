@@ -14,15 +14,24 @@
 
 import torch
 import unittest
-from tests.config import consts
-from tests.data_utils import random_asym_ids
-from openfold3.core.model.embedders import (
+
+from openfold3.core.model.feature_embedders import (
     InputEmbedder,
     InputEmbedderMultimer,
     PreembeddingEmbedder,
     RecyclingEmbedder
 )
-from openfold3.core.model.embedders import TemplateSingleEmbedder, TemplatePairEmbedder
+from openfold3.core.model.feature_embedders import (
+    TemplateSingleEmbedderMonomer,
+    TemplatePairEmbedderMonomer,
+    TemplateSingleEmbedderMultimer,
+    TemplatePairEmbedderMultimer,
+    TemplatePairEmbedderAllAtom
+)
+from openfold3.model_implementations.af2_monomer.config import model_config
+
+from tests.config import monomer_consts, multimer_consts
+from tests.data_utils import random_asym_ids, random_template_feats
 
 
 class TestInputEmbedder(unittest.TestCase):
@@ -49,17 +58,19 @@ class TestInputEmbedder(unittest.TestCase):
         entity_id = asym_id
         sym_id = torch.zeros_like(entity_id)
 
-        if consts.is_multimer:
-            ie = InputEmbedderMultimer(tf_dim, msa_dim, c_z, c_m,
-                                       max_relative_idx=max_relative_idx,
-                                       use_chain_relative=use_chain_relative,
-                                       max_relative_chain=max_relative_chain)
-            batch = {"target_feat": tf, "residue_index": ri, "msa_feat": msa,
-                     "asym_id": asym_id, "entity_id": entity_id, "sym_id": sym_id}
-            msa_emb, pair_emb = ie(batch)
-        else:
-            ie = InputEmbedder(tf_dim, msa_dim, c_z, c_m, relpos_k)
-            msa_emb, pair_emb = ie(tf=tf, ri=ri, msa=msa, inplace_safe=False)
+        ie = InputEmbedder(tf_dim, msa_dim, c_z, c_m, relpos_k)
+        msa_emb, pair_emb = ie(tf=tf, ri=ri, msa=msa, inplace_safe=False)
+
+        self.assertTrue(msa_emb.shape == (b, n_clust, n_res, c_m))
+        self.assertTrue(pair_emb.shape == (b, n_res, n_res, c_z))
+
+        ie = InputEmbedderMultimer(tf_dim, msa_dim, c_z, c_m,
+                                   max_relative_idx=max_relative_idx,
+                                   use_chain_relative=use_chain_relative,
+                                   max_relative_chain=max_relative_chain)
+        batch = {"target_feat": tf, "residue_index": ri, "msa_feat": msa,
+                 "asym_id": asym_id, "entity_id": entity_id, "sym_id": sym_id}
+        msa_emb, pair_emb = ie(batch)
 
         self.assertTrue(msa_emb.shape == (b, n_clust, n_res, c_m))
         self.assertTrue(pair_emb.shape == (b, n_res, n_res, c_z))
@@ -109,40 +120,100 @@ class TestRecyclingEmbedder(unittest.TestCase):
         self.assertTrue(m_1.shape == (batch_size, n, c_m))
 
 
-class TestTemplateAngleEmbedder(unittest.TestCase):
+class TestTemplateSingleEmbedders(unittest.TestCase):
     def test_shape(self):
-        template_angle_dim = 51
-        c_m = 256
         batch_size = 4
         n_templ = 4
         n_res = 256
 
-        tae = TemplateSingleEmbedder(
-            template_angle_dim,
+        c = model_config(monomer_consts.model)
+        c_m = c.model.template.template_single_embedder.c_out
+
+        batch = random_template_feats(n_templ, n_res, batch_size=batch_size)
+        batch = {k: torch.as_tensor(v) for k, v in batch.items()}
+
+        tae = TemplateSingleEmbedderMonomer(
+            c.model.template.template_single_embedder.c_in,
+            c_m
+        )
+
+        x = tae(batch)
+
+        self.assertTrue(x.shape == (batch_size, n_templ, n_res, c_m))
+
+        c = model_config(multimer_consts.model)
+        c_m = c.model.template.template_single_embedder.c_out
+
+        tae = TemplateSingleEmbedderMultimer(
+            c.model.template.template_single_embedder.c_in,
             c_m,
         )
 
-        x = torch.rand((batch_size, n_templ, n_res, template_angle_dim))
-        x = tae(x)
+        x = tae(batch)
+        x = x['template_single_embedding']
 
         self.assertTrue(x.shape == (batch_size, n_templ, n_res, c_m))
 
 
-class TestTemplatePairEmbedder(unittest.TestCase):
+class TestTemplatePairEmbedders(unittest.TestCase):
     def test_shape(self):
         batch_size = 2
-        n_templ = 3
+        n_templ = 4
         n_res = 5
-        template_pair_dim = 7
-        c_t = 11
+        c_feats = 88
 
-        tpe = TemplatePairEmbedder(
-            template_pair_dim,
-            c_t,
+        c = model_config(monomer_consts.model)
+        c_t = c.model.template.template_pair_embedder.c_out
+
+        batch = random_template_feats(n_templ, n_res, batch_size=batch_size)
+        batch = {k: torch.as_tensor(v) for k, v in batch.items()}
+
+        tpe = TemplatePairEmbedderMonomer(
+            **c.model.template.template_pair_embedder
         )
 
-        x = torch.rand((batch_size, n_templ, n_res, n_res, template_pair_dim))
-        x = tpe(x)
+        x = tpe(batch=batch,
+                distogram_config=c.model.template.distogram,
+                use_unit_vector=False,
+                inf=monomer_consts.inf,
+                eps=monomer_consts.eps)
+
+        self.assertTrue(x.shape == (batch_size, n_templ, n_res, n_res, c_t))
+
+        c = model_config(multimer_consts.model)
+        c_z = c.model.template.template_pair_embedder.c_in
+        c_t = c.model.template.template_pair_embedder.c_out
+
+        z = torch.rand((batch_size, 1, n_res, n_res, c_z))
+        asym_ids = torch.as_tensor((random_asym_ids(n_res)))
+        asym_ids = torch.tile(asym_ids[None, :], (batch_size, n_templ, 1))
+        multichain_mask_2d = (
+            asym_ids[..., None] == asym_ids[..., None, :]
+        ).to(dtype=z.dtype)
+
+        tpe = TemplatePairEmbedderMultimer(
+            **c.model.template.template_pair_embedder
+        )
+
+        x = tpe(batch=batch,
+                distogram_config=c.model.template.distogram,
+                query_embedding=z,
+                multichain_mask_2d=multichain_mask_2d,
+                inf=multimer_consts.inf)
+
+        self.assertTrue(x.shape == (batch_size, n_templ, n_res, n_res, c_t))
+
+        tpe = TemplatePairEmbedderAllAtom(
+            c_in=c_feats,
+            c_z=c_z,
+            c_out=c_t
+        )
+
+        x = tpe(batch=batch,
+                distogram_config=c.model.template.distogram,
+                query_embedding=z,
+                multichain_mask_2d=multichain_mask_2d,
+                inf=multimer_consts.inf)
 
         self.assertTrue(x.shape == (batch_size, n_templ, n_res, n_res, c_t))
 
