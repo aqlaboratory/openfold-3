@@ -16,7 +16,6 @@ import torch
 import torch.nn as nn
 
 from openfold3.core.data import data_transforms, data_transforms_multimer
-from openfold3.core.utils.tensor_utils import masked_mean
 from openfold3.core.model.feature_embedders.input_embedders import (
     InputEmbedder,
     InputEmbedderMultimer,
@@ -24,13 +23,14 @@ from openfold3.core.model.feature_embedders.input_embedders import (
     ExtraMSAEmbedder,
     PreembeddingEmbedder,
 )
+from openfold3.core.model.latent.evoformer import EvoformerStack
+from openfold3.core.model.latent.extra_msa import ExtraMSAStack
 from openfold3.core.model.latent.template import (
     TemplateEmbedderMonomer,
     TemplateEmbedderMultimer,
     embed_templates_offload,
     embed_templates_average
 )
-from openfold3.core.model.latent.msa_stacks import EvoformerStack, ExtraMSAStack
 from openfold3.core.model.heads.token_heads import AuxiliaryHeads
 from openfold3.core.model.structure.structure_module import StructureModule
 from openfold3.core.np import residue_constants
@@ -39,6 +39,7 @@ from openfold3.core.utils.feats import (
 )
 from openfold3.core.utils.tensor_utils import (
     add,
+    masked_mean,
     tensor_tree_map,
 )
 

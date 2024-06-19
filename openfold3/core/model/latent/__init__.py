@@ -1,8 +1,11 @@
-from .msa_blocks import MSABlock, EvoformerBlock, ExtraMSABlock, MSAModuleBlock
-from .msa_stacks import EvoformerStack, ExtraMSAStack, MSAModuleStack
-from .pair_blocks import PairStackBlock, TemplatePairStackBlock, PairFormerBlock
-from .pair_stacks import PairFormerStack, TemplatePairStack
+from .base_blocks import PairBlock
+from .evoformer import EvoformerBlock, EvoformerStack
+from .extra_msa import ExtraMSABlock, ExtraMSAStack
+from .msa_module import MSAModuleBlock, MSAModuleStack
+from .pairformer import PairFormerBlock, PairFormerStack
 from .template import (
+    TemplatePairBlock,
+    TemplatePairStack,
     TemplateEmbedderMonomer,
     TemplateEmbedderMultimer,
     TemplateEmbedderAllAtom,
@@ -11,17 +14,16 @@ from .template import (
 )
 
 __all__ = [
-    'MSABlock',
+    'PairBlock',
     'EvoformerBlock',
-    'ExtraMSABlock',
-    'MSAModuleBlock',
     'EvoformerStack',
+    'ExtraMSABlock',
     'ExtraMSAStack',
+    'MSAModuleBlock',
     'MSAModuleStack',
-    'PairStackBlock',
-    'TemplatePairStackBlock',
     'PairFormerBlock',
     'PairFormerStack',
+    'TemplatePairBlock',
     'TemplatePairStack',
     'TemplateEmbedderMonomer',
     'TemplateEmbedderMultimer',

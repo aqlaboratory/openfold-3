@@ -1,140 +1,105 @@
-import torch
-from typing import Tuple, Optional
 from functools import partial
+from typing import Optional, Tuple
 
-from torch import nn as nn
+import torch
+from torch import nn
 
-from .pair_blocks import TemplatePairStackBlock, PairFormerBlock
-from openfold3.core.model.primitives import LayerNorm
+from openfold3.core.model.latent.base_blocks import PairBlock
+from openfold3.core.model.layers.attention_pair_bias import AttentionPairBias
+from openfold3.core.model.layers.transition import SwiGLUTransition
 from openfold3.core.utils.checkpointing import checkpoint_blocks
 from openfold3.core.utils.chunk_utils import ChunkSizeTuner
+from openfold3.core.utils.tensor_utils import add
 
 
-class TemplatePairStack(nn.Module):
-    """
-    Implements AF2 Algorithm 16.
-    """
-
-    def __init__(
-        self,
-        c_t,
-        c_hidden_tri_att,
-        c_hidden_tri_mul,
-        no_blocks,
-        no_heads,
-        pair_transition_n,
-        dropout_rate,
-        tri_mul_first,
-        fuse_projection_weights,
-        blocks_per_ckpt,
-        tune_chunk_size: bool = False,
-        inf=1e9,
-        **kwargs,
+class PairFormerBlock(nn.Module):
+    def __init__(self,
+        c_s: int,
+        c_z: int,
+        c_hidden_pair_bias: int,
+        no_heads_pair_bias: int,
+        c_hidden_mul: int,
+        c_hidden_pair_att: int,
+        no_heads_pair: int,
+        transition_n: int,
+        pair_dropout: float,
+        fuse_projection_weights: bool,
+        inf: float,
+        eps: float,
     ):
-        """
-        Args:
-            c_t:
-                Template embedding channel dimension
-            c_hidden_tri_att:
-                Per-head hidden dimension for triangular attention
-            c_hidden_tri_att:
-                Hidden dimension for triangular multiplication
-            no_blocks:
-                Number of blocks in the stack
-            pair_transition_n:
-                Scale of pair transition (Alg. 15) hidden dimension
-            dropout_rate:
-                Dropout rate used throughout the stack
-            blocks_per_ckpt:
-                Number of blocks per activation checkpoint. None disables
-                activation checkpointing
-        """
-        super(TemplatePairStack, self).__init__()
+        super(PairFormerBlock, self).__init__()
 
-        self.blocks_per_ckpt = blocks_per_ckpt
-
-        self.blocks = nn.ModuleList()
-        for _ in range(no_blocks):
-            block = TemplatePairStackBlock(
-                c_t=c_t,
-                c_hidden_tri_att=c_hidden_tri_att,
-                c_hidden_tri_mul=c_hidden_tri_mul,
-                no_heads=no_heads,
-                pair_transition_n=pair_transition_n,
-                dropout_rate=dropout_rate,
-                tri_mul_first=tri_mul_first,
-                fuse_projection_weights=fuse_projection_weights,
-                inf=inf,
-            )
-            self.blocks.append(block)
-
-        self.layer_norm = LayerNorm(c_t)
-
-        self.tune_chunk_size = tune_chunk_size
-        self.chunk_size_tuner = None
-        if tune_chunk_size:
-            self.chunk_size_tuner = ChunkSizeTuner()
-
-    def forward(
-        self,
-        t: torch.tensor,
-        mask: torch.tensor,
-        chunk_size: int,
-        use_deepspeed_evo_attention: bool = False,
-        use_lma: bool = False,
-        inplace_safe: bool = False,
-        _mask_trans: bool = True,
-    ):
-        """
-        Args:
-            t:
-                [*, N_templ, N_res, N_res, C_t] template embedding
-            mask:
-                [*, N_templ, N_res, N_res] mask
-        Returns:
-            [*, N_templ, N_res, N_res, C_t] template embedding update
-        """
-        if mask.shape[-3] == 1:
-            expand_idx = list(mask.shape)
-            expand_idx[-3] = t.shape[-4]
-            mask = mask.expand(*expand_idx)
-
-        blocks = [
-            partial(
-                b,
-                mask=mask,
-                chunk_size=chunk_size,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_lma=use_lma,
-                inplace_safe=inplace_safe,
-                _mask_trans=_mask_trans,
-            )
-            for b in self.blocks
-        ]
-
-        if chunk_size is not None and self.chunk_size_tuner is not None:
-            assert (not self.training)
-            tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
-                representative_fn=blocks[0],
-                args=(t.clone(),),
-                min_chunk_size=chunk_size,
-            )
-            blocks = [
-                partial(b,
-                        chunk_size=tuned_chunk_size,
-                        _attn_chunk_size=max(chunk_size, tuned_chunk_size // 4),
-                        ) for b in blocks
-            ]
-
-        t, = checkpoint_blocks(
-            blocks=blocks,
-            args=(t,),
-            blocks_per_ckpt=self.blocks_per_ckpt if self.training else None,
+        self.pair_stack = PairBlock(
+            c_z=c_z,
+            c_hidden_mul=c_hidden_mul,
+            c_hidden_pair_att=c_hidden_pair_att,
+            no_heads_pair=no_heads_pair,
+            transition_n=transition_n,
+            pair_dropout=pair_dropout,
+            fuse_projection_weights=fuse_projection_weights,
+            inf=inf,
+            eps=eps,
+            transition_type='swiglu'
         )
 
-        t = self.layer_norm(t)
+        self.attn_pair_bias = AttentionPairBias(c_q=c_s,
+                                                c_k=c_s,
+                                                c_v=c_s,
+                                                c_z=c_z,
+                                                c_hidden=c_hidden_pair_bias,
+                                                no_heads=no_heads_pair_bias,
+                                                use_ada_layer_norm=False,
+                                                gating=True,
+                                                inf=inf)
 
-        return t
+        self.single_transition = SwiGLUTransition(
+            c_in=c_s,
+            n=transition_n,
+        )
+
+    def forward(self,
+                s: Optional[torch.Tensor],
+                z: Optional[torch.Tensor],
+                single_mask: torch.Tensor,
+                pair_mask: torch.Tensor,
+                chunk_size: Optional[int] = None,
+                use_deepspeed_evo_attention: bool = False,
+                use_lma: bool = False,
+                inplace_safe: bool = False,
+                _mask_trans: bool = True,
+                _attn_chunk_size: Optional[int] = None,
+                ) -> Tuple[torch.Tensor, torch.Tensor]:
+
+        single_trans_mask = single_mask if _mask_trans else None
+
+        z = self.pair_stack(
+            z=z,
+            pair_mask=pair_mask,
+            chunk_size=chunk_size,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_lma=use_lma,
+            inplace_safe=inplace_safe,
+            _mask_trans=_mask_trans,
+            _attn_chunk_size=_attn_chunk_size
+        )
+
+        s = add(s,
+                self.attn_pair_bias(a=s, z=z, s=None, beta=None, mask=single_mask,
+                                    use_memory_efficient_kernel=False,
+                                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                                    use_lma=use_lma),
+                inplace=inplace_safe,
+                )
+
+        s = add(
+            s,
+            self.single_transition(
+                s, mask=single_trans_mask, chunk_size=chunk_size,
+            ),
+            inplace=inplace_safe,
+        )
+
+        return s, z
 
 
 class PairFormerStack(nn.Module):
@@ -322,4 +287,3 @@ class PairFormerStack(nn.Module):
         )
 
         return s, z
-

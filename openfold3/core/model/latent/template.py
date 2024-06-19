@@ -15,9 +15,10 @@
 import math
 import sys
 from functools import partial
+from typing import Optional
 
 import torch
-from torch import nn as nn
+from torch import nn
 
 from openfold3.core.model.feature_embedders import (
     TemplateSingleEmbedderMonomer,
@@ -26,10 +27,343 @@ from openfold3.core.model.feature_embedders import (
     TemplateSingleEmbedderMultimer,
     TemplatePairEmbedderAllAtom
 )
-from openfold3.core.model.latent.pair_stacks import TemplatePairStack
+from openfold3.core.model.layers.transition import ReLUTransition
+from openfold3.core.model.layers.triangular_attention import TriangleAttentionStartingNode, TriangleAttentionEndingNode
+from openfold3.core.model.layers.triangular_multiplicative_update import (
+    FusedTriangleMultiplicationOutgoing,
+    FusedTriangleMultiplicationIncoming,
+    TriangleMultiplicationOutgoing,
+    TriangleMultiplicationIncoming,
+)
 from openfold3.core.model.layers.template_pointwise_attention import TemplatePointwiseAttention
-from openfold3.core.model.primitives import Linear
-from openfold3.core.utils.tensor_utils import tensor_tree_map, dict_multimap
+from openfold3.core.model.primitives import Linear, DropoutRowwise, DropoutColumnwise, LayerNorm
+from openfold3.core.utils.checkpointing import checkpoint_blocks
+from openfold3.core.utils.chunk_utils import ChunkSizeTuner
+from openfold3.core.utils.tensor_utils import tensor_tree_map, dict_multimap, add
+
+
+# TODO: Inherit from PairBlock and add option for SwiGLU transition
+class TemplatePairBlock(nn.Module):
+    def __init__(
+        self,
+        c_t: int,
+        c_hidden_tri_att: int,
+        c_hidden_tri_mul: int,
+        no_heads: int,
+        pair_transition_n: int,
+        dropout_rate: float,
+        tri_mul_first: bool,
+        fuse_projection_weights: bool,
+        inf: float,
+        **kwargs,
+    ):
+        super(TemplatePairBlock, self).__init__()
+
+        self.c_t = c_t
+        self.c_hidden_tri_att = c_hidden_tri_att
+        self.c_hidden_tri_mul = c_hidden_tri_mul
+        self.no_heads = no_heads
+        self.pair_transition_n = pair_transition_n
+        self.dropout_rate = dropout_rate
+        self.inf = inf
+        self.tri_mul_first = tri_mul_first
+
+        self.dropout_row = DropoutRowwise(self.dropout_rate)
+        self.dropout_col = DropoutColumnwise(self.dropout_rate)
+
+        self.tri_att_start = TriangleAttentionStartingNode(
+            self.c_t,
+            self.c_hidden_tri_att,
+            self.no_heads,
+            inf=inf,
+        )
+        self.tri_att_end = TriangleAttentionEndingNode(
+            self.c_t,
+            self.c_hidden_tri_att,
+            self.no_heads,
+            inf=inf,
+        )
+
+        if fuse_projection_weights:
+            self.tri_mul_out = FusedTriangleMultiplicationOutgoing(
+                self.c_t,
+                self.c_hidden_tri_mul,
+            )
+            self.tri_mul_in = FusedTriangleMultiplicationIncoming(
+                self.c_t,
+                self.c_hidden_tri_mul,
+            )
+        else:
+            self.tri_mul_out = TriangleMultiplicationOutgoing(
+                self.c_t,
+                self.c_hidden_tri_mul,
+            )
+            self.tri_mul_in = TriangleMultiplicationIncoming(
+                self.c_t,
+                self.c_hidden_tri_mul,
+            )
+
+        self.pair_transition = ReLUTransition(
+            c_in=self.c_t,
+            n=self.pair_transition_n,
+        )
+
+    def tri_att_start_end(self,
+                          single: torch.Tensor,
+                          _attn_chunk_size: Optional[int],
+                          single_mask: torch.Tensor,
+                          use_deepspeed_evo_attention: bool,
+                          use_lma: bool,
+                          inplace_safe: bool):
+        single = add(single,
+                     self.dropout_row(
+                         self.tri_att_start(
+                             single,
+                             chunk_size=_attn_chunk_size,
+                             mask=single_mask,
+                             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                             use_lma=use_lma,
+                             inplace_safe=inplace_safe,
+                         )
+                     ),
+                     inplace_safe,
+                     )
+
+        single = add(single,
+                     self.dropout_col(
+                         self.tri_att_end(
+                             single,
+                             chunk_size=_attn_chunk_size,
+                             mask=single_mask,
+                             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                             use_lma=use_lma,
+                             inplace_safe=inplace_safe,
+                         )
+                     ),
+                     inplace_safe,
+                     )
+
+        return single
+
+    def tri_mul_out_in(self,
+                       single: torch.Tensor,
+                       single_mask: torch.Tensor,
+                       inplace_safe: bool):
+        tmu_update = self.tri_mul_out(
+            single,
+            mask=single_mask,
+            inplace_safe=inplace_safe,
+            _add_with_inplace=True,
+        )
+        if not inplace_safe:
+            single = single + self.dropout_row(tmu_update)
+        else:
+            single = tmu_update
+
+        del tmu_update
+
+        tmu_update = self.tri_mul_in(
+            single,
+            mask=single_mask,
+            inplace_safe=inplace_safe,
+            _add_with_inplace=True,
+        )
+        if not inplace_safe:
+            single = single + self.dropout_row(tmu_update)
+        else:
+            single = tmu_update
+
+        del tmu_update
+
+        return single
+
+    def forward(self,
+                z: torch.Tensor,
+                mask: torch.Tensor,
+                chunk_size: Optional[int] = None,
+                use_deepspeed_evo_attention: bool = False,
+                use_lma: bool = False,
+                inplace_safe: bool = False,
+                _mask_trans: bool = True,
+                _attn_chunk_size: Optional[int] = None,
+                ):
+        if _attn_chunk_size is None:
+            _attn_chunk_size = chunk_size
+
+        single_templates = [
+            t.unsqueeze(-4) for t in torch.unbind(z, dim=-4)
+        ]
+        single_templates_masks = [
+            m.unsqueeze(-3) for m in torch.unbind(mask, dim=-3)
+        ]
+
+        for i in range(len(single_templates)):
+            single = single_templates[i]
+            single_mask = single_templates_masks[i]
+
+            if self.tri_mul_first:
+                single = self.tri_att_start_end(single=self.tri_mul_out_in(single=single,
+                                                                           single_mask=single_mask,
+                                                                           inplace_safe=inplace_safe),
+                                                _attn_chunk_size=_attn_chunk_size,
+                                                single_mask=single_mask,
+                                                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                                                use_lma=use_lma,
+                                                inplace_safe=inplace_safe)
+            else:
+                single = self.tri_mul_out_in(
+                    single=self.tri_att_start_end(single=single,
+                                                  _attn_chunk_size=_attn_chunk_size,
+                                                  single_mask=single_mask,
+                                                  use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                                                  use_lma=use_lma,
+                                                  inplace_safe=inplace_safe),
+                    single_mask=single_mask,
+                    inplace_safe=inplace_safe)
+
+            single = add(single,
+                         self.pair_transition(
+                             single,
+                             mask=single_mask if _mask_trans else None,
+                             chunk_size=chunk_size,
+                         ),
+                         inplace_safe,
+                         )
+
+            if not inplace_safe:
+                single_templates[i] = single
+
+        if not inplace_safe:
+            z = torch.cat(single_templates, dim=-4)
+
+        return z
+
+
+class TemplatePairStack(nn.Module):
+    """
+    Implements AF2 Algorithm 16.
+    """
+
+    def __init__(
+        self,
+        c_t,
+        c_hidden_tri_att,
+        c_hidden_tri_mul,
+        no_blocks,
+        no_heads,
+        pair_transition_n,
+        dropout_rate,
+        tri_mul_first,
+        fuse_projection_weights,
+        blocks_per_ckpt,
+        tune_chunk_size: bool = False,
+        inf=1e9,
+        **kwargs,
+    ):
+        """
+        Args:
+            c_t:
+                Template embedding channel dimension
+            c_hidden_tri_att:
+                Per-head hidden dimension for triangular attention
+            c_hidden_tri_att:
+                Hidden dimension for triangular multiplication
+            no_blocks:
+                Number of blocks in the stack
+            pair_transition_n:
+                Scale of pair transition (Alg. 15) hidden dimension
+            dropout_rate:
+                Dropout rate used throughout the stack
+            blocks_per_ckpt:
+                Number of blocks per activation checkpoint. None disables
+                activation checkpointing
+        """
+        super(TemplatePairStack, self).__init__()
+
+        self.blocks_per_ckpt = blocks_per_ckpt
+
+        self.blocks = nn.ModuleList()
+        for _ in range(no_blocks):
+            block = TemplatePairBlock(
+                c_t=c_t,
+                c_hidden_tri_att=c_hidden_tri_att,
+                c_hidden_tri_mul=c_hidden_tri_mul,
+                no_heads=no_heads,
+                pair_transition_n=pair_transition_n,
+                dropout_rate=dropout_rate,
+                tri_mul_first=tri_mul_first,
+                fuse_projection_weights=fuse_projection_weights,
+                inf=inf,
+            )
+            self.blocks.append(block)
+
+        self.layer_norm = LayerNorm(c_t)
+
+        self.tune_chunk_size = tune_chunk_size
+        self.chunk_size_tuner = None
+        if tune_chunk_size:
+            self.chunk_size_tuner = ChunkSizeTuner()
+
+    def forward(
+        self,
+        t: torch.tensor,
+        mask: torch.tensor,
+        chunk_size: int,
+        use_deepspeed_evo_attention: bool = False,
+        use_lma: bool = False,
+        inplace_safe: bool = False,
+        _mask_trans: bool = True,
+    ):
+        """
+        Args:
+            t:
+                [*, N_templ, N_res, N_res, C_t] template embedding
+            mask:
+                [*, N_templ, N_res, N_res] mask
+        Returns:
+            [*, N_templ, N_res, N_res, C_t] template embedding update
+        """
+        if mask.shape[-3] == 1:
+            expand_idx = list(mask.shape)
+            expand_idx[-3] = t.shape[-4]
+            mask = mask.expand(*expand_idx)
+
+        blocks = [
+            partial(
+                b,
+                mask=mask,
+                chunk_size=chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                _mask_trans=_mask_trans,
+            )
+            for b in self.blocks
+        ]
+
+        if chunk_size is not None and self.chunk_size_tuner is not None:
+            assert (not self.training)
+            tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
+                representative_fn=blocks[0],
+                args=(t.clone(),),
+                min_chunk_size=chunk_size,
+            )
+            blocks = [
+                partial(b,
+                        chunk_size=tuned_chunk_size,
+                        _attn_chunk_size=max(chunk_size, tuned_chunk_size // 4),
+                        ) for b in blocks
+            ]
+
+        t, = checkpoint_blocks(
+            blocks=blocks,
+            args=(t,),
+            blocks_per_ckpt=self.blocks_per_ckpt if self.training else None,
+        )
+
+        t = self.layer_norm(t)
+
+        return t
 
 
 class TemplateEmbedderMonomer(nn.Module):

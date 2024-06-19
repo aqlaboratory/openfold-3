@@ -17,7 +17,7 @@ import torch
 import numpy as np
 import unittest
 
-from openfold3.core.model.latent.pair_stacks import TemplatePairStack
+from openfold3.core.model.latent import TemplatePairStack
 from openfold3.core.model.layers.template_pointwise_attention import TemplatePointwiseAttention
 from openfold3.core.model.primitives import LayerNorm
 
@@ -82,7 +82,6 @@ class TestTemplatePairStack(unittest.TestCase):
         n_res = consts.n_res
         tri_mul_first = consts.is_multimer
         fuse_projection_weights = True if re.fullmatch("^model_[1-5]_multimer_v3$", consts.model) else False
-        blocks_per_ckpt = None
         chunk_size = 4
         inf = 1e7
         eps = 1e-7

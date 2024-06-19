@@ -16,10 +16,7 @@ import re
 import torch
 import numpy as np
 import unittest
-from openfold3.core.model.latent.msa_stacks import (
-    EvoformerStack,
-    ExtraMSAStack,
-)
+from openfold3.core.model.latent import EvoformerStack, ExtraMSAStack
 from openfold3.core.model.layers.transition import ReLUTransition
 from openfold3.core.utils.tensor_utils import tree_map
 import tests.compare_utils as compare_utils
