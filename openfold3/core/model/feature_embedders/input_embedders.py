@@ -406,6 +406,7 @@ class InputEmbedderAllAtom(nn.Module):
     def __init__(
         self,
         atom_ref_dim: int,
+        tok_feat_dim: int,
         tok_bonds_dim: int,
         c_s: int,
         c_z: int,
@@ -421,6 +422,7 @@ class InputEmbedderAllAtom(nn.Module):
 
         Args:
             atom_ref_dim:
+            tok_feat_dim:
             tok_bonds_dim:
             c_s:
             c_z:
@@ -434,9 +436,6 @@ class InputEmbedderAllAtom(nn.Module):
         """
         super(InputEmbedderAllAtom, self).__init__()
 
-        self.c_s = c_s
-        self.c_z = c_z
-
         self.atom_attn_enc = AtomAttentionEncoder(c_in=atom_ref_dim,
                                                   c_atom=c_atom,
                                                   c_atom_pair=c_atom_pair,
@@ -444,15 +443,15 @@ class InputEmbedderAllAtom(nn.Module):
                                                   c_hidden=c_hidden_att,
                                                   add_noisy_pos=False)
 
-        self.linear_s = Linear(self.c_s, self.c_s, bias=False)
-        self.linear_z_i = Linear(self.c_s, self.c_z, bias=False)
-        self.linear_z_j = Linear(self.c_s, self.c_z, bias=False)
+        self.linear_s = Linear(c_token + tok_feat_dim, c_s, bias=False)
+        self.linear_z_i = Linear(c_s, c_z, bias=False)
+        self.linear_z_j = Linear(c_s, c_z, bias=False)
 
-        self.relpos = RelposAllAtom(c_z=self.c_z,
+        self.relpos = RelposAllAtom(c_z=c_z,
                                     max_relative_idx=max_relative_idx,
                                     max_relative_chain=max_relative_chain)
 
-        self.linear_tok_bonds = Linear(tok_bonds_dim, self.c_z, bias=False)
+        self.linear_tok_bonds = Linear(tok_bonds_dim, c_z, bias=False)
 
     def forward(self, batch) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -468,7 +467,7 @@ class InputEmbedderAllAtom(nn.Module):
         s = torch.cat([a,
                        batch["target_feat"],
                        batch['msa_profile'],
-                       batch['deletion_mean'].unsqueeze(-1)], dim=-2)
+                       batch['deletion_mean'].unsqueeze(-1)], dim=-1)
 
         s = self.linear_s(s)
         z = self.linear_z_i(s) + self.linear_z_j(s)
