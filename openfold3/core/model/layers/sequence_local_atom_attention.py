@@ -99,11 +99,11 @@ class AtomFeatureEmbedder(nn.Module):
         args: 
             atom_feats: dictionary with following keys/features: 
                 - "ref_pos": atom position, given in Angstrom [*, n_atom, 3]
-                - "ref_mask": atom mask [*, n_atom, 1]
+                - "ref_mask": atom mask [*, n_atom,]
                 - "ref_element": one hot encoding of atomic number (up to 128) [*, n_atom, 128]
-                - "ref_charge": atom charge [*, n_atom, 1]
-                - "ref_atom_name_chars" WHAT IS THIS? [*, n_atom, 4, 64]
-                - "ref_space_uid": numerical encoding of the chain id and residue index [*, n_atom, 1]
+                - "ref_charge": atom charge [*, n_atom,]
+                - "ref_atom_name_chars": WHAT IS THIS? [*, n_atom, 4, 64]
+                - "ref_space_uid": numerical encoding of the chain id and residue index [*, n_atom,]
         returns: 
             cl: atom embedding [*, n_atom, c_atom]
             plm: pair embedding [*, n_atom, n_atom, c_atom_pair]
@@ -117,16 +117,16 @@ class AtomFeatureEmbedder(nn.Module):
             torch.flatten(atom_feats["ref_atom_name_chars"], start_dim = -2), 
             atom_feats["ref_space_uid"].unsqueeze(-1)
             ), 
-            dim = -1)) #(*, N, c_in) -> (*, N, c_atom),  #CONFIRM THIS FORMAT ONCE DATALOADER/FEATURIZER DONE
+            dim = -1)) #[*, n_atom, c_in] -> [*, n_atom, c_atom],  #CONFIRM THIS FORMAT ONCE DATALOADER/FEATURIZER DONE
 
         #2. Embed offsets  
-        dlm = atom_feats['ref_pos'].unsqueeze(-3) - atom_feats['ref_pos'].unsqueeze(-2) #(*, n_atom, 3) -> (*, n_atom, n_atom, 3)
-        vlm = (atom_feats['ref_space_uid'].unsqueeze(-2) == atom_feats['ref_space_uid' ].unsqueeze(-1)).to(dlm.dtype) #(*, n_atom) --> (*, n_atom, n_atom)
-        plm = self.linear_ref_offset(dlm) * vlm.unsqueeze(-1) #(*, n_atom, n_atom, 3) -> (*, n_atom, n_atom, c_atom_pair)
+        dlm = atom_feats['ref_pos'].unsqueeze(-3) - atom_feats['ref_pos'].unsqueeze(-2) #[*, n_atom, 3] -> [*, n_atom, n_atom, 3]
+        vlm = (atom_feats['ref_space_uid'].unsqueeze(-2) == atom_feats['ref_space_uid'].unsqueeze(-1)).to(dlm.dtype) #[*, n_atom] --> [*, n_atom, n_atom]
+        plm = self.linear_ref_offset(dlm) * vlm.unsqueeze(-1) #[*, n_atom, n_atom, 3] -> [*, n_atom, n_atom, c_atom_pair]
 
         #3. Embed pairwise inverse squared distance
-        plm = plm + self.linear_inv_dists(torch.pow(1.0 + torch.norm(dlm, dim = -1).unsqueeze(-1), -1.)) * vlm.unsqueeze(-1) #(*,N,N,3) -(*,N,N,1)->(*,N,N,c_atom_pair)
-        plm = plm + self.linear_valid_mask(vlm.unsqueeze(-1)) * vlm.unsqueeze(-1) #(*, n_atom, n_atom, c_atom_pair)
+        plm = plm + self.linear_inv_dists(torch.pow(1.0 + torch.norm(dlm, dim = -1).unsqueeze(-1), -1.)) * vlm.unsqueeze(-1) #[*, n_atom, n_atom, 3] -[*, n_atom, n_atom,1]->[*, n_atom, n_atom, c_atom_pair]
+        plm = plm + self.linear_valid_mask(vlm.unsqueeze(-1)) * vlm.unsqueeze(-1) #[*, n_atom, n_atom, c_atom_pair]
         return cl, plm
 
 
@@ -154,7 +154,7 @@ class NoisyPositionEmbedder(nn.Module):
         self.layer_norm_s = LayerNorm(c_s)
         self.linear_s = Linear(c_s, c_atom, bias=False)
         self.layer_norm_z = LayerNorm(c_z)
-        self.linear_z = Linear(c_z, c_atom_pair, bias=False) #need to double check
+        self.linear_z = Linear(c_z, c_atom_pair, bias=False)
         self.linear_r = Linear(3, c_atom, bias=False)
 
     def forward(self, 
@@ -167,16 +167,17 @@ class NoisyPositionEmbedder(nn.Module):
                 rl: torch.Tensor, 
                 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """ 
-        args: 
+        Args: 
+            atom_feats: TensorDict with features: 
+                - "atom_to_token_index": atom to token index feature [*, n_atom, n_token,]
             cl: atom embedding [*, n_atom, c_atom]
             plm: atom pair embedding [*, n_atom, n_atom, c_atom]
             ql: token embedding [*, n_atom, c_atom]
             s_trunk: trunk embedding (per tokens) [*, n_token, c_s]
             zij: pairwise token embedding [*, n_token, n_token, c_z]
             rl: noisy coordinates [*, n_atom, 3]
-            atom_per_token: number of atoms per token [*, n_token,]
 
-        returns: 
+        Returns: 
             cl: atom embedding with token embd projection [*, n_atom, c_atom]
             plm: atom pair embedding [*, n_atom, n_atom, c_atom_pair]
             ql: atom embedding with noisy coordinate projection [*, n_atom, c_atom]
@@ -215,7 +216,7 @@ class AtomAttentionEncoder(nn.Module):
         inf: float = 1e9
     ):
         """
-        args:
+        Args:
             c_in: 
             c_atom:
             c_atom_pair:
@@ -274,8 +275,7 @@ class AtomAttentionEncoder(nn.Module):
         atom_mask: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """ 
-
-        args: 
+        Args: 
             atom_feats: TensorDict with following keys/features: 
                 - "ref_pos": atom position, given in Angstrom [*, n_atom, 3]
                 - "ref_mask": atom mask [*, n_atom, 1]
@@ -283,19 +283,21 @@ class AtomAttentionEncoder(nn.Module):
                 - "ref_charge": atom charge [*, n_atom, 1]
                 - "ref_atom_name_chars" WHAT IS THIS? [*, n_atom, 4, 64]
                 - "ref_space_uid": numerical encoding of the chain id and residue index [*, n_atom, 1]
+                ... 
+                - "atom_to_token_index": atom to token index [*, n_atom, n_token,] 
             rl: noised coordinates [*, n_atom, 3]
             si_trunk: trunk embedding 
             zij: pair embedding 
             atom_mask: atom mask [*, n_atom]
 
-        returns: 
+        Returns: 
             ai: token level embedding [*, n_token, c_token]
             ql: atom level embedding with noisy coordinate info projection [*, n_atom, c_atom]
             cl: atom level embedding with atom features [*, n_atom, c_atom]
             plm: atom pairwise embedding [*, n_atom, n_atom, c_atompair] 
         """ 
         #1. atom feature projection (line 1- 6)
-        cl, plm = self.atom_feature_emb(atom_feats) #(*, n_atom, c_atom), (*, n_atom, n_atom, c_atom_pair)
+        cl, plm = self.atom_feature_emb(atom_feats) #[*, n_atom, c_atom], [*, n_atom, n_atom, c_atom_pair]
 
         ql = cl.detach().clone()
         #2. noisy pos projection (line 8 - 12)
@@ -303,16 +305,16 @@ class AtomAttentionEncoder(nn.Module):
             cl, plm, ql = self.noisy_position_emb(atom_feats, cl, plm, ql, si_trunk, zij, rl)
         
         #3. add the combined single conditioning to the pair representation (line 13 - 14)
-        plm = plm + self.linear_l(self.relu(cl.unsqueeze(-3))) + self.linear_m(self.relu(cl.unsqueeze(-2))) #(*, n_atom, c_atom) --> (*, n_atom, n_atom, atom_pair)
+        plm = plm + self.linear_l(self.relu(cl.unsqueeze(-3))) + self.linear_m(self.relu(cl.unsqueeze(-2))) #[*, n_atom, c_atom] --> [*, n_atom, n_atom, atom_pair]
         plm = plm + self.pair_mlp(plm)
         
-        #4. Cross attention transformer (line 15)
+        #4. cross attention transformer (line 15)
         ql = self.atom_transformer(ql=ql, 
                                    cl=cl, 
                                    plm=plm, 
                                    atom_mask=atom_mask)
         
-        #5. Aggregate
+        #5. aggregate
         ai = torch.sum(self.linear_q(ql).unsqueeze(-3) * atom_feats['token_to_atom_index'].unsqueeze(-1), dim=-2) / torch.sum(atom_feats['token_to_atom_index'], dim=-1, keepdim=True) # [b, n_token, c_token] 
 
         return ai, ql, cl, plm
@@ -369,16 +371,17 @@ class AtomAttentionDecoder(nn.Module):
                 ) -> torch.Tensor:
         """ 
         args: 
+            atom_feats: TensorDict
+                - "atom_to_token_index: atom to token index [*, n_atom, n_token]
             ai: token embedding [*, n_token, c_token]
             ql_skip: atom embedding [*, n_atom, c_atom]
             cl_skip: atom embedding [*, n_atom, c_atom]
             plm: pairwise embedding [*, n_atom, n_atom, c_atompair]
-            atom_per_token: number of atoms per given token index [*, n_token] *** #CONFIRM THIS FORMAT ONCE DATALOADER/FEATURIZER DONE
-
+            
         returns: 
             r_update: predicted coordinate noise [*, n_atom, 3]
         """
-        # 'atom_to_token_index': [b, n_atom]
+        # 'atom_to_token_index': [b, n_atom, n_token]
 
         #1. broadcast projected token embd
         ql_skip = ql_skip + torch.sum(self.linear_q_in(ai).unsqueeze(-3) * atom_feats['atom_to_token_index'].unsqueeze(-1), dim=-2) # [*, n_atom, c_atom]
