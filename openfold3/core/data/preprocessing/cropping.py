@@ -1,12 +1,11 @@
 # TODO add license
 
 # Some biotite examples
-from tempfile import gettempdir
+
 import biotite.database.rcsb as rcsb
-import biotite.structure.io.pdbx as pdbx
 import biotite.structure as struc
+import biotite.structure.io.pdbx as pdbx
 import numpy as np
-import biotite.structure.io as strucio
 from biotite.structure import AtomArray
 
 # Protein trimer with non-covalent ligands
@@ -45,10 +44,7 @@ def get_token_start_ids(atomarray: AtomArray):
     return
 
 
-
-def contiguous_crop(atomarray: AtomArray,
-                    n_res: int,
-                    seed: int):
+def contiguous_crop(atomarray: AtomArray, n_res: int, seed: int):
     """Implements Contiguous Cropping Algorithm 1 from AF-Multimer section 7.2.1.
 
     Args:
@@ -68,6 +64,5 @@ def contiguous_crop(atomarray: AtomArray,
     n_remaining = n_res
     for chain_start_id_k in chain_start_ids:
         n_remaining -= 0
-
 
     return
