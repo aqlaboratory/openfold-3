@@ -1,11 +1,29 @@
+# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2021 DeepMind Technologies Limited
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Sequence-local atom attention modules. Includes AtomAttentionEncoder, AtomAttentionDecoder, and AtomTransformer."""
+
 import torch
 import torch.nn as nn 
 
-from typing import Tuple, Optional, Dict, Mapping
+from typing import Tuple, Optional, Dict
 from .diffusion_transformer import DiffusionTransformer
 from openfold3.core.model.primitives import LayerNorm, Linear
 
-TensorDict = Dict[str, torch.Tensor] 
+TensorDict = Dict[str, torch.Tensor]
+
 
 class AtomTransformer(nn.Module):
     """ 
@@ -62,7 +80,8 @@ class AtomTransformer(nn.Module):
         
         # 3. call diffusion_transformer
         ql = self.diffusion_transformer(ql, cl, plm, blm)
-        return ql 
+        return ql
+
 
 class AtomFeatureEmbedder(nn.Module):
     def __init__(
@@ -182,6 +201,7 @@ class NoisyPositionEmbedder(nn.Module):
         #3. noisy coordinate projection 
         ql = ql + self.linear_r(rl)
         return cl, plm, ql
+
 
 class AtomAttentionEncoder(nn.Module):
     """

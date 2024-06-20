@@ -12,6 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+"""Template embedding layers. These modules embed templates into pair embeddings. Note that this
+includes the template feature embedding functions in openfold3.core.model.feature_embedders.
+"""
+
 import math
 import sys
 from functools import partial

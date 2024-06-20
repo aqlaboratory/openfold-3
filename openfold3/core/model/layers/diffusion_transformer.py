@@ -1,3 +1,20 @@
+# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2021 DeepMind Technologies Limited
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Diffusion transformer block and stack."""
+
 from functools import partial
 from typing import Optional
 
@@ -9,6 +26,10 @@ from .transition import ConditionedTransitionBlock
 
 
 class DiffusionTransformerBlock(nn.Module):
+    """Diffusion transformer block.
+
+    Implements AF3 Algorithm 23.
+    """
     def __init__(
         self,
         c_s: int,
@@ -19,14 +40,19 @@ class DiffusionTransformerBlock(nn.Module):
         inf: float = 1e9
     ):
         """
-
         Args:
             c_s:
+                Single activation channel dimension
             c_z:
+                Pair activation channel dimension
             c_hidden:
+                Hidden channel dimension
             no_heads:
+                Number of attention heads
             n_transition:
+                Dimension multiplication factor used in transition layer
             inf:
+                Large constant used to create mask for attention logits
         """
         super(DiffusionTransformerBlock, self).__init__()
 
@@ -54,20 +80,26 @@ class DiffusionTransformerBlock(nn.Module):
         _mask_trans: bool = True,
     ) -> torch.Tensor:
         """
-
         Args:
             a:
+                [*, N_res, C_token] Token-level embedding
             s:
+                [*, N_res, C_s] Single embedding
             z:
+                [*, N_res, N_res, C_z] Pair embedding
             beta:
+                [*, N_res, N_res] Neighborhood mask. Used in Sequence-local atom attention
+                for rectangular blocks along the diagonal.
             mask:
+                [*, N_res] Mask for token-level embedding
             use_memory_efficient_kernel:
+                Whether to use memory efficient kernel
             use_deepspeed_evo_attention:
+                Whether to use DeepSpeed Evo Attention kernel
             use_lma:
+                Whether to use LMA
             _mask_trans:
-
-        Returns:
-
+                Whether to mask the output of the transition layer
         """
         b = self.attention_pair_bias(a=a, z=z, s=s, beta=beta, mask=mask,
                                      use_memory_efficient_kernel=use_memory_efficient_kernel,
@@ -81,7 +113,8 @@ class DiffusionTransformerBlock(nn.Module):
 
 
 class DiffusionTransformer(nn.Module):
-    """
+    """Diffusion transformer stack.
+
     Implements AF3 Algorithm 23.
     """
     def __init__(
@@ -95,15 +128,19 @@ class DiffusionTransformer(nn.Module):
         inf: float,
     ):
         """
-
         Args:
             c_s:
+                Single activation channel dimension
             c_z:
+                Pair activation channel dimension
             c_hidden:
+                Hidden channel dimension
             no_heads:
-            no_blocks:
+                Number of attention heads
             n_transition:
+                Dimension multiplication factor used in transition layer
             inf:
+                Large constant used to create mask for attention logits
         """
         super(DiffusionTransformer, self).__init__()
 
@@ -130,20 +167,26 @@ class DiffusionTransformer(nn.Module):
                 _mask_trans: bool = True
                 ) -> torch.Tensor:
         """
-
         Args:
             a:
+                [*, N_res, C_token] Token-level embedding
             s:
+                [*, N_res, C_s] Single embedding
             z:
+                [*, N_res, N_res, C_z] Pair embedding
             beta:
+                [*, N_res, N_res] Neighborhood mask. Used in Sequence-local atom attention
+                for rectangular blocks along the diagonal.
             mask:
+                [*, N_res] Mask for token-level embedding
             use_memory_efficient_kernel:
+                Whether to use memory efficient kernel
             use_deepspeed_evo_attention:
+                Whether to use DeepSpeed Evo Attention kernel
             use_lma:
+                Whether to use LMA
             _mask_trans:
-
-        Returns:
-
+                Whether to mask the output of the transition layer
         """
         # Do we need all the fancy checkpoint blocks from evoformer?
         blocks = [

@@ -13,6 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Embedders for input features. Includes InputEmbedders for monomer, multimer, soloseq", and
+all-atom models. Also includes the RecyclingEmbedder and ExtraMSAEmbedder.
+"""
+
 import torch
 import torch.nn as nn
 from typing import Tuple
@@ -100,13 +104,14 @@ class InputEmbedder(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
-            batch: Dict containing
-                "target_feat":
-                    Features of shape [*, N_res, tf_dim]
-                "residue_index":
-                    Features of shape [*, N_res]
-                "msa_feat":
-                    Features of shape [*, N_clust, N_res, msa_dim]
+            tf:
+                [*, N_res, tf_dim] Target features
+            ri:
+                [*, N_res] Residue index
+            msa:
+                [*, N_clust, N_res, msa_dim] MSA features
+            inplace_safe:
+                Bool determining if operations can be done in place (inference only)
         Returns:
             msa_emb:
                 [*, N_clust, N_res, C_m] MSA embedding
@@ -169,8 +174,10 @@ class InputEmbedderMultimer(nn.Module):
                 Pair embedding dimension
             c_m:
                 MSA embedding dimension
-            relpos_k:
-                Window size used in relative positional encoding
+            max_relative_idx:
+
+            use_chain_relative:
+            max_relative_chain:
         """
         super(InputEmbedderMultimer, self).__init__()
 
@@ -273,6 +280,14 @@ class InputEmbedderMultimer(nn.Module):
         return self.linear_relpos(rel_feat)
 
     def forward(self, batch) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+
+        Args:
+            batch:
+
+        Returns:
+
+        """
         tf = batch["target_feat"]
         msa = batch["msa_feat"]
 
@@ -308,6 +323,7 @@ class RelposAllAtom(nn.Module):
 
         Args:
             c_z:
+                Pair embedding dimension
             max_relative_idx:
             max_relative_chain:
             **kwargs:
@@ -425,7 +441,9 @@ class InputEmbedderAllAtom(nn.Module):
             tok_feat_dim:
             tok_bonds_dim:
             c_s:
+                Single embedding dimension
             c_z:
+                Pair embedding dimension
             c_atom:
             c_atom_pair:
             c_token:

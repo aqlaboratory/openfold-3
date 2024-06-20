@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Triangle attention layers."""
+
 from functools import partialmethod, partial
 from typing import Optional, List
 

@@ -1,4 +1,4 @@
-from .activations import ReLULayer, SwiGLU
+from .activations import SwiGLU
 from .attention import Attention, GlobalAttention, DEFAULT_LMA_Q_CHUNK_SIZE, DEFAULT_LMA_KV_CHUNK_SIZE
 from .dropout import Dropout, DropoutColumnwise, DropoutRowwise
 from .linear import Linear
@@ -15,7 +15,6 @@ from .initialization import (
 from .normalization import AdaLN, LayerNorm
 
 __all__ = [
-    'ReLULayer',
     'SwiGLU',
     'Attention',
     'GlobalAttention',
