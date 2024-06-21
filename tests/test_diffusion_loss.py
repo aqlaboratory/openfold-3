@@ -16,7 +16,7 @@ import torch
 import unittest
 
 from openfold3.core.model.structure.diffusion_module import centre_random_augmentation
-from openfold3.core.utils.diffusion_loss import (
+from openfold3.core.utils.loss.diffusion import (
     bond_loss,
     diffusion_loss,
     mse_loss,

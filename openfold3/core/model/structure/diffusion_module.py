@@ -104,6 +104,7 @@ class DiffusionConditioning(nn.Module):
     """
     def __init__(
         self,
+        c_s_input: int,
         c_s: int,
         c_z: int,
         c_fourier_emb: int,
@@ -113,6 +114,8 @@ class DiffusionConditioning(nn.Module):
     ):
         """
         Args:
+            c_s_input:
+                Per token input representation channel dimension
             c_s:
                 Single representation channel dimension
             c_z:
@@ -128,6 +131,7 @@ class DiffusionConditioning(nn.Module):
         """
         super(DiffusionConditioning, self).__init__()
 
+        self.c_s_input = c_s_input
         self.c_s = c_s
         self.c_z = c_z
         self.c_fourier_emb = c_fourier_emb
@@ -137,15 +141,14 @@ class DiffusionConditioning(nn.Module):
                                     max_relative_idx=max_relative_idx,
                                     max_relative_chain=max_relative_chain)
 
-        self.layer_norm_z = LayerNorm(2*self.c_z)
-        self.linear_z = Linear(2*self.c_z, self.c_z, bias=False)
+        self.layer_norm_z = LayerNorm(2 * self.c_z)
+        self.linear_z = Linear(2 * self.c_z, self.c_z, bias=False)
 
         self.transition_z = nn.ModuleList([SwiGLUTransition(c_in=self.c_z, n=2)
                                            for _ in range(2)])
 
-        # TODO: update dimension
-        self.layer_norm_s = LayerNorm(2*self.c_s)
-        self.linear_s = Linear(2*self.c_s, self.c_s, bias=False)
+        self.layer_norm_s = LayerNorm(self.c_s + self.c_s_input)
+        self.linear_s = Linear(self.c_s + self.c_s_input, self.c_s, bias=False)
 
         self.fourier_emb = FourierEmbedding(c=c_fourier_emb)
         self.layer_norm_n = LayerNorm(self.c_fourier_emb)
@@ -164,9 +167,6 @@ class DiffusionConditioning(nn.Module):
         token_mask: torch.Tensor,
         pair_token_mask: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        
-        # TODO: check s_input dimension
-
         """
         Args:
             batch:
@@ -174,7 +174,7 @@ class DiffusionConditioning(nn.Module):
             t:
                 [*] Noise level at a diffusion timestep
             s_input:
-                [*, N_token, c_s] Input embedding
+                [*, N_token, c_s_input] Input embedding
             s_trunk:
                 [*, N_token, c_s] Single representation
             z_trunk:
@@ -216,6 +216,7 @@ class DiffusionModule(nn.Module):
     """
     def __init__(
         self,
+        c_s_input: int,
         c_s: int,
         c_z: int,
         c_fourier_emb: int,
@@ -234,6 +235,8 @@ class DiffusionModule(nn.Module):
     ):
         """
         Args:
+            c_s_input:
+                Per token input representation channel dimension
             c_s:
                 Single representation channel dimension
             c_z:
@@ -268,7 +271,8 @@ class DiffusionModule(nn.Module):
         super(DiffusionModule, self).__init__()
         self.sigma_data = sigma_data
 
-        self.diffusion_conditioning = DiffusionConditioning(c_s=c_s,
+        self.diffusion_conditioning = DiffusionConditioning(c_s_input=c_s_input,
+                                                            c_s=c_s,
                                                             c_z=c_z,
                                                             c_fourier_emb=c_fourier_emb,
                                                             max_relative_idx=max_relative_idx,
@@ -332,7 +336,7 @@ class DiffusionModule(nn.Module):
             t:
                 [*] Noise level at a diffusion step
             s_input:
-                [*, N_token, c_s] Input embedding
+                [*, N_token, c_s_input] Input embedding
             s_trunk:
                 [*, N_token, c_s] Single representation
             z_trunk:
@@ -357,7 +361,7 @@ class DiffusionModule(nn.Module):
         a, q, c, p = self.atom_attn_enc(atom_feats=batch,
                                         rl=r_noisy,
                                         si_trunk=s_trunk, 
-                                        zij=z,
+                                        zij=z_trunk, # differ from AF3
                                         atom_mask=atom_mask)
 
         a = a + self.linear_s(self.layer_norm_s(s))
@@ -388,6 +392,7 @@ class SampleDiffusion(nn.Module):
     """
     def __init__(
         self,
+        c_s_input: int,
         c_s: int,
         c_z: int,
         c_fourier_emb: int,
@@ -410,6 +415,8 @@ class SampleDiffusion(nn.Module):
     ):
         """
         Args:
+            c_s_input:
+                Per token input representation channel dimension
             c_s:
                 Single representation channel dimension
             c_z:
@@ -455,7 +462,8 @@ class SampleDiffusion(nn.Module):
         self.noise_scale = noise_scale
         self.step_scale = step_scale
 
-        self.diffusion_module = DiffusionModule(c_s=c_s,
+        self.diffusion_module = DiffusionModule(c_s_input=c_s_input,
+                                                c_s=c_s,
                                                 c_z=c_z,
                                                 c_fourier_emb=c_fourier_emb,
                                                 max_relative_idx=max_relative_idx,
@@ -487,7 +495,7 @@ class SampleDiffusion(nn.Module):
             batch:
                 Feature dictionary
             s_input:
-                [*, N_token, c_s] Input embedding
+                [*, N_token, c_s_input] Input embedding
             s_trunk:
                 [*, N_token, c_s] Single representation
             z_trunk:

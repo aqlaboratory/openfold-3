@@ -29,6 +29,7 @@ class TestDiffusionConditioning(unittest.TestCase):
     def test_diffusion_conditioning_shape(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
+        c_s_input = consts.c_s + 65
         c_s = consts.c_s
         c_z = consts.c_z
         c_fourier_emb = 256
@@ -37,6 +38,7 @@ class TestDiffusionConditioning(unittest.TestCase):
         sigma_data = 16
 
         dc = DiffusionConditioning(
+            c_s_input=c_s_input,
             c_s=c_s,
             c_z=c_z,
             c_fourier_emb=c_fourier_emb,
@@ -46,7 +48,7 @@ class TestDiffusionConditioning(unittest.TestCase):
         )
 
         t = torch.ones(batch_size)
-        s_input = torch.rand((batch_size, n_token, c_s))
+        s_input = torch.rand((batch_size, n_token, c_s_input))
         s_trunk = torch.rand((batch_size, n_token, c_s))
         z_trunk = torch.rand((batch_size, n_token, n_token, c_z))
         token_mask = torch.ones((batch_size, n_token))
@@ -80,6 +82,7 @@ class TestDiffusionModule(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
         n_atom = 4 * consts.n_res
+        c_s_input = consts.c_s + 65
         c_s = consts.c_s
         c_z = consts.c_z
         c_fourier_emb = 256
@@ -97,6 +100,7 @@ class TestDiffusionModule(unittest.TestCase):
         inf = 1e5
 
         dm = DiffusionModule(
+            c_s_input=c_s_input,
             c_s=c_s,
             c_z=c_z,
             c_fourier_emb=c_fourier_emb,
@@ -116,7 +120,7 @@ class TestDiffusionModule(unittest.TestCase):
 
         x_noisy = torch.randn((batch_size, n_atom, 3))
         t = torch.ones(1)
-        s_input = torch.rand((batch_size, n_token, c_s))
+        s_input = torch.rand((batch_size, n_token, c_s_input))
         s_trunk = torch.rand((batch_size, n_token, c_s))
         z_trunk = torch.rand((batch_size, n_token, n_token, c_z))
         token_mask = torch.ones((batch_size, n_token))
@@ -159,6 +163,7 @@ class TestSampleDiffusion(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
         n_atom = 4 * consts.n_res
+        c_s_input = consts.c_s + 65
         c_s = consts.c_s
         c_z = consts.c_z
         c_fourier_emb = 256
@@ -185,6 +190,7 @@ class TestSampleDiffusion(unittest.TestCase):
         step_size = 1./T
 
         sd = SampleDiffusion(
+            c_s_input=c_s_input,
             c_s=c_s,
             c_z=c_z,
             c_fourier_emb=c_fourier_emb,
@@ -206,7 +212,7 @@ class TestSampleDiffusion(unittest.TestCase):
             step_scale=step_scale,
         )
 
-        s_input = torch.rand((batch_size, n_token, c_s))
+        s_input = torch.rand((batch_size, n_token, c_s_input))
         s_trunk = torch.rand((batch_size, n_token, c_s))
         z_trunk = torch.rand((batch_size, n_token, n_token, c_z))
         token_mask = torch.ones((batch_size, n_token))
