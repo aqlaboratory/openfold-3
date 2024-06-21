@@ -18,8 +18,8 @@ import unittest
 from openfold3.core.model.structure.diffusion_module import (
     DiffusionConditioning,
     DiffusionModule,
-    NoiseSchedule,
-    SampleDiffusion
+    SampleDiffusion,
+    create_noise_schedule
 )
 from tests.config import consts
 
@@ -135,8 +135,7 @@ class TestDiffusionModule(unittest.TestCase):
             'ref_charge': torch.ones((batch_size, n_atom)),
             'ref_atom_name_chars': torch.ones((batch_size, n_atom, 4, 64)),
             'ref_space_uid': torch.zeros((batch_size, n_atom)),
-            'atom_to_token_index': torch.ones((batch_size, n_atom, n_token)),
-            'token_to_atom_index': torch.ones((batch_size, n_token, n_atom))
+            'atom_to_token_index': torch.eye(n_token).repeat_interleave(4, dim=0).unsqueeze(0).repeat(batch_size, 1, 1),
         }
 
         out = dm(
@@ -182,7 +181,8 @@ class TestSampleDiffusion(unittest.TestCase):
         s_max = 160
         s_min = 4e-4
         p = 7
-        T = 200
+        T = 5
+        step_size = 1./T
 
         sd = SampleDiffusion(
             c_s=c_s,
@@ -225,29 +225,30 @@ class TestSampleDiffusion(unittest.TestCase):
             'ref_charge': torch.ones((batch_size, n_atom)),
             'ref_atom_name_chars': torch.ones((batch_size, n_atom, 4, 64)),
             'ref_space_uid': torch.zeros((batch_size, n_atom)),
-            'atom_to_token_index': torch.ones((batch_size, n_atom, n_token)),
-            'token_to_atom_index': torch.ones((batch_size, n_token, n_atom))
+            'atom_to_token_index': torch.eye(n_token).repeat_interleave(4, dim=0).unsqueeze(0).repeat(batch_size, 1, 1),
         }
         
-        ns = NoiseSchedule(
+        noise_schedule = create_noise_schedule(
+            step_size=step_size,
             sigma_data=sigma_data,
             s_max=s_max,
             s_min=s_min,
             p=p
         )
-        noise_schedule = ns(T)
 
-        out = sd(
-            batch=batch,
-            s_input=s_input,
-            s_trunk=s_trunk,
-            z_trunk=z_trunk,
-            token_mask=token_mask,
-            pair_token_mask=pair_token_mask,
-            atom_mask=atom_mask,
-            noise_schedule=noise_schedule,
-        )
+        with torch.no_grad():
+            out = sd(
+                batch=batch,
+                s_input=s_input,
+                s_trunk=s_trunk,
+                z_trunk=z_trunk,
+                token_mask=token_mask,
+                pair_token_mask=pair_token_mask,
+                atom_mask=atom_mask,
+                noise_schedule=noise_schedule,
+            )
 
+        self.assertTrue(noise_schedule.shape == (T+1,))
         self.assertTrue(out.shape == (batch_size, n_atom, 3))
 
 

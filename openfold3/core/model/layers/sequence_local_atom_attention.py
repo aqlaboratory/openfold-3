@@ -189,8 +189,8 @@ class NoisyPositionEmbedder(nn.Module):
         #2. project pair embedding
         # [b, n_token, n_token, c_z]
         # [b, n_atom, 1, n_token, 1] * [b, 1, n_atom, 1, n_token]
-        token_index_per_atom_pair = atom_feats['atom_to_token_index'][..., None, :, None] * atom_feats['atom_to_token_index'][..., None, :, None, :] # [*, n_atom, n_atom, n_token, n_token]
-        plm = plm + self.linear_z(self.layer_norm_z(torch.sum(zij[..., None, None, :, :, :] * token_index_per_atom_pair[..., None], dim=(-2, -3)))) # [*, n_atom, n_atom, c_z]
+        atom_pair_to_token_index = atom_feats['atom_to_token_index'][..., None, :, None] * atom_feats['atom_to_token_index'][..., None, :, None, :] # [*, n_atom, n_atom, n_token, n_token]
+        plm = plm + self.linear_z(self.layer_norm_z(torch.sum(zij[..., None, None, :, :, :] * atom_pair_to_token_index[..., None], dim=(-2, -3)))) # [*, n_atom, n_atom, c_z]
 
         #3. noisy coordinate projection 
         ql = ql + self.linear_r(rl)
@@ -263,7 +263,7 @@ class AtomAttentionEncoder(nn.Module):
                                                 inf=inf)
         
         self.c_token = c_token
-        self.linear_q = nn.Sequential(Linear(c_atom, c_token, bias=False, init="final"),
+        self.linear_q = nn.Sequential(Linear(c_atom, c_token, bias=False, init="relu"),
                                       nn.ReLU())
 
     def forward(
@@ -315,7 +315,8 @@ class AtomAttentionEncoder(nn.Module):
                                    atom_mask=atom_mask)
         
         #5. aggregate
-        ai = torch.sum(self.linear_q(ql).unsqueeze(-3) * atom_feats['token_to_atom_index'].unsqueeze(-1), dim=-2) / torch.sum(atom_feats['token_to_atom_index'], dim=-1, keepdim=True) # [b, n_token, c_token] 
+        token_to_atom_index = atom_feats['atom_to_token_index'].transpose(-1, -2)
+        ai = torch.sum(self.linear_q(ql).unsqueeze(-3) * token_to_atom_index.unsqueeze(-1), dim=-2) / torch.sum(token_to_atom_index, dim=-1, keepdim=True) # [b, n_token, c_token] 
 
         return ai, ql, cl, plm
 

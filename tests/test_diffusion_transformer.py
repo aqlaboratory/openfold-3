@@ -24,6 +24,7 @@ class TestDiffusionTransformer(unittest.TestCase):
     def test_shape(self):
         batch_size = consts.batch_size
         n_res = consts.n_res
+        c_a = 768
         c_s = consts.c_s
         c_z = consts.c_z
         c_hidden = 16
@@ -33,6 +34,7 @@ class TestDiffusionTransformer(unittest.TestCase):
         inf = 1e9
 
         dt = DiffusionTransformer(
+            c_a,
             c_s,
             c_z,
             c_hidden,
@@ -42,7 +44,7 @@ class TestDiffusionTransformer(unittest.TestCase):
             inf=inf,
         ).eval()
 
-        a = torch.rand((batch_size, n_res, c_s))
+        a = torch.rand((batch_size, n_res, c_a))
         s = torch.rand((batch_size, n_res, c_s))
         z = torch.rand((batch_size, n_res, n_res, c_z))
         beta = torch.rand((batch_size, n_res, n_res))
@@ -61,12 +63,13 @@ class TestConditionedTransitionBlock(unittest.TestCase):
     def test_shape(self):
         batch_size = 2
         n_r = 5
+        c_a = 14
         c_s = 7
         n = 11
 
-        ct = ConditionedTransitionBlock(c_in=c_s, n=n)
+        ct = ConditionedTransitionBlock(c_a=c_a, c_s=c_s, n=n)
 
-        a = torch.rand((batch_size, n_r, c_s))
+        a = torch.rand((batch_size, n_r, c_a))
         s = torch.rand((batch_size, n_r, c_s))
 
         shape_before = a.shape

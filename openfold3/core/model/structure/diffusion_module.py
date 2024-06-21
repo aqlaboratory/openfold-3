@@ -24,13 +24,13 @@ def centre_random_augmentation(pos: torch.Tensor, pos_mask: torch.Tensor, scale_
     Returns:
         Updated atom position with random global rotation and translation
     """
-    m = torch.rand((3, 3), dtype=pos.dtype)
-    rot, __ = torch.linalg.qr(m)
+    m = torch.rand((*pos.shape[:-2], 3, 3), dtype=pos.dtype)
+    rots, __ = torch.linalg.qr(m)
 
-    trans = scale_trans * torch.randn((3,), dtype=pos.dtype)
+    trans = scale_trans * torch.randn((*pos.shape[:-2], 3), dtype=pos.dtype)
 
     mean_pos = (
-        torch.sum(
+        torch.mean(
             pos * pos_mask[..., None],
             dim=-2,
             keepdim=True,
@@ -39,49 +39,37 @@ def centre_random_augmentation(pos: torch.Tensor, pos_mask: torch.Tensor, scale_
 
     # center coordinates
     pos_centered = pos - mean_pos
-    return pos_centered @ rot + trans
+    return pos_centered @ rots.transpose(-1, -2) + trans[..., None, :]
+
 
 # Move this somewhere else?
-class NoiseSchedule(nn.Module):
+def create_noise_schedule(
+    step_size: float,
+    sigma_data: float,
+    s_max: float = 160.,
+    s_min: float = 4e-4,
+    p: int = 7
+):
     """
     Implements AF3 noise schedule (Page 24).
-    """
-    def __init__(
-        self,
-        sigma_data: float,
-        s_max: float,
-        s_min: float,
-        p: int
-    ):
-        """
-        Args:
-            sigma_data:
-                Constant determined by data variance
-            s_max:
-                Maximum standard deviation of noise
-            s_min:
-                Minimum standard deviation of noise
-            p:
-                Constant controlling the extent steps near s_min are shortened
-                at the cost of longer steps near s_max
-        """
-        super(NoiseSchedule, self).__init__()
 
-        self.sigma_data = sigma_data
-        self.s_max = s_max
-        self.s_min = s_min
-        self.p = p
-    
-    def forward(self, step_size: float):
-        """
-        Args:
-            step_size:
-                Diffusion step size
-        Returns:
-            Noise schedule
-        """
-        t = torch.arange(0, 1+step_size, step=step_size)
-        return self.sigma_data * (self.s_max ** (1/self.p) + t * (self.s_min ** (1/self.p) - self.s_max ** (1/self.p))) ** self.p
+     Args:
+        step_size:
+            Diffusion step size
+        sigma_data:
+            Constant determined by data variance
+        s_max:
+            Maximum standard deviation of noise
+        s_min:
+            Minimum standard deviation of noise
+        p:
+            Constant controlling the extent steps near s_min are shortened
+            at the cost of longer steps near s_max
+    Returns:
+        Noise schedule
+    """
+    t = torch.arange(0, 1+step_size, step=step_size)
+    return sigma_data * (s_max ** (1/p) + t * (s_min ** (1/p) - s_max ** (1/p))) ** p
 
 
 # Should this be moved to embedders?
@@ -97,9 +85,7 @@ class FourierEmbedding(nn.Module):
         """
         super(FourierEmbedding, self).__init__()
 
-        # TODO: fix initialization
-        self.linear = Linear(in_dim=1, out_dim=c, bias=True)
-        # self.linear = Linear(in_dim=1, out_dim=c, bias=True, init='fourier')
+        self.linear = Linear(in_dim=1, out_dim=c, bias=True, init='fourier')
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -379,7 +365,7 @@ class DiffusionModule(nn.Module):
         a = self.diffusion_transformer(a=a,
                                        s=s,
                                        z=z,
-                                       beta=torch.zeros_like(pair_token_mask),
+                                       beta=None,
                                        mask=token_mask)
 
         a = self.layer_norm_a(a)
