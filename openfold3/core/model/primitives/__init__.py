@@ -9,6 +9,7 @@ from .initialization import (
     glorot_uniform_init_,
     final_init_,
     gating_init_,
+    kaiming_normal_init_,
     normal_init_,
     ipa_point_weights_init_
 )
@@ -30,6 +31,7 @@ __all__ = [
     'glorot_uniform_init_',
     'final_init_',
     'gating_init_',
+    'kaiming_normal_init_',
     'normal_init_',
     'ipa_point_weights_init_',
     'AdaLN',

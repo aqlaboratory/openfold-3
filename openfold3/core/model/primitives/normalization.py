@@ -90,23 +90,25 @@ class AdaLN(nn.Module):
 
     Implements AF3 Algorithm 26.
     """
-    def __init__(self, c_in: int, eps: float = 1e-5):
+    def __init__(self, c_a: int, c_s: int, eps: float = 1e-5):
         """
         Args:
-            c_in: Number of input channels
+            c_a: Number of input channels for input tensor
+            c_s: Number of input channels for shift/scale tensor
             eps: Epsilon value for numerical stability
         """
         super(AdaLN, self).__init__()
 
-        self.c_in = c_in
+        self.c_a = c_a
+        self.c_s = c_s
         self.eps = eps
 
-        self.layer_norm_a = LayerNorm(self.c_in, create_scale=False, create_offset=False, eps=self.eps)
-        self.layer_norm_s = LayerNorm(self.c_in, create_scale=True, create_offset=False, eps=self.eps)
+        self.layer_norm_a = LayerNorm(self.c_a, create_scale=False, create_offset=False, eps=self.eps)
+        self.layer_norm_s = LayerNorm(self.c_s, create_scale=True, create_offset=False, eps=self.eps)
 
         self.sigmoid = nn.Sigmoid()
-        self.linear_g = Linear(self.c_in, self.c_in, init="final")
-        self.linear_s = Linear(self.c_in, self.c_in, bias=False, init="final")
+        self.linear_g = Linear(self.c_s, self.c_a, init="final")
+        self.linear_s = Linear(self.c_s, self.c_a, bias=False, init="final")
 
     def forward(self, a: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
         """

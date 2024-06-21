@@ -81,9 +81,12 @@ def gating_init_(weights):
         weights.fill_(0.0)
 
 
-def normal_init_(weights):
+def kaiming_normal_init_(weights):
     torch.nn.init.kaiming_normal_(weights, nonlinearity="linear")
 
+
+def normal_init_(weights):
+    torch.nn.init.normal_(weights)
 
 def ipa_point_weights_init_(weights):
     with torch.no_grad():
