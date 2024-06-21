@@ -320,6 +320,7 @@ class RelposAllAtom(nn.Module):
 
         self.no_bins = (
             2 * max_relative_idx + 2 +
+            2 * max_relative_idx + 2 +
             1 +
             2 * max_relative_chain + 2
         )

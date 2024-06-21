@@ -17,6 +17,7 @@ class AttentionPairBias(Attention):
         c_q: int,
         c_k: int,
         c_v: int,
+        c_s: int,
         c_z: int,
         c_hidden: int,
         no_heads: int,
@@ -41,11 +42,12 @@ class AttentionPairBias(Attention):
                                                 no_heads=no_heads, gating=gating)
 
         self.use_ada_layer_norm = use_ada_layer_norm
+        self.c_s = c_s
         self.c_z = c_z
         self.inf = inf
 
         if self.use_ada_layer_norm:
-            self.layer_norm_a = AdaLN(c_in=c_q)
+            self.layer_norm_a = AdaLN(c_a=self.c_q, c_s=self.c_s)
         else:
             self.layer_norm_a = LayerNorm(c_in=self.c_q)
 
@@ -63,7 +65,7 @@ class AttentionPairBias(Attention):
         )
 
         if self.use_ada_layer_norm:
-            self.linear_ada_out = Linear(self.c_q, self.c_q, init="gating_ada_zero")
+            self.linear_ada_out = Linear(self.c_s, self.c_q, init="gating_ada_zero")
 
     def _prep_bias(
         self,

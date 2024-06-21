@@ -44,6 +44,7 @@ class PairFormerBlock(nn.Module):
         self.attn_pair_bias = AttentionPairBias(c_q=c_s,
                                                 c_k=c_s,
                                                 c_v=c_s,
+                                                c_s=c_s,
                                                 c_z=c_z,
                                                 c_hidden=c_hidden_pair_bias,
                                                 no_heads=no_heads_pair_bias,

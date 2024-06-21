@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 
 from .initialization import (lecun_normal_init_, he_normal_init_, glorot_uniform_init_,
-                             final_init_, gating_init_, normal_init_)
+                             final_init_, gating_init_, kaiming_normal_init_, normal_init_)
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
@@ -78,7 +78,7 @@ class Linear(nn.Linear):
                     gating_init_(self.weight)
                     self.bias.fill_(-2.0)
                 elif init == "normal":
-                    normal_init_(self.weight)
+                    kaiming_normal_init_(self.weight)
                 elif init == "fourier":
                     normal_init_(self.weight)
                     normal_init_(self.bias)
