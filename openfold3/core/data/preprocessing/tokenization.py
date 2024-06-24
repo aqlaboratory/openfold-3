@@ -13,8 +13,8 @@ from openfold3.core.data.preprocessing.tables import (
 def tokenize_atom_array(atom_array: AtomArray):
     """Generates token ids and token center atom annotations for a biotite atom_array.
 
-    Updates the input biotite atom array with added 'af3_token_id' and 'af3_token_center_atom' 
-    annotations in-place.
+    Updates the input biotite atom array with added 'af3_token_id' and 'af3_token_center_atom'
+    and 'af3_atom_id' annotations in-place.
 
     Args:
         atom_array (AtomArray): biotite atom array of the first bioassembly of a PDB entry
@@ -22,6 +22,9 @@ def tokenize_atom_array(atom_array: AtomArray):
     Returns:
         None
     """
+
+    # Create atom id annotation
+    atom_array.set_annotation("af3_atom_id", np.arange(len(atom_array)))
 
     # Get standard residues
     n_atoms = len(atom_array)

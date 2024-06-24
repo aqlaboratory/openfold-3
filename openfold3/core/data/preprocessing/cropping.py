@@ -63,6 +63,8 @@ print(chains)
 def crop_contiguous(atom_array: AtomArray, n_res: int, generator: Generator):
     """Implements Contiguous Cropping, Algorithm 1 from AF-Multimer section 7.2.1.
 
+    Updates the input biotite atom array with added 'af3_crop_mask' annotation in-place.
+
     Args:
         atom_array (atom_array):
             biotite atom array of the first bioassembly of a PDB entry
@@ -70,6 +72,9 @@ def crop_contiguous(atom_array: AtomArray, n_res: int, generator: Generator):
             residue budget i.e. total crop size
         generator (Generator): 
             a numpy generator set with a specific seed
+
+    Returns:
+        None
     """
 
     # Get chain ids and permute
@@ -77,20 +82,23 @@ def crop_contiguous(atom_array: AtomArray, n_res: int, generator: Generator):
     chains = generator.permutation(chains)
 
     # Create cropping mask annotation
-    atom_array.set_annotation("af3_contiguous_crop_mask", np.repeat(False, len(atom_array)))
+    atom_array.set_annotation("af3_crop_mask", np.repeat(False, len(atom_array)))
 
     # Cropping loop
     n_added = 0
     n_remaining = n_res
     for chain_id in chains:
-
-        # TODO need to deal with atomic tokens including:
-        # ligands - separate chain from polymer
-        # ligands - same chain as poly
-        # covalently modified residues
-
+        # Get chain atom array and type
         atom_array_chain = atom_array[atom_array.af3_chain_id == chain_id]
-        n_k = struc.get_residue_count(atom_array_chain)
+        molecule_type_chain = set(atom_array_chain.af3_molecule_type) == 0
+
+        # If standard polymer WITHOUT covalent modifications
+        if (molecule_type_chain == 0) | (molecule_type_chain == 1):
+            n_k = struc.get_residue_count(atom_array_chain)
+        # TODO If standard polymer WITH covalent modifications
+        # If nonstandard residue in polymer or ligand
+        else:
+            n_k = len(atom_array_chain)
         n_remaining -= n_k
 
         # Calculate crop length
@@ -99,20 +107,16 @@ def crop_contiguous(atom_array: AtomArray, n_res: int, generator: Generator):
         crop_size = generator.integers(crop_size_min, crop_size_max + 1, 1).item()
         n_added += crop_size
 
-        # Calculate crop start
+        # Calculate crop start and map to global atom index
         crop_start = generator.integers(0, n_k - crop_size + 1, 1).item()
+        crop_start_global = atom_array_chain[crop_start].af3_atom_id
 
-        # Create mask - could also edit the atom_array annotation directly but looks much less clean
-        m_k = np.zeros(n_k, dtype=bool)
-        m_k[crop_start:crop_start + crop_size] = True
-
-        # Get atom indices of residue starting points for residues in crop
-        residue_starts = struc.get_residue_starts(atom_array_chain)
-        residue_starts_crop = residue_starts[crop_start:crop_start + crop_size]
+        # Edit corresponding segment in crop mask
+        atom_array.af3_crop_mask[crop_start_global:crop_start_global + crop_size] = True
 
 
 
-    return
+    return None
 
 def crop_spatial():
     return
