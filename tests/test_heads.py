@@ -91,17 +91,32 @@ class TestPairEmbed(unittest.TestCase):
         no_bin = 15
         inf = 1e8
 
-        pair_emb = Pairformer_Embedding(min_bin, max_bin, no_bin, inf, c_s, c_z,)
+        c_hidden_pair_bias = 12
+        no_heads_pair_bias = 3
+        c_hidden_mul = 19
+        c_hidden_pair_att = 14
+        no_heads_pair = 7
+        no_blocks = 2
+        transition_n = 2
+        pair_dropout = 0.25
+        inf = 1e9
+        eps = 1e-10
+
+        config = {'pairformer': {'c_s': c_s, 'c_z': c_z, 'c_hidden_pair_bias': c_hidden_pair_bias, 'no_heads_pair_bias': no_heads_pair_bias, 'c_hidden_mul': c_hidden_mul, 'c_hidden_pair_att': c_hidden_pair_att, 'no_heads_pair': no_heads_pair, 'no_blocks': no_blocks, 'transition_n': transition_n, 'pair_dropout': pair_dropout, 'fuse_projection_weights': False, 'blocks_per_ckpt': None, 'inf': inf, 'eps': eps}}
+
+        pair_emb = Pairformer_Embedding(min_bin, max_bin, no_bin, inf, c_s, c_z, config)
 
         si_input = torch.ones(batch_size, n_token, c_s)
         si = torch.ones(batch_size, n_token, c_s) 
         zij = torch.ones(batch_size, n_token, n_token, c_z) 
         x_pred = torch.ones(batch_size, n_token, 3)
+        single_mask = torch.randint(0, 2, size=(batch_size, n_token,))
+        pair_mask = torch.randint(0, 2, size=(batch_size, n_token, n_token))
 
-        out_single, out_pair = pair_emb(si_input, si, zij, x_pred)
+        out_single, out_pair = pair_emb(si_input, si, zij, x_pred, single_mask, pair_mask, chuck_size = 4)
 
         self.assertTrue(out_single.shape == (batch_size, n_token, c_s))
-        self.assertTrue(out_pair.shape == (batch_size, n_token, c_z))
+        self.assertTrue(out_pair.shape == (batch_size, n_token, n_token, c_z))
 
 
 class TestAuxiliaryHeads(unittest.TestCase):
@@ -112,32 +127,47 @@ class TestAuxiliaryHeads(unittest.TestCase):
         c_s = consts.c_s
         c_z = consts.c_z
         c_out = 50
-        min_bin = consts.min_bin
-        max_bin = consts.max_binz
-        no_bin = consts.no_bin
-        inf = consts.inf
-        c_out = 50 
+        min_bin = 3.25
+        max_bin = 20.25
+        no_bin = 15
+        inf = 1e8
+
+        c_hidden_pair_bias = 12
+        no_heads_pair_bias = 3
+        c_hidden_mul = 19
+        c_hidden_pair_att = 14
+        no_heads_pair = 7
+        no_blocks = 2
+        transition_n = 2
+        pair_dropout = 0.25
+        inf = 1e9
+        eps = 1e-10
 
         config = {'pae': {'c_z' : c_z, 'c_out' : c_out},
                 'pde': {'c_z' : c_z, 'c_out' : c_out},
                 'lddt': {'c_s' : c_s, 'c_out' : c_out},
                 'distogram': {'c_z' : c_z, 'c_out' : c_out},
                 'experimentally_resolved': {'c_s': c_s, 'c_out': c_out},
-                'pairformer': {'min_bin': min_bin, 'max_bin': max_bin, 'no_bin': no_bin, 'inf': inf, 'c_s': c_s, 'c_z': c_z,},
-                }
+                'pairformer': {'min_bin': min_bin, 'max_bin': max_bin, 'no_bin': no_bin, 'inf': inf, 'c_s': c_s, 'c_z': c_z, 'config': {'pairformer': {'c_s': c_s, 'c_z': c_z, 'c_hidden_pair_bias': c_hidden_pair_bias, 'no_heads_pair_bias': no_heads_pair_bias, 'c_hidden_mul': c_hidden_mul, 'c_hidden_pair_att': c_hidden_pair_att, 'no_heads_pair': no_heads_pair, 'no_blocks': no_blocks, 'transition_n': transition_n, 'pair_dropout': pair_dropout, 'fuse_projection_weights': False, 'blocks_per_ckpt': None, 'inf': inf, 'eps': eps}}},
+                'tm': {'enabled': False},
+                  }
         aux_head = AuxiliaryHeads(config)
 
         si_input = torch.ones(batch_size, n_token, c_s)
         si = torch.ones(batch_size, n_token, c_s)
         zij = torch.ones(batch_size, n_token, n_token, c_z)
         x_pred = torch.ones(batch_size, n_token, 3)
-        outputs = {'si': si, 'zij': zij, 'coordinate': x_pred}
+        outputs = {'single': si, 'pair': zij, 'coordinates': x_pred}
         token_to_atom_idx = torch.eye(n_token).repeat_interleave(4, dim=0).unsqueeze(0).repeat(batch_size, 1, 1)
+        single_mask = torch.randint(0, 2, size=(batch_size, n_token,))
+        pair_mask = torch.randint(0, 2, size=(batch_size, n_token, n_token))
 
-        d = aux_head(si_input, outputs, token_to_atom_idx)
+        d = aux_head(si_input, outputs, token_to_atom_idx, single_mask, pair_mask, chuck_size = 4)
 
-        self.assertTrue(d.distogram_logits.shape == (batch_size, n_token, n_token, c_out))
-        self.assertTrue(d.pae_logits.shape == (batch_size, n_token, n_token, c_out))
-        self.assertTrue(d.pde_logits.shape == (batch_size, n_token, n_token, c_out))
-        self.assertTrue(d.plddt_logits.shape == (batch_size, n_token, c_out))
-        
+        self.assertTrue(d['distogram_logits'].shape == (batch_size, n_token, n_token, c_out))
+        self.assertTrue(d['pae_logits'].shape == (batch_size, n_token, n_token, c_out))
+        self.assertTrue(d['pde_logits'].shape == (batch_size, n_token, n_token, c_out))
+        self.assertTrue(d['plddt_logits'].shape == (batch_size, n_atom, c_out))
+
+if __name__ == "__main__":
+    unittest.main()

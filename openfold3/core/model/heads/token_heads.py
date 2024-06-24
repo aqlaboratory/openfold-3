@@ -24,7 +24,7 @@ from openfold3.core.utils.loss import (
 )
 from openfold3.core.utils.precision_utils import is_fp16_enabled
 
-from openfold3.core.model.latent.pairformer import PairformerStack 
+from openfold3.core.model.latent.pairformer import PairFormerStack 
 
 
 class AuxiliaryHeads(nn.Module):
@@ -38,7 +38,7 @@ class AuxiliaryHeads(nn.Module):
         """
         super(AuxiliaryHeads, self).__init__()
         self.pairformer_embedding = Pairformer_Embedding(
-            **config, 
+            **config['pairformer'], 
         )
 
         self.pae = PAEHead(
@@ -67,6 +67,9 @@ class AuxiliaryHeads(nn.Module):
                 si_input, 
                 outputs, 
                 token_to_atom_idx,
+                single_mask: torch.Tensor,
+                pair_mask: torch.Tensor,
+                chuck_size: int,
                 ):
         """ 
         Args: 
@@ -99,8 +102,10 @@ class AuxiliaryHeads(nn.Module):
         si, zij = self.pairformer_embedding(si_input,
                                             outputs['single'],
                                             outputs['pair'],
-                                            outputs['coordinates'], 
-                                            n_block = 4
+                                            outputs['coordinates'],
+                                            single_mask,
+                                            pair_mask,
+                                            chuck_size,
                                             )
 
         lddt_logits = self.plddt(si, token_to_atom_idx)
@@ -115,7 +120,7 @@ class AuxiliaryHeads(nn.Module):
         pde_logits = self.pde(zij)
         aux_out['pde_logits'] = pde_logits
         
-        if self.config.tm.enabled:
+        if self.config['tm']['enabled']:
             tm_logits = pae_logits #SI says it uses pae_logits. 
             aux_out["tm_logits"] = tm_logits
             aux_out["ptm_score"] = compute_tm(
@@ -163,14 +168,16 @@ class Pairformer_Embedding(nn.Module):
         self.linear_j = Linear(c_s, c_z, bias=False, init = 'relu')
 
         self.linear_distance = Linear(self.no_bin, c_z, bias=False, init = 'relu')
-        self.pairformer_stack = PairformerStack(config['pairformer'])
+        self.pairformer_stack = PairFormerStack(**config['pairformer'])
     
     def forward(self, 
                 si_input: torch.Tensor, 
                 si: torch.Tensor, 
                 zij: torch.Tensor, 
-                x_pred: torch.Tensor, 
-                n_block: int = 4,
+                x_pred: torch.Tensor,
+                single_mask: torch.Tensor, 
+                pair_mask: torch.Tensor, 
+                chuck_size: int,
                 ): 
         """ 
         Args: 
@@ -178,7 +185,6 @@ class Pairformer_Embedding(nn.Module):
             si: single embedding, [*, n_token, c_s]
             zij: pairwise embedding, [*, n_token, n_token, c_z]
             x_pred: representative atom predicted coordinates, [*, n_token, 3]
-            n_block: number of blocks, int
 
         Returns: 
             si: pairformer stack out single
@@ -196,7 +202,7 @@ class Pairformer_Embedding(nn.Module):
         zij = zij + self.linear_distance(dij)
 
         #3. call pairformer
-        si, zij = self.pairformer_stack(si, zij, n_block)
+        si, zij = self.pairformer_stack(si, zij, single_mask, pair_mask, chuck_size)
         
         return si, zij
 
@@ -347,7 +353,7 @@ class DistogramHead(nn.Module):
     For use in computation of distogram loss, subsection 1.9.8
     """
 
-    def __init__(self, c_z, no_bins, **kwargs):
+    def __init__(self, c_z, c_out, **kwargs):
         """
         Args:
             c_z:
@@ -358,7 +364,7 @@ class DistogramHead(nn.Module):
         super(DistogramHead, self).__init__()
 
         self.c_z = c_z
-        self.no_bins = no_bins
+        self.no_bins = c_out
 
         self.linear = Linear(self.c_z, self.no_bins, init="final")
 
