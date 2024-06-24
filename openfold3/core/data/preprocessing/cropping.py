@@ -7,8 +7,8 @@ import biotite.structure as struc
 import biotite.structure.io.pdbx as pdbx
 import numpy as np
 from numpy.random import Generator
-from biotite.structure import AtomArray
-from openfold3.core.data.preprocessing.tokenization import tokenize_atomarray, chain_assignment
+from biotite.structure import atom_array
+from openfold3.core.data.preprocessing.tokenization import tokenize_atom_array, chain_assignment
 
 
 # Protein trimer with covalent and non-covalent glycans
@@ -36,15 +36,15 @@ biounit_3US4 = biounit_3US4[biounit_3US4.res_name != "HOH"]
 biounit_1A9N = biounit_1A9N[biounit_1A9N.res_name != "HOH"]
 
 #%%
-biounit_8FAQ = chain_assignment(tokenize_atomarray(biounit_8FAQ))
-biounit_1NVP = chain_assignment(tokenize_atomarray(biounit_1NVP))
-biounit_3US4 = chain_assignment(tokenize_atomarray(biounit_3US4))
-biounit_1A9N = chain_assignment(tokenize_atomarray(biounit_1A9N))
+biounit_8FAQ = chain_assignment(tokenize_atom_array(biounit_8FAQ))
+biounit_1NVP = chain_assignment(tokenize_atom_array(biounit_1NVP))
+biounit_3US4 = chain_assignment(tokenize_atom_array(biounit_3US4))
+biounit_1A9N = chain_assignment(tokenize_atom_array(biounit_1A9N))
 
-atomarray = biounit_1A9N
+atom_array = biounit_1A9N
 generator = np.random.default_rng(2346)
 n_res = 384
-chains = np.array(list(set(atomarray.af3_chain_id)), dtype=int)
+chains = np.array(list(set(atom_array.af3_chain_id)), dtype=int)
 chains = generator.permutation(chains)
 print(chains)
 #%%
@@ -54,21 +54,24 @@ print(chains)
 # strucio.save_structure("/mnt/c/Users/nikol/Documents/biotite_tests/1NVP.pdb", biounit_1NVP)
 
 
-def contiguous_crop(atomarray: AtomArray, n_res: int, generator: Generator):
+def contiguous_crop(atom_array: atom_array, n_res: int, generator: Generator):
     """Implements Contiguous Cropping, Algorithm 1 from AF-Multimer section 7.2.1.
 
     Args:
-        atomarray (AtomArray): biotite atom array of the first bioassembly of a PDB entry
-        n_res (int): residue budget i.e. total crop size
-        generator (Generator): a numpy generator set with a specific seed
+        atom_array (atom_array):
+            biotite atom array of the first bioassembly of a PDB entry
+        n_res (int):
+            residue budget i.e. total crop size
+        generator (Generator): 
+            a numpy generator set with a specific seed
     """
 
     # Get chain ids and permute
-    chains = np.array(list(set(atomarray.af3_chain_id)), dtype=int)
+    chains = np.array(list(set(atom_array.af3_chain_id)), dtype=int)
     chains = generator.permutation(chains)
 
     # Create cropping mask annotation
-    atomarray.set_annotation("af3_contiguous_crop_mask", np.repeat(False, len(atomarray)))
+    atom_array.set_annotation("af3_contiguous_crop_mask", np.repeat(False, len(atom_array)))
 
     # Cropping loop
     n_added = 0
@@ -80,8 +83,8 @@ def contiguous_crop(atomarray: AtomArray, n_res: int, generator: Generator):
         # ligands - same chain as poly
         # covalently modified residues
 
-        atomarray_chain = atomarray[atomarray.af3_chain_id == chain_id]
-        n_k = struc.get_residue_count(atomarray_chain)
+        atom_array_chain = atom_array[atom_array.af3_chain_id == chain_id]
+        n_k = struc.get_residue_count(atom_array_chain)
         n_remaining -= n_k
 
         # Calculate crop length
@@ -93,12 +96,12 @@ def contiguous_crop(atomarray: AtomArray, n_res: int, generator: Generator):
         # Calculate crop start
         crop_start = generator.integers(0, n_k - crop_size + 1, 1).item()
 
-        # Create mask - could also edit the AtomArray annotation directly but looks much less clean
+        # Create mask - could also edit the atom_array annotation directly but looks much less clean
         m_k = np.zeros(n_k, dtype=bool)
         m_k[crop_start:crop_start + crop_size] = True
 
         # Get atom indices of residue starting points for residues in crop
-        residue_starts = struc.get_residue_starts(atomarray_chain)
+        residue_starts = struc.get_residue_starts(atom_array_chain)
         residue_starts_crop = residue_starts[crop_start:crop_start + crop_size]
 
 
