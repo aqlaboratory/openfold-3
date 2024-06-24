@@ -11,8 +11,10 @@ from biotite.structure import AtomArray
 from openfold3.core.data.preprocessing.tokenization import tokenize_atomarray, chain_assignment
 
 
-# Protein trimer with non-covalent ligands
+# Protein trimer with covalent and non-covalent glycans
 pdbx_file_8FAQ = pdbx.BinaryCIFFile.read(rcsb.fetch("8FAQ", "bcif"))
+# Protein trimer with non-removed ions and non-covalent ligands 
+pdbx_file_1PCR = pdbx.BinaryCIFFile.read(rcsb.fetch("1PCR", "bcif"))
 # Protein-DNA complex
 pdbx_file_1NVP = pdbx.BinaryCIFFile.read(rcsb.fetch("1NVP", "bcif"))
 # Protein with modified residues
@@ -21,23 +23,25 @@ pdbx_file_3US4 = pdbx.BinaryCIFFile.read(rcsb.fetch("3US4", "bcif"))
 pdbx_file_1A9N = pdbx.BinaryCIFFile.read(rcsb.fetch("1A9N", "bcif"))
 
 biounit_8FAQ = pdbx.get_assembly(pdbx_file_8FAQ, assembly_id="1", model=1)
+biounit_1PCR = pdbx.get_assembly(pdbx_file_1PCR, assembly_id="1", model=1)
 biounit_1NVP = pdbx.get_assembly(pdbx_file_1NVP, assembly_id="1", model=1)
 biounit_3US4 = pdbx.get_assembly(pdbx_file_3US4, assembly_id="1", model=1)
 biounit_1A9N = pdbx.get_assembly(pdbx_file_1A9N, assembly_id="1", model=1)
 
 # Remove waters
-biounit_8FAQ_noHOH = biounit_8FAQ[biounit_8FAQ.res_name != "HOH"]
-biounit_1NVP_noHOH = biounit_1NVP[biounit_1NVP.res_name != "HOH"]
-biounit_3US4_noHOH = biounit_3US4[biounit_3US4.res_name != "HOH"]
-biounit_1A9N_noHOH = biounit_1A9N[biounit_1A9N.res_name != "HOH"]
+biounit_8FAQ = biounit_8FAQ[biounit_8FAQ.res_name != "HOH"]
+biounit_1PCR = biounit_1PCR[biounit_1PCR.res_name != "HOH"]
+biounit_1NVP = biounit_1NVP[biounit_1NVP.res_name != "HOH"]
+biounit_3US4 = biounit_3US4[biounit_3US4.res_name != "HOH"]
+biounit_1A9N = biounit_1A9N[biounit_1A9N.res_name != "HOH"]
 
 #%%
-biounit_8FAQ_noHOH = chain_assignment(tokenize_atomarray(biounit_8FAQ_noHOH))
-biounit_1NVP_noHOH = chain_assignment(tokenize_atomarray(biounit_1NVP_noHOH))
-biounit_3US4_noHOH = chain_assignment(tokenize_atomarray(biounit_3US4_noHOH))
-biounit_1A9N_noHOH = chain_assignment(tokenize_atomarray(biounit_1A9N_noHOH))
+biounit_8FAQ = chain_assignment(tokenize_atomarray(biounit_8FAQ))
+biounit_1NVP = chain_assignment(tokenize_atomarray(biounit_1NVP))
+biounit_3US4 = chain_assignment(tokenize_atomarray(biounit_3US4))
+biounit_1A9N = chain_assignment(tokenize_atomarray(biounit_1A9N))
 
-atomarray = biounit_1A9N_noHOH
+atomarray = biounit_1A9N
 generator = np.random.default_rng(2346)
 n_res = 384
 chains = np.array(list(set(atomarray.af3_chain_id)), dtype=int)
@@ -45,9 +49,9 @@ chains = generator.permutation(chains)
 print(chains)
 #%%
 # print("Number of chains:", struc.get_chain_count(biounit_3US4))
-# struc.get_residues(biounit_3US4_noHOH)
+# struc.get_residues(biounit_3US4)
 
-# strucio.save_structure("/mnt/c/Users/nikol/Documents/biotite_tests/1NVP_noHOH.pdb", biounit_1NVP_noHOH)
+# strucio.save_structure("/mnt/c/Users/nikol/Documents/biotite_tests/1NVP.pdb", biounit_1NVP)
 
 
 def contiguous_crop(atomarray: AtomArray, n_res: int, generator: Generator):
@@ -74,7 +78,7 @@ def contiguous_crop(atomarray: AtomArray, n_res: int, generator: Generator):
         # TODO need to deal with atomic tokens including:
         # ligands - separate chain from polymer
         # ligands - same chain as poly
-        # covanlently modified residues
+        # covalently modified residues
 
         atomarray_chain = atomarray[atomarray.af3_chain_id == chain_id]
         n_k = struc.get_residue_count(atomarray_chain)

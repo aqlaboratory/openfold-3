@@ -2,46 +2,12 @@ import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
 
-# Standard residues as defined in AF3 SI, Table 13
-STANDARD_PROTEIN_RESIDUES = [
-    "ALA",
-    "ARG",
-    "ASN",
-    "ASP",
-    "CYS",
-    "GLN",
-    "GLU",
-    "GLY",
-    "HIS",
-    "ILE",
-    "LEU",
-    "LYS",
-    "MET",
-    "PHE",
-    "PRO",
-    "SER",
-    "THR",
-    "TRP",
-    "TYR",
-    "VAL",
-    "UNK",
-]
-STANDARD_NUCLEIC_ACID_RESIDUES = [
-    "A",
-    "G",
-    "C",
-    "U",
-    "DA",
-    "DG",
-    "DC",
-    "DT",
-    "N",
-    "DN",
-]
-STANDARD_RESIDUES = STANDARD_PROTEIN_RESIDUES + STANDARD_NUCLEIC_ACID_RESIDUES
-
-# Token center atoms as defined in AF3 SI, Section 2.6.
-TOKEN_CENTER_ATOMS = ["CA", "C1'"]
+from openfold3.core.data.preprocessing.tables import (
+    STANDARD_NUCLEIC_ACID_RESIDUES,
+    STANDARD_PROTEIN_RESIDUES,
+    STANDARD_RESIDUES,
+    TOKEN_CENTER_ATOMS,
+)
 
 
 def tokenize_atomarray(atomarray: AtomArray):
