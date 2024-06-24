@@ -7,26 +7,26 @@ import biotite.structure as struc
 import biotite.structure.io.pdbx as pdbx
 import numpy as np
 from numpy.random import Generator
-from biotite.structure import atom_array
+from biotite.structure import AtomArray
 from openfold3.core.data.preprocessing.tokenization import tokenize_atom_array, chain_assignment
 
 
 # Protein trimer with covalent and non-covalent glycans
-pdbx_file_8FAQ = pdbx.BinaryCIFFile.read(rcsb.fetch("8FAQ", "bcif"))
+pdbx_file_8FAQ = pdbx.CIFFile.read(rcsb.fetch("8FAQ", "cif"), )
 # Protein trimer with non-removed ions and non-covalent ligands 
-pdbx_file_1PCR = pdbx.BinaryCIFFile.read(rcsb.fetch("1PCR", "bcif"))
+pdbx_file_1PCR = pdbx.CIFFile.read(rcsb.fetch("1PCR", "cif"))
 # Protein-DNA complex
-pdbx_file_1NVP = pdbx.BinaryCIFFile.read(rcsb.fetch("1NVP", "bcif"))
+pdbx_file_1NVP = pdbx.CIFFile.read(rcsb.fetch("1NVP", "cif"))
 # Protein with modified residues
-pdbx_file_3US4 = pdbx.BinaryCIFFile.read(rcsb.fetch("3US4", "bcif"))
+pdbx_file_3US4 = pdbx.CIFFile.read(rcsb.fetch("3US4", "cif"))
 # Protein RNA complex
-pdbx_file_1A9N = pdbx.BinaryCIFFile.read(rcsb.fetch("1A9N", "bcif"))
+pdbx_file_1A9N = pdbx.CIFFile.read(rcsb.fetch("1A9N", "cif"))
 
-biounit_8FAQ = pdbx.get_assembly(pdbx_file_8FAQ, assembly_id="1", model=1)
-biounit_1PCR = pdbx.get_assembly(pdbx_file_1PCR, assembly_id="1", model=1)
-biounit_1NVP = pdbx.get_assembly(pdbx_file_1NVP, assembly_id="1", model=1)
-biounit_3US4 = pdbx.get_assembly(pdbx_file_3US4, assembly_id="1", model=1)
-biounit_1A9N = pdbx.get_assembly(pdbx_file_1A9N, assembly_id="1", model=1)
+biounit_8FAQ = pdbx.get_assembly(pdbx_file_8FAQ, assembly_id="1", model=1, altloc='occupancy', use_author_fields=False, include_bonds=True)
+biounit_1PCR = pdbx.get_assembly(pdbx_file_1PCR, assembly_id="1", model=1, altloc='occupancy', use_author_fields=False, include_bonds=True)
+biounit_1NVP = pdbx.get_assembly(pdbx_file_1NVP, assembly_id="1", model=1, altloc='occupancy', use_author_fields=False, include_bonds=True)
+biounit_3US4 = pdbx.get_assembly(pdbx_file_3US4, assembly_id="1", model=1, altloc='occupancy', use_author_fields=False, include_bonds=True)
+biounit_1A9N = pdbx.get_assembly(pdbx_file_1A9N, assembly_id="1", model=1, altloc='occupancy', use_author_fields=False, include_bonds=True)
 
 # Remove waters
 biounit_8FAQ = biounit_8FAQ[biounit_8FAQ.res_name != "HOH"]
@@ -36,10 +36,16 @@ biounit_3US4 = biounit_3US4[biounit_3US4.res_name != "HOH"]
 biounit_1A9N = biounit_1A9N[biounit_1A9N.res_name != "HOH"]
 
 #%%
-biounit_8FAQ = chain_assignment(tokenize_atom_array(biounit_8FAQ))
-biounit_1NVP = chain_assignment(tokenize_atom_array(biounit_1NVP))
-biounit_3US4 = chain_assignment(tokenize_atom_array(biounit_3US4))
-biounit_1A9N = chain_assignment(tokenize_atom_array(biounit_1A9N))
+tokenize_atom_array(biounit_8FAQ)
+tokenize_atom_array(biounit_1PCR)
+tokenize_atom_array(biounit_1NVP)
+tokenize_atom_array(biounit_3US4)
+tokenize_atom_array(biounit_1A9N)
+chain_assignment(biounit_8FAQ)
+chain_assignment(biounit_1PCR)
+chain_assignment(biounit_1NVP)
+chain_assignment(biounit_3US4)
+chain_assignment(biounit_1A9N)
 
 atom_array = biounit_1A9N
 generator = np.random.default_rng(2346)
@@ -54,7 +60,7 @@ print(chains)
 # strucio.save_structure("/mnt/c/Users/nikol/Documents/biotite_tests/1NVP.pdb", biounit_1NVP)
 
 
-def contiguous_crop(atom_array: atom_array, n_res: int, generator: Generator):
+def crop_contiguous(atom_array: AtomArray, n_res: int, generator: Generator):
     """Implements Contiguous Cropping, Algorithm 1 from AF-Multimer section 7.2.1.
 
     Args:
@@ -108,9 +114,9 @@ def contiguous_crop(atom_array: atom_array, n_res: int, generator: Generator):
 
     return
 
-def spatial_crop():
+def crop_spatial():
     return
 
 
-def spatial_interface_crop():
+def crop_spatial_interface():
     return

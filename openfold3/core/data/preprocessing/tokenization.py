@@ -11,7 +11,7 @@ from openfold3.core.data.preprocessing.tables import (
 
 
 def tokenize_atom_array(atom_array: AtomArray):
-    """Generate token ids and token center atom annotations for a biotite atom_array.
+    """Generates token ids and token center atom annotations for a biotite atom_array.
 
     Updates the input biotite atom array with added 'af3_token_id' and 'af3_token_center_atom' 
     annotations in-place.
@@ -60,8 +60,8 @@ def tokenize_atom_array(atom_array: AtomArray):
     return None
 
 
-def chain_assignment(atom_array: AtomArray):
-    """Generate chain ids and molecule types for a biotite atom_array.
+def assign_chains(atom_array: AtomArray):
+    """Generates chain ids and molecule types for a biotite atom_array.
 
     Separate chain ids are given to each protein chain, nucleic acid chain and
     non-covalent ligands including lipids, glycans and small molecules. TODO Covalently
