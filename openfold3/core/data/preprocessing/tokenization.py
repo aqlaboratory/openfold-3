@@ -72,7 +72,7 @@ def assign_chains(atom_array: AtomArray):
     less than n atoms, otherwise they are assigned a separate chain id.
 
     Updates the input biotite AtomArray with added 'af3_chain_id' and 'af3_molecule_type' 
-    annotations in-place.
+    annotations and a 'chain_id_map' class attribute in-place.
 
     Args:
         atom_array (AtomArray): biotite atom array of the first bioassembly of a PDB entry
@@ -87,9 +87,13 @@ def assign_chains(atom_array: AtomArray):
     chain_start_ids = struc.get_chain_starts(atom_array)
 
     # Create chain ids
+    # This is necessary to do because some PDB-assigned homomeric chain IDs are not unique
     chain_id_repeats = np.diff(np.append(chain_start_ids, n_atoms))
     chain_ids_per_atom = np.repeat(np.arange(len(chain_id_repeats)), chain_id_repeats)
     atom_array.set_annotation("af3_chain_id", chain_ids_per_atom)
+
+    # Create chain id map from our chain IDs to auto-assigned PDB chain IDs
+    atom_array.chain_id_map = {k: v for (k, v) in list(set(zip(atom_array.af3_chain_id, atom_array.chain_id)))}
 
     # Create molecule type annotation
     molecule_types = np.zeros(len(atom_array))
