@@ -363,10 +363,10 @@ class AlphaFold(nn.Module):
                 z = self.extra_msa_stack._forward_offload(
                     input_tensors,
                     msa_mask=feats["extra_msa_mask"].to(dtype=m.dtype),
+                    pair_mask=pair_mask.to(dtype=m.dtype),
                     chunk_size=self.globals.chunk_size,
                     use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
                     use_lma=self.globals.use_lma,
-                    pair_mask=pair_mask.to(dtype=m.dtype),
                     _mask_trans=self.config._mask_trans,
                 )
 
@@ -376,10 +376,10 @@ class AlphaFold(nn.Module):
                 z = self.extra_msa_stack(
                     a, z,
                     msa_mask=feats["extra_msa_mask"].to(dtype=m.dtype),
+                    pair_mask=pair_mask.to(dtype=m.dtype),
                     chunk_size=self.globals.chunk_size,
                     use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
                     use_lma=self.globals.use_lma,
-                    pair_mask=pair_mask.to(dtype=m.dtype),
                     inplace_safe=inplace_safe,
                     _mask_trans=self.config._mask_trans,
                 )

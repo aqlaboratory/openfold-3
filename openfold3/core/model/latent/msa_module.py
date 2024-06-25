@@ -15,18 +15,15 @@
 
 """MSA module block and stack."""
 
-from functools import partial
-from typing import Optional, Sequence, Tuple
+from typing import Optional
 
 import torch
-from torch import nn
 
-from .evoformer import EvoformerBlock
+from openfold3.core.model.latent.base_stacks import MSAStack
+from openfold3.core.model.latent.evoformer import EvoformerBlock
 from openfold3.core.model.layers.msa import (
     MSAPairWeightedAveraging
 )
-from openfold3.core.utils.checkpointing import checkpoint_blocks
-from openfold3.core.utils.chunk_utils import ChunkSizeTuner
 
 
 class MSAModuleBlock(EvoformerBlock):
@@ -75,7 +72,7 @@ class MSAModuleBlock(EvoformerBlock):
         )
 
 
-class MSAModuleStack(nn.Module):
+class MSAModuleStack(MSAStack):
     """
     Implements AF3 Algorithm 8.
     """
@@ -145,12 +142,11 @@ class MSAModuleStack(nn.Module):
             tune_chunk_size:
                 Whether to dynamically tune the module's chunk size
         """
-        super(MSAModuleStack, self).__init__()
-
-        self.blocks_per_ckpt = blocks_per_ckpt
-        self.clear_cache_between_blocks = clear_cache_between_blocks
-
-        self.blocks = nn.ModuleList()
+        super(MSAModuleStack, self).__init__(
+            blocks_per_ckpt=blocks_per_ckpt,
+            clear_cache_between_blocks=clear_cache_between_blocks,
+            tune_chunk_size=tune_chunk_size
+        )
 
         for _ in range(no_blocks):
             block = MSAModuleBlock(
@@ -173,160 +169,11 @@ class MSAModuleStack(nn.Module):
             )
             self.blocks.append(block)
 
-        self.tune_chunk_size = tune_chunk_size
-        self.chunk_size_tuner = None
-        if (tune_chunk_size):
-            self.chunk_size_tuner = ChunkSizeTuner()
+    def _wrap_up(self, m: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+        """Return only the pair embedding.
 
-    def _prep_blocks(self,
-                     m: torch.Tensor,
-                     z: torch.Tensor,
-                     chunk_size: int,
-                     use_deepspeed_evo_attention: bool,
-                     use_lma: bool,
-                     msa_mask: Optional[torch.Tensor],
-                     pair_mask: Optional[torch.Tensor],
-                     inplace_safe: bool,
-                     _mask_trans: bool,
-                     ):
-        blocks = [
-            partial(
-                b,
-                msa_mask=msa_mask,
-                pair_mask=pair_mask,
-                chunk_size=chunk_size,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_lma=use_lma,
-                inplace_safe=inplace_safe,
-                _mask_trans=_mask_trans,
-            )
-            for b in self.blocks
-        ]
-
-        if (self.clear_cache_between_blocks):
-            def block_with_cache_clear(block, *args, **kwargs):
-                torch.cuda.empty_cache()
-                return block(*args, **kwargs)
-
-            blocks = [partial(block_with_cache_clear, b) for b in blocks]
-
-        if (chunk_size is not None and self.chunk_size_tuner is not None):
-            assert (not self.training)
-            tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
-                representative_fn=blocks[0],
-                # We don't want to write in-place during chunk tuning runs
-                args=(m.clone(), z.clone(),),
-                min_chunk_size=chunk_size,
-            )
-            blocks = [
-                partial(b,
-                        chunk_size=tuned_chunk_size,
-                        # A temporary measure to address torch's occasional
-                        # inability to allocate large tensors
-                        _attn_chunk_size=max(chunk_size, tuned_chunk_size // 4),
-                        ) for b in blocks
-            ]
-
-        return blocks
-
-    def _forward_offload(self,
-                         input_tensors: Sequence[torch.Tensor],
-                         msa_mask: torch.Tensor,
-                         pair_mask: torch.Tensor,
-                         chunk_size: int,
-                         use_deepspeed_evo_attention: bool = False,
-                         use_lma: bool = False,
-                         _mask_trans: bool = True,
-                         ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        assert not (self.training or torch.is_grad_enabled())
-
-        blocks = self._prep_blocks(
-            # We are very careful not to create references to these tensors in
-            # this function
-            m=input_tensors[0],
-            z=input_tensors[1],
-            chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_lma=use_lma,
-            msa_mask=msa_mask,
-            pair_mask=pair_mask,
-            inplace_safe=True,
-            _mask_trans=_mask_trans,
-        )
-
-        for b in blocks:
-            m, z = b(
-                None,
-                None,
-                _offload_inference=True,
-                _offloadable_inputs=input_tensors,
-            )
-            input_tensors[0] = m
-            input_tensors[1] = z
-            del m, z
-
-        _, z = input_tensors
-
-        return z
-
-    def forward(self,
-                m: torch.Tensor,
-                z: torch.Tensor,
-                msa_mask: torch.Tensor,
-                pair_mask: torch.Tensor,
-                chunk_size: int,
-                use_deepspeed_evo_attention: bool = False,
-                use_lma: bool = False,
-                inplace_safe: bool = False,
-                _mask_trans: bool = True,
-                ) -> torch.Tensor:
-        """
-        Args:
-            m:
-                [*, N_seq, N_res, C_m] MSA embedding
-            z:
-                [*, N_res, N_token, C_z] pair embedding
-            msa_mask:
-                [*, N_seq, N_res] MSA mask
-            pair_mask:
-                [*, N_res, N_token] pair mask
-            chunk_size:
-                Inference-time subbatch size. Acts as a minimum if
-                self.tune_chunk_size is True
-            use_deepspeed_evo_attention:
-                Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma.
-            use_lma:
-                Whether to use low-memory attention during inference.
-                Mutually exclusive with use_deepspeed_evo_attention.
-            inplace_safe:
-                Whether inplace operations can be performed
-            _mask_trans:
-                Whether to mask the output of the transition layers
         Returns:
             z:
-                [*, N_res, N_token, C_z] pair embedding
+                [*, N_token, N_token, C_z] Pair embedding
         """
-        blocks = self._prep_blocks(
-            m=m,
-            z=z,
-            chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_lma=use_lma,
-            msa_mask=msa_mask,
-            pair_mask=pair_mask,
-            inplace_safe=inplace_safe,
-            _mask_trans=_mask_trans,
-        )
-
-        blocks_per_ckpt = self.blocks_per_ckpt
-        if (not torch.is_grad_enabled()):
-            blocks_per_ckpt = None
-
-        _, z = checkpoint_blocks(
-            blocks,
-            args=(m, z),
-            blocks_per_ckpt=blocks_per_ckpt,
-        )
-
         return z

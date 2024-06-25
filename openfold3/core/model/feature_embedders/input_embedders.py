@@ -176,9 +176,11 @@ class InputEmbedderMultimer(nn.Module):
             c_m:
                 MSA embedding dimension
             max_relative_idx:
-
+                Maximum relative position and token indices clipped
             use_chain_relative:
+                Whether to add relative chain encoding
             max_relative_chain:
+                Maximum relative chain indices clipped
         """
         super(InputEmbedderMultimer, self).__init__()
 
@@ -280,14 +282,17 @@ class InputEmbedderMultimer(nn.Module):
 
         return self.linear_relpos(rel_feat)
 
-    def forward(self, batch) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, batch: Dict) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-
         Args:
             batch:
+                Input feature dictionary
 
         Returns:
-
+            msa_emb:
+                [*, N_clust, N_res, C_m] MSA embedding
+            pair_emb:
+                [*, N_res, N_res, C_z] pair embedding
         """
         tf = batch["target_feat"]
         msa = batch["msa_feat"]
@@ -313,6 +318,7 @@ class InputEmbedderMultimer(nn.Module):
 
 
 class RelposAllAtom(nn.Module):
+    """AF3 Algorithm 3 implementation."""
     def __init__(
         self,
         c_z: int,
@@ -321,12 +327,13 @@ class RelposAllAtom(nn.Module):
         **kwargs,
     ):
         """
-
         Args:
             c_z:
                 Pair embedding dimension
             max_relative_idx:
+                Maximum relative position and token indices clipped
             max_relative_chain:
+                Maximum relative chain indices clipped
             **kwargs:
         """
         super(RelposAllAtom, self).__init__()
@@ -345,16 +352,18 @@ class RelposAllAtom(nn.Module):
         self.linear_relpos = Linear(self.no_bins, c_z, bias=False)
 
     @staticmethod
-    def relpos(pos: torch.Tensor, condition: torch.BoolTensor, rel_clip_idx: int):
+    def relpos(pos: torch.Tensor, condition: torch.BoolTensor, rel_clip_idx: int) -> torch.Tensor:
         """
-
         Args:
             pos:
+                [*, N_token] Residue index
             condition:
+                [*, N_token, N_token] Condition for clipping
             rel_clip_idx:
-
+                Max idx for clipping (max_relative_idx or max_relative_chain)
         Returns:
-
+            rel_pos:
+                [*, N_token, N_token, 2 * rel_clip_idx + 2] Relative position embedding
         """
         offset = pos[..., None] - pos[..., None, :]
         clipped_offset = torch.clamp(
@@ -376,14 +385,14 @@ class RelposAllAtom(nn.Module):
 
         return rel_pos
 
-    def forward(self, batch):
+    def forward(self, batch: Dict) -> torch.Tensor:
         """
-
         Args:
             batch:
+                Input feature dictionary
 
         Returns:
-
+            [*, N_token, N_token, C_z] Relative position embedding
         """
         res_idx = batch["residue_index"]
         asym_id = batch["asym_id"]
@@ -427,9 +436,8 @@ class InputEmbedderAllAtom(nn.Module):
         c_atom: int,
         c_atom_pair: int,
         c_token: int,
-        c_tok_bonds: int,
-        c_s: int,
         c_s_input: int,
+        c_s: int,
         c_z: int,
         c_hidden_att: int,
         max_relative_idx: int,
@@ -437,19 +445,27 @@ class InputEmbedderAllAtom(nn.Module):
         **kwargs,
     ):
         """
-
         Args:
             c_atom_ref:
+                Reference per-atom feature dimension
             c_atom:
+                Atom embedding channel dimension
             c_atom_pair:
+                Atom pair embedding channel dimension
             c_token:
-            c_tok_bonds:
-            c_s:
+                Token representation channel dimension
             c_s_input:
+                Per token input representation channel dimension
+            c_s:
+                Single representation channel dimension
             c_z:
+                Pair representation channel dimension
             c_hidden_att:
+                Hidden channel dimension
             max_relative_idx:
+                Maximum relative position and token indices clipped
             max_relative_chain:
+                Maximum relative chain indices clipped
             **kwargs:
         """
         super(InputEmbedderAllAtom, self).__init__()
@@ -471,7 +487,7 @@ class InputEmbedderAllAtom(nn.Module):
                                     max_relative_idx=max_relative_idx,
                                     max_relative_chain=max_relative_chain)
 
-        self.linear_tok_bonds = Linear(c_tok_bonds, c_z, bias=False)
+        self.linear_tok_bonds = Linear(1, c_z, bias=False)
 
     def forward(
         self,
@@ -479,18 +495,25 @@ class InputEmbedderAllAtom(nn.Module):
         inplace_safe: bool = False
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-
         Args:
             batch:
+                Input feature dictionary
             inplace_safe:
+                Whether inplace operations can be performed
         Returns:
-
+            s_input:
+                [*, N_token, C_s_input] Single (input) representation
+            s:
+                [*, N_token, C_s] Single representation
+            z:
+                [*, N_token, N_token, C_z] Pair representation
         """
         a, _, _, _ = self.atom_attn_enc(
             atom_feats=batch,
             atom_mask=batch['atom_mask']  # TODO: Change to match diffusion module code
         )
 
+        # [*, N_token, C_s_input]
         s_input = torch.cat([
             a,
             batch["restype"],
@@ -498,14 +521,14 @@ class InputEmbedderAllAtom(nn.Module):
             batch['deletion_mean'].unsqueeze(-1)
         ], dim=-1)
 
+        # [*, N_token, C_s]
         s = self.linear_s(s_input)
 
-        # [*, N_res, c_z]
         s_input_emb_i = self.linear_z_i(s_input)
         s_input_emb_j = self.linear_z_j(s_input)
         tok_bonds_emb = self.linear_tok_bonds(batch['token_bonds'].unsqueeze(-1))
 
-        # [*, N_res, N_res, c_z]
+        # [*, N_token, N_token, C_z]
         z = self.relpos(batch)
         z = add(
             z,

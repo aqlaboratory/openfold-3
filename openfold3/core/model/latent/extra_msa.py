@@ -16,16 +16,14 @@
 """Extra MSA block and stack."""
 
 import sys
-from functools import partial
 from typing import Optional, Sequence, Tuple
 
 import torch
-from torch import nn
 
 from openfold3.core.model.latent.base_blocks import MSABlock
+from openfold3.core.model.latent.base_stacks import MSAStack
 from openfold3.core.model.layers.msa import MSAColumnGlobalAttention
 from openfold3.core.utils.checkpointing import get_checkpoint_fn
-from openfold3.core.utils.chunk_utils import ChunkSizeTuner
 from openfold3.core.utils.tensor_utils import add
 
 
@@ -90,6 +88,7 @@ class ExtraMSABlock(MSABlock):
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
+        use_flash: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
         _attn_chunk_size: Optional[int] = None,
@@ -224,7 +223,7 @@ class ExtraMSABlock(MSABlock):
         return m, z
 
 
-class ExtraMSAStack(nn.Module):
+class ExtraMSAStack(MSAStack):
     """
     Implements AF2 Algorithm 18.
     """
@@ -251,11 +250,17 @@ class ExtraMSAStack(nn.Module):
         tune_chunk_size: bool = False,
         **kwargs,
     ):
-        super(ExtraMSAStack, self).__init__()
+        # Previous implementation seems to call checkpoint function once for all blocks
+        blocks_per_ckpt = None if not ckpt else no_blocks
+        super(ExtraMSAStack, self).__init__(
+            blocks_per_ckpt=blocks_per_ckpt,
+            clear_cache_between_blocks=clear_cache_between_blocks,
+            tune_chunk_size=tune_chunk_size
+        )
 
         self.ckpt = ckpt
         self.clear_cache_between_blocks = clear_cache_between_blocks
-        self.blocks = nn.ModuleList()
+
         for _ in range(no_blocks):
             block = ExtraMSABlock(
                 c_m=c_m,
@@ -278,143 +283,11 @@ class ExtraMSAStack(nn.Module):
             )
             self.blocks.append(block)
 
-        self.tune_chunk_size = tune_chunk_size
-        self.chunk_size_tuner = None
-        if(tune_chunk_size):
-            self.chunk_size_tuner = ChunkSizeTuner()
+    def _wrap_up(self, m: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+        """Return only the pair embedding.
 
-    def _prep_blocks(self,
-        m: torch.Tensor,
-        z: torch.Tensor,
-        chunk_size: int,
-        use_deepspeed_evo_attention: bool,
-        use_lma: bool,
-        msa_mask: Optional[torch.Tensor],
-        pair_mask: Optional[torch.Tensor],
-        inplace_safe: bool,
-        _mask_trans: bool,
-    ):
-        blocks = [
-            partial(
-                b,
-                msa_mask=msa_mask,
-                pair_mask=pair_mask,
-                chunk_size=chunk_size,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_lma=use_lma,
-                inplace_safe=inplace_safe,
-                _mask_trans=_mask_trans,
-            ) for b in self.blocks
-        ]
-
-        def clear_cache(b, *args, **kwargs):
-            torch.cuda.empty_cache()
-            return b(*args, **kwargs)
-
-        if(self.clear_cache_between_blocks):
-            blocks = [partial(clear_cache, b) for b in blocks]
-
-        if(chunk_size is not None and self.chunk_size_tuner is not None):
-            tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
-                representative_fn=blocks[0],
-                # Tensors cloned to avoid getting written to in-place
-                # A corollary is that chunk size tuning should be disabled for
-                # large N, when z gets really big
-                args=(m.clone(), z.clone(),),
-                min_chunk_size=chunk_size,
-            )
-            blocks = [
-                partial(b,
-                    chunk_size=tuned_chunk_size,
-                    # A temporary measure to address torch's occasional
-                    # inability to allocate large tensors
-                    _attn_chunk_size=max(chunk_size, tuned_chunk_size // 4),
-                ) for b in blocks
-            ]
-
-        return blocks
-
-    def _forward_offload(self,
-        input_tensors: Sequence[torch.Tensor],
-        chunk_size: int,
-        use_deepspeed_evo_attention: bool = False,
-        use_lma: bool = False,
-        msa_mask: Optional[torch.Tensor] = None,
-        pair_mask: Optional[torch.Tensor] = None,
-        _mask_trans: bool = True,
-    ) -> torch.Tensor:
-        assert(not (self.training or torch.is_grad_enabled()))
-        blocks = self._prep_blocks(
-            # We are very careful not to create references to these tensors in
-            # this function
-            m=input_tensors[0],
-            z=input_tensors[1],
-            chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_lma=use_lma,
-            msa_mask=msa_mask,
-            pair_mask=pair_mask,
-            inplace_safe=True,
-            _mask_trans=_mask_trans,
-        )
-
-        for b in blocks:
-            m, z = b(
-                None,
-                None,
-                _offload_inference=True,
-                _offloadable_inputs=input_tensors,
-            )
-            input_tensors[0] = m
-            input_tensors[1] = z
-            del m, z
-
-        return input_tensors[1]
-
-    def forward(self,
-        m: torch.Tensor,
-        z: torch.Tensor,
-        msa_mask: Optional[torch.Tensor],
-        pair_mask: Optional[torch.Tensor],
-        chunk_size: int,
-        use_deepspeed_evo_attention: bool = False,
-        use_lma: bool = False,
-        inplace_safe: bool = False,
-        _mask_trans: bool = True,
-    ) -> torch.Tensor:
-        """
-        Args:
-            m:
-                [*, N_extra, N_res, C_m] extra MSA embedding
-            z:
-                [*, N_res, N_res, C_z] pair embedding
-            chunk_size: Inference-time subbatch size for Evoformer modules
-            use_deepspeed_evo_attention: Whether to use DeepSpeed memory-efficient kernel
-            use_lma: Whether to use low-memory attention during inference
-            msa_mask:
-                Optional [*, N_extra, N_res] MSA mask
-            pair_mask:
-                Optional [*, N_res, N_res] pair mask
         Returns:
-            [*, N_res, N_res, C_z] pair update
+            z:
+                [*, N_token, N_token, C_z] Pair embedding
         """
-        checkpoint_fn = get_checkpoint_fn()
-        blocks = self._prep_blocks(
-            m=m,
-            z=z,
-            chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_lma=use_lma,
-            msa_mask=msa_mask,
-            pair_mask=pair_mask,
-            inplace_safe=inplace_safe,
-            _mask_trans=_mask_trans,
-        )
-
-        for b in blocks:
-            if(self.ckpt and torch.is_grad_enabled()):
-                m, z = checkpoint_fn(b, m, z)
-            else:
-                m, z = b(m, z)
-
         return z

@@ -236,6 +236,7 @@ class TestExtraMSAStack(unittest.TestCase):
         no_heads_msa = 3
         no_heads_pair = 8
         no_blocks = 2
+        transition_type = 'relu'
         transition_n = 5
         msa_dropout = 0.15
         pair_stack_dropout = 0.25
@@ -254,6 +255,7 @@ class TestExtraMSAStack(unittest.TestCase):
             no_heads_msa,
             no_heads_pair,
             no_blocks,
+            transition_type,
             transition_n,
             msa_dropout,
             pair_stack_dropout,

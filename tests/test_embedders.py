@@ -92,7 +92,6 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
         c_atom_pair = 16
         c_token = 768
         c_s_input = c_token + 65
-        c_tok_bonds = 1
         c_hidden_att = 48  # c_token / no_heads
         one_hot_dim = 32
 
@@ -121,9 +120,8 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
             c_atom=c_atom,
             c_atom_pair=c_atom_pair,
             c_token=c_token,
-            c_tok_bonds=c_tok_bonds,
-            c_s=c_s,
             c_s_input=c_s_input,
+            c_s=c_s,
             c_z=c_z,
             c_hidden_att=c_hidden_att,
             max_relative_idx=max_relative_idx,
