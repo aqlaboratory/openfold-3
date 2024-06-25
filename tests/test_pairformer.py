@@ -31,26 +31,26 @@ class TestPairFormer(unittest.TestCase):
         c_hidden_pair_att = 14
         no_heads_pair = 7
         no_blocks = 2
+        transition_type = 'swiglu'
         transition_n = 2
         pair_dropout = 0.25
         inf = 1e9
-        eps = 1e-10
 
         pfs = PairFormerStack(
-            c_s,
-            c_z,
-            c_hidden_pair_bias,
-            no_heads_pair_bias,
-            c_hidden_mul,
-            c_hidden_pair_att,
-            no_heads_pair,
-            no_blocks,
-            transition_n,
-            pair_dropout,
+            c_s=c_s,
+            c_z=c_z,
+            c_hidden_pair_bias=c_hidden_pair_bias,
+            no_heads_pair_bias=no_heads_pair_bias,
+            c_hidden_mul=c_hidden_mul,
+            c_hidden_pair_att=c_hidden_pair_att,
+            no_heads_pair=no_heads_pair,
+            no_blocks=no_blocks,
+            transition_type=transition_type,
+            transition_n=transition_n,
+            pair_dropout=pair_dropout,
             fuse_projection_weights=False,
             blocks_per_ckpt=None,
-            inf=inf,
-            eps=eps,
+            inf=inf
         ).eval()
 
         s = torch.rand((batch_size, n_res, c_s))

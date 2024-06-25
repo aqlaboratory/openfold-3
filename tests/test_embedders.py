@@ -18,6 +18,8 @@ import unittest
 from openfold3.core.model.feature_embedders import (
     InputEmbedder,
     InputEmbedderMultimer,
+    InputEmbedderAllAtom,
+    MSAModuleEmbedder,
     PreembeddingEmbedder,
     RecyclingEmbedder
 )
@@ -30,7 +32,7 @@ from openfold3.core.model.feature_embedders import (
 )
 from openfold3.model_implementations.af2_monomer.config import model_config
 
-from tests.config import monomer_consts, multimer_consts
+from tests.config import consts, monomer_consts, multimer_consts
 from tests.data_utils import random_asym_ids, random_template_feats
 
 
@@ -74,6 +76,104 @@ class TestInputEmbedder(unittest.TestCase):
 
         self.assertTrue(msa_emb.shape == (b, n_clust, n_res, c_m))
         self.assertTrue(pair_emb.shape == (b, n_res, n_res, c_z))
+
+
+class TestInputEmbedderAllAtom(unittest.TestCase):
+    def test_shape(self):
+        batch_size = consts.batch_size
+        n_token = consts.n_res
+        n_atom = 4 * consts.n_res
+        c_s = consts.c_s
+        c_z = consts.c_z
+        max_relative_idx = 32
+        max_relative_chain = 2
+        c_atom_ref = 390
+        c_atom = 64
+        c_atom_pair = 16
+        c_token = 768
+        c_s_input = c_token + 65
+        c_tok_bonds = 1
+        c_hidden_att = 48  # c_token / no_heads
+        one_hot_dim = 32
+
+        batch = {
+            'token_index': torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
+            'residue_index': torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
+            'sym_id': torch.zeros((batch_size, n_token)),
+            'asym_id': torch.zeros((batch_size, n_token)),
+            'entity_id': torch.zeros((batch_size, n_token)),
+            'ref_pos': torch.randn((batch_size, n_atom, 3)),
+            'ref_mask': torch.ones((batch_size, n_atom)),
+            'ref_element': torch.ones((batch_size, n_atom, 128)),
+            'ref_charge': torch.ones((batch_size, n_atom)),
+            'ref_atom_name_chars': torch.ones((batch_size, n_atom, 4, 64)),
+            'ref_space_uid': torch.zeros((batch_size, n_atom)),
+            'atom_to_token_index': torch.eye(n_token).repeat_interleave(4, dim=0).unsqueeze(0).repeat(batch_size, 1, 1),
+            'atom_mask': torch.ones((batch_size, n_atom)),
+            'restype': torch.rand((batch_size, n_token, one_hot_dim)),
+            'profile': torch.rand((batch_size, n_token, one_hot_dim)),
+            'deletion_mean': torch.rand((batch_size, n_token)),
+            'token_bonds': torch.rand((batch_size, n_token, n_token))
+        }
+
+        ie = InputEmbedderAllAtom(
+            c_atom_ref=c_atom_ref,
+            c_atom=c_atom,
+            c_atom_pair=c_atom_pair,
+            c_token=c_token,
+            c_tok_bonds=c_tok_bonds,
+            c_s=c_s,
+            c_s_input=c_s_input,
+            c_z=c_z,
+            c_hidden_att=c_hidden_att,
+            max_relative_idx=max_relative_idx,
+            max_relative_chain=max_relative_chain
+        )
+
+        s_input, s, z = ie(batch=batch)
+
+        self.assertTrue(s_input.shape == (batch_size, n_token, c_s_input))
+        self.assertTrue(s.shape == (batch_size, n_token, c_s))
+        self.assertTrue(z.shape == (batch_size, n_token, n_token, c_z))
+
+
+class TestMSAModuleEmbedder(unittest.TestCase):
+    def test_shape(self):
+        batch_size = consts.batch_size
+        n_token = consts.n_res
+        n_total_msa_seq = 200
+        n_main_msa_seq = 50
+        c_m_feats = 34
+        c_m = 64
+        c_token = 768
+        c_s_input = c_token + 65
+        one_hot_dim = 32
+
+        batch = {
+            'msa': torch.rand((batch_size, n_total_msa_seq, n_token, one_hot_dim)),
+            'has_deletion': torch.ones((batch_size, n_total_msa_seq, n_token)),
+            'deletion_value': torch.rand((batch_size, n_total_msa_seq, n_token)),
+            'msa_mask': torch.ones((batch_size, n_total_msa_seq, n_token)),
+            'num_main_msa_seqs': torch.Tensor([n_main_msa_seq])
+        }
+
+        s_input = torch.rand(batch_size, n_token, c_s_input)
+
+        ie = MSAModuleEmbedder(
+            c_m_feats=c_m_feats,
+            c_m=c_m,
+            c_s_input=c_s_input
+        )
+
+        msa, msa_mask = ie(batch=batch, s_input=s_input)
+        uniprot_seqs = n_total_msa_seq - n_main_msa_seq
+        n_sampled_seqs = msa.shape[-3]
+
+        # Check that the number of sampled sequences is between the number of
+        # uniprot seqs and the total number of sequences
+        self.assertTrue((n_sampled_seqs > uniprot_seqs) & (n_sampled_seqs < n_total_msa_seq))
+        self.assertTrue(msa.shape == (batch_size, n_sampled_seqs, n_token, c_m))
+        self.assertTrue(msa_mask.shape == (batch_size, n_sampled_seqs, n_token))
 
 
 class TestPreembeddingEmbedder(unittest.TestCase):

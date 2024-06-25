@@ -19,7 +19,7 @@ import torch
 import torch.nn as nn
 
 from openfold3.core.model.primitives import LayerNorm, Linear
-from openfold3.core.utils.loss import (
+from openfold3.core.loss.loss import (
     compute_plddt,
     compute_tm,
     compute_predicted_aligned_error,

@@ -43,28 +43,30 @@ class TestEvoformerStack(unittest.TestCase):
         no_heads_msa = 3
         no_heads_pair = 7
         no_blocks = 2
+        transition_type = 'relu'
         transition_n = 2
         msa_dropout = 0.15
-        pair_stack_dropout = 0.25
+        pair_dropout = 0.25
         opm_first = consts.is_multimer
         fuse_projection_weights = True if re.fullmatch("^model_[1-5]_multimer_v3$", consts.model) else False
         inf = 1e9
         eps = 1e-10
 
         es = EvoformerStack(
-            c_m,
-            c_z,
-            c_hidden_msa_att,
-            c_hidden_opm,
-            c_hidden_mul,
-            c_hidden_pair_att,
-            c_s,
-            no_heads_msa,
-            no_heads_pair,
-            no_blocks,
-            transition_n,
-            msa_dropout,
-            pair_stack_dropout,
+            c_m=c_m,
+            c_z=c_z,
+            c_hidden_msa_att=c_hidden_msa_att,
+            c_hidden_opm=c_hidden_opm,
+            c_hidden_mul=c_hidden_mul,
+            c_hidden_pair_att=c_hidden_pair_att,
+            c_s=c_s,
+            no_heads_msa=no_heads_msa,
+            no_heads_pair=no_heads_pair,
+            no_blocks=no_blocks,
+            transition_type=transition_type,
+            transition_n=transition_n,
+            msa_dropout=msa_dropout,
+            pair_dropout=pair_dropout,
             no_column_attention=False,
             opm_first=opm_first,
             fuse_projection_weights=fuse_projection_weights,
@@ -103,26 +105,28 @@ class TestEvoformerStack(unittest.TestCase):
         no_heads_msa = 3
         no_heads_pair = 7
         no_blocks = 2
+        transition_type = 'relu'
         transition_n = 2
         msa_dropout = 0.15
-        pair_stack_dropout = 0.25
+        pair_dropout = 0.25
         inf = 1e9
         eps = 1e-10
 
         es = EvoformerStack(
-            c_m,
-            c_z,
-            c_hidden_msa_att,
-            c_hidden_opm,
-            c_hidden_mul,
-            c_hidden_pair_att,
-            c_s,
-            no_heads_msa,
-            no_heads_pair,
-            no_blocks,
-            transition_n,
-            msa_dropout,
-            pair_stack_dropout,
+            c_m=c_m,
+            c_z=c_z,
+            c_hidden_msa_att=c_hidden_msa_att,
+            c_hidden_opm=c_hidden_opm,
+            c_hidden_mul=c_hidden_mul,
+            c_hidden_pair_att=c_hidden_pair_att,
+            c_s=c_s,
+            no_heads_msa=no_heads_msa,
+            no_heads_pair=no_heads_pair,
+            no_blocks=no_blocks,
+            transition_type=transition_type,
+            transition_n=transition_n,
+            msa_dropout=msa_dropout,
+            pair_dropout=pair_dropout,
             no_column_attention=True,
             opm_first=False,
             fuse_projection_weights=False,

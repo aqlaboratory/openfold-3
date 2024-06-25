@@ -16,10 +16,11 @@
 """Embedders for input features. Includes InputEmbedders for monomer, multimer, soloseq", and
 all-atom models. Also includes the RecyclingEmbedder and ExtraMSAEmbedder.
 """
+import random
+from typing import Dict, Tuple
 
 import torch
 import torch.nn as nn
-from typing import Tuple
 
 from openfold3.core.model.layers.sequence_local_atom_attention import AtomAttentionEncoder
 from openfold3.core.model.primitives import LayerNorm, Linear
@@ -422,14 +423,14 @@ class InputEmbedderAllAtom(nn.Module):
 
     def __init__(
         self,
-        atom_ref_dim: int,
-        tok_feat_dim: int,
-        tok_bonds_dim: int,
-        c_s: int,
-        c_z: int,
+        c_atom_ref: int,
         c_atom: int,
         c_atom_pair: int,
         c_token: int,
+        c_tok_bonds: int,
+        c_s: int,
+        c_s_input: int,
+        c_z: int,
         c_hidden_att: int,
         max_relative_idx: int,
         max_relative_chain: int,
@@ -438,16 +439,14 @@ class InputEmbedderAllAtom(nn.Module):
         """
 
         Args:
-            atom_ref_dim:
-            tok_feat_dim:
-            tok_bonds_dim:
-            c_s:
-                Single embedding dimension
-            c_z:
-                Pair embedding dimension
+            c_atom_ref:
             c_atom:
             c_atom_pair:
             c_token:
+            c_tok_bonds:
+            c_s:
+            c_s_input:
+            c_z:
             c_hidden_att:
             max_relative_idx:
             max_relative_chain:
@@ -455,45 +454,156 @@ class InputEmbedderAllAtom(nn.Module):
         """
         super(InputEmbedderAllAtom, self).__init__()
 
-        self.atom_attn_enc = AtomAttentionEncoder(c_in=atom_ref_dim,
+        self.atom_attn_enc = AtomAttentionEncoder(c_s=c_s,
+                                                  c_z=c_z,
+                                                  c_atom_ref=c_atom_ref,
                                                   c_atom=c_atom,
                                                   c_atom_pair=c_atom_pair,
                                                   c_token=c_token,
                                                   c_hidden=c_hidden_att,
                                                   add_noisy_pos=False)
 
-        self.linear_s = Linear(c_token + tok_feat_dim, c_s, bias=False)
-        self.linear_z_i = Linear(c_s, c_z, bias=False)
-        self.linear_z_j = Linear(c_s, c_z, bias=False)
+        self.linear_s = Linear(c_s_input, c_s, bias=False)
+        self.linear_z_i = Linear(c_s_input, c_z, bias=False)
+        self.linear_z_j = Linear(c_s_input, c_z, bias=False)
 
         self.relpos = RelposAllAtom(c_z=c_z,
                                     max_relative_idx=max_relative_idx,
                                     max_relative_chain=max_relative_chain)
 
-        self.linear_tok_bonds = Linear(tok_bonds_dim, c_z, bias=False)
+        self.linear_tok_bonds = Linear(c_tok_bonds, c_z, bias=False)
 
-    def forward(self, batch) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self,
+        batch: Dict,
+        inplace_safe: bool = False
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
 
         Args:
             batch:
-
+            inplace_safe:
         Returns:
 
         """
-        a, _, _, _ = self.atom_attn_enc(batch=batch)
+        a, _, _, _ = self.atom_attn_enc(
+            atom_feats=batch,
+            atom_mask=batch['atom_mask']  # TODO: Change to match diffusion module code
+        )
 
-        s = torch.cat([a,
-                       batch["target_feat"],
-                       batch['msa_profile'],
-                       batch['deletion_mean'].unsqueeze(-1)], dim=-1)
+        s_input = torch.cat([
+            a,
+            batch["restype"],
+            batch['profile'],
+            batch['deletion_mean'].unsqueeze(-1)
+        ], dim=-1)
 
-        s = self.linear_s(s)
-        z = self.linear_z_i(s) + self.linear_z_j(s)
-        z = z + self.relpos(batch)
-        z = z + self.linear_tok_bonds(batch['token_bonds'].unsqueeze(-1))
+        s = self.linear_s(s_input)
 
-        return s, z
+        # [*, N_res, c_z]
+        s_input_emb_i = self.linear_z_i(s_input)
+        s_input_emb_j = self.linear_z_j(s_input)
+        tok_bonds_emb = self.linear_tok_bonds(batch['token_bonds'].unsqueeze(-1))
+
+        # [*, N_res, N_res, c_z]
+        z = self.relpos(batch)
+        z = add(
+            z,
+            s_input_emb_i[..., None, :],
+            inplace=inplace_safe
+        )
+        z = add(
+            z,
+            s_input_emb_j[..., None, :, :],
+            inplace=inplace_safe
+        )
+        z = add(
+            z,
+            tok_bonds_emb,
+            inplace=inplace_safe
+        )
+
+        return s_input, s, z
+
+
+class MSAModuleEmbedder(nn.Module):
+    """Sample MSA features and embed them. Implements AF3 Algorithm 8 lines 1-4.
+    This section of the MSAModule is separated from the main stack to allow for
+    tensor offloading during inference.
+    """
+    def __init__(
+        self,
+        c_m_feats: int,
+        c_m: int,
+        c_s_input: int
+    ):
+        """
+        Args:
+            c_m_feats:
+                MSA input features channel dimension
+            c_m:
+                MSA channel dimension
+            c_s_input:
+                Single (s_input) channel dimension
+        """
+        super(MSAModuleEmbedder, self).__init__()
+
+        self.linear_m = Linear(c_m_feats, c_m, bias=False)
+        self.linear_s_input = Linear(c_s_input, c_m, bias=False)
+
+    def forward(self, batch: Dict, s_input: torch.Tensor) -> [torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            batch:
+                Input feature dictionary. Features used in this function:
+                    - "msa": [*, N_msa, N_token, 32]
+                    - "has_deletion": [*, N_msa, N_token]
+                    - "deletion_value": [*, N_msa, N_token]
+                    - "msa_mask": [*, N_msa, N_token]
+                    - "num_main_msa_seqs": []
+            s_input:
+                [*, N_token, C_s_input] single embedding
+
+        Returns:
+            m:
+                [*, N_seq, N_token, C_m] MSA embedding
+            msa_mask:
+                [*, N_seq, N_token] MSA mask
+        """
+        msa_feat = torch.cat(
+            [
+                batch['msa'],
+                batch['has_deletion'].unsqueeze(-1),
+                batch['deletion_value'].unsqueeze(-1)
+            ],
+            dim=-1,
+        )
+        msa_mask = batch['msa_mask']
+
+        total_msa_seq = batch["msa"].shape[-3]
+
+        # Split uniprot and main MSA sequences. Only main MSA seqs will be sampled.
+        # All uniprot seqs are in the final MSA representation.
+        num_main_msa_seqs = int(batch["num_main_msa_seqs"].item())
+        split_sections = [total_msa_seq - num_main_msa_seqs, num_main_msa_seqs]
+        uniprot_msa, main_msa = torch.split(msa_feat, split_sections, dim=-3)
+        uniprot_msa_mask, main_msa_mask = torch.split(msa_mask, split_sections, dim=-2)
+
+        # Sample Uniform[1, num_main_msa_seqs] sequences from the main MSA
+        n_seq_sample = random.randint(1, num_main_msa_seqs)
+        index_order = torch.randperm(num_main_msa_seqs, device=msa_feat.device)
+        index_order = index_order[:n_seq_sample]
+
+        main_msa = torch.index_select(main_msa, dim=-3, index=index_order)
+        main_msa_mask = torch.index_select(main_msa_mask, dim=-2, index=index_order)
+
+        # Combine uniprot and sampled main MSA sequences
+        sampled_msa = torch.cat([uniprot_msa, main_msa], dim=-3)
+        msa_mask = torch.cat([uniprot_msa_mask, main_msa_mask], dim=-2)
+
+        m = self.linear_m(sampled_msa)
+        m = m + self.linear_s_input(s_input).unsqueeze(-3)
+        return m, msa_mask
 
 
 class PreembeddingEmbedder(nn.Module):

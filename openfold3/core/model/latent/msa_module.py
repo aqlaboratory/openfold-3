@@ -25,7 +25,6 @@ from .evoformer import EvoformerBlock
 from openfold3.core.model.layers.msa import (
     MSAPairWeightedAveraging
 )
-from openfold3.core.model.primitives import Linear
 from openfold3.core.utils.checkpointing import checkpoint_blocks
 from openfold3.core.utils.chunk_utils import ChunkSizeTuner
 
@@ -89,7 +88,6 @@ class MSAModuleStack(nn.Module):
         c_hidden_opm: int,
         c_hidden_mul: int,
         c_hidden_pair_att: int,
-        c_s: int,
         no_heads_msa: int,
         no_heads_pair: int,
         no_blocks: int,
@@ -119,8 +117,6 @@ class MSAModuleStack(nn.Module):
                 Hidden dimension in multiplicative updates
             c_hidden_pair_att:
                 Hidden dimension in triangular attention
-            c_s:
-                Channel dimension of the output "single" embedding
             no_heads_msa:
                 Number of heads used for MSA attention
             no_heads_pair:
@@ -176,8 +172,6 @@ class MSAModuleStack(nn.Module):
                 eps=eps,
             )
             self.blocks.append(block)
-
-        self.linear = Linear(c_m, c_s)
 
         self.tune_chunk_size = tune_chunk_size
         self.chunk_size_tuner = None
@@ -244,7 +238,8 @@ class MSAModuleStack(nn.Module):
                          use_lma: bool = False,
                          _mask_trans: bool = True,
                          ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        assert (not (self.training or torch.is_grad_enabled()))
+        assert not (self.training or torch.is_grad_enabled())
+
         blocks = self._prep_blocks(
             # We are very careful not to create references to these tensors in
             # this function
@@ -290,11 +285,11 @@ class MSAModuleStack(nn.Module):
             m:
                 [*, N_seq, N_res, C_m] MSA embedding
             z:
-                [*, N_res, N_res, C_z] pair embedding
+                [*, N_res, N_token, C_z] pair embedding
             msa_mask:
                 [*, N_seq, N_res] MSA mask
             pair_mask:
-                [*, N_res, N_res] pair mask
+                [*, N_res, N_token] pair mask
             chunk_size:
                 Inference-time subbatch size. Acts as a minimum if
                 self.tune_chunk_size is True
@@ -304,15 +299,14 @@ class MSAModuleStack(nn.Module):
             use_lma:
                 Whether to use low-memory attention during inference.
                 Mutually exclusive with use_deepspeed_evo_attention.
+            inplace_safe:
+                Whether inplace operations can be performed
+            _mask_trans:
+                Whether to mask the output of the transition layers
         Returns:
-            m:
-                [*, N_seq, N_res, C_m] MSA embedding
             z:
-                [*, N_res, N_res, C_z] pair embedding
-            s:
-                [*, N_res, C_s] single embedding (or None if extra MSA stack)
+                [*, N_res, N_token, C_z] pair embedding
         """
-        # TODO: sampling
         blocks = self._prep_blocks(
             m=m,
             z=z,

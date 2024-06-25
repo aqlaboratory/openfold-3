@@ -30,7 +30,8 @@ from openfold3.core.utils.tensor_utils import add
 
 
 class PairFormerBlock(nn.Module):
-    def __init__(self,
+    def __init__(
+        self,
         c_s: int,
         c_z: int,
         c_hidden_pair_bias: int,
@@ -38,11 +39,11 @@ class PairFormerBlock(nn.Module):
         c_hidden_mul: int,
         c_hidden_pair_att: int,
         no_heads_pair: int,
+        transition_type: str,
         transition_n: int,
         pair_dropout: float,
         fuse_projection_weights: bool,
-        inf: float,
-        eps: float,
+        inf: float
     ):
         super(PairFormerBlock, self).__init__()
 
@@ -51,12 +52,11 @@ class PairFormerBlock(nn.Module):
             c_hidden_mul=c_hidden_mul,
             c_hidden_pair_att=c_hidden_pair_att,
             no_heads_pair=no_heads_pair,
+            transition_type=transition_type,
             transition_n=transition_n,
             pair_dropout=pair_dropout,
             fuse_projection_weights=fuse_projection_weights,
-            inf=inf,
-            eps=eps,
-            transition_type='swiglu'
+            inf=inf
         )
 
         self.attn_pair_bias = AttentionPairBias(c_q=c_s,
@@ -135,12 +135,12 @@ class PairFormerStack(nn.Module):
         c_hidden_pair_att: int,
         no_heads_pair: int,
         no_blocks: int,
+        transition_type: str,
         transition_n: int,
         pair_dropout: float,
         fuse_projection_weights: bool,
         blocks_per_ckpt: Optional[int],
         inf: float,
-        eps: float,
         clear_cache_between_blocks: bool = False,
         tune_chunk_size: bool = False,
         **kwargs,
@@ -156,12 +156,12 @@ class PairFormerStack(nn.Module):
             c_hidden_pair_att:
             no_heads_pair:
             no_blocks:
+            transition_type:
             transition_n:
             pair_dropout:
             fuse_projection_weights:
             blocks_per_ckpt:
             inf:
-            eps:
             clear_cache_between_blocks:
             tune_chunk_size:
             **kwargs:
@@ -182,11 +182,11 @@ class PairFormerStack(nn.Module):
                 c_hidden_mul=c_hidden_mul,
                 c_hidden_pair_att=c_hidden_pair_att,
                 no_heads_pair=no_heads_pair,
+                transition_type=transition_type,
                 transition_n=transition_n,
                 pair_dropout=pair_dropout,
                 fuse_projection_weights=fuse_projection_weights,
-                inf=inf,
-                eps=eps,
+                inf=inf
             )
             self.blocks.append(block)
 

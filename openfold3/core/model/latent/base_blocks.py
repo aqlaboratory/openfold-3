@@ -96,12 +96,11 @@ class MSABlock(nn.Module, ABC):
             c_hidden_mul=c_hidden_mul,
             c_hidden_pair_att=c_hidden_pair_att,
             no_heads_pair=no_heads_pair,
+            transition_type=transition_type,
             transition_n=transition_n,
             pair_dropout=pair_dropout,
             fuse_projection_weights=fuse_projection_weights,
-            inf=inf,
-            eps=eps,
-            transition_type=transition_type
+            inf=inf
         )
 
     def _compute_opm(self,
@@ -163,12 +162,11 @@ class PairBlock(nn.Module):
         c_hidden_mul: int,
         c_hidden_pair_att: int,
         no_heads_pair: int,
+        transition_type: str,
         transition_n: int,
         pair_dropout: float,
         fuse_projection_weights: bool,
-        inf: float,
-        eps: float,
-        transition_type: str = 'relu'
+        inf: float
     ):
         super(PairBlock, self).__init__()
 
@@ -219,31 +217,17 @@ class PairBlock(nn.Module):
 
         self.ps_dropout_row_layer = DropoutRowwise(pair_dropout)
 
-    def forward(self,
-        z: torch.Tensor,
-        pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
-        use_deepspeed_evo_attention: bool = False,
-        use_lma: bool = False,
-        inplace_safe: bool = False,
-        _mask_trans: bool = True,
-        _attn_chunk_size: Optional[int] = None
-    ) -> torch.Tensor:
-        # DeepMind doesn't mask these transitions in the source, so _mask_trans
-        # should be disabled to better approximate the exact activations of
-        # the original.
-        pair_trans_mask = pair_mask if _mask_trans else None
-
-        if (_attn_chunk_size is None):
-            _attn_chunk_size = chunk_size
-
+    def tri_mul_out_in(self,
+                       z: torch.Tensor,
+                       pair_mask: torch.Tensor,
+                       inplace_safe: bool):
         tmu_update = self.tri_mul_out(
             z,
             mask=pair_mask,
             inplace_safe=inplace_safe,
             _add_with_inplace=True,
         )
-        if (not inplace_safe):
+        if not inplace_safe:
             z = z + self.ps_dropout_row_layer(tmu_update)
         else:
             z = tmu_update
@@ -256,13 +240,20 @@ class PairBlock(nn.Module):
             inplace_safe=inplace_safe,
             _add_with_inplace=True,
         )
-        if (not inplace_safe):
+        if not inplace_safe:
             z = z + self.ps_dropout_row_layer(tmu_update)
         else:
             z = tmu_update
 
-        del tmu_update
+        return z
 
+    def tri_att_start_end(self,
+                          z: torch.Tensor,
+                          _attn_chunk_size: Optional[int],
+                          pair_mask: torch.Tensor,
+                          use_deepspeed_evo_attention: bool,
+                          use_lma: bool,
+                          inplace_safe: bool):
         z = add(z,
                 self.ps_dropout_row_layer(
                     self.tri_att_start(
@@ -279,7 +270,7 @@ class PairBlock(nn.Module):
                 )
 
         z = z.transpose(-2, -3)
-        if (inplace_safe):
+        if inplace_safe:
             z = z.contiguous()
 
         z = add(z,
@@ -298,8 +289,37 @@ class PairBlock(nn.Module):
                 )
 
         z = z.transpose(-2, -3)
-        if (inplace_safe):
+        if inplace_safe:
             z = z.contiguous()
+
+        return z
+
+    def forward(self,
+        z: torch.Tensor,
+        pair_mask: torch.Tensor,
+        chunk_size: Optional[int] = None,
+        use_deepspeed_evo_attention: bool = False,
+        use_lma: bool = False,
+        inplace_safe: bool = False,
+        _mask_trans: bool = True,
+        _attn_chunk_size: Optional[int] = None
+    ) -> torch.Tensor:
+        # DeepMind doesn't mask these transitions in the source, so _mask_trans
+        # should be disabled to better approximate the exact activations of
+        # the original.
+        pair_trans_mask = pair_mask if _mask_trans else None
+
+        if _attn_chunk_size is None:
+            _attn_chunk_size = chunk_size
+
+        z = self.tri_att_start_end(z=self.tri_mul_out_in(z=z,
+                                                         pair_mask=pair_mask,
+                                                         inplace_safe=inplace_safe),
+                                   _attn_chunk_size=_attn_chunk_size,
+                                   pair_mask=pair_mask,
+                                   use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                                   use_lma=use_lma,
+                                   inplace_safe=inplace_safe)
 
         z = add(z,
                 self.pair_transition(

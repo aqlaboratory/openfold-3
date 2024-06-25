@@ -25,7 +25,7 @@ from openfold3.core.utils.rigid_utils import (
     Rotation,
     Rigid,
 )
-from openfold3.core.utils.loss import (
+from openfold3.core.loss.loss import (
     torsion_angle_loss,
     compute_fape,
     between_residue_bond_loss,

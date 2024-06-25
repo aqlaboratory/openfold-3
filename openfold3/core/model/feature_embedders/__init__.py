@@ -2,6 +2,7 @@ from .input_embedders import (
     InputEmbedder,
     InputEmbedderMultimer,
     InputEmbedderAllAtom,
+    MSAModuleEmbedder,
     PreembeddingEmbedder,
     RecyclingEmbedder,
     ExtraMSAEmbedder
@@ -18,6 +19,7 @@ __all__ = [
     'InputEmbedder',
     'InputEmbedderMultimer',
     'InputEmbedderAllAtom',
+    'MSAModuleEmbedder',
     'PreembeddingEmbedder',
     'RecyclingEmbedder',
     'ExtraMSAEmbedder',

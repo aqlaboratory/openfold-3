@@ -31,7 +31,8 @@ from openfold3.core.utils.tensor_utils import add
 
 
 class EvoformerBlock(MSABlock):
-    def __init__(self,
+    def __init__(
+        self,
         c_m: int,
         c_z: int,
         c_hidden_msa_att: int,
@@ -229,6 +230,7 @@ class EvoformerStack(nn.Module):
         no_heads_msa: int,
         no_heads_pair: int,
         no_blocks: int,
+        transition_type: str,
         transition_n: int,
         msa_dropout: float,
         pair_dropout: float,
@@ -264,8 +266,10 @@ class EvoformerStack(nn.Module):
                 Number of heads used for pair attention
             no_blocks:
                 Number of Evoformer blocks in the stack
+            transition_type:
+                String 'relu' or 'swiglu' to determine activation for the transition function
             transition_n:
-                Factor by which to multiply c_m to obtain the ReLUTransition
+                Factor by which to multiply c_m to obtain the ReLU or SwiGLU transition
                 hidden dimension
             msa_dropout:
                 Dropout rate for MSA activations
@@ -306,7 +310,7 @@ class EvoformerStack(nn.Module):
                 c_hidden_pair_att=c_hidden_pair_att,
                 no_heads_msa=no_heads_msa,
                 no_heads_pair=no_heads_pair,
-                transition_type='relu',
+                transition_type=transition_type,
                 transition_n=transition_n,
                 msa_dropout=msa_dropout,
                 pair_dropout=pair_dropout,
@@ -455,6 +459,10 @@ class EvoformerStack(nn.Module):
             use_flash:
                 Whether to use FlashAttention where possible. Mutually
                 exclusive with use_lma and use_deepspeed_evo_attention.
+            inplace_safe:
+                Whether inplace operations can be performed
+            _mask_trans:
+                Whether to mask the output of the transition layers
         Returns:
             m:
                 [*, N_seq, N_res, C_m] MSA embedding
