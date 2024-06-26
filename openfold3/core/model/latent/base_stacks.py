@@ -1,3 +1,20 @@
+# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2021 DeepMind Technologies Limited
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Base MSAStack that is used to define the following: EvoformerStack, ExtraMSAStack, and MSAModule."""
+
 from abc import ABC, abstractmethod
 from functools import partial
 from typing import Optional, Sequence, Tuple
@@ -8,9 +25,8 @@ from torch import nn
 from openfold3.core.utils.checkpointing import checkpoint_blocks
 from openfold3.core.utils.chunk_utils import ChunkSizeTuner
 
-"""Base MSAStack that is used to define the following: EvoformerStack, ExtraMSAStack, and MSAModule."""
 
-
+# TODO: Rename to CheckpointStack and generalize any kind of block (i.e. remove references to m/z)
 class MSAStack(nn.Module, ABC):
     """Abstract class for MSA stacks."""
 
@@ -45,7 +61,8 @@ class MSAStack(nn.Module, ABC):
         if tune_chunk_size:
             self.chunk_size_tuner = ChunkSizeTuner()
 
-    def _prep_blocks(self,
+    def _prep_blocks(
+        self,
         m: torch.Tensor,
         z: torch.Tensor,
         chunk_size: int,
@@ -57,6 +74,13 @@ class MSAStack(nn.Module, ABC):
         inplace_safe: bool,
         _mask_trans: bool,
     ):
+        """
+        Partially initialize the blocks. Optionally add cache clearing between
+        blocks and chunk size tuning. Arguments are the same as forward function.
+
+        Returns:
+            Partially initialized blocks.
+        """
         blocks = [
             partial(
                 b,
@@ -91,7 +115,8 @@ class MSAStack(nn.Module, ABC):
             )
 
             blocks = [
-                partial(b,
+                partial(
+                    b,
                     chunk_size=tuned_chunk_size,
                     # A temporary measure to address torch's occasional
                     # inability to allocate large tensors
@@ -156,7 +181,8 @@ class MSAStack(nn.Module, ABC):
 
         return self._wrap_up(m, z)
 
-    def forward(self,
+    def forward(
+        self,
         m: torch.Tensor,
         z: torch.Tensor,
         msa_mask: torch.Tensor,

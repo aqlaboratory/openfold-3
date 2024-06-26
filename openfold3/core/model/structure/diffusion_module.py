@@ -240,7 +240,7 @@ class DiffusionModule(nn.Module):
             c_s:
                 Single representation channel dimension
             c_z:
-                Pair representation channel diemnsion
+                Pair representation channel dimension
             c_fourier_emb:
                 Fourier embedding channel dimension
             max_relative_idx:
@@ -264,7 +264,7 @@ class DiffusionModule(nn.Module):
             no_blocks:
                 Number of attention blocks (for diffusion transformer)
             n_transition:
-                Number of transition blocks (for diffusion transformer)
+                Dimension multiplication factor used in transition layer (for diffusion transformer)
             inf:
                 Large number used for attention masking
         """

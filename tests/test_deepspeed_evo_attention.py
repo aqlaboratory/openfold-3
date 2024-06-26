@@ -31,7 +31,7 @@ from openfold3.core.utils.tensor_utils import tensor_tree_map
 
 from tests.config import consts
 import tests.compare_utils as compare_utils
-from tests.data_utils import random_template_feats, random_attention_inputs
+from tests.data_utils import random_template_feats, random_attention_inputs, random_asym_ids
 
 
 @compare_utils.skip_unless_ds4s_installed()
@@ -238,7 +238,7 @@ class TestDeepSpeedKernel(unittest.TestCase):
         batch = random_template_feats(n_templ, n_res)
         batch["template_all_atom_masks"] = batch["template_all_atom_mask"]
         if consts.is_multimer:
-            batch["asym_id"] = batch['asym_id'][0]
+            batch["asym_id"] = random_asym_ids(n_res)
 
         pair_act = np.random.rand(n_res, n_res, consts.c_z).astype(np.float32)
         pair_mask = np.random.randint(0, 2, (n_res, n_res)).astype(np.float32)

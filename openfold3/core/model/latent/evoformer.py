@@ -76,7 +76,8 @@ class EvoformerBlock(MSABlock):
                 inf=inf,
             )
 
-    def forward(self,
+    def forward(
+        self,
         m: Optional[torch.Tensor],
         z: Optional[torch.Tensor],
         msa_mask: torch.Tensor,
@@ -94,10 +95,10 @@ class EvoformerBlock(MSABlock):
 
         msa_trans_mask = msa_mask if _mask_trans else None
 
-        if(_attn_chunk_size is None):
+        if _attn_chunk_size is None:
             _attn_chunk_size = chunk_size
 
-        if(_offload_inference and inplace_safe):
+        if _offload_inference and inplace_safe:
             input_tensors = _offloadable_inputs
             del _offloadable_inputs
         else:
@@ -129,10 +130,10 @@ class EvoformerBlock(MSABlock):
                 inplace=inplace_safe,
                 )
 
-        if (_offload_inference and inplace_safe):
+        if _offload_inference and inplace_safe:
             # m: GPU, z: CPU
             del m, z
-            assert (sys.getrefcount(input_tensors[1]) == 2)
+            assert sys.getrefcount(input_tensors[1]) == 2
             input_tensors[1] = input_tensors[1].cpu()
             torch.cuda.empty_cache()
             m, z = input_tensors
@@ -160,7 +161,7 @@ class EvoformerBlock(MSABlock):
         )
 
         if not self.opm_first:
-            if (not inplace_safe):
+            if not inplace_safe:
                 input_tensors = [m, z]
 
             del m, z
@@ -171,16 +172,16 @@ class EvoformerBlock(MSABlock):
                                      inplace_safe=inplace_safe,
                                      _offload_inference=_offload_inference)
 
-        if (_offload_inference and inplace_safe):
+        if _offload_inference and inplace_safe:
             # m: CPU, z: GPU
             del m, z
-            assert (sys.getrefcount(input_tensors[0]) == 2)
+            assert sys.getrefcount(input_tensors[0]) == 2
             device = input_tensors[0].device
             input_tensors[0] = input_tensors[0].cpu()
             input_tensors[1] = input_tensors[1].to(device)
             m, z = input_tensors
 
-        if (not inplace_safe):
+        if not inplace_safe:
             input_tensors = [m, z]
 
         del m, z
@@ -196,10 +197,10 @@ class EvoformerBlock(MSABlock):
             _attn_chunk_size=_attn_chunk_size
         )
 
-        if (_offload_inference and inplace_safe):
+        if _offload_inference and inplace_safe:
             # m: GPU, z: GPU
             device = z.device
-            assert (sys.getrefcount(input_tensors[0]) == 2)
+            assert sys.getrefcount(input_tensors[0]) == 2
             input_tensors[0] = input_tensors[0].to(device)
             m, _ = input_tensors
         else:
@@ -266,7 +267,7 @@ class EvoformerStack(MSAStack):
             transition_type:
                 String 'relu' or 'swiglu' to determine activation for the transition function
             transition_n:
-                Factor by which to multiply c_m to obtain the ReLU or SwiGLU transition
+                Factor by which to multiply c_m to obtain the transition layer
                 hidden dimension
             msa_dropout:
                 Dropout rate for MSA activations
@@ -284,6 +285,10 @@ class EvoformerStack(MSAStack):
                 the Pair Stack. Used in Multimer pipeline.
             blocks_per_ckpt:
                 Number of Evoformer blocks in each activation checkpoint
+            inf:
+                Large constant for masking
+            eps:
+                Small constant for numerical stability
             clear_cache_between_blocks:
                 Whether to clear CUDA's GPU memory cache between blocks of the
                 stack. Slows down each block but can reduce fragmentation

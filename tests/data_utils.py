@@ -68,10 +68,6 @@ def random_template_feats(n_templ, n, batch_size=None):
     batch = {k: v.astype(np.float32) for k, v in batch.items()}
     batch["template_aatype"] = batch["template_aatype"].astype(np.int64)
 
-    if consts.is_multimer:
-        asym_ids = np.array(random_asym_ids(n))
-        batch["asym_id"] = np.tile(asym_ids[np.newaxis, :], (*b, n_templ, 1))
-
     return batch
 
 

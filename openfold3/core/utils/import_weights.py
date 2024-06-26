@@ -256,7 +256,7 @@ def generate_translation_dict(model, version, is_multimer=False):
 
     PairTransitionParams = lambda pt: {
         "input_layer_norm": LayerNormParams(pt.layer_norm),
-        "transition1": LinearParams(pt.transition_mlp.layers[0].linear),
+        "transition1": LinearParams(pt.transition_mlp.layers[0][0]),
         "transition2": LinearParams(pt.transition_mlp.linear_out),
     }
 
@@ -343,7 +343,7 @@ def generate_translation_dict(model, version, is_multimer=False):
 
     MSATransitionParams = lambda m: {
         "input_layer_norm": LayerNormParams(m.layer_norm),
-        "transition1": LinearParams(m.transition_mlp.layers[0].linear),
+        "transition1": LinearParams(m.transition_mlp.layers[0][0]),
         "transition2": LinearParams(m.transition_mlp.linear_out),
     }
 
@@ -392,8 +392,8 @@ def generate_translation_dict(model, version, is_multimer=False):
             "invariant_point_attention": 
                 IPAParamsMultimer(sm.ipa) if is_multimer else IPAParams(sm.ipa),
             "attention_layer_norm": LayerNormParams(sm.layer_norm_ipa),
-            "transition": LinearParams(sm.transition.layers[0].layers[0].linear),
-            "transition_1": LinearParams(sm.transition.layers[0].layers[1].linear),
+            "transition": LinearParams(sm.transition.layers[0].layers[0][0]),
+            "transition_1": LinearParams(sm.transition.layers[0].layers[1][0]),
             "transition_2": LinearParams(sm.transition.layers[0].linear_out),
             "transition_layer_norm": LayerNormParams(sm.transition.layer_norm),
             "affine_update": LinearParams(sm.bb_update.linear),
@@ -705,12 +705,12 @@ def convert_deprecated_v2_keys(state_dict):
     """
 
     replacements = {
-        'msa_transition.linear_1': 'msa_transition.transition_mlp.layers.0.linear',
+        'msa_transition.linear_1': 'msa_transition.transition_mlp.layers.0.0',
         'msa_transition.linear_2': 'msa_transition.transition_mlp.linear_out',
-        'pair_transition.linear_1': 'pair_transition.transition_mlp.layers.0.linear',
+        'pair_transition.linear_1': 'pair_transition.transition_mlp.layers.0.0',
         'pair_transition.linear_2': 'pair_transition.transition_mlp.linear_out',
-        'structure_module.transition.layers.0.linear_1': 'structure_module.transition.layers.0.layers.0.linear',
-        'structure_module.transition.layers.0.linear_2': 'structure_module.transition.layers.0.layers.1.linear',
+        'structure_module.transition.layers.0.linear_1': 'structure_module.transition.layers.0.layers.0.0',
+        'structure_module.transition.layers.0.linear_2': 'structure_module.transition.layers.0.layers.1.0',
         'structure_module.transition.layers.0.linear_3': 'structure_module.transition.layers.0.linear_out'
     }
 

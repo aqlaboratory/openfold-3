@@ -26,7 +26,7 @@ TensorDict = Dict[str, torch.Tensor]
 
 
 class AtomTransformer(nn.Module):
-    """ Atom Transformer: neighborhood-blocked (32 * 128) diffusion transformer.
+    """Atom Transformer: neighborhood-blocked (32 * 128) diffusion transformer.
 
     Implements AF3 Algorithm 7
     """
@@ -285,16 +285,30 @@ class AtomAttentionEncoder(nn.Module):
     ):
         """
         Args:
-            c_in: 
+            c_s:
+                Single representation channel dimension
+            c_z:
+                Pair representation channel dimension
+            c_atom_ref:
+                Reference per-atom feature dimension
             c_atom:
+                Atom emebedding channel dimension
             c_atom_pair:
+                Atom pair embedding channel dimension
             c_token:
+                Token representation channel dimension
             c_hidden:
+                Hidden channel dimension
             add_noisy_pos:
+                Whether to add noised positions and trunk embeddings
             no_heads:
+                Number of attention heads
             no_blocks:
+                Number of attention blocks
             n_transition:
+                Dimension multiplication factor used in transition layer
             inf:
+                Large number used for attention masking
         """
         super(AtomAttentionEncoder, self).__init__()
 

@@ -62,7 +62,7 @@ class TemplateSingleEmbedderMonomer(nn.Module):
         Args:
             template_feats: Dict with template features
         Returns:
-            x: [*, N_templ, N_res, C_out] embedding
+            x: [*, N_templ, N_res, C_out] Template single feature embedding
         """
         template_aatype = template_feats["template_aatype"]
         torsion_angles_sin_cos = template_feats["template_torsion_angles_sin_cos"]
@@ -108,7 +108,7 @@ class TemplatePairEmbedderMonomer(nn.Module):
         """
         Args:
             c_in:
-
+                Final dimension of template pair features
             c_out:
                 Output channel dimension
         """
@@ -132,13 +132,17 @@ class TemplatePairEmbedderMonomer(nn.Module):
 
         Args:
             batch:
+                Input template feature dictionary
             distogram_config:
+                Configuration for distogram computation
             use_unit_vector:
+                Whether to use unit vector in template features
             inf:
+                Large value for distogram computation
             eps:
-
+                Small constant for numerical stability
         Returns:
-            # [*, C_out] Template
+            # [*, N_res, N_res, C_out] Template pair feature embedding
         """
         # [*, C_in]
         dtype = batch["template_all_atom_positions"].dtype
@@ -192,7 +196,7 @@ class TemplatePairEmbedderMonomer(nn.Module):
         inv_distance_scalar = inv_distance_scalar * template_mask_2d
         unit_vector = rigid_vec * inv_distance_scalar[..., None]
 
-        if (not use_unit_vector):
+        if not use_unit_vector:
             unit_vector = unit_vector * 0.
 
         to_concat.extend(torch.unbind(unit_vector[..., None, :], dim=-1))
@@ -208,17 +212,36 @@ class TemplatePairEmbedderMonomer(nn.Module):
 
 
 class TemplateSingleEmbedderMultimer(nn.Module):
-    def __init__(self,
+    """
+    Embeds the "template_single_feat" feature.
+
+    Implements Multimer version of AF2 Algorithm 2, line 7.
+    """
+    def __init__(
+        self,
         c_in: int,
         c_out: int,
     ):
+        """
+        Args:
+            c_in:
+                Final dimension of single template features
+            c_out:
+                Output channel dimension
+        """
         super(TemplateSingleEmbedderMultimer, self).__init__()
         self.template_single_embedder = Linear(c_in, c_out)
         self.template_projector = Linear(c_out, c_out)
 
-    def forward(self,
-        batch,
-    ):
+    def forward(self, batch: Dict):
+        """
+        Args:
+            batch:
+                Input template feature dictionary
+
+        Returns:
+            [*, N_templ, N_res, C_out] Template single feature embedding
+        """
         out = {}
 
         dtype = batch["template_all_atom_positions"].dtype
@@ -271,12 +294,29 @@ class TemplateSingleEmbedderMultimer(nn.Module):
 
 
 class TemplatePairEmbedderMultimer(nn.Module):
-    def __init__(self,
+    """
+    Embeds template pair features.
+
+    Implements Multimer version of AF2 Algorithm 2, line 9.
+    """
+    def __init__(
+        self,
         c_in: int,
         c_out: int,
         c_dgram: int,
         c_aatype: int,
     ):
+        """
+        Args:
+            c_in:
+                Pair embedding dimension
+            c_out:
+                Template pair embedding dimension
+            c_dgram:
+                Distogram feature embedding dimension
+            c_aatype:
+                Template aatype feature embedding dimension
+        """
         super(TemplatePairEmbedderMultimer, self).__init__()
 
         self.dgram_linear = Linear(c_dgram, c_out, init='relu')
@@ -291,13 +331,31 @@ class TemplatePairEmbedderMultimer(nn.Module):
         self.z_linear = Linear(1, c_out, init='relu')
         self.backbone_mask_linear = Linear(1, c_out, init='relu')
 
-    def forward(self,
-                batch: Dict,
-                distogram_config: Dict,
-                query_embedding: torch.Tensor,
-                multichain_mask_2d: torch.Tensor,
-                inf: float
-                ) -> torch.Tensor:
+    def forward(
+        self,
+        batch: Dict,
+        distogram_config: Dict,
+        query_embedding: torch.Tensor,
+        multichain_mask_2d: torch.Tensor,
+        inf: float
+    ) -> torch.Tensor:
+        """
+        Args:
+            batch:
+                Input template feature dictionary
+            distogram_config:
+                Configuration for distogram computation
+            query_embedding:
+                [*, N_res, N_res, C_z] Pair embedding (z)
+            multichain_mask_2d:
+                [*, N_res, N_res] Multichain mask built from asym IDs
+            inf:
+                Large value for distogram computation
+        Returns:
+            # [*, N_templ, N_res, N_res, C_out] Template pair feature embedding
+        """
+        query_embedding = query_embedding.unsqueeze(-4)
+        multichain_mask_2d = multichain_mask_2d.unsqueeze(-3)
 
         template_positions, pseudo_beta_mask = pseudo_beta_fn(
             batch["template_aatype"],
@@ -356,20 +414,56 @@ class TemplatePairEmbedderMultimer(nn.Module):
 
 
 class TemplatePairEmbedderAllAtom(nn.Module):
-    def __init__(self, c_in: int, c_z: int, c_out: int):
+    """Implements AF3 Algorithm 16 lines 1-5. Also includes line 8.The resulting embedded template will
+    go into the TemplatePairStack.
+    """
+    def __init__(
+        self,
+        c_in: int,
+        c_z: int,
+        c_out: int
+    ):
+        """
+        Args:
+            c_in:
+                Final dimension of template pair features
+            c_z:
+                Pair embedding dimension
+            c_out:
+                Output channel dimension
+        """
         super(TemplatePairEmbedderAllAtom, self).__init__()
 
         self.linear_feats = Linear(c_in, c_out, bias=False)
         self.query_embedding_layer_norm = LayerNorm(c_z)
         self.query_embedding_linear = Linear(c_z, c_out, bias=False, init='relu')
 
-    def forward(self,
-                batch: Dict,
-                distogram_config: Dict,
-                query_embedding: torch.Tensor,
-                multichain_mask_2d: torch.Tensor,
-                inf: float
-                ) -> torch.Tensor:
+    def forward(
+        self,
+        batch: Dict,
+        distogram_config: Dict,
+        query_embedding: torch.Tensor,
+        multichain_mask_2d: torch.Tensor,
+        inf: float
+    ) -> torch.Tensor:
+        """
+        Args:
+            batch:
+                Input template feature dictionary
+            distogram_config:
+                Configuration for distogram computation
+            query_embedding:
+                [*, N_token, N_token, C_z] Pair embedding (z)
+            multichain_mask_2d:
+                [*, N_token, N_token] Multichain mask built from asym IDs
+            inf:
+                Large value for distogram computation
+        Returns:
+            # [*, N_templ, N_token, N_token, C_out] Template pair feature embedding
+        """
+        query_embedding = query_embedding.unsqueeze(-4)
+        multichain_mask_2d = multichain_mask_2d.unsqueeze(-3)
+
         template_positions, pseudo_beta_mask = pseudo_beta_fn(
             batch["template_aatype"],
             batch["template_all_atom_positions"],

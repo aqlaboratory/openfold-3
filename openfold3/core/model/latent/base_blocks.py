@@ -39,8 +39,12 @@ from openfold3.core.utils.tensor_utils import add
 
 
 class MSABlock(nn.Module, ABC):
+    """Abstract class for MSA blocks. Used to define the blocks used in the EvoformerStack,
+    ExtraMSAStack, and MSAModule.
+    """
     @abstractmethod
-    def __init__(self,
+    def __init__(
+        self,
         c_m: int,
         c_z: int,
         c_hidden_msa_att: int,
@@ -58,6 +62,45 @@ class MSABlock(nn.Module, ABC):
         inf: float,
         eps: float,
     ):
+        """
+        Args:
+            c_m:
+                MSA channel dimension
+            c_z:
+                Pair channel dimension
+            c_hidden_msa_att:
+                Hidden dimension in MSA attention
+            c_hidden_opm:
+                Hidden dimension in outer product mean module
+            c_hidden_mul:
+                Hidden dimension in multiplicative updates
+            c_hidden_pair_att:
+                Hidden dimension in triangular attention
+            no_heads_msa:
+                Number of heads used for MSA attention
+            no_heads_pair:
+                Number of heads used for pair attention
+            transition_type:
+                String 'relu' or 'swiglu' to determine activation for the transition function
+            transition_n:
+                Factor by which to multiply c_m to obtain the transition layer
+                hidden dimension
+            msa_dropout:
+                Dropout rate for MSA activations
+            pair_dropout:
+                Dropout used for pair activations
+            opm_first:
+                When True, Outer Product Mean is performed at the beginning of
+                the Evoformer block instead of after the MSA Stack.
+                Used in Multimer pipeline.
+            fuse_projection_weights:
+                When True, uses FusedTriangleMultiplicativeUpdate variant in
+                the Pair Stack. Used in Multimer pipeline.
+            inf:
+                Large constant for masking
+            eps:
+                Small constant for numerical stability
+        """
         super(MSABlock, self).__init__()
 
         self.opm_first = opm_first
@@ -103,20 +146,21 @@ class MSABlock(nn.Module, ABC):
             inf=inf
         )
 
-    def _compute_opm(self,
+    def _compute_opm(
+        self,
         input_tensors: Sequence[torch.Tensor],
         msa_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
         inplace_safe: bool = False,
         _offload_inference: bool = False
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-
+        """Compute the Outer Product Mean. Will be used in the forward pass of the MSABlock."""
         m, z = input_tensors
 
-        if (_offload_inference and inplace_safe):
+        if _offload_inference and inplace_safe:
             # m: GPU, z: CPU
             del m, z
-            assert (sys.getrefcount(input_tensors[1]) == 2)
+            assert sys.getrefcount(input_tensors[1]) == 2
             input_tensors[1] = input_tensors[1].cpu()
             m, z = input_tensors
 
@@ -124,10 +168,10 @@ class MSABlock(nn.Module, ABC):
             m, mask=msa_mask, chunk_size=chunk_size, inplace_safe=inplace_safe
         )
 
-        if (_offload_inference and inplace_safe):
+        if _offload_inference and inplace_safe:
             # m: GPU, z: GPU
             del m, z
-            assert (sys.getrefcount(input_tensors[0]) == 2)
+            assert sys.getrefcount(input_tensors[0]) == 2
             input_tensors[1] = input_tensors[1].to(opm.device)
             m, z = input_tensors
 
@@ -137,7 +181,8 @@ class MSABlock(nn.Module, ABC):
         return m, z
 
     @abstractmethod
-    def forward(self,
+    def forward(
+        self,
         m: Optional[torch.Tensor],
         z: Optional[torch.Tensor],
         msa_mask: torch.Tensor,
@@ -168,6 +213,28 @@ class PairBlock(nn.Module):
         fuse_projection_weights: bool,
         inf: float
     ):
+        """
+        Args:
+            c_z:
+                Pair embedding channel dimension
+            c_hidden_mul:
+                Hidden dimension for triangular multiplication
+            c_hidden_pair_att:
+                Per-head hidden dimension for triangular attention
+            no_heads_pair:
+                Number of heads in the attention mechanism
+            transition_type:
+                String 'relu' or 'swiglu' to determine activation for the transition function
+            transition_n:
+                Scale of pair transition (Alg. 15) hidden dimension
+            pair_dropout:
+                Dropout rate used throughout the stack
+            fuse_projection_weights:
+                When True, uses FusedTriangleMultiplicativeUpdate variant in
+                the Pair Stack. Used in Multimer pipeline.
+            inf:
+                Large constant used for masking
+        """
         super(PairBlock, self).__init__()
 
         if fuse_projection_weights:
@@ -217,10 +284,13 @@ class PairBlock(nn.Module):
 
         self.ps_dropout_row_layer = DropoutRowwise(pair_dropout)
 
-    def tri_mul_out_in(self,
-                       z: torch.Tensor,
-                       pair_mask: torch.Tensor,
-                       inplace_safe: bool):
+    def tri_mul_out_in(
+        self,
+        z: torch.Tensor,
+        pair_mask: torch.Tensor,
+        inplace_safe: bool
+    ) -> torch.Tensor:
+        """Perform the outgoing and incoming triangular multiplicative updates."""
         tmu_update = self.tri_mul_out(
             z,
             mask=pair_mask,
@@ -247,13 +317,16 @@ class PairBlock(nn.Module):
 
         return z
 
-    def tri_att_start_end(self,
-                          z: torch.Tensor,
-                          _attn_chunk_size: Optional[int],
-                          pair_mask: torch.Tensor,
-                          use_deepspeed_evo_attention: bool,
-                          use_lma: bool,
-                          inplace_safe: bool):
+    def tri_att_start_end(
+        self,
+        z: torch.Tensor,
+        _attn_chunk_size: Optional[int],
+        pair_mask: torch.Tensor,
+        use_deepspeed_evo_attention: bool,
+        use_lma: bool,
+        inplace_safe: bool
+    ) -> torch.Tensor:
+        """Perform the starting and ending triangular attention layers."""
         z = add(z,
                 self.ps_dropout_row_layer(
                     self.tri_att_start(
@@ -294,7 +367,8 @@ class PairBlock(nn.Module):
 
         return z
 
-    def forward(self,
+    def forward(
+        self,
         z: torch.Tensor,
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
@@ -304,6 +378,31 @@ class PairBlock(nn.Module):
         _mask_trans: bool = True,
         _attn_chunk_size: Optional[int] = None
     ) -> torch.Tensor:
+        """
+        Args:
+            z:
+                [*, N, N, C_z] Pair embedding
+            pair_mask:
+                [*, N, N] Pair mask
+            chunk_size:
+                Inference-time subbatch size
+            use_deepspeed_evo_attention:
+                Whether to use DeepSpeed memory efficient kernel.
+                Mutually exclusive with use_lma and use_flash.
+            use_lma:
+                Whether to use low-memory attention during inference.
+                Mutually exclusive with use_flash and use_deepspeed_evo_attention.
+            inplace_safe:
+                Whether inplace operations can be performed
+            _mask_trans:
+                Whether to mask the output of the transition layers
+            _attn_chunk_size:
+                Inference-time subbatch size for attention. If None, uses chunk.
+
+        Returns:
+            [*, N, N, C_z] Pair embedding update
+        """
+
         # DeepMind doesn't mask these transitions in the source, so _mask_trans
         # should be disabled to better approximate the exact activations of
         # the original.
@@ -312,9 +411,11 @@ class PairBlock(nn.Module):
         if _attn_chunk_size is None:
             _attn_chunk_size = chunk_size
 
-        z = self.tri_att_start_end(z=self.tri_mul_out_in(z=z,
-                                                         pair_mask=pair_mask,
-                                                         inplace_safe=inplace_safe),
+        z = self.tri_mul_out_in(z=z,
+                                pair_mask=pair_mask,
+                                inplace_safe=inplace_safe)
+
+        z = self.tri_att_start_end(z=z,
                                    _attn_chunk_size=_attn_chunk_size,
                                    pair_mask=pair_mask,
                                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,

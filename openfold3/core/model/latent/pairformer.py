@@ -30,6 +30,7 @@ from openfold3.core.utils.tensor_utils import add
 
 
 class PairFormerBlock(nn.Module):
+    """Implements block of AF3 Algorithm 17."""
     def __init__(
         self,
         c_s: int,
@@ -45,6 +46,35 @@ class PairFormerBlock(nn.Module):
         fuse_projection_weights: bool,
         inf: float
     ):
+        """
+        Args:
+            c_s:
+                Single embedding channel dimension
+            c_z:
+                Pair embedding channel dimension
+            c_hidden_pair_bias:
+                Hidden channel dimension for AttentionPairBias module
+            no_heads_pair_bias:
+                Number of heads for AttentionPairBias module
+            c_hidden_mul:
+                Hidden dimension in multiplicative updates
+            c_hidden_pair_att:
+                Hidden dimension in triangular attention
+            no_heads_pair:
+                Number of heads in triangular attention
+            transition_type:
+                String 'relu' or 'swiglu' to determine activation for the transition function
+            transition_n:
+                Factor by which to multiply c_z to obtain the transition layer
+                hidden dimension
+            pair_dropout:
+                Dropout rate used throughout the stack
+            fuse_projection_weights:
+                When True, uses FusedTriangleMultiplicativeUpdate variant in
+                the Pair Stack. Used in Multimer pipeline.
+            inf:
+                Large constant used for masking
+        """
         super(PairFormerBlock, self).__init__()
 
         self.pair_stack = PairBlock(
@@ -75,18 +105,50 @@ class PairFormerBlock(nn.Module):
             n=transition_n,
         )
 
-    def forward(self,
-                s: Optional[torch.Tensor],
-                z: Optional[torch.Tensor],
-                single_mask: torch.Tensor,
-                pair_mask: torch.Tensor,
-                chunk_size: Optional[int] = None,
-                use_deepspeed_evo_attention: bool = False,
-                use_lma: bool = False,
-                inplace_safe: bool = False,
-                _mask_trans: bool = True,
-                _attn_chunk_size: Optional[int] = None,
-                ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self,
+        s: Optional[torch.Tensor],
+        z: Optional[torch.Tensor],
+        single_mask: torch.Tensor,
+        pair_mask: torch.Tensor,
+        chunk_size: Optional[int] = None,
+        use_deepspeed_evo_attention: bool = False,
+        use_lma: bool = False,
+        inplace_safe: bool = False,
+        _mask_trans: bool = True,
+        _attn_chunk_size: Optional[int] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            s:
+                [*, N_token, C_s] Single embedding
+            z:
+                [*, N_token, N_token, C_z] Pair embedding
+            single_mask:
+                [*, N_token] Single mask
+            pair_mask:
+                [*, N_token, N_token] Pair mask
+            chunk_size:
+                Inference-time subbatch size. Acts as a minimum if
+                self.tune_chunk_size is True
+            use_deepspeed_evo_attention:
+                Whether to use DeepSpeed memory efficient kernel.
+                Mutually exclusive with use_lma.
+            use_lma:
+                Whether to use low-memory attention during inference.
+                Mutually exclusive with use_deepspeed_evo_attention.
+            inplace_safe:
+                Whether inplace operations can be performed
+            _mask_trans:
+                Whether to mask the output of the transition layers
+            _attn_chunk_size:
+                Inference-time subbatch size for attention. If None, uses chunk
+        Returns:
+            s:
+                [*, N_token, C_s] Single embedding
+            z:
+                [*, N_token, N_token, C_z] Pair embedding
+        """
 
         single_trans_mask = single_mask if _mask_trans else None
 
@@ -120,11 +182,9 @@ class PairFormerBlock(nn.Module):
         return s, z
 
 
+# TODO: Make this inherit from MSAStack/CheckpointStack
 class PairFormerStack(nn.Module):
-    """
-    Implements AF3 Algorithm 17.
-    """
-
+    """Implements AF3 Algorithm 17."""
     def __init__(
         self,
         c_s: int,
@@ -146,25 +206,43 @@ class PairFormerStack(nn.Module):
         **kwargs,
     ):
         """
-
         Args:
             c_s:
+                Single embedding channel dimension
             c_z:
+                Pair embedding channel dimension
             c_hidden_pair_bias:
+                Hidden channel dimension for AttentionPairBias module
             no_heads_pair_bias:
+                Number of heads for AttentionPairBias module
             c_hidden_mul:
+                Hidden dimension in multiplicative updates
             c_hidden_pair_att:
+                Hidden dimension in triangular attention
             no_heads_pair:
+                Number of heads in triangular attention
             no_blocks:
+                Number of PairFormer blocks
             transition_type:
+                String 'relu' or 'swiglu' to determine activation for the transition function
             transition_n:
+                Factor by which to multiply c_z to obtain the transition layer
+                hidden dimension
             pair_dropout:
+                Dropout rate used throughout the stack
             fuse_projection_weights:
+                When True, uses FusedTriangleMultiplicativeUpdate variant in
+                the Pair Stack. Used in Multimer pipeline.
             blocks_per_ckpt:
+                Number of blocks per activation checkpoint. None disables
+                activation checkpointing
             inf:
+                Large constant used for masking
             clear_cache_between_blocks:
+                Whether to clear CUDA's GPU memory cache between blocks of the
+                stack. Slows down each block but can reduce fragmentation
             tune_chunk_size:
-            **kwargs:
+                Whether to dynamically tune the module's chunk size
         """
         super(PairFormerStack, self).__init__()
 
@@ -192,20 +270,28 @@ class PairFormerStack(nn.Module):
 
         self.tune_chunk_size = tune_chunk_size
         self.chunk_size_tuner = None
-        if (tune_chunk_size):
+        if tune_chunk_size:
             self.chunk_size_tuner = ChunkSizeTuner()
 
-    def _prep_blocks(self,
-                     s: torch.Tensor,
-                     z: torch.Tensor,
-                     chunk_size: int,
-                     use_deepspeed_evo_attention: bool,
-                     use_lma: bool,
-                     single_mask: Optional[torch.Tensor],
-                     pair_mask: Optional[torch.Tensor],
-                     inplace_safe: bool,
-                     _mask_trans: bool,
-                     ):
+    def _prep_blocks(
+        self,
+        s: torch.Tensor,
+        z: torch.Tensor,
+        single_mask: Optional[torch.Tensor],
+        pair_mask: Optional[torch.Tensor],
+        chunk_size: int,
+        use_deepspeed_evo_attention: bool,
+        use_lma: bool,
+        inplace_safe: bool,
+        _mask_trans: bool,
+    ):
+        """
+        Partially initialize the PairFormer blocks. Optionally add cache clearing between
+        blocks and chunk size tuning. Arguments are the same as forward function.
+
+        Returns:
+            Partially initialized PairFormer blocks.
+        """
         blocks = [
             partial(
                 b,
@@ -220,15 +306,15 @@ class PairFormerStack(nn.Module):
             for b in self.blocks
         ]
 
-        if (self.clear_cache_between_blocks):
+        if self.clear_cache_between_blocks:
             def block_with_cache_clear(block, *args, **kwargs):
                 torch.cuda.empty_cache()
                 return block(*args, **kwargs)
 
             blocks = [partial(block_with_cache_clear, b) for b in blocks]
 
-        if (chunk_size is not None and self.chunk_size_tuner is not None):
-            assert (not self.training)
+        if chunk_size is not None and self.chunk_size_tuner is not None:
+            assert not self.training
             tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
                 representative_fn=blocks[0],
                 # We don't want to write in-place during chunk tuning runs
@@ -260,13 +346,13 @@ class PairFormerStack(nn.Module):
         """
         Args:
             s:
-                [*, N_res, C_m] MSA embedding
+                [*, N_token, C_s] Single embedding
             z:
-                [*, N_res, N_res, C_z] pair embedding
+                [*, N_token, N_token, C_z] Pair embedding
             single_mask:
-                [*, N_res] MSA mask
+                [*, N_token] Single mask
             pair_mask:
-                [*, N_res, N_res] pair mask
+                [*, N_token, N_token] Pair mask
             chunk_size:
                 Inference-time subbatch size. Acts as a minimum if
                 self.tune_chunk_size is True
@@ -276,26 +362,30 @@ class PairFormerStack(nn.Module):
             use_lma:
                 Whether to use low-memory attention during inference.
                 Mutually exclusive with use_deepspeed_evo_attention.
+            inplace_safe:
+                Whether inplace operations can be performed
+            _mask_trans:
+                Whether to mask the output of the transition layers
         Returns:
             s:
-                [*, N_res, C_m] Single embedding
+                [*, N_token, C_s] Single embedding
             z:
-                [*, N_res, N_res, C_z] pair embedding
+                [*, N_token, N_token, C_z] Pair embedding
         """
         blocks = self._prep_blocks(
             s=s,
             z=z,
+            single_mask=single_mask,
+            pair_mask=pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_lma=use_lma,
-            single_mask=single_mask,
-            pair_mask=pair_mask,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
         )
 
         blocks_per_ckpt = self.blocks_per_ckpt
-        if (not torch.is_grad_enabled()):
+        if not torch.is_grad_enabled():
             blocks_per_ckpt = None
 
         s, z = checkpoint_blocks(

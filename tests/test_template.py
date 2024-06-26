@@ -16,14 +16,16 @@ import re
 import torch
 import numpy as np
 import unittest
+from ml_collections import ConfigDict
 
-from openfold3.core.model.latent import TemplatePairStack
+from openfold3.core.model.latent import TemplatePairStack, TemplateEmbedderAllAtom
 from openfold3.core.model.layers.template_pointwise_attention import TemplatePointwiseAttention
 from openfold3.core.model.primitives import LayerNorm
+from openfold3.model_implementations.af2_monomer.config import model_config
 
 import tests.compare_utils as compare_utils
-from tests.config import consts
-from tests.data_utils import random_template_feats
+from tests.config import consts, multimer_consts
+from tests.data_utils import random_template_feats, random_asym_ids
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
@@ -194,6 +196,51 @@ class TestTemplatePairStack(unittest.TestCase):
         compare_utils.assert_max_abs_diff_small(out_gt, out_repro, consts.eps)
 
 
+class TestTemplateEmbedderAllAtom(unittest.TestCase):
+    def test_shape(self):
+        batch_size = 1
+        n_templ = 4
+        n_res = 5
+        c_feats = 88
+
+        c = model_config(multimer_consts.model)
+        c_z = c.model.template.template_pair_embedder.c_in
+        c_t = c.model.template.template_pair_embedder.c_out
+
+        batch = random_template_feats(n_templ, n_res, batch_size=batch_size)
+        batch = {k: torch.as_tensor(v) for k, v in batch.items()}
+
+        z = torch.rand((batch_size, n_res, n_res, c_z))
+        pair_mask = torch.ones((batch_size, n_res, n_res))
+        asym_ids = torch.as_tensor((random_asym_ids(n_res)))
+        asym_ids = torch.tile(asym_ids[None, :], (batch_size, 1))
+        multichain_mask_2d = (
+            asym_ids[..., None] == asym_ids[..., None, :]
+        ).to(dtype=z.dtype)
+
+        template_config = {
+            'template_pair_embedder': {'c_in': c_feats,
+                                       'c_z': c_z,
+                                       'c_out': c_t},
+            'template_pair_stack': c.model.template.template_pair_stack,
+            'distogram': c.model.template.distogram,
+            'inf': c.model.template.inf,
+            'c_t': c_t,
+            'c_z': c_z
+        }
+
+        te = TemplateEmbedderAllAtom(config=ConfigDict(template_config))
+
+        x = te(batch=batch,
+               z=z,
+               pair_mask=pair_mask,
+               templ_dim=1,
+               chunk_size=None,
+               multichain_mask_2d=multichain_mask_2d)
+
+        self.assertTrue(x.shape == (batch_size, n_res, n_res, c_z))
+
+
 class Template(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -232,10 +279,11 @@ class Template(unittest.TestCase):
         pair_act = np.random.rand(n_res, n_res, consts.c_z).astype(np.float32)
         batch = random_template_feats(n_templ, n_res)
         batch["template_all_atom_masks"] = batch["template_all_atom_mask"]
+        batch["asym_id"] = random_asym_ids(n_res)
 
         multichain_mask_2d = None
         if consts.is_multimer:
-            asym_id = batch['asym_id'][0]
+            asym_id = batch['asym_id']
             multichain_mask_2d = (
                     asym_id[..., None] == asym_id[..., None, :]
             ).astype(np.float32)
@@ -276,7 +324,7 @@ class Template(unittest.TestCase):
                 torch.as_tensor(pair_mask).cuda(),
                 templ_dim=0,
                 chunk_size=consts.chunk_size,
-                mask_trans=False,
+                _mask_trans=False,
                 use_lma=False,
                 inplace_safe=False
             )

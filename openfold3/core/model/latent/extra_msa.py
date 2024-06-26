@@ -34,7 +34,8 @@ class ExtraMSABlock(MSABlock):
         requires more fine-grained control over checkpointing. Separated from
         its twin to preserve the TorchScript-ability of the latter.
     """
-    def __init__(self,
+    def __init__(
+        self,
         c_m: int,
         c_z: int,
         c_hidden_msa_att: int,
@@ -80,7 +81,8 @@ class ExtraMSABlock(MSABlock):
             eps=eps,
         )
 
-    def forward(self,
+    def forward(
+        self,
         m: Optional[torch.Tensor],
         z: Optional[torch.Tensor],
         msa_mask: torch.Tensor,
@@ -95,10 +97,10 @@ class ExtraMSABlock(MSABlock):
         _offload_inference: bool = False,
         _offloadable_inputs: Optional[Sequence[torch.Tensor]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        if(_attn_chunk_size is None):
+        if _attn_chunk_size is None:
             _attn_chunk_size = chunk_size
 
-        if(_offload_inference and inplace_safe):
+        if _offload_inference and inplace_safe:
             input_tensors = _offloadable_inputs
             del _offloadable_inputs
         else:
@@ -115,7 +117,8 @@ class ExtraMSABlock(MSABlock):
                                      inplace_safe=inplace_safe,
                                      _offload_inference=_offload_inference)
 
-        m = add(m,
+        m = add(
+            m,
             self.msa_dropout_layer(
                 self.msa_att_row(
                     m.clone() if torch.is_grad_enabled() else m,
@@ -125,14 +128,13 @@ class ExtraMSABlock(MSABlock):
                     use_lma=use_lma,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                     use_memory_efficient_kernel=not (use_lma or use_deepspeed_evo_attention),
-                    _checkpoint_chunks=
-                        self.ckpt if torch.is_grad_enabled() else False,
+                    _checkpoint_chunks=self.ckpt if torch.is_grad_enabled() else False
                 )
             ),
-            inplace=inplace_safe,
+            inplace=inplace_safe
         )
 
-        if (not inplace_safe):
+        if not inplace_safe:
             input_tensors = [m, z]
 
         del m, z
@@ -140,10 +142,10 @@ class ExtraMSABlock(MSABlock):
         def fn(input_tensors):
             m, z = input_tensors
 
-            if (_offload_inference and inplace_safe):
+            if _offload_inference and inplace_safe:
                 # m: GPU, z: CPU
                 del m, z
-                assert (sys.getrefcount(input_tensors[1]) == 2)
+                assert sys.getrefcount(input_tensors[1]) == 2
                 input_tensors[1] = input_tensors[1].cpu()
                 torch.cuda.empty_cache()
                 m, z = input_tensors
@@ -167,7 +169,7 @@ class ExtraMSABlock(MSABlock):
             )
 
             if not self.opm_first:
-                if (not inplace_safe):
+                if not inplace_safe:
                     input_tensors = [m, z]
 
                 del m, z
@@ -178,16 +180,16 @@ class ExtraMSABlock(MSABlock):
                                          inplace_safe=inplace_safe,
                                          _offload_inference=_offload_inference)
 
-            if (_offload_inference and inplace_safe):
+            if _offload_inference and inplace_safe:
                 # m: CPU, z: GPU
                 del m, z
-                assert (sys.getrefcount(input_tensors[0]) == 2)
+                assert sys.getrefcount(input_tensors[0]) == 2
                 device = input_tensors[0].device
                 input_tensors[0] = input_tensors[0].cpu()
                 input_tensors[1] = input_tensors[1].to(device)
                 m, z = input_tensors
 
-            if (not inplace_safe):
+            if not inplace_safe:
                 input_tensors = [m, z]
 
             del m, z
@@ -204,17 +206,17 @@ class ExtraMSABlock(MSABlock):
             )
 
             m = input_tensors[0]
-            if (_offload_inference and inplace_safe):
+            if _offload_inference and inplace_safe:
                 # m: GPU, z: GPU
                 device = z.device
                 del m
-                assert (sys.getrefcount(input_tensors[0]) == 2)
+                assert sys.getrefcount(input_tensors[0]) == 2
                 input_tensors[0] = input_tensors[0].to(device)
                 m, _ = input_tensors
 
             return m, z
 
-        if (torch.is_grad_enabled() and self.ckpt):
+        if torch.is_grad_enabled() and self.ckpt:
             checkpoint_fn = get_checkpoint_fn()
             m, z = checkpoint_fn(fn, input_tensors)
         else:
@@ -224,10 +226,9 @@ class ExtraMSABlock(MSABlock):
 
 
 class ExtraMSAStack(MSAStack):
-    """
-    Implements AF2 Algorithm 18.
-    """
-    def __init__(self,
+    """ Implements AF2 Algorithm 18."""
+    def __init__(
+        self,
         c_m: int,
         c_z: int,
         c_hidden_msa_att: int,
@@ -250,6 +251,57 @@ class ExtraMSAStack(MSAStack):
         tune_chunk_size: bool = False,
         **kwargs,
     ):
+        """
+        Args:
+            c_m:
+                MSA channel dimension
+            c_z:
+                Pair channel dimension
+            c_hidden_msa_att:
+                Hidden dimension in MSA attention
+            c_hidden_opm:
+                Hidden dimension in outer product mean module
+            c_hidden_mul:
+                Hidden dimension in multiplicative updates
+            c_hidden_pair_att:
+                Hidden dimension in triangular attention
+            no_heads_msa:
+                Number of heads used for MSA attention
+            no_heads_pair:
+                Number of heads used for pair attention
+            no_blocks:
+                Number of ExtraMSA blocks in the stack
+            transition_type:
+                String 'relu' or 'swiglu' to determine activation for the transition function
+            transition_n:
+                Factor by which to multiply c_m to obtain the transition layer
+                hidden dimension
+            msa_dropout:
+                Dropout rate for MSA activations
+            pair_dropout:
+                Dropout used for pair activations
+            no_column_attention:
+                When True, doesn't use column attention. Required for running
+                sequence embedding mode
+            opm_first:
+                When True, Outer Product Mean is performed at the beginning of
+                the ExtraMSA block instead of after the MSA Stack.
+                Used in Multimer pipeline.
+            fuse_projection_weights:
+                When True, uses FusedTriangleMultiplicativeUpdate variant in
+                the Pair Stack. Used in Multimer pipeline.
+            inf:
+                Large constant for masking
+            eps:
+                Small constant for numerical stability
+            ckpt:
+                Whether to checkpoint blocks
+            clear_cache_between_blocks:
+                Whether to clear CUDA's GPU memory cache between blocks of the
+                stack. Slows down each block but can reduce fragmentation
+            tune_chunk_size:
+                Whether to dynamically tune the module's chunk size
+        """
         # Previous implementation seems to call checkpoint function once for all blocks
         blocks_per_ckpt = None if not ckpt else no_blocks
         super(ExtraMSAStack, self).__init__(
@@ -259,7 +311,6 @@ class ExtraMSAStack(MSAStack):
         )
 
         self.ckpt = ckpt
-        self.clear_cache_between_blocks = clear_cache_between_blocks
 
         for _ in range(no_blocks):
             block = ExtraMSABlock(

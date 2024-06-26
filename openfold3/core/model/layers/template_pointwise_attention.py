@@ -41,6 +41,10 @@ class TemplatePointwiseAttention(nn.Module):
                 Pair embedding channel dimension
             c_hidden:
                 Hidden channel dimension
+            no_heads:
+                Number of attention heads
+            inf:
+                Large constant for masking
         """
         super(TemplatePointwiseAttention, self).__init__()
 
@@ -89,11 +93,15 @@ class TemplatePointwiseAttention(nn.Module):
         """
         Args:
             t:
-                [*, N_templ, N_res, N_res, C_t] template embedding
+                [*, N_templ, N_res, N_res, C_t] Template embedding
             z:
-                [*, N_res, N_res, C_t] pair embedding
+                [*, N_res, N_res, C_t] Pair embedding
             template_mask:
-                [*, N_templ] template mask
+                [*, N_templ] Template mask
+            chunk_size:
+                Chunk size for large inputs
+            use_lma:
+                Whether to use low-memory attention during inference
         Returns:
             [*, N_res, N_res, C_z] pair embedding update
         """
