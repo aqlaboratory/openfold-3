@@ -126,9 +126,10 @@ def assign_chains(atom_array: AtomArray):
     """Generates chain ids and molecule types for a biotite atom_array.
 
     Separate chain ids are given to each protein chain, nucleic acid chain and
-    non-covalent ligands including lipids, glycans and small molecules. TODO Covalently
-    bound ligands are assigned the id of the chain they are bound to if they have
-    less than n atoms, otherwise they are assigned a separate chain id.
+    non-covalent ligands including lipids, glycans and small molecules. For ligands 
+    covalently bound to polymers, we follow the PDB auto-assigned chain ids: small
+    PTMs and ligands are assigned to the same chain as the polymer they are bound to,
+    whereas glycans are assigned to a separate chain.
 
     Updates the input biotite AtomArray with added 'af3_chain_id' and 'af3_molecule_type'
     annotations and a 'chain_id_map' class attribute in-place.
