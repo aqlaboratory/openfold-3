@@ -13,6 +13,4 @@ jobs:
       - name: Install with conda
         uses: mamba-org/setup-micromamba@v1
         environment-file: environment.yaml
-        create-args: >-
-          python=3.10
 
