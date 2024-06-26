@@ -4,7 +4,7 @@ channels:
   - bioconda
   - pytorch
 dependencies:
-  - python=3.9
+  - python=3.10
   - libgcc=7.2
   - setuptools=59.5.0
   - pip
