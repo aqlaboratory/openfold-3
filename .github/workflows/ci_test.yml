@@ -15,5 +15,5 @@ jobs:
       - name: Install with conda
         uses: mamba-org/setup-micromamba@v1
         with:
-          environment-file: environment.yaml
+          environment-file: environment.yml
 
