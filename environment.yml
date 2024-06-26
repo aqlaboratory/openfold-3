@@ -6,7 +6,7 @@ channels:
 dependencies:
   - python=3.10
   - libgcc=7.2
-  - setuptools=59.5.0
+  - setuptools
   - pip
   - openmm=7.7
   - pdbfixer
@@ -18,21 +18,21 @@ dependencies:
   - requests
   - scipy
   - tqdm==4.62.2
-  - typing-extensions==4.0
+  - typing-extensions
   - wandb
   - modelcif==0.7
   - awscli
   - ml-collections
+  - mkl=2022.1
   - aria2
-  - mkl=2024.0
   - git
-  - bioconda::hmmer==3.3.2
-  - bioconda::hhsuite==3.3.0
-  - bioconda::kalign2==2.04
-  - bioconda::mmseqs2
-  - pytorch::pytorch=1.12.*
+  - bioconda::hmmer
+  - bioconda::hhsuite
+  - bioconda::kalign2
+  - pytorch::pytorch=2.1
+  - pytorch::pytorch-cuda=12.1
   - pip:
       - deepspeed==0.12.4
       - dm-tree==0.1.6
       - git+https://github.com/NVIDIA/dllogger.git
-      - git+https://github.com/Dao-AILab/flash-attention.git@5b838a8
+      - flash-attn 
