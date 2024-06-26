@@ -17,8 +17,8 @@ from typing import Optional, Sequence, Tuple
 import torch
 import torch.nn as nn
 
-from openfold3.core.model.latent.msa_blocks import EvoformerBlock
-from openfold3.core.model.layers import (
+from openfold3.core.model.latent.evoformer import EvoformerBlock
+from openfold3.core.model.layers.msa import (
     MSARowAttentionWithPairBias,
     MSAColumnAttention,
 )
@@ -43,7 +43,7 @@ def script_preset_(model: torch.nn.Module):
             Attention,
             GlobalAttention,
             EvoformerBlock,
-            #TemplatePairStackBlock,
+            #TemplatePairBlock,
         ], 
         attempt_trace=False,
         batch_dims=None,

@@ -3,7 +3,7 @@ from typing import Dict, Tuple
 import torch
 import torch.nn as nn
 
-from openfold3.core.model.embedders.input_embedders import RelposAllAtom
+from openfold3.core.model.feature_embedders.input_embedders import RelposAllAtom
 from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
 from openfold3.core.model.layers.sequence_local_atom_attention import AtomAttentionEncoder, AtomAttentionDecoder
 from openfold3.core.model.layers.transition import SwiGLUTransition
@@ -240,7 +240,7 @@ class DiffusionModule(nn.Module):
             c_s:
                 Single representation channel dimension
             c_z:
-                Pair representation channel diemnsion
+                Pair representation channel dimension
             c_fourier_emb:
                 Fourier embedding channel dimension
             max_relative_idx:
@@ -264,7 +264,7 @@ class DiffusionModule(nn.Module):
             no_blocks:
                 Number of attention blocks (for diffusion transformer)
             n_transition:
-                Number of transition blocks (for diffusion transformer)
+                Dimension multiplication factor used in transition layer (for diffusion transformer)
             inf:
                 Large number used for attention masking
         """
@@ -359,10 +359,10 @@ class DiffusionModule(nn.Module):
         r_noisy = x_noisy / torch.sqrt(t ** 2 + self.sigma_data ** 2)
 
         a, q, c, p = self.atom_attn_enc(atom_feats=batch,
+                                        atom_mask=atom_mask,
                                         rl=r_noisy,
                                         si_trunk=s_trunk, 
-                                        zij=z_trunk, # differ from AF3
-                                        atom_mask=atom_mask)
+                                        zij=z_trunk) # differ from AF3
 
         a = a + self.linear_s(self.layer_norm_s(s))
 

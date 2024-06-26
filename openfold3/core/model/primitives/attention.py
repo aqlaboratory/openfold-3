@@ -12,6 +12,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+"""Attention layers. Includes standard multi-head attention and global attention.
+Optimizations such as Openfold's Low-Memory Attention Kernel, LMA, DeepSpeed EvoformerAttention,
+and FlashAttention are also included.
+"""
+
 import importlib
 import math
 from typing import Optional, List, Tuple

@@ -24,7 +24,7 @@ from openfold3.core.np import (
     residue_constants,
 )
 from openfold3.core.np import protein
-import openfold3.core.utils.loss as loss
+import openfold3.core.loss.loss as loss
 from openfold3.core.np.relax import cleanup, utils
 import ml_collections
 import numpy as np

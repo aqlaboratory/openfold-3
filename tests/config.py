@@ -12,6 +12,7 @@ monomer_consts = mlc.ConfigDict(
         "n_templ": 3,
         "n_extra": 17,
         "n_heads_extra_msa": 8,
+        "inf": 1e5,
         "eps": 5e-4,
         # For compatibility with DeepMind's pretrained weights, it's easiest for
         # everyone if these take their real values.
@@ -36,6 +37,7 @@ multimer_consts = mlc.ConfigDict(
         "n_templ": 3,
         "n_extra": 17,
         "n_heads_extra_msa": 8,
+        "inf": 1e5,
         "eps": 5e-4,
         # For compatibility with DeepMind's pretrained weights, it's easiest for
         # everyone if these take their real values.

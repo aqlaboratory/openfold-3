@@ -23,7 +23,7 @@ from openfold3.core.utils.callbacks import (
     PerformanceLoggingCallback
 )
 from openfold3.core.utils.exponential_moving_average import ExponentialMovingAverage
-from openfold3.core.utils.loss import AlphaFoldLoss, lddt_ca
+from openfold3.core.loss.loss import AlphaFoldLoss, lddt_ca
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation_align
 from openfold3.core.utils.superimposition import superimpose

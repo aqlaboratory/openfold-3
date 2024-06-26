@@ -591,6 +591,16 @@ def make_msa_feat(protein):
     return protein
 
 
+def build_extra_msa_feat(protein):
+    msa_1hot = torch.nn.functional.one_hot(protein["extra_msa"], 23)
+    msa_feat = [
+        msa_1hot,
+        protein["extra_has_deletion"].unsqueeze(-1),
+        protein["extra_deletion_value"].unsqueeze(-1),
+    ]
+    return torch.cat(msa_feat, dim=-1)
+
+
 @curry1
 def select_feat(protein, feature_list):
     return {k: v for k, v in protein.items() if k in feature_list}

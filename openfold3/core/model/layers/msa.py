@@ -12,6 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+"""MSA attention layers. Includes MSARowAttentionWithPairBias, MSAColumnAttention, MSAColumnGlobalAttention,
+and MSAPairWeightedAveraging.
+"""
+
 from functools import partial
 import torch
 from torch import nn
@@ -472,7 +477,9 @@ class MSAColumnGlobalAttention(nn.Module):
 
 
 class MSAPairWeightedAveraging(nn.Module):
-    """
+    """MSA Pair Weighted Averaging. This is not key-query based attention over the MSA
+    but a weighted averaging using the pair activation.
+
     Implements AF3 Algorithm 10.
     """
     def __init__(
@@ -561,8 +568,7 @@ class MSAPairWeightedAveraging(nn.Module):
             m:
                 [*, N_seq, N_res, C_m] MSA embedding
             z:
-                [*, N_res, N_res, C_z] pair embedding. Required only if
-                pair_bias is True
+                [*, N_res, N_res, C_z] Pair embedding
             mask:
                 [*, N_seq, N_res] MSA mask
 
