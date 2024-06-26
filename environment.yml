@@ -16,7 +16,7 @@ dependencies:
   - pandas
   - PyYAML==5.4.1
   - requests
-  - scipy==1.7
+  - scipy
   - tqdm==4.62.2
   - typing-extensions==4.0
   - wandb
