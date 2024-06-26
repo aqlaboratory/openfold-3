@@ -3,7 +3,8 @@ import numpy as np
 from biotite.structure import AtomArray
 
 from openfold3.core.data.preprocessing.tables import (
-    STANDARD_NUCLEIC_ACID_RESIDUES,
+    STANDARD_RNA_RESIDUES,
+    STANDARD_DNA_RESIDUES,
     STANDARD_PROTEIN_RESIDUES,
     STANDARD_RESIDUES,
     TOKEN_CENTER_ATOMS,
@@ -40,6 +41,8 @@ def tokenize_atom_array(atom_array: AtomArray):
     )
 
     # TODO this needs to be adapted to covalently modified standard residues !!!
+    # !!! Misses unannotated bonds
+    # Filter out cooordinate bonds
     # Get atom-token ids
     atom_token_start_ids = atomidx[is_standard_residue_atom == False]
 
@@ -102,12 +105,15 @@ def assign_chains(atom_array: AtomArray):
         # Assign protein
         if residues_in_chain & set(STANDARD_PROTEIN_RESIDUES):
             molecule_types[start_id:end_id] = 0
-        # Assign nucleic acid
-        elif residues_in_chain & set(STANDARD_NUCLEIC_ACID_RESIDUES):
+        # Assign RNA
+        elif residues_in_chain & set(STANDARD_RNA_RESIDUES):
             molecule_types[start_id:end_id] = 1
+        # Assign DNA
+        elif residues_in_chain & set(STANDARD_DNA_RESIDUES):
+            molecule_types[start_id:end_id] = 2
         # Assign ligand
         else:
-            molecule_types[start_id:end_id] = 2
+            molecule_types[start_id:end_id] = 3
     # TODO need to add annotation for covalently modified residues as they are tokenized atomically
     atom_array.set_annotation("af3_molecule_type", molecule_types)
 

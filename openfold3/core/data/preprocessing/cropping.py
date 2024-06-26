@@ -1,105 +1,11 @@
 # TODO add license
 
-# Some biotite examples
-# %%
-from typing import Union, Optional
+from typing import Optional, Union
 
-import biotite.database.rcsb as rcsb
 import biotite.structure as struc
-import biotite.structure.io.pdbx as pdbx
 import numpy as np
-from biotite.structure import AtomArray
+from biotite.structure import Atom, AtomArray
 from numpy.random import Generator
-
-from openfold3.core.data.preprocessing.tokenization import (
-    assign_chains,
-    tokenize_atom_array,
-)
-
-# Protein trimer with covalent and non-covalent glycans
-pdbx_file_8FAQ = pdbx.CIFFile.read(
-    rcsb.fetch("8FAQ", "cif"),
-)
-# Protein trimer with non-removed ions and non-covalent ligands
-pdbx_file_1PCR = pdbx.CIFFile.read(rcsb.fetch("1PCR", "cif"))
-# Protein-DNA complex
-pdbx_file_1NVP = pdbx.CIFFile.read(rcsb.fetch("1NVP", "cif"))
-# Protein with modified residues
-pdbx_file_3US4 = pdbx.CIFFile.read(rcsb.fetch("3US4", "cif"))
-# Protein RNA complex
-pdbx_file_1A9N = pdbx.CIFFile.read(rcsb.fetch("1A9N", "cif"))
-
-biounit_8FAQ = pdbx.get_assembly(
-    pdbx_file_8FAQ,
-    assembly_id="1",
-    model=1,
-    altloc="occupancy",
-    use_author_fields=False,
-    include_bonds=True,
-)
-biounit_1PCR = pdbx.get_assembly(
-    pdbx_file_1PCR,
-    assembly_id="1",
-    model=1,
-    altloc="occupancy",
-    use_author_fields=False,
-    include_bonds=True,
-)
-biounit_1NVP = pdbx.get_assembly(
-    pdbx_file_1NVP,
-    assembly_id="1",
-    model=1,
-    altloc="occupancy",
-    use_author_fields=False,
-    include_bonds=True,
-)
-biounit_3US4 = pdbx.get_assembly(
-    pdbx_file_3US4,
-    assembly_id="1",
-    model=1,
-    altloc="occupancy",
-    use_author_fields=False,
-    include_bonds=True,
-)
-biounit_1A9N = pdbx.get_assembly(
-    pdbx_file_1A9N,
-    assembly_id="1",
-    model=1,
-    altloc="occupancy",
-    use_author_fields=False,
-    include_bonds=True,
-)
-
-# Remove waters
-biounit_8FAQ = biounit_8FAQ[biounit_8FAQ.res_name != "HOH"]
-biounit_1PCR = biounit_1PCR[biounit_1PCR.res_name != "HOH"]
-biounit_1NVP = biounit_1NVP[biounit_1NVP.res_name != "HOH"]
-biounit_3US4 = biounit_3US4[biounit_3US4.res_name != "HOH"]
-biounit_1A9N = biounit_1A9N[biounit_1A9N.res_name != "HOH"]
-
-# %%
-tokenize_atom_array(biounit_8FAQ)
-tokenize_atom_array(biounit_1PCR)
-tokenize_atom_array(biounit_1NVP)
-tokenize_atom_array(biounit_3US4)
-tokenize_atom_array(biounit_1A9N)
-assign_chains(biounit_8FAQ)
-assign_chains(biounit_1PCR)
-assign_chains(biounit_1NVP)
-assign_chains(biounit_3US4)
-assign_chains(biounit_1A9N)
-
-atom_array = biounit_1PCR
-generator = np.random.default_rng(2346)
-token_budget = 384
-chains = np.array(list(set(atom_array.af3_chain_id)), dtype=int)
-chains = generator.permutation(chains)
-print(chains)
-# %%
-# print("Number of chains:", struc.get_chain_count(biounit_3US4))
-# struc.get_residues(biounit_3US4)
-# import biotite.structure.io as strucio
-# strucio.save_structure("/mnt/c/Users/nikol/Documents/biotite_tests/1NVP.pdb", biounit_1NVP)
 
 
 def crop_contiguous(
@@ -108,7 +14,9 @@ def crop_contiguous(
     """Implements Contiguous Cropping from AF3 SI, 2.7.1.
 
     Uses Algorithm 1 from AF-Multimer section 7.2.1. to update the input biotite
-    atom array with added 'af3_crop_mask' annotation in-place.
+    atom array with added 'af3_crop_mask' annotation in-place. Note: Algorithm 1
+    does not work correctly as stated in the AF-Multimer SO, so here we are using
+    a fixed version.
 
     Args:
         atom_array (atom_array):
@@ -130,43 +38,26 @@ def crop_contiguous(
     atom_array.set_annotation("af3_crop_mask", np.repeat(False, len(atom_array)))
 
     # Cropping loop
-    token_budget = crop_size
-    tokens_remaining = total number of tokens
+    tokens_remaining = max(atom_array.af3_token_id)
 
-
-
-
-
-
-
-
-
-
-    tokens_added = 0
-    tokens_remaining = token_budget
     for chain_id in chains:
-        # Get chain atom array and type
+        # Get chain atom array
         atom_array_chain = atom_array[atom_array.af3_chain_id == chain_id]
 
         # Get chain length
         chain_length = (
             atom_array_chain.af3_token_id[-1] - atom_array_chain.af3_token_id[0] + 1
         )
+        tokens_remaining -= chain_length
 
-        # Cannot have negative number of tokens remaining
-        tokens_remaining = max(tokens_remaining - chain_length, 0)
-
-        # Calculate crop length
-        crop_size_max = np.min([token_budget - tokens_added, chain_length])
-        crop_size_min = np.min(
-            [chain_length, np.max([0, token_budget - tokens_added - tokens_remaining])]
-        )
+        # Sample length of crop for current chain
+        crop_size_max = min(token_budget, chain_length)
+        crop_size_min = min(chain_length, max(0, token_budget - tokens_remaining))
         crop_size = generator.integers(crop_size_min, crop_size_max + 1, 1).item()
 
-        tokens_added += crop_size
+        token_budget -= crop_size
 
-        # Calculate crop start and map to global atom index
-        crop_start = generator.integers(0, chain_length - crop_size + 1, 1).item()
+        crop_start = generator.integers(0, chain_length - crop_size, 1).item()
         crop_start_global = atom_array_chain[crop_start].af3_atom_id
 
         # Edit corresponding segment in crop mask
@@ -174,8 +65,7 @@ def crop_contiguous(
             True
         )
 
-        # Break if allocated all of the token budget
-        if tokens_remaining == 0:
+        if token_budget == 0:
             break
 
     return None
@@ -208,46 +98,16 @@ def crop_spatial(
         None
     """
     # Subset token center atoms to those in the preferred chain/interface if provided
-    token_center_atoms = atom_array[atom_array.af3_token_center_atom]
-    if preferred_chain_or_interface:
-        # If chain provided
-        if isinstance(preferred_chain_or_interface, int):
-            token_center_atoms = token_center_atoms[
-                token_center_atoms.af3_chain_id == preferred_chain_or_interface
-            ]
-        # If interface provided
-        else:
-            token_center_atoms = token_center_atoms[
-                token_center_atoms.af3_chain_id in preferred_chain_or_interface
-            ]
+    token_center_atoms, preferred_token_center_atoms = subset_preferred(
+        atom_array, preferred_chain_or_interface
+    )
 
     # Get reference atom
-    reference_atom = generator.choice(token_center_atoms, size=1)[0]
+    reference_atom = generator.choice(preferred_token_center_atoms, size=1)[0]
 
-    # Get distance from all other token center atoms and break ties
-    distances_to_reference_atom = (
-        struc.distance(
-            reference_atom,
-            token_center_atoms[
-                token_center_atoms.af3_atom_id != reference_atom.af3_atom_id
-            ],
-        )
-        + np.arange(len(token_center_atoms) - 1) * 1e-3
-    )
+    # Find spatial crop
+    find_spatial_crop(reference_atom, token_center_atoms, token_budget, atom_array)
 
-    # Get token_budget nearest token center atoms
-    nearest_token_center_atom_ids = np.argsort(distances_to_reference_atom)[
-        :token_budget
-    ]
-
-    # Get all atoms for nearest token center atoms
-    atom_array.set_annotation(
-        "af3_crop_mask",
-        np.isin(
-            atom_array.af3_token_id,
-            token_center_atoms[nearest_token_center_atom_ids].af3_token_id,
-        ),
-    )
     return None
 
 
@@ -278,51 +138,169 @@ def crop_spatial_interface(
         None
     """
     # Subset token center atoms to those in the preferred chain/interface if provided
+    token_center_atoms, preferred_token_center_atoms = subset_preferred(
+        atom_array, preferred_chain_or_interface
+    )
+
+    # Find interface token center atoms
+    preferred_interface_token_center_atoms = find_interface_token_center_atoms(
+        preferred_token_center_atoms, token_center_atoms
+    )
+
+    # Get reference atom
+    reference_atom = generator.choice(preferred_interface_token_center_atoms, size=1)[0]
+
+    # Find spatial crop
+    find_spatial_crop(reference_atom, token_center_atoms, token_budget, atom_array)
+
+    return None
+
+
+def subset_preferred(
+    atom_array: AtomArray,
+    preferred_chain_or_interface: Optional[Union[int, tuple[int, int]]],
+) -> tuple[AtomArray, AtomArray]:
+    """Subsets the pool of token center atoms to those in the preferred chain or interface.
+
+    Args:
+        atom_array (AtomArray):
+            AtomArray of the input assembly.
+        preferred_chain_or_interface (Optional[Union[int, tuple[int, int]]]):
+            Integer or integer 2-tuple indicating the preferred chain or interface,
+            respectively, from which reference atoms are selected. Generated by
+            eq. 1 in AF3 SI for the weighted PDB dataset.
+
+    Raises:
+        ValueError:
+            Invalid preferred_chain_or_interface: {preferred_chain_or_interface}, has to be int or tuple.
+
+    Returns:
+        tuple[AtomArray, AtomArray]:
+            Tuple of all and preferred token center atoms.
+    """
     token_center_atoms = atom_array[atom_array.af3_token_center_atom]
-    if preferred_chain_or_interface:
+    if preferred_chain_or_interface is not None:
         # If chain provided
         if isinstance(preferred_chain_or_interface, int):
-            token_center_atoms = token_center_atoms[
+            preferred_token_center_atoms = token_center_atoms[
                 token_center_atoms.af3_chain_id == preferred_chain_or_interface
             ]
         # If interface provided
-        else:
-            token_center_atoms = token_center_atoms[
-                token_center_atoms.af3_chain_id in preferred_chain_or_interface
+        elif isinstance(preferred_chain_or_interface, tuple):
+            preferred_token_center_atoms = token_center_atoms[
+                np.isin(token_center_atoms.af3_chain_id, preferred_chain_or_interface)
             ]
+        else:
+            raise ValueError(
+                f"Invalid preferred_chain_or_interface: {preferred_chain_or_interface}, has to be int or tuple."
+            )
+    else:
+        preferred_token_center_atoms = token_center_atoms
+    return token_center_atoms, preferred_token_center_atoms
 
-    # Find interface token center atoms (within 15 A of at least one token center atom in another chain)
+
+def find_interface_token_center_atoms(
+    preferred_token_center_atoms: AtomArray, token_center_atoms: AtomArray
+) -> AtomArray:
+    """Subsets token center atoms to those within 15 A of at least one token center atom in another chain.
+
+    Args:
+        preferred_token_center_atoms (AtomArray):
+            Array of token center atoms from the preferred chain or interface.
+        token_center_atoms (AtomArray):
+            Array of all token center atoms.
+
+    Returns:
+        AtomArray: Array of interface token center atoms.
+    """
+    # Get the atom IDs, coordinates and chains of token center atoms
+    # Need to kept separate for cases where preferred chain/interface is given
+    preferred_n = len(preferred_token_center_atoms)
+    preferred_token_center_atom_ids = np.arange(preferred_n)
+    preferred_token_center_atom_chains = preferred_token_center_atoms.af3_chain_id
+    preferred_token_center_atom_coords = preferred_token_center_atoms.coord
+    preferred_token_center_atom_global_ids = preferred_token_center_atoms.af3_token_id
+
     n = len(token_center_atoms)
     token_center_atom_ids = np.arange(n)
-    token_center_atom_coords = token_center_atoms._coord
     token_center_atom_chains = token_center_atoms.af3_chain_id
+    token_center_atom_coords = token_center_atoms.coord
+    token_center_atom_global_ids = token_center_atoms.af3_token_id
 
-    is_different_chains = np.repeat(token_center_atom_chains, n) != np.tile(
-        token_center_atom_chains, n
+    # Get boolean mask for token center atoms in different chains and different tokens
+    is_different_chains = np.repeat(preferred_token_center_atom_chains, n) != np.tile(
+        token_center_atom_chains, preferred_n
     )
-    query_ids = np.repeat(token_center_atom_ids, n)
-    target_ids = np.tile(token_center_atom_ids, n)
-    query_coords = token_center_atom_coords[query_ids, :][is_different_chains, :]
-    target_coords = token_center_atom_coords[target_ids, :][is_different_chains, :]
+    is_different_tokens = np.repeat(
+        preferred_token_center_atom_global_ids, n
+    ) != np.tile(token_center_atom_global_ids, preferred_n)
+    is_different = is_different_chains & is_different_tokens
 
+    # Create n*m x 2 array of pairwise combinations of
+    # preferred token center atoms (query) to all token center atoms (target)
+    query_ids = np.repeat(preferred_token_center_atom_ids, n)
+    target_ids = np.tile(token_center_atom_ids, preferred_n)
+    query_coords = preferred_token_center_atom_coords[query_ids, :][is_different, :]
+    target_coords = token_center_atom_coords[target_ids, :][is_different, :]
+
+    # Find token center atoms that are within 15 A of at least one token center atom in another chain
     is_interface = struc.distance(query_coords, target_coords) < 15
-
-    interface_token_center_atom_ids = np.array(list(
-        set(query_ids[is_different_chains][is_interface])
-        | set(target_ids[is_different_chains][is_interface])
-    ))
-
-
-
-
-
-    pairwise_array = struc.array(
-        np.column_stack(
-            (np.repeat(token_center_atoms, n), np.tile(token_center_atoms, n))
-        )
+    # Get corresponding index
+    preferred_interface_token_center_atom_ids = np.array(
+        list(set(query_ids[is_different][is_interface]))
     )
-    pairwise_array = struc.array([pairwise_array[:, 0], pairwise_array[:, 1]])
-    struc.distance(np.repeat(token_center_atoms, n), np.tile(token_center_atoms, n))
-    # TODO add preferred_chain_or_interface logic
 
-    return
+    # Get pool of valid token center atoms
+    preferred_interface_token_center_atoms = preferred_token_center_atoms[
+        preferred_interface_token_center_atom_ids
+    ]
+
+    return preferred_interface_token_center_atoms
+
+
+def find_spatial_crop(
+    reference_atom: Atom,
+    token_center_atoms: AtomArray,
+    token_budget: int,
+    atom_array: AtomArray,
+) -> None:
+    """Finds the token_budget number of closes atoms to the reference atom.
+
+    Args:
+        reference_atom (Atom):
+            The sampled reference atom around which the spatial crop is created.
+        token_center_atoms (AtomArray):
+            The set of token center atoms to crop from.
+        token_budget (int):
+            Crop size.
+        atom_array (AtomArray):
+            Input atom array of the bioassembly.
+
+    Returns:
+        None
+    """
+    # Get distance from all other token center atoms and break ties
+    distances_to_reference_atom = (
+        struc.distance(
+            reference_atom,
+            token_center_atoms[
+                token_center_atoms.af3_atom_id != reference_atom.af3_atom_id
+            ],
+        )
+        + np.arange(len(token_center_atoms) - 1) * 1e-3
+    )
+
+    # Get token_budget nearest token center atoms
+    nearest_token_center_atom_ids = np.argsort(distances_to_reference_atom)[
+        :token_budget
+    ]
+
+    # Get all atoms for nearest token center atoms
+    atom_array.set_annotation(
+        "af3_crop_mask",
+        np.isin(
+            atom_array.af3_token_id,
+            token_center_atoms[nearest_token_center_atom_ids].af3_token_id,
+        ),
+    )
+    return None

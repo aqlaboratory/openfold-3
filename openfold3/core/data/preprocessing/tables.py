@@ -22,18 +22,10 @@ STANDARD_PROTEIN_RESIDUES = [
     "VAL",
     "UNK",
 ]
-STANDARD_NUCLEIC_ACID_RESIDUES = [
-    "A",
-    "G",
-    "C",
-    "U",
-    "DA",
-    "DG",
-    "DC",
-    "DT",
-    "N",
-    "DN",
-]
+
+STANDARD_RNA_RESIDUES = ["A", "G", "C", "U", "N"]
+STANDARD_DNA_RESIDUES = ["DA", "DG", "DC", "DT", "DN"]
+STANDARD_NUCLEIC_ACID_RESIDUES = STANDARD_RNA_RESIDUES + STANDARD_DNA_RESIDUES
 STANDARD_RESIDUES = STANDARD_PROTEIN_RESIDUES + STANDARD_NUCLEIC_ACID_RESIDUES
 
 # Token center atoms as defined in AF3 SI, Section 2.6.
