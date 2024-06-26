@@ -22,7 +22,7 @@ from typing import Dict, Tuple
 import torch
 import torch.nn as nn
 
-from openfold3.core.model.layers.sequence_local_atom_attention import AtomAttentionEncoder
+from openfold3.core.model.layers import AtomAttentionEncoder
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.tensor_utils import add, one_hot
 
@@ -322,9 +322,8 @@ class RelposAllAtom(nn.Module):
     def __init__(
         self,
         c_z: int,
-        max_relative_idx: int = 2,
-        max_relative_chain: int = 32,
-        **kwargs,
+        max_relative_idx: int,
+        max_relative_chain: int,
     ):
         """
         Args:
@@ -433,16 +432,19 @@ class InputEmbedderAllAtom(nn.Module):
     def __init__(
         self,
         c_atom_ref: int,
-        c_atom: int,
-        c_atom_pair: int,
-        c_token: int,
         c_s_input: int,
         c_s: int,
         c_z: int,
-        c_hidden_att: int,
+        c_atom: int,
+        c_atom_pair: int,
+        c_token: int,
+        c_hidden: int,
+        no_heads: int,
+        no_blocks: int,
+        n_transition: int,
+        inf: float,
         max_relative_idx: int,
-        max_relative_chain: int,
-        **kwargs,
+        max_relative_chain: int
     ):
         """
         Args:
@@ -470,14 +472,16 @@ class InputEmbedderAllAtom(nn.Module):
         """
         super(InputEmbedderAllAtom, self).__init__()
 
-        self.atom_attn_enc = AtomAttentionEncoder(c_s=c_s,
-                                                  c_z=c_z,
-                                                  c_atom_ref=c_atom_ref,
+        self.atom_attn_enc = AtomAttentionEncoder(c_atom_ref=c_atom_ref,
                                                   c_atom=c_atom,
                                                   c_atom_pair=c_atom_pair,
                                                   c_token=c_token,
-                                                  c_hidden=c_hidden_att,
-                                                  add_noisy_pos=False)
+                                                  add_noisy_pos=False,
+                                                  c_hidden=c_hidden,
+                                                  no_heads=no_heads,
+                                                  no_blocks=no_blocks,
+                                                  n_transition=n_transition,
+                                                  inf=inf)
 
         self.linear_s = Linear(c_s_input, c_s, bias=False)
         self.linear_z_i = Linear(c_s_input, c_z, bias=False)
@@ -487,7 +491,7 @@ class InputEmbedderAllAtom(nn.Module):
                                     max_relative_idx=max_relative_idx,
                                     max_relative_chain=max_relative_chain)
 
-        self.linear_tok_bonds = Linear(1, c_z, bias=False)
+        self.linear_token_bonds = Linear(1, c_z, bias=False)
 
     def forward(
         self,
@@ -508,10 +512,7 @@ class InputEmbedderAllAtom(nn.Module):
             z:
                 [*, N_token, N_token, C_z] Pair representation
         """
-        a, _, _, _ = self.atom_attn_enc(
-            atom_feats=batch,
-            atom_mask=batch['atom_mask']  # TODO: Change to match diffusion module code
-        )
+        a, _, _, _ = self.atom_attn_enc(batch=batch)
 
         # [*, N_token, C_s_input]
         s_input = torch.cat([
@@ -526,7 +527,7 @@ class InputEmbedderAllAtom(nn.Module):
 
         s_input_emb_i = self.linear_z_i(s_input)
         s_input_emb_j = self.linear_z_j(s_input)
-        tok_bonds_emb = self.linear_tok_bonds(batch['token_bonds'].unsqueeze(-1))
+        token_bonds_emb = self.linear_token_bonds(batch['token_bonds'].unsqueeze(-1))
 
         # [*, N_token, N_token, C_z]
         z = self.relpos(batch)
@@ -542,7 +543,7 @@ class InputEmbedderAllAtom(nn.Module):
         )
         z = add(
             z,
-            tok_bonds_emb,
+            token_bonds_emb,
             inplace=inplace_safe
         )
 
@@ -574,7 +575,7 @@ class MSAModuleEmbedder(nn.Module):
         self.linear_m = Linear(c_m_feats, c_m, bias=False)
         self.linear_s_input = Linear(c_s_input, c_m, bias=False)
 
-    def forward(self, batch: Dict, s_input: torch.Tensor) -> [torch.Tensor, torch.Tensor]:
+    def forward(self, batch: Dict, s_input: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:
@@ -862,4 +863,28 @@ class ExtraMSAEmbedder(nn.Module):
         x = self.linear(x)
 
         return x
+
+class FourierEmbedding(nn.Module):
+    """
+    Implements AF3 Algorithm 22.
+    """
+    def __init__(self, c: int):
+        """
+        Args:
+            c:
+                Embedding dimension
+        """
+        super(FourierEmbedding, self).__init__()
+
+        self.linear = Linear(in_dim=1, out_dim=c, bias=True, init='fourier')
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x:
+                [*, 1] Input tensor
+        Returns:
+            [*, c] Embedding
+        """
+        return torch.cos(2 * torch.pi * self.linear(x))
 

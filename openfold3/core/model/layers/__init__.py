@@ -12,9 +12,10 @@ from .sequence_local_atom_attention import (
     AtomAttentionEncoder,
     AtomAttentionDecoder,
     AtomTransformer,
-    AtomFeatureEmbedder,
+    RefAtomFeatureEmbedder,
     NoisyPositionEmbedder
 )
+from .diffusion_conditioning import DiffusionConditioning
 from .template_pointwise_attention import TemplatePointwiseAttention
 from .transition import (
     ReLUTransitionLayer,
@@ -37,6 +38,7 @@ __all__ = [
     'AttentionPairBias',
     'DiffusionTransformerBlock',
     'DiffusionTransformer',
+    'DiffusionConditioning',
     'MSAAttention',
     'MSARowAttentionWithPairBias',
     'MSAColumnAttention',
@@ -46,7 +48,7 @@ __all__ = [
     'AtomAttentionEncoder',
     'AtomAttentionDecoder',
     'AtomTransformer',
-    'AtomFeatureEmbedder',
+    'RefAtomFeatureEmbedder',
     'NoisyPositionEmbedder',
     'TemplatePointwiseAttention',
     'ReLUTransitionLayer',
