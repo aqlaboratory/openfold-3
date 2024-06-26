@@ -12,18 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
-import numpy as np
 import unittest
+
+import numpy as np
+import torch
+
+import tests.compare_utils as compare_utils
 from openfold3.core.model.layers import ReLUTransition
 from openfold3.core.utils.tensor_utils import tree_map
-import tests.compare_utils as compare_utils
 from tests.config import consts
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
-    import jax
     import haiku as hk
+    import jax
 
 
 class TestPairTransition(unittest.TestCase):
@@ -66,8 +68,7 @@ class TestPairTransition(unittest.TestCase):
 
         # Fetch pretrained parameters (but only from one block)]
         params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/"
-            + "pair_transition"
+            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/" + "pair_transition"
         )
         params = tree_map(lambda n: n[0], params, jax.Array)
 
@@ -76,8 +77,8 @@ class TestPairTransition(unittest.TestCase):
 
         model = compare_utils.get_global_pretrained_openfold()
         out_repro = (
-            model.evoformer.blocks[0].pair_stack
-            .pair_transition(
+            model.evoformer.blocks[0]
+            .pair_stack.pair_transition(
                 torch.as_tensor(pair_act, dtype=torch.float32).cuda(),
                 chunk_size=4,
                 mask=torch.as_tensor(pair_mask, dtype=torch.float32).cuda(),

@@ -1,6 +1,7 @@
-import re
 import copy
 import importlib
+import re
+
 import ml_collections as mlc
 
 
@@ -14,7 +15,7 @@ def set_inf(c, inf):
 
 def enforce_config_constraints(config):
     def string_to_setting(s):
-        path = s.split('.')
+        path = s.split(".")
         setting = config
         for p in path:
             setting = setting.get(p)
@@ -22,15 +23,8 @@ def enforce_config_constraints(config):
         return setting
 
     mutually_exclusive_bools = [
-        (
-            "model.template.average_templates", 
-            "model.template.offload_templates"
-        ),
-        (
-            "globals.use_lma",
-            "globals.use_flash",
-            "globals.use_deepspeed_evo_attention"
-        ),
+        ("model.template.average_templates", "model.template.offload_templates"),
+        ("globals.use_lma", "globals.use_flash", "globals.use_deepspeed_evo_attention"),
     ]
 
     for options in mutually_exclusive_bools:
@@ -43,25 +37,23 @@ def enforce_config_constraints(config):
         raise ValueError("use_flash requires that FlashAttention is installed")
 
     deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
-    ds4s_is_installed = deepspeed_is_installed and importlib.util.find_spec(
-        "deepspeed.ops.deepspeed4science") is not None
+    ds4s_is_installed = (
+        deepspeed_is_installed and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
+    )
     if config.globals.use_deepspeed_evo_attention and not ds4s_is_installed:
         raise ValueError(
             "use_deepspeed_evo_attention requires that DeepSpeed be installed "
             "and that the deepspeed.ops.deepspeed4science package exists"
         )
 
-    if(
-        config.globals.offload_inference and 
-        not config.model.template.average_templates
-    ):
+    if config.globals.offload_inference and not config.model.template.average_templates:
         config.model.template.offload_templates = True
 
 
 def model_config(
-    name, 
-    train=False, 
-    low_prec=False, 
+    name,
+    train=False,
+    low_prec=False,
     long_sequence_inference=False,
     use_deepspeed_evoformer_attention=False,
 ):
@@ -75,13 +67,13 @@ def model_config(
         c.data.train.crop_size = 384
         c.data.train.max_extra_msa = 5120
         c.data.train.max_msa_clusters = 512
-        c.loss.violation.weight = 1.
+        c.loss.violation.weight = 1.0
         c.loss.experimentally_resolved.weight = 0.01
     elif name == "finetuning_ptm":
         c.data.train.max_extra_msa = 5120
         c.data.train.crop_size = 384
         c.data.train.max_msa_clusters = 512
-        c.loss.violation.weight = 1.
+        c.loss.violation.weight = 1.0
         c.loss.experimentally_resolved.weight = 0.01
         c.model.heads.tm.enabled = True
         c.loss.tm.weight = 0.1
@@ -91,7 +83,7 @@ def model_config(
         c.data.train.max_extra_msa = 5120
         c.data.train.max_msa_clusters = 512
         c.model.template.enabled = False
-        c.loss.violation.weight = 1.
+        c.loss.violation.weight = 1.0
         c.loss.experimentally_resolved.weight = 0.01
     elif name == "finetuning_no_templ_ptm":
         # AF2 Suppl. Table 4, "finetuning" setting
@@ -99,7 +91,7 @@ def model_config(
         c.data.train.max_extra_msa = 5120
         c.data.train.max_msa_clusters = 512
         c.model.template.enabled = False
-        c.loss.violation.weight = 1.
+        c.loss.violation.weight = 1.0
         c.loss.experimentally_resolved.weight = 0.01
         c.model.heads.tm.enabled = True
         c.loss.tm.weight = 0.1
@@ -133,7 +125,7 @@ def model_config(
         c.model.template.enabled = False
     elif name == "model_1_ptm":
         c.data.train.max_extra_msa = 5120
-        c.data.predict.max_extra_msa = 5120 
+        c.data.predict.max_extra_msa = 5120
         c.data.common.reduce_max_clusters_by_max_templates = True
         c.data.common.use_templates = True
         c.data.common.use_template_torsion_angles = True
@@ -176,7 +168,7 @@ def model_config(
             c.data.train.block_delete_msa = False
             c.data.train.max_distillation_msa_clusters = 1
             c.data.train.crop_size = 384
-            c.loss.violation.weight = 1.
+            c.loss.violation.weight = 1.0
             c.loss.experimentally_resolved.weight = 0.01
         elif name == "seq_model_esm1b":
             c.data.common.use_templates = True
@@ -199,8 +191,8 @@ def model_config(
 
         # TODO: Change max_msa_clusters and max_extra_msa to multimer feats within model
         if re.fullmatch("^model_[1-5]_multimer(_v2)?$", name):
-            #c.model.input_embedder.num_msa = 252
-            #c.model.extra_msa.extra_msa_embedder.num_extra_msa = 1152
+            # c.model.input_embedder.num_msa = 252
+            # c.model.extra_msa.extra_msa_embedder.num_extra_msa = 1152
             c.data.train.crop_size = 384
 
             c.data.train.max_msa_clusters = 252
@@ -214,13 +206,13 @@ def model_config(
             c.model.evoformer_stack.fuse_projection_weights = False
             c.model.extra_msa.extra_msa_stack.fuse_projection_weights = False
             c.model.template.template_pair_stack.fuse_projection_weights = False
-        elif name == 'model_4_multimer_v3':
-            #c.model.extra_msa.extra_msa_embedder.num_extra_msa = 1152
+        elif name == "model_4_multimer_v3":
+            # c.model.extra_msa.extra_msa_embedder.num_extra_msa = 1152
             c.data.train.max_extra_msa = 1152
             c.data.eval.max_extra_msa = 1152
             c.data.predict.max_extra_msa = 1152
-        elif name == 'model_5_multimer_v3':
-            #c.model.extra_msa.extra_msa_embedder.num_extra_msa = 1152
+        elif name == "model_5_multimer_v3":
+            # c.model.extra_msa.extra_msa_embedder.num_extra_msa = 1152
             c.data.train.max_extra_msa = 1152
             c.data.eval.max_extra_msa = 1152
             c.data.predict.max_extra_msa = 1152
@@ -228,7 +220,7 @@ def model_config(
         raise ValueError("Invalid model name")
 
     if long_sequence_inference:
-        assert(not train)
+        assert not train
         c.globals.offload_inference = True
         # Default to DeepSpeed memory-efficient attention kernel unless use_lma is explicitly set
         c.globals.use_deepspeed_evo_attention = True if not c.globals.use_lma else False
@@ -237,10 +229,10 @@ def model_config(
         c.model.template.template_pair_stack.tune_chunk_size = False
         c.model.extra_msa.extra_msa_stack.tune_chunk_size = False
         c.model.evoformer_stack.tune_chunk_size = False
-    
+
     if use_deepspeed_evoformer_attention:
-        c.globals.use_deepspeed_evo_attention = True 
-    
+        c.globals.use_deepspeed_evo_attention = True
+
     if train:
         c.globals.blocks_per_ckpt = 1
         c.globals.chunk_size = None
@@ -248,7 +240,7 @@ def model_config(
         c.globals.offload_inference = False
         c.model.template.average_templates = False
         c.model.template.offload_templates = False
-    
+
     if low_prec:
         c.globals.eps = 1e-4
         # If we want exact numerical parity with the original, inf can't be
@@ -332,24 +324,38 @@ config = mlc.ConfigDict(
                     "template_aatype": [NUM_TEMPLATES, NUM_RES],
                     "template_all_atom_mask": [NUM_TEMPLATES, NUM_RES, None],
                     "template_all_atom_positions": [
-                        NUM_TEMPLATES, NUM_RES, None, None,
+                        NUM_TEMPLATES,
+                        NUM_RES,
+                        None,
+                        None,
                     ],
                     "template_alt_torsion_angles_sin_cos": [
-                        NUM_TEMPLATES, NUM_RES, None, None,
+                        NUM_TEMPLATES,
+                        NUM_RES,
+                        None,
+                        None,
                     ],
                     "template_backbone_rigid_mask": [NUM_TEMPLATES, NUM_RES],
                     "template_backbone_rigid_tensor": [
-                        NUM_TEMPLATES, NUM_RES, None, None,
+                        NUM_TEMPLATES,
+                        NUM_RES,
+                        None,
+                        None,
                     ],
                     "template_mask": [NUM_TEMPLATES],
                     "template_pseudo_beta": [NUM_TEMPLATES, NUM_RES, None],
                     "template_pseudo_beta_mask": [NUM_TEMPLATES, NUM_RES],
                     "template_sum_probs": [NUM_TEMPLATES, None],
                     "template_torsion_angles_mask": [
-                        NUM_TEMPLATES, NUM_RES, None,
+                        NUM_TEMPLATES,
+                        NUM_RES,
+                        None,
                     ],
                     "template_torsion_angles_sin_cos": [
-                        NUM_TEMPLATES, NUM_RES, None, None,
+                        NUM_TEMPLATES,
+                        NUM_RES,
+                        None,
+                        None,
                     ],
                     "true_msa": [NUM_MSA_SEQ, NUM_RES],
                     "use_clamped_fape": [],
@@ -387,8 +393,8 @@ config = mlc.ConfigDict(
                 "use_templates": templates_enabled,
                 "use_template_torsion_angles": embed_template_torsion_angles,
             },
-            "seqemb_mode": { # Configuration for sequence embedding mode
-                "enabled": False, # If True, use seq emb instead of MSA
+            "seqemb_mode": {  # Configuration for sequence embedding mode
+                "enabled": False,  # If True, use seq emb instead of MSA
             },
             "supervised": {
                 "clamp_prob": 0.9,
@@ -444,7 +450,7 @@ config = mlc.ConfigDict(
                 "shuffle_top_k_prefiltered": 20,
                 "crop": True,
                 "crop_size": 256,
-                "spatial_crop_prob": 0.,
+                "spatial_crop_prob": 0.0,
                 "interface_threshold": None,
                 "supervised": True,
                 "clamp_prob": 0.9,
@@ -471,7 +477,7 @@ config = mlc.ConfigDict(
             # Use Staats & Rabe's low-memory attention algorithm. Mutually
             # exclusive with use_deepspeed_evo_attention and use_flash.
             "use_lma": False,
-            # Use FlashAttention in selected modules. Mutually exclusive with 
+            # Use FlashAttention in selected modules. Mutually exclusive with
             # use_deepspeed_evo_attention and use_lma. Doesn't work that well
             # on long sequences (>1000 residues).
             "use_flash": False,
@@ -483,7 +489,7 @@ config = mlc.ConfigDict(
             "c_s": c_s,
             "eps": eps,
             "is_multimer": False,
-            "seqemb_mode_enabled": False, # Global flag for enabling seq emb mode
+            "seqemb_mode_enabled": False,  # Global flag for enabling seq emb mode
         },
         "model": {
             "_mask_trans": False,
@@ -525,7 +531,7 @@ config = mlc.ConfigDict(
                     "c_hidden_tri_mul": 64,
                     "no_blocks": 2,
                     "no_heads": 4,
-                    "transition_type": 'relu',
+                    "transition_type": "relu",
                     "pair_transition_n": 2,
                     "dropout_rate": 0.25,
                     "tri_mul_first": False,
@@ -575,7 +581,7 @@ config = mlc.ConfigDict(
                     "no_heads_msa": 8,
                     "no_heads_pair": 4,
                     "no_blocks": 4,
-                    "transition_type": 'relu',
+                    "transition_type": "relu",
                     "transition_n": 4,
                     "msa_dropout": 0.15,
                     "pair_dropout": 0.25,
@@ -600,7 +606,7 @@ config = mlc.ConfigDict(
                 "no_heads_msa": 8,
                 "no_heads_pair": 4,
                 "no_blocks": 48,
-                "transition_type": 'relu',
+                "transition_type": "relu",
                 "transition_n": 4,
                 "msa_dropout": 0.15,
                 "pair_dropout": 0.25,
@@ -659,7 +665,7 @@ config = mlc.ConfigDict(
             # iterations. A positive value will enable early stopping if the
             # difference in pairwise distances is less than the tolerance between
             # recycling steps.
-            "recycle_early_stop_tolerance": -1.
+            "recycle_early_stop_tolerance": -1.0,
         },
         "relax": {
             "max_iterations": 0,  # no max
@@ -728,12 +734,12 @@ config = mlc.ConfigDict(
                 "min_resolution": 0.1,
                 "max_resolution": 3.0,
                 "eps": eps,  # 1e-8,
-                "weight": 0.,
+                "weight": 0.0,
                 "enabled": tm_enabled,
             },
             "chain_center_of_mass": {
                 "clamp_distance": -4.0,
-                "weight": 0.,
+                "weight": 0.0,
                 "eps": eps,
                 "enabled": False,
             },
@@ -743,60 +749,62 @@ config = mlc.ConfigDict(
     }
 )
 
-multimer_config_update = mlc.ConfigDict({
-    "globals": {
-        "is_multimer": True
-    },
-    "data": {
-        "common": {
-            "feat": {
-                "aatype": [NUM_RES],
-                "all_atom_mask": [NUM_RES, None],
-                "all_atom_positions": [NUM_RES, None, None],
-                # "all_chains_entity_ids": [],  # TODO: Resolve missing features, remove processed msa feats
-                # "all_crops_all_chains_mask": [],
-                # "all_crops_all_chains_positions": [],
-                # "all_crops_all_chains_residue_ids": [],
-                "assembly_num_chains": [],
-                "asym_id": [NUM_RES],
-                "atom14_atom_exists": [NUM_RES, None],
-                "atom37_atom_exists": [NUM_RES, None],
-                "bert_mask": [NUM_MSA_SEQ, NUM_RES],
-                "cluster_bias_mask": [NUM_MSA_SEQ],
-                "cluster_profile": [NUM_MSA_SEQ, NUM_RES, None],
-                "cluster_deletion_mean": [NUM_MSA_SEQ, NUM_RES],
-                "deletion_matrix": [NUM_MSA_SEQ, NUM_RES],
-                "deletion_mean": [NUM_RES],
-                "entity_id": [NUM_RES],
-                "entity_mask": [NUM_RES],
-                "extra_deletion_matrix": [NUM_EXTRA_SEQ, NUM_RES],
-                "extra_msa": [NUM_EXTRA_SEQ, NUM_RES],
-                "extra_msa_mask": [NUM_EXTRA_SEQ, NUM_RES],
-                # "mem_peak": [],
-                "msa": [NUM_MSA_SEQ, NUM_RES],
-                "msa_feat": [NUM_MSA_SEQ, NUM_RES, None],
-                "msa_mask": [NUM_MSA_SEQ, NUM_RES],
-                "msa_profile": [NUM_RES, None],
-                "num_alignments": [],
-                "num_templates": [],
-                # "queue_size": [],
-                "residue_index": [NUM_RES],
-                "residx_atom14_to_atom37": [NUM_RES, None],
-                "residx_atom37_to_atom14": [NUM_RES, None],
-                "resolution": [],
-                "seq_length": [],
-                "seq_mask": [NUM_RES],
-                "sym_id": [NUM_RES],
-                "target_feat": [NUM_RES, None],
-                "template_aatype": [NUM_TEMPLATES, NUM_RES],
-                "template_all_atom_mask": [NUM_TEMPLATES, NUM_RES, None],
-                "template_all_atom_positions": [
-                    NUM_TEMPLATES, NUM_RES, None, None,
-                ],
-                "true_msa": [NUM_MSA_SEQ, NUM_RES]
-            },
-            "max_recycling_iters": 20,  # For training, value is 3
-            "unsupervised_features": [
+multimer_config_update = mlc.ConfigDict(
+    {
+        "globals": {"is_multimer": True},
+        "data": {
+            "common": {
+                "feat": {
+                    "aatype": [NUM_RES],
+                    "all_atom_mask": [NUM_RES, None],
+                    "all_atom_positions": [NUM_RES, None, None],
+                    # "all_chains_entity_ids": [],  # TODO: Resolve missing features, remove processed msa feats
+                    # "all_crops_all_chains_mask": [],
+                    # "all_crops_all_chains_positions": [],
+                    # "all_crops_all_chains_residue_ids": [],
+                    "assembly_num_chains": [],
+                    "asym_id": [NUM_RES],
+                    "atom14_atom_exists": [NUM_RES, None],
+                    "atom37_atom_exists": [NUM_RES, None],
+                    "bert_mask": [NUM_MSA_SEQ, NUM_RES],
+                    "cluster_bias_mask": [NUM_MSA_SEQ],
+                    "cluster_profile": [NUM_MSA_SEQ, NUM_RES, None],
+                    "cluster_deletion_mean": [NUM_MSA_SEQ, NUM_RES],
+                    "deletion_matrix": [NUM_MSA_SEQ, NUM_RES],
+                    "deletion_mean": [NUM_RES],
+                    "entity_id": [NUM_RES],
+                    "entity_mask": [NUM_RES],
+                    "extra_deletion_matrix": [NUM_EXTRA_SEQ, NUM_RES],
+                    "extra_msa": [NUM_EXTRA_SEQ, NUM_RES],
+                    "extra_msa_mask": [NUM_EXTRA_SEQ, NUM_RES],
+                    # "mem_peak": [],
+                    "msa": [NUM_MSA_SEQ, NUM_RES],
+                    "msa_feat": [NUM_MSA_SEQ, NUM_RES, None],
+                    "msa_mask": [NUM_MSA_SEQ, NUM_RES],
+                    "msa_profile": [NUM_RES, None],
+                    "num_alignments": [],
+                    "num_templates": [],
+                    # "queue_size": [],
+                    "residue_index": [NUM_RES],
+                    "residx_atom14_to_atom37": [NUM_RES, None],
+                    "residx_atom37_to_atom14": [NUM_RES, None],
+                    "resolution": [],
+                    "seq_length": [],
+                    "seq_mask": [NUM_RES],
+                    "sym_id": [NUM_RES],
+                    "target_feat": [NUM_RES, None],
+                    "template_aatype": [NUM_TEMPLATES, NUM_RES],
+                    "template_all_atom_mask": [NUM_TEMPLATES, NUM_RES, None],
+                    "template_all_atom_positions": [
+                        NUM_TEMPLATES,
+                        NUM_RES,
+                        None,
+                        None,
+                    ],
+                    "true_msa": [NUM_MSA_SEQ, NUM_RES],
+                },
+                "max_recycling_iters": 20,  # For training, value is 3
+                "unsupervised_features": [
                     "aatype",
                     "residue_index",
                     "msa",
@@ -811,149 +819,103 @@ multimer_config_update = mlc.ConfigDict({
                     "asym_id",
                     "entity_id",
                     "sym_id",
-                ]
-        },
-        "supervised": {
-            "clamp_prob": 1.
-        },
-        # TODO: Change max_msa_clusters and max_extra_msa to multimer feats within model:
-        # c.model.input_embedder.num_msa = 508
-        # c.model.extra_msa.extra_msa_embedder.num_extra_msa = 2048
-        "predict": {
-            "max_msa_clusters": 508,
-            "max_extra_msa": 2048
-        },
-        "eval": {
-            "max_msa_clusters": 508,
-            "max_extra_msa": 2048
-        },
-        "train": {
-            "max_msa_clusters": 508,
-            "max_extra_msa": 2048,
-            "block_delete_msa" : False,
-            "crop_size": 640,
-            "spatial_crop_prob": 0.5,
-            "interface_threshold": 10.,
-            "clamp_prob": 1.,
-        },
-    },
-    "model": {
-        "input_embedder": {
-            "tf_dim": 21,
-            #"num_msa": 508,
-            "max_relative_chain": 2,
-            "max_relative_idx": 32,
-            "use_chain_relative": True
-        },
-        "template": {
-            "template_single_embedder": {
-                "c_in": 34,
-                "c_out": c_m
+                ],
             },
-            "template_pair_embedder": {
-                "c_in": c_z,
-                "c_out": c_t,
-                "c_dgram": 39,
-                "c_aatype": 22
-            },
-            "template_pair_stack": {
-                "tri_mul_first": True,
-                "fuse_projection_weights": True
-            },
-            "c_t": c_t,
-            "c_z": c_z,
-            "use_unit_vector": True
-        },
-        "extra_msa": {
-            # "extra_msa_embedder": {
-            #     "num_extra_msa": 2048
-            # },
-            "extra_msa_stack": {
-                "opm_first": True,
-                "fuse_projection_weights": True
-            }
-        },
-        "evoformer_stack": {
-            "opm_first": True,
-            "fuse_projection_weights": True
-        },
-        "structure_module": {
-            "trans_scale_factor": 20
-        },
-        "heads": {
-            "tm": {
-                "ptm_weight": 0.2,
-                "iptm_weight": 0.8,
-                "enabled": True
-            },
-            "masked_msa": {
-                "c_out": 22
+            "supervised": {"clamp_prob": 1.0},
+            # TODO: Change max_msa_clusters and max_extra_msa to multimer feats within model:
+            # c.model.input_embedder.num_msa = 508
+            # c.model.extra_msa.extra_msa_embedder.num_extra_msa = 2048
+            "predict": {"max_msa_clusters": 508, "max_extra_msa": 2048},
+            "eval": {"max_msa_clusters": 508, "max_extra_msa": 2048},
+            "train": {
+                "max_msa_clusters": 508,
+                "max_extra_msa": 2048,
+                "block_delete_msa": False,
+                "crop_size": 640,
+                "spatial_crop_prob": 0.5,
+                "interface_threshold": 10.0,
+                "clamp_prob": 1.0,
             },
         },
-        "recycle_early_stop_tolerance": 0.5  # For training, value is -1.
-    },
-    "loss": {
-        "fape": {
-            "intra_chain_backbone": {
-                "clamp_distance": 10.0,
-                "loss_unit_distance": 10.0,
-                "weight": 0.5
+        "model": {
+            "input_embedder": {
+                "tf_dim": 21,
+                # "num_msa": 508,
+                "max_relative_chain": 2,
+                "max_relative_idx": 32,
+                "use_chain_relative": True,
             },
-            "interface_backbone": {
-                "clamp_distance": 30.0,
-                "loss_unit_distance": 20.0,
-                "weight": 0.5
-            }
-        },
-        "masked_msa": {
-            "num_classes": 22
-        },
-        "violation": {
-            "average_clashes": True,
-            "weight": 0.03 # Not finetuning
-        },
-        "tm": {
-            "weight": 0.1,
-            "enabled": True
-        },
-        "chain_center_of_mass": {
-            "weight": 0.05,
-            "enabled": True
-        }
-    }
-})
-
-
-seq_mode_config = mlc.ConfigDict({
-    "data": {
-        "common": {
-            "feat": {
-                "seq_embedding": [NUM_RES, None],
+            "template": {
+                "template_single_embedder": {"c_in": 34, "c_out": c_m},
+                "template_pair_embedder": {"c_in": c_z, "c_out": c_t, "c_dgram": 39, "c_aatype": 22},
+                "template_pair_stack": {"tri_mul_first": True, "fuse_projection_weights": True},
+                "c_t": c_t,
+                "c_z": c_z,
+                "use_unit_vector": True,
             },
-            "seqemb_features": [ # List of features to be generated in seqemb mode
-                "seq_embedding"
-            ],
+            "extra_msa": {
+                # "extra_msa_embedder": {
+                #     "num_extra_msa": 2048
+                # },
+                "extra_msa_stack": {"opm_first": True, "fuse_projection_weights": True}
+            },
+            "evoformer_stack": {"opm_first": True, "fuse_projection_weights": True},
+            "structure_module": {"trans_scale_factor": 20},
+            "heads": {
+                "tm": {"ptm_weight": 0.2, "iptm_weight": 0.8, "enabled": True},
+                "masked_msa": {"c_out": 22},
+            },
+            "recycle_early_stop_tolerance": 0.5,  # For training, value is -1.
         },
-        "seqemb_mode": { # Configuration for sequence embedding mode
-            "enabled": True, # If True, use seq emb instead of MSA
-        },
-    },
-    "globals": {
-        "seqemb_mode_enabled": True,
-    },
-    "model": {
-        "preembedding_embedder": {  # Used in sequence embedding mode
-            "tf_dim": 22,
-            "preembedding_dim": preemb_dim_size,
-            "c_z": c_z,
-            "c_m": c_m,
-            "relpos_k": 32,
-        },
-        "extra_msa": {
-            "enabled": False  # Disable Extra MSA Stack
-        },
-        "evoformer_stack": {
-            "no_column_attention": True  # Turn off Evoformer's column attention
+        "loss": {
+            "fape": {
+                "intra_chain_backbone": {"clamp_distance": 10.0, "loss_unit_distance": 10.0, "weight": 0.5},
+                "interface_backbone": {"clamp_distance": 30.0, "loss_unit_distance": 20.0, "weight": 0.5},
+            },
+            "masked_msa": {"num_classes": 22},
+            "violation": {
+                "average_clashes": True,
+                "weight": 0.03,  # Not finetuning
+            },
+            "tm": {"weight": 0.1, "enabled": True},
+            "chain_center_of_mass": {"weight": 0.05, "enabled": True},
         },
     }
-})
+)
+
+
+seq_mode_config = mlc.ConfigDict(
+    {
+        "data": {
+            "common": {
+                "feat": {
+                    "seq_embedding": [NUM_RES, None],
+                },
+                "seqemb_features": [  # List of features to be generated in seqemb mode
+                    "seq_embedding"
+                ],
+            },
+            "seqemb_mode": {  # Configuration for sequence embedding mode
+                "enabled": True,  # If True, use seq emb instead of MSA
+            },
+        },
+        "globals": {
+            "seqemb_mode_enabled": True,
+        },
+        "model": {
+            "preembedding_embedder": {  # Used in sequence embedding mode
+                "tf_dim": 22,
+                "preembedding_dim": preemb_dim_size,
+                "c_z": c_z,
+                "c_m": c_m,
+                "relpos_k": 32,
+            },
+            "extra_msa": {
+                "enabled": False  # Disable Extra MSA Stack
+            },
+            "evoformer_stack": {
+                "no_column_attention": True  # Turn off Evoformer's column attention
+            },
+        },
+    }
+)

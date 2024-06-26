@@ -14,12 +14,15 @@
 # limitations under the License.
 
 """Utils for minimization."""
+
 import io
-from openfold3.core.np import residue_constants
-from Bio import PDB
+
 import numpy as np
+from Bio import PDB
 from openmm import app as openmm_app
 from openmm.app.internal.pdbstructure import PdbStructure
+
+from openfold3.core.np import residue_constants
 
 
 def overwrite_pdb_coordinates(pdb_str: str, pos) -> str:
@@ -44,9 +47,7 @@ def overwrite_b_factors(pdb_str: str, bfactors: np.ndarray) -> str:
       A new PDB string with the B-factors replaced.
     """
     if bfactors.shape[-1] != residue_constants.atom_type_num:
-        raise ValueError(
-            f"Invalid final dimension size for bfactors: {bfactors.shape[-1]}."
-        )
+        raise ValueError(f"Invalid final dimension size for bfactors: {bfactors.shape[-1]}.")
 
     parser = PDB.PDBParser(QUIET=True)
     handle = io.StringIO(pdb_str)
@@ -60,8 +61,7 @@ def overwrite_b_factors(pdb_str: str, bfactors: np.ndarray) -> str:
             idx += 1
             if idx >= bfactors.shape[0]:
                 raise ValueError(
-                    "Index into bfactors exceeds number of residues. "
-                    "B-factors shape: {shape}, idx: {idx}."
+                    "Index into bfactors exceeds number of residues. " "B-factors shape: {shape}, idx: {idx}."
                 )
         curr_resid = atom_resid
         atom.bfactor = bfactors[idx, residue_constants.atom_order["CA"]]
@@ -73,14 +73,10 @@ def overwrite_b_factors(pdb_str: str, bfactors: np.ndarray) -> str:
     return new_pdb.getvalue()
 
 
-def assert_equal_nonterminal_atom_types(
-    atom_mask: np.ndarray, ref_atom_mask: np.ndarray
-):
+def assert_equal_nonterminal_atom_types(atom_mask: np.ndarray, ref_atom_mask: np.ndarray):
     """Checks that pre- and post-minimized proteins have same atom set."""
     # Ignore any terminal OXT atoms which may have been added by minimization.
     oxt = residue_constants.atom_order["OXT"]
     no_oxt_mask = np.ones(shape=atom_mask.shape, dtype=bool)
     no_oxt_mask[..., oxt] = False
-    np.testing.assert_almost_equal(
-        ref_atom_mask[no_oxt_mask], atom_mask[no_oxt_mask]
-    )
+    np.testing.assert_almost_equal(ref_atom_mask[no_oxt_mask], atom_mask[no_oxt_mask])

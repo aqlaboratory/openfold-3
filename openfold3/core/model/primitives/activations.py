@@ -23,6 +23,7 @@ from .linear import Linear
 
 class SwiGLU(nn.Module):
     """SwiGLU activation function."""
+
     def __init__(self, c_in: int, c_out: int, bias: bool = False, init="he_normal"):
         """
         Args:

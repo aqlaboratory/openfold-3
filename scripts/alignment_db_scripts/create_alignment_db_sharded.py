@@ -83,9 +83,7 @@ def create_index_default_dict() -> dict:
     return {"db": None, "files": []}
 
 
-def create_shard(
-    shard_files: list[Path], output_dir: Path, output_name: str, shard_num: int
-) -> dict:
+def create_shard(shard_files: list[Path], output_dir: Path, output_name: str, shard_num: int) -> dict:
     """
     Creates a single shard of the alignment database, and returns the
     corresponding indices for the super index.
@@ -117,9 +115,7 @@ def create_shard(
 
             for file_name, file_bytes in file_data:
                 file_length = len(file_bytes)
-                shard_index[chain_name]["files"].append(
-                    (file_name, db_offset, file_length)
-                )
+                shard_index[chain_name]["files"].append((file_name, db_offset, file_length))
                 db_file.write(file_bytes)
                 db_offset += file_length
     db_file.close()
@@ -155,9 +151,7 @@ def main(args):
     print(f"Creating {n_shards} alignment-db files...")
     with ProcessPoolExecutor() as executor:
         futures = [
-            executor.submit(
-                create_shard, shard_files, output_dir, output_db_name, shard_index
-            )
+            executor.submit(create_shard, shard_files, output_dir, output_db_name, shard_index)
             for shard_index, shard_files in enumerate(chain_dir_shards)
         ]
 

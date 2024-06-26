@@ -18,12 +18,12 @@
 import torch
 import torch.nn as nn
 
-from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.loss.loss import (
     compute_plddt,
-    compute_tm,
     compute_predicted_aligned_error,
+    compute_tm,
 )
+from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.precision_utils import is_fp16_enabled
 
 
@@ -68,26 +68,20 @@ class AuxiliaryHeads(nn.Module):
         masked_msa_logits = self.masked_msa(outputs["msa"])
         aux_out["masked_msa_logits"] = masked_msa_logits
 
-        experimentally_resolved_logits = self.experimentally_resolved(
-            outputs["single"]
-        )
-        aux_out[
-            "experimentally_resolved_logits"
-        ] = experimentally_resolved_logits
+        experimentally_resolved_logits = self.experimentally_resolved(outputs["single"])
+        aux_out["experimentally_resolved_logits"] = experimentally_resolved_logits
 
         if self.config.tm.enabled:
             tm_logits = self.tm(outputs["pair"])
             aux_out["tm_logits"] = tm_logits
-            aux_out["ptm_score"] = compute_tm(
-                tm_logits, **self.config.tm
-            )
+            aux_out["ptm_score"] = compute_tm(tm_logits, **self.config.tm)
             asym_id = outputs.get("asym_id")
             if asym_id is not None:
-                aux_out["iptm_score"] = compute_tm(
-                    tm_logits, asym_id=asym_id, interface=True, **self.config.tm
+                aux_out["iptm_score"] = compute_tm(tm_logits, asym_id=asym_id, interface=True, **self.config.tm)
+                aux_out["weighted_ptm_score"] = (
+                    self.config.tm["iptm_weight"] * aux_out["iptm_score"]
+                    + self.config.tm["ptm_weight"] * aux_out["ptm_score"]
                 )
-                aux_out["weighted_ptm_score"] = (self.config.tm["iptm_weight"] * aux_out["iptm_score"]
-                                                 + self.config.tm["ptm_weight"] * aux_out["ptm_score"])
 
             aux_out.update(
                 compute_predicted_aligned_error(
@@ -160,9 +154,9 @@ class DistogramHead(nn.Module):
         logits = self.linear(z)
         logits = logits + logits.transpose(-2, -3)
         return logits
-    
-    def forward(self, z): 
-        if(is_fp16_enabled()):
+
+    def forward(self, z):
+        if is_fp16_enabled():
             with torch.cuda.amp.autocast(enabled=False):
                 return self._forward(z.float())
         else:

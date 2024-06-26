@@ -4,6 +4,7 @@ sequence identity threshold using mmseqs2. The mmseqs2 flags are identical to
 what PDB officially uses to provide their official sequence clusters
 (https://github.com/soedinglab/MMseqs2/issues/452).
 """
+
 import shutil
 import subprocess
 from argparse import ArgumentParser
@@ -73,8 +74,7 @@ def main(args):
 
     print("Cleaning up mmseqs2 output...")
     mmseqs_outputs = [
-        output_dir / f"{mmseqs_prefix}_{suffix}"
-        for suffix in ["cluster.tsv", "rep_seq.fasta", "all_seqs.fasta"]
+        output_dir / f"{mmseqs_prefix}_{suffix}" for suffix in ["cluster.tsv", "rep_seq.fasta", "all_seqs.fasta"]
     ]
     for file in mmseqs_outputs:
         file.unlink()
@@ -84,9 +84,7 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser(
-        description=__doc__
-    )
+    parser = ArgumentParser(description=__doc__)
     parser.add_argument(
         "input_fasta",
         type=Path,

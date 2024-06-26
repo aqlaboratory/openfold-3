@@ -17,21 +17,21 @@ import torch.nn as nn
 
 from openfold3.core.data import data_transforms, data_transforms_multimer
 from openfold3.core.model.feature_embedders.input_embedders import (
+    ExtraMSAEmbedder,
     InputEmbedder,
     InputEmbedderMultimer,
-    RecyclingEmbedder,
-    ExtraMSAEmbedder,
     PreembeddingEmbedder,
+    RecyclingEmbedder,
 )
+from openfold3.core.model.heads.token_heads import AuxiliaryHeads
 from openfold3.core.model.latent.evoformer import EvoformerStack
 from openfold3.core.model.latent.extra_msa import ExtraMSAStack
 from openfold3.core.model.latent.template import (
     TemplateEmbedderMonomer,
     TemplateEmbedderMultimer,
+    embed_templates_average,
     embed_templates_offload,
-    embed_templates_average
 )
-from openfold3.core.model.heads.token_heads import AuxiliaryHeads
 from openfold3.core.model.structure.structure_module import StructureModule
 from openfold3.core.np import residue_constants
 from openfold3.core.utils.feats import (
@@ -68,9 +68,7 @@ class AlphaFold(nn.Module):
 
         # Main trunk + structure module
         if self.globals.is_multimer:
-            self.input_embedder = InputEmbedderMultimer(
-                **self.config["input_embedder"]
-            )
+            self.input_embedder = InputEmbedderMultimer(**self.config["input_embedder"])
         elif self.seqemb_mode:
             # If using seqemb mode, embed the sequence embeddings passed
             # to the model ("preembeddings") instead of embedding the sequence
@@ -119,9 +117,7 @@ class AlphaFold(nn.Module):
     def embed_templates(self, batch, feats, z, pair_mask, templ_dim, inplace_safe):
         if self.globals.is_multimer:
             asym_id = feats["asym_id"]
-            multichain_mask_2d = (
-                asym_id[..., None] == asym_id[..., None, :]
-            )
+            multichain_mask_2d = asym_id[..., None] == asym_id[..., None, :]
             template_embeds = self.template_embedder(
                 batch,
                 z,
@@ -132,20 +128,28 @@ class AlphaFold(nn.Module):
                 use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
                 use_lma=self.globals.use_lma,
                 inplace_safe=inplace_safe,
-                _mask_trans=self.config._mask_trans
+                _mask_trans=self.config._mask_trans,
             )
-            feats["template_torsion_angles_mask"] = (
-                template_embeds["template_mask"]
-            )
+            feats["template_torsion_angles_mask"] = template_embeds["template_mask"]
         else:
             if self.template_config.offload_templates:
-                return embed_templates_offload(self,
-                                               batch, z, pair_mask, templ_dim, inplace_safe=inplace_safe,
-                                               )
+                return embed_templates_offload(
+                    self,
+                    batch,
+                    z,
+                    pair_mask,
+                    templ_dim,
+                    inplace_safe=inplace_safe,
+                )
             elif self.template_config.average_templates:
-                return embed_templates_average(self,
-                                               batch, z, pair_mask, templ_dim, inplace_safe=inplace_safe,
-                                               )
+                return embed_templates_average(
+                    self,
+                    batch,
+                    z,
+                    pair_mask,
+                    templ_dim,
+                    inplace_safe=inplace_safe,
+                )
 
             template_embeds = self.template_embedder(
                 batch,
@@ -156,7 +160,7 @@ class AlphaFold(nn.Module):
                 use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
                 use_lma=self.globals.use_lma,
                 inplace_safe=inplace_safe,
-                _mask_trans=self.config._mask_trans
+                _mask_trans=self.config._mask_trans,
             )
 
         return template_embeds
@@ -177,12 +181,12 @@ class AlphaFold(nn.Module):
         def distances(points):
             """Compute all pairwise distances for a set of points."""
             d = points[..., None, :] - points[..., None, :, :]
-            return torch.sqrt(torch.sum(d ** 2, dim=-1))
+            return torch.sqrt(torch.sum(d**2, dim=-1))
 
         if self.config.recycle_early_stop_tolerance < 0:
             return False
 
-        ca_idx = residue_constants.atom_order['CA']
+        ca_idx = residue_constants.atom_order["CA"]
         sq_diff = (distances(prev_pos[..., ca_idx, :]) - distances(next_pos[..., ca_idx, :])) ** 2
         mask = mask[..., None] * mask[..., None, :]
         sq_diff = masked_mean(mask=mask, value=sq_diff, dim=list(range(len(mask.shape))))
@@ -224,11 +228,7 @@ class AlphaFold(nn.Module):
             # Initialize the SingleSeq and pair representations
             # m: [*, 1, N, C_m]
             # z: [*, N, N, C_z]
-            m, z = self.input_embedder(
-                feats["target_feat"],
-                feats["residue_index"],
-                feats["seq_embedding"]
-            )
+            m, z = self.input_embedder(feats["target_feat"], feats["residue_index"], feats["seq_embedding"])
         else:
             # Initialize the MSA and pair representations
             # m: [*, S_c, N, C_m]
@@ -240,11 +240,11 @@ class AlphaFold(nn.Module):
                 inplace_safe=inplace_safe,
             )
 
-        # Unpack the recycling embeddings. Removing them from the list allows 
+        # Unpack the recycling embeddings. Removing them from the list allows
         # them to be freed further down in this function, saving memory
         m_1_prev, z_prev, x_prev = reversed([prevs.pop() for _ in range(3)])
 
-        # Initialize the recycling embeddings, if needs be 
+        # Initialize the recycling embeddings, if needs be
         if None in [m_1_prev, z_prev, x_prev]:
             # [*, N, C_m]
             m_1_prev = m.new_zeros(
@@ -264,9 +264,7 @@ class AlphaFold(nn.Module):
                 requires_grad=False,
             )
 
-        pseudo_beta_x_prev = data_transforms.pseudo_beta_fn(
-            feats["aatype"], x_prev, None
-        ).to(dtype=z.dtype)
+        pseudo_beta_x_prev = data_transforms.pseudo_beta_fn(feats["aatype"], x_prev, None).to(dtype=z.dtype)
 
         # The recycling embedder is memory-intensive, so we offload first
         if self.globals.offload_inference and inplace_safe:
@@ -301,9 +299,7 @@ class AlphaFold(nn.Module):
 
         # Embed the templates + merge with MSA/pair embeddings
         if self.config.template.enabled:
-            template_feats = {
-                k: v for k, v in feats.items() if k.startswith("template_")
-            }
+            template_feats = {k: v for k, v in feats.items() if k.startswith("template_")}
 
             template_embeds = self.embed_templates(
                 template_feats,
@@ -315,27 +311,20 @@ class AlphaFold(nn.Module):
             )
 
             # [*, N, N, C_z]
-            z = add(z,
-                    template_embeds.pop("template_pair_embedding"),
-                    inplace_safe,
-                    )
+            z = add(
+                z,
+                template_embeds.pop("template_pair_embedding"),
+                inplace_safe,
+            )
 
-            if (
-                "template_single_embedding" in template_embeds
-            ):
+            if "template_single_embedding" in template_embeds:
                 # [*, S = S_c + S_t, N, C_m]
-                m = torch.cat(
-                    [m, template_embeds["template_single_embedding"]],
-                    dim=-3
-                )
+                m = torch.cat([m, template_embeds["template_single_embedding"]], dim=-3)
 
                 # [*, S, N]
                 if not self.globals.is_multimer:
                     torsion_angles_mask = feats["template_torsion_angles_mask"]
-                    msa_mask = torch.cat(
-                        [feats["msa_mask"], torsion_angles_mask[..., 2]],
-                        dim=-2
-                    )
+                    msa_mask = torch.cat([feats["msa_mask"], torsion_angles_mask[..., 2]], dim=-2)
                 else:
                     msa_mask = torch.cat(
                         [feats["msa_mask"], template_embeds["template_mask"]],
@@ -374,7 +363,8 @@ class AlphaFold(nn.Module):
             else:
                 # [*, N, N, C_z]
                 z = self.extra_msa_stack(
-                    a, z,
+                    a,
+                    z,
                     msa_mask=feats["extra_msa_mask"].to(dtype=m.dtype),
                     pair_mask=pair_mask.to(dtype=m.dtype),
                     chunk_size=self.globals.chunk_size,
@@ -387,7 +377,7 @@ class AlphaFold(nn.Module):
         # Run MSA + pair embeddings through the trunk of the network
         # m: [*, S, N, C_m]
         # z: [*, N, N, C_z]
-        # s: [*, N, C_s]          
+        # s: [*, N, C_s]
         if self.globals.offload_inference:
             input_tensors = [m, z]
             del m, z
@@ -430,9 +420,7 @@ class AlphaFold(nn.Module):
             inplace_safe=inplace_safe,
             _offload_inference=self.globals.offload_inference,
         )
-        outputs["final_atom_positions"] = atom14_to_atom37(
-            outputs["sm"]["positions"][-1], feats
-        )
+        outputs["final_atom_positions"] = atom14_to_atom37(outputs["sm"]["positions"][-1], feats)
         outputs["final_atom_mask"] = feats["atom37_atom_exists"]
         outputs["final_affine_tensor"] = outputs["sm"]["frames"][-1]
 
@@ -466,9 +454,7 @@ class AlphaFold(nn.Module):
         self.template_embedder.template_pair_stack.blocks_per_ckpt = (
             self.config.template.template_pair_stack.blocks_per_ckpt
         )
-        self.evoformer.blocks_per_ckpt = (
-            self.config.evoformer_stack.blocks_per_ckpt
-        )
+        self.evoformer.blocks_per_ckpt = self.config.evoformer_stack.blocks_per_ckpt
 
         for b in self.extra_msa_stack.blocks:
             b.ckpt = self.config.extra_msa.extra_msa_stack.ckpt
@@ -548,11 +534,7 @@ class AlphaFold(nn.Module):
                         torch.clear_autocast_cache()
 
                 # Run the next iteration of the model
-                outputs, m_1_prev, z_prev, x_prev, early_stop = self.iteration(
-                    feats,
-                    prevs,
-                    _recycle=(num_iters > 1)
-                )
+                outputs, m_1_prev, z_prev, x_prev, early_stop = self.iteration(feats, prevs, _recycle=(num_iters > 1))
 
                 num_recycles += 1
 

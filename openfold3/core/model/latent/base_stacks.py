@@ -97,6 +97,7 @@ class MSAStack(nn.Module, ABC):
         ]
 
         if self.clear_cache_between_blocks:
+
             def block_with_cache_clear(block, *args, **kwargs):
                 torch.cuda.empty_cache()
                 return block(*args, **kwargs)
@@ -110,7 +111,10 @@ class MSAStack(nn.Module, ABC):
                 # Tensors cloned to avoid getting written to in-place
                 # A corollary is that chunk size tuning should be disabled for
                 # large N, when z gets really big
-                args=(m.clone(), z.clone(),),
+                args=(
+                    m.clone(),
+                    z.clone(),
+                ),
                 min_chunk_size=chunk_size,
             )
 
@@ -121,7 +125,8 @@ class MSAStack(nn.Module, ABC):
                     # A temporary measure to address torch's occasional
                     # inability to allocate large tensors
                     _attn_chunk_size=max(chunk_size, tuned_chunk_size // 4),
-                ) for b in blocks
+                )
+                for b in blocks
             ]
 
         return blocks

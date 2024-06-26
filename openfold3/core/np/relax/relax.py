@@ -14,15 +14,18 @@
 # limitations under the License.
 
 """Amber relaxation."""
+
 from typing import Any, Dict, Sequence, Tuple
-from openfold3.core.np import protein
-from openfold3.core.np.relax import amber_minimize
-from openfold3.core.np.relax import utils
+
 import numpy as np
+
+from openfold3.core.np import protein
+from openfold3.core.np.relax import amber_minimize, utils
 
 
 class AmberRelaxation(object):
     """Amber relaxation."""
+
     def __init__(
         self,
         *,
@@ -57,9 +60,7 @@ class AmberRelaxation(object):
         self._max_outer_iterations = max_outer_iterations
         self._use_gpu = use_gpu
 
-    def process(
-        self, *, prot: protein.Protein, cif_output: bool = False
-    ) -> Tuple[str, Dict[str, Any], np.ndarray]:
+    def process(self, *, prot: protein.Protein, cif_output: bool = False) -> Tuple[str, Dict[str, Any], np.ndarray]:
         """Runs Amber relax on a prediction, adds hydrogens, returns PDB string."""
         out = amber_minimize.run_pipeline(
             prot=prot,
@@ -82,12 +83,8 @@ class AmberRelaxation(object):
         pdb_str = amber_minimize.clean_protein(prot)
         min_pdb = utils.overwrite_pdb_coordinates(pdb_str, min_pos)
         min_pdb = utils.overwrite_b_factors(min_pdb, prot.b_factors)
-        utils.assert_equal_nonterminal_atom_types(
-            protein.from_pdb_string(min_pdb).atom_mask, prot.atom_mask
-        )
-        violations = out["structural_violations"][
-            "total_per_residue_violations_mask"
-        ]
+        utils.assert_equal_nonterminal_atom_types(protein.from_pdb_string(min_pdb).atom_mask, prot.atom_mask)
+        violations = out["structural_violations"]["total_per_residue_violations_mask"]
 
         min_pdb = protein.add_pdb_headers(prot, min_pdb)
         output_str = min_pdb

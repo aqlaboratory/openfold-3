@@ -5,9 +5,7 @@ import os
 
 def main(args):
     db_path = os.path.join(args.output_db_path, f"{args.output_db_name}.db")
-    index_path = os.path.join(
-        args.output_db_path, f"{args.output_db_name}.index"
-    )
+    index_path = os.path.join(args.output_db_path, f"{args.output_db_name}.index")
     db_fp = open(db_path, "wb")
     index = {}
     db_offset = 0
@@ -21,7 +19,7 @@ def main(args):
             l = len(file_bytes)
             file_list = index.setdefault(chain_alignment_dir, [])
             file_list.append((f, db_offset, l))
-            
+
             db_fp.write(file_bytes)
             db_offset += l
 
@@ -29,15 +27,15 @@ def main(args):
 
     with open(index_path, "w") as fp:
         json.dump(index, fp)
-            
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "alignment_dir", type=str, 
+        "alignment_dir",
+        type=str,
         help="""Path to precomputed alignment directory, with one subdirectory 
-                per chain."""
+                per chain.""",
     )
     parser.add_argument("output_db_path", type=str)
     parser.add_argument("output_db_name", type=str)

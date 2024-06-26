@@ -31,6 +31,7 @@ from openfold3.core.utils.tensor_utils import add
 
 class PairFormerBlock(nn.Module):
     """Implements block of AF3 Algorithm 17."""
+
     def __init__(
         self,
         c_s: int,
@@ -44,7 +45,7 @@ class PairFormerBlock(nn.Module):
         transition_n: int,
         pair_dropout: float,
         fuse_projection_weights: bool,
-        inf: float
+        inf: float,
     ):
         """
         Args:
@@ -86,19 +87,21 @@ class PairFormerBlock(nn.Module):
             transition_n=transition_n,
             pair_dropout=pair_dropout,
             fuse_projection_weights=fuse_projection_weights,
-            inf=inf
+            inf=inf,
         )
 
-        self.attn_pair_bias = AttentionPairBias(c_q=c_s,
-                                                c_k=c_s,
-                                                c_v=c_s,
-                                                c_s=c_s,
-                                                c_z=c_z,
-                                                c_hidden=c_hidden_pair_bias,
-                                                no_heads=no_heads_pair_bias,
-                                                use_ada_layer_norm=False,
-                                                gating=True,
-                                                inf=inf)
+        self.attn_pair_bias = AttentionPairBias(
+            c_q=c_s,
+            c_k=c_s,
+            c_v=c_s,
+            c_s=c_s,
+            c_z=c_z,
+            c_hidden=c_hidden_pair_bias,
+            no_heads=no_heads_pair_bias,
+            use_ada_layer_norm=False,
+            gating=True,
+            inf=inf,
+        )
 
         self.single_transition = SwiGLUTransition(
             c_in=c_s,
@@ -160,21 +163,30 @@ class PairFormerBlock(nn.Module):
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
-            _attn_chunk_size=_attn_chunk_size
+            _attn_chunk_size=_attn_chunk_size,
         )
 
-        s = add(s,
-                self.attn_pair_bias(a=s, z=z, s=None, beta=None, mask=single_mask,
-                                    use_memory_efficient_kernel=False,
-                                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                                    use_lma=use_lma),
-                inplace=inplace_safe,
-                )
+        s = add(
+            s,
+            self.attn_pair_bias(
+                a=s,
+                z=z,
+                s=None,
+                beta=None,
+                mask=single_mask,
+                use_memory_efficient_kernel=False,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_lma=use_lma,
+            ),
+            inplace=inplace_safe,
+        )
 
         s = add(
             s,
             self.single_transition(
-                s, mask=single_trans_mask, chunk_size=chunk_size,
+                s,
+                mask=single_trans_mask,
+                chunk_size=chunk_size,
             ),
             inplace=inplace_safe,
         )
@@ -185,6 +197,7 @@ class PairFormerBlock(nn.Module):
 # TODO: Make this inherit from MSAStack/CheckpointStack
 class PairFormerStack(nn.Module):
     """Implements AF3 Algorithm 17."""
+
     def __init__(
         self,
         c_s: int,
@@ -264,7 +277,7 @@ class PairFormerStack(nn.Module):
                 transition_n=transition_n,
                 pair_dropout=pair_dropout,
                 fuse_projection_weights=fuse_projection_weights,
-                inf=inf
+                inf=inf,
             )
             self.blocks.append(block)
 
@@ -307,6 +320,7 @@ class PairFormerStack(nn.Module):
         ]
 
         if self.clear_cache_between_blocks:
+
             def block_with_cache_clear(block, *args, **kwargs):
                 torch.cuda.empty_cache()
                 return block(*args, **kwargs)
@@ -318,31 +332,37 @@ class PairFormerStack(nn.Module):
             tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
                 representative_fn=blocks[0],
                 # We don't want to write in-place during chunk tuning runs
-                args=(s.clone(), z.clone(),),
+                args=(
+                    s.clone(),
+                    z.clone(),
+                ),
                 min_chunk_size=chunk_size,
             )
             blocks = [
-                partial(b,
-                        chunk_size=tuned_chunk_size,
-                        # A temporary measure to address torch's occasional
-                        # inability to allocate large tensors
-                        _attn_chunk_size=max(chunk_size, tuned_chunk_size // 4),
-                        ) for b in blocks
+                partial(
+                    b,
+                    chunk_size=tuned_chunk_size,
+                    # A temporary measure to address torch's occasional
+                    # inability to allocate large tensors
+                    _attn_chunk_size=max(chunk_size, tuned_chunk_size // 4),
+                )
+                for b in blocks
             ]
 
         return blocks
 
-    def forward(self,
-                s: torch.Tensor,
-                z: torch.Tensor,
-                single_mask: torch.Tensor,
-                pair_mask: torch.Tensor,
-                chunk_size: int,
-                use_deepspeed_evo_attention: bool = False,
-                use_lma: bool = False,
-                inplace_safe: bool = False,
-                _mask_trans: bool = True,
-                ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self,
+        s: torch.Tensor,
+        z: torch.Tensor,
+        single_mask: torch.Tensor,
+        pair_mask: torch.Tensor,
+        chunk_size: int,
+        use_deepspeed_evo_attention: bool = False,
+        use_lma: bool = False,
+        inplace_safe: bool = False,
+        _mask_trans: bool = True,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             s:

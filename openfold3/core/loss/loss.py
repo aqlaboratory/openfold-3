@@ -13,23 +13,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
+from typing import Dict, Optional, Tuple
+
 import ml_collections
 import numpy as np
 import torch
 import torch.nn as nn
-from typing import Dict, Optional, Tuple
 
 from openfold3.core.np import residue_constants
-from openfold3.core.utils.rigid_utils import Rotation, Rigid
-from openfold3.core.utils.geometry.vector import Vec3Array, euclidean_distance
 from openfold3.core.utils.all_atom_multimer import get_rc_tensor
+from openfold3.core.utils.geometry.vector import Vec3Array, euclidean_distance
+from openfold3.core.utils.rigid_utils import Rigid, Rotation
 from openfold3.core.utils.tensor_utils import (
-    tree_map,
     masked_mean,
     permute_final_dims,
+    tensor_tree_map,
+    tree_map,
 )
-import logging
-from openfold3.core.utils.tensor_utils import tensor_tree_map
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ def sigmoid_cross_entropy(logits, labels):
     # log_p = torch.log(torch.sigmoid(logits))
     log_not_p = torch.nn.functional.logsigmoid(-1 * logits)
     # log_not_p = torch.log(torch.sigmoid(-logits))
-    loss = (-1. * labels) * log_p - (1. - labels) * log_not_p
+    loss = (-1.0 * labels) * log_p - (1.0 - labels) * log_not_p
     loss = loss.to(dtype=logits_dtype)
     return loss
 
@@ -69,7 +70,7 @@ def torsion_angle_loss(
     # [*, N, 7]
     diff_norm_gt = torch.norm(a - a_gt, dim=-1)
     diff_norm_alt_gt = torch.norm(a - a_alt_gt, dim=-1)
-    min_diff = torch.minimum(diff_norm_gt ** 2, diff_norm_alt_gt ** 2)
+    min_diff = torch.minimum(diff_norm_gt**2, diff_norm_alt_gt**2)
 
     # [*]
     l_torsion = torch.mean(min_diff, dim=(-1, -2))
@@ -92,32 +93,32 @@ def compute_fape(
     eps=1e-8,
 ) -> torch.Tensor:
     """
-        Computes FAPE loss.
+    Computes FAPE loss.
 
-        Args:
-            pred_frames:
-                [*, N_frames] Rigid object of predicted frames
-            target_frames:
-                [*, N_frames] Rigid object of ground truth frames
-            frames_mask:
-                [*, N_frames] binary mask for the frames
-            pred_positions:
-                [*, N_pts, 3] predicted atom positions
-            target_positions:
-                [*, N_pts, 3] ground truth positions
-            positions_mask:
-                [*, N_pts] positions mask
-            length_scale:
-                Length scale by which the loss is divided
-            pair_mask:
-                [*,  N_frames, N_pts] mask to use for
-                separating intra- from inter-chain losses.
-            l1_clamp_distance:
-                Cutoff above which distance errors are disregarded
-            eps:
-                Small value used to regularize denominators
-        Returns:
-            [*] loss tensor
+    Args:
+        pred_frames:
+            [*, N_frames] Rigid object of predicted frames
+        target_frames:
+            [*, N_frames] Rigid object of ground truth frames
+        frames_mask:
+            [*, N_frames] binary mask for the frames
+        pred_positions:
+            [*, N_pts, 3] predicted atom positions
+        target_positions:
+            [*, N_pts, 3] ground truth positions
+        positions_mask:
+            [*, N_pts] positions mask
+        length_scale:
+            Length scale by which the loss is divided
+        pair_mask:
+            [*,  N_frames, N_pts] mask to use for
+            separating intra- from inter-chain losses.
+        l1_clamp_distance:
+            Cutoff above which distance errors are disregarded
+        eps:
+            Small value used to regularize denominators
+    Returns:
+        [*] loss tensor
     """
     # [*, N_frames, N_pts, 3]
     local_pred_pos = pred_frames.invert()[..., None].apply(
@@ -127,9 +128,7 @@ def compute_fape(
         target_positions[..., None, :, :],
     )
 
-    error_dist = torch.sqrt(
-        torch.sum((local_pred_pos - local_target_pos) ** 2, dim=-1) + eps
-    )
+    error_dist = torch.sqrt(torch.sum((local_pred_pos - local_target_pos) ** 2, dim=-1) + eps)
 
     if l1_clamp_distance is not None:
         error_dist = torch.clamp(error_dist, min=0, max=l1_clamp_distance)
@@ -157,9 +156,7 @@ def compute_fape(
         #
         # ("roughly" because eps is necessarily duplicated in the latter)
         normed_error = torch.sum(normed_error, dim=-1)
-        normed_error = (
-            normed_error / (eps + torch.sum(frames_mask, dim=-1))[..., None]
-        )
+        normed_error = normed_error / (eps + torch.sum(frames_mask, dim=-1))[..., None]
         normed_error = torch.sum(normed_error, dim=-1)
         normed_error = normed_error / (eps + torch.sum(positions_mask, dim=-1))
 
@@ -222,9 +219,7 @@ def backbone_loss(
             eps=eps,
         )
 
-        fape_loss = fape_loss * use_clamped_fape + unclamped_fape_loss * (
-            1 - use_clamped_fape
-        )
+        fape_loss = fape_loss * use_clamped_fape + unclamped_fape_loss * (1 - use_clamped_fape)
 
     # Average over the batch dimension
     fape_loss = torch.mean(fape_loss)
@@ -247,10 +242,8 @@ def sidechain_loss(
     **kwargs,
 ) -> torch.Tensor:
     renamed_gt_frames = (
-                            1.0 - alt_naming_is_better[..., None, None, None]
-                        ) * rigidgroups_gt_frames + alt_naming_is_better[
-                            ..., None, None, None
-                        ] * rigidgroups_alt_gt_frames
+        1.0 - alt_naming_is_better[..., None, None, None]
+    ) * rigidgroups_gt_frames + alt_naming_is_better[..., None, None, None] * rigidgroups_alt_gt_frames
 
     # Steamroll the inputs
     sidechain_frames = sidechain_frames[-1]
@@ -262,9 +255,7 @@ def sidechain_loss(
     rigidgroups_gt_exists = rigidgroups_gt_exists.reshape(*batch_dims, -1)
     sidechain_atom_pos = sidechain_atom_pos[-1]
     sidechain_atom_pos = sidechain_atom_pos.view(*batch_dims, -1, 3)
-    renamed_atom14_gt_positions = renamed_atom14_gt_positions.view(
-        *batch_dims, -1, 3
-    )
+    renamed_atom14_gt_positions = renamed_atom14_gt_positions.view(*batch_dims, -1, 3)
     renamed_atom14_gt_exists = renamed_atom14_gt_exists.view(*batch_dims, -1)
 
     fape = compute_fape(
@@ -299,11 +290,13 @@ def fape_loss(
         )
         interface_bb_loss = backbone_loss(
             traj=traj,
-            pair_mask=1. - intra_chain_mask,
+            pair_mask=1.0 - intra_chain_mask,
             **{**batch, **config.interface_backbone},
         )
-        weighted_bb_loss = (intra_chain_bb_loss * config.intra_chain_backbone.weight
-                            + interface_bb_loss * config.interface_backbone.weight)
+        weighted_bb_loss = (
+            intra_chain_bb_loss * config.intra_chain_backbone.weight
+            + interface_bb_loss * config.interface_backbone.weight
+        )
     else:
         bb_loss = backbone_loss(
             traj=traj,
@@ -338,27 +331,27 @@ def supervised_chi_loss(
     **kwargs,
 ) -> torch.Tensor:
     """
-        Implements Algorithm 27 (torsionAngleLoss)
+    Implements Algorithm 27 (torsionAngleLoss)
 
-        Args:
-            angles_sin_cos:
-                [*, N, 7, 2] predicted angles
-            unnormalized_angles_sin_cos:
-                The same angles, but unnormalized
-            aatype:
-                [*, N] residue indices
-            seq_mask:
-                [*, N] sequence mask
-            chi_mask:
-                [*, N, 7] angle mask
-            chi_angles_sin_cos:
-                [*, N, 7, 2] ground truth angles
-            chi_weight:
-                Weight for the angle component of the loss
-            angle_norm_weight:
-                Weight for the normalization component of the loss
-        Returns:
-            [*] loss tensor
+    Args:
+        angles_sin_cos:
+            [*, N, 7, 2] predicted angles
+        unnormalized_angles_sin_cos:
+            The same angles, but unnormalized
+        aatype:
+            [*, N] residue indices
+        seq_mask:
+            [*, N] sequence mask
+        chi_mask:
+            [*, N, 7] angle mask
+        chi_angles_sin_cos:
+            [*, N, 7, 2] ground truth angles
+        chi_weight:
+            Weight for the angle component of the loss
+        angle_norm_weight:
+            Weight for the normalization component of the loss
+    Returns:
+        [*] loss tensor
     """
     pred_angles = angles_sin_cos[..., 3:, :]
     residue_type_one_hot = torch.nn.functional.one_hot(
@@ -376,32 +369,20 @@ def supervised_chi_loss(
     shifted_mask = (1 - 2 * chi_pi_periodic).unsqueeze(-1)
     true_chi_shifted = shifted_mask * true_chi
     sq_chi_error = torch.sum((true_chi - pred_angles) ** 2, dim=-1)
-    sq_chi_error_shifted = torch.sum(
-        (true_chi_shifted - pred_angles) ** 2, dim=-1
-    )
+    sq_chi_error_shifted = torch.sum((true_chi_shifted - pred_angles) ** 2, dim=-1)
     sq_chi_error = torch.minimum(sq_chi_error, sq_chi_error_shifted)
 
     # The ol' switcheroo
-    sq_chi_error = sq_chi_error.permute(
-        *range(len(sq_chi_error.shape))[1:-2], 0, -2, -1
-    )
+    sq_chi_error = sq_chi_error.permute(*range(len(sq_chi_error.shape))[1:-2], 0, -2, -1)
 
-    sq_chi_loss = masked_mean(
-        chi_mask[..., None, :, :], sq_chi_error, dim=(-1, -2, -3)
-    )
+    sq_chi_loss = masked_mean(chi_mask[..., None, :, :], sq_chi_error, dim=(-1, -2, -3))
 
     loss = chi_weight * sq_chi_loss
 
-    angle_norm = torch.sqrt(
-        torch.sum(unnormalized_angles_sin_cos ** 2, dim=-1) + eps
-    )
+    angle_norm = torch.sqrt(torch.sum(unnormalized_angles_sin_cos**2, dim=-1) + eps)
     norm_error = torch.abs(angle_norm - 1.0)
-    norm_error = norm_error.permute(
-        *range(len(norm_error.shape))[1:-2], 0, -2, -1
-    )
-    angle_norm_loss = masked_mean(
-        seq_mask[..., None, :, None], norm_error, dim=(-1, -2, -3)
-    )
+    norm_error = norm_error.permute(*range(len(norm_error.shape))[1:-2], 0, -2, -1)
+    angle_norm_loss = masked_mean(seq_mask[..., None, :, None], norm_error, dim=(-1, -2, -3))
 
     loss = loss + angle_norm_weight * angle_norm_loss
 
@@ -414,9 +395,7 @@ def supervised_chi_loss(
 def compute_plddt(logits: torch.Tensor) -> torch.Tensor:
     num_bins = logits.shape[-1]
     bin_width = 1.0 / num_bins
-    bounds = torch.arange(
-        start=0.5 * bin_width, end=1.0, step=bin_width, device=logits.device
-    )
+    bounds = torch.arange(start=0.5 * bin_width, end=1.0, step=bin_width, device=logits.device)
     probs = torch.nn.functional.softmax(logits, dim=-1)
     pred_lddt_ca = torch.sum(
         probs * bounds.view(*((1,) * len(probs.shape[:-1])), *bounds.shape),
@@ -437,11 +416,7 @@ def lddt(
     dmat_true = torch.sqrt(
         eps
         + torch.sum(
-            (
-                all_atom_positions[..., None, :]
-                - all_atom_positions[..., None, :, :]
-            )
-            ** 2,
+            (all_atom_positions[..., None, :] - all_atom_positions[..., None, :, :]) ** 2,
             dim=-1,
         )
     )
@@ -449,11 +424,7 @@ def lddt(
     dmat_pred = torch.sqrt(
         eps
         + torch.sum(
-            (
-                all_atom_pred_pos[..., None, :]
-                - all_atom_pred_pos[..., None, :, :]
-            )
-            ** 2,
+            (all_atom_pred_pos[..., None, :] - all_atom_pred_pos[..., None, :, :]) ** 2,
             dim=-1,
         )
     )
@@ -492,7 +463,7 @@ def lddt_ca(
     ca_pos = residue_constants.atom_order["CA"]
     all_atom_pred_pos = all_atom_pred_pos[..., ca_pos, :]
     all_atom_positions = all_atom_positions[..., ca_pos, :]
-    all_atom_mask = all_atom_mask[..., ca_pos: (ca_pos + 1)]  # keep dim
+    all_atom_mask = all_atom_mask[..., ca_pos : (ca_pos + 1)]  # keep dim
 
     return lddt(
         all_atom_pred_pos,
@@ -522,15 +493,9 @@ def lddt_loss(
     ca_pos = residue_constants.atom_order["CA"]
     all_atom_pred_pos = all_atom_pred_pos[..., ca_pos, :]
     all_atom_positions = all_atom_positions[..., ca_pos, :]
-    all_atom_mask = all_atom_mask[..., ca_pos: (ca_pos + 1)]  # keep dim
+    all_atom_mask = all_atom_mask[..., ca_pos : (ca_pos + 1)]  # keep dim
 
-    score = lddt(
-        all_atom_pred_pos,
-        all_atom_positions,
-        all_atom_mask,
-        cutoff=cutoff,
-        eps=eps
-    )
+    score = lddt(all_atom_pred_pos, all_atom_positions, all_atom_mask, cutoff=cutoff, eps=eps)
 
     # TODO: Remove after initial pipeline testing
     score = torch.nan_to_num(score, nan=torch.nanmean(score))
@@ -539,19 +504,13 @@ def lddt_loss(
     score = score.detach()
     bin_index = torch.floor(score * no_bins).long()
     bin_index = torch.clamp(bin_index, max=(no_bins - 1))
-    lddt_ca_one_hot = torch.nn.functional.one_hot(
-        bin_index, num_classes=no_bins
-    )
+    lddt_ca_one_hot = torch.nn.functional.one_hot(bin_index, num_classes=no_bins)
 
     errors = softmax_cross_entropy(logits, lddt_ca_one_hot)
     all_atom_mask = all_atom_mask.squeeze(-1)
-    loss = torch.sum(errors * all_atom_mask, dim=-1) / (
-        eps + torch.sum(all_atom_mask, dim=-1)
-    )
+    loss = torch.sum(errors * all_atom_mask, dim=-1) / (eps + torch.sum(all_atom_mask, dim=-1))
 
-    loss = loss * (
-        (resolution >= min_resolution) & (resolution <= max_resolution)
-    )
+    loss = loss * ((resolution >= min_resolution) & (resolution <= max_resolution))
 
     # Average over the batch dimension
     loss = torch.mean(loss)
@@ -575,7 +534,7 @@ def distogram_loss(
         no_bins - 1,
         device=logits.device,
     )
-    boundaries = boundaries ** 2
+    boundaries = boundaries**2
 
     dists = torch.sum(
         (pseudo_beta[..., None, :] - pseudo_beta[..., None, :, :]) ** 2,
@@ -610,9 +569,7 @@ def distogram_loss(
 def _calculate_bin_centers(boundaries: torch.Tensor):
     step = boundaries[1] - boundaries[0]
     bin_centers = boundaries + step / 2
-    bin_centers = torch.cat(
-        [bin_centers, (bin_centers[-1] + step).unsqueeze(-1)], dim=0
-    )
+    bin_centers = torch.cat([bin_centers, (bin_centers[-1] + step).unsqueeze(-1)], dim=0)
     return bin_centers
 
 
@@ -647,9 +604,7 @@ def compute_predicted_aligned_error(
         error for each pair of residues.
       max_predicted_aligned_error: [*] the maximum predicted error possible.
     """
-    boundaries = torch.linspace(
-        0, max_bin, steps=(no_bins - 1), device=logits.device
-    )
+    boundaries = torch.linspace(0, max_bin, steps=(no_bins - 1), device=logits.device)
 
     aligned_confidence_probs = torch.nn.functional.softmax(logits, dim=-1)
     (
@@ -680,9 +635,7 @@ def compute_tm(
     if residue_weights is None:
         residue_weights = logits.new_ones(logits.shape[-2])
 
-    boundaries = torch.linspace(
-        0, max_bin, steps=(no_bins - 1), device=logits.device
-    )
+    boundaries = torch.linspace(0, max_bin, steps=(no_bins - 1), device=logits.device)
 
     bin_centers = _calculate_bin_centers(boundaries)
     clipped_n = max(torch.sum(residue_weights), 19)
@@ -691,7 +644,7 @@ def compute_tm(
 
     probs = torch.nn.functional.softmax(logits, dim=-1)
 
-    tm_per_bin = 1.0 / (1 + (bin_centers ** 2) / (d0 ** 2))
+    tm_per_bin = 1.0 / (1 + (bin_centers**2) / (d0**2))
     predicted_tm_term = torch.sum(probs * tm_per_bin, dim=-1)
 
     n = residue_weights.shape[-1]
@@ -705,9 +658,7 @@ def compute_tm(
 
     predicted_tm_term *= pair_mask
 
-    pair_residue_weights = pair_mask * (
-        residue_weights[..., None, :] * residue_weights[..., :, None]
-    )
+    pair_residue_weights = pair_mask * (residue_weights[..., None, :] * residue_weights[..., :, None])
     denom = eps + torch.sum(pair_residue_weights, dim=-1, keepdims=True)
     normed_residue_mask = pair_residue_weights / denom
     per_alignment = torch.sum(predicted_tm_term * normed_residue_mask, dim=-1)
@@ -742,25 +693,17 @@ def tm_loss(
         pts = affine.get_trans()[..., None, :, :]
         return affine.invert()[..., None].apply(pts)
 
-    sq_diff = torch.sum(
-        (_points(pred_affine) - _points(backbone_rigid)) ** 2, dim=-1
-    )
+    sq_diff = torch.sum((_points(pred_affine) - _points(backbone_rigid)) ** 2, dim=-1)
 
     sq_diff = sq_diff.detach()
 
-    boundaries = torch.linspace(
-        0, max_bin, steps=(no_bins - 1), device=logits.device
-    )
-    boundaries = boundaries ** 2
+    boundaries = torch.linspace(0, max_bin, steps=(no_bins - 1), device=logits.device)
+    boundaries = boundaries**2
     true_bins = torch.sum(sq_diff[..., None] > boundaries, dim=-1)
 
-    errors = softmax_cross_entropy(
-        logits, torch.nn.functional.one_hot(true_bins, no_bins)
-    )
+    errors = softmax_cross_entropy(logits, torch.nn.functional.one_hot(true_bins, no_bins))
 
-    square_mask = (
-        backbone_rigid_mask[..., None] * backbone_rigid_mask[..., None, :]
-    )
+    square_mask = backbone_rigid_mask[..., None] * backbone_rigid_mask[..., None, :]
 
     loss = torch.sum(errors * square_mask, dim=-1)
     scale = 0.5  # hack to help FP16 training along
@@ -769,9 +712,7 @@ def tm_loss(
     loss = torch.sum(loss, dim=-1)
     loss = loss * scale
 
-    loss = loss * (
-        (resolution >= min_resolution) & (resolution <= max_resolution)
-    )
+    loss = loss * ((resolution >= min_resolution) & (resolution <= max_resolution))
 
     # Average over the batch dimension
     loss = torch.mean(loss)
@@ -828,46 +769,26 @@ def between_residue_bond_loss(
     has_no_gap_mask = (residue_index[..., 1:] - residue_index[..., :-1]) == 1.0
 
     # Compute loss for the C--N bond.
-    c_n_bond_length = torch.sqrt(
-        eps + torch.sum((this_c_pos - next_n_pos) ** 2, dim=-1)
-    )
+    c_n_bond_length = torch.sqrt(eps + torch.sum((this_c_pos - next_n_pos) ** 2, dim=-1))
 
     # The C-N bond to proline has slightly different length because of the ring.
     next_is_proline = aatype[..., 1:] == residue_constants.resname_to_idx["PRO"]
-    gt_length = (
-                    ~next_is_proline
-                ) * residue_constants.between_res_bond_length_c_n[
-                    0
-                ] + next_is_proline * residue_constants.between_res_bond_length_c_n[
-                    1
-                ]
-    gt_stddev = (
-                    ~next_is_proline
-                ) * residue_constants.between_res_bond_length_stddev_c_n[
-                    0
-                ] + next_is_proline * residue_constants.between_res_bond_length_stddev_c_n[
-                    1
-                ]
+    gt_length = (~next_is_proline) * residue_constants.between_res_bond_length_c_n[
+        0
+    ] + next_is_proline * residue_constants.between_res_bond_length_c_n[1]
+    gt_stddev = (~next_is_proline) * residue_constants.between_res_bond_length_stddev_c_n[
+        0
+    ] + next_is_proline * residue_constants.between_res_bond_length_stddev_c_n[1]
 
     c_n_bond_length_error = torch.sqrt(eps + (c_n_bond_length - gt_length) ** 2)
-    c_n_loss_per_residue = torch.nn.functional.relu(
-        c_n_bond_length_error - tolerance_factor_soft * gt_stddev
-    )
+    c_n_loss_per_residue = torch.nn.functional.relu(c_n_bond_length_error - tolerance_factor_soft * gt_stddev)
     mask = this_c_mask * next_n_mask * has_no_gap_mask
-    c_n_loss = torch.sum(mask * c_n_loss_per_residue, dim=-1) / (
-        torch.sum(mask, dim=-1) + eps
-    )
-    c_n_violation_mask = mask * (
-        c_n_bond_length_error > (tolerance_factor_hard * gt_stddev)
-    )
+    c_n_loss = torch.sum(mask * c_n_loss_per_residue, dim=-1) / (torch.sum(mask, dim=-1) + eps)
+    c_n_violation_mask = mask * (c_n_bond_length_error > (tolerance_factor_hard * gt_stddev))
 
     # Compute loss for the angles.
-    ca_c_bond_length = torch.sqrt(
-        eps + torch.sum((this_ca_pos - this_c_pos) ** 2, dim=-1)
-    )
-    n_ca_bond_length = torch.sqrt(
-        eps + torch.sum((next_n_pos - next_ca_pos) ** 2, dim=-1)
-    )
+    ca_c_bond_length = torch.sqrt(eps + torch.sum((this_ca_pos - this_c_pos) ** 2, dim=-1))
+    n_ca_bond_length = torch.sqrt(eps + torch.sum((next_n_pos - next_ca_pos) ** 2, dim=-1))
 
     c_ca_unit_vec = (this_ca_pos - this_c_pos) / ca_c_bond_length[..., None]
     c_n_unit_vec = (next_n_pos - this_c_pos) / c_n_bond_length[..., None]
@@ -876,45 +797,26 @@ def between_residue_bond_loss(
     ca_c_n_cos_angle = torch.sum(c_ca_unit_vec * c_n_unit_vec, dim=-1)
     gt_angle = residue_constants.between_res_cos_angles_ca_c_n[0]
     gt_stddev = residue_constants.between_res_bond_length_stddev_c_n[0]
-    ca_c_n_cos_angle_error = torch.sqrt(
-        eps + (ca_c_n_cos_angle - gt_angle) ** 2
-    )
-    ca_c_n_loss_per_residue = torch.nn.functional.relu(
-        ca_c_n_cos_angle_error - tolerance_factor_soft * gt_stddev
-    )
+    ca_c_n_cos_angle_error = torch.sqrt(eps + (ca_c_n_cos_angle - gt_angle) ** 2)
+    ca_c_n_loss_per_residue = torch.nn.functional.relu(ca_c_n_cos_angle_error - tolerance_factor_soft * gt_stddev)
     mask = this_ca_mask * this_c_mask * next_n_mask * has_no_gap_mask
-    ca_c_n_loss = torch.sum(mask * ca_c_n_loss_per_residue, dim=-1) / (
-        torch.sum(mask, dim=-1) + eps
-    )
-    ca_c_n_violation_mask = mask * (
-        ca_c_n_cos_angle_error > (tolerance_factor_hard * gt_stddev)
-    )
+    ca_c_n_loss = torch.sum(mask * ca_c_n_loss_per_residue, dim=-1) / (torch.sum(mask, dim=-1) + eps)
+    ca_c_n_violation_mask = mask * (ca_c_n_cos_angle_error > (tolerance_factor_hard * gt_stddev))
 
     c_n_ca_cos_angle = torch.sum((-c_n_unit_vec) * n_ca_unit_vec, dim=-1)
     gt_angle = residue_constants.between_res_cos_angles_c_n_ca[0]
     gt_stddev = residue_constants.between_res_cos_angles_c_n_ca[1]
-    c_n_ca_cos_angle_error = torch.sqrt(
-        eps + torch.square(c_n_ca_cos_angle - gt_angle)
-    )
-    c_n_ca_loss_per_residue = torch.nn.functional.relu(
-        c_n_ca_cos_angle_error - tolerance_factor_soft * gt_stddev
-    )
+    c_n_ca_cos_angle_error = torch.sqrt(eps + torch.square(c_n_ca_cos_angle - gt_angle))
+    c_n_ca_loss_per_residue = torch.nn.functional.relu(c_n_ca_cos_angle_error - tolerance_factor_soft * gt_stddev)
     mask = this_c_mask * next_n_mask * next_ca_mask * has_no_gap_mask
-    c_n_ca_loss = torch.sum(mask * c_n_ca_loss_per_residue, dim=-1) / (
-        torch.sum(mask, dim=-1) + eps
-    )
-    c_n_ca_violation_mask = mask * (
-        c_n_ca_cos_angle_error > (tolerance_factor_hard * gt_stddev)
-    )
+    c_n_ca_loss = torch.sum(mask * c_n_ca_loss_per_residue, dim=-1) / (torch.sum(mask, dim=-1) + eps)
+    c_n_ca_violation_mask = mask * (c_n_ca_cos_angle_error > (tolerance_factor_hard * gt_stddev))
 
     # Compute a per residue loss (equally distribute the loss to both
     # neighbouring residues).
-    per_residue_loss_sum = (
-        c_n_loss_per_residue + ca_c_n_loss_per_residue + c_n_ca_loss_per_residue
-    )
+    per_residue_loss_sum = c_n_loss_per_residue + ca_c_n_loss_per_residue + c_n_ca_loss_per_residue
     per_residue_loss_sum = 0.5 * (
-        torch.nn.functional.pad(per_residue_loss_sum, (0, 1))
-        + torch.nn.functional.pad(per_residue_loss_sum, (1, 0))
+        torch.nn.functional.pad(per_residue_loss_sum, (0, 1)) + torch.nn.functional.pad(per_residue_loss_sum, (1, 0))
     )
 
     # Compute hard violations.
@@ -979,44 +881,26 @@ def between_residue_clash_loss(
     dists = torch.sqrt(
         eps
         + torch.sum(
-            (
-                atom14_pred_positions[..., :, None, :, None, :]
-                - atom14_pred_positions[..., None, :, None, :, :]
-            )
-            ** 2,
+            (atom14_pred_positions[..., :, None, :, None, :] - atom14_pred_positions[..., None, :, None, :, :]) ** 2,
             dim=-1,
         )
     )
 
     # Create the mask for valid distances.
     # shape (N, N, 14, 14)
-    dists_mask = (
-        atom14_atom_exists[..., :, None, :, None]
-        * atom14_atom_exists[..., None, :, None, :]
-    ).type(fp_type)
+    dists_mask = (atom14_atom_exists[..., :, None, :, None] * atom14_atom_exists[..., None, :, None, :]).type(fp_type)
 
     # Mask out all the duplicate entries in the lower triangular matrix.
     # Also mask out the diagonal (atom-pairs from the same residue) -- these atoms
     # are handled separately.
-    dists_mask = dists_mask * (
-        residue_index[..., :, None, None, None]
-        < residue_index[..., None, :, None, None]
-    )
+    dists_mask = dists_mask * (residue_index[..., :, None, None, None] < residue_index[..., None, :, None, None])
 
     # Backbone C--N bond between subsequent residues is no clash.
-    c_one_hot = torch.nn.functional.one_hot(
-        residue_index.new_tensor(2), num_classes=14
-    )
-    c_one_hot = c_one_hot.reshape(
-        *((1,) * len(residue_index.shape[:-1])), *c_one_hot.shape
-    )
+    c_one_hot = torch.nn.functional.one_hot(residue_index.new_tensor(2), num_classes=14)
+    c_one_hot = c_one_hot.reshape(*((1,) * len(residue_index.shape[:-1])), *c_one_hot.shape)
     c_one_hot = c_one_hot.type(fp_type)
-    n_one_hot = torch.nn.functional.one_hot(
-        residue_index.new_tensor(0), num_classes=14
-    )
-    n_one_hot = n_one_hot.reshape(
-        *((1,) * len(residue_index.shape[:-1])), *n_one_hot.shape
-    )
+    n_one_hot = torch.nn.functional.one_hot(residue_index.new_tensor(0), num_classes=14)
+    n_one_hot = n_one_hot.reshape(*((1,) * len(residue_index.shape[:-1])), *n_one_hot.shape)
     n_one_hot = n_one_hot.type(fp_type)
 
     neighbour_mask = (residue_index[..., :, None] + 1) == residue_index[..., None, :]
@@ -1026,39 +910,27 @@ def between_residue_clash_loss(
 
     neighbour_mask = neighbour_mask[..., None, None]
 
-    c_n_bonds = (
-        neighbour_mask
-        * c_one_hot[..., None, None, :, None]
-        * n_one_hot[..., None, None, None, :]
-    )
+    c_n_bonds = neighbour_mask * c_one_hot[..., None, None, :, None] * n_one_hot[..., None, None, None, :]
     dists_mask = dists_mask * (1.0 - c_n_bonds)
 
     # Disulfide bridge between two cysteines is no clash.
     cys = residue_constants.restype_name_to_atom14_names["CYS"]
     cys_sg_idx = cys.index("SG")
     cys_sg_idx = residue_index.new_tensor(cys_sg_idx)
-    cys_sg_idx = cys_sg_idx.reshape(
-        *((1,) * len(residue_index.shape[:-1])), 1
-    ).squeeze(-1)
+    cys_sg_idx = cys_sg_idx.reshape(*((1,) * len(residue_index.shape[:-1])), 1).squeeze(-1)
     cys_sg_one_hot = torch.nn.functional.one_hot(cys_sg_idx, num_classes=14)
-    disulfide_bonds = (
-        cys_sg_one_hot[..., None, None, :, None]
-        * cys_sg_one_hot[..., None, None, None, :]
-    )
+    disulfide_bonds = cys_sg_one_hot[..., None, None, :, None] * cys_sg_one_hot[..., None, None, None, :]
     dists_mask = dists_mask * (1.0 - disulfide_bonds)
 
     # Compute the lower bound for the allowed distances.
     # shape (N, N, 14, 14)
     dists_lower_bound = dists_mask * (
-        atom14_atom_radius[..., :, None, :, None]
-        + atom14_atom_radius[..., None, :, None, :]
+        atom14_atom_radius[..., :, None, :, None] + atom14_atom_radius[..., None, :, None, :]
     )
 
     # Compute the error.
     # shape (N, N, 14, 14)
-    dists_to_low_error = dists_mask * torch.nn.functional.relu(
-        dists_lower_bound - overlap_tolerance_soft - dists
-    )
+    dists_to_low_error = dists_mask * torch.nn.functional.relu(dists_lower_bound - overlap_tolerance_soft - dists)
 
     # Compute the mean loss.
     # shape ()
@@ -1066,15 +938,11 @@ def between_residue_clash_loss(
 
     # Compute the per atom loss sum.
     # shape (N, 14)
-    per_atom_loss_sum = torch.sum(dists_to_low_error, dim=(-4, -2)) + torch.sum(
-        dists_to_low_error, dim=(-3, -1)
-    )
+    per_atom_loss_sum = torch.sum(dists_to_low_error, dim=(-4, -2)) + torch.sum(dists_to_low_error, dim=(-3, -1))
 
     # Compute the hard clash mask.
     # shape (N, N, 14, 14)
-    clash_mask = dists_mask * (
-        dists < (dists_lower_bound - overlap_tolerance_hard)
-    )
+    clash_mask = dists_mask * (dists < (dists_lower_bound - overlap_tolerance_hard))
 
     per_atom_num_clash = torch.sum(clash_mask, dim=(-4, -2)) + torch.sum(clash_mask, dim=(-3, -1))
 
@@ -1089,7 +957,7 @@ def between_residue_clash_loss(
         "mean_loss": mean_loss,  # shape ()
         "per_atom_loss_sum": per_atom_loss_sum,  # shape (N, 14)
         "per_atom_clash_mask": per_atom_clash_mask,  # shape (N, 14)
-        "per_atom_num_clash": per_atom_num_clash  # shape (N, 14)
+        "per_atom_num_clash": per_atom_num_clash,  # shape (N, 14)
     }
 
 
@@ -1130,56 +998,38 @@ def within_residue_violations(
     """
     # Compute the mask for each residue.
     dists_masks = 1.0 - torch.eye(14, device=atom14_atom_exists.device)[None]
-    dists_masks = dists_masks.reshape(
-        *((1,) * len(atom14_atom_exists.shape[:-2])), *dists_masks.shape
-    )
-    dists_masks = (
-        atom14_atom_exists[..., :, :, None]
-        * atom14_atom_exists[..., :, None, :]
-        * dists_masks
-    )
+    dists_masks = dists_masks.reshape(*((1,) * len(atom14_atom_exists.shape[:-2])), *dists_masks.shape)
+    dists_masks = atom14_atom_exists[..., :, :, None] * atom14_atom_exists[..., :, None, :] * dists_masks
 
     # Distance matrix
     dists = torch.sqrt(
         eps
         + torch.sum(
-            (
-                atom14_pred_positions[..., :, :, None, :]
-                - atom14_pred_positions[..., :, None, :, :]
-            )
-            ** 2,
+            (atom14_pred_positions[..., :, :, None, :] - atom14_pred_positions[..., :, None, :, :]) ** 2,
             dim=-1,
         )
     )
 
     # Compute the loss.
-    dists_to_low_error = torch.nn.functional.relu(
-        atom14_dists_lower_bound + tighten_bounds_for_loss - dists
-    )
-    dists_to_high_error = torch.nn.functional.relu(
-        dists - (atom14_dists_upper_bound - tighten_bounds_for_loss)
-    )
+    dists_to_low_error = torch.nn.functional.relu(atom14_dists_lower_bound + tighten_bounds_for_loss - dists)
+    dists_to_high_error = torch.nn.functional.relu(dists - (atom14_dists_upper_bound - tighten_bounds_for_loss))
     loss = dists_masks * (dists_to_low_error + dists_to_high_error)
 
     # Compute the per atom loss sum.
     per_atom_loss_sum = torch.sum(loss, dim=-2) + torch.sum(loss, dim=-1)
 
     # Compute the violations mask.
-    violations = dists_masks * (
-        (dists < atom14_dists_lower_bound) | (dists > atom14_dists_upper_bound)
-    )
+    violations = dists_masks * ((dists < atom14_dists_lower_bound) | (dists > atom14_dists_upper_bound))
 
     per_atom_num_clash = torch.sum(violations, dim=-2) + torch.sum(violations, dim=-1)
 
     # Compute the per atom violations.
-    per_atom_violations = torch.maximum(
-        torch.max(violations, dim=-2)[0], torch.max(violations, axis=-1)[0]
-    )
+    per_atom_violations = torch.maximum(torch.max(violations, dim=-2)[0], torch.max(violations, axis=-1)[0])
 
     return {
         "per_atom_loss_sum": per_atom_loss_sum,
         "per_atom_violations": per_atom_violations,
-        "per_atom_num_clash": per_atom_num_clash
+        "per_atom_num_clash": per_atom_num_clash,
     }
 
 
@@ -1205,28 +1055,17 @@ def find_structural_violations(
     # Compute the Van der Waals radius for every atom
     # (the first letter of the atom name is the element type).
     # Shape: (N, 14).
-    atomtype_radius = [
-        residue_constants.van_der_waals_radius[name[0]]
-        for name in residue_constants.atom_types
-    ]
+    atomtype_radius = [residue_constants.van_der_waals_radius[name[0]] for name in residue_constants.atom_types]
 
     atomtype_radius = atom14_pred_positions.new_tensor(atomtype_radius)
 
     # TODO: Consolidate monomer/multimer modes
     asym_id = batch.get("asym_id")
     if asym_id is not None:
-        residx_atom14_to_atom37 = get_rc_tensor(
-            residue_constants.RESTYPE_ATOM14_TO_ATOM37, batch["aatype"]
-        )
-        atom14_atom_radius = (
-            batch["atom14_atom_exists"]
-            * atomtype_radius[residx_atom14_to_atom37.long()]
-        )
+        residx_atom14_to_atom37 = get_rc_tensor(residue_constants.RESTYPE_ATOM14_TO_ATOM37, batch["aatype"])
+        atom14_atom_radius = batch["atom14_atom_exists"] * atomtype_radius[residx_atom14_to_atom37.long()]
     else:
-        atom14_atom_radius = (
-            batch["atom14_atom_exists"]
-            * atomtype_radius[batch["residx_atom14_to_atom37"]]
-        )
+        atom14_atom_radius = batch["atom14_atom_exists"] * atomtype_radius[batch["residx_atom14_to_atom37"]]
 
     # Compute the between residue clash loss.
     between_residue_clashes = between_residue_clash_loss(
@@ -1246,12 +1085,8 @@ def find_structural_violations(
         bond_length_tolerance_factor=violation_tolerance_factor,
     )
     atom14_atom_exists = batch["atom14_atom_exists"]
-    atom14_dists_lower_bound = atom14_pred_positions.new_tensor(
-        restype_atom14_bounds["lower_bound"]
-    )[batch["aatype"]]
-    atom14_dists_upper_bound = atom14_pred_positions.new_tensor(
-        restype_atom14_bounds["upper_bound"]
-    )[batch["aatype"]]
+    atom14_dists_lower_bound = atom14_pred_positions.new_tensor(restype_atom14_bounds["lower_bound"])[batch["aatype"]]
+    atom14_dists_upper_bound = atom14_pred_positions.new_tensor(restype_atom14_bounds["upper_bound"])[batch["aatype"]]
     residue_violations = within_residue_violations(
         atom14_pred_positions=atom14_pred_positions,
         atom14_atom_exists=batch["atom14_atom_exists"],
@@ -1265,9 +1100,7 @@ def find_structural_violations(
         torch.stack(
             [
                 connection_violations["per_residue_violation_mask"],
-                torch.max(
-                    between_residue_clashes["per_atom_clash_mask"], dim=-1
-                )[0],
+                torch.max(between_residue_clashes["per_atom_clash_mask"], dim=-1)[0],
                 torch.max(residue_violations["per_atom_violations"], dim=-1)[0],
             ],
             dim=-1,
@@ -1278,39 +1111,19 @@ def find_structural_violations(
     return {
         "between_residues": {
             "bonds_c_n_loss_mean": connection_violations["c_n_loss_mean"],  # ()
-            "angles_ca_c_n_loss_mean": connection_violations[
-                "ca_c_n_loss_mean"
-            ],  # ()
-            "angles_c_n_ca_loss_mean": connection_violations[
-                "c_n_ca_loss_mean"
-            ],  # ()
-            "connections_per_residue_loss_sum": connection_violations[
-                "per_residue_loss_sum"
-            ],  # (N)
-            "connections_per_residue_violation_mask": connection_violations[
-                "per_residue_violation_mask"
-            ],  # (N)
+            "angles_ca_c_n_loss_mean": connection_violations["ca_c_n_loss_mean"],  # ()
+            "angles_c_n_ca_loss_mean": connection_violations["c_n_ca_loss_mean"],  # ()
+            "connections_per_residue_loss_sum": connection_violations["per_residue_loss_sum"],  # (N)
+            "connections_per_residue_violation_mask": connection_violations["per_residue_violation_mask"],  # (N)
             "clashes_mean_loss": between_residue_clashes["mean_loss"],  # ()
-            "clashes_per_atom_loss_sum": between_residue_clashes[
-                "per_atom_loss_sum"
-            ],  # (N, 14)
-            "clashes_per_atom_clash_mask": between_residue_clashes[
-                "per_atom_clash_mask"
-            ],  # (N, 14)
-            "clashes_per_atom_num_clash": between_residue_clashes[
-                "per_atom_num_clash"
-            ],  # (N, 14)
+            "clashes_per_atom_loss_sum": between_residue_clashes["per_atom_loss_sum"],  # (N, 14)
+            "clashes_per_atom_clash_mask": between_residue_clashes["per_atom_clash_mask"],  # (N, 14)
+            "clashes_per_atom_num_clash": between_residue_clashes["per_atom_num_clash"],  # (N, 14)
         },
         "within_residues": {
-            "per_atom_loss_sum": residue_violations[
-                "per_atom_loss_sum"
-            ],  # (N, 14)
-            "per_atom_violations": residue_violations[
-                "per_atom_violations"
-            ],  # (N, 14),
-            "per_atom_num_clash": residue_violations[
-                "per_atom_num_clash"
-            ],  # (N, 14)
+            "per_atom_loss_sum": residue_violations["per_atom_loss_sum"],  # (N, 14)
+            "per_atom_violations": residue_violations["per_atom_violations"],  # (N, 14),
+            "per_atom_num_clash": residue_violations["per_atom_num_clash"],  # (N, 14)
         },
         "total_per_residue_violations_mask": per_residue_violations_mask,  # (N)
     }
@@ -1359,12 +1172,8 @@ def extreme_ca_ca_distance_violations(
     next_ca_pos = pred_atom_positions[..., 1:, 1, :]
     next_ca_mask = pred_atom_mask[..., 1:, 1]
     has_no_gap_mask = (residue_index[..., 1:] - residue_index[..., :-1]) == 1.0
-    ca_ca_distance = torch.sqrt(
-        eps + torch.sum((this_ca_pos - next_ca_pos) ** 2, dim=-1)
-    )
-    violations = (
-                     ca_ca_distance - residue_constants.ca_ca
-                 ) > max_angstrom_tolerance
+    ca_ca_distance = torch.sqrt(eps + torch.sum((this_ca_pos - next_ca_pos) ** 2, dim=-1))
+    violations = (ca_ca_distance - residue_constants.ca_ca) > max_angstrom_tolerance
     mask = this_ca_mask * next_ca_mask * has_no_gap_mask
     mean = masked_mean(mask, violations, -1)
     return mean
@@ -1385,9 +1194,7 @@ def compute_violation_metrics(
     ret["violations_extreme_ca_ca_distance"] = extreme_ca_ca_violations
     ret["violations_between_residue_bond"] = masked_mean(
         batch["seq_mask"],
-        violations["between_residues"][
-            "connections_per_residue_violation_mask"
-        ],
+        violations["between_residues"]["connections_per_residue_violation_mask"],
         dim=-1,
     )
     ret["violations_between_residue_clash"] = masked_mean(
@@ -1400,9 +1207,7 @@ def compute_violation_metrics(
     )
     ret["violations_within_residue"] = masked_mean(
         mask=batch["seq_mask"],
-        value=torch.max(
-            violations["within_residues"]["per_atom_violations"], dim=-1
-        )[0],
+        value=torch.max(violations["within_residues"]["per_atom_violations"], dim=-1)[0],
         dim=-1,
     )
     ret["violations_per_residue"] = masked_mean(
@@ -1438,12 +1243,15 @@ def violation_loss(
 ) -> torch.Tensor:
     num_atoms = torch.sum(atom14_atom_exists)
 
-    per_atom_clash = (violations["between_residues"]["clashes_per_atom_loss_sum"] +
-                      violations["within_residues"]["per_atom_loss_sum"])
+    per_atom_clash = (
+        violations["between_residues"]["clashes_per_atom_loss_sum"] + violations["within_residues"]["per_atom_loss_sum"]
+    )
 
     if average_clashes:
-        num_clash = (violations["between_residues"]["clashes_per_atom_num_clash"] +
-                     violations["within_residues"]["per_atom_num_clash"])
+        num_clash = (
+            violations["between_residues"]["clashes_per_atom_num_clash"]
+            + violations["within_residues"]["per_atom_num_clash"]
+        )
         per_atom_clash = per_atom_clash / (num_clash + eps)
 
     l_clash = torch.sum(per_atom_clash) / (eps + num_atoms)
@@ -1496,11 +1304,7 @@ def compute_renamed_ground_truth(
     pred_dists = torch.sqrt(
         eps
         + torch.sum(
-            (
-                atom14_pred_positions[..., None, :, None, :]
-                - atom14_pred_positions[..., None, :, None, :, :]
-            )
-            ** 2,
+            (atom14_pred_positions[..., None, :, None, :] - atom14_pred_positions[..., None, :, None, :, :]) ** 2,
             dim=-1,
         )
     )
@@ -1509,11 +1313,7 @@ def compute_renamed_ground_truth(
     gt_dists = torch.sqrt(
         eps
         + torch.sum(
-            (
-                atom14_gt_positions[..., None, :, None, :]
-                - atom14_gt_positions[..., None, :, None, :, :]
-            )
-            ** 2,
+            (atom14_gt_positions[..., None, :, None, :] - atom14_gt_positions[..., None, :, None, :, :]) ** 2,
             dim=-1,
         )
     )
@@ -1522,11 +1322,7 @@ def compute_renamed_ground_truth(
     alt_gt_dists = torch.sqrt(
         eps
         + torch.sum(
-            (
-                atom14_alt_gt_positions[..., None, :, None, :]
-                - atom14_alt_gt_positions[..., None, :, None, :, :]
-            )
-            ** 2,
+            (atom14_alt_gt_positions[..., None, :, None, :] - atom14_alt_gt_positions[..., None, :, None, :, :]) ** 2,
             dim=-1,
         )
     )
@@ -1550,16 +1346,12 @@ def compute_renamed_ground_truth(
     alt_naming_is_better = (alt_per_res_lddt < per_res_lddt).type(fp_type)
 
     renamed_atom14_gt_positions = (
-                                      1.0 - alt_naming_is_better[..., None, None]
-                                  ) * atom14_gt_positions + alt_naming_is_better[
-                                      ..., None, None
-                                  ] * atom14_alt_gt_positions
+        1.0 - alt_naming_is_better[..., None, None]
+    ) * atom14_gt_positions + alt_naming_is_better[..., None, None] * atom14_alt_gt_positions
 
-    renamed_atom14_gt_mask = (
-                                 1.0 - alt_naming_is_better[..., None]
-                             ) * atom14_gt_exists + alt_naming_is_better[..., None] * batch[
-                                 "atom14_alt_gt_exists"
-                             ]
+    renamed_atom14_gt_mask = (1.0 - alt_naming_is_better[..., None]) * atom14_gt_exists + alt_naming_is_better[
+        ..., None
+    ] * batch["atom14_alt_gt_exists"]
 
     return {
         "alt_naming_is_better": alt_naming_is_better,
@@ -1583,9 +1375,7 @@ def experimentally_resolved_loss(
     loss = loss / (eps + torch.sum(atom37_atom_exists, dim=(-1, -2)).unsqueeze(-1))
     loss = torch.sum(loss, dim=-1)
 
-    loss = loss * (
-        (resolution >= min_resolution) & (resolution <= max_resolution)
-    )
+    loss = loss * ((resolution >= min_resolution) & (resolution <= max_resolution))
 
     loss = torch.mean(loss)
 
@@ -1603,9 +1393,7 @@ def masked_msa_loss(logits, true_msa, bert_mask, num_classes, eps=1e-8, **kwargs
     Returns:
         Masked MSA loss
     """
-    errors = softmax_cross_entropy(
-        logits, torch.nn.functional.one_hot(true_msa, num_classes=num_classes)
-    )
+    errors = softmax_cross_entropy(logits, torch.nn.functional.one_hot(true_msa, num_classes=num_classes))
 
     # FP16-friendly averaging. Equivalent to:
     # loss = (
@@ -1632,7 +1420,8 @@ def chain_center_of_mass_loss(
     asym_id: torch.Tensor,
     clamp_distance: float = -4.0,
     weight: float = 0.05,
-    eps: float = 1e-10, **kwargs
+    eps: float = 1e-10,
+    **kwargs,
 ) -> torch.Tensor:
     """
     Computes chain centre-of-mass loss. Implements section 2.5, eqn 1 in the Multimer paper.
@@ -1658,7 +1447,7 @@ def chain_center_of_mass_loss(
     ca_pos = residue_constants.atom_order["CA"]
     all_atom_pred_pos = all_atom_pred_pos[..., ca_pos, :]
     all_atom_positions = all_atom_positions[..., ca_pos, :]
-    all_atom_mask = all_atom_mask[..., ca_pos: (ca_pos + 1)]  # keep dim
+    all_atom_mask = all_atom_mask[..., ca_pos : (ca_pos + 1)]  # keep dim
 
     one_hot = torch.nn.functional.one_hot(asym_id.long()).to(dtype=all_atom_mask.dtype)
     one_hot = one_hot * all_atom_mask
@@ -1692,7 +1481,7 @@ class AlphaFoldLoss(nn.Module):
     def loss(self, out, batch, _return_breakdown=False):
         """
         Rename previous forward() as loss()
-        so that can be reused in the subclass 
+        so that can be reused in the subclass
         """
         if "violation" not in out.keys():
             out["violation"] = find_structural_violations(
@@ -1755,7 +1544,7 @@ class AlphaFoldLoss(nn.Module):
                 **{**batch, **self.config.chain_center_of_mass},
             )
 
-        cum_loss = 0.
+        cum_loss = 0.0
         losses = {}
         for loss_name, loss_fn in loss_fns.items():
             weight = self.config[loss_name].weight
@@ -1766,7 +1555,7 @@ class AlphaFoldLoss(nn.Module):
                 #        logging.warning(f"{k}: is nan")
                 # logging.warning(f"{loss_name}: {loss}")
                 logging.warning(f"{loss_name} loss is NaN. Skipping...")
-                loss = loss.new_tensor(0., requires_grad=True)
+                loss = loss.new_tensor(0.0, requires_grad=True)
             cum_loss = cum_loss + weight * loss
             losses[loss_name] = loss.detach().clone()
         losses["unscaled_loss"] = cum_loss.detach().clone()

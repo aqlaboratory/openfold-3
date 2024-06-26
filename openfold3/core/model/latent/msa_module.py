@@ -28,6 +28,7 @@ from openfold3.core.model.layers.msa import MSAPairWeightedAveraging
 
 class MSAModuleBlock(EvoformerBlock):
     """Implements block of AF3 Algorithm 8."""
+
     def __init__(
         self,
         c_m: int,
@@ -102,7 +103,7 @@ class MSAModuleBlock(EvoformerBlock):
             opm_first=opm_first,
             fuse_projection_weights=fuse_projection_weights,
             inf=inf,
-            eps=eps
+            eps=eps,
         )
 
         # Column attention is disabled and MSAPairWeightedAveraging replace MSARowAttentionWithPairBias
@@ -119,6 +120,7 @@ class MSAModuleStack(MSAStack):
     """Implements AF3 Algorithm 8 lines 5-15. The MSA sampling and initial embedding is
     handled in MSAModuleEmbedder prior to calling this stack.
     """
+
     def __init__(
         self,
         c_m: int,
@@ -193,7 +195,7 @@ class MSAModuleStack(MSAStack):
         super(MSAModuleStack, self).__init__(
             blocks_per_ckpt=blocks_per_ckpt,
             clear_cache_between_blocks=clear_cache_between_blocks,
-            tune_chunk_size=tune_chunk_size
+            tune_chunk_size=tune_chunk_size,
         )
 
         for _ in range(no_blocks):

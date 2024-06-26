@@ -12,18 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
-import numpy as np
 import unittest
+
+import numpy as np
+import torch
+
+import tests.compare_utils as compare_utils
 from openfold3.core.model.layers import OuterProductMean
 from openfold3.core.utils.tensor_utils import tree_map
-import tests.compare_utils as compare_utils
 from tests.config import consts
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
-    import jax
     import haiku as hk
+    import jax
 
 
 class TestOuterProductMean(unittest.TestCase):
@@ -32,18 +34,11 @@ class TestOuterProductMean(unittest.TestCase):
 
         opm = OuterProductMean(consts.c_m, consts.c_z, c)
 
-        m = torch.rand(
-            (consts.batch_size, consts.n_seq, consts.n_res, consts.c_m)
-        )
-        mask = torch.randint(
-            0, 2, size=(consts.batch_size, consts.n_seq, consts.n_res)
-        )
+        m = torch.rand((consts.batch_size, consts.n_seq, consts.n_res, consts.c_m))
+        mask = torch.randint(0, 2, size=(consts.batch_size, consts.n_seq, consts.n_res))
         m = opm(m, mask=mask, chunk_size=None)
 
-        self.assertTrue(
-            m.shape == 
-            (consts.batch_size, consts.n_res, consts.n_res, consts.c_z)
-        )
+        self.assertTrue(m.shape == (consts.batch_size, consts.n_res, consts.n_res, consts.c_z))
 
     @compare_utils.skip_unless_alphafold_installed()
     def test_opm_compare(self):
@@ -65,14 +60,11 @@ class TestOuterProductMean(unittest.TestCase):
         c_m = consts.c_m
 
         msa_act = np.random.rand(n_seq, n_res, c_m).astype(np.float32) * 100
-        msa_mask = np.random.randint(low=0, high=2, size=(n_seq, n_res)).astype(
-            np.float32
-        )
+        msa_mask = np.random.randint(low=0, high=2, size=(n_seq, n_res)).astype(np.float32)
 
         # Fetch pretrained parameters (but only from one block)]
         params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/evoformer/"
-            + "evoformer_iteration/outer_product_mean"
+            "alphafold/alphafold_iteration/evoformer/" + "evoformer_iteration/outer_product_mean"
         )
         params = tree_map(lambda n: n[0], params, jax.Array)
 

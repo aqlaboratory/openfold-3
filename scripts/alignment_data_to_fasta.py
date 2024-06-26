@@ -74,28 +74,21 @@ def index_entry_to_fasta(index_entry: dict, db_dir: Path, chain_id: str) -> str:
     return f">{chain_id}\n{seq}\n"
 
 
-def main(
-    output_path: Path, alignment_db_index: Optional[Path], alignment_dir: Optional[Path]
-) -> None:
+def main(output_path: Path, alignment_db_index: Optional[Path], alignment_dir: Optional[Path]) -> None:
     """
     Generate a FASTA file from either an alignment-db index or a chain directory using multi-threading.
     """
     fasta = []
 
     if alignment_dir and alignment_db_index:
-        raise ValueError(
-            "Only one of alignment_db_index and alignment_dir can be provided."
-        )
+        raise ValueError("Only one of alignment_db_index and alignment_dir can be provided.")
 
     if alignment_dir:
         print("Creating FASTA from alignment directory...")
         chain_dirs = list(alignment_dir.iterdir())
 
         with ThreadPoolExecutor() as executor:
-            futures = [
-                executor.submit(chain_dir_to_fasta, chain_dir)
-                for chain_dir in chain_dirs
-            ]
+            futures = [executor.submit(chain_dir_to_fasta, chain_dir) for chain_dir in chain_dirs]
             for future in tqdm(as_completed(futures), total=len(chain_dirs)):
                 fasta.append(future.result())
 

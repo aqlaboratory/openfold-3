@@ -13,9 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Union
+
 import torch
 import torch.nn as nn
-from typing import Union
 
 from openfold3.core.utils.geometry import rigid_matrix_vector
 from openfold3.core.utils.rigid_utils import Rigid
@@ -31,9 +32,7 @@ def dgram_from_positions(
     no_bins: int = 39,
     inf: float = 1e8,
 ):
-    dgram = torch.sum(
-        (pos[..., None, :] - pos[..., None, :, :]) ** 2, dim=-1, keepdim=True
-    )
+    dgram = torch.sum((pos[..., None, :] - pos[..., None, :, :]) ** 2, dim=-1, keepdim=True)
     lower = torch.linspace(min_bin, max_bin, no_bins, device=pos.device) ** 2
     upper = torch.cat([lower[1:], lower.new_tensor([inf])], dim=-1)
     dgram = ((dgram > lower) * (dgram < upper)).type(dgram.dtype)
@@ -60,7 +59,6 @@ def torsion_angles_to_frames(
     aatype: torch.Tensor,
     rrgdf: torch.Tensor,
 ):
-
     rigid_type = type(r)
 
     # [*, N, 8, 4, 4]
@@ -75,9 +73,7 @@ def torsion_angles_to_frames(
     bb_rot[..., 1] = 1
 
     # [*, N, 8, 2]
-    alpha = torch.cat(
-        [bb_rot.expand(*alpha.shape[:-2], -1, -1), alpha], dim=-2
-    )
+    alpha = torch.cat([bb_rot.expand(*alpha.shape[:-2], -1, -1), alpha], dim=-2)
 
     # [*, N, 8, 3, 3]
     # Produces rotation matrices of the form:
@@ -116,7 +112,7 @@ def torsion_angles_to_frames(
         ],
         dim=-1,
     )
-    
+
     all_frames_to_global = r[..., None].compose(all_frames_to_bb)
 
     return all_frames_to_global
@@ -146,9 +142,7 @@ def frames_and_literature_positions_to_atom14_pos(
     t_atoms_to_global = r[..., None, :] * group_mask
 
     # [*, N, 14]
-    t_atoms_to_global = t_atoms_to_global.map_tensor_fn(
-        lambda x: torch.sum(x, dim=-1)
-    )
+    t_atoms_to_global = t_atoms_to_global.map_tensor_fn(lambda x: torch.sum(x, dim=-1))
 
     # [*, N, 14]
     atom_mask = atom_mask[aatype, ...].unsqueeze(-1)

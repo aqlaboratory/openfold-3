@@ -14,21 +14,23 @@
 """Vec3Array Class."""
 
 from __future__ import annotations
+
 import dataclasses
-from typing import Union, List
+from typing import List, Union
 
 import torch
 
 Float = Union[float, torch.Tensor]
 
+
 @dataclasses.dataclass(frozen=True)
 class Vec3Array:
-    x: torch.Tensor = dataclasses.field(metadata={'dtype': torch.float32})
+    x: torch.Tensor = dataclasses.field(metadata={"dtype": torch.float32})
     y: torch.Tensor
     z: torch.Tensor
 
     def __post_init__(self):
-        if hasattr(self.x, 'dtype'):
+        if hasattr(self.x, "dtype"):
             assert self.x.dtype == self.y.dtype
             assert self.x.dtype == self.z.dtype
             assert all([x == y for x, y in zip(self.x.shape, self.y.shape)])
@@ -66,7 +68,7 @@ class Vec3Array:
         )
 
     def __neg__(self) -> Vec3Array:
-        return self * -1 
+        return self * -1
 
     def __pos__(self) -> Vec3Array:
         return self * 1
@@ -91,7 +93,7 @@ class Vec3Array:
             fn(self.y),
             fn(self.z),
         )
-        
+
     def cross(self, other: Vec3Array) -> Vec3Array:
         """Compute cross product between 'self' and 'other'."""
         new_x = self.y * other.z - self.z * other.y
@@ -150,9 +152,9 @@ class Vec3Array:
     def zeros(cls, shape, device="cpu"):
         """Return Vec3Array corresponding to zeros of given shape."""
         return cls(
-            torch.zeros(shape, dtype=torch.float32, device=device), 
             torch.zeros(shape, dtype=torch.float32, device=device),
-            torch.zeros(shape, dtype=torch.float32, device=device)
+            torch.zeros(shape, dtype=torch.float32, device=device),
+            torch.zeros(shape, dtype=torch.float32, device=device),
         )
 
     def to_tensor(self) -> torch.Tensor:
@@ -171,11 +173,7 @@ class Vec3Array:
         )
 
 
-def square_euclidean_distance(
-    vec1: Vec3Array,
-    vec2: Vec3Array,
-    epsilon: float = 1e-6
-) -> Float:
+def square_euclidean_distance(vec1: Vec3Array, vec2: Vec3Array, epsilon: float = 1e-6) -> Float:
     """Computes square of euclidean distance between 'vec1' and 'vec2'.
 
     Args:
@@ -211,11 +209,7 @@ def normalized(vector: Vec3Array, epsilon: float = 1e-6) -> Vec3Array:
     return vector.normalized(epsilon)
 
 
-def euclidean_distance(
-    vec1: Vec3Array,
-    vec2: Vec3Array,
-    epsilon: float = 1e-6
-) -> Float:
+def euclidean_distance(vec1: Vec3Array, vec2: Vec3Array, epsilon: float = 1e-6) -> Float:
     """Computes euclidean distance between 'vec1' and 'vec2'.
 
     Args:
@@ -233,8 +227,7 @@ def euclidean_distance(
     return distance
 
 
-def dihedral_angle(a: Vec3Array, b: Vec3Array, c: Vec3Array,
-                                     d: Vec3Array) -> Float:
+def dihedral_angle(a: Vec3Array, b: Vec3Array, c: Vec3Array, d: Vec3Array) -> Float:
     """Computes torsion angle for a quadruple of points.
 
     For points (a, b, c, d), this is the angle between the planes defined by

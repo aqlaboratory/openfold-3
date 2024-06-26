@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
 import unittest
+
+import torch
+
 from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
 from openfold3.core.model.layers.transition import ConditionedTransitionBlock
-
 from tests.config import consts
 
 
@@ -52,9 +53,7 @@ class TestDiffusionTransformer(unittest.TestCase):
 
         shape_a_before = a.shape
 
-        a = dt(
-            a, s, z, beta=beta, mask=single_mask
-        )
+        a = dt(a, s, z, beta=beta, mask=single_mask)
 
         self.assertTrue(a.shape == shape_a_before)
 

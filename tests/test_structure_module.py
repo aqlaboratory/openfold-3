@@ -12,24 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
-import numpy as np
 import unittest
 
+import numpy as np
+import torch
+
+import tests.compare_utils as compare_utils
 from openfold3.core.data.data_transforms import make_atom14_masks_np
+from openfold3.core.model.layers.transition import StructureModuleTransition
+from openfold3.core.model.structure.structure_module import (
+    AngleResnet,
+    InvariantPointAttention,
+    StructureModule,
+)
 from openfold3.core.np.residue_constants import (
     restype_atom14_mask,
     restype_atom37_mask,
 )
-from openfold3.core.model.structure.structure_module import (
-    StructureModule,
-    AngleResnet,
-    InvariantPointAttention,
-)
-from openfold3.core.model.layers.transition import StructureModuleTransition
-from openfold3.core.utils.rigid_utils import Rotation, Rigid
 from openfold3.core.utils.geometry import Rigid3Array, Rot3Array, Vec3Array
-import tests.compare_utils as compare_utils
+from openfold3.core.utils.rigid_utils import Rigid, Rotation
 from tests.config import consts
 from tests.data_utils import (
     random_affines_4x4,
@@ -37,8 +38,8 @@ from tests.data_utils import (
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
-    import jax
     import haiku as hk
+    import jax
 
 
 class TestStructureModule(unittest.TestCase):
@@ -91,7 +92,7 @@ class TestStructureModule(unittest.TestCase):
             trans_scale_factor,
             ar_epsilon,
             inf,
-            is_multimer=consts.is_multimer
+            is_multimer=consts.is_multimer,
         )
 
         s = torch.rand((batch_size, n, c_s))
@@ -105,12 +106,8 @@ class TestStructureModule(unittest.TestCase):
         else:
             self.assertTrue(out["frames"].shape == (no_layers, batch_size, n, 7))
 
-        self.assertTrue(
-            out["angles"].shape == (no_layers, batch_size, n, no_angles, 2)
-        )
-        self.assertTrue(
-            out["positions"].shape == (no_layers, batch_size, n, 14, 3)
-        )
+        self.assertTrue(out["angles"].shape == (no_layers, batch_size, n, no_angles, 2))
+        self.assertTrue(out["positions"].shape == (no_layers, batch_size, n, 14, 3))
 
     def test_structure_module_transition_shape(self):
         batch_size = 2
@@ -137,9 +134,7 @@ class TestStructureModule(unittest.TestCase):
 
         def run_sm(representations, batch):
             sm = self.am_fold.StructureModule(c_sm, c_global)
-            representations = {
-                k: jax.lax.stop_gradient(v) for k, v in representations.items()
-            }
+            representations = {k: jax.lax.stop_gradient(v) for k, v in representations.items()}
             batch = {k: jax.lax.stop_gradient(v) for k, v in batch.items()}
 
             if consts.is_multimer:
@@ -160,25 +155,17 @@ class TestStructureModule(unittest.TestCase):
             "aatype": np.random.randint(0, 21, (n_res,)),
         }
 
-        batch["atom14_atom_exists"] = np.take(
-            restype_atom14_mask, batch["aatype"], axis=0
-        )
+        batch["atom14_atom_exists"] = np.take(restype_atom14_mask, batch["aatype"], axis=0)
 
-        batch["atom37_atom_exists"] = np.take(
-            restype_atom37_mask, batch["aatype"], axis=0
-        )
+        batch["atom37_atom_exists"] = np.take(restype_atom37_mask, batch["aatype"], axis=0)
 
         batch.update(make_atom14_masks_np(batch))
 
-        params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/structure_module"
-        )
+        params = compare_utils.fetch_alphafold_module_weights("alphafold/alphafold_iteration/structure_module")
 
         key = jax.random.PRNGKey(42)
         out_gt = f.apply(params, key, representations, batch)
-        out_gt = torch.as_tensor(
-            np.array(out_gt["final_atom14_positions"].block_until_ready())
-        )
+        out_gt = torch.as_tensor(np.array(out_gt["final_atom14_positions"].block_until_ready()))
 
         model = compare_utils.get_global_pretrained_openfold()
         out_repro = model.structure_module(
@@ -239,9 +226,7 @@ class TestInvariantPointAttention(unittest.TestCase):
             rots = Rotation(rot_mats=rot_mats, quats=None)
             r = Rigid(rots, trans)
 
-        ipa = InvariantPointAttention(
-            c_m, c_z, c_hidden, no_heads, no_qp, no_vp, is_multimer=consts.is_multimer
-        )
+        ipa = InvariantPointAttention(c_m, c_z, c_hidden, no_heads, no_qp, no_vp, is_multimer=consts.is_multimer)
 
         shape_before = s.shape
         s = ipa(s, z, r, mask)
@@ -258,19 +243,9 @@ class TestInvariantPointAttention(unittest.TestCase):
             )
 
             if consts.is_multimer:
-                attn = ipa(
-                    inputs_1d=act,
-                    inputs_2d=static_feat_2d,
-                    mask=mask,
-                    rigid=affine
-                )
+                attn = ipa(inputs_1d=act, inputs_2d=static_feat_2d, mask=mask, rigid=affine)
             else:
-                attn = ipa(
-                    inputs_1d=act,
-                    inputs_2d=static_feat_2d,
-                    mask=mask,
-                    affine=affine
-                )
+                attn = ipa(inputs_1d=act, inputs_2d=static_feat_2d, mask=mask, affine=affine)
 
             return attn
 
@@ -288,26 +263,19 @@ class TestInvariantPointAttention(unittest.TestCase):
 
         if consts.is_multimer:
             rigids = self.am_rigid.Rigid3Array.from_array4x4(affines)
-            transformations = Rigid3Array.from_tensor_4x4(
-                torch.as_tensor(affines).float().cuda()
-            )
+            transformations = Rigid3Array.from_tensor_4x4(torch.as_tensor(affines).float().cuda())
             sample_affine = rigids
         else:
             rigids = self.am_rigid.rigids_from_tensor4x4(affines)
             quats = self.am_rigid.rigids_to_quataffine(rigids)
-            transformations = Rigid.from_tensor_4x4(
-                torch.as_tensor(affines).float().cuda()
-            )
+            transformations = Rigid.from_tensor_4x4(torch.as_tensor(affines).float().cuda())
             sample_affine = quats
 
         ipa_params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/structure_module/"
-            + "fold_iteration/invariant_point_attention"
+            "alphafold/alphafold_iteration/structure_module/" + "fold_iteration/invariant_point_attention"
         )
 
-        out_gt = f.apply(
-            ipa_params, None, sample_act, sample_2d, sample_mask, sample_affine
-        ).block_until_ready()
+        out_gt = f.apply(ipa_params, None, sample_act, sample_2d, sample_mask, sample_affine).block_until_ready()
         out_gt = torch.as_tensor(np.array(out_gt))
 
         with torch.no_grad():

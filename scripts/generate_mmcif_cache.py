@@ -1,12 +1,12 @@
 import argparse
-from functools import partial
 import json
 import logging
-from multiprocessing import Pool
 import os
-
 import sys
-sys.path.append(".") # an innocent hack to get this to run from the top level
+from functools import partial
+from multiprocessing import Pool
+
+sys.path.append(".")  # an innocent hack to get this to run from the top level
 
 from tqdm import tqdm
 
@@ -33,9 +33,7 @@ def parse_file(f, args, chain_cluster_size_dict=None):
         cluster_sizes = []
         for chain_id in chain_ids:
             full_name = "_".join([file_id, chain_id])
-            cluster_size = chain_cluster_size_dict.get(
-                full_name.upper(), -1
-            )
+            cluster_size = chain_cluster_size_dict.get(full_name.upper(), -1)
             cluster_sizes.append(cluster_size)
 
         local_data["cluster_sizes"] = cluster_sizes
@@ -78,28 +76,22 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("mmcif_dir", type=str, help="Directory containing mmCIF files")
+    parser.add_argument("output_path", type=str, help="Path for .json output")
+    parser.add_argument("--no_workers", type=int, default=4, help="Number of workers to use for parsing")
     parser.add_argument(
-        "mmcif_dir", type=str, help="Directory containing mmCIF files"
-    )
-    parser.add_argument(
-        "output_path", type=str, help="Path for .json output"
-    )
-    parser.add_argument(
-        "--no_workers", type=int, default=4,
-        help="Number of workers to use for parsing"
-    )
-    parser.add_argument(
-        "--cluster_file", type=str, default=None,
+        "--cluster_file",
+        type=str,
+        default=None,
         help=(
             "Path to a cluster file (e.g. PDB40), one cluster "
             "({PROT1_ID}_{CHAIN_ID} {PROT2_ID}_{CHAIN_ID} ...) per line. "
             "Chains not in this cluster file will NOT be filtered by cluster "
             "size."
-        )
+        ),
     )
     parser.add_argument(
-        "--chunksize", type=int, default=10,
-        help="How many files should be distributed to each worker at a time"
+        "--chunksize", type=int, default=10, help="How many files should be distributed to each worker at a time"
     )
 
     args = parser.parse_args()

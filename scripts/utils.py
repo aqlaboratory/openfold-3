@@ -1,67 +1,93 @@
 import argparse
 import ctypes
-from datetime import date
 import os
+from datetime import date
 from pathlib import Path
 
-if 'CONDA_PREFIX' in os.environ:
-    CONDA_ENV_BINARY_PATH= Path(os.environ['CONDA_PREFIX']) / 'bin'
+if "CONDA_PREFIX" in os.environ:
+    CONDA_ENV_BINARY_PATH = Path(os.environ["CONDA_PREFIX"]) / "bin"
 else:
-    CONDA_ENV_BINARY_PATH = Path('/bin')
+    CONDA_ENV_BINARY_PATH = Path("/bin")
+
 
 def add_data_args(parser: argparse.ArgumentParser):
     parser.add_argument(
-        '--uniref90_database_path', type=str, default=None,
+        "--uniref90_database_path",
+        type=str,
+        default=None,
     )
     parser.add_argument(
-        '--mgnify_database_path', type=str, default=None,
+        "--mgnify_database_path",
+        type=str,
+        default=None,
     )
     parser.add_argument(
-        '--pdb70_database_path', type=str, default=None,
+        "--pdb70_database_path",
+        type=str,
+        default=None,
     )
     parser.add_argument(
-        '--pdb_seqres_database_path', type=str, default=None,
+        "--pdb_seqres_database_path",
+        type=str,
+        default=None,
     )
     parser.add_argument(
-        '--uniref30_database_path', type=str, default=None,
+        "--uniref30_database_path",
+        type=str,
+        default=None,
     )
     parser.add_argument(
-        '--uniclust30_database_path', type=str, default=None,
+        "--uniclust30_database_path",
+        type=str,
+        default=None,
     )
     parser.add_argument(
-        '--uniprot_database_path', type=str, default=None,
+        "--uniprot_database_path",
+        type=str,
+        default=None,
     )
     parser.add_argument(
-        '--bfd_database_path', type=str, default=None,
+        "--bfd_database_path",
+        type=str,
+        default=None,
     )
     parser.add_argument(
-        '--jackhmmer_binary_path', type=str, default=str(CONDA_ENV_BINARY_PATH / 'jackhmmer'),
+        "--jackhmmer_binary_path",
+        type=str,
+        default=str(CONDA_ENV_BINARY_PATH / "jackhmmer"),
     )
     parser.add_argument(
-        '--hhblits_binary_path', type=str, default=str(CONDA_ENV_BINARY_PATH / 'hhblits'),
+        "--hhblits_binary_path",
+        type=str,
+        default=str(CONDA_ENV_BINARY_PATH / "hhblits"),
     )
     parser.add_argument(
-        '--hhsearch_binary_path', type=str, default=str(CONDA_ENV_BINARY_PATH / 'hhsearch'),
+        "--hhsearch_binary_path",
+        type=str,
+        default=str(CONDA_ENV_BINARY_PATH / "hhsearch"),
     )
     parser.add_argument(
-        '--hmmsearch_binary_path', type=str, default=str(CONDA_ENV_BINARY_PATH / 'hmmsearch'),
+        "--hmmsearch_binary_path",
+        type=str,
+        default=str(CONDA_ENV_BINARY_PATH / "hmmsearch"),
     )
     parser.add_argument(
-        '--hmmbuild_binary_path', type=str, default=str(CONDA_ENV_BINARY_PATH / 'hmmbuild'),
+        "--hmmbuild_binary_path",
+        type=str,
+        default=str(CONDA_ENV_BINARY_PATH / "hmmbuild"),
     )
     parser.add_argument(
-        '--kalign_binary_path', type=str, default=str(CONDA_ENV_BINARY_PATH / 'kalign'),
+        "--kalign_binary_path",
+        type=str,
+        default=str(CONDA_ENV_BINARY_PATH / "kalign"),
     )
     parser.add_argument(
-        '--max_template_date', type=str,
+        "--max_template_date",
+        type=str,
         default=date.today().strftime("%Y-%m-%d"),
     )
-    parser.add_argument(
-        '--obsolete_pdbs_path', type=str, default=None
-    )
-    parser.add_argument(
-        '--release_dates_path', type=str, default=None
-    )
+    parser.add_argument("--obsolete_pdbs_path", type=str, default=None)
+    parser.add_argument("--release_dates_path", type=str, default=None)
 
 
 def get_nvidia_cc():
@@ -76,10 +102,10 @@ def get_nvidia_cc():
     CUDA_SUCCESS = 0
 
     libnames = [
-        'libcuda.so', 
-        'libcuda.dylib', 
-        'cuda.dll',
-        '/usr/local/cuda/compat/libcuda.so', # For Docker
+        "libcuda.so",
+        "libcuda.dylib",
+        "cuda.dll",
+        "/usr/local/cuda/compat/libcuda.so",  # For Docker
     ]
     for libname in libnames:
         try:
@@ -89,7 +115,7 @@ def get_nvidia_cc():
         else:
             break
     else:
-        return None, "Could not load any of: " + ' '.join(libnames)
+        return None, "Could not load any of: " + " ".join(libnames)
 
     nGpus = ctypes.c_int()
     cc_major = ctypes.c_int()

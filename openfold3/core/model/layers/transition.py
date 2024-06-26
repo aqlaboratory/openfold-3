@@ -29,6 +29,7 @@ class ReLUTransitionLayer(nn.Module):
     """
     Feed-forward network applied to activations after attention.
     """
+
     def __init__(self, num_relu_layers, c_in, n):
         """
         Args:
@@ -43,22 +44,19 @@ class ReLUTransitionLayer(nn.Module):
         super(ReLUTransitionLayer, self).__init__()
 
         self.c_in = c_in
-        self.n= n
+        self.n = n
         self.num_relu_layers = num_relu_layers
 
-        self.layers = nn.ModuleList([
-            nn.Sequential(Linear(self.c_in, self.n * self.c_in, bias=True, init='relu'),
-                          nn.ReLU())
-            for _ in range(self.num_relu_layers)]
+        self.layers = nn.ModuleList(
+            [
+                nn.Sequential(Linear(self.c_in, self.n * self.c_in, bias=True, init="relu"), nn.ReLU())
+                for _ in range(self.num_relu_layers)
+            ]
         )
 
         self.linear_out = Linear(self.n * self.c_in, self.c_in, init="final")
 
-    def forward(
-        self,
-        x: torch.Tensor,
-        mask: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
         Args:
             x:
@@ -82,6 +80,7 @@ class ReLUTransition(nn.Module):
 
     Implements AF2 Algorithm 9 and 15
     """
+
     def __init__(self, c_in, n):
         """
         Args:
@@ -105,17 +104,18 @@ class ReLUTransition(nn.Module):
         return x
 
     @torch.jit.ignore
-    def _chunk(self,
+    def _chunk(
+        self,
         x: torch.Tensor,
         mask: torch.Tensor,
         chunk_size: int,
     ) -> torch.Tensor:
-         return chunk_layer(
-             self._transition,
-             {"x": x, "mask": mask},
-             chunk_size=chunk_size,
-             no_batch_dims=len(x.shape[:-2]),
-         )
+        return chunk_layer(
+            self._transition,
+            {"x": x, "mask": mask},
+            chunk_size=chunk_size,
+            no_batch_dims=len(x.shape[:-2]),
+        )
 
     def forward(
         self,
@@ -154,6 +154,7 @@ class SwiGLUTransition(nn.Module):
 
     Implements AF3 Algorithm 11.
     """
+
     def __init__(self, c_in: int, n: int = 4):
         """
         Args:
@@ -232,7 +233,7 @@ class SwiGLUTransition(nn.Module):
 
 
 class ConditionedTransitionBlock(nn.Module):
-    """ SwiGLU transition block with adaptive layernorm.
+    """SwiGLU transition block with adaptive layernorm.
 
     Implements AF3 Algorithm 25.
     """
@@ -261,12 +262,7 @@ class ConditionedTransitionBlock(nn.Module):
         self.linear_g = Linear(self.c_s, self.c_a, init="gating_ada_zero")
         self.linear_out = Linear(self.n * self.c_a, self.c_a, bias=False, init="final")
 
-    def forward(
-        self,
-        a: torch.Tensor,
-        s: torch.Tensor,
-        mask: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
+    def forward(self, a: torch.Tensor, s: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         Args:
             a: [*, N_res, C_in] Input activation
@@ -296,6 +292,7 @@ class StructureModuleTransition(nn.Module):
 
     Implements AF2 Algorithm 20 lines 8-9.
     """
+
     def __init__(self, c, num_layers, dropout_rate):
         """
         Args:
@@ -309,8 +306,9 @@ class StructureModuleTransition(nn.Module):
         self.num_layers = num_layers
         self.dropout_rate = dropout_rate
 
-        self.layers = nn.ModuleList([ReLUTransitionLayer(num_relu_layers=2, c_in=self.c, n=1)
-                                     for _ in range(self.num_layers)])
+        self.layers = nn.ModuleList(
+            [ReLUTransitionLayer(num_relu_layers=2, c_in=self.c, n=1) for _ in range(self.num_layers)]
+        )
 
         self.dropout = nn.Dropout(self.dropout_rate)
         self.layer_norm = LayerNorm(self.c)

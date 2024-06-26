@@ -12,31 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from pathlib import Path
 import pickle
+import unittest
+from pathlib import Path
+
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
-import unittest
-
-from openfold3.core.data import data_transforms
-from openfold3.core.utils.tensor_utils import tensor_tree_map
-
-from openfold3.model_implementations.af2_monomer.config import model_config
-from openfold3.model_implementations.af2_monomer.model import AlphaFold
 
 import tests.compare_utils as compare_utils
+from openfold3.core.data import data_transforms
+from openfold3.core.utils.tensor_utils import tensor_tree_map
+from openfold3.model_implementations.af2_monomer.config import model_config
+from openfold3.model_implementations.af2_monomer.model import AlphaFold
 from tests.config import consts
-from tests.data_utils import (
-    random_template_feats,
-    random_extra_msa_feats,
-    random_asym_ids
-)
+from tests.data_utils import random_asym_ids, random_extra_msa_feats, random_template_feats
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
-    import jax
     import haiku as hk
+    import jax
 
 
 class TestModel(unittest.TestCase):
@@ -70,9 +65,7 @@ class TestModel(unittest.TestCase):
 
         batch = {}
         tf = torch.randint(c.model.input_embedder.tf_dim - 1, size=(n_res,))
-        batch["target_feat"] = nn.functional.one_hot(
-            tf, c.model.input_embedder.tf_dim
-        ).float()
+        batch["target_feat"] = nn.functional.one_hot(tf, c.model.input_embedder.tf_dim).float()
         batch["aatype"] = torch.argmax(batch["target_feat"], dim=-1)
         batch["residue_index"] = torch.arange(n_res)
 
@@ -81,12 +74,10 @@ class TestModel(unittest.TestCase):
         batch.update({k: torch.tensor(v) for k, v in t_feats.items()})
         extra_feats = random_extra_msa_feats(n_extra_seq, n_res)
         batch.update({k: torch.tensor(v) for k, v in extra_feats.items()})
-        batch["msa_mask"] = torch.randint(
-            low=0, high=2, size=(n_seq, n_res)
-        ).float()
+        batch["msa_mask"] = torch.randint(low=0, high=2, size=(n_seq, n_res)).float()
         batch["seq_mask"] = torch.randint(low=0, high=2, size=(n_res,)).float()
         batch.update(data_transforms.make_atom14_masks(batch))
-        batch["no_recycling_iters"] = torch.tensor(2.)
+        batch["no_recycling_iters"] = torch.tensor(2.0)
 
         if consts.is_multimer:
             batch["asym_id"] = torch.as_tensor(random_asym_ids(n_res))
@@ -94,9 +85,7 @@ class TestModel(unittest.TestCase):
             batch["sym_id"] = torch.ones(n_res)
             batch["extra_deletion_matrix"] = torch.randint(0, 2, size=(n_extra_seq, n_res))
 
-        add_recycling_dims = lambda t: (
-            t.unsqueeze(-1).expand(*t.shape, c.data.common.max_recycling_iters)
-        )
+        add_recycling_dims = lambda t: (t.unsqueeze(-1).expand(*t.shape, c.data.common.max_recycling_iters))
         batch = tensor_tree_map(add_recycling_dims, batch)
 
         to_cuda_device = lambda t: t.cuda()
@@ -115,7 +104,7 @@ class TestModel(unittest.TestCase):
         c.model.evoformer_stack.no_blocks = 2
         c.model.evoformer_stack.blocks_per_ckpt = None
         model = AlphaFold(c)
-        model.to(torch.device('cuda'))
+        model.to(torch.device("cuda"))
         model.eval()
 
         batch = {}
@@ -133,10 +122,8 @@ class TestModel(unittest.TestCase):
         batch.update(data_transforms.make_atom14_masks(batch))
         batch["msa_mask"] = torch.randint(low=0, high=2, size=(n_seq, n_res)).float()
 
-        batch["no_recycling_iters"] = torch.tensor(2.)
-        add_recycling_dims = lambda t: (
-            t.unsqueeze(-1).expand(*t.shape, c.data.common.max_recycling_iters)
-        )
+        batch["no_recycling_iters"] = torch.tensor(2.0)
+        add_recycling_dims = lambda t: (t.unsqueeze(-1).expand(*t.shape, c.data.common.max_recycling_iters))
         batch = tensor_tree_map(add_recycling_dims, batch)
 
         to_cuda_device = lambda t: t.to(torch.device("cuda"))
@@ -148,7 +135,7 @@ class TestModel(unittest.TestCase):
     @compare_utils.skip_unless_alphafold_installed()
     @unittest.skipIf(consts.is_multimer, "Additional changes required for multimer.")
     def test_compare(self):
-        #TODO: Fix test data for multimer MSA features
+        # TODO: Fix test data for multimer MSA features
         def run_alphafold(batch):
             config = compare_utils.get_alphafold_config()
 
@@ -178,19 +165,22 @@ class TestModel(unittest.TestCase):
         out_gt = self.am_atom.atom37_to_atom14(out_gt, batch)
         out_gt = torch.as_tensor(np.array(out_gt.block_until_ready()))
 
-        batch["no_recycling_iters"] = np.array([3., 3., 3., 3.,])
+        batch["no_recycling_iters"] = np.array(
+            [
+                3.0,
+                3.0,
+                3.0,
+                3.0,
+            ]
+        )
         batch = {k: torch.as_tensor(v).cuda() for k, v in batch.items()}
 
         batch["aatype"] = batch["aatype"].long()
         batch["template_aatype"] = batch["template_aatype"].long()
         batch["extra_msa"] = batch["extra_msa"].long()
-        batch["residx_atom37_to_atom14"] = batch[
-            "residx_atom37_to_atom14"
-        ].long()
+        batch["residx_atom37_to_atom14"] = batch["residx_atom37_to_atom14"].long()
         batch["template_all_atom_mask"] = batch["template_all_atom_masks"]
-        batch.update(
-            data_transforms.atom37_to_torsion_angles("template_")(batch)
-        )
+        batch.update(data_transforms.atom37_to_torsion_angles("template_")(batch))
 
         # Move the recycling dimension to the end
         move_dim = lambda t: t.permute(*range(len(t.shape))[1:], 0)

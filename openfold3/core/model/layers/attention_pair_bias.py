@@ -15,19 +15,18 @@
 
 """Attention layer with pair bias."""
 
-from typing import Optional, List
+from typing import List, Optional
 
 import torch
 
 from openfold3.core.model.primitives import (
+    DEFAULT_LMA_KV_CHUNK_SIZE,
+    DEFAULT_LMA_Q_CHUNK_SIZE,
     AdaLN,
+    Attention,
     LayerNorm,
     Linear,
-    Attention,
-    DEFAULT_LMA_Q_CHUNK_SIZE,
-    DEFAULT_LMA_KV_CHUNK_SIZE
 )
-
 from openfold3.core.utils.tensor_utils import permute_final_dims
 
 
@@ -36,6 +35,7 @@ class AttentionPairBias(Attention):
 
     Implements AF3 Algorithm 24.
     """
+
     def __init__(
         self,
         c_q: int,
@@ -47,7 +47,7 @@ class AttentionPairBias(Attention):
         no_heads: int,
         use_ada_layer_norm: bool = False,
         gating: bool = True,
-        inf=1e9
+        inf=1e9,
     ):
         """
         Args:
@@ -72,8 +72,9 @@ class AttentionPairBias(Attention):
             inf:
                 Large constant used to create mask for attention logits
         """
-        super(AttentionPairBias, self).__init__(c_q=c_q, c_k=c_k, c_v=c_v, c_hidden=c_hidden,
-                                                no_heads=no_heads, gating=gating)
+        super(AttentionPairBias, self).__init__(
+            c_q=c_q, c_k=c_k, c_v=c_v, c_hidden=c_hidden, no_heads=no_heads, gating=gating
+        )
 
         self.use_ada_layer_norm = use_ada_layer_norm
         self.c_s = c_s
@@ -86,27 +87,17 @@ class AttentionPairBias(Attention):
             self.layer_norm_a = LayerNorm(c_in=self.c_q)
 
         self.layer_norm_z = LayerNorm(self.c_z)
-        self.linear_z = Linear(
-            self.c_z, self.no_heads, bias=False, init="normal"
-        )
+        self.linear_z = Linear(self.c_z, self.no_heads, bias=False, init="normal")
 
-        self.linear_q = Linear(
-            self.c_q, self.c_hidden * self.no_heads, bias=True, init="glorot"
-        )
+        self.linear_q = Linear(self.c_q, self.c_hidden * self.no_heads, bias=True, init="glorot")
 
-        self.linear_o = Linear(
-            self.c_hidden * self.no_heads, self.c_q, bias=False, init="final"
-        )
+        self.linear_o = Linear(self.c_hidden * self.no_heads, self.c_q, bias=False, init="final")
 
         if self.use_ada_layer_norm:
             self.linear_ada_out = Linear(self.c_s, self.c_q, init="gating_ada_zero")
 
     def _prep_bias(
-        self,
-        a: torch.Tensor,
-        z: Optional[torch.Tensor],
-        beta: Optional[torch.Tensor],
-        mask: Optional[torch.Tensor]
+        self, a: torch.Tensor, z: Optional[torch.Tensor], beta: Optional[torch.Tensor], mask: Optional[torch.Tensor]
     ) -> List[torch.Tensor]:
         """
         Args:
@@ -163,7 +154,7 @@ class AttentionPairBias(Attention):
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
         lma_q_chunk_size: int = DEFAULT_LMA_Q_CHUNK_SIZE,
-        lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE
+        lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
     ) -> torch.Tensor:
         """
         Args:

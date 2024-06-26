@@ -13,24 +13,24 @@
 # limitations under the License.
 
 import re
-import torch
-import numpy as np
 import unittest
+
+import numpy as np
+import torch
 from ml_collections import ConfigDict
 
-from openfold3.core.model.latent import TemplatePairStack, TemplateEmbedderAllAtom
+import tests.compare_utils as compare_utils
+from openfold3.core.model.latent import TemplateEmbedderAllAtom, TemplatePairStack
 from openfold3.core.model.layers.template_pointwise_attention import TemplatePointwiseAttention
 from openfold3.core.model.primitives import LayerNorm
 from openfold3.model_implementations.af2_monomer.config import model_config
-
-import tests.compare_utils as compare_utils
 from tests.config import consts, multimer_consts
-from tests.data_utils import random_template_feats, random_asym_ids
+from tests.data_utils import random_asym_ids, random_template_feats
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
-    import jax
     import haiku as hk
+    import jax
 
 
 class TestTemplatePointwiseAttention(unittest.TestCase):
@@ -44,9 +44,7 @@ class TestTemplatePointwiseAttention(unittest.TestCase):
         n_res = consts.n_res
         inf = 1e7
 
-        tpa = TemplatePointwiseAttention(
-            c_t, c_z, c, no_heads, inf=inf
-        )
+        tpa = TemplatePointwiseAttention(c_t, c_z, c, no_heads, inf=inf)
 
         t = torch.rand((batch_size, n_seq, n_res, n_res, c_t))
         z = torch.rand((batch_size, n_res, n_res, c_z))
@@ -120,28 +118,23 @@ class TestTemplatePairStack(unittest.TestCase):
             if consts.is_multimer:
                 safe_key = alphafold.model.prng.SafeKey(hk.next_rng_key())
                 template_iteration = self.am_modules.TemplateEmbeddingIteration(
-                    c_ee.template.template_pair_stack,
-                    config.model.global_config,
-                    name='template_embedding_iteration')
+                    c_ee.template.template_pair_stack, config.model.global_config, name="template_embedding_iteration"
+                )
 
                 def template_iteration_fn(x):
                     act, safe_key = x
 
                     safe_key, safe_subkey = safe_key.split()
-                    act = template_iteration(
-                        act=act,
-                        pair_mask=pair_mask,
-                        is_training=False,
-                        safe_key=safe_subkey)
+                    act = template_iteration(act=act, pair_mask=pair_mask, is_training=False, safe_key=safe_subkey)
                     return (act, safe_key)
 
                 if config.model.global_config.use_remat:
                     template_iteration_fn = hk.remat(template_iteration_fn)
 
                 safe_key, safe_subkey = safe_key.split()
-                template_stack = alphafold.model.layer_stack.layer_stack(
-                    c_ee.template.template_pair_stack.num_block)(
-                    template_iteration_fn)
+                template_stack = alphafold.model.layer_stack.layer_stack(c_ee.template.template_pair_stack.num_block)(
+                    template_iteration_fn
+                )
                 act, _ = template_stack((pair_act, safe_subkey))
             else:
                 tps = self.am_modules.TemplatePairStack(
@@ -159,9 +152,7 @@ class TestTemplatePairStack(unittest.TestCase):
         n_res = consts.n_res
 
         pair_act = np.random.rand(n_res, n_res, consts.c_t).astype(np.float32)
-        pair_mask = np.random.randint(
-            low=0, high=2, size=(n_res, n_res)
-        ).astype(np.float32)
+        pair_mask = np.random.randint(low=0, high=2, size=(n_res, n_res)).astype(np.float32)
 
         if consts.is_multimer:
             params = compare_utils.fetch_alphafold_module_weights(
@@ -180,9 +171,7 @@ class TestTemplatePairStack(unittest.TestCase):
             )
         )
 
-        out_gt = f.apply(
-            params, jax.random.PRNGKey(42), pair_act, pair_mask
-        ).block_until_ready()
+        out_gt = f.apply(params, jax.random.PRNGKey(42), pair_act, pair_mask).block_until_ready()
         out_gt = torch.as_tensor(np.array(out_gt))
 
         model = compare_utils.get_global_pretrained_openfold()
@@ -214,29 +203,22 @@ class TestTemplateEmbedderAllAtom(unittest.TestCase):
         pair_mask = torch.ones((batch_size, n_res, n_res))
         asym_ids = torch.as_tensor((random_asym_ids(n_res)))
         asym_ids = torch.tile(asym_ids[None, :], (batch_size, 1))
-        multichain_mask_2d = (
-            asym_ids[..., None] == asym_ids[..., None, :]
-        ).to(dtype=z.dtype)
+        multichain_mask_2d = (asym_ids[..., None] == asym_ids[..., None, :]).to(dtype=z.dtype)
 
         template_config = {
-            'template_pair_embedder': {'c_in': c_feats,
-                                       'c_z': c_z,
-                                       'c_out': c_t},
-            'template_pair_stack': c.model.template.template_pair_stack,
-            'distogram': c.model.template.distogram,
-            'inf': c.model.template.inf,
-            'c_t': c_t,
-            'c_z': c_z
+            "template_pair_embedder": {"c_in": c_feats, "c_z": c_z, "c_out": c_t},
+            "template_pair_stack": c.model.template.template_pair_stack,
+            "distogram": c.model.template.distogram,
+            "inf": c.model.template.inf,
+            "c_t": c_t,
+            "c_z": c_z,
         }
 
         te = TemplateEmbedderAllAtom(config=ConfigDict(template_config))
 
-        x = te(batch=batch,
-               z=z,
-               pair_mask=pair_mask,
-               templ_dim=1,
-               chunk_size=None,
-               multichain_mask_2d=multichain_mask_2d)
+        x = te(
+            batch=batch, z=z, pair_mask=pair_mask, templ_dim=1, chunk_size=None, multichain_mask_2d=multichain_mask_2d
+        )
 
         self.assertTrue(x.shape == (batch_size, n_res, n_res, c_z))
 
@@ -283,10 +265,8 @@ class Template(unittest.TestCase):
 
         multichain_mask_2d = None
         if consts.is_multimer:
-            asym_id = batch['asym_id']
-            multichain_mask_2d = (
-                    asym_id[..., None] == asym_id[..., None, :]
-            ).astype(np.float32)
+            asym_id = batch["asym_id"]
+            multichain_mask_2d = (asym_id[..., None] == asym_id[..., None, :]).astype(np.float32)
 
         pair_mask = np.random.randint(0, 2, (n_res, n_res)).astype(np.float32)
         # Fetch pretrained parameters (but only from one block)]
@@ -315,7 +295,7 @@ class Template(unittest.TestCase):
                 multichain_mask_2d=torch.as_tensor(multichain_mask_2d).cuda(),
                 _mask_trans=False,
                 use_lma=False,
-                inplace_safe=False
+                inplace_safe=False,
             )
         else:
             out_repro_all = model.template_embedder(
@@ -326,7 +306,7 @@ class Template(unittest.TestCase):
                 chunk_size=consts.chunk_size,
                 _mask_trans=False,
                 use_lma=False,
-                inplace_safe=False
+                inplace_safe=False,
             )
 
         out_repro = out_repro_all["template_pair_embedding"]

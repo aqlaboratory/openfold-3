@@ -12,23 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
-import numpy as np
 import unittest
+
+import numpy as np
+import torch
+
+import tests.compare_utils as compare_utils
 from openfold3.core.model.layers import (
-    MSARowAttentionWithPairBias,
     MSAColumnAttention,
     MSAColumnGlobalAttention,
-    MSAPairWeightedAveraging
+    MSAPairWeightedAveraging,
+    MSARowAttentionWithPairBias,
 )
 from openfold3.core.utils.tensor_utils import tree_map
-import tests.compare_utils as compare_utils
 from tests.config import consts
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
-    import jax
     import haiku as hk
+    import jax
 
 
 class TestMSARowAttentionWithPairBias(unittest.TestCase):
@@ -70,21 +72,16 @@ class TestMSARowAttentionWithPairBias(unittest.TestCase):
         n_seq = consts.n_seq
 
         msa_act = np.random.rand(n_seq, n_res, consts.c_m).astype(np.float32)
-        msa_mask = np.random.randint(low=0, high=2, size=(n_seq, n_res)).astype(
-            np.float32
-        )
+        msa_mask = np.random.randint(low=0, high=2, size=(n_seq, n_res)).astype(np.float32)
         pair_act = np.random.rand(n_res, n_res, consts.c_z).astype(np.float32)
 
         # Fetch pretrained parameters (but only from one block)]
         params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/"
-            + "msa_row_attention"
+            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/" + "msa_row_attention"
         )
         params = tree_map(lambda n: n[0], params, jax.Array)
 
-        out_gt = f.apply(
-            params, None, msa_act, msa_mask, pair_act
-        ).block_until_ready()
+        out_gt = f.apply(params, None, msa_act, msa_mask, pair_act).block_until_ready()
         out_gt = torch.as_tensor(np.array(out_gt))
 
         model = compare_utils.get_global_pretrained_openfold()
@@ -124,9 +121,7 @@ class TestMSAColumnAttention(unittest.TestCase):
         def run_msa_col_att(msa_act, msa_mask):
             config = compare_utils.get_alphafold_config()
             c_e = config.model.embeddings_and_evoformer.evoformer
-            msa_col = alphafold.model.modules.MSAColumnAttention(
-                c_e.msa_column_attention, config.model.global_config
-            )
+            msa_col = alphafold.model.modules.MSAColumnAttention(c_e.msa_column_attention, config.model.global_config)
             act = msa_col(msa_act=msa_act, msa_mask=msa_mask)
             return act
 
@@ -136,14 +131,11 @@ class TestMSAColumnAttention(unittest.TestCase):
         n_seq = consts.n_seq
 
         msa_act = np.random.rand(n_seq, n_res, consts.c_m).astype(np.float32)
-        msa_mask = np.random.randint(low=0, high=2, size=(n_seq, n_res)).astype(
-            np.float32
-        )
+        msa_mask = np.random.randint(low=0, high=2, size=(n_seq, n_res)).astype(np.float32)
 
         # Fetch pretrained parameters (but only from one block)]
         params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/"
-            + "msa_column_attention"
+            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/" + "msa_column_attention"
         )
         params = tree_map(lambda n: n[0], params, jax.Array)
 
@@ -205,8 +197,7 @@ class TestMSAColumnGlobalAttention(unittest.TestCase):
 
         # Fetch pretrained parameters (but only from one block)]
         params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/evoformer/extra_msa_stack/"
-            + "msa_column_global_attention"
+            "alphafold/alphafold_iteration/evoformer/extra_msa_stack/" + "msa_column_global_attention"
         )
         params = tree_map(lambda n: n[0], params, jax.Array)
 
@@ -215,7 +206,8 @@ class TestMSAColumnGlobalAttention(unittest.TestCase):
 
         model = compare_utils.get_global_pretrained_openfold()
         out_repro = (
-            model.extra_msa_stack.blocks[0].msa_att_col(
+            model.extra_msa_stack.blocks[0]
+            .msa_att_col(
                 torch.as_tensor(msa_act, dtype=torch.float32).cuda(),
                 chunk_size=4,
                 mask=torch.as_tensor(msa_mask, dtype=torch.float32).cuda(),
