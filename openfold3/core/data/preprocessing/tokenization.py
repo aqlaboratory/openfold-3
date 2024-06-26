@@ -5,10 +5,10 @@ import numpy as np
 from biotite.structure import AtomArray
 
 from openfold3.core.data.preprocessing.tables import (
-    STANDARD_RNA_RESIDUES,
     STANDARD_DNA_RESIDUES,
     STANDARD_PROTEIN_RESIDUES,
     STANDARD_RESIDUES,
+    STANDARD_RNA_RESIDUES,
     TOKEN_CENTER_ATOMS,
 )
 
@@ -16,7 +16,7 @@ from openfold3.core.data.preprocessing.tables import (
 def tokenize_atom_array(atom_array: AtomArray):
     """Generates token ids, token center atom annotations and atom id annotations for a biotite atom_array.
 
-    Tokenizes the input atom array according to section 2.6. in the AF3 SI. The 
+    Tokenizes the input atom array according to section 2.6. in the AF3 SI. The
     tokenization is added to the input atom array as 'af3_token_id' annotation
     alongside 'af3_token_center_atom' and 'af3_atom_id' annotations.
 
@@ -31,7 +31,12 @@ def tokenize_atom_array(atom_array: AtomArray):
     # The auxiliary residue id is used to tokenize covalently modified residues
     # per atom and is removed afterwards
     atom_array.set_annotation("af3_atom_id", np.arange(len(atom_array)))
-    atom_array.set_annotation("af3_aux_residue_id", struc.spread_residue_wise(atom_array, np.arange(struc.get_residue_count(atom_array))))
+    atom_array.set_annotation(
+        "af3_aux_residue_id",
+        struc.spread_residue_wise(
+            atom_array, np.arange(struc.get_residue_count(atom_array))
+        ),
+    )
 
     # Get standard residues
     n_atoms = len(atom_array)
@@ -64,14 +69,25 @@ def tokenize_atom_array(atom_array: AtomArray):
 
     # Get corresponding non-heteroatoms
     atom_ids_covalent_modification = bondlist_covalent_modification[:, :2].flatten()
-    nonhetero_atoms_in_covalent_modification = atom_array[atom_ids_covalent_modification][~atom_array[atom_ids_covalent_modification].hetero]
+    nonhetero_atoms_in_covalent_modification = atom_array[
+        atom_ids_covalent_modification
+    ][~atom_array[atom_ids_covalent_modification].hetero]
 
     # Get the set of all atoms in corresponding residues
-    atomized_residue_token_start_ids = atom_array[np.isin(atom_array.af3_aux_residue_id, nonhetero_atoms_in_covalent_modification.af3_aux_residue_id)].af3_atom_id
+    atomized_residue_token_start_ids = atom_array[
+        np.isin(
+            atom_array.af3_aux_residue_id,
+            nonhetero_atoms_in_covalent_modification.af3_aux_residue_id,
+        )
+    ].af3_atom_id
 
     # Remove the corresponding residue token start ids
-    modified_residue_token_start_ids = np.unique(struc.get_residue_starts_for(atom_array, atomized_residue_token_start_ids))
-    residue_token_start_ids = residue_token_start_ids[~np.isin(residue_token_start_ids, modified_residue_token_start_ids)]
+    modified_residue_token_start_ids = np.unique(
+        struc.get_residue_starts_for(atom_array, atomized_residue_token_start_ids)
+    )
+    residue_token_start_ids = residue_token_start_ids[
+        ~np.isin(residue_token_start_ids, modified_residue_token_start_ids)
+    ]
     # Remove auxiliary residue id annotation
     atom_array.del_annotation("af3_aux_residue_id")
 
@@ -80,7 +96,13 @@ def tokenize_atom_array(atom_array: AtomArray):
 
     # Combine all token start ids
     all_token_start_ids = np.sort(
-        np.concatenate([residue_token_start_ids, atom_token_start_ids, atomized_residue_token_start_ids])
+        np.concatenate(
+            [
+                residue_token_start_ids,
+                atom_token_start_ids,
+                atomized_residue_token_start_ids,
+            ]
+        )
     )
 
     # Create token index
