@@ -16,7 +16,7 @@ def crop_contiguous(
 
     Uses Algorithm 1 from AF-Multimer section 7.2.1. to update the input biotite
     atom array with added 'af3_crop_mask' annotation in-place. Note: Algorithm 1
-    does not work correctly as stated in the AF-Multimer SO, so here we are using
+    does not work correctly as stated in the AF-Multimer SI, so here we are using
     a fixed version.
 
     Args:
@@ -82,7 +82,7 @@ def crop_spatial(
 
     Uses Algorithm 2 from AF-Multimer section 7.2.2. to update the input biotite
     atom array with added 'af3_crop_mask' annotation in-place. Note: we drop the
-    index-based distance-untying step from the algorithm (line 1, i * 10^-3 factor)
+    index-based distance-untying step from Algorithm 2 (line 1, i * 10^-3 factor)
     because it distorts the distances and results in less convex spatial crops. 
 
     Args:
@@ -124,7 +124,7 @@ def crop_spatial_interface(
 
     Uses Algorithm 2 from AF-Multimer section 7.2.2. to update the input biotite
     atom array with added 'af3_crop_mask' annotation in-place. Note: we drop the
-    index-based distance-untying step from the algorithm (line 1, i * 10^-3 factor)
+    index-based distance-untying step from Algorithm 2 (line 1, i * 10^-3 factor)
     because it distorts the distances and results in less convex spatial crops. 
 
     Args:
