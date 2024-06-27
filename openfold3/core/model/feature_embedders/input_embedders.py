@@ -442,6 +442,8 @@ class InputEmbedderAllAtom(nn.Module):
         no_heads: int,
         no_blocks: int,
         n_transition: int,
+        n_query: int,
+        n_key: int,
         inf: float,
         max_relative_idx: int,
         max_relative_chain: int
@@ -481,6 +483,8 @@ class InputEmbedderAllAtom(nn.Module):
                                                   no_heads=no_heads,
                                                   no_blocks=no_blocks,
                                                   n_transition=n_transition,
+                                                  n_query=n_query,
+                                                  n_key=n_key,
                                                   inf=inf)
 
         self.linear_s = Linear(c_s_input, c_s, bias=False)

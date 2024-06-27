@@ -4,31 +4,38 @@ import torch
 from torch import nn
 from ml_collections import ConfigDict
 
-from openfold3.core.model.feature_embedders import InputEmbedderAllAtom
+from openfold3.core.model.feature_embedders.input_embedders import MSAModuleEmbedder
+from openfold3.core.model.feature_embedders.template_embedders import TemplatePairEmbedderAllAtom
+from openfold3.core.model.latent.msa_module import MSAModuleStack
+from openfold3.core.model.latent.pairformer import PairFormerStack
+from openfold3.core.model.latent.template import TemplatePairStack
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.model.structure.diffusion_module import DiffusionModule, SampleDiffusion
+from openfold3.core.model.feature_embedders import InputEmbedderAllAtom
 
 
 class AlphaFold3(nn.Module):
 
     def __init__(self, config: ConfigDict):
+        super(AlphaFold3, self).__init__()
         self.config = config
         self.globals = self.config.globals
 
-        self.input_embedder = InputEmbedderAllAtom(globals=self.globals,
-                                                   config=self.config.model.input_embedder)
+        self.input_embedder = InputEmbedderAllAtom(**self.config.model.input_embedder)
 
         self.layer_norm_z = LayerNorm(self.globals.c_z)
         self.linear_z = Linear(self.globals.c_z, self.globals.c_z, bias=False)
 
-        self.template_embedder = None
+        self.template_pair_embedder = TemplatePairEmbedderAllAtom(**self.config.template_pair_embedder)
+        self.template_pair_stack = TemplatePairStack(**self.config.template_pair_stack)
 
-        self.msa_module = None
+        self.msa_module_embedder = MSAModuleEmbedder(**self.config.model.msa_module_embedder)
+        self.msa_module = MSAModuleStack(**self.config.model.msa_module)
 
         self.layer_norm_s = LayerNorm(self.globals.c_s)
         self.linear_s = Linear(self.globals.c_s, self.globals.c_s, bias=False)
 
-        self.pairformer_stack = None
+        self.pairformer_stack = PairFormerStack(**self.config.model.pairformer)
 
         self.diffusion_module = DiffusionModule(config=self.config.model.diffusion_module)
         

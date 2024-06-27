@@ -347,25 +347,69 @@ config = mlc.ConfigDict(
         },
         "model": {
             "input_embedder": {
-                "atom_attn_enc": {
-                    "c_atom_ref": c_atom_ref,
-                    "c_atom": c_atom,
-                    "c_atom_pair": c_atom_pair,
-                    "c_token": c_token_embedder,
-                    "c_hidden": 32, # c_atom / no_heads # built into the function (might get float depending on configuration)
-                    "add_noisy_pos": False,
-                    "no_heads": 4,
-                    "no_blocks": 3,
-                    "n_transition": 2,
-                    "n_query": n_query,
-                    "n_key": n_key,
-                    "inf": 1e10 # global parameter?
-                },
-                "relpos_all_atom": {
-                    "c_z": c_z,
-                    "max_relative_idx": max_relative_idx,
-                    "max_relative_chain": max_relative_chain
-                }
+                "c_s_input": c_s_input,
+                "c_s": c_s,
+                "c_z": c_z,
+                "c_atom_ref": c_atom_ref,
+                "c_atom": c_atom,
+                "c_atom_pair": c_atom_pair,
+                "c_token": c_token_embedder,
+                "c_hidden": 32, # c_atom / no_heads # built into the function (might get float depending on configuration)
+                "no_heads": 4,
+                "no_blocks": 3,
+                "n_transition": 2,
+                "n_query": n_query,
+                "n_key": n_key,
+                "max_relative_idx": max_relative_idx,
+                "max_relative_chain": max_relative_chain,
+                "inf": 1e10 # global parameter?
+            },
+            "template_pair_embedder": {
+                # c_in: int,
+                # c_z: int,
+                # c_out: int
+            },
+            "template_pair_stack": {
+                # c_t,
+                # c_hidden_tri_att,
+                # c_hidden_tri_mul,
+                # no_blocks,
+                # no_heads,
+                # transition_type,
+                # pair_transition_n,
+                # dropout_rate,
+                # tri_mul_first,
+                # fuse_projection_weights,
+                # blocks_per_ckpt,
+                # tune_chunk_size: bool = False,
+                # inf=1e9,
+            },
+            "msa_module_embedder": {
+                # c_m_feats: int,
+                # c_m: int,
+                # c_s_input: int
+            },
+            "msa_module": {
+                # c_m: int,
+                # c_z: int,
+                # c_hidden_msa_att: int,
+                # c_hidden_opm: int,
+                # c_hidden_mul: int,
+                # c_hidden_pair_att: int,
+                # no_heads_msa: int,
+                # no_heads_pair: int,
+                # no_blocks: int,
+                # transition_type: str,
+                # transition_n: int,
+                # msa_dropout: float,
+                # pair_dropout: float,
+                # opm_first: bool,
+                # fuse_projection_weights: bool,
+                # blocks_per_ckpt: Optional[int],
+                # inf: float,
+                # eps: float,
+                # clear_cache_between_blocks: bool = False,
+                # tune_chunk_size: bool = False,
             },
             "pairformer": {
                 "c_s": c_s,
@@ -408,7 +452,6 @@ config = mlc.ConfigDict(
                     "c_atom_pair": c_atom_pair,
                     "c_token": c_token_diffusion,
                     "c_hidden": 32, # c_atom / no_heads # built into the function (might get float depending on configuration)
-                    "add_noisy_pos": True,
                     "no_heads": 4,
                     "no_blocks": 3,
                     "n_transition": 2,

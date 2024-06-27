@@ -91,7 +91,8 @@ class DiffusionModule(nn.Module):
 
         self.diffusion_conditioning = DiffusionConditioning(**config.diffusion_conditioning)
 
-        self.atom_attn_enc = AtomAttentionEncoder(**config.atom_attn_enc)
+        self.atom_attn_enc = AtomAttentionEncoder(**config.atom_attn_enc,
+                                                  add_noisy_pos=True)
 
         self.layer_norm_s = LayerNorm(self.c_s)
         self.linear_s = Linear(self.c_s, self.c_token, bias=False)
