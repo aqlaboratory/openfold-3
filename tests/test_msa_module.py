@@ -31,30 +31,30 @@ class TestMSAModule(unittest.TestCase):
         c_hidden_opm = 17
         c_hidden_mul = 19
         c_hidden_pair_att = 14
-        c_s = consts.c_s
         no_heads_msa = 3
         no_heads_pair = 7
         no_blocks = 2
+        transition_type = 'swiglu'
         transition_n = 2
         msa_dropout = 0.15
-        pair_stack_dropout = 0.25
+        pair_dropout = 0.25
         inf = 1e9
         eps = 1e-10
 
         ms = MSAModuleStack(
-            c_m,
-            c_z,
-            c_hidden_msa_att,
-            c_hidden_opm,
-            c_hidden_mul,
-            c_hidden_pair_att,
-            c_s,
-            no_heads_msa,
-            no_heads_pair,
-            no_blocks,
-            transition_n,
-            msa_dropout,
-            pair_stack_dropout,
+            c_m=c_m,
+            c_z=c_z,
+            c_hidden_msa_att=c_hidden_msa_att,
+            c_hidden_opm=c_hidden_opm,
+            c_hidden_mul=c_hidden_mul,
+            c_hidden_pair_att=c_hidden_pair_att,
+            no_heads_msa=no_heads_msa,
+            no_heads_pair=no_heads_pair,
+            no_blocks=no_blocks,
+            transition_type=transition_type,
+            transition_n=transition_n,
+            msa_dropout=msa_dropout,
+            pair_dropout=pair_dropout,
             opm_first=True,
             fuse_projection_weights=False,
             blocks_per_ckpt=None,

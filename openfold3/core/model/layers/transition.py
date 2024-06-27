@@ -12,12 +12,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+"""Transition layers. Includes ReLUTransition, SwiGLUTransition, ConditionedTransitionBlock,
+and StructureModuleTransition."""
+
 from typing import Optional
 
 import torch
 import torch.nn as nn
 
-from openfold3.core.model.primitives import AdaLN, LayerNorm, Linear, ReLULayer, SwiGLU
+from openfold3.core.model.primitives import AdaLN, LayerNorm, Linear, SwiGLU
 from openfold3.core.utils.chunk_utils import chunk_layer
 
 
@@ -28,8 +32,8 @@ class ReLUTransitionLayer(nn.Module):
     def __init__(self, num_relu_layers, c_in, n):
         """
         Args:
-            num_layers:
-                Number of ReluLayers to apply.
+            num_relu_layers:
+                Number of Linear+ReLU layers to apply.
             c_in:
                 Input channel dimension
             n:
@@ -42,8 +46,12 @@ class ReLUTransitionLayer(nn.Module):
         self.n= n
         self.num_relu_layers = num_relu_layers
 
-        self.layers = nn.ModuleList([ReLULayer(c_in=self.c_in, c_out=self.n * self.c_in, bias=True, init='relu')
-                                     for _ in range(self.num_relu_layers)])
+        self.layers = nn.ModuleList([
+            nn.Sequential(Linear(self.c_in, self.n * self.c_in, bias=True, init='relu'),
+                          nn.ReLU())
+            for _ in range(self.num_relu_layers)]
+        )
+
         self.linear_out = Linear(self.n * self.c_in, self.c_in, init="final")
 
     def forward(
@@ -56,10 +64,10 @@ class ReLUTransitionLayer(nn.Module):
             x:
                 [*, N_res, C_in] Input tensor
             mask:
-                [*, N_res, C_in] Tensor mask
+                [*, N_res] Tensor mask
         Returns:
             x:
-                [*, N_res, C_m] Tensor update
+                [*, N_res, C_in] Tensor update
         """
         for l in self.layers:
             x = l(x)
@@ -70,7 +78,7 @@ class ReLUTransitionLayer(nn.Module):
 
 class ReLUTransition(nn.Module):
     """
-    Feed-forward network applied to MSA and Pair activations after attention.
+    Feed-forward network applied after attention.
 
     Implements AF2 Algorithm 9 and 15
     """
@@ -78,7 +86,7 @@ class ReLUTransition(nn.Module):
         """
         Args:
             c_in:
-                MSA/Pair channel dimension
+                Input channel dimension
             n:
                 Factor multiplied to c_in to obtain the hidden channel
                 dimension
@@ -118,12 +126,14 @@ class ReLUTransition(nn.Module):
         """
         Args:
             x:
-                [*, N_seq/N_res, N_res, C_in] MSA/Pair activation
+                [*, N_res, C_in] Input activation
             mask:
-                [*, N_seq/N_res, N_res, C_in] MSA/Pair mask
+                [*, N_res] Input mask
+            chunk_size
+                Chunk size for chunking the input tensor
         Returns:
-            m:
-                [*, N_seq/N_res, N_res, C_in] MSA/Pair activation update
+            x:
+                [*, N_res, C_in] Activation update
         """
         # DISCREPANCY: DeepMind forgets to apply the mask here.
         if mask is None:
@@ -140,12 +150,12 @@ class ReLUTransition(nn.Module):
 
 
 class SwiGLUTransition(nn.Module):
-    """
+    """Feed-forward network applied after attention.
+
     Implements AF3 Algorithm 11.
     """
     def __init__(self, c_in: int, n: int = 4):
         """
-
         Args:
             c_in:
                 Input channel dimension
@@ -163,22 +173,13 @@ class SwiGLUTransition(nn.Module):
         self.linear_out = Linear(self.n * self.c_in, c_in, bias=False, init="final")
 
     def _transition(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """
-
-        Args:
-            x:
-            mask:
-
-        Returns:
-
-        """
-        # [*, N_res/N_seq, N_res, C_in]
+        # [*, N_res, C_in]
         x = self.layer_norm(x)
 
-        # [*, N_res/N_seq, N_res, C_hidden]
+        # [*, N_res, C_hidden]
         x = self.swiglu(x)
 
-        # [*, N_res/N_seq, N_res, C_in]
+        # [*, N_res, C_in]
         x = self.linear_out(x)
         x = x * mask
 
@@ -191,16 +192,6 @@ class SwiGLUTransition(nn.Module):
         mask: torch.Tensor,
         chunk_size: int,
     ) -> torch.Tensor:
-        """
-
-        Args:
-            x:
-            mask:
-            chunk_size:
-
-        Returns:
-
-        """
         return chunk_layer(
             self._transition,
             {"x": x, "mask": mask},
@@ -215,19 +206,21 @@ class SwiGLUTransition(nn.Module):
         chunk_size: Optional[int] = None,
     ) -> torch.Tensor:
         """
-
         Args:
             x:
+                [*, N_res, C_in] Input activation
             mask:
-            chunk_size:
-
+                [*, N_res] Input mask
+            chunk_size
+                Chunk size for chunking the input tensor
         Returns:
-
+            x:
+                [*, N_res, C_in] Activation update
         """
         if mask is None:
             mask = x.new_ones(x.shape[:-1])
 
-        # [*, N_res/N_seq, N_res, 1]
+        # [*, N_res, 1]
         mask = mask.unsqueeze(-1)
 
         if chunk_size is not None:
@@ -239,7 +232,8 @@ class SwiGLUTransition(nn.Module):
 
 
 class ConditionedTransitionBlock(nn.Module):
-    """
+    """ SwiGLU transition block with adaptive layernorm.
+
     Implements AF3 Algorithm 25.
     """
 
@@ -274,14 +268,14 @@ class ConditionedTransitionBlock(nn.Module):
         mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
-
         Args:
-            a:
-            s:
+            a: [*, N_res, C_in] Input activation
+            s: [*, N_res, C_in] Input tensor to compute shift/scale
             mask:
+                [*, N_res] Input mask
 
         Returns:
-
+            a [*, N_res, C_in] Activation update
         """
         if mask is None:
             mask = a.new_ones(a.shape[:-1])
@@ -298,7 +292,17 @@ class ConditionedTransitionBlock(nn.Module):
 
 
 class StructureModuleTransition(nn.Module):
+    """Structure module transition.
+
+    Implements AF2 Algorithm 20 lines 8-9.
+    """
     def __init__(self, c, num_layers, dropout_rate):
+        """
+        Args:
+            c: Input channel dimension
+            num_layers: Number of ReLUTransitionLayers
+            dropout_rate: Dropout rate
+        """
         super(StructureModuleTransition, self).__init__()
 
         self.c = c

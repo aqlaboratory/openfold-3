@@ -29,7 +29,7 @@ version_dependent_macros = [
 ]
 
 extra_cuda_flags = [
-    '-std=c++14',
+    '-std=c++17',
     '-maxrregcount=50',
     '-U__CUDA_NO_HALF_OPERATORS__',
     '-U__CUDA_NO_HALF_CONVERSIONS__',
@@ -53,7 +53,6 @@ def get_cuda_bare_metal_version(cuda_dir):
         return raw_output, bare_metal_major, bare_metal_minor
 
 compute_capabilities = set([
-    (3, 7), # K80, e.g.
     (5, 2), # Titan X
     (6, 1), # GeForce 1000-series
 ])
@@ -131,7 +130,7 @@ setup(
     classifiers=[
         'License :: OSI Approved :: Apache Software License',
         'Operating System :: POSIX :: Linux',
-        'Programming Language :: Python :: 3.9,'
+        'Programming Language :: Python :: 3.10,'
         'Topic :: Scientific/Engineering :: Artificial Intelligence',
     ],
 )

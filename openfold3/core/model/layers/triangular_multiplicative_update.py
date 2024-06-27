@@ -13,6 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Triangle multiplicative update layers. Includes TriangleMultiplicativeUpdate from AF2
+and FusedTriangleMultiplicativeUpdate from AF2-Multimer.
+"""
+
 from functools import partialmethod
 from typing import Optional
 from abc import ABC, abstractmethod

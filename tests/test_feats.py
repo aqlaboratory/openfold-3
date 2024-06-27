@@ -16,7 +16,7 @@ import torch
 import numpy as np
 import unittest
 
-from openfold3 import core as data_transforms
+from openfold3.core.data import data_transforms
 from openfold3.core.np.residue_constants import (
     restype_rigid_group_default_frame,
     restype_atom14_to_rigid_group,
@@ -78,7 +78,7 @@ class TestFeats(unittest.TestCase):
         out_gt_pos = torch.tensor(np.array(out_gt_pos.block_until_ready()))
         out_gt_mask = torch.tensor(np.array(out_gt_mask.block_until_ready()))
 
-        out_repro_pos, out_repro_mask = feats.pseudo_beta_fn(
+        out_repro_pos, out_repro_mask = data_transforms.pseudo_beta_fn(
             torch.tensor(aatype).cuda(),
             torch.tensor(all_atom_pos).cuda(),
             torch.tensor(all_atom_mask).cuda(),

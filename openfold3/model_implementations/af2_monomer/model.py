@@ -15,31 +15,31 @@
 import torch
 import torch.nn as nn
 
-from openfold3.core.data import data_transforms_multimer
-from openfold3.core.utils.tensor_utils import masked_mean
-from openfold3.core.model.embedders.input_embedders import (
+from openfold3.core.data import data_transforms, data_transforms_multimer
+from openfold3.core.model.feature_embedders.input_embedders import (
     InputEmbedder,
     InputEmbedderMultimer,
     RecyclingEmbedder,
     ExtraMSAEmbedder,
     PreembeddingEmbedder,
 )
-from openfold3.core.model.embedders.template_embedders import TemplateEmbedder, TemplateEmbedderMultimer
-from openfold3.core.model.latent.msa_stacks import EvoformerStack, ExtraMSAStack
+from openfold3.core.model.latent.evoformer import EvoformerStack
+from openfold3.core.model.latent.extra_msa import ExtraMSAStack
+from openfold3.core.model.latent.template import (
+    TemplateEmbedderMonomer,
+    TemplateEmbedderMultimer,
+    embed_templates_offload,
+    embed_templates_average
+)
 from openfold3.core.model.heads.token_heads import AuxiliaryHeads
 from openfold3.core.model.structure.structure_module import StructureModule
-from openfold3.core.model.latent.template import (
-    embed_templates_average,
-    embed_templates_offload,
-)
 from openfold3.core.np import residue_constants
 from openfold3.core.utils.feats import (
-    pseudo_beta_fn,
-    build_extra_msa_feat,
     atom14_to_atom37,
 )
 from openfold3.core.utils.tensor_utils import (
     add,
+    masked_mean,
     tensor_tree_map,
 )
 
@@ -92,7 +92,7 @@ class AlphaFold(nn.Module):
                     self.template_config,
                 )
             else:
-                self.template_embedder = TemplateEmbedder(
+                self.template_embedder = TemplateEmbedderMonomer(
                     self.template_config,
                 )
 
@@ -264,7 +264,7 @@ class AlphaFold(nn.Module):
                 requires_grad=False,
             )
 
-        pseudo_beta_x_prev = pseudo_beta_fn(
+        pseudo_beta_x_prev = data_transforms.pseudo_beta_fn(
             feats["aatype"], x_prev, None
         ).to(dtype=z.dtype)
 
@@ -347,7 +347,7 @@ class AlphaFold(nn.Module):
             if self.globals.is_multimer:
                 extra_msa_fn = data_transforms_multimer.build_extra_msa_feat
             else:
-                extra_msa_fn = build_extra_msa_feat
+                extra_msa_fn = data_transforms.build_extra_msa_feat
 
             # [*, S_e, N, C_e]
             extra_msa_feat = extra_msa_fn(feats).to(dtype=z.dtype)
@@ -363,10 +363,10 @@ class AlphaFold(nn.Module):
                 z = self.extra_msa_stack._forward_offload(
                     input_tensors,
                     msa_mask=feats["extra_msa_mask"].to(dtype=m.dtype),
+                    pair_mask=pair_mask.to(dtype=m.dtype),
                     chunk_size=self.globals.chunk_size,
                     use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
                     use_lma=self.globals.use_lma,
-                    pair_mask=pair_mask.to(dtype=m.dtype),
                     _mask_trans=self.config._mask_trans,
                 )
 
@@ -376,10 +376,10 @@ class AlphaFold(nn.Module):
                 z = self.extra_msa_stack(
                     a, z,
                     msa_mask=feats["extra_msa_mask"].to(dtype=m.dtype),
+                    pair_mask=pair_mask.to(dtype=m.dtype),
                     chunk_size=self.globals.chunk_size,
                     use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
                     use_lma=self.globals.use_lma,
-                    pair_mask=pair_mask.to(dtype=m.dtype),
                     inplace_safe=inplace_safe,
                     _mask_trans=self.config._mask_trans,
                 )
