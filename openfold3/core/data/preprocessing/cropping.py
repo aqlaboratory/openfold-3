@@ -81,7 +81,9 @@ def crop_spatial(
     """Implements Spatial Cropping from AF3 SI, 2.7.2.
 
     Uses Algorithm 2 from AF-Multimer section 7.2.2. to update the input biotite
-    atom array with added 'af3_crop_mask' annotation in-place.
+    atom array with added 'af3_crop_mask' annotation in-place. Note: we drop the
+    index-based distance-untying step from the algorithm (line 1, i * 10^-3 factor)
+    because it distorts the distances and results in less convex spatial crops. 
 
     Args:
         atom_array (AtomArray):
@@ -121,7 +123,9 @@ def crop_spatial_interface(
     """Implements Spatial Interface Cropping from AF3 SI, 2.7.3.
 
     Uses Algorithm 2 from AF-Multimer section 7.2.2. to update the input biotite
-    atom array with added 'af3_crop_mask' annotation in-place.
+    atom array with added 'af3_crop_mask' annotation in-place. Note: we drop the
+    index-based distance-untying step from the algorithm (line 1, i * 10^-3 factor)
+    because it distorts the distances and results in less convex spatial crops. 
 
     Args:
         atom_array (AtomArray):

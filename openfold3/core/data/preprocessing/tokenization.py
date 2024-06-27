@@ -10,6 +10,12 @@ from openfold3.core.data.preprocessing.tables import (
     STANDARD_RESIDUES,
     STANDARD_RNA_RESIDUES,
     TOKEN_CENTER_ATOMS,
+    NUCLEIC_ACID_MAIN_CHAIN_ATOMS,
+    PROTEIN_MAIN_CHAIN_ATOMS,
+    MOLECULE_TYPE_ID_PROTEIN,
+    MOLECULE_TYPE_ID_RNA,
+    MOLECULE_TYPE_ID_DNA,
+    MOLECULE_TYPE_ID_LIGAND,
 )
 
 
@@ -59,16 +65,60 @@ def tokenize_atom_array(atom_array: AtomArray):
         np.isin(bondlist[:, 0], standard_residue_atom_ids)
         | np.isin(bondlist[:, 1], standard_residue_atom_ids)
     ]
+    # Find bonds which contain two standard residue atoms
+    bondlist_standard = bondlist[
+        np.isin(bondlist[:, 0], standard_residue_atom_ids)
+        & np.isin(bondlist[:, 1], standard_residue_atom_ids)
+    ]
 
-    # Find bonds which contain exactly one heteroatom or two non-heteroatoms in different chains
+    # Find bonds which contain
+    # - exactly one heteroatom
+    #   (standard residues with covalent ligands)
     is_heteoratom = atom_array.hetero
-    chain_ids = atom_array.af3_chain_id
     is_one_heteroatom = is_heteoratom[bondlist[:, 0]] ^ is_heteoratom[bondlist[:, 1]]
+    # - two non-heteroatoms in different chains
+    #   (standard residues covalently linking different chains)
+    chain_ids = atom_array.af3_chain_id
     is_different_chain = chain_ids[bondlist[:, 0]] != chain_ids[bondlist[:, 1]]
-    bondlist_covalent_modification = bondlist[is_one_heteroatom | is_different_chain]
+    # - two non-heteroatoms in the same chain but side chains of different residues
+    #   (standard residues covalently linking different residues in the same chain)
+    atom_names = atom_array.atom_name
+    molecule_types = atom_array.af3_molecule_type
+    # Find atoms that are NOT in bonds connecting adjacent residues
+    is_side_chain = (
+        ~np.isin(atom_names, NUCLEIC_ACID_MAIN_CHAIN_ATOMS)
+        & np.isin(molecule_types, [MOLECULE_TYPE_ID_RNA, MOLECULE_TYPE_ID_DNA])
+    ) | (
+        ~np.isin(atom_names, PROTEIN_MAIN_CHAIN_ATOMS)
+        & (molecule_types == MOLECULE_TYPE_ID_PROTEIN)
+    )
+    is_same_chain = (
+        chain_ids[bondlist_standard[:, 0]] == chain_ids[bondlist_standard[:, 1]]
+    )
+    is_both_side_chain = (
+        is_side_chain[bondlist_standard[:, 0]] & is_side_chain[bondlist_standard[:, 1]]
+    )
+    is_different_residue = (
+        atom_array.af3_aux_residue_id[bondlist_standard[:, 0]]
+        != atom_array.af3_aux_residue_id[bondlist_standard[:, 1]]
+    )
+    is_same_chain_diff_sidechain = (
+        is_same_chain & is_both_side_chain & is_different_residue
+    )
+
+    # Combine
+    bondlist_covalent_modification = np.concatenate(
+        (
+            bondlist[is_one_heteroatom | is_different_chain],
+            bondlist_standard[is_same_chain_diff_sidechain],
+        ),
+        axis=0,
+    )
 
     # Get corresponding non-heteroatoms
-    atom_ids_covalent_modification = np.unique(bondlist_covalent_modification[:, :2].flatten())
+    atom_ids_covalent_modification = np.unique(
+        bondlist_covalent_modification[:, :2].flatten()
+    )
     nonhetero_atoms_in_covalent_modification = atom_array[
         atom_ids_covalent_modification
     ][~atom_array[atom_ids_covalent_modification].hetero]
@@ -126,10 +176,11 @@ def assign_chains(atom_array: AtomArray):
     """Generates chain ids and molecule types for a biotite atom_array.
 
     Separate chain ids are given to each protein chain, nucleic acid chain and
-    non-covalent ligands including lipids, glycans and small molecules. For ligands 
+    non-covalent ligands including lipids, glycans and small molecules. For ligands
     covalently bound to polymers, we follow the PDB auto-assigned chain ids: small
     PTMs and ligands are assigned to the same chain as the polymer they are bound to,
-    whereas glycans are assigned to a separate chain.
+    whereas glycans are assigned to a separate chain. Note: chain assignment needs
+    to be ran before tokenization to create certain features used by the tokenizer.
 
     Updates the input biotite AtomArray with added 'af3_chain_id' and 'af3_molecule_type'
     annotations and a 'chain_id_map' class attribute in-place.
@@ -161,16 +212,16 @@ def assign_chains(atom_array: AtomArray):
         residues_in_chain = set(atom_array[start_id:end_id].res_name)
         # Assign protein
         if residues_in_chain & set(STANDARD_PROTEIN_RESIDUES):
-            molecule_types[start_id:end_id] = 0
+            molecule_types[start_id:end_id] = MOLECULE_TYPE_ID_PROTEIN
         # Assign RNA
         elif residues_in_chain & set(STANDARD_RNA_RESIDUES):
-            molecule_types[start_id:end_id] = 1
+            molecule_types[start_id:end_id] = MOLECULE_TYPE_ID_RNA
         # Assign DNA
         elif residues_in_chain & set(STANDARD_DNA_RESIDUES):
-            molecule_types[start_id:end_id] = 2
+            molecule_types[start_id:end_id] = MOLECULE_TYPE_ID_DNA
         # Assign ligand
         else:
-            molecule_types[start_id:end_id] = 3
+            molecule_types[start_id:end_id] = MOLECULE_TYPE_ID_LIGAND
 
     atom_array.set_annotation("af3_molecule_type", molecule_types)
 

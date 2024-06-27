@@ -31,6 +31,16 @@ STANDARD_RESIDUES = STANDARD_PROTEIN_RESIDUES + STANDARD_NUCLEIC_ACID_RESIDUES
 # Token center atoms as defined in AF3 SI, Section 2.6.
 TOKEN_CENTER_ATOMS = ["CA", "C1'"]
 
+# Main chain atoms - needed for modified residue tokenization
+NUCLEIC_ACID_MAIN_CHAIN_ATOMS = ["C3" ,"C4", "C5", "O3", "O5", "P"]
+PROTEIN_MAIN_CHAIN_ATOMS = ["N", "CA", "O"]
+
+# Molecule type used in tokenization
+MOLECULE_TYPE_ID_PROTEIN = 0
+MOLECULE_TYPE_ID_RNA = 1
+MOLECULE_TYPE_ID_DNA = 2
+MOLECULE_TYPE_ID_LIGAND = 3
+
 # Removed crystallization aids as defined in AF3 SI, Table 9
 CRYSTALLIZATION_AIDS = [
     "SO4",
