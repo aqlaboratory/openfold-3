@@ -187,8 +187,8 @@ def remove_chain_with_covalent_ligands(
     While not explicitly stated in the AlphaFold3 SI, the intent of this
     function is to remove protein or nucleic acid chains together with their
     covalent modifications, so that no "floating" covalent ligands are left
-    behind. If the input chain itself is a hetero-chain (e.g. a glycan), only
-    the input chain is removed.
+    behind. This doesn't apply the other way around, so if the input chain
+    itself is a hetero-chain (e.g. a glycan), only the input chain is removed.
 
     Args:
         atom_array:
