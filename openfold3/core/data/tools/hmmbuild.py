@@ -23,7 +23,7 @@ from absl import logging
 from openfold3.core.data.tools import utils
 
 
-class Hmmbuild(object):
+class Hmmbuild:
     """Python wrapper of the hmmbuild binary."""
 
     def __init__(self, *, binary_path: str, singlemx: bool = False):

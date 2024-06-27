@@ -24,7 +24,7 @@ from openfold3.core.data import parsers
 from openfold3.core.data.tools import hmmbuild, utils
 
 
-class Hmmsearch(object):
+class Hmmsearch:
     """Python wrapper of the hmmsearch binary."""
 
     def __init__(

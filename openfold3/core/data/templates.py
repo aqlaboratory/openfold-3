@@ -101,8 +101,8 @@ def empty_template_feats(n_res):
         "template_all_atom_positions": np.zeros(
             (0, n_res, residue_constants.atom_type_num, 3), np.float32
         ),
-        "template_domain_names": np.array(["".encode()], dtype=object),
-        "template_sequence": np.array(["".encode()], dtype=object),
+        "template_domain_names": np.array([b""], dtype=object),
+        "template_sequence": np.array([b""], dtype=object),
         "template_sum_probs": np.zeros((0, 1), dtype=np.float32),
     }
 
@@ -182,7 +182,7 @@ def generate_release_dates_cache(mmcif_dir: str, out_path: str):
     for f in os.listdir(mmcif_dir):
         if f.endswith(".cif"):
             path = os.path.join(mmcif_dir, f)
-            with open(path, "r") as fp:
+            with open(path) as fp:
                 mmcif_string = fp.read()
 
             file_id = os.path.splitext(f)[0]
@@ -196,13 +196,13 @@ def generate_release_dates_cache(mmcif_dir: str, out_path: str):
 
             dates[file_id] = release_date
 
-    with open(out_path, "r") as fp:
+    with open(out_path) as fp:
         fp.write(json.dumps(dates))
 
 
 def _parse_release_dates(path: str) -> Mapping[str, datetime.datetime]:
     """Parses release dates file, returns a mapping from PDBs to release dates."""
-    with open(path, "r") as fp:
+    with open(path) as fp:
         data = json.load(fp)
 
     return {
@@ -789,7 +789,7 @@ def _prefilter_hit(
 
 @functools.lru_cache(16, typed=False)
 def _read_file(path):
-    with open(path, "r") as f:
+    with open(path) as f:
         file_data = f.read()
 
     return file_data
@@ -922,7 +922,7 @@ def get_custom_template_features(
     chain_id: str,
     kalign_binary_path: str,
 ):
-    with open(mmcif_path, "r") as mmcif_path:
+    with open(mmcif_path) as mmcif_path:
         cif_string = mmcif_path.read()
 
     mmcif_parse_result = mmcif_parsing.parse(file_id=pdb_id, mmcif_string=cif_string)

@@ -115,7 +115,7 @@ Read in a PDB file from a path
 
 def pdb_to_string(pdb_file):
     lines = []
-    for line in open(pdb_file, "r"):
+    for line in open(pdb_file):
         if line[:6] == "HETATM" and line[17:20] == "MSE":
             line = "ATOM  " + line[6:17] + "MET" + line[20:]
         if line[:4] == "ATOM":
@@ -306,7 +306,7 @@ def score_decoy(target_seq, decoy_prot, model_runner, name):
         assert jnp.all(decoy_prot.residue_index - 1 == np.arange(len(target_seq)))
     else:  # case when template is missing some residues
         if args.verbose:
-            print("Sequence mismatch: {}".format(name))
+            print(f"Sequence mismatch: {name}")
         mismatch = True
 
         assert (
@@ -508,18 +508,18 @@ def write_results(decoy, af_result, prot_native=None, pdb_native=None, mismatch=
         tm_out = compute_tmscore(pdb_out_path, pdb_native)
 
     if not os.path.exists(
-        args.output_dir + args.name + "/results/results_{}.csv".format(decoy.target)
+        args.output_dir + args.name + f"/results/results_{decoy.target}.csv"
     ):
         with open(
             args.output_dir
             + args.name
-            + "/results/results_{}.csv".format(decoy.target),
+            + f"/results/results_{decoy.target}.csv",
             "w",
         ) as f:
             f.write(",".join(csv_headers) + "\n")
 
     with open(
-        args.output_dir + args.name + "/results/results_{}.csv".format(decoy.target),
+        args.output_dir + args.name + f"/results/results_{decoy.target}.csv",
         "a",
     ) as f:
         result_fields = [
@@ -538,7 +538,7 @@ os.makedirs(args.output_dir + args.name + "/pdbs", exist_ok=True)
 os.makedirs(args.output_dir + args.name + "/results", exist_ok=True)
 
 if len(args.targets_file) > 0:
-    natives_list = open(args.targets_file, "r").read().split("\n")[:-1]
+    natives_list = open(args.targets_file).read().split("\n")[:-1]
 else:
     natives_list = args.target_list
 
@@ -546,12 +546,12 @@ else:
 finished_decoys = []
 for n in natives_list:
     if os.path.exists(
-        args.output_dir + args.name + "/results/results_{}.csv".format(n)
+        args.output_dir + args.name + f"/results/results_{n}.csv"
     ):
         finished_decoys += [
             x.split(",")[0] + "_" + x.split(",")[1]
             for x in open(
-                args.output_dir + args.name + "/results/results_{}.csv".format(n), "r"
+                args.output_dir + args.name + f"/results/results_{n}.csv"
             ).readlines()
         ]
 finished_decoys = set(finished_decoys)
@@ -559,7 +559,7 @@ finished_decoys = set(finished_decoys)
 
 if os.path.exists(args.output_dir + args.name + "/finished_targets.txt"):
     finished_targets = set(
-        open(args.output_dir + args.name + "/finished_targets.txt", "r")
+        open(args.output_dir + args.name + "/finished_targets.txt")
         .read()
         .split("\n")[:-1]
     )
@@ -570,7 +570,7 @@ else:
 # info of the form "target decoy_id"
 decoy_list = [
     x.split()
-    for x in open(args.decoy_dir + "decoy_list.txt", "r").read().split("\n")[:-1]
+    for x in open(args.decoy_dir + "decoy_list.txt").read().split("\n")[:-1]
 ]
 
 # parse all of the information about the decoys
@@ -579,7 +579,7 @@ for field in decoy_fields_list[2:]:
     if os.path.exists(args.decoy_dir + field + ".txt"):
         lines = [
             x.split()
-            for x in open(args.decoy_dir + field + ".txt", "r").read().split("\n")[:-1]
+            for x in open(args.decoy_dir + field + ".txt").read().split("\n")[:-1]
         ]  # form "target decoy_id metric value"
 
         # make sure everything is in the same order
@@ -615,7 +615,7 @@ for i, d in enumerate(decoy_list):
 
 # add another decoy entry for the native structure
 if args.use_native:
-    for n in decoy_dict.keys():
+    for n in decoy_dict:
         if n + "_native" not in finished_decoys:
             decoy_dict[n].insert(
                 0,
@@ -635,7 +635,7 @@ if args.verbose:
     print(finished_decoys)
 
 model_name = args.model_name
-results_key = model_name + "_seed_{}".format(args.seed)
+results_key = model_name + f"_seed_{args.seed}"
 for n in natives_list:
     try:
         pdb_native = args.decoy_dir + "natives/" + n + ".pdb"
@@ -694,9 +694,9 @@ for n in natives_list:
 
         with open(args.output_dir + args.name + "/finished_targets.txt", "a") as f:
             f.write(n + "\n")
-    except AssertionError as ae:
+    except AssertionError:
         print(f"AssertionError encountered while processing a decoy of native {n}")
         traceback.print_exc()
-    except Exception as e:
+    except Exception:
         print(f"Exception encountered while processing a decoy of native {n}")
         traceback.print_exc()

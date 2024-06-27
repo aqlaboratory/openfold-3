@@ -9,7 +9,6 @@ from typing import Any, Optional, Sequence, Union
 import ml_collections as mlc
 import pytorch_lightning as pl
 import torch
-from torch.utils.data import RandomSampler
 
 from openfold3.core.data import (
     data_pipeline,
@@ -91,7 +90,7 @@ class OpenFoldSingleDataset(torch.utils.data.Dataset):
 
         self.chain_data_cache = None
         if chain_data_cache_path is not None:
-            with open(chain_data_cache_path, "r") as fp:
+            with open(chain_data_cache_path) as fp:
                 self.chain_data_cache = json.load(fp)
             assert isinstance(self.chain_data_cache, dict)
 
@@ -121,7 +120,7 @@ class OpenFoldSingleDataset(torch.utils.data.Dataset):
             self._chain_ids = list(os.listdir(alignment_dir))
 
         if filter_path is not None:
-            with open(filter_path, "r") as f:
+            with open(filter_path) as f:
                 chains_to_include = set([l.strip() for l in f.readlines()])
 
             self._chain_ids = [c for c in self._chain_ids if c in chains_to_include]
@@ -172,7 +171,7 @@ class OpenFoldSingleDataset(torch.utils.data.Dataset):
             self.feature_pipeline = feature_pipeline.FeaturePipeline(config)
 
     def _parse_mmcif(self, path, file_id, chain_id, alignment_dir, alignment_index):
-        with open(path, "r") as f:
+        with open(path) as f:
             mmcif_string = f.read()
 
         mmcif_object = mmcif_parsing.parse(file_id=file_id, mmcif_string=mmcif_string)
@@ -359,7 +358,7 @@ class OpenFoldSingleMultimerDataset(torch.utils.data.Dataset):
         self.mmcif_data_cache_path = mmcif_data_cache_path
 
         if self.mmcif_data_cache_path is not None:
-            with open(self.mmcif_data_cache_path, "r") as infile:
+            with open(self.mmcif_data_cache_path) as infile:
                 self.mmcif_data_cache = json.load(infile)
             assert isinstance(self.mmcif_data_cache, dict)
 
@@ -395,7 +394,7 @@ class OpenFoldSingleMultimerDataset(torch.utils.data.Dataset):
             )
 
         if filter_path is not None:
-            with open(filter_path, "r") as f:
+            with open(filter_path) as f:
                 mmcifs_to_include = set([l.strip() for l in f.readlines()])
 
             self._mmcifs = [m for m in self._mmcifs if m in mmcifs_to_include]
@@ -421,7 +420,7 @@ class OpenFoldSingleMultimerDataset(torch.utils.data.Dataset):
         self.feature_pipeline = feature_pipeline.FeaturePipeline(config)
 
     def _parse_mmcif(self, path, file_id, alignment_dir, alignment_index):
-        with open(path, "r") as f:
+        with open(path) as f:
             mmcif_string = f.read()
 
         mmcif_object = mmcif_parsing.parse(file_id=file_id, mmcif_string=mmcif_string)
@@ -925,17 +924,17 @@ class OpenFoldDataModule(pl.LightningDataModule):
         # An ad-hoc measure for our particular filesystem restrictions
         self._distillation_structure_index = None
         if _distillation_structure_index_path is not None:
-            with open(_distillation_structure_index_path, "r") as fp:
+            with open(_distillation_structure_index_path) as fp:
                 self._distillation_structure_index = json.load(fp)
 
         self.alignment_index = None
         if alignment_index_path is not None:
-            with open(alignment_index_path, "r") as fp:
+            with open(alignment_index_path) as fp:
                 self.alignment_index = json.load(fp)
 
         self.distillation_alignment_index = None
         if distillation_alignment_index_path is not None:
-            with open(distillation_alignment_index_path, "r") as fp:
+            with open(distillation_alignment_index_path) as fp:
                 self.distillation_alignment_index = json.load(fp)
 
     def setup(self, stage=None):

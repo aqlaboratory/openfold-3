@@ -160,7 +160,7 @@ def from_pdb_string(pdb_str: str, chain_id: Optional[str] = None) -> Protein:
         chain_id = 0
         for l in pdb_str.split("\n"):
             if "PARENT" in l:
-                if not "N/A" in l:
+                if "N/A" not in l:
                     parent_names = l.split()[1:]
                     parents.extend(parent_names)
                     parents_chain_index.extend([chain_id for _ in parent_names])
@@ -192,7 +192,7 @@ def from_proteinnet_string(proteinnet_str: str) -> Protein:
     atom_positions = None
     atom_mask = None
     for g in groups:
-        if "[PRIMARY]" == g[0]:
+        if g[0] == "[PRIMARY]":
             seq = g[1][0].strip()
             for i in range(len(seq)):
                 if seq[i] not in residue_constants.restypes:
@@ -205,7 +205,7 @@ def from_proteinnet_string(proteinnet_str: str) -> Protein:
                     for res_symbol in seq
                 ]
             )
-        elif "[TERTIARY]" == g[0]:
+        elif g[0] == "[TERTIARY]":
             tertiary = []
             for axis in range(3):
                 tertiary.append(list(map(float, g[1][axis].split())))
@@ -218,7 +218,7 @@ def from_proteinnet_string(proteinnet_str: str) -> Protein:
                     tertiary_np[:, i::3]
                 )
             atom_positions *= PICO_TO_ANGSTROM
-        elif "[MASK]" == g[0]:
+        elif g[0] == "[MASK]":
             mask = np.array(list(map({"-": 0, "+": 1}.get, g[1][0].strip())))
             atom_mask = np.zeros(
                 (
@@ -305,7 +305,7 @@ def add_pdb_headers(prot: Protein, pdb_str: str) -> str:
     for i, l in enumerate(lines):
         if "PARENT" not in l and "REMARK" not in l:
             out_pdb_lines.append(l)
-        if "TER" in l and not "END" in lines[i + 1]:
+        if "TER" in l and "END" not in lines[i + 1]:
             chain_counter += 1
             if not chain_counter >= len(parents_per_chain):
                 chain_parents = parents_per_chain[chain_counter]
@@ -570,7 +570,7 @@ def to_modelcif(prot: Protein) -> str:
                         )
                     )
             # global score
-            self.qa_metrics.append((_GlobalPLDDT(np.mean(plddts))))
+            self.qa_metrics.append(_GlobalPLDDT(np.mean(plddts)))
 
     # Add the model and modeling protocol to the file and write them out:
     model = _MyModel(assembly=modeled_assembly, name="Best scoring model")

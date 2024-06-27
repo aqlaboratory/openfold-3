@@ -11,7 +11,7 @@ from openfold3.core.data import parsers
 def parse_stockholm_file(alignment_dir: str, stockholm_file: str):
     path = os.path.join(alignment_dir, stockholm_file)
     file_name, _ = os.path.splitext(stockholm_file)
-    with open(path, "r") as infile:
+    with open(path) as infile:
         msa = parsers.parse_stockholm(infile.read())
         infile.close()
     return {file_name: msa}
@@ -20,7 +20,7 @@ def parse_stockholm_file(alignment_dir: str, stockholm_file: str):
 def parse_a3m_file(alignment_dir: str, a3m_file: str):
     path = os.path.join(alignment_dir, a3m_file)
     file_name, _ = os.path.splitext(a3m_file)
-    with open(path, "r") as infile:
+    with open(path) as infile:
         msa = parsers.parse_a3m(infile.read())
         infile.close()
     return {file_name: msa}

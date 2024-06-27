@@ -15,7 +15,7 @@ def main(args):
         basename = basename.upper()
         fpath = os.path.join(args.data_dir, fname)
         if ext == ".cif":
-            with open(fpath, "r") as fp:
+            with open(fpath) as fp:
                 mmcif_str = fp.read()
 
             mmcif = mmcif_parsing.parse(file_id=basename, mmcif_string=mmcif_str)
@@ -32,7 +32,7 @@ def main(args):
                 fasta.append(f">{chain_id}")
                 fasta.append(seq)
         elif ext == ".pdb":
-            with open(fpath, "r") as fp:
+            with open(fpath) as fp:
                 pdb_str = fp.read()
 
             protein_object = protein.from_pdb_string(pdb_str)
@@ -53,7 +53,7 @@ def main(args):
                 fasta.append("".join(seq))
 
         elif ext == ".core":
-            with open(fpath, "r") as fp:
+            with open(fpath) as fp:
                 core_str = fp.read()
 
             core_protein = protein.from_proteinnet_string(core_str)

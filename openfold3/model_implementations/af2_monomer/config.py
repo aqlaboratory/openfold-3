@@ -140,13 +140,7 @@ def model_config(
         c.model.template.enabled = True
         c.model.heads.tm.enabled = True
         c.loss.tm.weight = 0.1
-    elif name == "model_3_ptm":
-        c.data.train.max_extra_msa = 5120
-        c.data.predict.max_extra_msa = 5120
-        c.model.template.enabled = False
-        c.model.heads.tm.enabled = True
-        c.loss.tm.weight = 0.1
-    elif name == "model_4_ptm":
+    elif name == "model_3_ptm" or name == "model_4_ptm":
         c.data.train.max_extra_msa = 5120
         c.data.predict.max_extra_msa = 5120
         c.model.template.enabled = False
@@ -207,12 +201,7 @@ def model_config(
             c.model.evoformer_stack.fuse_projection_weights = False
             c.model.extra_msa.extra_msa_stack.fuse_projection_weights = False
             c.model.template.template_pair_stack.fuse_projection_weights = False
-        elif name == "model_4_multimer_v3":
-            # c.model.extra_msa.extra_msa_embedder.num_extra_msa = 1152
-            c.data.train.max_extra_msa = 1152
-            c.data.eval.max_extra_msa = 1152
-            c.data.predict.max_extra_msa = 1152
-        elif name == "model_5_multimer_v3":
+        elif name == "model_4_multimer_v3" or name == "model_5_multimer_v3":
             # c.model.extra_msa.extra_msa_embedder.num_extra_msa = 1152
             c.data.train.max_extra_msa = 1152
             c.data.eval.max_extra_msa = 1152

@@ -156,7 +156,7 @@ class TestDeepSpeedKernel(unittest.TestCase):
         # Compare the grads of model weights
         a_repro_params = dict(a_repro.named_parameters())
         a_gt_params = dict(a_gt.named_parameters())
-        for name in a_gt_params.keys():
+        for name in a_gt_params:
             t_repro = a_repro_params[name]
             t_gt = a_gt_params[name]
             err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))

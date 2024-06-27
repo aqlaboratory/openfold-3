@@ -91,7 +91,7 @@ def get_optimal_transform(
         #
         # sometimes using fake test inputs generates NaN in the predicted atom positions
         # #
-        logging.warning(f"src_atom has nan or inf")
+        logging.warning("src_atom has nan or inf")
         src_atoms = torch.nan_to_num(src_atoms, nan=0.0, posinf=1.0, neginf=1.0)
 
     if mask is not None:

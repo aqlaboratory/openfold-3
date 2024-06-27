@@ -41,7 +41,7 @@ def convert_v1_to_v2_weights(args):
         state_dict_key = "module"
         latest_path = os.path.join(checkpoint_path, "latest")
         if os.path.isfile(latest_path):
-            with open(latest_path, "r") as fd:
+            with open(latest_path) as fd:
                 tag = fd.read().strip()
         else:
             raise ValueError(f"Unable to find 'latest' file at {latest_path}")

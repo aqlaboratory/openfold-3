@@ -169,7 +169,7 @@ def main(args):
     if args.duplicate_chains_file:
         print("Extending super index with duplicate chains...")
         duplicates_added = 0
-        with open(args.duplicate_chains_file, "r") as fp:
+        with open(args.duplicate_chains_file) as fp:
             duplicate_chains = [line.strip().split() for line in fp]
 
         for chains in duplicate_chains:

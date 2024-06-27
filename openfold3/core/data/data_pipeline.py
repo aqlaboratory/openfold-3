@@ -723,10 +723,10 @@ class DataPipeline:
                 filename, ext = os.path.splitext(f)
 
                 if ext == ".a3m":
-                    with open(path, "r") as fp:
+                    with open(path) as fp:
                         msa = parsers.parse_a3m(fp.read())
                 elif ext == ".sto" and filename not in ["uniprot_hits", "hmm_output"]:
-                    with open(path, "r") as fp:
+                    with open(path) as fp:
                         msa = parsers.parse_stockholm(fp.read())
                 else:
                     continue
@@ -769,11 +769,11 @@ class DataPipeline:
                 ext = os.path.splitext(f)[-1]
 
                 if ext == ".hhr":
-                    with open(path, "r") as fp:
+                    with open(path) as fp:
                         hits = parsers.parse_hhr(fp.read())
                     all_hits[f] = hits
                 elif f == "hmm_output.sto":
-                    with open(path, "r") as fp:
+                    with open(path) as fp:
                         hits = parsers.parse_hmmsearch_sto(
                             fp.read(),
                             input_sequence,
@@ -956,7 +956,7 @@ class DataPipeline:
             pdb_str = fp.read(length).decode("utf-8")
             fp.close()
         else:
-            with open(pdb_path, "r") as f:
+            with open(pdb_path) as f:
                 pdb_str = f.read()
 
         protein_object = protein.from_pdb_string(pdb_str, chain_id)
@@ -1005,7 +1005,7 @@ class DataPipeline:
         """
         Assembles features for a protein in a ProteinNet .core file.
         """
-        with open(core_path, "r") as f:
+        with open(core_path) as f:
             core_str = f.read()
 
         protein_object = protein.from_proteinnet_string(core_str)
@@ -1050,7 +1050,7 @@ class DataPipeline:
         Assembles features for a multi-sequence FASTA. Uses Minkyung Baek's
         hack from Twitter (a.k.a. AlphaFold-Gap).
         """
-        with open(fasta_path, "r") as f:
+        with open(fasta_path) as f:
             fasta_str = f.read()
 
         input_seqs, input_descs = parsers.parse_fasta(fasta_str)
@@ -1215,7 +1215,7 @@ class DataPipelineMultimer:
                     f"This is required for Multimer MSA pairing."
                 )
 
-            with open(uniprot_msa_path, "r") as fp:
+            with open(uniprot_msa_path) as fp:
                 uniprot_msa_string = fp.read()
             msa = parsers.parse_stockholm(uniprot_msa_string)
 

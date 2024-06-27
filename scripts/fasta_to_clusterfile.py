@@ -21,7 +21,7 @@ def reformat_cluster_file(cluster_file: Path, output_file: Path):
     cluster_to_chains = defaultdict(list)
 
     # extract all chains belonging to each cluster
-    with open(cluster_file, "r") as f:
+    with open(cluster_file) as f:
         for line in f:
             line = line.strip()
             cluster_name, chain_id = line.split()

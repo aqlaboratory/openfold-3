@@ -14,7 +14,7 @@
 """Ops for all atom representations."""
 
 from functools import partial
-from typing import Dict, Text, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 import torch
@@ -101,7 +101,7 @@ def atom37_to_frames(
     aatype: torch.Tensor,  # (...)
     all_atom_positions: torch.Tensor,  # (..., 37)
     all_atom_mask: torch.Tensor,  # (..., 37)
-) -> Dict[Text, torch.Tensor]:
+) -> Dict[str, torch.Tensor]:
     """Computes the frames for the up to 8 rigid groups for each residue."""
     # 0: 'backbone group',
     # 1: 'pre-omega-group', (empty)
@@ -403,7 +403,7 @@ def compute_chi_angles(
         )
     )
 
-    a, b, c, d = [chi_angle_atoms[..., i] for i in range(4)]
+    a, b, c, d = (chi_angle_atoms[..., i] for i in range(4))
 
     chi_angles = geometry.dihedral_angle(a, b, c, d)
 

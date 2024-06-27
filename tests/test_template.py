@@ -216,7 +216,7 @@ class TestTemplateEmbedderAllAtom(unittest.TestCase):
 
         z = torch.rand((batch_size, n_res, n_res, c_z))
         pair_mask = torch.ones((batch_size, n_res, n_res))
-        asym_ids = torch.as_tensor((random_asym_ids(n_res)))
+        asym_ids = torch.as_tensor(random_asym_ids(n_res))
         asym_ids = torch.tile(asym_ids[None, :], (batch_size, 1))
         multichain_mask_2d = (asym_ids[..., None] == asym_ids[..., None, :]).to(
             dtype=z.dtype

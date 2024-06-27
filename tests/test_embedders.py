@@ -296,7 +296,7 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         c_t = c.model.template.template_pair_embedder.c_out
 
         z = torch.rand((batch_size, n_res, n_res, c_z))
-        asym_ids = torch.as_tensor((random_asym_ids(n_res)))
+        asym_ids = torch.as_tensor(random_asym_ids(n_res))
         asym_ids = torch.tile(asym_ids[None, :], (batch_size, 1))
         multichain_mask_2d = (asym_ids[..., None] == asym_ids[..., None, :]).to(
             dtype=z.dtype

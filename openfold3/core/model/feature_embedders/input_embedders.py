@@ -137,7 +137,7 @@ class InputEmbedder(nn.Module):
         tf_m = (
             self.linear_tf_m(tf)
             .unsqueeze(-3)
-            .expand(((-1,) * len(tf.shape[:-2]) + (n_clust, -1, -1)))
+            .expand((-1,) * len(tf.shape[:-2]) + (n_clust, -1, -1))
         )
         msa_emb = self.linear_msa_m(msa) + tf_m
 
@@ -300,7 +300,7 @@ class InputEmbedderMultimer(nn.Module):
         tf_m = (
             self.linear_tf_m(tf)
             .unsqueeze(-3)
-            .expand(((-1,) * len(tf.shape[:-2]) + (n_clust, -1, -1)))
+            .expand((-1,) * len(tf.shape[:-2]) + (n_clust, -1, -1))
         )
         msa_emb = self.linear_msa_m(msa) + tf_m
 

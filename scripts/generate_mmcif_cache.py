@@ -14,7 +14,7 @@ from openfold3.core.data.mmcif_parsing import parse
 
 
 def parse_file(f, args, chain_cluster_size_dict=None):
-    with open(os.path.join(args.mmcif_dir, f), "r") as fp:
+    with open(os.path.join(args.mmcif_dir, f)) as fp:
         mmcif_string = fp.read()
     file_id = os.path.splitext(f)[0]
     mmcif = parse(file_id=file_id, mmcif_string=mmcif_string)
@@ -51,7 +51,7 @@ def main(args):
     chain_cluster_size_dict = None
     if args.cluster_file is not None:
         chain_cluster_size_dict = {}
-        with open(args.cluster_file, "r") as fp:
+        with open(args.cluster_file) as fp:
             clusters = [l.strip() for l in fp.readlines()]
 
         for cluster in clusters:

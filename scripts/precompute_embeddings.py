@@ -10,7 +10,7 @@ from openfold3.core.data import parsers
 logging.basicConfig(level=logging.INFO)
 
 
-class SequenceDataset(object):
+class SequenceDataset:
     def __init__(self, labels, sequences) -> None:
         self.labels = labels
         self.sequences = sequences
@@ -19,7 +19,7 @@ class SequenceDataset(object):
     def from_file(cls, fasta_file):
         labels, sequences = [], []
 
-        with open(fasta_file, "r") as infile:
+        with open(fasta_file) as infile:
             fasta_str = infile.read()
             sequences, labels = parsers.parse_fasta(fasta_str)
 
@@ -98,7 +98,7 @@ class EmbeddingGenerator:
             if ext != ".fasta" and ext != ".fa":
                 logging.warning(f"Ignoring non-FASTA file: {f}")
                 continue
-            with open(os.path.join(fasta_dir, f), "r") as infile:
+            with open(os.path.join(fasta_dir, f)) as infile:
                 seq = infile.readlines()[1].strip()
             labels.append(f_name)
             seqs.append(seq)

@@ -14,7 +14,7 @@ def _write_file(args, file_in_progress):
 def main(args):
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
 
-    with open(args.proteinnet_file, "r") as fp:
+    with open(args.proteinnet_file) as fp:
         proteinnet_string = fp.readlines()
 
     file_in_progress = []

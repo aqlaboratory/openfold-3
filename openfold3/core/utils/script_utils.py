@@ -53,7 +53,7 @@ def load_models_from_command_line(
         count_models_to_evaluate(openfold_checkpoint_path, jax_param_path) > 1
     )
     if multiple_model_mode:
-        logger.info(f"evaluating multiple models")
+        logger.info("evaluating multiple models")
 
     if jax_param_path:
         for path in jax_param_path.split(","):
@@ -130,7 +130,7 @@ def update_timings(timing_dict, output_file=os.path.join(os.getcwd(), "timings.j
     Write dictionary of one or more run step times to a file
     """
     if os.path.exists(output_file):
-        with open(output_file, "r") as f:
+        with open(output_file) as f:
             try:
                 timings = json.load(f)
             except json.JSONDecodeError:

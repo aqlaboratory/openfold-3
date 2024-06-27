@@ -244,7 +244,7 @@ class OpenFoldWrapper(pl.LightningModule):
         ema = checkpoint["ema"]
         if not self.model.template_config.enabled:
             ema["params"] = {
-                k: v for k, v in ema["params"].items() if not "template" in k
+                k: v for k, v in ema["params"].items() if "template" not in k
             }
         self.ema.load_state_dict(ema)
 
@@ -265,7 +265,7 @@ class OpenFoldWrapper(pl.LightningModule):
 def get_model_state_dict_from_ds_checkpoint(checkpoint_dir):
     latest_path = os.path.join(checkpoint_dir, "latest")
     if os.path.isfile(latest_path):
-        with open(latest_path, "r") as fd:
+        with open(latest_path) as fd:
             tag = fd.read().strip()
     else:
         raise ValueError(f"Unable to find 'latest' file at {latest_path}")
@@ -297,7 +297,7 @@ def main(args):
         low_prec=is_low_precision,
     )
     if args.experiment_config_json:
-        with open(args.experiment_config_json, "r") as f:
+        with open(args.experiment_config_json) as f:
             custom_config_dict = json.load(f)
         config.update_from_flattened_dict(custom_config_dict)
 

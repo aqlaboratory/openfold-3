@@ -182,12 +182,12 @@ def main(args):
     )
 
     if args.experiment_config_json:
-        with open(args.experiment_config_json, "r") as f:
+        with open(args.experiment_config_json) as f:
             custom_config_dict = json.load(f)
         config.update_from_flattened_dict(custom_config_dict)
 
     if args.experiment_config_json:
-        with open(args.experiment_config_json, "r") as f:
+        with open(args.experiment_config_json) as f:
             custom_config_dict = json.load(f)
         config.update_from_flattened_dict(custom_config_dict)
 
@@ -248,7 +248,7 @@ def main(args):
     for fasta_file in list_files_with_extensions(args.fasta_dir, (".fasta", ".fa")):
         # Gather input sequences
         fasta_path = os.path.join(args.fasta_dir, fasta_file)
-        with open(fasta_path, "r") as fp:
+        with open(fasta_path) as fp:
             data = fp.read()
 
         tags, seqs = parse_fasta(data)
@@ -293,7 +293,7 @@ def main(args):
             # Does nothing if the alignments have already been computed
             precompute_alignments(tags, seqs, alignment_dir, args)
 
-            feature_dict = feature_dicts.get(tag, None)
+            feature_dict = feature_dicts.get(tag)
             if feature_dict is None:
                 feature_dict = generate_feature_dict(
                     tags,

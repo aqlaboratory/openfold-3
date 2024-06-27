@@ -171,7 +171,7 @@ class TemplatePairEmbedderMonomer(nn.Module):
             )
         )
 
-        n, ca, c = [rc.atom_order[a] for a in ["N", "CA", "C"]]
+        n, ca, c = (rc.atom_order[a] for a in ["N", "CA", "C"])
         rigids = Rigid.make_transform_from_reference(
             n_xyz=batch["template_all_atom_positions"][..., n, :],
             ca_xyz=batch["template_all_atom_positions"][..., ca, :],
@@ -389,10 +389,10 @@ class TemplatePairEmbedderMultimer(nn.Module):
         unit_vector = rigid_vec.normalized()
         backbone_mask_2d = backbone_mask[..., None] * backbone_mask[..., None, :]
         backbone_mask_2d *= multichain_mask_2d
-        x, y, z = [
+        x, y, z = (
             (coord * backbone_mask_2d).to(dtype=query_embedding.dtype)
             for coord in unit_vector
-        ]
+        )
         act += self.x_linear(x[..., None])
         act += self.y_linear(y[..., None])
         act += self.z_linear(z[..., None])
@@ -486,7 +486,7 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         unit_vector = rigid_vec.normalized()
         backbone_mask_2d = backbone_mask[..., None] * backbone_mask[..., None, :]
 
-        x, y, z = [(coord * backbone_mask_2d)[..., None] for coord in unit_vector]
+        x, y, z = ((coord * backbone_mask_2d)[..., None] for coord in unit_vector)
 
         act = torch.cat(
             [

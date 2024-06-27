@@ -23,7 +23,7 @@ from openfold3.core.np import protein
 from openfold3.core.np.relax import amber_minimize, utils
 
 
-class AmberRelaxation(object):
+class AmberRelaxation:
     """Amber relaxation."""
 
     def __init__(

@@ -63,8 +63,8 @@ class PerformanceLoggingCallback(Callback):
         throughput_imgps = _round3(self.global_batch_size / np.mean(deltas))
         timestamps_ms = 1000 * deltas
         stats = {
-            f"throughput": throughput_imgps,
-            f"latency_mean": _round3(timestamps_ms.mean()),
+            "throughput": throughput_imgps,
+            "latency_mean": _round3(timestamps_ms.mean()),
         }
         for level in [90, 95, 99]:
             stats.update(

@@ -343,7 +343,7 @@ def remove_empty_columns_from_stockholm_msa(stockholm_msa: str) -> str:
             unprocessed_lines[i] = line
         else:
             processed_lines[i] = line
-    return "\n".join((processed_lines[i] for i in range(len(processed_lines))))
+    return "\n".join(processed_lines[i] for i in range(len(processed_lines)))
 
 
 def deduplicate_stockholm_msa(stockholm_msa: str) -> str:
@@ -434,7 +434,7 @@ def _parse_hhr_hit(detailed_lines: Sequence[str]) -> TemplateHit:
             "Could not parse section: %s. Expected this: \n%s to contain summary."
             % (detailed_lines, detailed_lines[2])
         )
-    (_, _, _, aligned_cols, _, _, sum_probs, _) = [float(x) for x in match.groups()]
+    (_, _, _, aligned_cols, _, _, sum_probs, _) = (float(x) for x in match.groups())
 
     # The next section reads the detailed comparisons. These are in a 'human
     # readable' format which has a fixed length. The strategy employed is to

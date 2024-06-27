@@ -20,7 +20,7 @@ from openfold3.core.np import protein, residue_constants
 def parse_file(f, args, chain_cluster_size_dict):
     file_id, ext = os.path.splitext(f)
     if ext == ".cif":
-        with open(os.path.join(args.data_dir, f), "r") as fp:
+        with open(os.path.join(args.data_dir, f)) as fp:
             mmcif_string = fp.read()
         mmcif = parse(file_id=file_id, mmcif_string=mmcif_string)
         if mmcif.mmcif_object is None:
@@ -42,7 +42,7 @@ def parse_file(f, args, chain_cluster_size_dict):
                 cluster_size = chain_cluster_size_dict.get(full_name.upper(), -1)
                 local_data["cluster_size"] = cluster_size
     elif ext == ".pdb":
-        with open(os.path.join(args.data_dir, f), "r") as fp:
+        with open(os.path.join(args.data_dir, f)) as fp:
             pdb_string = fp.read()
 
         protein_object = protein.from_pdb_string(pdb_string, None)
@@ -75,7 +75,7 @@ def main(args):
     chain_cluster_size_dict = None
     if args.cluster_file is not None:
         chain_cluster_size_dict = {}
-        with open(args.cluster_file, "r") as fp:
+        with open(args.cluster_file) as fp:
             clusters = [l.strip() for l in fp.readlines()]
 
         for cluster in clusters:

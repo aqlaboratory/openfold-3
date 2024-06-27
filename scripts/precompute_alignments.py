@@ -66,7 +66,7 @@ def parse_and_align(files, alignment_runner, args):
         file_id = os.path.splitext(f)[0]
         seq_group_dict = {}
         if f.endswith(".cif"):
-            with open(path, "r") as fp:
+            with open(path) as fp:
                 mmcif_str = fp.read()
             mmcif = mmcif_parsing.parse(file_id=file_id, mmcif_string=mmcif_str)
             if mmcif.mmcif_object is None:
@@ -81,7 +81,7 @@ def parse_and_align(files, alignment_runner, args):
                 l = seq_group_dict.setdefault(seq, [])
                 l.append(chain_id)
         elif f.endswith(".fasta") or f.endswith(".fa"):
-            with open(path, "r") as fp:
+            with open(path) as fp:
                 fasta_str = fp.read()
             input_seqs, _ = parse_fasta(fasta_str)
             if len(input_seqs) != 1:
@@ -93,7 +93,7 @@ def parse_and_align(files, alignment_runner, args):
             input_sequence = input_seqs[0]
             seq_group_dict[input_sequence] = [file_id]
         elif f.endswith(".core"):
-            with open(path, "r") as fp:
+            with open(path) as fp:
                 core_str = fp.read()
             core_prot = protein.from_proteinnet_string(core_str)
             aatype = core_prot.aatype
@@ -148,7 +148,7 @@ def main(args):
 
     # Do some filtering
     if args.mmcif_cache is not None:
-        with open(args.mmcif_cache, "r") as fp:
+        with open(args.mmcif_cache) as fp:
             cache = json.load(fp)
     else:
         cache = None
@@ -163,7 +163,7 @@ def main(args):
                 chain_ids = cache[prot_id]["chain_ids"]
                 for c in chain_ids:
                     full_name = prot_id + "_" + c
-                    if not full_name in dirs:
+                    if full_name not in dirs:
                         return False
             else:
                 return False

@@ -8,10 +8,10 @@ import os
 def main(args):
     super_index = {}
     for f in os.listdir(args.alignment_db_dir):
-        if not os.path.splitext(f)[-1] == ".index":
+        if os.path.splitext(f)[-1] != ".index":
             continue
 
-        with open(os.path.join(args.alignment_db_dir, f), "r") as fp:
+        with open(os.path.join(args.alignment_db_dir, f)) as fp:
             index = json.load(fp)
 
         db_name = f"{os.path.splitext(f)[0]}.db"

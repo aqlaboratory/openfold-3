@@ -285,7 +285,7 @@ class InvariantPointAttention(nn.Module):
 
         self.linear_b = Linear(self.c_z, self.no_heads)
 
-        self.head_weights = nn.Parameter(torch.zeros((no_heads)))
+        self.head_weights = nn.Parameter(torch.zeros(no_heads))
         ipa_point_weights_init_(self.head_weights)
 
         concat_out_dim = self.no_heads * (
@@ -564,7 +564,7 @@ class InvariantPointAttentionMultimer(nn.Module):
 
         self.linear_b = Linear(self.c_z, self.no_heads)
 
-        self.head_weights = nn.Parameter(torch.zeros((no_heads)))
+        self.head_weights = nn.Parameter(torch.zeros(no_heads))
         ipa_point_weights_init_(self.head_weights)
 
         concat_out_dim = self.no_heads * (

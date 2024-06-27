@@ -9,12 +9,12 @@ from openfold3.core.data.tools import hhsearch
 
 def _split_a3ms(output_dir):
     for fname in os.listdir(output_dir):
-        if not os.path.splitext(fname)[-1] == ".a3m":
+        if os.path.splitext(fname)[-1] != ".a3m":
             continue
 
         fpath = os.path.join(output_dir, fname)
 
-        with open(fpath, "r") as fp:
+        with open(fpath) as fp:
             a3ms = fp.read()
 
         # Split by the null byte, excluding the terminating null byte
@@ -33,7 +33,7 @@ def _split_a3ms(output_dir):
 
 
 def main(args):
-    with open(args.input_fasta, "r") as f:
+    with open(args.input_fasta) as f:
         lines = [l.strip() for l in f.readlines()]
 
     names = lines[::2]
@@ -105,10 +105,10 @@ def main(args):
             continue
         for fname in os.listdir(dpath):
             fpath = os.path.join(dpath, fname)
-            if not "uniref" in fname or not os.path.splitext(fname)[-1] == ".a3m":
+            if "uniref" not in fname or os.path.splitext(fname)[-1] != ".a3m":
                 continue
 
-            with open(fpath, "r") as fp:
+            with open(fpath) as fp:
                 a3m = fp.read()
 
             hhsearch_result = hhsearch_pdb70_runner.query(a3m)

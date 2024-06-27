@@ -140,10 +140,10 @@ def attention_chunked_trainable(
             return b[tuple(idx)]
 
         if checkpoint:
-            bias_1_chunk, bias_2_chunk = [
+            bias_1_chunk, bias_2_chunk = (
                 _slice_bias(b) if b is not None else None
                 for b in (biases + [None, None])[:2]
-            ]
+            )
 
             o_chunk = checkpoint_fn(
                 _checkpointable_attention,
