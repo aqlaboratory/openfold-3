@@ -6,6 +6,7 @@ import biotite.structure as struc
 import numpy as np
 from biotite.structure import Atom, AtomArray
 from numpy.random import Generator
+from scipy.spatial.distance import cdist
 
 
 def crop_contiguous(
@@ -280,15 +281,9 @@ def find_spatial_crop(
         None
     """
     # Get distance from all other token center atoms and break ties
-    distances_to_reference_atom = (
-        struc.distance(
-            reference_atom,
-            token_center_atoms[
-                token_center_atoms.af3_atom_id != reference_atom.af3_atom_id
-            ],
-        )
-        + np.arange(len(token_center_atoms) - 1) * 1e-3
-    )
+    distances_to_reference_atom = cdist(
+        np.reshape(reference_atom.coord, (1, -1)), token_center_atoms.coord
+    )[0, :]
 
     # Get token_budget nearest token center atoms
     nearest_token_center_atom_ids = np.argsort(distances_to_reference_atom)[

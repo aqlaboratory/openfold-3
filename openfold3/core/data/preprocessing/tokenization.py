@@ -68,7 +68,7 @@ def tokenize_atom_array(atom_array: AtomArray):
     bondlist_covalent_modification = bondlist[is_one_heteroatom | is_different_chain]
 
     # Get corresponding non-heteroatoms
-    atom_ids_covalent_modification = bondlist_covalent_modification[:, :2].flatten()
+    atom_ids_covalent_modification = np.unique(bondlist_covalent_modification[:, :2].flatten())
     nonhetero_atoms_in_covalent_modification = atom_array[
         atom_ids_covalent_modification
     ][~atom_array[atom_ids_covalent_modification].hetero]
