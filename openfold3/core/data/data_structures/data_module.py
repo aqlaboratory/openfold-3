@@ -7,15 +7,15 @@ from typing import Dict, List, Sequence
 import pytorch_lightning as pl
 import torch
 
-from openfold3.base.data.data_structures.dataloader import OpenFoldDataLoader
-from openfold3.base.data.data_structures.singledatasets import (
+from torch.utils.data import DataLoader
+from openfold3.core.data.data_structures.single_datasets import (
     DATASET_REGISTRY,
     OpenFoldSingleDataset,
 )
-from openfold3.base.data.data_structures.stochasticsamplerdataset import (
+from openfold3.core.data.data_structures.stochastic_sampler_dataset import (
     OpenFoldStochasticSamplerDataset,
 )
-from openfold3.base.utils.tensor_utils import dict_multimap
+from openfold3.core.utils.tensor_utils import dict_multimap
 
 
 class OpenFoldDataModule(pl.LightningDataModule):
@@ -133,21 +133,21 @@ class OpenFoldDataModule(pl.LightningDataModule):
             )
         return datasets
 
-    def train_dataloader(self) -> OpenFoldDataLoader:
+    def train_dataloader(self) -> DataLoader:
         # TODO refactor OpneFoldDataLoader and add arguments
-        return OpenFoldDataLoader(self.train_dataset, "<other arguments>")
+        return DataLoader(self.train_dataset, "<other arguments>")
 
-    def val_dataloader(self) -> OpenFoldDataLoader:
+    def val_dataloader(self) -> DataLoader:
         # TODO refactor OpneFoldDataLoader and add arguments
-        return OpenFoldDataLoader(self.validation_dataset, "<other arguments>")
+        return DataLoader(self.validation_dataset, "<other arguments>")
 
-    def test_dataloader(self) -> OpenFoldDataLoader:
+    def test_dataloader(self) -> DataLoader:
         # TODO refactor OpneFoldDataLoader and add arguments
-        return OpenFoldDataLoader(self.test_dataset, "<other arguments>")
+        return DataLoader(self.test_dataset, "<other arguments>")
 
-    def predict_dataloader(self) -> OpenFoldDataLoader:
+    def predict_dataloader(self) -> DataLoader:
         # TODO refactor OpneFoldDataLoader and add arguments
-        return OpenFoldDataLoader(self.predict_dataset, "<other arguments>")
+        return DataLoader(self.predict_dataset, "<other arguments>")
 
 
 def openfold_batch_collator(prots):
