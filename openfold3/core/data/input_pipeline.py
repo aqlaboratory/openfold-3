@@ -75,7 +75,11 @@ def ensembled_transform_fns(common_cfg, mode_cfg, ensemble_seed):
         transforms.append(data_transforms.block_delete_msa(common_cfg.block_delete_msa))
 
     if "max_distillation_msa_clusters" in mode_cfg:
-        transforms.append(data_transforms.sample_msa_distillation(mode_cfg.max_distillation_msa_clusters))
+        transforms.append(
+            data_transforms.sample_msa_distillation(
+                mode_cfg.max_distillation_msa_clusters
+            )
+        )
 
     if common_cfg.reduce_msa_clusters_by_max_templates:
         pad_msa_clusters = mode_cfg.max_msa_clusters - mode_cfg.max_templates
@@ -182,7 +186,9 @@ def process_tensors_from_config(tensors, common_cfg, mode_cfg):
     else:
         num_recycling = common_cfg.max_recycling_iters
 
-    tensors = map_fn(lambda x: wrap_ensemble_fn(tensors, x), torch.arange(num_recycling + 1))
+    tensors = map_fn(
+        lambda x: wrap_ensemble_fn(tensors, x), torch.arange(num_recycling + 1)
+    )
 
     return tensors
 
@@ -199,5 +205,7 @@ def map_fn(fun, x):
     features = ensembles[0].keys()
     ensembled_dict = {}
     for feat in features:
-        ensembled_dict[feat] = torch.stack([dict_i[feat] for dict_i in ensembles], dim=-1)
+        ensembled_dict[feat] = torch.stack(
+            [dict_i[feat] for dict_i in ensembles], dim=-1
+        )
     return ensembled_dict

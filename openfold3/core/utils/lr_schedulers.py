@@ -33,7 +33,9 @@ class AlphaFoldLRScheduler(torch.optim.lr_scheduler._LRScheduler):
                 raise ValueError(f"{k} must be nonnegative")
 
         if warmup_no_steps > start_decay_after_n_steps:
-            raise ValueError("warmup_no_steps must not exceed start_decay_after_n_steps")
+            raise ValueError(
+                "warmup_no_steps must not exceed start_decay_after_n_steps"
+            )
 
         self.optimizer = optimizer
         self.last_epoch = last_epoch
@@ -61,7 +63,10 @@ class AlphaFoldLRScheduler(torch.optim.lr_scheduler._LRScheduler):
 
     def get_lr(self):
         if not self._get_lr_called_within_step:
-            raise RuntimeError("To get the last learning rate computed by the scheduler, use " "get_last_lr()")
+            raise RuntimeError(
+                "To get the last learning rate computed by the scheduler, use "
+                "get_last_lr()"
+            )
 
         step_no = self.last_epoch
 

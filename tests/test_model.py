@@ -26,7 +26,11 @@ from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.model_implementations.af2_monomer.config import model_config
 from openfold3.model_implementations.af2_monomer.model import AlphaFold
 from tests.config import consts
-from tests.data_utils import random_asym_ids, random_extra_msa_feats, random_template_feats
+from tests.data_utils import (
+    random_asym_ids,
+    random_extra_msa_feats,
+    random_template_feats,
+)
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
@@ -65,7 +69,9 @@ class TestModel(unittest.TestCase):
 
         batch = {}
         tf = torch.randint(c.model.input_embedder.tf_dim - 1, size=(n_res,))
-        batch["target_feat"] = nn.functional.one_hot(tf, c.model.input_embedder.tf_dim).float()
+        batch["target_feat"] = nn.functional.one_hot(
+            tf, c.model.input_embedder.tf_dim
+        ).float()
         batch["aatype"] = torch.argmax(batch["target_feat"], dim=-1)
         batch["residue_index"] = torch.arange(n_res)
 
@@ -83,9 +89,13 @@ class TestModel(unittest.TestCase):
             batch["asym_id"] = torch.as_tensor(random_asym_ids(n_res))
             batch["entity_id"] = batch["asym_id"].clone()
             batch["sym_id"] = torch.ones(n_res)
-            batch["extra_deletion_matrix"] = torch.randint(0, 2, size=(n_extra_seq, n_res))
+            batch["extra_deletion_matrix"] = torch.randint(
+                0, 2, size=(n_extra_seq, n_res)
+            )
 
-        add_recycling_dims = lambda t: (t.unsqueeze(-1).expand(*t.shape, c.data.common.max_recycling_iters))
+        add_recycling_dims = lambda t: (
+            t.unsqueeze(-1).expand(*t.shape, c.data.common.max_recycling_iters)
+        )
         batch = tensor_tree_map(add_recycling_dims, batch)
 
         to_cuda_device = lambda t: t.cuda()
@@ -109,11 +119,15 @@ class TestModel(unittest.TestCase):
 
         batch = {}
         tf = torch.randint(c.model.preembedding_embedder.tf_dim - 1, size=(n_res,))
-        batch["target_feat"] = nn.functional.one_hot(tf, c.model.preembedding_embedder.tf_dim).float()
+        batch["target_feat"] = nn.functional.one_hot(
+            tf, c.model.preembedding_embedder.tf_dim
+        ).float()
         batch["aatype"] = torch.argmax(batch["target_feat"], dim=-1)
         batch["residue_index"] = torch.arange(n_res)
         batch["msa_feat"] = torch.rand((n_seq, n_res, msa_dim))
-        batch["seq_embedding"] = torch.rand((n_res, c.model.preembedding_embedder.preembedding_dim))
+        batch["seq_embedding"] = torch.rand(
+            (n_res, c.model.preembedding_embedder.preembedding_dim)
+        )
 
         t_feats = random_template_feats(n_templ, n_res)
         batch.update({k: torch.tensor(v) for k, v in t_feats.items()})
@@ -123,7 +137,9 @@ class TestModel(unittest.TestCase):
         batch["msa_mask"] = torch.randint(low=0, high=2, size=(n_seq, n_res)).float()
 
         batch["no_recycling_iters"] = torch.tensor(2.0)
-        add_recycling_dims = lambda t: (t.unsqueeze(-1).expand(*t.shape, c.data.common.max_recycling_iters))
+        add_recycling_dims = lambda t: (
+            t.unsqueeze(-1).expand(*t.shape, c.data.common.max_recycling_iters)
+        )
         batch = tensor_tree_map(add_recycling_dims, batch)
 
         to_cuda_device = lambda t: t.to(torch.device("cuda"))

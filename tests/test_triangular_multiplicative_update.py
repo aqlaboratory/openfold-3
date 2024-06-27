@@ -66,7 +66,9 @@ class TestTriangularMultiplicativeUpdate(unittest.TestCase):
             config = compare_utils.get_alphafold_config()
             c_e = config.model.embeddings_and_evoformer.evoformer
             tri_mul = alphafold.model.modules.TriangleMultiplication(
-                c_e.triangle_multiplication_incoming if incoming else c_e.triangle_multiplication_outgoing,
+                c_e.triangle_multiplication_incoming
+                if incoming
+                else c_e.triangle_multiplication_outgoing,
                 config.model.global_config,
                 name=name,
             )

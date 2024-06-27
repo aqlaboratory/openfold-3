@@ -22,9 +22,12 @@ os.environ["JAX_PLATFORM_NAME"] = "gpu"
 def skip_unless_ds4s_installed():
     deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
     ds4s_is_installed = (
-        deepspeed_is_installed and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
+        deepspeed_is_installed
+        and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
     )
-    return unittest.skipUnless(ds4s_is_installed, "Requires DeepSpeed with version ≥ 0.10.4")
+    return unittest.skipUnless(
+        ds4s_is_installed, "Requires DeepSpeed with version ≥ 0.10.4"
+    )
 
 
 def skip_unless_flash_attn_installed():
@@ -65,7 +68,9 @@ def get_alphafold_config():
 
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
-_param_path = os.path.join(dir_path, "..", f"openfold3/resources/params/params_{consts.model}.npz")
+_param_path = os.path.join(
+    dir_path, "..", f"openfold3/resources/params/params_{consts.model}.npz"
+)
 _model = None
 
 
@@ -115,7 +120,9 @@ def fetch_alphafold_module_weights(weight_path):
     try:
         params = alphafold.model.utils.flat_params_to_haiku(params)  # noqa
     except:
-        raise ImportError("Make sure to call import_alphafold before running this function")
+        raise ImportError(
+            "Make sure to call import_alphafold before running this function"
+        )
     return params
 
 

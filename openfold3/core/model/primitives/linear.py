@@ -119,12 +119,20 @@ class Linear(nn.Linear):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         d = input.dtype
-        deepspeed_is_initialized = deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
+        deepspeed_is_initialized = (
+            deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
+        )
         if self.precision is not None:
             with torch.cuda.amp.autocast(enabled=False):
-                bias = self.bias.to(dtype=self.precision) if self.bias is not None else None
+                bias = (
+                    self.bias.to(dtype=self.precision)
+                    if self.bias is not None
+                    else None
+                )
                 return nn.functional.linear(
-                    input.to(dtype=self.precision), self.weight.to(dtype=self.precision), bias
+                    input.to(dtype=self.precision),
+                    self.weight.to(dtype=self.precision),
+                    bias,
                 ).to(dtype=d)
 
         if d is torch.bfloat16 and not deepspeed_is_initialized:

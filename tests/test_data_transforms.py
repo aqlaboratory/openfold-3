@@ -73,7 +73,9 @@ class TestDataTransforms(unittest.TestCase):
         template_aatype = template_seq_one_hot.clone().detach().unsqueeze(0)
         protein = {"template_aatype": template_aatype, "aatype": template_aatype}
         protein = fix_templates_aatype(protein)
-        template_seq_ours = torch.tensor([[0, 4, 3, 6, 13, 7, 8, 9, 11, 10, 12, 2, 14, 5, 1, 15, 16, 19, 17, 18] * 2])
+        template_seq_ours = torch.tensor(
+            [[0, 4, 3, 6, 13, 7, 8, 9, 11, 10, 12, 2, 14, 5, 1, 15, 16, 19, 17, 18] * 2]
+        )
         assert torch.all(torch.eq(protein["template_aatype"], template_seq_ours))
 
     def test_correct_msa_restypes(self):
@@ -81,7 +83,12 @@ class TestDataTransforms(unittest.TestCase):
         print(protein.keys())
         protein = correct_msa_restypes(protein)
         print(protein.keys())
-        assert torch.all(torch.eq(torch.as_tensor(self.features["msa"].shape), torch.tensor(protein["msa"].shape)))
+        assert torch.all(
+            torch.eq(
+                torch.as_tensor(self.features["msa"].shape),
+                torch.tensor(protein["msa"].shape),
+            )
+        )
 
     def test_squeeze_features(self):
         features_list = [
@@ -123,9 +130,15 @@ class TestDataTransforms(unittest.TestCase):
         }
         replace_proportion = 0.15
         x_idx = 20
-        protein = randomly_replace_msa_with_unknown.__wrapped__(protein, replace_proportion)
-        unknown_proportion_in_msa = torch.bincount(protein["msa"].flatten()) / torch.numel(protein["msa"])
-        unknown_proportion_in_seq = torch.bincount(protein["aatype"].flatten()) / torch.numel(protein["aatype"])
+        protein = randomly_replace_msa_with_unknown.__wrapped__(
+            protein, replace_proportion
+        )
+        unknown_proportion_in_msa = torch.bincount(
+            protein["msa"].flatten()
+        ) / torch.numel(protein["msa"])
+        unknown_proportion_in_seq = torch.bincount(
+            protein["aatype"].flatten()
+        ) / torch.numel(protein["aatype"])
 
     def test_sample_msa(self):
         max_seq = 1000
@@ -138,11 +151,13 @@ class TestDataTransforms(unittest.TestCase):
         protein_processed = sample_msa.__wrapped__(protein.copy(), max_seq, keep_extra)
         for k in MSA_FEATURE_NAMES:
             if k in protein and keep_extra:
-                assert protein_processed[k].shape[0] == min(protein[k].shape[0], max_seq)
-                assert "extra_" + k in protein_processed
-                assert protein_processed["extra_" + k].shape[0] == protein[k].shape[0] - min(
+                assert protein_processed[k].shape[0] == min(
                     protein[k].shape[0], max_seq
                 )
+                assert "extra_" + k in protein_processed
+                assert protein_processed["extra_" + k].shape[0] == protein[k].shape[
+                    0
+                ] - min(protein[k].shape[0], max_seq)
 
     def test_crop_extra_msa(self):
         max_extra_msa = 10
@@ -166,10 +181,18 @@ class TestDataTransforms(unittest.TestCase):
 
     def test_nearest_neighbor_clusters(self):
         protein = {
-            "msa": torch.as_tensor(self.sample_features["true_msa"][0], dtype=torch.int64),
-            "msa_mask": torch.as_tensor(self.sample_features["msa_mask"][0], dtype=torch.int64),
-            "extra_msa": torch.as_tensor(self.sample_features["extra_msa"][0], dtype=torch.int64),
-            "extra_msa_mask": torch.as_tensor(self.sample_features["extra_msa_mask"][0], dtype=torch.int64),
+            "msa": torch.as_tensor(
+                self.sample_features["true_msa"][0], dtype=torch.int64
+            ),
+            "msa_mask": torch.as_tensor(
+                self.sample_features["msa_mask"][0], dtype=torch.int64
+            ),
+            "extra_msa": torch.as_tensor(
+                self.sample_features["extra_msa"][0], dtype=torch.int64
+            ),
+            "extra_msa_mask": torch.as_tensor(
+                self.sample_features["extra_msa_mask"][0], dtype=torch.int64
+            ),
         }
         protein = nearest_neighbor_clusters.__wrapped__(protein, 0)
         assert "extra_cluster_assignment" in protein
@@ -185,7 +208,9 @@ class TestDataTransforms(unittest.TestCase):
         protein = {"msa": torch.as_tensor(self.features["msa"], dtype=torch.int64)}
         protein = make_hhblits_profile(protein)
         assert "hhblits_profile" in protein
-        assert protein["hhblits_profile"].shape == torch.Size((protein["msa"].shape[1], 22))
+        assert protein["hhblits_profile"].shape == torch.Size(
+            (protein["msa"].shape[1], 22)
+        )
 
     def test_make_masked_msa(self):
         protein = {
@@ -194,18 +219,25 @@ class TestDataTransforms(unittest.TestCase):
         }
         protein = make_hhblits_profile(protein)
         masked_msa_config = config.data.common.masked_msa
-        protein = make_masked_msa.__wrapped__(protein, masked_msa_config, replace_fraction=0.15, seed=42)
+        protein = make_masked_msa.__wrapped__(
+            protein, masked_msa_config, replace_fraction=0.15, seed=42
+        )
         assert "bert_mask" in protein
         assert "true_msa" in protein
         assert "msa" in protein
         assert protein["bert_mask"].sum() >= 0
         assert torch.all(
-            torch.eq(protein["true_msa"] * (1 - protein["bert_mask"]), protein["msa"] * (1 - protein["bert_mask"]))
+            torch.eq(
+                protein["true_msa"] * (1 - protein["bert_mask"]),
+                protein["msa"] * (1 - protein["bert_mask"]),
+            )
         )
 
     def test_make_msa_feat(self):
         protein = {
-            "between_segment_residues": torch.as_tensor(self.features["between_segment_residues"]),
+            "between_segment_residues": torch.as_tensor(
+                self.features["between_segment_residues"]
+            ),
             "msa": torch.as_tensor(self.features["msa"], dtype=torch.int64),
             "deletion_matrix": torch.as_tensor(self.features["deletion_matrix_int"]),
             "aatype": torch.argmax(torch.as_tensor(self.features["aatype"]), dim=1),
@@ -219,7 +251,9 @@ class TestDataTransforms(unittest.TestCase):
     def test_crop_templates(self):
         protein = {
             "template_aatype": torch.as_tensor(self.sample_features["true_msa"][0]),
-            "template_all_atom_masks": torch.as_tensor(self.sample_features["msa_mask"][0]),
+            "template_all_atom_masks": torch.as_tensor(
+                self.sample_features["msa_mask"][0]
+            ),
         }
         max_templates = 2
         protein = crop_templates.__wrapped__(protein, max_templates)

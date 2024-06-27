@@ -33,10 +33,16 @@ from openfold3.model_implementations.af2_monomer.model import AlphaFold
 def reshape_fn(of_param, af_weight):
     transformations = {
         ParamType.LinearWeight: lambda w: w.transpose(-1, -2),
-        ParamType.LinearWeightMHA: lambda w: w.transpose(-1, -2).reshape(af_weight.shape),
-        ParamType.LinearMHAOutputWeight: lambda w: w.transpose(-1, -2).reshape(af_weight.shape),
+        ParamType.LinearWeightMHA: lambda w: w.transpose(-1, -2).reshape(
+            af_weight.shape
+        ),
+        ParamType.LinearMHAOutputWeight: lambda w: w.transpose(-1, -2).reshape(
+            af_weight.shape
+        ),
         ParamType.LinearBiasMHA: lambda w: w.reshape(af_weight.shape),
-        ParamType.LinearWeightOPM: lambda w: w.transpose(-1, -2).reshape(af_weight.shape),
+        ParamType.LinearWeightOPM: lambda w: w.transpose(-1, -2).reshape(
+            af_weight.shape
+        ),
         ParamType.Other: lambda w: w,
     }
 
@@ -69,7 +75,9 @@ def main(args):
     translation = process_translation_dict(translation)
 
     af_weight_template = np.load(args.template_npz_path)
-    af_weight_template = {k: v for k, v in af_weight_template.items() if k in translation}
+    af_weight_template = {
+        k: v for k, v in af_weight_template.items() if k in translation
+    }
     zero = lambda n: n * 0
     af_weight_template = tree_map(zero, af_weight_template, np.ndarray)
 
@@ -80,8 +88,12 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("of_pt_path", type=str, help="Path to OpenFold .pt checkpoint file")
-    parser.add_argument("config_preset", type=str, help="The corresponding config preset")
+    parser.add_argument(
+        "of_pt_path", type=str, help="Path to OpenFold .pt checkpoint file"
+    )
+    parser.add_argument(
+        "config_preset", type=str, help="The corresponding config preset"
+    )
     parser.add_argument("out_path", type=str, help="Path for output .npz file")
     parser.add_argument(
         "--template_npz_path",

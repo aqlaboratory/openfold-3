@@ -151,7 +151,9 @@ def _get_minimal_slice_set(
     # Analogous to the previous case, but the top is ragged this time
     elif end_edges[divergence_idx]:
         slices.extend(upper())
-        slices.append(path + (slice(start[divergence_idx] + 1, end[divergence_idx] + 1),))
+        slices.append(
+            path + (slice(start[divergence_idx] + 1, end[divergence_idx] + 1),)
+        )
     # If both sides of the range are ragged, we need to handle both sides
     # separately. If there's contiguous meat in between them, we can index it
     # in one big chunk
@@ -159,7 +161,9 @@ def _get_minimal_slice_set(
         slices.extend(upper())
         middle_ground = end[divergence_idx] - start[divergence_idx]
         if middle_ground > 1:
-            slices.append(path + (slice(start[divergence_idx] + 1, end[divergence_idx]),))
+            slices.append(
+                path + (slice(start[divergence_idx] + 1, end[divergence_idx]),)
+            )
         slices.extend(lower())
 
     return [tuple(s) for s in slices]

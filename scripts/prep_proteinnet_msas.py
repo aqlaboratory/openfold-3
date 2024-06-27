@@ -39,14 +39,28 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Converts raw ProteinNet MSAs into a format recognized by the parser")
-    parser.add_argument("msa_dir", type=str, help="Directory containing ProteinNet MSAs")
-    parser.add_argument("mmcif_dir", type=str, help="Directory containing PDB mmCIFs")
-    parser.add_argument("out_dir", type=str, help="Directory to which output should be saved")
-    parser.add_argument(
-        "--copy", type=bool, default=True, help="Whether to copy the MSAs to out_dir rather than moving them"
+    parser = argparse.ArgumentParser(
+        description="Converts raw ProteinNet MSAs into a format recognized by the parser"
     )
-    parser.add_argument("--max_count", type=int, default=None, help="A bound on the number of MSAs to process")
+    parser.add_argument(
+        "msa_dir", type=str, help="Directory containing ProteinNet MSAs"
+    )
+    parser.add_argument("mmcif_dir", type=str, help="Directory containing PDB mmCIFs")
+    parser.add_argument(
+        "out_dir", type=str, help="Directory to which output should be saved"
+    )
+    parser.add_argument(
+        "--copy",
+        type=bool,
+        default=True,
+        help="Whether to copy the MSAs to out_dir rather than moving them",
+    )
+    parser.add_argument(
+        "--max_count",
+        type=int,
+        default=None,
+        help="A bound on the number of MSAs to process",
+    )
 
     args = parser.parse_args()
 

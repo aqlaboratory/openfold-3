@@ -54,7 +54,9 @@ class TestTriangularAttention(unittest.TestCase):
             config = compare_utils.get_alphafold_config()
             c_e = config.model.embeddings_and_evoformer.evoformer
             tri_att = alphafold.model.modules.TriangleAttention(
-                c_e.triangle_attention_starting_node if starting else c_e.triangle_attention_ending_node,
+                c_e.triangle_attention_starting_node
+                if starting
+                else c_e.triangle_attention_ending_node,
                 config.model.global_config,
                 name=name,
             )

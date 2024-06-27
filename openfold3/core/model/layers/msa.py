@@ -23,8 +23,16 @@ from typing import List, Optional, Tuple
 import torch
 from torch import nn
 
-from openfold3.core.model.primitives import Attention, GlobalAttention, LayerNorm, Linear
-from openfold3.core.model.primitives.attention import attention_chunked_trainable, softmax_no_cast
+from openfold3.core.model.primitives import (
+    Attention,
+    GlobalAttention,
+    LayerNorm,
+    Linear,
+)
+from openfold3.core.model.primitives.attention import (
+    attention_chunked_trainable,
+    softmax_no_cast,
+)
 from openfold3.core.utils.checkpointing import get_checkpoint_fn
 from openfold3.core.utils.chunk_utils import chunk_layer
 from openfold3.core.utils.tensor_utils import flatten_final_dims, permute_final_dims
@@ -116,7 +124,9 @@ class MSAAttention(nn.Module):
         else:
             fn = partial(fn, flash_mask=None)
 
-        return chunk_layer(fn, inputs, chunk_size=chunk_size, no_batch_dims=len(m.shape[:-2]))
+        return chunk_layer(
+            fn, inputs, chunk_size=chunk_size, no_batch_dims=len(m.shape[:-2])
+        )
 
     def _prep_inputs(
         self,
@@ -517,10 +527,14 @@ class MSAPairWeightedAveraging(nn.Module):
         self.layer_norm_z = LayerNorm(self.c_z)
         self.linear_z = Linear(self.c_z, self.no_heads, bias=False, init="normal")
 
-        self.linear_v = Linear(self.c_in, self.c_hidden * self.no_heads, bias=False, init="glorot")
+        self.linear_v = Linear(
+            self.c_in, self.c_hidden * self.no_heads, bias=False, init="glorot"
+        )
         self.linear_o = Linear(c_hidden * no_heads, c_in, bias=False, init="final")
 
-        self.linear_g = Linear(self.c_in, self.c_hidden * self.no_heads, bias=False, init="gating")
+        self.linear_g = Linear(
+            self.c_in, self.c_hidden * self.no_heads, bias=False, init="gating"
+        )
 
         self.sigmoid = nn.Sigmoid()
 
@@ -553,7 +567,11 @@ class MSAPairWeightedAveraging(nn.Module):
         return z
 
     def forward(
-        self, m: torch.Tensor, z: Optional[torch.Tensor] = None, mask: Optional[torch.Tensor] = None, **kwargs
+        self,
+        m: torch.Tensor,
+        z: Optional[torch.Tensor] = None,
+        mask: Optional[torch.Tensor] = None,
+        **kwargs,
     ) -> torch.Tensor:
         """
         Args:

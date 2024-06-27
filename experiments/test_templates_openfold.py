@@ -31,18 +31,32 @@ import torch
 parser = argparse.ArgumentParser()
 parser.add_argument("name", help="name to save everything under")
 parser.add_argument("--target_list", nargs="*", help="List of target names to run")
-parser.add_argument("--targets_file", default="", help="File with list of target names to run")
-parser.add_argument("--recycles", type=int, default=1, help="Number of recycles when predicting")
-parser.add_argument("--model_name", type=str, default="model_1_ptm", help="Which OF model to use")
+parser.add_argument(
+    "--targets_file", default="", help="File with list of target names to run"
+)
+parser.add_argument(
+    "--recycles", type=int, default=1, help="Number of recycles when predicting"
+)
+parser.add_argument(
+    "--model_name", type=str, default="model_1_ptm", help="Which OF model to use"
+)
 parser.add_argument("--seed", type=int, default=0, help="RNG Seed")
 parser.add_argument("--verbose", action="store_true", help="print extra")
 parser.add_argument(
-    "--deterministic", action="store_true", help="make all data processing deterministic (no masking, etc.)"
+    "--deterministic",
+    action="store_true",
+    help="make all data processing deterministic (no masking, etc.)",
 )
 parser.add_argument(
-    "--use_native", action="store_true", help="add the native structure as a decoy, and compare outputs against it"
+    "--use_native",
+    action="store_true",
+    help="add the native structure as a decoy, and compare outputs against it",
 )
-parser.add_argument("--mask_sidechains", action="store_true", help="mask out sidechain atoms except for C-Beta")
+parser.add_argument(
+    "--mask_sidechains",
+    action="store_true",
+    help="mask out sidechain atoms except for C-Beta",
+)
 parser.add_argument(
     "--mask_sidechains_add_cb",
     action="store_true",
@@ -53,16 +67,32 @@ parser.add_argument(
     default="",
     help="Amino acid residue to fill the decoy sequence with. Default keeps target sequence",
 )
-parser.add_argument("--of_dir", default="/home/user/openfold/", help="OpenFold code and weights directory")
-parser.add_argument("--esm_dir", help="ESM1b embeddings directory, containing embeddings as *.pt")
-parser.add_argument("--decoy_dir", default="/home/user/openfold/rosetta_decoy_set/", help="Rosetta decoy directory")
 parser.add_argument(
-    "--output_dir", default="/home/user/ofss_ranking_experiment/outputs/", help="Rosetta decoy directory"
+    "--of_dir",
+    default="/home/user/openfold/",
+    help="OpenFold code and weights directory",
 )
-parser.add_argument("--openfold_checkpoint_path", help="Path to the OpenFold model checkpoint")
+parser.add_argument(
+    "--esm_dir", help="ESM1b embeddings directory, containing embeddings as *.pt"
+)
+parser.add_argument(
+    "--decoy_dir",
+    default="/home/user/openfold/rosetta_decoy_set/",
+    help="Rosetta decoy directory",
+)
+parser.add_argument(
+    "--output_dir",
+    default="/home/user/ofss_ranking_experiment/outputs/",
+    help="Rosetta decoy directory",
+)
+parser.add_argument(
+    "--openfold_checkpoint_path", help="Path to the OpenFold model checkpoint"
+)
 parser.add_argument("--jax_param_path", help="Path to the JAX parameters checkpoint")
 parser.add_argument("--model_device", default="cpu", help="Device to run the model on")
-parser.add_argument("--tm_exec", default="/home/user/tmscore/TMscore", help="TMScore executable")
+parser.add_argument(
+    "--tm_exec", default="/home/user/tmscore/TMscore", help="TMScore executable"
+)
 
 args = parser.parse_args()
 
@@ -131,7 +161,11 @@ def make_model_runner(name, recycles, args):
         cfg.data.predict.masked_msa_replace_fraction = 0.0
 
     model_generator = load_models_from_command_line(
-        cfg, args.model_device, args.openfold_checkpoint_path, args.jax_param_path, args.output_dir
+        cfg,
+        args.model_device,
+        args.openfold_checkpoint_path,
+        args.jax_param_path,
+        args.output_dir,
     )
     model, _ = model_generator.__next__()
 
@@ -146,9 +180,12 @@ Make a set of empty features for no-template evaluations
 def empty_placeholder_template_features(num_templates, num_res):
     return {
         "template_aatype": np.zeros((num_templates, num_res), dtype=np.int64),
-        "template_all_atom_mask": np.zeros((num_templates, num_res, residue_constants.atom_type_num), dtype=np.float32),
+        "template_all_atom_mask": np.zeros(
+            (num_templates, num_res, residue_constants.atom_type_num), dtype=np.float32
+        ),
         "template_all_atom_positions": np.zeros(
-            (num_templates, num_res, residue_constants.atom_type_num, 3), dtype=np.float32
+            (num_templates, num_res, residue_constants.atom_type_num, 3),
+            dtype=np.float32,
         ),
         "template_domain_names": np.zeros([num_templates], dtype=object),
         "template_sequence": np.zeros([num_templates], dtype=object),
@@ -179,7 +216,9 @@ seed - The random seed being used for data processing
 
 def make_processed_feature_dict(cfg, sequence, name="test", templates=None, seed=0):
     feature_dict = {}
-    feature_dict.update(data_pipeline.make_sequence_features(sequence, name, len(sequence)))
+    feature_dict.update(
+        data_pipeline.make_sequence_features(sequence, name, len(sequence))
+    )
 
     msa = [[sequence]]
     deletion_matrix = [[[0 for _ in sequence]]]
@@ -189,14 +228,19 @@ def make_processed_feature_dict(cfg, sequence, name="test", templates=None, seed
     if templates is not None:
         feature_dict.update(templates)
     else:
-        feature_dict.update(empty_placeholder_template_features(num_templates=0, num_res=len(sequence)))
+        feature_dict.update(
+            empty_placeholder_template_features(num_templates=0, num_res=len(sequence))
+        )
 
     feature_dict.update(make_embedding_features(args, name.split("_")[0]))
 
     feature_processor = feature_pipeline.FeaturePipeline(cfg.data)
-    processed_feature_dict = feature_processor.process_features(feature_dict, mode="predict")
+    processed_feature_dict = feature_processor.process_features(
+        feature_dict, mode="predict"
+    )
     processed_feature_dict = {
-        k: torch.as_tensor(v, device=args.model_device) for k, v in processed_feature_dict.items()
+        k: torch.as_tensor(v, device=args.model_device)
+        for k, v in processed_feature_dict.items()
     }
 
     return processed_feature_dict
@@ -210,10 +254,14 @@ processed_feature_dict -- The dictionary passed to OpenFold as input. Returned b
 
 
 def parse_results(prediction_result, processed_feature_dict):
-    b_factors = prediction_result["plddt"][:, None] * prediction_result["final_atom_mask"]
+    b_factors = (
+        prediction_result["plddt"][:, None] * prediction_result["final_atom_mask"]
+    )
 
     out = {
-        "unrelaxed_protein": protein.from_prediction(processed_feature_dict, prediction_result, b_factors=b_factors),
+        "unrelaxed_protein": protein.from_prediction(
+            processed_feature_dict, prediction_result, b_factors=b_factors
+        ),
         "plddt": prediction_result["plddt"],
         "pLDDT": prediction_result["plddt"].mean(),
     }
@@ -261,14 +309,20 @@ def score_decoy(target_seq, decoy_prot, model_runner, name):
             print("Sequence mismatch: {}".format(name))
         mismatch = True
 
-        assert "".join(target_seq[i - 1] for i in decoy_prot.residue_index) == decoy_seq_in
+        assert (
+            "".join(target_seq[i - 1] for i in decoy_prot.residue_index) == decoy_seq_in
+        )
 
     # use this to index into the template features
     template_idxs = decoy_prot.residue_index - 1
     template_idx_set = set(template_idxs)
 
     # The sequence associated with the decoy. Always has same length as target sequence.
-    decoy_seq = args.seq_replacement * len(target_seq) if len(args.seq_replacement) == 1 else target_seq
+    decoy_seq = (
+        args.seq_replacement * len(target_seq)
+        if len(args.seq_replacement) == 1
+        else target_seq
+    )
 
     # create empty template features
     pos = np.zeros([1, len(decoy_seq), 37, 3])
@@ -278,22 +332,33 @@ def score_decoy(target_seq, decoy_prot, model_runner, name):
         pos[0, template_idxs, :5] = decoy_prot.atom_positions[:, :5]
 
         # residues where we have all of the key backbone atoms (N CA C)
-        backbone_modelled = np.asarray(jnp.all(decoy_prot.atom_mask[:, [0, 1, 2]] == 1, axis=1))
+        backbone_modelled = np.asarray(
+            jnp.all(decoy_prot.atom_mask[:, [0, 1, 2]] == 1, axis=1)
+        )
         backbone_idx_set = set(decoy_prot.residue_index[backbone_modelled] - 1)
 
         projected_cb = [
             i - 1
-            for i, b, m in zip(decoy_prot.residue_index, backbone_modelled, decoy_prot.atom_mask)
+            for i, b, m in zip(
+                decoy_prot.residue_index, backbone_modelled, decoy_prot.atom_mask
+            )
             if m[3] == 0 and b
         ]
         projected_cb_set = set(projected_cb)
         gly_idx = [i for i, a in enumerate(target_seq) if a == "G"]
         assert all(
-            [k in projected_cb_set for k in gly_idx if k in template_idx_set and k in backbone_idx_set]
+            [
+                k in projected_cb_set
+                for k in gly_idx
+                if k in template_idx_set and k in backbone_idx_set
+            ]
         )  # make sure we are adding CBs to all of the glycines
 
         cbs = np.array(
-            [extend(c, n, ca, 1.522, 1.927, -2.143) for c, n, ca in zip(pos[0, :, 2], pos[0, :, 0], pos[0, :, 1])]
+            [
+                extend(c, n, ca, 1.522, 1.927, -2.143)
+                for c, n, ca in zip(pos[0, :, 2], pos[0, :, 0], pos[0, :, 1])
+            ]
         )
 
         pos[0, projected_cb, 3] = cbs[projected_cb]
@@ -301,9 +366,9 @@ def score_decoy(target_seq, decoy_prot, model_runner, name):
         atom_mask[0, projected_cb, 3] = 1
 
         template = {
-            "template_aatype": residue_constants.sequence_to_onehot(decoy_seq, residue_constants.HHBLITS_AA_TO_ID)[
-                None
-            ],
+            "template_aatype": residue_constants.sequence_to_onehot(
+                decoy_seq, residue_constants.HHBLITS_AA_TO_ID
+            )[None],
             "template_all_atom_mask": atom_mask.astype(np.float32),
             "template_all_atom_positions": pos.astype(np.float32),
             "template_domain_names": np.asarray(["None"]),
@@ -313,9 +378,9 @@ def score_decoy(target_seq, decoy_prot, model_runner, name):
         atom_mask[0, template_idxs, :5] = decoy_prot.atom_mask[:, :5]
 
         template = {
-            "template_aatype": residue_constants.sequence_to_onehot(decoy_seq, residue_constants.HHBLITS_AA_TO_ID)[
-                None
-            ],
+            "template_aatype": residue_constants.sequence_to_onehot(
+                decoy_seq, residue_constants.HHBLITS_AA_TO_ID
+            )[None],
             "template_all_atom_mask": atom_mask.astype(np.float32),
             "template_all_atom_positions": pos.astype(np.float32),
             "template_domain_names": np.asarray(["None"]),
@@ -325,15 +390,19 @@ def score_decoy(target_seq, decoy_prot, model_runner, name):
         atom_mask[0, template_idxs] = decoy_prot.atom_mask
 
         template = {
-            "template_aatype": residue_constants.sequence_to_onehot(decoy_seq, residue_constants.HHBLITS_AA_TO_ID)[
-                None
-            ],
+            "template_aatype": residue_constants.sequence_to_onehot(
+                decoy_seq, residue_constants.HHBLITS_AA_TO_ID
+            )[None],
             "template_all_atom_mask": decoy_prot.atom_mask[None].astype(np.float32),
-            "template_all_atom_positions": decoy_prot.atom_positions[None].astype(np.float32),
+            "template_all_atom_positions": decoy_prot.atom_positions[None].astype(
+                np.float32
+            ),
             "template_domain_names": np.asarray(["None"]),
         }
 
-    features = make_processed_feature_dict(cfg, target_seq, name=name, templates=template, seed=args.seed)
+    features = make_processed_feature_dict(
+        cfg, target_seq, name=name, templates=template, seed=args.seed
+    )
     # with open(os.path.join(args.output_dir, name + '_features.pt'), 'wb') as outfile:
     #  torch.save(features, outfile)
     working_batch = deepcopy(features)
@@ -383,12 +452,28 @@ def compute_tmscore(pdb_pred, pdb_native, test_len=True):
 
 
 # Simple wrapper for keeping track of the information associated with each decoy.
-decoy_fields_list = ["target", "decoy_id", "decoy_path", "rmsd", "rosettascore", "gdt_ts", "tmscore", "danscore"]
+decoy_fields_list = [
+    "target",
+    "decoy_id",
+    "decoy_path",
+    "rmsd",
+    "rosettascore",
+    "gdt_ts",
+    "tmscore",
+    "danscore",
+]
 Decoy = namedtuple("Decoy", decoy_fields_list)
 
 
 # headers for csv outputs
-csv_headers = decoy_fields_list + ["output_path", "rmsd_out", "tm_diff", "tm_out", "plddt", "ptm"]
+csv_headers = decoy_fields_list + [
+    "output_path",
+    "rmsd_out",
+    "tm_diff",
+    "tm_out",
+    "plddt",
+    "ptm",
+]
 
 
 def write_results(decoy, af_result, prot_native=None, pdb_native=None, mismatch=False):
@@ -406,7 +491,9 @@ def write_results(decoy, af_result, prot_native=None, pdb_native=None, mismatch=
         )
 
     pdb_lines = protein.to_pdb(af_result["unrelaxed_protein"])
-    pdb_out_path = args.output_dir + args.name + "/pdbs/" + decoy.target + "_" + decoy.decoy_id
+    pdb_out_path = (
+        args.output_dir + args.name + "/pdbs/" + decoy.target + "_" + decoy.decoy_id
+    )
     with open(pdb_out_path, "w") as f:
         f.write(pdb_lines)
 
@@ -420,12 +507,25 @@ def write_results(decoy, af_result, prot_native=None, pdb_native=None, mismatch=
     else:
         tm_out = compute_tmscore(pdb_out_path, pdb_native)
 
-    if not os.path.exists(args.output_dir + args.name + "/results/results_{}.csv".format(decoy.target)):
-        with open(args.output_dir + args.name + "/results/results_{}.csv".format(decoy.target), "w") as f:
+    if not os.path.exists(
+        args.output_dir + args.name + "/results/results_{}.csv".format(decoy.target)
+    ):
+        with open(
+            args.output_dir
+            + args.name
+            + "/results/results_{}.csv".format(decoy.target),
+            "w",
+        ) as f:
             f.write(",".join(csv_headers) + "\n")
 
-    with open(args.output_dir + args.name + "/results/results_{}.csv".format(decoy.target), "a") as f:
-        result_fields = [str(x) for x in list(decoy) + [pdb_out_path, rms_out, tm_diff, tm_out, plddt, ptm]]
+    with open(
+        args.output_dir + args.name + "/results/results_{}.csv".format(decoy.target),
+        "a",
+    ) as f:
+        result_fields = [
+            str(x)
+            for x in list(decoy) + [pdb_out_path, rms_out, tm_diff, tm_out, plddt, ptm]
+        ]
         f.write(",".join(result_fields) + "\n")
 
         if args.verbose:
@@ -445,29 +545,41 @@ else:
 
 finished_decoys = []
 for n in natives_list:
-    if os.path.exists(args.output_dir + args.name + "/results/results_{}.csv".format(n)):
+    if os.path.exists(
+        args.output_dir + args.name + "/results/results_{}.csv".format(n)
+    ):
         finished_decoys += [
             x.split(",")[0] + "_" + x.split(",")[1]
-            for x in open(args.output_dir + args.name + "/results/results_{}.csv".format(n), "r").readlines()
+            for x in open(
+                args.output_dir + args.name + "/results/results_{}.csv".format(n), "r"
+            ).readlines()
         ]
 finished_decoys = set(finished_decoys)
 
 
 if os.path.exists(args.output_dir + args.name + "/finished_targets.txt"):
-    finished_targets = set(open(args.output_dir + args.name + "/finished_targets.txt", "r").read().split("\n")[:-1])
+    finished_targets = set(
+        open(args.output_dir + args.name + "/finished_targets.txt", "r")
+        .read()
+        .split("\n")[:-1]
+    )
 else:
     finished_targets = []
 
 
 # info of the form "target decoy_id"
-decoy_list = [x.split() for x in open(args.decoy_dir + "decoy_list.txt", "r").read().split("\n")[:-1]]
+decoy_list = [
+    x.split()
+    for x in open(args.decoy_dir + "decoy_list.txt", "r").read().split("\n")[:-1]
+]
 
 # parse all of the information about the decoys
 decoy_data = {}
 for field in decoy_fields_list[2:]:
     if os.path.exists(args.decoy_dir + field + ".txt"):
         lines = [
-            x.split() for x in open(args.decoy_dir + field + ".txt", "r").read().split("\n")[:-1]
+            x.split()
+            for x in open(args.decoy_dir + field + ".txt", "r").read().split("\n")[:-1]
         ]  # form "target decoy_id metric value"
 
         # make sure everything is in the same order
@@ -495,7 +607,10 @@ for i, d in enumerate(decoy_list):
         danscore=decoy_data["danscore"][i],
     )
 
-    if decoy.target in decoy_dict and decoy.target + "_" + decoy.decoy_id not in finished_decoys:
+    if (
+        decoy.target in decoy_dict
+        and decoy.target + "_" + decoy.decoy_id not in finished_decoys
+    ):
         decoy_dict[decoy.target].append(decoy)
 
 # add another decoy entry for the native structure
@@ -525,16 +640,24 @@ for n in natives_list:
     try:
         pdb_native = args.decoy_dir + "natives/" + n + ".pdb"
         prot_native = protein.from_pdb_string(pdb_to_string(pdb_native))
-        seq_native = "".join([residue_constants.restypes[x] for x in prot_native.aatype])
+        seq_native = "".join(
+            [residue_constants.restypes[x] for x in prot_native.aatype]
+        )
         runner, cfg = make_model_runner(model_name, args.recycles, args)
 
         if n + "_none.pdb" not in finished_decoys:
             # run the model with no templates
-            features = make_processed_feature_dict(cfg, seq_native, name=n + "_none", seed=args.seed)
+            features = make_processed_feature_dict(
+                cfg, seq_native, name=n + "_none", seed=args.seed
+            )
             working_batch = deepcopy(features)
-            out, inference_time = run_model(runner, working_batch, n + "_none", args.output_dir)
+            out, inference_time = run_model(
+                runner, working_batch, n + "_none", args.output_dir
+            )
             print(f"{n}_none done. Inference time: ", inference_time)
-            working_batch = tensor_tree_map(lambda x: np.array(x[..., -1].cpu()), working_batch)
+            working_batch = tensor_tree_map(
+                lambda x: np.array(x[..., -1].cpu()), working_batch
+            )
             out = tensor_tree_map(lambda x: np.array(x.cpu()), out)
             result = parse_results(out, working_batch)
 
@@ -558,7 +681,9 @@ for n in natives_list:
         # run the model with all of the decoys passed as templates
         for d in decoy_dict[n]:
             prot = protein.from_pdb_string(pdb_to_string(d.decoy_path))
-            result, mismatch = score_decoy(seq_native, prot, runner, d.target + "_" + d.decoy_id)
+            result, mismatch = score_decoy(
+                seq_native, prot, runner, d.target + "_" + d.decoy_id
+            )
             write_results(
                 d,
                 result,

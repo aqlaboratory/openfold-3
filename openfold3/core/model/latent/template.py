@@ -33,7 +33,9 @@ from openfold3.core.model.feature_embedders import (
     TemplateSingleEmbedderMonomer,
     TemplateSingleEmbedderMultimer,
 )
-from openfold3.core.model.layers.template_pointwise_attention import TemplatePointwiseAttention
+from openfold3.core.model.layers.template_pointwise_attention import (
+    TemplatePointwiseAttention,
+)
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.checkpointing import checkpoint_blocks
 from openfold3.core.utils.chunk_utils import ChunkSizeTuner
@@ -146,7 +148,9 @@ class TemplatePairBlock(PairBlock):
 
             if self.tri_mul_first:
                 t = self.tri_att_start_end(
-                    z=self.tri_mul_out_in(z=t, pair_mask=t_pair_mask, inplace_safe=inplace_safe),
+                    z=self.tri_mul_out_in(
+                        z=t, pair_mask=t_pair_mask, inplace_safe=inplace_safe
+                    ),
                     _attn_chunk_size=_attn_chunk_size,
                     pair_mask=t_pair_mask,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
@@ -413,7 +417,9 @@ class TemplateEmbedderMonomer(nn.Module):
         if inplace_safe:
             # We'll preallocate the full pair tensor now to avoid manifesting
             # a second copy during the stack later on
-            t_pair = z.new_zeros(z.shape[:-3] + (n_templ, n, n, self.config.template_pair_embedder.c_out))
+            t_pair = z.new_zeros(
+                z.shape[:-3] + (n_templ, n, n, self.config.template_pair_embedder.c_out)
+            )
 
         for i in range(n_templ):
             idx = batch["template_aatype"].new_tensor(i)
@@ -465,7 +471,9 @@ class TemplateEmbedderMonomer(nn.Module):
 
         t_mask = torch.sum(batch["template_mask"], dim=-1) > 0
         # Append singletons
-        t_mask = t_mask.reshape(*t_mask.shape, *([1] * (len(t.shape) - len(t_mask.shape))))
+        t_mask = t_mask.reshape(
+            *t_mask.shape, *([1] * (len(t.shape) - len(t_mask.shape)))
+        )
 
         if inplace_safe:
             t *= t_mask
@@ -757,7 +765,9 @@ def embed_templates_offload(
     t = z.new_zeros(z.shape)
 
     for i in range(0, n, template_chunk_size):
-        pair_chunks = [p[..., i : i + template_chunk_size, :, :] for p in pair_embeds_cpu]
+        pair_chunks = [
+            p[..., i : i + template_chunk_size, :, :] for p in pair_embeds_cpu
+        ]
         pair_chunk = torch.cat(pair_chunks, dim=templ_dim).to(device=z.device)
         z_chunk = z[..., i : i + template_chunk_size, :, :]
         att_chunk = model.template_embedder.template_pointwise_att(

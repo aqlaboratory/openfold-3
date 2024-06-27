@@ -50,7 +50,9 @@ class TestEvoformerStack(unittest.TestCase):
         msa_dropout = 0.15
         pair_dropout = 0.25
         opm_first = consts.is_multimer
-        fuse_projection_weights = True if re.fullmatch("^model_[1-5]_multimer_v3$", consts.model) else False
+        fuse_projection_weights = (
+            True if re.fullmatch("^model_[1-5]_multimer_v3$", consts.model) else False
+        )
         inf = 1e9
         eps = 1e-10
 
@@ -143,7 +145,9 @@ class TestEvoformerStack(unittest.TestCase):
         shape_m_before = m_init.shape
         shape_z_before = z_init.shape
 
-        m, z, s = es(m_init, z_init, chunk_size=4, msa_mask=msa_mask, pair_mask=pair_mask)
+        m, z, s = es(
+            m_init, z_init, chunk_size=4, msa_mask=msa_mask, pair_mask=pair_mask
+        )
 
         self.assertTrue(m.shape == shape_m_before)
         self.assertTrue(z.shape == shape_z_before)
@@ -154,7 +158,9 @@ class TestEvoformerStack(unittest.TestCase):
         def run_ei(activations, masks):
             config = compare_utils.get_alphafold_config()
             c_e = config.model.embeddings_and_evoformer.evoformer
-            ei = alphafold.model.modules.EvoformerIteration(c_e, config.model.global_config, is_extra_msa=False)
+            ei = alphafold.model.modules.EvoformerIteration(
+                c_e, config.model.global_config, is_extra_msa=False
+            )
             return ei(activations, masks, is_training=False)
 
         f = hk.transform(run_ei)
@@ -237,7 +243,9 @@ class TestExtraMSAStack(unittest.TestCase):
         msa_dropout = 0.15
         pair_stack_dropout = 0.25
         opm_first = consts.is_multimer
-        fuse_projection_weights = True if re.fullmatch("^model_[1-5]_multimer_v3$", consts.model) else False
+        fuse_projection_weights = (
+            True if re.fullmatch("^model_[1-5]_multimer_v3$", consts.model) else False
+        )
         inf = 1e9
         eps = 1e-10
 
@@ -337,7 +345,8 @@ class TestMSATransition(unittest.TestCase):
 
         # Fetch pretrained parameters (but only from one block)]
         params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/" + "msa_transition"
+            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/"
+            + "msa_transition"
         )
         params = tree_map(lambda n: n[0], params, jax.Array)
 

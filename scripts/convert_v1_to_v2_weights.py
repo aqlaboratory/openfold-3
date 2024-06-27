@@ -21,7 +21,11 @@ import os
 import shutil
 
 import torch
-from deepspeed.utils.zero_to_fp32 import get_model_state_file, get_optim_files, parse_optim_states
+from deepspeed.utils.zero_to_fp32 import (
+    get_model_state_file,
+    get_optim_files,
+    parse_optim_states,
+)
 
 from openfold3.core.utils.import_weights import convert_deprecated_v1_keys
 
@@ -31,7 +35,9 @@ def convert_v1_to_v2_weights(args):
     is_dir = os.path.isdir(checkpoint_path)
     if is_dir:
         # A DeepSpeed checkpoint
-        logging.info("Converting deepspeed checkpoint found at {args.input_checkpoint_path}")
+        logging.info(
+            "Converting deepspeed checkpoint found at {args.input_checkpoint_path}"
+        )
         state_dict_key = "module"
         latest_path = os.path.join(checkpoint_path, "latest")
         if os.path.isfile(latest_path):
@@ -47,7 +53,9 @@ def convert_v1_to_v2_weights(args):
         model_file = get_model_state_file(ds_checkpoint_dir, zero_stage)
     else:
         # A Pytorch Lightning checkpoint
-        logging.info("Converting pytorch lightning checkpoint found at {args.input_checkpoint_path}")
+        logging.info(
+            "Converting pytorch lightning checkpoint found at {args.input_checkpoint_path}"
+        )
         state_dict_key = "state_dict"
         model_output_path = args.output_ckpt_path
         model_file = checkpoint_path
@@ -69,10 +77,14 @@ def convert_v1_to_v2_weights(args):
         for optim_file in optim_files:
             optim_dict = torch.load(optim_file)
             new_optim_dict = optim_dict.copy()
-            new_optim_dict["optimizer_state_dict"]["param_slice_mappings"][0] = convert_deprecated_v1_keys(
-                optim_dict["optimizer_state_dict"]["param_slice_mappings"][0]
+            new_optim_dict["optimizer_state_dict"]["param_slice_mappings"][0] = (
+                convert_deprecated_v1_keys(
+                    optim_dict["optimizer_state_dict"]["param_slice_mappings"][0]
+                )
             )
-            out_optim_fname = os.path.join(model_output_path, os.path.basename(optim_file))
+            out_optim_fname = os.path.join(
+                model_output_path, os.path.basename(optim_file)
+            )
             torch.save(new_optim_dict, out_optim_fname)
     else:
         out_fname = model_output_path

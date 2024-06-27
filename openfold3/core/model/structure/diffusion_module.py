@@ -5,12 +5,17 @@ import torch.nn as nn
 
 from openfold3.core.model.feature_embedders.input_embedders import RelposAllAtom
 from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
-from openfold3.core.model.layers.sequence_local_atom_attention import AtomAttentionDecoder, AtomAttentionEncoder
+from openfold3.core.model.layers.sequence_local_atom_attention import (
+    AtomAttentionDecoder,
+    AtomAttentionEncoder,
+)
 from openfold3.core.model.layers.transition import SwiGLUTransition
 from openfold3.core.model.primitives import LayerNorm, Linear
 
 
-def centre_random_augmentation(pos: torch.Tensor, pos_mask: torch.Tensor, scale_trans: float = 1.0) -> torch.Tensor:
+def centre_random_augmentation(
+    pos: torch.Tensor, pos_mask: torch.Tensor, scale_trans: float = 1.0
+) -> torch.Tensor:
     """
     Implements AF3 Algorithm 19.
 
@@ -41,7 +46,13 @@ def centre_random_augmentation(pos: torch.Tensor, pos_mask: torch.Tensor, scale_
 
 
 # Move this somewhere else?
-def create_noise_schedule(step_size: float, sigma_data: float, s_max: float = 160.0, s_min: float = 4e-4, p: int = 7):
+def create_noise_schedule(
+    step_size: float,
+    sigma_data: float,
+    s_max: float = 160.0,
+    s_min: float = 4e-4,
+    p: int = 7,
+):
     """
     Implements AF3 noise schedule (Page 24).
 
@@ -61,7 +72,9 @@ def create_noise_schedule(step_size: float, sigma_data: float, s_max: float = 16
         Noise schedule
     """
     t = torch.arange(0, 1 + step_size, step=step_size)
-    return sigma_data * (s_max ** (1 / p) + t * (s_min ** (1 / p) - s_max ** (1 / p))) ** p
+    return (
+        sigma_data * (s_max ** (1 / p) + t * (s_min ** (1 / p) - s_max ** (1 / p))) ** p
+    )
 
 
 # Should this be moved to embedders?
@@ -132,13 +145,17 @@ class DiffusionConditioning(nn.Module):
         self.sigma_data = sigma_data
 
         self.relpos = RelposAllAtom(
-            c_z=self.c_z, max_relative_idx=max_relative_idx, max_relative_chain=max_relative_chain
+            c_z=self.c_z,
+            max_relative_idx=max_relative_idx,
+            max_relative_chain=max_relative_chain,
         )
 
         self.layer_norm_z = LayerNorm(2 * self.c_z)
         self.linear_z = Linear(2 * self.c_z, self.c_z, bias=False)
 
-        self.transition_z = nn.ModuleList([SwiGLUTransition(c_in=self.c_z, n=2) for _ in range(2)])
+        self.transition_z = nn.ModuleList(
+            [SwiGLUTransition(c_in=self.c_z, n=2) for _ in range(2)]
+        )
 
         self.layer_norm_s = LayerNorm(self.c_s + self.c_s_input)
         self.linear_s = Linear(self.c_s + self.c_s_input, self.c_s, bias=False)
@@ -147,7 +164,9 @@ class DiffusionConditioning(nn.Module):
         self.layer_norm_n = LayerNorm(self.c_fourier_emb)
         self.linear_n = Linear(self.c_fourier_emb, self.c_s, bias=False)
 
-        self.transition_s = nn.ModuleList([SwiGLUTransition(c_in=self.c_s, n=2) for _ in range(2)])
+        self.transition_s = nn.ModuleList(
+            [SwiGLUTransition(c_in=self.c_s, n=2) for _ in range(2)]
+        )
 
     def forward(
         self,
@@ -362,7 +381,11 @@ class DiffusionModule(nn.Module):
         r_noisy = x_noisy / torch.sqrt(t**2 + self.sigma_data**2)
 
         a, q, c, p = self.atom_attn_enc(
-            atom_feats=batch, atom_mask=atom_mask, rl=r_noisy, si_trunk=s_trunk, zij=z_trunk
+            atom_feats=batch,
+            atom_mask=atom_mask,
+            rl=r_noisy,
+            si_trunk=s_trunk,
+            zij=z_trunk,
         )  # differ from AF3
 
         a = a + self.linear_s(self.layer_norm_s(s))
@@ -371,7 +394,9 @@ class DiffusionModule(nn.Module):
 
         a = self.layer_norm_a(a)
 
-        r_update = self.atom_attn_dec(atom_feats=batch, ai=a, ql_skip=q, cl_skip=c, plm=p, atom_mask=atom_mask)
+        r_update = self.atom_attn_dec(
+            atom_feats=batch, ai=a, ql_skip=q, cl_skip=c, plm=p, atom_mask=atom_mask
+        )
 
         x_out = (
             self.sigma_data**2 / (self.sigma_data**2 + t**2) * x_noisy
@@ -509,7 +534,9 @@ class SampleDiffusion(nn.Module):
         Returns:
             [*, N_atom, 3] Sampled atom positions
         """
-        x = noise_schedule[0] * torch.randn((*atom_mask.shape, 3), device=atom_mask.device)
+        x = noise_schedule[0] * torch.randn(
+            (*atom_mask.shape, 3), device=atom_mask.device
+        )
 
         for tau, c_tau in enumerate(noise_schedule[1:]):
             x = centre_random_augmentation(pos=x, pos_mask=atom_mask)
@@ -518,7 +545,11 @@ class SampleDiffusion(nn.Module):
 
             t = noise_schedule[tau - 1] * (gamma + 1)
 
-            xi = self.noise_scale * torch.sqrt(t**2 - noise_schedule[tau - 1] ** 2) * torch.randn_like(x)
+            xi = (
+                self.noise_scale
+                * torch.sqrt(t**2 - noise_schedule[tau - 1] ** 2)
+                * torch.randn_like(x)
+            )
 
             x_noisy = x + xi
 

@@ -94,7 +94,9 @@ class HHSearch:
             ] + db_cmd
 
             logging.info('Launching subprocess "%s"', " ".join(cmd))
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            process = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
             with utils.timing("HHsearch query"):
                 stdout, stderr = process.communicate()
                 retcode = process.wait()
@@ -111,7 +113,9 @@ class HHSearch:
         return hhr
 
     @staticmethod
-    def get_template_hits(output_string: str, input_sequence: str) -> Sequence[parsers.TemplateHit]:
+    def get_template_hits(
+        output_string: str, input_sequence: str
+    ) -> Sequence[parsers.TemplateHit]:
         """Gets parsed template hits from the raw string output by the tool"""
         del input_sequence  # Used by hmmsearch but not needed for hhsearch
         return parsers.parse_hhr(output_string)

@@ -41,7 +41,9 @@ def np_to_tensor_dict(
         features are returned, all other ones are filtered out.
     """
     # torch generates warnings if feature is already a torch Tensor
-    to_tensor = lambda t: torch.tensor(t) if type(t) != torch.Tensor else t.clone().detach()
+    to_tensor = (
+        lambda t: torch.tensor(t) if type(t) != torch.Tensor else t.clone().detach()
+    )
     tensor_dict = {k: to_tensor(v) for k, v in np_example.items() if k in features}
 
     return tensor_dict
@@ -74,7 +76,10 @@ def make_data_config(
 
 
 def np_example_to_features(
-    np_example: FeatureDict, config: ml_collections.ConfigDict, mode: str, is_multimer: bool = False
+    np_example: FeatureDict,
+    config: ml_collections.ConfigDict,
+    mode: str,
+    is_multimer: bool = False,
 ):
     np_example = dict(np_example)
 
@@ -83,7 +88,9 @@ def np_example_to_features(
     cfg, feature_names = make_data_config(config, mode=mode, num_res=num_res)
 
     if "deletion_matrix_int" in np_example:
-        np_example["deletion_matrix"] = np_example.pop("deletion_matrix_int").astype(np.float32)
+        np_example["deletion_matrix"] = np_example.pop("deletion_matrix_int").astype(
+            np.float32
+        )
 
     tensor_dict = np_to_tensor_dict(np_example=np_example, features=feature_names)
 

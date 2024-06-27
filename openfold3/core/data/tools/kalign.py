@@ -91,7 +91,9 @@ class Kalign:
             ]
 
             logging.info('Launching subprocess "%s"', " ".join(cmd))
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            process = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
 
             with utils.timing("Kalign query"):
                 stdout, stderr = process.communicate()
@@ -104,7 +106,8 @@ class Kalign:
 
             if retcode:
                 raise RuntimeError(
-                    "Kalign failed\nstdout:\n%s\n\nstderr:\n%s\n" % (stdout.decode("utf-8"), stderr.decode("utf-8"))
+                    "Kalign failed\nstdout:\n%s\n\nstderr:\n%s\n"
+                    % (stdout.decode("utf-8"), stderr.decode("utf-8"))
                 )
 
             with open(output_a3m_path) as f:

@@ -72,7 +72,9 @@ def random_extra_msa_feats(n_extra, n, batch_size=None):
         b.append(batch_size)
     batch = {
         "extra_msa": np.random.randint(0, 22, (*b, n_extra, n)).astype(np.int64),
-        "extra_has_deletion": np.random.randint(0, 2, (*b, n_extra, n)).astype(np.float32),
+        "extra_has_deletion": np.random.randint(0, 2, (*b, n_extra, n)).astype(
+            np.float32
+        ),
         "extra_deletion_value": np.random.rand(*b, n_extra, n).astype(np.float32),
         "extra_msa_mask": np.random.randint(0, 2, (*b, n_extra, n)).astype(np.float32),
     }
@@ -114,13 +116,28 @@ def random_affines_4x4(dim):
 
 
 def random_attention_inputs(
-    batch_size, n_seq, n, no_heads, c_hidden, inf=1e9, dtype=torch.float32, requires_grad=False
+    batch_size,
+    n_seq,
+    n,
+    no_heads,
+    c_hidden,
+    inf=1e9,
+    dtype=torch.float32,
+    requires_grad=False,
 ):
-    q = torch.rand(batch_size, n_seq, n, c_hidden, dtype=dtype, requires_grad=requires_grad).cuda()
-    kv = torch.rand(batch_size, n_seq, n, c_hidden, dtype=dtype, requires_grad=requires_grad).cuda()
+    q = torch.rand(
+        batch_size, n_seq, n, c_hidden, dtype=dtype, requires_grad=requires_grad
+    ).cuda()
+    kv = torch.rand(
+        batch_size, n_seq, n, c_hidden, dtype=dtype, requires_grad=requires_grad
+    ).cuda()
 
-    mask = torch.randint(0, 2, (batch_size, n_seq, 1, 1, n), dtype=dtype, requires_grad=False).cuda()
-    z_bias = torch.rand(batch_size, 1, no_heads, n, n, dtype=dtype, requires_grad=requires_grad).cuda()
+    mask = torch.randint(
+        0, 2, (batch_size, n_seq, 1, 1, n), dtype=dtype, requires_grad=False
+    ).cuda()
+    z_bias = torch.rand(
+        batch_size, 1, no_heads, n, n, dtype=dtype, requires_grad=requires_grad
+    ).cuda()
     mask_bias = inf * (mask - 1)
 
     biases = [mask_bias, z_bias]

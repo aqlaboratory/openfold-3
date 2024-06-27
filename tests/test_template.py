@@ -21,7 +21,9 @@ from ml_collections import ConfigDict
 
 import tests.compare_utils as compare_utils
 from openfold3.core.model.latent import TemplateEmbedderAllAtom, TemplatePairStack
-from openfold3.core.model.layers.template_pointwise_attention import TemplatePointwiseAttention
+from openfold3.core.model.layers.template_pointwise_attention import (
+    TemplatePointwiseAttention,
+)
 from openfold3.core.model.primitives import LayerNorm
 from openfold3.model_implementations.af2_monomer.config import model_config
 from tests.config import consts, multimer_consts
@@ -81,7 +83,9 @@ class TestTemplatePairStack(unittest.TestCase):
         n_templ = consts.n_templ
         n_res = consts.n_res
         tri_mul_first = consts.is_multimer
-        fuse_projection_weights = True if re.fullmatch("^model_[1-5]_multimer_v3$", consts.model) else False
+        fuse_projection_weights = (
+            True if re.fullmatch("^model_[1-5]_multimer_v3$", consts.model) else False
+        )
         chunk_size = 4
         inf = 1e7
         eps = 1e-7
@@ -118,23 +122,30 @@ class TestTemplatePairStack(unittest.TestCase):
             if consts.is_multimer:
                 safe_key = alphafold.model.prng.SafeKey(hk.next_rng_key())
                 template_iteration = self.am_modules.TemplateEmbeddingIteration(
-                    c_ee.template.template_pair_stack, config.model.global_config, name="template_embedding_iteration"
+                    c_ee.template.template_pair_stack,
+                    config.model.global_config,
+                    name="template_embedding_iteration",
                 )
 
                 def template_iteration_fn(x):
                     act, safe_key = x
 
                     safe_key, safe_subkey = safe_key.split()
-                    act = template_iteration(act=act, pair_mask=pair_mask, is_training=False, safe_key=safe_subkey)
+                    act = template_iteration(
+                        act=act,
+                        pair_mask=pair_mask,
+                        is_training=False,
+                        safe_key=safe_subkey,
+                    )
                     return (act, safe_key)
 
                 if config.model.global_config.use_remat:
                     template_iteration_fn = hk.remat(template_iteration_fn)
 
                 safe_key, safe_subkey = safe_key.split()
-                template_stack = alphafold.model.layer_stack.layer_stack(c_ee.template.template_pair_stack.num_block)(
-                    template_iteration_fn
-                )
+                template_stack = alphafold.model.layer_stack.layer_stack(
+                    c_ee.template.template_pair_stack.num_block
+                )(template_iteration_fn)
                 act, _ = template_stack((pair_act, safe_subkey))
             else:
                 tps = self.am_modules.TemplatePairStack(
@@ -152,7 +163,9 @@ class TestTemplatePairStack(unittest.TestCase):
         n_res = consts.n_res
 
         pair_act = np.random.rand(n_res, n_res, consts.c_t).astype(np.float32)
-        pair_mask = np.random.randint(low=0, high=2, size=(n_res, n_res)).astype(np.float32)
+        pair_mask = np.random.randint(low=0, high=2, size=(n_res, n_res)).astype(
+            np.float32
+        )
 
         if consts.is_multimer:
             params = compare_utils.fetch_alphafold_module_weights(
@@ -171,7 +184,9 @@ class TestTemplatePairStack(unittest.TestCase):
             )
         )
 
-        out_gt = f.apply(params, jax.random.PRNGKey(42), pair_act, pair_mask).block_until_ready()
+        out_gt = f.apply(
+            params, jax.random.PRNGKey(42), pair_act, pair_mask
+        ).block_until_ready()
         out_gt = torch.as_tensor(np.array(out_gt))
 
         model = compare_utils.get_global_pretrained_openfold()
@@ -203,7 +218,9 @@ class TestTemplateEmbedderAllAtom(unittest.TestCase):
         pair_mask = torch.ones((batch_size, n_res, n_res))
         asym_ids = torch.as_tensor((random_asym_ids(n_res)))
         asym_ids = torch.tile(asym_ids[None, :], (batch_size, 1))
-        multichain_mask_2d = (asym_ids[..., None] == asym_ids[..., None, :]).to(dtype=z.dtype)
+        multichain_mask_2d = (asym_ids[..., None] == asym_ids[..., None, :]).to(
+            dtype=z.dtype
+        )
 
         template_config = {
             "template_pair_embedder": {"c_in": c_feats, "c_z": c_z, "c_out": c_t},
@@ -217,7 +234,12 @@ class TestTemplateEmbedderAllAtom(unittest.TestCase):
         te = TemplateEmbedderAllAtom(config=ConfigDict(template_config))
 
         x = te(
-            batch=batch, z=z, pair_mask=pair_mask, templ_dim=1, chunk_size=None, multichain_mask_2d=multichain_mask_2d
+            batch=batch,
+            z=z,
+            pair_mask=pair_mask,
+            templ_dim=1,
+            chunk_size=None,
+            multichain_mask_2d=multichain_mask_2d,
         )
 
         self.assertTrue(x.shape == (batch_size, n_res, n_res, c_z))
@@ -248,7 +270,13 @@ class Template(unittest.TestCase):
             )
 
             if consts.is_multimer:
-                act = te(pair, batch, mask_2d, multichain_mask_2d=mc_mask_2d, is_training=False)
+                act = te(
+                    pair,
+                    batch,
+                    mask_2d,
+                    multichain_mask_2d=mc_mask_2d,
+                    is_training=False,
+                )
             else:
                 act = te(pair, batch, mask_2d, is_training=False)
             return act
@@ -266,7 +294,9 @@ class Template(unittest.TestCase):
         multichain_mask_2d = None
         if consts.is_multimer:
             asym_id = batch["asym_id"]
-            multichain_mask_2d = (asym_id[..., None] == asym_id[..., None, :]).astype(np.float32)
+            multichain_mask_2d = (asym_id[..., None] == asym_id[..., None, :]).astype(
+                np.float32
+            )
 
         pair_mask = np.random.randint(0, 2, (n_res, n_res)).astype(np.float32)
         # Fetch pretrained parameters (but only from one block)]
@@ -275,7 +305,12 @@ class Template(unittest.TestCase):
         )
 
         out_gt = f.apply(
-            params, jax.random.PRNGKey(42), pair_act, batch, pair_mask, multichain_mask_2d
+            params,
+            jax.random.PRNGKey(42),
+            pair_act,
+            batch,
+            pair_mask,
+            multichain_mask_2d,
         ).block_until_ready()
         out_gt = torch.as_tensor(np.array(out_gt))
 

@@ -73,7 +73,12 @@ class AttentionPairBias(Attention):
                 Large constant used to create mask for attention logits
         """
         super(AttentionPairBias, self).__init__(
-            c_q=c_q, c_k=c_k, c_v=c_v, c_hidden=c_hidden, no_heads=no_heads, gating=gating
+            c_q=c_q,
+            c_k=c_k,
+            c_v=c_v,
+            c_hidden=c_hidden,
+            no_heads=no_heads,
+            gating=gating,
         )
 
         self.use_ada_layer_norm = use_ada_layer_norm
@@ -89,15 +94,23 @@ class AttentionPairBias(Attention):
         self.layer_norm_z = LayerNorm(self.c_z)
         self.linear_z = Linear(self.c_z, self.no_heads, bias=False, init="normal")
 
-        self.linear_q = Linear(self.c_q, self.c_hidden * self.no_heads, bias=True, init="glorot")
+        self.linear_q = Linear(
+            self.c_q, self.c_hidden * self.no_heads, bias=True, init="glorot"
+        )
 
-        self.linear_o = Linear(self.c_hidden * self.no_heads, self.c_q, bias=False, init="final")
+        self.linear_o = Linear(
+            self.c_hidden * self.no_heads, self.c_q, bias=False, init="final"
+        )
 
         if self.use_ada_layer_norm:
             self.linear_ada_out = Linear(self.c_s, self.c_q, init="gating_ada_zero")
 
     def _prep_bias(
-        self, a: torch.Tensor, z: Optional[torch.Tensor], beta: Optional[torch.Tensor], mask: Optional[torch.Tensor]
+        self,
+        a: torch.Tensor,
+        z: Optional[torch.Tensor],
+        beta: Optional[torch.Tensor],
+        mask: Optional[torch.Tensor],
     ) -> List[torch.Tensor]:
         """
         Args:

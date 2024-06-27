@@ -28,7 +28,12 @@ class Hmmsearch(object):
     """Python wrapper of the hmmsearch binary."""
 
     def __init__(
-        self, *, binary_path: str, hmmbuild_binary_path: str, database_path: str, flags: Optional[Sequence[str]] = None
+        self,
+        *,
+        binary_path: str,
+        hmmbuild_binary_path: str,
+        database_path: str,
+        flags: Optional[Sequence[str]] = None,
     ):
         """Initializes the Python hmmsearch wrapper.
 
@@ -79,7 +84,9 @@ class Hmmsearch(object):
 
     def query(self, msa_sto: str, output_dir: Optional[str] = None) -> str:
         """Queries the database using hmmsearch using a given stockholm msa."""
-        hmm = self.hmmbuild_runner.build_profile_from_sto(msa_sto, model_construction="hand")
+        hmm = self.hmmbuild_runner.build_profile_from_sto(
+            msa_sto, model_construction="hand"
+        )
         return self.query_with_hmm(hmm, output_dir)
 
     def query_with_hmm(self, hmm: str, output_dir: Optional[str] = None) -> str:
@@ -110,14 +117,19 @@ class Hmmsearch(object):
             )
 
             logging.info("Launching sub-process %s", cmd)
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            with utils.timing(f"hmmsearch ({os.path.basename(self.database_path)}) query"):
+            process = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            with utils.timing(
+                f"hmmsearch ({os.path.basename(self.database_path)}) query"
+            ):
                 stdout, stderr = process.communicate()
                 retcode = process.wait()
 
             if retcode:
                 raise RuntimeError(
-                    "hmmsearch failed:\nstdout:\n%s\n\nstderr:\n%s\n" % (stdout.decode("utf-8"), stderr.decode("utf-8"))
+                    "hmmsearch failed:\nstdout:\n%s\n\nstderr:\n%s\n"
+                    % (stdout.decode("utf-8"), stderr.decode("utf-8"))
                 )
 
             with open(out_path) as f:
@@ -126,7 +138,9 @@ class Hmmsearch(object):
         return out_msa
 
     @staticmethod
-    def get_template_hits(output_string: str, input_sequence: str) -> Sequence[parsers.TemplateHit]:
+    def get_template_hits(
+        output_string: str, input_sequence: str
+    ) -> Sequence[parsers.TemplateHit]:
         """Gets parsed template hits from the raw string output by the tool."""
         template_hits = parsers.parse_hmmsearch_sto(
             output_string,

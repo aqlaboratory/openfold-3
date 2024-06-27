@@ -30,7 +30,9 @@ if deepspeed_is_installed:
 class LayerNorm(nn.Module):
     """Basic LayerNorm layer with learnable scale and offset."""
 
-    def __init__(self, c_in: int, create_scale: bool = True, create_offset: bool = True, eps=1e-5):
+    def __init__(
+        self, c_in: int, create_scale: bool = True, create_offset: bool = True, eps=1e-5
+    ):
         """
         Args:
             c_in: Number of input channels
@@ -53,7 +55,9 @@ class LayerNorm(nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         d = x.dtype
-        deepspeed_is_initialized = deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
+        deepspeed_is_initialized = (
+            deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
+        )
         if d is torch.bfloat16 and not deepspeed_is_initialized:
             with torch.cuda.amp.autocast(enabled=False):
                 weight = self.weight.to(dtype=d) if self.weight is not None else None
@@ -90,8 +94,12 @@ class AdaLN(nn.Module):
         self.c_s = c_s
         self.eps = eps
 
-        self.layer_norm_a = LayerNorm(self.c_a, create_scale=False, create_offset=False, eps=self.eps)
-        self.layer_norm_s = LayerNorm(self.c_s, create_scale=True, create_offset=False, eps=self.eps)
+        self.layer_norm_a = LayerNorm(
+            self.c_a, create_scale=False, create_offset=False, eps=self.eps
+        )
+        self.layer_norm_s = LayerNorm(
+            self.c_s, create_scale=True, create_offset=False, eps=self.eps
+        )
 
         self.sigmoid = nn.Sigmoid()
         self.linear_g = Linear(self.c_s, self.c_a, init="final")

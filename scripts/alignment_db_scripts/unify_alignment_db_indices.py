@@ -28,8 +28,12 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("alignment_db_dir", type=str, help="Path to directory containing alignment_dbs")
-    parser.add_argument("output_dir", type=str, help="Path in which to output super index")
+    parser.add_argument(
+        "alignment_db_dir", type=str, help="Path to directory containing alignment_dbs"
+    )
+    parser.add_argument(
+        "output_dir", type=str, help="Path in which to output super index"
+    )
 
     args = parser.parse_args()
 

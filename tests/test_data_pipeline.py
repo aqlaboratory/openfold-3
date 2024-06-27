@@ -67,9 +67,13 @@ class TestDataPipeline(unittest.TestCase):
             template_featurizer=template_featurizer,
         )
 
-        openfold_feature_dict = data_pipeline.process_fasta(str(data_dir / "short.fasta"), str(data_dir / "alignments"))
+        openfold_feature_dict = data_pipeline.process_fasta(
+            str(data_dir / "short.fasta"), str(data_dir / "alignments")
+        )
 
-        openfold_feature_dict["template_all_atom_masks"] = openfold_feature_dict["template_all_atom_mask"]
+        openfold_feature_dict["template_all_atom_masks"] = openfold_feature_dict[
+            "template_all_atom_mask"
+        ]
 
         checked = []
 
@@ -92,7 +96,9 @@ class TestDataPipeline(unittest.TestCase):
         matching_idx = np.argmax(matching_rows, axis=-1)
         rearranged_o_dmi = openfold_feature_dict["deletion_matrix_int"]
         rearranged_o_dmi = rearranged_o_dmi[matching_idx, :]
-        self.assertTrue(np.all(alphafold_feature_dict["deletion_matrix_int"] == rearranged_o_dmi))
+        self.assertTrue(
+            np.all(alphafold_feature_dict["deletion_matrix_int"] == rearranged_o_dmi)
+        )
 
         checked.append("deletion_matrix_int")
 

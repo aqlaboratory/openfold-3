@@ -24,7 +24,9 @@ def gumbel_noise(
     Returns:
         Gumbel noise of given shape.
     """
-    uniform_noise = torch.rand(shape, dtype=torch.float32, device=device, generator=generator)
+    uniform_noise = torch.rand(
+        shape, dtype=torch.float32, device=device, generator=generator
+    )
     gumbel = -torch.log(-torch.log(uniform_noise + eps) + eps)
     return gumbel
 
@@ -82,7 +84,9 @@ def make_masked_msa(batch, config, replace_fraction, seed, eps=1e-6):
     # Put all remaining probability on [MASK] which is a new column.
     mask_prob = 1.0 - config.profile_prob - config.same_prob - config.uniform_prob
 
-    categorical_probs = torch.nn.functional.pad(categorical_probs, [0, 1], value=mask_prob)
+    categorical_probs = torch.nn.functional.pad(
+        categorical_probs, [0, 1], value=mask_prob
+    )
 
     sh = batch["msa"].shape
     mask_position = torch.rand(sh, device=batch["msa"].device) < replace_fraction
@@ -135,7 +139,9 @@ def nearest_neighbor_clusters(batch, gap_agreement_weight=0.0):
     msa_one_hot_masked = msa_mask[:, :, None] * msa_one_hot
     extra_one_hot_masked = extra_mask[:, :, None] * extra_one_hot
 
-    agreement = torch.einsum("mrc, nrc->nm", extra_one_hot_masked, weights * msa_one_hot_masked)
+    agreement = torch.einsum(
+        "mrc, nrc->nm", extra_one_hot_masked, weights * msa_one_hot_masked
+    )
 
     cluster_assignment = torch.nn.functional.softmax(1e3 * agreement, dim=0)
     cluster_assignment *= torch.einsum("mr, nr->mn", msa_mask, extra_mask)
@@ -151,7 +157,9 @@ def nearest_neighbor_clusters(batch, gap_agreement_weight=0.0):
     extra_deletion_matrix = batch["extra_deletion_matrix"]
     deletion_matrix = batch["deletion_matrix"]
 
-    del_sum = torch.einsum("nm, mc->nc", cluster_assignment, extra_mask * extra_deletion_matrix)
+    del_sum = torch.einsum(
+        "nm, mc->nc", cluster_assignment, extra_mask * extra_deletion_matrix
+    )
     del_sum += deletion_matrix  # Original sequence.
     cluster_deletion_mean = del_sum / cluster_count[:, None]
 
@@ -163,7 +171,9 @@ def nearest_neighbor_clusters(batch, gap_agreement_weight=0.0):
 
 def create_target_feat(batch):
     """Create the target features"""
-    batch["target_feat"] = torch.nn.functional.one_hot(batch["aatype"], 21).to(torch.float32)
+    batch["target_feat"] = torch.nn.functional.one_hot(batch["aatype"], 21).to(
+        torch.float32
+    )
     return batch
 
 
@@ -176,10 +186,18 @@ def create_msa_feat(batch):
     pi = torch.acos(torch.zeros(1, device=deletion_matrix.device)) * 2
     deletion_value = (torch.atan(deletion_matrix / 3.0) * (2.0 / pi))[..., None]
 
-    deletion_mean_value = (torch.atan(batch["cluster_deletion_mean"] / 3.0) * (2.0 / pi))[..., None]
+    deletion_mean_value = (
+        torch.atan(batch["cluster_deletion_mean"] / 3.0) * (2.0 / pi)
+    )[..., None]
 
     msa_feat = torch.cat(
-        [msa_1hot, has_deletion, deletion_value, batch["cluster_profile"], deletion_mean_value],
+        [
+            msa_1hot,
+            has_deletion,
+            deletion_value,
+            batch["cluster_profile"],
+            deletion_mean_value,
+        ],
         dim=-1,
     )
 
@@ -291,7 +309,9 @@ def get_interface_residues(positions, atom_mask, asym_id, interface_threshold):
 
     min_dist_per_res, _ = torch.where(mask, pairwise_dists, torch.inf).min(dim=-1)
 
-    valid_interfaces = torch.sum((min_dist_per_res < interface_threshold).float(), dim=-1)
+    valid_interfaces = torch.sum(
+        (min_dist_per_res < interface_threshold).float(), dim=-1
+    )
     interface_residues_idxs = torch.nonzero(valid_interfaces, as_tuple=True)[0]
 
     return interface_residues_idxs
@@ -303,14 +323,20 @@ def get_spatial_crop_idx(protein, crop_size, interface_threshold, generator):
     asym_id = protein["asym_id"]
 
     interface_residues = get_interface_residues(
-        positions=positions, atom_mask=atom_mask, asym_id=asym_id, interface_threshold=interface_threshold
+        positions=positions,
+        atom_mask=atom_mask,
+        asym_id=asym_id,
+        interface_threshold=interface_threshold,
     )
 
     if not torch.any(interface_residues):
         return get_contiguous_crop_idx(protein, crop_size, generator)
 
     target_res_idx = randint(
-        lower=0, upper=interface_residues.shape[-1] - 1, generator=generator, device=positions.device
+        lower=0,
+        upper=interface_residues.shape[-1] - 1,
+        generator=generator,
+        device=positions.device,
     )
 
     target_res = interface_residues[target_res_idx]
@@ -323,17 +349,26 @@ def get_spatial_crop_idx(protein, crop_size, interface_threshold, generator):
     ca_pairwise_dists = torch.sqrt(torch.sum(coord_diff**2, dim=-1))
 
     to_target_distances = ca_pairwise_dists[target_res]
-    break_tie = torch.arange(0, to_target_distances.shape[-1], device=positions.device).float() * 1e-3
-    to_target_distances = torch.where(ca_mask, to_target_distances, torch.inf) + break_tie
+    break_tie = (
+        torch.arange(0, to_target_distances.shape[-1], device=positions.device).float()
+        * 1e-3
+    )
+    to_target_distances = (
+        torch.where(ca_mask, to_target_distances, torch.inf) + break_tie
+    )
 
     ret = torch.argsort(to_target_distances)[:crop_size]
     return ret.sort().values
 
 
 def get_contiguous_crop_idx(protein, crop_size, generator):
-    unique_asym_ids, chain_idxs, chain_lens = protein["asym_id"].unique(dim=-1, return_inverse=True, return_counts=True)
+    unique_asym_ids, chain_idxs, chain_lens = protein["asym_id"].unique(
+        dim=-1, return_inverse=True, return_counts=True
+    )
 
-    shuffle_idx = torch.randperm(chain_lens.shape[-1], device=chain_lens.device, generator=generator)
+    shuffle_idx = torch.randperm(
+        chain_lens.shape[-1], device=chain_lens.device, generator=generator
+    )
 
     _, idx_sorted = torch.sort(chain_idxs, stable=True)
     cum_sum = chain_lens.cumsum(dim=0)
@@ -351,15 +386,27 @@ def get_contiguous_crop_idx(protein, crop_size, generator):
         crop_size_max = min(num_budget, chain_len)
         crop_size_min = min(chain_len, max(0, num_budget - num_remaining))
         chain_crop_size = randint(
-            lower=crop_size_min, upper=crop_size_max, generator=generator, device=chain_lens.device
+            lower=crop_size_min,
+            upper=crop_size_max,
+            generator=generator,
+            device=chain_lens.device,
         )
 
         num_budget -= chain_crop_size
 
-        chain_start = randint(lower=0, upper=chain_len - chain_crop_size, generator=generator, device=chain_lens.device)
+        chain_start = randint(
+            lower=0,
+            upper=chain_len - chain_crop_size,
+            generator=generator,
+            device=chain_lens.device,
+        )
 
         asym_offset = asym_offsets[idx]
-        crop_idxs.append(torch.arange(asym_offset + chain_start, asym_offset + chain_start + chain_crop_size))
+        crop_idxs.append(
+            torch.arange(
+                asym_offset + chain_start, asym_offset + chain_start + chain_crop_size
+            )
+        )
 
     return torch.concat(crop_idxs).sort().values
 
@@ -382,7 +429,10 @@ def random_crop_to_size(
         g = torch.Generator(device=protein["seq_length"].device)
         g.manual_seed(seed)
 
-    use_spatial_crop = torch.rand((1,), device=protein["seq_length"].device, generator=g) < spatial_crop_prob
+    use_spatial_crop = (
+        torch.rand((1,), device=protein["seq_length"].device, generator=g)
+        < spatial_crop_prob
+    )
 
     num_res = protein["aatype"].shape[0]
     if num_res <= crop_size:
@@ -401,8 +451,15 @@ def random_crop_to_size(
     subsample_templates = subsample_templates and num_templates
 
     if subsample_templates:
-        templates_crop_start = randint(lower=0, upper=num_templates, generator=g, device=protein["seq_length"].device)
-        templates_select_indices = torch.randperm(num_templates, device=protein["seq_length"].device, generator=g)
+        templates_crop_start = randint(
+            lower=0,
+            upper=num_templates,
+            generator=g,
+            device=protein["seq_length"].device,
+        )
+        templates_select_indices = torch.randperm(
+            num_templates, device=protein["seq_length"].device, generator=g
+        )
     else:
         templates_crop_start = 0
 
@@ -410,7 +467,9 @@ def random_crop_to_size(
     num_templates_crop_size = min(num_templates - templates_crop_start, max_templates)
 
     for k, v in protein.items():
-        if k not in shape_schema or ("template" not in k and NUM_RES not in shape_schema[k]):
+        if k not in shape_schema or (
+            "template" not in k and NUM_RES not in shape_schema[k]
+        ):
             continue
 
         # randomly permute the templates before cropping them.
@@ -420,7 +479,12 @@ def random_crop_to_size(
         for i, (dim_size, dim) in enumerate(zip(shape_schema[k], v.shape)):
             is_num_res = dim_size == NUM_RES
             if i == 0 and k.startswith("template"):
-                v = v[slice(templates_crop_start, templates_crop_start + num_templates_crop_size)]
+                v = v[
+                    slice(
+                        templates_crop_start,
+                        templates_crop_start + num_templates_crop_size,
+                    )
+                ]
             elif is_num_res:
                 v = torch.index_select(v, i, crop_idxs)
 

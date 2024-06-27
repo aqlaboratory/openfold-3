@@ -40,11 +40,15 @@ def weighted_rigid_align(
         [*, N_atom, 3] Aligned atom positions
     """
     # Mean-centre positions
-    w_mean = torch.sum(w * atom_mask, dim=-1, keepdim=True) / torch.sum(atom_mask, dim=-1, keepdim=True)
-    wx_mean = torch.sum(x * w[..., None] * atom_mask[..., None], dim=-2) / torch.sum(atom_mask, dim=-1, keepdim=True)
-    wx_gt_mean = torch.sum(x_gt * w[..., None] * atom_mask[..., None], dim=-2) / torch.sum(
+    w_mean = torch.sum(w * atom_mask, dim=-1, keepdim=True) / torch.sum(
         atom_mask, dim=-1, keepdim=True
     )
+    wx_mean = torch.sum(x * w[..., None] * atom_mask[..., None], dim=-2) / torch.sum(
+        atom_mask, dim=-1, keepdim=True
+    )
+    wx_gt_mean = torch.sum(
+        x_gt * w[..., None] * atom_mask[..., None], dim=-2
+    ) / torch.sum(atom_mask, dim=-1, keepdim=True)
     mu = wx_mean / w_mean
     mu_gt = wx_gt_mean / w_mean
     x = x - mu[..., None, :]
@@ -115,11 +119,15 @@ def mse_loss(
     x_gt_aligned = weighted_rigid_align(x=x_gt, x_gt=x, w=w, atom_mask=atom_mask)
 
     return (
-        (1 / 3.0) * torch.sum(torch.sum((x - x_gt_aligned) ** 2, dim=-1) * w * atom_mask) / torch.sum(atom_mask, dim=-1)
+        (1 / 3.0)
+        * torch.sum(torch.sum((x - x_gt_aligned) ** 2, dim=-1) * w * atom_mask)
+        / torch.sum(atom_mask, dim=-1)
     )
 
 
-def bond_loss(batch: Dict, x: torch.Tensor, x_gt: torch.Tensor, atom_mask: torch.Tensor) -> torch.Tensor:
+def bond_loss(
+    batch: Dict, x: torch.Tensor, x_gt: torch.Tensor, atom_mask: torch.Tensor
+) -> torch.Tensor:
     """
     Implements AF3 Equation 5.
 
@@ -141,21 +149,30 @@ def bond_loss(batch: Dict, x: torch.Tensor, x_gt: torch.Tensor, atom_mask: torch
 
     # Construct polymer-ligand per-token bond mask
     # [*, N_token, N_token]
-    bond_mask = batch["token_bonds"] * (batch["is_polymer"][..., None, :] * batch["is_ligand"][..., None])
+    bond_mask = batch["token_bonds"] * (
+        batch["is_polymer"][..., None, :] * batch["is_ligand"][..., None]
+    )
 
     # Construct polymer-ligand per-atom bond mask
     # [*, N_atom, N_atom]
     atom_pair_to_token_index = (
-        batch["atom_to_token_index"][..., None, :, None] * batch["atom_to_token_index"][..., None, :, None, :]
+        batch["atom_to_token_index"][..., None, :, None]
+        * batch["atom_to_token_index"][..., None, :, None, :]
     )  # [*, n_atom, n_atom, n_token, n_token]
-    bond_mask = torch.sum(bond_mask[..., None, None, :, :] * atom_pair_to_token_index, dim=(-1, -2))
+    bond_mask = torch.sum(
+        bond_mask[..., None, None, :, :] * atom_pair_to_token_index, dim=(-1, -2)
+    )
 
     # Compute polymer-ligand bond loss
     mask = bond_mask * (atom_mask[..., None] * atom_mask[..., None, :])
-    return torch.sum((dx - dx_gt) ** 2 * mask, dim=(-1, -2)) / torch.sum(mask, dim=(-1, -2))
+    return torch.sum((dx - dx_gt) ** 2 * mask, dim=(-1, -2)) / torch.sum(
+        mask, dim=(-1, -2)
+    )
 
 
-def smooth_lddt_loss(batch: Dict, x: torch.Tensor, x_gt: torch.Tensor, atom_mask: torch.Tensor) -> torch.Tensor:
+def smooth_lddt_loss(
+    batch: Dict, x: torch.Tensor, x_gt: torch.Tensor, atom_mask: torch.Tensor
+) -> torch.Tensor:
     """
     Implements AF3 Algorithm 27.
 
@@ -177,16 +194,25 @@ def smooth_lddt_loss(batch: Dict, x: torch.Tensor, x_gt: torch.Tensor, atom_mask
 
     # [*, N_atom, N_atom]
     d = torch.abs(dx_gt - dx)
-    e = 0.25 * (torch.sigmoid(0.5 - d) + torch.sigmoid(1.0 - d) + torch.sigmoid(2.0 - d) + torch.sigmoid(4.0 - d))
+    e = 0.25 * (
+        torch.sigmoid(0.5 - d)
+        + torch.sigmoid(1.0 - d)
+        + torch.sigmoid(2.0 - d)
+        + torch.sigmoid(4.0 - d)
+    )
 
     # [*, N_token]
     is_nucleotide = batch["is_dna"] + batch["is_rna"]
 
     # [*, N_atom]
-    is_nucleotide = torch.sum(batch["atom_to_token_index"] * is_nucleotide[..., None, :], dim=-1)
+    is_nucleotide = torch.sum(
+        batch["atom_to_token_index"] * is_nucleotide[..., None, :], dim=-1
+    )
 
     # [*, N_atom, N_atom]
-    c = (dx_gt < 30) * is_nucleotide[..., None] + (dx_gt < 15) * (1 - is_nucleotide[..., None])
+    c = (dx_gt < 30) * is_nucleotide[..., None] + (dx_gt < 15) * (
+        1 - is_nucleotide[..., None]
+    )
 
     # [*]
     mask = 1 - torch.eye(x.shape[-2], device=x.device).tile(*x.shape[:-2], 1, 1)

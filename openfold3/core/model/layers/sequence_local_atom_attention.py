@@ -33,7 +33,16 @@ class AtomTransformer(nn.Module):
     Implements AF3 Algorithm 7
     """
 
-    def __init__(self, c_q: int, c_p: int, c_hidden: int, no_heads: int, no_blocks: int, n_transition: int, inf: float):
+    def __init__(
+        self,
+        c_q: int,
+        c_p: int,
+        c_hidden: int,
+        no_heads: int,
+        no_blocks: int,
+        n_transition: int,
+        inf: float,
+    ):
         """
         Args:
             c_q:
@@ -93,15 +102,28 @@ class AtomTransformer(nn.Module):
         """
         # 1. Get subset centers
         n_atom = ql.shape[-2]
-        subset_centers = torch.arange(int(n_atom // n_queries) + 1) * n_queries + (n_queries // 2 - 0.5)
+        subset_centers = torch.arange(int(n_atom // n_queries) + 1) * n_queries + (
+            n_queries // 2 - 0.5
+        )
 
         # 2. Make Blm: (32 * 128) blocks
         # [N_atom, Subset]
-        row_condition = torch.abs(torch.arange(n_atom).unsqueeze(1) - subset_centers.unsqueeze(0)) < n_queries / 2
-        col_condition = torch.abs(torch.arange(n_atom).unsqueeze(1) - subset_centers.unsqueeze(0)) < n_keys / 2
+        row_condition = (
+            torch.abs(torch.arange(n_atom).unsqueeze(1) - subset_centers.unsqueeze(0))
+            < n_queries / 2
+        )
+        col_condition = (
+            torch.abs(torch.arange(n_atom).unsqueeze(1) - subset_centers.unsqueeze(0))
+            < n_keys / 2
+        )
         # [N_atom, N_atom]
         blm = (
-            torch.sum(torch.logical_and(row_condition.unsqueeze(1), col_condition.unsqueeze(0)).to(ql.dtype), dim=-1)
+            torch.sum(
+                torch.logical_and(
+                    row_condition.unsqueeze(1), col_condition.unsqueeze(0)
+                ).to(ql.dtype),
+                dim=-1,
+            )
             * 1e10
             - 1e10
         )
@@ -173,14 +195,19 @@ class AtomFeatureEmbedder(nn.Module):
         dlm = atom_feats["ref_pos"].unsqueeze(-3) - atom_feats["ref_pos"].unsqueeze(-2)
 
         # [*, N_atom] --> [*, N_atom, N_atom]
-        vlm = (atom_feats["ref_space_uid"].unsqueeze(-2) == atom_feats["ref_space_uid"].unsqueeze(-1)).to(dlm.dtype)
+        vlm = (
+            atom_feats["ref_space_uid"].unsqueeze(-2)
+            == atom_feats["ref_space_uid"].unsqueeze(-1)
+        ).to(dlm.dtype)
 
         # [*, N_atom, N_atom, 3] -> [*, N_atom, N_atom, C_atom_pair]
         plm = self.linear_ref_offset(dlm) * vlm.unsqueeze(-1)
 
         # 3. Embed pairwise inverse squared distance
         # [*, N_atom, N_atom, 3] -> [*, N_atom, N_atom, C_atom_pair]
-        inv_dists = self.linear_inv_dists(torch.pow(1.0 + torch.norm(dlm, dim=-1).unsqueeze(-1), -1.0))
+        inv_dists = self.linear_inv_dists(
+            torch.pow(1.0 + torch.norm(dlm, dim=-1).unsqueeze(-1), -1.0)
+        )
         plm = plm + inv_dists * vlm.unsqueeze(-1)
 
         # [*, N_atom, N_atom, C_atom_pair]
@@ -243,7 +270,11 @@ class NoisyPositionEmbedder(nn.Module):
         # 1. project trunk embedding (s_trunk) onto atom embedding
         cl = cl + self.linear_s(
             self.layer_norm_s(
-                torch.sum(s_trunk.unsqueeze(-3) * atom_feats["atom_to_token_index"].unsqueeze(-1), dim=-2)
+                torch.sum(
+                    s_trunk.unsqueeze(-3)
+                    * atom_feats["atom_to_token_index"].unsqueeze(-1),
+                    dim=-2,
+                )
             )
         )
 
@@ -256,7 +287,10 @@ class NoisyPositionEmbedder(nn.Module):
         )  # [*, n_atom, n_atom, n_token, n_token]
         plm = plm + self.linear_z(
             self.layer_norm_z(
-                torch.sum(zij[..., None, None, :, :, :] * atom_pair_to_token_index[..., None], dim=(-2, -3))
+                torch.sum(
+                    zij[..., None, None, :, :, :] * atom_pair_to_token_index[..., None],
+                    dim=(-2, -3),
+                )
             )
         )  # [*, n_atom, n_atom, c_z]
 
@@ -316,10 +350,14 @@ class AtomAttentionEncoder(nn.Module):
 
         self.add_noisy_pos = add_noisy_pos
 
-        self.atom_feature_emb = AtomFeatureEmbedder(c_in=c_atom_ref, c_atom=c_atom, c_atom_pair=c_atom_pair)
+        self.atom_feature_emb = AtomFeatureEmbedder(
+            c_in=c_atom_ref, c_atom=c_atom, c_atom_pair=c_atom_pair
+        )
 
         if add_noisy_pos:
-            self.noisy_position_emb = NoisyPositionEmbedder(c_s=c_s, c_z=c_z, c_atom=c_atom, c_atom_pair=c_atom_pair)
+            self.noisy_position_emb = NoisyPositionEmbedder(
+                c_s=c_s, c_z=c_z, c_atom=c_atom, c_atom_pair=c_atom_pair
+            )
 
         self.relu = nn.ReLU()
         self.linear_l = Linear(
@@ -347,7 +385,9 @@ class AtomAttentionEncoder(nn.Module):
         )
 
         self.c_token = c_token
-        self.linear_q = nn.Sequential(Linear(c_atom, c_token, bias=False, init="relu"), nn.ReLU())
+        self.linear_q = nn.Sequential(
+            Linear(c_atom, c_token, bias=False, init="relu"), nn.ReLU()
+        )
 
     def forward(
         self,
@@ -385,16 +425,22 @@ class AtomAttentionEncoder(nn.Module):
             plm: atom pairwise embedding [*, n_atom, n_atom, c_atom_pair]
         """
         # 1. atom feature projection (line 1- 6)
-        cl, plm = self.atom_feature_emb(atom_feats)  # [*, n_atom, c_atom], [*, n_atom, n_atom, c_atom_pair]
+        cl, plm = self.atom_feature_emb(
+            atom_feats
+        )  # [*, n_atom, c_atom], [*, n_atom, n_atom, c_atom_pair]
 
         ql = cl.detach().clone()
         # 2. noisy pos projection (line 8 - 12)
         if rl is not None:
-            cl, plm, ql = self.noisy_position_emb(atom_feats, cl, plm, ql, si_trunk, zij, rl)
+            cl, plm, ql = self.noisy_position_emb(
+                atom_feats, cl, plm, ql, si_trunk, zij, rl
+            )
 
         # 3. add the combined single conditioning to the pair representation (line 13 - 14)
         plm = (
-            plm + self.linear_l(self.relu(cl.unsqueeze(-3))) + self.linear_m(self.relu(cl.unsqueeze(-2)))
+            plm
+            + self.linear_l(self.relu(cl.unsqueeze(-3)))
+            + self.linear_m(self.relu(cl.unsqueeze(-2)))
         )  # [*, n_atom, c_atom] --> [*, n_atom, n_atom, atom_pair]
         plm = plm + self.pair_mlp(plm)
 
@@ -403,7 +449,9 @@ class AtomAttentionEncoder(nn.Module):
 
         # 5. aggregate
         token_to_atom_index = atom_feats["atom_to_token_index"].transpose(-1, -2)
-        ai = torch.sum(self.linear_q(ql).unsqueeze(-3) * token_to_atom_index.unsqueeze(-1), dim=-2) / torch.sum(
+        ai = torch.sum(
+            self.linear_q(ql).unsqueeze(-3) * token_to_atom_index.unsqueeze(-1), dim=-2
+        ) / torch.sum(
             token_to_atom_index, dim=-1, keepdim=True
         )  # [b, n_token, c_token]
 
@@ -479,13 +527,19 @@ class AtomAttentionDecoder(nn.Module):
 
         # 1. broadcast projected token embd
         ql_skip = ql_skip + torch.sum(
-            self.linear_q_in(ai).unsqueeze(-3) * atom_feats["atom_to_token_index"].unsqueeze(-1), dim=-2
+            self.linear_q_in(ai).unsqueeze(-3)
+            * atom_feats["atom_to_token_index"].unsqueeze(-1),
+            dim=-2,
         )  # [*, n_atom, c_atom]
 
         # 2. atom transformer
-        q_out = self.atom_transformer(ql_skip, cl_skip, plm, atom_mask)  # q_out: shape [*, n_atom, c_atom]
+        q_out = self.atom_transformer(
+            ql_skip, cl_skip, plm, atom_mask
+        )  # q_out: shape [*, n_atom, c_atom]
 
         # 3. predict the noise
-        r_update = self.linear_q_out(self.layer_norm(q_out))  # [*, n_atom, c_atom] -> [*, n_atom, 3]
+        r_update = self.linear_q_out(
+            self.layer_norm(q_out)
+        )  # [*, n_atom, c_atom] -> [*, n_atom, 3]
 
         return r_update

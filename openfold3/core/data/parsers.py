@@ -34,7 +34,9 @@ class Msa:
     descriptions: Optional[Sequence[str]]
 
     def __post_init__(self):
-        if not (len(self.sequences) == len(self.deletion_matrix) == len(self.descriptions)):
+        if not (
+            len(self.sequences) == len(self.deletion_matrix) == len(self.descriptions)
+        ):
             raise ValueError("All fields for an MSA must have the same length")
 
     def __len__(self):
@@ -148,7 +150,11 @@ def parse_stockholm(stockholm_string: str) -> Msa:
                     deletion_count = 0
         deletion_matrix.append(deletion_vec)
 
-    return Msa(sequences=msa, deletion_matrix=deletion_matrix, descriptions=list(name_to_sequence.keys()))
+    return Msa(
+        sequences=msa,
+        deletion_matrix=deletion_matrix,
+        descriptions=list(name_to_sequence.keys()),
+    )
 
 
 def parse_a3m(a3m_string: str) -> Msa:
@@ -182,10 +188,16 @@ def parse_a3m(a3m_string: str) -> Msa:
     # Make the MSA matrix out of aligned (deletion-free) sequences.
     deletion_table = str.maketrans("", "", string.ascii_lowercase)
     aligned_sequences = [s.translate(deletion_table) for s in sequences]
-    return Msa(sequences=aligned_sequences, deletion_matrix=deletion_matrix, descriptions=descriptions)
+    return Msa(
+        sequences=aligned_sequences,
+        deletion_matrix=deletion_matrix,
+        descriptions=descriptions,
+    )
 
 
-def _convert_sto_seq_to_a3m(query_non_gaps: Sequence[bool], sto_seq: str) -> Iterable[str]:
+def _convert_sto_seq_to_a3m(
+    query_non_gaps: Sequence[bool], sto_seq: str
+) -> Iterable[str]:
     for is_query_res_non_gap, sequence_res in zip(query_non_gaps, sto_seq):
         if is_query_res_non_gap:
             yield sequence_res
@@ -240,10 +252,14 @@ def convert_stockholm_to_a3m(
         # Dots are optional in a3m format and are commonly removed.
         out_sequence = sto_sequence.replace(".", "")
         if remove_first_row_gaps:
-            out_sequence = "".join(_convert_sto_seq_to_a3m(query_non_gaps, out_sequence))
+            out_sequence = "".join(
+                _convert_sto_seq_to_a3m(query_non_gaps, out_sequence)
+            )
         a3m_sequences[seqname] = out_sequence
 
-    fasta_chunks = (f">{k} {descriptions.get(k, '')}\n{a3m_sequences[k]}" for k in a3m_sequences)
+    fasta_chunks = (
+        f">{k} {descriptions.get(k, '')}\n{a3m_sequences[k]}" for k in a3m_sequences
+    )
     return "\n".join(fasta_chunks) + "\n"  # Include terminating newline.
 
 
@@ -365,14 +381,18 @@ def deduplicate_stockholm_msa(stockholm_msa: str) -> str:
     return "\n".join(filtered_lines) + "\n"
 
 
-def _get_hhr_line_regex_groups(regex_pattern: str, line: str) -> Sequence[Optional[str]]:
+def _get_hhr_line_regex_groups(
+    regex_pattern: str, line: str
+) -> Sequence[Optional[str]]:
     match = re.match(regex_pattern, line)
     if match is None:
         raise RuntimeError(f"Could not parse query line {line}")
     return match.groups()
 
 
-def _update_hhr_residue_indices_list(sequence: str, start_index: int, indices_list: List[int]):
+def _update_hhr_residue_indices_list(
+    sequence: str, start_index: int, indices_list: List[int]
+):
     """Computes the relative indices for each residue with respect to the original sequence."""
     counter = start_index
     for symbol in sequence:
@@ -411,7 +431,8 @@ def _parse_hhr_hit(detailed_lines: Sequence[str]) -> TemplateHit:
     match = re.match(pattern, detailed_lines[2])
     if match is None:
         raise RuntimeError(
-            "Could not parse section: %s. Expected this: \n%s to contain summary." % (detailed_lines, detailed_lines[2])
+            "Could not parse section: %s. Expected this: \n%s to contain summary."
+            % (detailed_lines, detailed_lines[2])
         )
     (_, _, _, aligned_cols, _, _, sum_probs, _) = [float(x) for x in match.groups()]
 
@@ -549,17 +570,27 @@ def _parse_hmmsearch_description(description: str) -> HitMetadata:
     """Parses the hmmsearch A3M sequence description line."""
     # Example 1: >4pqx_A/2-217 [subseq from] mol:protein length:217  Free text
     # Example 2: >5g3r_A/1-55 [subseq from] mol:protein length:352
-    match = re.match(r"^>?([a-z0-9]+)_(\w+)/([0-9]+)-([0-9]+).*protein length:([0-9]+) *(.*)$", description.strip())
+    match = re.match(
+        r"^>?([a-z0-9]+)_(\w+)/([0-9]+)-([0-9]+).*protein length:([0-9]+) *(.*)$",
+        description.strip(),
+    )
 
     if not match:
         raise ValueError(f'Could not parse description: "{description}".')
 
     return HitMetadata(
-        pdb_id=match[1], chain=match[2], start=int(match[3]), end=int(match[4]), length=int(match[5]), text=match[6]
+        pdb_id=match[1],
+        chain=match[2],
+        start=int(match[3]),
+        end=int(match[4]),
+        length=int(match[5]),
+        text=match[6],
     )
 
 
-def parse_hmmsearch_a3m(query_sequence: str, a3m_string: str, skip_first: bool = True) -> Sequence[TemplateHit]:
+def parse_hmmsearch_a3m(
+    query_sequence: str, a3m_string: str, skip_first: bool = True
+) -> Sequence[TemplateHit]:
     """Parses an a3m string produced by hmmsearch.
 
     Args:
@@ -601,8 +632,12 @@ def parse_hmmsearch_a3m(query_sequence: str, a3m_string: str, skip_first: bool =
     return hits
 
 
-def parse_hmmsearch_sto(output_string: str, input_sequence: str) -> Sequence[TemplateHit]:
+def parse_hmmsearch_sto(
+    output_string: str, input_sequence: str
+) -> Sequence[TemplateHit]:
     """Gets parsed template hits from the raw string output by the tool."""
     a3m_string = convert_stockholm_to_a3m(output_string, remove_first_row_gaps=False)
-    template_hits = parse_hmmsearch_a3m(query_sequence=input_sequence, a3m_string=a3m_string, skip_first=False)
+    template_hits = parse_hmmsearch_a3m(
+        query_sequence=input_sequence, a3m_string=a3m_string, skip_first=False
+    )
     return template_hits

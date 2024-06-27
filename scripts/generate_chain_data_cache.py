@@ -51,7 +51,9 @@ def parse_file(f, args, chain_cluster_size_dict):
 
         chain_dict = defaultdict(list)
         for i in range(aatype.shape[0]):
-            chain_dict[chain_index[i]].append(residue_constants.restypes_with_x[aatype[i]])
+            chain_dict[chain_index[i]].append(
+                residue_constants.restypes_with_x[aatype[i]]
+            )
 
         out = {}
         chain_tags = string.ascii_uppercase
@@ -104,7 +106,9 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("data_dir", type=str, help="Directory containing mmCIF or PDB files")
+    parser.add_argument(
+        "data_dir", type=str, help="Directory containing mmCIF or PDB files"
+    )
     parser.add_argument("output_path", type=str, help="Path for .json output")
     parser.add_argument(
         "--cluster_file",
@@ -117,9 +121,14 @@ if __name__ == "__main__":
             "size."
         ),
     )
-    parser.add_argument("--no_workers", type=int, default=4, help="Number of workers to use for parsing")
     parser.add_argument(
-        "--chunksize", type=int, default=10, help="How many files should be distributed to each worker at a time"
+        "--no_workers", type=int, default=4, help="Number of workers to use for parsing"
+    )
+    parser.add_argument(
+        "--chunksize",
+        type=int,
+        default=10,
+        help="How many files should be distributed to each worker at a time",
     )
 
     args = parser.parse_args()

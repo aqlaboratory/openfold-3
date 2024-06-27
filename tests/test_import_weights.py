@@ -19,7 +19,10 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from openfold3.core.utils.import_weights import import_jax_weights_, import_openfold_weights_
+from openfold3.core.utils.import_weights import (
+    import_jax_weights_,
+    import_openfold_weights_,
+)
 from openfold3.model_implementations.af2_monomer.config import model_config
 from openfold3.model_implementations.af2_monomer.model import AlphaFold
 from tests.config import consts
@@ -27,7 +30,10 @@ from tests.config import consts
 
 class TestImportWeights(unittest.TestCase):
     def test_import_jax_weights_(self):
-        npz_path = Path(__file__).parent.resolve() / f"../openfold3/resources/params/params_{consts.model}.npz"
+        npz_path = (
+            Path(__file__).parent.resolve()
+            / f"../openfold3/resources/params/params_{consts.model}.npz"
+        )
 
         c = model_config(consts.model)
         c.globals.blocks_per_ckpt = None
@@ -42,7 +48,9 @@ class TestImportWeights(unittest.TestCase):
         test_pairs = [
             # Normal linear weight
             (
-                torch.as_tensor(data[prefix + "structure_module/initial_projection//weights"]).transpose(-1, -2),
+                torch.as_tensor(
+                    data[prefix + "structure_module/initial_projection//weights"]
+                ).transpose(-1, -2),
                 model.structure_module.linear_in.weight,
             ),
             # Normal layer norm param
@@ -55,9 +63,13 @@ class TestImportWeights(unittest.TestCase):
             # From a stack
             (
                 torch.as_tensor(
-                    data[prefix + ("evoformer/evoformer_iteration/outer_product_mean/" "left_projection//weights")][
-                        1
-                    ].transpose(-1, -2)
+                    data[
+                        prefix
+                        + (
+                            "evoformer/evoformer_iteration/outer_product_mean/"
+                            "left_projection//weights"
+                        )
+                    ][1].transpose(-1, -2)
                 ),
                 model.evoformer.blocks[1].outer_product_mean.linear_1.weight,
             ),
@@ -68,7 +80,10 @@ class TestImportWeights(unittest.TestCase):
 
     def test_import_openfold_weights_(self):
         model_name = "initial_training"
-        pt_path = Path(__file__).parent.resolve() / f"../openfold3/resources/openfold_params/{model_name}.pt"
+        pt_path = (
+            Path(__file__).parent.resolve()
+            / f"../openfold3/resources/openfold_params/{model_name}.pt"
+        )
 
         if os.path.exists(pt_path):
             c = model_config(model_name)

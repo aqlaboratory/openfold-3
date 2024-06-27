@@ -38,7 +38,8 @@ def enforce_config_constraints(config):
 
     deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
     ds4s_is_installed = (
-        deepspeed_is_installed and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
+        deepspeed_is_installed
+        and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
     )
     if config.globals.use_deepspeed_evo_attention and not ds4s_is_installed:
         raise ValueError(
@@ -847,8 +848,16 @@ multimer_config_update = mlc.ConfigDict(
             },
             "template": {
                 "template_single_embedder": {"c_in": 34, "c_out": c_m},
-                "template_pair_embedder": {"c_in": c_z, "c_out": c_t, "c_dgram": 39, "c_aatype": 22},
-                "template_pair_stack": {"tri_mul_first": True, "fuse_projection_weights": True},
+                "template_pair_embedder": {
+                    "c_in": c_z,
+                    "c_out": c_t,
+                    "c_dgram": 39,
+                    "c_aatype": 22,
+                },
+                "template_pair_stack": {
+                    "tri_mul_first": True,
+                    "fuse_projection_weights": True,
+                },
                 "c_t": c_t,
                 "c_z": c_z,
                 "use_unit_vector": True,
@@ -869,8 +878,16 @@ multimer_config_update = mlc.ConfigDict(
         },
         "loss": {
             "fape": {
-                "intra_chain_backbone": {"clamp_distance": 10.0, "loss_unit_distance": 10.0, "weight": 0.5},
-                "interface_backbone": {"clamp_distance": 30.0, "loss_unit_distance": 20.0, "weight": 0.5},
+                "intra_chain_backbone": {
+                    "clamp_distance": 10.0,
+                    "loss_unit_distance": 10.0,
+                    "weight": 0.5,
+                },
+                "interface_backbone": {
+                    "clamp_distance": 30.0,
+                    "loss_unit_distance": 20.0,
+                    "weight": 0.5,
+                },
             },
             "masked_msa": {"num_classes": 22},
             "violation": {

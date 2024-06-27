@@ -7,7 +7,9 @@ import numpy
 import torch
 
 from openfold3.core.data import feature_pipeline
-from openfold3.core.data.data_pipeline import make_sequence_features_with_custom_template
+from openfold3.core.data.data_pipeline import (
+    make_sequence_features_with_custom_template,
+)
 from openfold3.core.np import protein
 from openfold3.core.utils.script_utils import (
     load_models_from_command_line,
@@ -58,25 +60,36 @@ def main(args):
     query_sequence = sequences[0]
     query_tag = tags[0]
     feature_dict = make_sequence_features_with_custom_template(
-        query_sequence, args.input_mmcif, args.template_id, args.chain_id, args.kalign_binary_path
+        query_sequence,
+        args.input_mmcif,
+        args.template_id,
+        args.chain_id,
+        args.kalign_binary_path,
     )
     processed_feature_dict = feature_processor.process_features(
         feature_dict,
         mode="predict",
     )
     processed_feature_dict = {
-        k: torch.as_tensor(v, device=args.model_device) for k, v in processed_feature_dict.items()
+        k: torch.as_tensor(v, device=args.model_device)
+        for k, v in processed_feature_dict.items()
     }
 
     model_generator = load_models_from_command_line(
-        config, args.model_device, args.openfold_checkpoint_path, args.jax_param_path, args.output_dir
+        config,
+        args.model_device,
+        args.openfold_checkpoint_path,
+        args.jax_param_path,
+        args.output_dir,
     )
     output_name = f"{query_tag}_{args.config_preset}"
     for model, output_directory in model_generator:
         out = run_model(model, processed_feature_dict, query_tag, args.output_dir)
 
         # Toss out the recycling dimensions --- we don't need them anymore
-        processed_feature_dict = tensor_tree_map(lambda x: numpy.array(x[..., -1].cpu()), processed_feature_dict)
+        processed_feature_dict = tensor_tree_map(
+            lambda x: numpy.array(x[..., -1].cpu()), processed_feature_dict
+        )
         out = tensor_tree_map(lambda x: numpy.array(x.cpu()), out)
 
         unrelaxed_protein = prep_output(
@@ -89,7 +102,9 @@ def main(args):
             args.subtract_plddt,
         )
 
-        unrelaxed_output_path = os.path.join(output_directory, f"{output_name}_unrelaxed.pdb")
+        unrelaxed_output_path = os.path.join(
+            output_directory, f"{output_name}_unrelaxed.pdb"
+        )
 
         with open(unrelaxed_output_path, "w") as fp:
             fp.write(protein.to_pdb(unrelaxed_protein))
@@ -97,17 +112,38 @@ def main(args):
         logger.info(f"Output written to {unrelaxed_output_path}...")
 
         logger.info(f"Running relaxation on {unrelaxed_output_path}...")
-        relax_protein(config, args.model_device, unrelaxed_protein, output_directory, output_name, False)
+        relax_protein(
+            config,
+            args.model_device,
+            unrelaxed_protein,
+            output_directory,
+            output_name,
+            False,
+        )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("input_fasta", type=str, help="the path to a fasta file containing a single sequence to thread")
-    parser.add_argument("input_mmcif", type=str, help="the path to an mmcif file to thread the sequence on to")
+    parser.add_argument(
+        "input_fasta",
+        type=str,
+        help="the path to a fasta file containing a single sequence to thread",
+    )
+    parser.add_argument(
+        "input_mmcif",
+        type=str,
+        help="the path to an mmcif file to thread the sequence on to",
+    )
 
-    parser.add_argument("--template_id", type=str, help="a PDB id or other identifier for the template")
+    parser.add_argument(
+        "--template_id", type=str, help="a PDB id or other identifier for the template"
+    )
 
-    parser.add_argument("--chain_id", type=str, help="""The chain ID of the chain in the template to use""")
+    parser.add_argument(
+        "--chain_id",
+        type=str,
+        help="""The chain ID of the chain in the template to use""",
+    )
 
     parser.add_argument(
         "--model_device",
@@ -158,7 +194,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.jax_param_path is None and args.openfold_checkpoint_path is None:
-        args.jax_param_path = os.path.join("openfold", "resources", "params", "params_" + args.config_preset + ".npz")
+        args.jax_param_path = os.path.join(
+            "openfold", "resources", "params", "params_" + args.config_preset + ".npz"
+        )
 
     if args.model_device == "cpu" and torch.cuda.is_available():
         logging.warning(

@@ -187,9 +187,13 @@ class AlphaFold(nn.Module):
             return False
 
         ca_idx = residue_constants.atom_order["CA"]
-        sq_diff = (distances(prev_pos[..., ca_idx, :]) - distances(next_pos[..., ca_idx, :])) ** 2
+        sq_diff = (
+            distances(prev_pos[..., ca_idx, :]) - distances(next_pos[..., ca_idx, :])
+        ) ** 2
         mask = mask[..., None] * mask[..., None, :]
-        sq_diff = masked_mean(mask=mask, value=sq_diff, dim=list(range(len(mask.shape))))
+        sq_diff = masked_mean(
+            mask=mask, value=sq_diff, dim=list(range(len(mask.shape)))
+        )
         diff = torch.sqrt(sq_diff + eps).item()
         return diff <= self.config.recycle_early_stop_tolerance
 
@@ -228,7 +232,9 @@ class AlphaFold(nn.Module):
             # Initialize the SingleSeq and pair representations
             # m: [*, 1, N, C_m]
             # z: [*, N, N, C_z]
-            m, z = self.input_embedder(feats["target_feat"], feats["residue_index"], feats["seq_embedding"])
+            m, z = self.input_embedder(
+                feats["target_feat"], feats["residue_index"], feats["seq_embedding"]
+            )
         else:
             # Initialize the MSA and pair representations
             # m: [*, S_c, N, C_m]
@@ -264,7 +270,9 @@ class AlphaFold(nn.Module):
                 requires_grad=False,
             )
 
-        pseudo_beta_x_prev = data_transforms.pseudo_beta_fn(feats["aatype"], x_prev, None).to(dtype=z.dtype)
+        pseudo_beta_x_prev = data_transforms.pseudo_beta_fn(
+            feats["aatype"], x_prev, None
+        ).to(dtype=z.dtype)
 
         # The recycling embedder is memory-intensive, so we offload first
         if self.globals.offload_inference and inplace_safe:
@@ -299,7 +307,9 @@ class AlphaFold(nn.Module):
 
         # Embed the templates + merge with MSA/pair embeddings
         if self.config.template.enabled:
-            template_feats = {k: v for k, v in feats.items() if k.startswith("template_")}
+            template_feats = {
+                k: v for k, v in feats.items() if k.startswith("template_")
+            }
 
             template_embeds = self.embed_templates(
                 template_feats,
@@ -324,7 +334,9 @@ class AlphaFold(nn.Module):
                 # [*, S, N]
                 if not self.globals.is_multimer:
                     torsion_angles_mask = feats["template_torsion_angles_mask"]
-                    msa_mask = torch.cat([feats["msa_mask"], torsion_angles_mask[..., 2]], dim=-2)
+                    msa_mask = torch.cat(
+                        [feats["msa_mask"], torsion_angles_mask[..., 2]], dim=-2
+                    )
                 else:
                     msa_mask = torch.cat(
                         [feats["msa_mask"], template_embeds["template_mask"]],
@@ -420,7 +432,9 @@ class AlphaFold(nn.Module):
             inplace_safe=inplace_safe,
             _offload_inference=self.globals.offload_inference,
         )
-        outputs["final_atom_positions"] = atom14_to_atom37(outputs["sm"]["positions"][-1], feats)
+        outputs["final_atom_positions"] = atom14_to_atom37(
+            outputs["sm"]["positions"][-1], feats
+        )
         outputs["final_atom_mask"] = feats["atom37_atom_exists"]
         outputs["final_affine_tensor"] = outputs["sm"]["frames"][-1]
 
@@ -434,7 +448,9 @@ class AlphaFold(nn.Module):
 
         early_stop = False
         if self.globals.is_multimer:
-            early_stop = self.tolerance_reached(x_prev, outputs["final_atom_positions"], seq_mask)
+            early_stop = self.tolerance_reached(
+                x_prev, outputs["final_atom_positions"], seq_mask
+            )
 
         del x_prev
 
@@ -534,7 +550,9 @@ class AlphaFold(nn.Module):
                         torch.clear_autocast_cache()
 
                 # Run the next iteration of the model
-                outputs, m_1_prev, z_prev, x_prev, early_stop = self.iteration(feats, prevs, _recycle=(num_iters > 1))
+                outputs, m_1_prev, z_prev, x_prev, early_stop = self.iteration(
+                    feats, prevs, _recycle=(num_iters > 1)
+                )
 
                 num_recycles += 1
 
@@ -545,7 +563,9 @@ class AlphaFold(nn.Module):
                 else:
                     break
 
-        outputs["num_recycles"] = torch.tensor(num_recycles, device=feats["aatype"].device)
+        outputs["num_recycles"] = torch.tensor(
+            num_recycles, device=feats["aatype"].device
+        )
 
         if "asym_id" in batch:
             outputs["asym_id"] = feats["asym_id"]

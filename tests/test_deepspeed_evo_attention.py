@@ -30,7 +30,11 @@ from openfold3.core.model.primitives.attention import Attention
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from tests.config import consts
-from tests.data_utils import random_asym_ids, random_attention_inputs, random_template_feats
+from tests.data_utils import (
+    random_asym_ids,
+    random_attention_inputs,
+    random_template_feats,
+)
 
 
 @compare_utils.skip_unless_ds4s_installed()
@@ -45,7 +49,11 @@ class TestDeepSpeedKernel(unittest.TestCase):
         eps = 2e-2
 
         q, kv, mask, biases = random_attention_inputs(
-            batch_size=batch_size, n_seq=n_seq, n=n_res, no_heads=no_heads, c_hidden=c_hidden
+            batch_size=batch_size,
+            n_seq=n_seq,
+            n=n_res,
+            no_heads=no_heads,
+            c_hidden=c_hidden,
         )
 
         a = Attention(c_hidden, c_hidden, c_hidden, c_hidden, no_heads).cuda()
@@ -87,7 +95,12 @@ class TestDeepSpeedKernel(unittest.TestCase):
         eps = consts.eps
 
         q, kv, mask, biases = random_attention_inputs(
-            batch_size=batch_size, n_seq=n_seq, n=n_res, no_heads=no_heads, c_hidden=c_hidden, requires_grad=True
+            batch_size=batch_size,
+            n_seq=n_seq,
+            n=n_res,
+            no_heads=no_heads,
+            c_hidden=c_hidden,
+            requires_grad=True,
         )
 
         attn = Attention(c_hidden, c_hidden, c_hidden, c_hidden, no_heads).cuda()
@@ -116,7 +129,9 @@ class TestDeepSpeedKernel(unittest.TestCase):
         biases_repro = [clone(b) for b in biases]
 
         a_repro = init_attn()
-        out_repro = a_repro(q_repro, kv_repro, biases=biases_repro, use_deepspeed_evo_attention=True)
+        out_repro = a_repro(
+            q_repro, kv_repro, biases=biases_repro, use_deepspeed_evo_attention=True
+        )
         loss_repro = torch.mean(out_repro)
         loss_repro.backward()
 
@@ -287,7 +302,9 @@ class TestDeepSpeedKernel(unittest.TestCase):
             batch["asym_id"] = np.ones((4, n_res))
             batch["entity_id"] = np.ones((4, n_res))
             batch["sym_id"] = np.ones((4, n_res))
-            batch["extra_deletion_matrix"] = np.random.randint(0, 2, size=(4, n_extra_seq, n_res))
+            batch["extra_deletion_matrix"] = np.random.randint(
+                0, 2, size=(4, n_extra_seq, n_res)
+            )
 
         batch = {k: torch.as_tensor(v).cuda() for k, v in batch.items()}
 
@@ -296,7 +313,9 @@ class TestDeepSpeedKernel(unittest.TestCase):
         batch["extra_msa"] = batch["extra_msa"].long()
         batch["residx_atom37_to_atom14"] = batch["residx_atom37_to_atom14"].long()
         # print(batch["target_feat"].shape)
-        batch["target_feat"] = torch.nn.functional.one_hot(batch["aatype"], consts.msa_logits - 1).to(torch.float32)
+        batch["target_feat"] = torch.nn.functional.one_hot(
+            batch["aatype"], consts.msa_logits - 1
+        ).to(torch.float32)
         batch["template_all_atom_mask"] = batch["template_all_atom_masks"]
         batch.update(data_transforms.atom37_to_torsion_angles("template_")(batch))
 

@@ -334,7 +334,9 @@ class EvoformerStack(MSAStack):
 
         self.linear = Linear(c_m, c_s)
 
-    def _wrap_up(self, m: torch.Tensor, z: torch.Tensor) -> [torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _wrap_up(
+        self, m: torch.Tensor, z: torch.Tensor
+    ) -> [torch.Tensor, torch.Tensor, torch.Tensor]:
         """Generate the single embedding and return all three embeddings.
 
         Returns:

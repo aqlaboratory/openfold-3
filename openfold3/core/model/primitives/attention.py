@@ -25,7 +25,10 @@ from typing import List, Optional, Tuple
 from .linear import Linear
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
-ds4s_is_installed = deepspeed_is_installed and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
+ds4s_is_installed = (
+    deepspeed_is_installed
+    and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
+)
 if deepspeed_is_installed:
     import deepspeed
 
@@ -64,7 +67,9 @@ def softmax_no_cast(t: torch.Tensor, dim: int = -1) -> torch.Tensor:
     type bfloat16
     """
     d = t.dtype
-    deepspeed_is_initialized = deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
+    deepspeed_is_initialized = (
+        deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
+    )
     if d is torch.bfloat16 and not deepspeed_is_initialized:
         with torch.cuda.amp.autocast(enabled=False):
             s = torch.nn.functional.softmax(t, dim=dim)
@@ -75,7 +80,12 @@ def softmax_no_cast(t: torch.Tensor, dim: int = -1) -> torch.Tensor:
 
 
 # @torch.jit.script
-def _attention(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, biases: List[torch.Tensor]) -> torch.Tensor:
+def _attention(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    biases: List[torch.Tensor],
+) -> torch.Tensor:
     # [*, H, C_hidden, K]
     key = permute_final_dims(key, (1, 0))
 
@@ -124,15 +134,25 @@ def attention_chunked_trainable(
         v_chunk = value[idx_tup]
 
         def _slice_bias(b):
-            idx[chunk_dim] = slice(start, end) if b.shape[chunk_dim] != 1 else slice(None)
+            idx[chunk_dim] = (
+                slice(start, end) if b.shape[chunk_dim] != 1 else slice(None)
+            )
             return b[tuple(idx)]
 
         if checkpoint:
             bias_1_chunk, bias_2_chunk = [
-                _slice_bias(b) if b is not None else None for b in (biases + [None, None])[:2]
+                _slice_bias(b) if b is not None else None
+                for b in (biases + [None, None])[:2]
             ]
 
-            o_chunk = checkpoint_fn(_checkpointable_attention, q_chunk, k_chunk, v_chunk, bias_1_chunk, bias_2_chunk)
+            o_chunk = checkpoint_fn(
+                _checkpointable_attention,
+                q_chunk,
+                k_chunk,
+                v_chunk,
+                bias_1_chunk,
+                bias_2_chunk,
+            )
         else:
             bias_chunks = [_slice_bias(b) for b in biases]
 
@@ -187,14 +207,22 @@ class Attention(nn.Module):
         # DISCREPANCY: c_hidden is not the per-head channel dimension, as
         # stated in the supplement, but the overall channel dimension.
 
-        self.linear_q = Linear(self.c_q, self.c_hidden * self.no_heads, bias=False, init="glorot")
-        self.linear_k = Linear(self.c_k, self.c_hidden * self.no_heads, bias=False, init="glorot")
-        self.linear_v = Linear(self.c_v, self.c_hidden * self.no_heads, bias=False, init="glorot")
+        self.linear_q = Linear(
+            self.c_q, self.c_hidden * self.no_heads, bias=False, init="glorot"
+        )
+        self.linear_k = Linear(
+            self.c_k, self.c_hidden * self.no_heads, bias=False, init="glorot"
+        )
+        self.linear_v = Linear(
+            self.c_v, self.c_hidden * self.no_heads, bias=False, init="glorot"
+        )
         self.linear_o = Linear(self.c_hidden * self.no_heads, self.c_q, init="final")
 
         self.linear_g = None
         if self.gating:
-            self.linear_g = Linear(self.c_q, self.c_hidden * self.no_heads, init="gating")
+            self.linear_g = Linear(
+                self.c_q, self.c_hidden * self.no_heads, init="gating"
+            )
 
         self.sigmoid = nn.Sigmoid()
 
@@ -279,12 +307,23 @@ class Attention(nn.Module):
             [*, Q, C_q] attention update
         """
         if use_lma and (lma_q_chunk_size is None or lma_kv_chunk_size is None):
-            raise ValueError("If use_lma is specified, lma_q_chunk_size and " "lma_kv_chunk_size must be provided")
+            raise ValueError(
+                "If use_lma is specified, lma_q_chunk_size and "
+                "lma_kv_chunk_size must be provided"
+            )
 
         if use_flash and biases is not None:
-            raise ValueError("use_flash is incompatible with the bias option. For masking, " "use flash_mask instead")
+            raise ValueError(
+                "use_flash is incompatible with the bias option. For masking, "
+                "use flash_mask instead"
+            )
 
-        attn_options = [use_memory_efficient_kernel, use_deepspeed_evo_attention, use_lma, use_flash]
+        attn_options = [
+            use_memory_efficient_kernel,
+            use_deepspeed_evo_attention,
+            use_lma,
+            use_flash,
+        ]
         if sum(attn_options) > 1:
             raise ValueError("Choose at most one alternative attention algorithm")
 
@@ -299,17 +338,28 @@ class Attention(nn.Module):
 
         if use_memory_efficient_kernel:
             if not attn_core_is_installed:
-                raise ValueError("Memory-efficient kernel attention_core must be installed")
+                raise ValueError(
+                    "Memory-efficient kernel attention_core must be installed"
+                )
             if len(biases) > 2:
-                raise ValueError("If use_memory_efficient_kernel is True, you may only " "provide up to two bias terms")
+                raise ValueError(
+                    "If use_memory_efficient_kernel is True, you may only "
+                    "provide up to two bias terms"
+                )
             o = attention_core(q, k, v, *((biases + [None] * 2)[:2]))
             o = o.transpose(-2, -3)
         elif use_deepspeed_evo_attention:
             if len(biases) > 2:
-                raise ValueError("If use_deepspeed_evo_attention is True, you may only " "provide up to two bias terms")
+                raise ValueError(
+                    "If use_deepspeed_evo_attention is True, you may only "
+                    "provide up to two bias terms"
+                )
             o = _deepspeed_evo_attn(q, k, v, biases)
         elif use_lma:
-            biases = [b.expand(b.shape[:-2] + (q_x.shape[-2],) + (kv_x.shape[-2],)) for b in biases]
+            biases = [
+                b.expand(b.shape[:-2] + (q_x.shape[-2],) + (kv_x.shape[-2],))
+                for b in biases
+            ]
             o = _lma(q, k, v, biases, lma_q_chunk_size, lma_kv_chunk_size)
             o = o.transpose(-2, -3)
         elif use_flash:
@@ -359,7 +409,9 @@ class GlobalAttention(nn.Module):
         use_lma: bool = False,
     ) -> torch.Tensor:
         # [*, N_res, C_in]
-        q = torch.sum(m * mask.unsqueeze(-1), dim=-2) / (torch.sum(mask, dim=-1)[..., None] + self.eps)
+        q = torch.sum(m * mask.unsqueeze(-1), dim=-2) / (
+            torch.sum(mask, dim=-1)[..., None] + self.eps
+        )
 
         # [*, N_res, H * C_hidden]
         q = self.linear_q(q)
@@ -388,7 +440,9 @@ class GlobalAttention(nn.Module):
                 v,
             )
         else:
-            o = _lma(q, k, v, [bias], DEFAULT_LMA_Q_CHUNK_SIZE, DEFAULT_LMA_KV_CHUNK_SIZE)
+            o = _lma(
+                q, k, v, [bias], DEFAULT_LMA_Q_CHUNK_SIZE, DEFAULT_LMA_KV_CHUNK_SIZE
+            )
 
         # [*, N_res, N_seq, C_hidden]
         g = self.sigmoid(self.linear_g(m))
@@ -498,7 +552,9 @@ def _lma(
         for kv_s in range(0, no_kv, kv_chunk_size):
             k_chunk = k[..., kv_s : kv_s + kv_chunk_size, :]
             v_chunk = v[..., kv_s : kv_s + kv_chunk_size, :]
-            small_bias_chunks = [b[..., kv_s : kv_s + kv_chunk_size] for b in large_bias_chunks]
+            small_bias_chunks = [
+                b[..., kv_s : kv_s + kv_chunk_size] for b in large_bias_chunks
+            ]
 
             a = torch.einsum(
                 "...hqd,...hkd->...hqk",
@@ -567,7 +623,9 @@ def _flash_attn(q, k, v, kv_mask):
     q = q.reshape(-1, *q.shape[-2:])
 
     q_max_s = n
-    q_cu_seqlens = torch.arange(0, (batch_size + 1) * n, step=n, dtype=torch.int32, device=q.device)
+    q_cu_seqlens = torch.arange(
+        0, (batch_size + 1) * n, step=n, dtype=torch.int32, device=q.device
+    )
 
     # [B_flat, N, 2, H, C]
     kv = torch.stack([k, v], dim=-3)

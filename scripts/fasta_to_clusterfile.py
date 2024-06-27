@@ -74,7 +74,8 @@ def main(args):
 
     print("Cleaning up mmseqs2 output...")
     mmseqs_outputs = [
-        output_dir / f"{mmseqs_prefix}_{suffix}" for suffix in ["cluster.tsv", "rep_seq.fasta", "all_seqs.fasta"]
+        output_dir / f"{mmseqs_prefix}_{suffix}"
+        for suffix in ["cluster.tsv", "rep_seq.fasta", "all_seqs.fasta"]
     ]
     for file in mmseqs_outputs:
         file.unlink()
@@ -96,7 +97,12 @@ if __name__ == "__main__":
         help="Output file. Each line will contain a space-separated list of {PDB_ID}_{CHAIN_ID} belonging to the same cluster.",
     )
     parser.add_argument("mmseqs_binary_path", type=str, help="Path to mmseqs binary")
-    parser.add_argument("--seq-id", type=float, default=0.4, help="Sequence identity threshold for clustering.")
+    parser.add_argument(
+        "--seq-id",
+        type=float,
+        default=0.4,
+        help="Sequence identity threshold for clustering.",
+    )
 
     args = parser.parse_args()
 

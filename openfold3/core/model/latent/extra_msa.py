@@ -132,7 +132,9 @@ class ExtraMSABlock(MSABlock):
                     chunk_size=_attn_chunk_size,
                     use_lma=use_lma,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                    use_memory_efficient_kernel=not (use_lma or use_deepspeed_evo_attention),
+                    use_memory_efficient_kernel=not (
+                        use_lma or use_deepspeed_evo_attention
+                    ),
                     _checkpoint_chunks=self.ckpt if torch.is_grad_enabled() else False,
                 )
             ),

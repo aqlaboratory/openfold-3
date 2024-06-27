@@ -33,7 +33,10 @@ from openfold3.core.data import (
     parsers,
     templates,
 )
-from openfold3.core.data.templates import empty_template_feats, get_custom_template_features
+from openfold3.core.data.templates import (
+    empty_template_feats,
+    get_custom_template_features,
+)
 from openfold3.core.data.tools import hhblits, hhsearch, hmmsearch, jackhmmer
 from openfold3.core.np import protein, residue_constants
 
@@ -59,7 +62,9 @@ def make_template_features(
     return template_features
 
 
-def unify_template_features(template_feature_list: Sequence[FeatureDict]) -> FeatureDict:
+def unify_template_features(
+    template_feature_list: Sequence[FeatureDict],
+) -> FeatureDict:
     out_dicts = []
     seq_lens = [fd["template_aatype"].shape[1] for fd in template_feature_list]
     for i, fd in enumerate(template_feature_list):
@@ -93,14 +98,18 @@ def unify_template_features(template_feature_list: Sequence[FeatureDict]) -> Fea
             out_dicts.append(out_dict)
 
     if len(out_dicts) > 0:
-        out_dict = {k: np.concatenate([od[k] for od in out_dicts]) for k in out_dicts[0]}
+        out_dict = {
+            k: np.concatenate([od[k] for od in out_dicts]) for k in out_dicts[0]
+        }
     else:
         out_dict = empty_template_feats(sum(seq_lens))
 
     return out_dict
 
 
-def make_sequence_features(sequence: str, description: str, num_res: int) -> FeatureDict:
+def make_sequence_features(
+    sequence: str, description: str, num_res: int
+) -> FeatureDict:
     """Construct a feature dict of sequence features."""
     features = {}
     features["aatype"] = residue_constants.sequence_to_onehot(
@@ -116,7 +125,9 @@ def make_sequence_features(sequence: str, description: str, num_res: int) -> Fea
     return features
 
 
-def make_mmcif_features(mmcif_object: mmcif_parsing.MmcifObject, chain_id: str) -> FeatureDict:
+def make_mmcif_features(
+    mmcif_object: mmcif_parsing.MmcifObject, chain_id: str
+) -> FeatureDict:
     input_sequence = mmcif_object.chain_to_seqres[chain_id]
     description = "_".join([mmcif_object.file_id, chain_id])
     num_res = len(input_sequence)
@@ -131,13 +142,19 @@ def make_mmcif_features(mmcif_object: mmcif_parsing.MmcifObject, chain_id: str) 
         )
     )
 
-    all_atom_positions, all_atom_mask = mmcif_parsing.get_atom_coords(mmcif_object=mmcif_object, chain_id=chain_id)
+    all_atom_positions, all_atom_mask = mmcif_parsing.get_atom_coords(
+        mmcif_object=mmcif_object, chain_id=chain_id
+    )
     mmcif_feats["all_atom_positions"] = all_atom_positions
     mmcif_feats["all_atom_mask"] = all_atom_mask
 
-    mmcif_feats["resolution"] = np.array([mmcif_object.header["resolution"]], dtype=np.float32)
+    mmcif_feats["resolution"] = np.array(
+        [mmcif_object.header["resolution"]], dtype=np.float32
+    )
 
-    mmcif_feats["release_date"] = np.array([mmcif_object.header["release_date"].encode("utf-8")], dtype=object)
+    mmcif_feats["release_date"] = np.array(
+        [mmcif_object.header["release_date"].encode("utf-8")], dtype=object
+    )
 
     mmcif_feats["is_distillation"] = np.array(0.0, dtype=np.float32)
 
@@ -145,7 +162,9 @@ def make_mmcif_features(mmcif_object: mmcif_parsing.MmcifObject, chain_id: str) 
 
 
 def _aatype_to_str_sequence(aatype):
-    return "".join([residue_constants.restypes_with_x[aatype[i]] for i in range(len(aatype))])
+    return "".join(
+        [residue_constants.restypes_with_x[aatype[i]] for i in range(len(aatype))]
+    )
 
 
 def make_protein_features(
@@ -171,7 +190,9 @@ def make_protein_features(
     pdb_feats["all_atom_mask"] = all_atom_mask.astype(np.float32)
 
     pdb_feats["resolution"] = np.array([0.0]).astype(np.float32)
-    pdb_feats["is_distillation"] = np.array(1.0 if _is_distillation else 0.0).astype(np.float32)
+    pdb_feats["is_distillation"] = np.array(1.0 if _is_distillation else 0.0).astype(
+        np.float32
+    )
 
     return pdb_feats
 
@@ -182,7 +203,9 @@ def make_pdb_features(
     is_distillation: bool = True,
     confidence_threshold: float = 50.0,
 ) -> FeatureDict:
-    pdb_feats = make_protein_features(protein_object, description, _is_distillation=True)
+    pdb_feats = make_protein_features(
+        protein_object, description, _is_distillation=True
+    )
 
     if is_distillation:
         high_confidence = protein_object.b_factors > confidence_threshold
@@ -208,10 +231,14 @@ def make_msa_features(msas: Sequence[parsers.Msa]) -> FeatureDict:
             if sequence in seen_sequences:
                 continue
             seen_sequences.add(sequence)
-            int_msa.append([residue_constants.HHBLITS_AA_TO_ID[res] for res in sequence])
+            int_msa.append(
+                [residue_constants.HHBLITS_AA_TO_ID[res] for res in sequence]
+            )
 
             deletion_matrix.append(msa.deletion_matrix[sequence_index])
-            identifiers = msa_identifiers.get_identifiers(msa.descriptions[sequence_index])
+            identifiers = msa_identifiers.get_identifiers(
+                msa.descriptions[sequence_index]
+            )
             species_ids.append(identifiers.species_id.encode("utf-8"))
 
     num_res = len(msas[0].sequences[0])
@@ -246,7 +273,11 @@ def run_msa_tool(
 
 def make_dummy_msa_obj(input_sequence) -> parsers.Msa:
     deletion_matrix = [[0 for _ in input_sequence]]
-    return parsers.Msa(sequences=[input_sequence], deletion_matrix=deletion_matrix, descriptions=["dummy"])
+    return parsers.Msa(
+        sequences=[input_sequence],
+        deletion_matrix=deletion_matrix,
+        descriptions=["dummy"],
+    )
 
 
 # Generate 1-sequence MSA features having only the input sequence
@@ -271,7 +302,9 @@ def make_sequence_features_with_custom_template(
 
     msa_data = [sequence]
     deletion_matrix = [[0 for _ in sequence]]
-    msa_data_obj = parsers.Msa(sequences=msa_data, deletion_matrix=deletion_matrix, descriptions=None)
+    msa_data_obj = parsers.Msa(
+        sequences=msa_data, deletion_matrix=deletion_matrix, descriptions=None
+    )
 
     msa_features = make_msa_features([msa_data_obj])
     template_features = get_custom_template_features(
@@ -411,7 +444,9 @@ class AlignmentRunner:
         self.jackhmmer_uniprot_runner = None
         if uniprot_database_path is not None:
             self.jackhmmer_uniprot_runner = jackhmmer.Jackhmmer(
-                binary_path=jackhmmer_binary_path, database_path=uniprot_database_path, n_cpu=no_cpus
+                binary_path=jackhmmer_binary_path,
+                database_path=uniprot_database_path,
+                n_cpu=no_cpus,
             )
 
         if template_searcher is not None and self.jackhmmer_uniref90_runner is None:
@@ -442,10 +477,14 @@ class AlignmentRunner:
 
             if self.template_searcher is not None:
                 if self.template_searcher.input_format == "sto":
-                    pdb_templates_result = self.template_searcher.query(template_msa, output_dir=output_dir)
+                    pdb_templates_result = self.template_searcher.query(
+                        template_msa, output_dir=output_dir
+                    )
                 elif self.template_searcher.input_format == "a3m":
                     uniref90_msa_as_a3m = parsers.convert_stockholm_to_a3m(template_msa)
-                    pdb_templates_result = self.template_searcher.query(uniref90_msa_as_a3m, output_dir=output_dir)
+                    pdb_templates_result = self.template_searcher.query(
+                        uniref90_msa_as_a3m, output_dir=output_dir
+                    )
                 else:
                     fmt = self.template_searcher.input_format
                     raise ValueError(f"Unrecognized template input format: {fmt}")
@@ -508,12 +547,18 @@ def _make_chain_id_map(
     """Makes a mapping from PDB-format chain ID to sequence and description."""
     if len(sequences) != len(descriptions):
         raise ValueError(
-            "sequences and descriptions must have equal length. " f"Got {len(sequences)} != {len(descriptions)}."
+            "sequences and descriptions must have equal length. "
+            f"Got {len(sequences)} != {len(descriptions)}."
         )
     if len(sequences) > protein.PDB_MAX_CHAINS:
-        raise ValueError("Cannot process more chains than the PDB format supports. " f"Got {len(sequences)} chains.")
+        raise ValueError(
+            "Cannot process more chains than the PDB format supports. "
+            f"Got {len(sequences)} chains."
+        )
     chain_id_map = {}
-    for chain_id, sequence, description in zip(protein.PDB_CHAIN_IDS, sequences, descriptions):
+    for chain_id, sequence, description in zip(
+        protein.PDB_CHAIN_IDS, sequences, descriptions
+    ):
         chain_id_map[chain_id] = _FastaChain(sequence=sequence, description=description)
     return chain_id_map
 
@@ -526,11 +571,18 @@ def temp_fasta_file(fasta_str: str):
         yield fasta_file.name
 
 
-def convert_monomer_features(monomer_features: FeatureDict, chain_id: str) -> FeatureDict:
+def convert_monomer_features(
+    monomer_features: FeatureDict, chain_id: str
+) -> FeatureDict:
     """Reshapes and modifies monomer features for multimer models."""
     converted = {}
     converted["auth_chain_id"] = np.asarray(chain_id, dtype=object)
-    unnecessary_leading_dim_feats = {"sequence", "domain_name", "num_alignments", "seq_length"}
+    unnecessary_leading_dim_feats = {
+        "sequence",
+        "domain_name",
+        "num_alignments",
+        "seq_length",
+    }
     for feature_name, feature in monomer_features.items():
         if feature_name in unnecessary_leading_dim_feats:
             # asarray ensures it's a np.ndarray.
@@ -598,11 +650,17 @@ def add_assembly_features(
     chain_id = 1
     for entity_id, group_chain_features in grouped_chains.items():
         for sym_id, chain_features in enumerate(group_chain_features, start=1):
-            new_all_chain_features[f"{int_id_to_str_id(entity_id)}_{sym_id}"] = chain_features
+            new_all_chain_features[f"{int_id_to_str_id(entity_id)}_{sym_id}"] = (
+                chain_features
+            )
             seq_length = chain_features["seq_length"]
-            chain_features["asym_id"] = (chain_id * np.ones(seq_length)).astype(np.int64)
+            chain_features["asym_id"] = (chain_id * np.ones(seq_length)).astype(
+                np.int64
+            )
             chain_features["sym_id"] = (sym_id * np.ones(seq_length)).astype(np.int64)
-            chain_features["entity_id"] = (entity_id * np.ones(seq_length)).astype(np.int64)
+            chain_features["entity_id"] = (entity_id * np.ones(seq_length)).astype(
+                np.int64
+            )
             chain_id += 1
 
     return new_all_chain_features
@@ -613,8 +671,12 @@ def pad_msa(np_example, min_num_seq):
     num_seq = np_example["msa"].shape[0]
     if num_seq < min_num_seq:
         for feat in ("msa", "deletion_matrix", "bert_mask", "msa_mask"):
-            np_example[feat] = np.pad(np_example[feat], ((0, min_num_seq - num_seq), (0, 0)))
-        np_example["cluster_bias_mask"] = np.pad(np_example["cluster_bias_mask"], ((0, min_num_seq - num_seq),))
+            np_example[feat] = np.pad(
+                np_example[feat], ((0, min_num_seq - num_seq), (0, 0))
+            )
+        np_example["cluster_bias_mask"] = np.pad(
+            np_example["cluster_bias_mask"], ((0, min_num_seq - num_seq),)
+        )
     return np_example
 
 
@@ -627,7 +689,9 @@ class DataPipeline:
     ):
         self.template_featurizer = template_featurizer
 
-    def _parse_msa_data(self, alignment_dir: str, alignment_index: Optional[Any] = None) -> Mapping[str, Any]:
+    def _parse_msa_data(
+        self, alignment_dir: str, alignment_index: Optional[Any] = None
+    ) -> Mapping[str, Any]:
         msa_data = {}
         if alignment_index is not None:
             fp = open(os.path.join(alignment_dir, alignment_index["db"]), "rb")
@@ -672,7 +736,10 @@ class DataPipeline:
         return msa_data
 
     def _parse_template_hit_files(
-        self, alignment_dir: str, input_sequence: str, alignment_index: Optional[Any] = None
+        self,
+        alignment_dir: str,
+        input_sequence: str,
+        alignment_index: Optional[Any] = None,
     ) -> Mapping[str, Any]:
         all_hits = {}
         if alignment_index is not None:
@@ -736,7 +803,10 @@ class DataPipeline:
         return list(msa_data.values())
 
     def _process_msa_feats(
-        self, alignment_dir: str, input_sequence: Optional[str] = None, alignment_index: Optional[Any] = None
+        self,
+        alignment_dir: str,
+        input_sequence: Optional[str] = None,
+        alignment_index: Optional[Any] = None,
     ) -> Mapping[str, Any]:
         msas = self._get_msas(alignment_dir, input_sequence, alignment_index)
         msa_features = make_msa_features(msas=msas)
@@ -801,9 +871,16 @@ class DataPipeline:
             msa_features = make_dummy_msa_feats(input_sequence)
             sequence_embedding_features = self._process_seqemb_features(alignment_dir)
         else:
-            msa_features = self._process_msa_feats(alignment_dir, input_sequence, alignment_index)
+            msa_features = self._process_msa_feats(
+                alignment_dir, input_sequence, alignment_index
+            )
 
-        return {**sequence_features, **msa_features, **template_features, **sequence_embedding_features}
+        return {
+            **sequence_features,
+            **msa_features,
+            **template_features,
+            **sequence_embedding_features,
+        }
 
     def process_mmcif(
         self,
@@ -830,10 +907,14 @@ class DataPipeline:
 
         input_sequence = mmcif.chain_to_seqres[chain_id]
         hits = self._parse_template_hit_files(
-            alignment_dir=alignment_dir, input_sequence=input_sequence, alignment_index=alignment_index
+            alignment_dir=alignment_dir,
+            input_sequence=input_sequence,
+            alignment_index=alignment_index,
         )
 
-        template_features = make_template_features(input_sequence, hits, self.template_featurizer)
+        template_features = make_template_features(
+            input_sequence, hits, self.template_featurizer
+        )
 
         sequence_embedding_features = {}
         # If using seqemb mode, generate a dummy MSA features using just the sequence
@@ -841,9 +922,16 @@ class DataPipeline:
             msa_features = make_dummy_msa_feats(input_sequence)
             sequence_embedding_features = self._process_seqemb_features(alignment_dir)
         else:
-            msa_features = self._process_msa_feats(alignment_dir, input_sequence, alignment_index)
+            msa_features = self._process_msa_feats(
+                alignment_dir, input_sequence, alignment_index
+            )
 
-        return {**mmcif_feats, **template_features, **msa_features, **sequence_embedding_features}
+        return {
+            **mmcif_feats,
+            **template_features,
+            **msa_features,
+            **sequence_embedding_features,
+        }
 
     def process_pdb(
         self,
@@ -874,7 +962,9 @@ class DataPipeline:
         protein_object = protein.from_pdb_string(pdb_str, chain_id)
         input_sequence = _aatype_to_str_sequence(protein_object.aatype)
         description = os.path.splitext(os.path.basename(pdb_path))[0].upper()
-        pdb_feats = make_pdb_features(protein_object, description, is_distillation=is_distillation)
+        pdb_feats = make_pdb_features(
+            protein_object, description, is_distillation=is_distillation
+        )
 
         hits = self._parse_template_hit_files(
             alignment_dir=alignment_dir,
@@ -894,9 +984,16 @@ class DataPipeline:
             msa_features = make_dummy_msa_feats(input_sequence)
             sequence_embedding_features = self._process_seqemb_features(alignment_dir)
         else:
-            msa_features = self._process_msa_feats(alignment_dir, input_sequence, alignment_index)
+            msa_features = self._process_msa_feats(
+                alignment_dir, input_sequence, alignment_index
+            )
 
-        return {**pdb_feats, **template_features, **msa_features, **sequence_embedding_features}
+        return {
+            **pdb_feats,
+            **template_features,
+            **msa_features,
+            **sequence_embedding_features,
+        }
 
     def process_core(
         self,
@@ -936,7 +1033,12 @@ class DataPipeline:
         else:
             msa_features = self._process_msa_feats(alignment_dir, input_sequence)
 
-        return {**core_feats, **template_features, **msa_features, **sequence_embedding_features}
+        return {
+            **core_feats,
+            **template_features,
+            **msa_features,
+            **sequence_embedding_features,
+        }
 
     def process_multiseq_fasta(
         self,
@@ -988,7 +1090,10 @@ class DataPipeline:
         for i, (msas, deletion_mats) in msa_it:
             prec, post = sum(seq_lens[:i]), sum(seq_lens[i + 1 :])
             msas = [[prec * "-" + seq + post * "-" for seq in msa] for msa in msas]
-            deletion_mats = [[prec * [0] + dml + post * [0] for dml in deletion_mat] for deletion_mat in deletion_mats]
+            deletion_mats = [
+                [prec * [0] + dml + post * [0] for dml in deletion_mat]
+                for deletion_mat in deletion_mats
+            ]
 
             assert len(msas[0][-1]) == len(input_sequence)
 
@@ -996,7 +1101,11 @@ class DataPipeline:
             final_deletion_mat.extend(deletion_mats)
             final_msa_obj.extend(
                 [
-                    parsers.Msa(sequences=msas[k], deletion_matrix=deletion_mats[k], descriptions=None)
+                    parsers.Msa(
+                        sequences=msas[k],
+                        deletion_matrix=deletion_mats[k],
+                        descriptions=None,
+                    )
                     for k in range(len(msas))
                 ]
             )
@@ -1006,7 +1115,9 @@ class DataPipeline:
         template_feature_list = []
         for seq, desc in zip(input_seqs, input_descs):
             alignment_dir = os.path.join(super_alignment_dir, desc)
-            hits = self._parse_template_hit_files(alignment_dir=alignment_dir, input_sequence=seq, alignment_index=None)
+            hits = self._parse_template_hit_files(
+                alignment_dir=alignment_dir, input_sequence=seq, alignment_index=None
+            )
 
             template_features = make_template_features(
                 seq,
@@ -1060,13 +1171,17 @@ class DataPipelineMultimer:
 
         with temp_fasta_file(chain_fasta_str) as chain_fasta_path:
             chain_features = self._monomer_data_pipeline.process_fasta(
-                fasta_path=chain_fasta_path, alignment_dir=chain_alignment_dir, alignment_index=chain_alignment_index
+                fasta_path=chain_fasta_path,
+                alignment_dir=chain_alignment_dir,
+                alignment_index=chain_alignment_index,
             )
 
             # We only construct the pairing features if there are 2 or more unique
             # sequences.
             if not is_homomer_or_monomer:
-                all_seq_msa_features = self._all_seq_msa_features(chain_alignment_dir, chain_alignment_index)
+                all_seq_msa_features = self._all_seq_msa_features(
+                    chain_alignment_dir, chain_alignment_index
+                )
                 chain_features.update(all_seq_msa_features)
         return chain_features
 
@@ -1082,7 +1197,11 @@ class DataPipelineMultimer:
                 return msa
 
             start, size = next(
-                iter((start, size) for name, start, size in alignment_index["files"] if name == "uniprot_hits.sto")
+                iter(
+                    (start, size)
+                    for name, start, size in alignment_index["files"]
+                    if name == "uniprot_hits.sto"
+                )
             )
 
             msa = parsers.parse_stockholm(read_msa(start, size))
@@ -1092,7 +1211,8 @@ class DataPipelineMultimer:
             if not os.path.exists(uniprot_msa_path):
                 chain_id = os.path.basename(os.path.normpath(alignment_dir))
                 raise ValueError(
-                    f"Missing 'uniprot_hits.sto' for {chain_id}. " f"This is required for Multimer MSA pairing."
+                    f"Missing 'uniprot_hits.sto' for {chain_id}. "
+                    f"This is required for Multimer MSA pairing."
                 )
 
             with open(uniprot_msa_path, "r") as fp:
@@ -1101,10 +1221,14 @@ class DataPipelineMultimer:
 
         all_seq_features = make_msa_features([msa])
         valid_feats = msa_pairing.MSA_FEATURES + ("msa_species_identifiers",)
-        feats = {f"{k}_all_seq": v for k, v in all_seq_features.items() if k in valid_feats}
+        feats = {
+            f"{k}_all_seq": v for k, v in all_seq_features.items() if k in valid_feats
+        }
         return feats
 
-    def process_fasta(self, fasta_path: str, alignment_dir: str, alignment_index: Optional[Any] = None) -> FeatureDict:
+    def process_fasta(
+        self, fasta_path: str, alignment_dir: str, alignment_index: Optional[Any] = None
+    ) -> FeatureDict:
         """Creates features."""
         with open(fasta_path) as f:
             input_fasta_str = f.read()
@@ -1150,16 +1274,24 @@ class DataPipelineMultimer:
 
         return np_example
 
-    def get_mmcif_features(self, mmcif_object: mmcif_parsing.MmcifObject, chain_id: str) -> FeatureDict:
+    def get_mmcif_features(
+        self, mmcif_object: mmcif_parsing.MmcifObject, chain_id: str
+    ) -> FeatureDict:
         mmcif_feats = {}
 
-        all_atom_positions, all_atom_mask = mmcif_parsing.get_atom_coords(mmcif_object=mmcif_object, chain_id=chain_id)
+        all_atom_positions, all_atom_mask = mmcif_parsing.get_atom_coords(
+            mmcif_object=mmcif_object, chain_id=chain_id
+        )
         mmcif_feats["all_atom_positions"] = all_atom_positions
         mmcif_feats["all_atom_mask"] = all_atom_mask
 
-        mmcif_feats["resolution"] = np.array(mmcif_object.header["resolution"], dtype=np.float32)
+        mmcif_feats["resolution"] = np.array(
+            mmcif_object.header["resolution"], dtype=np.float32
+        )
 
-        mmcif_feats["release_date"] = np.array([mmcif_object.header["release_date"].encode("utf-8")], dtype=object)
+        mmcif_feats["release_date"] = np.array(
+            [mmcif_object.header["release_date"].encode("utf-8")], dtype=object
+        )
 
         mmcif_feats["is_distillation"] = np.array(0.0, dtype=np.float32)
 

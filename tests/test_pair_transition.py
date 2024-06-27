@@ -68,7 +68,8 @@ class TestPairTransition(unittest.TestCase):
 
         # Fetch pretrained parameters (but only from one block)]
         params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/" + "pair_transition"
+            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/"
+            + "pair_transition"
         )
         params = tree_map(lambda n: n[0], params, jax.Array)
 

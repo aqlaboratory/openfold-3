@@ -16,8 +16,17 @@ from .sequence_local_atom_attention import (
     NoisyPositionEmbedder,
 )
 from .template_pointwise_attention import TemplatePointwiseAttention
-from .transition import ConditionedTransitionBlock, ReLUTransition, ReLUTransitionLayer, SwiGLUTransition
-from .triangular_attention import TriangleAttention, TriangleAttentionEndingNode, TriangleAttentionStartingNode
+from .transition import (
+    ConditionedTransitionBlock,
+    ReLUTransition,
+    ReLUTransitionLayer,
+    SwiGLUTransition,
+)
+from .triangular_attention import (
+    TriangleAttention,
+    TriangleAttentionEndingNode,
+    TriangleAttentionStartingNode,
+)
 from .triangular_multiplicative_update import (
     BaseTriangleMultiplicativeUpdate,
     FusedTriangleMultiplicationIncoming,

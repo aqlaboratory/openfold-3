@@ -49,7 +49,10 @@ class ReLUTransitionLayer(nn.Module):
 
         self.layers = nn.ModuleList(
             [
-                nn.Sequential(Linear(self.c_in, self.n * self.c_in, bias=True, init="relu"), nn.ReLU())
+                nn.Sequential(
+                    Linear(self.c_in, self.n * self.c_in, bias=True, init="relu"),
+                    nn.ReLU(),
+                )
                 for _ in range(self.num_relu_layers)
             ]
         )
@@ -96,7 +99,9 @@ class ReLUTransition(nn.Module):
         self.n = n
 
         self.layer_norm = LayerNorm(self.c_in)
-        self.transition_mlp = ReLUTransitionLayer(num_relu_layers=1, c_in=self.c_in, n=self.n)
+        self.transition_mlp = ReLUTransitionLayer(
+            num_relu_layers=1, c_in=self.c_in, n=self.n
+        )
 
     def _transition(self, x, mask):
         x = self.layer_norm(x)
@@ -262,7 +267,9 @@ class ConditionedTransitionBlock(nn.Module):
         self.linear_g = Linear(self.c_s, self.c_a, init="gating_ada_zero")
         self.linear_out = Linear(self.n * self.c_a, self.c_a, bias=False, init="final")
 
-    def forward(self, a: torch.Tensor, s: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(
+        self, a: torch.Tensor, s: torch.Tensor, mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """
         Args:
             a: [*, N_res, C_in] Input activation
@@ -307,7 +314,10 @@ class StructureModuleTransition(nn.Module):
         self.dropout_rate = dropout_rate
 
         self.layers = nn.ModuleList(
-            [ReLUTransitionLayer(num_relu_layers=2, c_in=self.c, n=1) for _ in range(self.num_layers)]
+            [
+                ReLUTransitionLayer(num_relu_layers=2, c_in=self.c, n=1)
+                for _ in range(self.num_layers)
+            ]
         )
 
         self.dropout = nn.Dropout(self.dropout_rate)

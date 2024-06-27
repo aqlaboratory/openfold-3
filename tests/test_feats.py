@@ -123,16 +123,26 @@ class TestFeats(unittest.TestCase):
 
         # This function is extremely sensitive to floating point imprecisions,
         # so it is given much greater latitude in comparison tests.
-        self.assertTrue(torch.mean(torch.abs(out_gt["torsion_angles_sin_cos"] - tasc)) < 0.01)
-        self.assertTrue(torch.mean(torch.abs(out_gt["alt_torsion_angles_sin_cos"] - atasc)) < 0.01)
-        self.assertTrue(torch.max(torch.abs(out_gt["torsion_angles_mask"] - tam)) < consts.eps)
+        self.assertTrue(
+            torch.mean(torch.abs(out_gt["torsion_angles_sin_cos"] - tasc)) < 0.01
+        )
+        self.assertTrue(
+            torch.mean(torch.abs(out_gt["alt_torsion_angles_sin_cos"] - atasc)) < 0.01
+        )
+        self.assertTrue(
+            torch.max(torch.abs(out_gt["torsion_angles_mask"] - tam)) < consts.eps
+        )
 
     @compare_utils.skip_unless_alphafold_installed()
     def test_atom37_to_frames_compare(self):
         def run_atom37_to_frames(aatype, all_atom_positions, all_atom_mask):
             if consts.is_multimer:
-                all_atom_positions = self.am_rigid.Vec3Array.from_array(all_atom_positions)
-            return self.am_atom.atom37_to_frames(aatype, all_atom_positions, all_atom_mask)
+                all_atom_positions = self.am_rigid.Vec3Array.from_array(
+                    all_atom_positions
+                )
+            return self.am_atom.atom37_to_frames(
+                aatype, all_atom_positions, all_atom_mask
+            )
 
         f = hk.transform(run_atom37_to_frames)
 
@@ -178,7 +188,9 @@ class TestFeats(unittest.TestCase):
         convert_func = rigid3x4_to_4x4 if consts.is_multimer else flat12_to_4x4
 
         out_gt["rigidgroups_gt_frames"] = convert_func(out_gt["rigidgroups_gt_frames"])
-        out_gt["rigidgroups_alt_gt_frames"] = convert_func(out_gt["rigidgroups_alt_gt_frames"])
+        out_gt["rigidgroups_alt_gt_frames"] = convert_func(
+            out_gt["rigidgroups_alt_gt_frames"]
+        )
 
         to_tensor = lambda t: torch.tensor(np.array(t)).cuda()
         batch = tree_map(to_tensor, batch, np.ndarray)
@@ -218,7 +230,9 @@ class TestFeats(unittest.TestCase):
 
     @compare_utils.skip_unless_alphafold_installed()
     def test_torsion_angles_to_frames_compare(self):
-        def run_torsion_angles_to_frames(aatype, backb_to_global, torsion_angles_sin_cos):
+        def run_torsion_angles_to_frames(
+            aatype, backb_to_global, torsion_angles_sin_cos
+        ):
             return self.am_atom.torsion_angles_to_frames(
                 aatype,
                 backb_to_global,
@@ -235,7 +249,9 @@ class TestFeats(unittest.TestCase):
 
         if consts.is_multimer:
             rigids = self.am_rigid.Rigid3Array.from_array4x4(affines)
-            transformations = Rigid3Array.from_tensor_4x4(torch.as_tensor(affines).float())
+            transformations = Rigid3Array.from_tensor_4x4(
+                torch.as_tensor(affines).float()
+            )
         else:
             rigids = self.am_rigid.rigids_from_tensor4x4(affines)
             transformations = Rigid.from_tensor_4x4(torch.as_tensor(affines).float())
@@ -254,8 +270,12 @@ class TestFeats(unittest.TestCase):
         )
 
         # Convert the Rigids to 4x4 transformation tensors
-        out_gt_rot = out_gt.rot if not consts.is_multimer else out_gt.rotation.to_array()
-        out_gt_trans = out_gt.trans if not consts.is_multimer else out_gt.translation.to_array()
+        out_gt_rot = (
+            out_gt.rot if not consts.is_multimer else out_gt.rotation.to_array()
+        )
+        out_gt_trans = (
+            out_gt.trans if not consts.is_multimer else out_gt.translation.to_array()
+        )
 
         if consts.is_multimer:
             rots_gt = torch.as_tensor(np.array(out_gt_rot))
@@ -274,7 +294,9 @@ class TestFeats(unittest.TestCase):
 
         transforms_repro = out.to_tensor_4x4().cpu()
 
-        self.assertTrue(torch.max(torch.abs(transforms_gt - transforms_repro) < consts.eps))
+        self.assertTrue(
+            torch.max(torch.abs(transforms_gt - transforms_repro) < consts.eps)
+        )
 
     def test_frames_and_literature_positions_to_atom14_pos_shape(self):
         batch_size = consts.batch_size
@@ -306,7 +328,9 @@ class TestFeats(unittest.TestCase):
     @compare_utils.skip_unless_alphafold_installed()
     def test_frames_and_literature_positions_to_atom14_pos_compare(self):
         def run_f(aatype, affines):
-            return self.am_atom.frames_and_literature_positions_to_atom14_pos(aatype, affines)
+            return self.am_atom.frames_and_literature_positions_to_atom14_pos(
+                aatype, affines
+            )
 
         f = hk.transform(run_f)
 
@@ -318,7 +342,9 @@ class TestFeats(unittest.TestCase):
 
         if consts.is_multimer:
             rigids = self.am_rigid.Rigid3Array.from_array4x4(affines)
-            transformations = Rigid3Array.from_tensor_4x4(torch.as_tensor(affines).float())
+            transformations = Rigid3Array.from_tensor_4x4(
+                torch.as_tensor(affines).float()
+            )
         else:
             rigids = self.am_rigid.rigids_from_tensor4x4(affines)
             transformations = Rigid.from_tensor_4x4(torch.as_tensor(affines).float())

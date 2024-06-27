@@ -89,7 +89,10 @@ class Jackhmmer:
         self.streaming_callback = streaming_callback
 
     def _query_chunk(
-        self, input_fasta_path: str, database_path: str, max_sequences: Optional[int] = None
+        self,
+        input_fasta_path: str,
+        database_path: str,
+        max_sequences: Optional[int] = None,
     ) -> Mapping[str, Any]:
         """Queries the database chunk using Jackhmmer."""
         with utils.tmpdir_manager() as query_tmp_dir:
@@ -139,13 +142,17 @@ class Jackhmmer:
             cmd = [self.binary_path] + cmd_flags + [input_fasta_path, database_path]
 
             logging.info('Launching subprocess "%s"', " ".join(cmd))
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            process = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
             with utils.timing(f"Jackhmmer ({os.path.basename(database_path)}) query"):
                 _, stderr = process.communicate()
                 retcode = process.wait()
 
             if retcode:
-                raise RuntimeError("Jackhmmer failed\nstderr:\n%s\n" % stderr.decode("utf-8"))
+                raise RuntimeError(
+                    "Jackhmmer failed\nstderr:\n%s\n" % stderr.decode("utf-8")
+                )
 
             # Get e-values for each target name
             tbl = ""
@@ -222,7 +229,9 @@ class Jackhmmer:
                 future.result()
                 for fasta_idx, input_fasta_path in enumerate(input_fasta_paths):
                     chunked_outputs[fasta_idx].append(
-                        self._query_chunk(input_fasta_path, db_local_chunk(i), max_sequences)
+                        self._query_chunk(
+                            input_fasta_path, db_local_chunk(i), max_sequences
+                        )
                     )
 
                 # Remove the local copy of the chunk

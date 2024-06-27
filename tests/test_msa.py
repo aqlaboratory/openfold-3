@@ -72,12 +72,15 @@ class TestMSARowAttentionWithPairBias(unittest.TestCase):
         n_seq = consts.n_seq
 
         msa_act = np.random.rand(n_seq, n_res, consts.c_m).astype(np.float32)
-        msa_mask = np.random.randint(low=0, high=2, size=(n_seq, n_res)).astype(np.float32)
+        msa_mask = np.random.randint(low=0, high=2, size=(n_seq, n_res)).astype(
+            np.float32
+        )
         pair_act = np.random.rand(n_res, n_res, consts.c_z).astype(np.float32)
 
         # Fetch pretrained parameters (but only from one block)]
         params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/" + "msa_row_attention"
+            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/"
+            + "msa_row_attention"
         )
         params = tree_map(lambda n: n[0], params, jax.Array)
 
@@ -121,7 +124,9 @@ class TestMSAColumnAttention(unittest.TestCase):
         def run_msa_col_att(msa_act, msa_mask):
             config = compare_utils.get_alphafold_config()
             c_e = config.model.embeddings_and_evoformer.evoformer
-            msa_col = alphafold.model.modules.MSAColumnAttention(c_e.msa_column_attention, config.model.global_config)
+            msa_col = alphafold.model.modules.MSAColumnAttention(
+                c_e.msa_column_attention, config.model.global_config
+            )
             act = msa_col(msa_act=msa_act, msa_mask=msa_mask)
             return act
 
@@ -131,11 +136,14 @@ class TestMSAColumnAttention(unittest.TestCase):
         n_seq = consts.n_seq
 
         msa_act = np.random.rand(n_seq, n_res, consts.c_m).astype(np.float32)
-        msa_mask = np.random.randint(low=0, high=2, size=(n_seq, n_res)).astype(np.float32)
+        msa_mask = np.random.randint(low=0, high=2, size=(n_seq, n_res)).astype(
+            np.float32
+        )
 
         # Fetch pretrained parameters (but only from one block)]
         params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/" + "msa_column_attention"
+            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/"
+            + "msa_column_attention"
         )
         params = tree_map(lambda n: n[0], params, jax.Array)
 
@@ -197,7 +205,8 @@ class TestMSAColumnGlobalAttention(unittest.TestCase):
 
         # Fetch pretrained parameters (but only from one block)]
         params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/evoformer/extra_msa_stack/" + "msa_column_global_attention"
+            "alphafold/alphafold_iteration/evoformer/extra_msa_stack/"
+            + "msa_column_global_attention"
         )
         params = tree_map(lambda n: n[0], params, jax.Array)
 
@@ -228,7 +237,9 @@ class TestMSAPairWeightedAveraging(unittest.TestCase):
         c = 52
         no_heads = 4
 
-        mrapb = MSAPairWeightedAveraging(c_in=c_m, c_hidden=c, c_z=c_z, no_heads=no_heads)
+        mrapb = MSAPairWeightedAveraging(
+            c_in=c_m, c_hidden=c, c_z=c_z, no_heads=no_heads
+        )
 
         m = torch.rand((batch_size, n_seq, n_res, c_m))
         z = torch.rand((batch_size, n_res, n_res, c_z))

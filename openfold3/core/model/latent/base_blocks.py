@@ -165,7 +165,9 @@ class MSABlock(nn.Module, ABC):
             input_tensors[1] = input_tensors[1].cpu()
             m, z = input_tensors
 
-        opm = self.outer_product_mean(m, mask=msa_mask, chunk_size=chunk_size, inplace_safe=inplace_safe)
+        opm = self.outer_product_mean(
+            m, mask=msa_mask, chunk_size=chunk_size, inplace_safe=inplace_safe
+        )
 
         if _offload_inference and inplace_safe:
             # m: GPU, z: GPU
@@ -283,7 +285,9 @@ class PairBlock(nn.Module):
 
         self.ps_dropout_row_layer = DropoutRowwise(pair_dropout)
 
-    def tri_mul_out_in(self, z: torch.Tensor, pair_mask: torch.Tensor, inplace_safe: bool) -> torch.Tensor:
+    def tri_mul_out_in(
+        self, z: torch.Tensor, pair_mask: torch.Tensor, inplace_safe: bool
+    ) -> torch.Tensor:
         """Perform the outgoing and incoming triangular multiplicative updates."""
         tmu_update = self.tri_mul_out(
             z,

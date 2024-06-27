@@ -16,7 +16,13 @@ import unittest
 
 import torch
 
-from openfold3.core.loss.diffusion import bond_loss, diffusion_loss, mse_loss, smooth_lddt_loss, weighted_rigid_align
+from openfold3.core.loss.diffusion import (
+    bond_loss,
+    diffusion_loss,
+    mse_loss,
+    smooth_lddt_loss,
+    weighted_rigid_align,
+)
 from openfold3.core.model.structure.diffusion_module import centre_random_augmentation
 from tests.config import consts
 
@@ -27,7 +33,13 @@ class TestDiffusionLoss(unittest.TestCase):
         n_atom = 2 * consts.n_res
 
         x_gt = torch.randn((batch_size, n_atom, 3))
-        w = torch.concat([torch.ones((batch_size, consts.n_res)), torch.ones((batch_size, consts.n_res)) * 5], dim=-1)
+        w = torch.concat(
+            [
+                torch.ones((batch_size, consts.n_res)),
+                torch.ones((batch_size, consts.n_res)) * 5,
+            ],
+            dim=-1,
+        )
         atom_mask = torch.ones((batch_size, n_atom))
 
         x = centre_random_augmentation(x_gt, atom_mask)
@@ -89,7 +101,10 @@ class TestDiffusionLoss(unittest.TestCase):
                 ],
                 dim=-1,
             ),
-            "atom_to_token_index": torch.eye(n_token).repeat_interleave(4, dim=0).unsqueeze(0).repeat(batch_size, 1, 1),
+            "atom_to_token_index": torch.eye(n_token)
+            .repeat_interleave(4, dim=0)
+            .unsqueeze(0)
+            .repeat(batch_size, 1, 1),
         }
 
         mse = mse_loss(
@@ -162,7 +177,10 @@ class TestDiffusionLoss(unittest.TestCase):
                 ],
                 dim=-1,
             ),
-            "atom_to_token_index": torch.eye(n_token).repeat_interleave(4, dim=0).unsqueeze(0).repeat(batch_size, 1, 1),
+            "atom_to_token_index": torch.eye(n_token)
+            .repeat_interleave(4, dim=0)
+            .unsqueeze(0)
+            .repeat(batch_size, 1, 1),
             "token_bonds": torch.ones((batch_size, n_token, n_token)),
         }
 
@@ -219,7 +237,10 @@ class TestDiffusionLoss(unittest.TestCase):
                 ],
                 dim=-1,
             ),
-            "atom_to_token_index": torch.eye(n_token).repeat_interleave(4, dim=0).unsqueeze(0).repeat(batch_size, 1, 1),
+            "atom_to_token_index": torch.eye(n_token)
+            .repeat_interleave(4, dim=0)
+            .unsqueeze(0)
+            .repeat(batch_size, 1, 1),
         }
 
         loss = smooth_lddt_loss(batch, x, x_gt, atom_mask)
@@ -276,14 +297,23 @@ class TestDiffusionLoss(unittest.TestCase):
                 ],
                 dim=-1,
             ),
-            "atom_to_token_index": torch.eye(n_token).repeat_interleave(4, dim=0).unsqueeze(0).repeat(batch_size, 1, 1),
+            "atom_to_token_index": torch.eye(n_token)
+            .repeat_interleave(4, dim=0)
+            .unsqueeze(0)
+            .repeat(batch_size, 1, 1),
             "token_bonds": torch.ones((batch_size, n_token, n_token)),
         }
 
         t = sigma_data * torch.exp(-1.2 + 1.5 * torch.randn(batch_size))
 
         loss = diffusion_loss(
-            batch=batch, x=x, x_gt=x_gt, atom_mask=atom_mask, t=t, sigma_data=sigma_data, alpha_bond=alpha_bond
+            batch=batch,
+            x=x,
+            x_gt=x_gt,
+            atom_mask=atom_mask,
+            t=t,
+            sigma_data=sigma_data,
+            alpha_bond=alpha_bond,
         )
 
         self.assertTrue(loss.shape == ())

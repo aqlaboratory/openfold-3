@@ -132,7 +132,9 @@ def trace_model_(model, sample_input):
     if model.template_config.enabled:
         template_pair_stack_chunk_size = model.globals.chunk_size
         if model.template_pair_stack.chunk_size_tuner is not None:
-            template_pair_stack_chunk_size = get_tuned_chunk_size(model.template_pair_stack)
+            template_pair_stack_chunk_size = get_tuned_chunk_size(
+                model.template_pair_stack
+            )
 
     def trace_block(block, block_inputs):
         # Yes, yes, I know
@@ -177,10 +179,15 @@ def trace_model_(model, sample_input):
         ("mask", msa_mask),
         ("chunk_size", torch.tensor(evoformer_attn_chunk_size)),
         ("use_memory_efficient_kernel", torch.tensor(False)),
-        ("use_deepspeed_evo_attention", torch.tensor(model.globals.use_deepspeed_evo_attention)),
+        (
+            "use_deepspeed_evo_attention",
+            torch.tensor(model.globals.use_deepspeed_evo_attention),
+        ),
         ("use_lma", torch.tensor(model.globals.use_lma)),
     ]
-    verify_arg_order(model.evoformer.blocks[0].msa_att_row.forward, msa_att_row_arg_tuples)
+    verify_arg_order(
+        model.evoformer.blocks[0].msa_att_row.forward, msa_att_row_arg_tuples
+    )
     msa_att_row_args = [arg for _, arg in msa_att_row_arg_tuples]
     with torch.no_grad():
         for b in model.evoformer.blocks:
@@ -193,11 +200,16 @@ def trace_model_(model, sample_input):
         ("m", m),
         ("mask", msa_mask),
         ("chunk_size", torch.tensor(evoformer_chunk_size)),
-        ("use_deepspeed_evo_attention", torch.tensor(model.globals.use_deepspeed_evo_attention)),
+        (
+            "use_deepspeed_evo_attention",
+            torch.tensor(model.globals.use_deepspeed_evo_attention),
+        ),
         ("use_lma", torch.tensor(model.globals.use_lma)),
         ("use_flash", torch.tensor(model.globals.use_flash)),
     ]
-    verify_arg_order(model.evoformer.blocks[0].msa_att_col.forward, msa_att_col_arg_tuples)
+    verify_arg_order(
+        model.evoformer.blocks[0].msa_att_col.forward, msa_att_col_arg_tuples
+    )
     msa_att_col_args = [arg for _, arg in msa_att_col_arg_tuples]
     with torch.no_grad():
         for b in model.evoformer.blocks:
@@ -212,7 +224,9 @@ def trace_model_(model, sample_input):
         ("chunk_size", torch.tensor(evoformer_chunk_size)),
         ("inplace_safe", torch.tensor(True)),
     ]
-    verify_arg_order(model.evoformer.blocks[0].core.outer_product_mean.forward, opm_arg_tuples)
+    verify_arg_order(
+        model.evoformer.blocks[0].core.outer_product_mean.forward, opm_arg_tuples
+    )
     opm_args = [arg for _, arg in opm_arg_tuples]
     with torch.no_grad():
         for b in model.evoformer.blocks:
@@ -227,7 +241,9 @@ def trace_model_(model, sample_input):
         ("inplace_safe", torch.tensor(True)),
         ("_add_with_inplace", torch.tensor(True)),
     ]
-    verify_arg_order(model.evoformer.blocks[0].core.tri_mul_out.forward, tri_mul_out_arg_tuples)
+    verify_arg_order(
+        model.evoformer.blocks[0].core.tri_mul_out.forward, tri_mul_out_arg_tuples
+    )
     tri_mul_out_args = [arg for _, arg in tri_mul_out_arg_tuples]
     with torch.no_grad():
         for b in model.evoformer.blocks:
@@ -242,7 +258,9 @@ def trace_model_(model, sample_input):
         ("inplace_safe", torch.tensor(True)),
         ("_add_with_inplace", torch.tensor(True)),
     ]
-    verify_arg_order(model.evoformer.blocks[0].core.tri_mul_in.forward, tri_mul_in_arg_tuples)
+    verify_arg_order(
+        model.evoformer.blocks[0].core.tri_mul_in.forward, tri_mul_in_arg_tuples
+    )
     tri_mul_in_args = [arg for _, arg in tri_mul_in_arg_tuples]
     with torch.no_grad():
         for b in model.evoformer.blocks:
@@ -256,11 +274,16 @@ def trace_model_(model, sample_input):
         ("mask", pair_mask.float()),
         ("chunk_size", torch.tensor(evoformer_attn_chunk_size)),
         ("use_memory_efficient_kernel", torch.tensor(False)),
-        ("use_deepspeed_evo_attention", torch.tensor(model.globals.use_deepspeed_evo_attention)),
+        (
+            "use_deepspeed_evo_attention",
+            torch.tensor(model.globals.use_deepspeed_evo_attention),
+        ),
         ("use_lma", torch.tensor(model.globals.use_lma)),
         ("inplace_safe", torch.tensor(True)),
     ]
-    verify_arg_order(model.evoformer.blocks[0].core.tri_att_start.forward, tri_att_start_arg_tuples)
+    verify_arg_order(
+        model.evoformer.blocks[0].core.tri_att_start.forward, tri_att_start_arg_tuples
+    )
     tri_att_start_args = [arg for _, arg in tri_att_start_arg_tuples]
     with torch.no_grad():
         for b in model.evoformer.blocks:
@@ -274,11 +297,16 @@ def trace_model_(model, sample_input):
         ("mask", pair_mask.transpose(-1, -2).float()),
         ("chunk_size", torch.tensor(evoformer_attn_chunk_size)),
         ("use_memory_efficient_kernel", torch.tensor(False)),
-        ("use_deepspeed_evo_attention", torch.tensor(model.globals.use_deepspeed_evo_attention)),
+        (
+            "use_deepspeed_evo_attention",
+            torch.tensor(model.globals.use_deepspeed_evo_attention),
+        ),
         ("use_lma", torch.tensor(model.globals.use_lma)),
         ("inplace_safe", torch.tensor(True)),
     ]
-    verify_arg_order(model.evoformer.blocks[0].core.tri_att_end.forward, tri_att_end_arg_tuples)
+    verify_arg_order(
+        model.evoformer.blocks[0].core.tri_att_end.forward, tri_att_end_arg_tuples
+    )
     tri_att_end_args = [arg for _, arg in tri_att_end_arg_tuples]
     with torch.no_grad():
         for b in model.evoformer.blocks:

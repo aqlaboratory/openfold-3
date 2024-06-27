@@ -28,7 +28,11 @@ class TestLMA(unittest.TestCase):
         no_heads = 4
 
         q, kv, _, biases = random_attention_inputs(
-            batch_size=consts.batch_size, n_seq=consts.n_seq, n=2**12, no_heads=no_heads, c_hidden=c_hidden
+            batch_size=consts.batch_size,
+            n_seq=consts.n_seq,
+            n=2**12,
+            no_heads=no_heads,
+            c_hidden=c_hidden,
         )
 
         a = Attention(c_hidden, c_hidden, c_hidden, c_hidden, no_heads).cuda()

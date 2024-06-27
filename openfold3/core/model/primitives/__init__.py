@@ -1,5 +1,10 @@
 from .activations import SwiGLU
-from .attention import DEFAULT_LMA_KV_CHUNK_SIZE, DEFAULT_LMA_Q_CHUNK_SIZE, Attention, GlobalAttention
+from .attention import (
+    DEFAULT_LMA_KV_CHUNK_SIZE,
+    DEFAULT_LMA_Q_CHUNK_SIZE,
+    Attention,
+    GlobalAttention,
+)
 from .dropout import Dropout, DropoutColumnwise, DropoutRowwise
 from .initialization import (
     final_init_,

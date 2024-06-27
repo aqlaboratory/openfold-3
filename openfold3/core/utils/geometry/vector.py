@@ -173,7 +173,9 @@ class Vec3Array:
         )
 
 
-def square_euclidean_distance(vec1: Vec3Array, vec2: Vec3Array, epsilon: float = 1e-6) -> Float:
+def square_euclidean_distance(
+    vec1: Vec3Array, vec2: Vec3Array, epsilon: float = 1e-6
+) -> Float:
     """Computes square of euclidean distance between 'vec1' and 'vec2'.
 
     Args:
@@ -209,7 +211,9 @@ def normalized(vector: Vec3Array, epsilon: float = 1e-6) -> Vec3Array:
     return vector.normalized(epsilon)
 
 
-def euclidean_distance(vec1: Vec3Array, vec2: Vec3Array, epsilon: float = 1e-6) -> Float:
+def euclidean_distance(
+    vec1: Vec3Array, vec2: Vec3Array, epsilon: float = 1e-6
+) -> Float:
     """Computes euclidean distance between 'vec1' and 'vec2'.
 
     Args:

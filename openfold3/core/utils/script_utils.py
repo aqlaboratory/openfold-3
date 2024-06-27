@@ -6,10 +6,15 @@ import time
 
 import numpy
 import torch
-from pytorch_lightning.utilities.deepspeed import convert_zero_checkpoint_to_fp32_state_dict
+from pytorch_lightning.utilities.deepspeed import (
+    convert_zero_checkpoint_to_fp32_state_dict,
+)
 
 from openfold3.core.np import protein, relax, residue_constants
-from openfold3.core.utils.import_weights import import_jax_weights_, import_openfold_weights_
+from openfold3.core.utils.import_weights import (
+    import_jax_weights_,
+    import_openfold_weights_,
+)
 from openfold3.model_implementations.af2_monomer.model import AlphaFold
 
 logging.basicConfig()
@@ -39,10 +44,14 @@ def make_output_directory(output_dir, model_name, multiple_model_mode):
     return prediction_dir
 
 
-def load_models_from_command_line(config, model_device, openfold_checkpoint_path, jax_param_path, output_dir):
+def load_models_from_command_line(
+    config, model_device, openfold_checkpoint_path, jax_param_path, output_dir
+):
     # Create the output directory
 
-    multiple_model_mode = count_models_to_evaluate(openfold_checkpoint_path, jax_param_path) > 1
+    multiple_model_mode = (
+        count_models_to_evaluate(openfold_checkpoint_path, jax_param_path) > 1
+    )
     if multiple_model_mode:
         logger.info(f"evaluating multiple models")
 
@@ -55,7 +64,9 @@ def load_models_from_command_line(config, model_device, openfold_checkpoint_path
             import_jax_weights_(model, path, version=model_version)
             model = model.to(model_device)
             logger.info(f"Successfully loaded JAX parameters at {path}...")
-            output_directory = make_output_directory(output_dir, model_basename, multiple_model_mode)
+            output_directory = make_output_directory(
+                output_dir, model_basename, multiple_model_mode
+            )
             yield model, output_directory
 
     if openfold_checkpoint_path:
@@ -88,16 +99,25 @@ def load_models_from_command_line(config, model_device, openfold_checkpoint_path
 
             model = model.to(model_device)
             logger.info(f"Loaded OpenFold parameters at {path}...")
-            output_directory = make_output_directory(output_dir, checkpoint_basename, multiple_model_mode)
+            output_directory = make_output_directory(
+                output_dir, checkpoint_basename, multiple_model_mode
+            )
             yield model, output_directory
 
     if not jax_param_path and not openfold_checkpoint_path:
-        raise ValueError("At least one of jax_param_path or openfold_checkpoint_path must " "be specified.")
+        raise ValueError(
+            "At least one of jax_param_path or openfold_checkpoint_path must "
+            "be specified."
+        )
 
 
 def parse_fasta(data):
     data = re.sub(">$", "", data, flags=re.M)
-    lines = [l.replace("\n", "") for prot in data.split(">") for l in prot.strip().split("\n", 1)][1:]
+    lines = [
+        l.replace("\n", "")
+        for prot in data.split(">")
+        for l in prot.strip().split("\n", 1)
+    ][1:]
     tags, seqs = lines[::2], lines[1::2]
 
     tags = [re.split("\W| \|", t)[0] for t in tags]
@@ -128,24 +148,39 @@ def run_model(model, batch, tag, output_dir):
     with torch.no_grad():
         # Temporarily disable templates if there aren't any in the batch
         template_enabled = model.config.template.enabled
-        model.config.template.enabled = template_enabled and any(["template_" in k for k in batch])
+        model.config.template.enabled = template_enabled and any(
+            ["template_" in k for k in batch]
+        )
 
         logger.info(f"Running inference for {tag}...")
         t = time.perf_counter()
         out = model(batch)
         inference_time = time.perf_counter() - t
         logger.info(f"Inference time: {inference_time}")
-        update_timings({tag: {"inference": inference_time}}, os.path.join(output_dir, "timings.json"))
+        update_timings(
+            {tag: {"inference": inference_time}},
+            os.path.join(output_dir, "timings.json"),
+        )
 
         model.config.template.enabled = template_enabled
 
     return out
 
 
-def prep_output(out, batch, feature_dict, feature_processor, config_preset, multimer_ri_gap, subtract_plddt):
+def prep_output(
+    out,
+    batch,
+    feature_dict,
+    feature_processor,
+    config_preset,
+    multimer_ri_gap,
+    subtract_plddt,
+):
     plddt = out["plddt"]
 
-    plddt_b_factors = numpy.repeat(plddt[..., None], residue_constants.atom_type_num, axis=-1)
+    plddt_b_factors = numpy.repeat(
+        plddt[..., None], residue_constants.atom_type_num, axis=-1
+    )
 
     if subtract_plddt:
         plddt_b_factors = 100 - plddt_b_factors
@@ -153,15 +188,24 @@ def prep_output(out, batch, feature_dict, feature_processor, config_preset, mult
     # Prep protein metadata
     template_domain_names = []
     template_chain_index = None
-    if feature_processor.config.common.use_templates and "template_domain_names" in feature_dict:
-        template_domain_names = [t.decode("utf-8") for t in feature_dict["template_domain_names"]]
+    if (
+        feature_processor.config.common.use_templates
+        and "template_domain_names" in feature_dict
+    ):
+        template_domain_names = [
+            t.decode("utf-8") for t in feature_dict["template_domain_names"]
+        ]
 
         # This works because templates are not shuffled during inference
-        template_domain_names = template_domain_names[: feature_processor.config.predict.max_templates]
+        template_domain_names = template_domain_names[
+            : feature_processor.config.predict.max_templates
+        ]
 
         if "template_chain_index" in feature_dict:
             template_chain_index = feature_dict["template_chain_index"]
-            template_chain_index = template_chain_index[: feature_processor.config.predict.max_templates]
+            template_chain_index = template_chain_index[
+                : feature_processor.config.predict.max_templates
+            ]
 
     no_recycling = feature_processor.config.common.max_recycling_iters
     remark = ", ".join(
@@ -198,7 +242,14 @@ def prep_output(out, batch, feature_dict, feature_processor, config_preset, mult
     return unrelaxed_protein
 
 
-def relax_protein(config, model_device, unrelaxed_protein, output_directory, output_name, cif_output=False):
+def relax_protein(
+    config,
+    model_device,
+    unrelaxed_protein,
+    output_directory,
+    output_name,
+    cif_output=False,
+):
     amber_relaxer = relax.AmberRelaxation(
         use_gpu=(model_device != "cpu"),
         **config.relax,
@@ -210,12 +261,16 @@ def relax_protein(config, model_device, unrelaxed_protein, output_directory, out
         device_no = model_device.split(":")[-1]
         os.environ["CUDA_VISIBLE_DEVICES"] = device_no
     # the struct_str will contain either a PDB-format or a ModelCIF format string
-    struct_str, _, _ = amber_relaxer.process(prot=unrelaxed_protein, cif_output=cif_output)
+    struct_str, _, _ = amber_relaxer.process(
+        prot=unrelaxed_protein, cif_output=cif_output
+    )
     os.environ["CUDA_VISIBLE_DEVICES"] = visible_devices
     relaxation_time = time.perf_counter() - t
 
     logger.info(f"Relaxation time: {relaxation_time}")
-    update_timings({"relaxation": relaxation_time}, os.path.join(output_directory, "timings.json"))
+    update_timings(
+        {"relaxation": relaxation_time}, os.path.join(output_directory, "timings.json")
+    )
 
     # Save the relaxed PDB.
     suffix = "_relaxed.pdb"

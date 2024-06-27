@@ -106,7 +106,9 @@ def from_pdb_string(pdb_str: str, chain_id: Optional[str] = None) -> Protein:
     structure = parser.get_structure("none", pdb_fh)
     models = list(structure.get_models())
     if len(models) != 1:
-        raise ValueError(f"Only single model PDBs are supported. Found {len(models)} models.")
+        raise ValueError(
+            f"Only single model PDBs are supported. Found {len(models)} models."
+        )
     model = models[0]
 
     atom_positions = []
@@ -127,7 +129,9 @@ def from_pdb_string(pdb_str: str, chain_id: Optional[str] = None) -> Protein:
                     f"index {res.id[1]}. These are not supported."
                 )
             res_shortname = residue_constants.restype_3to1.get(res.resname, "X")
-            restype_idx = residue_constants.restype_order.get(res_shortname, residue_constants.restype_num)
+            restype_idx = residue_constants.restype_order.get(
+                res_shortname, residue_constants.restype_num
+            )
             pos = np.zeros((residue_constants.atom_type_num, 3))
             mask = np.zeros((residue_constants.atom_type_num,))
             res_b_factors = np.zeros((residue_constants.atom_type_num,))
@@ -194,16 +198,25 @@ def from_proteinnet_string(proteinnet_str: str) -> Protein:
                 if seq[i] not in residue_constants.restypes:
                     seq[i] = "X"
             aatype = np.array(
-                [residue_constants.restype_order.get(res_symbol, residue_constants.restype_num) for res_symbol in seq]
+                [
+                    residue_constants.restype_order.get(
+                        res_symbol, residue_constants.restype_num
+                    )
+                    for res_symbol in seq
+                ]
             )
         elif "[TERTIARY]" == g[0]:
             tertiary = []
             for axis in range(3):
                 tertiary.append(list(map(float, g[1][axis].split())))
             tertiary_np = np.array(tertiary)
-            atom_positions = np.zeros((len(tertiary[0]) // 3, residue_constants.atom_type_num, 3)).astype(np.float32)
+            atom_positions = np.zeros(
+                (len(tertiary[0]) // 3, residue_constants.atom_type_num, 3)
+            ).astype(np.float32)
             for i, atom in enumerate(atoms):
-                atom_positions[:, residue_constants.atom_order[atom], :] = np.transpose(tertiary_np[:, i::3])
+                atom_positions[:, residue_constants.atom_order[atom], :] = np.transpose(
+                    tertiary_np[:, i::3]
+                )
             atom_positions *= PICO_TO_ANGSTROM
         elif "[MASK]" == g[0]:
             mask = np.array(list(map({"-": 0, "+": 1}.get, g[1][0].strip())))
@@ -228,7 +241,10 @@ def from_proteinnet_string(proteinnet_str: str) -> Protein:
 
 def _chain_end(atom_index, end_resname, chain_name, residue_index) -> str:
     chain_end = "TER"
-    return f"{chain_end:<6}{atom_index:>5}      {end_resname:>3} " f"{chain_name:>1}{residue_index:>4}"
+    return (
+        f"{chain_end:<6}{atom_index:>5}      {end_resname:>3} "
+        f"{chain_name:>1}{residue_index:>4}"
+    )
 
 
 def get_pdb_headers(prot: Protein, chain_id: int = 0) -> Sequence[str]:
@@ -330,7 +346,9 @@ def to_pdb(prot: Protein) -> str:
     chain_ids = {}
     for i in np.unique(chain_index):  # np.unique gives sorted output.
         if i >= PDB_MAX_CHAINS:
-            raise ValueError(f"The PDB format supports at most {PDB_MAX_CHAINS} chains.")
+            raise ValueError(
+                f"The PDB format supports at most {PDB_MAX_CHAINS} chains."
+            )
         chain_ids[i] = PDB_CHAIN_IDS[i]
 
     headers = get_pdb_headers(prot)
@@ -349,13 +367,20 @@ def to_pdb(prot: Protein) -> str:
         # Close the previous chain if in a multichain PDB.
         if last_chain_index != chain_index[i]:
             pdb_lines.append(
-                _chain_end(atom_index, res_1to3(aatype[i - 1]), chain_ids[chain_index[i - 1]], residue_index[i - 1])
+                _chain_end(
+                    atom_index,
+                    res_1to3(aatype[i - 1]),
+                    chain_ids[chain_index[i - 1]],
+                    residue_index[i - 1],
+                )
             )
             last_chain_index = chain_index[i]
             atom_index += 1  # Atom index increases at the TER symbol.
 
         res_name_3 = res_1to3(aatype[i])
-        for atom_name, pos, mask, b_factor in zip(atom_types, atom_positions[i], atom_mask[i], b_factors[i]):
+        for atom_name, pos, mask, b_factor in zip(
+            atom_types, atom_positions[i], atom_mask[i], b_factors[i]
+        ):
             if mask < 0.5:
                 continue
 
@@ -478,9 +503,13 @@ def to_modelcif(prot: Protein) -> str:
     for chain_idx in set(chain_index):
         # Define the model assembly
         chain_id = chain_tags[chain_idx]
-        asym = modelcif.AsymUnit(entities_map[chain_idx], details="Model subunit %s" % chain_id, id=chain_id)
+        asym = modelcif.AsymUnit(
+            entities_map[chain_idx], details="Model subunit %s" % chain_id, id=chain_id
+        )
         asym_unit_map[chain_idx] = asym
-    modeled_assembly = modelcif.Assembly(asym_unit_map.values(), name="Modeled assembly")
+    modeled_assembly = modelcif.Assembly(
+        asym_unit_map.values(), name="Modeled assembly"
+    )
 
     class _LocalPLDDT(modelcif.qa_metric.Local, modelcif.qa_metric.PLDDT):
         name = "pLDDT"
@@ -496,10 +525,14 @@ def to_modelcif(prot: Protein) -> str:
         def get_atoms(self):
             # Add all atom sites.
             for i in range(n):
-                for atom_name, pos, mask, b_factor in zip(atom_types, atom_positions[i], atom_mask[i], b_factors[i]):
+                for atom_name, pos, mask, b_factor in zip(
+                    atom_types, atom_positions[i], atom_mask[i], b_factors[i]
+                ):
                     if mask < 0.5:
                         continue
-                    element = atom_name[0]  # Protein supports only C, N, O, S, this works.
+                    element = atom_name[
+                        0
+                    ]  # Protein supports only C, N, O, S, this works.
                     yield modelcif.model.Atom(
                         asym_unit=asym_unit_map[chain_index[i]],
                         type_symbol=element,
@@ -531,7 +564,11 @@ def to_modelcif(prot: Protein) -> str:
                 for residue_idx in plddt_per_residue[chain_idx]:
                     plddt = plddt_per_residue[chain_idx][residue_idx]
                     plddts.append(plddt)
-                    self.qa_metrics.append(_LocalPLDDT(asym_unit_map[chain_idx].residue(residue_idx), plddt))
+                    self.qa_metrics.append(
+                        _LocalPLDDT(
+                            asym_unit_map[chain_idx].residue(residue_idx), plddt
+                        )
+                    )
             # global score
             self.qa_metrics.append((_GlobalPLDDT(np.mean(plddts))))
 

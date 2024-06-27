@@ -32,8 +32,12 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("proteinnet_file", type=str, help="Path to ProteinNet file to unpack")
-    parser.add_argument("output_dir", type=str, help="Path to directory in which to output .core files")
+    parser.add_argument(
+        "proteinnet_file", type=str, help="Path to ProteinNet file to unpack"
+    )
+    parser.add_argument(
+        "output_dir", type=str, help="Path to directory in which to output .core files"
+    )
 
     args = parser.parse_args()
 

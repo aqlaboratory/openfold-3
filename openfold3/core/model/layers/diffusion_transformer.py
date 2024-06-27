@@ -31,7 +31,16 @@ class DiffusionTransformerBlock(nn.Module):
     Implements AF3 Algorithm 23.
     """
 
-    def __init__(self, c_a: int, c_s: int, c_z: int, c_hidden: int, no_heads: int, n_transition: int, inf: float = 1e9):
+    def __init__(
+        self,
+        c_a: int,
+        c_s: int,
+        c_z: int,
+        c_hidden: int,
+        no_heads: int,
+        n_transition: int,
+        inf: float = 1e9,
+    ):
         """
         Args:
             c_s:
@@ -62,7 +71,9 @@ class DiffusionTransformerBlock(nn.Module):
             inf=inf,
         )
 
-        self.conditioned_transition = ConditionedTransitionBlock(c_a=c_a, c_s=c_s, n=n_transition)
+        self.conditioned_transition = ConditionedTransitionBlock(
+            c_a=c_a, c_s=c_s, n=n_transition
+        )
 
     def forward(
         self,
@@ -154,7 +165,13 @@ class DiffusionTransformer(nn.Module):
         self.blocks = nn.ModuleList(
             [
                 DiffusionTransformerBlock(
-                    c_a=c_a, c_s=c_s, c_z=c_z, c_hidden=c_hidden, no_heads=no_heads, n_transition=n_transition, inf=inf
+                    c_a=c_a,
+                    c_s=c_s,
+                    c_z=c_z,
+                    c_hidden=c_hidden,
+                    no_heads=no_heads,
+                    n_transition=n_transition,
+                    inf=inf,
                 )
                 for _ in range(no_blocks)
             ]

@@ -78,7 +78,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("mmcif_dir", type=str, help="Directory containing mmCIF files")
     parser.add_argument("output_path", type=str, help="Path for .json output")
-    parser.add_argument("--no_workers", type=int, default=4, help="Number of workers to use for parsing")
+    parser.add_argument(
+        "--no_workers", type=int, default=4, help="Number of workers to use for parsing"
+    )
     parser.add_argument(
         "--cluster_file",
         type=str,
@@ -91,7 +93,10 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
-        "--chunksize", type=int, default=10, help="How many files should be distributed to each worker at a time"
+        "--chunksize",
+        type=int,
+        default=10,
+        help="How many files should be distributed to each worker at a time",
     )
 
     args = parser.parse_args()

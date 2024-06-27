@@ -90,14 +90,20 @@ class TestUtils(unittest.TestCase):
     def test_rigid_shape(self):
         batch_size = 2
         n = 5
-        transf = Rigid(Rotation(rot_mats=torch.rand((batch_size, n, 3, 3))), torch.rand((batch_size, n, 3)))
+        transf = Rigid(
+            Rotation(rot_mats=torch.rand((batch_size, n, 3, 3))),
+            torch.rand((batch_size, n, 3)),
+        )
 
         self.assertTrue(transf.shape == (batch_size, n))
 
     def test_rigid_cat(self):
         batch_size = 2
         n = 5
-        transf = Rigid(Rotation(rot_mats=torch.rand((batch_size, n, 3, 3))), torch.rand((batch_size, n, 3)))
+        transf = Rigid(
+            Rotation(rot_mats=torch.rand((batch_size, n, 3, 3))),
+            torch.rand((batch_size, n, 3)),
+        )
 
         transf_cat = Rigid.cat([transf, transf], dim=0)
 
@@ -215,7 +221,9 @@ class TestUtils(unittest.TestCase):
         new_repro = rigid.compose_q_update_vec(torch.tensor(update_vec))
 
         new_gt_q = torch.tensor(np.array(new_gt.quaternion))
-        new_gt_t = torch.stack([torch.tensor(np.array(t)) for t in new_gt.translation], dim=-1)
+        new_gt_t = torch.stack(
+            [torch.tensor(np.array(t)) for t in new_gt.translation], dim=-1
+        )
         new_repro_q = new_repro.get_rots().get_quats()
         new_repro_t = new_repro.get_trans()
 

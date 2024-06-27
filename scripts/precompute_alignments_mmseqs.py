@@ -86,7 +86,8 @@ def main(args):
 
         if retcode:
             raise RuntimeError(
-                "MMseqs failed\nstdout:\n%s\n\nstderr:\n%s\n" % (stdout.decode("utf-8"), stderr.decode("utf-8"))
+                "MMseqs failed\nstdout:\n%s\n\nstderr:\n%s\n"
+                % (stdout.decode("utf-8"), stderr.decode("utf-8"))
             )
 
         _split_a3ms(args.output_dir)
@@ -94,7 +95,9 @@ def main(args):
         # Clean up temporary files
         os.remove(chunk_fasta_path)
 
-    hhsearch_pdb70_runner = hhsearch.HHSearch(binary_path=args.hhsearch_binary_path, databases=[args.pdb70])
+    hhsearch_pdb70_runner = hhsearch.HHSearch(
+        binary_path=args.hhsearch_binary_path, databases=[args.pdb70]
+    )
 
     for d in os.listdir(args.output_dir):
         dpath = os.path.join(args.output_dir, d)
@@ -116,7 +119,11 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("input_fasta", type=str, help="Path to input FASTA file. Can contain one or more sequences.")
+    parser.add_argument(
+        "input_fasta",
+        type=str,
+        help="Path to input FASTA file. Can contain one or more sequences.",
+    )
     parser.add_argument(
         "mmseqs_db_dir",
         type=str,
@@ -133,8 +140,12 @@ if __name__ == "__main__":
         help="""Path to hhsearch binary (for template search). In future 
                 versions, we'll also use mmseqs for this""",
     )
-    parser.add_argument("--pdb70", type=str, default=None, help="Basename of the pdb70 database")
-    parser.add_argument("--env_db", type=str, default=None, help="Basename of environmental database")
+    parser.add_argument(
+        "--pdb70", type=str, default=None, help="Basename of the pdb70 database"
+    )
+    parser.add_argument(
+        "--env_db", type=str, default=None, help="Basename of environmental database"
+    )
     parser.add_argument(
         "--fasta_chunk_size",
         type=int,

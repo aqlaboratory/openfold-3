@@ -145,7 +145,12 @@ def get_nvidia_cc():
         cuda.cuGetErrorString(result, ctypes.byref(error_str))
         return None, error_str.value.decode()
 
-    if cuda.cuDeviceComputeCapability(ctypes.byref(cc_major), ctypes.byref(cc_minor), device) != CUDA_SUCCESS:
+    if (
+        cuda.cuDeviceComputeCapability(
+            ctypes.byref(cc_major), ctypes.byref(cc_minor), device
+        )
+        != CUDA_SUCCESS
+    ):
         return None, "Compute Capability not found"
 
     major = cc_major.value

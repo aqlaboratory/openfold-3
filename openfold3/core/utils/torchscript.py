@@ -101,7 +101,12 @@ def _trace_module(module, batch_dims=None):
             ),
         }
     elif isinstance(module, OuterProductMean):
-        inputs = {"forward": (msa(module.c_m), torch.randint(0, 2, (*batch_dims, n_seq, n_res)))}
+        inputs = {
+            "forward": (
+                msa(module.c_m),
+                torch.randint(0, 2, (*batch_dims, n_seq, n_res)),
+            )
+        }
     else:
         raise TypeError(f"tracing is not supported for modules of type {type(module)}")
 

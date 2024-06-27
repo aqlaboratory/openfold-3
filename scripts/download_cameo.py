@@ -84,10 +84,15 @@ if __name__ == "__main__":
         help=f"""The length of the period from which to draw CAMEO proteins. 
              Choose from {VALID_PERIODS}""",
     )
-    parser.add_argument("end_date", type=str, help="The date marking the end of the period (YYYY-MM-DD)")
+    parser.add_argument(
+        "end_date", type=str, help="The date marking the end of the period (YYYY-MM-DD)"
+    )
     parser.add_argument("output_dir")
     parser.add_argument(
-        "--max_seqlen", type=int, default=700, help="The maximum length in residues of downloaded proteins (or -1)"
+        "--max_seqlen",
+        type=int,
+        default=700,
+        help="The maximum length in residues of downloaded proteins (or -1)",
     )
 
     args = parser.parse_args()

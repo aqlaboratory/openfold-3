@@ -51,7 +51,9 @@ class TriangleAttention(nn.Module):
 
         self.linear = Linear(c_in, self.no_heads, bias=False, init="normal")
 
-        self.mha = Attention(self.c_in, self.c_in, self.c_in, self.c_hidden, self.no_heads)
+        self.mha = Attention(
+            self.c_in, self.c_in, self.c_in, self.c_hidden, self.no_heads
+        )
 
     @torch.jit.ignore
     def _chunk(

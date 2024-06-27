@@ -17,7 +17,12 @@ import subprocess
 
 import torch
 from setuptools import find_packages, setup
-from torch.utils.cpp_extension import CUDA_HOME, BuildExtension, CppExtension, CUDAExtension
+from torch.utils.cpp_extension import (
+    CUDA_HOME,
+    BuildExtension,
+    CppExtension,
+    CUDAExtension,
+)
 
 from scripts.utils import get_nvidia_cc
 
@@ -42,7 +47,9 @@ def get_cuda_bare_metal_version(cuda_dir):
         print("CUDA is not found, cpu version is installed")
         return None, -1, 0
     else:
-        raw_output = subprocess.check_output([cuda_dir + "/bin/nvcc", "-V"], universal_newlines=True)
+        raw_output = subprocess.check_output(
+            [cuda_dir + "/bin/nvcc", "-V"], universal_newlines=True
+        )
         output = raw_output.split()
         release_idx = output.index("release") + 1
         release = output[release_idx].split(".")
@@ -91,11 +98,18 @@ if bare_metal_major != -1:
                 "openfold3/base/utils/kernel/csrc/softmax_cuda_kernel.cu",
             ],
             include_dirs=[
-                os.path.join(os.path.dirname(os.path.abspath(__file__)), "openfold3/core/utils/kernel/csrc/")
+                os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)),
+                    "openfold3/core/utils/kernel/csrc/",
+                )
             ],
             extra_compile_args={
                 "cxx": ["-O3"] + version_dependent_macros,
-                "nvcc": (["-O3", "--use_fast_math"] + version_dependent_macros + extra_cuda_flags),
+                "nvcc": (
+                    ["-O3", "--use_fast_math"]
+                    + version_dependent_macros
+                    + extra_cuda_flags
+                ),
             },
         )
     ]
@@ -123,12 +137,16 @@ setup(
     url="https://github.com/aqlaboratory/openfold3",
     packages=find_packages(exclude=["tests", "scripts"]),
     include_package_data=True,
-    package_data={"openfold3": ["base/utils/kernel/csrc/*"], "": ["resources/stereo_chemical_props.txt"]},
+    package_data={
+        "openfold3": ["base/utils/kernel/csrc/*"],
+        "": ["resources/stereo_chemical_props.txt"],
+    },
     ext_modules=modules,
     cmdclass={"build_ext": BuildExtension},
     classifiers=[
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: POSIX :: Linux",
-        "Programming Language :: Python :: 3.9," "Topic :: Scientific/Engineering :: Artificial Intelligence",
+        "Programming Language :: Python :: 3.9,"
+        "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
 )

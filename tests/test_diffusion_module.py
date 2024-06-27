@@ -55,8 +55,12 @@ class TestDiffusionConditioning(unittest.TestCase):
         pair_token_mask = torch.ones((batch_size, n_token, n_token))
 
         batch = {
-            "token_index": torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-            "residue_index": torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
+            "token_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
+            "residue_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
             "sym_id": torch.zeros((batch_size, n_token)),
             "asym_id": torch.zeros((batch_size, n_token)),
             "entity_id": torch.zeros((batch_size, n_token)),
@@ -127,8 +131,12 @@ class TestDiffusionModule(unittest.TestCase):
         atom_mask = torch.ones((batch_size, n_atom))
 
         batch = {
-            "token_index": torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-            "residue_index": torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
+            "token_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
+            "residue_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
             "sym_id": torch.zeros((batch_size, n_token)),
             "asym_id": torch.zeros((batch_size, n_token)),
             "entity_id": torch.zeros((batch_size, n_token)),
@@ -138,7 +146,10 @@ class TestDiffusionModule(unittest.TestCase):
             "ref_charge": torch.ones((batch_size, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, n_atom)),
-            "atom_to_token_index": torch.eye(n_token).repeat_interleave(4, dim=0).unsqueeze(0).repeat(batch_size, 1, 1),
+            "atom_to_token_index": torch.eye(n_token)
+            .repeat_interleave(4, dim=0)
+            .unsqueeze(0)
+            .repeat(batch_size, 1, 1),
         }
 
         out = dm(
@@ -218,8 +229,12 @@ class TestSampleDiffusion(unittest.TestCase):
         atom_mask = torch.ones((batch_size, n_atom))
 
         batch = {
-            "token_index": torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-            "residue_index": torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
+            "token_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
+            "residue_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
             "sym_id": torch.zeros((batch_size, n_token)),
             "asym_id": torch.zeros((batch_size, n_token)),
             "entity_id": torch.zeros((batch_size, n_token)),
@@ -229,7 +244,10 @@ class TestSampleDiffusion(unittest.TestCase):
             "ref_charge": torch.ones((batch_size, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, n_atom)),
-            "atom_to_token_index": torch.eye(n_token).repeat_interleave(4, dim=0).unsqueeze(0).repeat(batch_size, 1, 1),
+            "atom_to_token_index": torch.eye(n_token)
+            .repeat_interleave(4, dim=0)
+            .unsqueeze(0)
+            .repeat(batch_size, 1, 1),
         }
 
         noise_schedule = create_noise_schedule(

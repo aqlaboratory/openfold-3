@@ -21,7 +21,9 @@ parser = argparse.ArgumentParser(
                                                 stdout"""
 )
 
-parser.add_argument("--gradient_clipping", type=float, default=None, help="Value of gradient clipping")
+parser.add_argument(
+    "--gradient_clipping", type=float, default=None, help="Value of gradient clipping"
+)
 p = parser.add_argument_group("Optimizer")
 p.add_argument(
     "--optimizer",
@@ -136,9 +138,24 @@ p.add_argument(
 )
 
 p = parser.add_argument_group("Activation checkpointing")
-p.add_argument("--partition_activations", action="store_true", default=False, help="Activation checkpointing")
-p.add_argument("--cpu_checkpointing", action="store_true", default=False, help="Offload activation checkpoints to CPU")
-p.add_argument("--profile", action="store_true", default=False, help="Whether to profile activation checkpointing")
+p.add_argument(
+    "--partition_activations",
+    action="store_true",
+    default=False,
+    help="Activation checkpointing",
+)
+p.add_argument(
+    "--cpu_checkpointing",
+    action="store_true",
+    default=False,
+    help="Offload activation checkpoints to CPU",
+)
+p.add_argument(
+    "--profile",
+    action="store_true",
+    default=False,
+    help="Whether to profile activation checkpointing",
+)
 
 
 p = parser.add_argument_group("ZeRO optimization")
@@ -150,7 +167,12 @@ p.add_argument(
     help="""Allgather collective vs. broadcast collectives 
                           for parameter gathering""",
 )
-p.add_argument("--allgather_bucket_size", type=int, default=1e9, help="Number of elements allgathered at one time")
+p.add_argument(
+    "--allgather_bucket_size",
+    type=int,
+    default=1e9,
+    help="Number of elements allgathered at one time",
+)
 p.add_argument(
     "--overlap_comm",
     action="store_true",
@@ -158,8 +180,18 @@ p.add_argument(
     help="""Whether to overlap gradient reduction and backward 
                           pass""",
 )
-p.add_argument("--reduce_scatter", action="store_true", default=False, help="Use reduce to average gradients")
-p.add_argument("--reduce_bucket_size", type=int, default=1e9, help="Number of elements reduced at one time")
+p.add_argument(
+    "--reduce_scatter",
+    action="store_true",
+    default=False,
+    help="Use reduce to average gradients",
+)
+p.add_argument(
+    "--reduce_bucket_size",
+    type=int,
+    default=1e9,
+    help="Number of elements reduced at one time",
+)
 p.add_argument(
     "--offload_optimizer",
     action="store_true",
@@ -168,12 +200,18 @@ p.add_argument(
                           --stage is 2 or 3""",
 )
 p.add_argument(
-    "--pin_memory", action="store_true", default=False, help="Speeds up offloaded throughput at the cost of memory"
+    "--pin_memory",
+    action="store_true",
+    default=False,
+    help="Speeds up offloaded throughput at the cost of memory",
 )
 
 p = parser.add_argument_group("Flops profiler")
 p.add_argument(
-    "--flops_profiler", action="store_true", default=False, help="Whether to enable the DeepSpeed Flops Profiler"
+    "--flops_profiler",
+    action="store_true",
+    default=False,
+    help="Whether to enable the DeepSpeed Flops Profiler",
 )
 p.add_argument(
     "--profile_step",

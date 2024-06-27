@@ -11,7 +11,12 @@ import pytorch_lightning as pl
 import torch
 from torch.utils.data import RandomSampler
 
-from openfold3.core.data import data_pipeline, feature_pipeline, mmcif_parsing, templates
+from openfold3.core.data import (
+    data_pipeline,
+    feature_pipeline,
+    mmcif_parsing,
+    templates,
+)
 from openfold3.core.np.residue_constants import restypes
 from openfold3.core.utils.tensor_utils import (
     dict_multimap,
@@ -127,19 +132,24 @@ class OpenFoldSingleDataset(torch.utils.data.Dataset):
             original_chain_ids = self._chain_ids
             self._chain_ids = [c for c in self._chain_ids if c in self.chain_data_cache]
             if len(self._chain_ids) < len(original_chain_ids):
-                missing = [c for c in original_chain_ids if c not in self.chain_data_cache]
+                missing = [
+                    c for c in original_chain_ids if c not in self.chain_data_cache
+                ]
                 max_to_print = 10
                 missing_examples = ", ".join(missing[:max_to_print])
                 if len(missing) > max_to_print:
                     missing_examples += ", ..."
                 logging.warning(
-                    "Removing %d alignment entries (%s) with no corresponding " "entries in chain_data_cache (%s).",
+                    "Removing %d alignment entries (%s) with no corresponding "
+                    "entries in chain_data_cache (%s).",
                     len(missing),
                     missing_examples,
                     chain_data_cache_path,
                 )
 
-        self._chain_id_to_idx_dict = {chain: i for i, chain in enumerate(self._chain_ids)}
+        self._chain_id_to_idx_dict = {
+            chain: i for i, chain in enumerate(self._chain_ids)
+        }
 
         # If it's running template search for a monomer, then use hhsearch
         # as demonstrated in AlphaFold's run_alphafold.py code
@@ -269,7 +279,9 @@ class OpenFoldSingleDataset(torch.utils.data.Dataset):
         feats = self.feature_pipeline.process_features(data, self.mode)
 
         feats["batch_idx"] = torch.tensor(
-            [idx for _ in range(feats["aatype"].shape[-1])], dtype=torch.int64, device=feats["aatype"].device
+            [idx for _ in range(feats["aatype"].shape[-1])],
+            dtype=torch.int64,
+            device=feats["aatype"].device,
         )
 
         return feats
@@ -378,7 +390,9 @@ class OpenFoldSingleMultimerDataset(torch.utils.data.Dataset):
         elif self.alignment_dir is not None:
             self._mmcifs = [i.split("_")[0] for i in os.listdir(self.alignment_dir)]
         else:
-            raise ValueError("You must provide at least one of the mmcif_data_cache or alignment_dir")
+            raise ValueError(
+                "You must provide at least one of the mmcif_data_cache or alignment_dir"
+            )
 
         if filter_path is not None:
             with open(filter_path, "r") as f:
@@ -401,7 +415,9 @@ class OpenFoldSingleMultimerDataset(torch.utils.data.Dataset):
         data_processor = data_pipeline.DataPipeline(
             template_featurizer=template_featurizer,
         )
-        self.data_pipeline = data_pipeline.DataPipelineMultimer(monomer_data_pipeline=data_processor)
+        self.data_pipeline = data_pipeline.DataPipelineMultimer(
+            monomer_data_pipeline=data_processor
+        )
         self.feature_pipeline = feature_pipeline.FeaturePipeline(config)
 
     def _parse_mmcif(self, path, file_id, alignment_dir, alignment_index):
@@ -418,7 +434,9 @@ class OpenFoldSingleMultimerDataset(torch.utils.data.Dataset):
         mmcif_object = mmcif_object.mmcif_object
 
         data = self.data_pipeline.process_mmcif(
-            mmcif=mmcif_object, alignment_dir=alignment_dir, alignment_index=alignment_index
+            mmcif=mmcif_object,
+            alignment_dir=alignment_dir,
+            alignment_index=alignment_index,
         )
 
         return data
@@ -434,7 +452,9 @@ class OpenFoldSingleMultimerDataset(torch.utils.data.Dataset):
 
         alignment_index = None
         if self.alignment_index is not None:
-            alignment_index = {k: v for k, v in self.alignment_index.items() if f"{mmcif_id}_" in k}
+            alignment_index = {
+                k: v for k, v in self.alignment_index.items() if f"{mmcif_id}_" in k
+            }
 
         if self.mode == "train" or self.mode == "eval":
             path = os.path.join(self.data_dir, f"{mmcif_id}")
@@ -461,18 +481,24 @@ class OpenFoldSingleMultimerDataset(torch.utils.data.Dataset):
         else:
             path = os.path.join(self.data_dir, f"{mmcif_id}.fasta")
             data = self.data_pipeline.process_fasta(
-                fasta_path=path, alignment_dir=self.alignment_dir, alignment_index=alignment_index
+                fasta_path=path,
+                alignment_dir=self.alignment_dir,
+                alignment_index=alignment_index,
             )
 
         if self._output_raw:
             return data
 
         # process all_chain_features
-        data = self.feature_pipeline.process_features(data, mode=self.mode, is_multimer=True)
+        data = self.feature_pipeline.process_features(
+            data, mode=self.mode, is_multimer=True
+        )
 
         # if it's inference mode, only need all_chain_features
         data["batch_idx"] = torch.tensor(
-            [idx for _ in range(data["aatype"].shape[-1])], dtype=torch.int64, device=data["aatype"].device
+            [idx for _ in range(data["aatype"].shape[-1])],
+            dtype=torch.int64,
+            device=data["aatype"].device,
         )
 
         return data
@@ -519,7 +545,9 @@ class OpenFoldDataset(torch.utils.data.Dataset):
 
     def __init__(
         self,
-        datasets: Union[Sequence[OpenFoldSingleDataset], Sequence[OpenFoldSingleMultimerDataset]],
+        datasets: Union[
+            Sequence[OpenFoldSingleDataset], Sequence[OpenFoldSingleMultimerDataset]
+        ],
         probabilities: Sequence[float],
         epoch_len: int,
         generator: torch.Generator = None,
@@ -536,7 +564,11 @@ class OpenFoldDataset(torch.utils.data.Dataset):
 
     @staticmethod
     def deterministic_train_filter(
-        cache_entry: Any, max_resolution: float = 9.0, max_single_aa_prop: float = 0.8, *args, **kwargs
+        cache_entry: Any,
+        max_resolution: float = 9.0,
+        max_single_aa_prop: float = 0.8,
+        *args,
+        **kwargs,
     ) -> bool:
         # Hard filters
         resolution = cache_entry.get("resolution", None)
@@ -681,7 +713,9 @@ class OpenFoldMultimerDataset(OpenFoldDataset):
                 aa_count_filter(seqs=seqs, max_single_aa_prop=max_single_aa_prop),
                 (
                     not is_distillation
-                    or all_seq_len_filter(seqs=seqs, minimum_number_of_residues=minimum_number_of_residues)
+                    or all_seq_len_filter(
+                        seqs=seqs, minimum_number_of_residues=minimum_number_of_residues
+                    )
                 ),
             ]
         )
@@ -786,10 +820,16 @@ class OpenFoldDataLoader(torch.utils.data.DataLoader):
         no_recycling = recycling_dim
         for i, key in enumerate(self.prop_keys):
             sample = int(samples[i][0])
-            sample_tensor = torch.tensor(sample, device=aatype.device, requires_grad=False)
+            sample_tensor = torch.tensor(
+                sample, device=aatype.device, requires_grad=False
+            )
             orig_shape = sample_tensor.shape
-            sample_tensor = sample_tensor.view((1,) * len(batch_dims) + sample_tensor.shape + (1,))
-            sample_tensor = sample_tensor.expand(batch_dims + orig_shape + (recycling_dim,))
+            sample_tensor = sample_tensor.view(
+                (1,) * len(batch_dims) + sample_tensor.shape + (1,)
+            )
+            sample_tensor = sample_tensor.expand(
+                batch_dims + orig_shape + (recycling_dim,)
+            )
             batch[key] = sample_tensor
 
             if key == "no_recycling_iters":
@@ -863,16 +903,24 @@ class OpenFoldDataModule(pl.LightningDataModule):
         self.train_epoch_len = train_epoch_len
 
         if self.train_data_dir is None and self.predict_data_dir is None:
-            raise ValueError("At least one of train_data_dir or predict_data_dir must be " "specified")
+            raise ValueError(
+                "At least one of train_data_dir or predict_data_dir must be "
+                "specified"
+            )
 
         self.training_mode = self.train_data_dir is not None
 
         if self.training_mode and train_alignment_dir is None:
             raise ValueError("In training mode, train_alignment_dir must be specified")
         elif not self.training_mode and predict_alignment_dir is None:
-            raise ValueError("In inference mode, predict_alignment_dir must be specified")
+            raise ValueError(
+                "In inference mode, predict_alignment_dir must be specified"
+            )
         elif val_data_dir is not None and val_alignment_dir is None:
-            raise ValueError("If val_data_dir is specified, val_alignment_dir must " "be specified as well")
+            raise ValueError(
+                "If val_data_dir is specified, val_alignment_dir must "
+                "be specified as well"
+            )
 
         # An ad-hoc measure for our particular filesystem restrictions
         self._distillation_structure_index = None

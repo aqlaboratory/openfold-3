@@ -92,9 +92,15 @@ TEMPLATE_FEATURES = {
 
 def empty_template_feats(n_res):
     return {
-        "template_aatype": np.zeros((0, n_res, len(residue_constants.restypes_with_x_and_gap)), np.float32),
-        "template_all_atom_mask": np.zeros((0, n_res, residue_constants.atom_type_num), np.float32),
-        "template_all_atom_positions": np.zeros((0, n_res, residue_constants.atom_type_num, 3), np.float32),
+        "template_aatype": np.zeros(
+            (0, n_res, len(residue_constants.restypes_with_x_and_gap)), np.float32
+        ),
+        "template_all_atom_mask": np.zeros(
+            (0, n_res, residue_constants.atom_type_num), np.float32
+        ),
+        "template_all_atom_positions": np.zeros(
+            (0, n_res, residue_constants.atom_type_num, 3), np.float32
+        ),
         "template_domain_names": np.array(["".encode()], dtype=object),
         "template_sequence": np.array(["".encode()], dtype=object),
         "template_sum_probs": np.zeros((0, 1), dtype=np.float32),
@@ -199,7 +205,12 @@ def _parse_release_dates(path: str) -> Mapping[str, datetime.datetime]:
     with open(path, "r") as fp:
         data = json.load(fp)
 
-    return {pdb.upper(): to_date(v) for pdb, d in data.items() for k, v in d.items() if k == "release_date"}
+    return {
+        pdb.upper(): to_date(v)
+        for pdb, d in data.items()
+        for k, v in d.items()
+        if k == "release_date"
+    }
 
 
 def _assess_hhsearch_hit(
@@ -242,18 +253,26 @@ def _assess_hhsearch_hit(
 
     if _is_after_cutoff(hit_pdb_code, release_dates, release_date_cutoff):
         date = release_dates[hit_pdb_code.upper()]
-        raise DateError(f"Date ({date}) > max template date " f"({release_date_cutoff}).")
+        raise DateError(
+            f"Date ({date}) > max template date " f"({release_date_cutoff})."
+        )
 
     if align_ratio <= min_align_ratio:
-        raise AlignRatioError("Proportion of residues aligned to query too small. " f"Align ratio: {align_ratio}.")
+        raise AlignRatioError(
+            "Proportion of residues aligned to query too small. "
+            f"Align ratio: {align_ratio}."
+        )
 
     # Check whether the template is a large subsequence or duplicate of original
     # query. This can happen due to duplicate entries in the PDB database.
-    duplicate = template_sequence in query_sequence and length_ratio > max_subsequence_ratio
+    duplicate = (
+        template_sequence in query_sequence and length_ratio > max_subsequence_ratio
+    )
 
     if duplicate:
         raise DuplicateError(
-            "Template is an exact subsequence of query with large " f"coverage. Length ratio: {length_ratio}."
+            "Template is an exact subsequence of query with large "
+            f"coverage. Length ratio: {length_ratio}."
         )
 
     if len(template_sequence) < 10:
@@ -385,7 +404,8 @@ def _realign_pdb_template_to_query(
     if not new_template_sequence:
         if len(mmcif_object.chain_to_seqres) == 1:
             logging.info(
-                "Could not find %s in %s, but there is only 1 sequence, so " "using that one.",
+                "Could not find %s in %s, but there is only 1 sequence, so "
+                "using that one.",
                 template_chain_id,
                 mmcif_object.file_id,
             )
@@ -398,7 +418,9 @@ def _realign_pdb_template_to_query(
             )
 
     try:
-        parsed_a3m = parsers.parse_a3m(aligner.align([old_template_sequence, new_template_sequence]))
+        parsed_a3m = parsers.parse_a3m(
+            aligner.align([old_template_sequence, new_template_sequence])
+        )
         old_aligned_template, new_aligned_template = parsed_a3m.sequences
     except Exception as e:
         raise QueryToTemplateAlignError(
@@ -422,7 +444,9 @@ def _realign_pdb_template_to_query(
     old_template_index = -1
     new_template_index = -1
     num_same = 0
-    for old_template_aa, new_template_aa in zip(old_aligned_template, new_aligned_template):
+    for old_template_aa, new_template_aa in zip(
+        old_aligned_template, new_aligned_template
+    ):
         if old_template_aa != "-":
             old_template_index += 1
         if new_template_aa != "-":
@@ -433,7 +457,10 @@ def _realign_pdb_template_to_query(
                 num_same += 1
 
     # Require at least 90 % sequence identity wrt to the shorter of the sequences.
-    if float(num_same) / min(len(old_template_sequence), len(new_template_sequence)) < 0.9:
+    if (
+        float(num_same) / min(len(old_template_sequence), len(new_template_sequence))
+        < 0.9
+    ):
         raise QueryToTemplateAlignError(
             "Insufficient similarity of the sequence in the database: %s to the "
             "actual sequence in the mmCIF file %s_%s: %s. We require at least "
@@ -449,7 +476,9 @@ def _realign_pdb_template_to_query(
 
     new_query_to_template_mapping = {}
     for query_index, old_template_index in old_mapping.items():
-        new_query_to_template_mapping[query_index] = old_to_new_template_mapping.get(old_template_index, -1)
+        new_query_to_template_mapping[query_index] = old_to_new_template_mapping.get(
+            old_template_index, -1
+        )
 
     new_template_sequence = new_template_sequence.replace("-", "")
 
@@ -594,7 +623,9 @@ def _extract_template_features(
             _zero_center_positions=_zero_center_positions,
         )
     except (CaDistanceError, KeyError) as ex:
-        raise NoAtomDataInTemplateError("Could not get atom data (%s_%s): %s" % (pdb_id, chain_id, str(ex))) from ex
+        raise NoAtomDataInTemplateError(
+            "Could not get atom data (%s_%s): %s" % (pdb_id, chain_id, str(ex))
+        ) from ex
 
     all_atom_positions = np.split(all_atom_positions, all_atom_positions.shape[0])
     all_atom_masks = np.split(all_atom_mask, all_atom_mask.shape[0])
@@ -605,7 +636,9 @@ def _extract_template_features(
 
     for _ in query_sequence:
         # Residues in the query_sequence that are not in the template_sequence:
-        templates_all_atom_positions.append(np.zeros((residue_constants.atom_type_num, 3)))
+        templates_all_atom_positions.append(
+            np.zeros((residue_constants.atom_type_num, 3))
+        )
         templates_all_atom_masks.append(np.zeros(residue_constants.atom_type_num))
         output_templates_sequence.append("-")
 
@@ -693,7 +726,9 @@ def _build_query_to_hit_index_mapping(
     mapping = {}
     for q_i, q_t in zip(fixed_indices_query, fixed_indices_hit):
         if q_t != -1 and q_i != -1:
-            if q_t >= len(hit_sequence) or q_i + hhsearch_query_offset >= len(original_query_sequence):
+            if q_t >= len(hit_sequence) or q_i + hhsearch_query_offset >= len(
+                original_query_sequence
+            ):
                 continue
             mapping[q_i + hhsearch_query_offset] = q_t
 
@@ -805,7 +840,9 @@ def _process_single_hit(
     parsing_result = mmcif_parsing.parse(file_id=hit_pdb_code, mmcif_string=cif_string)
 
     if parsing_result.mmcif_object is not None:
-        hit_release_date = datetime.datetime.strptime(parsing_result.mmcif_object.header["release_date"], "%Y-%m-%d")
+        hit_release_date = datetime.datetime.strptime(
+            parsing_result.mmcif_object.header["release_date"], "%Y-%m-%d"
+        )
         if hit_release_date > max_template_date:
             error = "Template %s date (%s) > max template date (%s)." % (
                 hit_pdb_code,
@@ -846,32 +883,44 @@ def _process_single_hit(
     ) as e:
         # These 3 errors indicate missing mmCIF experimental data rather than a
         # problem with the template search, so turn them into warnings.
-        warning = "%s_%s (sum_probs: %.2f, rank: %d): feature extracting errors: " "%s, mmCIF parsing errors: %s" % (
-            hit_pdb_code,
-            hit_chain_id,
-            hit.sum_probs if hit.sum_probs else 0.0,
-            hit.index,
-            str(e),
-            parsing_result.errors,
+        warning = (
+            "%s_%s (sum_probs: %.2f, rank: %d): feature extracting errors: "
+            "%s, mmCIF parsing errors: %s"
+            % (
+                hit_pdb_code,
+                hit_chain_id,
+                hit.sum_probs if hit.sum_probs else 0.0,
+                hit.index,
+                str(e),
+                parsing_result.errors,
+            )
         )
         if strict_error_check:
             return SingleHitResult(features=None, error=warning, warning=None)
         else:
             return SingleHitResult(features=None, error=None, warning=warning)
     except Error as e:
-        error = "%s_%s (sum_probs: %.2f, rank: %d): feature extracting errors: " "%s, mmCIF parsing errors: %s" % (
-            hit_pdb_code,
-            hit_chain_id,
-            hit.sum_probs if hit.sum_probs else 0.0,
-            hit.index,
-            str(e),
-            parsing_result.errors,
+        error = (
+            "%s_%s (sum_probs: %.2f, rank: %d): feature extracting errors: "
+            "%s, mmCIF parsing errors: %s"
+            % (
+                hit_pdb_code,
+                hit_chain_id,
+                hit.sum_probs if hit.sum_probs else 0.0,
+                hit.index,
+                str(e),
+                parsing_result.errors,
+            )
         )
         return SingleHitResult(features=None, error=error, warning=None)
 
 
 def get_custom_template_features(
-    mmcif_path: str, query_sequence: str, pdb_id: str, chain_id: str, kalign_binary_path: str
+    mmcif_path: str,
+    query_sequence: str,
+    pdb_id: str,
+    chain_id: str,
+    kalign_binary_path: str,
 ):
     with open(mmcif_path, "r") as mmcif_path:
         cif_string = mmcif_path.read()
@@ -902,9 +951,13 @@ def get_custom_template_features(
         template_features[k].append(features[k])
 
     for name in template_features:
-        template_features[name] = np.stack(template_features[name], axis=0).astype(TEMPLATE_FEATURES[name])
+        template_features[name] = np.stack(template_features[name], axis=0).astype(
+            TEMPLATE_FEATURES[name]
+        )
 
-    return TemplateSearchResult(features=template_features, errors=None, warnings=warnings)
+    return TemplateSearchResult(
+        features=template_features, errors=None, warnings=warnings
+    )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -958,9 +1011,13 @@ class TemplateHitFeaturizer(abc.ABC):
             raise ValueError(f"Could not find CIFs in {self._mmcif_dir}")
 
         try:
-            self._max_template_date = datetime.datetime.strptime(max_template_date, "%Y-%m-%d")
+            self._max_template_date = datetime.datetime.strptime(
+                max_template_date, "%Y-%m-%d"
+            )
         except ValueError:
-            raise ValueError("max_template_date must be set and have format YYYY-MM-DD.")
+            raise ValueError(
+                "max_template_date must be set and have format YYYY-MM-DD."
+            )
         self._max_hits = max_hits
         self._kalign_binary_path = kalign_binary_path
         self._strict_error_check = strict_error_check
@@ -981,7 +1038,9 @@ class TemplateHitFeaturizer(abc.ABC):
         self._zero_center_positions = _zero_center_positions
 
     @abc.abstractmethod
-    def get_templates(self, query_sequence: str, hits: Sequence[parsers.TemplateHit]) -> TemplateSearchResult:
+    def get_templates(
+        self, query_sequence: str, hits: Sequence[parsers.TemplateHit]
+    ) -> TemplateSearchResult:
         """Computes the templates for a given query sequence"""
 
 
@@ -1073,17 +1132,23 @@ class HhsearchHitFeaturizer(TemplateHitFeaturizer):
 
         if already_seen:
             for name in template_features:
-                template_features[name] = np.stack(template_features[name], axis=0).astype(TEMPLATE_FEATURES[name])
+                template_features[name] = np.stack(
+                    template_features[name], axis=0
+                ).astype(TEMPLATE_FEATURES[name])
         else:
             num_res = len(query_sequence)
             # Construct a default template with all zeros.
             template_features = empty_template_feats(num_res)
 
-        return TemplateSearchResult(features=template_features, errors=errors, warnings=warnings)
+        return TemplateSearchResult(
+            features=template_features, errors=errors, warnings=warnings
+        )
 
 
 class HmmsearchHitFeaturizer(TemplateHitFeaturizer):
-    def get_templates(self, query_sequence: str, hits: Sequence[parsers.TemplateHit]) -> TemplateSearchResult:
+    def get_templates(
+        self, query_sequence: str, hits: Sequence[parsers.TemplateHit]
+    ) -> TemplateSearchResult:
         logging.info("Searching for template for: %s", query_sequence)
 
         template_features = {}
@@ -1115,7 +1180,13 @@ class HmmsearchHitFeaturizer(TemplateHitFeaturizer):
             if prefilter_result.valid:
                 filtered.append(hit)
 
-        filtered = list(sorted(filtered, key=lambda x: x.sum_probs if x.sum_probs else 0.0, reverse=True))
+        filtered = list(
+            sorted(
+                filtered,
+                key=lambda x: x.sum_probs if x.sum_probs else 0.0,
+                reverse=True,
+            )
+        )
         idx = list(range(len(filtered)))
         if self._shuffle_top_k_prefiltered:
             stk = self._shuffle_top_k_prefiltered
@@ -1162,7 +1233,9 @@ class HmmsearchHitFeaturizer(TemplateHitFeaturizer):
 
         if already_seen:
             for name in template_features:
-                template_features[name] = np.stack(template_features[name], axis=0).astype(TEMPLATE_FEATURES[name])
+                template_features[name] = np.stack(
+                    template_features[name], axis=0
+                ).astype(TEMPLATE_FEATURES[name])
         else:
             num_res = len(query_sequence)
             # Construct a default template with all zeros.

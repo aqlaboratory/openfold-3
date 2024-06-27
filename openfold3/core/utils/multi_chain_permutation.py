@@ -51,7 +51,9 @@ def kabsch_rotation(P: torch.Tensor, Q: torch.Tensor) -> torch.Tensor:
     assert P.shape == torch.Size([Q.shape[0], Q.shape[1]])
 
     # Firstly, compute SVD of P.T * Q
-    u, _, vt = torch.linalg.svd(torch.matmul(P.to(torch.float32).T, Q.to(torch.float32)))
+    u, _, vt = torch.linalg.svd(
+        torch.matmul(P.to(torch.float32).T, Q.to(torch.float32))
+    )
     # Then construct s matrix
     s = torch.eye(P.shape[1], device=P.device)
     # correct the rotation matrix to ensure a right-handed coordinate
@@ -96,7 +98,9 @@ def get_optimal_transform(
         assert mask.dtype == torch.bool
         assert mask.shape[-1] == src_atoms.shape[-2]
         if mask.sum() == 0:
-            src_atoms = torch.zeros((1, 3), device=src_atoms.device, dtype=src_atoms.dtype)
+            src_atoms = torch.zeros(
+                (1, 3), device=src_atoms.device, dtype=src_atoms.dtype
+            )
             tgt_atoms = src_atoms
         else:
             src_atoms = src_atoms[mask, :]
@@ -149,12 +153,18 @@ def get_least_asym_entity_or_longest_length(
         entity_length[int(entity_id)] = entity_mask.sum().item()
 
     min_asym_count = min(entity_asym_count.values())
-    least_asym_entities = [entity for entity, count in entity_asym_count.items() if count == min_asym_count]
+    least_asym_entities = [
+        entity for entity, count in entity_asym_count.items() if count == min_asym_count
+    ]
 
     # If multiple entities have the least asym_id count, return those with the longest length
     if len(least_asym_entities) > 1:
         max_length = max([entity_length[entity] for entity in least_asym_entities])
-        least_asym_entities = [entity for entity in least_asym_entities if entity_length[entity] == max_length]
+        least_asym_entities = [
+            entity
+            for entity in least_asym_entities
+            if entity_length[entity] == max_length
+        ]
 
     # If still multiple entities, return a random one
     if len(least_asym_entities) > 1:
@@ -164,7 +174,11 @@ def get_least_asym_entity_or_longest_length(
     least_asym_entities = least_asym_entities[0]
 
     anchor_gt_asym_id = random.choice(entity_2_asym_list[least_asym_entities])
-    anchor_pred_asym_ids = [asym_id for asym_id in entity_2_asym_list[least_asym_entities] if asym_id in input_asym_id]
+    anchor_pred_asym_ids = [
+        asym_id
+        for asym_id in entity_2_asym_list[least_asym_entities]
+        if asym_id in input_asym_id
+    ]
 
     return anchor_gt_asym_id, anchor_pred_asym_ids
 
@@ -222,7 +236,9 @@ def greedy_align(
                 cropped_pos = torch.index_select(true_ca_poses[j], 1, cur_residue_index)
                 mask = torch.index_select(true_ca_masks[j], 1, cur_residue_index)
                 rmsd = compute_rmsd(
-                    torch.squeeze(cropped_pos, 0), torch.squeeze(cur_pred_pos, 0), (cur_pred_mask * mask).bool()
+                    torch.squeeze(cropped_pos, 0),
+                    torch.squeeze(cur_pred_pos, 0),
+                    (cur_pred_mask * mask).bool(),
                 )
                 if rmsd is not None and rmsd < best_rmsd:
                     best_rmsd = rmsd
@@ -234,7 +250,9 @@ def greedy_align(
     return align
 
 
-def pad_features(feature_tensor: torch.Tensor, nres_pad: int, pad_dim: int) -> torch.Tensor:
+def pad_features(
+    feature_tensor: torch.Tensor, nres_pad: int, pad_dim: int
+) -> torch.Tensor:
     """
     Pad input feature tensor. Padding values will be 0 and put behind the true feature values
 
@@ -253,7 +271,10 @@ def pad_features(feature_tensor: torch.Tensor, nres_pad: int, pad_dim: int) -> t
 
 
 def merge_labels(
-    per_asym_residue_index: Dict[int, List[int]], labels: List[Dict], align: List[Tuple[int, int]], original_nres: int
+    per_asym_residue_index: Dict[int, List[int]],
+    labels: List[Dict],
+    align: List[Tuple[int, int]],
+    original_nres: int,
 ) -> Dict[str, torch.Tensor]:
     """
     Merge ground truth labels according to the permutation results
@@ -307,7 +328,9 @@ def split_ground_truth_labels(gt_features: dict) -> List[Dict]:
         required to finish multi-chain permutation, e.g. it will be a list of 5 elements if there
         are 5 chains in total.
     """
-    unique_asym_ids, asym_id_counts = torch.unique(gt_features["asym_id"], sorted=True, return_counts=True)
+    unique_asym_ids, asym_id_counts = torch.unique(
+        gt_features["asym_id"], sorted=True, return_counts=True
+    )
     n_res = gt_features["asym_id"].shape[-1]
 
     def split_dim(shape):
@@ -318,7 +341,12 @@ def split_ground_truth_labels(gt_features: dict) -> List[Dict]:
             dict,
             zip(
                 *[
-                    [(k, v) for v in torch.split(v_all, asym_id_counts.tolist(), dim=split_dim(v_all.shape))]
+                    [
+                        (k, v)
+                        for v in torch.split(
+                            v_all, asym_id_counts.tolist(), dim=split_dim(v_all.shape)
+                        )
+                    ]
                     for k, v_all in gt_features.items()
                     if n_res in v_all.shape
                 ]
@@ -342,7 +370,9 @@ def get_per_asym_residue_index(features: dict) -> Dict[int, torch.Tensor]:
     per_asym_residue_index = {}
     for cur_asym_id in unique_asym_ids:
         asym_mask = (features["asym_id"] == cur_asym_id).bool()
-        per_asym_residue_index[int(cur_asym_id)] = torch.masked_select(features["residue_index"], asym_mask)
+        per_asym_residue_index[int(cur_asym_id)] = torch.masked_select(
+            features["residue_index"], asym_mask
+        )
 
     return per_asym_residue_index
 
@@ -390,7 +420,9 @@ def calculate_input_mask(
     pred_ca_mask = torch.squeeze(pred_ca_mask, 0)
     asym_mask = torch.squeeze(asym_mask, 0)
     anchor_pred_mask = pred_ca_mask[asym_mask]
-    anchor_true_mask = torch.index_select(true_ca_masks[anchor_gt_idx], 1, anchor_gt_residue)
+    anchor_true_mask = torch.index_select(
+        true_ca_masks[anchor_gt_idx], 1, anchor_gt_residue
+    )
     input_mask = (anchor_true_mask * anchor_pred_mask).bool()
     return input_mask
 
@@ -430,19 +462,27 @@ def calculate_optimal_transform(
     that will best align selected anchor prediction to selected anchor truth
     a matrix records how the atoms should be shifted after applying r i.e. optimal alignment requires 1) rotate 2) shift the positions
     """
-    input_mask = calculate_input_mask(true_ca_masks, anchor_gt_idx, anchor_gt_residue, asym_mask, pred_ca_mask)
+    input_mask = calculate_input_mask(
+        true_ca_masks, anchor_gt_idx, anchor_gt_residue, asym_mask, pred_ca_mask
+    )
     input_mask = torch.squeeze(input_mask, 0)
     pred_ca_pos = torch.squeeze(pred_ca_pos, 0)
     asym_mask = torch.squeeze(asym_mask, 0)
-    anchor_true_pos = torch.index_select(true_ca_poses[anchor_gt_idx], 1, anchor_gt_residue)
+    anchor_true_pos = torch.index_select(
+        true_ca_poses[anchor_gt_idx], 1, anchor_gt_residue
+    )
     anchor_pred_pos = pred_ca_pos[asym_mask]
-    r, x = get_optimal_transform(anchor_pred_pos, torch.squeeze(anchor_true_pos, 0), mask=input_mask)
+    r, x = get_optimal_transform(
+        anchor_pred_pos, torch.squeeze(anchor_true_pos, 0), mask=input_mask
+    )
 
     return r, x
 
 
 def compute_permutation_alignment(
-    out: Dict[str, torch.Tensor], features: Dict[str, torch.Tensor], ground_truth: List[Dict[str, torch.Tensor]]
+    out: Dict[str, torch.Tensor],
+    features: Dict[str, torch.Tensor],
+    ground_truth: List[Dict[str, torch.Tensor]],
 ) -> Tuple[List[Tuple[int, int]], Dict[int, List[int]]]:
     """
     A method that permutes chains in ground truth before calculating the loss
@@ -476,7 +516,9 @@ def compute_permutation_alignment(
     best_rmsd = float("inf")
     best_align = None
     # First select anchors from predicted structures and ground truths
-    anchor_gt_asym, anchor_pred_asym_ids = get_least_asym_entity_or_longest_length(ground_truth, features["asym_id"])
+    anchor_gt_asym, anchor_pred_asym_ids = get_least_asym_entity_or_longest_length(
+        ground_truth, features["asym_id"]
+    )
     entity_2_asym_list = get_entity_2_asym_list(ground_truth)
     labels = split_ground_truth_labels(ground_truth)
     assert isinstance(labels, list)
@@ -484,17 +526,31 @@ def compute_permutation_alignment(
     # Then calculate optimal transform by aligning anchors
     ca_idx = rc.atom_order["CA"]
     pred_ca_pos = out["final_atom_positions"][..., ca_idx, :]  # [bsz, nres, 3]
-    pred_ca_mask = out["final_atom_mask"][..., ca_idx].to(dtype=pred_ca_pos.dtype)  # [bsz, nres]
+    pred_ca_mask = out["final_atom_mask"][..., ca_idx].to(
+        dtype=pred_ca_pos.dtype
+    )  # [bsz, nres]
 
-    true_ca_poses = [l["all_atom_positions"][..., ca_idx, :] for l in labels]  # list([nres, 3])
-    true_ca_masks = [l["all_atom_mask"][..., ca_idx].long() for l in labels]  # list([nres,])
+    true_ca_poses = [
+        l["all_atom_positions"][..., ca_idx, :] for l in labels
+    ]  # list([nres, 3])
+    true_ca_masks = [
+        l["all_atom_mask"][..., ca_idx].long() for l in labels
+    ]  # list([nres,])
     for candidate_pred_anchor in anchor_pred_asym_ids:
         asym_mask = (features["asym_id"] == candidate_pred_anchor).bool()
         anchor_gt_residue = per_asym_residue_index[candidate_pred_anchor.item()]
         r, x = calculate_optimal_transform(
-            true_ca_poses, anchor_gt_idx, anchor_gt_residue, true_ca_masks, pred_ca_mask, asym_mask, pred_ca_pos
+            true_ca_poses,
+            anchor_gt_idx,
+            anchor_gt_residue,
+            true_ca_masks,
+            pred_ca_mask,
+            asym_mask,
+            pred_ca_pos,
         )
-        aligned_true_ca_poses = [ca.to(r.dtype) @ r + x for ca in true_ca_poses]  # apply transforms
+        aligned_true_ca_poses = [
+            ca.to(r.dtype) @ r + x for ca in true_ca_poses
+        ]  # apply transforms
         align = greedy_align(
             features,
             per_asym_residue_index,
@@ -504,11 +560,22 @@ def compute_permutation_alignment(
             aligned_true_ca_poses,
             true_ca_masks,
         )
-        merged_labels = merge_labels(per_asym_residue_index, labels, align, original_nres=features["aatype"].shape[-1])
+        merged_labels = merge_labels(
+            per_asym_residue_index,
+            labels,
+            align,
+            original_nres=features["aatype"].shape[-1],
+        )
         rmsd = compute_rmsd(
-            true_atom_pos=merged_labels["all_atom_positions"][..., ca_idx, :].to(r.dtype) @ r + x,
+            true_atom_pos=merged_labels["all_atom_positions"][..., ca_idx, :].to(
+                r.dtype
+            )
+            @ r
+            + x,
             pred_atom_pos=pred_ca_pos,
-            atom_mask=(pred_ca_mask * merged_labels["all_atom_mask"][..., ca_idx].long()).bool(),
+            atom_mask=(
+                pred_ca_mask * merged_labels["all_atom_mask"][..., ca_idx].long()
+            ).bool(),
         )
         if rmsd < best_rmsd:
             best_rmsd = rmsd
@@ -518,7 +585,9 @@ def compute_permutation_alignment(
 
 
 def multi_chain_permutation_align(
-    out: Dict[str, torch.Tensor], features: Dict[str, torch.Tensor], ground_truth: List[Dict[str, torch.Tensor]]
+    out: Dict[str, torch.Tensor],
+    features: Dict[str, torch.Tensor],
+    ground_truth: List[Dict[str, torch.Tensor]],
 ) -> Dict[str, torch.Tensor]:
     """
     Compute multi-chain permutation alignment.
@@ -535,10 +604,17 @@ def multi_chain_permutation_align(
     labels = split_ground_truth_labels(ground_truth)
 
     # Then permute ground truth chains before calculating the loss
-    align, per_asym_residue_index = compute_permutation_alignment(out=out, features=features, ground_truth=ground_truth)
+    align, per_asym_residue_index = compute_permutation_alignment(
+        out=out, features=features, ground_truth=ground_truth
+    )
 
     # reorder ground truth labels according to permutation results
-    labels = merge_labels(per_asym_residue_index, labels, align, original_nres=features["aatype"].shape[-1])
+    labels = merge_labels(
+        per_asym_residue_index,
+        labels,
+        align,
+        original_nres=features["aatype"].shape[-1],
+    )
 
     features.update(labels)
     return features

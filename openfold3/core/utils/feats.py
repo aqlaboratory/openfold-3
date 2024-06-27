@@ -32,7 +32,9 @@ def dgram_from_positions(
     no_bins: int = 39,
     inf: float = 1e8,
 ):
-    dgram = torch.sum((pos[..., None, :] - pos[..., None, :, :]) ** 2, dim=-1, keepdim=True)
+    dgram = torch.sum(
+        (pos[..., None, :] - pos[..., None, :, :]) ** 2, dim=-1, keepdim=True
+    )
     lower = torch.linspace(min_bin, max_bin, no_bins, device=pos.device) ** 2
     upper = torch.cat([lower[1:], lower.new_tensor([inf])], dim=-1)
     dgram = ((dgram > lower) * (dgram < upper)).type(dgram.dtype)

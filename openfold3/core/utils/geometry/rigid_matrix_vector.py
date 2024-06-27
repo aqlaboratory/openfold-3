@@ -74,7 +74,9 @@ class Rigid3Array:
         return self.rotation.apply_inverse_to_point(new_point)
 
     def invert_apply(self, point: torch.Tensor) -> torch.Tensor:
-        return self.apply_inverse_to_point(vector.Vec3Array.from_array(point)).to_tensor()
+        return self.apply_inverse_to_point(
+            vector.Vec3Array.from_array(point)
+        ).to_tensor()
 
     def compose_rotation(self, other_rotation):
         rot = self.rotation @ other_rotation
@@ -104,7 +106,10 @@ class Rigid3Array:
     @classmethod
     def identity(cls, shape, device) -> Rigid3Array:
         """Return identity Rigid3Array of given shape."""
-        return cls(rotation_matrix.Rot3Array.identity(shape, device), vector.Vec3Array.zeros(shape, device))
+        return cls(
+            rotation_matrix.Rot3Array.identity(shape, device),
+            vector.Vec3Array.zeros(shape, device),
+        )
 
     @classmethod
     def cat(cls, rigids: List[Rigid3Array], dim: int) -> Rigid3Array:
@@ -120,7 +125,11 @@ class Rigid3Array:
     def to_tensor(self) -> torch.Tensor:
         rot_array = self.rotation.to_tensor()
         vec_array = self.translation.to_tensor()
-        array = torch.zeros(rot_array.shape[:-2] + (4, 4), device=rot_array.device, dtype=rot_array.dtype)
+        array = torch.zeros(
+            rot_array.shape[:-2] + (4, 4),
+            device=rot_array.device,
+            dtype=rot_array.dtype,
+        )
         array[..., :3, :3] = rot_array
         array[..., :3, 3] = vec_array
         array[..., 3, 3] = 1.0
@@ -166,7 +175,9 @@ class Rigid3Array:
             array[..., 2, 1],
             array[..., 2, 2],
         )
-        translation = vector.Vec3Array(array[..., 0, 3], array[..., 1, 3], array[..., 2, 3])
+        translation = vector.Vec3Array(
+            array[..., 0, 3], array[..., 1, 3], array[..., 2, 3]
+        )
         return cls(rotation, translation)
 
     def cuda(self) -> Rigid3Array:

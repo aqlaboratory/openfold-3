@@ -23,7 +23,9 @@ from typing import Dict, Tuple
 import torch
 import torch.nn as nn
 
-from openfold3.core.model.layers.sequence_local_atom_attention import AtomAttentionEncoder
+from openfold3.core.model.layers.sequence_local_atom_attention import (
+    AtomAttentionEncoder,
+)
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.tensor_utils import add, one_hot
 
@@ -86,7 +88,9 @@ class InputEmbedder(nn.Module):
                 "residue_index" features of shape [*, N]
         """
         d = ri[..., None] - ri[..., None, :]
-        boundaries = torch.arange(start=-self.relpos_k, end=self.relpos_k + 1, device=d.device)
+        boundaries = torch.arange(
+            start=-self.relpos_k, end=self.relpos_k + 1, device=d.device
+        )
         reshaped_bins = boundaries.view(((1,) * len(d.shape)) + (len(boundaries),))
         d = d[..., None] - reshaped_bins
         d = torch.abs(d)
@@ -130,7 +134,11 @@ class InputEmbedder(nn.Module):
 
         # [*, N_clust, N_res, c_m]
         n_clust = msa.shape[-3]
-        tf_m = self.linear_tf_m(tf).unsqueeze(-3).expand(((-1,) * len(tf.shape[:-2]) + (n_clust, -1, -1)))
+        tf_m = (
+            self.linear_tf_m(tf)
+            .unsqueeze(-3)
+            .expand(((-1,) * len(tf.shape[:-2]) + (n_clust, -1, -1)))
+        )
         msa_emb = self.linear_msa_m(msa) + tf_m
 
         return msa_emb, pair_emb
@@ -200,14 +208,20 @@ class InputEmbedderMultimer(nn.Module):
         asym_id_same = asym_id[..., None] == asym_id[..., None, :]
         offset = pos[..., None] - pos[..., None, :]
 
-        clipped_offset = torch.clamp(offset + self.max_relative_idx, 0, 2 * self.max_relative_idx)
+        clipped_offset = torch.clamp(
+            offset + self.max_relative_idx, 0, 2 * self.max_relative_idx
+        )
 
         rel_feats = []
         if self.use_chain_relative:
             final_offset = torch.where(
-                asym_id_same, clipped_offset, (2 * self.max_relative_idx + 1) * torch.ones_like(clipped_offset)
+                asym_id_same,
+                clipped_offset,
+                (2 * self.max_relative_idx + 1) * torch.ones_like(clipped_offset),
             )
-            boundaries = torch.arange(start=0, end=2 * self.max_relative_idx + 2, device=final_offset.device)
+            boundaries = torch.arange(
+                start=0, end=2 * self.max_relative_idx + 2, device=final_offset.device
+            )
             rel_pos = one_hot(
                 final_offset,
                 boundaries,
@@ -230,10 +244,14 @@ class InputEmbedderMultimer(nn.Module):
             )
 
             final_rel_chain = torch.where(
-                entity_id_same, clipped_rel_chain, (2 * max_rel_chain + 1) * torch.ones_like(clipped_rel_chain)
+                entity_id_same,
+                clipped_rel_chain,
+                (2 * max_rel_chain + 1) * torch.ones_like(clipped_rel_chain),
             )
 
-            boundaries = torch.arange(start=0, end=2 * max_rel_chain + 2, device=final_rel_chain.device)
+            boundaries = torch.arange(
+                start=0, end=2 * max_rel_chain + 2, device=final_rel_chain.device
+            )
             rel_chain = one_hot(
                 final_rel_chain,
                 boundaries,
@@ -241,7 +259,9 @@ class InputEmbedderMultimer(nn.Module):
 
             rel_feats.append(rel_chain)
         else:
-            boundaries = torch.arange(start=0, end=2 * self.max_relative_idx + 1, device=clipped_offset.device)
+            boundaries = torch.arange(
+                start=0, end=2 * self.max_relative_idx + 1, device=clipped_offset.device
+            )
             rel_pos = one_hot(
                 clipped_offset,
                 boundaries,
@@ -277,7 +297,11 @@ class InputEmbedderMultimer(nn.Module):
 
         # [*, N_clust, N_res, c_m]
         n_clust = msa.shape[-3]
-        tf_m = self.linear_tf_m(tf).unsqueeze(-3).expand(((-1,) * len(tf.shape[:-2]) + (n_clust, -1, -1)))
+        tf_m = (
+            self.linear_tf_m(tf)
+            .unsqueeze(-3)
+            .expand(((-1,) * len(tf.shape[:-2]) + (n_clust, -1, -1)))
+        )
         msa_emb = self.linear_msa_m(msa) + tf_m
 
         return msa_emb, pair_emb
@@ -309,12 +333,22 @@ class RelposAllAtom(nn.Module):
         self.max_relative_idx = max_relative_idx
         self.max_relative_chain = max_relative_chain
 
-        self.no_bins = 2 * max_relative_idx + 2 + 2 * max_relative_idx + 2 + 1 + 2 * max_relative_chain + 2
+        self.no_bins = (
+            2 * max_relative_idx
+            + 2
+            + 2 * max_relative_idx
+            + 2
+            + 1
+            + 2 * max_relative_chain
+            + 2
+        )
 
         self.linear_relpos = Linear(self.no_bins, c_z, bias=False)
 
     @staticmethod
-    def relpos(pos: torch.Tensor, condition: torch.BoolTensor, rel_clip_idx: int) -> torch.Tensor:
+    def relpos(
+        pos: torch.Tensor, condition: torch.BoolTensor, rel_clip_idx: int
+    ) -> torch.Tensor:
         """
         Args:
             pos:
@@ -329,8 +363,14 @@ class RelposAllAtom(nn.Module):
         """
         offset = pos[..., None] - pos[..., None, :]
         clipped_offset = torch.clamp(offset + rel_clip_idx, 0, 2 * rel_clip_idx)
-        final_offset = torch.where(condition, clipped_offset, (2 * rel_clip_idx + 1) * torch.ones_like(clipped_offset))
-        boundaries = torch.arange(start=0, end=2 * rel_clip_idx + 2, device=final_offset.device)
+        final_offset = torch.where(
+            condition,
+            clipped_offset,
+            (2 * rel_clip_idx + 1) * torch.ones_like(clipped_offset),
+        )
+        boundaries = torch.arange(
+            start=0, end=2 * rel_clip_idx + 2, device=final_offset.device
+        )
         rel_pos = one_hot(
             final_offset,
             boundaries,
@@ -353,17 +393,27 @@ class RelposAllAtom(nn.Module):
         same_chain = asym_id[..., None] == asym_id[..., None, :]
         same_res = res_idx[..., None] == res_idx[..., None, :]
 
-        rel_pos = self.relpos(pos=res_idx, condition=same_chain, rel_clip_idx=self.max_relative_idx)
+        rel_pos = self.relpos(
+            pos=res_idx, condition=same_chain, rel_clip_idx=self.max_relative_idx
+        )
         rel_token = self.relpos(
-            pos=batch["token_index"], condition=same_chain & same_res, rel_clip_idx=self.max_relative_idx
+            pos=batch["token_index"],
+            condition=same_chain & same_res,
+            rel_clip_idx=self.max_relative_idx,
         )
 
         same_entity = entity_id[..., None] == entity_id[..., None, :]
         same_entity = same_entity[..., None].to(dtype=rel_pos.dtype)
 
-        rel_chain = self.relpos(pos=batch["sym_id"], condition=~same_chain, rel_clip_idx=self.max_relative_chain)
+        rel_chain = self.relpos(
+            pos=batch["sym_id"],
+            condition=~same_chain,
+            rel_clip_idx=self.max_relative_chain,
+        )
 
-        rel_feat = torch.cat([rel_pos, rel_token, same_entity, rel_chain], dim=-1).to(self.linear_relpos.weight.dtype)
+        rel_feat = torch.cat([rel_pos, rel_token, same_entity, rel_chain], dim=-1).to(
+            self.linear_relpos.weight.dtype
+        )
 
         return self.linear_relpos(rel_feat)
 
@@ -431,11 +481,17 @@ class InputEmbedderAllAtom(nn.Module):
         self.linear_z_i = Linear(c_s_input, c_z, bias=False)
         self.linear_z_j = Linear(c_s_input, c_z, bias=False)
 
-        self.relpos = RelposAllAtom(c_z=c_z, max_relative_idx=max_relative_idx, max_relative_chain=max_relative_chain)
+        self.relpos = RelposAllAtom(
+            c_z=c_z,
+            max_relative_idx=max_relative_idx,
+            max_relative_chain=max_relative_chain,
+        )
 
         self.linear_tok_bonds = Linear(1, c_z, bias=False)
 
-    def forward(self, batch: Dict, inplace_safe: bool = False) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(
+        self, batch: Dict, inplace_safe: bool = False
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:
@@ -456,7 +512,15 @@ class InputEmbedderAllAtom(nn.Module):
         )
 
         # [*, N_token, C_s_input]
-        s_input = torch.cat([a, batch["restype"], batch["profile"], batch["deletion_mean"].unsqueeze(-1)], dim=-1)
+        s_input = torch.cat(
+            [
+                a,
+                batch["restype"],
+                batch["profile"],
+                batch["deletion_mean"].unsqueeze(-1),
+            ],
+            dim=-1,
+        )
 
         # [*, N_token, C_s]
         s = self.linear_s(s_input)
@@ -495,7 +559,9 @@ class MSAModuleEmbedder(nn.Module):
         self.linear_m = Linear(c_m_feats, c_m, bias=False)
         self.linear_s_input = Linear(c_s_input, c_m, bias=False)
 
-    def forward(self, batch: Dict, s_input: torch.Tensor) -> [torch.Tensor, torch.Tensor]:
+    def forward(
+        self, batch: Dict, s_input: torch.Tensor
+    ) -> [torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:
@@ -515,7 +581,11 @@ class MSAModuleEmbedder(nn.Module):
                 [*, N_seq, N_token] MSA mask
         """
         msa_feat = torch.cat(
-            [batch["msa"], batch["has_deletion"].unsqueeze(-1), batch["deletion_value"].unsqueeze(-1)],
+            [
+                batch["msa"],
+                batch["has_deletion"].unsqueeze(-1),
+                batch["deletion_value"].unsqueeze(-1),
+            ],
             dim=-1,
         )
         msa_mask = batch["msa_mask"]
@@ -602,7 +672,9 @@ class PreembeddingEmbedder(nn.Module):
                 residue_index feature
         """
         d = ri[..., None] - ri[..., None, :]
-        boundaries = torch.arange(start=-self.relpos_k, end=self.relpos_k + 1, device=d.device)
+        boundaries = torch.arange(
+            start=-self.relpos_k, end=self.relpos_k + 1, device=d.device
+        )
         reshaped_bins = boundaries.view(((1,) * len(d.shape)) + (len(boundaries),))
         d = d[..., None] - reshaped_bins
         d = torch.abs(d)
@@ -716,8 +788,12 @@ class RecyclingEmbedder(nn.Module):
             requires_grad=False,
         )
         squared_bins = bins**2
-        upper = torch.cat([squared_bins[1:], squared_bins.new_tensor([self.inf])], dim=-1)
-        d = torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1, keepdims=True)
+        upper = torch.cat(
+            [squared_bins[1:], squared_bins.new_tensor([self.inf])], dim=-1
+        )
+        d = torch.sum(
+            (x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1, keepdims=True
+        )
 
         # [*, N, N, no_bins]
         d = ((d > squared_bins) * (d < upper)).type(x.dtype)

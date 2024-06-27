@@ -193,7 +193,9 @@ def main(args):
 
     if args.trace_model:
         if not config.data.predict.fixed_size:
-            raise ValueError("Tracing requires that fixed_size mode be enabled in the config")
+            raise ValueError(
+                "Tracing requires that fixed_size mode be enabled in the config"
+            )
 
     is_multimer = "multimer" in args.config_preset
 
@@ -252,7 +254,10 @@ def main(args):
         tags, seqs = parse_fasta(data)
 
         if not is_multimer and len(tags) != 1:
-            print(f"{fasta_path} contains more than one sequence but " f"multimer mode is not enabled. Skipping...")
+            print(
+                f"{fasta_path} contains more than one sequence but "
+                f"multimer mode is not enabled. Skipping..."
+            )
             continue
 
         # assert len(tags) == len(set(tags)), "All FASTA tags must be unique"
@@ -271,7 +276,11 @@ def main(args):
         )
 
     model_generator = load_models_from_command_line(
-        config, args.model_device, args.openfold_checkpoint_path, args.jax_param_path, args.output_dir
+        config,
+        args.model_device,
+        args.openfold_checkpoint_path,
+        args.jax_param_path,
+        args.output_dir,
     )
 
     for model, output_directory in model_generator:
@@ -309,7 +318,8 @@ def main(args):
             )
 
             processed_feature_dict = {
-                k: torch.as_tensor(v, device=args.model_device) for k, v in processed_feature_dict.items()
+                k: torch.as_tensor(v, device=args.model_device)
+                for k, v in processed_feature_dict.items()
             }
 
             if args.trace_model:
@@ -324,7 +334,9 @@ def main(args):
             out = run_model(model, processed_feature_dict, tag, args.output_dir)
 
             # Toss out the recycling dimensions --- we don't need them anymore
-            processed_feature_dict = tensor_tree_map(lambda x: np.array(x[..., -1].cpu()), processed_feature_dict)
+            processed_feature_dict = tensor_tree_map(
+                lambda x: np.array(x[..., -1].cpu()), processed_feature_dict
+            )
             out = tensor_tree_map(lambda x: np.array(x.cpu()), out)
 
             unrelaxed_protein = prep_output(
@@ -340,7 +352,9 @@ def main(args):
             unrelaxed_file_suffix = "_unrelaxed.pdb"
             if args.cif_output:
                 unrelaxed_file_suffix = "_unrelaxed.cif"
-            unrelaxed_output_path = os.path.join(output_directory, f"{output_name}{unrelaxed_file_suffix}")
+            unrelaxed_output_path = os.path.join(
+                output_directory, f"{output_name}{unrelaxed_file_suffix}"
+            )
 
             with open(unrelaxed_output_path, "w") as fp:
                 if args.cif_output:
@@ -354,11 +368,18 @@ def main(args):
                 # Relax the prediction.
                 logger.info(f"Running relaxation on {unrelaxed_output_path}...")
                 relax_protein(
-                    config, args.model_device, unrelaxed_protein, output_directory, output_name, args.cif_output
+                    config,
+                    args.model_device,
+                    unrelaxed_protein,
+                    output_directory,
+                    output_name,
+                    args.cif_output,
                 )
 
             if args.save_outputs:
-                output_dict_path = os.path.join(output_directory, f"{output_name}_output_dict.pkl")
+                output_dict_path = os.path.join(
+                    output_directory, f"{output_name}_output_dict.pkl"
+                )
                 with open(output_dict_path, "wb") as fp:
                     pickle.dump(out, fp, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -367,7 +388,11 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("fasta_dir", type=str, help="Path to directory containing FASTA files, one sequence per file")
+    parser.add_argument(
+        "fasta_dir",
+        type=str,
+        help="Path to directory containing FASTA files, one sequence per file",
+    )
     parser.add_argument(
         "template_mmcif_dir",
         type=str,
@@ -425,9 +450,21 @@ if __name__ == "__main__":
         default=False,
         help="Whether to save all model outputs, including embeddings, etc.",
     )
-    parser.add_argument("--cpus", type=int, default=4, help="""Number of CPUs with which to run alignment tools""")
-    parser.add_argument("--preset", type=str, default="full_dbs", choices=("reduced_dbs", "full_dbs"))
-    parser.add_argument("--output_postfix", type=str, default=None, help="""Postfix for output prediction filenames""")
+    parser.add_argument(
+        "--cpus",
+        type=int,
+        default=4,
+        help="""Number of CPUs with which to run alignment tools""",
+    )
+    parser.add_argument(
+        "--preset", type=str, default="full_dbs", choices=("reduced_dbs", "full_dbs")
+    )
+    parser.add_argument(
+        "--output_postfix",
+        type=str,
+        default=None,
+        help="""Postfix for output prediction filenames""",
+    )
     parser.add_argument("--data_random_seed", type=int, default=None)
     parser.add_argument(
         "--skip_relaxation",
@@ -482,7 +519,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.jax_param_path is None and args.openfold_checkpoint_path is None:
-        args.jax_param_path = os.path.join("openfold3", "resources", "params", "params_" + args.config_preset + ".npz")
+        args.jax_param_path = os.path.join(
+            "openfold3", "resources", "params", "params_" + args.config_preset + ".npz"
+        )
 
     if args.model_device == "cpu" and torch.cuda.is_available():
         logging.warning(

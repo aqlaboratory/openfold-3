@@ -77,7 +77,9 @@ class AuxiliaryHeads(nn.Module):
             aux_out["ptm_score"] = compute_tm(tm_logits, **self.config.tm)
             asym_id = outputs.get("asym_id")
             if asym_id is not None:
-                aux_out["iptm_score"] = compute_tm(tm_logits, asym_id=asym_id, interface=True, **self.config.tm)
+                aux_out["iptm_score"] = compute_tm(
+                    tm_logits, asym_id=asym_id, interface=True, **self.config.tm
+                )
                 aux_out["weighted_ptm_score"] = (
                     self.config.tm["iptm_weight"] * aux_out["iptm_score"]
                     + self.config.tm["ptm_weight"] * aux_out["ptm_score"]

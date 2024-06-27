@@ -38,7 +38,9 @@ class TestOuterProductMean(unittest.TestCase):
         mask = torch.randint(0, 2, size=(consts.batch_size, consts.n_seq, consts.n_res))
         m = opm(m, mask=mask, chunk_size=None)
 
-        self.assertTrue(m.shape == (consts.batch_size, consts.n_res, consts.n_res, consts.c_z))
+        self.assertTrue(
+            m.shape == (consts.batch_size, consts.n_res, consts.n_res, consts.c_z)
+        )
 
     @compare_utils.skip_unless_alphafold_installed()
     def test_opm_compare(self):
@@ -60,11 +62,14 @@ class TestOuterProductMean(unittest.TestCase):
         c_m = consts.c_m
 
         msa_act = np.random.rand(n_seq, n_res, c_m).astype(np.float32) * 100
-        msa_mask = np.random.randint(low=0, high=2, size=(n_seq, n_res)).astype(np.float32)
+        msa_mask = np.random.randint(low=0, high=2, size=(n_seq, n_res)).astype(
+            np.float32
+        )
 
         # Fetch pretrained parameters (but only from one block)]
         params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/evoformer/" + "evoformer_iteration/outer_product_mean"
+            "alphafold/alphafold_iteration/evoformer/"
+            + "evoformer_iteration/outer_product_mean"
         )
         params = tree_map(lambda n: n[0], params, jax.Array)
 

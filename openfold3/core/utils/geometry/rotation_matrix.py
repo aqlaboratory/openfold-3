@@ -63,7 +63,17 @@ class Rot3Array:
 
     def inverse(self) -> Rot3Array:
         """Returns inverse of Rot3Array."""
-        return Rot3Array(self.xx, self.yx, self.zx, self.xy, self.yy, self.zy, self.xz, self.yz, self.zz)
+        return Rot3Array(
+            self.xx,
+            self.yx,
+            self.zx,
+            self.xy,
+            self.yy,
+            self.zy,
+            self.xz,
+            self.yz,
+            self.zz,
+        )
 
     def apply_to_point(self, point: vector.Vec3Array) -> vector.Vec3Array:
         """Applies Rot3Array to point."""
@@ -78,7 +88,11 @@ class Rot3Array:
         return self.inverse().apply_to_point(point)
 
     def unsqueeze(self, dim: int):
-        return Rot3Array(*tensor_tree_map(lambda t: t.unsqueeze(dim), [getattr(self, c) for c in COMPONENTS]))
+        return Rot3Array(
+            *tensor_tree_map(
+                lambda t: t.unsqueeze(dim), [getattr(self, c) for c in COMPONENTS]
+            )
+        )
 
     def stop_gradient(self) -> Rot3Array:
         return Rot3Array(*[getattr(self, c).detach() for c in COMPONENTS])
@@ -161,10 +175,14 @@ class Rot3Array:
     def reshape(self, new_shape):
         field_names = utils.get_field_names(Rot3Array)
         reshape_fn = lambda t: t.reshape(new_shape)
-        return Rot3Array(**{name: reshape_fn(getattr(self, name)) for name in field_names})
+        return Rot3Array(
+            **{name: reshape_fn(getattr(self, name)) for name in field_names}
+        )
 
     @classmethod
     def cat(cls, rots: List[Rot3Array], dim: int) -> Rot3Array:
         field_names = utils.get_field_names(Rot3Array)
         cat_fn = lambda l: torch.cat(l, dim=dim)
-        return cls(**{name: cat_fn([getattr(r, name) for r in rots]) for name in field_names})
+        return cls(
+            **{name: cat_fn([getattr(r, name) for r in rots]) for name in field_names}
+        )

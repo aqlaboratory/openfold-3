@@ -22,7 +22,9 @@ def main(args):
     chains_w_alignments = set(super_index.keys())
     chains_wo_alignments = set(chains_to_seqs.keys()) - chains_w_alignments
 
-    seq_to_chain_w_alignment = {chains_to_seqs[chain]: chain for chain in chains_w_alignments}
+    seq_to_chain_w_alignment = {
+        chains_to_seqs[chain]: chain for chain in chains_w_alignments
+    }
 
     print("Unique sequences with alignments:", len(seq_to_chain_w_alignment))
 
@@ -66,7 +68,9 @@ if __name__ == "__main__":
         type=Path,
         help="Path to alignment-db super index file.",
     )
-    parser.add_argument("output_path", type=Path, help="Write the output super index to this path.")
+    parser.add_argument(
+        "output_path", type=Path, help="Write the output super index to this path."
+    )
     parser.add_argument(
         "all_chains_fasta",
         type=Path,

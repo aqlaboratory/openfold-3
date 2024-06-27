@@ -28,7 +28,9 @@ def run_seq_group_alignments(seq_groups, alignment_runner, args):
         try:
             os.makedirs(alignment_dir)
         except Exception as e:
-            logging.warning(f"Failed to create directory for {first_name} with exception {e}...")
+            logging.warning(
+                f"Failed to create directory for {first_name} with exception {e}..."
+            )
             continue
 
         fd, fasta_path = tempfile.mkstemp(suffix=".fasta")
@@ -95,7 +97,12 @@ def parse_and_align(files, alignment_runner, args):
                 core_str = fp.read()
             core_prot = protein.from_proteinnet_string(core_str)
             aatype = core_prot.aatype
-            seq = "".join([residue_constants.restypes_with_x[aatype[i]] for i in range(len(aatype))])
+            seq = "".join(
+                [
+                    residue_constants.restypes_with_x[aatype[i]]
+                    for i in range(len(aatype))
+                ]
+            )
             seq_group_dict[seq] = [file_id]
         else:
             continue
@@ -106,7 +113,10 @@ def parse_and_align(files, alignment_runner, args):
 
 def main(args):
     # Build the alignment tool runner
-    if args.hmmsearch_binary_path is not None and args.pdb_seqres_database_path is not None:
+    if (
+        args.hmmsearch_binary_path is not None
+        and args.pdb_seqres_database_path is not None
+    ):
         template_searcher = hmmsearch.Hmmsearch(
             binary_path=args.hmmsearch_binary_path,
             hmmbuild_binary_path=args.hmmbuild_binary_path,
@@ -191,7 +201,9 @@ def main(args):
                         l = seq_group_dict.setdefault(seq, [])
                         l.append(chain_name)
 
-        func = partial(run_seq_group_alignments, alignment_runner=alignment_runner, args=args)
+        func = partial(
+            run_seq_group_alignments, alignment_runner=alignment_runner, args=args
+        )
 
         seq_groups = [(k, v) for k, v in seq_group_dict.items()]
 
@@ -226,12 +238,24 @@ if __name__ == "__main__":
         help="""Path to directory containing mmCIF, FASTA and/or ProteinNet
                 .core files""",
     )
-    parser.add_argument("output_dir", type=str, help="Directory in which to output alignments")
-    add_data_args(parser)
-    parser.add_argument("--raise_errors", action="store_true", default=False, help="Whether to crash on parsing errors")
-    parser.add_argument("--cpus_per_task", type=int, default=cpu_count(), help="Number of CPUs to use")
     parser.add_argument(
-        "--mmcif_cache", type=str, default=None, help="Path to mmCIF cache. Used to filter files to be parsed"
+        "output_dir", type=str, help="Directory in which to output alignments"
+    )
+    add_data_args(parser)
+    parser.add_argument(
+        "--raise_errors",
+        action="store_true",
+        default=False,
+        help="Whether to crash on parsing errors",
+    )
+    parser.add_argument(
+        "--cpus_per_task", type=int, default=cpu_count(), help="Number of CPUs to use"
+    )
+    parser.add_argument(
+        "--mmcif_cache",
+        type=str,
+        default=None,
+        help="Path to mmCIF cache. Used to filter files to be parsed",
     )
     parser.add_argument(
         "--no_tasks",

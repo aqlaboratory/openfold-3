@@ -57,7 +57,10 @@ class BaseTriangleMultiplicativeUpdate(nn.Module, ABC):
         self.sigmoid = nn.Sigmoid()
 
     def _combine_projections(
-        self, a: torch.Tensor, b: torch.Tensor, _inplace_chunk_size: Optional[int] = None
+        self,
+        a: torch.Tensor,
+        b: torch.Tensor,
+        _inplace_chunk_size: Optional[int] = None,
     ) -> torch.Tensor:
         if self._outgoing:
             a = permute_final_dims(a, (2, 0, 1))
@@ -115,7 +118,9 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             c:
                 Hidden channel dimension
         """
-        super(TriangleMultiplicativeUpdate, self).__init__(c_z=c_z, c_hidden=c_hidden, _outgoing=_outgoing)
+        super(TriangleMultiplicativeUpdate, self).__init__(
+            c_z=c_z, c_hidden=c_hidden, _outgoing=_outgoing
+        )
 
         self.linear_a_p = Linear(self.c_z, self.c_hidden)
         self.linear_a_g = Linear(self.c_z, self.c_hidden, init="gating")
@@ -301,10 +306,14 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             # don't want a single chunk to straddle that point. We contract one
             # of the chunks in the middle to address that problem.
             i_range = list(range(0, half_n, inplace_chunk_size))
-            initial_offsets = [i_2 - i_1 for i_1, i_2 in zip(i_range, i_range[1:] + [half_n])]
+            initial_offsets = [
+                i_2 - i_1 for i_1, i_2 in zip(i_range, i_range[1:] + [half_n])
+            ]
             after_half = list(range(half_n, n, inplace_chunk_size))
             after_half_offsets = [inplace_chunk_size for _ in after_half]
-            combined_range_with_offsets = zip(i_range + after_half, initial_offsets + after_half_offsets)
+            combined_range_with_offsets = zip(
+                i_range + after_half, initial_offsets + after_half_offsets
+            )
             for i, offset in combined_range_with_offsets:
                 if not z_cache_rotated and i >= half_n:
                     z_cache = flip_z_cache_(z_cache, z)
@@ -341,9 +350,13 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
                         )
                     else:
                         z_cache_offset = i - half_n
-                        z_chunk_b = slice_tensor(z_cache, z_cache_offset, z_cache_offset + offset, row_dim)
+                        z_chunk_b = slice_tensor(
+                            z_cache, z_cache_offset, z_cache_offset + offset, row_dim
+                        )
 
-                b_chunk = compute_projection(z_chunk_b, mask_chunk, a=False, chunked=False)
+                b_chunk = compute_projection(
+                    z_chunk_b, mask_chunk, a=False, chunked=False
+                )
                 del z_chunk_b
 
                 x_chunk = torch.matmul(
@@ -476,7 +489,9 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             c:
                 Hidden channel dimension
         """
-        super(FusedTriangleMultiplicativeUpdate, self).__init__(c_z=c_z, c_hidden=c_hidden, _outgoing=_outgoing)
+        super(FusedTriangleMultiplicativeUpdate, self).__init__(
+            c_z=c_z, c_hidden=c_hidden, _outgoing=_outgoing
+        )
 
         self.linear_ab_p = Linear(self.c_z, self.c_hidden * 2)
         self.linear_ab_g = Linear(self.c_z, self.c_hidden * 2, init="gating")
@@ -610,4 +625,6 @@ class FusedTriangleMultiplicationIncoming(FusedTriangleMultiplicativeUpdate):
     Implements AF2-Multimer version of AF2 Algorithm 12.
     """
 
-    __init__ = partialmethod(FusedTriangleMultiplicativeUpdate.__init__, _outgoing=False)
+    __init__ = partialmethod(
+        FusedTriangleMultiplicativeUpdate.__init__, _outgoing=False
+    )
