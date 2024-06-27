@@ -14,7 +14,7 @@ RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86
 RUN dpkg -i cuda-keyring_1.0-1_all.deb
 
 RUN apt-get install -y libxml2 cuda-minimal-build-12-1 libcusparse-dev-12-1 libcublas-dev-12-1 libcusolver-dev-12-1 git \
-    apt-get install openmpi-bin libopenmpi-dev && \
+    apt-get install -y openmpi-bin libopenmpi-dev && \
     apt-get clean && apt-get purge && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN wget -P /tmp \
