@@ -84,7 +84,7 @@ def tokenize_atom_array(atom_array: AtomArray):
     #   (standard residues covalently linking different residues in the same chain)
     atom_names = atom_array.atom_name
     molecule_types = atom_array.af3_molecule_type
-    # Find atoms that are NOT in bonds connecting adjacent residues
+    # Find atoms connecting residues in the same chain via side chains
     is_side_chain = (
         ~np.isin(atom_names, NUCLEIC_ACID_MAIN_CHAIN_ATOMS)
         & np.isin(molecule_types, [MOLECULE_TYPE_ID_RNA, MOLECULE_TYPE_ID_DNA])
