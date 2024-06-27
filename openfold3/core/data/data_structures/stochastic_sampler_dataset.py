@@ -18,12 +18,16 @@ class OpenFoldStochasticSamplerDataset(Dataset):
         generator: torch.Generator,
     ) -> None:
         super().__init__()
-
+        if len(datasets) != len(probabilities):
+            raise RuntimeError(
+                "Number of datasets and probabilities must be equal."
+            )
         self.datasets = datasets
         self.probabilities = probabilities
         self.virtual_epoch_len = virtual_epoch_len
         self.num_virtual_epochs = num_virtual_epochs
         self.generator = generator
+
 
     def __len__(self):
         return self.virtual_epoch_len

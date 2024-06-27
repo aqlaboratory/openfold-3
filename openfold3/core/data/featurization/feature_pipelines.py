@@ -1,7 +1,8 @@
 # TODO add license
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Sequence
+import torch
 
 # TODO import parsing primitives from feature_pipeline_primitives.py
 # TODO implement checks that a FeaturePipeline is used with the correct SingleDataset
@@ -10,15 +11,19 @@ class FeaturePipeline(ABC):
     """
 
     @abstractmethod
-    def forward(self, index):
+    def forward(self, data_dict: dict) -> dict[Sequence[torch.Tensor]]:
         """Implements featurization and embedding logic.
 
         Args:
-            index (int): datapoint index
+            data_dict (dict): 
+                dictionary of parsed features to be tensorized
+        Returns:
+            dict: 
+                feature dictionary of embedded feature tensors
         """
         pass
 
-    def __call__(self, parsed_features: dict) -> Any:
+    def __call__(self, parsed_features: dict) -> dict[Sequence[torch.Tensor]]:
         return self.forward(parsed_features=parsed_features)
     
 

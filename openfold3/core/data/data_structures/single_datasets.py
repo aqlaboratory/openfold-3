@@ -127,7 +127,7 @@ class ProteinMonomerDataset(OpenFoldSingleDataset):
 
 
 @register_dataset
-class RNADataset(OpenFoldSingleDataset):
+class RNAStructureDataset(OpenFoldSingleDataset):
     """Implements a Dataset class for the RNA distillation dataset for AF3.
     """
 

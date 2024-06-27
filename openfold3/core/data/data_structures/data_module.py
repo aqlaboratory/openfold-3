@@ -25,7 +25,7 @@ class OpenFoldDataModule(pl.LightningDataModule):
         # TODO Input argument self-assignment - only assign necessary attributes if any
 
         # TODO Argument checks
-        # train/valid/test/predict datasets exclusivity
+        # train/validation/test/predict datasets exclusivity
 
         # Parse data_config
         dataset_classes, dataset_weights, dataset_configs, dataset_types = (
@@ -34,7 +34,7 @@ class OpenFoldDataModule(pl.LightningDataModule):
 
         # Initialize datasets
         # QUESTION do we want to support validation/testing/prediction on multiple datasets?
-        if ("train" in dataset_types) | ("valid" in dataset_types):
+        if ("train" in dataset_types) | ("validation" in dataset_types):
             # Initialize train datasets
             train_datasets = self.init_datasets(
                 dataset_classes, dataset_configs, dataset_types, "train"
@@ -53,9 +53,9 @@ class OpenFoldDataModule(pl.LightningDataModule):
                 generator=generator,
             )
 
-            # Currently only one valid dataset is supported
-            self.valid_dataset = self.init_datasets(
-                dataset_classes, dataset_configs, dataset_types, "valid"
+            # Currently only one validation dataset is supported
+            self.validation_dataset = self.init_datasets(
+                dataset_classes, dataset_configs, dataset_types, "validation"
             )[0]
 
         elif "test" in dataset_types:
@@ -114,8 +114,8 @@ class OpenFoldDataModule(pl.LightningDataModule):
         Args:
             dataset_classes (list[Sequence[str]]): List of strings matching the specific OpenFoldSingleDataset classes to initialize.
             dataset_configs (list[Sequence[dict]]): List of configs to pass each dataset class.
-            dataset_types (list[Sequence[str]]): List of dataset types, elements can be train, valid, test, predict.
-            type_to_init (str): One of train, valid, test, predict.
+            dataset_types (list[Sequence[str]]): List of dataset types, elements can be train, validation, test, predict.
+            type_to_init (str): One of train, validation, test, predict.
 
         Returns:
             list[Sequence[OpenFoldSingleDataset]]: List of initialized OpenFoldSingleDataset objects.
@@ -127,7 +127,7 @@ class OpenFoldDataModule(pl.LightningDataModule):
             )
             if dataset_type == type_to_init
         ]
-        if (type_to_init in ["valid", "test", "predict"]) & (len(datasets) > 1):
+        if (type_to_init in ["validation", "test", "predict"]) & (len(datasets) > 1):
             warnings.warn(
                 f"{len(datasets)} {type_to_init} datasets were found, using only the first one."
             )
@@ -139,7 +139,7 @@ class OpenFoldDataModule(pl.LightningDataModule):
 
     def val_dataloader(self) -> OpenFoldDataLoader:
         # TODO refactor OpneFoldDataLoader and add arguments
-        return OpenFoldDataLoader(self.valid_dataset, "<other arguments>")
+        return OpenFoldDataLoader(self.validation_dataset, "<other arguments>")
 
     def test_dataloader(self) -> OpenFoldDataLoader:
         # TODO refactor OpneFoldDataLoader and add arguments
