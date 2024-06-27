@@ -55,7 +55,7 @@ class ExtraMSABlock(MSABlock):
         eps: float,
         ckpt: bool,
     ):
-        super(ExtraMSABlock, self).__init__(
+        super().__init__(
             c_m=c_m,
             c_z=c_z,
             c_hidden_msa_att=c_hidden_msa_att,
@@ -285,24 +285,25 @@ class ExtraMSAStack(MSAStack):
             no_blocks:
                 Number of ExtraMSA blocks in the stack
             transition_type:
-                String 'relu' or 'swiglu' to determine activation for the transition function
+                String 'relu' or 'swiglu' to determine activation for the transition
+                function
             transition_n:
-                Factor by which to multiply c_m to obtain the transition layer
-                hidden dimension
+                Factor by which to multiply c_m to obtain the transition layer hidden
+                dimension
             msa_dropout:
                 Dropout rate for MSA activations
             pair_dropout:
                 Dropout used for pair activations
             no_column_attention:
-                When True, doesn't use column attention. Required for running
-                sequence embedding mode
+                When True, doesn't use column attention. Required for running sequence
+                embedding mode
             opm_first:
-                When True, Outer Product Mean is performed at the beginning of
-                the ExtraMSA block instead of after the MSA Stack.
-                Used in Multimer pipeline.
+                When True, Outer Product Mean is performed at the beginning of the
+                ExtraMSA block instead of after the MSA Stack. Used in Multimer
+                pipeline.
             fuse_projection_weights:
-                When True, uses FusedTriangleMultiplicativeUpdate variant in
-                the Pair Stack. Used in Multimer pipeline.
+                When True, uses FusedTriangleMultiplicativeUpdate variant in the Pair
+                Stack. Used in Multimer pipeline.
             inf:
                 Large constant for masking
             eps:
@@ -310,14 +311,14 @@ class ExtraMSAStack(MSAStack):
             ckpt:
                 Whether to checkpoint blocks
             clear_cache_between_blocks:
-                Whether to clear CUDA's GPU memory cache between blocks of the
-                stack. Slows down each block but can reduce fragmentation
+                Whether to clear CUDA's GPU memory cache between blocks of the stack.
+                Slows down each block but can reduce fragmentation
             tune_chunk_size:
                 Whether to dynamically tune the module's chunk size
         """
         # Previous implementation seems to call checkpoint function once for all blocks
         blocks_per_ckpt = None if not ckpt else no_blocks
-        super(ExtraMSAStack, self).__init__(
+        super().__init__(
             blocks_per_ckpt=blocks_per_ckpt,
             clear_cache_between_blocks=clear_cache_between_blocks,
             tune_chunk_size=tune_chunk_size,

@@ -13,7 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Base MSAStack that is used to define the following: EvoformerStack, ExtraMSAStack, and MSAModule."""
+"""
+Base MSAStack that is used to define the following: EvoformerStack, ExtraMSAStack, and
+MSAModule.
+"""
 
 from abc import ABC, abstractmethod
 from functools import partial
@@ -26,7 +29,8 @@ from openfold3.core.utils.checkpointing import checkpoint_blocks
 from openfold3.core.utils.chunk_utils import ChunkSizeTuner
 
 
-# TODO: Rename to CheckpointStack and generalize any kind of block (i.e. remove references to m/z)
+# TODO: Rename to CheckpointStack and generalize any kind of block (i.e. remove
+# references to m/z)
 class MSAStack(nn.Module, ABC):
     """Abstract class for MSA stacks."""
 
@@ -48,7 +52,7 @@ class MSAStack(nn.Module, ABC):
             tune_chunk_size:
                 Whether to dynamically tune the module's chunk size
         """
-        super(MSAStack, self).__init__()
+        super().__init__()
 
         self.blocks_per_ckpt = blocks_per_ckpt
         self.clear_cache_between_blocks = clear_cache_between_blocks
@@ -132,8 +136,10 @@ class MSAStack(nn.Module, ABC):
         return blocks
 
     def _wrap_up(self, m: torch.Tensor, z: torch.Tensor):
-        """Function called at the end of the forward pass to wrap up the outputs and return
-        the appropriate tensors depending on the stack type.
+        """Wrap-up function called at the end of the forward pass
+
+        Wraps up the outputs and returns the appropriate tensors depending on the stack
+        type.
 
         Returns:
             m:

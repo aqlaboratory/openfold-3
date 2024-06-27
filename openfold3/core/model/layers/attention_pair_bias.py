@@ -72,7 +72,7 @@ class AttentionPairBias(Attention):
             inf:
                 Large constant used to create mask for attention logits
         """
-        super(AttentionPairBias, self).__init__(
+        super().__init__(
             c_q=c_q,
             c_k=c_k,
             c_v=c_v,
@@ -147,8 +147,9 @@ class AttentionPairBias(Attention):
         # [*, no_heads, N_res, N_res]
         z = permute_final_dims(z, [2, 0, 1])
 
-        # TODO: This is how it is written in the algorithm, but I need to actually select these indices
-        # in the a, z, and mask terms to actually reduce the attention computation
+        # TODO: This is how it is written in the algorithm, but I need to actually
+        # select these indices in the a, z, and mask terms to actually reduce the
+        # attention computation
         if beta is not None:
             z = z + beta.unsqueeze(-3)
 
@@ -176,10 +177,11 @@ class AttentionPairBias(Attention):
             z:
                 [*, N_res, N_res, C_z] Pair embedding
             s:
-                [*, N_res, C_s] Single embedding. Used in AdaLN if use_ada_layer_norm is True
+                [*, N_res, C_s] Single embedding. Used in AdaLN if use_ada_layer_norm is
+                True
             beta:
-                [*, N_res, N_res] Neighborhood mask. Used in Sequence-local atom attention
-                for rectangular blocks along the diagonal.
+                [*, N_res, N_res] Neighborhood mask. Used in Sequence-local atom
+                attention for rectangular blocks along the diagonal.
             mask:
                 [*, N_res] Mask for token-level embedding
             use_memory_efficient_kernel:
@@ -195,15 +197,12 @@ class AttentionPairBias(Attention):
         Returns
             [*, Q, C_q] attention updated token-level embedding
         """
-        if self.use_ada_layer_norm:
-            a = self.layer_norm_a(a, s)
-        else:
-            a = self.layer_norm_a(a)
+        a = self.layer_norm_a(a, s) if self.use_ada_layer_norm else self.layer_norm_a(a)
 
         biases = self._prep_bias(a, z, beta, mask)
 
         # Do we support all the memory efficient kernel types?
-        a = super(AttentionPairBias, self).forward(
+        a = super().forward(
             q_x=a,
             kv_x=a,
             biases=biases,

@@ -13,8 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Base blocks for MSA-based and Pair transformer stacks. Includes MSABlock and PairBlock, where the
-MSABlock is used to define the blocks used in the EvoformerStack, ExtraMSAStack, and MSAModule.
+"""Base blocks for MSA-based and Pair transformer stacks.
+
+Includes MSABlock and PairBlock, where the MSABlock is used to define the blocks used in
+the EvoformerStack, ExtraMSAStack, and MSAModule.
 """
 
 import sys
@@ -39,8 +41,9 @@ from openfold3.core.utils.tensor_utils import add
 
 
 class MSABlock(nn.Module, ABC):
-    """Abstract class for MSA blocks. Used to define the blocks used in the EvoformerStack,
-    ExtraMSAStack, and MSAModule.
+    """Abstract class for MSA blocks.
+
+    Used to define the blocks used in the EvoformerStack, ExtraMSAStack, and MSAModule.
     """
 
     @abstractmethod
@@ -82,7 +85,8 @@ class MSABlock(nn.Module, ABC):
             no_heads_pair:
                 Number of heads used for pair attention
             transition_type:
-                String 'relu' or 'swiglu' to determine activation for the transition function
+                String 'relu' or 'swiglu' to determine activation for the transition
+                function
             transition_n:
                 Factor by which to multiply c_m to obtain the transition layer
                 hidden dimension
@@ -102,7 +106,7 @@ class MSABlock(nn.Module, ABC):
             eps:
                 Small constant for numerical stability
         """
-        super(MSABlock, self).__init__()
+        super().__init__()
 
         self.opm_first = opm_first
 
@@ -155,7 +159,10 @@ class MSABlock(nn.Module, ABC):
         inplace_safe: bool = False,
         _offload_inference: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Compute the Outer Product Mean. Will be used in the forward pass of the MSABlock."""
+        """Compute the Outer Product Mean.
+
+        Used in the forward pass of the MSABlock.
+        """
         m, z = input_tensors
 
         if _offload_inference and inplace_safe:
@@ -225,18 +232,19 @@ class PairBlock(nn.Module):
             no_heads_pair:
                 Number of heads in the attention mechanism
             transition_type:
-                String 'relu' or 'swiglu' to determine activation for the transition function
+                String 'relu' or 'swiglu' to determine activation for the transition
+                function
             transition_n:
                 Scale of pair transition (Alg. 15) hidden dimension
             pair_dropout:
                 Dropout rate used throughout the stack
             fuse_projection_weights:
-                When True, uses FusedTriangleMultiplicativeUpdate variant in
-                the Pair Stack. Used in Multimer pipeline.
+                When True, uses FusedTriangleMultiplicativeUpdate variant in the Pair
+                Stack. Used in Multimer pipeline.
             inf:
                 Large constant used for masking
         """
-        super(PairBlock, self).__init__()
+        super().__init__()
 
         if fuse_projection_weights:
             self.tri_mul_out = FusedTriangleMultiplicationOutgoing(

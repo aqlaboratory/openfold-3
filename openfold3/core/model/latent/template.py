@@ -13,8 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Template embedding layers. These modules embed templates into pair embeddings. Note that this
-includes the template feature embedding functions in openfold3.core.model.feature_embedders.
+"""Template embedding layers.
+
+These modules embed templates into pair embeddings. Note that this includes the template
+feature embedding functions in openfold3.core.model.feature_embedders.
 """
 
 import math
@@ -73,7 +75,8 @@ class TemplatePairBlock(PairBlock):
             no_heads:
                 Number of heads in the attention mechanism
             transition_type:
-                String 'relu' or 'swiglu' to determine activation for the transition function
+                String 'relu' or 'swiglu' to determine activation for the transition
+                function
             pair_transition_n:
                 Scale of pair transition (Alg. 15) hidden dimension
             dropout_rate:
@@ -81,12 +84,12 @@ class TemplatePairBlock(PairBlock):
             tri_mul_first:
                 Whether to perform triangular multiplication before attention
             fuse_projection_weights:
-                When True, uses FusedTriangleMultiplicativeUpdate variant in
-                the Pair Stack. Used in Multimer pipeline.
+                When True, uses FusedTriangleMultiplicativeUpdate variant in the Pair
+                Stack. Used in Multimer pipeline.
             inf:
                 Large constant used for masking
         """
-        super(TemplatePairBlock, self).__init__(
+        super().__init__(
             c_z=c_t,
             c_hidden_mul=c_hidden_tri_mul,
             c_hidden_pair_att=c_hidden_tri_att,
@@ -223,7 +226,8 @@ class TemplatePairStack(nn.Module):
             no_heads:
                 Number of heads in the attention mechanism
             transition_type:
-                String 'relu' or 'swiglu' to determine activation for the transition function
+                String 'relu' or 'swiglu' to determine activation for the transition
+                function
             pair_transition_n:
                 Scale of pair transition (Alg. 15) hidden dimension
             dropout_rate:
@@ -241,7 +245,7 @@ class TemplatePairStack(nn.Module):
             inf:
                 Large constant used for masking
         """
-        super(TemplatePairStack, self).__init__()
+        super().__init__()
 
         self.blocks_per_ckpt = blocks_per_ckpt
 
@@ -354,7 +358,7 @@ class TemplateEmbedderMonomer(nn.Module):
             config:
                 ConfigDict with template config.
         """
-        super(TemplateEmbedderMonomer, self).__init__()
+        super().__init__()
 
         self.config = config
         self.template_single_embedder = TemplateSingleEmbedderMonomer(
@@ -424,7 +428,7 @@ class TemplateEmbedderMonomer(nn.Module):
         for i in range(n_templ):
             idx = batch["template_aatype"].new_tensor(i)
             single_template_feats = tensor_tree_map(
-                lambda t: torch.index_select(t, templ_dim, idx).squeeze(templ_dim),
+                lambda t: torch.index_select(t, templ_dim, idx).squeeze(templ_dim),  # noqa: B023
                 batch,
             )
 
@@ -504,7 +508,7 @@ class TemplateEmbedderMultimer(nn.Module):
             config:
                 ConfigDict with template config.
         """
-        super(TemplateEmbedderMultimer, self).__init__()
+        super().__init__()
 
         self.config = config
         self.template_single_embedder = TemplateSingleEmbedderMultimer(
@@ -607,7 +611,7 @@ class TemplateEmbedderAllAtom(nn.Module):
             config:
                 ConfigDict with template config.
         """
-        super(TemplateEmbedderAllAtom, self).__init__()
+        super().__init__()
 
         self.config = config
         self.template_pair_embedder = TemplatePairEmbedderAllAtom(
@@ -731,7 +735,7 @@ def embed_templates_offload(
     for i in range(n_templ):
         idx = batch["template_aatype"].new_tensor(i)
         single_template_feats = tensor_tree_map(
-            lambda t: torch.index_select(t, templ_dim, idx).squeeze(templ_dim),
+            lambda t: torch.index_select(t, templ_dim, idx).squeeze(templ_dim),  # noqa: B023
             batch,
         )
 
@@ -839,15 +843,15 @@ def embed_templates_average(
     # Embed the templates one at a time (with a poor man's vmap)
     n_templ = batch["template_aatype"].shape[templ_dim]
     out_tensor = z.new_zeros(z.shape)
+
+    def slice_template_tensor(t, i):
+        s = [slice(None) for _ in t.shape]
+        s[templ_dim] = slice(i, i + templ_group_size)
+        return t[s]
+
     for i in range(0, n_templ, templ_group_size):
-
-        def slice_template_tensor(t):
-            s = [slice(None) for _ in t.shape]
-            s[templ_dim] = slice(i, i + templ_group_size)
-            return t[s]
-
         template_feats = tensor_tree_map(
-            slice_template_tensor,
+            partial(slice_template_tensor, i=i),
             batch,
         )
 

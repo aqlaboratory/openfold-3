@@ -64,7 +64,8 @@ class PairFormerBlock(nn.Module):
             no_heads_pair:
                 Number of heads in triangular attention
             transition_type:
-                String 'relu' or 'swiglu' to determine activation for the transition function
+                String 'relu' or 'swiglu' to determine activation for the transition
+                function
             transition_n:
                 Factor by which to multiply c_z to obtain the transition layer
                 hidden dimension
@@ -76,7 +77,7 @@ class PairFormerBlock(nn.Module):
             inf:
                 Large constant used for masking
         """
-        super(PairFormerBlock, self).__init__()
+        super().__init__()
 
         self.pair_stack = PairBlock(
             c_z=c_z,
@@ -237,7 +238,8 @@ class PairFormerStack(nn.Module):
             no_blocks:
                 Number of PairFormer blocks
             transition_type:
-                String 'relu' or 'swiglu' to determine activation for the transition function
+                String 'relu' or 'swiglu' to determine activation for the transition
+                function
             transition_n:
                 Factor by which to multiply c_z to obtain the transition layer
                 hidden dimension
@@ -257,7 +259,7 @@ class PairFormerStack(nn.Module):
             tune_chunk_size:
                 Whether to dynamically tune the module's chunk size
         """
-        super(PairFormerStack, self).__init__()
+        super().__init__()
 
         self.blocks_per_ckpt = blocks_per_ckpt
         self.clear_cache_between_blocks = clear_cache_between_blocks
@@ -299,8 +301,9 @@ class PairFormerStack(nn.Module):
         _mask_trans: bool,
     ):
         """
-        Partially initialize the PairFormer blocks. Optionally add cache clearing between
-        blocks and chunk size tuning. Arguments are the same as forward function.
+        Partially initialize the PairFormer blocks. Optionally add cache clearing
+        between blocks and chunk size tuning. Arguments are the same as forward
+        function.
 
         Returns:
             Partially initialized PairFormer blocks.

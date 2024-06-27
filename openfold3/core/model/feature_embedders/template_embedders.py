@@ -13,7 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Template feature embedders. Used in the template stack to build the final template embeddings."""
+"""
+Template feature embedders. Used in the template stack to build the final template
+embeddings.
+"""
 
 from typing import Dict
 
@@ -48,7 +51,7 @@ class TemplateSingleEmbedderMonomer(nn.Module):
             c_out:
                 Output channel dimension
         """
-        super(TemplateSingleEmbedderMonomer, self).__init__()
+        super().__init__()
 
         self.c_out = c_out
         self.c_in = c_in
@@ -110,7 +113,7 @@ class TemplatePairEmbedderMonomer(nn.Module):
             c_out:
                 Output channel dimension
         """
-        super(TemplatePairEmbedderMonomer, self).__init__()
+        super().__init__()
 
         self.c_in = c_in
         self.c_out = c_out
@@ -224,7 +227,7 @@ class TemplateSingleEmbedderMultimer(nn.Module):
             c_out:
                 Output channel dimension
         """
-        super(TemplateSingleEmbedderMultimer, self).__init__()
+        super().__init__()
         self.template_single_embedder = Linear(c_in, c_out)
         self.template_projector = Linear(c_out, c_out)
 
@@ -306,7 +309,7 @@ class TemplatePairEmbedderMultimer(nn.Module):
             c_aatype:
                 Template aatype feature embedding dimension
         """
-        super(TemplatePairEmbedderMultimer, self).__init__()
+        super().__init__()
 
         self.dgram_linear = Linear(c_dgram, c_out, init="relu")
         self.aatype_linear_1 = Linear(c_aatype, c_out, init="relu")
@@ -408,8 +411,9 @@ class TemplatePairEmbedderMultimer(nn.Module):
 
 
 class TemplatePairEmbedderAllAtom(nn.Module):
-    """Implements AF3 Algorithm 16 lines 1-5. Also includes line 8.The resulting embedded template will
-    go into the TemplatePairStack.
+    """
+    Implements AF3 Algorithm 16 lines 1-5. Also includes line 8. The resulting embedded
+    template will go into the TemplatePairStack.
     """
 
     def __init__(self, c_in: int, c_z: int, c_out: int):
@@ -422,7 +426,7 @@ class TemplatePairEmbedderAllAtom(nn.Module):
             c_out:
                 Output channel dimension
         """
-        super(TemplatePairEmbedderAllAtom, self).__init__()
+        super().__init__()
 
         self.linear_feats = Linear(c_in, c_out, bias=False)
         self.query_embedding_layer_norm = LayerNorm(c_z)

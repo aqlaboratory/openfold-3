@@ -13,8 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Embedders for input features. Includes InputEmbedders for monomer, multimer, soloseq", and
-all-atom models. Also includes the RecyclingEmbedder and ExtraMSAEmbedder.
+"""
+Embedders for input features. Includes InputEmbedders for monomer, multimer, soloseq",
+and all-atom models. Also includes the RecyclingEmbedder and ExtraMSAEmbedder.
 """
 
 import random
@@ -59,7 +60,7 @@ class InputEmbedder(nn.Module):
             relpos_k:
                 Window size used in relative positional encoding
         """
-        super(InputEmbedder, self).__init__()
+        super().__init__()
 
         self.tf_dim = tf_dim
         self.msa_dim = msa_dim
@@ -179,7 +180,7 @@ class InputEmbedderMultimer(nn.Module):
             max_relative_chain:
                 Maximum relative chain indices clipped
         """
-        super(InputEmbedderMultimer, self).__init__()
+        super().__init__()
 
         self.tf_dim = tf_dim
         self.msa_dim = msa_dim
@@ -327,7 +328,7 @@ class RelposAllAtom(nn.Module):
                 Maximum relative chain indices clipped
             **kwargs:
         """
-        super(RelposAllAtom, self).__init__()
+        super().__init__()
 
         # RPE stuff
         self.max_relative_idx = max_relative_idx
@@ -464,7 +465,7 @@ class InputEmbedderAllAtom(nn.Module):
                 Maximum relative chain indices clipped
             **kwargs:
         """
-        super(InputEmbedderAllAtom, self).__init__()
+        super().__init__()
 
         self.atom_attn_enc = AtomAttentionEncoder(
             c_s=c_s,
@@ -554,14 +555,14 @@ class MSAModuleEmbedder(nn.Module):
             c_s_input:
                 Single (s_input) channel dimension
         """
-        super(MSAModuleEmbedder, self).__init__()
+        super().__init__()
 
         self.linear_m = Linear(c_m_feats, c_m, bias=False)
         self.linear_s_input = Linear(c_s_input, c_m, bias=False)
 
     def forward(
         self, batch: Dict, s_input: torch.Tensor
-    ) -> [torch.Tensor, torch.Tensor]:
+    ) -> list[torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:
@@ -643,7 +644,7 @@ class PreembeddingEmbedder(nn.Module):
             relpos_k:
                 Window size used in relative position encoding
         """
-        super(PreembeddingEmbedder, self).__init__()
+        super().__init__()
 
         self.tf_dim = tf_dim
         self.preembedding_dim = preembedding_dim
@@ -732,7 +733,7 @@ class RecyclingEmbedder(nn.Module):
             no_bins:
                 Number of distogram bins
         """
-        super(RecyclingEmbedder, self).__init__()
+        super().__init__()
 
         self.c_m = c_m
         self.c_z = c_z
@@ -825,7 +826,7 @@ class ExtraMSAEmbedder(nn.Module):
             c_out:
                 Output channel dimension
         """
-        super(ExtraMSAEmbedder, self).__init__()
+        super().__init__()
 
         self.c_in = c_in
         self.c_out = c_out
