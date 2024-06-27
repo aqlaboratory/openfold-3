@@ -15,6 +15,6 @@ jobs:
       # Check for formatter compliance
       - name: Check formatting with Ruff
         if: always()
-        uses: chartboost/ruff-action@v1git
+        uses: chartboost/ruff-action@v1
         with:
           args: 'format --check'
