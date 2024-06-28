@@ -25,7 +25,7 @@ from openfold3.core.model.feature_embedders.input_embedders import (
 )
 from openfold3.core.model.latent.evoformer import EvoformerStack
 from openfold3.core.model.latent.extra_msa import ExtraMSAStack
-from openfold3.core.model.latent.template import (
+from openfold3.core.model.latent.template_module import (
     TemplateEmbedderMonomer,
     TemplateEmbedderMultimer,
     embed_templates_offload,
@@ -360,7 +360,7 @@ class AlphaFold(nn.Module):
                 del a, z
 
                 # [*, N, N, C_z]
-                z = self.extra_msa_stack._forward_offload(
+                z = self.extra_msa_stack.forward_offload(
                     input_tensors,
                     msa_mask=feats["extra_msa_mask"].to(dtype=m.dtype),
                     pair_mask=pair_mask.to(dtype=m.dtype),
@@ -387,11 +387,11 @@ class AlphaFold(nn.Module):
         # Run MSA + pair embeddings through the trunk of the network
         # m: [*, S, N, C_m]
         # z: [*, N, N, C_z]
-        # s: [*, N, C_s]          
+        # s: [*, N, C_s]
         if self.globals.offload_inference:
             input_tensors = [m, z]
             del m, z
-            m, z, s = self.evoformer._forward_offload(
+            m, z, s = self.evoformer.forward_offload(
                 input_tensors,
                 msa_mask=msa_mask.to(dtype=input_tensors[0].dtype),
                 pair_mask=pair_mask.to(dtype=input_tensors[1].dtype),

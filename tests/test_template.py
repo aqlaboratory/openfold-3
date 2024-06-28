@@ -16,16 +16,13 @@ import re
 import torch
 import numpy as np
 import unittest
-from ml_collections import ConfigDict
 
 from openfold3.core.model.latent import TemplatePairStack, TemplateEmbedderAllAtom
 from openfold3.core.model.layers.template_pointwise_attention import TemplatePointwiseAttention
-from openfold3.core.model.primitives import LayerNorm
-from openfold3.model_implementations.af2_monomer.config import model_config
 from openfold3.model_implementations.af3_all_atom.config import config as af3_config
 
 import tests.compare_utils as compare_utils
-from tests.config import consts, multimer_consts
+from tests.config import consts
 from tests.data_utils import random_template_feats, random_asym_ids
 
 if compare_utils.alphafold_is_installed():
@@ -152,7 +149,7 @@ class TestTemplatePairStack(unittest.TestCase):
                     name="template_pair_stack",
                 )
                 act = tps(pair_act, pair_mask, is_training=False)
-            ln = LayerNorm([-1], True, True, name="output_layer_norm")
+            ln = alphafold.model.common_modules.LayerNorm([-1], True, True, name="output_layer_norm")
             act = ln(act)
             return act
 

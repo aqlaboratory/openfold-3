@@ -138,7 +138,7 @@ class MSAStack(nn.Module, ABC):
         """
         return m, z
 
-    def _forward_offload(
+    def forward_offload(
         self,
         input_tensors: Sequence[torch.Tensor],
         msa_mask: torch.Tensor,
@@ -148,7 +148,7 @@ class MSAStack(nn.Module, ABC):
         use_lma: bool = False,
         use_flash: bool = False,
         _mask_trans: bool = True,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ):
         assert not (self.training or torch.is_grad_enabled())
 
         blocks = self._prep_blocks(
@@ -193,7 +193,7 @@ class MSAStack(nn.Module, ABC):
         use_flash: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ):
         """
         Args:
             m:

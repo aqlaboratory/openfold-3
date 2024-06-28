@@ -23,10 +23,6 @@ def enforce_config_constraints(config):
 
     mutually_exclusive_bools = [
         (
-            "model.template.average_templates", 
-            "model.template.offload_templates"
-        ),
-        (
             "globals.use_lma",
             "globals.use_flash",
             "globals.use_deepspeed_evo_attention"
@@ -51,12 +47,6 @@ def enforce_config_constraints(config):
             "and that the deepspeed.ops.deepspeed4science package exists"
         )
 
-    if(
-        config.globals.offload_inference and 
-        not config.model.template.average_templates
-    ):
-        config.model.template.offload_templates = True
-
 
 def model_config(
     name, 
@@ -66,166 +56,8 @@ def model_config(
     use_deepspeed_evoformer_attention=False,
 ):
     c = copy.deepcopy(config)
-    # TRAINING PRESETS
-    if name == "initial_training":
-        # AF2 Suppl. Table 4, "initial training" setting
-        pass
-    elif name == "finetuning":
-        # AF2 Suppl. Table 4, "finetuning" setting
-        c.data.train.crop_size = 384
-        c.data.train.max_extra_msa = 5120
-        c.data.train.max_msa_clusters = 512
-        c.loss.violation.weight = 1.
-        c.loss.experimentally_resolved.weight = 0.01
-    elif name == "finetuning_ptm":
-        c.data.train.max_extra_msa = 5120
-        c.data.train.crop_size = 384
-        c.data.train.max_msa_clusters = 512
-        c.loss.violation.weight = 1.
-        c.loss.experimentally_resolved.weight = 0.01
-        c.model.heads.tm.enabled = True
-        c.loss.tm.weight = 0.1
-    elif name == "finetuning_no_templ":
-        # AF2 Suppl. Table 4, "finetuning" setting
-        c.data.train.crop_size = 384
-        c.data.train.max_extra_msa = 5120
-        c.data.train.max_msa_clusters = 512
-        c.model.template.enabled = False
-        c.loss.violation.weight = 1.
-        c.loss.experimentally_resolved.weight = 0.01
-    elif name == "finetuning_no_templ_ptm":
-        # AF2 Suppl. Table 4, "finetuning" setting
-        c.data.train.crop_size = 384
-        c.data.train.max_extra_msa = 5120
-        c.data.train.max_msa_clusters = 512
-        c.model.template.enabled = False
-        c.loss.violation.weight = 1.
-        c.loss.experimentally_resolved.weight = 0.01
-        c.model.heads.tm.enabled = True
-        c.loss.tm.weight = 0.1
-    # INFERENCE PRESETS
-    elif name == "model_1":
-        # AF2 Suppl. Table 5, Model 1.1.1
-        c.data.train.max_extra_msa = 5120
-        c.data.predict.max_extra_msa = 5120
-        c.data.common.reduce_max_clusters_by_max_templates = True
-        c.data.common.use_templates = True
-        c.data.common.use_template_torsion_angles = True
-        c.model.template.enabled = True
-    elif name == "model_2":
-        # AF2 Suppl. Table 5, Model 1.1.2
-        c.data.common.reduce_max_clusters_by_max_templates = True
-        c.data.common.use_templates = True
-        c.data.common.use_template_torsion_angles = True
-        c.model.template.enabled = True
-    elif name == "model_3":
-        # AF2 Suppl. Table 5, Model 1.2.1
-        c.data.train.max_extra_msa = 5120
-        c.data.predict.max_extra_msa = 5120
-        c.model.template.enabled = False
-    elif name == "model_4":
-        # AF2 Suppl. Table 5, Model 1.2.2
-        c.data.train.max_extra_msa = 5120
-        c.data.predict.max_extra_msa = 5120
-        c.model.template.enabled = False
-    elif name == "model_5":
-        # AF2 Suppl. Table 5, Model 1.2.3
-        c.model.template.enabled = False
-    elif name == "model_1_ptm":
-        c.data.train.max_extra_msa = 5120
-        c.data.predict.max_extra_msa = 5120 
-        c.data.common.reduce_max_clusters_by_max_templates = True
-        c.data.common.use_templates = True
-        c.data.common.use_template_torsion_angles = True
-        c.model.template.enabled = True
-        c.model.heads.tm.enabled = True
-        c.loss.tm.weight = 0.1
-    elif name == "model_2_ptm":
-        c.data.common.reduce_max_clusters_by_max_templates = True
-        c.data.common.use_templates = True
-        c.data.common.use_template_torsion_angles = True
-        c.model.template.enabled = True
-        c.model.heads.tm.enabled = True
-        c.loss.tm.weight = 0.1
-    elif name == "model_3_ptm":
-        c.data.train.max_extra_msa = 5120
-        c.data.predict.max_extra_msa = 5120
-        c.model.template.enabled = False
-        c.model.heads.tm.enabled = True
-        c.loss.tm.weight = 0.1
-    elif name == "model_4_ptm":
-        c.data.train.max_extra_msa = 5120
-        c.data.predict.max_extra_msa = 5120
-        c.model.template.enabled = False
-        c.model.heads.tm.enabled = True
-        c.loss.tm.weight = 0.1
-    elif name == "model_5_ptm":
-        c.model.template.enabled = False
-        c.model.heads.tm.enabled = True
-        c.loss.tm.weight = 0.1
-    elif name.startswith("seq"):  # SINGLE SEQUENCE EMBEDDING PRESETS
-        c.update(seq_mode_config.copy_and_resolve_references())
-        if name == "seqemb_initial_training":
-            c.data.train.max_msa_clusters = 1
-            c.data.eval.max_msa_clusters = 1
-            c.data.train.block_delete_msa = False
-            c.data.train.max_distillation_msa_clusters = 1
-        elif name == "seqemb_finetuning":
-            c.data.train.max_msa_clusters = 1
-            c.data.eval.max_msa_clusters = 1
-            c.data.train.block_delete_msa = False
-            c.data.train.max_distillation_msa_clusters = 1
-            c.data.train.crop_size = 384
-            c.loss.violation.weight = 1.
-            c.loss.experimentally_resolved.weight = 0.01
-        elif name == "seq_model_esm1b":
-            c.data.common.use_templates = True
-            c.data.common.use_template_torsion_angles = True
-            c.model.template.enabled = True
-            c.data.predict.max_msa_clusters = 1
-        elif name == "seq_model_esm1b_ptm":
-            c.data.common.use_templates = True
-            c.data.common.use_template_torsion_angles = True
-            c.model.template.enabled = True
-            c.data.predict.max_msa_clusters = 1
-            c.model.heads.tm.enabled = True
-            c.loss.tm.weight = 0.1
-    elif "multimer" in name:  # MULTIMER PRESETS
-        c.update(multimer_config_update.copy_and_resolve_references())
 
-        # Not used in multimer
-        del c.model.template.template_pointwise_attention
-        del c.loss.fape.backbone
-
-        # TODO: Change max_msa_clusters and max_extra_msa to multimer feats within model
-        if re.fullmatch("^model_[1-5]_multimer(_v2)?$", name):
-            #c.model.input_embedder.num_msa = 252
-            #c.model.extra_msa.extra_msa_embedder.num_extra_msa = 1152
-            c.data.train.crop_size = 384
-
-            c.data.train.max_msa_clusters = 252
-            c.data.eval.max_msa_clusters = 252
-            c.data.predict.max_msa_clusters = 252
-
-            c.data.train.max_extra_msa = 1152
-            c.data.eval.max_extra_msa = 1152
-            c.data.predict.max_extra_msa = 1152
-
-            c.model.evoformer_stack.fuse_projection_weights = False
-            c.model.extra_msa.extra_msa_stack.fuse_projection_weights = False
-            c.model.template.template_pair_stack.fuse_projection_weights = False
-        elif name == 'model_4_multimer_v3':
-            #c.model.extra_msa.extra_msa_embedder.num_extra_msa = 1152
-            c.data.train.max_extra_msa = 1152
-            c.data.eval.max_extra_msa = 1152
-            c.data.predict.max_extra_msa = 1152
-        elif name == 'model_5_multimer_v3':
-            #c.model.extra_msa.extra_msa_embedder.num_extra_msa = 1152
-            c.data.train.max_extra_msa = 1152
-            c.data.eval.max_extra_msa = 1152
-            c.data.predict.max_extra_msa = 1152
-    else:
-        raise ValueError("Invalid model name")
+    # TODO: Named model configs unless this is moved somewhere else
 
     if long_sequence_inference:
         assert(not train)
@@ -235,8 +67,8 @@ def model_config(
         c.globals.use_flash = False
         c.model.template.offload_inference = True
         c.model.template.template_pair_stack.tune_chunk_size = False
-        c.model.extra_msa.extra_msa_stack.tune_chunk_size = False
-        c.model.evoformer_stack.tune_chunk_size = False
+        c.model.msa.msa_module.tune_chunk_size = False
+        c.model.pairformer.tune_chunk_size = False
     
     if use_deepspeed_evoformer_attention:
         c.globals.use_deepspeed_evo_attention = True 
@@ -246,8 +78,6 @@ def model_config(
         c.globals.chunk_size = None
         c.globals.use_lma = False
         c.globals.offload_inference = False
-        c.model.template.average_templates = False
-        c.model.template.offload_templates = False
     
     if low_prec:
         c.globals.eps = 1e-4
@@ -260,32 +90,16 @@ def model_config(
     return c
 
 
-# c_z = mlc.FieldReference(128, field_type=int)
-# c_m = mlc.FieldReference(256, field_type=int)
-# c_t = mlc.FieldReference(64, field_type=int)
-# c_e = mlc.FieldReference(64, field_type=int)
-# c_s = mlc.FieldReference(384, field_type=int)
-
-# # For seqemb mode, dimension size of the per-residue sequence embedding passed to the model
-# # In current model, the dimension size is the ESM-1b dimension size i.e. 1280.
-# preemb_dim_size = mlc.FieldReference(1280, field_type=int)
-
-# blocks_per_ckpt = mlc.FieldReference(None, field_type=int)
-# chunk_size = mlc.FieldReference(4, field_type=int)
-# aux_distogram_bins = mlc.FieldReference(64, field_type=int)
-# tm_enabled = mlc.FieldReference(False, field_type=bool)
-# eps = mlc.FieldReference(1e-8, field_type=float)
-# templates_enabled = mlc.FieldReference(True, field_type=bool)
-# embed_template_torsion_angles = mlc.FieldReference(True, field_type=bool)
-# tune_chunk_size = mlc.FieldReference(True, field_type=bool)
-
 NUM_TOKENS = "num tokens placeholder"
 NUM_ATOMS = "num atoms placeholder"
 NUM_MSA_SEQ = "msa placeholder"
 NUM_TEMPLATES = "num templates placeholder"
 
+
+# Hidden dimensions
 c_s = mlc.FieldReference(384, field_type=int)
 c_z = mlc.FieldReference(128, field_type=int)
+c_m = mlc.FieldReference(64, field_type=int)
 c_t = mlc.FieldReference(64, field_type=int)
 c_atom_ref = mlc.FieldReference(390, field_type=int)
 c_atom = mlc.FieldReference(128, field_type=int)
@@ -294,6 +108,7 @@ c_token_embedder = mlc.FieldReference(384, field_type=int)
 c_token_diffusion = mlc.FieldReference(768, field_type=int)
 c_s_input = mlc.FieldReference(c_token_embedder + 65, field_type=int)
 
+# Diffusion parameters
 sigma_data = mlc.FieldReference(16, field_type=int)
 max_relative_idx = mlc.FieldReference(32, field_type=int)
 max_relative_chain = mlc.FieldReference(2, field_type=int)
@@ -302,8 +117,13 @@ no_rollout_steps = mlc.FieldReference(20, field_type=int)
 n_query = mlc.FieldReference(32, field_type=int)
 n_key = mlc.FieldReference(128, field_type=int)
 
+# templates_enabled = mlc.FieldReference(True, field_type=bool)
+eps = mlc.FieldReference(1e-8, field_type=float)
+aux_distogram_bins = mlc.FieldReference(64, field_type=int)
 blocks_per_ckpt = mlc.FieldReference(None, field_type=int)
+chunk_size = mlc.FieldReference(4, field_type=int)
 tune_chunk_size = mlc.FieldReference(True, field_type=bool)
+
 
 config = mlc.ConfigDict(
     {
@@ -346,7 +166,16 @@ config = mlc.ConfigDict(
             "c_z": c_z,
             "no_cycles": 4,
             "no_samples": no_samples,
-            "no_rollout_steps": no_rollout_steps
+            "no_rollout_steps": no_rollout_steps,
+            "blocks_per_ckpt": blocks_per_ckpt,
+            "chunk_size": chunk_size,
+            # Use DeepSpeed memory-efficient attention kernel. Mutually
+            # exclusive with use_lma and use_flash.
+            "use_deepspeed_evo_attention": False,
+            # Use Staats & Rabe's low-memory attention algorithm. Mutually
+            # exclusive with use_deepspeed_evo_attention and use_flash.
+            "use_lma": False,
+            "offload_inference": False
         },
         "model": {
             "input_embedder": {
@@ -370,11 +199,6 @@ config = mlc.ConfigDict(
             "template": {
                 "c_t": c_t,
                 "c_z": c_z,
-                "distogram": {
-                    "min_bin": 3.25,
-                    "max_bin": 50.75,
-                    "no_bins": 39,
-                },
                 "template_pair_embedder": {
                     "c_in": 108,
                     "c_z": c_z,
@@ -382,16 +206,17 @@ config = mlc.ConfigDict(
                 },
                 "template_pair_stack": {
                     "c_t": c_t,
+                    # TODO: Do we use pairformer attn params?
                     # DISCREPANCY: c_hidden_tri_att here is given in the supplement
                     # as 64. In the code, it's 16.
                     "c_hidden_tri_att": 16,
                     "c_hidden_tri_mul": 64,
                     "no_blocks": 2,
                     "no_heads": 4,
-                    "transition_type": 'relu',
+                    "transition_type": "swiglu",
                     "pair_transition_n": 2,
                     "dropout_rate": 0.25,
-                    "tri_mul_first": False,
+                    "tri_mul_first": True,
                     "fuse_projection_weights": False,
                     "blocks_per_ckpt": blocks_per_ckpt,
                     "tune_chunk_size": tune_chunk_size,
@@ -400,31 +225,31 @@ config = mlc.ConfigDict(
             },
             "msa": {
                 "msa_module_embedder": {
-                    # c_m_feats: int,
-                    # c_m: int,
-                    # c_s_input: int
+                    "c_m_feats": 34,
+                    "c_m": c_m,
+                    "c_s_input": c_s_input
                 },
                 "msa_module": {
-                    # c_m: int,
-                    # c_z: int,
-                    # c_hidden_msa_att: int,
-                    # c_hidden_opm: int,
-                    # c_hidden_mul: int,
-                    # c_hidden_pair_att: int,
-                    # no_heads_msa: int,
-                    # no_heads_pair: int,
-                    # no_blocks: int,
-                    # transition_type: str,
-                    # transition_n: int,
-                    # msa_dropout: float,
-                    # pair_dropout: float,
-                    # opm_first: bool,
-                    # fuse_projection_weights: bool,
-                    # blocks_per_ckpt: Optional[int],
-                    # inf: float,
-                    # eps: float,
-                    # clear_cache_between_blocks: bool = False,
-                    # tune_chunk_size: bool = False,
+                    "c_m": c_m,
+                    "c_z": c_z,
+                    "c_hidden_msa_att": 32,
+                    "c_hidden_opm": 32,
+                    "c_hidden_mul": 128,
+                    "c_hidden_pair_att": 32,
+                    "no_heads_msa": 8,
+                    "no_heads_pair": 4,
+                    "no_blocks": 4,
+                    "transition_type": "swiglu",
+                    "transition_n": 4,
+                    "msa_dropout": 0.15,
+                    "pair_dropout": 0.25,
+                    "opm_first": True,
+                    "fuse_projection_weights": False,
+                    "blocks_per_ckpt": blocks_per_ckpt,
+                    "inf": 1e9,
+                    "eps": eps,
+                    "clear_cache_between_blocks": False,
+                    "tune_chunk_size": tune_chunk_size
                 },
             },
             "pairformer": {
@@ -432,18 +257,18 @@ config = mlc.ConfigDict(
                 "c_z": c_z,
                 "c_hidden_pair_bias": 24, # c_s / no_heads_pair_bias
                 "no_heads_pair_bias": 16,
-                "c_hidden_mul": int,
-                # c_hidden_pair_att: int,
-                # no_heads_pair: int,
-                # no_blocks: int,
-                # transition_type: str,
-                # transition_n: int,
-                # pair_dropout: float,
-                # fuse_projection_weights: bool,
-                # blocks_per_ckpt: Optional[int],
-                # inf: float,
-                # clear_cache_between_blocks: bool = False,
-                # tune_chunk_size: bool = False,
+                "c_hidden_mul": 128,
+                "c_hidden_pair_att": 32,
+                "no_heads_pair": 4,
+                "no_blocks": 48,
+                "transition_type": "swiglu",
+                "transition_n": 4,
+                "pair_dropout": 0.25,
+                "fuse_projection_weights": False,
+                "blocks_per_ckpt": blocks_per_ckpt,
+                "inf": 1e9,
+                "clear_cache_between_blocks": False,
+                "tune_chunk_size": tune_chunk_size
             },
             "diffusion_module": {
                 "diffusion_module": {

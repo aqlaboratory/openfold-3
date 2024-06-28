@@ -5,18 +5,23 @@ from torch import nn
 from ml_collections import ConfigDict
 
 from openfold3.core.model.feature_embedders.input_embedders import MSAModuleEmbedder
-from openfold3.core.model.feature_embedders.template_embedders import TemplatePairEmbedderAllAtom
 from openfold3.core.model.latent.msa_module import MSAModuleStack
 from openfold3.core.model.latent.pairformer import PairFormerStack
-from openfold3.core.model.latent.template import TemplatePairStack
+from openfold3.core.model.latent.template_module import TemplateEmbedderAllAtom
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.model.structure.diffusion_module import DiffusionModule, SampleDiffusion
 from openfold3.core.model.feature_embedders import InputEmbedderAllAtom
+from openfold3.core.utils.tensor_utils import add
 
 
 class AlphaFold3(nn.Module):
 
     def __init__(self, config: ConfigDict):
+        """
+
+        Args:
+            config:
+        """
         super(AlphaFold3, self).__init__()
         self.config = config
         self.globals = self.config.globals
@@ -26,11 +31,10 @@ class AlphaFold3(nn.Module):
         self.layer_norm_z = LayerNorm(self.globals.c_z)
         self.linear_z = Linear(self.globals.c_z, self.globals.c_z, bias=False)
 
-        self.template_pair_embedder = TemplatePairEmbedderAllAtom(**self.config.template_pair_embedder)
-        self.template_pair_stack = TemplatePairStack(**self.config.template_pair_stack)
+        self.template_embedder = TemplateEmbedderAllAtom(**self.config.template)
 
-        self.msa_module_embedder = MSAModuleEmbedder(**self.config.model.msa_module_embedder)
-        self.msa_module = MSAModuleStack(**self.config.model.msa_module)
+        self.msa_module_embedder = MSAModuleEmbedder(**self.config.model.msa.msa_module_embedder)
+        self.msa_module = MSAModuleStack(**self.config.model.msa.msa_module)
 
         self.layer_norm_s = LayerNorm(self.globals.c_s)
         self.linear_s = Linear(self.globals.c_s, self.globals.c_s, bias=False)
@@ -46,21 +50,112 @@ class AlphaFold3(nn.Module):
 
         self.distogram_head = None
 
-    def _encode(self, batch):
+    def _disable_activation_checkpointing(self):
+        self.template_embedder.template_pair_stack.blocks_per_ckpt = None
+        self.msa_module.blocks_per_ckpt = None
+        self.pairformer_stack.blocks_per_ckpt = None
 
-        s_input, s_init, z_init = self.input_embedder(batch)
+    def _enable_activation_checkpointing(self):
+        self.template_embedder.template_pair_stack.blocks_per_ckpt = (
+            self.config.template.template_pair_stack.blocks_per_ckpt
+        )
+        self.msa_module.blocks_per_ckpt = (
+            self.config.msa.msa_module.blocks_per_ckpt
+        )
+        self.pairformer_stack.blocks_per_ckpt = (
+            self.config.pairformer.blocks_per_ckpt
+        )
+
+    def run_trunk(
+        self,
+        batch: Dict,
+        inplace_safe: bool = False
+    ) -> [torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+
+        Args:
+            batch:
+            inplace_safe:
+                Whether inplace operations can be performed
+
+        Returns:
+
+        """
+        s_input, s_init, z_init = self.input_embedder(batch=batch)
 
         s = torch.zeros_like(s_init)
         z = torch.zeros_like(z_init)
 
-        for _ in range(self.globals.no_cycles):
+        # token_mask: [*, N_token]
+        # pair_mask: [*, N_token, N_token]
+        token_mask = batch['token_mask']
+        pair_mask = token_mask[..., None] * token_mask[..., None, :]
 
+        for _ in range(self.globals.no_cycles):
+            # [*, N_token, N_token, C_z]
             z = z_init + self.linear_z(self.layer_norm_z(z))
-            z = z + self.template_embedder(batch, z)
-            z = z + self.msa_module(batch, z, s_input)
+
+            z = add(
+                z,
+                self.template_embedder(
+                    batch=batch,
+                    z=z,
+                    pair_mask=pair_mask,
+                    chunk_size=self.globals.chunk_size,
+                    _mask_trans=True,
+                    use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
+                    use_lma=self.globals.use_lma,
+                    inplace_safe=inplace_safe
+                ),
+                inplace=inplace_safe
+            )
+
+            m, msa_mask = self.msa_module_embedder(batch=batch, s_input=s_input)
+
+            # Run MSA + pair embeddings through the MsaModule
+            # m: [*, N_seq, N_token, C_m]
+            # z: [*, N_token, N_token, C_z]
+            if self.globals.offload_inference:
+                input_tensors = [m, z]
+                del m, z
+                z = self.msa_module.forward_offload(
+                    input_tensors,
+                    msa_mask=msa_mask.to(dtype=input_tensors[0].dtype),
+                    pair_mask=pair_mask.to(dtype=input_tensors[1].dtype),
+                    chunk_size=self.globals.chunk_size,
+                    use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
+                    use_lma=self.globals.use_lma,
+                    _mask_trans=True
+                )
+
+                del input_tensors
+            else:
+                z = self.msa_module(
+                    m,
+                    z,
+                    msa_mask=msa_mask.to(dtype=m.dtype),
+                    pair_mask=pair_mask.to(dtype=z.dtype),
+                    chunk_size=self.globals.chunk_size,
+                    use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
+                    use_lma=self.globals.use_lma,
+                    inplace_safe=inplace_safe,
+                    _mask_trans=True
+                )
+
+            del m, msa_mask
 
             s = s_init + self.linear_s(self.layer_norm_s(s))
-            s, z = self.pairformer_stack(s, z)
+            s, z = self.pairformer_stack(
+                s=s,
+                z=z,
+                single_mask=token_mask.to(dtype=z.dtype),
+                pair_mask=pair_mask.to(dtype=s.dtype),
+                chunk_size=self.globals.chunk_size,
+                use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
+                use_lma=self.globals.use_lma,
+                inplace_safe=inplace_safe,
+                _mask_trans=True
+            )
 
         return s_input, s, z
 
@@ -71,7 +166,17 @@ class AlphaFold3(nn.Module):
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
     ) -> Dict:
+        """
 
+        Args:
+            batch:
+            si_input:
+            si_trunk:
+            zij_trunk:
+
+        Returns:
+
+        """
         # Compute atom positions
         with torch.no_grad():
             x_pred = self.sample_diffusion(batch=batch,
@@ -102,7 +207,18 @@ class AlphaFold3(nn.Module):
         zij_trunk: torch.Tensor,
         xl_gt: torch.Tensor
     ) -> torch.Tensor:
+        """
 
+        Args:
+            batch:
+            si_input:
+            si_trunk:
+            zij_trunk:
+            xl_gt:
+
+        Returns:
+
+        """
         # Expand sampling dimension
         # Is this ideal?
         si_input = si_input.unsqueeze(1)
@@ -134,10 +250,28 @@ class AlphaFold3(nn.Module):
         
         return xl
 
-    def forward(self, batch, xl_gt=None):
+    def forward(self, batch: Dict, xl_gt: torch.Tensor = None) -> Dict:
+        """
+
+        Args:
+            batch:
+            xl_gt:
+
+        Returns:
+
+        """
+        # This needs to be done manually for DeepSpeed's sake
+        dtype = next(self.parameters()).dtype
+        for k in batch:
+            if batch[k].dtype == torch.float32:
+                batch[k] = batch[k].to(dtype=dtype)
+
+        # Controls whether the model uses in-place operations throughout
+        # The dual condition accounts for activation checkpoints
+        inplace_safe = not (self.training or torch.is_grad_enabled())
 
         # Compute representations
-        si_input, si_trunk, zij_trunk = self._encode(batch)
+        si_input, si_trunk, zij_trunk = self.run_trunk(batch=batch, inplace_safe=inplace_safe)
 
         # [b, ...]
 
@@ -149,13 +283,12 @@ class AlphaFold3(nn.Module):
 
         # Run training step (if necessary)
         if self.training:
-
             xl = self._train(batch=batch,
-                            si_input=si_input,
-                            si_trunk=si_trunk,
-                            zij_trunk=zij_trunk,
-                            xl_gt=xl_gt)
+                             si_input=si_input,
+                             si_trunk=si_trunk,
+                             zij_trunk=zij_trunk,
+                             xl_gt=xl_gt)
 
-            return output, xl
+            output["x_train"] = xl
 
         return output

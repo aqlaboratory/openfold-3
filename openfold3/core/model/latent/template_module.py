@@ -21,7 +21,7 @@ import math
 import sys
 from functools import partial
 from ml_collections import ConfigDict
-from typing import Optional
+from typing import Dict, Optional
 
 import torch
 from torch import nn
@@ -608,13 +608,14 @@ class TemplateEmbedderAllAtom(nn.Module):
 
     def forward(
         self,
-        batch,
-        z,
-        chunk_size,
-        _mask_trans=True,
-        use_deepspeed_evo_attention=False,
-        use_lma=False,
-        inplace_safe=False
+        batch: Dict,
+        z: torch.Tensor,
+        pair_mask: torch.Tensor,
+        chunk_size: int,
+        _mask_trans: bool = True,
+        use_deepspeed_evo_attention: bool = False,
+        use_lma: bool = False,
+        inplace_safe: bool = False
     ) -> torch.Tensor:
         """
         Args:
@@ -624,12 +625,8 @@ class TemplateEmbedderAllAtom(nn.Module):
                 [*, N_token, N_token, C_z] Pair embedding
             pair_mask:
                 [*, N_token, N_token] Pair mask
-            templ_dim:
-                The template dimension of the template tensors in batch
             chunk_size:
                 Inference-time subbatch size.
-            multichain_mask_2d:
-                [*, N_token, N_token] Multichain mask built from asym IDs
             _mask_trans:
                 Whether to mask the output of the transition layers
             use_deepspeed_evo_attention:
@@ -651,13 +648,12 @@ class TemplateEmbedderAllAtom(nn.Module):
         n_templ = template_embeds.shape[-4]
 
         # [*, 1, N_token, N_token]
-        pair_token_mask = batch['token_mask'][..., None] * batch['token_mask'][..., None, :]
-        pair_token_mask = pair_token_mask[..., None, :, :].to(dtype=z.dtype)
+        pair_mask = pair_mask[..., None, :, :].to(dtype=z.dtype)
 
         # [*, N_templ, N_token, N_token, C_z]
         t = self.template_pair_stack(
             template_embeds,
-            pair_token_mask,
+            pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_lma=use_lma,

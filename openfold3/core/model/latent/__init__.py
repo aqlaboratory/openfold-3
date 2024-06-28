@@ -3,7 +3,7 @@ from .evoformer import EvoformerBlock, EvoformerStack
 from .extra_msa import ExtraMSABlock, ExtraMSAStack
 from .msa_module import MSAModuleBlock, MSAModuleStack
 from .pairformer import PairFormerBlock, PairFormerStack
-from .template import (
+from .template_module import (
     TemplatePairBlock,
     TemplatePairStack,
     TemplateEmbedderMonomer,
