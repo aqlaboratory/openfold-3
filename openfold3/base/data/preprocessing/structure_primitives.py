@@ -229,7 +229,10 @@ def remove_clashing_chains(
 ) -> struc.AtomArray:
     """Removes chains with a high fraction of clashes
 
-    This follows 2.5.4 of the AlphaFold3 SI.
+    This follows 2.5.4 of the AlphaFold3 SI. Pairs of chains are considered to clash if
+    either one of them has more than the clash_percentage of atoms within the
+    clash_distance of the other chain. The chain with the higher fraction of clashing
+    atoms is then removed.
 
     Args:
         atom_array:
@@ -237,8 +240,8 @@ def remove_clashing_chains(
         clash_distance:
             Distance threshold for clashes in Angstrom. Defaults to 1.7.
         clash_percentage:
-            Fraction of clashing atoms in a chain for it to be considered as
-            clashing. Defaults to 0.3.
+            Fraction of clashing atoms in a chain for it to be considered as clashing.
+            Defaults to 0.3.
 
     Returns:
         AtomArray with clashing chains removed.
