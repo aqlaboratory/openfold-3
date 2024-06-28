@@ -39,7 +39,6 @@ def main(args):
             aatype = protein_object.aatype
             chain_index = protein_object.chain_index
 
-            last_chain_index = chain_index[0]
             chain_dict = defaultdict(list)
             for i in range(aatype.shape[0]):
                 chain_dict[chain_index[i]].append(

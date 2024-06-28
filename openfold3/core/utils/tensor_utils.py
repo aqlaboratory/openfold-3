@@ -57,7 +57,7 @@ def dict_multimap(fn, dicts):
     new_dict = {}
     for k, v in first.items():
         all_v = [d[k] for d in dicts]
-        if type(v) is dict:
+        if isinstance(v, dict):
             new_dict[k] = dict_multimap(fn, all_v)
         else:
             new_dict[k] = fn(all_v)
@@ -89,7 +89,7 @@ def batched_gather(data, inds, dim=0, no_batch_dims=0):
 def dict_map(fn, dic, leaf_type):
     new_dict = {}
     for k, v in dic.items():
-        if type(v) is dict:
+        if isinstance(v, dict):
             new_dict[k] = dict_map(fn, v, leaf_type)
         else:
             new_dict[k] = tree_map(fn, v, leaf_type)

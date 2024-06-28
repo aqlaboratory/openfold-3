@@ -259,7 +259,10 @@ def chunk_layer(
     prepped_inputs = tensor_tree_map(_prep_inputs, inputs)
     prepped_outputs = None
     if _out is not None:
-        reshape_fn = lambda t: t.view([-1] + list(t.shape[no_batch_dims:]))
+
+        def reshape_fn(t):
+            return t.view([-1] + list(t.shape[no_batch_dims:]))
+
         prepped_outputs = tensor_tree_map(reshape_fn, _out)
 
     flat_batch_dim = 1
@@ -270,10 +273,16 @@ def chunk_layer(
 
     i = 0
     out = prepped_outputs
+
+    if not low_mem:
+
+        def select_chunk_base_fn(t, i):
+            return t[i : i + chunk_size] if t.shape[0] != 1 else t
+
     for _ in range(no_chunks):
         # Chunk the input
         if not low_mem:
-            select_chunk = lambda t: t[i : i + chunk_size] if t.shape[0] != 1 else t
+            select_chunk = partial(select_chunk_base_fn, i=i)
         else:
             select_chunk = partial(
                 _chunk_slice,
@@ -289,7 +298,10 @@ def chunk_layer(
 
         # Allocate space for the output
         if out is None:
-            allocate = lambda t: t.new_zeros((flat_batch_dim,) + t.shape[1:])
+
+            def allocate(t):
+                return t.new_zeros((flat_batch_dim,) + t.shape[1:])
+
             out = tensor_tree_map(allocate, output_chunk)
 
         # Put the chunk in its pre-allocated space
@@ -298,13 +310,13 @@ def chunk_layer(
 
             def assign(d1, d2):
                 for k, v in d1.items():
-                    if type(v) is dict:
+                    if isinstance(v, dict):
                         assign(v, d2[k])
                     else:
                         if _add_into_out:
-                            v[i : i + chunk_size] += d2[k]
+                            v[i : i + chunk_size] += d2[k]  # noqa: B023
                         else:
-                            v[i : i + chunk_size] = d2[k]
+                            v[i : i + chunk_size] = d2[k]  # noqa: B023
 
             assign(out, output_chunk)
         elif out_type is tuple:
@@ -323,7 +335,9 @@ def chunk_layer(
 
         i += chunk_size
 
-    reshape = lambda t: t.view(orig_batch_dims + t.shape[1:])
+    def reshape(t):
+        return t.view(orig_batch_dims + t.shape[1:])
+
     out = tensor_tree_map(reshape, out)
 
     return out
@@ -375,9 +389,9 @@ class ChunkSizeTuner:
         consistent = True
         for a1, a2 in zip(ac1, ac2):
             assert type(ac1) == type(ac2)
-            if type(ac1) is list or type(ac1) is tuple:
+            if isinstance(ac1, (list, tuple)):
                 consistent &= self._compare_arg_caches(a1, a2)
-            elif type(ac1) is dict:
+            elif isinstance(ac1, dict) is dict:
                 a1_items = [v for _, v in sorted(a1.items(), key=lambda x: x[0])]
                 a2_items = [v for _, v in sorted(a2.items(), key=lambda x: x[0])]
                 consistent &= self._compare_arg_caches(a1_items, a2_items)
@@ -393,7 +407,10 @@ class ChunkSizeTuner:
         min_chunk_size: int,
     ) -> int:
         consistent = True
-        remove_tensors = lambda a: a.shape if type(a) is torch.Tensor else a
+
+        def remove_tensors(a):
+            return a.shape if type(a) is torch.Tensor else a
+
         arg_data = tree_map(remove_tensors, args, object)
         if self.cached_arg_data is not None:
             # If args have changed shape/value, we need to re-tune

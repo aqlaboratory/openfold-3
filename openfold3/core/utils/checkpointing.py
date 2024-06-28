@@ -14,12 +14,13 @@
 import importlib
 from typing import Any, Callable, List, Optional
 
+import torch
+import torch.utils.checkpoint
+
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
     import deepspeed
 
-import torch
-import torch.utils.checkpoint
 
 BLOCK_ARG = Any
 BLOCK_ARGS = List[BLOCK_ARG]

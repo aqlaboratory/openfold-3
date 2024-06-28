@@ -42,8 +42,8 @@ def kabsch_rotation(P: torch.Tensor, Q: torch.Tensor) -> torch.Tensor:
     https://en.wikipedia.org/wiki/Kabsch_algorithm
 
     Args:
-        P: [N * 3] Nres is the number of atoms and each row corresponds to the atom's x,y,z coordinates
-        Q: [N * 3] the same dimension as P
+        P: [N * 3] Nres is the number of atoms and each row corresponds to the atom's
+        x,y,z coordinates Q: [N * 3] the same dimension as P
 
     return:
         one 3*3 rotation matrix that best aligns the sorce and target atoms
@@ -79,9 +79,10 @@ def get_optimal_transform(
         mask: a vector of boolean values, shape:[num_res]
 
     Returns:
-    a rotation matrix that record the optimal rotation
-    that will best align selected anchor prediction to selected anchor truth
-    a matrix records how the atoms should be shifted after applying r i.e. optimal alignment requires 1) rotate 2) shift the positions
+        a rotation matrix that record the optimal rotation that will best align selected
+        anchor prediction to selected anchor truth a matrix records how the atoms should
+        be shifted after applying r i.e. optimal alignment requires 1) rotate 2) shift
+        the positions
     """
     assert src_atoms.shape == tgt_atoms.shape, (src_atoms.shape, tgt_atoms.shape)
     assert src_atoms.shape[-1] == 3
@@ -128,8 +129,10 @@ def get_least_asym_entity_or_longest_length(
         input_asym_id: A list of asym_ids that are in the cropped input features
 
     Return:
-        anchor_gt_asym_id: Tensor(int) selected ground truth asym_id
-        anchor_pred_asym_ids: list(Tensor(int)) a list of all possible pred anchor candidates
+        anchor_gt_asym_id:
+            Tensor(int) selected ground truth asym_id
+        anchor_pred_asym_ids:
+            list(Tensor(int)) a list of all possible pred anchor candidates
     """
     entity_2_asym_list = get_entity_2_asym_list(batch)
     unique_entity_ids = [
@@ -141,7 +144,8 @@ def get_least_asym_entity_or_longest_length(
     for entity_id in unique_entity_ids:
         asym_ids = torch.unique(batch["asym_id"][batch["entity_id"] == entity_id])
 
-        # Make sure some asym IDs associated with ground truth entity ID exist in cropped prediction
+        # Make sure some asym IDs associated with ground truth entity ID exist in
+        # cropped prediction
         asym_ids_in_pred = [a for a in asym_ids if a in input_asym_id]
         if not asym_ids_in_pred:
             continue
@@ -157,7 +161,8 @@ def get_least_asym_entity_or_longest_length(
         entity for entity, count in entity_asym_count.items() if count == min_asym_count
     ]
 
-    # If multiple entities have the least asym_id count, return those with the longest length
+    # If multiple entities have the least asym_id count, return those with the longest
+    # length
     if len(least_asym_entities) > 1:
         max_length = max([entity_length[entity] for entity in least_asym_entities])
         least_asym_entities = [
@@ -194,26 +199,42 @@ def greedy_align(
 ) -> List[Tuple[int, int]]:
     """
     Implement Algorithm 4 in the Supplementary Information of AlphaFold-Multimer paper:
-    Evans,R et al., 2022 Protein complex prediction with AlphaFold-Multimer, bioRxiv 2021.10.04.463034; doi: https://doi.org/10.1101/2021.10.04.463034
+    Evans,R et al., 2022 Protein complex prediction with AlphaFold-Multimer, bioRxiv
+    2021.10.04.463034; doi: https://doi.org/10.1101/2021.10.04.463034
 
     Args:
         batch: a dictionary of ground truth features
-        per_asym_residue_index: a dictionary recording which residues belong to which aysm_id
-        entity_2_asym_list: a dictionary recording which asym_id(s) belong to which entity_id
-        pred_ca_pos: predicted positions of c-alpha atoms from the results of model.forward()
-        pred_ca_mask: a boolean tensor that masks pred_ca_pos
-        true_ca_poses: a list of tensors, corresponding to the c-alpha positions of the ground truth structure. e.g. If there are 5 chains, this list will have a length of 5
-        true_ca_masks: a list of tensors, corresponding to the masks of c-alpha positions of the ground truth structure. If there are 5 chains, this list will have a length of 5
+        per_asym_residue_index:
+            a dictionary recording which residues belong to which aysm_id
+        entity_2_asym_list:
+            a dictionary recording which asym_id(s) belong to which entity_id
+        pred_ca_pos:
+            predicted positions of c-alpha atoms from the results of model.forward()
+        pred_ca_mask:
+            a boolean tensor that masks pred_ca_pos
+        true_ca_poses:
+            a list of tensors, corresponding to the c-alpha positions of the ground
+            truth structure. e.g. If there are 5 chains, this list will have a length of
+            5
+        true_ca_masks:
+            a list of tensors, corresponding to the masks of c-alpha positions of the
+            ground truth structure. If there are 5 chains, this list will have a length
+            of 5
 
     Return:
-        A list of tuple(int,int) that provides instructions of how the ground truth chains should be permuated
-        e.g. if 3 chains in the imput model have the same sequences, an example return would be:
-        [(0,2),(1,1),(2,0)], meaning the 1st chain in the predicted structure should be aligned to the 3rd chain in the ground truth,
-        and the 2nd chain in the predicted structure is ok to stay with the 2nd chain in the ground truth.
+        A list of tuple(int,int) that provides instructions of how the ground truth
+        chains should be permuated e.g. if 3 chains in the imput model have the same
+        sequences, an example return would be: [(0,2),(1,1),(2,0)], meaning the 1st
+        chain in the predicted structure should be aligned to the 3rd chain in the
+        ground truth, and the 2nd chain in the predicted structure is ok to stay with
+        the 2nd chain in the ground truth.
 
-    Note: the tuples in the returned list begin with 0 indexing but aym_id begins with 1. The reason why tuples in the return are 0-indexing
-    is that at the stage of loss calculation, the ground truth atom positions: true_ca_poses, are already split up into a list of matrices.
-    Hence, now this function needs to return tuples that provide the index to select from the list: true_ca_poses, and list index starts from 0.
+    Note: the tuples in the returned list begin with 0 indexing but aym_id begins with
+    1. The reason why tuples in the return are 0-indexing is that at the stage of loss
+    calculation, the ground truth atom positions: true_ca_poses, are already split up
+    into a list of matrices. Hence, now this function needs to return tuples that
+    provide the index to select from the list: true_ca_poses, and list index starts from
+    0.
     """
     used = [
         False for _ in range(len(true_ca_poses))
@@ -254,7 +275,8 @@ def pad_features(
     feature_tensor: torch.Tensor, nres_pad: int, pad_dim: int
 ) -> torch.Tensor:
     """
-    Pad input feature tensor. Padding values will be 0 and put behind the true feature values
+    Pad input feature tensor. Padding values will be 0 and put behind the true feature
+    values
 
     Args:
         feature_tensor: A feature tensor
@@ -280,10 +302,16 @@ def merge_labels(
     Merge ground truth labels according to the permutation results
 
     Args:
-        per_asym_residue_index: a dictionary recording which residues belong to which aysm_id
-        labels: list of original ground truth feats e.g. if there're 5 chains, labels will have a length of 5
-        align: list of tuples, each entry specify the corresponding label of the asym.
-        original_nres: int, corresponding to the number of residues specified by crop_size in config.py
+        per_asym_residue_index:
+            a dictionary recording which residues belong to which aysm_id
+        labels:
+            list of original ground truth feats e.g. if there're 5 chains, labels will
+            have a length of 5
+        align:
+            list of tuples, each entry specify the corresponding label of the asym.
+        original_nres:
+            int, corresponding to the number of residues specified by crop_size in
+            config.py
 
     Returns:
         A new dictionary of permuated ground truth features
@@ -318,15 +346,18 @@ def split_ground_truth_labels(gt_features: dict) -> List[Dict]:
     Splits ground truth features according to chains
 
     Args:
-    gt_features: A dictionary within a the PyTorch DataSet iteration, which returns by the upstream DataLoader.iter() method
-    In the DataLoader pipeline, all tensors belonging to all the ground truth changes are concatenated so it stays the same as monomer data input format/pipeline,
-    thus, this function is needed to 1) detect the number of chains i.e. unique(asym_id)
-    2) split the concatenated tensors back to individual ones that correspond to individual asym_ids
+    gt_features:
+        A dictionary within a the PyTorch DataSet iteration, which returns by the
+        upstream DataLoader.iter() method In the DataLoader pipeline, all tensors
+        belonging to all the ground truth changes are concatenated so it stays the same
+        as monomer data input format/pipeline, thus, this function is needed to 1)
+        detect the number of chains i.e. unique(asym_id) 2) split the concatenated
+        tensors back to individual ones that correspond to individual asym_ids
 
     Returns:
         a list of feature dictionaries with only necessary ground truth features
-        required to finish multi-chain permutation, e.g. it will be a list of 5 elements if there
-        are 5 chains in total.
+        required to finish multi-chain permutation, e.g. it will be a list of 5 elements
+        if there are 5 chains in total.
     """
     unique_asym_ids, asym_id_counts = torch.unique(
         gt_features["asym_id"], sorted=True, return_counts=True
@@ -379,14 +410,17 @@ def get_per_asym_residue_index(features: dict) -> Dict[int, torch.Tensor]:
 
 def get_entity_2_asym_list(features: dict) -> Dict[int, list]:
     """
-    Generates a dictionary mapping unique entity IDs to lists of unique asymmetry IDs (asym_id) for each entity.
+    Generates a dictionary mapping unique entity IDs to lists of unique asymmetry IDs
+    (asym_id) for each entity.
 
     Args:
-        features (dict): A dictionary containing data features, including "entity_id" and "asym_id" tensors.
+        features (dict):
+            A dictionary containing data features, including "entity_id" and "asym_id"
+            tensors.
 
     Returns:
-        entity_2_asym_list (dict): A dictionary where keys are unique entity IDs, and values are lists of unique asymmetry IDs
-        associated with each entity.
+        entity_2_asym_list (dict): A dictionary where keys are unique entity IDs, and
+        values are lists of unique asymmetry IDs associated with each entity.
     """
     entity_2_asym_list = {}
     unique_entity_ids = torch.unique(features["entity_id"])
@@ -408,11 +442,17 @@ def calculate_input_mask(
     Calculate an input mask for downstream optimal transformation computation
 
     Args:
-        true_ca_masks: list of masks from ground truth chains.
-        anchor_gt_idx (Tensor): a tensor with one integer in it. The index of selected ground truth anchor.
-        anchor_gt_residue:a 1D vector tensor of residue indexes that belongs to the selected ground truth anchor
-        asym_mask (Tensor): Boolean tensor indicating which regions are selected predicted anchor.
-        pred_ca_mask (Tensor): ca mask from predicted structure.
+        true_ca_masks:
+            list of masks from ground truth chains.
+        anchor_gt_idx (Tensor):
+            a tensor with one integer in it. The index of selected ground truth anchor.
+        anchor_gt_residue:
+            a 1D vector tensor of residue indexes that belongs to the selected ground
+            truth anchor
+        asym_mask (Tensor):
+            Boolean tensor indicating which regions are selected predicted anchor.
+        pred_ca_mask (Tensor):
+            ca mask from predicted structure.
 
     Returns:
         input_mask (Tensor): A boolean mask
@@ -437,30 +477,43 @@ def calculate_optimal_transform(
     pred_ca_pos: torch.Tensor,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
-    Takes selected anchor ground truth c-alpha positions and
-    selected predicted anchor c-alpha position then calculate the optimal rotation matrix
-    to align ground-truth anchor and predicted anchor
+    Takes selected anchor ground truth c-alpha positions and selected predicted anchor
+    c-alpha position then calculate the optimal rotation matrix to align ground-truth
+    anchor and predicted anchor
 
     Args:
-        true_ca_poses: a list of tensors, corresponding to the c-alpha positions of the ground truth structure. e.g. If there are 5 chains, this list will have a length of 5
-        anchor_gt_idx (Tensor): a tensor with one integer in it. The index of selected ground truth anchor.
-        anchor_gt_residue:a 1D vector tensor of residue indexes that belongs to the selected ground truth anchor
-        true_ca_masks: list of masks from ground truth chains e.g. it will be length=5 if there are 5 chains in ground truth structure
-        pred_ca_mask: A boolean tensor corresponds to the mask to mask the predicted features
-        asym_mask: A boolean tensor that mask out other elements in a tensor if they do not belong to a this asym_id
-        pred_ca_pos: a [nres*3] tensor of predicted c-alpha atom positions
+        true_ca_poses:
+            a list of tensors, corresponding to the c-alpha positions of the ground
+            truth structure. e.g. If there are 5 chains, this list will have a length of
+            5
+        anchor_gt_idx (Tensor):
+            a tensor with one integer in it. The index of selected ground truth anchor.
+        anchor_gt_residue:
+            a 1D vector tensor of residue indexes that belongs to the selected ground
+            truth anchor
+        true_ca_masks:
+            list of masks from ground truth chains e.g. it will be length=5 if there are
+            5 chains in ground truth structure
+        pred_ca_mask:
+            A boolean tensor corresponds to the mask to mask the predicted features
+        asym_mask:
+            A boolean tensor that mask out other elements in a tensor if they do not
+            belong to a this asym_id
+        pred_ca_pos:
+            a [nres*3] tensor of predicted c-alpha atom positions
 
-    Process:
-    1) select an achor chain from ground truth, denoted by anchor_gt_idx, and
-    an chor chain from the predicted structure. Both anchor_gt and anchor_pred have exactly the same sequence
-    2) obtain the C-alpha positions corresponding to the selected anchor_gt, done be slicing the true_ca_pose according to anchor_gt_residue
-    3) calculate the optimal transformation that can best align the C-alpha atoms of anchor_pred to those of anchor_gt,
-    done by Kabsch algorithm: source https://en.wikipedia.org/wiki/Kabsch_algorithm
+    Process: 1) select an achor chain from ground truth, denoted by anchor_gt_idx, and
+    an chor chain from the predicted structure. Both anchor_gt and anchor_pred have
+    exactly the same sequence 2) obtain the C-alpha positions corresponding to the
+    selected anchor_gt, done be slicing the true_ca_pose according to anchor_gt_residue
+    3) calculate the optimal transformation that can best align the C-alpha atoms of
+    anchor_pred to those of anchor_gt, done by Kabsch algorithm: source
+    https://en.wikipedia.org/wiki/Kabsch_algorithm
 
-    Returns:
-    a rotation matrix that record the optimal rotation
-    that will best align selected anchor prediction to selected anchor truth
-    a matrix records how the atoms should be shifted after applying r i.e. optimal alignment requires 1) rotate 2) shift the positions
+    Returns: a rotation matrix that record the optimal rotation that will best align
+    selected anchor prediction to selected anchor truth a matrix records how the atoms
+    should be shifted after applying r i.e. optimal alignment requires 1) rotate 2)
+    shift the positions
     """
     input_mask = calculate_input_mask(
         true_ca_masks, anchor_gt_idx, anchor_gt_residue, asym_mask, pred_ca_mask
@@ -488,20 +541,26 @@ def compute_permutation_alignment(
     A method that permutes chains in ground truth before calculating the loss
     because the mapping between the predicted and ground-truth will become arbitrary.
     The model cannot be assumed to predict chains in the same order as the ground truth.
-    Thus, this function pick the optimal permutaion of predicted chains that best matches the ground truth,
-    by minimising the RMSD i.e. the best permutation of ground truth chains is selected based on which permutation has the lowest RMSD calculation
+    Thus, this function pick the optimal permutaion of predicted chains that best
+    matches the ground truth, by minimising the RMSD i.e. the best permutation of ground
+    truth chains is selected based on which permutation has the lowest RMSD calculation
 
-    Details are described in Section 7.3 in the Supplementary of AlphaFold-Multimer paper:
-    https://www.biorxiv.org/content/10.1101/2021.10.04.463034v2
+    Details are described in Section 7.3 in the Supplementary of AlphaFold-Multimer
+    paper: https://www.biorxiv.org/content/10.1101/2021.10.04.463034v2
 
     Args:
-        out: a dictionary of output tensors from model.forward()
-        features: a dictionary of feature tensors that are used as input for model.forward()
-        ground_truth: a list of dictionaries of features corresponding to chains in ground truth structure e.g. it will be a length of 5 if  there are 5 chains in ground truth structure
+        out:
+            a dictionary of output tensors from model.forward()
+        features:
+            a dictionary of feature tensors that are used as input for model.forward()
+        ground_truth:
+            a list of dictionaries of features corresponding to chains in ground truth
+            structure e.g. it will be a length of 5 if  there are 5 chains in ground
+            truth structure
 
     Returns:
-        a list of tuple(int,int) that instructs how ground truth chains should be permutated
-        a dictionary recording which residues belong to which aysm_id
+        a list of tuple(int,int) that instructs how ground truth chains should be
+        permutated a dictionary recording which residues belong to which aysm_id
     """
     unique_asym_ids = set(torch.unique(features["asym_id"]).tolist())
     unique_asym_ids.discard(0)  # Remove padding asym_id
@@ -593,12 +652,19 @@ def multi_chain_permutation_align(
     Compute multi-chain permutation alignment.
 
     Args:
-        out: a dictionary of output tensors from model.forward()
-        features: a dictionary of feature tensors that are used as input for model.forward()
-        ground_truth: a list of dictionaries of features corresponding to chains in ground truth structure e.g. it will be a length of 5 if  there are 5 chains in ground truth structure
+        out:
+            a dictionary of output tensors from model.forward()
+        features:
+            a dictionary of feature tensors that are used as input for model.forward()
+        ground_truth:
+            a list of dictionaries of features corresponding to chains in ground truth
+            structure e.g. it will be a length of 5 if  there are 5 chains in ground
+            truth structure
 
     Returns:
-        features: a dictionary with updated ground truth feature tensors, ready for downstream loss calculations.
+        features:
+            a dictionary with updated ground truth feature tensors, ready for downstream
+            loss calculations.
     """
 
     labels = split_ground_truth_labels(ground_truth)

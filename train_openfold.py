@@ -46,7 +46,7 @@ from openfold3.model_implementations.af2_monomer.model import AlphaFold
 
 class OpenFoldWrapper(pl.LightningModule):
     def __init__(self, config):
-        super(OpenFoldWrapper, self).__init__()
+        super().__init__()
         self.config = config
         self.model = AlphaFold(config)
         self.is_multimer = self.config.globals.is_multimer
@@ -135,7 +135,9 @@ class OpenFoldWrapper(pl.LightningModule):
             # model.state_dict() contains references to model weights rather
             # than copies. Therefore, we need to clone them before calling
             # load_state_dict().
-            clone_param = lambda t: t.detach().clone()
+            def clone_param(t):
+                return t.detach().clone()
+
             self.cached_weights = tensor_tree_map(clone_param, self.model.state_dict())
             self.model.load_state_dict(self.ema.state_dict()["params"])
 
@@ -508,7 +510,10 @@ if __name__ == "__main__":
         "--train_mmcif_data_cache_path",
         type=str,
         default=None,
-        help="Path to the json file which records all the information of mmcif structures used during training",
+        help=(
+            "Path to the json file which records all the information of mmcif "
+            "structures used during training"
+        ),
     )
     parser.add_argument(
         "--use_single_seq_mode",
@@ -544,7 +549,10 @@ if __name__ == "__main__":
         "--val_mmcif_data_cache_path",
         type=str,
         default=None,
-        help="path to the json file which records all the information of mmcif structures used during validation",
+        help=(
+            "path to the json file which records all the information of mmcif "
+            "structures used during validation"
+        ),
     )
     parser.add_argument(
         "--kalign_binary_path",
@@ -631,7 +639,7 @@ if __name__ == "__main__":
         "--resume_from_jax_params",
         type=str,
         default=None,
-        help="""Path to an .npz JAX parameter file with which to initialize the model""",
+        help="Path to an .npz JAX parameter file with which to initialize the model",
     )
     parser.add_argument(
         "--log_performance", type=bool_type, default=False, help="Measure performance"
@@ -726,7 +734,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--experiment_config_json",
         default="",
-        help="Path to a json file with custom config values to overwrite config setting",
+        help=(
+            "Path to a json file with custom config values "
+            "to overwrite config setting"
+        ),
     )
     parser.add_argument(
         "--gpus",

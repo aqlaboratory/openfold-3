@@ -14,7 +14,8 @@
 
 """
 Unit tests to compare components of OpenFold run with the DeepSpeed memory-efficient
-attention kernel, DS4Sci_EvoformerAttention vs. a stock PyTorch attention implementation.
+attention kernel, DS4Sci_EvoformerAttention vs. a stock PyTorch attention
+implementation.
 """
 
 import pickle
@@ -58,8 +59,8 @@ class TestDeepSpeedKernel(unittest.TestCase):
 
         a = Attention(c_hidden, c_hidden, c_hidden, c_hidden, no_heads).cuda()
 
-        # Change output params init for testing since they are initialized with 'final' init (zeros)
-        # Otherwise both will just return zero.
+        # Change output params init for testing since they are initialized with 'final'
+        # init (zeros) Otherwise both will just return zero.
         with torch.no_grad():
             lecun_normal_init_(a.linear_g.weight)
             lecun_normal_init_(a.linear_o.weight)
@@ -86,7 +87,9 @@ class TestDeepSpeedKernel(unittest.TestCase):
         self.compare_attention_types(use_flash=True)
 
     def test_ds_kernel_vs_attention_backward(self):
-        """Compare backward pass for regular attention vs. DeepSpeed Evoformer kernel."""
+        """
+        Compare backward pass for regular attention vs. DeepSpeed Evoformer kernel.
+        """
         batch_size = consts.batch_size
         n_seq = 18
         n_res = 20
@@ -164,9 +167,10 @@ class TestDeepSpeedKernel(unittest.TestCase):
 
     def compare_evoformer(self, dtype, eps):
         """
-        Compare Evoformer output with and without using DeepSpeed Evoformer attention kernel.
-        Set dtype to confirm the kernel can be used during both training (BF16) and inference (FP32),
-        since the kernel itself can run with either BF16 or FP16 precision.
+        Compare Evoformer output with and without using DeepSpeed Evoformer attention
+        kernel. Set dtype to confirm the kernel can be used during both training (BF16)
+        and inference (FP32), since the kernel itself can run with either BF16 or FP16
+        precision.
         """
         n_res = 20
         n_seq = 18
@@ -230,8 +234,9 @@ class TestDeepSpeedKernel(unittest.TestCase):
 
     def test_compare_template_stack(self):
         """
-        Compare Template Stack output with and without using DeepSpeed Evoformer attention kernel.
-        Kernel can be used for Triangle Attention in the Template Pair Stack.
+        Compare Template Stack output with and without using DeepSpeed Evoformer
+        attention kernel. Kernel can be used for Triangle Attention in the Template Pair
+        Stack.
         """
         n_templ = consts.n_templ
         n_res = 20
@@ -320,25 +325,26 @@ class TestDeepSpeedKernel(unittest.TestCase):
         batch.update(data_transforms.atom37_to_torsion_angles("template_")(batch))
 
         # Move the recycling dimension to the end
-        move_dim = lambda t: t.permute(*range(len(t.shape))[1:], 0)
+        def move_dim(t):
+            return t.permute(*range(len(t.shape))[1:], 0)
+
         batch = tensor_tree_map(move_dim, batch)
-        with torch.no_grad():
-            with torch.cuda.amp.autocast(dtype=torch.bfloat16):
-                model = compare_utils.get_global_pretrained_openfold()
-                model.globals.use_deepspeed_evo_attention = False
-                out_repro = model(batch)
+        with torch.no_grad(), torch.cuda.amp.autocast(dtype=torch.bfloat16):
+            model = compare_utils.get_global_pretrained_openfold()
+            model.globals.use_deepspeed_evo_attention = False
+            out_repro = model(batch)
 
-                # Enable kernel
-                model.globals.use_deepspeed_evo_attention = True
-                out_repro_ds = model(batch)
+            # Enable kernel
+            model.globals.use_deepspeed_evo_attention = True
+            out_repro_ds = model(batch)
 
-                out_repro = tensor_tree_map(lambda t: t.cpu(), out_repro)
-                out_repro_ds = tensor_tree_map(lambda t: t.cpu(), out_repro_ds)
+            out_repro = tensor_tree_map(lambda t: t.cpu(), out_repro)
+            out_repro_ds = tensor_tree_map(lambda t: t.cpu(), out_repro_ds)
 
-                out_repro = out_repro["sm"]["positions"][-1].squeeze(0)
-                out_repro_ds = out_repro_ds["sm"]["positions"][-1].squeeze(0)
+            out_repro = out_repro["sm"]["positions"][-1].squeeze(0)
+            out_repro_ds = out_repro_ds["sm"]["positions"][-1].squeeze(0)
 
-                compare_utils.assert_mean_abs_diff_small(out_repro, out_repro_ds, eps)
+            compare_utils.assert_mean_abs_diff_small(out_repro, out_repro_ds, eps)
 
 
 if __name__ == "__main__":

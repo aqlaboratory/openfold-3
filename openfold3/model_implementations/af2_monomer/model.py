@@ -58,7 +58,7 @@ class AlphaFold(nn.Module):
             config:
                 A dict-like config object (like the one in config.py)
         """
-        super(AlphaFold, self).__init__()
+        super().__init__()
 
         self.globals = config.globals
         self.config = config.model
@@ -212,7 +212,6 @@ class AlphaFold(nn.Module):
         no_batch_dims = len(batch_dims)
         n = feats["target_feat"].shape[-2]
         n_seq = feats["msa_feat"].shape[-3]
-        device = feats["target_feat"].device
 
         # Controls whether the model uses in-place operations throughout
         # The dual condition accounts for activation checkpoints
@@ -538,16 +537,17 @@ class AlphaFold(nn.Module):
         num_recycles = 0
         for cycle_no in range(num_iters):
             # Select the features for the current recycling cycle
-            fetch_cur_batch = lambda t: t[..., cycle_no]
+            def fetch_cur_batch(t):
+                return t[..., cycle_no]  # noqa: B023
+
             feats = tensor_tree_map(fetch_cur_batch, batch)
 
             # Enable grad iff we're training and it's the final recycling layer
             is_final_iter = cycle_no == (num_iters - 1) or early_stop
             with torch.set_grad_enabled(is_grad_enabled and is_final_iter):
-                if is_final_iter:
+                if is_final_iter and torch.is_autocast_enabled():
                     # Sidestep AMP bug (PyTorch issue #65766)
-                    if torch.is_autocast_enabled():
-                        torch.clear_autocast_cache()
+                    torch.clear_autocast_cache()
 
                 # Run the next iteration of the model
                 outputs, m_1_prev, z_prev, x_prev, early_stop = self.iteration(

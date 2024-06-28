@@ -128,9 +128,6 @@ def frames_and_literature_positions_to_atom14_pos(
     atom_mask,
     lit_positions,
 ):
-    # [*, N, 14, 4, 4]
-    default_4x4 = default_frames[aatype, ...]
-
     # [*, N, 14]
     group_mask = group_idx[aatype, ...]
 

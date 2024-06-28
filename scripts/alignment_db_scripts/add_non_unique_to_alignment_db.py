@@ -47,7 +47,10 @@ def main(args):
         json.dump(super_index, fp)
 
     print(
-        f"No corresponding alignment found for the following {len(remaining_unaligned_chains)} chains:",
+        (
+            "No corresponding alignment found for the following "
+            f"{len(remaining_unaligned_chains)} chains:"
+        ),
         remaining_unaligned_chains,
     )
 

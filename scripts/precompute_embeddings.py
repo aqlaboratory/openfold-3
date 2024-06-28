@@ -131,7 +131,8 @@ class EmbeddingGenerator:
         with torch.no_grad():
             for batch_idx, (labels, strs, toks) in enumerate(data_loader):
                 logging.info(
-                    f"Processing {batch_idx + 1} of {len(batches)} batches ({toks.size(0)} sequences)"
+                    f"Processing {batch_idx + 1} of {len(batches)} batches "
+                    f"({toks.size(0)} sequences)"
                 )
                 if torch.cuda.is_available() and not self.nogpu:
                     toks = toks.to(device="cuda", non_blocking=True)

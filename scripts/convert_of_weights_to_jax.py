@@ -56,7 +56,7 @@ def reshape_fn(of_param, af_weight):
 
 def transfer(of_dict, af_weight_template):
     for k in of_dict:
-        if type(of_dict[k]) == dict:
+        if isinstance(of_dict[k], dict):
             transfer(of_dict[k], af_weight_template[k])
         else:
             reshaped = reshape_fn(of_dict[k], af_weight_template[k])
@@ -78,7 +78,10 @@ def main(args):
     af_weight_template = {
         k: v for k, v in af_weight_template.items() if k in translation
     }
-    zero = lambda n: n * 0
+
+    def zero(n):
+        return n * 0
+
     af_weight_template = tree_map(zero, af_weight_template, np.ndarray)
 
     transfer(translation, af_weight_template)

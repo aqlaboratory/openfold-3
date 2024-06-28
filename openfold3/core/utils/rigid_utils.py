@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any, Callable, Optional, Sequence, Tuple
+from typing import Any, Callable, Sequence
 
 import numpy as np
 import torch
@@ -84,9 +84,9 @@ def rot_vec_mul(r: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
 
 @lru_cache(maxsize=None)
 def identity_rot_mats(
-    batch_dims: Tuple[int],
-    dtype: Optional[torch.dtype] = None,
-    device: Optional[torch.device] = None,
+    batch_dims: tuple[int],
+    dtype: torch.dtype | None = None,
+    device: torch.device | None = None,
     requires_grad: bool = True,
 ) -> torch.Tensor:
     rots = torch.eye(3, dtype=dtype, device=device, requires_grad=requires_grad)
@@ -99,9 +99,9 @@ def identity_rot_mats(
 
 @lru_cache(maxsize=None)
 def identity_trans(
-    batch_dims: Tuple[int],
-    dtype: Optional[torch.dtype] = None,
-    device: Optional[torch.device] = None,
+    batch_dims: tuple[int],
+    dtype: torch.dtype | None = None,
+    device: torch.device | None = None,
     requires_grad: bool = True,
 ) -> torch.Tensor:
     trans = torch.zeros(
@@ -112,9 +112,9 @@ def identity_trans(
 
 @lru_cache(maxsize=None)
 def identity_quats(
-    batch_dims: Tuple[int],
-    dtype: Optional[torch.dtype] = None,
-    device: Optional[torch.device] = None,
+    batch_dims: tuple[int],
+    dtype: torch.dtype | None = None,
+    device: torch.device | None = None,
     requires_grad: bool = True,
 ) -> torch.Tensor:
     quat = torch.zeros(
@@ -285,8 +285,8 @@ class Rotation:
 
     def __init__(
         self,
-        rot_mats: Optional[torch.Tensor] = None,
-        quats: Optional[torch.Tensor] = None,
+        rot_mats: torch.Tensor | None = None,
+        quats: torch.Tensor | None = None,
         normalize_quats: bool = True,
     ):
         """
@@ -325,8 +325,8 @@ class Rotation:
     @staticmethod
     def identity(
         shape,
-        dtype: Optional[torch.dtype] = None,
-        device: Optional[torch.device] = None,
+        dtype: torch.dtype | None = None,
+        device: torch.device | None = None,
         requires_grad: bool = True,
         fmt: str = "quat",
     ) -> Rotation:
@@ -751,9 +751,7 @@ class Rotation:
         else:
             raise ValueError("Both rotations are None")
 
-    def to(
-        self, device: Optional[torch.device], dtype: Optional[torch.dtype]
-    ) -> Rotation:
+    def to(self, device: torch.device | None, dtype: torch.dtype | None) -> Rotation:
         """
         Analogous to the to() method of torch Tensors
 
@@ -810,8 +808,8 @@ class Rigid:
 
     def __init__(
         self,
-        rots: Optional[Rotation],
-        trans: Optional[torch.Tensor],
+        rots: Rotation | None,
+        trans: torch.Tensor | None,
     ):
         """
         Args:
@@ -860,9 +858,9 @@ class Rigid:
 
     @staticmethod
     def identity(
-        shape: Tuple[int],
-        dtype: Optional[torch.dtype] = None,
-        device: Optional[torch.device] = None,
+        shape: tuple[int],
+        dtype: torch.dtype | None = None,
+        device: torch.device | None = None,
         requires_grad: bool = True,
         fmt: str = "quat",
     ) -> Rigid:
@@ -1286,8 +1284,7 @@ class Rigid:
         Returns:
             A transformation object with a scaled translation.
         """
-        fn = lambda t: t * trans_scale_factor
-        return self.apply_trans_fn(fn)
+        return self.apply_trans_fn(lambda t: t * trans_scale_factor)
 
     def stop_rot_gradient(self) -> Rigid:
         """
@@ -1296,8 +1293,7 @@ class Rigid:
         Returns:
             A transformation object with detached rotations
         """
-        fn = lambda r: r.detach()
-        return self.apply_rot_fn(fn)
+        return self.apply_rot_fn(lambda r: r.detach())
 
     @staticmethod
     def make_transform_from_reference(n_xyz, ca_xyz, c_xyz, eps=1e-20):
@@ -1327,8 +1323,6 @@ class Rigid:
         norm = torch.sqrt(eps + c_x**2 + c_y**2)
         sin_c1 = -c_y / norm
         cos_c1 = c_x / norm
-        zeros = sin_c1.new_zeros(sin_c1.shape)
-        ones = sin_c1.new_ones(sin_c1.shape)
 
         c1_rots = sin_c1.new_zeros((*sin_c1.shape, 3, 3))
         c1_rots[..., 0, 0] = cos_c1

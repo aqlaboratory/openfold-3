@@ -86,8 +86,9 @@ def main(args):
 
         if retcode:
             raise RuntimeError(
-                "MMseqs failed\nstdout:\n%s\n\nstderr:\n%s\n"
-                % (stdout.decode("utf-8"), stderr.decode("utf-8"))
+                "MMseqs failed\nstdout:\n{}\n\nstderr:\n{}\n".format(
+                    stdout.decode("utf-8"), stderr.decode("utf-8")
+                )
             )
 
         _split_a3ms(args.output_dir)

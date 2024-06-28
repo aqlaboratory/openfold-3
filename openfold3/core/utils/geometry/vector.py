@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import List, Union
+from typing import Union
 
 import torch
 
@@ -165,7 +165,7 @@ class Vec3Array:
         return cls(*torch.unbind(tensor, dim=-1))
 
     @classmethod
-    def cat(cls, vecs: List[Vec3Array], dim: int) -> Vec3Array:
+    def cat(cls, vecs: list[Vec3Array], dim: int) -> Vec3Array:
         return cls(
             torch.cat([v.x for v in vecs], dim=dim),
             torch.cat([v.y for v in vecs], dim=dim),

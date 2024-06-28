@@ -212,8 +212,9 @@ def model_config(
     if long_sequence_inference:
         assert not train
         c.globals.offload_inference = True
-        # Default to DeepSpeed memory-efficient attention kernel unless use_lma is explicitly set
-        c.globals.use_deepspeed_evo_attention = True if not c.globals.use_lma else False
+        # Default to DeepSpeed memory-efficient attention kernel unless use_lma is
+        # explicitly set
+        c.globals.use_deepspeed_evo_attention = bool(not c.globals.use_lma)
         c.globals.use_flash = False
         c.model.template.offload_inference = True
         c.model.template.template_pair_stack.tune_chunk_size = False
@@ -248,8 +249,8 @@ c_t = mlc.FieldReference(64, field_type=int)
 c_e = mlc.FieldReference(64, field_type=int)
 c_s = mlc.FieldReference(384, field_type=int)
 
-# For seqemb mode, dimension size of the per-residue sequence embedding passed to the model
-# In current model, the dimension size is the ESM-1b dimension size i.e. 1280.
+# For seqemb mode, dimension size of the per-residue sequence embedding passed to the
+# model. In current model, the dimension size is the ESM-1b dimension size i.e. 1280.
 preemb_dim_size = mlc.FieldReference(1280, field_type=int)
 
 blocks_per_ckpt = mlc.FieldReference(None, field_type=int)
@@ -748,7 +749,8 @@ multimer_config_update = mlc.ConfigDict(
                     "aatype": [NUM_RES],
                     "all_atom_mask": [NUM_RES, None],
                     "all_atom_positions": [NUM_RES, None, None],
-                    # "all_chains_entity_ids": [],  # TODO: Resolve missing features, remove processed msa feats
+                    # TODO: Resolve missing features, remove processed msa feats
+                    # "all_chains_entity_ids": [],
                     # "all_crops_all_chains_mask": [],
                     # "all_crops_all_chains_positions": [],
                     # "all_crops_all_chains_residue_ids": [],
@@ -812,7 +814,8 @@ multimer_config_update = mlc.ConfigDict(
                 ],
             },
             "supervised": {"clamp_prob": 1.0},
-            # TODO: Change max_msa_clusters and max_extra_msa to multimer feats within model:
+            # TODO: Change max_msa_clusters and max_extra_msa to multimer feats within
+            # model:
             # c.model.input_embedder.num_msa = 508
             # c.model.extra_msa.extra_msa_embedder.num_extra_msa = 2048
             "predict": {"max_msa_clusters": 508, "max_extra_msa": 2048},

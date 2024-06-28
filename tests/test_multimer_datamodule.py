@@ -80,7 +80,10 @@ class TestMultimerDataModule(unittest.TestCase):
         self.data_module.setup()
         train_dataset = self.data_module.train_dataset
         all_chain_features = train_dataset[1]
-        add_batch_size_dimension = lambda t: (t.unsqueeze(0))
+
+        def add_batch_size_dimension(t):
+            return t.unsqueeze(0)
+
         all_chain_features = tensor_tree_map(
             add_batch_size_dimension, all_chain_features
         )

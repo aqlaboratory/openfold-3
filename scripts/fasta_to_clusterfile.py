@@ -89,12 +89,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "input_fasta",
         type=Path,
-        help="Input .fasta file. Sequence names should be in format >{PDB_ID}_{CHAIN_ID}",
+        help=(
+            "Input .fasta file. Sequence names should be in format "
+            ">{PDB_ID}_{CHAIN_ID}"
+        ),
     )
     parser.add_argument(
         "output_file",
         type=Path,
-        help="Output file. Each line will contain a space-separated list of {PDB_ID}_{CHAIN_ID} belonging to the same cluster.",
+        help=(
+            "Output file. Each line will contain a space-separated list of "
+            "{PDB_ID}_{CHAIN_ID} belonging to the same cluster."
+        ),
     )
     parser.add_argument("mmseqs_binary_path", type=str, help="Path to mmseqs binary")
     parser.add_argument(

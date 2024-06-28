@@ -106,13 +106,14 @@ class TestPermutation(unittest.TestCase):
 
     def test_2_permutation_pentamer(self):
         """
-        Test the permutation results on a pentamer A2B3, in which protein A has 9 residues
-        and protein B has 13 residues.
+        Test the permutation results on a pentamer A2B3, in which protein A has 9
+        residues and protein B has 13 residues.
 
         Expected outputs:
-            Only protein A should be selected as an anchor thus, in the output list, either [(0,1), (1,0)] or [(0,0), (1,1)] are allowed
-            The 3 chains from protein B should ALWAYS be aligned in a way that predicted b1 to be aligned with ground truth b1, pred b2 to ground truth b2
-            as shown below:
+            Only protein A should be selected as an anchor thus, in the output list,
+            either [(0,1), (1,0)] or [(0,0), (1,1)] are allowed The 3 chains from
+            protein B should ALWAYS be aligned in a way that predicted b1 to be aligned
+            with ground truth b1, pred b2 to ground truth b2 as shown below:
 
             predicted structure:              a2 - a1 - b2 - b3 - b1
             indexes in the predicted list:    0    1    2    3    4
@@ -120,10 +121,12 @@ class TestPermutation(unittest.TestCase):
             ground truth structure:           a1 - a2 - b1 - b2 - b3
             indexes in the ground truth list: 0    1    2    3    4
 
-            then the 2 protein A chains are free to be aligned by either order, thus either [(0,1),(1,0)] or [(0,0),(1,1)] is valid.
+            then the 2 protein A chains are free to be aligned by either order, thus
+            either [(0,1),(1,0)] or [(0,0),(1,1)] is valid.
 
-            However, the 3 protein B chains should be strictly aligned in the following order:
-            [(2,3), (3,4), (4,2)], regardless of how protein A chains are aligned.
+            However, the 3 protein B chains should be strictly aligned in the following
+            order: [(2,3), (3,4), (4,2)], regardless of how protein A chains are
+            aligned.
 
             Therefore, the only 2 correct permutations are :
             [(0, 1), (1, 0), (2, 3), (3, 4), (4, 2)] and
@@ -155,9 +158,9 @@ class TestPermutation(unittest.TestCase):
             )
             + 30
         )
-        # Below permutate predicted chain positions
-        # here the b2 chain from the ground truth is deliberately put in b1 chain's position, and predicted b3 chain to b2's position
-        # and predicted b1 chain to b3's position
+        # Below permutate predicted chain positions here the b2 chain from the ground
+        # truth is deliberately put in b1 chain's position, and predicted b3 chain to
+        # b2's position and predicted b1 chain to b3's position
         pred_atom_position = torch.cat(
             (chain_a2_pos, chain_a1_pos, chain_b2_pos, chain_b3_pos, chain_b1_pos),
             dim=1,
@@ -319,7 +322,8 @@ class TestPermutation(unittest.TestCase):
 
         # NOTE
         # batch: simulates ground_truth features
-        # fake_input_features: simulates the data that are going be used as input for model.forward(fake_input_features)
+        # fake_input_features: simulates the data that are going be used as input for
+        # model.forward(fake_input_features)
         # out: simulates the output of model.forward(fake_input_features)
         aligns, per_asym_residue_index = compute_permutation_alignment(
             out, fake_input_features, batch

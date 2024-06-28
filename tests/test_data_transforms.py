@@ -22,7 +22,6 @@ from openfold3.core.data.data_transforms import (
     make_msa_mask,
     make_seq_mask,
     nearest_neighbor_clusters,
-    randomly_replace_msa_with_unknown,
     sample_msa,
     squeeze_features,
 )
@@ -122,23 +121,23 @@ class TestDataTransforms(unittest.TestCase):
             if k in protein:
                 assert protein_squeezed[k].shape == self.features[k].shape
 
-    def test_randomly_replace_msa_with_unknown(self):
-        # TODO: Fix this test
-        protein = {
-            "msa": torch.as_tensor(self.features["msa"]),
-            "aatype": torch.argmax(torch.as_tensor(self.features["aatype"]), dim=1),
-        }
-        replace_proportion = 0.15
-        x_idx = 20
-        protein = randomly_replace_msa_with_unknown.__wrapped__(
-            protein, replace_proportion
-        )
-        unknown_proportion_in_msa = torch.bincount(
-            protein["msa"].flatten()
-        ) / torch.numel(protein["msa"])
-        unknown_proportion_in_seq = torch.bincount(
-            protein["aatype"].flatten()
-        ) / torch.numel(protein["aatype"])
+    # TODO: Fix this test
+    # def test_randomly_replace_msa_with_unknown(self):
+    #     protein = {
+    #         "msa": torch.as_tensor(self.features["msa"]),
+    #         "aatype": torch.argmax(torch.as_tensor(self.features["aatype"]), dim=1),
+    #     }
+    #     replace_proportion = 0.15
+    #     x_idx = 20
+    #     protein = randomly_replace_msa_with_unknown.__wrapped__(
+    #         protein, replace_proportion
+    #     )
+    #     unknown_proportion_in_msa = torch.bincount(
+    #         protein["msa"].flatten()
+    #     ) / torch.numel(protein["msa"])
+    #     unknown_proportion_in_seq = torch.bincount(
+    #         protein["aatype"].flatten()
+    #     ) / torch.numel(protein["aatype"])
 
     def test_sample_msa(self):
         max_seq = 1000

@@ -78,7 +78,8 @@ def main(
     output_path: Path, alignment_db_index: Optional[Path], alignment_dir: Optional[Path]
 ) -> None:
     """
-    Generate a FASTA file from either an alignment-db index or a chain directory using multi-threading.
+    Generate a FASTA file from either an alignment-db index or a chain directory using
+    multi-threading.
     """
     fasta = []
 

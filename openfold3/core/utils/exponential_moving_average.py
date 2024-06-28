@@ -27,9 +27,11 @@ class ExponentialMovingAverage:
                 A value (usually close to 1.) by which updates are
                 weighted as part of the above formula
         """
-        super(ExponentialMovingAverage, self).__init__()
+        super().__init__()
 
-        clone_param = lambda t: t.clone().detach()
+        def clone_param(t):
+            return t.clone().detach()
+
         self.params = tensor_tree_map(clone_param, model.state_dict())
         self.decay = decay
         self.device = next(model.parameters()).device
@@ -58,7 +60,7 @@ class ExponentialMovingAverage:
         self._update_state_dict_(model.state_dict(), self.params)
 
     def load_state_dict(self, state_dict: OrderedDict) -> None:
-        for k in state_dict["params"].keys():
+        for k in state_dict["params"]:
             self.params[k] = state_dict["params"][k].clone()
         self.decay = state_dict["decay"]
 

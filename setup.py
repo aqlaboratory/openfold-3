@@ -43,7 +43,7 @@ extra_cuda_flags = [
 
 
 def get_cuda_bare_metal_version(cuda_dir):
-    if cuda_dir == None or torch.version.cuda == None:
+    if cuda_dir is None or torch.version.cuda is None:
         print("CUDA is not found, cpu version is installed")
         return None, -1, 0
     else:

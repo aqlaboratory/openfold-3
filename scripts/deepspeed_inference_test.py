@@ -19,7 +19,7 @@ class Model(torch.nn.Module):
             self.ml.append(openfold3.base.model.primitives.linear.Linear(500, 500))
 
     def forward(self, batch):
-        for i, l in enumerate(self.ml):
+        for _, l in enumerate(self.ml):
             # print(f"{i}: {l.weight.device}")
             batch = l(batch)
 

@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import List
 
 import torch
 
@@ -174,15 +173,21 @@ class Rot3Array:
 
     def reshape(self, new_shape):
         field_names = utils.get_field_names(Rot3Array)
-        reshape_fn = lambda t: t.reshape(new_shape)
+
+        def reshape_fn(t):
+            return t.reshape(new_shape)
+
         return Rot3Array(
             **{name: reshape_fn(getattr(self, name)) for name in field_names}
         )
 
     @classmethod
-    def cat(cls, rots: List[Rot3Array], dim: int) -> Rot3Array:
+    def cat(cls, rots: list[Rot3Array], dim: int) -> Rot3Array:
         field_names = utils.get_field_names(Rot3Array)
-        cat_fn = lambda l: torch.cat(l, dim=dim)
+
+        def cat_fn(l):
+            return torch.cat(l, dim=dim)
+
         return cls(
             **{name: cat_fn([getattr(r, name) for r in rots]) for name in field_names}
         )

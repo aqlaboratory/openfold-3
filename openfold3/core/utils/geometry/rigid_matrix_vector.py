@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import List, Union
+from typing import Union
 
 import torch
 
@@ -112,7 +112,7 @@ class Rigid3Array:
         )
 
     @classmethod
-    def cat(cls, rigids: List[Rigid3Array], dim: int) -> Rigid3Array:
+    def cat(cls, rigids: list[Rigid3Array], dim: int) -> Rigid3Array:
         return cls(
             rotation_matrix.Rot3Array.cat([r.rotation for r in rigids], dim=dim),
             vector.Vec3Array.cat([r.translation for r in rigids], dim=dim),

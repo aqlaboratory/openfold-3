@@ -124,9 +124,6 @@ class TestUtils(unittest.TestCase):
         trans_1 = [0, 1, 0]
         trans_2 = [0, 0, 1]
 
-        r = Rotation(rot_mats=X_90_ROT)
-        t = torch.tensor(trans_1)
-
         t1 = Rigid(Rotation(rot_mats=X_90_ROT), torch.tensor(trans_1))
         t2 = Rigid(Rotation(rot_mats=X_NEG_90_ROT), torch.tensor(trans_2))
 

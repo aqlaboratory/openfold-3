@@ -11,10 +11,7 @@ class QuatRigid(nn.Module):
     def __init__(self, c_hidden, full_quat):
         super().__init__()
         self.full_quat = full_quat
-        if self.full_quat:
-            rigid_dim = 7
-        else:
-            rigid_dim = 6
+        rigid_dim = 7 if self.full_quat else 6
 
         self.linear = Linear(c_hidden, rigid_dim, init="final", precision=torch.float32)
 

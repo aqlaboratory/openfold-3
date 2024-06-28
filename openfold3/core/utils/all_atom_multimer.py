@@ -185,7 +185,8 @@ def atom37_to_frames(
     # Create the alternative ground truth frames.
     alt_gt_frames = gt_frames.compose_rotation(ambiguity_rot)
 
-    fix_shape = lambda x: x.reshape(x.shape[:-2] + (8,))
+    def fix_shape(x):
+        return x.reshape(x.shape[:-2] + (8,))
 
     # reshape back to original residue layout
     gt_frames = fix_shape(gt_frames)
@@ -220,7 +221,6 @@ def torsion_angles_to_frames(
     cos_angles = torsion_angles_sin_cos[..., 1]
 
     # insert zero rotation for backbone group.
-    num_residues = aatype.shape[-1]
     sin_angles = torch.cat(
         [
             torch.zeros_like(aatype).unsqueeze(dim=-1),

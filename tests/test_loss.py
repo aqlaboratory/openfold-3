@@ -99,7 +99,7 @@ class TestLoss(unittest.TestCase):
         a_gt = torch.rand((batch_size, n_res, 7, 2))
         a_alt_gt = torch.rand((batch_size, n_res, 7, 2))
 
-        loss = torsion_angle_loss(a, a_gt, a_alt_gt)
+        torsion_angle_loss(a, a_gt, a_alt_gt)
 
     def test_run_fape(self):
         batch_size = consts.batch_size
@@ -118,7 +118,7 @@ class TestLoss(unittest.TestCase):
         positions_mask = torch.randint(0, 2, (batch_size, n_atoms)).float()
         length_scale = 10
 
-        loss = compute_fape(
+        compute_fape(
             pred_frames=t,
             target_frames=t_gt,
             frames_mask=frames_mask,
@@ -190,7 +190,7 @@ class TestLoss(unittest.TestCase):
         )
         out_repro = tensor_tree_map(lambda x: x.cpu(), out_repro)
 
-        for k in out_gt.keys():
+        for k in out_gt:
             self.assertTrue(torch.max(torch.abs(out_gt[k] - out_repro[k])) < consts.eps)
 
     def test_run_between_residue_clash_loss(self):
@@ -202,7 +202,7 @@ class TestLoss(unittest.TestCase):
         atom14_atom_radius = torch.rand(bs, n, 14)
         residue_index = torch.arange(n).unsqueeze(0)
 
-        loss = between_residue_clash_loss(
+        between_residue_clash_loss(
             pred_pos,
             pred_atom_mask,
             atom14_atom_radius,
@@ -257,7 +257,7 @@ class TestLoss(unittest.TestCase):
         )
         out_repro = tensor_tree_map(lambda x: x.cpu(), out_repro)
 
-        for k in out_gt.keys():
+        for k in out_gt:
             self.assertTrue(torch.max(torch.abs(out_gt[k] - out_repro[k])) < consts.eps)
 
     @compare_utils.skip_unless_alphafold_installed()
@@ -793,7 +793,9 @@ class TestLoss(unittest.TestCase):
         out_gt = f.apply({}, None, value, batch)
         out_gt = torch.tensor(np.array(out_gt["loss"]))
 
-        to_tensor = lambda t: torch.tensor(t).cuda()
+        def to_tensor(t):
+            return torch.tensor(t).cuda()
+
         value = tree_map(to_tensor, value, np.ndarray)
         batch = tree_map(to_tensor, batch, np.ndarray)
 
@@ -872,7 +874,9 @@ class TestLoss(unittest.TestCase):
         out_gt = f.apply({}, None, batch, value)
         out_gt = torch.tensor(np.array(out_gt.block_until_ready()))
 
-        to_tensor = lambda t: torch.tensor(t).cuda()
+        def to_tensor(t):
+            return torch.tensor(t).cuda()
+
         batch = tree_map(to_tensor, batch, np.ndarray)
         value = tree_map(to_tensor, value, np.ndarray)
 
@@ -1007,7 +1011,9 @@ class TestLoss(unittest.TestCase):
         out_gt = f.apply({}, None, batch, value, atom14_pred_pos)
         out_gt = torch.tensor(np.array(out_gt.block_until_ready()))
 
-        to_tensor = lambda t: torch.tensor(t).cuda()
+        def to_tensor(t):
+            return torch.tensor(t).cuda()
+
         batch = tree_map(to_tensor, batch, np.ndarray)
         value = tree_map(to_tensor, value, np.ndarray)
         atom14_pred_pos = to_tensor(atom14_pred_pos)
@@ -1073,7 +1079,9 @@ class TestLoss(unittest.TestCase):
         out_gt = f.apply(params, None, representations, batch, value)
         out_gt = torch.tensor(np.array(out_gt.block_until_ready()))
 
-        to_tensor = lambda n: torch.tensor(n).cuda()
+        def to_tensor(n):
+            return torch.tensor(n).cuda()
+
         representations = tree_map(to_tensor, representations, np.ndarray)
         batch = tree_map(to_tensor, batch, np.ndarray)
         value = tree_map(to_tensor, value, np.ndarray)
@@ -1118,7 +1126,9 @@ class TestLoss(unittest.TestCase):
 
         final_atom_positions = torch.rand(batch_size, n_res, 37, 3).cuda()
 
-        to_tensor = lambda t: torch.tensor(t).cuda()
+        def to_tensor(t):
+            return torch.tensor(t).cuda()
+
         batch = tree_map(to_tensor, batch, np.ndarray)
 
         out_repro = chain_center_of_mass_loss(

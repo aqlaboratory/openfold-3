@@ -47,7 +47,7 @@ class AlphaFoldLRScheduler(torch.optim.lr_scheduler._LRScheduler):
         self.decay_every_n_steps = decay_every_n_steps
         self.decay_factor = decay_factor
 
-        super(AlphaFoldLRScheduler, self).__init__(
+        super().__init__(
             optimizer,
             last_epoch=last_epoch,
             verbose=verbose,

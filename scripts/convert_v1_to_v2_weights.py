@@ -54,7 +54,8 @@ def convert_v1_to_v2_weights(args):
     else:
         # A Pytorch Lightning checkpoint
         logging.info(
-            "Converting pytorch lightning checkpoint found at {args.input_checkpoint_path}"
+            "Converting pytorch lightning checkpoint found at "
+            "{args.input_checkpoint_path}"
         )
         state_dict_key = "state_dict"
         model_output_path = args.output_ckpt_path

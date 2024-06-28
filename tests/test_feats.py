@@ -158,13 +158,17 @@ class TestFeats(unittest.TestCase):
 
         if consts.is_multimer:
             batch["asym_id"] = random_asym_ids(n_res)
-            to_tensor = (
-                lambda t: torch.tensor(np.array(t))
-                if not isinstance(t, self.am_rigid.Rigid3Array)
-                else torch.tensor(np.array(t.to_array()))
-            )
+
+            def to_tensor(t):
+                return (
+                    torch.tensor(np.array(t))
+                    if not isinstance(t, self.am_rigid.Rigid3Array)
+                    else torch.tensor(np.array(t.to_array()))
+                )
         else:
-            to_tensor = lambda t: torch.tensor(np.array(t))
+
+            def to_tensor(t):
+                return torch.tensor(np.array(t))
 
         out_gt = {k: to_tensor(v) for k, v in out_gt.items()}
 
@@ -192,13 +196,15 @@ class TestFeats(unittest.TestCase):
             out_gt["rigidgroups_alt_gt_frames"]
         )
 
-        to_tensor = lambda t: torch.tensor(np.array(t)).cuda()
+        def to_tensor(t):
+            return torch.tensor(np.array(t)).cuda()
+
         batch = tree_map(to_tensor, batch, np.ndarray)
 
         out_repro = data_transforms.atom37_to_frames(batch)
         out_repro = tensor_tree_map(lambda t: t.cpu(), out_repro)
 
-        for k, v in out_gt.items():
+        for k, _ in out_gt.items():
             self.assertTrue(torch.max(torch.abs(out_gt[k] - out_repro[k])) < consts.eps)
 
     def test_torsion_angles_to_frames_shape(self):

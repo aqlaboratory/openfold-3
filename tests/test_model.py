@@ -93,16 +93,18 @@ class TestModel(unittest.TestCase):
                 0, 2, size=(n_extra_seq, n_res)
             )
 
-        add_recycling_dims = lambda t: (
-            t.unsqueeze(-1).expand(*t.shape, c.data.common.max_recycling_iters)
-        )
+        def add_recycling_dims(t):
+            return t.unsqueeze(-1).expand(*t.shape, c.data.common.max_recycling_iters)
+
         batch = tensor_tree_map(add_recycling_dims, batch)
 
-        to_cuda_device = lambda t: t.cuda()
+        def to_cuda_device(t):
+            return t.cuda()
+
         batch = tensor_tree_map(to_cuda_device, batch)
 
         with torch.no_grad():
-            out = model(batch)
+            model(batch)
 
     def test_dry_run_seqemb_mode(self):
         n_seq = 1
@@ -137,16 +139,19 @@ class TestModel(unittest.TestCase):
         batch["msa_mask"] = torch.randint(low=0, high=2, size=(n_seq, n_res)).float()
 
         batch["no_recycling_iters"] = torch.tensor(2.0)
-        add_recycling_dims = lambda t: (
-            t.unsqueeze(-1).expand(*t.shape, c.data.common.max_recycling_iters)
-        )
+
+        def add_recycling_dims(t):
+            return t.unsqueeze(-1).expand(*t.shape, c.data.common.max_recycling_iters)
+
         batch = tensor_tree_map(add_recycling_dims, batch)
 
-        to_cuda_device = lambda t: t.to(torch.device("cuda"))
+        def to_cuda_device(t):
+            return t.to(torch.device("cuda"))
+
         batch = tensor_tree_map(to_cuda_device, batch)
 
         with torch.no_grad():
-            out = model(batch)
+            model(batch)
 
     @compare_utils.skip_unless_alphafold_installed()
     @unittest.skipIf(consts.is_multimer, "Additional changes required for multimer.")
@@ -199,7 +204,9 @@ class TestModel(unittest.TestCase):
         batch.update(data_transforms.atom37_to_torsion_angles("template_")(batch))
 
         # Move the recycling dimension to the end
-        move_dim = lambda t: t.permute(*range(len(t.shape))[1:], 0)
+        def move_dim(t):
+            return t.permute(*range(len(t.shape))[1:], 0)
+
         batch = tensor_tree_map(move_dim, batch)
 
         with torch.no_grad():

@@ -119,10 +119,10 @@ def fetch_alphafold_module_weights(weight_path):
 
     try:
         params = alphafold.model.utils.flat_params_to_haiku(params)  # noqa
-    except:
+    except Exception as err:
         raise ImportError(
             "Make sure to call import_alphafold before running this function"
-        )
+        ) from err
     return params
 
 

@@ -61,7 +61,7 @@ class Param:
 def process_translation_dict(d, top_layer=True):
     flat = {}
     for k, v in d.items():
-        if type(v) == dict:
+        if isinstance(v, dict):
             prefix = _NPZ_KEY_PREFIX if top_layer else ""
             sub_flat = {
                 (prefix + "/".join([k, k_prime])): v_prime
@@ -91,7 +91,7 @@ def stacked(param_dict_list, out=None):
     template = param_dict_list[0]
     for k, _ in template.items():
         v = [d[k] for d in param_dict_list]
-        if type(v[0]) is dict:
+        if isinstance(v[0], dict):
             out[k] = {}
             stacked(v, out=out[k])
         elif type(v[0]) is Param:
@@ -138,75 +138,84 @@ def generate_translation_dict(model, version, is_multimer=False):
     #######################
     # Some templates
     #######################
-    LinearWeight = lambda l: (Param(l, param_type=ParamType.LinearWeight))
-    LinearBias = lambda l: (Param(l))
-    LinearWeightMHA = lambda l: (Param(l, param_type=ParamType.LinearWeightMHA))
-    LinearBiasMHA = lambda b: (Param(b, param_type=ParamType.LinearBiasMHA))
-    LinearWeightOPM = lambda l: (Param(l, param_type=ParamType.LinearWeightOPM))
-    LinearWeightMultimer = lambda l: (
-        Param(l, param_type=ParamType.LinearWeightMultimer)
-    )
-    LinearBiasMultimer = lambda l: (Param(l, param_type=ParamType.LinearBiasMultimer))
-    LinearWeightSwap = lambda l: (
-        Param(l, param_type=ParamType.LinearWeight, swap=True)
-    )
-    LinearBiasSwap = lambda l: (Param(l, swap=True))
+    def LinearWeight(l):
+        return Param(l, param_type=ParamType.LinearWeight)
 
-    LinearParams = lambda l: {
-        "weights": LinearWeight(l.weight),
-        "bias": LinearBias(l.bias),
-    }
+    def LinearBias(l):
+        return Param(l)
 
-    LinearParamsMHA = lambda l: {
-        "weights": LinearWeightMHA(l.weight),
-        "bias": LinearBiasMHA(l.bias),
-    }
+    def LinearWeightMHA(l):
+        return Param(l, param_type=ParamType.LinearWeightMHA)
 
-    LinearParamsSwap = lambda l: {
-        "weights": LinearWeightSwap(l.weight),
-        "bias": LinearBiasSwap(l.bias),
-    }
+    def LinearBiasMHA(b):
+        return Param(b, param_type=ParamType.LinearBiasMHA)
 
-    LinearParamsMultimer = lambda l: {
-        "weights": LinearWeightMultimer(l.weight),
-        "bias": LinearBiasMultimer(l.bias),
-    }
+    def LinearWeightOPM(l):
+        return Param(l, param_type=ParamType.LinearWeightOPM)
 
-    LayerNormParams = lambda l: {
-        "scale": Param(l.weight),
-        "offset": Param(l.bias),
-    }
+    def LinearWeightMultimer(l):
+        return Param(l, param_type=ParamType.LinearWeightMultimer)
 
-    AttentionParams = lambda att: {
-        "query_w": LinearWeightMHA(att.linear_q.weight),
-        "key_w": LinearWeightMHA(att.linear_k.weight),
-        "value_w": LinearWeightMHA(att.linear_v.weight),
-        "output_w": Param(
-            att.linear_o.weight,
-            param_type=ParamType.LinearMHAOutputWeight,
-        ),
-        "output_b": LinearBias(att.linear_o.bias),
-    }
+    def LinearBiasMultimer(l):
+        return Param(l, param_type=ParamType.LinearBiasMultimer)
 
-    AttentionGatedParams = lambda att: dict(
-        **AttentionParams(att),
-        **{
-            "gating_w": LinearWeightMHA(att.linear_g.weight),
-            "gating_b": LinearBiasMHA(att.linear_g.bias),
-        },
-    )
+    def LinearWeightSwap(l):
+        return Param(l, param_type=ParamType.LinearWeight, swap=True)
 
-    GlobalAttentionParams = lambda att: dict(
-        AttentionGatedParams(att),
-        key_w=LinearWeight(att.linear_k.weight),
-        value_w=LinearWeight(att.linear_v.weight),
-    )
+    def LinearBiasSwap(l):
+        return Param(l, swap=True)
 
-    TriAttParams = lambda tri_att: {
-        "query_norm": LayerNormParams(tri_att.layer_norm),
-        "feat_2d_weights": LinearWeight(tri_att.linear.weight),
-        "attention": AttentionGatedParams(tri_att.mha),
-    }
+    def LinearParams(l):
+        return {"weights": LinearWeight(l.weight), "bias": LinearBias(l.bias)}
+
+    def LinearParamsMHA(l):
+        return {"weights": LinearWeightMHA(l.weight), "bias": LinearBiasMHA(l.bias)}
+
+    def LinearParamsSwap(l):
+        return {"weights": LinearWeightSwap(l.weight), "bias": LinearBiasSwap(l.bias)}
+
+    def LinearParamsMultimer(l):
+        return {
+            "weights": LinearWeightMultimer(l.weight),
+            "bias": LinearBiasMultimer(l.bias),
+        }
+
+    def LayerNormParams(l):
+        return {"scale": Param(l.weight), "offset": Param(l.bias)}
+
+    def AttentionParams(att):
+        return {
+            "query_w": LinearWeightMHA(att.linear_q.weight),
+            "key_w": LinearWeightMHA(att.linear_k.weight),
+            "value_w": LinearWeightMHA(att.linear_v.weight),
+            "output_w": Param(
+                att.linear_o.weight, param_type=ParamType.LinearMHAOutputWeight
+            ),
+            "output_b": LinearBias(att.linear_o.bias),
+        }
+
+    def AttentionGatedParams(att):
+        return dict(
+            **AttentionParams(att),
+            **{
+                "gating_w": LinearWeightMHA(att.linear_g.weight),
+                "gating_b": LinearBiasMHA(att.linear_g.bias),
+            },
+        )
+
+    def GlobalAttentionParams(att):
+        return dict(
+            AttentionGatedParams(att),
+            key_w=LinearWeight(att.linear_k.weight),
+            value_w=LinearWeight(att.linear_v.weight),
+        )
+
+    def TriAttParams(tri_att):
+        return {
+            "query_norm": LayerNormParams(tri_att.layer_norm),
+            "feat_2d_weights": LinearWeight(tri_att.linear.weight),
+            "attention": AttentionGatedParams(tri_att.mha),
+        }
 
     def TriMulOutParams(tri_mul, outgoing=True):
         if re.fullmatch("^model_[1-5]_multimer_v3$", version):
@@ -253,100 +262,95 @@ def generate_translation_dict(model, version, is_multimer=False):
 
     TriMulInParams = partial(TriMulOutParams, outgoing=False)
 
-    PairTransitionParams = lambda pt: {
-        "input_layer_norm": LayerNormParams(pt.layer_norm),
-        "transition1": LinearParams(pt.transition_mlp.layers[0][0]),
-        "transition2": LinearParams(pt.transition_mlp.linear_out),
-    }
+    def PairTransitionParams(pt):
+        return {
+            "input_layer_norm": LayerNormParams(pt.layer_norm),
+            "transition1": LinearParams(pt.transition_mlp.layers[0][0]),
+            "transition2": LinearParams(pt.transition_mlp.linear_out),
+        }
 
-    MSAAttParams = lambda matt: {
-        "query_norm": LayerNormParams(matt.layer_norm_m),
-        "attention": AttentionGatedParams(matt.mha),
-    }
+    def MSAAttParams(matt):
+        return {
+            "query_norm": LayerNormParams(matt.layer_norm_m),
+            "attention": AttentionGatedParams(matt.mha),
+        }
 
-    MSAColAttParams = lambda matt: {
-        "query_norm": LayerNormParams(matt._msa_att.layer_norm_m),
-        "attention": AttentionGatedParams(matt._msa_att.mha),
-    }
+    def MSAColAttParams(matt):
+        return {
+            "query_norm": LayerNormParams(matt._msa_att.layer_norm_m),
+            "attention": AttentionGatedParams(matt._msa_att.mha),
+        }
 
-    MSAGlobalAttParams = lambda matt: {
-        "query_norm": LayerNormParams(matt.layer_norm_m),
-        "attention": GlobalAttentionParams(matt.global_attention),
-    }
+    def MSAGlobalAttParams(matt):
+        return {
+            "query_norm": LayerNormParams(matt.layer_norm_m),
+            "attention": GlobalAttentionParams(matt.global_attention),
+        }
 
-    MSAAttPairBiasParams = lambda matt: dict(
-        **MSAAttParams(matt),
-        **{
-            "feat_2d_norm": LayerNormParams(matt.layer_norm_z),
-            "feat_2d_weights": LinearWeight(matt.linear_z.weight),
-        },
-    )
+    def MSAAttPairBiasParams(matt):
+        return dict(
+            **MSAAttParams(matt),
+            **{
+                "feat_2d_norm": LayerNormParams(matt.layer_norm_z),
+                "feat_2d_weights": LinearWeight(matt.linear_z.weight),
+            },
+        )
 
-    IPAParams = lambda ipa: {
-        "q_scalar": LinearParams(ipa.linear_q),
-        "kv_scalar": LinearParams(ipa.linear_kv),
-        "q_point_local": LinearParams(ipa.linear_q_points.linear),
-        "kv_point_local": LinearParams(ipa.linear_kv_points.linear),
-        "trainable_point_weights": Param(
-            param=ipa.head_weights, param_type=ParamType.Other
-        ),
-        "attention_2d": LinearParams(ipa.linear_b),
-        "output_projection": LinearParams(ipa.linear_out),
-    }
-
-    PointProjectionParams = lambda pp: {
-        "point_projection": LinearParamsMHA(
-            pp.linear,
-        ),
-    }
-
-    IPAParamsMultimer = lambda ipa: {
-        "q_scalar_projection": {
-            "weights": LinearWeightMHA(
-                ipa.linear_q.weight,
+    def IPAParams(ipa):
+        return {
+            "q_scalar": LinearParams(ipa.linear_q),
+            "kv_scalar": LinearParams(ipa.linear_kv),
+            "q_point_local": LinearParams(ipa.linear_q_points.linear),
+            "kv_point_local": LinearParams(ipa.linear_kv_points.linear),
+            "trainable_point_weights": Param(
+                param=ipa.head_weights, param_type=ParamType.Other
             ),
-        },
-        "k_scalar_projection": {
-            "weights": LinearWeightMHA(
-                ipa.linear_k.weight,
+            "attention_2d": LinearParams(ipa.linear_b),
+            "output_projection": LinearParams(ipa.linear_out),
+        }
+
+    def PointProjectionParams(pp):
+        return {"point_projection": LinearParamsMHA(pp.linear)}
+
+    def IPAParamsMultimer(ipa):
+        return {
+            "q_scalar_projection": {"weights": LinearWeightMHA(ipa.linear_q.weight)},
+            "k_scalar_projection": {"weights": LinearWeightMHA(ipa.linear_k.weight)},
+            "v_scalar_projection": {"weights": LinearWeightMHA(ipa.linear_v.weight)},
+            "q_point_projection": PointProjectionParams(ipa.linear_q_points),
+            "k_point_projection": PointProjectionParams(ipa.linear_k_points),
+            "v_point_projection": PointProjectionParams(ipa.linear_v_points),
+            "trainable_point_weights": Param(
+                param=ipa.head_weights, param_type=ParamType.Other
             ),
-        },
-        "v_scalar_projection": {
-            "weights": LinearWeightMHA(
-                ipa.linear_v.weight,
-            ),
-        },
-        "q_point_projection": PointProjectionParams(ipa.linear_q_points),
-        "k_point_projection": PointProjectionParams(ipa.linear_k_points),
-        "v_point_projection": PointProjectionParams(ipa.linear_v_points),
-        "trainable_point_weights": Param(
-            param=ipa.head_weights, param_type=ParamType.Other
-        ),
-        "attention_2d": LinearParams(ipa.linear_b),
-        "output_projection": LinearParams(ipa.linear_out),
-    }
+            "attention_2d": LinearParams(ipa.linear_b),
+            "output_projection": LinearParams(ipa.linear_out),
+        }
 
-    TemplatePairBlockParams = lambda b: {
-        "triangle_attention_starting_node": TriAttParams(b.tri_att_start),
-        "triangle_attention_ending_node": TriAttParams(b.tri_att_end),
-        "triangle_multiplication_outgoing": TriMulOutParams(b.tri_mul_out),
-        "triangle_multiplication_incoming": TriMulInParams(b.tri_mul_in),
-        "pair_transition": PairTransitionParams(b.pair_transition),
-    }
+    def TemplatePairBlockParams(b):
+        return {
+            "triangle_attention_starting_node": TriAttParams(b.tri_att_start),
+            "triangle_attention_ending_node": TriAttParams(b.tri_att_end),
+            "triangle_multiplication_outgoing": TriMulOutParams(b.tri_mul_out),
+            "triangle_multiplication_incoming": TriMulInParams(b.tri_mul_in),
+            "pair_transition": PairTransitionParams(b.pair_transition),
+        }
 
-    MSATransitionParams = lambda m: {
-        "input_layer_norm": LayerNormParams(m.layer_norm),
-        "transition1": LinearParams(m.transition_mlp.layers[0][0]),
-        "transition2": LinearParams(m.transition_mlp.linear_out),
-    }
+    def MSATransitionParams(m):
+        return {
+            "input_layer_norm": LayerNormParams(m.layer_norm),
+            "transition1": LinearParams(m.transition_mlp.layers[0][0]),
+            "transition2": LinearParams(m.transition_mlp.linear_out),
+        }
 
-    OuterProductMeanParams = lambda o: {
-        "layer_norm_input": LayerNormParams(o.layer_norm),
-        "left_projection": LinearParams(o.linear_1),
-        "right_projection": LinearParams(o.linear_2),
-        "output_w": LinearWeightOPM(o.linear_out.weight),
-        "output_b": LinearBias(o.linear_out.bias),
-    }
+    def OuterProductMeanParams(o):
+        return {
+            "layer_norm_input": LayerNormParams(o.layer_norm),
+            "left_projection": LinearParams(o.linear_1),
+            "right_projection": LinearParams(o.linear_2),
+            "output_w": LinearWeightOPM(o.linear_out.weight),
+            "output_b": LinearBias(o.linear_out.bias),
+        }
 
     def EvoformerBlockParams(b, is_extra_msa=False):
         if is_extra_msa:
@@ -616,9 +620,7 @@ def import_jax_weights_(model, npz_path, version="model_1"):
     keys = list(data.keys())
     flat_keys = list(flat.keys())
     incorrect = [k for k in flat_keys if k not in keys]
-    missing = [k for k in keys if k not in flat_keys]
     # print(f"Incorrect: {incorrect}")
-    # print(f"Missing: {missing}")
 
     assert len(incorrect) == 0
     # assert(sorted(list(flat.keys())) == sorted(list(data.keys())))
@@ -640,7 +642,9 @@ def convert_deprecated_v1_keys(state_dict):
         "ipa.linear_kv_points": "ipa.linear_kv_points.linear",
     }
 
-    convert_key_re = re.compile("(%s)" % "|".join(map(re.escape, replacements.keys())))
+    convert_key_re = re.compile(
+        "({})".format("|".join(map(re.escape, replacements.keys())))
+    )
     template_emb_re = re.compile(r"^((module\.)?(model\.)?)(template(?!_embedder).*)")
 
     converted_state_dict = {}
@@ -671,12 +675,14 @@ def convert_deprecated_v2_keys(state_dict):
         "msa_transition.linear_2": "msa_transition.transition_mlp.linear_out",
         "pair_transition.linear_1": "pair_transition.transition_mlp.layers.0.0",
         "pair_transition.linear_2": "pair_transition.transition_mlp.linear_out",
-        "structure_module.transition.layers.0.linear_1": "structure_module.transition.layers.0.layers.0.0",
-        "structure_module.transition.layers.0.linear_2": "structure_module.transition.layers.0.layers.1.0",
-        "structure_module.transition.layers.0.linear_3": "structure_module.transition.layers.0.linear_out",
+        "structure_module.transition.layers.0.linear_1": "structure_module.transition.layers.0.layers.0.0",  # noqa: E501
+        "structure_module.transition.layers.0.linear_2": "structure_module.transition.layers.0.layers.1.0",  # noqa: E501
+        "structure_module.transition.layers.0.linear_3": "structure_module.transition.layers.0.linear_out",  # noqa: E501
     }
 
-    convert_key_re = re.compile("(%s)" % "|".join(map(re.escape, replacements.keys())))
+    convert_key_re = re.compile(
+        "({})".format("|".join(map(re.escape, replacements.keys())))
+    )
 
     converted_state_dict = {}
     for key, value in state_dict.items():

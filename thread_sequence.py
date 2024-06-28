@@ -98,7 +98,9 @@ def main(args):
             feature_dict,
             feature_processor,
             args.config_preset,
-            200,  # this is the ri_multimer_gap. There's no multimer sequences here, so it doesnt matter what its set to
+            # this is the ri_multimer_gap. There's no multimer sequences here, so it
+            # doesnt matter what its set to
+            200,
             args.subtract_plddt,
         )
 

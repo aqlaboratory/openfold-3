@@ -125,10 +125,14 @@ def parse_fasta(data):
     return tags, seqs
 
 
-def update_timings(timing_dict, output_file=os.path.join(os.getcwd(), "timings.json")):
+def update_timings(timing_dict, output_file=None):
     """
     Write dictionary of one or more run step times to a file
     """
+
+    if output_file is None:
+        output_file = os.path.join(os.getcwd(), "timings.json")
+
     if os.path.exists(output_file):
         with open(output_file) as f:
             try:

@@ -94,11 +94,10 @@ def main(args):
         chain_cluster_size_dict=chain_cluster_size_dict,
     )
     data = {}
-    with Pool(processes=args.no_workers) as p:
-        with tqdm(total=len(files)) as pbar:
-            for d in p.imap_unordered(fn, files, chunksize=args.chunksize):
-                data.update(d)
-                pbar.update()
+    with Pool(processes=args.no_workers) as p, tqdm(total=len(files)) as pbar:
+        for d in p.imap_unordered(fn, files, chunksize=args.chunksize):
+            data.update(d)
+            pbar.update()
 
     with open(args.output_path, "w") as fp:
         fp.write(json.dumps(data, indent=4))
