@@ -610,10 +610,7 @@ class TemplateEmbedderAllAtom(nn.Module):
         self,
         batch,
         z,
-        pair_mask,
-        templ_dim,
         chunk_size,
-        multichain_mask_2d,
         _mask_trans=True,
         use_deepspeed_evo_attention=False,
         use_lma=False,
@@ -648,20 +645,19 @@ class TemplateEmbedderAllAtom(nn.Module):
             t:
                 [*, N_token, N_token, C_z] Template embedding
         """
-        n_templ = batch["template_aatype"].shape[templ_dim]
 
-        template_embeds = self.template_pair_embedder(
-            batch=batch,
-            distogram_config=self.config.distogram,
-            query_embedding=z,
-            multichain_mask_2d=multichain_mask_2d,
-            inf=self.config.inf
-        )
+        # [*, N_templ, N_token, N_token, C_t]
+        template_embeds = self.template_pair_embedder(batch, z)
+        n_templ = template_embeds.shape[-4]
 
-        # [*, S_t, N, N, C_z]
+        # [*, 1, N_token, N_token]
+        pair_token_mask = batch['token_mask'][..., None] * batch['token_mask'][..., None, :]
+        pair_token_mask = pair_token_mask[..., None, :, :].to(dtype=z.dtype)
+
+        # [*, N_templ, N_token, N_token, C_z]
         t = self.template_pair_stack(
             template_embeds,
-            pair_mask.unsqueeze(-3).to(dtype=z.dtype),
+            pair_token_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_lma=use_lma,
@@ -669,7 +665,7 @@ class TemplateEmbedderAllAtom(nn.Module):
             _mask_trans=_mask_trans,
         )
 
-        # [*, N, N, C_z]
+        # [*, N_token, N_token, C_z]
         t = torch.sum(t, dim=-4) / n_templ
         t = torch.nn.functional.relu(t)
         t = self.linear_t(t)

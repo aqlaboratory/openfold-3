@@ -414,15 +414,12 @@ class TemplatePairEmbedderMultimer(nn.Module):
 
 
 class TemplatePairEmbedderAllAtom(nn.Module):
-    """Implements AF3 Algorithm 16 lines 1-5. Also includes line 8.The resulting embedded template will
+    """
+    Implements AF3 Algorithm 16 lines 1-5. Also includes line 8. The resulting embedded template will
     go into the TemplatePairStack.
     """
-    def __init__(
-        self,
-        c_in: int,
-        c_z: int,
-        c_out: int
-    ):
+
+    def __init__(self, c_in, c_z, c_out):
         """
         Args:
             c_in:
@@ -434,94 +431,48 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         """
         super(TemplatePairEmbedderAllAtom, self).__init__()
 
-        self.linear_feats = Linear(c_in, c_out, bias=False)
-        self.query_embedding_layer_norm = LayerNorm(c_z)
-        self.query_embedding_linear = Linear(c_z, c_out, bias=False, init='relu')
+        self.linear_a = Linear(c_in, c_out, bias=False)
+        self.layer_norm_z = LayerNorm(c_z)
+        self.linear_z = Linear(c_z, c_out, bias=False, init='relu') # TODO: check initialization
 
-    def forward(
-        self,
-        batch: Dict,
-        distogram_config: Dict,
-        query_embedding: torch.Tensor,
-        multichain_mask_2d: torch.Tensor,
-        inf: float
-    ) -> torch.Tensor:
+    def forward(self, batch, z):
         """
         Args:
             batch:
                 Input template feature dictionary
-            distogram_config:
-                Configuration for distogram computation
-            query_embedding:
-                [*, N_token, N_token, C_z] Pair embedding (z)
-            multichain_mask_2d:
-                [*, N_token, N_token] Multichain mask built from asym IDs
-            inf:
-                Large value for distogram computation
+            z:
+                Pair embedding
         Returns:
             # [*, N_templ, N_token, N_token, C_out] Template pair feature embedding
         """
-        query_embedding = query_embedding.unsqueeze(-4)
-        multichain_mask_2d = multichain_mask_2d.unsqueeze(-3)
+        # [*, N_token, N_token]
+        multichain_pair_mask = batch['asym_id'][..., None] * batch['asym_id'][..., None, :]
 
-        template_positions, pseudo_beta_mask = pseudo_beta_fn(
-            batch["template_aatype"],
-            batch["template_all_atom_positions"],
-            batch["template_all_atom_mask"])
+        # [*, N_templ, N_token, N_token]
+        backbone_frame_pair_mask = batch['template_backbone_frame_mask'][..., None] * batch['template_backbone_frame_mask'][..., None, :]
+        pseudo_beta_pair_mask = batch['template_pseudo_beta_mask'][..., None] * batch['template_pseudo_beta_mask'][..., None, :]
 
-        template_dgram = dgram_from_positions(
-            template_positions,
-            inf=inf,
-            **distogram_config,
+        # [*, N_templ, N_token, N_token, 32]
+        template_restype = batch['template_restype']
+        n_token = batch["template_restype"].shape[-2]
+        template_restype_ti = template_restype[..., None, :].expand(
+            *template_restype.shape[:-2], -1, n_token, -1
+        )
+        template_restype_tj = template_restype[..., None, :, :].expand(
+            *template_restype.shape[:-2], n_token, -1, -1
         )
 
-        pseudo_beta_mask_2d = (
-            pseudo_beta_mask[..., None] * pseudo_beta_mask[..., None, :]
-        )
-        template_dgram *= pseudo_beta_mask_2d[..., None]
+        # [*, N_templ, N_token, N_token, C_in]
+        a = torch.concat([batch['template_distogram'],
+                          backbone_frame_pair_mask[..., None],
+                          batch['template_unit_vector'],
+                          pseudo_beta_pair_mask[..., None]], dim=-1)
+        a = a * multichain_pair_mask[..., None, :, :, None]
+        a = torch.concat([a,
+                          template_restype_ti,
+                          template_restype_tj], dim=-1)
+        
+        # [*, N_templ, N_token, N_token, C_out]
+        v = self.linear_z(self.layer_norm_z(z))[..., None, :, :, :] + self.linear_a(a)
 
-        raw_atom_pos = batch["template_all_atom_positions"]
-
-        # Vec3Arrays are required to be float32
-        atom_pos = geometry.Vec3Array.from_array(raw_atom_pos.to(dtype=torch.float32))
-
-        rigid, backbone_mask = all_atom_multimer.make_backbone_affine(
-            atom_pos,
-            batch["template_all_atom_mask"],
-            batch["template_aatype"],
-        )
-        points = rigid.translation
-        rigid_vec = rigid[..., None].inverse().apply_to_point(points[..., None, :])
-        unit_vector = rigid_vec.normalized()
-        backbone_mask_2d = (
-            backbone_mask[..., None] * backbone_mask[..., None, :]
-        )
-
-        x, y, z = [(coord * backbone_mask_2d)[..., None] for coord in unit_vector]
-
-        act = torch.cat([template_dgram,
-                         backbone_mask_2d[..., None],
-                         x, y, z,
-                         pseudo_beta_mask_2d[..., None]], dim=-1)
-        act = act * multichain_mask_2d[..., None]
-
-        aatype_one_hot = torch.nn.functional.one_hot(
-            batch["template_aatype"], 22,
-        )
-
-        n_res = batch["template_aatype"].shape[-1]
-        aatype_ti = aatype_one_hot[..., None, :, :].expand(
-            *aatype_one_hot.shape[:-2], n_res, -1, -1
-        )
-        aatype_tj = aatype_one_hot[..., None, :].expand(
-            *aatype_one_hot.shape[:-2], -1, n_res, -1
-        )
-
-        act = torch.cat([act, aatype_ti, aatype_tj], dim=-1)
-
-        act = self.linear_feats(act.to(dtype=query_embedding.dtype))
-
-        query_embedding = self.query_embedding_layer_norm(query_embedding)
-        act += self.query_embedding_linear(query_embedding)
-
-        return act
+        return v

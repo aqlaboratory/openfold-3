@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 
 from openfold3.core.model.primitives import LayerNorm, Linear
+from openfold3.core.model.layers.diffusion_conditioning import DiffusionConditioning
 from openfold3.core.model.layers import (
-    DiffusionConditioning,
     DiffusionTransformer,
     AtomAttentionEncoder,
     AtomAttentionDecoder

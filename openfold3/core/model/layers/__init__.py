@@ -15,7 +15,7 @@ from .sequence_local_atom_attention import (
     RefAtomFeatureEmbedder,
     NoisyPositionEmbedder
 )
-from .diffusion_conditioning import DiffusionConditioning
+# from .diffusion_conditioning import DiffusionConditioning
 from .template_pointwise_attention import TemplatePointwiseAttention
 from .transition import (
     ReLUTransitionLayer,
@@ -38,7 +38,7 @@ __all__ = [
     'AttentionPairBias',
     'DiffusionTransformerBlock',
     'DiffusionTransformer',
-    'DiffusionConditioning',
+    # 'DiffusionConditioning',
     'MSAAttention',
     'MSARowAttentionWithPairBias',
     'MSAColumnAttention',

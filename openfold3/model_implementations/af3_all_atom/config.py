@@ -286,6 +286,7 @@ NUM_TEMPLATES = "num templates placeholder"
 
 c_s = mlc.FieldReference(384, field_type=int)
 c_z = mlc.FieldReference(128, field_type=int)
+c_t = mlc.FieldReference(64, field_type=int)
 c_atom_ref = mlc.FieldReference(390, field_type=int)
 c_atom = mlc.FieldReference(128, field_type=int)
 c_atom_pair = mlc.FieldReference(16, field_type=int)
@@ -301,6 +302,8 @@ no_rollout_steps = mlc.FieldReference(20, field_type=int)
 n_query = mlc.FieldReference(32, field_type=int)
 n_key = mlc.FieldReference(128, field_type=int)
 
+blocks_per_ckpt = mlc.FieldReference(None, field_type=int)
+tune_chunk_size = mlc.FieldReference(True, field_type=bool)
 
 config = mlc.ConfigDict(
     {
@@ -364,52 +367,65 @@ config = mlc.ConfigDict(
                 "max_relative_chain": max_relative_chain,
                 "inf": 1e10 # global parameter?
             },
-            "template_pair_embedder": {
-                # c_in: int,
-                # c_z: int,
-                # c_out: int
+            "template": {
+                "c_t": c_t,
+                "c_z": c_z,
+                "distogram": {
+                    "min_bin": 3.25,
+                    "max_bin": 50.75,
+                    "no_bins": 39,
+                },
+                "template_pair_embedder": {
+                    "c_in": 108,
+                    "c_z": c_z,
+                    "c_out": c_t,
+                },
+                "template_pair_stack": {
+                    "c_t": c_t,
+                    # DISCREPANCY: c_hidden_tri_att here is given in the supplement
+                    # as 64. In the code, it's 16.
+                    "c_hidden_tri_att": 16,
+                    "c_hidden_tri_mul": 64,
+                    "no_blocks": 2,
+                    "no_heads": 4,
+                    "transition_type": 'relu',
+                    "pair_transition_n": 2,
+                    "dropout_rate": 0.25,
+                    "tri_mul_first": False,
+                    "fuse_projection_weights": False,
+                    "blocks_per_ckpt": blocks_per_ckpt,
+                    "tune_chunk_size": tune_chunk_size,
+                    "inf": 1e9,
+                },
             },
-            "template_pair_stack": {
-                # c_t,
-                # c_hidden_tri_att,
-                # c_hidden_tri_mul,
-                # no_blocks,
-                # no_heads,
-                # transition_type,
-                # pair_transition_n,
-                # dropout_rate,
-                # tri_mul_first,
-                # fuse_projection_weights,
-                # blocks_per_ckpt,
-                # tune_chunk_size: bool = False,
-                # inf=1e9,
-            },
-            "msa_module_embedder": {
-                # c_m_feats: int,
-                # c_m: int,
-                # c_s_input: int
-            },
-            "msa_module": {
-                # c_m: int,
-                # c_z: int,
-                # c_hidden_msa_att: int,
-                # c_hidden_opm: int,
-                # c_hidden_mul: int,
-                # c_hidden_pair_att: int,
-                # no_heads_msa: int,
-                # no_heads_pair: int,
-                # no_blocks: int,
-                # transition_type: str,
-                # transition_n: int,
-                # msa_dropout: float,
-                # pair_dropout: float,
-                # opm_first: bool,
-                # fuse_projection_weights: bool,
-                # blocks_per_ckpt: Optional[int],
-                # inf: float,
-                # eps: float,
-                # clear_cache_between_blocks: bool = False,
-                # tune_chunk_size: bool = False,
+            "msa": {
+                "msa_module_embedder": {
+                    # c_m_feats: int,
+                    # c_m: int,
+                    # c_s_input: int
+                },
+                "msa_module": {
+                    # c_m: int,
+                    # c_z: int,
+                    # c_hidden_msa_att: int,
+                    # c_hidden_opm: int,
+                    # c_hidden_mul: int,
+                    # c_hidden_pair_att: int,
+                    # no_heads_msa: int,
+                    # no_heads_pair: int,
+                    # no_blocks: int,
+                    # transition_type: str,
+                    # transition_n: int,
+                    # msa_dropout: float,
+                    # pair_dropout: float,
+                    # opm_first: bool,
+                    # fuse_projection_weights: bool,
+                    # blocks_per_ckpt: Optional[int],
+                    # inf: float,
+                    # eps: float,
+                    # clear_cache_between_blocks: bool = False,
+                    # tune_chunk_size: bool = False,
+                },
             },
             "pairformer": {
                 "c_s": c_s,
