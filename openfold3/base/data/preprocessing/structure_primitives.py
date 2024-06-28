@@ -15,8 +15,8 @@ from tables import (
 def convert_MSE_to_MET(atom_array: struc.AtomArray) -> None:
     """Converts selenomethionine (MSE) residues to methionine (MET) in-place
 
-    Will change the residue names and convert selenium atoms to sulfur atoms in
-    the input AtomArray in-place, following 2.1 of the AlphaFold3 SI.
+    Will change the residue names and convert selenium atoms to sulfur atoms in the
+    input AtomArray in-place, following 2.1 of the AlphaFold3 SI.
 
     Args:
         atom_array: AtomArray containing the structure to convert.
@@ -88,8 +88,8 @@ def remove_crystallization_aids(
 ) -> struc.AtomArray:
     """Removes crystallization aids from the AtomArray
 
-    Will remove all ligands that are classified as crystallization aids
-    following 2.5.4 of the AlphaFold3 SI.
+    Will remove all ligands that are classified as crystallization aids following 2.5.4
+    of the AlphaFold3 SI.
 
     Args:
         atom_array:
@@ -156,10 +156,10 @@ def remove_fully_unknown_polymers(atom_array: struc.AtomArray) -> struc.AtomArra
 def assign_renumbered_chain_ids(atom_array: struc.AtomArray) -> struc.AtomArray:
     """Creates a renumbered chain index
 
-    Iterates through all chains in the atom array and assigns unique numerical
-    chain IDs starting with 0 to each chain in the "chain_id_renumbered" field.
-    This is useful for bioassembly parsing where chain IDs can be duplicated
-    after the assembly is expanded.
+    Iterates through all chains in the atom array and assigns unique numerical chain IDs
+    starting with 0 to each chain in the "chain_id_renumbered" field. This is useful for
+    bioassembly parsing where chain IDs can be duplicated after the assembly is
+    expanded.
 
     Args:
         atom_array (AtomArray): biotite atom array
@@ -184,22 +184,20 @@ def remove_chain_and_attached_ligands(
 ) -> struc.AtomArray:
     """Removes a chain from an AtomArray including all attached covalent ligands
 
-    While not explicitly stated in the AlphaFold3 SI, the intent of this
-    function is to remove protein or nucleic acid chains together with their
-    covalent modifications, so that no "floating" covalent ligands are left
-    behind. This doesn't apply the other way around, so if the input chain
-    itself is a hetero-chain (e.g. a glycan), only the input chain is removed.
+    While not explicitly stated in the AlphaFold3 SI, the intent of this function is to
+    remove protein or nucleic acid chains together with their covalent modifications, so
+    that no "floating" covalent ligands are left behind. This doesn't apply the other
+    way around, so if the input chain itself is a hetero-chain (e.g. a glycan), only the
+    input chain is removed.
 
     Args:
         atom_array:
             biotite atom array
         chain_id:
-            chain ID of the chain to remove (uses the "chain_id_renumbered"
-            field)
+            chain ID of the chain to remove (uses the "chain_id_renumbered" field)
 
     Returns:
-        AtomArray with the specified chain and all attached covalent ligands
-        removed
+        AtomArray with the specified chain and all attached covalent ligands removed
     """
     chain_mask = atom_array.chain_id_renumbered == chain_id
 
