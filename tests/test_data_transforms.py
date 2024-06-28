@@ -64,9 +64,7 @@ class TestDataTransforms(unittest.TestCase):
 
     def test_correct_msa_restypes(self):
         protein = {'msa': torch.as_tensor(self.features['msa'], dtype=torch.int64)}
-        print(protein.keys())
         protein = correct_msa_restypes(protein)
-        print(protein.keys())
         assert torch.all(torch.eq(torch.as_tensor(self.features['msa'].shape), torch.tensor(protein['msa'].shape)))
 
     def test_squeeze_features(self):
