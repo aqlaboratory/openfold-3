@@ -6,7 +6,7 @@ from biotite.structure.io import pdbx
 from structure_primitives import assign_renumbered_chain_ids
 
 
-class ParsedCIF(NamedTuple):
+class ParsedStructure(NamedTuple):
     cif_file: pdbx.CIFFile
     atom_array: struc.AtomArray
 
@@ -16,7 +16,7 @@ def parse_mmcif_bioassembly(
     use_author_fields=False,
     include_bonds=True,
     add_renumbered_chains=True,
-) -> ParsedCIF:
+) -> ParsedStructure:
     """Convenience wrapper around biotite's bioassembly CIF parsing
 
     Parses the mmCIF file, expands the first bioassembly, and creates an
@@ -52,4 +52,4 @@ def parse_mmcif_bioassembly(
 
     atom_array = assign_renumbered_chain_ids(atom_array)
 
-    return ParsedCIF(cif_file, atom_array)
+    return ParsedStructure(cif_file, atom_array)
