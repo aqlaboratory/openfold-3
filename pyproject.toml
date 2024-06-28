@@ -16,3 +16,7 @@ select = [
     # isort
     "I",
 ]
+ignore = [
+    "E741",
+    "SIM108",
+]
