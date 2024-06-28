@@ -13,12 +13,39 @@ from openfold3.core.data.data_structures.single_datasets import (
     OpenFoldSingleDataset,
 )
 from openfold3.core.data.data_structures.stochastic_sampler_dataset import (
-    OpenFoldStochasticSamplerDataset,
+    StochasticSamplerDataset,
 )
 from openfold3.core.utils.tensor_utils import dict_multimap
 
 
-class OpenFoldDataModule(pl.LightningDataModule):
+class DataModule(pl.LightningDataModule):
+    """_summary_
+
+    The DataModule is a LightningDataModule class that organizes the 
+    instantiation of Datasets for training, validation, testing and prediction and 
+    wraps Datasets into DataLoaders.
+
+    The steps below outline how datapoints get from raw datapoints to the model
+    and highlight where you currently are in the process:
+    
+    0. Dataset filtering and cache generation
+        raw data -> filtered data
+    1. PreprocessingPipeline
+        filtered data -> processed data
+    2. FeaturePipeline
+        processed data -> FeatureDict
+    3. SingleDataset
+        datapoints -> __getitem__ -> FeatureDict
+    4. StochasticSamplerDataset (optional)
+        Sequence[SingeDataset] -> __getitem__ -> FeatureDict
+    5. DataLoader
+        FeatureDict -> batched data
+    6. *DataModule* [YOU ARE HERE]
+        SingleDataset/StochasticSamplerDataset -> DataLoader
+    7. ModelRunner
+        batched data -> model
+    """
+
     def __init__(self, data_config: List[Sequence[Dict]]) -> None:
         super().__init__()
 
@@ -45,7 +72,7 @@ class OpenFoldDataModule(pl.LightningDataModule):
             )  # TODO add argument
 
             # Wrap train datasets in the sampler dataset class
-            self.train_dataset = OpenFoldStochasticSamplerDataset(
+            self.train_dataset = StochasticSamplerDataset(
                 datasets=train_datasets,
                 probabilities=dataset_weights,
                 virtual_epoch_len="<virtual_epoch_len from data config>",  # TODO add argument
