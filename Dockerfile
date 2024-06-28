@@ -1,12 +1,5 @@
 FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 
-# metainformation
-LABEL org.opencontainers.image.version = "0.1.0"
-LABEL org.opencontainers.image.authors = "OpenFold Team"
-LABEL org.opencontainers.image.source = "https://github.com/aqlaboratory/openfold3"
-LABEL org.opencontainers.image.licenses = "Apache License 2.0"
-LABEL org.opencontainers.image.base.name="docker.io/nvidia/cuda:12.4.1-devel-ubuntu22.04"
-
 RUN apt-get update && apt-get install -y wget
 
 RUN apt-key del 7fa2af80
