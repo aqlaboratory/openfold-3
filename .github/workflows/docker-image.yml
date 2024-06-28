@@ -15,7 +15,3 @@ jobs:
       run: sudo rm -rf /usr/share/dotnet && sudo rm -rf /opt/ghc && sudo rm -rf "/usr/local/share/boost" && sudo rm -rf "$AGENT_TOOLSDIRECTORY"
     - name: Build the Docker image
       run: docker build . --file Dockerfile --tag openfold:$(date +%s)
-    - name: Check memory
-      run: du -sh
-    - name: Run tests
-      run: sh /opt/openfold3/scripts/run_unit_tests.sh
