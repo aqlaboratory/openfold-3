@@ -1,4 +1,29 @@
-# TODO add license
+"""This module contains the DataModule class.
+
+The DataModule is a LightningDataModule class that organizes the 
+instantiation of Datasets for training, validation, testing and prediction and 
+wraps Datasets into DataLoaders.
+
+The steps below outline how datapoints get from raw datapoints to the model
+and highlight where you currently are in the process:
+
+0. Dataset filtering and cache generation
+    raw data -> filtered data
+1. PreprocessingPipeline
+    filtered data -> processed data
+2. FeaturePipeline
+    processed data -> FeatureDict
+3. SingleDataset
+    datapoints -> __getitem__ -> FeatureDict
+4. StochasticSamplerDataset (optional)
+    Sequence[SingeDataset] -> __getitem__ -> FeatureDict
+5. DataLoader
+    FeatureDict -> batched data
+6. *DataModule* [YOU ARE HERE]
+    SingleDataset/StochasticSamplerDataset -> DataLoader
+7. ModelRunner
+    batched data -> model
+"""
 
 import warnings
 from functools import partial
@@ -19,32 +44,7 @@ from openfold3.core.utils.tensor_utils import dict_multimap
 
 
 class DataModule(pl.LightningDataModule):
-    """_summary_
-
-    The DataModule is a LightningDataModule class that organizes the 
-    instantiation of Datasets for training, validation, testing and prediction and 
-    wraps Datasets into DataLoaders.
-
-    The steps below outline how datapoints get from raw datapoints to the model
-    and highlight where you currently are in the process:
-    
-    0. Dataset filtering and cache generation
-        raw data -> filtered data
-    1. PreprocessingPipeline
-        filtered data -> processed data
-    2. FeaturePipeline
-        processed data -> FeatureDict
-    3. SingleDataset
-        datapoints -> __getitem__ -> FeatureDict
-    4. StochasticSamplerDataset (optional)
-        Sequence[SingeDataset] -> __getitem__ -> FeatureDict
-    5. DataLoader
-        FeatureDict -> batched data
-    6. *DataModule* [YOU ARE HERE]
-        SingleDataset/StochasticSamplerDataset -> DataLoader
-    7. ModelRunner
-        batched data -> model
-    """
+    """A LightningDataModule class for organizing Datasets and DataLoaders."""
 
     def __init__(self, data_config: List[Sequence[Dict]]) -> None:
         super().__init__()

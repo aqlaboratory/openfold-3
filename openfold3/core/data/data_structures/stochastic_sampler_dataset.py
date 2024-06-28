@@ -1,5 +1,31 @@
-# TODO add license
+""" This module contains the StochasticSamplerDataset class.
 
+The StochasticSamplerDataset class is a pytorch Dataset class that wraps one or
+more SingleDataset instances and samples a desired number of datapoints based on
+the provided dataset and datapoint probabilities. The sampling is done by 
+generating a list of index tuples for a given dataset-datapoint pair per
+sample and can be regenerated at the start of each virtual epoch.
+
+The steps below outline how datapoints get from raw datapoints to the model
+and highlight where you currently are in the process:
+
+0. Dataset filtering and cache generation
+    raw data -> filtered data
+1. PreprocessingPipeline
+    filtered data -> processed data
+2. FeaturePipeline
+    processed data -> FeatureDict
+3. SingleDataset
+    datapoints -> __getitem__ -> FeatureDict
+4. *StochasticSamplerDataset (optional)* [YOU ARE HERE]
+    Sequence[SingeDataset] -> __getitem__ -> FeatureDict
+5. DataLoader
+    FeatureDict -> batched data
+6. DataModule
+    SingleDataset/StochasticSamplerDataset -> DataLoader
+7. ModelRunner
+    batched data -> model
+"""
 from typing import Any, Sequence
 
 import torch
@@ -7,34 +33,7 @@ from torch.utils.data import Dataset
 
 
 class StochasticSamplerDataset(Dataset):
-    """A Dataset class for combining and sampling from multiple SingleDatasets.
-    
-    The StochasticSamplerDataset class is a pytorch Dataset class that wraps one or
-    more SingleDataset instances and samples a desired number of datapoints based on
-    the provided dataset and datapoint probabilities. The sampling is done by 
-    generating a list of index tuples for a given dataset-datapoint pair per
-    sample and can be regenerated at the start of each virtual epoch.
-
-    The steps below outline how datapoints get from raw datapoints to the model
-    and highlight where you currently are in the process:
-    
-    0. Dataset filtering and cache generation
-        raw data -> filtered data
-    1. PreprocessingPipeline
-        filtered data -> processed data
-    2. FeaturePipeline
-        processed data -> FeatureDict
-    3. SingleDataset
-        datapoints -> __getitem__ -> FeatureDict
-    4. *StochasticSamplerDataset (optional)* [YOU ARE HERE]
-        Sequence[SingeDataset] -> __getitem__ -> FeatureDict
-    5. DataLoader
-        FeatureDict -> batched data
-    6. DataModule
-        SingleDataset/StochasticSamplerDataset -> DataLoader
-    7. ModelRunner
-        batched data -> model
-    """
+    """A Dataset class for combining and sampling from multiple SingleDatasets."""
 
     def __init__(
         self,

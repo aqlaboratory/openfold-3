@@ -1,4 +1,31 @@
-# TODO add license
+""" This module contains the SingleDataset class and its subclasses.
+
+A SingleDataset class is a pytorch Dataset class which specified the way datapoints
+need to be parsed/process and embedded into feature tensors using a pair of 
+PreprocessingPipeline and FeaturePipeline. SingleDataset also has an optional
+calculate_datapoint_probabilities which implements a strategy for calculating
+the probability of sampling all of the datapoints from a precomputed data cache.
+
+The steps below outline how datapoints get from raw datapoints to the model
+and highlight where you currently are in the process:
+
+0. Dataset filtering and cache generation
+    raw data -> filtered data
+1. PreprocessingPipeline
+    filtered data -> processed data
+2. FeaturePipeline
+    processed data -> FeatureDict
+3. *SingleDataset* [YOU ARE HERE]
+    datapoints -> __getitem__ -> FeatureDict
+4. StochasticSamplerDataset (optional)
+    Sequence[SingeDataset] -> __getitem__ -> FeatureDict
+5. DataLoader
+    FeatureDict -> batched data
+6. DataModule
+    SingleDataset/StochasticSamplerDataset -> DataLoader
+7. ModelRunner
+    batched data -> model
+"""
 
 from abc import ABC, abstractmethod, property
 from typing import Any
@@ -15,34 +42,6 @@ from openfold3.core.data.featurization.feature_pipelines import (
 )
 
 DATASET_REGISTRY = {}
-
-SINGLE_DATASET_MAP_DOCSTRING = """
-    A SingleDataset class is a pytorch Dataset class which specified the way datapoints
-    need to be parsed/process and embedded into feature tensors using a pair of 
-    PreprocessingPipeline and FeaturePipeline. SingleDataset also has an optional
-    calculate_datapoint_probabilities which implements a strategy for calculating
-    the probability of sampling all of the datapoints from a precomputed data cache.
-
-    The steps below outline how datapoints get from raw datapoints to the model
-    and highlight where you currently are in the process:
-    
-    0. Dataset filtering and cache generation
-        raw data -> filtered data
-    1. PreprocessingPipeline
-        filtered data -> processed data
-    2. FeaturePipeline
-        processed data -> FeatureDict
-    3. *SingleDataset* [YOU ARE HERE]
-        datapoints -> __getitem__ -> FeatureDict
-    4. StochasticSamplerDataset (optional)
-        Sequence[SingeDataset] -> __getitem__ -> FeatureDict
-    5. DataLoader
-        FeatureDict -> batched data
-    6. DataModule
-        SingleDataset/StochasticSamplerDataset -> DataLoader
-    7. ModelRunner
-        batched data -> model
-"""
 
 
 def register_dataset(cls):
@@ -71,10 +70,7 @@ class DatasetNotRegisteredError(Exception):
 
 
 class SingleDataset(ABC, Dataset):
-    """Abstract class wrapping a pair of preprocessing and feature pipelines.
-    
-    {data_pipeline_map}
-    """.format(data_pipeline_map=SINGLE_DATASET_MAP_DOCSTRING)
+    """Abstract class wrapping a pair of preprocessing and feature pipelines."""
 
     def __init__(self) -> None:
         if not self.__class__._registered:
@@ -109,10 +105,7 @@ class SingleDataset(ABC, Dataset):
 
 @register_dataset
 class WeightedPDBDataset(SingleDataset):
-    """Implements a Dataset class for the Weighted PDB training dataset for AF3.
-
-    {data_pipeline_map}
-    """.format(data_pipeline_map=SINGLE_DATASET_MAP_DOCSTRING)
+    """Implements a Dataset class for the Weighted PDB training dataset for AF3."""
 
     def __init__(self, dataset_config) -> None:
         super().__init__()
@@ -148,10 +141,7 @@ class WeightedPDBDataset(SingleDataset):
 
 @register_dataset
 class ProteinMonomerDataset(SingleDataset):
-    """Implements a Dataset class for the monomeric protein distillation datasets for AF3.
-
-    {data_pipeline_map}
-    """.format(data_pipeline_map=SINGLE_DATASET_MAP_DOCSTRING)
+    """Implements a Dataset class for the monomeric protein distillation datasets for AF3."""
 
     def __init__(self, data_config) -> None:
         super().__init__()
@@ -183,10 +173,7 @@ class ProteinMonomerDataset(SingleDataset):
 
 @register_dataset
 class RNAStructureDataset(SingleDataset):
-    """Implements a Dataset class for the RNA distillation dataset for AF3.
-    
-    {data_pipeline_map}
-    """.format(data_pipeline_map=SINGLE_DATASET_MAP_DOCSTRING)
+    """Implements a Dataset class for the RNA distillation dataset for AF3."""
 
     def __init__(self, data_config) -> None:
         super().__init__()
@@ -216,10 +203,7 @@ class RNAStructureDataset(SingleDataset):
 
 @register_dataset
 class TFPositiveDataset(SingleDataset):
-    """Implements a Datset class for the Transcription factor-DNA positive distillation dataset for AF3.
-    
-    {data_pipeline_map}
-    """.format(data_pipeline_map=SINGLE_DATASET_MAP_DOCSTRING)
+    """Implements a Datset class for the Transcription factor-DNA positive distillation dataset for AF3."""
 
     def __init__(self, data_config) -> None:
         super().__init__()
@@ -249,10 +233,7 @@ class TFPositiveDataset(SingleDataset):
 
 @register_dataset
 class TFNegativeDataset(SingleDataset):
-    """Implements a Datset class for the Transcription factor-DNA negative distillation dataset for AF3.
-    
-    {data_pipeline_map}
-    """.format(data_pipeline_map=SINGLE_DATASET_MAP_DOCSTRING)
+    """Implements a Datset class for the Transcription factor-DNA negative distillation dataset for AF3."""
 
     def __init__(self, data_config) -> None:
         super().__init__()
@@ -285,10 +266,7 @@ class TFNegativeDataset(SingleDataset):
 
 @register_dataset
 class InferenceDataset(SingleDataset):
-    """Implements a Dataset class for the inference dataset for AF3.
-    
-    {data_pipeline_map}
-    """.format(data_pipeline_map=SINGLE_DATASET_MAP_DOCSTRING)
+    """Implements a Dataset class for the inference dataset for AF3."""
 
     def __init__(self, data_config) -> None:
         super().__init__()

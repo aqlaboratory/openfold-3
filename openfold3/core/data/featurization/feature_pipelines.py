@@ -1,45 +1,41 @@
-# TODO add license
+""" This module contains the FeaturePipeline abstract class and its subclasses.
+
+Feature pipelines accept parse and processed data from a PreprocessingPipeline,
+embed features into tensors necessary for a specific model (and are hence specific
+to a model), and return a feature dictionary. The logic and order of tensorization
+steps are defined in the forward method using primitives from 
+feature_pipeline_primitives.
+
+The steps below outline how datapoints get from raw datapoints to the model
+and highlight where you currently are in the process:
+
+0. Dataset filtering and cache generation
+    raw data -> filtered data
+1. PreprocessingPipeline
+    filtered data -> processed data
+2. *FeaturePipeline* [YOU ARE HERE]
+    processed data -> FeatureDict
+3. SingleDataset
+    datapoints -> __getitem__ -> FeatureDict
+4. StochasticSamplerDataset (optional)
+    Sequence[SingeDataset] -> __getitem__ -> FeatureDict
+5. DataLoader
+    FeatureDict -> batched data
+6. DataModule
+    SingleDataset/StochasticSamplerDataset -> DataLoader
+7. ModelRunner
+    batched data -> model
+"""
 
 from abc import ABC, abstractmethod
 from typing import Sequence
 import torch
 
-FEATURE_PIPELINE_MAP_DOCSTRING = """
-    Feature pipelines accept parse and processed data from a PreprocessingPipeline,
-    embed features into tensors necessary for a specific model (and are hence specific
-    to a model), and return a feature dictionary. The logic and order of tensorization
-    steps are defined in the forward method using primitives from 
-    feature_pipeline_primitives.
-
-    The steps below outline how datapoints get from raw datapoints to the model
-    and highlight where you currently are in the process:
-    
-    0. Dataset filtering and cache generation
-        raw data -> filtered data
-    1. PreprocessingPipeline
-        filtered data -> processed data
-    2. *FeaturePipeline* [YOU ARE HERE]
-        processed data -> FeatureDict
-    3. SingleDataset
-        datapoints -> __getitem__ -> FeatureDict
-    4. StochasticSamplerDataset (optional)
-        Sequence[SingeDataset] -> __getitem__ -> FeatureDict
-    5. DataLoader
-        FeatureDict -> batched data
-    6. DataModule
-        SingleDataset/StochasticSamplerDataset -> DataLoader
-    7. ModelRunner
-        batched data -> model
-"""
-
 
 # TODO import parsing primitives from feature_pipeline_primitives.py
 # TODO implement checks that a FeaturePipeline is used with the correct SingleDataset
 class FeaturePipeline(ABC):
-    """An abstract class for implementing a FeaturePipeline class.
-    
-    {data_pipeline_map}
-    """.format(data_pipeline_map=FEATURE_PIPELINE_MAP_DOCSTRING)
+    """An abstract class for implementing a FeaturePipeline class."""
 
     @abstractmethod
     def forward(self, data_dict: dict) -> dict[Sequence[torch.Tensor]]:
@@ -59,10 +55,7 @@ class FeaturePipeline(ABC):
 
 
 class AF3FeaturePipeline(FeaturePipeline):
-    """An FeaturePipeline for embedding AF3 features.
-    
-    {data_pipeline_map}
-    """.format(data_pipeline_map=FEATURE_PIPELINE_MAP_DOCSTRING)
+    """An FeaturePipeline for embedding AF3 features."""
 
     def forward(self, parsed_features) -> dict:
         """_summary_
