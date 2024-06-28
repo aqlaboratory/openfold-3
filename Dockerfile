@@ -36,8 +36,9 @@ RUN python3 setup.py install
 RUN mkdir openfold3/resources/params
 RUN wget -q -P openfold3/resources/params \
     https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar
-RUN tar --extract --verbose --file={/opt/openfold3/openfold3/resources/alphafold_params_2022-12-06.tar} \
+RUN tar -xvf /opt/openfold3/openfold3/resources/params/alphafold_params_2022-12-06.tar \
     params_model_1_ptm.npz
+RUN rm /opt/openfold3/openfold3/resources/params/alphafold_params_2022-12-06.tar
 
 # Run tests for OpenFold 
 RUN python3 -m unittests "$@" 
