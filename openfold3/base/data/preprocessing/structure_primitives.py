@@ -146,7 +146,7 @@ def remove_fully_unknown_polymers(atom_array: struc.AtomArray) -> struc.AtomArra
 
         # Remove the chain from the AtomArray if all residues are unknown
         if np.all(chain.res_name == "UNK"):
-            atom_array_filtered = remove_chain_with_covalent_ligands(
+            atom_array_filtered = remove_chain_and_attached_ligands(
                 atom_array_filtered, chain_id
             )
 
@@ -179,7 +179,7 @@ def assign_renumbered_chain_ids(atom_array: struc.AtomArray) -> struc.AtomArray:
     return atom_array
 
 
-def remove_chain_with_covalent_ligands(
+def remove_chain_and_attached_ligands(
     atom_array: struc.AtomArray, chain_id: int
 ) -> struc.AtomArray:
     """Removes a chain from an AtomArray including all attached covalent ligands
@@ -302,7 +302,7 @@ def remove_clashing_chains(
                     chain_ids_to_remove.add(chain2_id)
 
     for chain_id in chain_ids_to_remove:
-        atom_array = remove_chain_with_covalent_ligands(atom_array, chain_id)
+        atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
 
     return atom_array
 
