@@ -179,7 +179,6 @@ def create_target_feat(batch):
 
 def create_msa_feat(batch):
     """Create and concatenate MSA features."""
-    device = batch["msa"]
     msa_1hot = torch.nn.functional.one_hot(batch["msa"], 23)
     deletion_matrix = batch["deletion_matrix"]
     has_deletion = torch.clamp(deletion_matrix, min=0.0, max=1.0)[..., None]
@@ -229,7 +228,6 @@ def build_extra_msa_feat(batch):
     has_deletion = torch.clamp(deletion_matrix, min=0.0, max=1.0)[..., None]
     pi = torch.acos(torch.zeros(1, device=deletion_matrix.device)) * 2
     deletion_value = (torch.atan(deletion_matrix / 3.0) * (2.0 / pi))[..., None]
-    extra_msa_mask = batch["extra_msa_mask"]
     catted = torch.cat([msa_1hot, has_deletion, deletion_value], dim=-1)
 
     return catted
@@ -476,7 +474,7 @@ def random_crop_to_size(
         if k.startswith("template") and subsample_templates:
             v = v[templates_select_indices]
 
-        for i, (dim_size, dim) in enumerate(zip(shape_schema[k], v.shape)):
+        for i, dim_size in enumerate(shape_schema[k]):
             is_num_res = dim_size == NUM_RES
             if i == 0 and k.startswith("template"):
                 v = v[

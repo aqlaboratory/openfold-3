@@ -41,9 +41,8 @@ def np_to_tensor_dict(
         features are returned, all other ones are filtered out.
     """
     # torch generates warnings if feature is already a torch Tensor
-    to_tensor = (
-        lambda t: torch.tensor(t) if type(t) != torch.Tensor else t.clone().detach()
-    )
+    def to_tensor(t):
+        return torch.tensor(t) if type(t) != torch.Tensor else t.clone().detach()
     tensor_dict = {k: to_tensor(v) for k, v in np_example.items() if k in features}
 
     return tensor_dict
