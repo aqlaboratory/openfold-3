@@ -393,7 +393,8 @@ def _get_hhr_line_regex_groups(
 def _update_hhr_residue_indices_list(
     sequence: str, start_index: int, indices_list: List[int]
 ):
-    """Computes the relative indices for each residue with respect to the original sequence."""
+    """Computes the relative indices for each residue with respect to the
+    original sequence."""
     counter = start_index
     for symbol in sequence:
         if symbol == "-":
@@ -431,8 +432,8 @@ def _parse_hhr_hit(detailed_lines: Sequence[str]) -> TemplateHit:
     match = re.match(pattern, detailed_lines[2])
     if match is None:
         raise RuntimeError(
-            "Could not parse section: %s. Expected this: \n%s to contain summary."
-            % (detailed_lines, detailed_lines[2])
+            f"Could not parse section: {detailed_lines}."  
+            f" Expected this: \n{detailed_lines[2]} to contain summary."
         )
     (_, _, _, aligned_cols, _, _, sum_probs, _) = (float(x) for x in match.groups())
 

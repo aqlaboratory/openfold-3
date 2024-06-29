@@ -143,7 +143,7 @@ def mmcif_loop_to_list(
             data.append(value)
 
     assert all([len(xs) == len(data[0]) for xs in data]), (
-        "mmCIF error: Not all loops are the same length: %s" % cols
+        f"mmCIF error: Not all loops are the same length: {cols}"
     )
 
     return [dict(zip(cols, xs)) for xs in zip(*data)]
@@ -459,7 +459,7 @@ def get_atom_coords(
             for atom in res.get_atoms():
                 atom_name = atom.get_name()
                 x, y, z = atom.get_coord()
-                if atom_name in residue_constants.atom_order.keys():
+                if atom_name in residue_constants.atom_order:
                     pos[residue_constants.atom_order[atom_name]] = [x, y, z]
                     mask[residue_constants.atom_order[atom_name]] = 1.0
                 elif atom_name.upper() == "SE" and res.get_resname() == "MSE":

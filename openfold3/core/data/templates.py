@@ -145,7 +145,8 @@ def _is_after_cutoff(
 
 
 def _replace_obsolete_references(obsolete_mapping) -> Mapping[str, str]:
-    """Generates a new obsolete by tracing all cross-references and store the latest leaf to all referencing nodes"""
+    """Generates a new obsolete by tracing all cross-references and store the
+    latest leaf to all referencing nodes"""
     obsolete_new = {}
     obsolete_keys = obsolete_mapping.keys()
 
@@ -329,7 +330,7 @@ def _find_template_in_pdb(
 
     # Return a chain sequence that fuzzy matches (X = wildcard) the template.
     # Make parentheses unnamed groups (?:_) to avoid the 100 named groups limit.
-    regex = ["." if aa == "X" else "(?:%s|X)" % aa for aa in template_sequence]
+    regex = ["." if aa == "X" else f"(?:{aa}|X)" for aa in template_sequence]
     regex = re.compile("".join(regex))
     for chain_id, chain_sequence in mmcif_object.chain_to_seqres.items():
         match = re.search(regex, chain_sequence)
@@ -340,14 +341,9 @@ def _find_template_in_pdb(
 
     # No hits, raise an error.
     raise SequenceNotInTemplateError(
-        "Could not find the template sequence in %s_%s. Template sequence: %s, "
-        "chain_to_seqres: %s"
-        % (
-            pdb_id,
-            template_chain_id,
-            template_sequence,
-            mmcif_object.chain_to_seqres,
-        )
+        f"Could not find the template sequence in {pdb_id}_{template_chain_id}."
+        f" Template sequence: {template_sequence}, "
+        f"chain_to_seqres: {mmcif_object.chain_to_seqres}"
     )
 
 
@@ -422,17 +418,12 @@ def _realign_pdb_template_to_query(
             aligner.align([old_template_sequence, new_template_sequence])
         )
         old_aligned_template, new_aligned_template = parsed_a3m.sequences
-    except Exception as e:
+    except Exception as exc:
         raise QueryToTemplateAlignError(
-            "Could not align old template %s to template %s (%s_%s). Error: %s"
-            % (
-                old_template_sequence,
-                new_template_sequence,
-                mmcif_object.file_id,
-                template_chain_id,
-                str(e),
-            )
-        )
+            f"Could not align old template {old_template_sequence}"
+            f" to template {new_template_sequence} "
+            f"({mmcif_object.file_id}_{template_chain_id})."
+        ) from exc
 
     logging.info(
         "Old aligned template: %s\nNew aligned template: %s",
@@ -462,10 +453,12 @@ def _realign_pdb_template_to_query(
         < 0.9
     ):
         raise QueryToTemplateAlignError(
-            "Insufficient similarity of the sequence in the database: %s to the "
-            "actual sequence in the mmCIF file %s_%s: %s. We require at least "
-            "90 %% similarity wrt to the shorter of the sequences. This is not a "
-            "problem unless you think this is a template that should be included."
+            "Insufficient similarity of the sequence in the database: "
+            f"{old_template_sequence} to the actual sequence in the mmCIF file "
+            f"{mmcif_object.file_id}_{template_chain_id}: {new_template_sequence}."
+            " We require at least 90 %% similarity wrt to the shorter of the sequences."
+            " This is not a problem unless you think this is a template that "
+            "should be included."
             % (
                 old_template_sequence,
                 mmcif_object.file_id,
@@ -575,7 +568,7 @@ def _extract_template_features(
             unmasked residues.
     """
     if mmcif_object is None or not mmcif_object.chain_to_seqres:
-        raise NoChainsError("No chains in PDB: %s_%s" % (pdb_id, template_chain_id))
+        raise NoChainsError(f"No chains in PDB: {pdb_id}_{template_chain_id}")
 
     warning = None
     try:
@@ -624,7 +617,8 @@ def _extract_template_features(
         )
     except (CaDistanceError, KeyError) as ex:
         raise NoAtomDataInTemplateError(
-            "Could not get atom data (%s_%s): %s" % (pdb_id, chain_id, str(ex))
+            f"Could not get atom data ({pdb_id}_{chain_id}): "
+            f"{str(ex)}"
         ) from ex
 
     all_atom_positions = np.split(all_atom_positions, all_atom_positions.shape[0])
@@ -760,9 +754,8 @@ def _prefilter_hit(
     # Fail hard if we can't get the PDB ID and chain name from the hit.
     hit_pdb_code, hit_chain_id = _get_pdb_id_and_chain(hit)
 
-    if hit_pdb_code not in release_dates:
-        if hit_pdb_code in obsolete_pdbs:
-            hit_pdb_code = obsolete_pdbs[hit_pdb_code]
+    if (hit_pdb_code not in release_dates) and (hit_pdb_code in obsolete_pdbs):
+        hit_pdb_code = obsolete_pdbs[hit_pdb_code]
 
     # Pass hit_pdb_code since it might have changed due to the pdb being
     # obsolete.
@@ -810,9 +803,8 @@ def _process_single_hit(
     # Fail hard if we can't get the PDB ID and chain name from the hit.
     hit_pdb_code, hit_chain_id = _get_pdb_id_and_chain(hit)
 
-    if hit_pdb_code not in release_dates:
-        if hit_pdb_code in obsolete_pdbs:
-            hit_pdb_code = obsolete_pdbs[hit_pdb_code]
+    if (hit_pdb_code not in release_dates) and (hit_pdb_code in obsolete_pdbs):
+        hit_pdb_code = obsolete_pdbs[hit_pdb_code]
 
     mapping = _build_query_to_hit_index_mapping(
         hit.query,
@@ -844,11 +836,8 @@ def _process_single_hit(
             parsing_result.mmcif_object.header["release_date"], "%Y-%m-%d"
         )
         if hit_release_date > max_template_date:
-            error = "Template %s date (%s) > max template date (%s)." % (
-                hit_pdb_code,
-                hit_release_date,
-                max_template_date,
-            )
+            error = (f"Template {hit_pdb_code} date ({hit_release_date}) "
+                     f"> max template date ({max_template_date}).")
             if strict_error_check:
                 return SingleHitResult(features=None, error=error, warning=None)
             else:
@@ -1014,10 +1003,10 @@ class TemplateHitFeaturizer(abc.ABC):
             self._max_template_date = datetime.datetime.strptime(
                 max_template_date, "%Y-%m-%d"
             )
-        except ValueError:
+        except ValueError as exc:
             raise ValueError(
                 "max_template_date must be set and have format YYYY-MM-DD."
-            )
+            ) from exc
         self._max_hits = max_hits
         self._kalign_binary_path = kalign_binary_path
         self._strict_error_check = strict_error_check

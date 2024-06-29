@@ -187,9 +187,8 @@ def _match_rows_by_sequence_similarity(
     ]
     take_num_seqs = np.min(num_seqs)
 
-    sort_by_similarity = lambda x: x.sort_values(
-        "msa_similarity", axis=0, ascending=False
-    )
+    def sort_by_similarity(x):
+        return x.sort_values("msa_similarity", axis=0, ascending=False)
 
     for species_df in this_species_msa_dfs:
         if species_df is not None:

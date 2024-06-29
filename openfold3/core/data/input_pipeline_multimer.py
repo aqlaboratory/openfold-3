@@ -113,7 +113,8 @@ def ensembled_transform_fns(common_cfg, mode_cfg, ensemble_seed):
 
 
 def prepare_ground_truth_features(tensors):
-    """Prepare ground truth features that are only needed for loss calculation during training"""
+    """Prepare ground truth features that are only needed for loss calculation
+    during training"""
 
     gt_features = [
         "all_atom_mask",
