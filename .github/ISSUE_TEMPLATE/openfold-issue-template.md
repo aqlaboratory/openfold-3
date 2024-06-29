@@ -10,6 +10,7 @@ assignees: ''
 <The description of the issue should go here. This is a template recommending the organization of issues added as items to this project board. You issue should have a concise name identifying the main topic. The first comment of your issue should start with a brief description of what the existing code does, what the problems are that the current logic causes and identify the goal of your issue. >
 
 **Related PR:**
+<If there are specific PRs that address this given issue, they can be added here.>
 
 - [ ] <>
 
