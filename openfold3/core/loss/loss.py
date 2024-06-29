@@ -503,8 +503,6 @@ def lddt_loss(
     eps: float = 1e-10,
     **kwargs,
 ) -> torch.Tensor:
-    n = all_atom_mask.shape[-2]
-
     ca_pos = residue_constants.atom_order["CA"]
     all_atom_pred_pos = all_atom_pred_pos[..., ca_pos, :]
     all_atom_positions = all_atom_positions[..., ca_pos, :]
@@ -1201,7 +1199,6 @@ def find_structural_violations(
         overlap_tolerance=clash_overlap_tolerance,
         bond_length_tolerance_factor=violation_tolerance_factor,
     )
-    atom14_atom_exists = batch["atom14_atom_exists"]
     atom14_dists_lower_bound = atom14_pred_positions.new_tensor(
         restype_atom14_bounds["lower_bound"]
     )[batch["aatype"]]
@@ -1267,13 +1264,13 @@ def find_structural_violations_np(
     atom14_pred_positions: np.ndarray,
     config: ml_collections.ConfigDict,
 ) -> Dict[str, np.ndarray]:
-    to_tensor = lambda x: torch.tensor(x)
+    to_tensor = lambda x: torch.tensor(x)  # noqa: E731
     batch = tree_map(to_tensor, batch, np.ndarray)
     atom14_pred_positions = to_tensor(atom14_pred_positions)
 
     out = find_structural_violations(batch, atom14_pred_positions, **config)
 
-    to_np = lambda x: np.array(x)
+    to_np = lambda x: np.array(x)  # noqa: E731
     np_out = tensor_tree_map(to_np, out)
 
     return np_out
@@ -1360,14 +1357,14 @@ def compute_violation_metrics_np(
     atom14_pred_positions: np.ndarray,
     violations: Dict[str, np.ndarray],
 ) -> Dict[str, np.ndarray]:
-    to_tensor = lambda x: torch.tensor(x)
+    to_tensor = lambda x: torch.tensor(x)  # noqa: E731
     batch = tree_map(to_tensor, batch, np.ndarray)
     atom14_pred_positions = to_tensor(atom14_pred_positions)
     violations = tree_map(to_tensor, violations, np.ndarray)
 
     out = compute_violation_metrics(batch, atom14_pred_positions, violations)
 
-    to_np = lambda x: np.array(x)
+    to_np = lambda x: np.array(x)  # noqa: E731
     return tree_map(to_np, out, torch.Tensor)
 
 
@@ -1580,7 +1577,8 @@ def chain_center_of_mass_loss(
     **kwargs,
 ) -> torch.Tensor:
     """
-    Computes chain centre-of-mass loss. Implements section 2.5, eqn 1 in the Multimer paper.
+    Computes chain centre-of-mass loss. Implements section 2.5, eqn 1 in the
+    Multimer paper.
 
     Args:
         all_atom_pred_pos:
@@ -1637,7 +1635,7 @@ class AlphaFoldLoss(nn.Module):
     """Aggregation of the various losses described in the supplement"""
 
     def __init__(self, config):
-        super(AlphaFoldLoss, self).__init__()
+        super().__init__()
         self.config = config
 
     def loss(self, out, batch, _return_breakdown=False):
@@ -1645,14 +1643,14 @@ class AlphaFoldLoss(nn.Module):
         Rename previous forward() as loss()
         so that can be reused in the subclass
         """
-        if "violation" not in out.keys():
+        if "violation" not in out:
             out["violation"] = find_structural_violations(
                 batch,
                 out["sm"]["positions"][-1],
                 **self.config.violation,
             )
 
-        if "renamed_atom14_gt_positions" not in out.keys():
+        if "renamed_atom14_gt_positions" not in out:
             batch.update(
                 compute_renamed_ground_truth(
                     batch,

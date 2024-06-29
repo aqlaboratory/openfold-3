@@ -28,6 +28,12 @@ import jax.numpy as jnp
 import numpy as np
 import torch
 
+from openfold3.core.data import data_pipeline, feature_pipeline
+from openfold3.core.np import protein, residue_constants
+from openfold3.core.utils.script_utils import load_models_from_command_line, run_model
+from openfold3.core.utils.tensor_utils import tensor_tree_map
+from openfold3.model_implementations.af2_monomer import config
+
 parser = argparse.ArgumentParser()
 parser.add_argument("name", help="name to save everything under")
 parser.add_argument("--target_list", nargs="*", help="List of target names to run")
@@ -65,7 +71,7 @@ parser.add_argument(
 parser.add_argument(
     "--seq_replacement",
     default="",
-    help="Amino acid residue to fill the decoy sequence with. Default keeps target sequence",
+    help="Amino acid residue to fill the decoy sequence. Default keeps target sequence",
 )
 parser.add_argument(
     "--of_dir",
@@ -98,24 +104,12 @@ args = parser.parse_args()
 
 sys.path.insert(0, args.of_dir)
 
-
-# openfold imports
-from openfold3.core.data import data_pipeline, feature_pipeline
-from openfold3.core.np import protein, residue_constants
-from openfold3.core.utils.script_utils import load_models_from_command_line, run_model
-from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations.af2_monomer import config
-
 # helper functions
-
-"""
-Read in a PDB file from a path
-"""
-
-
 def pdb_to_string(pdb_file):
+    """Read in a PDB file from a path"""
     lines = []
-    for line in open(pdb_file):
+    with open(pdb_file) as fp:
+       for line in fp: 
         if line[:6] == "HETATM" and line[17:20] == "MSE":
             line = "ATOM  " + line[6:17] + "MET" + line[20:]
         if line[:4] == "ATOM":
@@ -123,14 +117,13 @@ def pdb_to_string(pdb_file):
     return "".join(lines)
 
 
-"""
-Compute aligned RMSD between two corresponding sets of points
-true -- set of reference points. Numpy array of dimension N x 3
-pred -- set of predicted points, Numpy array of dimension N x 3
-"""
-
 
 def jnp_rmsd(true, pred):
+    """ Compute aligned RMSD between two corresponding sets of points
+    Args:
+        true: set of reference points. Numpy array of dimension N x 3
+        pred: set of predicted points, Numpy array of dimension N x 3
+    """
     def kabsch(P, Q):
         V, S, W = jnp.linalg.svd(P.T @ Q, full_matrices=False)
         flip = jax.nn.sigmoid(-10 * jnp.linalg.det(V) * jnp.linalg.det(W))
@@ -246,14 +239,15 @@ def make_processed_feature_dict(cfg, sequence, name="test", templates=None, seed
     return processed_feature_dict
 
 
-"""
-Package OpenFold's output into an easy-to-use dictionary
-prediction_result - output from running OpenFold on an input dictionary
-processed_feature_dict -- The dictionary passed to OpenFold as input. Returned by `make_processed_feature_dict`.
-"""
 
 
 def parse_results(prediction_result, processed_feature_dict):
+    """Package OpenFold's output into an easy-to-use dictionary
+    Args:
+        prediction_result: output from running OpenFold on an input dictionary
+        processed_feature_dict: The dictionary passed to OpenFold as input. Returned by 
+            `make_processed_feature_dict`.
+    """
     b_factors = (
         prediction_result["plddt"][:, None] * prediction_result["final_atom_mask"]
     )
@@ -271,15 +265,14 @@ def parse_results(prediction_result, processed_feature_dict):
     return out
 
 
-"""
-Function used to add C-Beta to glycine resides
-input:  3 coords (a,b,c), (L)ength, (A)ngle, and (D)ihedral
-output: 4th coord
-"""
-
-
 def extend(a, b, c, L, A, D):
-    N = lambda x: x / np.sqrt(np.square(x).sum(-1, keepdims=True) + 1e-8)
+    """Function used to add C-Beta to glycine resides
+    Args:
+        input:  3 coords (a,b,c), (L)ength, (A)ngle, and (D)ihedral
+        output: 4th coord
+    """
+    def N(x):
+        return x / np.sqrt(np.square(x).sum(-1, keepdims=True) + 1e-08)
     bc = N(b - c)
     n = N(np.cross(b - a, bc))
     m = [bc, np.cross(n, bc), n]
@@ -418,7 +411,7 @@ tm_re = re.compile(r"TM-score[\s]*=[\s]*(\d.\d+)")
 ref_len_re = re.compile(r"Length=[\s]*(\d+)[\s]*\(by which all scores are normalized\)")
 common_re = re.compile(r"Number of residues in common=[\s]*(\d+)")
 super_re = re.compile(
-    r'\(":" denotes the residue pairs of distance < 5\.0 Angstrom\)\\n([A-Z\-]+)\\n[" ", :]+\\n([A-Z\-]+)\\n'
+    r'\(":" denotes the residue pairs of distance < 5\.0 Angstrom\)\\n([A-Z\-]+)\\n[" ", :]+\\n([A-Z\-]+)\\n'  # noqa: E501
 )
 
 """
@@ -538,49 +531,43 @@ os.makedirs(args.output_dir + args.name + "/pdbs", exist_ok=True)
 os.makedirs(args.output_dir + args.name + "/results", exist_ok=True)
 
 if len(args.targets_file) > 0:
-    natives_list = open(args.targets_file).read().split("\n")[:-1]
+    with open(args.targets_file) as fp:
+        natives_list = fp.read().split("\n")[:-1]
 else:
     natives_list = args.target_list
 
 
 finished_decoys = []
 for n in natives_list:
-    if os.path.exists(
-        args.output_dir + args.name + f"/results/results_{n}.csv"
-    ):
-        finished_decoys += [
-            x.split(",")[0] + "_" + x.split(",")[1]
-            for x in open(
-                args.output_dir + args.name + f"/results/results_{n}.csv"
-            ).readlines()
-        ]
+    results_fname = args.output_dir + args.name + f"/results/results_{n}.csv"
+    if os.path.exists(results_fname):
+        with open(results_fname) as fp:
+            for x in fp.readlines():
+                finished_decoys.append(x.split(",")[0] + "_" + x.split(",")[1]) 
 finished_decoys = set(finished_decoys)
 
-
-if os.path.exists(args.output_dir + args.name + "/finished_targets.txt"):
-    finished_targets = set(
-        open(args.output_dir + args.name + "/finished_targets.txt")
-        .read()
-        .split("\n")[:-1]
-    )
+target_fname = args.output_dir + args.name + "/finished_targets.txt"
+if os.path.exists(target_fname):
+    with open(target_fname) as fp:
+        finished_targets = set(fp.read().split("\n")[:-1])
 else:
     finished_targets = []
 
 
 # info of the form "target decoy_id"
-decoy_list = [
-    x.split()
-    for x in open(args.decoy_dir + "decoy_list.txt").read().split("\n")[:-1]
-]
+with open(args.decoy_dir + "decoy_list.txt") as fp:
+    decoy_list = [x.split() for x in fp.read().split("\n")[:-1]]
 
 # parse all of the information about the decoys
 decoy_data = {}
 for field in decoy_fields_list[2:]:
-    if os.path.exists(args.decoy_dir + field + ".txt"):
-        lines = [
-            x.split()
-            for x in open(args.decoy_dir + field + ".txt").read().split("\n")[:-1]
-        ]  # form "target decoy_id metric value"
+    decoy_field_path = args.decoy_dir + field + ".txt"
+    if os.path.exists(decoy_field_path):
+        with open(decoy_field_path) as fp:
+            lines = [
+                x.split()
+                for x in fp.read().split("\n")[:-1]
+            ]  # form "target decoy_id metric value"
 
         # make sure everything is in the same order
         for i, l in enumerate(lines):
