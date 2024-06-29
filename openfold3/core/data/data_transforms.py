@@ -126,7 +126,7 @@ def correct_msa_restypes(protein):
                 20,
                 21,
                 22,
-            ], "num_dim for %s out of expected range: %s" % (k, num_dim)
+            ], f"num_dim for {k} out of expected range: {num_dim}"
             protein[k] = torch.dot(protein[k], perm_matrix[:num_dim, :num_dim])
 
     return protein
@@ -609,7 +609,7 @@ def make_atom14_masks(protein):
         atom_name_to_idx14 = {name: i for i, name in enumerate(atom_names)}
         restype_atom37_to_atom14.append(
             [
-                (atom_name_to_idx14[name] if name in atom_name_to_idx14 else 0)
+                (atom_name_to_idx14.get(name, 0))
                 for name in rc.atom_types
             ]
         )

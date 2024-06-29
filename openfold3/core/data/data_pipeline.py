@@ -290,7 +290,8 @@ def make_sequence_features_with_custom_template(
     sequence: str, mmcif_path: str, pdb_id: str, chain_id: str, kalign_binary_path: str
 ) -> FeatureDict:
     """
-    process a single fasta file using features derived from a single template rather than an alignment
+    Process a single fasta file using features derived from a single template
+    rather than an alignment
     """
     num_res = len(sequence)
 
@@ -477,12 +478,12 @@ class AlignmentRunner:
 
             if self.template_searcher is not None:
                 if self.template_searcher.input_format == "sto":
-                    pdb_templates_result = self.template_searcher.query(
+                    self.template_searcher.query(
                         template_msa, output_dir=output_dir
                     )
                 elif self.template_searcher.input_format == "a3m":
                     uniref90_msa_as_a3m = parsers.convert_stockholm_to_a3m(template_msa)
-                    pdb_templates_result = self.template_searcher.query(
+                    self.template_searcher.query(
                         uniref90_msa_as_a3m, output_dir=output_dir
                     )
                 else:
@@ -491,7 +492,7 @@ class AlignmentRunner:
 
         if self.jackhmmer_mgnify_runner is not None:
             mgnify_out_path = os.path.join(output_dir, "mgnify_hits.sto")
-            jackhmmer_mgnify_result = run_msa_tool(
+            run_msa_tool(
                 msa_runner=self.jackhmmer_mgnify_runner,
                 fasta_path=fasta_path,
                 msa_out_path=mgnify_out_path,
@@ -501,7 +502,7 @@ class AlignmentRunner:
 
         if self.use_small_bfd and self.jackhmmer_small_bfd_runner is not None:
             bfd_out_path = os.path.join(output_dir, "small_bfd_hits.sto")
-            jackhmmer_small_bfd_result = run_msa_tool(
+            run_msa_tool(
                 msa_runner=self.jackhmmer_small_bfd_runner,
                 fasta_path=fasta_path,
                 msa_out_path=bfd_out_path,
@@ -516,7 +517,7 @@ class AlignmentRunner:
                     uni_name = f"{uni_name}clust"
 
             bfd_out_path = os.path.join(output_dir, f"bfd_{uni_name}_hits.a3m")
-            hhblits_bfd_unirefclust_result = run_msa_tool(
+            run_msa_tool(
                 msa_runner=self.hhblits_bfd_unirefclust_runner,
                 fasta_path=fasta_path,
                 msa_out_path=bfd_out_path,
@@ -525,7 +526,7 @@ class AlignmentRunner:
 
         if self.jackhmmer_uniprot_runner is not None:
             uniprot_out_path = os.path.join(output_dir, "uniprot_hits.sto")
-            result = run_msa_tool(
+            run_msa_tool(
                 self.jackhmmer_uniprot_runner,
                 fasta_path=fasta_path,
                 msa_out_path=uniprot_out_path,
@@ -640,7 +641,7 @@ def add_assembly_features(
     # Group the chains by sequence
     seq_to_entity_id = {}
     grouped_chains = collections.defaultdict(list)
-    for chain_id, chain_features in all_chain_features.items():
+    for _, chain_features in all_chain_features.items():
         seq = str(chain_features["sequence"])
         if seq not in seq_to_entity_id:
             seq_to_entity_id[seq] = len(seq_to_entity_id) + 1
@@ -694,29 +695,26 @@ class DataPipeline:
     ) -> Mapping[str, Any]:
         msa_data = {}
         if alignment_index is not None:
-            fp = open(os.path.join(alignment_dir, alignment_index["db"]), "rb")
+            with open(os.path.join(alignment_dir, alignment_index["db"]), "rb") as fp: 
+                def read_msa(start, size):
+                    fp.seek(start)
+                    msa = fp.read(size).decode("utf-8")
+                    return msa
 
-            def read_msa(start, size):
-                fp.seek(start)
-                msa = fp.read(size).decode("utf-8")
-                return msa
+                for name, start, size in alignment_index["files"]:
+                    fname, ext = os.path.splitext(name)
 
-            for name, start, size in alignment_index["files"]:
-                filename, ext = os.path.splitext(name)
+                    if ext == ".a3m":
+                        msa = parsers.parse_a3m(read_msa(start, size))
+                    # The "hmm_output" exception is a crude way to exclude
+                    # multimer template hits.
+                    # Multimer "uniprot_hits" processed separately.
+                    elif ext == ".sto" and fname not in ["uniprot_hits", "hmm_output"]:
+                        msa = parsers.parse_stockholm(read_msa(start, size))
+                    else:
+                        continue
 
-                if ext == ".a3m":
-                    msa = parsers.parse_a3m(read_msa(start, size))
-                # The "hmm_output" exception is a crude way to exclude
-                # multimer template hits.
-                # Multimer "uniprot_hits" processed separately.
-                elif ext == ".sto" and filename not in ["uniprot_hits", "hmm_output"]:
-                    msa = parsers.parse_stockholm(read_msa(start, size))
-                else:
-                    continue
-
-                msa_data[name] = msa
-
-            fp.close()
+                    msa_data[name] = msa
         else:
             for f in os.listdir(alignment_dir):
                 path = os.path.join(alignment_dir, f)
@@ -743,26 +741,23 @@ class DataPipeline:
     ) -> Mapping[str, Any]:
         all_hits = {}
         if alignment_index is not None:
-            fp = open(os.path.join(alignment_dir, alignment_index["db"]), "rb")
+            with open(os.path.join(alignment_dir, alignment_index["db"]), "rb") as fp: 
+                def read_template(start, size):
+                    fp.seek(start)
+                    return fp.read(size).decode("utf-8")
 
-            def read_template(start, size):
-                fp.seek(start)
-                return fp.read(size).decode("utf-8")
+                for name, start, size in alignment_index["files"]:
+                    ext = os.path.splitext(name)[-1]
 
-            for name, start, size in alignment_index["files"]:
-                ext = os.path.splitext(name)[-1]
-
-                if ext == ".hhr":
-                    hits = parsers.parse_hhr(read_template(start, size))
-                    all_hits[name] = hits
-                elif name == "hmmsearch_output.sto":
-                    hits = parsers.parse_hmmsearch_sto(
-                        read_template(start, size),
-                        input_sequence,
-                    )
-                    all_hits[name] = hits
-
-            fp.close()
+                    if ext == ".hhr":
+                        hits = parsers.parse_hhr(read_template(start, size))
+                        all_hits[name] = hits
+                    elif name == "hmmsearch_output.sto":
+                        hits = parsers.parse_hmmsearch_sto(
+                            read_template(start, size),
+                            input_sequence,
+                        )
+                        all_hits[name] = hits
         else:
             for f in os.listdir(alignment_dir):
                 path = os.path.join(alignment_dir, f)
@@ -950,11 +945,10 @@ class DataPipeline:
             db_dir = os.path.dirname(pdb_path)
             db = _structure_index["db"]
             db_path = os.path.join(db_dir, db)
-            fp = open(db_path, "rb")
             _, offset, length = _structure_index["files"][0]
-            fp.seek(offset)
-            pdb_str = fp.read(length).decode("utf-8")
-            fp.close()
+            with open(db_path) as fp:
+                fp.seek(offset)
+                pdb_str = fp.read(length).decode("utf-8")
         else:
             with open(pdb_path) as f:
                 pdb_str = f.read()
@@ -979,7 +973,8 @@ class DataPipeline:
         )
 
         sequence_embedding_features = {}
-        # If in sequence embedding mode, generate dummy MSA features using just the input sequence
+        # If in sequence embedding mode, generate dummy MSA features
+        # using just the input sequence
         if seqemb_mode:
             msa_features = make_dummy_msa_feats(input_sequence)
             sequence_embedding_features = self._process_seqemb_features(alignment_dir)
@@ -1026,7 +1021,8 @@ class DataPipeline:
         )
 
         sequence_embedding_features = {}
-        # If in sequence embedding mode, generate dummy MSA features using just the input sequence
+        # If in sequence embedding mode, generate dummy MSA
+        # features using just the input sequence
         if seqemb_mode:
             msa_features = make_dummy_msa_feats(input_sequence)
             sequence_embedding_features = self._process_seqemb_features(alignment_dir)
@@ -1189,23 +1185,20 @@ class DataPipelineMultimer:
     def _all_seq_msa_features(alignment_dir, alignment_index):
         """Get MSA features for unclustered uniprot, for pairing."""
         if alignment_index is not None:
-            fp = open(os.path.join(alignment_dir, alignment_index["db"]), "rb")
+            with open(os.path.join(alignment_dir, alignment_index["db"]), "rb") as fp:
+                def read_msa(start, size):
+                    fp.seek(start)
+                    msa = fp.read(size).decode("utf-8")
+                    return msa
 
-            def read_msa(start, size):
-                fp.seek(start)
-                msa = fp.read(size).decode("utf-8")
-                return msa
-
-            start, size = next(
-                iter(
-                    (start, size)
-                    for name, start, size in alignment_index["files"]
-                    if name == "uniprot_hits.sto"
+                start, size = next(
+                    iter(
+                        (start, size)
+                        for name, start, size in alignment_index["files"]
+                        if name == "uniprot_hits.sto"
+                    )
                 )
-            )
-
-            msa = parsers.parse_stockholm(read_msa(start, size))
-            fp.close()
+                msa = parsers.parse_stockholm(read_msa(start, size))
         else:
             uniprot_msa_path = os.path.join(alignment_dir, "uniprot_hits.sto")
             if not os.path.exists(uniprot_msa_path):
