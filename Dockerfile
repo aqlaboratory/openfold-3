@@ -37,7 +37,7 @@ RUN python3 setup.py install
 RUN wget -q -P . https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar
 RUN tar -xvf alphafold_params_2022-12-06.tar params_model_1_ptm.npz
 RUN mkdir openfold3/resources/params
-COPY params_model_1_ptm.npz openfold3/resources/params/
+COPY params_model_1_ptm.npz openfold3/resources/params/params_model_1_ptm.npz
 RUN rm alphafold_params_2022-12-06.tar params_model_1_ptm.npz 
 
 # Sanity checks for environment / path
