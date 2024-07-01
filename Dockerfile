@@ -38,7 +38,7 @@ RUN wget -q -P . https://storage.googleapis.com/alphafold/alphafold_params_2022-
 RUN tar -xvf alphafold_params_2022-12-06.tar params_model_1_ptm.npz
 RUN mkdir openfold3/resources/params
 RUN ls
-COPY /opt/openfold3/params_model_1_ptm.npz openfold3/resources/params/params_model_1_ptm.npz
+RUN cp /opt/openfold3/params_model_1_ptm.npz openfold3/resources/params/params_model_1_ptm.npz
 RUN rm alphafold_params_2022-12-06.tar params_model_1_ptm.npz 
 
 # Sanity checks for environment / path
