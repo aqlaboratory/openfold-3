@@ -140,11 +140,11 @@ class TestPairformer_Embedding(unittest.TestCase):
                                         chuck_size = 4
                                         )
         
-        expected_shape = (batch_size, n_token, c_s)
-        np.testing.assert_array_equal(out_single.shape, expected_shape)
+        expected_shape_single = (batch_size, n_token, c_s)
+        np.testing.assert_array_equal(out_single.shape, expected_shape_single)
         
-        expected_shape = (batch_size, n_token, n_token, c_z)
-        np.testing.assert_array_equal(out_pair.shape, expected_shape)        
+        expected_shape_pair = (batch_size, n_token, n_token, c_z)
+        np.testing.assert_array_equal(out_pair.shape, expected_shape_pair)        
 
 class TestAuxiliaryHeads(unittest.TestCase):
     def test_aux_head_shape(self):
@@ -235,7 +235,7 @@ class TestAuxiliaryHeads(unittest.TestCase):
         single_mask = torch.randint(0, 2, size=(batch_size, n_token,))
         pair_mask = torch.randint(0, 2, size=(batch_size, n_token, n_token))
 
-        d = aux_head(si_input, 
+        aux_out = aux_head(si_input, 
                      outputs, 
                      token_to_atom_idx, 
                      single_mask, 
@@ -244,16 +244,16 @@ class TestAuxiliaryHeads(unittest.TestCase):
                      )
         
         expected_shape_distogram = (batch_size, n_token, n_token, c_out)
-        np.testing.assert_array_equal(d['distogram_logits'].shape, expected_shape_distogram)        
+        np.testing.assert_array_equal(aux_out['distogram_logits'].shape, expected_shape_distogram)        
 
         expected_shape_pae = (batch_size, n_token, n_token, c_out)
-        np.testing.assert_array_equal(d['pae_logits'].shape, expected_shape_pae)        
+        np.testing.assert_array_equal(aux_out['pae_logits'].shape, expected_shape_pae)        
 
         expected_shape_pde = (batch_size, n_token, n_token, c_out)
-        np.testing.assert_array_equal(d['pde_logits'].shape, expected_shape_pde)        
+        np.testing.assert_array_equal(aux_out['pde_logits'].shape, expected_shape_pde)        
 
         expected_shape_plddt = (batch_size, n_atom, c_out)
-        np.testing.assert_array_equal(d['plddt_logits'].shape, expected_shape_plddt)        
+        np.testing.assert_array_equal(aux_out['plddt_logits'].shape, expected_shape_plddt)        
 
 if __name__ == "__main__":
     unittest.main()

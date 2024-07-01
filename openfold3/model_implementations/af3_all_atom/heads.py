@@ -18,7 +18,6 @@ import torch.nn as nn
 
 from openfold3.core.model.primitives import Linear
 from openfold3.core.utils.loss import (
-    compute_plddt,
     compute_tm,
     compute_predicted_aligned_error,
 )
@@ -90,7 +89,7 @@ class AuxiliaryHeads(nn.Module):
             chuck_size: feat associated with pairformer stack (int)
 
         Returns: 
-            aux_out: dict containing following keys: 
+            aux_out: dict containing following keys and values:
                 'distogram_logits': distogram head out [*, n_token, n_token, bins_distogram]
                 'pae_logits': pae head out[*, n_token, n_token, bins_pae]
                 'pde_logits': pde head out[*, n_token, n_token, bins_pde]
@@ -103,11 +102,11 @@ class AuxiliaryHeads(nn.Module):
         """
         aux_out = {}
         
-        # 1. distogram head: distogram head needs outputs['pair'] before passing pairformer (main loop: line 17)
+        # 1. distogram head: distogram head needs outputs['pair'] before passing pairformer_embedding (main loop: line 17)
         distogram_logits = self.distogram(outputs['pair'])
         aux_out["distogram_logits"] = distogram_logits
 
-        #2. si, zij from pairformer stack outs
+        #2. si, zij from pairformer stack
         si, zij = self.pairformer_embedding(si_input,
                                             outputs['single'],
                                             outputs['pair'],
@@ -210,7 +209,7 @@ class Pairformer_Embedding(nn.Module):
         bins = torch.linspace(self.min_bin, self.max_bin, self.no_bin)
         squared_bins = bins ** 2
         upper = torch.cat([squared_bins[1:], squared_bins.new_tensor([self.inf])], dim=-1)
-        dij = torch.sum((x_pred[..., None, :] - x_pred[..., None, :, :]) ** 2, dim=-1, keepdims=True)
+        dij = torch.sum((x_pred[..., None, :] - x_pred[..., None, :, :]) ** 2, dim = -1, keepdims = True)
         dij = ((dij > squared_bins) * (dij < upper)).type(x_pred.dtype) 
         zij = zij + self.linear_distance(dij)
 
