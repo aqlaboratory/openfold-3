@@ -24,6 +24,7 @@ RUN export LD_LIBRARY_PATH=${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}
 
 COPY openfold3 /opt/openfold3/openfold3
 COPY scripts /opt/openfold3/scripts
+COPY tests /opt/openfold3/tests
 COPY run_pretrained_openfold.py /opt/openfold3/run_pretrained_openfold.py
 COPY train_openfold.py /opt/openfold3/train_openfold.py
 COPY setup.py /opt/openfold3/setup.py
@@ -37,18 +38,14 @@ RUN mkdir openfold3/resources/params
 RUN wget -q -P openfold3/resources/params \
     https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar
 RUN tar -xvf /opt/openfold3/openfold3/resources/params/alphafold_params_2022-12-06.tar \
-    params_model_1_ptm.npz
+    openfold3/resources/params_model_1_ptm.npz
 RUN rm /opt/openfold3/openfold3/resources/params/alphafold_params_2022-12-06.tar
-
-# Run tests for OpenFold 
-RUN echo $LD_LIBRARY_PATH
-RUN export LIBRARY_PATH=/opt/conda/lib:$LIBRARY_PATH && export LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
 
 # Sanity checks for environment / path
 RUN echo $LD_LIBRARY_PATH
 RUN pwd
 RUN ls 
 
-# RUN python3 -m unittest discover -s /opt/openfold3/tests/ -p "test_*.py"
-RUN mamba install pytest
-RUN pytest /opt/openfold3/tests/
+RUN python3 -m unittest discover -s /opt/openfold3/tests/ -p "test_*.py"
+# RUN mamba install pytest
+# RUN pytest /opt/openfold3/tests/
