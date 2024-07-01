@@ -43,4 +43,8 @@ RUN rm /opt/openfold3/openfold3/resources/params/alphafold_params_2022-12-06.tar
 # Run tests for OpenFold 
 RUN echo $LD_LIBRARY_PATH
 RUN export LIBRARY_PATH=$CONDA_PREFIX/lib:$LIBRARY_PATH && export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
-RUN python3 -m unittest discover -s /opt/openfold3/tests/ -p "test_*.py"
+RUN echo $LD_LIBRARY_PATH
+
+# RUN python3 -m unittest discover -s /opt/openfold3/tests/ -p "test_*.py"
+RUN mamba install pytest
+RUN pytest tests/
