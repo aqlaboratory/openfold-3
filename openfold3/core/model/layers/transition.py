@@ -13,8 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Transition layers. Includes ReLUTransition, SwiGLUTransition, ConditionedTransitionBlock,
-and StructureModuleTransition."""
+"""
+Transition layers. Includes ReLUTransition, SwiGLUTransition,
+ConditionedTransitionBlock, and StructureModuleTransition.
+"""
 
 from typing import Optional
 
@@ -41,7 +43,7 @@ class ReLUTransitionLayer(nn.Module):
                 Factor multiplied to c_in to obtain the hidden channel
                 dimension
         """
-        super(ReLUTransitionLayer, self).__init__()
+        super().__init__()
 
         self.c_in = c_in
         self.n = n
@@ -93,7 +95,7 @@ class ReLUTransition(nn.Module):
                 Factor multiplied to c_in to obtain the hidden channel
                 dimension
         """
-        super(ReLUTransition, self).__init__()
+        super().__init__()
 
         self.c_in = c_in
         self.n = n
@@ -169,7 +171,7 @@ class SwiGLUTransition(nn.Module):
                 Factor by which c_in is multiplied to obtain hidden channel
                 dimension
         """
-        super(SwiGLUTransition, self).__init__()
+        super().__init__()
 
         self.c_in = c_in
         self.n = n
@@ -253,7 +255,7 @@ class ConditionedTransitionBlock(nn.Module):
                 Factor by which c_in is multiplied to obtain hidden channel
                 dimension
         """
-        super(ConditionedTransitionBlock, self).__init__()
+        super().__init__()
 
         self.c_a = c_a
         self.c_s = c_s
@@ -307,7 +309,7 @@ class StructureModuleTransition(nn.Module):
             num_layers: Number of ReLUTransitionLayers
             dropout_rate: Dropout rate
         """
-        super(StructureModuleTransition, self).__init__()
+        super().__init__()
 
         self.c = c
         self.num_layers = num_layers

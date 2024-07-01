@@ -13,7 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Sequence-local atom attention modules. Includes AtomAttentionEncoder, AtomAttentionDecoder, and AtomTransformer."""
+"""
+Sequence-local atom attention modules. Includes AtomAttentionEncoder,
+AtomAttentionDecoder, and AtomTransformer.
+"""
 
 from typing import Dict, Optional, Tuple
 
@@ -60,7 +63,7 @@ class AtomTransformer(nn.Module):
             inf:
                 Large constant used to create mask for attention logits
         """
-        super(AtomTransformer, self).__init__()
+        super().__init__()
         self.diffusion_transformer = DiffusionTransformer(
             c_a=c_q,
             c_s=c_q,
@@ -147,7 +150,7 @@ class AtomFeatureEmbedder(nn.Module):
             c_atom_pair:
                 Atom pair embedding dimension
         """
-        super(AtomFeatureEmbedder, self).__init__()
+        super().__init__()
         self.linear_feats = Linear(c_in, c_atom, bias=False)
         self.linear_ref_offset = Linear(3, c_atom_pair, bias=False)
         self.linear_inv_dists = Linear(1, c_atom_pair, bias=False)
@@ -164,9 +167,10 @@ class AtomFeatureEmbedder(nn.Module):
                 - "ref_mask": [*, N_atom] atom mask
                 - "ref_element": [*, N_atom, 128] one-hot encoding of atomic number
                 - "ref_charge": [*, N_atom] atom charge
-                - "ref_atom_name_chars": [*, N_atom, 4, 64] one-hot encoding of unicode integers
-                    representing unique atom names
-                - "ref_space_uid": numerical encoding of the chain id and residue index [*, n_atom,]
+                - "ref_atom_name_chars": [*, N_atom, 4, 64] one-hot encoding of
+                    unicode integers representing unique atom names
+                - "ref_space_uid": numerical encoding of the chain id and residue
+                    index [*, n_atom,]
         Returns:
             cl:
                 [*, N_atom, C_atom] atom embedding
@@ -230,7 +234,7 @@ class NoisyPositionEmbedder(nn.Module):
             c_atom_pair:
                 Atom pair embedding dimension
         """
-        super(NoisyPositionEmbedder, self).__init__()
+        super().__init__()
         self.c_s = c_s
         self.c_z = c_z
 
@@ -253,7 +257,8 @@ class NoisyPositionEmbedder(nn.Module):
         """
         Args:
             atom_feats: TensorDict with features:
-                - "atom_to_token_index": atom to token index feature [*, n_atom, n_token,]
+                - "atom_to_token_index": atom to token index
+                    feature [*, n_atom, n_token,]
             cl: atom embedding [*, n_atom, c_atom]
             plm: atom pair embedding [*, n_atom, n_atom, c_atom]
             ql: token embedding [*, n_atom, c_atom]
@@ -346,7 +351,7 @@ class AtomAttentionEncoder(nn.Module):
             inf:
                 Large number used for attention masking
         """
-        super(AtomAttentionEncoder, self).__init__()
+        super().__init__()
 
         self.add_noisy_pos = add_noisy_pos
 
@@ -402,10 +407,12 @@ class AtomAttentionEncoder(nn.Module):
             atom_feats: TensorDict with following keys/features:
                 - "ref_pos": atom position, given in Angstrom [*, n_atom, 3]
                 - "ref_mask": atom mask [*, n_atom, 1]
-                - "ref_element": one hot encoding of atomic number (up to 128) [*, n_atom, 128]
+                - "ref_element": one hot encoding of atomic number
+                    (up to 128) [*, n_atom, 128]
                 - "ref_charge": atom charge [*, n_atom, 1]
                 - "ref_atom_name_chars" WHAT IS THIS? [*, n_atom, 4, 64]
-                - "ref_space_uid": numerical encoding of the chain id and residue index [*, n_atom, 1]
+                - "ref_space_uid": numerical encoding of the chain id and
+                    residue index [*, n_atom, 1]
                 ...
                 - "atom_to_token_index": atom to token index [*, n_atom, n_token,]
             atom_mask:
@@ -420,7 +427,8 @@ class AtomAttentionEncoder(nn.Module):
         Returns:
             ai:
                 token level embedding [*, n_token, c_token]
-            ql: atom level embedding with noisy coordinate info projection [*, n_atom, c_atom]
+            ql: atom level embedding with noisy coordinate info
+                projection [*, n_atom, c_atom]
             cl: atom level embedding with atom features [*, n_atom, c_atom]
             plm: atom pairwise embedding [*, n_atom, n_atom, c_atom_pair]
         """
@@ -436,7 +444,7 @@ class AtomAttentionEncoder(nn.Module):
                 atom_feats, cl, plm, ql, si_trunk, zij, rl
             )
 
-        # 3. add the combined single conditioning to the pair representation (line 13 - 14)
+        # 3. add the combined single conditioning to the pair rep (line 13 - 14)
         plm = (
             plm
             + self.linear_l(self.relu(cl.unsqueeze(-3)))
@@ -485,7 +493,7 @@ class AtomAttentionDecoder(nn.Module):
             n_transition: transition (for aotm transformer)
             inf:
         """
-        super(AtomAttentionDecoder, self).__init__()
+        super().__init__()
 
         self.linear_q_in = Linear(c_token, c_atom, bias=False)
 

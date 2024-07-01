@@ -41,7 +41,7 @@ class OuterProductMean(nn.Module):
             c_hidden:
                 Hidden channel dimension
         """
-        super(OuterProductMean, self).__init__()
+        super().__init__()
 
         self.c_m = c_m
         self.c_z = c_z

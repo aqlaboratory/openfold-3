@@ -12,6 +12,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+"""AF2 Structure Module.
+
+TODO: Separate out IPA, AngelResnet, PointProjection, etc. into layers package.
+"""
+
 import importlib
 import math
 import sys
@@ -58,7 +64,7 @@ class AngleResnetBlock(nn.Module):
             c_hidden:
                 Hidden channel dimension
         """
-        super(AngleResnetBlock, self).__init__()
+        super().__init__()
 
         self.c_hidden = c_hidden
 
@@ -97,7 +103,7 @@ class AngleResnet(nn.Module):
             epsilon:
                 Small constant for normalization
         """
-        super(AngleResnet, self).__init__()
+        super().__init__()
 
         self.c_in = c_in
         self.c_hidden = c_hidden
@@ -241,7 +247,7 @@ class InvariantPointAttention(nn.Module):
             no_v_points:
                 Number of value points to generate
         """
-        super(InvariantPointAttention, self).__init__()
+        super().__init__()
 
         self.c_s = c_s
         self.c_z = c_z
@@ -495,9 +501,10 @@ class InvariantPointAttention(nn.Module):
         return s
 
 
-# TODO: This module follows the refactoring done in IPA for multimer. Running the regular IPA above
-# in multimer mode should be equivalent, but tests do not pass unless using this version. Determine
-# whether or not the increase in test error matters in practice.
+# TODO: This module follows the refactoring done in IPA for multimer.
+# Running the regular IPA above.
+# in multimer mode should be equivalent, but tests do not pass unless
+# using this version. Determine whether the increase in test error matters in practice.
 class InvariantPointAttentionMultimer(nn.Module):
     """
     Implements AF2-Multimer version of AF2 Algorithm 22.
@@ -530,7 +537,7 @@ class InvariantPointAttentionMultimer(nn.Module):
             no_v_points:
                 Number of value points to generate
         """
-        super(InvariantPointAttentionMultimer, self).__init__()
+        super().__init__()
 
         self.c_s = c_s
         self.c_z = c_z
@@ -607,9 +614,10 @@ class InvariantPointAttentionMultimer(nn.Module):
         point_variance = max(self.no_qk_points, 1) * 9.0 / 2
         point_weights = math.sqrt(1.0 / point_variance)
 
-        softplus = lambda x: torch.logaddexp(x, torch.zeros_like(x))
-
-        head_weights = softplus(self.head_weights)
+        # Apply softplus to head weights
+        head_weights = torch.logaddexp(
+            self.head_weights, torch.zeros_like(self.head_weights)
+        )
         point_weights = point_weights * head_weights
 
         #######################################
@@ -724,7 +732,7 @@ class BackboneUpdate(nn.Module):
             c_s:
                 Single representation channel dimension
         """
-        super(BackboneUpdate, self).__init__()
+        super().__init__()
 
         self.c_s = c_s
 
@@ -798,7 +806,7 @@ class StructureModule(nn.Module):
             inf:
                 Large number used for attention masking
         """
-        super(StructureModule, self).__init__()
+        super().__init__()
 
         self.c_s = c_s
         self.c_z = c_z
@@ -922,7 +930,7 @@ class StructureModule(nn.Module):
             fmt="quat",
         )
         outputs = []
-        for i in range(self.no_blocks):
+        for _ in range(self.no_blocks):
             # [*, N, C_s]
             s = s + self.ipa(
                 s,
@@ -1026,7 +1034,7 @@ class StructureModule(nn.Module):
             s.device,
         )
         outputs = []
-        for i in range(self.no_blocks):
+        for _ in range(self.no_blocks):
             # [*, N, C_s]
             s = s + self.ipa(
                 s,

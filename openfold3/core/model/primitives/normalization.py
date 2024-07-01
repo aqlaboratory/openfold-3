@@ -40,7 +40,7 @@ class LayerNorm(nn.Module):
             create_offset: Whether to create a learnable offset parameter
             eps: Epsilon value for numerical stability
         """
-        super(LayerNorm, self).__init__()
+        super().__init__()
 
         self.c_in = (c_in,)
         self.eps = eps
@@ -88,7 +88,7 @@ class AdaLN(nn.Module):
             c_s: Number of input channels for shift/scale tensor
             eps: Epsilon value for numerical stability
         """
-        super(AdaLN, self).__init__()
+        super().__init__()
 
         self.c_a = c_a
         self.c_s = c_s

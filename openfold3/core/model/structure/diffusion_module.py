@@ -1,3 +1,23 @@
+# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2021 DeepMind Technologies Limited
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+Diffusion module. Implements the algorithms in section 3.7 of the
+Supplementary Information.
+"""
+
 from typing import Dict, Tuple
 
 import torch
@@ -89,7 +109,7 @@ class FourierEmbedding(nn.Module):
             c:
                 Embedding dimension
         """
-        super(FourierEmbedding, self).__init__()
+        super().__init__()
 
         self.linear = Linear(in_dim=1, out_dim=c, bias=True, init="fourier")
 
@@ -136,7 +156,7 @@ class DiffusionConditioning(nn.Module):
             sigma_data:
                 Constant determined by data variance
         """
-        super(DiffusionConditioning, self).__init__()
+        super().__init__()
 
         self.c_s_input = c_s_input
         self.c_s = c_s
@@ -276,11 +296,12 @@ class DiffusionModule(nn.Module):
             no_blocks:
                 Number of attention blocks (for diffusion transformer)
             n_transition:
-                Dimension multiplication factor used in transition layer (for diffusion transformer)
+                Dimension multiplication factor used in transition layer
+                (for diffusion transformer)
             inf:
                 Large number used for attention masking
         """
-        super(DiffusionModule, self).__init__()
+        super().__init__()
         self.sigma_data = sigma_data
 
         self.diffusion_conditioning = DiffusionConditioning(
@@ -324,11 +345,12 @@ class DiffusionModule(nn.Module):
 
         self.layer_norm_a = LayerNorm(c_token)
 
+        # c_hidden is shared across encoder, transformer and decoder. Intended?
         self.atom_attn_dec = AtomAttentionDecoder(
             c_atom=c_atom,
             c_atom_pair=c_atom_pair,
             c_token=c_token,
-            c_hidden=c_hidden_att,  # shared across encoder, transformer and decoder? Intended?
+            c_hidden=c_hidden_att,
             # no_heads=no_heads,
             # no_blocks=no_blocks,
             # n_transition=n_transition,
@@ -477,7 +499,7 @@ class SampleDiffusion(nn.Module):
             step_scale:
                 Step scaling factor
         """
-        super(SampleDiffusion, self).__init__()
+        super().__init__()
         self.gamma_0 = gamma_0
         self.gamma_min = gamma_min
         self.noise_scale = noise_scale

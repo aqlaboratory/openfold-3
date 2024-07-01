@@ -13,8 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""MSA attention layers. Includes MSARowAttentionWithPairBias, MSAColumnAttention, MSAColumnGlobalAttention,
-and MSAPairWeightedAveraging.
+"""
+MSA attention layers. Includes MSARowAttentionWithPairBias, MSAColumnAttention,
+MSAColumnGlobalAttention, and MSAPairWeightedAveraging.
 """
 
 from functools import partial
@@ -64,7 +65,7 @@ class MSAAttention(nn.Module):
             inf:
                 A large number to be used in computing the attention mask
         """
-        super(MSAAttention, self).__init__()
+        super().__init__()
 
         self.c_in = c_in
         self.c_hidden = c_hidden
@@ -314,7 +315,7 @@ class MSARowAttentionWithPairBias(MSAAttention):
             inf:
                 Large number used to construct attention masks
         """
-        super(MSARowAttentionWithPairBias, self).__init__(
+        super().__init__(
             c_m,
             c_hidden,
             no_heads,
@@ -344,7 +345,7 @@ class MSAColumnAttention(nn.Module):
             inf:
                 Large number used to construct attention masks
         """
-        super(MSAColumnAttention, self).__init__()
+        super().__init__()
 
         self.c_m = c_m
         self.c_hidden = c_hidden
@@ -411,7 +412,7 @@ class MSAColumnGlobalAttention(nn.Module):
         inf=1e9,
         eps=1e-10,
     ):
-        super(MSAColumnGlobalAttention, self).__init__()
+        super().__init__()
 
         self.c_in = c_in
         self.c_hidden = c_hidden
@@ -514,7 +515,7 @@ class MSAPairWeightedAveraging(nn.Module):
             inf:
                 A large number to be used in computing the attention mask
         """
-        super(MSAPairWeightedAveraging, self).__init__()
+        super().__init__()
 
         self.c_in = c_in
         self.c_hidden = c_hidden

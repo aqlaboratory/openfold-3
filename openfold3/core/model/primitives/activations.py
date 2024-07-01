@@ -32,7 +32,7 @@ class SwiGLU(nn.Module):
             bias: Whether to include a bias term in linear layers
             init: Linear layer initialization method
         """
-        super(SwiGLU, self).__init__()
+        super().__init__()
 
         self.c_in = c_in
         self.c_out = c_out

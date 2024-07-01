@@ -56,7 +56,7 @@ class DiffusionTransformerBlock(nn.Module):
             inf:
                 Large constant used to create mask for attention logits
         """
-        super(DiffusionTransformerBlock, self).__init__()
+        super().__init__()
 
         self.attention_pair_bias = AttentionPairBias(
             c_q=c_a,
@@ -96,8 +96,8 @@ class DiffusionTransformerBlock(nn.Module):
             z:
                 [*, N_res, N_res, C_z] Pair embedding
             beta:
-                [*, N_res, N_res] Neighborhood mask. Used in Sequence-local atom attention
-                for rectangular blocks along the diagonal.
+                [*, N_res, N_res] Neighborhood mask. Used in Sequence-local
+                atom attention for rectangular blocks along the diagonal.
             mask:
                 [*, N_res] Mask for token-level embedding
             use_memory_efficient_kernel:
@@ -160,7 +160,7 @@ class DiffusionTransformer(nn.Module):
             inf:
                 Large constant used to create mask for attention logits
         """
-        super(DiffusionTransformer, self).__init__()
+        super().__init__()
 
         self.blocks = nn.ModuleList(
             [
@@ -198,8 +198,8 @@ class DiffusionTransformer(nn.Module):
             z:
                 [*, N_res, N_res, C_z] Pair embedding
             beta:
-                [*, N_res, N_res] Neighborhood mask. Used in Sequence-local atom attention
-                for rectangular blocks along the diagonal.
+                [*, N_res, N_res] Neighborhood mask. Used in Sequence-local
+                atom attention for rectangular blocks along the diagonal.
             mask:
                 [*, N_res] Mask for token-level embedding
             use_memory_efficient_kernel:

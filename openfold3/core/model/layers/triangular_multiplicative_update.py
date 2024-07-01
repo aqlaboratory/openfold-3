@@ -13,7 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Triangle multiplicative update layers. Includes TriangleMultiplicativeUpdate from AF2
+"""
+Triangle multiplicative update layers. Includes TriangleMultiplicativeUpdate from AF2
 and FusedTriangleMultiplicativeUpdate from AF2-Multimer.
 """
 
@@ -31,7 +32,8 @@ from openfold3.core.utils.tensor_utils import permute_final_dims
 
 class BaseTriangleMultiplicativeUpdate(nn.Module, ABC):
     """
-    Common base class for TriangleMultiplicativeUpdate and FusedTriangleMultiplicativeUpdate.
+    Common base class for TriangleMultiplicativeUpdate and
+    FusedTriangleMultiplicativeUpdate.
     """
 
     @abstractmethod
@@ -43,7 +45,7 @@ class BaseTriangleMultiplicativeUpdate(nn.Module, ABC):
             c:
                 Hidden channel dimension
         """
-        super(BaseTriangleMultiplicativeUpdate, self).__init__()
+        super().__init__()
         self.c_z = c_z
         self.c_hidden = c_hidden
         self._outgoing = _outgoing
@@ -118,9 +120,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             c:
                 Hidden channel dimension
         """
-        super(TriangleMultiplicativeUpdate, self).__init__(
-            c_z=c_z, c_hidden=c_hidden, _outgoing=_outgoing
-        )
+        super().__init__(c_z=c_z, c_hidden=c_hidden, _outgoing=_outgoing)
 
         self.linear_a_p = Linear(self.c_z, self.c_hidden)
         self.linear_a_g = Linear(self.c_z, self.c_hidden, init="gating")
@@ -228,8 +228,6 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
                 out_shape = pair.shape[:-3] + (c,) + pair.shape[-3:-1]
                 p = pair.new_zeros(out_shape)
                 for i in range(0, pair.shape[-3], inplace_chunk_size):
-                    pair_chunk = pair[..., i : i + inplace_chunk_size, :, :]
-                    mask_chunk = mask[..., i : i + inplace_chunk_size, :, :]
                     pair_chunk = compute_projection_helper(
                         pair[..., i : i + inplace_chunk_size, :, :],
                         mask[..., i : i + inplace_chunk_size, :, :],
@@ -489,9 +487,7 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             c:
                 Hidden channel dimension
         """
-        super(FusedTriangleMultiplicativeUpdate, self).__init__(
-            c_z=c_z, c_hidden=c_hidden, _outgoing=_outgoing
-        )
+        super().__init__(c_z=c_z, c_hidden=c_hidden, _outgoing=_outgoing)
 
         self.linear_ab_p = Linear(self.c_z, self.c_hidden * 2)
         self.linear_ab_g = Linear(self.c_z, self.c_hidden * 2, init="gating")

@@ -52,10 +52,10 @@ class Dropout(nn.Module):
             batch_dim:
                 Dimension(s) along which the dropout mask is shared
         """
-        super(Dropout, self).__init__()
+        super().__init__()
 
         self.r = r
-        if type(batch_dim) == int:
+        if isinstance(batch_dim, int):
             batch_dim = [batch_dim]
         self.batch_dim = batch_dim
         self.dropout = nn.Dropout(self.r)

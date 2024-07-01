@@ -82,7 +82,7 @@ class Linear(nn.Linear):
                 Precision to compute the linear layer in. If None, the
                 precision is the same as the input tensor.
         """
-        super(Linear, self).__init__(in_dim, out_dim, bias=bias)
+        super().__init__(in_dim, out_dim, bias=bias)
 
         if bias:
             with torch.no_grad():

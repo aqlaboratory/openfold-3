@@ -13,14 +13,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Attention layers. Includes standard multi-head attention and global attention.
-Optimizations such as Openfold's Low-Memory Attention Kernel, LMA, DeepSpeed EvoformerAttention,
-and FlashAttention are also included.
+"""
+Attention layers. Includes standard multi-head attention and global attention.
+Optimizations such as Openfold's Low-Memory Attention Kernel, LMA,
+DeepSpeed EvoformerAttention, and FlashAttention are also included.
 """
 
 import importlib
 import math
 from typing import List, Optional, Tuple
+
+import torch
+import torch.nn as nn
+
+from openfold3.core.utils.checkpointing import get_checkpoint_fn
+from openfold3.core.utils.precision_utils import is_fp16_enabled
+from openfold3.core.utils.tensor_utils import (
+    flatten_final_dims,
+    permute_final_dims,
+)
 
 from .linear import Linear
 
@@ -40,21 +51,10 @@ if fa_is_installed:
     from flash_attn.bert_padding import unpad_input
     from flash_attn.flash_attn_interface import flash_attn_varlen_kvpacked_func
 
-import torch
-import torch.nn as nn
-
-from openfold3.core.utils.checkpointing import get_checkpoint_fn
-
 # To avoid errors if memory-efficient attention kernel is not installed
 attn_core_is_installed = importlib.util.find_spec("attn_core_inplace_cuda") is not None
 if attn_core_is_installed:
     from openfold3.core.utils.kernel.attention_core import attention_core
-
-from openfold3.core.utils.precision_utils import is_fp16_enabled
-from openfold3.core.utils.tensor_utils import (
-    flatten_final_dims,
-    permute_final_dims,
-)
 
 DEFAULT_LMA_Q_CHUNK_SIZE = 1024
 DEFAULT_LMA_KV_CHUNK_SIZE = 4096
@@ -133,15 +133,14 @@ def attention_chunked_trainable(
         k_chunk = key[idx_tup]
         v_chunk = value[idx_tup]
 
-        def _slice_bias(b):
-            idx[chunk_dim] = (
-                slice(start, end) if b.shape[chunk_dim] != 1 else slice(None)
-            )
-            return b[tuple(idx)]
+        def _slice_bias(b: torch.Tensor, i: List, s: int, e: int) -> torch.Tensor:
+            """Slice bias tensor along chunk dimension."""
+            i[chunk_dim] = slice(s, e) if b.shape[chunk_dim] != 1 else slice(None)
+            return b[tuple(i)]
 
         if checkpoint:
             bias_1_chunk, bias_2_chunk = (
-                _slice_bias(b) if b is not None else None
+                _slice_bias(b, i=idx, s=start, e=end) if b is not None else None
                 for b in (biases + [None, None])[:2]
             )
 
@@ -154,7 +153,7 @@ def attention_chunked_trainable(
                 bias_2_chunk,
             )
         else:
-            bias_chunks = [_slice_bias(b) for b in biases]
+            bias_chunks = [_slice_bias(b, i=idx, s=start, e=end) for b in biases]
 
             o_chunk = _attention(q_chunk, k_chunk, v_chunk, bias_chunks)
 
@@ -195,7 +194,7 @@ class Attention(nn.Module):
             gating:
                 Whether the output should be gated using query data
         """
-        super(Attention, self).__init__()
+        super().__init__()
 
         self.c_q = c_q
         self.c_k = c_k
@@ -375,7 +374,7 @@ class Attention(nn.Module):
 
 class GlobalAttention(nn.Module):
     def __init__(self, c_in, c_hidden, no_heads, inf, eps):
-        super(GlobalAttention, self).__init__()
+        super().__init__()
 
         self.c_in = c_in
         self.c_hidden = c_hidden
@@ -636,7 +635,7 @@ def _flash_attn(q, k, v, kv_mask):
 
     kv_unpad, _, kv_cu_seqlens, kv_max_s = unpad_input(kv, kv_mask)
     kv_unpad = kv_unpad.reshape(-1, *kv_shape[-3:])
-   
+
     out = flash_attn_varlen_kvpacked_func(
         q,
         kv_unpad,

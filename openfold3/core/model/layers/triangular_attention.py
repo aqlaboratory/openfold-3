@@ -39,7 +39,7 @@ class TriangleAttention(nn.Module):
             no_heads:
                 Number of attention heads
         """
-        super(TriangleAttention, self).__init__()
+        super().__init__()
 
         self.c_in = c_in
         self.c_hidden = c_hidden

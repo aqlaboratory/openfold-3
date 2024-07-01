@@ -46,7 +46,7 @@ class TemplatePointwiseAttention(nn.Module):
             inf:
                 Large constant for masking
         """
-        super(TemplatePointwiseAttention, self).__init__()
+        super().__init__()
 
         self.c_t = c_t
         self.c_z = c_z
