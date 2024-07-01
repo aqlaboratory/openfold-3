@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Tuple
 
 import torch
 from torch import nn
@@ -31,7 +31,7 @@ class AlphaFold3(nn.Module):
         self.layer_norm_z = LayerNorm(self.globals.c_z)
         self.linear_z = Linear(self.globals.c_z, self.globals.c_z, bias=False)
 
-        self.template_embedder = TemplateEmbedderAllAtom(**self.config.template)
+        self.template_embedder = TemplateEmbedderAllAtom(config=self.config.model.template)
 
         self.msa_module_embedder = MSAModuleEmbedder(**self.config.model.msa.msa_module_embedder)
         self.msa_module = MSAModuleStack(**self.config.model.msa.msa_module)
@@ -70,7 +70,7 @@ class AlphaFold3(nn.Module):
         self,
         batch: Dict,
         inplace_safe: bool = False
-    ) -> [torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
 
         Args:
@@ -157,6 +157,8 @@ class AlphaFold3(nn.Module):
                 _mask_trans=True
             )
 
+        del s_init, z_init
+
         return s_input, s, z
 
     def _rollout(
@@ -184,19 +186,19 @@ class AlphaFold3(nn.Module):
                                            si_trunk=si_trunk,
                                            zij_trunk=zij_trunk)
 
-        # Compute confidences
-        p_plddt, p_pae, p_pde, p_resolved = self.confidence_head(si_input, si_trunk, zij_trunk, x_pred)
+        # # Compute confidences
+        # p_plddt, p_pae, p_pde, p_resolved = self.confidence_head(si_input, si_trunk, zij_trunk, x_pred)
 
-        # Compute distogram
-        p_distogram = self.distogram_head(zij_trunk)
+        # # Compute distogram
+        # p_distogram = self.distogram_head(zij_trunk)
 
         return {
             'x_pred': x_pred,
-            'p_plddt': p_plddt,
-            'p_pae': p_pae,
-            'p_pde': p_pde,
-            'p_resolved': p_resolved,
-            'p_distogram': p_distogram
+            # 'p_plddt': p_plddt,
+            # 'p_pae': p_pae,
+            # 'p_pde': p_pde,
+            # 'p_resolved': p_resolved,
+            # 'p_distogram': p_distogram
         }
 
     def _train(
@@ -235,7 +237,7 @@ class AlphaFold3(nn.Module):
         t = self.globals.sigma_data * torch.exp(-1.2 + 1.5 * n)
 
         # Sample noise
-        noise = (t[:, None, None] ** 2) * torch.randn((batch_size, no_samples, n_atom, 3), device=device)
+        noise = (t[..., None, None] ** 2) * torch.randn((batch_size, no_samples, n_atom, 3), device=device)
 
         # Sample atom positions
         xl_noisy = xl_gt + noise
@@ -272,8 +274,6 @@ class AlphaFold3(nn.Module):
 
         # Compute representations
         si_input, si_trunk, zij_trunk = self.run_trunk(batch=batch, inplace_safe=inplace_safe)
-
-        # [b, ...]
 
         # Mini rollout
         output = self._rollout(batch=batch,

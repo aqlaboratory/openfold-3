@@ -121,7 +121,7 @@ n_key = mlc.FieldReference(128, field_type=int)
 eps = mlc.FieldReference(1e-8, field_type=float)
 aux_distogram_bins = mlc.FieldReference(64, field_type=int)
 blocks_per_ckpt = mlc.FieldReference(None, field_type=int)
-chunk_size = mlc.FieldReference(4, field_type=int)
+chunk_size = mlc.FieldReference(None, field_type=int)
 tune_chunk_size = mlc.FieldReference(True, field_type=bool)
 
 
@@ -164,6 +164,7 @@ config = mlc.ConfigDict(
             "c_s_input": c_s_input,
             "c_s": c_s,
             "c_z": c_z,
+            "sigma_data": sigma_data,
             "no_cycles": 4,
             "no_samples": no_samples,
             "no_rollout_steps": no_rollout_steps,

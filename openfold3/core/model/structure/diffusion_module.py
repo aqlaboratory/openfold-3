@@ -135,7 +135,7 @@ class DiffusionModule(nn.Module):
                                               si_trunk=si_trunk,
                                               zij_trunk=zij_trunk)
 
-        rl_noisy = xl_noisy / torch.sqrt(t ** 2 + self.sigma_data ** 2)
+        rl_noisy = xl_noisy / torch.sqrt(t[..., None, None] ** 2 + self.sigma_data ** 2)
 
         ai, ql, cl, plm = self.atom_attn_enc(batch=batch,
                                              rl=rl_noisy,
@@ -158,8 +158,8 @@ class DiffusionModule(nn.Module):
                                       cl=cl, 
                                       plm=plm)
 
-        xl_out = self.sigma_data ** 2 / (self.sigma_data ** 2 + t ** 2) * xl_noisy + \
-            self.sigma_data * t / torch.sqrt(self.sigma_data ** 2 + t ** 2) * rl_update
+        xl_out = self.sigma_data ** 2 / (self.sigma_data ** 2 + t[..., None, None] ** 2) * xl_noisy + \
+            self.sigma_data * t[..., None, None] / torch.sqrt(self.sigma_data ** 2 + t[..., None, None] ** 2) * rl_update
 
         return xl_out
 
