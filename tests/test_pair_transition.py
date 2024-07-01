@@ -12,18 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
-import numpy as np
 import unittest
-from openfold.model.pair_transition import PairTransition
-from openfold.utils.tensor_utils import tree_map
+
+import numpy as np
+import torch
+
 import tests.compare_utils as compare_utils
+from openfold3.core.model.layers import ReLUTransition
+from openfold3.core.utils.tensor_utils import tree_map
 from tests.config import consts
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
-    import jax
     import haiku as hk
+    import jax
 
 
 class TestPairTransition(unittest.TestCase):
@@ -31,7 +33,7 @@ class TestPairTransition(unittest.TestCase):
         c_z = consts.c_z
         n = 4
 
-        pt = PairTransition(c_z, n)
+        pt = ReLUTransition(c_in=c_z, n=n)
 
         batch_size = consts.batch_size
         n_res = consts.n_res
@@ -76,8 +78,8 @@ class TestPairTransition(unittest.TestCase):
 
         model = compare_utils.get_global_pretrained_openfold()
         out_repro = (
-            model.evoformer.blocks[0].pair_stack
-            .pair_transition(
+            model.evoformer.blocks[0]
+            .pair_stack.pair_transition(
                 torch.as_tensor(pair_act, dtype=torch.float32).cuda(),
                 chunk_size=4,
                 mask=torch.as_tensor(pair_mask, dtype=torch.float32).cuda(),
@@ -85,7 +87,7 @@ class TestPairTransition(unittest.TestCase):
             .cpu()
         )
 
-        self.assertTrue(torch.max(torch.abs(out_gt - out_repro) < consts.eps))
+        self.assertTrue(torch.max(torch.abs(out_gt - out_repro)) < consts.eps)
 
 
 if __name__ == "__main__":

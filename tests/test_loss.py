@@ -13,52 +13,52 @@
 # limitations under the License.
 
 import os
-import torch
-import numpy as np
-from pathlib import Path
 import unittest
-import ml_collections as mlc
+from pathlib import Path
 
-from openfold.data import data_transforms
-from openfold.np import residue_constants
-from openfold.utils.rigid_utils import (
-    Rotation,
-    Rigid,
-)
-from openfold.utils.loss import (
-    torsion_angle_loss,
-    compute_fape,
+import ml_collections as mlc
+import numpy as np
+import torch
+
+import tests.compare_utils as compare_utils
+from openfold3.core.data import data_transforms
+from openfold3.core.loss.loss import (
+    backbone_loss,
     between_residue_bond_loss,
     between_residue_clash_loss,
-    find_structural_violations,
+    chain_center_of_mass_loss,
+    compute_fape,
+    compute_plddt,
     compute_renamed_ground_truth,
-    masked_msa_loss,
+    compute_tm,
     distogram_loss,
     experimentally_resolved_loss,
-    violation_loss,
-    fape_loss,
+    find_structural_violations,
     lddt_loss,
-    supervised_chi_loss,
-    backbone_loss,
+    masked_msa_loss,
     sidechain_loss,
+    supervised_chi_loss,
     tm_loss,
-    compute_plddt,
-    compute_tm,
-    chain_center_of_mass_loss
+    torsion_angle_loss,
+    violation_loss,
 )
-from openfold.utils.tensor_utils import (
-    tree_map,
-    tensor_tree_map,
+from openfold3.core.np import residue_constants
+from openfold3.core.utils.rigid_utils import (
+    Rigid,
+    Rotation,
+)
+from openfold3.core.utils.tensor_utils import (
     dict_multimap,
+    tensor_tree_map,
+    tree_map,
 )
-import tests.compare_utils as compare_utils
 from tests.config import consts
-from tests.data_utils import random_affines_vector, random_affines_4x4, random_asym_ids
+from tests.data_utils import random_affines_4x4, random_affines_vector, random_asym_ids
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
-    import jax
     import haiku as hk
+    import jax
 
 
 def affine_vector_to_4x4(affine):
@@ -99,7 +99,7 @@ class TestLoss(unittest.TestCase):
         a_gt = torch.rand((batch_size, n_res, 7, 2))
         a_alt_gt = torch.rand((batch_size, n_res, 7, 2))
 
-        loss = torsion_angle_loss(a, a_gt, a_alt_gt)
+        torsion_angle_loss(a, a_gt, a_alt_gt)
 
     def test_run_fape(self):
         batch_size = consts.batch_size
@@ -118,7 +118,7 @@ class TestLoss(unittest.TestCase):
         positions_mask = torch.randint(0, 2, (batch_size, n_atoms)).float()
         length_scale = 10
 
-        loss = compute_fape(
+        compute_fape(
             pred_frames=t,
             target_frames=t_gt,
             frames_mask=frames_mask,
@@ -190,10 +190,8 @@ class TestLoss(unittest.TestCase):
         )
         out_repro = tensor_tree_map(lambda x: x.cpu(), out_repro)
 
-        for k in out_gt.keys():
-            self.assertTrue(
-                torch.max(torch.abs(out_gt[k] - out_repro[k])) < consts.eps
-            )
+        for k in out_gt:
+            self.assertTrue(torch.max(torch.abs(out_gt[k] - out_repro[k])) < consts.eps)
 
     def test_run_between_residue_clash_loss(self):
         bs = consts.batch_size
@@ -204,7 +202,7 @@ class TestLoss(unittest.TestCase):
         atom14_atom_radius = torch.rand(bs, n, 14)
         residue_index = torch.arange(n).unsqueeze(0)
 
-        loss = between_residue_clash_loss(
+        between_residue_clash_loss(
             pred_pos,
             pred_atom_mask,
             atom14_atom_radius,
@@ -217,18 +215,11 @@ class TestLoss(unittest.TestCase):
             if consts.is_multimer:
                 pred_pos = self.am_rigid.Vec3Array.from_array(pred_pos)
                 return self.am_atom.between_residue_clash_loss(
-                    pred_pos,
-                    atom_exists,
-                    atom_radius,
-                    res_ind,
-                    asym_id
+                    pred_pos, atom_exists, atom_radius, res_ind, asym_id
                 )
 
             return self.am_atom.between_residue_clash_loss(
-                pred_pos,
-                atom_exists,
-                atom_radius,
-                res_ind
+                pred_pos, atom_exists, atom_radius, res_ind
             )
 
         f = hk.transform(run_brcl)
@@ -247,24 +238,13 @@ class TestLoss(unittest.TestCase):
             for name in residue_constants.atom_types
         ]
         atomtype_radius = np.array(atomtype_radius).astype(np.float32)
-        atom_radius = (
-                atom_exists
-                * atomtype_radius[residx_atom14_to_atom37]
-        )
+        atom_radius = atom_exists * atomtype_radius[residx_atom14_to_atom37]
 
         asym_id = None
         if consts.is_multimer:
             asym_id = random_asym_ids(n_res)
 
-        out_gt = f.apply(
-            {},
-            None,
-            pred_pos,
-            atom_exists,
-            atom_radius,
-            res_ind,
-            asym_id
-        )
+        out_gt = f.apply({}, None, pred_pos, atom_exists, atom_radius, res_ind, asym_id)
         out_gt = jax.tree_map(lambda x: x.block_until_ready(), out_gt)
         out_gt = jax.tree_map(lambda x: torch.tensor(np.copy(x)), out_gt)
 
@@ -277,10 +257,8 @@ class TestLoss(unittest.TestCase):
         )
         out_repro = tensor_tree_map(lambda x: x.cpu(), out_repro)
 
-        for k in out_gt.keys():
-            self.assertTrue(
-                torch.max(torch.abs(out_gt[k] - out_repro[k])) < consts.eps
-            )
+        for k in out_gt:
+            self.assertTrue(torch.max(torch.abs(out_gt[k] - out_repro[k])) < consts.eps)
 
     @compare_utils.skip_unless_alphafold_installed()
     def test_compute_plddt_compare(self):
@@ -293,9 +271,7 @@ class TestLoss(unittest.TestCase):
         logits_t = torch.tensor(logits)
         out_repro = compute_plddt(logits_t)
 
-        self.assertTrue(
-            torch.max(torch.abs(out_gt - out_repro)) < consts.eps
-        )
+        self.assertTrue(torch.max(torch.abs(out_gt - out_repro)) < consts.eps)
 
     @compare_utils.skip_unless_alphafold_installed()
     def test_compute_ptm_compare(self):
@@ -311,21 +287,23 @@ class TestLoss(unittest.TestCase):
         logits_t = torch.tensor(logits)
         ptm_repro = compute_tm(logits_t, no_bins=no_bins, max_bin=max_bin)
 
-        self.assertTrue(
-            torch.max(torch.abs(ptm_gt - ptm_repro)) < consts.eps
-        )
+        self.assertTrue(torch.max(torch.abs(ptm_gt - ptm_repro)) < consts.eps)
 
         if consts.is_multimer:
             asym_id = random_asym_ids(n_res)
-            iptm_gt = alphafold.common.confidence.predicted_tm_score(logits, boundaries,
-                                                                     asym_id=asym_id, interface=True)
-            iptm_gt = torch.tensor(iptm_gt)
-            iptm_repro = compute_tm(logits_t, no_bins=no_bins, max_bin=max_bin,
-                                    asym_id=torch.tensor(asym_id), interface=True)
-
-            self.assertTrue(
-                torch.max(torch.abs(iptm_gt - iptm_repro)) < consts.eps
+            iptm_gt = alphafold.common.confidence.predicted_tm_score(
+                logits, boundaries, asym_id=asym_id, interface=True
             )
+            iptm_gt = torch.tensor(iptm_gt)
+            iptm_repro = compute_tm(
+                logits_t,
+                no_bins=no_bins,
+                max_bin=max_bin,
+                asym_id=torch.tensor(asym_id),
+                interface=True,
+            )
+
+            self.assertTrue(torch.max(torch.abs(iptm_gt - iptm_repro)) < consts.eps)
 
     def test_find_structural_violations(self):
         n = consts.n_res
@@ -356,12 +334,12 @@ class TestLoss(unittest.TestCase):
             if consts.is_multimer:
                 atom14_pred_pos = self.am_rigid.Vec3Array.from_array(pos)
                 return self.am_fold.find_structural_violations(
-                    batch['aatype'],
-                    batch['residue_index'],
-                    batch['atom14_atom_exists'],
+                    batch["aatype"],
+                    batch["residue_index"],
+                    batch["atom14_atom_exists"],
                     atom14_pred_pos,
                     config,
-                    batch['asym_id']
+                    batch["asym_id"],
                 )
 
             loss = self.am_fold.find_structural_violations(
@@ -380,9 +358,9 @@ class TestLoss(unittest.TestCase):
             "atom14_atom_exists": np.random.randint(0, 2, (n_res, 14)),
             "residue_index": np.arange(n_res),
             "aatype": np.random.randint(0, 20, (n_res,)),
-            "residx_atom14_to_atom37": np.random.randint(
-                0, 37, (n_res, 14)
-            ).astype(np.int64),
+            "residx_atom14_to_atom37": np.random.randint(0, 37, (n_res, 14)).astype(
+                np.int64
+            ),
         }
 
         if consts.is_multimer:
@@ -431,15 +409,9 @@ class TestLoss(unittest.TestCase):
             "seq_mask": np.random.randint(0, 2, (n_res,)).astype(np.float32),
             "aatype": np.random.randint(0, 20, (n_res,)),
             "atom14_gt_positions": np.random.rand(n_res, 14, 3),
-            "atom14_gt_exists": np.random.randint(0, 2, (n_res, 14)).astype(
-                np.float32
-            ),
-            "all_atom_mask": np.random.randint(0, 2, (n_res, 37)).astype(
-                np.float32
-            ),
-            "all_atom_positions": np.random.rand(n_res, 37, 3).astype(
-                np.float32
-            ),
+            "atom14_gt_exists": np.random.randint(0, 2, (n_res, 14)).astype(np.float32),
+            "all_atom_mask": np.random.randint(0, 2, (n_res, 37)).astype(np.float32),
+            "all_atom_positions": np.random.rand(n_res, 37, 3).astype(np.float32),
         }
 
         def _build_extra_feats_np():
@@ -462,9 +434,7 @@ class TestLoss(unittest.TestCase):
         out_repro = tensor_tree_map(lambda t: t.cpu(), out_repro)
 
         for k in out_repro:
-            self.assertTrue(
-                torch.max(torch.abs(out_gt[k] - out_repro[k])) < consts.eps
-            )
+            self.assertTrue(torch.max(torch.abs(out_gt[k] - out_repro[k])) < consts.eps)
 
     @compare_utils.skip_unless_alphafold_installed()
     def test_msa_loss_compare(self):
@@ -481,14 +451,14 @@ class TestLoss(unittest.TestCase):
         n_seq = consts.n_seq
 
         value = {
-            "logits": np.random.rand(n_res, n_seq, consts.msa_logits).astype(np.float32),
+            "logits": np.random.rand(n_res, n_seq, consts.msa_logits).astype(
+                np.float32
+            ),
         }
 
         batch = {
             "true_msa": np.random.randint(0, 21, (n_res, n_seq)),
-            "bert_mask": np.random.randint(0, 2, (n_res, n_seq)).astype(
-                np.float32
-            )
+            "bert_mask": np.random.randint(0, 2, (n_res, n_seq)).astype(np.float32),
         }
 
         out_gt = f.apply({}, None, value, batch)["loss"]
@@ -502,7 +472,7 @@ class TestLoss(unittest.TestCase):
                 value["logits"],
                 batch["true_msa"],
                 batch["bert_mask"],
-                consts.msa_logits
+                consts.msa_logits,
             )
         out_repro = tensor_tree_map(lambda t: t.cpu(), out_repro)
 
@@ -611,28 +581,29 @@ class TestLoss(unittest.TestCase):
         def run_supervised_chi_loss(value, batch):
             if consts.is_multimer:
                 pred_angles = np.reshape(
-                    value['sidechains']['angles_sin_cos'], [-1, consts.n_res, 7, 2])
+                    value["sidechains"]["angles_sin_cos"], [-1, consts.n_res, 7, 2]
+                )
 
                 unnormed_angles = np.reshape(
-                    value['sidechains']['unnormalized_angles_sin_cos'], [-1, consts.n_res, 7, 2])
+                    value["sidechains"]["unnormalized_angles_sin_cos"],
+                    [-1, consts.n_res, 7, 2],
+                )
 
                 chi_loss, _, _ = self.am_fold.supervised_chi_loss(
-                    batch['seq_mask'],
-                    batch['chi_mask'],
-                    batch['aatype'],
-                    batch['chi_angles'],
+                    batch["seq_mask"],
+                    batch["chi_mask"],
+                    batch["aatype"],
+                    batch["chi_angles"],
                     pred_angles,
                     unnormed_angles,
-                    c_chi_loss
+                    c_chi_loss,
                 )
                 return chi_loss
 
             ret = {
                 "loss": jax.numpy.array(0.0),
             }
-            self.am_fold.supervised_chi_loss(
-                ret, batch, value, c_chi_loss
-            )
+            self.am_fold.supervised_chi_loss(ret, batch, value, c_chi_loss)
             return ret["loss"]
 
         f = hk.transform(run_supervised_chi_loss)
@@ -641,12 +612,10 @@ class TestLoss(unittest.TestCase):
 
         value = {
             "sidechains": {
-                "angles_sin_cos": np.random.rand(8, n_res, 7, 2).astype(
+                "angles_sin_cos": np.random.rand(8, n_res, 7, 2).astype(np.float32),
+                "unnormalized_angles_sin_cos": np.random.rand(8, n_res, 7, 2).astype(
                     np.float32
                 ),
-                "unnormalized_angles_sin_cos": np.random.rand(
-                    8, n_res, 7, 2
-                ).astype(np.float32),
             }
         }
 
@@ -706,13 +675,15 @@ class TestLoss(unittest.TestCase):
 
         loss_sum_clash = violation_loss(
             find_structural_violations(batch, atom14_pred_pos, **c_viol),
-            average_clashes=False, **batch
+            average_clashes=False,
+            **batch,
         )
         loss_sum_clash = loss_sum_clash.cpu()
 
         loss_avg_clash = violation_loss(
             find_structural_violations(batch, atom14_pred_pos, **c_viol),
-            average_clashes=True, **batch
+            average_clashes=True,
+            **batch,
         )
         loss_avg_clash = loss_avg_clash.cpu()
 
@@ -729,21 +700,19 @@ class TestLoss(unittest.TestCase):
             if consts.is_multimer:
                 atom14_pred_pos = self.am_rigid.Vec3Array.from_array(atom14_pred_pos)
                 viol = self.am_fold.find_structural_violations(
-                    batch['aatype'],
-                    batch['residue_index'],
-                    batch['atom14_atom_exists'],
+                    batch["aatype"],
+                    batch["residue_index"],
+                    batch["atom14_atom_exists"],
                     atom14_pred_pos,
                     c_viol,
-                    batch['asym_id']
+                    batch["asym_id"],
                 )
-                return self.am_fold.structural_violation_loss(mask=batch['atom14_atom_exists'],
-                                                              violations=viol,
-                                                              config=c_viol)
+                return self.am_fold.structural_violation_loss(
+                    mask=batch["atom14_atom_exists"], violations=viol, config=c_viol
+                )
 
             value = {}
-            value[
-                "violations"
-            ] = self.am_fold.find_structural_violations(
+            value["violations"] = self.am_fold.find_structural_violations(
                 batch,
                 atom14_pred_pos,
                 c_viol,
@@ -764,7 +733,7 @@ class TestLoss(unittest.TestCase):
         batch = {
             "seq_mask": np.random.randint(0, 2, (n_res,)).astype(np.float32),
             "residue_index": np.arange(n_res),
-            "aatype": np.random.randint(0, 21, (n_res,))
+            "aatype": np.random.randint(0, 21, (n_res,)),
         }
 
         if consts.is_multimer:
@@ -808,31 +777,25 @@ class TestLoss(unittest.TestCase):
 
         value = {
             "predicted_lddt": {
-                "logits": np.random.rand(n_res, c_plddt.num_bins).astype(
-                    np.float32
-                ),
+                "logits": np.random.rand(n_res, c_plddt.num_bins).astype(np.float32),
             },
             "structure_module": {
-                "final_atom_positions": np.random.rand(n_res, 37, 3).astype(
-                    np.float32
-                ),
+                "final_atom_positions": np.random.rand(n_res, 37, 3).astype(np.float32),
             },
         }
 
         batch = {
-            "all_atom_positions": np.random.rand(n_res, 37, 3).astype(
-                np.float32
-            ),
-            "all_atom_mask": np.random.randint(0, 2, (n_res, 37)).astype(
-                np.float32
-            ),
+            "all_atom_positions": np.random.rand(n_res, 37, 3).astype(np.float32),
+            "all_atom_mask": np.random.randint(0, 2, (n_res, 37)).astype(np.float32),
             "resolution": np.array(1.0).astype(np.float32),
         }
 
         out_gt = f.apply({}, None, value, batch)
         out_gt = torch.tensor(np.array(out_gt["loss"]))
 
-        to_tensor = lambda t: torch.tensor(t).cuda()
+        def to_tensor(t):
+            return torch.tensor(t).cuda()
+
         value = tree_map(to_tensor, value, np.ndarray)
         batch = tree_map(to_tensor, batch, np.ndarray)
 
@@ -852,23 +815,29 @@ class TestLoss(unittest.TestCase):
 
         def run_bb_loss(batch, value):
             if consts.is_multimer:
-                intra_chain_mask = (batch["asym_id"][..., None] == batch["asym_id"][..., None, :]).astype(np.float32)
-                gt_rigid = affine_vector_to_rigid(self.am_rigid, batch["backbone_affine_tensor"])
-                target_rigid = affine_vector_to_rigid(self.am_rigid, value['traj'])
+                intra_chain_mask = (
+                    batch["asym_id"][..., None] == batch["asym_id"][..., None, :]
+                ).astype(np.float32)
+                gt_rigid = affine_vector_to_rigid(
+                    self.am_rigid, batch["backbone_affine_tensor"]
+                )
+                target_rigid = affine_vector_to_rigid(self.am_rigid, value["traj"])
                 intra_chain_bb_loss, intra_chain_fape = self.am_fold.backbone_loss(
                     gt_rigid=gt_rigid,
                     gt_frames_mask=batch["backbone_affine_mask"],
                     gt_positions_mask=batch["backbone_affine_mask"],
                     target_rigid=target_rigid,
                     config=c_sm.intra_chain_fape,
-                    pair_mask=intra_chain_mask)
+                    pair_mask=intra_chain_mask,
+                )
                 interface_bb_loss, interface_fape = self.am_fold.backbone_loss(
                     gt_rigid=gt_rigid,
                     gt_frames_mask=batch["backbone_affine_mask"],
                     gt_positions_mask=batch["backbone_affine_mask"],
                     target_rigid=target_rigid,
                     config=c_sm.interface_fape,
-                    pair_mask=1. - intra_chain_mask)
+                    pair_mask=1.0 - intra_chain_mask,
+                )
 
                 return intra_chain_bb_loss + interface_bb_loss
 
@@ -887,7 +856,7 @@ class TestLoss(unittest.TestCase):
             "backbone_affine_mask": np.random.randint(0, 2, (n_res,)).astype(
                 np.float32
             ),
-            "use_clamped_fape": np.array(0.0)
+            "use_clamped_fape": np.array(0.0),
         }
 
         value = {
@@ -905,7 +874,9 @@ class TestLoss(unittest.TestCase):
         out_gt = f.apply({}, None, batch, value)
         out_gt = torch.tensor(np.array(out_gt.block_until_ready()))
 
-        to_tensor = lambda t: torch.tensor(t).cuda()
+        def to_tensor(t):
+            return torch.tensor(t).cuda()
+
         batch = tree_map(to_tensor, batch, np.ndarray)
         value = tree_map(to_tensor, value, np.ndarray)
 
@@ -913,14 +884,21 @@ class TestLoss(unittest.TestCase):
             batch["backbone_affine_tensor"]
         )
         batch["backbone_rigid_mask"] = batch["backbone_affine_mask"]
-        
+
         if consts.is_multimer:
-            intra_chain_mask = (batch["asym_id"][..., None]
-                                == batch["asym_id"][..., None, :]).to(dtype=value["traj"].dtype)
-            intra_chain_out = backbone_loss(traj=value["traj"], pair_mask=intra_chain_mask,
-                                            **{**batch, **c_sm.intra_chain_fape})
-            interface_out = backbone_loss(traj=value["traj"], pair_mask=1. - intra_chain_mask,
-                                          **{**batch, **c_sm.interface_fape})
+            intra_chain_mask = (
+                batch["asym_id"][..., None] == batch["asym_id"][..., None, :]
+            ).to(dtype=value["traj"].dtype)
+            intra_chain_out = backbone_loss(
+                traj=value["traj"],
+                pair_mask=intra_chain_mask,
+                **{**batch, **c_sm.intra_chain_fape},
+            )
+            interface_out = backbone_loss(
+                traj=value["traj"],
+                pair_mask=1.0 - intra_chain_mask,
+                **{**batch, **c_sm.interface_fape},
+            )
             out_repro = intra_chain_out + interface_out
             out_repro = out_repro.cpu()
         else:
@@ -936,25 +914,41 @@ class TestLoss(unittest.TestCase):
 
         def run_sidechain_loss(batch, value, atom14_pred_positions):
             if consts.is_multimer:
-                atom14_pred_positions = self.am_rigid.Vec3Array.from_array(atom14_pred_positions)
-                all_atom_positions = self.am_rigid.Vec3Array.from_array(batch["all_atom_positions"])
-                gt_positions, gt_mask, alt_naming_is_better = self.am_fold.compute_atom14_gt(
-                    aatype=batch["aatype"], all_atom_positions=all_atom_positions,
-                    all_atom_mask=batch["all_atom_mask"], pred_pos=atom14_pred_positions)
-                pred_frames = self.am_rigid.Rigid3Array.from_array4x4(value["sidechains"]["frames"])
-                pred_positions = self.am_rigid.Vec3Array.from_array(value["sidechains"]["atom_pos"])
+                atom14_pred_positions = self.am_rigid.Vec3Array.from_array(
+                    atom14_pred_positions
+                )
+                all_atom_positions = self.am_rigid.Vec3Array.from_array(
+                    batch["all_atom_positions"]
+                )
+                gt_positions, gt_mask, alt_naming_is_better = (
+                    self.am_fold.compute_atom14_gt(
+                        aatype=batch["aatype"],
+                        all_atom_positions=all_atom_positions,
+                        all_atom_mask=batch["all_atom_mask"],
+                        pred_pos=atom14_pred_positions,
+                    )
+                )
+                pred_frames = self.am_rigid.Rigid3Array.from_array4x4(
+                    value["sidechains"]["frames"]
+                )
+                pred_positions = self.am_rigid.Vec3Array.from_array(
+                    value["sidechains"]["atom_pos"]
+                )
                 gt_sc_frames, gt_sc_frames_mask = self.am_fold.compute_frames(
                     aatype=batch["aatype"],
                     all_atom_positions=all_atom_positions,
                     all_atom_mask=batch["all_atom_mask"],
-                    use_alt=alt_naming_is_better)
-                return self.am_fold.sidechain_loss(gt_sc_frames,
-                                                   gt_sc_frames_mask,
-                                                   gt_positions,
-                                                   gt_mask,
-                                                   pred_frames,
-                                                   pred_positions,
-                                                   c_sm)['loss']
+                    use_alt=alt_naming_is_better,
+                )
+                return self.am_fold.sidechain_loss(
+                    gt_sc_frames,
+                    gt_sc_frames_mask,
+                    gt_positions,
+                    gt_mask,
+                    pred_frames,
+                    pred_positions,
+                    c_sm,
+                )["loss"]
             batch = {
                 **batch,
                 **self.am_atom.atom37_to_frames(
@@ -965,9 +959,7 @@ class TestLoss(unittest.TestCase):
             }
             v = {}
             v["sidechains"] = {}
-            v["sidechains"][
-                "frames"
-            ] = self.am_rigid.rigids_from_tensor4x4(
+            v["sidechains"]["frames"] = self.am_rigid.rigids_from_tensor4x4(
                 value["sidechains"]["frames"]
             )
             v["sidechains"]["atom_pos"] = self.am_rigid.vecs_from_tensor(
@@ -991,18 +983,10 @@ class TestLoss(unittest.TestCase):
         batch = {
             "seq_mask": np.random.randint(0, 2, (n_res,)).astype(np.float32),
             "aatype": np.random.randint(0, 20, (n_res,)),
-            "atom14_gt_positions": np.random.rand(n_res, 14, 3).astype(
-                np.float32
-            ),
-            "atom14_gt_exists": np.random.randint(0, 2, (n_res, 14)).astype(
-                np.float32
-            ),
-            "all_atom_positions": np.random.rand(n_res, 37, 3).astype(
-                np.float32
-            ),
-            "all_atom_mask": np.random.randint(0, 2, (n_res, 37)).astype(
-                np.float32
-            ),
+            "atom14_gt_positions": np.random.rand(n_res, 14, 3).astype(np.float32),
+            "atom14_gt_exists": np.random.randint(0, 2, (n_res, 14)).astype(np.float32),
+            "all_atom_positions": np.random.rand(n_res, 37, 3).astype(np.float32),
+            "all_atom_mask": np.random.randint(0, 2, (n_res, 37)).astype(np.float32),
         }
 
         def _build_extra_feats_np():
@@ -1027,7 +1011,9 @@ class TestLoss(unittest.TestCase):
         out_gt = f.apply({}, None, batch, value, atom14_pred_pos)
         out_gt = torch.tensor(np.array(out_gt.block_until_ready()))
 
-        to_tensor = lambda t: torch.tensor(t).cuda()
+        def to_tensor(t):
+            return torch.tensor(t).cuda()
+
         batch = tree_map(to_tensor, batch, np.ndarray)
         value = tree_map(to_tensor, value, np.ndarray)
         atom14_pred_pos = to_tensor(atom14_pred_pos)
@@ -1045,7 +1031,10 @@ class TestLoss(unittest.TestCase):
         self.assertTrue(torch.max(torch.abs(out_gt - out_repro)) < consts.eps)
 
     @compare_utils.skip_unless_alphafold_installed()
-    @unittest.skipIf(not consts.is_multimer and "ptm" not in consts.model, "Not enabled for non-ptm models.")
+    @unittest.skipIf(
+        not consts.is_multimer and "ptm" not in consts.model,
+        "Not enabled for non-ptm models.",
+    )
     def test_tm_loss_compare(self):
         config = compare_utils.get_alphafold_config()
         c_tm = config.model.heads.predicted_aligned_error
@@ -1090,7 +1079,9 @@ class TestLoss(unittest.TestCase):
         out_gt = f.apply(params, None, representations, batch, value)
         out_gt = torch.tensor(np.array(out_gt.block_until_ready()))
 
-        to_tensor = lambda n: torch.tensor(n).cuda()
+        def to_tensor(n):
+            return torch.tensor(n).cuda()
+
         representations = tree_map(to_tensor, representations, np.ndarray)
         batch = tree_map(to_tensor, batch, np.ndarray)
         value = tree_map(to_tensor, value, np.ndarray)
@@ -1118,9 +1109,14 @@ class TestLoss(unittest.TestCase):
         n_res = consts.n_res
 
         batch = {
-            "all_atom_positions": np.random.rand(batch_size, n_res, 37, 3).astype(np.float32) * 10.0,
-            "all_atom_mask": np.random.randint(0, 2, (batch_size, n_res, 37)).astype(np.float32),
-            "asym_id": np.stack([random_asym_ids(n_res) for _ in range(batch_size)])
+            "all_atom_positions": np.random.rand(batch_size, n_res, 37, 3).astype(
+                np.float32
+            )
+            * 10.0,
+            "all_atom_mask": np.random.randint(0, 2, (batch_size, n_res, 37)).astype(
+                np.float32
+            ),
+            "asym_id": np.stack([random_asym_ids(n_res) for _ in range(batch_size)]),
         }
 
         config = {
@@ -1130,7 +1126,9 @@ class TestLoss(unittest.TestCase):
 
         final_atom_positions = torch.rand(batch_size, n_res, 37, 3).cuda()
 
-        to_tensor = lambda t: torch.tensor(t).cuda()
+        def to_tensor(t):
+            return torch.tensor(t).cuda()
+
         batch = tree_map(to_tensor, batch, np.ndarray)
 
         out_repro = chain_center_of_mass_loss(
