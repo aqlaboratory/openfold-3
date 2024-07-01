@@ -478,9 +478,7 @@ class AlignmentRunner:
 
             if self.template_searcher is not None:
                 if self.template_searcher.input_format == "sto":
-                    self.template_searcher.query(
-                        template_msa, output_dir=output_dir
-                    )
+                    self.template_searcher.query(template_msa, output_dir=output_dir)
                 elif self.template_searcher.input_format == "a3m":
                     uniref90_msa_as_a3m = parsers.convert_stockholm_to_a3m(template_msa)
                     self.template_searcher.query(
@@ -695,7 +693,8 @@ class DataPipeline:
     ) -> Mapping[str, Any]:
         msa_data = {}
         if alignment_index is not None:
-            with open(os.path.join(alignment_dir, alignment_index["db"]), "rb") as fp: 
+            with open(os.path.join(alignment_dir, alignment_index["db"]), "rb") as fp:
+
                 def read_msa(start, size):
                     fp.seek(start)
                     msa = fp.read(size).decode("utf-8")
@@ -741,7 +740,8 @@ class DataPipeline:
     ) -> Mapping[str, Any]:
         all_hits = {}
         if alignment_index is not None:
-            with open(os.path.join(alignment_dir, alignment_index["db"]), "rb") as fp: 
+            with open(os.path.join(alignment_dir, alignment_index["db"]), "rb") as fp:
+
                 def read_template(start, size):
                     fp.seek(start)
                     return fp.read(size).decode("utf-8")
@@ -1186,6 +1186,7 @@ class DataPipelineMultimer:
         """Get MSA features for unclustered uniprot, for pairing."""
         if alignment_index is not None:
             with open(os.path.join(alignment_dir, alignment_index["db"]), "rb") as fp:
+
                 def read_msa(start, size):
                     fp.seek(start)
                     msa = fp.read(size).decode("utf-8")

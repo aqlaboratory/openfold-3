@@ -142,9 +142,9 @@ def mmcif_loop_to_list(
             cols.append(key)
             data.append(value)
 
-    assert all([len(xs) == len(data[0]) for xs in data]), (
-        f"mmCIF error: Not all loops are the same length: {cols}"
-    )
+    assert all(
+        [len(xs) == len(data[0]) for xs in data]
+    ), f"mmCIF error: Not all loops are the same length: {cols}"
 
     return [dict(zip(cols, xs)) for xs in zip(*data)]
 

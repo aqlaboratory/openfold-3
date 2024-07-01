@@ -617,8 +617,7 @@ def _extract_template_features(
         )
     except (CaDistanceError, KeyError) as ex:
         raise NoAtomDataInTemplateError(
-            f"Could not get atom data ({pdb_id}_{chain_id}): "
-            f"{str(ex)}"
+            f"Could not get atom data ({pdb_id}_{chain_id}): " f"{str(ex)}"
         ) from ex
 
     all_atom_positions = np.split(all_atom_positions, all_atom_positions.shape[0])
@@ -836,8 +835,10 @@ def _process_single_hit(
             parsing_result.mmcif_object.header["release_date"], "%Y-%m-%d"
         )
         if hit_release_date > max_template_date:
-            error = (f"Template {hit_pdb_code} date ({hit_release_date}) "
-                     f"> max template date ({max_template_date}).")
+            error = (
+                f"Template {hit_pdb_code} date ({hit_release_date}) "
+                f"> max template date ({max_template_date})."
+            )
             if strict_error_check:
                 return SingleHitResult(features=None, error=error, warning=None)
             else:

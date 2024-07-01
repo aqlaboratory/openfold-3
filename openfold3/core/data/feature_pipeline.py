@@ -40,9 +40,11 @@ def np_to_tensor_dict(
         A dictionary of features mapping feature names to features. Only the given
         features are returned, all other ones are filtered out.
     """
+
     # torch generates warnings if feature is already a torch Tensor
     def to_tensor(t):
         return torch.tensor(t) if type(t) != torch.Tensor else t.clone().detach()
+
     tensor_dict = {k: to_tensor(v) for k, v in np_example.items() if k in features}
 
     return tensor_dict

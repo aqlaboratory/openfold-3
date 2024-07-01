@@ -53,9 +53,7 @@ class OpenFoldWrapper(pl.LightningModule):
 
         self.loss = AlphaFoldLoss(config.loss)
 
-        self.ema = ExponentialMovingAverage(
-            model=self.model, decay=config.ema.decay
-        )
+        self.ema = ExponentialMovingAverage(model=self.model, decay=config.ema.decay)
 
         self.cached_weights = None
         self.last_lr_step = -1
@@ -197,9 +195,7 @@ class OpenFoldWrapper(pl.LightningModule):
             pred_coords_masked_ca,
             gt_coords_masked_ca,
             mask=all_atom_mask_ca,  # still required here to compute n
-            mask=all_atom_mask_ca,  # still required here to compute n
         )
-
 
         metrics["drmsd_ca"] = drmsd_ca_score
 
@@ -264,11 +260,7 @@ class OpenFoldWrapper(pl.LightningModule):
         model_basename = os.path.splitext(os.path.basename(os.path.normpath(jax_path)))[
             0
         ]
-        model_basename = os.path.splitext(
-            os.path.basename(
-                os.path.normpath(jax_path)
-            )
-        )[0]
+
         model_version = "_".join(model_basename.split("_")[1:])
         import_jax_weights_(self.model, jax_path, version=model_version)
 

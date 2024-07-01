@@ -135,8 +135,8 @@ class Hmmbuild:
 
             if retcode:
                 raise RuntimeError(
-                    "hmmbuild failed\nstdout:\n%s\n\nstderr:\n%s\n"
-                    % (stdout.decode("utf-8"), stderr.decode("utf-8"))
+                    f"hmmbuild failed\nstdout:\n{stdout.decode('utf-8')}\n\n"
+                    f"stderr:\n{stderr.decode('utf-8')}\n"
                 )
 
             with open(output_hmm_path, encoding="utf-8") as f:

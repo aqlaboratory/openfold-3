@@ -608,10 +608,7 @@ def make_atom14_masks(protein):
         )
         atom_name_to_idx14 = {name: i for i, name in enumerate(atom_names)}
         restype_atom37_to_atom14.append(
-            [
-                (atom_name_to_idx14.get(name, 0))
-                for name in rc.atom_types
-            ]
+            [(atom_name_to_idx14.get(name, 0)) for name in rc.atom_types]
         )
 
         restype_atom14_mask.append([(1.0 if name else 0.0) for name in atom_names])

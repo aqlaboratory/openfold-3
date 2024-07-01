@@ -432,7 +432,7 @@ def _parse_hhr_hit(detailed_lines: Sequence[str]) -> TemplateHit:
     match = re.match(pattern, detailed_lines[2])
     if match is None:
         raise RuntimeError(
-            f"Could not parse section: {detailed_lines}."  
+            f"Could not parse section: {detailed_lines}."
             f" Expected this: \n{detailed_lines[2]} to contain summary."
         )
     (_, _, _, aligned_cols, _, _, sum_probs, _) = (float(x) for x in match.groups())

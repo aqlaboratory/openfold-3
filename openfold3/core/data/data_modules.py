@@ -671,7 +671,7 @@ class OpenFoldMultimerDataset(OpenFoldDataset):
     """
     Create a torch Dataset object for multimer training and
     add filtering steps described in AlphaFold Multimer's paper:
-    https://www.biorxiv.org/content/10.1101/2021.10.04.463034v2.full.pdf 
+    https://www.biorxiv.org/content/10.1101/2021.10.04.463034v2.full.pdf
     Supplementary section 7.1
     """
 
@@ -703,7 +703,7 @@ class OpenFoldMultimerDataset(OpenFoldDataset):
     ) -> bool:
         """
         Implement multimer training filtering criteria described in
-        https://www.biorxiv.org/content/10.1101/2021.10.04.463034v2.full.pdf 
+        https://www.biorxiv.org/content/10.1101/2021.10.04.463034v2.full.pdf
         Supplementary section 7.1
         """
         resolution = cache_entry.get("resolution", None)

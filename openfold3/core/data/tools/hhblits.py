@@ -154,8 +154,8 @@ class HHBlits:
                         logging.error(error_line.strip())
                 logging.error("HHblits stderr end")
                 raise RuntimeError(
-                    "HHblits failed\nstdout:\n%s\n\nstderr:\n%s\n"
-                    % (stdout.decode("utf-8"), stderr[:500_000].decode("utf-8"))
+                    f"HHblits failed\nstdout:\n{stdout.decode('utf-8')}\n\n"
+                    f"stderr:\n{stderr[:500_000].decode('utf-8')}\n"
                 )
 
             with open(a3m_path) as f:

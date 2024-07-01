@@ -106,8 +106,8 @@ class Kalign:
 
             if retcode:
                 raise RuntimeError(
-                    "Kalign failed\nstdout:\n%s\n\nstderr:\n%s\n"
-                    % (stdout.decode("utf-8"), stderr.decode("utf-8"))
+                    f"Kalign failed\nstdout:\n{stdout.decode('utf-8')}\n\n"
+                    f"stderr:\n{stderr.decode('utf-8')}\n"
                 )
 
             with open(output_a3m_path) as f:

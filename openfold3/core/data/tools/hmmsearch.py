@@ -128,8 +128,8 @@ class Hmmsearch:
 
             if retcode:
                 raise RuntimeError(
-                    "hmmsearch failed:\nstdout:\n%s\n\nstderr:\n%s\n"
-                    % (stdout.decode("utf-8"), stderr.decode("utf-8"))
+                    f"hmmsearch failed:\nstdout:\n{stdout.decode('utf-8')}\n\n"
+                    f"stderr:\n{stderr.decode('utf-8')}\n"
                 )
 
             with open(out_path) as f:

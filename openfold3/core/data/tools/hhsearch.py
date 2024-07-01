@@ -104,8 +104,8 @@ class HHSearch:
             if retcode:
                 # Stderr is truncated to prevent proto size errors in Beam.
                 raise RuntimeError(
-                    "HHSearch failed:\nstdout:\n%s\n\nstderr:\n%s\n"
-                    % (stdout.decode("utf-8"), stderr[:100_000].decode("utf-8"))
+                    f"HHSearch failed:\nstdout:\n{stdout.decode('utf-8')}\n\n"
+                    f"stderr:\n{stderr[:100_000].decode('utf-8')}\n"
                 )
 
             with open(hhr_path) as f:

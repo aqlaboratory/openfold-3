@@ -104,26 +104,27 @@ args = parser.parse_args()
 
 sys.path.insert(0, args.of_dir)
 
+
 # helper functions
 def pdb_to_string(pdb_file):
     """Read in a PDB file from a path"""
     lines = []
     with open(pdb_file) as fp:
-       for line in fp: 
-        if line[:6] == "HETATM" and line[17:20] == "MSE":
-            line = "ATOM  " + line[6:17] + "MET" + line[20:]
-        if line[:4] == "ATOM":
-            lines.append(line)
+        for line in fp:
+            if line[:6] == "HETATM" and line[17:20] == "MSE":
+                line = "ATOM  " + line[6:17] + "MET" + line[20:]
+            if line[:4] == "ATOM":
+                lines.append(line)
     return "".join(lines)
 
 
-
 def jnp_rmsd(true, pred):
-    """ Compute aligned RMSD between two corresponding sets of points
+    """Compute aligned RMSD between two corresponding sets of points
     Args:
         true: set of reference points. Numpy array of dimension N x 3
         pred: set of predicted points, Numpy array of dimension N x 3
     """
+
     def kabsch(P, Q):
         V, S, W = jnp.linalg.svd(P.T @ Q, full_matrices=False)
         flip = jax.nn.sigmoid(-10 * jnp.linalg.det(V) * jnp.linalg.det(W))
@@ -239,13 +240,11 @@ def make_processed_feature_dict(cfg, sequence, name="test", templates=None, seed
     return processed_feature_dict
 
 
-
-
 def parse_results(prediction_result, processed_feature_dict):
     """Package OpenFold's output into an easy-to-use dictionary
     Args:
         prediction_result: output from running OpenFold on an input dictionary
-        processed_feature_dict: The dictionary passed to OpenFold as input. Returned by 
+        processed_feature_dict: The dictionary passed to OpenFold as input. Returned by
             `make_processed_feature_dict`.
     """
     b_factors = (
@@ -271,8 +270,10 @@ def extend(a, b, c, L, A, D):
         input:  3 coords (a,b,c), (L)ength, (A)ngle, and (D)ihedral
         output: 4th coord
     """
+
     def N(x):
         return x / np.sqrt(np.square(x).sum(-1, keepdims=True) + 1e-08)
+
     bc = N(b - c)
     n = N(np.cross(b - a, bc))
     m = [bc, np.cross(n, bc), n]
@@ -504,9 +505,7 @@ def write_results(decoy, af_result, prot_native=None, pdb_native=None, mismatch=
         args.output_dir + args.name + f"/results/results_{decoy.target}.csv"
     ):
         with open(
-            args.output_dir
-            + args.name
-            + f"/results/results_{decoy.target}.csv",
+            args.output_dir + args.name + f"/results/results_{decoy.target}.csv",
             "w",
         ) as f:
             f.write(",".join(csv_headers) + "\n")
@@ -543,7 +542,7 @@ for n in natives_list:
     if os.path.exists(results_fname):
         with open(results_fname) as fp:
             for x in fp.readlines():
-                finished_decoys.append(x.split(",")[0] + "_" + x.split(",")[1]) 
+                finished_decoys.append(x.split(",")[0] + "_" + x.split(",")[1])
 finished_decoys = set(finished_decoys)
 
 target_fname = args.output_dir + args.name + "/finished_targets.txt"
@@ -565,8 +564,7 @@ for field in decoy_fields_list[2:]:
     if os.path.exists(decoy_field_path):
         with open(decoy_field_path) as fp:
             lines = [
-                x.split()
-                for x in fp.read().split("\n")[:-1]
+                x.split() for x in fp.read().split("\n")[:-1]
             ]  # form "target decoy_id metric value"
 
         # make sure everything is in the same order
