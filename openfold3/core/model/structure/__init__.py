@@ -1,19 +1,19 @@
 from .structure_module import (
-    AngleResnetBlock,
     AngleResnet,
-    PointProjection,
+    AngleResnetBlock,
+    BackboneUpdate,
     InvariantPointAttention,
     InvariantPointAttentionMultimer,
-    BackboneUpdate,
-    StructureModule
+    PointProjection,
+    StructureModule,
 )
 
 __all__ = [
-    'AngleResnetBlock',
-    'AngleResnet',
-    'PointProjection',
-    'InvariantPointAttention',
-    'InvariantPointAttentionMultimer',
-    'BackboneUpdate',
-    'StructureModule'
+    "AngleResnetBlock",
+    "AngleResnet",
+    "PointProjection",
+    "InvariantPointAttention",
+    "InvariantPointAttentionMultimer",
+    "BackboneUpdate",
+    "StructureModule",
 ]

@@ -16,13 +16,20 @@
 """Linear layer with nonstandard initializations."""
 
 import importlib
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 import torch
 import torch.nn as nn
 
-from .initialization import (lecun_normal_init_, he_normal_init_, glorot_uniform_init_,
-                             final_init_, gating_init_, kaiming_normal_init_, normal_init_)
+from .initialization import (
+    final_init_,
+    gating_init_,
+    glorot_uniform_init_,
+    he_normal_init_,
+    kaiming_normal_init_,
+    lecun_normal_init_,
+    normal_init_,
+)
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
@@ -45,7 +52,7 @@ class Linear(nn.Linear):
         bias: bool = True,
         init: str = "default",
         init_fn: Optional[Callable[[torch.Tensor, torch.Tensor], None]] = None,
-        precision=None
+        precision=None,
     ):
         """
         Args:
@@ -75,7 +82,7 @@ class Linear(nn.Linear):
                 Precision to compute the linear layer in. If None, the
                 precision is the same as the input tensor.
         """
-        super(Linear, self).__init__(in_dim, out_dim, bias=bias)
+        super().__init__(in_dim, out_dim, bias=bias)
 
         if bias:
             with torch.no_grad():
@@ -113,15 +120,20 @@ class Linear(nn.Linear):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         d = input.dtype
         deepspeed_is_initialized = (
-                deepspeed_is_installed and
-                deepspeed.comm.comm.is_initialized()
+            deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
         )
         if self.precision is not None:
             with torch.cuda.amp.autocast(enabled=False):
-                bias = self.bias.to(dtype=self.precision) if self.bias is not None else None
-                return nn.functional.linear(input.to(dtype=self.precision),
-                                            self.weight.to(dtype=self.precision),
-                                            bias).to(dtype=d)
+                bias = (
+                    self.bias.to(dtype=self.precision)
+                    if self.bias is not None
+                    else None
+                )
+                return nn.functional.linear(
+                    input.to(dtype=self.precision),
+                    self.weight.to(dtype=self.precision),
+                    bias,
+                ).to(dtype=d)
 
         if d is torch.bfloat16 and not deepspeed_is_initialized:
             with torch.cuda.amp.autocast(enabled=False):

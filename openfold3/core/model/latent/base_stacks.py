@@ -13,7 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Base MSAStack that is used to define the following: EvoformerStack, ExtraMSAStack, and MSAModule."""
+"""
+Base MSAStack that is used to define the following: EvoformerStack, ExtraMSAStack, and
+MSAModule.
+"""
 
 from abc import ABC, abstractmethod
 from functools import partial
@@ -26,7 +29,8 @@ from openfold3.core.utils.checkpointing import checkpoint_blocks
 from openfold3.core.utils.chunk_utils import ChunkSizeTuner
 
 
-# TODO: Rename to CheckpointStack and generalize any kind of block (i.e. remove references to m/z)
+# TODO: Rename to CheckpointStack and generalize any kind of block (i.e. remove
+# references to m/z)
 class MSAStack(nn.Module, ABC):
     """Abstract class for MSA stacks."""
 
@@ -48,7 +52,7 @@ class MSAStack(nn.Module, ABC):
             tune_chunk_size:
                 Whether to dynamically tune the module's chunk size
         """
-        super(MSAStack, self).__init__()
+        super().__init__()
 
         self.blocks_per_ckpt = blocks_per_ckpt
         self.clear_cache_between_blocks = clear_cache_between_blocks
@@ -97,6 +101,7 @@ class MSAStack(nn.Module, ABC):
         ]
 
         if self.clear_cache_between_blocks:
+
             def block_with_cache_clear(block, *args, **kwargs):
                 torch.cuda.empty_cache()
                 return block(*args, **kwargs)
@@ -110,7 +115,10 @@ class MSAStack(nn.Module, ABC):
                 # Tensors cloned to avoid getting written to in-place
                 # A corollary is that chunk size tuning should be disabled for
                 # large N, when z gets really big
-                args=(m.clone(), z.clone(),),
+                args=(
+                    m.clone(),
+                    z.clone(),
+                ),
                 min_chunk_size=chunk_size,
             )
 
@@ -121,14 +129,17 @@ class MSAStack(nn.Module, ABC):
                     # A temporary measure to address torch's occasional
                     # inability to allocate large tensors
                     _attn_chunk_size=max(chunk_size, tuned_chunk_size // 4),
-                ) for b in blocks
+                )
+                for b in blocks
             ]
 
         return blocks
 
     def _wrap_up(self, m: torch.Tensor, z: torch.Tensor):
-        """Function called at the end of the forward pass to wrap up the outputs and return
-        the appropriate tensors depending on the stack type.
+        """Wrap-up function called at the end of the forward pass
+
+        Wraps up the outputs and returns the appropriate tensors depending on the stack
+        type.
 
         Returns:
             m:

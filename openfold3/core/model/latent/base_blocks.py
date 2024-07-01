@@ -13,13 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Base blocks for MSA-based and Pair transformer stacks. Includes MSABlock and PairBlock, where the
-MSABlock is used to define the blocks used in the EvoformerStack, ExtraMSAStack, and MSAModule.
+"""Base blocks for MSA-based and Pair transformer stacks.
+
+Includes MSABlock and PairBlock, where the MSABlock is used to define the blocks used in
+the EvoformerStack, ExtraMSAStack, and MSAModule.
 """
 
 import sys
 from abc import ABC, abstractmethod
-from typing import Sequence, Optional, Tuple
+from typing import Optional, Sequence, Tuple
 
 import torch
 import torch.nn as nn
@@ -29,19 +31,21 @@ from openfold3.core.model.layers.outer_product_mean import OuterProductMean
 from openfold3.core.model.layers.transition import ReLUTransition, SwiGLUTransition
 from openfold3.core.model.layers.triangular_attention import TriangleAttention
 from openfold3.core.model.layers.triangular_multiplicative_update import (
-    FusedTriangleMultiplicationOutgoing,
     FusedTriangleMultiplicationIncoming,
+    FusedTriangleMultiplicationOutgoing,
+    TriangleMultiplicationIncoming,
     TriangleMultiplicationOutgoing,
-    TriangleMultiplicationIncoming
 )
 from openfold3.core.model.primitives import DropoutRowwise
 from openfold3.core.utils.tensor_utils import add
 
 
 class MSABlock(nn.Module, ABC):
-    """Abstract class for MSA blocks. Used to define the blocks used in the EvoformerStack,
-    ExtraMSAStack, and MSAModule.
+    """Abstract class for MSA blocks.
+
+    Used to define the blocks used in the EvoformerStack, ExtraMSAStack, and MSAModule.
     """
+
     @abstractmethod
     def __init__(
         self,
@@ -53,7 +57,7 @@ class MSABlock(nn.Module, ABC):
         c_hidden_pair_att: int,
         no_heads_msa: int,
         no_heads_pair: int,
-        transition_type:str,
+        transition_type: str,
         transition_n: int,
         msa_dropout: float,
         pair_dropout: float,
@@ -81,7 +85,8 @@ class MSABlock(nn.Module, ABC):
             no_heads_pair:
                 Number of heads used for pair attention
             transition_type:
-                String 'relu' or 'swiglu' to determine activation for the transition function
+                String 'relu' or 'swiglu' to determine activation for the transition
+                function
             transition_n:
                 Factor by which to multiply c_m to obtain the transition layer
                 hidden dimension
@@ -101,7 +106,7 @@ class MSABlock(nn.Module, ABC):
             eps:
                 Small constant for numerical stability
         """
-        super(MSABlock, self).__init__()
+        super().__init__()
 
         self.opm_first = opm_first
 
@@ -115,18 +120,18 @@ class MSABlock(nn.Module, ABC):
 
         self.msa_dropout_layer = DropoutRowwise(msa_dropout)
 
-        if transition_type == 'relu':
+        if transition_type == "relu":
             self.msa_transition = ReLUTransition(
                 c_in=c_m,
                 n=transition_n,
             )
-        elif transition_type == 'swiglu':
+        elif transition_type == "swiglu":
             self.msa_transition = SwiGLUTransition(
                 c_in=c_m,
                 n=transition_n,
             )
         else:
-            raise ValueError(f'Transition type {transition_type} is not available')
+            raise ValueError(f"Transition type {transition_type} is not available")
 
         self.outer_product_mean = OuterProductMean(
             c_m,
@@ -143,7 +148,7 @@ class MSABlock(nn.Module, ABC):
             transition_n=transition_n,
             pair_dropout=pair_dropout,
             fuse_projection_weights=fuse_projection_weights,
-            inf=inf
+            inf=inf,
         )
 
     def _compute_opm(
@@ -152,9 +157,12 @@ class MSABlock(nn.Module, ABC):
         msa_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
         inplace_safe: bool = False,
-        _offload_inference: bool = False
+        _offload_inference: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Compute the Outer Product Mean. Will be used in the forward pass of the MSABlock."""
+        """Compute the Outer Product Mean.
+
+        Used in the forward pass of the MSABlock.
+        """
         m, z = input_tensors
 
         if _offload_inference and inplace_safe:
@@ -211,7 +219,7 @@ class PairBlock(nn.Module):
         transition_n: int,
         pair_dropout: float,
         fuse_projection_weights: bool,
-        inf: float
+        inf: float,
     ):
         """
         Args:
@@ -224,18 +232,19 @@ class PairBlock(nn.Module):
             no_heads_pair:
                 Number of heads in the attention mechanism
             transition_type:
-                String 'relu' or 'swiglu' to determine activation for the transition function
+                String 'relu' or 'swiglu' to determine activation for the transition
+                function
             transition_n:
                 Scale of pair transition (Alg. 15) hidden dimension
             pair_dropout:
                 Dropout rate used throughout the stack
             fuse_projection_weights:
-                When True, uses FusedTriangleMultiplicativeUpdate variant in
-                the Pair Stack. Used in Multimer pipeline.
+                When True, uses FusedTriangleMultiplicativeUpdate variant in the Pair
+                Stack. Used in Multimer pipeline.
             inf:
                 Large constant used for masking
         """
-        super(PairBlock, self).__init__()
+        super().__init__()
 
         if fuse_projection_weights:
             self.tri_mul_out = FusedTriangleMultiplicationOutgoing(
@@ -269,26 +278,23 @@ class PairBlock(nn.Module):
             inf=inf,
         )
 
-        if transition_type == 'relu':
+        if transition_type == "relu":
             self.pair_transition = ReLUTransition(
                 c_in=c_z,
                 n=transition_n,
             )
-        elif transition_type == 'swiglu':
+        elif transition_type == "swiglu":
             self.pair_transition = SwiGLUTransition(
                 c_in=c_z,
                 n=transition_n,
             )
         else:
-            raise ValueError(f'Transition type {transition_type} is not available')
+            raise ValueError(f"Transition type {transition_type} is not available")
 
         self.ps_dropout_row_layer = DropoutRowwise(pair_dropout)
 
     def tri_mul_out_in(
-        self,
-        z: torch.Tensor,
-        pair_mask: torch.Tensor,
-        inplace_safe: bool
+        self, z: torch.Tensor, pair_mask: torch.Tensor, inplace_safe: bool
     ) -> torch.Tensor:
         """Perform the outgoing and incoming triangular multiplicative updates."""
         tmu_update = self.tri_mul_out(
@@ -324,42 +330,44 @@ class PairBlock(nn.Module):
         pair_mask: torch.Tensor,
         use_deepspeed_evo_attention: bool,
         use_lma: bool,
-        inplace_safe: bool
+        inplace_safe: bool,
     ) -> torch.Tensor:
         """Perform the starting and ending triangular attention layers."""
-        z = add(z,
-                self.ps_dropout_row_layer(
-                    self.tri_att_start(
-                        z,
-                        mask=pair_mask,
-                        chunk_size=_attn_chunk_size,
-                        use_memory_efficient_kernel=False,
-                        use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                        use_lma=use_lma,
-                        inplace_safe=inplace_safe,
-                    )
-                ),
-                inplace=inplace_safe,
+        z = add(
+            z,
+            self.ps_dropout_row_layer(
+                self.tri_att_start(
+                    z,
+                    mask=pair_mask,
+                    chunk_size=_attn_chunk_size,
+                    use_memory_efficient_kernel=False,
+                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_lma=use_lma,
+                    inplace_safe=inplace_safe,
                 )
+            ),
+            inplace=inplace_safe,
+        )
 
         z = z.transpose(-2, -3)
         if inplace_safe:
             z = z.contiguous()
 
-        z = add(z,
-                self.ps_dropout_row_layer(
-                    self.tri_att_end(
-                        z,
-                        mask=pair_mask.transpose(-1, -2),
-                        chunk_size=_attn_chunk_size,
-                        use_memory_efficient_kernel=False,
-                        use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                        use_lma=use_lma,
-                        inplace_safe=inplace_safe,
-                    )
-                ),
-                inplace=inplace_safe,
+        z = add(
+            z,
+            self.ps_dropout_row_layer(
+                self.tri_att_end(
+                    z,
+                    mask=pair_mask.transpose(-1, -2),
+                    chunk_size=_attn_chunk_size,
+                    use_memory_efficient_kernel=False,
+                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_lma=use_lma,
+                    inplace_safe=inplace_safe,
                 )
+            ),
+            inplace=inplace_safe,
+        )
 
         z = z.transpose(-2, -3)
         if inplace_safe:
@@ -376,7 +384,7 @@ class PairBlock(nn.Module):
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
-        _attn_chunk_size: Optional[int] = None
+        _attn_chunk_size: Optional[int] = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -411,22 +419,25 @@ class PairBlock(nn.Module):
         if _attn_chunk_size is None:
             _attn_chunk_size = chunk_size
 
-        z = self.tri_mul_out_in(z=z,
-                                pair_mask=pair_mask,
-                                inplace_safe=inplace_safe)
+        z = self.tri_mul_out_in(z=z, pair_mask=pair_mask, inplace_safe=inplace_safe)
 
-        z = self.tri_att_start_end(z=z,
-                                   _attn_chunk_size=_attn_chunk_size,
-                                   pair_mask=pair_mask,
-                                   use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                                   use_lma=use_lma,
-                                   inplace_safe=inplace_safe)
+        z = self.tri_att_start_end(
+            z=z,
+            _attn_chunk_size=_attn_chunk_size,
+            pair_mask=pair_mask,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_lma=use_lma,
+            inplace_safe=inplace_safe,
+        )
 
-        z = add(z,
-                self.pair_transition(
-                    z, mask=pair_trans_mask, chunk_size=chunk_size,
-                ),
-                inplace=inplace_safe,
+        z = add(
+            z,
+            self.pair_transition(
+                z,
+                mask=pair_trans_mask,
+                chunk_size=chunk_size,
+            ),
+            inplace=inplace_safe,
         )
 
         return z

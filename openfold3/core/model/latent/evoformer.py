@@ -48,22 +48,24 @@ class EvoformerBlock(MSABlock):
         inf: float,
         eps: float,
     ):
-        super(EvoformerBlock, self).__init__(c_m=c_m,
-                                             c_z=c_z,
-                                             c_hidden_msa_att=c_hidden_msa_att,
-                                             c_hidden_opm=c_hidden_opm,
-                                             c_hidden_mul=c_hidden_mul,
-                                             c_hidden_pair_att=c_hidden_pair_att,
-                                             no_heads_msa=no_heads_msa,
-                                             no_heads_pair=no_heads_pair,
-                                             transition_type=transition_type,
-                                             transition_n=transition_n,
-                                             msa_dropout=msa_dropout,
-                                             pair_dropout=pair_dropout,
-                                             opm_first=opm_first,
-                                             fuse_projection_weights=fuse_projection_weights,
-                                             inf=inf,
-                                             eps=eps)
+        super().__init__(
+            c_m=c_m,
+            c_z=c_z,
+            c_hidden_msa_att=c_hidden_msa_att,
+            c_hidden_opm=c_hidden_opm,
+            c_hidden_mul=c_hidden_mul,
+            c_hidden_pair_att=c_hidden_pair_att,
+            no_heads_msa=no_heads_msa,
+            no_heads_pair=no_heads_pair,
+            transition_type=transition_type,
+            transition_n=transition_n,
+            msa_dropout=msa_dropout,
+            pair_dropout=pair_dropout,
+            opm_first=opm_first,
+            fuse_projection_weights=fuse_projection_weights,
+            inf=inf,
+            eps=eps,
+        )
 
         # Specifically, seqemb mode does not use column attention
         self.no_column_attention = no_column_attention
@@ -92,7 +94,6 @@ class EvoformerBlock(MSABlock):
         _offload_inference: bool = False,
         _offloadable_inputs: Optional[Sequence[torch.Tensor]] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-
         msa_trans_mask = msa_mask if _mask_trans else None
 
         if _attn_chunk_size is None:
@@ -109,26 +110,29 @@ class EvoformerBlock(MSABlock):
         if self.opm_first:
             del m, z
 
-            m, z = self._compute_opm(input_tensors=input_tensors,
-                                     msa_mask=msa_mask,
-                                     chunk_size=chunk_size,
-                                     inplace_safe=inplace_safe,
-                                     _offload_inference=_offload_inference)
+            m, z = self._compute_opm(
+                input_tensors=input_tensors,
+                msa_mask=msa_mask,
+                chunk_size=chunk_size,
+                inplace_safe=inplace_safe,
+                _offload_inference=_offload_inference,
+            )
 
-        m = add(m,
-                self.msa_dropout_layer(
-                    self.msa_att_row(
-                        m,
-                        z=z,
-                        mask=msa_mask,
-                        chunk_size=_attn_chunk_size,
-                        use_memory_efficient_kernel=False,
-                        use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                        use_lma=use_lma,
-                    )
-                ),
-                inplace=inplace_safe,
+        m = add(
+            m,
+            self.msa_dropout_layer(
+                self.msa_att_row(
+                    m,
+                    z=z,
+                    mask=msa_mask,
+                    chunk_size=_attn_chunk_size,
+                    use_memory_efficient_kernel=False,
+                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_lma=use_lma,
                 )
+            ),
+            inplace=inplace_safe,
+        )
 
         if _offload_inference and inplace_safe:
             # m: GPU, z: CPU
@@ -140,22 +144,25 @@ class EvoformerBlock(MSABlock):
 
         # Specifically, column attention is not used in seqemb mode.
         if not self.no_column_attention:
-            m = add(m,
-                    self.msa_att_col(
-                        m,
-                        mask=msa_mask,
-                        chunk_size=chunk_size,
-                        use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                        use_lma=use_lma,
-                        use_flash=use_flash,
-                    ),
-                    inplace=inplace_safe,
-                    )
+            m = add(
+                m,
+                self.msa_att_col(
+                    m,
+                    mask=msa_mask,
+                    chunk_size=chunk_size,
+                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_lma=use_lma,
+                    use_flash=use_flash,
+                ),
+                inplace=inplace_safe,
+            )
 
         m = add(
             m,
             self.msa_transition(
-                m, mask=msa_trans_mask, chunk_size=chunk_size,
+                m,
+                mask=msa_trans_mask,
+                chunk_size=chunk_size,
             ),
             inplace=inplace_safe,
         )
@@ -166,11 +173,13 @@ class EvoformerBlock(MSABlock):
 
             del m, z
 
-            m, z = self._compute_opm(input_tensors=input_tensors,
-                                     msa_mask=msa_mask,
-                                     chunk_size=chunk_size,
-                                     inplace_safe=inplace_safe,
-                                     _offload_inference=_offload_inference)
+            m, z = self._compute_opm(
+                input_tensors=input_tensors,
+                msa_mask=msa_mask,
+                chunk_size=chunk_size,
+                inplace_safe=inplace_safe,
+                _offload_inference=_offload_inference,
+            )
 
         if _offload_inference and inplace_safe:
             # m: CPU, z: GPU
@@ -194,7 +203,7 @@ class EvoformerBlock(MSABlock):
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
-            _attn_chunk_size=_attn_chunk_size
+            _attn_chunk_size=_attn_chunk_size,
         )
 
         if _offload_inference and inplace_safe:
@@ -265,24 +274,25 @@ class EvoformerStack(MSAStack):
             no_blocks:
                 Number of Evoformer blocks in the stack
             transition_type:
-                String 'relu' or 'swiglu' to determine activation for the transition function
+                String 'relu' or 'swiglu' to determine activation for the transition
+                function
             transition_n:
-                Factor by which to multiply c_m to obtain the transition layer
-                hidden dimension
+                Factor by which to multiply c_m to obtain the transition layer hidden
+                dimension
             msa_dropout:
                 Dropout rate for MSA activations
             pair_dropout:
                 Dropout used for pair activations
             no_column_attention:
-                When True, doesn't use column attention. Required for running
-                sequence embedding mode
+                When True, doesn't use column attention. Required for running sequence
+                embedding mode
             opm_first:
-                When True, Outer Product Mean is performed at the beginning of
-                the Evoformer block instead of after the MSA Stack.
-                Used in Multimer pipeline.
+                When True, Outer Product Mean is performed at the beginning of the
+                Evoformer block instead of after the MSA Stack. Used in Multimer
+                pipeline.
             fuse_projection_weights:
-                When True, uses FusedTriangleMultiplicativeUpdate variant in
-                the Pair Stack. Used in Multimer pipeline.
+                When True, uses FusedTriangleMultiplicativeUpdate variant in the Pair
+                Stack. Used in Multimer pipeline.
             blocks_per_ckpt:
                 Number of Evoformer blocks in each activation checkpoint
             inf:
@@ -290,15 +300,15 @@ class EvoformerStack(MSAStack):
             eps:
                 Small constant for numerical stability
             clear_cache_between_blocks:
-                Whether to clear CUDA's GPU memory cache between blocks of the
-                stack. Slows down each block but can reduce fragmentation
+                Whether to clear CUDA's GPU memory cache between blocks of the stack.
+                Slows down each block but can reduce fragmentation
             tune_chunk_size:
                 Whether to dynamically tune the module's chunk size
         """
-        super(EvoformerStack, self).__init__(
+        super().__init__(
             blocks_per_ckpt=blocks_per_ckpt,
             clear_cache_between_blocks=clear_cache_between_blocks,
-            tune_chunk_size=tune_chunk_size
+            tune_chunk_size=tune_chunk_size,
         )
 
         for _ in range(no_blocks):
@@ -325,7 +335,9 @@ class EvoformerStack(MSAStack):
 
         self.linear = Linear(c_m, c_s)
 
-    def _wrap_up(self, m: torch.Tensor, z: torch.Tensor) -> [torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _wrap_up(
+        self, m: torch.Tensor, z: torch.Tensor
+    ) -> list[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Generate the single embedding and return all three embeddings.
 
         Returns:
