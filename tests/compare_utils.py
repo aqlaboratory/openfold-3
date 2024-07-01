@@ -1,6 +1,5 @@
-import os
-
 import importlib
+import os
 import pkgutil
 import sys
 import unittest
@@ -11,7 +10,6 @@ import torch
 from openfold3.core.utils.import_weights import import_jax_weights_
 from openfold3.model_implementations.af2_monomer.config import model_config
 from openfold3.model_implementations.af2_monomer.model import AlphaFold
-
 from tests.config import consts
 
 # Give JAX some GPU memory discipline
@@ -23,9 +21,13 @@ os.environ["JAX_PLATFORM_NAME"] = "gpu"
 
 def skip_unless_ds4s_installed():
     deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
-    ds4s_is_installed = deepspeed_is_installed and importlib.util.find_spec(
-        "deepspeed.ops.deepspeed4science") is not None
-    return unittest.skipUnless(ds4s_is_installed, "Requires DeepSpeed with version ≥ 0.10.4")
+    ds4s_is_installed = (
+        deepspeed_is_installed
+        and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
+    )
+    return unittest.skipUnless(
+        ds4s_is_installed, "Requires DeepSpeed with version ≥ 0.10.4"
+    )
 
 
 def skip_unless_flash_attn_installed():
@@ -71,7 +73,9 @@ def get_alphafold_config():
 
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
-_param_path = os.path.join(dir_path, "..", f"openfold3/resources/params/params_{consts.model}.npz")
+_param_path = os.path.join(
+    dir_path, "..", f"openfold3/resources/params/params_{consts.model}.npz"
+)
 _model = None
 
 
@@ -106,7 +110,7 @@ def _remove_key_prefix(d, prefix):
     for k, v in list(d.items()):
         if k.startswith(prefix):
             d.pop(k)
-            d[k[len(prefix):]] = v
+            d[k[len(prefix) :]] = v
 
 
 def fetch_alphafold_module_weights(weight_path):
@@ -120,10 +124,10 @@ def fetch_alphafold_module_weights(weight_path):
 
     try:
         params = alphafold.model.utils.flat_params_to_haiku(params)  # noqa
-    except:
+    except Exception as err:
         raise ImportError(
             "Make sure to call import_alphafold before running this function"
-        )
+        ) from err
     return params
 
 
@@ -132,7 +136,7 @@ def _assert_abs_diff_small_base(compare_func, expected, actual, eps):
     abs_diff = torch.abs(expected - actual)
     err = compare_func(abs_diff)
     zero_tensor = torch.tensor(0, dtype=err.dtype)
-    rtol = 1.6e-2 if err.dtype == torch.bfloat16 else 1.3e-6  
+    rtol = 1.6e-2 if err.dtype == torch.bfloat16 else 1.3e-6
     torch.testing.assert_close(err, zero_tensor, atol=eps, rtol=rtol)
 
 

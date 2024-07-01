@@ -1,28 +1,30 @@
-from typing import Dict
+from typing import Dict, Tuple
 
 import torch
-from torch import nn
 from ml_collections import ConfigDict
+from torch import nn
 
+from openfold3.core.model.feature_embedders import InputEmbedderAllAtom
 from openfold3.core.model.feature_embedders.input_embedders import MSAModuleEmbedder
 from openfold3.core.model.latent.msa_module import MSAModuleStack
 from openfold3.core.model.latent.pairformer import PairFormerStack
 from openfold3.core.model.latent.template_module import TemplateEmbedderAllAtom
 from openfold3.core.model.primitives import LayerNorm, Linear
-from openfold3.core.model.structure.diffusion_module import DiffusionModule, SampleDiffusion
-from openfold3.core.model.feature_embedders import InputEmbedderAllAtom
+from openfold3.core.model.structure.diffusion_module import (
+    DiffusionModule,
+    SampleDiffusion,
+)
 from openfold3.core.utils.tensor_utils import add
 
 
 class AlphaFold3(nn.Module):
-
     def __init__(self, config: ConfigDict):
         """
 
         Args:
             config:
         """
-        super(AlphaFold3, self).__init__()
+        super().__init__()
         self.config = config
         self.globals = self.config.globals
 
@@ -31,9 +33,13 @@ class AlphaFold3(nn.Module):
         self.layer_norm_z = LayerNorm(self.globals.c_z)
         self.linear_z = Linear(self.globals.c_z, self.globals.c_z, bias=False)
 
-        self.template_embedder = TemplateEmbedderAllAtom(**self.config.template)
+        self.template_embedder = TemplateEmbedderAllAtom(
+            config=self.config.model.template
+        )
 
-        self.msa_module_embedder = MSAModuleEmbedder(**self.config.model.msa.msa_module_embedder)
+        self.msa_module_embedder = MSAModuleEmbedder(
+            **self.config.model.msa.msa_module_embedder
+        )
         self.msa_module = MSAModuleStack(**self.config.model.msa.msa_module)
 
         self.layer_norm_s = LayerNorm(self.globals.c_s)
@@ -41,10 +47,13 @@ class AlphaFold3(nn.Module):
 
         self.pairformer_stack = PairFormerStack(**self.config.model.pairformer)
 
-        self.diffusion_module = DiffusionModule(config=self.config.model.diffusion_module)
-        
-        self.sample_diffusion = SampleDiffusion(**self.config.model.sample_diffusion,
-                                                diffusion_module=self.diffusion_module)
+        self.diffusion_module = DiffusionModule(
+            config=self.config.model.diffusion_module
+        )
+
+        self.sample_diffusion = SampleDiffusion(
+            **self.config.model.sample_diffusion, diffusion_module=self.diffusion_module
+        )
 
         self.confidence_head = None
 
@@ -59,18 +68,12 @@ class AlphaFold3(nn.Module):
         self.template_embedder.template_pair_stack.blocks_per_ckpt = (
             self.config.template.template_pair_stack.blocks_per_ckpt
         )
-        self.msa_module.blocks_per_ckpt = (
-            self.config.msa.msa_module.blocks_per_ckpt
-        )
-        self.pairformer_stack.blocks_per_ckpt = (
-            self.config.pairformer.blocks_per_ckpt
-        )
+        self.msa_module.blocks_per_ckpt = self.config.msa.msa_module.blocks_per_ckpt
+        self.pairformer_stack.blocks_per_ckpt = self.config.pairformer.blocks_per_ckpt
 
     def run_trunk(
-        self,
-        batch: Dict,
-        inplace_safe: bool = False
-    ) -> [torch.Tensor, torch.Tensor, torch.Tensor]:
+        self, batch: Dict, inplace_safe: bool = False
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
 
         Args:
@@ -88,7 +91,7 @@ class AlphaFold3(nn.Module):
 
         # token_mask: [*, N_token]
         # pair_mask: [*, N_token, N_token]
-        token_mask = batch['token_mask']
+        token_mask = batch["token_mask"]
         pair_mask = token_mask[..., None] * token_mask[..., None, :]
 
         for _ in range(self.globals.no_cycles):
@@ -105,9 +108,9 @@ class AlphaFold3(nn.Module):
                     _mask_trans=True,
                     use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
                     use_lma=self.globals.use_lma,
-                    inplace_safe=inplace_safe
+                    inplace_safe=inplace_safe,
                 ),
-                inplace=inplace_safe
+                inplace=inplace_safe,
             )
 
             m, msa_mask = self.msa_module_embedder(batch=batch, s_input=s_input)
@@ -125,7 +128,7 @@ class AlphaFold3(nn.Module):
                     chunk_size=self.globals.chunk_size,
                     use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
                     use_lma=self.globals.use_lma,
-                    _mask_trans=True
+                    _mask_trans=True,
                 )
 
                 del input_tensors
@@ -139,7 +142,7 @@ class AlphaFold3(nn.Module):
                     use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
                     use_lma=self.globals.use_lma,
                     inplace_safe=inplace_safe,
-                    _mask_trans=True
+                    _mask_trans=True,
                 )
 
             del m, msa_mask
@@ -154,8 +157,10 @@ class AlphaFold3(nn.Module):
                 use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
                 use_lma=self.globals.use_lma,
                 inplace_safe=inplace_safe,
-                _mask_trans=True
+                _mask_trans=True,
             )
+
+        del s_init, z_init
 
         return s_input, s, z
 
@@ -179,24 +184,25 @@ class AlphaFold3(nn.Module):
         """
         # Compute atom positions
         with torch.no_grad():
-            x_pred = self.sample_diffusion(batch=batch,
-                                           si_input=si_input,
-                                           si_trunk=si_trunk,
-                                           zij_trunk=zij_trunk)
+            x_pred = self.sample_diffusion(
+                batch=batch, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
+            )
 
-        # Compute confidences
-        p_plddt, p_pae, p_pde, p_resolved = self.confidence_head(si_input, si_trunk, zij_trunk, x_pred)
-
-        # Compute distogram
-        p_distogram = self.distogram_head(zij_trunk)
+        # # Compute confidences
+        # p_plddt, p_pae, p_pde, p_resolved = self.confidence_head(
+        #     si_input, si_trunk, zij_trunk, x_pred
+        # )
+        #
+        # # Compute distogram
+        # p_distogram = self.distogram_head(zij_trunk)
 
         return {
-            'x_pred': x_pred,
-            'p_plddt': p_plddt,
-            'p_pae': p_pae,
-            'p_pde': p_pde,
-            'p_resolved': p_resolved,
-            'p_distogram': p_distogram
+            "x_pred": x_pred,
+            # "p_plddt": p_plddt,
+            # "p_pae": p_pae,
+            # "p_pde": p_pde,
+            # "p_resolved": p_resolved,
+            # "p_distogram": p_distogram,
         }
 
     def _train(
@@ -205,7 +211,7 @@ class AlphaFold3(nn.Module):
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
-        xl_gt: torch.Tensor
+        xl_gt: torch.Tensor,
     ) -> torch.Tensor:
         """
 
@@ -227,7 +233,7 @@ class AlphaFold3(nn.Module):
         xl_gt = xl_gt.unsqueeze(1)
         for key in batch:
             batch[key] = batch[key].unsqueeze(1)
-        
+
         # Sample noise schedule for training
         no_samples = self.globals.no_samples
         batch_size, n_atom, device = xl_gt.shape[0], xl_gt.shape[1], xl_gt.device
@@ -235,19 +241,23 @@ class AlphaFold3(nn.Module):
         t = self.globals.sigma_data * torch.exp(-1.2 + 1.5 * n)
 
         # Sample noise
-        noise = (t[:, None, None] ** 2) * torch.randn((batch_size, no_samples, n_atom, 3), device=device)
+        noise = (t[..., None, None] ** 2) * torch.randn(
+            (batch_size, no_samples, n_atom, 3), device=device
+        )
 
         # Sample atom positions
         xl_noisy = xl_gt + noise
 
         # Run diffusion module
-        xl = self.diffusion_module(batch=batch,
-                                   xl_noisy=xl_noisy,
-                                   t=t,
-                                   si_input=si_input,
-                                   si_trunk=si_trunk,
-                                   zij_trunk=zij_trunk)
-        
+        xl = self.diffusion_module(
+            batch=batch,
+            xl_noisy=xl_noisy,
+            t=t,
+            si_input=si_input,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+        )
+
         return xl
 
     def forward(self, batch: Dict, xl_gt: torch.Tensor = None) -> Dict:
@@ -271,23 +281,24 @@ class AlphaFold3(nn.Module):
         inplace_safe = not (self.training or torch.is_grad_enabled())
 
         # Compute representations
-        si_input, si_trunk, zij_trunk = self.run_trunk(batch=batch, inplace_safe=inplace_safe)
-
-        # [b, ...]
+        si_input, si_trunk, zij_trunk = self.run_trunk(
+            batch=batch, inplace_safe=inplace_safe
+        )
 
         # Mini rollout
-        output = self._rollout(batch=batch,
-                               si_input=si_input,
-                               si_trunk=si_trunk,
-                               zij_trunk=zij_trunk)
+        output = self._rollout(
+            batch=batch, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
+        )
 
         # Run training step (if necessary)
         if self.training:
-            xl = self._train(batch=batch,
-                             si_input=si_input,
-                             si_trunk=si_trunk,
-                             zij_trunk=zij_trunk,
-                             xl_gt=xl_gt)
+            xl = self._train(
+                batch=batch,
+                si_input=si_input,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                xl_gt=xl_gt,
+            )
 
             output["x_train"] = xl
 

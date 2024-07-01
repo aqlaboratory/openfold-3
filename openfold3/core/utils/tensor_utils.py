@@ -23,7 +23,7 @@ import torch.nn as nn
 def add(m1, m2, inplace):
     # The first operation in a checkpoint can't be in-place, but it's
     # nice to have in-place addition during inference. Thus...
-    if(not inplace):
+    if not inplace:
         m1 = m1 + m2
     else:
         m1 += m2
@@ -47,12 +47,8 @@ def masked_mean(mask, value, dim, eps=1e-4):
 
 
 def pts_to_distogram(pts, min_bin=2.3125, max_bin=21.6875, no_bins=64):
-    boundaries = torch.linspace(
-        min_bin, max_bin, no_bins - 1, device=pts.device
-    )
-    dists = torch.sqrt(
-        torch.sum((pts.unsqueeze(-2) - pts.unsqueeze(-3)) ** 2, dim=-1)
-    )
+    boundaries = torch.linspace(min_bin, max_bin, no_bins - 1, device=pts.device)
+    dists = torch.sqrt(torch.sum((pts.unsqueeze(-2) - pts.unsqueeze(-3)) ** 2, dim=-1))
     return torch.bucketize(dists, boundaries)
 
 
@@ -61,7 +57,7 @@ def dict_multimap(fn, dicts):
     new_dict = {}
     for k, v in first.items():
         all_v = [d[k] for d in dicts]
-        if type(v) is dict:
+        if isinstance(v, dict):
             new_dict[k] = dict_multimap(fn, all_v)
         else:
             new_dict[k] = fn(all_v)
@@ -83,9 +79,7 @@ def batched_gather(data, inds, dim=0, no_batch_dims=0):
         r = r.view(*(*((1,) * i), -1, *((1,) * (len(inds.shape) - i - 1))))
         ranges.append(r)
 
-    remaining_dims = [
-        slice(None) for _ in range(len(data.shape) - no_batch_dims)
-    ]
+    remaining_dims = [slice(None) for _ in range(len(data.shape) - no_batch_dims)]
     remaining_dims[dim - no_batch_dims if dim >= 0 else dim] = inds
     ranges.extend(remaining_dims)
     return data[ranges]
@@ -95,7 +89,7 @@ def batched_gather(data, inds, dim=0, no_batch_dims=0):
 def dict_map(fn, dic, leaf_type):
     new_dict = {}
     for k, v in dic.items():
-        if type(v) is dict:
+        if isinstance(v, dict):
             new_dict[k] = dict_map(fn, v, leaf_type)
         else:
             new_dict[k] = tree_map(fn, v, leaf_type)

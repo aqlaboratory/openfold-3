@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
 import unittest
-from openfold3.core.model.latent import MSAModuleStack
 
+import torch
+
+from openfold3.core.model.latent import MSAModuleStack
 from openfold3.core.model.layers.transition import SwiGLUTransition
 from tests.config import consts
 
@@ -34,7 +35,7 @@ class TestMSAModule(unittest.TestCase):
         no_heads_msa = 3
         no_heads_pair = 7
         no_blocks = 2
-        transition_type = 'swiglu'
+        transition_type = "swiglu"
         transition_n = 2
         msa_dropout = 0.15
         pair_dropout = 0.25
@@ -69,9 +70,7 @@ class TestMSAModule(unittest.TestCase):
 
         shape_z_before = z.shape
 
-        z = ms(
-            m, z, chunk_size=4, msa_mask=msa_mask, pair_mask=pair_mask
-        )
+        z = ms(m, z, chunk_size=4, msa_mask=msa_mask, pair_mask=pair_mask)
 
         self.assertTrue(z.shape == shape_z_before)
 

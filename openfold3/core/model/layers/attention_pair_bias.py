@@ -16,19 +16,18 @@
 """Attention layer with pair bias."""
 
 import importlib
-from typing import Optional, List
+from typing import List, Optional
 
 import torch
 
 from openfold3.core.model.primitives import (
+    DEFAULT_LMA_KV_CHUNK_SIZE,
+    DEFAULT_LMA_Q_CHUNK_SIZE,
     AdaLN,
+    Attention,
     LayerNorm,
     Linear,
-    Attention,
-    DEFAULT_LMA_Q_CHUNK_SIZE,
-    DEFAULT_LMA_KV_CHUNK_SIZE
 )
-
 from openfold3.core.utils.tensor_utils import permute_final_dims
 
 if importlib.util.find_spec("triton") is not None:
@@ -41,6 +40,7 @@ class AttentionPairBias(Attention):
 
     Implements AF3 Algorithm 24.
     """
+
     def __init__(
         self,
         c_q: int,
@@ -52,7 +52,7 @@ class AttentionPairBias(Attention):
         no_heads: int,
         use_ada_layer_norm: bool = False,
         gating: bool = True,
-        inf=1e9
+        inf=1e9,
     ):
         """
         Args:
@@ -77,8 +77,14 @@ class AttentionPairBias(Attention):
             inf:
                 Large constant used to create mask for attention logits
         """
-        super(AttentionPairBias, self).__init__(c_q=c_q, c_k=c_k, c_v=c_v, c_hidden=c_hidden,
-                                                no_heads=no_heads, gating=gating)
+        super().__init__(
+            c_q=c_q,
+            c_k=c_k,
+            c_v=c_v,
+            c_hidden=c_hidden,
+            no_heads=no_heads,
+            gating=gating,
+        )
 
         self.use_ada_layer_norm = use_ada_layer_norm
         self.c_s = c_s
@@ -91,9 +97,7 @@ class AttentionPairBias(Attention):
             self.layer_norm_a = LayerNorm(c_in=self.c_q)
 
         self.layer_norm_z = LayerNorm(self.c_z)
-        self.linear_z = Linear(
-            self.c_z, self.no_heads, bias=False, init="normal"
-        )
+        self.linear_z = Linear(self.c_z, self.no_heads, bias=False, init="normal")
 
         self.linear_q = Linear(
             self.c_q, self.c_hidden * self.no_heads, bias=True, init="glorot"
@@ -138,7 +142,7 @@ class AttentionPairBias(Attention):
         a: torch.Tensor,
         z: Optional[torch.Tensor],
         beta: Optional[torch.Tensor],
-        mask: Optional[torch.Tensor]
+        mask: Optional[torch.Tensor],
     ) -> List[torch.Tensor]:
         """
         Args:
@@ -175,8 +179,9 @@ class AttentionPairBias(Attention):
         # [*, no_heads, N_res, N_res]
         z = permute_final_dims(z, [2, 0, 1])
 
-        # TODO: This is how it is written in the algorithm, but I need to actually select these indices
-        # in the a, z, and mask terms to actually reduce the attention computation
+        # TODO: This is how it is written in the algorithm, but I need to actually
+        # select these indices in the a, z, and mask terms to actually reduce the
+        # attention computation
         if beta is not None:
             z = z + beta.unsqueeze(-3)
 
@@ -189,20 +194,22 @@ class AttentionPairBias(Attention):
 
         # Delayed triton init, to make sure that we get the right device
         # Infer device from query
-        if not hasattr(self, ""):
+        if not hasattr(self, "sparse_dot_sdd"):
             self.create_triton_kernels(
-                layout=layout,
-                block_size=block_size,
-                device=q_x.device
+                layout=layout, block_size=block_size, device=q_x.device
             )
 
         # [*, H, Q/K/V, C_hidden]
         q, k, v = self._prep_qkv(q_x, kv_x, apply_scale=True)
 
         def sparsify_tensor(x, mask, block):
-            ret = torch.empty((x.size(0), mask.sum(), block, block), dtype=x.dtype, device=x.device)
+            ret = torch.empty(
+                (x.size(0), mask.sum(), block, block), dtype=x.dtype, device=x.device
+            )
             for idx, (h, i, j) in enumerate(zip(*mask.nonzero(as_tuple=True))):
-                ret[:, idx, :, :] = x[:, h, i * block:(i + 1) * block, j * block:(j + 1) * block]
+                ret[:, idx, :, :] = x[
+                    :, h, i * block : (i + 1) * block, j * block : (j + 1) * block
+                ]
             return ret
 
         w = self.sparse_dot_sdd(q, k)
@@ -232,7 +239,7 @@ class AttentionPairBias(Attention):
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
         lma_q_chunk_size: int = DEFAULT_LMA_Q_CHUNK_SIZE,
-        lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE
+        lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
     ) -> torch.Tensor:
         """
         Args:
@@ -241,10 +248,11 @@ class AttentionPairBias(Attention):
             z:
                 [*, N_res, N_res, C_z] Pair embedding
             s:
-                [*, N_res, C_s] Single embedding. Used in AdaLN if use_ada_layer_norm is True
+                [*, N_res, C_s] Single embedding. Used in AdaLN if use_ada_layer_norm is
+                True
             beta:
-                [*, N_res, N_res] Neighborhood mask. Used in Sequence-local atom attention
-                for rectangular blocks along the diagonal.
+                [*, N_res, N_res] Neighborhood mask. Used in Sequence-local atom
+                attention for rectangular blocks along the diagonal.
             mask:
                 [*, N_res] Mask for token-level embedding
             use_memory_efficient_kernel:
@@ -260,16 +268,13 @@ class AttentionPairBias(Attention):
         Returns
             [*, Q, C_q] attention updated token-level embedding
         """
-        if self.use_ada_layer_norm:
-            a = self.layer_norm_a(a, s)
-        else:
-            a = self.layer_norm_a(a)
+        a = self.layer_norm_a(a, s) if self.use_ada_layer_norm else self.layer_norm_a(a)
 
         biases = self._prep_bias(a, z, beta, mask)
 
         if not use_block_sparse_attn:
             # Do we support all the memory efficient kernel types?
-            a = super(AttentionPairBias, self).forward(
+            a = super().forward(
                 q_x=a,
                 kv_x=a,
                 biases=biases,
@@ -278,7 +283,9 @@ class AttentionPairBias(Attention):
                 use_lma=use_lma,
             )
         else:
-            a = self.block_sparse_attention(q_x=a, kv_x=a, biases=biases, layout=layout, block_size=block_size)
+            a = self.block_sparse_attention(
+                q_x=a, kv_x=a, biases=biases, layout=layout, block_size=block_size
+            )
 
         if self.use_ada_layer_norm:
             a = self.sigmoid(self.linear_ada_out(s)) * a

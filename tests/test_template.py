@@ -13,22 +13,24 @@
 # limitations under the License.
 
 import re
-import torch
-import numpy as np
 import unittest
 
-from openfold3.core.model.latent import TemplatePairStack, TemplateEmbedderAllAtom
-from openfold3.core.model.layers.template_pointwise_attention import TemplatePointwiseAttention
-from openfold3.model_implementations.af3_all_atom.config import config as af3_config
+import numpy as np
+import torch
 
 import tests.compare_utils as compare_utils
+from openfold3.core.model.latent import TemplateEmbedderAllAtom, TemplatePairStack
+from openfold3.core.model.layers.template_pointwise_attention import (
+    TemplatePointwiseAttention,
+)
+from openfold3.model_implementations.af3_all_atom.config import config as af3_config
 from tests.config import consts
-from tests.data_utils import random_template_feats, random_asym_ids
+from tests.data_utils import random_asym_ids, random_template_feats
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
-    import jax
     import haiku as hk
+    import jax
 
 
 class TestTemplatePointwiseAttention(unittest.TestCase):
@@ -42,9 +44,7 @@ class TestTemplatePointwiseAttention(unittest.TestCase):
         n_res = consts.n_res
         inf = 1e7
 
-        tpa = TemplatePointwiseAttention(
-            c_t, c_z, c, no_heads, inf=inf
-        )
+        tpa = TemplatePointwiseAttention(c_t, c_z, c, no_heads, inf=inf)
 
         t = torch.rand((batch_size, n_seq, n_res, n_res, c_t))
         z = torch.rand((batch_size, n_res, n_res, c_z))
@@ -81,7 +81,9 @@ class TestTemplatePairStack(unittest.TestCase):
         n_templ = consts.n_templ
         n_res = consts.n_res
         tri_mul_first = consts.is_multimer
-        fuse_projection_weights = True if re.fullmatch("^model_[1-5]_multimer_v3$", consts.model) else False
+        fuse_projection_weights = bool(
+            re.fullmatch("^model_[1-5]_multimer_v3$", consts.model)
+        )
         chunk_size = 4
         inf = 1e7
         eps = 1e-7
@@ -92,7 +94,7 @@ class TestTemplatePairStack(unittest.TestCase):
             c_hidden_tri_mul=c_hidden_tri_mul,
             no_blocks=no_blocks,
             no_heads=no_heads,
-            transition_type='relu',
+            transition_type="relu",
             pair_transition_n=pt_inner_dim,
             dropout_rate=dropout,
             tri_mul_first=tri_mul_first,
@@ -121,7 +123,8 @@ class TestTemplatePairStack(unittest.TestCase):
                 template_iteration = self.am_modules.TemplateEmbeddingIteration(
                     c_ee.template.template_pair_stack,
                     config.model.global_config,
-                    name='template_embedding_iteration')
+                    name="template_embedding_iteration",
+                )
 
                 def template_iteration_fn(x):
                     act, safe_key = x
@@ -131,7 +134,8 @@ class TestTemplatePairStack(unittest.TestCase):
                         act=act,
                         pair_mask=pair_mask,
                         is_training=False,
-                        safe_key=safe_subkey)
+                        safe_key=safe_subkey,
+                    )
                     return (act, safe_key)
 
                 if config.model.global_config.use_remat:
@@ -139,8 +143,8 @@ class TestTemplatePairStack(unittest.TestCase):
 
                 safe_key, safe_subkey = safe_key.split()
                 template_stack = alphafold.model.layer_stack.layer_stack(
-                    c_ee.template.template_pair_stack.num_block)(
-                    template_iteration_fn)
+                    c_ee.template.template_pair_stack.num_block
+                )(template_iteration_fn)
                 act, _ = template_stack((pair_act, safe_subkey))
             else:
                 tps = self.am_modules.TemplatePairStack(
@@ -149,7 +153,9 @@ class TestTemplatePairStack(unittest.TestCase):
                     name="template_pair_stack",
                 )
                 act = tps(pair_act, pair_mask, is_training=False)
-            ln = alphafold.model.common_modules.LayerNorm([-1], True, True, name="output_layer_norm")
+            ln = alphafold.model.common_modules.LayerNorm(
+                [-1], True, True, name="output_layer_norm"
+            )
             act = ln(act)
             return act
 
@@ -158,9 +164,9 @@ class TestTemplatePairStack(unittest.TestCase):
         n_res = consts.n_res
 
         pair_act = np.random.rand(n_res, n_res, consts.c_t).astype(np.float32)
-        pair_mask = np.random.randint(
-            low=0, high=2, size=(n_res, n_res)
-        ).astype(np.float32)
+        pair_mask = np.random.randint(low=0, high=2, size=(n_res, n_res)).astype(
+            np.float32
+        )
 
         if consts.is_multimer:
             params = compare_utils.fetch_alphafold_module_weights(
@@ -196,7 +202,6 @@ class TestTemplatePairStack(unittest.TestCase):
 
 
 class TestTemplateEmbedderAllAtom(unittest.TestCase):
-
     def test_shape(self):
         batch_size = 2
         n_templ = 3
@@ -211,16 +216,18 @@ class TestTemplateEmbedderAllAtom(unittest.TestCase):
             "template_restype": torch.ones((batch_size, n_templ, n_token, 32)),
             "template_pseudo_beta_mask": torch.ones((batch_size, n_templ, n_token)),
             "template_backbone_frame_mask": torch.ones((batch_size, n_templ, n_token)),
-            "template_distogram": torch.ones((batch_size, n_templ, n_token, n_token, 39)),
-            "template_unit_vector": torch.ones((batch_size, n_templ, n_token, n_token, 3)),
+            "template_distogram": torch.ones(
+                (batch_size, n_templ, n_token, n_token, 39)
+            ),
+            "template_unit_vector": torch.ones(
+                (batch_size, n_templ, n_token, n_token, 3)
+            ),
         }
 
         z = torch.ones((batch_size, n_token, n_token, c_z))
 
-        t = embedder(batch=batch,
-                     z=z,
-                     chunk_size=None)
-        
+        t = embedder(batch=batch, z=z, chunk_size=None)
+
         self.assertTrue(t.shape == (batch_size, n_token, n_token, c_z))
 
 
@@ -249,7 +256,13 @@ class Template(unittest.TestCase):
             )
 
             if consts.is_multimer:
-                act = te(pair, batch, mask_2d, multichain_mask_2d=mc_mask_2d, is_training=False)
+                act = te(
+                    pair,
+                    batch,
+                    mask_2d,
+                    multichain_mask_2d=mc_mask_2d,
+                    is_training=False,
+                )
             else:
                 act = te(pair, batch, mask_2d, is_training=False)
             return act
@@ -266,10 +279,10 @@ class Template(unittest.TestCase):
 
         multichain_mask_2d = None
         if consts.is_multimer:
-            asym_id = batch['asym_id']
-            multichain_mask_2d = (
-                    asym_id[..., None] == asym_id[..., None, :]
-            ).astype(np.float32)
+            asym_id = batch["asym_id"]
+            multichain_mask_2d = (asym_id[..., None] == asym_id[..., None, :]).astype(
+                np.float32
+            )
 
         pair_mask = np.random.randint(0, 2, (n_res, n_res)).astype(np.float32)
         # Fetch pretrained parameters (but only from one block)]
@@ -278,7 +291,12 @@ class Template(unittest.TestCase):
         )
 
         out_gt = f.apply(
-            params, jax.random.PRNGKey(42), pair_act, batch, pair_mask, multichain_mask_2d
+            params,
+            jax.random.PRNGKey(42),
+            pair_act,
+            batch,
+            pair_mask,
+            multichain_mask_2d,
         ).block_until_ready()
         out_gt = torch.as_tensor(np.array(out_gt))
 
@@ -298,7 +316,7 @@ class Template(unittest.TestCase):
                 multichain_mask_2d=torch.as_tensor(multichain_mask_2d).cuda(),
                 _mask_trans=False,
                 use_lma=False,
-                inplace_safe=False
+                inplace_safe=False,
             )
         else:
             out_repro_all = model.template_embedder(
@@ -309,7 +327,7 @@ class Template(unittest.TestCase):
                 chunk_size=consts.chunk_size,
                 _mask_trans=False,
                 use_lma=False,
-                inplace_safe=False
+                inplace_safe=False,
             )
 
         out_repro = out_repro_all["template_pair_embedding"]

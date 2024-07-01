@@ -4,30 +4,30 @@ from .extra_msa import ExtraMSABlock, ExtraMSAStack
 from .msa_module import MSAModuleBlock, MSAModuleStack
 from .pairformer import PairFormerBlock, PairFormerStack
 from .template_module import (
-    TemplatePairBlock,
-    TemplatePairStack,
+    TemplateEmbedderAllAtom,
     TemplateEmbedderMonomer,
     TemplateEmbedderMultimer,
-    TemplateEmbedderAllAtom,
+    TemplatePairBlock,
+    TemplatePairStack,
+    embed_templates_average,
     embed_templates_offload,
-    embed_templates_average
 )
 
 __all__ = [
-    'PairBlock',
-    'EvoformerBlock',
-    'EvoformerStack',
-    'ExtraMSABlock',
-    'ExtraMSAStack',
-    'MSAModuleBlock',
-    'MSAModuleStack',
-    'PairFormerBlock',
-    'PairFormerStack',
-    'TemplatePairBlock',
-    'TemplatePairStack',
-    'TemplateEmbedderMonomer',
-    'TemplateEmbedderMultimer',
-    'TemplateEmbedderAllAtom',
-    'embed_templates_offload',
-    'embed_templates_average'
+    "PairBlock",
+    "EvoformerBlock",
+    "EvoformerStack",
+    "ExtraMSABlock",
+    "ExtraMSAStack",
+    "MSAModuleBlock",
+    "MSAModuleStack",
+    "PairFormerBlock",
+    "PairFormerStack",
+    "TemplatePairBlock",
+    "TemplatePairStack",
+    "TemplateEmbedderMonomer",
+    "TemplateEmbedderMultimer",
+    "TemplateEmbedderAllAtom",
+    "embed_templates_offload",
+    "embed_templates_average",
 ]

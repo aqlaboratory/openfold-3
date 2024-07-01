@@ -13,37 +13,43 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Template embedding layers. These modules embed templates into pair embeddings. Note that this
-includes the template feature embedding functions in openfold3.core.model.feature_embedders.
+"""Template embedding layers.
+
+These modules embed templates into pair embeddings. Note that this includes the template
+feature embedding functions in openfold3.core.model.feature_embedders.
 """
 
 import math
 import sys
 from functools import partial
-from ml_collections import ConfigDict
 from typing import Dict, Optional
 
 import torch
+from ml_collections import ConfigDict
 from torch import nn
 
 from openfold3.core.model.feature_embedders import (
-    TemplateSingleEmbedderMonomer,
+    TemplatePairEmbedderAllAtom,
     TemplatePairEmbedderMonomer,
     TemplatePairEmbedderMultimer,
+    TemplateSingleEmbedderMonomer,
     TemplateSingleEmbedderMultimer,
-    TemplatePairEmbedderAllAtom
 )
-from .base_blocks import PairBlock
-from openfold3.core.model.layers.template_pointwise_attention import TemplatePointwiseAttention
-from openfold3.core.model.primitives import Linear, LayerNorm
+from openfold3.core.model.layers.template_pointwise_attention import (
+    TemplatePointwiseAttention,
+)
+from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.checkpointing import checkpoint_blocks
 from openfold3.core.utils.chunk_utils import ChunkSizeTuner
-from openfold3.core.utils.tensor_utils import tensor_tree_map, add
+from openfold3.core.utils.tensor_utils import add, tensor_tree_map
+
+from .base_blocks import PairBlock
 
 
 # TODO: Make arguments match PairBlock
 class TemplatePairBlock(PairBlock):
     """Implements one block of AF2 Algorithm 16."""
+
     def __init__(
         self,
         c_t: int,
@@ -69,7 +75,8 @@ class TemplatePairBlock(PairBlock):
             no_heads:
                 Number of heads in the attention mechanism
             transition_type:
-                String 'relu' or 'swiglu' to determine activation for the transition function
+                String 'relu' or 'swiglu' to determine activation for the transition
+                function
             pair_transition_n:
                 Scale of pair transition (Alg. 15) hidden dimension
             dropout_rate:
@@ -82,7 +89,7 @@ class TemplatePairBlock(PairBlock):
             inf:
                 Large constant used for masking
         """
-        super(TemplatePairBlock, self).__init__(
+        super().__init__(
             c_z=c_t,
             c_hidden_mul=c_hidden_tri_mul,
             c_hidden_pair_att=c_hidden_tri_att,
@@ -91,7 +98,7 @@ class TemplatePairBlock(PairBlock):
             transition_n=pair_transition_n,
             pair_dropout=dropout_rate,
             fuse_projection_weights=fuse_projection_weights,
-            inf=inf
+            inf=inf,
         )
 
         self.tri_mul_first = tri_mul_first
@@ -135,45 +142,47 @@ class TemplatePairBlock(PairBlock):
         if _attn_chunk_size is None:
             _attn_chunk_size = chunk_size
 
-        single_templates = [
-            t.unsqueeze(-4) for t in torch.unbind(z, dim=-4)
-        ]
-        single_templates_masks = [
-            m.unsqueeze(-3) for m in torch.unbind(mask, dim=-3)
-        ]
+        single_templates = [t.unsqueeze(-4) for t in torch.unbind(z, dim=-4)]
+        single_templates_masks = [m.unsqueeze(-3) for m in torch.unbind(mask, dim=-3)]
 
         for i in range(len(single_templates)):
             t = single_templates[i]
             t_pair_mask = single_templates_masks[i]
 
             if self.tri_mul_first:
-                t = self.tri_att_start_end(z=self.tri_mul_out_in(z=t,
-                                                                 pair_mask=t_pair_mask,
-                                                                 inplace_safe=inplace_safe),
-                                           _attn_chunk_size=_attn_chunk_size,
-                                           pair_mask=t_pair_mask,
-                                           use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                                           use_lma=use_lma,
-                                           inplace_safe=inplace_safe)
+                t = self.tri_att_start_end(
+                    z=self.tri_mul_out_in(
+                        z=t, pair_mask=t_pair_mask, inplace_safe=inplace_safe
+                    ),
+                    _attn_chunk_size=_attn_chunk_size,
+                    pair_mask=t_pair_mask,
+                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_lma=use_lma,
+                    inplace_safe=inplace_safe,
+                )
             else:
                 t = self.tri_mul_out_in(
-                    z=self.tri_att_start_end(z=t,
-                                             _attn_chunk_size=_attn_chunk_size,
-                                             pair_mask=t_pair_mask,
-                                             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                                             use_lma=use_lma,
-                                             inplace_safe=inplace_safe),
-                    pair_mask=t_pair_mask,
-                    inplace_safe=inplace_safe)
-
-            t = add(t,
-                    self.pair_transition(
-                        t,
-                        mask=t_pair_mask if _mask_trans else None,
-                        chunk_size=chunk_size,
+                    z=self.tri_att_start_end(
+                        z=t,
+                        _attn_chunk_size=_attn_chunk_size,
+                        pair_mask=t_pair_mask,
+                        use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                        use_lma=use_lma,
+                        inplace_safe=inplace_safe,
                     ),
-                    inplace_safe
-                    )
+                    pair_mask=t_pair_mask,
+                    inplace_safe=inplace_safe,
+                )
+
+            t = add(
+                t,
+                self.pair_transition(
+                    t,
+                    mask=t_pair_mask if _mask_trans else None,
+                    chunk_size=chunk_size,
+                ),
+                inplace_safe,
+            )
 
             if not inplace_safe:
                 single_templates[i] = t
@@ -186,6 +195,7 @@ class TemplatePairBlock(PairBlock):
 
 class TemplatePairStack(nn.Module):
     """Implements AF2 Algorithm 16."""
+
     def __init__(
         self,
         c_t,
@@ -216,7 +226,8 @@ class TemplatePairStack(nn.Module):
             no_heads:
                 Number of heads in the attention mechanism
             transition_type:
-                String 'relu' or 'swiglu' to determine activation for the transition function
+                String 'relu' or 'swiglu' to determine activation for the transition
+                function
             pair_transition_n:
                 Scale of pair transition (Alg. 15) hidden dimension
             dropout_rate:
@@ -234,7 +245,7 @@ class TemplatePairStack(nn.Module):
             inf:
                 Large constant used for masking
         """
-        super(TemplatePairStack, self).__init__()
+        super().__init__()
 
         self.blocks_per_ckpt = blocks_per_ckpt
 
@@ -312,20 +323,22 @@ class TemplatePairStack(nn.Module):
         ]
 
         if chunk_size is not None and self.chunk_size_tuner is not None:
-            assert (not self.training)
+            assert not self.training
             tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
                 representative_fn=blocks[0],
                 args=(t.clone(),),
                 min_chunk_size=chunk_size,
             )
             blocks = [
-                partial(b,
-                        chunk_size=tuned_chunk_size,
-                        _attn_chunk_size=max(chunk_size, tuned_chunk_size // 4),
-                        ) for b in blocks
+                partial(
+                    b,
+                    chunk_size=tuned_chunk_size,
+                    _attn_chunk_size=max(chunk_size, tuned_chunk_size // 4),
+                )
+                for b in blocks
             ]
 
-        t, = checkpoint_blocks(
+        (t,) = checkpoint_blocks(
             blocks=blocks,
             args=(t,),
             blocks_per_ckpt=self.blocks_per_ckpt if self.training else None,
@@ -338,13 +351,14 @@ class TemplatePairStack(nn.Module):
 
 class TemplateEmbedderMonomer(nn.Module):
     """Implements AF2 Algorithm 2 lines 7-13."""
+
     def __init__(self, config: ConfigDict):
         """
         Args:
             config:
                 ConfigDict with template config.
         """
-        super(TemplateEmbedderMonomer, self).__init__()
+        super().__init__()
 
         self.config = config
         self.template_single_embedder = TemplateSingleEmbedderMonomer(
@@ -370,9 +384,9 @@ class TemplateEmbedderMonomer(nn.Module):
         _mask_trans=True,
         use_deepspeed_evo_attention=False,
         use_lma=False,
-        inplace_safe=False
+        inplace_safe=False,
     ):
-        """"
+        """
         Args:
             batch:
                 Input feature dictionary
@@ -408,23 +422,24 @@ class TemplateEmbedderMonomer(nn.Module):
             # We'll preallocate the full pair tensor now to avoid manifesting
             # a second copy during the stack later on
             t_pair = z.new_zeros(
-                z.shape[:-3] +
-                (n_templ, n, n, self.config.template_pair_embedder.c_out)
+                z.shape[:-3] + (n_templ, n, n, self.config.template_pair_embedder.c_out)
             )
 
         for i in range(n_templ):
             idx = batch["template_aatype"].new_tensor(i)
             single_template_feats = tensor_tree_map(
-                lambda t: torch.index_select(t, templ_dim, idx).squeeze(templ_dim),
+                lambda t: torch.index_select(t, templ_dim, idx).squeeze(templ_dim),  # noqa: B023
                 batch,
             )
 
             # [*, N, N, C_t]
-            t = self.template_pair_embedder(batch=single_template_feats,
-                                            distogram_config=self.config.distogram,
-                                            use_unit_vector=self.config.use_unit_vector,
-                                            inf=self.config.inf,
-                                            eps=self.config.eps)
+            t = self.template_pair_embedder(
+                batch=single_template_feats,
+                distogram_config=self.config.distogram,
+                use_unit_vector=self.config.use_unit_vector,
+                inf=self.config.inf,
+                eps=self.config.eps,
+            )
 
             if inplace_safe:
                 t_pair[..., i, :, :, :] = t
@@ -486,13 +501,14 @@ class TemplateEmbedderMonomer(nn.Module):
 
 class TemplateEmbedderMultimer(nn.Module):
     """Implements AF2-Multimer version of Algorithm 2 lines 7-13."""
+
     def __init__(self, config: ConfigDict):
         """
         Args:
             config:
                 ConfigDict with template config.
         """
-        super(TemplateEmbedderMultimer, self).__init__()
+        super().__init__()
 
         self.config = config
         self.template_single_embedder = TemplateSingleEmbedderMultimer(
@@ -518,9 +534,9 @@ class TemplateEmbedderMultimer(nn.Module):
         _mask_trans=True,
         use_deepspeed_evo_attention=False,
         use_lma=False,
-        inplace_safe=False
+        inplace_safe=False,
     ):
-        """"
+        """
         Args:
             batch:
                 Input feature dictionary
@@ -557,7 +573,7 @@ class TemplateEmbedderMultimer(nn.Module):
             distogram_config=self.config.distogram,
             query_embedding=z,
             multichain_mask_2d=multichain_mask_2d,
-            inf=self.config.inf
+            inf=self.config.inf,
         )
 
         template_embeds["template_pair_embedding"] = pair_act
@@ -588,13 +604,14 @@ class TemplateEmbedderMultimer(nn.Module):
 
 class TemplateEmbedderAllAtom(nn.Module):
     """Implements AF3 Algorithm 16."""
+
     def __init__(self, config: ConfigDict):
         """
         Args:
             config:
                 ConfigDict with template config.
         """
-        super(TemplateEmbedderAllAtom, self).__init__()
+        super().__init__()
 
         self.config = config
         self.template_pair_embedder = TemplatePairEmbedderAllAtom(
@@ -615,7 +632,7 @@ class TemplateEmbedderAllAtom(nn.Module):
         _mask_trans: bool = True,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
-        inplace_safe: bool = False
+        inplace_safe: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -710,16 +727,18 @@ def embed_templates_offload(
     for i in range(n_templ):
         idx = batch["template_aatype"].new_tensor(i)
         single_template_feats = tensor_tree_map(
-            lambda t: torch.index_select(t, templ_dim, idx).squeeze(templ_dim),
+            lambda t: torch.index_select(t, templ_dim, idx).squeeze(templ_dim),  # noqa: B023
             batch,
         )
 
         # [*, N, N, C_t]
-        t = model.template_embedder.template_pair_embedder(batch=single_template_feats,
-                                                           distogram_config=model.config.template.distogram,
-                                                           use_unit_vector=model.config.template.use_unit_vector,
-                                                           inf=model.config.template.inf,
-                                                           eps=model.config.template.eps)
+        t = model.template_embedder.template_pair_embedder(
+            batch=single_template_feats,
+            distogram_config=model.config.template.distogram,
+            use_unit_vector=model.config.template.use_unit_vector,
+            inf=model.config.template.inf,
+            eps=model.config.template.eps,
+        )
 
         # [*, 1, N, N, C_z]
         t = model.template_embedder.template_pair_stack(
@@ -732,7 +751,7 @@ def embed_templates_offload(
             _mask_trans=model.config._mask_trans,
         )
 
-        assert (sys.getrefcount(t) == 2)
+        assert sys.getrefcount(t) == 2
 
         pair_embeds_cpu.append(t.cpu())
 
@@ -743,10 +762,10 @@ def embed_templates_offload(
 
     for i in range(0, n, template_chunk_size):
         pair_chunks = [
-            p[..., i: i + template_chunk_size, :, :] for p in pair_embeds_cpu
+            p[..., i : i + template_chunk_size, :, :] for p in pair_embeds_cpu
         ]
         pair_chunk = torch.cat(pair_chunks, dim=templ_dim).to(device=z.device)
-        z_chunk = z[..., i: i + template_chunk_size, :, :]
+        z_chunk = z[..., i : i + template_chunk_size, :, :]
         att_chunk = model.template_embedder.template_pointwise_att(
             pair_chunk,
             z_chunk,
@@ -754,14 +773,14 @@ def embed_templates_offload(
             use_lma=model.globals.use_lma,
         )
 
-        t[..., i: i + template_chunk_size, :, :] = att_chunk
+        t[..., i : i + template_chunk_size, :, :] = att_chunk
 
     del pair_chunks
 
     if inplace_safe:
         t = t * (torch.sum(batch["template_mask"], dim=-1) > 0)
     else:
-        t *= (torch.sum(batch["template_mask"], dim=-1) > 0)
+        t *= torch.sum(batch["template_mask"], dim=-1) > 0
 
     ret = {}
     if model.config.template.embed_angles:
@@ -816,23 +835,26 @@ def embed_templates_average(
     # Embed the templates one at a time (with a poor man's vmap)
     n_templ = batch["template_aatype"].shape[templ_dim]
     out_tensor = z.new_zeros(z.shape)
-    for i in range(0, n_templ, templ_group_size):
-        def slice_template_tensor(t):
-            s = [slice(None) for _ in t.shape]
-            s[templ_dim] = slice(i, i + templ_group_size)
-            return t[s]
 
+    def slice_template_tensor(t, i):
+        s = [slice(None) for _ in t.shape]
+        s[templ_dim] = slice(i, i + templ_group_size)
+        return t[s]
+
+    for i in range(0, n_templ, templ_group_size):
         template_feats = tensor_tree_map(
-            slice_template_tensor,
+            partial(slice_template_tensor, i=i),
             batch,
         )
 
         # [*, N, N, C_t]
-        t = model.template_embedder.template_pair_embedder(batch=template_feats,
-                                                           distogram_config=model.config.template.distogram,
-                                                           use_unit_vector=model.config.template.use_unit_vector,
-                                                           inf=model.config.template.inf,
-                                                           eps=model.config.template.eps)
+        t = model.template_embedder.template_pair_embedder(
+            batch=template_feats,
+            distogram_config=model.config.template.distogram,
+            use_unit_vector=model.config.template.use_unit_vector,
+            inf=model.config.template.inf,
+            eps=model.config.template.eps,
+        )
 
         t = model.template_embedder.template_pair_stack(
             t,
@@ -865,7 +887,7 @@ def embed_templates_average(
         del t
 
     if inplace_safe:
-        out_tensor *= (torch.sum(batch["template_mask"], dim=-1) > 0)
+        out_tensor *= torch.sum(batch["template_mask"], dim=-1) > 0
     else:
         out_tensor = out_tensor * (torch.sum(batch["template_mask"], dim=-1) > 0)
 
