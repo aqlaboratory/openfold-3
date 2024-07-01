@@ -34,12 +34,11 @@ WORKDIR /opt/openfold3
 RUN python3 setup.py install
 
 # Download single parameter file 
+RUN wget -q -P . https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar
+RUN tar -xvf alphafold_params_2022-12-06.tar params_model_1_ptm.npz
 RUN mkdir openfold3/resources/params
-RUN wget -q -P openfold3/resources/params \
-    https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar
-RUN tar -xvf /opt/openfold3/openfold3/resources/params/alphafold_params_2022-12-06.tar \
-    openfold3/resources/params_model_1_ptm.npz
-RUN rm /opt/openfold3/openfold3/resources/params/alphafold_params_2022-12-06.tar
+COPY params_model_1_ptm.npz openfold3/resources/params/
+RUN rm alphafold_params_2022-12-06.tar params_model_1_ptm.npz 
 
 # Sanity checks for environment / path
 RUN echo $LD_LIBRARY_PATH
