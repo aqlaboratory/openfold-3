@@ -17,6 +17,7 @@
 fix_pdb uses a third-party tool. We also support fixing some additional edge
 cases like removing chains of length one (see clean_structure).
 """
+
 import io
 
 import pdbfixer
@@ -55,9 +56,7 @@ def fix_pdb(pdbfile, alterations_info):
     fixer.addMissingAtoms(seed=0)
     fixer.addMissingHydrogens()
     out_handle = io.StringIO()
-    app.PDBFile.writeFile(
-        fixer.topology, fixer.positions, out_handle, keepIds=True
-    )
+    app.PDBFile.writeFile(fixer.topology, fixer.positions, out_handle, keepIds=True)
     return out_handle.getvalue()
 
 
@@ -89,9 +88,7 @@ def _remove_heterogens(fixer, alterations_info, keep_water):
     for chain in fixer.topology.chains():
         for residue in chain.residues():
             final_resnames.add(residue.name)
-    alterations_info["removed_heterogens"] = initial_resnames.difference(
-        final_resnames
-    )
+    alterations_info["removed_heterogens"] = initial_resnames.difference(final_resnames)
 
 
 def _replace_met_se(pdb_structure, alterations_info):
@@ -121,9 +118,7 @@ def _remove_chains_of_length_one(pdb_structure, alterations_info):
     removed_chains = {}
     for model in pdb_structure.iter_models():
         valid_chains = [c for c in model.iter_chains() if len(c) > 1]
-        invalid_chain_ids = [
-            c.chain_id for c in model.iter_chains() if len(c) <= 1
-        ]
+        invalid_chain_ids = [c.chain_id for c in model.iter_chains() if len(c) <= 1]
         model.chains = valid_chains
         for chain_id in invalid_chain_ids:
             model.chains_by_id.pop(chain_id)

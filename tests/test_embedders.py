@@ -12,27 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
 import unittest
+
+import torch
 
 from openfold3.core.model.feature_embedders import (
     InputEmbedder,
-    InputEmbedderMultimer,
     InputEmbedderAllAtom,
+    InputEmbedderMultimer,
     MSAModuleEmbedder,
     PreembeddingEmbedder,
-    RecyclingEmbedder
-)
-from openfold3.core.model.feature_embedders import (
-    TemplateSingleEmbedderMonomer,
+    RecyclingEmbedder,
+    TemplatePairEmbedderAllAtom,
     TemplatePairEmbedderMonomer,
-    TemplateSingleEmbedderMultimer,
     TemplatePairEmbedderMultimer,
-    TemplatePairEmbedderAllAtom
+    TemplateSingleEmbedderMonomer,
+    TemplateSingleEmbedderMultimer,
 )
 from openfold3.model_implementations.af2_monomer.config import model_config
 from openfold3.model_implementations.af3_all_atom.config import config as af3_config
-
 from tests.config import consts, monomer_consts, multimer_consts
 from tests.data_utils import random_asym_ids, random_template_feats
 
@@ -67,12 +65,23 @@ class TestInputEmbedder(unittest.TestCase):
         self.assertTrue(msa_emb.shape == (b, n_clust, n_res, c_m))
         self.assertTrue(pair_emb.shape == (b, n_res, n_res, c_z))
 
-        ie = InputEmbedderMultimer(tf_dim, msa_dim, c_z, c_m,
-                                   max_relative_idx=max_relative_idx,
-                                   use_chain_relative=use_chain_relative,
-                                   max_relative_chain=max_relative_chain)
-        batch = {"target_feat": tf, "residue_index": ri, "msa_feat": msa,
-                 "asym_id": asym_id, "entity_id": entity_id, "sym_id": sym_id}
+        ie = InputEmbedderMultimer(
+            tf_dim,
+            msa_dim,
+            c_z,
+            c_m,
+            max_relative_idx=max_relative_idx,
+            use_chain_relative=use_chain_relative,
+            max_relative_chain=max_relative_chain,
+        )
+        batch = {
+            "target_feat": tf,
+            "residue_index": ri,
+            "msa_feat": msa,
+            "asym_id": asym_id,
+            "entity_id": entity_id,
+            "sym_id": sym_id,
+        }
         msa_emb, pair_emb = ie(batch)
 
         self.assertTrue(msa_emb.shape == (b, n_clust, n_res, c_m))
@@ -90,24 +99,31 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
         c_z = af3_config.model.input_embedder.c_z
 
         batch = {
-            'token_index': torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-            'token_mask': torch.ones((batch_size, n_token)),
-            'residue_index': torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-            'sym_id': torch.zeros((batch_size, n_token)),
-            'asym_id': torch.zeros((batch_size, n_token)),
-            'entity_id': torch.zeros((batch_size, n_token)),
-            'ref_pos': torch.randn((batch_size, n_atom, 3)),
-            'ref_mask': torch.ones((batch_size, n_atom)),
-            'ref_element': torch.ones((batch_size, n_atom, 128)),
-            'ref_charge': torch.ones((batch_size, n_atom)),
-            'ref_atom_name_chars': torch.ones((batch_size, n_atom, 4, 64)),
-            'ref_space_uid': torch.zeros((batch_size, n_atom)),
-            'atom_to_token_index': torch.eye(n_token).repeat_interleave(4, dim=0).unsqueeze(0).repeat(batch_size, 1, 1),
-            'atom_mask': torch.ones((batch_size, n_atom)),
-            'restype': torch.rand((batch_size, n_token, one_hot_dim)),
-            'profile': torch.rand((batch_size, n_token, one_hot_dim)),
-            'deletion_mean': torch.rand((batch_size, n_token)),
-            'token_bonds': torch.rand((batch_size, n_token, n_token))
+            "token_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
+            "token_mask": torch.ones((batch_size, n_token)),
+            "residue_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
+            "sym_id": torch.zeros((batch_size, n_token)),
+            "asym_id": torch.zeros((batch_size, n_token)),
+            "entity_id": torch.zeros((batch_size, n_token)),
+            "ref_pos": torch.randn((batch_size, n_atom, 3)),
+            "ref_mask": torch.ones((batch_size, n_atom)),
+            "ref_element": torch.ones((batch_size, n_atom, 128)),
+            "ref_charge": torch.ones((batch_size, n_atom)),
+            "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
+            "ref_space_uid": torch.zeros((batch_size, n_atom)),
+            "atom_to_token_index": torch.eye(n_token)
+            .repeat_interleave(4, dim=0)
+            .unsqueeze(0)
+            .repeat(batch_size, 1, 1),
+            "atom_mask": torch.ones((batch_size, n_atom)),
+            "restype": torch.rand((batch_size, n_token, one_hot_dim)),
+            "profile": torch.rand((batch_size, n_token, one_hot_dim)),
+            "deletion_mean": torch.rand((batch_size, n_token)),
+            "token_bonds": torch.rand((batch_size, n_token, n_token)),
         }
 
         ie = InputEmbedderAllAtom(**af3_config.model.input_embedder)
@@ -132,20 +148,16 @@ class TestMSAModuleEmbedder(unittest.TestCase):
         one_hot_dim = 32
 
         batch = {
-            'msa': torch.rand((batch_size, n_total_msa_seq, n_token, one_hot_dim)),
-            'has_deletion': torch.ones((batch_size, n_total_msa_seq, n_token)),
-            'deletion_value': torch.rand((batch_size, n_total_msa_seq, n_token)),
-            'msa_mask': torch.ones((batch_size, n_total_msa_seq, n_token)),
-            'num_main_msa_seqs': torch.Tensor([n_main_msa_seq])
+            "msa": torch.rand((batch_size, n_total_msa_seq, n_token, one_hot_dim)),
+            "has_deletion": torch.ones((batch_size, n_total_msa_seq, n_token)),
+            "deletion_value": torch.rand((batch_size, n_total_msa_seq, n_token)),
+            "msa_mask": torch.ones((batch_size, n_total_msa_seq, n_token)),
+            "num_main_msa_seqs": torch.Tensor([n_main_msa_seq]),
         }
 
         s_input = torch.rand(batch_size, n_token, c_s_input)
 
-        ie = MSAModuleEmbedder(
-            c_m_feats=c_m_feats,
-            c_m=c_m,
-            c_s_input=c_s_input
-        )
+        ie = MSAModuleEmbedder(c_m_feats=c_m_feats, c_m=c_m, c_s_input=c_s_input)
 
         msa, msa_mask = ie(batch=batch, s_input=s_input)
         uniprot_seqs = n_total_msa_seq - n_main_msa_seq
@@ -153,7 +165,9 @@ class TestMSAModuleEmbedder(unittest.TestCase):
 
         # Check that the number of sampled sequences is between the number of
         # uniprot seqs and the total number of sequences
-        self.assertTrue((n_sampled_seqs > uniprot_seqs) & (n_sampled_seqs < n_total_msa_seq))
+        self.assertTrue(
+            (n_sampled_seqs > uniprot_seqs) & (n_sampled_seqs < n_total_msa_seq)
+        )
         self.assertTrue(msa.shape == (batch_size, n_sampled_seqs, n_token, c_m))
         self.assertTrue(msa_mask.shape == (batch_size, n_sampled_seqs, n_token))
 
@@ -215,8 +229,7 @@ class TestTemplateSingleEmbedders(unittest.TestCase):
         batch = {k: torch.as_tensor(v) for k, v in batch.items()}
 
         tae = TemplateSingleEmbedderMonomer(
-            c.model.template.template_single_embedder.c_in,
-            c_m
+            c.model.template.template_single_embedder.c_in, c_m
         )
 
         x = tae(batch)
@@ -232,7 +245,7 @@ class TestTemplateSingleEmbedders(unittest.TestCase):
         )
 
         x = tae(batch)
-        x = x['template_single_embedding']
+        x = x["template_single_embedding"]
 
         self.assertTrue(x.shape == (batch_size, n_templ, n_res, c_m))
 
@@ -242,7 +255,6 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         batch_size = 2
         n_templ = 4
         n_res = 5
-        c_feats = 88
 
         c = model_config(monomer_consts.model)
         c_t = c.model.template.template_pair_embedder.c_out
@@ -250,15 +262,15 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         batch = random_template_feats(n_templ, n_res, batch_size=batch_size)
         batch = {k: torch.as_tensor(v) for k, v in batch.items()}
 
-        tpe = TemplatePairEmbedderMonomer(
-            **c.model.template.template_pair_embedder
-        )
+        tpe = TemplatePairEmbedderMonomer(**c.model.template.template_pair_embedder)
 
-        x = tpe(batch=batch,
-                distogram_config=c.model.template.distogram,
-                use_unit_vector=False,
-                inf=monomer_consts.inf,
-                eps=monomer_consts.eps)
+        x = tpe(
+            batch=batch,
+            distogram_config=c.model.template.distogram,
+            use_unit_vector=False,
+            inf=monomer_consts.inf,
+            eps=monomer_consts.eps,
+        )
 
         self.assertTrue(x.shape == (batch_size, n_templ, n_res, n_res, c_t))
 
@@ -267,21 +279,21 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         c_t = c.model.template.template_pair_embedder.c_out
 
         z = torch.rand((batch_size, n_res, n_res, c_z))
-        asym_ids = torch.as_tensor((random_asym_ids(n_res)))
+        asym_ids = torch.as_tensor(random_asym_ids(n_res))
         asym_ids = torch.tile(asym_ids[None, :], (batch_size, 1))
-        multichain_mask_2d = (
-            asym_ids[..., None] == asym_ids[..., None, :]
-        ).to(dtype=z.dtype)
-
-        tpe = TemplatePairEmbedderMultimer(
-            **c.model.template.template_pair_embedder
+        multichain_mask_2d = (asym_ids[..., None] == asym_ids[..., None, :]).to(
+            dtype=z.dtype
         )
 
-        x = tpe(batch=batch,
-                distogram_config=c.model.template.distogram,
-                query_embedding=z,
-                multichain_mask_2d=multichain_mask_2d,
-                inf=multimer_consts.inf)
+        tpe = TemplatePairEmbedderMultimer(**c.model.template.template_pair_embedder)
+
+        x = tpe(
+            batch=batch,
+            distogram_config=c.model.template.distogram,
+            query_embedding=z,
+            multichain_mask_2d=multichain_mask_2d,
+            inf=multimer_consts.inf,
+        )
 
         self.assertTrue(x.shape == (batch_size, n_templ, n_res, n_res, c_t))
 
@@ -292,15 +304,21 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         c_z = af3_config.model.template.template_pair_embedder.c_z
         c_t = af3_config.model.template.template_pair_embedder.c_out
 
-        tpe = TemplatePairEmbedderAllAtom(**af3_config.model.template.template_pair_embedder)
+        tpe = TemplatePairEmbedderAllAtom(
+            **af3_config.model.template.template_pair_embedder
+        )
 
         batch = {
             "asym_id": torch.ones((batch_size, n_token)),
             "template_restype": torch.ones((batch_size, n_templ, n_token, 32)),
             "template_pseudo_beta_mask": torch.ones((batch_size, n_templ, n_token)),
             "template_backbone_frame_mask": torch.ones((batch_size, n_templ, n_token)),
-            "template_distogram": torch.ones((batch_size, n_templ, n_token, n_token, 39)),
-            "template_unit_vector": torch.ones((batch_size, n_templ, n_token, n_token, 3)),
+            "template_distogram": torch.ones(
+                (batch_size, n_templ, n_token, n_token, 39)
+            ),
+            "template_unit_vector": torch.ones(
+                (batch_size, n_templ, n_token, n_token, 3)
+            ),
         }
 
         z = torch.ones((batch_size, n_token, n_token, c_z))

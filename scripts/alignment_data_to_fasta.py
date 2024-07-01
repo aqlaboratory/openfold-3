@@ -26,7 +26,7 @@ def chain_dir_to_fasta(dir: Path) -> str:
         if alignment_file.exists():
             break
 
-    with open(alignment_file, "r") as f:
+    with open(alignment_file) as f:
         next(f)  # skip the first line
         seq = next(f).strip()
 
@@ -78,7 +78,8 @@ def main(
     output_path: Path, alignment_db_index: Optional[Path], alignment_dir: Optional[Path]
 ) -> None:
     """
-    Generate a FASTA file from either an alignment-db index or a chain directory using multi-threading.
+    Generate a FASTA file from either an alignment-db index or a chain directory using
+    multi-threading.
     """
     fasta = []
 
@@ -102,7 +103,7 @@ def main(
     elif alignment_db_index:
         print("Creating FASTA from alignment dbs...")
 
-        with open(alignment_db_index, "r") as f:
+        with open(alignment_db_index) as f:
             index = json.load(f)
 
         db_dir = alignment_db_index.parent

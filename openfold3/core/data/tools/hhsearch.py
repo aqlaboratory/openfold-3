@@ -14,11 +14,12 @@
 # limitations under the License.
 
 """Library to run HHsearch from Python."""
+
 import glob
 import logging
 import os
 import subprocess
-from typing import Sequence, Optional
+from typing import Optional, Sequence
 
 from openfold3.core.data import parsers
 from openfold3.core.data.tools import utils
@@ -56,20 +57,16 @@ class HHSearch:
 
         for database_path in self.databases:
             if not glob.glob(database_path + "_*"):
-                logging.error(
-                    "Could not find HHsearch database %s", database_path
-                )
-                raise ValueError(
-                    f"Could not find HHsearch database {database_path}"
-                )
+                logging.error("Could not find HHsearch database %s", database_path)
+                raise ValueError(f"Could not find HHsearch database {database_path}")
 
     @property
     def output_format(self) -> str:
-        return 'hhr'
+        return "hhr"
 
     @property
     def input_format(self) -> str:
-        return 'a3m'
+        return "a3m"
 
     def query(self, a3m: str, output_dir: Optional[str] = None) -> str:
         """Queries the database using HHsearch using a given a3m."""
@@ -107,8 +104,8 @@ class HHSearch:
             if retcode:
                 # Stderr is truncated to prevent proto size errors in Beam.
                 raise RuntimeError(
-                    "HHSearch failed:\nstdout:\n%s\n\nstderr:\n%s\n"
-                    % (stdout.decode("utf-8"), stderr[:100_000].decode("utf-8"))
+                    f"HHSearch failed:\nstdout:\n{stdout.decode('utf-8')}\n\n"
+                    f"stderr:\n{stderr[:100_000].decode('utf-8')}\n"
                 )
 
             with open(hhr_path) as f:
@@ -117,9 +114,8 @@ class HHSearch:
 
     @staticmethod
     def get_template_hits(
-        output_string: str,
-        input_sequence: str
+        output_string: str, input_sequence: str
     ) -> Sequence[parsers.TemplateHit]:
         """Gets parsed template hits from the raw string output by the tool"""
-        del input_sequence # Used by hmmsearch but not needed for hhsearch
+        del input_sequence  # Used by hmmsearch but not needed for hhsearch
         return parsers.parse_hhr(output_string)

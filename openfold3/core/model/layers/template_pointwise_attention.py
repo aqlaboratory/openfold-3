@@ -46,7 +46,7 @@ class TemplatePointwiseAttention(nn.Module):
             inf:
                 Large constant for masking
         """
-        super(TemplatePointwiseAttention, self).__init__()
+        super().__init__()
 
         self.c_t = c_t
         self.c_z = c_z
@@ -63,13 +63,14 @@ class TemplatePointwiseAttention(nn.Module):
             gating=False,
         )
 
-    def _chunk(self,
-               z: torch.Tensor,
-               t: torch.Tensor,
-               biases: List[torch.Tensor],
-               chunk_size: int,
-               use_lma: bool = False,
-               ) -> torch.Tensor:
+    def _chunk(
+        self,
+        z: torch.Tensor,
+        t: torch.Tensor,
+        biases: List[torch.Tensor],
+        chunk_size: int,
+        use_lma: bool = False,
+    ) -> torch.Tensor:
         mha_inputs = {
             "q_x": z,
             "kv_x": t,
@@ -82,14 +83,15 @@ class TemplatePointwiseAttention(nn.Module):
             no_batch_dims=len(z.shape[:-2]),
         )
 
-    def forward(self,
-                t: torch.Tensor,
-                z: torch.Tensor,
-                template_mask: Optional[torch.Tensor] = None,
-                # This module suffers greatly from a small chunk size
-                chunk_size: Optional[int] = 256,
-                use_lma: bool = False,
-                ) -> torch.Tensor:
+    def forward(
+        self,
+        t: torch.Tensor,
+        z: torch.Tensor,
+        template_mask: Optional[torch.Tensor] = None,
+        # This module suffers greatly from a small chunk size
+        chunk_size: Optional[int] = 256,
+        use_lma: bool = False,
+    ) -> torch.Tensor:
         """
         Args:
             t:

@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
 import unittest
+
+import torch
 
 from openfold3.core.model.structure.diffusion_module import (
     DiffusionModule,
@@ -24,7 +25,6 @@ from tests.config import consts
 
 
 class TestDiffusionModule(unittest.TestCase):
-
     def test_without_n_sample_channel(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
@@ -43,30 +43,39 @@ class TestDiffusionModule(unittest.TestCase):
         zij_trunk = torch.rand((batch_size, n_token, n_token, c_z))
 
         batch = {
-            'token_index': torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-            'token_mask': torch.ones((batch_size, n_token)),
-            'residue_index': torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-            'sym_id': torch.zeros((batch_size, n_token)),
-            'asym_id': torch.zeros((batch_size, n_token)),
-            'entity_id': torch.zeros((batch_size, n_token)),
-            'ref_pos': torch.randn((batch_size, n_atom, 3)),
-            'ref_mask': torch.ones((batch_size, n_atom)),
-            'ref_element': torch.ones((batch_size, n_atom, 128)),
-            'ref_charge': torch.ones((batch_size, n_atom)),
-            'ref_atom_name_chars': torch.ones((batch_size, n_atom, 4, 64)),
-            'ref_space_uid': torch.zeros((batch_size, n_atom)),
-            'atom_to_token_index': torch.eye(n_token).repeat_interleave(4, dim=0).unsqueeze(0).repeat(batch_size, 1, 1),
+            "token_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
+            "token_mask": torch.ones((batch_size, n_token)),
+            "residue_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
+            "sym_id": torch.zeros((batch_size, n_token)),
+            "asym_id": torch.zeros((batch_size, n_token)),
+            "entity_id": torch.zeros((batch_size, n_token)),
+            "ref_pos": torch.randn((batch_size, n_atom, 3)),
+            "ref_mask": torch.ones((batch_size, n_atom)),
+            "ref_element": torch.ones((batch_size, n_atom, 128)),
+            "ref_charge": torch.ones((batch_size, n_atom)),
+            "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
+            "ref_space_uid": torch.zeros((batch_size, n_atom)),
+            "atom_to_token_index": torch.eye(n_token)
+            .repeat_interleave(4, dim=0)
+            .unsqueeze(0)
+            .repeat(batch_size, 1, 1),
         }
 
-        xl = dm(batch=batch,
-                xl_noisy=xl_noisy,
-                t=t,
-                si_input=si_input,
-                si_trunk=si_trunk,
-                zij_trunk=zij_trunk)
-        
+        xl = dm(
+            batch=batch,
+            xl_noisy=xl_noisy,
+            t=t,
+            si_input=si_input,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+        )
+
         self.assertTrue(xl.shape == (batch_size, n_atom, 3))
-    
+
     def test_with_n_sample_channel(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
@@ -86,33 +95,40 @@ class TestDiffusionModule(unittest.TestCase):
         zij_trunk = torch.rand((batch_size, 1, n_token, n_token, c_z))
 
         batch = {
-            'token_index': torch.arange(0, n_token)[None, None, :].repeat((batch_size, 1, 1)),
-            'token_mask': torch.ones((batch_size, 1, n_token)),
-            'residue_index': torch.arange(0, n_token)[None, None, :].repeat((batch_size, 1, 1)),
-            'sym_id': torch.zeros((batch_size, 1, n_token)),
-            'asym_id': torch.zeros((batch_size, 1, n_token)),
-            'entity_id': torch.zeros((batch_size, 1, n_token)),
-            'ref_pos': torch.randn((batch_size, 1, n_atom, 3)),
-            'ref_mask': torch.ones((batch_size, 1, n_atom)),
-            'ref_element': torch.ones((batch_size, 1, n_atom, 128)),
-            'ref_charge': torch.ones((batch_size, 1, n_atom)),
-            'ref_atom_name_chars': torch.ones((batch_size, 1, n_atom, 4, 64)),
-            'ref_space_uid': torch.zeros((batch_size, 1, n_atom)),
-            'atom_to_token_index': torch.eye(n_token).repeat_interleave(4, dim=0)[None, None, :, :].repeat(batch_size, 1, 1, 1),
+            "token_index": torch.arange(0, n_token)[None, None, :].repeat(
+                (batch_size, 1, 1)
+            ),
+            "token_mask": torch.ones((batch_size, 1, n_token)),
+            "residue_index": torch.arange(0, n_token)[None, None, :].repeat(
+                (batch_size, 1, 1)
+            ),
+            "sym_id": torch.zeros((batch_size, 1, n_token)),
+            "asym_id": torch.zeros((batch_size, 1, n_token)),
+            "entity_id": torch.zeros((batch_size, 1, n_token)),
+            "ref_pos": torch.randn((batch_size, 1, n_atom, 3)),
+            "ref_mask": torch.ones((batch_size, 1, n_atom)),
+            "ref_element": torch.ones((batch_size, 1, n_atom, 128)),
+            "ref_charge": torch.ones((batch_size, 1, n_atom)),
+            "ref_atom_name_chars": torch.ones((batch_size, 1, n_atom, 4, 64)),
+            "ref_space_uid": torch.zeros((batch_size, 1, n_atom)),
+            "atom_to_token_index": torch.eye(n_token)
+            .repeat_interleave(4, dim=0)[None, None, :, :]
+            .repeat(batch_size, 1, 1, 1),
         }
 
-        xl = dm(batch=batch,
-                xl_noisy=xl_noisy,
-                t=t,
-                si_input=si_input,
-                si_trunk=si_trunk,
-                zij_trunk=zij_trunk)
-        
+        xl = dm(
+            batch=batch,
+            xl_noisy=xl_noisy,
+            t=t,
+            si_input=si_input,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+        )
+
         self.assertTrue(xl.shape == (batch_size, n_sample, n_atom, 3))
 
 
 class TestSampleDiffusion(unittest.TestCase):
-
     def test_shape(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
@@ -129,19 +145,26 @@ class TestSampleDiffusion(unittest.TestCase):
         sd = SampleDiffusion(**sample_config, diffusion_module=dm)
 
         batch = {
-            'token_index': torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-            'token_mask': torch.ones((batch_size, n_token)),
-            'residue_index': torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-            'sym_id': torch.zeros((batch_size, n_token)),
-            'asym_id': torch.zeros((batch_size, n_token)),
-            'entity_id': torch.zeros((batch_size, n_token)),
-            'ref_pos': torch.randn((batch_size, n_atom, 3)),
-            'ref_mask': torch.ones((batch_size, n_atom)),
-            'ref_element': torch.ones((batch_size, n_atom, 128)),
-            'ref_charge': torch.ones((batch_size, n_atom)),
-            'ref_atom_name_chars': torch.ones((batch_size, n_atom, 4, 64)),
-            'ref_space_uid': torch.zeros((batch_size, n_atom)),
-            'atom_to_token_index': torch.eye(n_token).repeat_interleave(4, dim=0).unsqueeze(0).repeat(batch_size, 1, 1),
+            "token_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
+            "token_mask": torch.ones((batch_size, n_token)),
+            "residue_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
+            "sym_id": torch.zeros((batch_size, n_token)),
+            "asym_id": torch.zeros((batch_size, n_token)),
+            "entity_id": torch.zeros((batch_size, n_token)),
+            "ref_pos": torch.randn((batch_size, n_atom, 3)),
+            "ref_mask": torch.ones((batch_size, n_atom)),
+            "ref_element": torch.ones((batch_size, n_atom, 128)),
+            "ref_charge": torch.ones((batch_size, n_atom)),
+            "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
+            "ref_space_uid": torch.zeros((batch_size, n_atom)),
+            "atom_to_token_index": torch.eye(n_token)
+            .repeat_interleave(4, dim=0)
+            .unsqueeze(0)
+            .repeat(batch_size, 1, 1),
         }
 
         si_input = torch.rand((batch_size, n_token, c_s_input))
@@ -149,10 +172,9 @@ class TestSampleDiffusion(unittest.TestCase):
         zij_trunk = torch.rand((batch_size, n_token, n_token, c_z))
 
         with torch.no_grad():
-            xl = sd(batch=batch,
-                    si_input=si_input,
-                    si_trunk=si_trunk,
-                    zij_trunk=zij_trunk)
+            xl = sd(
+                batch=batch, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
+            )
 
         self.assertTrue(xl.shape == (batch_size, n_atom, 3))
 

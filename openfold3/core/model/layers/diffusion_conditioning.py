@@ -3,15 +3,20 @@ from typing import Dict, Tuple
 import torch
 from torch import nn
 
-from openfold3.core.model.feature_embedders.input_embedders import FourierEmbedding, RelposAllAtom
+from openfold3.core.model.feature_embedders.input_embedders import (
+    FourierEmbedding,
+    RelposAllAtom,
+)
 from openfold3.core.model.layers.transition import SwiGLUTransition
 from openfold3.core.model.primitives.linear import Linear
 from openfold3.core.model.primitives.normalization import LayerNorm
+
 
 class DiffusionConditioning(nn.Module):
     """
     Implements AF3 Algorithm 21.
     """
+
     def __init__(
         self,
         c_s_input: int,
@@ -39,7 +44,7 @@ class DiffusionConditioning(nn.Module):
             sigma_data:
                 Constant determined by data variance
         """
-        super(DiffusionConditioning, self).__init__()
+        super().__init__()
 
         self.c_s_input = c_s_input
         self.c_s = c_s
@@ -47,15 +52,18 @@ class DiffusionConditioning(nn.Module):
         self.c_fourier_emb = c_fourier_emb
         self.sigma_data = sigma_data
 
-        self.relpos = RelposAllAtom(c_z=self.c_z,
-                                    max_relative_idx=max_relative_idx,
-                                    max_relative_chain=max_relative_chain)
+        self.relpos = RelposAllAtom(
+            c_z=self.c_z,
+            max_relative_idx=max_relative_idx,
+            max_relative_chain=max_relative_chain,
+        )
 
         self.layer_norm_z = LayerNorm(2 * self.c_z)
         self.linear_z = Linear(2 * self.c_z, self.c_z, bias=False)
 
-        self.transition_z = nn.ModuleList([SwiGLUTransition(c_in=self.c_z, n=2)
-                                           for _ in range(2)])
+        self.transition_z = nn.ModuleList(
+            [SwiGLUTransition(c_in=self.c_z, n=2) for _ in range(2)]
+        )
 
         self.layer_norm_s = LayerNorm(self.c_s + self.c_s_input)
         self.linear_s = Linear(self.c_s + self.c_s_input, self.c_s, bias=False)
@@ -64,8 +72,9 @@ class DiffusionConditioning(nn.Module):
         self.layer_norm_n = LayerNorm(self.c_fourier_emb)
         self.linear_n = Linear(self.c_fourier_emb, self.c_s, bias=False)
 
-        self.transition_s = nn.ModuleList([SwiGLUTransition(c_in=self.c_s, n=2)
-                                           for _ in range(2)])
+        self.transition_s = nn.ModuleList(
+            [SwiGLUTransition(c_in=self.c_s, n=2) for _ in range(2)]
+        )
 
     def forward(
         self,
@@ -94,7 +103,7 @@ class DiffusionConditioning(nn.Module):
                 [*, N_token, N_token, c_z] Conditioned pair representation
         """
         # Set up masks
-        token_mask = batch['token_mask']
+        token_mask = batch["token_mask"]
         pair_token_mask = token_mask.unsqueeze(-1) * token_mask.unsqueeze(-2)
 
         # Pair conditioning

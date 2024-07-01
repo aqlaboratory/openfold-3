@@ -29,10 +29,11 @@
 
 """Dropout layers."""
 
+from functools import partialmethod
+from typing import List, Union
+
 import torch
 import torch.nn as nn
-from functools import partialmethod
-from typing import Union, List
 
 
 class Dropout(nn.Module):
@@ -51,10 +52,10 @@ class Dropout(nn.Module):
             batch_dim:
                 Dimension(s) along which the dropout mask is shared
         """
-        super(Dropout, self).__init__()
+        super().__init__()
 
         self.r = r
-        if type(batch_dim) == int:
+        if isinstance(batch_dim, int):
             batch_dim = [batch_dim]
         self.batch_dim = batch_dim
         self.dropout = nn.Dropout(self.r)

@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
 import unittest
-from openfold3.core.model.latent import PairFormerStack
 
+import torch
+
+from openfold3.core.model.latent import PairFormerStack
 from tests.config import consts
 
 
@@ -31,7 +32,7 @@ class TestPairFormer(unittest.TestCase):
         c_hidden_pair_att = 14
         no_heads_pair = 7
         no_blocks = 2
-        transition_type = 'swiglu'
+        transition_type = "swiglu"
         transition_n = 2
         pair_dropout = 0.25
         inf = 1e9
@@ -50,20 +51,25 @@ class TestPairFormer(unittest.TestCase):
             pair_dropout=pair_dropout,
             fuse_projection_weights=False,
             blocks_per_ckpt=None,
-            inf=inf
+            inf=inf,
         ).eval()
 
         s = torch.rand((batch_size, n_res, c_s))
         z = torch.rand((batch_size, n_res, n_res, c_z))
-        single_mask = torch.randint(0, 2, size=(batch_size, n_res,))
+        single_mask = torch.randint(
+            0,
+            2,
+            size=(
+                batch_size,
+                n_res,
+            ),
+        )
         pair_mask = torch.randint(0, 2, size=(batch_size, n_res, n_res))
 
         shape_s_before = s.shape
         shape_z_before = z.shape
 
-        s, z = pfs(
-            s, z, single_mask=single_mask, pair_mask=pair_mask, chunk_size=4
-        )
+        s, z = pfs(s, z, single_mask=single_mask, pair_mask=pair_mask, chunk_size=4)
 
         self.assertTrue(s.shape == shape_s_before)
         self.assertTrue(z.shape == shape_z_before)
