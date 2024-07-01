@@ -33,6 +33,11 @@ def skip_unless_flash_attn_installed():
     return unittest.skipUnless(fa_is_installed, "Requires Flash Attention")
 
 
+def skip_unless_triton_installed():
+    triton_is_installed = importlib.util.find_spec("triton") is not None
+    return unittest.skipUnless(triton_is_installed, "Requires Triton")
+
+
 def alphafold_is_installed():
     return importlib.util.find_spec("alphafold") is not None
 

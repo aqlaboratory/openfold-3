@@ -8,6 +8,8 @@ from openfold3.core.model.layers import (
     NoisyPositionEmbedder,
     RefAtomFeatureEmbedder
 )
+
+import tests.compare_utils as compare_utils
 from tests.config import consts
 
 
@@ -146,7 +148,7 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
 
 class TestAtomTransformer(unittest.TestCase):
 
-    def test_without_n_sample_channel(self):
+    def without_n_sample_channel(self, use_block_sparse_attn):
         batch_size = consts.batch_size
         n_token = consts.n_res
         n_atom = 4 * consts.n_res
@@ -168,7 +170,9 @@ class TestAtomTransformer(unittest.TestCase):
                                            n_transition=n_transition,
                                            n_query=n_query,
                                            n_key=n_key,
-                                           inf=inf)
+                                           inf=inf,
+                                           use_block_sparse_attn=use_block_sparse_attn
+                                           )
         
         ql = torch.ones((batch_size, n_atom, c_atom))
         cl = torch.ones((batch_size, n_atom, c_atom))
@@ -186,7 +190,7 @@ class TestAtomTransformer(unittest.TestCase):
         
         self.assertTrue(ql.shape == (batch_size, n_atom, c_atom))
 
-    def test_with_n_sample_channel(self):
+    def with_n_sample_channel(self, use_block_sparse_attn):
         batch_size = consts.batch_size
         n_token = consts.n_res
         n_atom = 4 * consts.n_res
@@ -209,7 +213,9 @@ class TestAtomTransformer(unittest.TestCase):
                                            n_transition=n_transition,
                                            n_query=n_query,
                                            n_key=n_key,
-                                           inf=inf)
+                                           inf=inf,
+                                           use_block_sparse_attn=use_block_sparse_attn
+                                           )
         
         ql = torch.ones((batch_size, n_sample, n_atom, c_atom))
         cl = torch.ones((batch_size, 1, n_atom, c_atom))
@@ -226,6 +232,15 @@ class TestAtomTransformer(unittest.TestCase):
                               plm=plm)
         
         self.assertTrue(ql.shape == (batch_size, n_sample, n_atom, c_atom))
+
+    def test_without_block_sparse_attn(self):
+        self.without_n_sample_channel(use_block_sparse_attn=False)
+        self.with_n_sample_channel(use_block_sparse_attn=False)
+
+    @compare_utils.skip_unless_triton_installed()
+    def test_with_block_sparse_attn(self):
+        self.without_n_sample_channel(use_block_sparse_attn=True)
+        self.with_n_sample_channel(use_block_sparse_attn=True)
 
 
 class TestAtomAttentionEncoder(unittest.TestCase):

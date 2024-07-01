@@ -53,7 +53,7 @@ class TestDiffusionTransformer(unittest.TestCase):
         shape_a_before = a.shape
 
         a = dt(
-            a, s, z, beta=beta, mask=single_mask
+            a, s, z, mask=single_mask, beta=beta
         )
 
         self.assertTrue(a.shape == shape_a_before)

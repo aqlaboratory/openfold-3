@@ -70,12 +70,16 @@ class DiffusionTransformerBlock(nn.Module):
 
         self.conditioned_transition = ConditionedTransitionBlock(c_a=c_a, c_s=c_s, n=n_transition)
 
-    def forward(self,
+    def forward(
+        self,
         a: torch.Tensor,
         s: torch.Tensor,
         z: torch.Tensor,
-        beta: Optional[torch.Tensor],
-        mask: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+        beta: Optional[torch.Tensor] = None,
+        layout: Optional[torch.Tensor] = None,
+        use_block_sparse_attn: bool = False,
+        block_size: int = 16,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
@@ -89,11 +93,11 @@ class DiffusionTransformerBlock(nn.Module):
                 [*, N_res, C_s] Single embedding
             z:
                 [*, N_res, N_res, C_z] Pair embedding
+            mask:
+                [*, N_res] Mask for token-level embedding
             beta:
                 [*, N_res, N_res] Neighborhood mask. Used in Sequence-local atom attention
                 for rectangular blocks along the diagonal.
-            mask:
-                [*, N_res] Mask for token-level embedding
             use_memory_efficient_kernel:
                 Whether to use memory efficient kernel
             use_deepspeed_evo_attention:
@@ -103,10 +107,19 @@ class DiffusionTransformerBlock(nn.Module):
             _mask_trans:
                 Whether to mask the output of the transition layer
         """
-        b = self.attention_pair_bias(a=a, z=z, s=s, beta=beta, mask=mask,
-                                     use_memory_efficient_kernel=use_memory_efficient_kernel,
-                                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                                     use_lma=use_lma)
+        b = self.attention_pair_bias(
+            a=a,
+            z=z,
+            s=s,
+            mask=mask,
+            beta=beta,
+            layout=layout,
+            use_block_sparse_attn=use_block_sparse_attn,
+            block_size=block_size,
+            use_memory_efficient_kernel=use_memory_efficient_kernel,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_lma=use_lma
+        )
 
         trans_mask = mask if _mask_trans else None
         a = b + self.conditioned_transition(a=a, s=s, mask=trans_mask)
@@ -161,17 +174,21 @@ class DiffusionTransformer(nn.Module):
             )
             for _ in range(no_blocks)])
 
-    def forward(self,
-                a: torch.Tensor,
-                s: torch.Tensor,
-                z: Optional[torch.Tensor],
-                beta: Optional[torch.Tensor],
-                mask: torch.Tensor,
-                use_memory_efficient_kernel: bool = False,
-                use_deepspeed_evo_attention: bool = False,
-                use_lma: bool = False,
-                _mask_trans: bool = True
-                ) -> torch.Tensor:
+    def forward(
+        self,
+        a: torch.Tensor,
+        s: torch.Tensor,
+        z: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+        beta: Optional[torch.Tensor] = None,
+        layout: Optional[torch.Tensor] = None,
+        use_block_sparse_attn: bool = False,
+        block_size: int = 16,
+        use_memory_efficient_kernel: bool = False,
+        use_deepspeed_evo_attention: bool = False,
+        use_lma: bool = False,
+        _mask_trans: bool = True
+    ) -> torch.Tensor:
         """
         Args:
             a:
@@ -180,11 +197,11 @@ class DiffusionTransformer(nn.Module):
                 [*, N_res, C_s] Single embedding
             z:
                 [*, N_res, N_res, C_z] Pair embedding
+            mask:
+                [*, N_res] Mask for token-level embedding
             beta:
                 [*, N_res, N_res] Neighborhood mask. Used in Sequence-local atom attention
                 for rectangular blocks along the diagonal.
-            mask:
-                [*, N_res] Mask for token-level embedding
             use_memory_efficient_kernel:
                 Whether to use memory efficient kernel
             use_deepspeed_evo_attention:
@@ -200,8 +217,11 @@ class DiffusionTransformer(nn.Module):
                 b,
                 s=s,
                 z=z,
-                beta=beta,
                 mask=mask,
+                beta=beta,
+                layout=layout,
+                use_block_sparse_attn=use_block_sparse_attn,
+                block_size=block_size,
                 use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,

@@ -41,7 +41,9 @@ class AtomTransformer(nn.Module):
         n_transition: int,
         n_query: int,
         n_key: int,
-        inf: float
+        inf: float,
+        use_block_sparse_attn: bool = False,
+        block_size: int = 16
     ):
         """
         Args:
@@ -63,11 +65,17 @@ class AtomTransformer(nn.Module):
                 Number of keys (block width)
             inf:
                 Large number used for attention masking
+            use_block_sparse_attn:
+            block_size:
         """
         super(AtomTransformer, self).__init__()
+
         self.n_query = n_query
         self.n_key = n_key
+        self.use_block_sparse_attn = use_block_sparse_attn
+        self.block_size = block_size
         self.inf = inf
+
         self.diffusion_transformer = DiffusionTransformer(c_a=c_q,
                                                           c_s=c_q,
                                                           c_z=c_p,
@@ -103,16 +111,32 @@ class AtomTransformer(nn.Module):
         # Define subset centers
         # [N_center]
         n_atom = ql.shape[-2]
-        offset = self.n_query // 2 - 0.5 # TODO: check this
-        n_center = int(n_atom // self.n_query) + 1
-        subset_centers = offset + torch.arange(n_center) * self.n_query
+        if self.use_block_sparse_attn:
+            n_query = self.n_query // self.block_size
+            n_key = self.n_key // self.block_size
+            n_blocks = n_atom // self.block_size
+        else:
+            n_query = self.n_query
+            n_key = self.n_key
+            n_blocks = n_atom
+
+        offset = n_query // 2 - 0.5  # TODO: check this
+        n_center = int(n_blocks // n_query) + 1
+        subset_centers = offset + torch.arange(n_center) * n_query
         
         # Compute beta
         # [*, N_atom, N_atom]
-        row_mask = torch.abs(torch.arange(n_atom).unsqueeze(1) - subset_centers.unsqueeze(0)) < (self.n_query / 2)
-        col_mask = torch.abs(torch.arange(n_atom).unsqueeze(1) - subset_centers.unsqueeze(0)) < (self.n_key / 2)
-        blm = (torch.einsum('li,mi->lm', row_mask.to(ql.dtype), col_mask.to(ql.dtype)) - 1.) * self.inf # TODO: check this
-        blm = blm.reshape(len(plm[:-3]) * (1,) + (n_atom, n_atom))
+        row_mask = torch.abs(torch.arange(n_blocks).unsqueeze(1) - subset_centers.unsqueeze(0)) < (n_query / 2)
+        col_mask = torch.abs(torch.arange(n_blocks).unsqueeze(1) - subset_centers.unsqueeze(0)) < (n_key / 2)
+        beta = torch.einsum('li,mi->lm', row_mask.to(ql.dtype), col_mask.to(ql.dtype))
+
+        layout = None
+        if self.use_block_sparse_attn:
+            layout = beta
+            beta = beta.repeat_interleave(self.block_size, dim=0).repeat_interleave(self.block_size, dim=1)
+
+        beta = (beta - 1.) * self.inf  # TODO: check this
+        beta = beta.reshape(len(plm[:-3]) * (1,) + (n_atom, n_atom))
 
         # Create atom mask
         # [*, N_atom]
@@ -120,11 +144,16 @@ class AtomTransformer(nn.Module):
 
         # Run diffusion transformer
         # [*, N_atom, c_atom]
-        ql = self.diffusion_transformer(a=ql,
-                                        s=cl,
-                                        z=plm,
-                                        beta=blm,
-                                        mask=atom_mask)
+        ql = self.diffusion_transformer(
+            a=ql,
+            s=cl,
+            z=plm,
+            mask=atom_mask,
+            beta=beta,
+            layout=layout,
+            use_block_sparse_attn=self.use_block_sparse_attn,
+            block_size=self.block_size
+        )
 
         return ql 
 

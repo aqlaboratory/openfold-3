@@ -147,7 +147,6 @@ class DiffusionModule(nn.Module):
         ai = self.diffusion_transformer(a=ai,
                                         s=si,
                                         z=zij,
-                                        beta=None,
                                         mask=batch['token_mask'])
 
         ai = self.layer_norm_a(ai)
