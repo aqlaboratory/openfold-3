@@ -133,12 +133,13 @@ def _check_cleaned_atoms(pdb_cleaned_string: str, pdb_ref_string: str):
         assert ref_res.name == cl_res.name
         for rat in ref_res.atoms():
             for cat in cl_res.atoms():
-                if cat.name == rat.name:
-                    if not np.array_equal(cl_xyz[cat.index], ref_xyz[rat.index]):
-                        raise ValueError(
-                            f"Coordinates of cleaned atom {cat} do not match "
-                            f"coordinates of reference atom {rat}."
-                        )
+                if cat.name == rat.name and not np.array_equal(
+                    cl_xyz[cat.index], ref_xyz[rat.index]
+                ):
+                    raise ValueError(
+                        f"Coordinates of cleaned atom {cat} do not match "
+                        f"coordinates of reference atom {rat}."
+                    )
 
 
 def _check_residues_are_well_defined(prot: protein.Protein):
@@ -212,10 +213,7 @@ def make_atom14_positions(prot):
 
         atom_name_to_idx14 = {name: i for i, name in enumerate(atom_names)}
         restype_atom37_to_atom14.append(
-            [
-                (atom_name_to_idx14[name] if name in atom_name_to_idx14 else 0)
-                for name in residue_constants.atom_types
-            ]
+            [atom_name_to_idx14.get(name, 0) for name in residue_constants.atom_types]
         )
 
         restype_atom14_mask.append([(1.0 if name else 0.0) for name in atom_names])

@@ -19,7 +19,7 @@ import dataclasses
 import io
 import re
 import string
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, List, Mapping, Optional, Sequence
 
 import modelcif
 import modelcif.alignment
@@ -95,8 +95,8 @@ def from_pdb_string(pdb_str: str, chain_id: Optional[str] = None) -> Protein:
 
     Args:
       pdb_str: The contents of the pdb file
-      chain_id: If None, then the whole pdb file is parsed. If chain_id is specified (e.g. A), then only that chain
-        is parsed.
+      chain_id: If None, then the whole pdb file is parsed. If chain_id is
+        specified (e.g. A), then only that chain is parsed.
 
     Returns:
       A new `Protein` parsed from the pdb contents.
@@ -166,7 +166,6 @@ def from_pdb_string(pdb_str: str, chain_id: Optional[str] = None) -> Protein:
                     parents_chain_index.extend([chain_id for _ in parent_names])
                 chain_id += 1
 
-    unique_chain_ids = np.unique(chain_ids)
     chain_id_mapping = {cid: n for n, cid in enumerate(string.ascii_uppercase)}
     chain_index = np.array([chain_id_mapping[cid] for cid in chain_ids])
 
@@ -226,7 +225,7 @@ def from_proteinnet_string(proteinnet_str: str) -> Protein:
                     residue_constants.atom_type_num,
                 )
             ).astype(np.float32)
-            for i, atom in enumerate(atoms):
+            for _, atom in enumerate(atoms):
                 atom_mask[:, residue_constants.atom_order[atom]] = 1
             atom_mask *= mask[..., None]
 
@@ -278,11 +277,9 @@ def add_pdb_headers(prot: Protein, pdb_str: str) -> str:
     if remark is not None:
         out_pdb_lines.append(f"REMARK {remark}")
 
-    parents_per_chain = None
     if prot.parents is not None and len(prot.parents) > 0:
         parents_per_chain = []
         if prot.parents_chain_index is not None:
-            cur_chain = prot.parents_chain_index[0]
             parent_dict = {}
             for p, i in zip(prot.parents, prot.parents_chain_index):
                 parent_dict.setdefault(str(i), [])
@@ -297,7 +294,9 @@ def add_pdb_headers(prot: Protein, pdb_str: str) -> str:
     else:
         parents_per_chain = [["N/A"]]
 
-    make_parent_line = lambda p: f"PARENT {' '.join(p)}"
+    def make_parent_line(parents: List) -> str:
+        """Format PARENT pdb line."""
+        return f"PARENT {' '.join(parents)}"
 
     out_pdb_lines.append(make_parent_line(parents_per_chain[0]))
 
@@ -327,7 +326,6 @@ def to_pdb(prot: Protein) -> str:
       PDB string.
     """
     restypes = residue_constants.restypes + ["X"]
-    res_1to3 = lambda r: residue_constants.restype_1to3.get(restypes[r], "UNK")
     atom_types = residue_constants.atom_types
 
     pdb_lines = []
@@ -361,6 +359,10 @@ def to_pdb(prot: Protein) -> str:
     last_chain_index = chain_index[0]
     prev_chain_index = 0
     chain_tags = string.ascii_uppercase
+
+    def res_1to3(r: int) -> str:
+        """Converts a residue type index to a 3-letter residue type string."""
+        return residue_constants.restype_1to3.get(restypes[r], "UNK")
 
     # Add all atom sites.
     for i in range(aatype.shape[0]):
@@ -411,10 +413,16 @@ def to_pdb(prot: Protein) -> str:
             atom_index += 1
 
         should_terminate = i == n - 1
-        if chain_index is not None:
-            if i != n - 1 and chain_index[i + 1] != prev_chain_index:
-                should_terminate = True
-                prev_chain_index = chain_index[i + 1]
+        chain_should_terminate = all(
+            [
+                chain_index is not None,
+                i != n - 1,
+                chain_index[i + 1] != prev_chain_index,
+            ]
+        )
+        if chain_should_terminate:
+            should_terminate = True
+            prev_chain_index = chain_index[i + 1]
 
         if should_terminate:
             # Close the chain.
@@ -442,9 +450,10 @@ def to_pdb(prot: Protein) -> str:
 
 def to_modelcif(prot: Protein) -> str:
     """
-    Converts a `Protein` instance to a ModelCIF string. Chains with identical modelled coordinates
-    will be treated as the same polymer entity. But note that if chains differ in modelled regions,
-    no attempt is made at identifying them as a single polymer entity.
+    Converts a `Protein` instance to a ModelCIF string. Chains with identical modelled
+    coordinates will be treated as the same polymer entity. But note that if chains
+    differ in modelled regions, no attempt is made at identifying them as a single
+    polymer entity.
 
     Args:
       prot: The protein to convert to PDB.
@@ -482,7 +491,8 @@ def to_modelcif(prot: Protein) -> str:
     # finally add the last chain
     seqs[last_chain_idx] = seq
 
-    # now reduce sequences to unique ones (note this won't work if different asyms have different unmodelled regions)
+    # Now reduce sequences to unique ones (note this won't work if different asyms
+    # have different unmodelled regions)
     unique_seqs = {}
     for chain_idx, seq_list in seqs.items():
         seq = "".join(seq_list)
@@ -504,7 +514,7 @@ def to_modelcif(prot: Protein) -> str:
         # Define the model assembly
         chain_id = chain_tags[chain_idx]
         asym = modelcif.AsymUnit(
-            entities_map[chain_idx], details="Model subunit %s" % chain_id, id=chain_id
+            entities_map[chain_idx], details=f"Model subunit {chain_id}", id=chain_id
         )
         asym_unit_map[chain_idx] = asym
     modeled_assembly = modelcif.Assembly(
@@ -555,7 +565,8 @@ def to_modelcif(prot: Protein) -> str:
                         continue
                     # add 1 per residue, not 1 per atom
                     if chain_index[i] not in plddt_per_residue:
-                        # first time a chain index is seen: add the key and start the residue dict
+                        # first time a chain index is seen: add the key and
+                        # start the residue dict
                         plddt_per_residue[chain_index[i]] = {residue_index[i]: b_factor}
                     if residue_index[i] not in plddt_per_residue[chain_index[i]]:
                         plddt_per_residue[chain_index[i]][residue_index[i]] = b_factor
