@@ -47,7 +47,6 @@ def fix_single_arginine_naming(arg_atom_array: struc.AtomArray) -> None:
 
     # If NH2 is closer to CD than NH1, swap the names
     if struc.distance(nh2, cd) < struc.distance(nh1, cd):
-        print("Swapping NH1 and NH2")
         nh1.atom_name = ["NH2"]
         nh2.atom_name = ["NH1"]
 
