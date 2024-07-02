@@ -152,8 +152,8 @@ def remove_fully_unknown_polymers(atom_array: struc.AtomArray) -> struc.AtomArra
     return atom_array_filtered
 
 
-def assign_renumbered_chain_ids(atom_array: struc.AtomArray) -> struc.AtomArray:
-    """Creates a renumbered chain index
+def assign_renumbered_chain_ids(atom_array: struc.AtomArray):
+    """Adds a renumbered chain index to the AtomArray
 
     Iterates through all chains in the atom array and assigns unique numerical chain IDs
     starting with 0 to each chain in the "chain_id_renumbered" field. This is useful for
@@ -162,9 +162,6 @@ def assign_renumbered_chain_ids(atom_array: struc.AtomArray) -> struc.AtomArray:
 
     Args:
         atom_array (AtomArray): biotite atom array
-
-    Returns:
-        AtomArray with the "chain_id_renumbered" field added
     """
     chain_start_idxs = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
 
@@ -174,8 +171,6 @@ def assign_renumbered_chain_ids(atom_array: struc.AtomArray) -> struc.AtomArray:
         np.arange(len(chain_id_n_repeats)), chain_id_n_repeats
     )
     atom_array.set_annotation("chain_id_renumbered", chain_ids_per_atom)
-
-    return atom_array
 
 
 def remove_chain_and_attached_ligands(
