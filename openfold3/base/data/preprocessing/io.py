@@ -50,6 +50,6 @@ def parse_mmcif_bioassembly(
         include_bonds=include_bonds,
     )
 
-    atom_array = assign_renumbered_chain_ids(atom_array)
+    assign_renumbered_chain_ids(atom_array)
 
     return ParsedStructure(cif_file, atom_array)
