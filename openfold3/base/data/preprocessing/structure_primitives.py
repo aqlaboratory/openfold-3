@@ -114,7 +114,7 @@ def remove_hydrogens(atom_array: struc.AtomArray) -> struc.AtomArray:
     Returns:
         AtomArray with all hydrogen atoms removed.
     """
-    atom_array = atom_array[atom_array.element != "H"]
+    atom_array = atom_array[~np.isin(atom_array.element, ("H", "D"))]
 
     return atom_array
 
