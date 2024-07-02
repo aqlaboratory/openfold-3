@@ -2,12 +2,21 @@ from itertools import combinations
 
 import biotite.structure as struc
 import numpy as np
-from scipy.spatial.distance import pdist, squareform
-from tables import (
+from biotite.structure.io.pdbx import CIFFile
+from scipy.spatial.distance import cdist, pdist, squareform
+
+from .tables import (
     CRYSTALLIZATION_AIDS,
-    STANDARD_NUCLEIC_ACID_RESIDUES,
+    MOLECULE_TYPE_ID_DNA,
+    MOLECULE_TYPE_ID_LIGAND,
+    MOLECULE_TYPE_ID_PROTEIN,
+    MOLECULE_TYPE_ID_RNA,
+    NUCLEIC_ACID_MAIN_CHAIN_ATOMS,
+    PROTEIN_MAIN_CHAIN_ATOMS,
+    STANDARD_DNA_RESIDUES,
     STANDARD_PROTEIN_RESIDUES,
     STANDARD_RESIDUES,
+    STANDARD_RNA_RESIDUES,
     TOKEN_CENTER_ATOMS,
 )
 
@@ -297,4 +306,170 @@ def remove_clashing_chains(
         atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
 
     return atom_array
+
+
+# TODO: add documentation
+def get_interface_atoms(
+    query_atom_array: struc.AtomArray,
+    target_atom_array: struc.AtomArray,
+    distance_threshold: float = 15.0,
+) -> struc.AtomArray:
+    pairwise_dists = cdist(query_atom_array.coord, target_atom_array.coord)
+
+    # All unique chains in the query
+    query_chain_ids = set(query_atom_array.chain_id_renumbered)
+
+    # Set masks to avoid intra-chain comparisons
+    for chain in query_chain_ids:
+        query_chain_mask = query_atom_array.chain_id_renumbered == chain
+        target_chain_mask = target_atom_array.chain_id_renumbered == chain
+
+        query_chain_block_mask = np.ix_(query_chain_mask, target_chain_mask)
+        pairwise_dists[query_chain_block_mask] = np.inf
+
+    interface_atom_mask = np.any(pairwise_dists < distance_threshold, axis=1)
+
+    return query_atom_array[interface_atom_mask]
+
+
+# TODO: add documentation
+def get_interface_token_center_atoms(
+    query_atom_array: struc.AtomArray,
+    target_atom_array: struc.AtomArray,
+    distance_threshold: float = 15.0,
+) -> struc.AtomArray:
+    query_token_centers = query_atom_array[query_atom_array.af3_token_center_atom]
+    target_token_centers = target_atom_array[target_atom_array.af3_token_center_atom]
+
+    return get_interface_atoms(
+        query_token_centers, target_token_centers, distance_threshold
+    )
+
+
+def get_res_atoms_in_ccd_mask(
+    res_atom_array: struc.AtomArray, ccd: CIFFile
+) -> np.ndarray:
+    """Returns a mask for atoms in a residue that are present in the CCD
+
+    Args:
+        res_atom_array:
+            AtomArray containing the atoms of a single residue
+        ccd:
+            CIFFile containing the parsed CCD (components.cif)
+
+    Returns:
+        Mask for atoms in the residue that are present in the CCD
+    """
+    res_name = res_atom_array.res_name[0]
+    allowed_atoms = ccd[res_name]["chem_comp_atom"]["atom_id"].as_array()
+
+    mask = np.isin(res_atom_array.atom_name, allowed_atoms)
+    return mask
+
+
+def remove_non_CCD_atoms(atom_array: struc.AtomArray, ccd: CIFFile) -> struc.AtomArray:
+    """Removes atoms that are not present in the CCD residue definition
+
+    Follows 2.5.4 of the AlphaFold3 SI and removes all atoms that do not appear in the
+    residue's definition in the Chemical Component Dictionary (CCD).
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to remove non-CCD atoms from
+        ccd:
+            CIFFile containing the parsed CCD (components.cif)
+
+    Returns:
+        AtomArray with all atoms not present in the CCD removed
+    """
+    atom_masks_per_res = [
+        get_res_atoms_in_ccd_mask(res_atom_array, ccd)
+        for res_atom_array in struc.residue_iter(atom_array)
+    ]
+
+    # Inclusion mask over all atoms
+    atom_mask = np.concatenate(atom_masks_per_res)
+
+    return atom_array[atom_mask]
+
+
+def remove_chains_with_CA_gaps(
+    atom_array: struc.AtomArray, distance_threshold: float = 10.0
+) -> struc.AtomArray:
+    """Removes protein chains where consecutive C-alpha atoms are too far apart
+
+    This follows 2.5.4 of the AlphaFold3 SI and removes protein chains where the
+    distance between consecutive C-alpha atoms is larger than a given threshold.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to remove chains with CA gaps from
+        distance_threshold:
+            Distance threshold in Angstrom. Defaults to 10.0.
+    """
+    protein_chain_ca = atom_array[
+        struc.filter_polymer(pol_type="peptide") & atom_array.atom_name == "CA"
+    ]
+
+    # Match C-alpha atoms with their next C-alpha atom
+    ca_without_last = protein_chain_ca[:-1]
+    ca_shifted_left = np.roll(protein_chain_ca, -1, axis=0)[:-1]
+
+    # Distances of every C-alpha atom to the next C-alpha atom
+    ca_dists = struc.distance(ca_without_last, ca_shifted_left)
+
+    # Create gap mask for atoms that are directly before a new chain start or chain
+    # break
+    chain_ends = struc.get_chain_starts(protein_chain_ca)[1:] - 1
+    discontinuities = struc.check_res_id_continuity(protein_chain_ca) - 1
+    gap_mask = np.union1d(chain_ends, discontinuities)
+
+    # Mask out distances at gaps as they are non-consecutive
+    ca_dists[gap_mask] = np.nan
+
+    # Find chains where the distance between consecutive C-alpha atoms is too large
+    chain_ids_to_remove = np.unique(
+        protein_chain_ca[ca_dists > distance_threshold].chain_id_renumbered
+    )
+
+    for chain_id in chain_ids_to_remove:
+        atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
+
+    return atom_array
+
+
+# TODO: add documentation
+def subset_large_structure(
+    atom_array: struc.AtomArray, max_allowed_chains: int
+) -> struc.AtomArray:
+    # Select random interface token center atom
+    interface_token_center_atoms = get_interface_token_center_atoms(
+        atom_array, atom_array
+    )
+    selected_atom = np.random.choice(interface_token_center_atoms)
+
+    # Get distances of atom to all token center atoms
+    all_token_center_atoms = atom_array[atom_array.af3_token_center_atom]
+    dists_to_all_token_centers = cdist(
+        selected_atom.coord.reshape(1, 3),
+        all_token_center_atoms.coord,
+    )[0]
+
+    # Sort (atom-wise) chain IDs by distance
+    sort_by_dist_idx = np.argsort(dists_to_all_token_centers)
+    chain_ids_sorted = all_token_center_atoms.chain_id_renumbered[sort_by_dist_idx]
+
+    # Get unique chain IDs sorted by distance to selected atom
+    unique_chain_idxs_sorted = np.sort(
+        np.unique(chain_ids_sorted, return_index=True)[1]
+    )
+
+    # Select the closest n chains
+    closest_n_chain_ids_idxs = unique_chain_idxs_sorted[:max_allowed_chains]
+    closest_n_chain_ids = chain_ids_sorted[closest_n_chain_ids_idxs]
+
+    # Subset atom array to the closest n chains
+    selected_chain_mask = np.isin(atom_array.chain_id_renumbered, closest_n_chain_ids)
+
+    return atom_array[selected_chain_mask]
 
