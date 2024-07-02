@@ -3,7 +3,8 @@ from typing import NamedTuple
 
 import biotite.structure as struc
 from biotite.structure.io import pdbx
-from structure_primitives import assign_renumbered_chain_ids
+
+from .structure_primitives import assign_renumbered_chain_ids
 
 
 class ParsedStructure(NamedTuple):
@@ -24,7 +25,7 @@ def parse_mmcif_bioassembly(
     locations by taking the one with the highest occupancy, defaults to
     inferring bond information, and defaults to using the PDB-automated
     chain/residue annotation instead of author annotations.
-    
+
     This function also creates a "chain_ids_renumbered" field in the AtomArray
     with numerical chain IDs starting from 0, which can be useful when
     bioassembly expansion results in multiple chains with the same chain ID.
