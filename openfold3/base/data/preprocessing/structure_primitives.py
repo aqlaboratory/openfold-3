@@ -161,7 +161,7 @@ def remove_fully_unknown_polymers(atom_array: struc.AtomArray) -> struc.AtomArra
     return atom_array_filtered
 
 
-def assign_renumbered_chain_ids(atom_array: struc.AtomArray):
+def assign_renumbered_chain_ids(atom_array: struc.AtomArray) -> None:
     """Adds a renumbered chain index to the AtomArray
 
     Iterates through all chains in the atom array and assigns unique numerical chain IDs
@@ -170,7 +170,8 @@ def assign_renumbered_chain_ids(atom_array: struc.AtomArray):
     expanded.
 
     Args:
-        atom_array (AtomArray): biotite atom array
+        atom_array:
+            AtomArray containing the structure to assign renumbered chain IDs to.
     """
     chain_start_idxs = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
 
@@ -195,7 +196,7 @@ def remove_chain_and_attached_ligands(
 
     Args:
         atom_array:
-            biotite atom array
+            AtomArray containing the structure to remove the chain from.
         chain_id:
             chain ID of the chain to remove (uses the "chain_id_renumbered" field)
 
@@ -308,12 +309,27 @@ def remove_clashing_chains(
     return atom_array
 
 
-# TODO: add documentation
 def get_interface_atoms(
     query_atom_array: struc.AtomArray,
     target_atom_array: struc.AtomArray,
     distance_threshold: float = 15.0,
 ) -> struc.AtomArray:
+    """Returns interface atoms in the query based on the target
+
+    This will find atoms in the query that are within a given distance threshold of any
+    atom with a different chain in the target.
+
+    Args:
+        query_atom_array:
+            AtomArray containing the structure to find interface atoms in.
+        target_atom_array:
+            AtomArray containing the structure to compare against.
+        distance_threshold:
+            Distance threshold in Angstrom. Defaults to 15.0.
+
+    Returns:
+        AtomArray with interface atoms.
+    """
     pairwise_dists = cdist(query_atom_array.coord, target_atom_array.coord)
 
     # All unique chains in the query
@@ -332,12 +348,29 @@ def get_interface_atoms(
     return query_atom_array[interface_atom_mask]
 
 
-# TODO: add documentation
 def get_interface_token_center_atoms(
     query_atom_array: struc.AtomArray,
     target_atom_array: struc.AtomArray,
     distance_threshold: float = 15.0,
 ) -> struc.AtomArray:
+    """Gets interface token center atoms in the query based on the target
+
+    This will find token center atoms in the query that are within a given distance
+    threshold of any token center atom with a different chain in the target.
+
+    For example used in 2.5.4 of the AlphaFold3 SI (subsetting of large bioassemblies)
+
+    Args:
+        query_atom_array:
+            AtomArray containing the structure to find interface token center atoms in.
+        target_atom_array:
+            AtomArray containing the structure to compare against.
+        distance_threshold:
+            Distance threshold in Angstrom. Defaults to 15.0.
+
+    Returns:
+        AtomArray with interface token center atoms.
+    """
     query_token_centers = query_atom_array[query_atom_array.af3_token_center_atom]
     target_token_centers = target_atom_array[target_atom_array.af3_token_center_atom]
 
@@ -438,10 +471,27 @@ def remove_chains_with_CA_gaps(
     return atom_array
 
 
-# TODO: add documentation
 def subset_large_structure(
-    atom_array: struc.AtomArray, max_allowed_chains: int
+    atom_array: struc.AtomArray, n_chains: int
 ) -> struc.AtomArray:
+    """Subsets structures with too many chains to n chains
+
+    Follows 2.5.4 of the AlphaFold3 SI. Will select a random interface token center atom
+    and return the closest N chains based on minimum distances between any token center
+    atoms.
+
+    Requires the 'af3_token_center_atom' annotation created by the tokenizer function.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to subset
+        n_chains:
+            Number of chains to keep in the subset
+
+    Returns:
+        AtomArray with the closest n_chains based on token center atom distances
+    """
+
     # Select random interface token center atom
     interface_token_center_atoms = get_interface_token_center_atoms(
         atom_array, atom_array
@@ -465,7 +515,7 @@ def subset_large_structure(
     )
 
     # Select the closest n chains
-    closest_n_chain_ids_idxs = unique_chain_idxs_sorted[:max_allowed_chains]
+    closest_n_chain_ids_idxs = unique_chain_idxs_sorted[:n_chains]
     closest_n_chain_ids = chain_ids_sorted[closest_n_chain_ids_idxs]
 
     # Subset atom array to the closest n chains
