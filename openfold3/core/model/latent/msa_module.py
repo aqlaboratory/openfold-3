@@ -13,8 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""MSA module block and stack. Note that this does not include the MSA sampling, which is handled
-in the MSAModuleEmbedder.
+"""MSA module block and stack.
+
+Note that this does not include the MSA sampling, which is handled in the
+MSAModuleEmbedder.
 """
 
 from typing import Optional
@@ -28,6 +30,7 @@ from openfold3.core.model.layers.msa import MSAPairWeightedAveraging
 
 class MSAModuleBlock(EvoformerBlock):
     """Implements block of AF3 Algorithm 8."""
+
     def __init__(
         self,
         c_m: int,
@@ -66,7 +69,8 @@ class MSAModuleBlock(EvoformerBlock):
             no_heads_pair:
                 Number of heads used for pair attention
             transition_type:
-                String 'relu' or 'swiglu' to determine activation for the transition function
+                String 'relu' or 'swiglu' to determine activation for the transition
+                function
             transition_n:
                 Factor by which to multiply c_m to obtain the transition layer
                 hidden dimension
@@ -85,7 +89,7 @@ class MSAModuleBlock(EvoformerBlock):
             eps:
                 Small constant for numerical stability
         """
-        super(MSAModuleBlock, self).__init__(
+        super().__init__(
             c_m=c_m,
             c_z=c_z,
             c_hidden_msa_att=c_hidden_msa_att,
@@ -102,10 +106,11 @@ class MSAModuleBlock(EvoformerBlock):
             opm_first=opm_first,
             fuse_projection_weights=fuse_projection_weights,
             inf=inf,
-            eps=eps
+            eps=eps,
         )
 
-        # Column attention is disabled and MSAPairWeightedAveraging replace MSARowAttentionWithPairBias
+        # Column attention is disabled and MSAPairWeightedAveraging replace
+        # MSARowAttentionWithPairBias
         self.msa_att_row = MSAPairWeightedAveraging(
             c_in=c_m,
             c_z=c_z,
@@ -119,6 +124,7 @@ class MSAModuleStack(MSAStack):
     """Implements AF3 Algorithm 8 lines 5-15. The MSA sampling and initial embedding is
     handled in MSAModuleEmbedder prior to calling this stack.
     """
+
     def __init__(
         self,
         c_m: int,
@@ -164,7 +170,8 @@ class MSAModuleStack(MSAStack):
             no_blocks:
                 Number of MSAModule blocks in the stack
             transition_type:
-                String 'relu' or 'swiglu' to determine activation for the transition function
+                String 'relu' or 'swiglu' to determine activation for the transition
+                function
             transition_n:
                 Factor by which to multiply c_m to obtain the transition layer
                 hidden dimension
@@ -190,10 +197,10 @@ class MSAModuleStack(MSAStack):
             tune_chunk_size:
                 Whether to dynamically tune the module's chunk size
         """
-        super(MSAModuleStack, self).__init__(
+        super().__init__(
             blocks_per_ckpt=blocks_per_ckpt,
             clear_cache_between_blocks=clear_cache_between_blocks,
-            tune_chunk_size=tune_chunk_size
+            tune_chunk_size=tune_chunk_size,
         )
 
         for _ in range(no_blocks):

@@ -13,8 +13,9 @@
 # limitations under the License.
 
 from random import randint
-import torch
+
 import numpy as np
+import torch
 from scipy.spatial.transform import Rotation
 
 from tests.config import consts
@@ -32,7 +33,7 @@ def random_asym_ids(n_res, split_chains=True, min_chain_len=4):
     asym_ids = []
     final_idx = n_chain - 1
     for idx in range(n_chain - 1):
-        n_stop = (n_res - sum(pieces) - n_chain + idx - min_chain_len)
+        n_stop = n_res - sum(pieces) - n_chain + idx - min_chain_len
         if n_stop <= min_chain_len:
             final_idx = idx
             break
@@ -53,17 +54,11 @@ def random_template_feats(n_templ, n, batch_size=None):
         "template_pseudo_beta_mask": np.random.randint(0, 2, (*b, n_templ, n)),
         "template_pseudo_beta": np.random.rand(*b, n_templ, n, 3),
         "template_aatype": np.random.randint(0, 22, (*b, n_templ, n)),
-        "template_all_atom_mask": np.random.randint(
-            0, 2, (*b, n_templ, n, 37)
-        ),
-        "template_all_atom_positions": 
-            np.random.rand(*b, n_templ, n, 37, 3) * 10,
-        "template_torsion_angles_sin_cos": 
-            np.random.rand(*b, n_templ, n, 7, 2),
-        "template_alt_torsion_angles_sin_cos": 
-            np.random.rand(*b, n_templ, n, 7, 2),
-        "template_torsion_angles_mask": 
-            np.random.rand(*b, n_templ, n, 7),
+        "template_all_atom_mask": np.random.randint(0, 2, (*b, n_templ, n, 37)),
+        "template_all_atom_positions": np.random.rand(*b, n_templ, n, 37, 3) * 10,
+        "template_torsion_angles_sin_cos": np.random.rand(*b, n_templ, n, 7, 2),
+        "template_alt_torsion_angles_sin_cos": np.random.rand(*b, n_templ, n, 7, 2),
+        "template_torsion_angles_mask": np.random.rand(*b, n_templ, n, 7),
     }
     batch = {k: v.astype(np.float32) for k, v in batch.items()}
     batch["template_aatype"] = batch["template_aatype"].astype(np.int64)
@@ -76,18 +71,12 @@ def random_extra_msa_feats(n_extra, n, batch_size=None):
     if batch_size is not None:
         b.append(batch_size)
     batch = {
-        "extra_msa": np.random.randint(0, 22, (*b, n_extra, n)).astype(
-            np.int64
-        ),
+        "extra_msa": np.random.randint(0, 22, (*b, n_extra, n)).astype(np.int64),
         "extra_has_deletion": np.random.randint(0, 2, (*b, n_extra, n)).astype(
             np.float32
         ),
-        "extra_deletion_value": np.random.rand(*b, n_extra, n).astype(
-            np.float32
-        ),
-        "extra_msa_mask": np.random.randint(0, 2, (*b, n_extra, n)).astype(
-            np.float32
-        ),
+        "extra_deletion_value": np.random.rand(*b, n_extra, n).astype(np.float32),
+        "extra_msa_mask": np.random.randint(0, 2, (*b, n_extra, n)).astype(np.float32),
     }
     return batch
 
@@ -126,13 +115,29 @@ def random_affines_4x4(dim):
     return affines.reshape(*dim, 4, 4)
 
 
-def random_attention_inputs(batch_size, n_seq, n, no_heads, c_hidden, inf=1e9,
-                            dtype=torch.float32, requires_grad=False):
-    q = torch.rand(batch_size, n_seq, n, c_hidden, dtype=dtype, requires_grad=requires_grad).cuda()
-    kv = torch.rand(batch_size, n_seq, n, c_hidden, dtype=dtype, requires_grad=requires_grad).cuda()
+def random_attention_inputs(
+    batch_size,
+    n_seq,
+    n,
+    no_heads,
+    c_hidden,
+    inf=1e9,
+    dtype=torch.float32,
+    requires_grad=False,
+):
+    q = torch.rand(
+        batch_size, n_seq, n, c_hidden, dtype=dtype, requires_grad=requires_grad
+    ).cuda()
+    kv = torch.rand(
+        batch_size, n_seq, n, c_hidden, dtype=dtype, requires_grad=requires_grad
+    ).cuda()
 
-    mask = torch.randint(0, 2, (batch_size, n_seq, 1, 1, n), dtype=dtype, requires_grad=False).cuda()
-    z_bias = torch.rand(batch_size, 1, no_heads, n, n, dtype=dtype, requires_grad=requires_grad).cuda()
+    mask = torch.randint(
+        0, 2, (batch_size, n_seq, 1, 1, n), dtype=dtype, requires_grad=False
+    ).cuda()
+    z_bias = torch.rand(
+        batch_size, 1, no_heads, n, n, dtype=dtype, requires_grad=requires_grad
+    ).cuda()
     mask_bias = inf * (mask - 1)
 
     biases = [mask_bias, z_bias]

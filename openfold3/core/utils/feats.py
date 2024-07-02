@@ -13,9 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Union
+
 import torch
 import torch.nn as nn
-from typing import Union
 
 from openfold3.core.utils.geometry import rigid_matrix_vector
 from openfold3.core.utils.rigid_utils import Rigid
@@ -60,7 +61,6 @@ def torsion_angles_to_frames(
     aatype: torch.Tensor,
     rrgdf: torch.Tensor,
 ):
-
     rigid_type = type(r)
 
     # [*, N, 8, 4, 4]
@@ -75,9 +75,7 @@ def torsion_angles_to_frames(
     bb_rot[..., 1] = 1
 
     # [*, N, 8, 2]
-    alpha = torch.cat(
-        [bb_rot.expand(*alpha.shape[:-2], -1, -1), alpha], dim=-2
-    )
+    alpha = torch.cat([bb_rot.expand(*alpha.shape[:-2], -1, -1), alpha], dim=-2)
 
     # [*, N, 8, 3, 3]
     # Produces rotation matrices of the form:
@@ -116,7 +114,7 @@ def torsion_angles_to_frames(
         ],
         dim=-1,
     )
-    
+
     all_frames_to_global = r[..., None].compose(all_frames_to_bb)
 
     return all_frames_to_global
@@ -130,9 +128,6 @@ def frames_and_literature_positions_to_atom14_pos(
     atom_mask,
     lit_positions,
 ):
-    # [*, N, 14, 4, 4]
-    default_4x4 = default_frames[aatype, ...]
-
     # [*, N, 14]
     group_mask = group_idx[aatype, ...]
 
@@ -146,9 +141,7 @@ def frames_and_literature_positions_to_atom14_pos(
     t_atoms_to_global = r[..., None, :] * group_mask
 
     # [*, N, 14]
-    t_atoms_to_global = t_atoms_to_global.map_tensor_fn(
-        lambda x: torch.sum(x, dim=-1)
-    )
+    t_atoms_to_global = t_atoms_to_global.map_tensor_fn(lambda x: torch.sum(x, dim=-1))
 
     # [*, N, 14]
     atom_mask = atom_mask[aatype, ...].unsqueeze(-1)

@@ -29,11 +29,12 @@ from openfold3.core.utils.tensor_utils import add
 
 class ExtraMSABlock(MSABlock):
     """
-        Almost identical to the standard EvoformerBlock, except in that the
-        ExtraMSABlock uses GlobalAttention for MSA column attention and
-        requires more fine-grained control over checkpointing. Separated from
-        its twin to preserve the TorchScript-ability of the latter.
+    Almost identical to the standard EvoformerBlock, except in that the
+    ExtraMSABlock uses GlobalAttention for MSA column attention and
+    requires more fine-grained control over checkpointing. Separated from
+    its twin to preserve the TorchScript-ability of the latter.
     """
+
     def __init__(
         self,
         c_m: int,
@@ -54,22 +55,24 @@ class ExtraMSABlock(MSABlock):
         eps: float,
         ckpt: bool,
     ):
-        super(ExtraMSABlock, self).__init__(c_m=c_m,
-                                            c_z=c_z,
-                                            c_hidden_msa_att=c_hidden_msa_att,
-                                            c_hidden_opm=c_hidden_opm,
-                                            c_hidden_mul=c_hidden_mul,
-                                            c_hidden_pair_att=c_hidden_pair_att,
-                                            no_heads_msa=no_heads_msa,
-                                            no_heads_pair=no_heads_pair,
-                                            transition_type=transition_type,
-                                            transition_n=transition_n,
-                                            msa_dropout=msa_dropout,
-                                            pair_dropout=pair_dropout,
-                                            opm_first=opm_first,
-                                            fuse_projection_weights=fuse_projection_weights,
-                                            inf=inf,
-                                            eps=eps)
+        super().__init__(
+            c_m=c_m,
+            c_z=c_z,
+            c_hidden_msa_att=c_hidden_msa_att,
+            c_hidden_opm=c_hidden_opm,
+            c_hidden_mul=c_hidden_mul,
+            c_hidden_pair_att=c_hidden_pair_att,
+            no_heads_msa=no_heads_msa,
+            no_heads_pair=no_heads_pair,
+            transition_type=transition_type,
+            transition_n=transition_n,
+            msa_dropout=msa_dropout,
+            pair_dropout=pair_dropout,
+            opm_first=opm_first,
+            fuse_projection_weights=fuse_projection_weights,
+            inf=inf,
+            eps=eps,
+        )
 
         self.ckpt = ckpt
 
@@ -111,11 +114,13 @@ class ExtraMSABlock(MSABlock):
         if self.opm_first:
             del m, z
 
-            m, z = self._compute_opm(input_tensors=input_tensors,
-                                     msa_mask=msa_mask,
-                                     chunk_size=chunk_size,
-                                     inplace_safe=inplace_safe,
-                                     _offload_inference=_offload_inference)
+            m, z = self._compute_opm(
+                input_tensors=input_tensors,
+                msa_mask=msa_mask,
+                chunk_size=chunk_size,
+                inplace_safe=inplace_safe,
+                _offload_inference=_offload_inference,
+            )
 
         m = add(
             m,
@@ -127,11 +132,13 @@ class ExtraMSABlock(MSABlock):
                     chunk_size=_attn_chunk_size,
                     use_lma=use_lma,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                    use_memory_efficient_kernel=not (use_lma or use_deepspeed_evo_attention),
-                    _checkpoint_chunks=self.ckpt if torch.is_grad_enabled() else False
+                    use_memory_efficient_kernel=not (
+                        use_lma or use_deepspeed_evo_attention
+                    ),
+                    _checkpoint_chunks=self.ckpt if torch.is_grad_enabled() else False,
                 )
             ),
-            inplace=inplace_safe
+            inplace=inplace_safe,
         )
 
         if not inplace_safe:
@@ -150,20 +157,23 @@ class ExtraMSABlock(MSABlock):
                 torch.cuda.empty_cache()
                 m, z = input_tensors
 
-            m = add(m,
-                    self.msa_att_col(
-                        m,
-                        mask=msa_mask,
-                        chunk_size=chunk_size,
-                        use_lma=use_lma,
-                    ),
-                    inplace=inplace_safe,
-                    )
+            m = add(
+                m,
+                self.msa_att_col(
+                    m,
+                    mask=msa_mask,
+                    chunk_size=chunk_size,
+                    use_lma=use_lma,
+                ),
+                inplace=inplace_safe,
+            )
 
             m = add(
                 m,
                 self.msa_transition(
-                    m, mask=msa_mask, chunk_size=chunk_size,
+                    m,
+                    mask=msa_mask,
+                    chunk_size=chunk_size,
                 ),
                 inplace=inplace_safe,
             )
@@ -174,11 +184,13 @@ class ExtraMSABlock(MSABlock):
 
                 del m, z
 
-                m, z = self._compute_opm(input_tensors=input_tensors,
-                                         msa_mask=msa_mask,
-                                         chunk_size=chunk_size,
-                                         inplace_safe=inplace_safe,
-                                         _offload_inference=_offload_inference)
+                m, z = self._compute_opm(
+                    input_tensors=input_tensors,
+                    msa_mask=msa_mask,
+                    chunk_size=chunk_size,
+                    inplace_safe=inplace_safe,
+                    _offload_inference=_offload_inference,
+                )
 
             if _offload_inference and inplace_safe:
                 # m: CPU, z: GPU
@@ -202,7 +214,7 @@ class ExtraMSABlock(MSABlock):
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
-                _attn_chunk_size=_attn_chunk_size
+                _attn_chunk_size=_attn_chunk_size,
             )
 
             m = input_tensors[0]
@@ -226,7 +238,8 @@ class ExtraMSABlock(MSABlock):
 
 
 class ExtraMSAStack(MSAStack):
-    """ Implements AF2 Algorithm 18."""
+    """Implements AF2 Algorithm 18."""
+
     def __init__(
         self,
         c_m: int,
@@ -272,24 +285,25 @@ class ExtraMSAStack(MSAStack):
             no_blocks:
                 Number of ExtraMSA blocks in the stack
             transition_type:
-                String 'relu' or 'swiglu' to determine activation for the transition function
+                String 'relu' or 'swiglu' to determine activation for the transition
+                function
             transition_n:
-                Factor by which to multiply c_m to obtain the transition layer
-                hidden dimension
+                Factor by which to multiply c_m to obtain the transition layer hidden
+                dimension
             msa_dropout:
                 Dropout rate for MSA activations
             pair_dropout:
                 Dropout used for pair activations
             no_column_attention:
-                When True, doesn't use column attention. Required for running
-                sequence embedding mode
+                When True, doesn't use column attention. Required for running sequence
+                embedding mode
             opm_first:
-                When True, Outer Product Mean is performed at the beginning of
-                the ExtraMSA block instead of after the MSA Stack.
-                Used in Multimer pipeline.
+                When True, Outer Product Mean is performed at the beginning of the
+                ExtraMSA block instead of after the MSA Stack. Used in Multimer
+                pipeline.
             fuse_projection_weights:
-                When True, uses FusedTriangleMultiplicativeUpdate variant in
-                the Pair Stack. Used in Multimer pipeline.
+                When True, uses FusedTriangleMultiplicativeUpdate variant in the Pair
+                Stack. Used in Multimer pipeline.
             inf:
                 Large constant for masking
             eps:
@@ -297,17 +311,17 @@ class ExtraMSAStack(MSAStack):
             ckpt:
                 Whether to checkpoint blocks
             clear_cache_between_blocks:
-                Whether to clear CUDA's GPU memory cache between blocks of the
-                stack. Slows down each block but can reduce fragmentation
+                Whether to clear CUDA's GPU memory cache between blocks of the stack.
+                Slows down each block but can reduce fragmentation
             tune_chunk_size:
                 Whether to dynamically tune the module's chunk size
         """
         # Previous implementation seems to call checkpoint function once for all blocks
         blocks_per_ckpt = None if not ckpt else no_blocks
-        super(ExtraMSAStack, self).__init__(
+        super().__init__(
             blocks_per_ckpt=blocks_per_ckpt,
             clear_cache_between_blocks=clear_cache_between_blocks,
-            tune_chunk_size=tune_chunk_size
+            tune_chunk_size=tune_chunk_size,
         )
 
         self.ckpt = ckpt

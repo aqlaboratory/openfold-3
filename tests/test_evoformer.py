@@ -13,19 +13,21 @@
 # limitations under the License.
 
 import re
-import torch
-import numpy as np
 import unittest
+
+import numpy as np
+import torch
+
+import tests.compare_utils as compare_utils
 from openfold3.core.model.latent import EvoformerStack, ExtraMSAStack
 from openfold3.core.model.layers.transition import ReLUTransition
 from openfold3.core.utils.tensor_utils import tree_map
-import tests.compare_utils as compare_utils
 from tests.config import consts
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
-    import jax
     import haiku as hk
+    import jax
 
 
 class TestEvoformerStack(unittest.TestCase):
@@ -43,12 +45,14 @@ class TestEvoformerStack(unittest.TestCase):
         no_heads_msa = 3
         no_heads_pair = 7
         no_blocks = 2
-        transition_type = 'relu'
+        transition_type = "relu"
         transition_n = 2
         msa_dropout = 0.15
         pair_dropout = 0.25
         opm_first = consts.is_multimer
-        fuse_projection_weights = True if re.fullmatch("^model_[1-5]_multimer_v3$", consts.model) else False
+        fuse_projection_weights = bool(
+            re.fullmatch("^model_[1-5]_multimer_v3$", consts.model)
+        )
         inf = 1e9
         eps = 1e-10
 
@@ -83,9 +87,7 @@ class TestEvoformerStack(unittest.TestCase):
         shape_m_before = m.shape
         shape_z_before = z.shape
 
-        m, z, s = es(
-            m, z, chunk_size=4, msa_mask=msa_mask, pair_mask=pair_mask
-        )
+        m, z, s = es(m, z, chunk_size=4, msa_mask=msa_mask, pair_mask=pair_mask)
 
         self.assertTrue(m.shape == shape_m_before)
         self.assertTrue(z.shape == shape_z_before)
@@ -105,7 +107,7 @@ class TestEvoformerStack(unittest.TestCase):
         no_heads_msa = 3
         no_heads_pair = 7
         no_blocks = 2
-        transition_type = 'relu'
+        transition_type = "relu"
         transition_n = 2
         msa_dropout = 0.15
         pair_dropout = 0.25
@@ -236,35 +238,41 @@ class TestExtraMSAStack(unittest.TestCase):
         no_heads_msa = 3
         no_heads_pair = 8
         no_blocks = 2
-        transition_type = 'relu'
+        transition_type = "relu"
         transition_n = 5
         msa_dropout = 0.15
         pair_stack_dropout = 0.25
         opm_first = consts.is_multimer
-        fuse_projection_weights = True if re.fullmatch("^model_[1-5]_multimer_v3$", consts.model) else False
+        fuse_projection_weights = bool(
+            re.fullmatch("^model_[1-5]_multimer_v3$", consts.model)
+        )
         inf = 1e9
         eps = 1e-10
 
-        es = ExtraMSAStack(
-            c_m,
-            c_z,
-            c_hidden_msa_att,
-            c_hidden_opm,
-            c_hidden_mul,
-            c_hidden_tri_att,
-            no_heads_msa,
-            no_heads_pair,
-            no_blocks,
-            transition_type,
-            transition_n,
-            msa_dropout,
-            pair_stack_dropout,
-            opm_first,
-            fuse_projection_weights,
-            ckpt=False,
-            inf=inf,
-            eps=eps,
-        ).eval().cuda()
+        es = (
+            ExtraMSAStack(
+                c_m,
+                c_z,
+                c_hidden_msa_att,
+                c_hidden_opm,
+                c_hidden_mul,
+                c_hidden_tri_att,
+                no_heads_msa,
+                no_heads_pair,
+                no_blocks,
+                transition_type,
+                transition_n,
+                msa_dropout,
+                pair_stack_dropout,
+                opm_first,
+                fuse_projection_weights,
+                ckpt=False,
+                inf=inf,
+                eps=eps,
+            )
+            .eval()
+            .cuda()
+        )
 
         m = torch.rand((batch_size, s_t, n_res, c_m), device="cuda")
         z = torch.rand((batch_size, n_res, n_res, c_z), device="cuda")
@@ -333,9 +341,7 @@ class TestMSATransition(unittest.TestCase):
         n_seq = consts.n_seq
 
         msa_act = np.random.rand(n_seq, n_res, consts.c_m).astype(np.float32)
-        msa_mask = np.ones((n_seq, n_res)).astype(
-            np.float32
-        )  # no mask here either
+        msa_mask = np.ones((n_seq, n_res)).astype(np.float32)  # no mask here either
 
         # Fetch pretrained parameters (but only from one block)]
         params = compare_utils.fetch_alphafold_module_weights(
@@ -348,9 +354,10 @@ class TestMSATransition(unittest.TestCase):
         out_gt = torch.as_tensor(np.array(out_gt))
 
         model = compare_utils.get_global_pretrained_openfold()
-        
+
         out_repro = (
-            model.evoformer.blocks[0].msa_transition(
+            model.evoformer.blocks[0]
+            .msa_transition(
                 torch.as_tensor(msa_act, dtype=torch.float32).cuda(),
                 mask=torch.as_tensor(msa_mask, dtype=torch.float32).cuda(),
             )

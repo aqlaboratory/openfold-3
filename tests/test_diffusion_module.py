@@ -12,20 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
 import unittest
+
+import torch
 
 from openfold3.core.model.structure.diffusion_module import (
     DiffusionConditioning,
     DiffusionModule,
     SampleDiffusion,
-    create_noise_schedule
+    create_noise_schedule,
 )
 from tests.config import consts
 
 
 class TestDiffusionConditioning(unittest.TestCase):
-
     def test_diffusion_conditioning_shape(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
@@ -55,15 +55,19 @@ class TestDiffusionConditioning(unittest.TestCase):
         pair_token_mask = torch.ones((batch_size, n_token, n_token))
 
         batch = {
-            'token_index': torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-            'residue_index': torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-            'sym_id': torch.zeros((batch_size, n_token)),
-            'asym_id': torch.zeros((batch_size, n_token)),
-            'entity_id': torch.zeros((batch_size, n_token))
+            "token_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
+            "residue_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
+            "sym_id": torch.zeros((batch_size, n_token)),
+            "asym_id": torch.zeros((batch_size, n_token)),
+            "entity_id": torch.zeros((batch_size, n_token)),
         }
 
         out_s, out_z = dc(
-            batch = batch,
+            batch=batch,
             t=t,
             s_input=s_input,
             s_trunk=s_trunk,
@@ -71,13 +75,12 @@ class TestDiffusionConditioning(unittest.TestCase):
             token_mask=token_mask,
             pair_token_mask=pair_token_mask,
         )
-        
+
         self.assertTrue(out_s.shape == (batch_size, n_token, c_s))
         self.assertTrue(out_z.shape == (batch_size, n_token, n_token, c_z))
 
 
 class TestDiffusionModule(unittest.TestCase):
-
     def test_diffusion_module_shape(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
@@ -93,7 +96,7 @@ class TestDiffusionModule(unittest.TestCase):
         c_atom = 64
         c_atom_pair = 16
         c_token = 768
-        c_hidden_att = 48 # c_token / no_heads
+        c_hidden_att = 48  # c_token / no_heads
         no_heads = 16
         no_blocks = 24
         n_transition = 2
@@ -128,18 +131,25 @@ class TestDiffusionModule(unittest.TestCase):
         atom_mask = torch.ones((batch_size, n_atom))
 
         batch = {
-            'token_index': torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-            'residue_index': torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-            'sym_id': torch.zeros((batch_size, n_token)),
-            'asym_id': torch.zeros((batch_size, n_token)),
-            'entity_id': torch.zeros((batch_size, n_token)),
-            'ref_pos': torch.randn((batch_size, n_atom, 3)),
-            'ref_mask': torch.ones((batch_size, n_atom)),
-            'ref_element': torch.ones((batch_size, n_atom, 128)),
-            'ref_charge': torch.ones((batch_size, n_atom)),
-            'ref_atom_name_chars': torch.ones((batch_size, n_atom, 4, 64)),
-            'ref_space_uid': torch.zeros((batch_size, n_atom)),
-            'atom_to_token_index': torch.eye(n_token).repeat_interleave(4, dim=0).unsqueeze(0).repeat(batch_size, 1, 1),
+            "token_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
+            "residue_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
+            "sym_id": torch.zeros((batch_size, n_token)),
+            "asym_id": torch.zeros((batch_size, n_token)),
+            "entity_id": torch.zeros((batch_size, n_token)),
+            "ref_pos": torch.randn((batch_size, n_atom, 3)),
+            "ref_mask": torch.ones((batch_size, n_atom)),
+            "ref_element": torch.ones((batch_size, n_atom, 128)),
+            "ref_charge": torch.ones((batch_size, n_atom)),
+            "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
+            "ref_space_uid": torch.zeros((batch_size, n_atom)),
+            "atom_to_token_index": torch.eye(n_token)
+            .repeat_interleave(4, dim=0)
+            .unsqueeze(0)
+            .repeat(batch_size, 1, 1),
         }
 
         out = dm(
@@ -151,14 +161,13 @@ class TestDiffusionModule(unittest.TestCase):
             z_trunk=z_trunk,
             token_mask=token_mask,
             pair_token_mask=pair_token_mask,
-            atom_mask=atom_mask
+            atom_mask=atom_mask,
         )
 
         self.assertTrue(out.shape == (batch_size, n_atom, 3))
 
 
 class TestSampleDiffusion(unittest.TestCase):
-
     def test_sample_diffusion_shape(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
@@ -174,7 +183,7 @@ class TestSampleDiffusion(unittest.TestCase):
         c_atom = 64
         c_atom_pair = 16
         c_token = 768
-        c_hidden_att = 48 # c_token / no_heads
+        c_hidden_att = 48  # c_token / no_heads
         no_heads = 16
         no_blocks = 24
         n_transition = 2
@@ -187,7 +196,7 @@ class TestSampleDiffusion(unittest.TestCase):
         s_min = 4e-4
         p = 7
         T = 5
-        step_size = 1./T
+        step_size = 1.0 / T
 
         sd = SampleDiffusion(
             c_s_input=c_s_input,
@@ -220,26 +229,29 @@ class TestSampleDiffusion(unittest.TestCase):
         atom_mask = torch.ones((batch_size, n_atom))
 
         batch = {
-            'token_index': torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-            'residue_index': torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-            'sym_id': torch.zeros((batch_size, n_token)),
-            'asym_id': torch.zeros((batch_size, n_token)),
-            'entity_id': torch.zeros((batch_size, n_token)),
-            'ref_pos': torch.randn((batch_size, n_atom, 3)),
-            'ref_mask': torch.ones((batch_size, n_atom)),
-            'ref_element': torch.ones((batch_size, n_atom, 128)),
-            'ref_charge': torch.ones((batch_size, n_atom)),
-            'ref_atom_name_chars': torch.ones((batch_size, n_atom, 4, 64)),
-            'ref_space_uid': torch.zeros((batch_size, n_atom)),
-            'atom_to_token_index': torch.eye(n_token).repeat_interleave(4, dim=0).unsqueeze(0).repeat(batch_size, 1, 1),
+            "token_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
+            "residue_index": torch.arange(0, n_token)
+            .unsqueeze(0)
+            .repeat((batch_size, 1)),
+            "sym_id": torch.zeros((batch_size, n_token)),
+            "asym_id": torch.zeros((batch_size, n_token)),
+            "entity_id": torch.zeros((batch_size, n_token)),
+            "ref_pos": torch.randn((batch_size, n_atom, 3)),
+            "ref_mask": torch.ones((batch_size, n_atom)),
+            "ref_element": torch.ones((batch_size, n_atom, 128)),
+            "ref_charge": torch.ones((batch_size, n_atom)),
+            "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
+            "ref_space_uid": torch.zeros((batch_size, n_atom)),
+            "atom_to_token_index": torch.eye(n_token)
+            .repeat_interleave(4, dim=0)
+            .unsqueeze(0)
+            .repeat(batch_size, 1, 1),
         }
-        
+
         noise_schedule = create_noise_schedule(
-            step_size=step_size,
-            sigma_data=sigma_data,
-            s_max=s_max,
-            s_min=s_min,
-            p=p
+            step_size=step_size, sigma_data=sigma_data, s_max=s_max, s_min=s_min, p=p
         )
 
         with torch.no_grad():
@@ -254,7 +266,7 @@ class TestSampleDiffusion(unittest.TestCase):
                 noise_schedule=noise_schedule,
             )
 
-        self.assertTrue(noise_schedule.shape == (T+1,))
+        self.assertTrue(noise_schedule.shape == (T + 1,))
         self.assertTrue(out.shape == (batch_size, n_atom, 3))
 
 

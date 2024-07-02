@@ -14,6 +14,7 @@
 # limitations under the License.
 
 """Library to run HHblits from Python."""
+
 import glob
 import logging
 import os
@@ -79,12 +80,8 @@ class HHBlits:
 
         for database_path in self.databases:
             if not glob.glob(database_path + "_*"):
-                logging.error(
-                    "Could not find HHBlits database %s", database_path
-                )
-                raise ValueError(
-                    f"Could not find HHBlits database {database_path}"
-                )
+                logging.error("Could not find HHBlits database %s", database_path)
+                raise ValueError(f"Could not find HHBlits database {database_path}")
 
         self.n_cpu = n_cpu
         self.n_iter = n_iter
@@ -157,8 +154,8 @@ class HHBlits:
                         logging.error(error_line.strip())
                 logging.error("HHblits stderr end")
                 raise RuntimeError(
-                    "HHblits failed\nstdout:\n%s\n\nstderr:\n%s\n"
-                    % (stdout.decode("utf-8"), stderr[:500_000].decode("utf-8"))
+                    f"HHblits failed\nstdout:\n{stdout.decode('utf-8')}\n\n"
+                    f"stderr:\n{stderr[:500_000].decode('utf-8')}\n"
                 )
 
             with open(a3m_path) as f:

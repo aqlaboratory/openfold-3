@@ -1,17 +1,17 @@
 from .token_heads import (
     AuxiliaryHeads,
-    PerResidueLDDTCaPredictor,
     DistogramHead,
-    TMScoreHead,
+    ExperimentallyResolvedHead,
     MaskedMSAHead,
-    ExperimentallyResolvedHead
+    PerResidueLDDTCaPredictor,
+    TMScoreHead,
 )
 
 __all__ = [
-    'AuxiliaryHeads',
-    'PerResidueLDDTCaPredictor',
-    'DistogramHead',
-    'TMScoreHead',
-    'MaskedMSAHead',
-    'ExperimentallyResolvedHead'
+    "AuxiliaryHeads",
+    "PerResidueLDDTCaPredictor",
+    "DistogramHead",
+    "TMScoreHead",
+    "MaskedMSAHead",
+    "ExperimentallyResolvedHead",
 ]

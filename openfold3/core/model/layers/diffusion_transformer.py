@@ -30,6 +30,7 @@ class DiffusionTransformerBlock(nn.Module):
 
     Implements AF3 Algorithm 23.
     """
+
     def __init__(
         self,
         c_a: int,
@@ -38,7 +39,7 @@ class DiffusionTransformerBlock(nn.Module):
         c_hidden: int,
         no_heads: int,
         n_transition: int,
-        inf: float = 1e9
+        inf: float = 1e9,
     ):
         """
         Args:
@@ -55,22 +56,27 @@ class DiffusionTransformerBlock(nn.Module):
             inf:
                 Large constant used to create mask for attention logits
         """
-        super(DiffusionTransformerBlock, self).__init__()
+        super().__init__()
 
-        self.attention_pair_bias = AttentionPairBias(c_q=c_a,
-                                                     c_k=c_a,
-                                                     c_v=c_a,
-                                                     c_s=c_s,
-                                                     c_z=c_z,
-                                                     c_hidden=c_hidden,
-                                                     no_heads=no_heads,
-                                                     use_ada_layer_norm=True,
-                                                     gating=True,
-                                                     inf=inf)
+        self.attention_pair_bias = AttentionPairBias(
+            c_q=c_a,
+            c_k=c_a,
+            c_v=c_a,
+            c_s=c_s,
+            c_z=c_z,
+            c_hidden=c_hidden,
+            no_heads=no_heads,
+            use_ada_layer_norm=True,
+            gating=True,
+            inf=inf,
+        )
 
-        self.conditioned_transition = ConditionedTransitionBlock(c_a=c_a, c_s=c_s, n=n_transition)
+        self.conditioned_transition = ConditionedTransitionBlock(
+            c_a=c_a, c_s=c_s, n=n_transition
+        )
 
-    def forward(self,
+    def forward(
+        self,
         a: torch.Tensor,
         s: torch.Tensor,
         z: torch.Tensor,
@@ -90,8 +96,8 @@ class DiffusionTransformerBlock(nn.Module):
             z:
                 [*, N_res, N_res, C_z] Pair embedding
             beta:
-                [*, N_res, N_res] Neighborhood mask. Used in Sequence-local atom attention
-                for rectangular blocks along the diagonal.
+                [*, N_res, N_res] Neighborhood mask. Used in Sequence-local
+                atom attention for rectangular blocks along the diagonal.
             mask:
                 [*, N_res] Mask for token-level embedding
             use_memory_efficient_kernel:
@@ -103,10 +109,16 @@ class DiffusionTransformerBlock(nn.Module):
             _mask_trans:
                 Whether to mask the output of the transition layer
         """
-        b = self.attention_pair_bias(a=a, z=z, s=s, beta=beta, mask=mask,
-                                     use_memory_efficient_kernel=use_memory_efficient_kernel,
-                                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                                     use_lma=use_lma)
+        b = self.attention_pair_bias(
+            a=a,
+            z=z,
+            s=s,
+            beta=beta,
+            mask=mask,
+            use_memory_efficient_kernel=use_memory_efficient_kernel,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_lma=use_lma,
+        )
 
         trans_mask = mask if _mask_trans else None
         a = b + self.conditioned_transition(a=a, s=s, mask=trans_mask)
@@ -119,6 +131,7 @@ class DiffusionTransformer(nn.Module):
 
     Implements AF3 Algorithm 23.
     """
+
     def __init__(
         self,
         c_a: int,
@@ -147,31 +160,35 @@ class DiffusionTransformer(nn.Module):
             inf:
                 Large constant used to create mask for attention logits
         """
-        super(DiffusionTransformer, self).__init__()
+        super().__init__()
 
-        self.blocks = nn.ModuleList([
-            DiffusionTransformerBlock(
-                c_a=c_a,
-                c_s=c_s,
-                c_z=c_z,
-                c_hidden=c_hidden,
-                no_heads=no_heads,
-                n_transition=n_transition,
-                inf=inf
-            )
-            for _ in range(no_blocks)])
+        self.blocks = nn.ModuleList(
+            [
+                DiffusionTransformerBlock(
+                    c_a=c_a,
+                    c_s=c_s,
+                    c_z=c_z,
+                    c_hidden=c_hidden,
+                    no_heads=no_heads,
+                    n_transition=n_transition,
+                    inf=inf,
+                )
+                for _ in range(no_blocks)
+            ]
+        )
 
-    def forward(self,
-                a: torch.Tensor,
-                s: torch.Tensor,
-                z: Optional[torch.Tensor],
-                beta: Optional[torch.Tensor],
-                mask: torch.Tensor,
-                use_memory_efficient_kernel: bool = False,
-                use_deepspeed_evo_attention: bool = False,
-                use_lma: bool = False,
-                _mask_trans: bool = True
-                ) -> torch.Tensor:
+    def forward(
+        self,
+        a: torch.Tensor,
+        s: torch.Tensor,
+        z: Optional[torch.Tensor],
+        beta: Optional[torch.Tensor],
+        mask: torch.Tensor,
+        use_memory_efficient_kernel: bool = False,
+        use_deepspeed_evo_attention: bool = False,
+        use_lma: bool = False,
+        _mask_trans: bool = True,
+    ) -> torch.Tensor:
         """
         Args:
             a:
@@ -181,8 +198,8 @@ class DiffusionTransformer(nn.Module):
             z:
                 [*, N_res, N_res, C_z] Pair embedding
             beta:
-                [*, N_res, N_res] Neighborhood mask. Used in Sequence-local atom attention
-                for rectangular blocks along the diagonal.
+                [*, N_res, N_res] Neighborhood mask. Used in Sequence-local
+                atom attention for rectangular blocks along the diagonal.
             mask:
                 [*, N_res] Mask for token-level embedding
             use_memory_efficient_kernel:

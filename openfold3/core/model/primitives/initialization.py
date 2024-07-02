@@ -88,6 +88,7 @@ def kaiming_normal_init_(weights):
 def normal_init_(weights):
     torch.nn.init.normal_(weights)
 
+
 def ipa_point_weights_init_(weights):
     with torch.no_grad():
         softplus_inverse_1 = 0.541324854612918

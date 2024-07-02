@@ -1,31 +1,31 @@
 from .input_embedders import (
+    ExtraMSAEmbedder,
     InputEmbedder,
-    InputEmbedderMultimer,
     InputEmbedderAllAtom,
+    InputEmbedderMultimer,
     MSAModuleEmbedder,
     PreembeddingEmbedder,
     RecyclingEmbedder,
-    ExtraMSAEmbedder
 )
 from .template_embedders import (
-    TemplateSingleEmbedderMonomer,
+    TemplatePairEmbedderAllAtom,
     TemplatePairEmbedderMonomer,
-    TemplateSingleEmbedderMultimer,
     TemplatePairEmbedderMultimer,
-    TemplatePairEmbedderAllAtom
+    TemplateSingleEmbedderMonomer,
+    TemplateSingleEmbedderMultimer,
 )
 
 __all__ = [
-    'InputEmbedder',
-    'InputEmbedderMultimer',
-    'InputEmbedderAllAtom',
-    'MSAModuleEmbedder',
-    'PreembeddingEmbedder',
-    'RecyclingEmbedder',
-    'ExtraMSAEmbedder',
-    'TemplateSingleEmbedderMonomer',
-    'TemplatePairEmbedderMonomer',
-    'TemplateSingleEmbedderMultimer',
-    'TemplatePairEmbedderMultimer',
-    'TemplatePairEmbedderAllAtom'
+    "InputEmbedder",
+    "InputEmbedderMultimer",
+    "InputEmbedderAllAtom",
+    "MSAModuleEmbedder",
+    "PreembeddingEmbedder",
+    "RecyclingEmbedder",
+    "ExtraMSAEmbedder",
+    "TemplateSingleEmbedderMonomer",
+    "TemplatePairEmbedderMonomer",
+    "TemplateSingleEmbedderMultimer",
+    "TemplatePairEmbedderMultimer",
+    "TemplatePairEmbedderAllAtom",
 ]
