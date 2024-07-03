@@ -25,9 +25,9 @@ def pLDDT(
     Args:
         batch:
             Batch dictionary.
-        X:
+        x:
             Predicted coordinates. [*, N, 3]
-        X_gt:
+        x_gt:
             Ground truth coordinates per batch (B) and atom (N). [*, N, 3]
         logits:
             predicted lddt logits. [*, N, n_bins]
@@ -45,7 +45,7 @@ def pLDDT(
 
     # Ca_mask = batch["Ca_mask"] # [*, N]
     # C1_mask = batch["C1_mask"] # [*, N]
-
+    # [*, T]
     Ca_mask = batch['frame_idx'][..., 1] * batch['is_protein'] # [*, T]
     Ca_mask = F.one_hot(Ca_mask, num_classes=dx.shape[-1]).sum(dim=-2) # [*, N]
 
@@ -82,10 +82,10 @@ def pLDDT(
 
     return lddt_loss
 
-def get_Phi(
+def get_phi(
     batch: Dict[str, torch.Tensor],
-    X_gt: torch.Tensor,
-    X: torch.Tensor,
+    x_gt: torch.Tensor,
+    x: torch.Tensor,
     angle_threshold: float = 25,
     eps: float = 1e-8,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -101,16 +101,16 @@ def get_Phi(
     Args:
         batch:
             Batch dictionary.
-        X_gt:
+        x_gt:
             Ground truth coordinates. [*, N, 3]
-        X:
+        x:
             Predicted coordinates. [*, N, 3]
         angle_threshold:
             Threshold for invalid frames. (float)
     Returns:
-        Phi_gt:
+        phi_gt:
             Ground truth coordinates of 3 atoms per token. [*, T, 3, 3]
-        Phi:
+        phi:
             Predicted coordinates of 3 atoms per token T. [*, T, 3, 3]
         invalid_frame_mask:
             Mask for invalid frames. [*, T]
@@ -136,15 +136,18 @@ def get_Phi(
     # GET ATOMS FOR LIGAND FRAME
     # -----------------------------
 
+    T = valid_frame_mask.shape[-1]
+    N = x.shape[-2]
+    atom_to_token = batch["atom_to_token_index"] # [*, N]
+    atom_to_token = F.one_hot(atom_to_token, T) # [*, N, T]
+    
     # mask for ligand atoms with valid frame
-    # (*, N, T) @ (*, T, 1) -> (*, N, 1)
-    is_ligand_atom_with_frame = (
-        batch["atom_to_token_index"] @ valid_frame_mask[..., None]
-    ).squeeze(-1)  # [*, N]
+    # [*, N, T] * [*, T] -> [*, N]
+    is_ligand_atom_with_frame = (atom_to_token * valid_frame_mask).sum(dim=-1) # [*, N]
 
     # indices of three closest neighbors to each atom
     # TODO closest is assumed to be the atom itselt (d=0.0), can this lead to problems?
-    d = torch.cdist(X_gt, X_gt)  # [*, N, N]
+    d = torch.cdist(x_gt, x_gt)  # [*, N, N]
     _, idx = torch.topk(d, dim=-1, k=3, largest=False)  # [*, N, 3]
 
     # arrange as (closest neighbor, atom, 2nd closest)
@@ -152,29 +155,29 @@ def get_Phi(
     idx = idx.unsqueeze(-1).expand(-1, -1, -1, 3)  # [*, N, 3, 3]
 
     # get the coordinates of atoms corresponding to idx
-    Phi_ligand_gt = torch.gather(
-        X_gt.unsqueeze(-3).expand(-1, X_gt.shape[-2], -1, -1), 
+    phi_ligand_gt = torch.gather(
+        x_gt.unsqueeze(-3).expand(-1, N, -1, -1), 
         dim=-2, 
         index=idx
     )  # [*, N, 3, 3]
-    Phi_ligand_gt = Phi_ligand_gt * is_ligand_atom_with_frame[..., None, None]
-    Phi_ligand_gt = (
-        permute_final_dims(Phi_ligand_gt, [1, 2, 0]) @ 
-        batch["atom_to_token_index"].unsqueeze(-3)
+    phi_ligand_gt = phi_ligand_gt * is_ligand_atom_with_frame[..., None, None]
+    phi_ligand_gt = (
+        permute_final_dims(phi_ligand_gt, [1, 2, 0]) @ 
+        atom_to_token.unsqueeze(-3)
       ) # [*, 3, 3, T]
-    Phi_ligand_gt = permute_final_dims(Phi_ligand_gt, [2, 0, 1])  # [*, T, 3, 3]
+    phi_ligand_gt = permute_final_dims(phi_ligand_gt, [2, 0, 1])  # [*, T, 3, 3]
 
-    Phi_ligand = torch.gather(
-        X.unsqueeze(-3).expand(-1, X.shape[-2], -1, -1), 
+    phi_ligand = torch.gather(
+        x.unsqueeze(-3).expand(-1, N, -1, -1), 
         dim=-2, 
         index=idx
     ) # [*, N, 3, 3]
-    Phi_ligand = Phi_ligand * is_ligand_atom_with_frame[..., None, None]
-    Phi_ligand = (
-        permute_final_dims(Phi_ligand, [1, 2, 0]) @ 
-        batch["atom_to_token_index"].unsqueeze(-3)
+    phi_ligand = phi_ligand * is_ligand_atom_with_frame[..., None, None]
+    phi_ligand = (
+        permute_final_dims(phi_ligand, [1, 2, 0]) @ 
+        atom_to_token.unsqueeze(-3)
       ) # [*, 3, 3, T]
-    Phi_ligand = permute_final_dims(Phi_ligand, [2, 0, 1])  # [*, T, 3, 3]
+    phi_ligand = permute_final_dims(phi_ligand, [2, 0, 1])  # [*, T, 3, 3]
 
     # -----------------------------
     # INVALID LIGAND FRAMES
@@ -186,8 +189,8 @@ def get_Phi(
     COS_ANGLE_THRESHOLD = math.cos(angle_threshold * math.pi / 180)
 
     # check if the 3 atoms are collinear to within 25 degrees
-    v1 = Phi_ligand[..., 0, :] - Phi_ligand[..., 1, :]  # [*, T, 3]
-    v2 = Phi_ligand[..., 2, :] - Phi_ligand[..., 1, :]  # [*, T, 3]
+    v1 = phi_ligand[..., 0, :] - phi_ligand[..., 1, :]  # [*, T, 3]
+    v2 = phi_ligand[..., 2, :] - phi_ligand[..., 1, :]  # [*, T, 3]
 
     cos_angle = vecdot(v1, v2) / (norm(v1, eps) * norm(v2, eps))  # [*, T]
 
@@ -204,44 +207,44 @@ def get_Phi(
     frame_idx = batch["frame_idx"]  # [*, T, 3]
     frame_idx = frame_idx.unsqueeze(-1).expand(-1, -1, -1, 3)  # [*, T, 3, 3]
 
-    Phi_gt = torch.gather(
-        X_gt.unsqueeze(-3).expand(-1, is_not_ligand.shape[-1], -1, -1),
+    phi_gt = torch.gather(
+        x_gt.unsqueeze(-3).expand(-1, is_not_ligand.shape[-1], -1, -1),
         dim=-2,
         index=frame_idx,
     )  # [*, T, 3, 3]
-    Phi_gt = Phi_gt * is_not_ligand[..., None, None]
+    phi_gt = phi_gt * is_not_ligand[..., None, None]
 
-    Phi = torch.gather(
-        X.unsqueeze(-3).expand(-1, is_not_ligand.shape[-1], -1, -1),
+    phi = torch.gather(
+        x.unsqueeze(-3).expand(-1, is_not_ligand.shape[-1], -1, -1),
         dim=-2,
         index=frame_idx,
     )  # [*, T, 3, 3]
-    Phi = Phi * is_not_ligand[..., None, None]
+    phi = phi * is_not_ligand[..., None, None]
 
     # -----------------------------
     # COMBINED PHI
     # -----------------------------
 
-    Phi_gt = Phi_gt + Phi_ligand_gt  # [*, T, 3, 3]
-    Phi = Phi + Phi_ligand  # [*, T, 3, 3]
+    phi_gt = phi_gt + phi_ligand_gt  # [*, T, 3, 3]
+    phi = phi + phi_ligand  # [*, T, 3, 3]
 
-    return Phi_gt, Phi, invalid_frame_mask
+    return phi_gt, phi, invalid_frame_mask
 
 def expressCoordinatesInFrame(
-    X: torch.Tensor,
-    Phi: torch.Tensor,
+    x: torch.Tensor,
+    phi: torch.Tensor,
     eps: float = 1e-8,
 ) -> torch.Tensor:
     """
     Algorithm 29 of the AF3 supplementary.
     Express coordinates in a frame.
     Args:
-        X:
+        x:
             Predicted token coordinates and token (T). [* T, 3]
-        Phi:
+        phi:
             Coordinates of 3 atoms for each token. [*, T', 3, 3]
     Returns:
-        X_frame:
+        x_frame:
             Coordinates expressed in frame. [*, T', T, 3]
             (More explicitly: R_i^{-1} (x_j - x_i)
             with frame index i --> T' and the token index j --> T.)
@@ -252,7 +255,7 @@ def expressCoordinatesInFrame(
         return torch.sqrt(torch.sum(x**2, dim=-1, keepdim=True) + eps)
 
     # Extract frame atoms
-    a, b, c = Phi.unbind(dim=-2)  # [*, T', 3]
+    a, b, c = phi.unbind(dim=-2)  # [*, T', 3]
 
     w1 = a - b
     w1 = w1 / norm(w1, eps)
@@ -272,54 +275,54 @@ def expressCoordinatesInFrame(
     e3 = torch.linalg.cross(e1, e2)  # [*, T', 1, 3]
 
     # Project onto frame basis
-    X = X.unsqueeze(-3)  # [*, 1, T, 3]
+    x = x.unsqueeze(-3)  # [*, 1, T, 3]
     b = b.unsqueeze(-2)  # [*, T', 1, 3]
 
-    d = X - b  # [*, T', T, 3]
+    d = x - b  # [*, T', T, 3]
     d1 = vecdot(d, e1)  # [*, T', T]
     d2 = vecdot(d, e2)  # [*, T', T]
     d3 = vecdot(d, e3)  # [*, T', T]
 
-    X_frame = torch.stack([d1, d2, d3], dim=-1)  # [*, T', T, 3]
+    x_frame = torch.stack([d1, d2, d3], dim=-1)  # [*, T', T, 3]
 
-    return X_frame
+    return x_frame
 
 def computeAlignmentError(
-    X: torch.Tensor,
-    X_gt: torch.Tensor,
-    Phi: torch.Tensor,
-    Phi_gt: torch.Tensor,
+    x: torch.Tensor,
+    x_gt: torch.Tensor,
+    phi: torch.Tensor,
+    phi_gt: torch.Tensor,
     eps: float = 1e-8,
 ) -> torch.Tensor:
     """
     Algorithm 30 of the AF3 supplementary.
     Compute the alignment error.
     Args:
-        X:
+        x:
             Predicted token coordinates. [*, T, 3]
-        X_gt:
+        x_gt:
             Ground truth token coordinates. [*, T, 3]
-        Phi:
+        phi:
             Coordinates of 3 atoms associated with frame of token T. [*, T, 3, 3]
-        Phi_gt:
+        phi_gt:
             Ground truth coordinates of 3 atoms associated with frame of token T. [*, T, 3, 3]
     Returns:
         e:
             Alignment error per frame (dim=-2) and per token (dim=-1). [*, T, T]
     """
 
-    X_frame = expressCoordinatesInFrame(X, Phi)  # [*, T, T, 3]
-    X_gt_frame = expressCoordinatesInFrame(X_gt, Phi_gt)  # [*, T, T, 3]
+    x_frame = expressCoordinatesInFrame(x, phi)  # [*, T, T, 3]
+    x_gt_frame = expressCoordinatesInFrame(x_gt, phi_gt)  # [*, T, T, 3]
 
-    e = torch.sum((X_frame - X_gt_frame) ** 2, dim=-1)  # [*, T, T]
+    e = torch.sum((x_frame - x_gt_frame) ** 2, dim=-1)  # [*, T, T]
     e = torch.sqrt(e + eps)  # (*, T, T)
 
     return e
 
 def predictedAlignmentError(
     batch: Dict[str, torch.Tensor],
-    X: torch.Tensor,
-    X_gt: torch.Tensor,
+    x: torch.Tensor,
+    x_gt: torch.Tensor,
     pae_logits: torch.Tensor,
     angle_threshold: float = 25,
     n_bins: int = 64,
@@ -333,9 +336,9 @@ def predictedAlignmentError(
     Args:
         batch:
             Batch dictionary.
-        X:
+        x:
             Predicted coordinates. [*, N, 3]
-        X_gt:
+        x_gt:
             Ground truth coordinates. [*, N, 3]
         pae_logits:
             Predicted alignmed error logits. [*, T, T, n_bins]
@@ -356,16 +359,16 @@ def predictedAlignmentError(
             Mask for invalid frames. [*, T, T]
     """
 
-    Phi_gt, Phi, invalid_frame_mask = get_Phi(
-        batch, X_gt, X, angle_threshold, eps
+    phi_gt, phi, invalid_frame_mask = get_phi(
+        batch, x_gt, x, angle_threshold, eps
     )  # [*, T, 3, 3], [*, T]
 
     # get token atom coordinates
     # batch['token_atom'].shape = [*, T, N]
-    X = batch["token_center_atom"] @ X  # [*, T, 3]
-    X_gt = batch["token_center_atom"] @ X_gt  # [*, T, 3]
+    x = batch["token_center_atom"] @ x  # [*, T, 3]
+    x_gt = batch["token_center_atom"] @ x_gt  # [*, T, 3]
 
-    e = computeAlignmentError(X, X_gt, Phi, Phi_gt, eps)  # [*, T, T]
+    e = computeAlignmentError(x, x_gt, phi, phi_gt, eps)  # [*, T, T]
 
     # -------------------------
     # BIN ALIGNMENT ERROR
@@ -409,8 +412,8 @@ def predictedAlignmentError(
 
 def predictedDistanceError(
         batch: Dict[str, torch.Tensor],
-        X: torch.Tensor,
-        X_gt: torch.Tensor,
+        x: torch.Tensor,
+        x_gt: torch.Tensor,
         pde_logits: torch.Tensor,
         n_bins: int = 64,
         d_min: float = 0.0,
@@ -422,9 +425,9 @@ def predictedDistanceError(
     Args:
         batch:
             Batch dictionary.
-        X:
+        x:
             Predicted atom coordinates. [*, N, 3]
-        X_gt:
+        x_gt:
             Ground truth coordinates. [*, N, 3]
         pde_logits: 
             Predicted distance error logits. [*, T, T, n_bins]
@@ -440,12 +443,12 @@ def predictedDistanceError(
     """
     # get token atom coordinates
     # batch['token_atom'].shape = [*, T, N]
-    X = batch['token_center_atom'] @ X # [*, T, 3]
-    X_gt = batch['token_center_atom'] @ X_gt # [*, T, 3]
+    x = batch['token_center_atom'] @ x # [*, T, 3]
+    x_gt = batch['token_center_atom'] @ x_gt # [*, T, 3]
 
     # token atom distances errors
-    d = torch.cdist(X, X) # [*, T, T]
-    d_gt = torch.cdist(X_gt, X_gt) # [*, T, T]
+    d = torch.cdist(x, x) # [*, T, T]
+    d_gt = torch.cdist(x_gt, x_gt) # [*, T, T]
     e = torch.abs(d - d_gt) # [*, T, T]
 
     # boundaries = [0.0, 0.5, ...., 31.5, 32.0]
