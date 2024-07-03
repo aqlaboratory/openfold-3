@@ -115,6 +115,8 @@ class AtomTransformer(nn.Module):
             ql:
                 [*, N_atom, c_atom] Updated atom single representation
         """
+        # TODO: Add/remove padding from n_atom to make it divisible by block size
+
         # Define subset centers
         # [N_center]
         n_atom = ql.shape[-2]

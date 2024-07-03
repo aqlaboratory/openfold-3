@@ -191,7 +191,7 @@ class TestAtomTransformer(unittest.TestCase):
 
     def without_n_sample_channel(self, dtype, use_block_sparse_attn):
         batch_size = consts.batch_size
-        n_token = 192
+        n_token = 192  # Has to be divisible by block size
         n_atom = 4 * n_token
         c_atom = 128
         c_atom_pair = 16
@@ -211,7 +211,7 @@ class TestAtomTransformer(unittest.TestCase):
 
     def with_n_sample_channel(self, dtype, use_block_sparse_attn):
         batch_size = consts.batch_size
-        n_token = 192
+        n_token = 192  # Has to be divisible by block size
         n_atom = 4 * n_token
         c_atom = 128
         c_atom_pair = 16
@@ -255,8 +255,8 @@ class TestAtomTransformer(unittest.TestCase):
 
     def compare_block_sparse(self, dtype):
         batch_size = consts.batch_size
-        n_token = consts.n_res
-        n_atom = 4 * consts.n_res
+        n_token = 192  # Has to be divisible by block size
+        n_atom = 4 * n_token
         n_sample = 3
         c_atom = 128
         c_atom_pair = 16
