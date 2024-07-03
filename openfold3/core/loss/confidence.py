@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from torch.linalg import vecdot
 
 from openfold3.core.utils.tensor_utils import (
-    masked_mean,
+#    masked_mean,
     permute_final_dims,
 )
 
@@ -202,20 +202,20 @@ def get_phi(
     # ------------------------------------------------
 
     # TODO: update to correct batch dict convention
-    # Let's say tentatively this gives the indices of the 3 atoms associated with the frame of token T.
+    # Tentatively gives the indices of the 3 atoms associated with the frame of token T.
     is_not_ligand = 1 - batch["is_ligand"]  # [*, T]
     frame_idx = batch["frame_idx"]  # [*, T, 3]
     frame_idx = frame_idx.unsqueeze(-1).expand(-1, -1, -1, 3)  # [*, T, 3, 3]
 
     phi_gt = torch.gather(
-        x_gt.unsqueeze(-3).expand(-1, is_not_ligand.shape[-1], -1, -1),
+        x_gt.unsqueeze(-3).expand(-1, T, -1, -1),
         dim=-2,
         index=frame_idx,
     )  # [*, T, 3, 3]
     phi_gt = phi_gt * is_not_ligand[..., None, None]
 
     phi = torch.gather(
-        x.unsqueeze(-3).expand(-1, is_not_ligand.shape[-1], -1, -1),
+        x.unsqueeze(-3).expand(-1, T, -1, -1),
         dim=-2,
         index=frame_idx,
     )  # [*, T, 3, 3]
@@ -359,33 +359,62 @@ def predictedAlignmentError(
             Mask for invalid frames. [*, T, T]
     """
 
-    phi_gt, phi, invalid_frame_mask = get_phi(
-        batch, x_gt, x, angle_threshold, eps
-    )  # [*, T, 3, 3], [*, T]
+    # phi_gt, phi, invalid_frame_mask = get_phi(
+    #     batch, x_gt, x, angle_threshold, eps
+    # )  # [*, T, 3, 3], [*, T]
 
-    # get token atom coordinates
-    # batch['token_atom'].shape = [*, T, N]
-    x = batch["token_center_atom"] @ x  # [*, T, 3]
-    x_gt = batch["token_center_atom"] @ x_gt  # [*, T, 3]
+    #-------------------------
+    # GET PHI
+    #-------------------------
+    
+    # frame_idx holds indices of 3 atoms associated with the frame of each token.
+    # The 2nd is always the center atom.
+    # For proteins: N, C-alpha, C
+    # For nucleic acids: C1', C3', C4' (is that the correct order?)
+    # For ligands: closest neighbor, atom, 2nd closest neighbor.
+    # Frame does not exist if (1) number of neighbors in the chain < 2 or 
+    # (2) the 3 atoms are collinear within 25 degrees.
 
-    e = computeAlignmentError(x, x_gt, phi, phi_gt, eps)  # [*, T, T]
+    idx = batch['frame_idx']  # [*, T, 3]
+    T = idx.shape[-2]
+
+    # [*, T, 3, 3]
+    phi = torch.gather(
+        x.unsqueeze(-3).expand(-1, T, -1, -1), # [*, T, N, 3]
+        dim=-2,
+        index=idx.unsqueeze(-1).expand(-1, -1, -1, 3), # [*, T, 3, 3]
+    ) 
+
+    # [*, T, 3, 3]
+    phi_gt = torch.gather(
+        x_gt.unsqueeze(-3).expand(-1, T, -1, -1),
+        dim=-2,
+        index=idx.unsqueeze(-1).expand(-1, -1, -1, 3),
+    )
+
+    # center atom coordinates
+    x_token = phi[..., 1, :] # [*, T, 3]
+    x_token_gt = phi_gt[..., 1, :] # [*, T, 3]
 
     # -------------------------
     # BIN ALIGNMENT ERROR
     # -------------------------
 
+    e = computeAlignmentError(x_token, x_token_gt, phi, phi_gt, eps) # [*, T, T]
+
     # boundaries = [0.0, 0.5, ...., 31.5, 32.0]
     boundaries = torch.linspace(
         d_min, d_max, n_bins + 1, device=e.device
-    )  # [n_bins + 1]
+    ) # [n_bins + 1]
 
     # index of bin for each computed alignment error
     # top bin: anything > 31.5, bottom bin: anything < 0.5
-    bins = torch.bucketize(e, boundaries[1:-1])  # [*, T, T]
+    bins = torch.bucketize(e, boundaries[1:-1]) # [*, T, T]
 
     # set bin to ignore value (=-100) of F.cross_entropy if invalid frame
-    invalid_frame_mask = invalid_frame_mask.unsqueeze(-1).expand_as(bins)  # [*, T, T]
-    bins = bins.masked_fill(invalid_frame_mask.bool(), -100)  # [*, T, T]
+    valid_frame = batch['valid_frame'] # [*, T]
+    valid_frame = valid_frame.unsqueeze(-1).expand_as(bins) # [*, T, T]
+    bins = bins.masked_fill(~valid_frame.bool(), -100) # [*, T, T]
 
     # -------------------------
     # LOSS AND EXPECTED PAE
@@ -399,7 +428,7 @@ def predictedAlignmentError(
     bin_centers = (boundaries[1:] + boundaries[:-1]) / 2  # [n_bins]
     PAE = (bin_centers * pae).sum(dim=-1)  # [*, T, T]
 
-    # TODO I'm including the invalid frame mask in the return, because it must accompany
+    # TODO I'm including the valid frame mask in the return, because it must accompany
     # the PAE for whatever you do with it.
     # It could be easier to multiply it with the PAE before returning it, and include 
     # a normalization factor in the loss function.
@@ -407,7 +436,7 @@ def predictedAlignmentError(
     return {
         "pae_loss": pae_loss,
         "predicted_alignment_error": PAE,
-        "invalid_frame_mask": invalid_frame_mask,
+        "valid_frame_mask": valid_frame,
     }
 
 def predictedDistanceError(
@@ -442,13 +471,25 @@ def predictedDistanceError(
             Predicted alignment error loss.
     """
     # get token atom coordinates
-    # batch['token_atom'].shape = [*, T, N]
-    x = batch['token_center_atom'] @ x # [*, T, 3]
-    x_gt = batch['token_center_atom'] @ x_gt # [*, T, 3]
+    center_idx = batch['frame_idx'][..., 1:2]  # [*, T, 1]
+    T = center_idx.shape[-2]
+
+    # [*, T, 3]
+    x_token = torch.gather(
+        x.unsqueeze(-3).expand(-1, T, -1, -1), # [*, T, N, 3]
+        dim=-2,
+        index=center_idx.unsqueeze(-1).expand(-1, -1, -1, 3), # [*, T, 1, 3]
+    ).squeeze(-2) # [*, T, 3]
+
+    x_token_gt = torch.gather(
+        x_gt.unsqueeze(-3).expand(-1, T, -1, -1),
+        dim=-2,
+        index=center_idx.unsqueeze(-1).expand(-1, -1, -1, 3),
+    ).squeeze(-2) # [*, T, 3]
 
     # token atom distances errors
-    d = torch.cdist(x, x) # [*, T, T]
-    d_gt = torch.cdist(x_gt, x_gt) # [*, T, T]
+    d = torch.cdist(x_token, x_token) # [*, T, T]
+    d_gt = torch.cdist(x_token_gt, x_token_gt) # [*, T, T]
     e = torch.abs(d - d_gt) # [*, T, T]
 
     # boundaries = [0.0, 0.5, ...., 31.5, 32.0]
