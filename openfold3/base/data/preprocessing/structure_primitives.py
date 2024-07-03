@@ -189,6 +189,51 @@ def remove_hydrogens(atom_array: struc.AtomArray) -> struc.AtomArray:
     return atom_array
 
 
+def remove_small_polymers(
+    atom_array: struc.AtomArray, max_residues: int = 3
+) -> struc.AtomArray:
+    """Removes small polymer chains from the AtomArray
+
+    Follows 2.5.4 of the AlphaFold3 SI and removes all polymer chains with up to
+    max_residues residues. We consider proteins and nucleic acids as polymers.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to remove small polymers from.
+        max_residues:
+            Maximum number of residues for a polymer chain to be considered as small.
+
+    Returns:
+        AtomArray with all polymer chains with fewer than min_residues residues removed.
+    """
+    # Get polymers of all sizes
+    all_nucleotides = struc.filter_polymer(
+        atom_array, pol_type="nucleotide", min_size=2
+    )
+    all_proteins = struc.filter_polymer(atom_array, pol_type="peptide", min_size=2)
+    all_polymers = all_nucleotides | all_proteins
+
+    # Get polymers that are not small
+    not_small_nucleotides = struc.filter_polymer(
+        atom_array, pol_type="nucleotide", min_size=max_residues + 1
+    )
+    not_small_proteins = struc.filter_polymer(
+        atom_array, pol_type="peptide", min_size=max_residues + 1
+    )
+    not_small_polymers = not_small_nucleotides | not_small_proteins
+
+    # Get small polymers by subtracting the not small polymers from all polymers
+    small_polymers = all_polymers & ~not_small_polymers
+
+    # Remove small polymers
+    small_polymer_chains = np.unique(atom_array.chain_id_renumbered[small_polymers])
+
+    for chain_id in small_polymer_chains:
+        atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
+
+    return atom_array
+
+
 def remove_fully_unknown_polymers(atom_array: struc.AtomArray) -> struc.AtomArray:
     """Removes polymer chains with all unknown residues from the AtomArray
 
