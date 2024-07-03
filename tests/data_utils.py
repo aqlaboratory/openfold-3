@@ -191,10 +191,8 @@ def random_af3_features(batch_size, n_token, n_atom, n_msa, n_templ):
         .repeat_interleave(int(n_atom / n_token), dim=0)
         .unsqueeze(0)
         .repeat(batch_size, 1, 1),
-        "msa_mask": torch.ones(
-            (batch_size, n_msa, n_token)
-        ),  # padding mask? Not existed in AF3 feature dict
-        "num_main_msa_seqs": torch.Tensor(
-            [int(n_msa / 2)]
-        ),  # Not existed in AF3 feature dict
+        "msa_mask": torch.ones((batch_size, n_msa, n_token)),
+        "num_main_msa_seqs": torch.Tensor([int(n_msa / 2)]),
+        "gt_atom_positions": torch.ones((batch_size, n_atom, 3)),
+        "gt_atom_mask": torch.ones((batch_size, n_token)),
     }

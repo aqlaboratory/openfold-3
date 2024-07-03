@@ -150,12 +150,19 @@ config = mlc.ConfigDict(
                     "deletion_value": [NUM_MSA_SEQ, NUM_TOKENS],
                     "profile": [NUM_TOKENS, 32],
                     "deletion_mean": [NUM_TOKENS],
-                    "template_restype": [NUM_TEMPLATES, NUM_TOKENS],
+                    "template_restype": [NUM_TEMPLATES, NUM_TOKENS, 32],
                     "template_pseudo_beta_mask": [NUM_TEMPLATES, NUM_TOKENS],
                     "template_backbone_frame_mask": [NUM_TEMPLATES, NUM_TOKENS],
                     "template_distogram": [NUM_TEMPLATES, NUM_TOKENS, NUM_TOKENS, 39],
                     "template_unit_vector": [NUM_TEMPLATES, NUM_TOKENS, NUM_TOKENS, 3],
                     "token_bonds": [NUM_TOKENS, NUM_TOKENS],
+                    # Features not included in AF3 docs
+                    "atom_to_token_index": [NUM_ATOMS, NUM_TOKENS],
+                    "token_mask": [NUM_TOKENS],
+                    "msa_mask": [NUM_MSA_SEQ, NUM_TOKENS],
+                    "num_main_msa_seqs": [],
+                    "gt_atom_positions": [NUM_ATOMS, 3],
+                    "gt_atom_mask": [NUM_ATOMS],
                 }
             }
         },
