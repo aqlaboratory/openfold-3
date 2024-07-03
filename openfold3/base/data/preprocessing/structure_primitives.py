@@ -525,12 +525,13 @@ def remove_chains_with_CA_gaps(
             Distance threshold in Angstrom. Defaults to 10.0.
     """
     protein_chain_ca = atom_array[
-        struc.filter_polymer(pol_type="peptide") & atom_array.atom_name == "CA"
+        struc.filter_polymer(atom_array, pol_type="peptide")
+        & (atom_array.atom_name == "CA")
     ]
 
     # Match C-alpha atoms with their next C-alpha atom
     ca_without_last = protein_chain_ca[:-1]
-    ca_shifted_left = np.roll(protein_chain_ca, -1, axis=0)[:-1]
+    ca_shifted_left = struc.array(np.roll(protein_chain_ca, -1, axis=0)[:-1])
 
     # Distances of every C-alpha atom to the next C-alpha atom
     ca_dists = struc.distance(ca_without_last, ca_shifted_left)
@@ -546,7 +547,7 @@ def remove_chains_with_CA_gaps(
 
     # Find chains where the distance between consecutive C-alpha atoms is too large
     chain_ids_to_remove = np.unique(
-        protein_chain_ca[ca_dists > distance_threshold].chain_id_renumbered
+        protein_chain_ca[:-1][ca_dists > distance_threshold].chain_id_renumbered
     )
 
     for chain_id in chain_ids_to_remove:
