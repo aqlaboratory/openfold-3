@@ -43,8 +43,8 @@ def pLDDT(
     dx_gt = torch.cdist(x_gt, x_gt)  # [*, N, N]
     delta = torch.abs(dx - dx_gt)  # [*, N, N]
 
-    # Ca_mask = batch["Ca_mask"]  # [*, N]
-    # C1_mask = batch["C1_mask"]  # [*, N]
+    # Ca_mask = batch["Ca_mask"] # [*, N]
+    # C1_mask = batch["C1_mask"] # [*, N]
 
     Ca_mask = batch['frame_idx'][..., 1] * batch['is_protein'] # [*, T]
     Ca_mask = F.one_hot(Ca_mask, num_classes=dx.shape[-1]).sum(dim=-2) # [*, N]
