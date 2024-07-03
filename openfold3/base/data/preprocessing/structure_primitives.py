@@ -21,6 +21,28 @@ from .tables import (
 )
 
 
+def assign_renumbered_chain_ids(atom_array: struc.AtomArray) -> None:
+    """Adds a renumbered chain index to the AtomArray
+
+    Iterates through all chains in the atom array and assigns unique numerical chain IDs
+    starting with 0 to each chain in the "chain_id_renumbered" field. This is useful for
+    bioassembly parsing where chain IDs can be duplicated after the assembly is
+    expanded.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to assign renumbered chain IDs to.
+    """
+    chain_start_idxs = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
+
+    # Assign numerical chain IDs
+    chain_id_n_repeats = np.diff(chain_start_idxs)
+    chain_ids_per_atom = np.repeat(
+        np.arange(len(chain_id_n_repeats)), chain_id_n_repeats
+    )
+    atom_array.set_annotation("chain_id_renumbered", chain_ids_per_atom)
+
+
 def convert_MSE_to_MET(atom_array: struc.AtomArray) -> None:
     """Converts selenomethionine (MSE) residues to methionine (MET) in-place
 
@@ -159,28 +181,6 @@ def remove_fully_unknown_polymers(atom_array: struc.AtomArray) -> struc.AtomArra
             )
 
     return atom_array_filtered
-
-
-def assign_renumbered_chain_ids(atom_array: struc.AtomArray) -> None:
-    """Adds a renumbered chain index to the AtomArray
-
-    Iterates through all chains in the atom array and assigns unique numerical chain IDs
-    starting with 0 to each chain in the "chain_id_renumbered" field. This is useful for
-    bioassembly parsing where chain IDs can be duplicated after the assembly is
-    expanded.
-
-    Args:
-        atom_array:
-            AtomArray containing the structure to assign renumbered chain IDs to.
-    """
-    chain_start_idxs = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
-
-    # Assign numerical chain IDs
-    chain_id_n_repeats = np.diff(chain_start_idxs)
-    chain_ids_per_atom = np.repeat(
-        np.arange(len(chain_id_n_repeats)), chain_id_n_repeats
-    )
-    atom_array.set_annotation("chain_id_renumbered", chain_ids_per_atom)
 
 
 def remove_chain_and_attached_ligands(
