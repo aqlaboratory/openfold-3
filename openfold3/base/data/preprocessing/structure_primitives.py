@@ -43,6 +43,45 @@ def assign_renumbered_chain_ids(atom_array: struc.AtomArray) -> None:
     atom_array.set_annotation("chain_id_renumbered", chain_ids_per_atom)
 
 
+def assign_molecule_types(atom_array: struc.AtomArray) -> None:
+    """Assigns molecule types to the AtomArray
+
+    Assigns molecule types to each chain based on its residue names. Possible molecule
+    types are protein, RNA, DNA, and ligand. The molecule type is stored in the
+    "molecule_type" field of the AtomArray.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to assign molecule types to.
+    """
+    chain_start_idxs = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
+
+    # Create molecule type annotation
+    molecule_types = np.zeros(len(atom_array))
+
+    # Zip together chain starts and ends
+    for chain_start, chain_end in zip(chain_start_idxs[:-1], chain_start_idxs[1:]):
+        residues_in_chain = set(atom_array[chain_start:chain_end].res_name)
+
+        # Assign protein if any standard protein residue is present
+        if residues_in_chain & set(STANDARD_PROTEIN_RESIDUES):
+            molecule_types[chain_start:chain_end] = MOLECULE_TYPE_ID_PROTEIN
+
+        # Assign RNA if any standard RNA residue is present
+        elif residues_in_chain & set(STANDARD_RNA_RESIDUES):
+            molecule_types[chain_start:chain_end] = MOLECULE_TYPE_ID_RNA
+
+        # Assign DNA if any standard DNA residue is present
+        elif residues_in_chain & set(STANDARD_DNA_RESIDUES):
+            molecule_types[chain_start:chain_end] = MOLECULE_TYPE_ID_DNA
+
+        # Assign ligand otherwise
+        else:
+            molecule_types[chain_start:chain_end] = MOLECULE_TYPE_ID_LIGAND
+
+    atom_array.set_annotation("molecule_type", molecule_types)
+
+
 def convert_MSE_to_MET(atom_array: struc.AtomArray) -> None:
     """Converts selenomethionine (MSE) residues to methionine (MET) in-place
 
