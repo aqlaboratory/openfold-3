@@ -309,9 +309,8 @@ class TestAtomTransformer(unittest.TestCase):
             ql_out_block_sparse = atom_transformer(
                 batch=batch, ql=ql, cl=cl, plm=plm
             ).cpu()
-            compare_utils.assert_mean_abs_diff_small(
-                ql_out, ql_out_block_sparse, eps=eps
-            )
+            err = torch.mean(torch.abs(ql_out - ql_out_block_sparse))
+            self.assertTrue(err < eps, f"Error: {err}")
 
     @compare_utils.skip_unless_triton_installed()
     def test_compare_block_sparse_fp32(self):
