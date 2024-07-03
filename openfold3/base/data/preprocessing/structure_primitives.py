@@ -246,8 +246,8 @@ def remove_fully_unknown_polymers(atom_array: struc.AtomArray) -> struc.AtomArra
         AtomArray with all polymer chains containing only unknown residues removed.
     """
     # Masks for standard polymers
-    proteins = struc.filter_polymer(atom_array, poly_type="peptide")
-    nucleic_acids = struc.filter_polymer(atom_array, poly_type="nucleotide")
+    proteins = struc.filter_polymer(atom_array, pol_type="peptide")
+    nucleic_acids = struc.filter_polymer(atom_array, pol_type="nucleotide")
 
     # Combine to get mask for all polymers
     polymers = proteins | nucleic_acids
