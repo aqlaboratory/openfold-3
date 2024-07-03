@@ -557,7 +557,7 @@ def remove_chains_with_CA_gaps(
 
 
 def subset_large_structure(
-    atom_array: struc.AtomArray, n_chains: int
+    atom_array: struc.AtomArray, n_chains: int = 20
 ) -> struc.AtomArray:
     """Subsets structures with too many chains to n chains
 
