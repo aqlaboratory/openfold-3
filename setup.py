@@ -93,8 +93,8 @@ if bare_metal_major != -1:
         CUDAExtension(
             name="attn_core_inplace_cuda",
             sources=[
-                "openfold3/base/utils/kernel/csrc/softmax_cuda.cpp",
-                "openfold3/base/utils/kernel/csrc/softmax_cuda_kernel.cu",
+                "openfold3/core/utils/kernel/csrc/softmax_cuda.cpp",
+                "openfold3/core/utils/kernel/csrc/softmax_cuda_kernel.cu",
             ],
             include_dirs=[
                 os.path.join(
@@ -117,8 +117,8 @@ else:
         CppExtension(
             name="attn_core_inplace_cuda",
             sources=[
-                "openfold3/base/utils/kernel/csrc/softmax_cuda.cpp",
-                "openfold3/base/utils/kernel/csrc/softmax_cuda_stub.cpp",
+                "openfold3/core/utils/kernel/csrc/softmax_cuda.cpp",
+                "openfold3/core/utils/kernel/csrc/softmax_cuda_stub.cpp",
             ],
             extra_compile_args={
                 "cxx": ["-O3"],
@@ -137,7 +137,7 @@ setup(
     packages=find_packages(exclude=["tests", "scripts"]),
     include_package_data=True,
     package_data={
-        "openfold3": ["base/utils/kernel/csrc/*"],
+        "openfold3": ["core/utils/kernel/csrc/*"],
         "": ["resources/stereo_chemical_props.txt"],
     },
     ext_modules=modules,
