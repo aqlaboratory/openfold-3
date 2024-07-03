@@ -59,9 +59,10 @@ def pLDDT(
       )  # [*, N, N]
 
     # atom mask and avoid self term
-    atom_mask = batch['atom_mask_gt']  # [*, N]
+    atom_mask_gt = batch['atom_mask_gt']  # [*, N]
+    # TODO check dtypes for masks
     mask = 1 - torch.eye(c.shape[-1], device=c.device)  # [N, N]
-    mask = mask * atom_mask[..., None] * atom_mask[..., None, :]  # [*, N, N]
+    mask = mask * atom_mask_gt[..., None] * atom_mask_gt[..., None, :]  # [*, N, N]
     c = c * mask  # [*, N, N]
 
     thresholds = torch.tensor([0.5, 1.0, 2.0, 4.0]).to(dx.device)
@@ -73,7 +74,7 @@ def pLDDT(
     bins = torch.bucketize(lddt, boundaries[1:-1])  # [*, N]
 
     # set bin to ignore value (=-100) of F.cross_entropy for masked atoms
-    bins = bins.masked_fill(~atom_mask.bool(), -100)  # [*, N]
+    bins = bins.masked_fill(~atom_mask_gt.bool(), -100)  # [*, N]
 
     # compute cross entropy loss
     logits = permute_final_dims(logits, [1, 0])  # [*, n_bins, N]
@@ -152,21 +153,27 @@ def get_Phi(
 
     # get the coordinates of atoms corresponding to idx
     Phi_ligand_gt = torch.gather(
-        X_gt.unsqueeze(-3).expand(-1, X_gt.shape[-2], -1, -1), dim=-2, index=idx
+        X_gt.unsqueeze(-3).expand(-1, X_gt.shape[-2], -1, -1), 
+        dim=-2, 
+        index=idx
     )  # [*, N, 3, 3]
     Phi_ligand_gt = Phi_ligand_gt * is_ligand_atom_with_frame[..., None, None]
-    Phi_ligand_gt = permute_final_dims(Phi_ligand_gt, [1, 2, 0]) @ batch[
-        "atom_to_token_index"
-    ].unsqueeze(-3)  # [*, 3, 3, T]
+    Phi_ligand_gt = (
+        permute_final_dims(Phi_ligand_gt, [1, 2, 0]) @ 
+        batch["atom_to_token_index"].unsqueeze(-3)
+      ) # [*, 3, 3, T]
     Phi_ligand_gt = permute_final_dims(Phi_ligand_gt, [2, 0, 1])  # [*, T, 3, 3]
 
     Phi_ligand = torch.gather(
-        X.unsqueeze(-3).expand(-1, X.shape[-2], -1, -1), dim=-2, index=idx
-    )  # [*, N, 3, 3]
+        X.unsqueeze(-3).expand(-1, X.shape[-2], -1, -1), 
+        dim=-2, 
+        index=idx
+    ) # [*, N, 3, 3]
     Phi_ligand = Phi_ligand * is_ligand_atom_with_frame[..., None, None]
-    Phi_ligand = permute_final_dims(Phi_ligand, [1, 2, 0]) @ batch[
-        "atom_to_token_index"
-    ].unsqueeze(-3)  # [*, 3, 3, T]
+    Phi_ligand = (
+        permute_final_dims(Phi_ligand, [1, 2, 0]) @ 
+        batch["atom_to_token_index"].unsqueeze(-3)
+      ) # [*, 3, 3, T]
     Phi_ligand = permute_final_dims(Phi_ligand, [2, 0, 1])  # [*, T, 3, 3]
 
     # -----------------------------
