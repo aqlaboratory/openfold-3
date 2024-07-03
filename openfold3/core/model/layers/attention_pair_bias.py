@@ -132,8 +132,8 @@ class AttentionPairBias(Attention):
         )
 
         self.sparse_softmax = blocksparse_softmax(
-            self.layout,
-            self.block_size,
+            layout,
+            block_size,
             device=device,
         )
 
@@ -192,6 +192,8 @@ class AttentionPairBias(Attention):
     def block_sparse_attention(self, q_x, kv_x, biases, layout, block_size):
         # Temporary, using this for initial testing
 
+        layout = layout[None].tile((self.no_heads, 1, 1)).long()
+
         # Delayed triton init, to make sure that we get the right device
         # Infer device from query
         if not hasattr(self, "sparse_dot_sdd"):
@@ -202,13 +204,23 @@ class AttentionPairBias(Attention):
         # [*, H, Q/K/V, C_hidden]
         q, k, v = self._prep_qkv(q_x, kv_x, apply_scale=True)
 
-        def sparsify_tensor(x, mask, block):
+        def flatten_batch_dims(x):
+            return x.reshape((-1, *x.shape[-3:]))
+
+        orig_shape = q.shape
+        batch_dims = orig_shape[:-3]
+        if len(batch_dims) > 1:
+            q = flatten_batch_dims(q)
+            k = flatten_batch_dims(k)
+            v = flatten_batch_dims(v)
+
+        def sparsify_tensor(x, mask, block, batch_dims):
             ret = torch.empty(
-                (x.size(0), mask.sum(), block, block), dtype=x.dtype, device=x.device
+                (*batch_dims, mask.sum(), block, block), dtype=x.dtype, device=x.device
             )
             for idx, (h, i, j) in enumerate(zip(*mask.nonzero(as_tuple=True))):
-                ret[:, idx, :, :] = x[
-                    :, h, i * block : (i + 1) * block, j * block : (j + 1) * block
+                ret[..., idx, :, :] = x[
+                    ..., h, i * block : (i + 1) * block, j * block : (j + 1) * block
                 ]
             return ret
 
@@ -216,11 +228,18 @@ class AttentionPairBias(Attention):
 
         if biases is not None:
             bias = sum(biases)
-            b = sparsify_tensor(bias, layout, block_size)
+            b = sparsify_tensor(bias, layout, block_size, batch_dims=batch_dims)
+            attn_shape = w.shape
+            w = w.reshape((*batch_dims, *w.shape[-3:]))
             w = w + b
+            w = w.reshape(attn_shape)
 
         w = self.sparse_softmax(w)
         o = self.sparse_dot_dsd(w, v)
+        o = o.reshape(orig_shape)
+
+        o = o.transpose(-2, -3)
+
         o = self._wrap_up(o=o, q_x=q_x)
 
         return o

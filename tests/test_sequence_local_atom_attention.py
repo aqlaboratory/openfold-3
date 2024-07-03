@@ -10,6 +10,7 @@ from openfold3.core.model.layers import (
     NoisyPositionEmbedder,
     RefAtomFeatureEmbedder,
 )
+from openfold3.core.utils.tensor_utils import tensor_tree_map
 from tests.config import consts
 
 
@@ -143,32 +144,57 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
 
 
 class TestAtomTransformer(unittest.TestCase):
-    def without_n_sample_channel(self, use_block_sparse_attn):
-        batch_size = consts.batch_size
-        n_token = consts.n_res
-        n_atom = 4 * consts.n_res
+    def run_shape_test(
+        self, batch, q, cl, plm, out_shape, dtype, use_block_sparse_attn=False
+    ):
         c_atom = 128
         c_atom_pair = 16
         c_hidden = 32
         no_heads = 4
         no_blocks = 3
         n_transition = 2
-        inf = 1e10
         n_query = 32
         n_key = 128
+        inf = 1e10
+        device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        atom_transformer = AtomTransformer(
-            c_q=c_atom,
-            c_p=c_atom_pair,
-            c_hidden=c_hidden,
-            no_heads=no_heads,
-            no_blocks=no_blocks,
-            n_transition=n_transition,
-            n_query=n_query,
-            n_key=n_key,
-            inf=inf,
-            use_block_sparse_attn=use_block_sparse_attn,
+        atom_transformer = (
+            AtomTransformer(
+                c_q=c_atom,
+                c_p=c_atom_pair,
+                c_hidden=c_hidden,
+                no_heads=no_heads,
+                no_blocks=no_blocks,
+                n_transition=n_transition,
+                n_query=n_query,
+                n_key=n_key,
+                inf=inf,
+                use_block_sparse_attn=use_block_sparse_attn,
+            )
+            .eval()
+            .to(device)
         )
+
+        ql = q.to(device, dtype=dtype)
+        cl = cl.to(device, dtype=dtype)
+        plm = plm.to(device, dtype=dtype)
+
+        def to_device(t):
+            return t.to(device, dtype=dtype)
+
+        batch = tensor_tree_map(to_device, batch)
+
+        with torch.cuda.amp.autocast(dtype=dtype):
+            ql = atom_transformer(batch=batch, ql=ql, cl=cl, plm=plm).cpu()
+
+        self.assertTrue(ql.shape == out_shape)
+
+    def without_n_sample_channel(self, dtype, use_block_sparse_attn):
+        batch_size = consts.batch_size
+        n_token = 192
+        n_atom = 4 * n_token
+        c_atom = 128
+        c_atom_pair = 16
 
         ql = torch.ones((batch_size, n_atom, c_atom))
         cl = torch.ones((batch_size, n_atom, c_atom))
@@ -179,37 +205,17 @@ class TestAtomTransformer(unittest.TestCase):
             "atom_to_token_index": torch.ones((batch_size, n_atom, n_token)),
         }
 
-        ql = atom_transformer(batch=batch, ql=ql, cl=cl, plm=plm)
+        out_shape = (batch_size, n_atom, c_atom)
 
-        self.assertTrue(ql.shape == (batch_size, n_atom, c_atom))
+        self.run_shape_test(batch, ql, cl, plm, out_shape, dtype, use_block_sparse_attn)
 
-    def with_n_sample_channel(self, use_block_sparse_attn):
+    def with_n_sample_channel(self, dtype, use_block_sparse_attn):
         batch_size = consts.batch_size
-        n_token = consts.n_res
-        n_atom = 4 * consts.n_res
+        n_token = 192
+        n_atom = 4 * n_token
         c_atom = 128
         c_atom_pair = 16
-        c_hidden = 32
-        no_heads = 4
-        no_blocks = 3
-        n_transition = 2
-        inf = 1e10
-        n_query = 32
-        n_key = 128
         n_sample = 3
-
-        atom_transformer = AtomTransformer(
-            c_q=c_atom,
-            c_p=c_atom_pair,
-            c_hidden=c_hidden,
-            no_heads=no_heads,
-            no_blocks=no_blocks,
-            n_transition=n_transition,
-            n_query=n_query,
-            n_key=n_key,
-            inf=inf,
-            use_block_sparse_attn=use_block_sparse_attn,
-        )
 
         ql = torch.ones((batch_size, n_sample, n_atom, c_atom))
         cl = torch.ones((batch_size, 1, n_atom, c_atom))
@@ -220,18 +226,100 @@ class TestAtomTransformer(unittest.TestCase):
             "atom_to_token_index": torch.ones((batch_size, 1, n_atom, n_token)),
         }
 
-        ql = atom_transformer(batch=batch, ql=ql, cl=cl, plm=plm)
+        out_shape = (batch_size, n_sample, n_atom, c_atom)
 
-        self.assertTrue(ql.shape == (batch_size, n_sample, n_atom, c_atom))
+        self.run_shape_test(batch, ql, cl, plm, out_shape, dtype, use_block_sparse_attn)
 
     def test_without_block_sparse_attn(self):
-        self.without_n_sample_channel(use_block_sparse_attn=False)
-        self.with_n_sample_channel(use_block_sparse_attn=False)
+        self.without_n_sample_channel(dtype=torch.float32, use_block_sparse_attn=False)
+        self.with_n_sample_channel(dtype=torch.float32, use_block_sparse_attn=False)
+
+        if torch.cuda.is_available():
+            self.without_n_sample_channel(
+                dtype=torch.bfloat16, use_block_sparse_attn=False
+            )
+            self.with_n_sample_channel(
+                dtype=torch.bfloat16, use_block_sparse_attn=False
+            )
 
     @compare_utils.skip_unless_triton_installed()
     def test_with_block_sparse_attn(self):
-        self.without_n_sample_channel(use_block_sparse_attn=True)
-        self.with_n_sample_channel(use_block_sparse_attn=True)
+        self.without_n_sample_channel(dtype=torch.float32, use_block_sparse_attn=True)
+        self.with_n_sample_channel(dtype=torch.float32, use_block_sparse_attn=True)
+
+        if torch.cuda.is_available():
+            self.without_n_sample_channel(
+                dtype=torch.bfloat16, use_block_sparse_attn=True
+            )
+            self.with_n_sample_channel(dtype=torch.bfloat16, use_block_sparse_attn=True)
+
+    def compare_block_sparse(self, dtype):
+        batch_size = consts.batch_size
+        n_token = consts.n_res
+        n_atom = 4 * consts.n_res
+        n_sample = 3
+        c_atom = 128
+        c_atom_pair = 16
+        c_hidden = 32
+        no_heads = 4
+        no_blocks = 3
+        n_transition = 2
+        n_query = 32
+        n_key = 128
+        inf = 1e10
+        eps = consts.eps
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        atom_transformer = (
+            AtomTransformer(
+                c_q=c_atom,
+                c_p=c_atom_pair,
+                c_hidden=c_hidden,
+                no_heads=no_heads,
+                no_blocks=no_blocks,
+                n_transition=n_transition,
+                n_query=n_query,
+                n_key=n_key,
+                inf=inf,
+                use_block_sparse_attn=False,
+            )
+            .eval()
+            .to(device)
+        )
+
+        ql = torch.ones((batch_size, n_sample, n_atom, c_atom)).to(device, dtype=dtype)
+        cl = torch.ones((batch_size, 1, n_atom, c_atom)).to(device, dtype=dtype)
+        plm = torch.ones((batch_size, 1, n_atom, n_atom, c_atom_pair)).to(
+            device, dtype=dtype
+        )
+
+        batch = {
+            "token_mask": torch.ones((batch_size, 1, n_token)),
+            "atom_to_token_index": torch.ones((batch_size, 1, n_atom, n_token)),
+        }
+
+        def to_device(t):
+            return t.to(device, dtype=dtype)
+
+        batch = tensor_tree_map(to_device, batch)
+
+        with torch.cuda.amp.autocast(dtype=dtype):
+            ql_out = atom_transformer(batch=batch, ql=ql, cl=cl, plm=plm).cpu()
+            atom_transformer.use_block_sparse_attn = True
+            ql_out_block_sparse = atom_transformer(
+                batch=batch, ql=ql, cl=cl, plm=plm
+            ).cpu()
+            compare_utils.assert_mean_abs_diff_small(
+                ql_out, ql_out_block_sparse, eps=eps
+            )
+
+    @compare_utils.skip_unless_triton_installed()
+    def test_compare_block_sparse_fp32(self):
+        self.compare_block_sparse(dtype=torch.float32)
+
+    @compare_utils.skip_unless_triton_installed()
+    def test_compare_block_sparse_bf16(self):
+        self.compare_block_sparse(dtype=torch.bfloat16)
 
 
 class TestAtomAttentionEncoder(unittest.TestCase):

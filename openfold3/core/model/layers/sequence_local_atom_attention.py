@@ -129,15 +129,17 @@ class AtomTransformer(nn.Module):
 
         offset = n_query // 2 - 0.5  # TODO: check this
         n_center = int(n_blocks // n_query) + 1
-        subset_centers = offset + torch.arange(n_center) * n_query
+        subset_centers = offset + torch.arange(n_center, device=ql.device) * n_query
 
         # Compute beta
         # [*, N_atom, N_atom]
         row_mask = torch.abs(
-            torch.arange(n_blocks).unsqueeze(1) - subset_centers.unsqueeze(0)
+            torch.arange(n_blocks, device=ql.device).unsqueeze(1)
+            - subset_centers.unsqueeze(0)
         ) < (n_query / 2)
         col_mask = torch.abs(
-            torch.arange(n_blocks).unsqueeze(1) - subset_centers.unsqueeze(0)
+            torch.arange(n_blocks, device=ql.device).unsqueeze(1)
+            - subset_centers.unsqueeze(0)
         ) < (n_key / 2)
         beta = torch.einsum("li,mi->lm", row_mask.to(ql.dtype), col_mask.to(ql.dtype))
 
