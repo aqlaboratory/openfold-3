@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from torch.linalg import vecdot
 
 from openfold3.core.utils.tensor_utils import (
-#    masked_mean,
+    #    masked_mean,
     permute_final_dims,
 )
 
@@ -46,20 +46,19 @@ def pLDDT(
     # Ca_mask = batch["Ca_mask"] # [*, N]
     # C1_mask = batch["C1_mask"] # [*, N]
     # [*, T]
-    Ca_mask = batch['frame_idx'][..., 1] * batch['is_protein'] # [*, T]
-    Ca_mask = F.one_hot(Ca_mask, num_classes=dx.shape[-1]).sum(dim=-2) # [*, N]
+    Ca_mask = batch["frame_idx"][..., 1] * batch["is_protein"]  # [*, T]
+    Ca_mask = F.one_hot(Ca_mask, num_classes=dx.shape[-1]).sum(dim=-2)  # [*, N]
 
-    C1_mask = batch['frame_idx'][..., 1] * (batch['is_dna'] + batch['is_rna']) # [*, T]
-    C1_mask = F.one_hot(C1_mask, num_classes=dx.shape[-1]).sum(dim=-2) # [*, N]
+    C1_mask = batch["frame_idx"][..., 1] * (batch["is_dna"] + batch["is_rna"])  # [*, T]
+    C1_mask = F.one_hot(C1_mask, num_classes=dx.shape[-1]).sum(dim=-2)  # [*, N]
 
     # Restrict to bespoke inclusion radius
-    c = (
-        (dx_gt < 30.0) * Ca_mask.unsqueeze(-2) + 
-        (dx_gt < 15.0) * C1_mask.unsqueeze(-2)
-      )  # [*, N, N]
+    c = (dx_gt < 30.0) * Ca_mask.unsqueeze(-2) + (dx_gt < 15.0) * C1_mask.unsqueeze(
+        -2
+    )  # [*, N, N]
 
     # atom mask and avoid self term
-    atom_mask_gt = batch['atom_mask_gt']  # [*, N]
+    atom_mask_gt = batch["atom_mask_gt"]  # [*, N]
     # TODO check dtypes for masks
     mask = 1 - torch.eye(c.shape[-1], device=c.device)  # [N, N]
     mask = mask * atom_mask_gt[..., None] * atom_mask_gt[..., None, :]  # [*, N, N]
@@ -70,7 +69,9 @@ def pLDDT(
     # TODO: shouldn't this be normalized? (normalized here...)
     lddt = 0.25 * (lddt * c).sum(dim=-1) / (c.sum(dim=-1) + eps)  # [*, N]
 
-    boundaries = torch.linspace(0.0, 1.0, n_bins + 1, device=lddt.device) # [n_bins + 1]
+    boundaries = torch.linspace(
+        0.0, 1.0, n_bins + 1, device=lddt.device
+    )  # [n_bins + 1]
     bins = torch.bucketize(lddt, boundaries[1:-1])  # [*, N]
 
     # set bin to ignore value (=-100) of F.cross_entropy for masked atoms
@@ -81,6 +82,7 @@ def pLDDT(
     lddt_loss = F.cross_entropy(logits, bins)
 
     return lddt_loss
+
 
 def get_phi(
     batch: Dict[str, torch.Tensor],
@@ -138,12 +140,12 @@ def get_phi(
 
     T = valid_frame_mask.shape[-1]
     N = x.shape[-2]
-    atom_to_token = batch["atom_to_token_index"] # [*, N]
-    atom_to_token = F.one_hot(atom_to_token, T) # [*, N, T]
-    
+    atom_to_token = batch["atom_to_token_index"]  # [*, N]
+    atom_to_token = F.one_hot(atom_to_token, T)  # [*, N, T]
+
     # mask for ligand atoms with valid frame
     # [*, N, T] * [*, T] -> [*, N]
-    is_ligand_atom_with_frame = (atom_to_token * valid_frame_mask).sum(dim=-1) # [*, N]
+    is_ligand_atom_with_frame = (atom_to_token * valid_frame_mask).sum(dim=-1)  # [*, N]
 
     # indices of three closest neighbors to each atom
     # TODO closest is assumed to be the atom itselt (d=0.0), can this lead to problems?
@@ -156,27 +158,21 @@ def get_phi(
 
     # get the coordinates of atoms corresponding to idx
     phi_ligand_gt = torch.gather(
-        x_gt.unsqueeze(-3).expand(-1, N, -1, -1), 
-        dim=-2, 
-        index=idx
+        x_gt.unsqueeze(-3).expand(-1, N, -1, -1), dim=-2, index=idx
     )  # [*, N, 3, 3]
     phi_ligand_gt = phi_ligand_gt * is_ligand_atom_with_frame[..., None, None]
-    phi_ligand_gt = (
-        permute_final_dims(phi_ligand_gt, [1, 2, 0]) @ 
-        atom_to_token.unsqueeze(-3)
-      ) # [*, 3, 3, T]
+    phi_ligand_gt = permute_final_dims(
+        phi_ligand_gt, [1, 2, 0]
+    ) @ atom_to_token.unsqueeze(-3)  # [*, 3, 3, T]
     phi_ligand_gt = permute_final_dims(phi_ligand_gt, [2, 0, 1])  # [*, T, 3, 3]
 
     phi_ligand = torch.gather(
-        x.unsqueeze(-3).expand(-1, N, -1, -1), 
-        dim=-2, 
-        index=idx
-    ) # [*, N, 3, 3]
+        x.unsqueeze(-3).expand(-1, N, -1, -1), dim=-2, index=idx
+    )  # [*, N, 3, 3]
     phi_ligand = phi_ligand * is_ligand_atom_with_frame[..., None, None]
-    phi_ligand = (
-        permute_final_dims(phi_ligand, [1, 2, 0]) @ 
-        atom_to_token.unsqueeze(-3)
-      ) # [*, 3, 3, T]
+    phi_ligand = permute_final_dims(phi_ligand, [1, 2, 0]) @ atom_to_token.unsqueeze(
+        -3
+    )  # [*, 3, 3, T]
     phi_ligand = permute_final_dims(phi_ligand, [2, 0, 1])  # [*, T, 3, 3]
 
     # -----------------------------
@@ -229,6 +225,7 @@ def get_phi(
     phi = phi + phi_ligand  # [*, T, 3, 3]
 
     return phi_gt, phi, invalid_frame_mask
+
 
 def expressCoordinatesInFrame(
     x: torch.Tensor,
@@ -287,6 +284,7 @@ def expressCoordinatesInFrame(
 
     return x_frame
 
+
 def computeAlignmentError(
     x: torch.Tensor,
     x_gt: torch.Tensor,
@@ -305,7 +303,8 @@ def computeAlignmentError(
         phi:
             Coordinates of 3 atoms associated with frame of token T. [*, T, 3, 3]
         phi_gt:
-            Ground truth coordinates of 3 atoms associated with frame of token T. [*, T, 3, 3]
+            Ground truth coordinates of 3 atoms associated with frame of
+            token T. [*, T, 3, 3]
     Returns:
         e:
             Alignment error per frame (dim=-2) and per token (dim=-1). [*, T, T]
@@ -318,6 +317,7 @@ def computeAlignmentError(
     e = torch.sqrt(e + eps)  # (*, T, T)
 
     return e
+
 
 def predictedAlignmentError(
     batch: Dict[str, torch.Tensor],
@@ -363,27 +363,27 @@ def predictedAlignmentError(
     #     batch, x_gt, x, angle_threshold, eps
     # )  # [*, T, 3, 3], [*, T]
 
-    #-------------------------
+    # -------------------------
     # GET PHI
-    #-------------------------
-    
+    # -------------------------
+
     # frame_idx holds indices of 3 atoms associated with the frame of each token.
     # The 2nd is always the center atom.
     # For proteins: N, C-alpha, C
     # For nucleic acids: C1', C3', C4' (is that the correct order?)
     # For ligands: closest neighbor, atom, 2nd closest neighbor.
-    # Frame does not exist if (1) number of neighbors in the chain < 2 or 
+    # Frame does not exist if (1) number of neighbors in the chain < 2 or
     # (2) the 3 atoms are collinear within 25 degrees.
 
-    idx = batch['frame_idx']  # [*, T, 3]
+    idx = batch["frame_idx"]  # [*, T, 3]
     T = idx.shape[-2]
 
     # [*, T, 3, 3]
     phi = torch.gather(
-        x.unsqueeze(-3).expand(-1, T, -1, -1), # [*, T, N, 3]
+        x.unsqueeze(-3).expand(-1, T, -1, -1),  # [*, T, N, 3]
         dim=-2,
-        index=idx.unsqueeze(-1).expand(-1, -1, -1, 3), # [*, T, 3, 3]
-    ) 
+        index=idx.unsqueeze(-1).expand(-1, -1, -1, 3),  # [*, T, 3, 3]
+    )
 
     # [*, T, 3, 3]
     phi_gt = torch.gather(
@@ -393,28 +393,28 @@ def predictedAlignmentError(
     )
 
     # center atom coordinates
-    x_token = phi[..., 1, :] # [*, T, 3]
-    x_token_gt = phi_gt[..., 1, :] # [*, T, 3]
+    x_token = phi[..., 1, :]  # [*, T, 3]
+    x_token_gt = phi_gt[..., 1, :]  # [*, T, 3]
 
     # -------------------------
     # BIN ALIGNMENT ERROR
     # -------------------------
 
-    e = computeAlignmentError(x_token, x_token_gt, phi, phi_gt, eps) # [*, T, T]
+    e = computeAlignmentError(x_token, x_token_gt, phi, phi_gt, eps)  # [*, T, T]
 
     # boundaries = [0.0, 0.5, ...., 31.5, 32.0]
     boundaries = torch.linspace(
         d_min, d_max, n_bins + 1, device=e.device
-    ) # [n_bins + 1]
+    )  # [n_bins + 1]
 
     # index of bin for each computed alignment error
     # top bin: anything > 31.5, bottom bin: anything < 0.5
-    bins = torch.bucketize(e, boundaries[1:-1]) # [*, T, T]
+    bins = torch.bucketize(e, boundaries[1:-1])  # [*, T, T]
 
     # set bin to ignore value (=-100) of F.cross_entropy if invalid frame
-    valid_frame = batch['valid_frame'] # [*, T]
-    valid_frame = valid_frame.unsqueeze(-1).expand_as(bins) # [*, T, T]
-    bins = bins.masked_fill(~valid_frame.bool(), -100) # [*, T, T]
+    valid_frame = batch["valid_frame"]  # [*, T]
+    valid_frame = valid_frame.unsqueeze(-1).expand_as(bins)  # [*, T, T]
+    bins = bins.masked_fill(~valid_frame.bool(), -100)  # [*, T, T]
 
     # -------------------------
     # LOSS AND EXPECTED PAE
@@ -430,7 +430,7 @@ def predictedAlignmentError(
 
     # TODO I'm including the valid frame mask in the return, because it must accompany
     # the PAE for whatever you do with it.
-    # It could be easier to multiply it with the PAE before returning it, and include 
+    # It could be easier to multiply it with the PAE before returning it, and include
     # a normalization factor in the loss function.
 
     return {
@@ -439,14 +439,15 @@ def predictedAlignmentError(
         "valid_frame_mask": valid_frame,
     }
 
+
 def predictedDistanceError(
-        batch: Dict[str, torch.Tensor],
-        x: torch.Tensor,
-        x_gt: torch.Tensor,
-        pde_logits: torch.Tensor,
-        n_bins: int = 64,
-        d_min: float = 0.0,
-        d_max: float = 32.0,
+    batch: Dict[str, torch.Tensor],
+    x: torch.Tensor,
+    x_gt: torch.Tensor,
+    pde_logits: torch.Tensor,
+    n_bins: int = 64,
+    d_min: float = 0.0,
+    d_max: float = 32.0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Computes the cross entropy loss between the predicted and computed distance errors.
@@ -458,77 +459,80 @@ def predictedDistanceError(
             Predicted atom coordinates. [*, N, 3]
         x_gt:
             Ground truth coordinates. [*, N, 3]
-        pde_logits: 
+        pde_logits:
             Predicted distance error logits. [*, T, T, n_bins]
-        n_bins: 
+        n_bins:
             Number of bins.
-        d_min: 
+        d_min:
             Minimum distance.
-        d_max: 
+        d_max:
             Maximum distance.
     Returns:
-        pae_loss: 
+        pae_loss:
             Predicted alignment error loss.
     """
     # get token atom coordinates
-    center_idx = batch['frame_idx'][..., 1:2]  # [*, T, 1]
+    center_idx = batch["frame_idx"][..., 1:2]  # [*, T, 1]
     T = center_idx.shape[-2]
 
     # [*, T, 3]
     x_token = torch.gather(
-        x.unsqueeze(-3).expand(-1, T, -1, -1), # [*, T, N, 3]
+        x.unsqueeze(-3).expand(-1, T, -1, -1),  # [*, T, N, 3]
         dim=-2,
-        index=center_idx.unsqueeze(-1).expand(-1, -1, -1, 3), # [*, T, 1, 3]
-    ).squeeze(-2) # [*, T, 3]
+        index=center_idx.unsqueeze(-1).expand(-1, -1, -1, 3),  # [*, T, 1, 3]
+    ).squeeze(-2)  # [*, T, 3]
 
     x_token_gt = torch.gather(
         x_gt.unsqueeze(-3).expand(-1, T, -1, -1),
         dim=-2,
         index=center_idx.unsqueeze(-1).expand(-1, -1, -1, 3),
-    ).squeeze(-2) # [*, T, 3]
+    ).squeeze(-2)  # [*, T, 3]
 
     # token atom distances errors
-    d = torch.cdist(x_token, x_token) # [*, T, T]
-    d_gt = torch.cdist(x_token_gt, x_token_gt) # [*, T, T]
-    e = torch.abs(d - d_gt) # [*, T, T]
+    d = torch.cdist(x_token, x_token)  # [*, T, T]
+    d_gt = torch.cdist(x_token_gt, x_token_gt)  # [*, T, T]
+    e = torch.abs(d - d_gt)  # [*, T, T]
 
     # boundaries = [0.0, 0.5, ...., 31.5, 32.0]
-    boundaries = torch.linspace(d_min, d_max, n_bins + 1, device=e.device) # [n_bins + 1]
-    bins = torch.bucketize(e, boundaries[1:-1]) # [*, T, T]
-    
+    boundaries = torch.linspace(
+        d_min, d_max, n_bins + 1, device=e.device
+    )  # [n_bins + 1]
+    bins = torch.bucketize(e, boundaries[1:-1])  # [*, T, T]
+
     # cross entropy loss
     pde_loss = F.cross_entropy(permute_final_dims(pde_logits, [2, 0, 1]), bins)
 
     # predicted distance error (expectation over bins)
-    bin_centers = (boundaries[1:] + boundaries[:-1]) / 2 # [n_bins]
-    pde = F.softmax(pde_logits, dim=-1) # [*, T, T, n_bins]
-    PDE = (bin_centers * pde).sum(dim=-1) # [*, T, T]
+    bin_centers = (boundaries[1:] + boundaries[:-1]) / 2  # [n_bins]
+    pde = F.softmax(pde_logits, dim=-1)  # [*, T, T, n_bins]
+    PDE = (bin_centers * pde).sum(dim=-1)  # [*, T, T]
 
     return pde_loss, PDE
 
+
 def experimentally_resolved_prediction(
-        batch: Dict[str, torch.Tensor],
-        logits_resolved: torch.Tensor,
+    batch: Dict[str, torch.Tensor],
+    logits_resolved: torch.Tensor,
 ) -> torch.Tensor:
     """
     Computes the experimentally resolved prediction, subsection 4.3.4 of the AF3.
     Args:
         batch:
             Batch dictionary.
-        logits_resolved: 
+        logits_resolved:
             Predicted value. [*, N, 2]
     Returns:
-        erp_loss: 
-            Experimentally resolved prediction. 
+        erp_loss:
+            Experimentally resolved prediction.
     """
 
     # set bin to ignore value (=-100) of F.cross_entropy for masked atoms
-    atom_mask_gt = batch['atom_mask_gt'].long() # [*, N]
-    atom_mask = batch['atom_mask'].long() # [*, N]
-    atom_mask_gt = atom_mask_gt.masked_fill(~atom_mask.bool(), -100) # [*, N]
+    atom_mask_gt = batch["atom_mask_gt"].long()  # [*, N]
+    atom_mask = batch["atom_mask"].long()  # [*, N]
+    atom_mask_gt = atom_mask_gt.masked_fill(~atom_mask.bool(), -100)  # [*, N]
 
-    erp_loss = F.cross_entropy(permute_final_dims(logits_resolved, [1, 0]),atom_mask_gt)
-    
+    erp_loss = F.cross_entropy(
+        permute_final_dims(logits_resolved, [1, 0]), atom_mask_gt
+    )
+
     return erp_loss
-
-
