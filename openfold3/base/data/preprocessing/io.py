@@ -16,7 +16,6 @@ def parse_mmcif_bioassembly(
     file_path: Path | str,
     use_author_fields=False,
     include_bonds=True,
-    add_renumbered_chains=True,
 ) -> ParsedStructure:
     """Convenience wrapper around biotite's bioassembly CIF parsing
 
