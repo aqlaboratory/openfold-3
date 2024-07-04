@@ -50,7 +50,9 @@ def centre_random_augmentation(
     m = torch.rand((*pos.shape[:-2], 3, 3), dtype=pos.dtype, device=pos.device)
     rots, __ = torch.linalg.qr(m)
 
-    trans = scale_trans * torch.randn((*pos.shape[:-2], 3), dtype=pos.dtype, device=pos.device)
+    trans = scale_trans * torch.randn(
+        (*pos.shape[:-2], 3), dtype=pos.dtype, device=pos.device
+    )
 
     mean_pos = torch.mean(
         pos * pos_mask[..., None],
@@ -164,9 +166,9 @@ class DiffusionModule(nn.Module):
         ai, ql, cl, plm = self.atom_attn_enc(
             batch=batch,
             atom_mask=atom_mask,
-            rl=rl_noisy, 
+            rl=rl_noisy,
             si_trunk=si_trunk,
-            zij_trunk=zij_trunk
+            zij_trunk=zij_trunk,
         )  # differ from AF3
 
         ai = ai + self.linear_s(self.layer_norm_s(si))
@@ -178,12 +180,7 @@ class DiffusionModule(nn.Module):
         ai = self.layer_norm_a(ai)
 
         rl_update = self.atom_attn_dec(
-            batch=batch,
-            atom_mask=atom_mask,
-            ai=ai,
-            ql=ql,
-            cl=cl,
-            plm=plm
+            batch=batch, atom_mask=atom_mask, ai=ai, ql=ql, cl=cl, plm=plm
         )
 
         xl_out = (

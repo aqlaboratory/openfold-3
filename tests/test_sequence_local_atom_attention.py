@@ -317,7 +317,11 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         zij_trunk = torch.ones((batch_size, 1, n_token, n_token, c_z))
 
         ai, ql, cl, plm = atom_attn_enc(
-            batch=batch, atom_mask=atom_mask, rl=rl, si_trunk=si_trunk, zij_trunk=zij_trunk
+            batch=batch,
+            atom_mask=atom_mask,
+            rl=rl,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
         )
 
         self.assertTrue(ai.shape == (batch_size, n_sample, n_token, c_token))

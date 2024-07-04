@@ -480,9 +480,13 @@ class AtomAttentionEncoder(nn.Module):
         # Create atom to token index conversion matrix
         # [*, N_token, N_atom]
         n_token = batch["token_mask"].shape[-1]
-        token_to_onehot_atom_index = torch.nn.functional.one_hot(
-            batch["atom_to_token_index"].to(torch.int64), num_classes=n_token
-        ).transpose(-1, -2).to(batch["atom_to_token_index"].dtype)
+        token_to_onehot_atom_index = (
+            torch.nn.functional.one_hot(
+                batch["atom_to_token_index"].to(torch.int64), num_classes=n_token
+            )
+            .transpose(-1, -2)
+            .to(batch["atom_to_token_index"].dtype)
+        )
 
         # Aggregate per-atom representation to per-token representation
         # [*, N_token, c_token]
