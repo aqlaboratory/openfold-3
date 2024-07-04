@@ -22,8 +22,14 @@ from openfold.utils.loss import (
     compute_tm,
     compute_predicted_aligned_error,
 )
-from openfold.utils.precision_utils import is_fp16_enabled
 
+from openfold3.core.model.heads.token_heads import (
+    PerResidueLDDTCaPredictor, 
+    ExperimentallyResolvedHead,
+    DistogramHead, 
+    TMScoreHead, 
+    MaskedMSAHead
+)
 
 class AuxiliaryHeads(nn.Module):
     def __init__(self, config):
@@ -53,6 +59,25 @@ class AuxiliaryHeads(nn.Module):
         self.config = config
 
     def forward(self, outputs):
+        """ 
+        Args: 
+            outputs: a dict containing following keys and tensors: 
+                'sm':
+                    'single': single embedding 
+                'pair': pair embedding 
+                'msa': msa embedding
+        Returns: 
+            aux_out: a dict containing: 
+                'lddt_logits': plddt head out [*, n_atoms, bins_plddt]
+                'plddt': computed plddt [*, n_atoms, bins_plddt]
+                'distogram_logits': distogram head out [*, n_token, n_token, bins_distogram]
+                'masked_msa_logits': masked msa head out[]
+                'experimentally_resolved_logits': resolved head out [*, n_atoms, bins_resolved]
+                'tm_logits': values identical to pae_logits [*, n_token, n_token, bins_pae]
+                'ptm_scores': 
+                'iptm_score': 
+                'weighted_ptm_score': 
+        """
         aux_out = {}
         lddt_logits = self.plddt(outputs["sm"]["single"])
         aux_out["lddt_logits"] = lddt_logits
@@ -95,173 +120,3 @@ class AuxiliaryHeads(nn.Module):
             )
 
         return aux_out
-
-
-class PerResidueLDDTCaPredictor(nn.Module):
-    def __init__(self, no_bins, c_in, c_hidden):
-        super(PerResidueLDDTCaPredictor, self).__init__()
-
-        self.no_bins = no_bins
-        self.c_in = c_in
-        self.c_hidden = c_hidden
-
-        self.layer_norm = LayerNorm(self.c_in)
-
-        self.linear_1 = Linear(self.c_in, self.c_hidden, init="relu")
-        self.linear_2 = Linear(self.c_hidden, self.c_hidden, init="relu")
-        self.linear_3 = Linear(self.c_hidden, self.no_bins, init="final")
-
-        self.relu = nn.ReLU()
-
-    def forward(self, s):
-        s = self.layer_norm(s)
-        s = self.linear_1(s)
-        s = self.relu(s)
-        s = self.linear_2(s)
-        s = self.relu(s)
-        s = self.linear_3(s)
-
-        return s
-
-
-class DistogramHead(nn.Module):
-    """
-    Computes a distogram probability distribution.
-
-    For use in computation of distogram loss, subsection 1.9.8
-    """
-
-    def __init__(self, c_z, no_bins, **kwargs):
-        """
-        Args:
-            c_z:
-                Input channel dimension
-            no_bins:
-                Number of distogram bins
-        """
-        super(DistogramHead, self).__init__()
-
-        self.c_z = c_z
-        self.no_bins = no_bins
-
-        self.linear = Linear(self.c_z, self.no_bins, init="final")
-
-    def _forward(self, z):  # [*, N, N, C_z]
-        """
-        Args:
-            z:
-                [*, N_res, N_res, C_z] pair embedding
-        Returns:
-            [*, N, N, no_bins] distogram probability distribution
-        """
-        # [*, N, N, no_bins]
-        logits = self.linear(z)
-        logits = logits + logits.transpose(-2, -3)
-        return logits
-    
-    def forward(self, z): 
-        if(is_fp16_enabled()):
-            with torch.cuda.amp.autocast(enabled=False):
-                return self._forward(z.float())
-        else:
-            return self._forward(z)
-
-
-class TMScoreHead(nn.Module):
-    """
-    For use in computation of TM-score, subsection 1.9.7
-    """
-
-    def __init__(self, c_z, no_bins, **kwargs):
-        """
-        Args:
-            c_z:
-                Input channel dimension
-            no_bins:
-                Number of bins
-        """
-        super(TMScoreHead, self).__init__()
-
-        self.c_z = c_z
-        self.no_bins = no_bins
-
-        self.linear = Linear(self.c_z, self.no_bins, init="final")
-
-    def forward(self, z):
-        """
-        Args:
-            z:
-                [*, N_res, N_res, C_z] pairwise embedding
-        Returns:
-            [*, N_res, N_res, no_bins] prediction
-        """
-        # [*, N, N, no_bins]
-        logits = self.linear(z)
-        return logits
-
-
-class MaskedMSAHead(nn.Module):
-    """
-    For use in computation of masked MSA loss, subsection 1.9.9
-    """
-
-    def __init__(self, c_m, c_out, **kwargs):
-        """
-        Args:
-            c_m:
-                MSA channel dimension
-            c_out:
-                Output channel dimension
-        """
-        super(MaskedMSAHead, self).__init__()
-
-        self.c_m = c_m
-        self.c_out = c_out
-
-        self.linear = Linear(self.c_m, self.c_out, init="final")
-
-    def forward(self, m):
-        """
-        Args:
-            m:
-                [*, N_seq, N_res, C_m] MSA embedding
-        Returns:
-            [*, N_seq, N_res, C_out] reconstruction
-        """
-        # [*, N_seq, N_res, C_out]
-        logits = self.linear(m)
-        return logits
-
-
-class ExperimentallyResolvedHead(nn.Module):
-    """
-    For use in computation of "experimentally resolved" loss, subsection
-    1.9.10
-    """
-
-    def __init__(self, c_s, c_out, **kwargs):
-        """
-        Args:
-            c_s:
-                Input channel dimension
-            c_out:
-                Number of distogram bins
-        """
-        super(ExperimentallyResolvedHead, self).__init__()
-
-        self.c_s = c_s
-        self.c_out = c_out
-
-        self.linear = Linear(self.c_s, self.c_out, init="final")
-
-    def forward(self, s):
-        """
-        Args:
-            s:
-                [*, N_res, C_s] single embedding
-        Returns:
-            [*, N, C_out] logits
-        """
-        # [*, N, C_out]
-        logits = self.linear(s)
-        return logits

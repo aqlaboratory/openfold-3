@@ -1,4 +1,3 @@
-from .token_heads import (AuxiliaryHeads, Pairformer_Embedding, PAEHead, PDEHead, PerResidueLDDTHead, ExperimentallyResolvedHead, DistogramHead)
+from .token_heads import (Pairformer_Embedding, PAEHead, PDEHead, PerResidueLDDTCaPredictor, PerResidueLDDAllAtom, ExperimentallyResolvedHead, ExperimentallyResolvedHeadAllAtom, DistogramHead, TMScoreHead, MaskedMSAHead)
 
-__all__ = ['AuxiliaryHeads', 'PerResidueLDDTHead', 'DistogramHead', 'Pairformer_Embedding', 'PAEHead', 'PDEHead', 
-           'ExperimentallyResolvedHead']
+__all__ = ['Pairformer_Embedding', 'PAEHead', 'PDEHead', 'PerResidueLDDTCaPredictor', 'PerResidueLDDAllAtom', 'ExperimentallyResolvedHead', 'ExperimentallyResolvedHeadAllAtom', 'DistogramHead', 'TMScoreHead', 'MaskedMSAHead']

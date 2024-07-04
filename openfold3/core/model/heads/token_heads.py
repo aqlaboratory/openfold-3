@@ -16,153 +16,20 @@
 import torch
 import torch.nn as nn
 
-from openfold3.core.model.primitives import Linear
-from openfold3.core.utils.loss import (
-    compute_plddt,
-    compute_tm,
-    compute_predicted_aligned_error,
-)
-from openfold3.core.utils.precision_utils import is_fp16_enabled
-
+from openfold3.core.model.primitives import Linear, LayerNorm
 from openfold3.core.model.latent.pairformer import PairFormerStack 
-
-
-class AuxiliaryHeads(nn.Module):
-    """ 
-    Auxiliary head for OF3. Implements Algorithm 31 with main inference loop (Algorithm 1) line 16 - 17. 
-    """
-    def __init__(self, config):
-        """ 
-        Args:
-            config: ConfigDict with following keys
-                'pairformer_embedding': pairformer embedding config
-                'pae': pae config 
-                'pde': pde config
-                'lddt': lddt config 
-                'distogram': distogram config 
-                'experimentally_resolved': experimentally_resolved config 
-        """
-        super(AuxiliaryHeads, self).__init__()
-        self.pairformer_embedding = Pairformer_Embedding(
-            **config['pairformer_embedding'], 
-        )
-
-        self.pae = PAEHead(
-            **config['pae'],
-        )
-
-        self.pde = PDEHead(
-            **config['pde'],
-        )
-
-        self.plddt = PerResidueLDDTHead(
-            **config["lddt"],
-        )
-
-        self.distogram = DistogramHead(
-            **config["distogram"],
-        )
-
-        self.experimentally_resolved = ExperimentallyResolvedHead(
-            **config["experimentally_resolved"],
-        )
-
-        self.config = config
-    
-    def forward(self, 
-                si_input, 
-                outputs, 
-                token_to_atom_idx,
-                single_mask: torch.Tensor,
-                pair_mask: torch.Tensor,
-                chuck_size: int,
-                ):
-        """ 
-        Args: 
-            si_input: single, token embedding [*, n_token, c_s]
-            outputs: TensorDict containing outputs 
-                'single': single out [*, n_token, c_s]
-                'pair': pair out [*, n_token, n_token, c_z]
-                'coordinates': coordinate of representative atom per each token [*, n_token, 3] 
-            token_to_atom_idx: feature of token to atom idx [*, n_token, n_atom,]
-            single_mask: single mask feat associated with pairformer stack [*, n_token]
-            pair_mask: pair mask feat associated with pairformer stack [*, n_token, n_token]
-            chuck_size: feat associated with pairformer stack (int)
-
-        Returns: 
-            aux_out: dict containing following keys: 
-                'distogram_logits': distogram head out [*, n_token, n_token, bins_distogram]
-                'pae_logits': pae head out[*, n_token, n_token, bins_pae]
-                'pde_logits': pde head out[*, n_token, n_token, bins_pde]
-                'plddt_logits': plddt head out [*, n_atoms, bins_plddt]
-                'experimentally_resolved_logits': resolved head out [*, n_atoms, bins_resolved]
-                'tm_logits': values identical to pae_logits [*, n_token, n_token, bins_pae]
-                'ptm_scores': 
-                'iptm_score': 
-                'weighted_ptm_score': 
-        """
-        aux_out = {}
-        
-        # 1. distogram head: distogram head needs outputs['pair'] before passing pairformer (main loop: line 17)
-        distogram_logits = self.distogram(outputs['pair'])
-        aux_out["distogram_logits"] = distogram_logits
-
-        #2. si, zij from pairformer stack outs
-        si, zij = self.pairformer_embedding(si_input,
-                                            outputs['single'],
-                                            outputs['pair'],
-                                            outputs['coordinates'],
-                                            single_mask,
-                                            pair_mask,
-                                            chuck_size,
-                                            )
-
-        lddt_logits = self.plddt(si, token_to_atom_idx)
-        aux_out['plddt_logits'] = lddt_logits
-
-        experimentally_resolved_logits = self.experimentally_resolved(outputs["single"], token_to_atom_idx)
-        aux_out["experimentally_resolved_logits"] = experimentally_resolved_logits
-
-        pae_logits = self.pae(zij)
-        aux_out['pae_logits'] = pae_logits
-        
-        pde_logits = self.pde(zij)
-        aux_out['pde_logits'] = pde_logits
-        
-        if self.config['tm']['enabled']:
-            tm_logits = pae_logits #uses pae_logits (SI pg. 27)
-            aux_out["tm_logits"] = tm_logits
-            aux_out["ptm_score"] = compute_tm(
-                tm_logits, **self.config.tm
-            )
-            asym_id = outputs.get("asym_id")
-            if asym_id is not None:
-                aux_out["iptm_score"] = compute_tm(
-                    tm_logits, asym_id=asym_id, interface=True, **self.config.tm
-                )
-                aux_out["weighted_ptm_score"] = (self.config.tm["iptm_weight"] * aux_out["iptm_score"]
-                                                 + self.config.tm["ptm_weight"] * aux_out["ptm_score"])
-
-            aux_out.update(
-                compute_predicted_aligned_error(
-                    tm_logits,
-                    **self.config.tm,
-                )
-            )
-        
-        return aux_out
 
 class Pairformer_Embedding(nn.Module):
     """ 
-    Implements Algorithm 31, line 1 - 6
+    Implements AF3 Algorithm 31, line 1 - 6
     """
     def __init__(self, min_bin, max_bin, no_bin, inf, c_s, c_z, config):
         """ 
         Args: 
-            min_bin: minimum value for bin (3.25)
-            max_bin: maximum value for bin (20.75)
-            no_bin: number of bins (15)
-            inf: inf (1e8)
+            min_bin: minimum value for bin (3.25). The value is slightly different from SI. Previous AF2 implementation utilized these values for bins. https://github.com/aqlaboratory/openfold3/blob/f6c875b3c8e3e873a932cbe3b31f94ae011f6fd4/openfold/model/embedders.py#L406   
+            max_bin: maximum value for bin (20.75). ibid 
+            no_bin: number of bins (15). ibid
+            inf: inf (1e8). ibid
             c_s: single embedding dimension 
             c_z: pair embedding dimension 
             config: config for PairFormerStack used 
@@ -206,7 +73,6 @@ class Pairformer_Embedding(nn.Module):
         zij = zij + self.linear_i(si_input.unsqueeze(-2)) + self.linear_j(si_input.unsqueeze(-3))
         
         #2. embed pair distances of representative atoms. 
-        # Implementation from RecyclingEmbedder: https://github.com/aqlaboratory/openfold3/blob/f6c875b3c8e3e873a932cbe3b31f94ae011f6fd4/openfold/model/embedders.py#L406   
         bins = torch.linspace(self.min_bin, self.max_bin, self.no_bin)
         squared_bins = bins ** 2
         upper = torch.cat([squared_bins[1:], squared_bins.new_tensor([self.inf])], dim=-1)
@@ -246,6 +112,9 @@ class PAEHead(nn.Module):
         Returns:
             logits:
                 [*, n_res, n_res, c_out] logits
+
+        Note: 
+            Previous implementations of losses happened to include softmax so head returns logits. change if necessary. 
         """
         logits = self.linear(zij)
         return logits
@@ -279,14 +148,14 @@ class PDEHead(nn.Module):
                 [*, n_res, n_res, c_out] 
 
         Note: 
-            Previous implementations of losses happened to include softmax. change if necessary. 
+            Previous implementations of losses happened to include softmax so head returns logits. change if necessary. 
         """
-        logits = self.linear(zij + zij.transpose(-2, -3))
+        logits = self.linear(zij + zij.transpose(-2, -3)) ##Note:: DistogramHead does self.linear(zij) then logits = logits + logits.transpose(-2, -3). 
         return logits
 
-class PerResidueLDDTHead(nn.Module):
+class PerResidueLDDAllAtom(nn.Module):
     """
-    Implements Plddt Head (Algorithm 31, Line 7)
+    Implements Plddt Head (Algorithm 31, Line 7) for AF3 
     """
 
     def __init__(self, c_s, c_out, **kwargs):
@@ -297,7 +166,7 @@ class PerResidueLDDTHead(nn.Module):
             c_out:
                 Number of distogram bins
         """
-        super(PerResidueLDDTHead, self).__init__()
+        super(PerResidueLDDAllAtom, self).__init__()
 
         self.c_s = c_s
         self.c_out = c_out
@@ -316,15 +185,85 @@ class PerResidueLDDTHead(nn.Module):
                 [*, n_atom, c_out] 
 
         Note: 
-            Previous implementations of losses happened to include softmax. change if necessary. 
+            Previous implementations of losses happened to include softmax so head returns logits. change if necessary. 
+        """
+        logits = self.linear(torch.sum(s[..., None, :, :] * token_to_atom_idx.unsqueeze(-1), dim = -2)) 
+        return logits
+    
+class PerResidueLDDTCaPredictor(nn.Module):
+    """ 
+    Implements plddtHead for AF2. 
+
+    Source: OpenFold
+    """
+    def __init__(self, no_bins, c_in, c_hidden):
+        super(PerResidueLDDTCaPredictor, self).__init__()
+
+        self.no_bins = no_bins
+        self.c_in = c_in
+        self.c_hidden = c_hidden
+
+        self.layer_norm = LayerNorm(self.c_in)
+
+        self.linear_1 = Linear(self.c_in, self.c_hidden, init="relu")
+        self.linear_2 = Linear(self.c_hidden, self.c_hidden, init="relu")
+        self.linear_3 = Linear(self.c_hidden, self.no_bins, init="final")
+
+        self.relu = nn.ReLU()
+
+    def forward(self, s):
+        s = self.layer_norm(s)
+        s = self.linear_1(s)
+        s = self.relu(s)
+        s = self.linear_2(s)
+        s = self.relu(s)
+        s = self.linear_3(s)
+
+        return s
+
+class ExperimentallyResolvedHeadAllAtom(nn.Module):
+    """
+    For use in computation of "experimentally resolved" loss for AF3
+    """
+    def __init__(self, c_s, c_out, **kwargs):
+        """
+        Args:
+            c_s:
+                Input channel dimension
+            c_out:
+                Number of distogram bins
+        """
+        super(ExperimentallyResolvedHeadAllAtom, self).__init__()
+
+        self.c_s = c_s
+        self.c_out = c_out
+
+        self.linear = Linear(self.c_s, self.c_out, init="final")
+
+    def forward(self, s, token_to_atom_idx):
+        """
+        Args:
+            s:
+                [*, n_res, c_s] single embedding
+            token_to_atom_idx: one hot encoding of token to atom
+                [*, n_res, n_atom,] 
+        Returns:
+            logits: 
+                [*, n_atom, c_out] 
+
+        Note: 
+            Previous implementations of losses happened to include softmax so head returns logits. change if necessary. 
         """
         logits = self.linear(torch.sum(s[..., None, :, :] * token_to_atom_idx.unsqueeze(-1), dim = -2)) 
         return logits
 
 class ExperimentallyResolvedHead(nn.Module):
+    """ 
+    Implements resolvedHeads for AF2. 
+
+    Source: OpenFold
     """
-    For use in computation of "experimentally resolved" loss
-    """
+
     def __init__(self, c_s, c_out, **kwargs):
         """
         Args:
@@ -340,26 +279,22 @@ class ExperimentallyResolvedHead(nn.Module):
 
         self.linear = Linear(self.c_s, self.c_out, init="final")
 
-    def forward(self, s, token_to_atom_idx):
+    def forward(self, s):
         """
         Args:
             s:
-                [*, n_res, c_s] single embedding
-            token_to_atom_idx: one hot encoding of token to atom
-                [*, n_res, n_atom,] 
+                [*, N_res, C_s] single embedding
         Returns:
-            logits: 
-                [*, n_atom, c_out] 
-
-        Note: 
-            Previous implementations of losses happened to include softmax. change if necessary. 
+            [*, N, C_out] logits
         """
-        logits = self.linear(torch.sum(s[..., None, :, :] * token_to_atom_idx.unsqueeze(-1), dim = -2)) 
+        # [*, N, C_out]
+        logits = self.linear(s)
         return logits
-
+    
 class DistogramHead(nn.Module):
     """
-    Just directly copied from OF implementation. As stated in SI, no changes made in DistogramHead 
+    Just directly copied from OF implementation. As stated in SI, no changes made in DistogramHead. 
+    Implementation for both AF2 and AF3. 
 
     Computes a distogram probability distribution.
     For use in computation of distogram loss, subsection 1.9.8
@@ -387,8 +322,81 @@ class DistogramHead(nn.Module):
                 [*, N_res, N_res, C_z] pair embedding
         Returns:
             [*, N, N, no_bins] distogram probability distribution
+
+        Note: 
+            Previous implementations of losses happened to include softmax so head returns logits. change if necessary. 
         """
         # [*, N, N, no_bins]
         logits = self.linear(z)
-        logits = logits + logits.transpose(-2, -3)
+        logits = logits + logits.transpose(-2, -3) 
+
+        ###any suggestions on what to do with FP16?? OF2 has it and iirc OF3 doesn't? we can create two separate DistogramHeads with and without FP16_enabled. 
+        return logits
+    
+
+class TMScoreHead(nn.Module):
+    """
+    For use in computation of TM-score, subsection 1.9.7
+    """
+
+    def __init__(self, c_z, no_bins, **kwargs):
+        """
+        Args:
+            c_z:
+                Input channel dimension
+            no_bins:
+                Number of bins
+        """
+        super(TMScoreHead, self).__init__()
+
+        self.c_z = c_z
+        self.no_bins = no_bins
+
+        self.linear = Linear(self.c_z, self.no_bins, init="final")
+
+    def forward(self, z):
+        """
+        Args:
+            z:
+                [*, N_res, N_res, C_z] pairwise embedding
+        Returns:
+            [*, N_res, N_res, no_bins] prediction
+        """
+        # [*, N, N, no_bins]
+        logits = self.linear(z)
+        return logits
+
+
+class MaskedMSAHead(nn.Module):
+    """
+    For use in computation of masked MSA loss, subsection 1.9.9
+    
+    Source: OpenFold 
+    """
+
+    def __init__(self, c_m, c_out, **kwargs):
+        """
+        Args:
+            c_m:
+                MSA channel dimension
+            c_out:
+                Output channel dimension
+        """
+        super(MaskedMSAHead, self).__init__()
+
+        self.c_m = c_m
+        self.c_out = c_out
+
+        self.linear = Linear(self.c_m, self.c_out, init="final")
+
+    def forward(self, m):
+        """
+        Args:
+            m:
+                [*, N_seq, N_res, C_m] MSA embedding
+        Returns:
+            [*, N_seq, N_res, C_out] reconstruction
+        """
+        # [*, N_seq, N_res, C_out]
+        logits = self.linear(m)
         return logits

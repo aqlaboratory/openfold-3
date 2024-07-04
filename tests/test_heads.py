@@ -3,13 +3,14 @@ import unittest
 import numpy as np
 
 from openfold3.core.model.heads.token_heads import (
-    AuxiliaryHeads, 
     Pairformer_Embedding, 
     PAEHead, 
     PDEHead, 
-    PerResidueLDDTHead, 
-    ExperimentallyResolvedHead,
+    PerResidueLDDAllAtom, 
+    ExperimentallyResolvedHeadAllAtom,
 )
+
+from openfold3.model_implementations.af3_all_atom.heads import AuxiliaryHeads
 
 from tests.config import consts 
 
@@ -51,7 +52,7 @@ class TestPLDDTHead(unittest.TestCase):
         c_s = consts.c_s
         c_out = 50
 
-        plddt_head = PerResidueLDDTHead(c_s, c_out)
+        plddt_head = PerResidueLDDAllAtom(c_s, c_out)
 
         token_identity = torch.eye(n_token) #shape: [n_token, n_token]
         token_to_atom_expansion = token_identity.repeat_interleave(4, dim = 0) #for a simple test, assume that each token has 4 atoms for all tokens. shape: [n_atom, n_token] with n_atom == n_token * 4 
@@ -71,7 +72,7 @@ class TestResolvedHead(unittest.TestCase):
         c_s = consts.c_s
         c_out = 50
 
-        plddt_head = ExperimentallyResolvedHead(c_s, c_out)
+        plddt_head = ExperimentallyResolvedHeadAllAtom(c_s, c_out)
 
         token_identity = torch.eye(n_token) #shape: [n_token, n_token]
         token_to_atom_expansion = token_identity.repeat_interleave(4, dim = 0) #for a simple test, assume that each token has 4 atoms. shape: [n_atom, n_token] 
@@ -225,8 +226,15 @@ class TestAuxiliaryHeads(unittest.TestCase):
         si_input = torch.ones(batch_size, n_token, c_s)
         si = torch.ones(batch_size, n_token, c_s)
         zij = torch.ones(batch_size, n_token, n_token, c_z)
-        x_pred = torch.ones(batch_size, n_token, 3)
-        outputs = {'single': si, 'pair': zij, 'coordinates': x_pred}
+        outputs = {'single': si, 'pair': zij,}
+
+        x_pred = torch.ones(batch_size, n_atom, 3)
+        
+        token_representative_atom_idx = torch.zeros((n_token, n_atom))
+        token_idx = torch.arange(n_token)
+        atom_idx = token_idx * 4
+        token_representative_atom_idx[token_idx, atom_idx] = 1
+        token_representative_atom_idx = token_representative_atom_idx.unsqueeze(0).repeat(batch_size, 1, 1) #(bs, n_token, 3)
 
         token_identity = torch.eye(n_token) #shape: [n_token, n_token]
         token_to_atom_expansion = token_identity.repeat_interleave(4, dim = 0) #for a simple test, assume that each token has 4 atoms. shape: [n_atom, n_token] 
@@ -237,6 +245,8 @@ class TestAuxiliaryHeads(unittest.TestCase):
 
         aux_out = aux_head(si_input, 
                      outputs, 
+                     x_pred,
+                     token_representative_atom_idx,
                      token_to_atom_idx, 
                      single_mask, 
                      pair_mask, 
