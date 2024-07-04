@@ -513,7 +513,10 @@ class InputEmbedderAllAtom(nn.Module):
             z:
                 [*, N_token, N_token, C_z] Pair representation
         """
-        a, _, _, _ = self.atom_attn_enc(batch=batch)
+        atom_mask = torch.einsum(
+            "...li,...i->...l", batch["atom_to_token_index"], batch["token_mask"]
+        )
+        a, _, _, _ = self.atom_attn_enc(batch=batch, atom_mask=atom_mask)
 
         # [*, N_token, C_s_input]
         s_input = torch.cat(

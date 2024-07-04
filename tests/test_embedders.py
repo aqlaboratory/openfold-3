@@ -119,7 +119,6 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
             .repeat_interleave(4, dim=0)
             .unsqueeze(0)
             .repeat(batch_size, 1, 1),
-            "atom_mask": torch.ones((batch_size, n_atom)),
             "restype": torch.rand((batch_size, n_token, one_hot_dim)),
             "profile": torch.rand((batch_size, n_token, one_hot_dim)),
             "deletion_mean": torch.rand((batch_size, n_token)),

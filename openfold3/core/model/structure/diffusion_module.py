@@ -47,10 +47,10 @@ def centre_random_augmentation(
     Returns:
         Updated atom position with random global rotation and translation
     """
-    m = torch.rand((*pos.shape[:-2], 3, 3), dtype=pos.dtype)
+    m = torch.rand((*pos.shape[:-2], 3, 3), dtype=pos.dtype, device=pos.device)
     rots, __ = torch.linalg.qr(m)
 
-    trans = scale_trans * torch.randn((*pos.shape[:-2], 3), dtype=pos.dtype)
+    trans = scale_trans * torch.randn((*pos.shape[:-2], 3), dtype=pos.dtype, device=pos.device)
 
     mean_pos = torch.mean(
         pos * pos_mask[..., None],
@@ -130,6 +130,7 @@ class DiffusionModule(nn.Module):
         self,
         batch: Dict,
         xl_noisy: torch.Tensor,
+        atom_mask: torch.Tensor,
         t: torch.Tensor,
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
@@ -141,6 +142,8 @@ class DiffusionModule(nn.Module):
                 Feature dictionary
             xl_noisy:
                 [*, N_atom, 3] Noisy atom positions
+            atom_mask:
+                [*, N_atom] Atom mask
             t:
                 [*] Noise level at a diffusion step
             si_input:
@@ -159,7 +162,7 @@ class DiffusionModule(nn.Module):
         rl_noisy = xl_noisy / torch.sqrt(t[..., None, None] ** 2 + self.sigma_data**2)
 
         ai, ql, cl, plm = self.atom_attn_enc(
-            batch=batch, rl=rl_noisy, si_trunk=si_trunk, zij_trunk=zij_trunk
+            batch=batch, atom_mask=atom_mask, rl=rl_noisy, si_trunk=si_trunk, zij_trunk=zij_trunk
         )  # differ from AF3
 
         ai = ai + self.linear_s(self.layer_norm_s(si))
@@ -170,7 +173,7 @@ class DiffusionModule(nn.Module):
 
         ai = self.layer_norm_a(ai)
 
-        rl_update = self.atom_attn_dec(batch=batch, ai=ai, ql=ql, cl=cl, plm=plm)
+        rl_update = self.atom_attn_dec(batch=batch, atom_mask=atom_mask, ai=ai, ql=ql, cl=cl, plm=plm)
 
         xl_out = (
             self.sigma_data**2
@@ -289,7 +292,8 @@ class SampleDiffusion(nn.Module):
             xl_denoised = self.diffusion_module(
                 batch=batch,
                 xl_noisy=xl_noisy,
-                t=t,
+                atom_mask=atom_mask,
+                t=t.to(xl_noisy.device),
                 si_input=si_input,
                 si_trunk=si_trunk,
                 zij_trunk=zij_trunk,

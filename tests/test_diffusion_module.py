@@ -38,6 +38,7 @@ class TestDiffusionModule(unittest.TestCase):
 
         xl_noisy = torch.randn((batch_size, n_atom, 3))
         t = torch.ones(1)
+        atom_mask = torch.ones((batch_size, n_atom))
         si_input = torch.rand((batch_size, n_token, c_s_input))
         si_trunk = torch.rand((batch_size, n_token, c_s))
         zij_trunk = torch.rand((batch_size, n_token, n_token, c_z))
@@ -69,6 +70,7 @@ class TestDiffusionModule(unittest.TestCase):
             batch=batch,
             xl_noisy=xl_noisy,
             t=t,
+            atom_mask=atom_mask,
             si_input=si_input,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
@@ -90,6 +92,7 @@ class TestDiffusionModule(unittest.TestCase):
 
         xl_noisy = torch.randn((batch_size, n_sample, n_atom, 3))
         t = torch.ones((batch_size, n_sample))
+        atom_mask = torch.ones((batch_size, 1, n_atom))
         si_input = torch.rand((batch_size, 1, n_token, c_s_input))
         si_trunk = torch.rand((batch_size, 1, n_token, c_s))
         zij_trunk = torch.rand((batch_size, 1, n_token, n_token, c_z))
@@ -119,6 +122,7 @@ class TestDiffusionModule(unittest.TestCase):
         xl = dm(
             batch=batch,
             xl_noisy=xl_noisy,
+            atom_mask=atom_mask,
             t=t,
             si_input=si_input,
             si_trunk=si_trunk,

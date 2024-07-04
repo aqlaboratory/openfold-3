@@ -171,13 +171,9 @@ class TestAtomTransformer(unittest.TestCase):
         ql = torch.ones((batch_size, n_atom, c_atom))
         cl = torch.ones((batch_size, n_atom, c_atom))
         plm = torch.ones((batch_size, n_atom, n_atom, c_atom_pair))
+        atom_mask = torch.ones((batch_size, n_atom))
 
-        batch = {
-            "token_mask": torch.ones((batch_size, n_token)),
-            "atom_to_token_index": torch.ones((batch_size, n_atom, n_token)),
-        }
-
-        ql = atom_transformer(batch=batch, ql=ql, cl=cl, plm=plm)
+        ql = atom_transformer(ql=ql, cl=cl, plm=plm, atom_mask=atom_mask)
 
         self.assertTrue(ql.shape == (batch_size, n_atom, c_atom))
 
@@ -211,13 +207,9 @@ class TestAtomTransformer(unittest.TestCase):
         ql = torch.ones((batch_size, n_sample, n_atom, c_atom))
         cl = torch.ones((batch_size, 1, n_atom, c_atom))
         plm = torch.ones((batch_size, 1, n_atom, n_atom, c_atom_pair))
+        atom_mask = torch.ones((batch_size, 1, n_atom))
 
-        batch = {
-            "token_mask": torch.ones((batch_size, 1, n_token)),
-            "atom_to_token_index": torch.ones((batch_size, 1, n_atom, n_token)),
-        }
-
-        ql = atom_transformer(batch=batch, ql=ql, cl=cl, plm=plm)
+        ql = atom_transformer(ql=ql, cl=cl, plm=plm, atom_mask=atom_mask)
 
         self.assertTrue(ql.shape == (batch_size, n_sample, n_atom, c_atom))
 
@@ -255,7 +247,6 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         )
 
         batch = {
-            "token_mask": torch.ones((batch_size, n_token)),
             "atom_to_token_index": torch.ones((batch_size, n_atom, n_token)),
             "ref_pos": torch.randn((batch_size, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, n_atom)),
@@ -265,7 +256,9 @@ class TestAtomAttentionEncoder(unittest.TestCase):
             "ref_space_uid": torch.zeros((batch_size, n_atom)),
         }
 
-        ai, ql, cl, plm = atom_attn_enc(batch)
+        atom_mask = torch.ones((batch_size, n_atom))
+
+        ai, ql, cl, plm = atom_attn_enc(batch=batch, atom_mask=atom_mask)
 
         self.assertTrue(ai.shape == (batch_size, n_token, c_token))
         self.assertTrue(ql.shape == (batch_size, n_atom, c_atom))
@@ -309,7 +302,6 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         )
 
         batch = {
-            "token_mask": torch.ones((batch_size, 1, n_token)),
             "atom_to_token_index": torch.ones((batch_size, 1, n_atom, n_token)),
             "ref_pos": torch.randn((batch_size, 1, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, 1, n_atom)),
@@ -319,12 +311,13 @@ class TestAtomAttentionEncoder(unittest.TestCase):
             "ref_space_uid": torch.zeros((batch_size, 1, n_atom)),
         }
 
+        atom_mask = torch.ones((batch_size, 1, n_atom))
         rl = torch.randn((batch_size, n_sample, n_atom, 3))
         si_trunk = torch.ones((batch_size, 1, n_token, c_s))
         zij_trunk = torch.ones((batch_size, 1, n_token, n_token, c_z))
 
         ai, ql, cl, plm = atom_attn_enc(
-            batch=batch, rl=rl, si_trunk=si_trunk, zij_trunk=zij_trunk
+            batch=batch, atom_mask=atom_mask, rl=rl, si_trunk=si_trunk, zij_trunk=zij_trunk
         )
 
         self.assertTrue(ai.shape == (batch_size, n_sample, n_token, c_token))
@@ -363,16 +356,16 @@ class TestAtomAttentionDecoder(unittest.TestCase):
         )
 
         batch = {
-            "token_mask": torch.ones((batch_size, n_token)),
             "atom_to_token_index": torch.ones((batch_size, n_atom, n_token)),
         }
 
+        atom_mask = torch.ones((batch_size, n_atom))
         ai = torch.ones((batch_size, n_token, c_token))
         ql = torch.ones((batch_size, n_atom, c_atom))
         cl = torch.ones((batch_size, n_atom, c_atom))
         plm = torch.ones((batch_size, n_atom, n_atom, c_atom_pair))
 
-        rl_update = atom_attn_dec(batch=batch, ai=ai, ql=ql, cl=cl, plm=plm)
+        rl_update = atom_attn_dec(batch=batch, atom_mask=atom_mask, ai=ai, ql=ql, cl=cl, plm=plm)
 
         self.assertTrue(rl_update.shape == (batch_size, n_atom, 3))
 
@@ -406,16 +399,16 @@ class TestAtomAttentionDecoder(unittest.TestCase):
         )
 
         batch = {
-            "token_mask": torch.ones((batch_size, 1, n_token)),
             "atom_to_token_index": torch.ones((batch_size, 1, n_atom, n_token)),
         }
 
+        atom_mask = torch.ones((batch_size, 1, n_atom))
         ai = torch.ones((batch_size, n_sample, n_token, c_token))
         ql = torch.ones((batch_size, n_sample, n_atom, c_atom))
         cl = torch.ones((batch_size, 1, n_atom, c_atom))
         plm = torch.ones((batch_size, 1, n_atom, n_atom, c_atom_pair))
 
-        rl_update = atom_attn_dec(batch=batch, ai=ai, ql=ql, cl=cl, plm=plm)
+        rl_update = atom_attn_dec(batch=batch, atom_mask=atom_mask, ai=ai, ql=ql, cl=cl, plm=plm)
 
         self.assertTrue(rl_update.shape == (batch_size, n_sample, n_atom, 3))
 

@@ -86,24 +86,21 @@ class AtomTransformer(nn.Module):
 
     def forward(
         self,
-        batch: TensorDict,
         ql: torch.Tensor,
         cl: torch.Tensor,
         plm: torch.Tensor,
+        atom_mask: torch.Tensor,
     ):
         """
         Args:
-            batch:
-                Input feature dictionary. Features used in this function:
-                    - "token_mask": [*, N_token] token mask
-                    - "atom_to_token_index": [*, N_atom, N_token] one-hot encoding
-                        of token index per atom
             ql:
                 [*, N_atom, c_atom] Atom single representation
             cl:
                 [*, N_atom, c_atom] Atom single conditioning
             plm:
                 [*, N_atom, N_atom, c_atom_pair] Atom pair representation
+            atom_mask:
+                [*, N_atom] Atom mask
         Returns:
             ql:
                 [*, N_atom, c_atom] Updated atom single representation
@@ -127,13 +124,7 @@ class AtomTransformer(nn.Module):
             torch.einsum("li,mi->lm", row_mask.to(ql.dtype), col_mask.to(ql.dtype))
             - 1.0
         ) * self.inf  # TODO: check this
-        blm = blm.reshape(len(plm[:-3]) * (1,) + (n_atom, n_atom))
-
-        # Create atom mask
-        # [*, N_atom]
-        atom_mask = torch.einsum(
-            "...li,...i->...l", batch["atom_to_token_index"], batch["token_mask"]
-        )
+        blm = blm.reshape(len(plm[:-3]) * (1,) + (n_atom, n_atom)).to(ql.device)
 
         # Run diffusion transformer
         # [*, N_atom, c_atom]
@@ -403,6 +394,7 @@ class AtomAttentionEncoder(nn.Module):
     def forward(
         self,
         batch: TensorDict,
+        atom_mask: torch.Tensor,
         rl: Optional[torch.Tensor] = None,
         si_trunk: Optional[torch.Tensor] = None,
         zij_trunk: Optional[torch.Tensor] = None,
@@ -422,10 +414,10 @@ class AtomAttentionEncoder(nn.Module):
                         reference conformer
                     - "ref_space_uid": [*, n_atom,] numerical encoding of the chain id
                         and residue index in the reference conformer
-                    - "token_mask":
-                        [*, N_token] token mask
                     - "atom_to_token_index":
                         [*, N_atom, N_token] one-hot encoding of token index per atom
+            atom_mask:
+                [*, N_atom] Atom mask
             rl:
                 [*, N_atom, 3] Noisy atom positions (optional)
             si_trunk:
@@ -478,7 +470,7 @@ class AtomAttentionEncoder(nn.Module):
 
         # Cross attention transformer (line 15)
         # [*, N_atom, c_atom]
-        ql = self.atom_transformer(batch=batch, ql=ql, cl=cl, plm=plm)
+        ql = self.atom_transformer(ql=ql, cl=cl, plm=plm, atom_mask=atom_mask)
 
         # Create atom to token index conversion matrix
         # [*, N_token, N_atom]
@@ -556,6 +548,7 @@ class AtomAttentionDecoder(nn.Module):
     def forward(
         self,
         batch: TensorDict,
+        atom_mask: torch.Tensor,
         ai: torch.Tensor,
         ql: torch.Tensor,
         cl: torch.Tensor,
@@ -565,9 +558,10 @@ class AtomAttentionDecoder(nn.Module):
         Args:
             batch:
                 Input feature dictionary. Features used in this function:
-                    - "token_mask": [*, N_token] token mask
                     - "atom_to_token_index": [*, N_atom, N_token] one-hot encoding
                         of token index per atom
+            atom_mask:
+                [*, N_atom] Atom mask
             ai:
                 [*, N_token, c_token] Token representation
             ql:
@@ -588,7 +582,7 @@ class AtomAttentionDecoder(nn.Module):
 
         # Atom transformer
         # [*, N_atom, c_atom]
-        ql = self.atom_transformer(batch=batch, ql=ql, cl=cl, plm=plm)
+        ql = self.atom_transformer(ql=ql, cl=cl, plm=plm, atom_mask=atom_mask)
 
         # Compute updates for atom positions
         # [*, N_atom, 3]

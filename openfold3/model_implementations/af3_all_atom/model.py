@@ -306,6 +306,7 @@ class AlphaFold3(nn.Module):
         xl = self.diffusion_module(
             batch=batch,
             xl_noisy=xl_noisy,
+            atom_mask=batch['gt_atom_mask'],
             t=t,
             si_input=si_input,
             si_trunk=si_trunk,
