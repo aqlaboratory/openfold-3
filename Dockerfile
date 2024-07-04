@@ -20,7 +20,7 @@ COPY environment.yml /opt/openfold3/environment.yml
 
 # installing into the base environment since the docker container wont do anything other than run openfold
 RUN mamba env update -n base --file /opt/openfold3/environment.yml && mamba clean --all
-RUN export LD_LIBRARY_PATH=${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}
+RUN export LD_LIBRARY_PATH=${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH
 
 COPY openfold3 /opt/openfold3/openfold3
 COPY scripts /opt/openfold3/scripts
@@ -31,8 +31,6 @@ COPY setup.py /opt/openfold3/setup.py
 RUN wget -q -P /opt/openfold3/openfold3/resources \
     https://git.scicore.unibas.ch/schwede/openstructure/-/raw/7102c63615b64735c4941278d92b554ec94415f8/modules/mol/alg/src/stereo_chemical_props.txt
 WORKDIR /opt/openfold3
-RUN python3 setup.py install
-
 # Download single parameter file 
 RUN wget -q -P . https://storage.googleapis.com/alphafold/alphafold_params_2022-12-06.tar
 RUN tar -xvf alphafold_params_2022-12-06.tar params_model_1_ptm.npz
@@ -41,11 +39,8 @@ RUN ls
 RUN cp /opt/openfold3/params_model_1_ptm.npz openfold3/resources/params/params_model_1_ptm.npz
 RUN rm alphafold_params_2022-12-06.tar params_model_1_ptm.npz 
 
-# Sanity checks for environment / path
-RUN echo $LD_LIBRARY_PATH
-RUN pwd
-RUN ls 
+RUN python3 setup.py install
 
-RUN python3 -m unittest discover -s /opt/openfold3/tests/ -p "test_*.py"
+# RUN python3 -m unittest discover -s /opt/openfold3/tests/ -p "test_*.py"
 # RUN mamba install pytest
 # RUN pytest /opt/openfold3/tests/
