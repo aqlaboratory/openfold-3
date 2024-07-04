@@ -248,8 +248,7 @@ class NoisyPositionEmbedder(nn.Module):
         Args:
             batch:
                 Input feature dictionary. Features used in this function:
-                    - "atom_to_token_index": [*, N_atom, N_token] one-hot encoding
-                        of token index per atom
+                    - "atom_to_token_index": [*, N_atom] Token index per atom
             cl:
                 [*, N_atom, c_atom] Atom single conditioning
             plm:
@@ -273,20 +272,26 @@ class NoisyPositionEmbedder(nn.Module):
                 [*, N_atom, c_atom] Atom single representation with noisy coordinate
                     projection
         """
+        # Create an one-hot mapping from atom to token index
+        n_token = si_trunk.shape[-2]
+        atom_to_onehot_token_index = torch.nn.functional.one_hot(
+            batch["atom_to_token_index"].to(torch.int64), num_classes=n_token
+        ).to(batch["atom_to_token_index"].dtype)
+
         # Broadcast trunk single representation into atom single conditioning
         # [*, N_atom, c_atom]
         sl_trunk = torch.einsum(
-            "...ic,...li->...lc", si_trunk, batch["atom_to_token_index"]
+            "...ic,...li->...lc", si_trunk, atom_to_onehot_token_index
         )
         cl = cl + self.linear_s(self.layer_norm_s(sl_trunk))
 
         # Broadcast trunk pair representation into atom pair conditioning
         # [*, N_atom, N_atom, c_atom_pair]
         zlj_trunk = torch.einsum(
-            "...ijc,...li->...ljc", zij_trunk, batch["atom_to_token_index"]
+            "...ijc,...li->...ljc", zij_trunk, atom_to_onehot_token_index
         )
         zlm_trunk = torch.einsum(
-            "...ljc,...mj->...lmc", zlj_trunk, batch["atom_to_token_index"]
+            "...ljc,...mj->...lmc", zlj_trunk, atom_to_onehot_token_index
         )
         plm = plm + self.linear_z(self.layer_norm_z(zlm_trunk))
 
@@ -414,8 +419,8 @@ class AtomAttentionEncoder(nn.Module):
                         reference conformer
                     - "ref_space_uid": [*, n_atom,] numerical encoding of the chain id
                         and residue index in the reference conformer
-                    - "atom_to_token_index":
-                        [*, N_atom, N_token] one-hot encoding of token index per atom
+                    - "token_mask": [*, N_token] token mask
+                    - "atom_to_token_index": [*, N_atom] Token index per atom
             atom_mask:
                 [*, N_atom] Atom mask
             rl:
@@ -474,13 +479,16 @@ class AtomAttentionEncoder(nn.Module):
 
         # Create atom to token index conversion matrix
         # [*, N_token, N_atom]
-        token_to_atom_index = batch["atom_to_token_index"].transpose(-1, -2)
+        n_token = batch["token_mask"].shape[-1]
+        token_to_onehot_atom_index = torch.nn.functional.one_hot(
+            batch["atom_to_token_index"].to(torch.int64), num_classes=n_token
+        ).transpose(-1, -2).to(batch["atom_to_token_index"].dtype)
 
         # Aggregate per-atom representation to per-token representation
         # [*, N_token, c_token]
         ai = torch.einsum(
-            "...lc,...il->...ic", self.linear_q(ql), token_to_atom_index
-        ) / torch.sum(token_to_atom_index, dim=-1, keepdim=True)  # TODO: check this
+            "...lc,...il->...ic", self.linear_q(ql), token_to_onehot_atom_index
+        ) / torch.sum(token_to_onehot_atom_index, dim=-1, keepdim=True)
 
         return ai, ql, cl, plm
 
@@ -558,8 +566,7 @@ class AtomAttentionDecoder(nn.Module):
         Args:
             batch:
                 Input feature dictionary. Features used in this function:
-                    - "atom_to_token_index": [*, N_atom, N_token] one-hot encoding
-                        of token index per atom
+                    - "atom_to_token_index": [*, N_atom] Token index per atom
             atom_mask:
                 [*, N_atom] Atom mask
             ai:
@@ -576,8 +583,12 @@ class AtomAttentionDecoder(nn.Module):
         """
         # Broadcast per-token activations to atoms
         # [*, N_atom, c_atom]
+        n_token = ai.shape[-2]
+        atom_to_onehot_token_index = torch.nn.functional.one_hot(
+            batch["atom_to_token_index"].to(torch.int64), num_classes=n_token
+        ).to(batch["atom_to_token_index"].dtype)
         ql = ql + torch.einsum(
-            "...ic,...li->...lc", self.linear_q_in(ai), batch["atom_to_token_index"]
+            "...ic,...li->...lc", self.linear_q_in(ai), atom_to_onehot_token_index
         )
 
         # Atom transformer

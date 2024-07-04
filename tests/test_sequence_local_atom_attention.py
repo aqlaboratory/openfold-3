@@ -86,7 +86,7 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
         zij_trunk = torch.ones((batch_size, n_token, n_token, c_z))
         rl = torch.randn((batch_size, n_atom, 3))
 
-        batch = {"atom_to_token_index": torch.ones((batch_size, n_atom, n_token))}
+        batch = {"atom_to_token_index": torch.ones((batch_size, n_atom))}
 
         cl, plm, ql = embedder(
             batch=batch,
@@ -124,7 +124,7 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
         zij_trunk = torch.ones((batch_size, 1, n_token, n_token, c_z))
         rl = torch.randn((batch_size, n_sample, n_atom, 3))
 
-        batch = {"atom_to_token_index": torch.ones((batch_size, 1, n_atom, n_token))}
+        batch = {"atom_to_token_index": torch.ones((batch_size, 1, n_atom))}
 
         cl, plm, ql = embedder(
             batch=batch,
@@ -144,7 +144,6 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
 class TestAtomTransformer(unittest.TestCase):
     def test_without_n_sample_channel(self):
         batch_size = consts.batch_size
-        n_token = consts.n_res
         n_atom = 4 * consts.n_res
         c_atom = 128
         c_atom_pair = 16
@@ -179,7 +178,6 @@ class TestAtomTransformer(unittest.TestCase):
 
     def test_with_n_sample_channel(self):
         batch_size = consts.batch_size
-        n_token = consts.n_res
         n_atom = 4 * consts.n_res
         c_atom = 128
         c_atom_pair = 16
@@ -247,7 +245,8 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         )
 
         batch = {
-            "atom_to_token_index": torch.ones((batch_size, n_atom, n_token)),
+            "token_mask": torch.ones((batch_size, n_token)),
+            "atom_to_token_index": torch.ones((batch_size, n_atom)),
             "ref_pos": torch.randn((batch_size, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, n_atom)),
             "ref_element": torch.ones((batch_size, n_atom, 128)),
@@ -302,7 +301,8 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         )
 
         batch = {
-            "atom_to_token_index": torch.ones((batch_size, 1, n_atom, n_token)),
+            "token_mask": torch.ones((batch_size, 1, n_token)),
+            "atom_to_token_index": torch.ones((batch_size, 1, n_atom)),
             "ref_pos": torch.randn((batch_size, 1, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, 1, n_atom)),
             "ref_element": torch.ones((batch_size, 1, n_atom, 128)),
@@ -356,7 +356,7 @@ class TestAtomAttentionDecoder(unittest.TestCase):
         )
 
         batch = {
-            "atom_to_token_index": torch.ones((batch_size, n_atom, n_token)),
+            "atom_to_token_index": torch.ones((batch_size, n_atom)),
         }
 
         atom_mask = torch.ones((batch_size, n_atom))
@@ -365,7 +365,9 @@ class TestAtomAttentionDecoder(unittest.TestCase):
         cl = torch.ones((batch_size, n_atom, c_atom))
         plm = torch.ones((batch_size, n_atom, n_atom, c_atom_pair))
 
-        rl_update = atom_attn_dec(batch=batch, atom_mask=atom_mask, ai=ai, ql=ql, cl=cl, plm=plm)
+        rl_update = atom_attn_dec(
+            batch=batch, atom_mask=atom_mask, ai=ai, ql=ql, cl=cl, plm=plm
+        )
 
         self.assertTrue(rl_update.shape == (batch_size, n_atom, 3))
 
@@ -399,7 +401,7 @@ class TestAtomAttentionDecoder(unittest.TestCase):
         )
 
         batch = {
-            "atom_to_token_index": torch.ones((batch_size, 1, n_atom, n_token)),
+            "atom_to_token_index": torch.ones((batch_size, 1, n_atom)),
         }
 
         atom_mask = torch.ones((batch_size, 1, n_atom))
@@ -408,7 +410,9 @@ class TestAtomAttentionDecoder(unittest.TestCase):
         cl = torch.ones((batch_size, 1, n_atom, c_atom))
         plm = torch.ones((batch_size, 1, n_atom, n_atom, c_atom_pair))
 
-        rl_update = atom_attn_dec(batch=batch, atom_mask=atom_mask, ai=ai, ql=ql, cl=cl, plm=plm)
+        rl_update = atom_attn_dec(
+            batch=batch, atom_mask=atom_mask, ai=ai, ql=ql, cl=cl, plm=plm
+        )
 
         self.assertTrue(rl_update.shape == (batch_size, n_sample, n_atom, 3))
 

@@ -60,10 +60,7 @@ class TestDiffusionModule(unittest.TestCase):
             "ref_charge": torch.ones((batch_size, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, n_atom)),
-            "atom_to_token_index": torch.eye(n_token)
-            .repeat_interleave(4, dim=0)
-            .unsqueeze(0)
-            .repeat(batch_size, 1, 1),
+            "atom_to_token_index": torch.ones((batch_size, n_atom)),
         }
 
         xl = dm(
@@ -114,9 +111,7 @@ class TestDiffusionModule(unittest.TestCase):
             "ref_charge": torch.ones((batch_size, 1, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, 1, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, 1, n_atom)),
-            "atom_to_token_index": torch.eye(n_token)
-            .repeat_interleave(4, dim=0)[None, None, :, :]
-            .repeat(batch_size, 1, 1, 1),
+            "atom_to_token_index": torch.ones((batch_size, 1, n_atom)),
         }
 
         xl = dm(
@@ -165,10 +160,7 @@ class TestSampleDiffusion(unittest.TestCase):
             "ref_charge": torch.ones((batch_size, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, n_atom)),
-            "atom_to_token_index": torch.eye(n_token)
-            .repeat_interleave(4, dim=0)
-            .unsqueeze(0)
-            .repeat(batch_size, 1, 1),
+            "atom_to_token_index": torch.ones((batch_size, n_atom))
         }
 
         si_input = torch.rand((batch_size, n_token, c_s_input))

@@ -157,7 +157,7 @@ config = mlc.ConfigDict(
                     "template_unit_vector": [NUM_TEMPLATES, NUM_TOKENS, NUM_TOKENS, 3],
                     "token_bonds": [NUM_TOKENS, NUM_TOKENS],
                     # Features not included in AF3 docs
-                    "atom_to_token_index": [NUM_ATOMS, NUM_TOKENS],
+                    "atom_to_token_index": [NUM_ATOMS],
                     "token_mask": [NUM_TOKENS],
                     "msa_mask": [NUM_MSA_SEQ, NUM_TOKENS],
                     "num_main_msa_seqs": [],

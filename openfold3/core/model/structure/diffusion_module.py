@@ -162,7 +162,11 @@ class DiffusionModule(nn.Module):
         rl_noisy = xl_noisy / torch.sqrt(t[..., None, None] ** 2 + self.sigma_data**2)
 
         ai, ql, cl, plm = self.atom_attn_enc(
-            batch=batch, atom_mask=atom_mask, rl=rl_noisy, si_trunk=si_trunk, zij_trunk=zij_trunk
+            batch=batch,
+            atom_mask=atom_mask,
+            rl=rl_noisy, 
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk
         )  # differ from AF3
 
         ai = ai + self.linear_s(self.layer_norm_s(si))
@@ -173,7 +177,14 @@ class DiffusionModule(nn.Module):
 
         ai = self.layer_norm_a(ai)
 
-        rl_update = self.atom_attn_dec(batch=batch, atom_mask=atom_mask, ai=ai, ql=ql, cl=cl, plm=plm)
+        rl_update = self.atom_attn_dec(
+            batch=batch,
+            atom_mask=atom_mask,
+            ai=ai,
+            ql=ql,
+            cl=cl,
+            plm=plm
+        )
 
         xl_out = (
             self.sigma_data**2
@@ -266,8 +277,12 @@ class SampleDiffusion(nn.Module):
             [*, N_atom, 3] Sampled atom positions
         """
 
+        n_token = si_trunk.shape[-2]
+        atom_to_onehot_token_index = torch.nn.functional.one_hot(
+            batch["atom_to_token_index"].to(torch.int64), num_classes=n_token
+        ).to(batch["atom_to_token_index"].dtype)
         atom_mask = torch.einsum(
-            "...li,...i->...l", batch["atom_to_token_index"], batch["token_mask"]
+            "...li,...i->...l", atom_to_onehot_token_index, batch["token_mask"]
         )
 
         xl = self.noise_schedule[0] * torch.randn(

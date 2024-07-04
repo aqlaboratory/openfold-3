@@ -187,10 +187,10 @@ def random_af3_features(batch_size, n_token, n_atom, n_msa, n_templ):
         "token_bonds": torch.ones((batch_size, n_token, n_token)),
         # Additional features
         "token_mask": torch.ones((batch_size, n_token)),
-        "atom_to_token_index": torch.eye(n_token)
-        .repeat_interleave(int(n_atom / n_token), dim=0)
+        "atom_to_token_index": torch.arange(n_token, dtype=torch.float32)
+        .repeat_interleave(int(n_atom / n_token))
         .unsqueeze(0)
-        .repeat(batch_size, 1, 1),
+        .repeat(batch_size, 1),
         "msa_mask": torch.ones((batch_size, n_msa, n_token)),
         "num_main_msa_seqs": torch.Tensor([int(n_msa / 2)]),
         "gt_atom_positions": torch.ones((batch_size, n_atom, 3)),
