@@ -16,6 +16,7 @@
 from typing import Dict
 
 import torch
+import torch.nn as nn
 
 
 def weighted_rigid_align(
@@ -281,3 +282,22 @@ def diffusion_loss(
     l = w * (l_mse + alpha_bond * l_bond) + l_smooth_lddt
 
     return torch.mean(l)
+
+class DiffusionLoss(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config.loss.diffusion
+
+    def forward(self, batch, output):
+        return diffusion_loss(
+            batch=batch,
+            x=output['x_pred'],
+            x_gt=batch['gt_atom_positions'],
+            atom_mask=batch["atom_mask"],
+            t=self.config.diffusion_step,
+            sigma_data=self.config.sigma_data,
+            alpha_bond=self.config.alpha_bond,
+            alpha_dna=self.config.alpha_dna,
+            alpha_rna=self.config.alpha_rna,
+            alpha_ligand=self.config.alpha_ligand,
+        )

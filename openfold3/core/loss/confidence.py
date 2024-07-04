@@ -314,7 +314,7 @@ def computeAlignmentError(
         phi:
             Coordinates of 3 atoms associated with frame of token T. [*, T, 3, 3]
         phi_gt:
-            Ground truth coordinates of 3 atoms associated with frame of token T. [*, T, 3, 3]
+            GT coordinates of 3 atoms associated with frame of token T. [*, T, 3, 3]
     Returns:
         e:
             Alignment error per frame (dim=-2) and per token (dim=-1). [*, T, T]
