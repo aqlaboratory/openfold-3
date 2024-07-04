@@ -65,9 +65,10 @@ def pLDDT(
     C1_mask = F.one_hot(C1_mask, num_classes=dx.shape[-1]).sum(dim=-2)  # [*, N]
 
     # Restrict to bespoke inclusion radius
-    c = (dx_gt < 30.0) * Ca_mask.unsqueeze(-2) + (dx_gt < 15.0) * C1_mask.unsqueeze(
-        -2
-    )  # [*, N, N]
+    c = (
+        (dx_gt < 30.0) * Ca_mask.unsqueeze(-2) 
+        + (dx_gt < 15.0) * C1_mask.unsqueeze(-2)  
+        ) # [*, N, N]
 
     # atom mask and avoid self term
     # TODO check dtypes for masks
@@ -330,7 +331,6 @@ def computeAlignmentError(
 
 
 def predictedAlignmentError(
-    # batch: Dict[str, torch.Tensor],
     x: torch.Tensor,
     x_gt: torch.Tensor,
     frame_idx: torch.Tensor,
@@ -346,8 +346,6 @@ def predictedAlignmentError(
     Compute the cross entropy loss between the predicted and computed alignment errors.
     Subsection 4.3.2 of the AF3 supplementary.
     Args:
-        # batch:
-        #     Batch dictionary.
         x:
             Predicted coordinates. [*, N, 3]
         x_gt:
@@ -470,9 +468,9 @@ def predictedDistanceError(
         n_bins:
             Number of bins.
         bin_min:
-            Minimum distance.
+            Minimum lower bin.
         bin_max:
-            Maximum distance.
+            Maximum upper bin.
     Returns:
         pae_loss:
             Predicted alignment error loss.
