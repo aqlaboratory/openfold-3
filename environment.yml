@@ -23,6 +23,7 @@ dependencies:
   - wandb
   - modelcif==0.7
   - awscli
+  - pytest
   - ml-collections
   - mkl=2022.1
   - aria2

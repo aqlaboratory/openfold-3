@@ -1,14 +1,14 @@
 FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 
-RUN apt-get update && apt-get install -y wget
+RUN apt-get update && apt-get install -y wget libxml2 cuda-minimal-build-12-1 \
+    libcusparse-dev-12-1 libcublas-dev-12-1 libcusolver-dev-12-1 \
+    git openmpi-bin libopenmpi-dev
 
 RUN apt-key del 7fa2af80
 RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
 RUN dpkg -i cuda-keyring_1.0-1_all.deb
 
-RUN apt-get install -y libxml2 cuda-minimal-build-12-1 libcusparse-dev-12-1 libcublas-dev-12-1 libcusolver-dev-12-1 \
-    git openmpi-bin libopenmpi-dev && \
-    apt-get clean && apt-get purge && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+RUN apt-get clean && apt-get purge && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN wget -P /tmp \
     "https://github.com/conda-forge/miniforge/releases/download/23.3.1-1/Miniforge3-Linux-x86_64.sh" \

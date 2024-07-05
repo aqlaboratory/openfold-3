@@ -17,5 +17,5 @@ jobs:
       run: docker build --file Dockerfile -t openfold-docker .
     - name: Run import openfold 
       run: docker run -it openfold-docker python -c 'import openfold3' 
-    # - name: Run unit tests
-    #   run: docker run -it openfold:$(date +%s) pytest /opt/openfold3/tests/ 
+    - name: Run unit tests
+      run: docker run -it openfold-docker pytest tests/ 
