@@ -294,7 +294,7 @@ class DiffusionLoss(nn.Module):
             x=output['x_pred'],
             x_gt=batch['gt_atom_positions'],
             atom_mask=batch["atom_mask"],
-            t=self.config.diffusion_step,
+            t=output['noise_level'],
             sigma_data=self.config.sigma_data,
             alpha_bond=self.config.alpha_bond,
             alpha_dna=self.config.alpha_dna,
