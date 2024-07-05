@@ -65,10 +65,8 @@ def pLDDT(
     C1_mask = F.one_hot(C1_mask, num_classes=dx.shape[-1]).sum(dim=-2)  # [*, N]
 
     # Restrict to bespoke inclusion radius
-    c = (
-        (dx_gt < 30.0) * Ca_mask.unsqueeze(-2) 
-        + (dx_gt < 15.0) * C1_mask.unsqueeze(-2)  
-        ) # [*, N, N]
+    c = ((dx_gt < 30.0) * Ca_mask.unsqueeze(-2) + 
+         (dx_gt < 15.0) * C1_mask.unsqueeze(-2))  # [*, N, N]
 
     # atom mask and avoid self term
     # TODO check dtypes for masks
@@ -604,8 +602,8 @@ class ConfidenceLoss(nn.Module):
             is_dna,
             is_rna,
             plddt_logits,
-            self.config.n_bins_plddt, # 50
-            self.config.eps # 1e-8,
+            self.config.n_bins_plddt,  # 50
+            self.config.eps,  # 1e-8,
         )
 
         if self.alpha_pae is not None:
@@ -615,26 +613,26 @@ class ConfidenceLoss(nn.Module):
                 frame_idx,
                 valid_frame,
                 pae_logits,
-                self.config.angle_threshold, # 25.0
-                self.config.n_bins_pae, # 64
-                self.config.bin_min_pae, # 0.0
-                self.config.bin_max_pae, # 32.0
-                self.config.eps # 1e-8,
+                self.config.angle_threshold,  # 25.0
+                self.config.n_bins_pae,  # 64
+                self.config.bin_min_pae,  # 0.0
+                self.config.bin_max_pae,  # 32.0
+                self.config.eps,  # 1e-8,
             )
 
         pde_loss, PDE = predictedDistanceError(
-            x, 
-            x_gt, 
-            frame_idx, 
-            pde_logits, 
-            self.config.n_bins_pde, # 64 
-            self.config.bin_min_pde, # 0.0
-            self.config.bin_max_pde, # 32.0
+            x,
+            x_gt,
+            frame_idx,
+            pde_logits,
+            self.config.n_bins_pde,  # 64
+            self.config.bin_min_pde,  # 0.0
+            self.config.bin_max_pde,  # 32.0
         )
 
         resolved_loss = experimentally_resolved_prediction(
-            atom_mask_gt, 
-            atom_mask, 
+            atom_mask_gt,
+            atom_mask,
             resolved_logits,
         )
 

@@ -3,8 +3,7 @@ import torch.nn as nn
 
 from openfold3.core.loss.confidence import ConfidenceLoss
 from openfold3.core.loss.diffusion import DiffusionLoss
-
-# import DistogramLoss from openfold3.core.loss.distogram
+from openfold3.core.loss.distogram import DistogramLoss
 
 
 class AlphaFold3Loss(nn.Module):
@@ -16,7 +15,7 @@ class AlphaFold3Loss(nn.Module):
         self.config = config
         self.confidence_loss = ConfidenceLoss(config)
         self.diffusion_loss = DiffusionLoss(config)
-        self.DitogramLoss = DitogramLoss(config)
+        self.distogram_loss = DistogramLoss(config)
 
     def forward(self, batch, output):
         alpha_confidence = self.config.loss.alpha_confidence
@@ -26,6 +25,6 @@ class AlphaFold3Loss(nn.Module):
         loss = (
             alpha_confidence * self.confidence_loss(batch, output)
             + alpha_diffusion * self.diffusion_loss(batch, output)
-            + alpha_distogram * distogram_loss(output),
+            + alpha_distogram * self.distogram_loss(batch, output)
         )
         return loss
