@@ -223,6 +223,7 @@ class TestEvoformerStack(unittest.TestCase):
         compare_utils.assert_mean_abs_diff_small(out_gt_msa, out_repro_msa, consts.eps)
         compare_utils.assert_max_abs_diff_small(out_gt_pair, out_repro_pair, consts.eps)
 
+
 @compare_utils.skip_unless_cuda_available()
 class TestExtraMSAStack(unittest.TestCase):
     def test_shape(self):
