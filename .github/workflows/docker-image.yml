@@ -14,8 +14,8 @@ jobs:
     - name: Cleanup  # https://github.com/actions/virtual-environments/issues/2840
       run: sudo rm -rf /usr/share/dotnet && sudo rm -rf /opt/ghc && sudo rm -rf "/usr/local/share/boost" && sudo rm -rf "$AGENT_TOOLSDIRECTORY"
     - name: Build the Docker image
-      run: docker build --file Dockerfile -t openfold-docker .
+      run: docker build -f Dockerfile -t openfold-docker .
     - name: Run import openfold 
-      run: docker run -it openfold-docker python -c 'import openfold3' 
+      run: docker run openfold-docker python -c 'import openfold3' 
     - name: Run unit tests
-      run: docker run -it openfold-docker pytest tests/ 
+      run: docker run openfold-docker pytest tests/ 
