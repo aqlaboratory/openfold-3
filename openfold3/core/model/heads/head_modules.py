@@ -17,24 +17,126 @@ import torch
 import torch.nn as nn
 
 from openfold3.core.utils.loss import (
+    compute_plddt,
     compute_tm,
     compute_predicted_aligned_error,
 )
 
-from openfold3.core.model.heads.token_heads import (
+from openfold3.core.model.heads.confidence_heads import (
     Pairformer_Embedding, 
-    PAEHead, 
-    PDEHead, 
+    PredictedAlignedErrorHead, 
+    PredictedDistanceErrorHead, 
     PerResidueLDDAllAtom, 
     ExperimentallyResolvedHeadAllAtom,
-    DistogramHead
+    DistogramHead,
+    PerResidueLDDTCaPredictor, 
+    ExperimentallyResolvedHead,
+    TMScoreHead, 
+    MaskedMSAHead
 )
 
 from typing import Dict
 
-class AuxiliaryHeads(nn.Module):
+class AuxiliaryHeadsAF2(nn.Module):
+    """
+    Auxiliary head for OF2
+    Implements section 1.9 (AF2)
+
+    Source: OpenFold    
+    """
+    def __init__(self, config):
+        super(AuxiliaryHeadsAF2, self).__init__()
+
+        self.plddt = PerResidueLDDTCaPredictor(
+            **config["lddt"],
+        )
+
+        self.distogram = DistogramHead(
+            **config["distogram"],
+        )
+
+        self.masked_msa = MaskedMSAHead(
+            **config["masked_msa"],
+        )
+
+        self.experimentally_resolved = ExperimentallyResolvedHead(
+            **config["experimentally_resolved"],
+        )
+
+        if config.tm.enabled:
+            self.tm = TMScoreHead(
+                **config.tm,
+            )
+
+        self.config = config
+
+    def forward(self, outputs):
+        """ 
+        Args: 
+            outputs: a dict containing following keys and tensors: 
+                'sm':
+                    'single': single embedding 
+                'pair': pair embedding 
+                'msa': msa embedding
+        Returns: 
+            aux_out: a dict containing: 
+                'lddt_logits': plddt head out [*, n_atoms, bins_plddt]
+                'plddt': computed plddt [*, n_atoms, bins_plddt]
+                'distogram_logits': distogram head out [*, n_token, n_token, bins_distogram]
+                'masked_msa_logits': masked msa head out[]
+                'experimentally_resolved_logits': resolved head out [*, n_atoms, bins_resolved]
+                'tm_logits': values identical to pae_logits [*, n_token, n_token, bins_pae]
+                'ptm_scores': 
+                'iptm_score': 
+                'weighted_ptm_score': 
+        """
+        aux_out = {}
+        lddt_logits = self.plddt(outputs["sm"]["single"])
+        aux_out["lddt_logits"] = lddt_logits
+
+        # Required for relaxation later on
+        aux_out["plddt"] = compute_plddt(lddt_logits)
+
+        distogram_logits = self.distogram(outputs["pair"])
+        aux_out["distogram_logits"] = distogram_logits
+
+        masked_msa_logits = self.masked_msa(outputs["msa"])
+        aux_out["masked_msa_logits"] = masked_msa_logits
+
+        experimentally_resolved_logits = self.experimentally_resolved(
+            outputs["single"]
+        )
+        aux_out[
+            "experimentally_resolved_logits"
+        ] = experimentally_resolved_logits
+
+        if self.config.tm.enabled:
+            tm_logits = self.tm(outputs["pair"])
+            aux_out["tm_logits"] = tm_logits
+            aux_out["ptm_score"] = compute_tm(
+                tm_logits, **self.config.tm
+            )
+            asym_id = outputs.get("asym_id")
+            if asym_id is not None:
+                aux_out["iptm_score"] = compute_tm(
+                    tm_logits, asym_id=asym_id, interface=True, **self.config.tm
+                )
+                aux_out["weighted_ptm_score"] = (self.config.tm["iptm_weight"] * aux_out["iptm_score"]
+                                                 + self.config.tm["ptm_weight"] * aux_out["ptm_score"])
+
+            aux_out.update(
+                compute_predicted_aligned_error(
+                    tm_logits,
+                    **self.config.tm,
+                )
+            )
+
+        return aux_out
+
+class AuxiliaryHeadsAllAtom(nn.Module):
     """ 
-    Auxiliary head for OF3. Implements Algorithm 31 with main inference loop (Algorithm 1) line 16 - 17. 
+    Auxiliary head for OF3
+    Implements Algorithm 31 with main inference loop (Algorithm 1) line 16 - 17. 
     """
     def __init__(self, config):
         """ 
@@ -47,16 +149,16 @@ class AuxiliaryHeads(nn.Module):
                 'distogram': distogram config 
                 'experimentally_resolved': experimentally_resolved config 
         """
-        super(AuxiliaryHeads, self).__init__()
+        super(AuxiliaryHeadsAllAtom, self).__init__()
         self.pairformer_embedding = Pairformer_Embedding(
             **config['pairformer_embedding'], 
         )
 
-        self.pae = PAEHead(
+        self.pae = PredictedAlignedErrorHead(
             **config['pae'],
         )
 
-        self.pde = PDEHead(
+        self.pde = PredictedDistanceErrorHead(
             **config['pde'],
         )
 
@@ -92,7 +194,6 @@ class AuxiliaryHeads(nn.Module):
                 'pair': pair out [*, n_token, n_token, c_z]
             x_pred: coordinate of representative atom per each token [*, n_atom, 3] 
             token_representative_atom_idx: index of representative atom index for each token: [*, n_token, n_atom]
-
             token_to_atom_idx: feature of token to atom idx [*, n_token, n_atom,]
             single_mask: single mask feat associated with pairformer stack [*, n_token]
             pair_mask: pair mask feat associated with pairformer stack [*, n_token, n_token]
@@ -115,7 +216,7 @@ class AuxiliaryHeads(nn.Module):
         distogram_logits = self.distogram(outputs['pair'])
         aux_out["distogram_logits"] = distogram_logits
 
-        # 2. stop grad. This might need to come before distogram head. One of many ambiguities... 
+        # 2. stop grad
         pair = outputs['pair'].detach()
         single = outputs['single'].detach()
         coords = x_pred.detach()

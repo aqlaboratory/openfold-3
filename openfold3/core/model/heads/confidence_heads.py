@@ -72,7 +72,7 @@ class Pairformer_Embedding(nn.Module):
         #1. si projection to zij 
         zij = zij + self.linear_i(si_input.unsqueeze(-2)) + self.linear_j(si_input.unsqueeze(-3))
         
-        #2. embed pair distances of representative atoms. 
+        #2. embed pair distances of representative atoms
         bins = torch.linspace(self.min_bin, self.max_bin, self.no_bin)
         squared_bins = bins ** 2
         upper = torch.cat([squared_bins[1:], squared_bins.new_tensor([self.inf])], dim=-1)
@@ -85,9 +85,9 @@ class Pairformer_Embedding(nn.Module):
         
         return si, zij
 
-class PAEHead(nn.Module):
+class PredictedAlignedErrorHead(nn.Module):
     """
-    Implements PAE Head (Algorithm 31, Line 5)
+    Implements PredictedAlignedError Head (Algorithm 31, Line 5) for AF3 (subsection 4.3.2)
     """
     def __init__(self, c_z, c_out, **kwargs):
         """
@@ -95,9 +95,9 @@ class PAEHead(nn.Module):
             c_z:
                 Input channel dimension
             c_out:
-                Number of PAE bins
+                Number of PredictedAlignedError (PAE) bins
         """
-        super(PAEHead, self).__init__()
+        super(PredictedAlignedErrorHead, self).__init__()
 
         self.c_z = c_z
         self.c_out = c_out
@@ -119,19 +119,19 @@ class PAEHead(nn.Module):
         logits = self.linear(zij)
         return logits
 
-class PDEHead(nn.Module):
+class PredictedDistanceErrorHead(nn.Module):
     """
-    Implements PDE Head (Algorithm 31, Line 6)
+    Implements PredictedDistanceError Head (Algorithm 31, Line 6) for AF3 (subsection 4.3.3) 
     """
     def __init__(self, c_z, c_out, **kwargs):
         """
         Args:
-            c_s:
+            c_z:
                 Input channel dimension
             c_out:
-                Number of PDE bins
+                Number of PredictedDistanceError (PDE) bins
         """
-        super(PDEHead, self).__init__()
+        super(PredictedDistanceErrorHead, self).__init__()
 
         self.c_z = c_z
         self.c_out = c_out
@@ -150,12 +150,12 @@ class PDEHead(nn.Module):
         Note: 
             Previous implementations of losses happened to include softmax so head returns logits. change if necessary. 
         """
-        logits = self.linear(zij + zij.transpose(-2, -3)) ##Note:: DistogramHead does self.linear(zij) then logits = logits + logits.transpose(-2, -3). 
+        logits = self.linear(zij + zij.transpose(-2, -3))
         return logits
 
 class PerResidueLDDAllAtom(nn.Module):
     """
-    Implements Plddt Head (Algorithm 31, Line 7) for AF3 
+    Implements Plddt Head (Algorithm 31, Line 7) for AF3 (subsection 4.3.1)
     """
 
     def __init__(self, c_s, c_out, **kwargs):
@@ -164,7 +164,7 @@ class PerResidueLDDAllAtom(nn.Module):
             c_s:
                 Input channel dimension
             c_out:
-                Number of distogram bins
+                Number of PLDDT bins
         """
         super(PerResidueLDDAllAtom, self).__init__()
 
@@ -192,7 +192,7 @@ class PerResidueLDDAllAtom(nn.Module):
     
 class PerResidueLDDTCaPredictor(nn.Module):
     """ 
-    Implements plddtHead for AF2. 
+    Implements plddtHead for AF2, subsection 1.9.10 
 
     Source: OpenFold
     """
@@ -223,7 +223,7 @@ class PerResidueLDDTCaPredictor(nn.Module):
 
 class ExperimentallyResolvedHeadAllAtom(nn.Module):
     """
-    For use in computation of "experimentally resolved" loss for AF3
+    Implements resolvedHeads for AF3, subsection 4.3.3
     """
     def __init__(self, c_s, c_out, **kwargs):
         """
@@ -231,7 +231,7 @@ class ExperimentallyResolvedHeadAllAtom(nn.Module):
             c_s:
                 Input channel dimension
             c_out:
-                Number of distogram bins
+                Number of ExperimentallyResolved Head AllAtom bins
         """
         super(ExperimentallyResolvedHeadAllAtom, self).__init__()
 
@@ -260,6 +260,7 @@ class ExperimentallyResolvedHeadAllAtom(nn.Module):
 class ExperimentallyResolvedHead(nn.Module):
     """ 
     Implements resolvedHeads for AF2. 
+    For use in computation of experimentally resolved loss, subsection 1.9.10 (AF2)
 
     Source: OpenFold
     """
@@ -270,7 +271,7 @@ class ExperimentallyResolvedHead(nn.Module):
             c_s:
                 Input channel dimension
             c_out:
-                Number of distogram bins
+                Number of experimentally resolved atom bins
         """
         super(ExperimentallyResolvedHead, self).__init__()
 
@@ -285,19 +286,19 @@ class ExperimentallyResolvedHead(nn.Module):
             s:
                 [*, N_res, C_s] single embedding
         Returns:
-            [*, N, C_out] logits
+            logits: 
+                [*, N, C_out] logits
         """
-        # [*, N, C_out]
+
         logits = self.linear(s)
         return logits
     
 class DistogramHead(nn.Module):
     """
-    Just directly copied from OF implementation. As stated in SI, no changes made in DistogramHead. 
-    Implementation for both AF2 and AF3. 
+    Implementation of distogram head for both AF2 and AF3. 
 
     Computes a distogram probability distribution.
-    For use in computation of distogram loss, subsection 1.9.8
+    For use in computation of distogram loss, subsection 1.9.8 (AF2), section 4.4 (AF3)
     """
 
     def __init__(self, c_z, c_out, **kwargs):
@@ -305,54 +306,54 @@ class DistogramHead(nn.Module):
         Args:
             c_z:
                 Input channel dimension
-            no_bins:
+            c_out:
                 Number of distogram bins
         """
         super(DistogramHead, self).__init__()
 
         self.c_z = c_z
-        self.no_bins = c_out
+        self.c_out = c_out
 
-        self.linear = Linear(self.c_z, self.no_bins, init="final")
+        self.linear = Linear(self.c_z, self.c_out, init="final")
 
-    def forward(self, z):  # [*, N, N, C_z]
+    def forward(self, z):
         """
         Args:
             z:
                 [*, N_res, N_res, C_z] pair embedding
         Returns:
-            [*, N, N, no_bins] distogram probability distribution
+            logit: 
+                [*, N, N, c_out] distogram probability distribution
 
         Note: 
             Previous implementations of losses happened to include softmax so head returns logits. change if necessary. 
+            For symmetric pairwise PairDistanceError loss (PDE), logits are calculated by linear(zij + zij.transpose(-2, -3))
         """
-        # [*, N, N, no_bins]
+
         logits = self.linear(z)
         logits = logits + logits.transpose(-2, -3) 
-
-        ###any suggestions on what to do with FP16?? OF2 has it and iirc OF3 doesn't? we can create two separate DistogramHeads with and without FP16_enabled. 
         return logits
     
 
 class TMScoreHead(nn.Module):
     """
-    For use in computation of TM-score, subsection 1.9.7
+    For use in computation of TM-score, subsection 1.9.7 (AF2)
     """
 
-    def __init__(self, c_z, no_bins, **kwargs):
+    def __init__(self, c_z, c_out, **kwargs):
         """
         Args:
             c_z:
                 Input channel dimension
-            no_bins:
+            c_out:
                 Number of bins
         """
         super(TMScoreHead, self).__init__()
 
         self.c_z = c_z
-        self.no_bins = no_bins
+        self.no_bins = c_out
 
-        self.linear = Linear(self.c_z, self.no_bins, init="final")
+        self.linear = Linear(self.c_z, self.c_out, init="final")
 
     def forward(self, z):
         """
@@ -360,16 +361,17 @@ class TMScoreHead(nn.Module):
             z:
                 [*, N_res, N_res, C_z] pairwise embedding
         Returns:
-            [*, N_res, N_res, no_bins] prediction
+            logits: 
+                [*, N_res, N_res, c_out] prediction
         """
-        # [*, N, N, no_bins]
+
         logits = self.linear(z)
         return logits
 
 
 class MaskedMSAHead(nn.Module):
     """
-    For use in computation of masked MSA loss, subsection 1.9.9
+    For use in computation of masked MSA loss, subsection 1.9.9 (AF2)
     
     Source: OpenFold 
     """
@@ -395,8 +397,9 @@ class MaskedMSAHead(nn.Module):
             m:
                 [*, N_seq, N_res, C_m] MSA embedding
         Returns:
-            [*, N_seq, N_res, C_out] reconstruction
+            logits: 
+                [*, N_seq, N_res, c_out] reconstruction
         """
-        # [*, N_seq, N_res, C_out]
+
         logits = self.linear(m)
         return logits
