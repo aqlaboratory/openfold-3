@@ -1,9 +1,9 @@
 """This module contains the PreprocessingPipeline abstract class and its subclasses.
 
-Preprocessing pipelines are used to implement the data parsing and filtering 
+Preprocessing pipelines are used to implement the data parsing and filtering
 that needs to happen for individual samples returned in the __getitem__ method of a
 specific SingleDataset class. The logic and order of preprocessing steps are
-defined in the forward method using primitives from 
+defined in the forward method using primitives from
 preprocessing_primitives.
 
 The steps below outline how datapoints get from raw datapoints to the model
@@ -31,22 +31,19 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from preprocessing_primitives import (
-    parse_target_structure_mmCIF,
-    select_cropping_strategy,
-    generate_reference_conformers,
-    calculate_charges,
-    process_MSAs,
-    parse,
-    subsample,
-    apply_crop,
-    search_template,
     align_template,
+    calculate_charges,
     crop_template,
+    generate_reference_conformers,
+    parse_target_structure_mmCIF,
+    search_template,
+    select_cropping_strategy,
 )
 
 
 # TODO import parsing primitives from parsing_pipeline_primitives.py
-# TODO implement checks that a PreprocessingPipeline is used with the correct SingleDataset
+# TODO implement checks that a PreprocessingPipeline is used with the
+# correct SingleDataset
 class PreprocessingPipeline(ABC):
     """An abstract class for implementing a PreprocessingPipeline class."""
 
@@ -63,12 +60,13 @@ class PreprocessingPipeline(ABC):
         return self.forward(index=index)
 
 
-# QUESTION can we have separate pipelines for each molecule type and composite pipelines like BioAssemblyPreprocessingPipeline and TFDNAPreprocessingPipeline calling the appropriate sub-pipelines?
+# QUESTION can we have separate pipelines for each molecule type and composite pipelines
+# like BioAssemblyPreprocessingPipeline and TFDNAPreprocessingPipeline calling the
+# appropriate sub-pipelines?
 
 
 class BioAssemblyPreprocessingPipeline(PreprocessingPipeline):
-    """A PreprocessingPipeline for SingeDataset(s) that need to handle arbitrary molecule types,
-    including protein, DNA, RNA, and ligands."""
+    """For handling DNA, RNA, and ligands."""
 
     def forward(self, index: int) -> dict:
         """Implements data parsing and filtering logic.
@@ -92,15 +90,16 @@ class BioAssemblyPreprocessingPipeline(PreprocessingPipeline):
         calculate_charges()
         # -> target_raw_data
 
+        # !!! recycling resampling will be moved into the MSAModule
         # for each recycling step process MSAs
-        process_MSAs()
-        for step in self.recycling_steps:
-            # - parse
-            parse()
-            # - subsample
-            subsample()
-            # - apply crop
-            apply_crop()
+        # process_MSAs()
+        # for _ in self.recycling_steps:
+        #     # - parse
+        #     parse()
+        #     # - subsample
+        #     subsample()
+        #     # - apply crop
+        #     apply_crop()
         # -> msa_raw_data
 
         # Template preprocessing
@@ -116,8 +115,7 @@ class BioAssemblyPreprocessingPipeline(PreprocessingPipeline):
 
 
 class TFDNAPreprocessingPipeline(PreprocessingPipeline):
-    """A PreprocessingPipeline for SingeDataset(s) that implement the preprocessing
-    logic of the Transcription Factor Positive Distillation dataset of AF3 (SI 2.5.2.)."""
+    """For Transcription Factor Positive Distillation dataset of AF3 (SI 2.5.2.)."""
 
     def forward(self, index: int) -> dict:
         pass
