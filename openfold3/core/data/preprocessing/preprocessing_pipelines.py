@@ -15,7 +15,7 @@ from preprocessing_primitives import (
 
 
 # TODO import parsing primitives from parsing_pipeline_primitives.py
-# TODO implement checks that a PreprocessingPipeline is used with the 
+# TODO implement checks that a PreprocessingPipeline is used with the
 # correct SingleDataset
 class PreprocessingPipeline(ABC):
     """An abstract class for implementing a specific PreprocessingPipeline class."""

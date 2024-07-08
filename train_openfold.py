@@ -264,7 +264,6 @@ class OpenFoldWrapper(pl.LightningModule):
         model_version = "_".join(model_basename.split("_")[1:])
         import_jax_weights_(self.model, jax_path, version=model_version)
 
-
     def on_train_epoch_start(self) -> None:
         """Resample epoch_len number of samples for the training datasets at the start
         of each epoch.

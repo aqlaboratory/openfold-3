@@ -199,7 +199,7 @@ def assign_chains(atom_array: AtomArray):
     # Get chain id start indices
     chain_start_ids = struc.get_chain_starts(atom_array)
 
-    # Create chain ids 
+    # Create chain ids
     # This is necessary to do because some PDB-assigned homomeric chain
     # IDs are not unique
     chain_id_repeats = np.diff(np.append(chain_start_ids, len(atom_array)))
