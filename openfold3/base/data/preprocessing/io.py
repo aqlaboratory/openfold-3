@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import NamedTuple
 
@@ -41,14 +42,31 @@ def parse_mmcif_bioassembly(
         A NamedTuple containing the parsed CIF file and the AtomArray.
     """
     cif_file = pdbx.CIFFile.read(file_path)
-    atom_array = pdbx.get_assembly(
-        cif_file,
-        assembly_id="1",
-        model=1,
-        altloc="occupancy",
-        use_author_fields=use_author_fields,
-        include_bonds=include_bonds,
-    )
+
+    (pdb_id,) = cif_file.keys()  # Single-element unpacking
+
+    # Check if the CIF file contains bioassembly information
+    if "pdbx_struct_assembly_gen" in cif_file[pdb_id]:
+        atom_array = pdbx.get_assembly(
+            cif_file,
+            assembly_id="1",
+            model=1,
+            altloc="occupancy",
+            use_author_fields=use_author_fields,
+            include_bonds=include_bonds,
+        )
+    else:
+        logging.warning(
+            "No bioassembly information found in the CIF file, "
+            "falling back to parsing the asymmetric unit."
+        )
+        atom_array = pdbx.get_structure(
+            cif_file,
+            model=1,
+            altloc="occupancy",
+            use_author_fields=use_author_fields,
+            include_bonds=include_bonds,
+        )
 
     assign_renumbered_chain_ids(atom_array)
 
