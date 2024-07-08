@@ -14,15 +14,18 @@
 # limitations under the License.
 
 """Amber relaxation."""
+
 from typing import Any, Dict, Sequence, Tuple
-from openfold3.core.np import protein
-from openfold3.core.np.relax import amber_minimize
-from openfold3.core.np.relax import utils
+
 import numpy as np
 
+from openfold3.core.np import protein
+from openfold3.core.np.relax import amber_minimize, utils
 
-class AmberRelaxation(object):
+
+class AmberRelaxation:
     """Amber relaxation."""
+
     def __init__(
         self,
         *,
@@ -85,9 +88,7 @@ class AmberRelaxation(object):
         utils.assert_equal_nonterminal_atom_types(
             protein.from_pdb_string(min_pdb).atom_mask, prot.atom_mask
         )
-        violations = out["structural_violations"][
-            "total_per_residue_violations_mask"
-        ]
+        violations = out["structural_violations"]["total_per_residue_violations_mask"]
 
         min_pdb = protein.add_pdb_headers(prot, min_pdb)
         output_str = min_pdb

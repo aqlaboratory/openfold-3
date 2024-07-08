@@ -14,12 +14,15 @@
 # limitations under the License.
 
 """Utils for minimization."""
+
 import io
-from openfold3.core.np import residue_constants
-from Bio import PDB
+
 import numpy as np
+from Bio import PDB
 from openmm import app as openmm_app
 from openmm.app.internal.pdbstructure import PdbStructure
+
+from openfold3.core.np import residue_constants
 
 
 def overwrite_pdb_coordinates(pdb_str: str, pos) -> str:
@@ -81,6 +84,4 @@ def assert_equal_nonterminal_atom_types(
     oxt = residue_constants.atom_order["OXT"]
     no_oxt_mask = np.ones(shape=atom_mask.shape, dtype=bool)
     no_oxt_mask[..., oxt] = False
-    np.testing.assert_almost_equal(
-        ref_atom_mask[no_oxt_mask], atom_mask[no_oxt_mask]
-    )
+    np.testing.assert_almost_equal(ref_atom_mask[no_oxt_mask], atom_mask[no_oxt_mask])

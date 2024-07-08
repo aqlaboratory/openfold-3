@@ -12,20 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
-
-import torch
-import numpy as np
 import unittest
-from openfold3.core.model.layers import TriangleAttention
-from openfold3.core.utils.tensor_utils import tree_map
+
+import numpy as np
+import torch
 
 import tests.compare_utils as compare_utils
+from openfold3.core.model.layers import TriangleAttention
+from openfold3.core.utils.tensor_utils import tree_map
 from tests.config import consts
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
-    import jax
     import haiku as hk
+    import jax
 
 
 class TestTriangularAttention(unittest.TestCase):
@@ -48,11 +48,7 @@ class TestTriangularAttention(unittest.TestCase):
         self.assertTrue(shape_before == shape_after)
 
     def _tri_att_compare(self, starting=False):
-        name = (
-            "triangle_attention_"
-            + ("starting" if starting else "ending")
-            + "_node"
-        )
+        name = "triangle_attention_" + ("starting" if starting else "ending") + "_node"
 
         def run_tri_att(pair_act, pair_mask):
             config = compare_utils.get_alphafold_config()
@@ -76,8 +72,7 @@ class TestTriangularAttention(unittest.TestCase):
 
         # Fetch pretrained parameters (but only from one block)]
         params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/"
-            + name
+            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/" + name
         )
         params = tree_map(lambda n: n[0], params, jax.Array)
 

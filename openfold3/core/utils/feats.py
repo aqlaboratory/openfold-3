@@ -13,11 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
-import torch.nn as nn
 from typing import Union
 
-from openfold3.core.np import residue_constants as rc
+import torch
+import torch.nn as nn
+
 from openfold3.core.utils.geometry import rigid_matrix_vector
 from openfold3.core.utils.rigid_utils import Rigid
 from openfold3.core.utils.tensor_utils import (
@@ -25,25 +25,21 @@ from openfold3.core.utils.tensor_utils import (
 )
 
 
-def pseudo_beta_fn(aatype, all_atom_positions, all_atom_masks):
-    is_gly = aatype == rc.restype_order["G"]
-    ca_idx = rc.atom_order["CA"]
-    cb_idx = rc.atom_order["CB"]
-    pseudo_beta = torch.where(
-        is_gly[..., None].expand(*((-1,) * len(is_gly.shape)), 3),
-        all_atom_positions[..., ca_idx, :],
-        all_atom_positions[..., cb_idx, :],
+def dgram_from_positions(
+    pos: torch.Tensor,
+    min_bin: float = 3.25,
+    max_bin: float = 50.75,
+    no_bins: int = 39,
+    inf: float = 1e8,
+):
+    dgram = torch.sum(
+        (pos[..., None, :] - pos[..., None, :, :]) ** 2, dim=-1, keepdim=True
     )
+    lower = torch.linspace(min_bin, max_bin, no_bins, device=pos.device) ** 2
+    upper = torch.cat([lower[1:], lower.new_tensor([inf])], dim=-1)
+    dgram = ((dgram > lower) * (dgram < upper)).type(dgram.dtype)
 
-    if all_atom_masks is not None:
-        pseudo_beta_mask = torch.where(
-            is_gly,
-            all_atom_masks[..., ca_idx],
-            all_atom_masks[..., cb_idx],
-        )
-        return pseudo_beta, pseudo_beta_mask
-    else:
-        return pseudo_beta
+    return dgram
 
 
 def atom14_to_atom37(atom14, batch):
@@ -59,129 +55,12 @@ def atom14_to_atom37(atom14, batch):
     return atom37_data
 
 
-def build_template_angle_feat(template_feats):
-    template_aatype = template_feats["template_aatype"]
-    torsion_angles_sin_cos = template_feats["template_torsion_angles_sin_cos"]
-    alt_torsion_angles_sin_cos = template_feats[
-        "template_alt_torsion_angles_sin_cos"
-    ]
-    torsion_angles_mask = template_feats["template_torsion_angles_mask"]
-    template_angle_feat = torch.cat(
-        [
-            nn.functional.one_hot(template_aatype, 22),
-            torsion_angles_sin_cos.reshape(
-                *torsion_angles_sin_cos.shape[:-2], 14
-            ),
-            alt_torsion_angles_sin_cos.reshape(
-                *alt_torsion_angles_sin_cos.shape[:-2], 14
-            ),
-            torsion_angles_mask,
-        ],
-        dim=-1,
-    )
-
-    return template_angle_feat
-
-
-def dgram_from_positions(
-    pos: torch.Tensor, 
-    min_bin: float = 3.25, 
-    max_bin: float = 50.75, 
-    no_bins: float = 39, 
-    inf: float = 1e8,
-):
-    dgram = torch.sum(
-        (pos[..., None, :] - pos[..., None, :, :]) ** 2, dim=-1, keepdim=True
-    )
-    lower = torch.linspace(min_bin, max_bin, no_bins, device=pos.device) ** 2
-    upper = torch.cat([lower[1:], lower.new_tensor([inf])], dim=-1)
-    dgram = ((dgram > lower) * (dgram < upper)).type(dgram.dtype)
-
-    return dgram
-
-
-def build_template_pair_feat(
-    batch, 
-    min_bin, max_bin, no_bins, 
-    use_unit_vector=False, 
-    eps=1e-20, inf=1e8
-):
-    template_mask = batch["template_pseudo_beta_mask"]
-    template_mask_2d = template_mask[..., None] * template_mask[..., None, :]
-
-    # Compute distogram (this seems to differ slightly from Alg. 5)
-    tpb = batch["template_pseudo_beta"]
-    dgram = dgram_from_positions(tpb, min_bin, max_bin, no_bins, inf)
-
-    to_concat = [dgram, template_mask_2d[..., None]]
-
-    aatype_one_hot = nn.functional.one_hot(
-        batch["template_aatype"],
-        rc.restype_num + 2,
-    )
-
-    n_res = batch["template_aatype"].shape[-1]
-    to_concat.append(
-        aatype_one_hot[..., None, :, :].expand(
-            *aatype_one_hot.shape[:-2], n_res, -1, -1
-        )
-    )
-    to_concat.append(
-        aatype_one_hot[..., None, :].expand(
-            *aatype_one_hot.shape[:-2], -1, n_res, -1
-        )
-    )
-
-    n, ca, c = [rc.atom_order[a] for a in ["N", "CA", "C"]]
-    rigids = Rigid.make_transform_from_reference(
-        n_xyz=batch["template_all_atom_positions"][..., n, :],
-        ca_xyz=batch["template_all_atom_positions"][..., ca, :],
-        c_xyz=batch["template_all_atom_positions"][..., c, :],
-        eps=eps,
-    )
-    points = rigids.get_trans()[..., None, :, :]
-    rigid_vec = rigids[..., None].invert_apply(points)
-
-    inv_distance_scalar = torch.rsqrt(eps + torch.sum(rigid_vec ** 2, dim=-1))
-
-    t_aa_masks = batch["template_all_atom_mask"]
-    template_mask = (
-        t_aa_masks[..., n] * t_aa_masks[..., ca] * t_aa_masks[..., c]
-    )
-    template_mask_2d = template_mask[..., None] * template_mask[..., None, :]
-
-    inv_distance_scalar = inv_distance_scalar * template_mask_2d
-    unit_vector = rigid_vec * inv_distance_scalar[..., None]
-    
-    if(not use_unit_vector):
-        unit_vector = unit_vector * 0.
-    
-    to_concat.extend(torch.unbind(unit_vector[..., None, :], dim=-1))
-    to_concat.append(template_mask_2d[..., None])
-
-    act = torch.cat(to_concat, dim=-1)
-    act = act * template_mask_2d[..., None]
-
-    return act
-
-
-def build_extra_msa_feat(batch):
-    msa_1hot = nn.functional.one_hot(batch["extra_msa"], 23)
-    msa_feat = [
-        msa_1hot,
-        batch["extra_has_deletion"].unsqueeze(-1),
-        batch["extra_deletion_value"].unsqueeze(-1),
-    ]
-    return torch.cat(msa_feat, dim=-1)
-
-
 def torsion_angles_to_frames(
     r: Union[Rigid, rigid_matrix_vector.Rigid3Array],
     alpha: torch.Tensor,
     aatype: torch.Tensor,
     rrgdf: torch.Tensor,
 ):
-
     rigid_type = type(r)
 
     # [*, N, 8, 4, 4]
@@ -196,9 +75,7 @@ def torsion_angles_to_frames(
     bb_rot[..., 1] = 1
 
     # [*, N, 8, 2]
-    alpha = torch.cat(
-        [bb_rot.expand(*alpha.shape[:-2], -1, -1), alpha], dim=-2
-    )
+    alpha = torch.cat([bb_rot.expand(*alpha.shape[:-2], -1, -1), alpha], dim=-2)
 
     # [*, N, 8, 3, 3]
     # Produces rotation matrices of the form:
@@ -237,7 +114,7 @@ def torsion_angles_to_frames(
         ],
         dim=-1,
     )
-    
+
     all_frames_to_global = r[..., None].compose(all_frames_to_bb)
 
     return all_frames_to_global
@@ -251,9 +128,6 @@ def frames_and_literature_positions_to_atom14_pos(
     atom_mask,
     lit_positions,
 ):
-    # [*, N, 14, 4, 4]
-    default_4x4 = default_frames[aatype, ...]
-
     # [*, N, 14]
     group_mask = group_idx[aatype, ...]
 
@@ -267,9 +141,7 @@ def frames_and_literature_positions_to_atom14_pos(
     t_atoms_to_global = r[..., None, :] * group_mask
 
     # [*, N, 14]
-    t_atoms_to_global = t_atoms_to_global.map_tensor_fn(
-        lambda x: torch.sum(x, dim=-1)
-    )
+    t_atoms_to_global = t_atoms_to_global.map_tensor_fn(lambda x: torch.sum(x, dim=-1))
 
     # [*, N, 14]
     atom_mask = atom_mask[aatype, ...].unsqueeze(-1)
