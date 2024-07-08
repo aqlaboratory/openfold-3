@@ -1,9 +1,9 @@
-""" This module contains the FeaturePipeline abstract class and its subclasses.
+"""This module contains the FeaturePipeline abstract class and its subclasses.
 
 Feature pipelines accept parse and processed data from a PreprocessingPipeline,
 embed features into tensors necessary for a specific model (and are hence specific
 to a model), and return a feature dictionary. The logic and order of tensorization
-steps are defined in the forward method using primitives from 
+steps are defined in the forward method using primitives from
 feature_pipeline_primitives.
 
 The steps below outline how datapoints get from raw datapoints to the model
@@ -29,6 +29,7 @@ and highlight where you currently are in the process:
 
 from abc import ABC, abstractmethod
 from typing import Sequence
+
 import torch
 
 
@@ -61,7 +62,8 @@ class AF3FeaturePipeline(FeaturePipeline):
         """_summary_
 
         Args:
-            parsed_features (_type_): set of coordinates from parsed mmCIF and parsed MSAs, chain/interface metadata, center atom around which to crop
+            parsed_features (_type_): set of coordinates from parsed mmCIF and parsed
+            MSAs, chain/interface metadata, center atom around which to crop
 
         Returns:
             dict: feature dictionary (Table 5)

@@ -1,7 +1,7 @@
-""" This module contains the SingleDataset class and its subclasses.
+"""This module contains the SingleDataset class and its subclasses.
 
 A SingleDataset class is a pytorch Dataset class which specified the way datapoints
-need to be parsed/process and embedded into feature tensors using a pair of 
+need to be parsed/process and embedded into feature tensors using a pair of
 PreprocessingPipeline and FeaturePipeline. SingleDataset also has an optional
 calculate_datapoint_probabilities which implements a strategy for calculating
 the probability of sampling all of the datapoints from a precomputed data cache.
@@ -27,18 +27,18 @@ and highlight where you currently are in the process:
     batched data -> model
 """
 
+import json
 from abc import ABC, abstractmethod, property
 from typing import Any
-import json
 
 from torch.utils.data import Dataset
 
+from openfold3.core.data.featurization.feature_pipelines import (
+    AF3BioAssemblyFeaturePipeline,
+)
 from openfold3.core.data.preprocessing.preprocessing_pipelines import (
     BioAssemblyPreprocessingPipeline,
     TFDNAPreprocessingPipeline,
-)
-from openfold3.core.data.featurization.feature_pipelines import (
-    AF3BioAssemblyFeaturePipeline,
 )
 
 DATASET_REGISTRY = {}
@@ -59,14 +59,15 @@ def register_dataset(cls):
 
 
 class DatasetNotRegisteredError(Exception):
-    """A custom error for indicating that the SingleDataset class is not registered in the dataset registry."""
+    """A custom error for for unregistered SingleDatasets."""
 
     def __init__(self, dataset_name: str) -> None:
         super().__init__()
         self.dataset_name = dataset_name
 
     def __str__(self):
-        return f"SingleDataset {self.dataset_name} missing from dataset registry. Wrap your class with the register_dataset decorator."
+        return f"""SingleDataset {self.dataset_name} missing from dataset registry. \
+                Wrap your class with the register_dataset decorator."""
 
 
 class SingleDataset(ABC, Dataset):
@@ -90,7 +91,7 @@ class SingleDataset(ABC, Dataset):
 
     def calculate_datapoint_probabilities(self) -> float:
         """Calculates datapoint probabilities for stochastic sampling.
-        
+
         Datapoint probabilities are calculated from the self.data_cache attribute and
         are used in the StochasticSamplerDataset class. By default datapoints are
         sampled uniformly."""
@@ -141,7 +142,7 @@ class WeightedPDBDataset(SingleDataset):
 
 @register_dataset
 class ProteinMonomerDataset(SingleDataset):
-    """Implements a Dataset class for the monomeric protein distillation datasets for AF3."""
+    """For monomeric protein distillation datasets for AF3."""
 
     def __init__(self, data_config) -> None:
         super().__init__()
@@ -150,7 +151,7 @@ class ProteinMonomerDataset(SingleDataset):
         )
         self._feature_pipeline = "<AF3ProteinFeaturePipeline(data_config)>"
 
-        with open(data_config["data_cache"], "r") as f:
+        with open(data_config["data_cache"]) as f:
             self.data_cache = json.load(f)
 
         "<assign other attributes here>"
@@ -180,7 +181,7 @@ class RNAStructureDataset(SingleDataset):
         self._preprocessing_pipeline = "<RNAPreprocessingPipeline(data_config)>"
         self._feature_pipeline = "<AF3RNAFeaturePipeline(data_config)>"
 
-        with open(data_config["data_cache"], "r") as f:
+        with open(data_config["data_cache"]) as f:
             self.data_cache = json.load(f)
 
         "<assign other attributes here>"
@@ -203,14 +204,14 @@ class RNAStructureDataset(SingleDataset):
 
 @register_dataset
 class TFPositiveDataset(SingleDataset):
-    """Implements a Datset class for the Transcription factor-DNA positive distillation dataset for AF3."""
+    """For transcription factor-DNA positive distillation dataset for AF3."""
 
     def __init__(self, data_config) -> None:
         super().__init__()
         self._preprocessing_pipeline = TFDNAPreprocessingPipeline(data_config)
         self._feature_pipeline = AF3BioAssemblyFeaturePipeline(data_config)
 
-        with open(data_config["data_cache"], "r") as f:
+        with open(data_config["data_cache"]) as f:
             self.data_cache = json.load(f)
 
         "<assign other attributes here>"
@@ -233,14 +234,14 @@ class TFPositiveDataset(SingleDataset):
 
 @register_dataset
 class TFNegativeDataset(SingleDataset):
-    """Implements a Datset class for the Transcription factor-DNA negative distillation dataset for AF3."""
+    """For the Transcription factor-DNA negative distillation dataset for AF3."""
 
     def __init__(self, data_config) -> None:
         super().__init__()
         self._preprocessing_pipeline = TFDNAPreprocessingPipeline(data_config)
         self._feature_pipeline = AF3BioAssemblyFeaturePipeline(data_config)
 
-        with open(data_config["data_cache"], "r") as f:
+        with open(data_config["data_cache"]) as f:
             self.data_cache = json.load(f)
 
         "<assign other attributes here>"
@@ -273,7 +274,7 @@ class InferenceDataset(SingleDataset):
         self._preprocessing_pipeline = "<InferencePreprocessingPipeline(data_config)>"
         self._feature_pipeline = "<AF3InferenceFeaturePipeline(data_config)>"
 
-        with open(data_config["data_cache"], "r") as f:
+        with open(data_config["data_cache"]) as f:
             self.data_cache = json.load(f)
 
         "<assign other attributes here>"
