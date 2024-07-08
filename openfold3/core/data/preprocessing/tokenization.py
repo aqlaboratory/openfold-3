@@ -83,7 +83,8 @@ def tokenize_atom_array(atom_array: AtomArray):
     chain_ids = atom_array.af3_chain_id
     is_different_chain = chain_ids[bondlist[:, 0]] != chain_ids[bondlist[:, 1]]
     # - two non-heteroatoms in the same chain but side chains of different residues
-    #   (standard residues covalently linking non-consecutive residues in the same chain)
+    #   (standard residues covalently linking non-consecutive residues in the same
+    #   chain)
     atom_names = atom_array.atom_name
     molecule_types = atom_array.af3_molecule_type
     # Find atoms connecting residues in the same chain via side chains
@@ -179,16 +180,17 @@ def assign_chains(atom_array: AtomArray):
 
     Separate chain ids are given to each protein chain, nucleic acid chain and
     non-covalent ligands including lipids, glycans and small molecules. For ligands
-    covalently bound to polymers, we follow the PDB auto-assigned chain ids: small
-    PTMs and ligands are assigned to the same chain as the polymer they are bound to,
-    whereas glycans are assigned to a separate chain. Note: chain assignment needs
-    to be ran before tokenization to create certain features used by the tokenizer.
+    covalently bound to polymers, we follow the PDB auto-assigned chain ids: small PTMs
+    and ligands are assigned to the same chain as the polymer they are bound to, whereas
+    glycans are assigned to a separate chain. Note: chain assignment needs to be ran
+    before tokenization to create certain features used by the tokenizer.
 
-    Updates the input biotite AtomArray with added 'af3_chain_id' and 'af3_molecule_type'
-    annotations and a 'chain_id_map' class attribute in-place.
+    Updates the input biotite AtomArray with added 'af3_chain_id' and
+    'af3_molecule_type' annotations and a 'chain_id_map' class attribute in-place.
 
     Args:
-        atom_array (AtomArray): biotite atom array of the first bioassembly of a PDB entry
+        atom_array (AtomArray): biotite atom array of the first bioassembly of a PDB
+        entry
 
     Returns:
         None
@@ -197,8 +199,9 @@ def assign_chains(atom_array: AtomArray):
     # Get chain id start indices
     chain_start_ids = struc.get_chain_starts(atom_array)
 
-    # Create chain ids
-    # This is necessary to do because some PDB-assigned homomeric chain IDs are not unique
+    # Create chain ids 
+    # This is necessary to do because some PDB-assigned homomeric chain
+    # IDs are not unique
     chain_id_repeats = np.diff(np.append(chain_start_ids, len(atom_array)))
     chain_ids_per_atom = np.repeat(np.arange(len(chain_id_repeats)), chain_id_repeats)
     atom_array.set_annotation("af3_chain_id", chain_ids_per_atom)

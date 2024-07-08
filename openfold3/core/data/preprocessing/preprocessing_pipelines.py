@@ -4,22 +4,19 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from preprocessing_primitives import (
-    parse_target_structure_mmCIF,
-    select_cropping_strategy,
-    generate_reference_conformers,
-    calculate_charges,
-    process_MSAs,
-    parse,
-    subsample,
-    apply_crop,
-    search_template,
     align_template,
+    calculate_charges,
     crop_template,
+    generate_reference_conformers,
+    parse_target_structure_mmCIF,
+    search_template,
+    select_cropping_strategy,
 )
 
 
 # TODO import parsing primitives from parsing_pipeline_primitives.py
-# TODO implement checks that a PreprocessingPipeline is used with the correct SingleDataset
+# TODO implement checks that a PreprocessingPipeline is used with the 
+# correct SingleDataset
 class PreprocessingPipeline(ABC):
     """An abstract class for implementing a specific PreprocessingPipeline class."""
 
@@ -36,7 +33,10 @@ class PreprocessingPipeline(ABC):
         return self.forward(index=index)
 
 
-# QUESTION can we have separate pipelines for each molecule type and composite pipelines like BioAssemblyPreprocessingPipeline and TFDNAPreprocessingPipeline calling the appropriate sub-pipelines?
+# QUESTION can we have separate pipelines for each molecule type and composite pipelines
+# like BioAssemblyPreprocessingPipeline and TFDNAPreprocessingPipeline calling the
+# appropriate sub-pipelines?
+
 
 class BioAssemblyPreprocessingPipeline(PreprocessingPipeline):
     def forward(self, index: int) -> dict:
@@ -63,16 +63,16 @@ class BioAssemblyPreprocessingPipeline(PreprocessingPipeline):
         calculate_charges()
         # -> target_raw_data
 
-        # for each recycling step process MSAs
-        process_MSAs()
-        for step in self.recycling_steps:
-            # - parse
-            parse()
-            # - subsample
-            subsample()
-            # - apply crop
-            apply_crop()
-        # -> msa_raw_data
+        # # for each recycling step process MSAs
+        # process_MSAs()
+        # for _ in self.recycling_steps:
+        #     # - parse
+        #     parse()
+        #     # - subsample
+        #     subsample()
+        #     # - apply crop
+        #     apply_crop()
+        # # -> msa_raw_data
 
         # Template preprocessing
         # - search
@@ -82,7 +82,7 @@ class BioAssemblyPreprocessingPipeline(PreprocessingPipeline):
         # - cropping
         crop_template()
         # -> template_raw_data
-        
+
         # return {target_raw_data, msa_raw_data, template_raw_data}
 
 

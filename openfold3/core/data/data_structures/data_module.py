@@ -32,8 +32,8 @@ class OpenFoldDataModule(pl.LightningDataModule):
             self.parse_data_config(data_config)
         )
 
-        # Initialize datasets
-        # QUESTION do we want to support validation/testing/prediction on multiple datasets?
+        # Initialize datasets QUESTION do we want to support
+        # validation/testing/prediction on multiple datasets?
         if ("train" in dataset_types) | ("validation" in dataset_types):
             # Initialize train datasets
             train_datasets = self.init_datasets(
@@ -48,8 +48,8 @@ class OpenFoldDataModule(pl.LightningDataModule):
             self.train_dataset = OpenFoldStochasticSamplerDataset(
                 datasets=train_datasets,
                 probabilities=dataset_weights,
-                virtual_epoch_len="<virtual_epoch_len from data config>",  # TODO add argument
-                num_virtual_epochs="<num_virtual_epochs from data config>",  # TODO add argument
+                virtual_epoch_len="<virtual_epoch_len from data config>",
+                num_virtual_epochs="<num_virtual_epochs from data config>",
                 generator=generator,
             )
 
@@ -72,7 +72,8 @@ class OpenFoldDataModule(pl.LightningDataModule):
 
         else:
             raise ValueError(
-                f"No valid dataset types were found in data_config. Found: {dataset_types}"
+                f"""No valid dataset types were found in data_config. Found: \
+                 {dataset_types}"""
             )
 
     def parse_data_config(
@@ -81,10 +82,12 @@ class OpenFoldDataModule(pl.LightningDataModule):
         """Parses input data_config into separate lists.
 
         Args:
-            data_config (List[Sequence[Dict]]): Input data configuration list of dataset dictionaries.
+            data_config (List[Sequence[Dict]]): Input data configuration list of dataset
+            dictionaries.
 
         Returns:
-            Tuple[List, List, List, Set]: Lists of dataset classes, weights, configurations and unique set of types.
+            Tuple[List, List, List, Set]: Lists of dataset classes, weights,
+            configurations and unique set of types.
         """
         dataset_classes, dataset_weights, dataset_configs, dataset_types = list(
             zip(
@@ -112,13 +115,16 @@ class OpenFoldDataModule(pl.LightningDataModule):
         """Initializes datasets.
 
         Args:
-            dataset_classes (list[Sequence[str]]): List of strings matching the specific OpenFoldSingleDataset classes to initialize.
-            dataset_configs (list[Sequence[dict]]): List of configs to pass each dataset class.
-            dataset_types (list[Sequence[str]]): List of dataset types, elements can be train, validation, test, predict.
-            type_to_init (str): One of train, validation, test, predict.
+            dataset_classes (list[Sequence[str]]): List of strings matching the specific
+            OpenFoldSingleDataset classes to initialize. dataset_configs
+            (list[Sequence[dict]]): List of configs to pass each dataset class.
+            dataset_types (list[Sequence[str]]): List of dataset types, elements can be
+            train, validation, test, predict. type_to_init (str): One of train,
+            validation, test, predict.
 
         Returns:
-            list[Sequence[OpenFoldSingleDataset]]: List of initialized OpenFoldSingleDataset objects.
+            list[Sequence[OpenFoldSingleDataset]]: List of initialized
+            OpenFoldSingleDataset objects.
         """
         datasets = [
             DATASET_REGISTRY[dataset_class](dataset_config)
@@ -129,7 +135,9 @@ class OpenFoldDataModule(pl.LightningDataModule):
         ]
         if (type_to_init in ["validation", "test", "predict"]) & (len(datasets) > 1):
             warnings.warn(
-                f"{len(datasets)} {type_to_init} datasets were found, using only the first one."
+                f"""{len(datasets)} {type_to_init} datasets were found, using only the \
+                 first one.""", 
+                 stacklevel=2
             )
         return datasets
 

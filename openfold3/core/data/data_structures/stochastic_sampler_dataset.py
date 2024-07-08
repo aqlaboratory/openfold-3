@@ -7,7 +7,8 @@ from torch.utils.data import Dataset
 
 
 class OpenFoldStochasticSamplerDataset(Dataset):
-    """A dataset class for combining multiple OpenFoldSingleDataset instances and sampling from them with the provided probabilities."""
+    """A dataset class for combining multiple OpenFoldSingleDataset instances and
+    sampling from them with the provided probabilities."""
 
     def __init__(
         self,
@@ -19,15 +20,12 @@ class OpenFoldStochasticSamplerDataset(Dataset):
     ) -> None:
         super().__init__()
         if len(datasets) != len(probabilities):
-            raise RuntimeError(
-                "Number of datasets and probabilities must be equal."
-            )
+            raise RuntimeError("Number of datasets and probabilities must be equal.")
         self.datasets = datasets
         self.probabilities = probabilities
         self.virtual_epoch_len = virtual_epoch_len
         self.num_virtual_epochs = num_virtual_epochs
         self.generator = generator
-
 
     def __len__(self):
         return self.virtual_epoch_len
@@ -37,11 +35,13 @@ class OpenFoldStochasticSamplerDataset(Dataset):
         return self.datasets[dataset_idx][datapoint_idx]
 
     def resample_epoch(self):
-        """Resample virtual_epoch_len number of samples according to the provided probabilities."""
+        """Resample virtual_epoch_len number of samples according to the provided
+        probabilities."""
         raise NotImplementedError(
             "OpenFoldStochasticSamplerDataset.resample() is not yet implemented."
         )
-        # <functions to generate index tuples self.indices for (dataset_idx, datapoint_idx)>
+        # <functions to generate index tuples self.indices for (dataset_idx,
+        # datapoint_idx)>
         pass
 
     def calculate_coverage(self):
