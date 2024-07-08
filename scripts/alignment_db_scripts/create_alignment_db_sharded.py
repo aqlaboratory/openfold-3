@@ -100,29 +100,29 @@ def create_shard(
     output_path = output_dir / f"{output_name}_{shard_num}.db"
 
     db_offset = 0
-    db_file = open(output_path, "wb")
-    for files_chunk in tqdm(
-        chunk_iter,
-        total=ceil(len(shard_files) / CHUNK_SIZE),
-        desc=pbar_desc,
-        position=shard_num,
-        leave=False,
-    ):
-        # get processed files for one chunk
-        chunk_data = process_chunk(files_chunk)
 
-        # write to db and store info in index
-        for chain_name, file_data in chunk_data.items():
-            shard_index[chain_name]["db"] = output_path.name
+    with open(output_path, "wb") as db_file:
+        for files_chunk in tqdm(
+            chunk_iter,
+            total=ceil(len(shard_files) / CHUNK_SIZE),
+            desc=pbar_desc,
+            position=shard_num,
+            leave=False,
+        ):
+            # get processed files for one chunk
+            chunk_data = process_chunk(files_chunk)
 
-            for file_name, file_bytes in file_data:
-                file_length = len(file_bytes)
-                shard_index[chain_name]["files"].append(
-                    (file_name, db_offset, file_length)
-                )
-                db_file.write(file_bytes)
-                db_offset += file_length
-    db_file.close()
+            # write to db and store info in index
+            for chain_name, file_data in chunk_data.items():
+                shard_index[chain_name]["db"] = output_path.name
+
+                for file_name, file_bytes in file_data:
+                    file_length = len(file_bytes)
+                    shard_index[chain_name]["files"].append(
+                        (file_name, db_offset, file_length)
+                    )
+                    db_file.write(file_bytes)
+                    db_offset += file_length
 
     return shard_index
 
@@ -137,8 +137,9 @@ def main(args):
     n_cpus = cpu_count()
     if n_shards > n_cpus:
         print(
-            f"Warning: Your number of shards ({n_shards}) is greater than the number of cores on your machine ({n_cpus}). "
-            "This may result in slower performance. Consider using a smaller number of shards."
+            f"Warning: Your number of shards ({n_shards}) is greater than the number "
+            f"of cores on your machine ({n_cpus}). This may result in slower "
+            "performance. Consider using a smaller number of shards."
         )
 
     # get all chain dirs in alignment_dir
@@ -169,7 +170,7 @@ def main(args):
     if args.duplicate_chains_file:
         print("Extending super index with duplicate chains...")
         duplicates_added = 0
-        with open(args.duplicate_chains_file, "r") as fp:
+        with open(args.duplicate_chains_file) as fp:
             duplicate_chains = [line.strip().split() for line in fp]
 
         for chains in duplicate_chains:

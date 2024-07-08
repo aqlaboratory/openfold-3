@@ -3,13 +3,13 @@ import os
 import pickle
 
 from alphafold.data import pipeline, pipeline_multimer, templates
-from alphafold.data.tools import hmmsearch, hhsearch
+from alphafold.data.tools import hhsearch, hmmsearch
 
 from scripts.utils import add_data_args
 
 
 def main(args):
-    if (args.multimer):
+    if args.multimer:
         template_searcher = hmmsearch.Hmmsearch(
             binary_path=args.hmmsearch_binary_path,
             hmmbuild_binary_path=args.hmmbuild_binary_path,
@@ -22,7 +22,7 @@ def main(args):
             max_hits=20,
             kalign_binary_path=args.kalign_binary_path,
             release_dates_path=args.release_dates_path,
-            obsolete_pdbs_path=args.obsolete_pdbs_path
+            obsolete_pdbs_path=args.obsolete_pdbs_path,
         )
     else:
         template_searcher = hhsearch.HHSearch(
@@ -36,7 +36,7 @@ def main(args):
             max_hits=20,
             kalign_binary_path=args.kalign_binary_path,
             release_dates_path=None,
-            obsolete_pdbs_path=args.obsolete_pdbs_path
+            obsolete_pdbs_path=args.obsolete_pdbs_path,
         )
 
     data_pipeline = pipeline.DataPipeline(
@@ -52,11 +52,12 @@ def main(args):
         use_small_bfd=False,
     )
 
-    if (args.multimer):
+    if args.multimer:
         data_pipeline = pipeline_multimer.DataPipeline(
             monomer_data_pipeline=data_pipeline,
             jackhmmer_binary_path=args.jackhmmer_binary_path,
-            uniprot_database_path=args.uniprot_database_path)
+            uniprot_database_path=args.uniprot_database_path,
+        )
 
     feature_dict = data_pipeline.process(
         input_fasta_path=args.fasta_path,
@@ -66,12 +67,13 @@ def main(args):
     with open(os.path.join(args.output_dir, "feature_dict.pickle"), "wb") as fp:
         pickle.dump(feature_dict, fp, protocol=pickle.HIGHEST_PROTOCOL)
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("fasta_path", type=str)
     parser.add_argument("mmcif_dir", type=str)
     parser.add_argument("output_dir", type=str)
-    parser.add_argument("--multimer", action='store_true')
+    parser.add_argument("--multimer", action="store_true")
     add_data_args(parser)
 
     args = parser.parse_args()

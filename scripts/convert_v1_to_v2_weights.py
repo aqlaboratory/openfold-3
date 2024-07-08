@@ -15,16 +15,19 @@
 # Converts OpenFold .pt checkpoints into AlphaFold .npz ones, which can then be
 # used to run inference using DeepMind's JAX code.
 
-import logging
 import argparse
+import logging
 import os
 import shutil
+
 import torch
+from deepspeed.utils.zero_to_fp32 import (
+    get_model_state_file,
+    get_optim_files,
+    parse_optim_states,
+)
 
 from openfold3.core.utils.import_weights import convert_deprecated_v1_keys
-from deepspeed.utils.zero_to_fp32 import (
-    get_optim_files, parse_optim_states, get_model_state_file
-)
 
 
 def convert_v1_to_v2_weights(args):
@@ -33,11 +36,12 @@ def convert_v1_to_v2_weights(args):
     if is_dir:
         # A DeepSpeed checkpoint
         logging.info(
-            'Converting deepspeed checkpoint found at {args.input_checkpoint_path}')
-        state_dict_key = 'module'
-        latest_path = os.path.join(checkpoint_path, 'latest')
+            "Converting deepspeed checkpoint found at {args.input_checkpoint_path}"
+        )
+        state_dict_key = "module"
+        latest_path = os.path.join(checkpoint_path, "latest")
         if os.path.isfile(latest_path):
-            with open(latest_path, 'r') as fd:
+            with open(latest_path) as fd:
                 tag = fd.read().strip()
         else:
             raise ValueError(f"Unable to find 'latest' file at {latest_path}")
@@ -50,36 +54,38 @@ def convert_v1_to_v2_weights(args):
     else:
         # A Pytorch Lightning checkpoint
         logging.info(
-            'Converting pytorch lightning checkpoint found at {args.input_checkpoint_path}')
-        state_dict_key = 'state_dict'
+            "Converting pytorch lightning checkpoint found at "
+            "{args.input_checkpoint_path}"
+        )
+        state_dict_key = "state_dict"
         model_output_path = args.output_ckpt_path
         model_file = checkpoint_path
 
-    model_dict = torch.load(model_file, map_location=torch.device('cpu'))
-    model_dict[state_dict_key] = convert_deprecated_v1_keys(
-        model_dict[state_dict_key])
+    model_dict = torch.load(model_file, map_location=torch.device("cpu"))
+    model_dict[state_dict_key] = convert_deprecated_v1_keys(model_dict[state_dict_key])
 
-    if 'ema' in model_dict:
-        ema_state_dict = model_dict['ema']['params']
-        model_dict['ema']['params'] = convert_deprecated_v1_keys(
-            ema_state_dict)
+    if "ema" in model_dict:
+        ema_state_dict = model_dict["ema"]["params"]
+        model_dict["ema"]["params"] = convert_deprecated_v1_keys(ema_state_dict)
 
     if is_dir:
-        param_shapes = convert_deprecated_v1_keys(
-            model_dict['param_shapes'][0])
-        model_dict['param_shapes'] = [param_shapes]
+        param_shapes = convert_deprecated_v1_keys(model_dict["param_shapes"][0])
+        model_dict["param_shapes"] = [param_shapes]
 
         shutil.copytree(checkpoint_path, args.output_ckpt_path)
-        out_fname = os.path.join(
-            model_output_path, os.path.basename(model_file))
+        out_fname = os.path.join(model_output_path, os.path.basename(model_file))
 
         for optim_file in optim_files:
             optim_dict = torch.load(optim_file)
             new_optim_dict = optim_dict.copy()
-            new_optim_dict['optimizer_state_dict']['param_slice_mappings'][0] = convert_deprecated_v1_keys(
-                optim_dict['optimizer_state_dict']['param_slice_mappings'][0])
+            new_optim_dict["optimizer_state_dict"]["param_slice_mappings"][0] = (
+                convert_deprecated_v1_keys(
+                    optim_dict["optimizer_state_dict"]["param_slice_mappings"][0]
+                )
+            )
             out_optim_fname = os.path.join(
-                model_output_path, os.path.basename(optim_file))
+                model_output_path, os.path.basename(optim_file)
+            )
             torch.save(new_optim_dict, out_optim_fname)
     else:
         out_fname = model_output_path

@@ -27,12 +27,12 @@ dependencies:
   - aria2
   - mkl=2022.1
   - git
+  - ruff>=0.5.0
   - bioconda::hmmer
   - bioconda::hhsuite
   - bioconda::kalign2
   - pytorch::pytorch=2.1
   - pytorch::pytorch-cuda=12.1
-  - biotite==0.41.0
   - pip:
       - mpi4py==3.1.5
       - deepspeed==0.12.4
