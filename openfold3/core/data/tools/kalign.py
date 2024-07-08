@@ -14,6 +14,7 @@
 # limitations under the License.
 
 """A Python wrapper for Kalign."""
+
 import os
 import subprocess
 from typing import Sequence
@@ -28,8 +29,8 @@ def _to_a3m(sequences: Sequence[str]) -> str:
     names = ["sequence %d" % i for i in range(1, len(sequences) + 1)]
     a3m = []
     for sequence, name in zip(sequences, names):
-        a3m.append(u">" + name + u"\n")
-        a3m.append(sequence + u"\n")
+        a3m.append(">" + name + "\n")
+        a3m.append(sequence + "\n")
     return "".join(a3m)
 
 
@@ -105,8 +106,8 @@ class Kalign:
 
             if retcode:
                 raise RuntimeError(
-                    "Kalign failed\nstdout:\n%s\n\nstderr:\n%s\n"
-                    % (stdout.decode("utf-8"), stderr.decode("utf-8"))
+                    f"Kalign failed\nstdout:\n{stdout.decode('utf-8')}\n\n"
+                    f"stderr:\n{stderr.decode('utf-8')}\n"
                 )
 
             with open(output_a3m_path) as f:

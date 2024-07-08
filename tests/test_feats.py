@@ -12,32 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
-import numpy as np
 import unittest
 
-from openfold3 import core as data_transforms
+import numpy as np
+import torch
+
+import openfold3.core.utils.feats as feats
+import tests.compare_utils as compare_utils
+from openfold3.core.data import data_transforms
 from openfold3.core.np.residue_constants import (
-    restype_rigid_group_default_frame,
-    restype_atom14_to_rigid_group,
     restype_atom14_mask,
     restype_atom14_rigid_group_positions,
+    restype_atom14_to_rigid_group,
+    restype_rigid_group_default_frame,
 )
-import openfold3.core.utils.feats as feats
-from openfold3.core.utils.rigid_utils import Rotation, Rigid
 from openfold3.core.utils.geometry import Rigid3Array, Rot3Array, Vec3Array
+from openfold3.core.utils.rigid_utils import Rigid, Rotation
 from openfold3.core.utils.tensor_utils import (
-    tree_map,
     tensor_tree_map,
+    tree_map,
 )
-import tests.compare_utils as compare_utils
 from tests.config import consts
 from tests.data_utils import random_affines_4x4, random_asym_ids
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
-    import jax
     import haiku as hk
+    import jax
 
 
 class TestFeats(unittest.TestCase):
@@ -72,13 +73,11 @@ class TestFeats(unittest.TestCase):
         all_atom_pos = np.random.rand(n_res, 37, 3).astype(np.float32)
         all_atom_mask = np.random.randint(0, 2, (n_res, 37))
 
-        out_gt_pos, out_gt_mask = f.apply(
-            {}, None, aatype, all_atom_pos, all_atom_mask
-        )
+        out_gt_pos, out_gt_mask = f.apply({}, None, aatype, all_atom_pos, all_atom_mask)
         out_gt_pos = torch.tensor(np.array(out_gt_pos.block_until_ready()))
         out_gt_mask = torch.tensor(np.array(out_gt_mask.block_until_ready()))
 
-        out_repro_pos, out_repro_mask = feats.pseudo_beta_fn(
+        out_repro_pos, out_repro_mask = data_transforms.pseudo_beta_fn(
             torch.tensor(aatype).cuda(),
             torch.tensor(all_atom_pos).cuda(),
             torch.tensor(all_atom_mask).cuda(),
@@ -86,12 +85,8 @@ class TestFeats(unittest.TestCase):
         out_repro_pos = out_repro_pos.cpu()
         out_repro_mask = out_repro_mask.cpu()
 
-        self.assertTrue(
-            torch.max(torch.abs(out_gt_pos - out_repro_pos)) < consts.eps
-        )
-        self.assertTrue(
-            torch.max(torch.abs(out_gt_mask - out_repro_mask)) < consts.eps
-        )
+        self.assertTrue(torch.max(torch.abs(out_gt_pos - out_repro_pos)) < consts.eps)
+        self.assertTrue(torch.max(torch.abs(out_gt_mask - out_repro_mask)) < consts.eps)
 
     @compare_utils.skip_unless_alphafold_installed()
     def test_atom37_to_torsion_angles_compare(self):
@@ -110,9 +105,7 @@ class TestFeats(unittest.TestCase):
 
         aatype = np.random.randint(0, 22, (n_templ, n_res)).astype(np.int64)
         all_atom_pos = np.random.rand(n_templ, n_res, 37, 3).astype(np.float32)
-        all_atom_mask = np.random.randint(0, 2, (n_templ, n_res, 37)).astype(
-            np.float32
-        )
+        all_atom_mask = np.random.randint(0, 2, (n_templ, n_res, 37)).astype(np.float32)
 
         out_gt = f.apply({}, None, aatype, all_atom_pos, all_atom_mask)
         out_gt = jax.tree_map(lambda x: torch.as_tensor(np.array(x)), out_gt)
@@ -131,23 +124,22 @@ class TestFeats(unittest.TestCase):
         # This function is extremely sensitive to floating point imprecisions,
         # so it is given much greater latitude in comparison tests.
         self.assertTrue(
-            torch.mean(torch.abs(out_gt["torsion_angles_sin_cos"] - tasc))
-            < 0.01
+            torch.mean(torch.abs(out_gt["torsion_angles_sin_cos"] - tasc)) < 0.01
         )
         self.assertTrue(
-            torch.mean(torch.abs(out_gt["alt_torsion_angles_sin_cos"] - atasc))
-            < 0.01
+            torch.mean(torch.abs(out_gt["alt_torsion_angles_sin_cos"] - atasc)) < 0.01
         )
         self.assertTrue(
-            torch.max(torch.abs(out_gt["torsion_angles_mask"] - tam))
-            < consts.eps
+            torch.max(torch.abs(out_gt["torsion_angles_mask"] - tam)) < consts.eps
         )
 
     @compare_utils.skip_unless_alphafold_installed()
     def test_atom37_to_frames_compare(self):
         def run_atom37_to_frames(aatype, all_atom_positions, all_atom_mask):
             if consts.is_multimer:
-                all_atom_positions = self.am_rigid.Vec3Array.from_array(all_atom_positions)
+                all_atom_positions = self.am_rigid.Vec3Array.from_array(
+                    all_atom_positions
+                )
             return self.am_atom.atom37_to_frames(
                 aatype, all_atom_positions, all_atom_mask
             )
@@ -158,23 +150,25 @@ class TestFeats(unittest.TestCase):
 
         batch = {
             "aatype": np.random.randint(0, 21, (n_res,)),
-            "all_atom_positions": np.random.rand(n_res, 37, 3).astype(
-                np.float32
-            ),
-            "all_atom_mask": np.random.randint(0, 2, (n_res, 37)).astype(
-                np.float32
-            ),
+            "all_atom_positions": np.random.rand(n_res, 37, 3).astype(np.float32),
+            "all_atom_mask": np.random.randint(0, 2, (n_res, 37)).astype(np.float32),
         }
 
         out_gt = f.apply({}, None, **batch)
 
         if consts.is_multimer:
             batch["asym_id"] = random_asym_ids(n_res)
-            to_tensor = (lambda t: torch.tensor(np.array(t))
-                         if not isinstance(t, self.am_rigid.Rigid3Array)
-                         else torch.tensor(np.array(t.to_array())))
+
+            def to_tensor(t):
+                return (
+                    torch.tensor(np.array(t))
+                    if not isinstance(t, self.am_rigid.Rigid3Array)
+                    else torch.tensor(np.array(t.to_array()))
+                )
         else:
-            to_tensor = lambda t: torch.tensor(np.array(t))
+
+            def to_tensor(t):
+                return torch.tensor(np.array(t))
 
         out_gt = {k: to_tensor(v) for k, v in out_gt.items()}
 
@@ -197,23 +191,21 @@ class TestFeats(unittest.TestCase):
 
         convert_func = rigid3x4_to_4x4 if consts.is_multimer else flat12_to_4x4
 
-        out_gt["rigidgroups_gt_frames"] = convert_func(
-            out_gt["rigidgroups_gt_frames"]
-        )
+        out_gt["rigidgroups_gt_frames"] = convert_func(out_gt["rigidgroups_gt_frames"])
         out_gt["rigidgroups_alt_gt_frames"] = convert_func(
             out_gt["rigidgroups_alt_gt_frames"]
         )
 
-        to_tensor = lambda t: torch.tensor(np.array(t)).cuda()
+        def to_tensor(t):
+            return torch.tensor(np.array(t)).cuda()
+
         batch = tree_map(to_tensor, batch, np.ndarray)
 
         out_repro = data_transforms.atom37_to_frames(batch)
         out_repro = tensor_tree_map(lambda t: t.cpu(), out_repro)
 
-        for k, v in out_gt.items():
-            self.assertTrue(
-                torch.max(torch.abs(out_gt[k] - out_repro[k])) < consts.eps
-            )
+        for k, _ in out_gt.items():
+            self.assertTrue(torch.max(torch.abs(out_gt[k] - out_repro[k])) < consts.eps)
 
     def test_torsion_angles_to_frames_shape(self):
         batch_size = 2
@@ -268,9 +260,7 @@ class TestFeats(unittest.TestCase):
             )
         else:
             rigids = self.am_rigid.rigids_from_tensor4x4(affines)
-            transformations = Rigid.from_tensor_4x4(
-                torch.as_tensor(affines).float()
-            )
+            transformations = Rigid.from_tensor_4x4(torch.as_tensor(affines).float())
 
         torsion_angles_sin_cos = np.random.rand(n_res, 7, 2)
 
@@ -286,17 +276,19 @@ class TestFeats(unittest.TestCase):
         )
 
         # Convert the Rigids to 4x4 transformation tensors
-        out_gt_rot = out_gt.rot if not consts.is_multimer else out_gt.rotation.to_array()
-        out_gt_trans = out_gt.trans if not consts.is_multimer else out_gt.translation.to_array()
+        out_gt_rot = (
+            out_gt.rot if not consts.is_multimer else out_gt.rotation.to_array()
+        )
+        out_gt_trans = (
+            out_gt.trans if not consts.is_multimer else out_gt.translation.to_array()
+        )
 
         if consts.is_multimer:
             rots_gt = torch.as_tensor(np.array(out_gt_rot))
             trans_gt = torch.as_tensor(np.array(out_gt_trans))
         else:
             rots_gt = list(map(lambda x: torch.as_tensor(np.array(x)), out_gt_rot))
-            trans_gt = list(
-                map(lambda x: torch.as_tensor(np.array(x)), out_gt_trans)
-            )
+            trans_gt = list(map(lambda x: torch.as_tensor(np.array(x)), out_gt_trans))
             rots_gt = torch.cat([x.unsqueeze(-1) for x in rots_gt], dim=-1)
             rots_gt = rots_gt.view(*rots_gt.shape[:-1], 3, 3)
             trans_gt = torch.cat([x.unsqueeze(-1) for x in trans_gt], dim=-1)
@@ -361,9 +353,7 @@ class TestFeats(unittest.TestCase):
             )
         else:
             rigids = self.am_rigid.rigids_from_tensor4x4(affines)
-            transformations = Rigid.from_tensor_4x4(
-                torch.as_tensor(affines).float()
-            )
+            transformations = Rigid.from_tensor_4x4(torch.as_tensor(affines).float())
 
         out_gt = f.apply({}, None, aatype, rigids)
         jax.tree_map(lambda x: x.block_until_ready(), out_gt)
@@ -371,9 +361,7 @@ class TestFeats(unittest.TestCase):
         if consts.is_multimer:
             out_gt = torch.as_tensor(np.array(out_gt.to_array()))
         else:
-            out_gt = torch.stack(
-                [torch.as_tensor(np.array(x)) for x in out_gt], dim=-1
-            )
+            out_gt = torch.stack([torch.as_tensor(np.array(x)) for x in out_gt], dim=-1)
 
         out_repro = feats.frames_and_literature_positions_to_atom14_pos(
             transformations.cuda(),

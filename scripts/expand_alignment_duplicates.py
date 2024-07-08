@@ -50,7 +50,7 @@ def create_duplicate_dirs(duplicate_chains: list[list[str]], alignment_dir: Path
 
 def main(alignment_dir: Path, duplicate_chains_file: Path):
     # read duplicate chains file
-    with open(duplicate_chains_file, "r") as fp:
+    with open(duplicate_chains_file) as fp:
         duplicate_chains = [list(line.strip().split()) for line in fp]
 
     # convert to absolute path for symlink creation
