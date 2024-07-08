@@ -7,7 +7,8 @@ from torch.utils.data import Dataset
 
 
 class OpenFoldStochasticSamplerDataset(Dataset):
-    """A dataset class for combining multiple OpenFoldSingleDataset instances and sampling from them with the provided probabilities."""
+    """A dataset class for combining multiple OpenFoldSingleDataset instances and
+    sampling from them with the provided probabilities."""
 
     def __init__(
         self,
@@ -20,11 +21,16 @@ class OpenFoldStochasticSamplerDataset(Dataset):
         """Initializes the OpenFoldStochasticSamplerDataset class.
 
         Args:
-            datasets (Sequence[Dataset]): List of datasets to sample from.
-            dataset_probabilities (Sequence[float]): Probabilities of sampling each dataset.
-            epoch_len (int): Number of datapoints to sample in total for each virtual epoch.
-            num_epochs (int): Total number of virtual epochs.
-            generator (torch.Generator): torch.Generator instance for reproducibility.
+            datasets (Sequence[Dataset]): 
+                List of datasets to sample from.
+            dataset_probabilities (Sequence[float]): 
+                Probabilities of sampling each dataset.
+            epoch_len (int): 
+                Number of datapoints to sample in total for each virtual epoch.
+            num_epochs (int): 
+                Total number of virtual epochs.
+            generator (torch.Generator): 
+                torch.Generator instance for reproducibility.
         """
         super().__init__()
 
@@ -42,7 +48,8 @@ class OpenFoldStochasticSamplerDataset(Dataset):
         return self.datasets[dataset_idx][datapoint_idx]
 
     def resample_epoch(self):
-        """Resample epoch_len number of samples according to the provided probabilities."""
+        """Resample epoch_len number of samples according to the provided
+        probabilities."""
         # Sample dataset indices
         dataset_indices = torch.multinomial(
             input=self.dataset_probabilities,
