@@ -21,15 +21,15 @@ class OpenFoldStochasticSamplerDataset(Dataset):
         """Initializes the OpenFoldStochasticSamplerDataset class.
 
         Args:
-            datasets (Sequence[Dataset]): 
+            datasets (Sequence[Dataset]):
                 List of datasets to sample from.
-            dataset_probabilities (Sequence[float]): 
+            dataset_probabilities (Sequence[float]):
                 Probabilities of sampling each dataset.
-            epoch_len (int): 
+            epoch_len (int):
                 Number of datapoints to sample in total for each virtual epoch.
-            num_epochs (int): 
+            num_epochs (int):
                 Total number of virtual epochs.
-            generator (torch.Generator): 
+            generator (torch.Generator):
                 torch.Generator instance for reproducibility.
         """
         super().__init__()

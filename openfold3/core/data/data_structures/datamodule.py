@@ -35,7 +35,7 @@ class OpenFoldDataModule(pl.LightningDataModule):
         )
 
         # Initialize datasets
-        # QUESTION do we want to support validation/testing/prediction on 
+        # QUESTION do we want to support validation/testing/prediction on
         # multiple datasets?
         if ("train" in dataset_types) | ("valid" in dataset_types):
             # Initialize train datasets
@@ -83,7 +83,7 @@ class OpenFoldDataModule(pl.LightningDataModule):
         """Parses input data_config into separate lists.
 
         Args:
-            data_config (List[Sequence[Dict]]): 
+            data_config (List[Sequence[Dict]]):
                 Input data configuration list of dataset dictionaries.
 
         Returns:
@@ -132,14 +132,14 @@ class OpenFoldDataModule(pl.LightningDataModule):
         """Initializes datasets.
 
         Args:
-            dataset_classes (list[Sequence[str]]): 
+            dataset_classes (list[Sequence[str]]):
                 List of strings matching the specific OpenFoldSingleDataset classes to
                 initialize.
-            dataset_configs (list[Sequence[dict]]): 
+            dataset_configs (list[Sequence[dict]]):
                 List of configs to pass each dataset class.
-            dataset_types (list[Sequence[str]]): 
+            dataset_types (list[Sequence[str]]):
                 List of dataset types, elements can be train, valid, test, predict.
-            type_to_init (str): 
+            type_to_init (str):
                 One of train, valid, test, predict.
 
         Returns:
@@ -156,8 +156,8 @@ class OpenFoldDataModule(pl.LightningDataModule):
         if (type_to_init in ["valid", "test", "predict"]) & (len(datasets) > 1):
             warnings.warn(
                 f"""{len(datasets)} {type_to_init} datasets were found, using only the \
-                 first one.""", 
-                stacklevel=2
+                 first one.""",
+                stacklevel=2,
             )
         return datasets
 
@@ -165,7 +165,7 @@ class OpenFoldDataModule(pl.LightningDataModule):
         """Wrap the appropriate dataset in a DataLoader and return it.
 
         Args:
-            stage (str): 
+            stage (str):
                 Type of DataLoader to return, one of train, valid, test, predict.
 
         Returns:
