@@ -5,29 +5,31 @@ import numpy as np
 from biotite.structure import AtomArray
 
 from openfold3.core.data.preprocessing.tables import (
+    MOLECULE_TYPE_ID_DNA,
+    MOLECULE_TYPE_ID_LIGAND,
+    MOLECULE_TYPE_ID_PROTEIN,
+    MOLECULE_TYPE_ID_RNA,
+    NUCLEIC_ACID_MAIN_CHAIN_ATOMS,
+    PROTEIN_MAIN_CHAIN_ATOMS,
     STANDARD_DNA_RESIDUES,
     STANDARD_PROTEIN_RESIDUES,
     STANDARD_RESIDUES,
     STANDARD_RNA_RESIDUES,
     TOKEN_CENTER_ATOMS,
-    NUCLEIC_ACID_MAIN_CHAIN_ATOMS,
-    PROTEIN_MAIN_CHAIN_ATOMS,
-    MOLECULE_TYPE_ID_PROTEIN,
-    MOLECULE_TYPE_ID_RNA,
-    MOLECULE_TYPE_ID_DNA,
-    MOLECULE_TYPE_ID_LIGAND,
 )
 
 
 def tokenize_atom_array(atom_array: AtomArray):
-    """Generates token ids, token center atom annotations and atom id annotations for a biotite atom_array.
+    """Generates token ids, token center atom annotations and atom id annotations for a
+    biotite atom_array.
 
     Tokenizes the input atom array according to section 2.6. in the AF3 SI. The
-    tokenization is added to the input atom array as 'af3_token_id' annotation
-    alongside 'af3_token_center_atom' and 'af3_atom_id' annotations.
+    tokenization is added to the input atom array as 'af3_token_id' annotation alongside
+    'af3_token_center_atom' and 'af3_atom_id' annotations.
 
     Args:
-        atom_array (AtomArray): biotite atom array of the first bioassembly of a PDB entry
+        atom_array (AtomArray): biotite atom array of the first bioassembly of a PDB
+        entry
 
     Returns:
         None
@@ -58,7 +60,7 @@ def tokenize_atom_array(atom_array: AtomArray):
 
     # Tokenize modified residues per atom
     # Get bonds
-    bondlist = atom_array.bonds._bonds
+    bondlist = atom_array.bonds.as_array()
 
     # Find bonds with at least one standard residue atom (i.e. non-heteroatom)
     bondlist = bondlist[
@@ -81,7 +83,7 @@ def tokenize_atom_array(atom_array: AtomArray):
     chain_ids = atom_array.af3_chain_id
     is_different_chain = chain_ids[bondlist[:, 0]] != chain_ids[bondlist[:, 1]]
     # - two non-heteroatoms in the same chain but side chains of different residues
-    #   (standard residues covalently linking different residues in the same chain)
+    #   (standard residues covalently linking non-consecutive residues in the same chain)
     atom_names = atom_array.atom_name
     molecule_types = atom_array.af3_molecule_type
     # Find atoms connecting residues in the same chain via side chains

@@ -33,7 +33,7 @@ TOKEN_CENTER_ATOMS = ["CA", "C1'"]
 
 # Main chain atoms - needed for modified residue tokenization
 NUCLEIC_ACID_MAIN_CHAIN_ATOMS = ["C3" ,"C4", "C5", "O3", "O5", "P"]
-PROTEIN_MAIN_CHAIN_ATOMS = ["N", "CA", "O"]
+PROTEIN_MAIN_CHAIN_ATOMS = ["N", "CA", "O", "C"]
 
 # Molecule type used in tokenization
 MOLECULE_TYPE_ID_PROTEIN = 0

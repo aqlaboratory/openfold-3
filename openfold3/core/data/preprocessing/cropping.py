@@ -8,6 +8,8 @@ from biotite.structure import Atom, AtomArray
 from numpy.random import Generator
 from scipy.spatial.distance import cdist
 
+from openfold3.core.data.preprocessing.structure_primitives import get_interface_atoms
+
 
 def crop_contiguous(
     atom_array: AtomArray, token_budget: int, generator: Generator
@@ -148,7 +150,7 @@ def crop_spatial_interface(
     )
 
     # Find interface token center atoms
-    preferred_interface_token_center_atoms = find_interface_token_center_atoms(
+    preferred_interface_token_center_atoms = get_interface_atoms(
         preferred_token_center_atoms, token_center_atoms
     )
 
@@ -202,65 +204,6 @@ def subset_preferred(
     else:
         preferred_token_center_atoms = token_center_atoms
     return token_center_atoms, preferred_token_center_atoms
-
-
-def find_interface_token_center_atoms(
-    preferred_token_center_atoms: AtomArray, token_center_atoms: AtomArray
-) -> AtomArray:
-    """Subsets token center atoms to those within 15 A of at least one token center atom in another chain.
-
-    Args:
-        preferred_token_center_atoms (AtomArray):
-            Array of token center atoms from the preferred chain or interface.
-        token_center_atoms (AtomArray):
-            Array of all token center atoms.
-
-    Returns:
-        AtomArray: Array of interface token center atoms.
-    """
-    # Get the atom IDs, coordinates and chains of token center atoms
-    # Need to kept separate for cases where preferred chain/interface is given
-    preferred_n = len(preferred_token_center_atoms)
-    preferred_token_center_atom_ids = np.arange(preferred_n)
-    preferred_token_center_atom_chains = preferred_token_center_atoms.af3_chain_id
-    preferred_token_center_atom_coords = preferred_token_center_atoms.coord
-    preferred_token_center_atom_global_ids = preferred_token_center_atoms.af3_token_id
-
-    n = len(token_center_atoms)
-    token_center_atom_ids = np.arange(n)
-    token_center_atom_chains = token_center_atoms.af3_chain_id
-    token_center_atom_coords = token_center_atoms.coord
-    token_center_atom_global_ids = token_center_atoms.af3_token_id
-
-    # Get boolean mask for token center atoms in different chains and different tokens
-    is_different_chains = np.repeat(preferred_token_center_atom_chains, n) != np.tile(
-        token_center_atom_chains, preferred_n
-    )
-    is_different_tokens = np.repeat(
-        preferred_token_center_atom_global_ids, n
-    ) != np.tile(token_center_atom_global_ids, preferred_n)
-    is_different = is_different_chains & is_different_tokens
-
-    # Create n*m x 2 array of pairwise combinations of
-    # preferred token center atoms (query) to all token center atoms (target)
-    query_ids = np.repeat(preferred_token_center_atom_ids, n)
-    target_ids = np.tile(token_center_atom_ids, preferred_n)
-    query_coords = preferred_token_center_atom_coords[query_ids, :][is_different, :]
-    target_coords = token_center_atom_coords[target_ids, :][is_different, :]
-
-    # Find token center atoms that are within 15 A of at least one token center atom in another chain
-    is_interface = struc.distance(query_coords, target_coords) < 15
-    # Get corresponding index
-    preferred_interface_token_center_atom_ids = np.array(
-        list(set(query_ids[is_different][is_interface]))
-    )
-
-    # Get pool of valid token center atoms
-    preferred_interface_token_center_atoms = preferred_token_center_atoms[
-        preferred_interface_token_center_atom_ids
-    ]
-
-    return preferred_interface_token_center_atoms
 
 
 def find_spatial_crop(
