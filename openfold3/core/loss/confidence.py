@@ -1,11 +1,13 @@
 import math
-from typing import Dict
+import sys
+from typing import Dict, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.linalg import vecdot
 
+sys.path.append('/Users/itamarshamir/Git/openfold3')
+# from torch.linalg import vecdot
 from openfold3.core.utils.tensor_utils import (
     permute_final_dims,
 )
@@ -100,7 +102,7 @@ def get_phi(
     x: torch.Tensor,
     angle_threshold: float = 25,
     eps: float = 1e-8,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Subsection 4.3.2 of the AF3 supplementary.
     Extract coordinates of three atoms for each token, used to define the frame,
@@ -192,13 +194,16 @@ def get_phi(
     def norm(x, eps):
         return torch.sqrt(torch.sum(x**2, dim=-1) + eps)
 
+    def dot(x, y):
+        return torch.sum(x * y, dim=-1)
+
     COS_ANGLE_THRESHOLD = math.cos(angle_threshold * math.pi / 180)
 
     # check if the 3 atoms are collinear to within 25 degrees
     v1 = phi_ligand[..., 0, :] - phi_ligand[..., 1, :]  # [*, T, 3]
     v2 = phi_ligand[..., 2, :] - phi_ligand[..., 1, :]  # [*, T, 3]
 
-    cos_angle = vecdot(v1, v2) / (norm(v1, eps) * norm(v2, eps))  # [*, T]
+    cos_angle = dot(v1, v2) / (norm(v1, eps) * norm(v2, eps))  # [*, T]
 
     valid_frame_mask = (cos_angle >= COS_ANGLE_THRESHOLD) * valid_frame_mask  # [*, T]
     invalid_frame_mask = (1 - valid_frame_mask) * batch["is_ligand"]  # [*, T]
@@ -261,6 +266,9 @@ def expressCoordinatesInFrame(
     def norm(x, eps):
         return torch.sqrt(torch.sum(x**2, dim=-1, keepdim=True) + eps)
 
+    def dot(x, y):
+        return torch.sum(x * y, dim=-1)
+
     # Extract frame atoms
     a, b, c = phi.unbind(dim=-2)  # [*, T', 3]
 
@@ -286,9 +294,9 @@ def expressCoordinatesInFrame(
     b = b.unsqueeze(-2)  # [*, T', 1, 3]
 
     d = x - b  # [*, T', T, 3]
-    d1 = vecdot(d, e1)  # [*, T', T]
-    d2 = vecdot(d, e2)  # [*, T', T]
-    d3 = vecdot(d, e3)  # [*, T', T]
+    d1 = dot(d, e1)  # [*, T', T]
+    d2 = dot(d, e2)  # [*, T', T]
+    d3 = dot(d, e3)  # [*, T', T]
 
     x_frame = torch.stack([d1, d2, d3], dim=-1)  # [*, T', T, 3]
 
@@ -339,7 +347,7 @@ def predictedAlignmentError(
     bin_min: float = 0.0,
     bin_max: float = 32.0,
     eps: float = 1e-8,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Compute the cross entropy loss between the predicted and computed alignment errors.
     Subsection 4.3.2 of the AF3 supplementary.
@@ -450,7 +458,7 @@ def predictedDistanceError(
     n_bins: int = 64,
     bin_min: float = 0.0,
     bin_max: float = 32.0,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Computes the cross entropy loss between the predicted and computed distance errors.
     Subsection 4.3.3 of the AF3 supplementary.

@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 
 from openfold3.core.loss.confidence import ConfidenceLoss
@@ -18,6 +17,15 @@ class AlphaFold3Loss(nn.Module):
         self.distogram_loss = DistogramLoss(config)
 
     def forward(self, batch, output):
+        """
+        Args:
+            batch: dict containing input tensors
+            output: dict containing output tensors
+            (see openfold3/openfold3/model_implementations/af3_all_atom/model.py
+            for a list items in batch and output)
+        Returns:
+            loss: scalar tensor representing the total loss
+        """
         alpha_confidence = self.config.loss.alpha_confidence
         alpha_diffusion = self.config.loss.alpha_diffusion
         alpha_distogram = self.config.loss.alpha_distogram
