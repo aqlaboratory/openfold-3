@@ -3,6 +3,7 @@ import importlib
 
 import ml_collections as mlc
 from openfold3.model_implementations.af2_monomer.features import af2_feature_dict
+from openfold3.model_implementations.af2_monomer.config import inference_config
 
 
 def set_inf(c, inf):
@@ -59,99 +60,14 @@ def model_config(
     use_deepspeed_evoformer_attention=False,
 ):
     c = copy.deepcopy(config)
-    # TRAINING PRESETS
-    if name == "initial_training":
-        # AF2 Suppl. Table 4, "initial training" setting
-        pass
-    elif name == "finetuning":
-        # AF2 Suppl. Table 4, "finetuning" setting
-        c.data.train.crop_size = 384
-        c.data.train.max_extra_msa = 5120
-        c.data.train.max_msa_clusters = 512
-        c.loss.violation.weight = 1.0
-        c.loss.experimentally_resolved.weight = 0.01
-    elif name == "finetuning_ptm":
-        c.data.train.max_extra_msa = 5120
-        c.data.train.crop_size = 384
-        c.data.train.max_msa_clusters = 512
-        c.loss.violation.weight = 1.0
-        c.loss.experimentally_resolved.weight = 0.01
-        c.model.heads.tm.enabled = True
-        c.loss.tm.weight = 0.1
-    elif name == "finetuning_no_templ":
-        # AF2 Suppl. Table 4, "finetuning" setting
-        c.data.train.crop_size = 384
-        c.data.train.max_extra_msa = 5120
-        c.data.train.max_msa_clusters = 512
-        c.model.template.enabled = False
-        c.loss.violation.weight = 1.0
-        c.loss.experimentally_resolved.weight = 0.01
-    elif name == "finetuning_no_templ_ptm":
-        # AF2 Suppl. Table 4, "finetuning" setting
-        c.data.train.crop_size = 384
-        c.data.train.max_extra_msa = 5120
-        c.data.train.max_msa_clusters = 512
-        c.model.template.enabled = False
-        c.loss.violation.weight = 1.0
-        c.loss.experimentally_resolved.weight = 0.01
-        c.model.heads.tm.enabled = True
-        c.loss.tm.weight = 0.1
-    # INFERENCE PRESETS
-    elif name == "model_1":
-        # AF2 Suppl. Table 5, Model 1.1.1
-        c.data.train.max_extra_msa = 5120
-        c.data.predict.max_extra_msa = 5120
-        c.data.common.reduce_max_clusters_by_max_templates = True
-        c.data.common.use_templates = True
-        c.data.common.use_template_torsion_angles = True
-        c.model.template.enabled = True
-    elif name == "model_2":
-        # AF2 Suppl. Table 5, Model 1.1.2
-        c.data.common.reduce_max_clusters_by_max_templates = True
-        c.data.common.use_templates = True
-        c.data.common.use_template_torsion_angles = True
-        c.model.template.enabled = True
-    elif name == "model_3":
-        # AF2 Suppl. Table 5, Model 1.2.1
-        c.data.train.max_extra_msa = 5120
-        c.data.predict.max_extra_msa = 5120
-        c.model.template.enabled = False
-    elif name == "model_4":
-        # AF2 Suppl. Table 5, Model 1.2.2
-        c.data.train.max_extra_msa = 5120
-        c.data.predict.max_extra_msa = 5120
-        c.model.template.enabled = False
-    elif name == "model_5":
-        # AF2 Suppl. Table 5, Model 1.2.3
-        c.model.template.enabled = False
-    elif name == "model_1_ptm":
-        c.data.train.max_extra_msa = 5120
-        c.data.predict.max_extra_msa = 5120
-        c.data.common.reduce_max_clusters_by_max_templates = True
-        c.data.common.use_templates = True
-        c.data.common.use_template_torsion_angles = True
-        c.model.template.enabled = True
-        c.model.heads.tm.enabled = True
-        c.loss.tm.weight = 0.1
-    elif name == "model_2_ptm":
-        c.data.common.reduce_max_clusters_by_max_templates = True
-        c.data.common.use_templates = True
-        c.data.common.use_template_torsion_angles = True
-        c.model.template.enabled = True
-        c.model.heads.tm.enabled = True
-        c.loss.tm.weight = 0.1
-    elif name == "model_3_ptm" or name == "model_4_ptm":
-        c.data.train.max_extra_msa = 5120
-        c.data.predict.max_extra_msa = 5120
-        c.model.template.enabled = False
-        c.model.heads.tm.enabled = True
-        c.loss.tm.weight = 0.1
-    elif name == "model_5_ptm":
-        c.model.template.enabled = False
-        c.model.heads.tm.enabled = True
-        c.loss.tm.weight = 0.1
-    else:
-        raise ValueError("Invalid model name")
+    if name == "train":
+        # Use base
+    if name == "finetuning":
+        # Directly call right finetuning preset from CLI 
+    if name == "inference":
+        inference_dict = inference_config_registry[inference_mode] 
+        # inference_mode should be model_1, model_1_ptm, etc.
+        c.update(inference_dict)
 
     if long_sequence_inference:
         assert not train
@@ -206,6 +122,7 @@ templates_enabled = mlc.FieldReference(True, field_type=bool)
 embed_template_torsion_angles = mlc.FieldReference(True, field_type=bool)
 tune_chunk_size = mlc.FieldReference(True, field_type=bool)
 
+# AF2 Suppl. Table 4, "initial training" setting
 config = mlc.ConfigDict(
     {
         "data": {

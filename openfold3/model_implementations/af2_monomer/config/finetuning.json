@@ -1,0 +1,9 @@
+{
+    // Data configuration settings need to be passed to data_config.py
+    "data.train.crop_size": 384,
+    "data.train.max_extra_msa": 5120,
+    "data.train.max_msa_clusters" : 512,
+    // These are model parameters 
+    "loss.violation.weight" : 1.0,
+    "loss.experimentally_resolved.weight": 0.01
+}
