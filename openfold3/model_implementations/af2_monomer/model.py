@@ -83,6 +83,7 @@ class AlphaFold(nn.Module):
         )
 
         # TODO: Revisit Structure module to modularize it and remove is_multimer flag?
+        # Most of the piping has to do with the recycling dimensions
         self.structure_module = StructureModule(
             is_multimer=False,
             **self.config["structure_module"],
