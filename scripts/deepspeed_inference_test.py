@@ -1,13 +1,13 @@
 import copy
 import os
 
-import torch
 import deepspeed
+import torch
 
 import openfold3
 
-local_rank = int(os.getenv('LOCAL_RANK', '0'))
-world_size = int(os.getenv('WORLD_SIZE', '1'))
+local_rank = int(os.getenv("LOCAL_RANK", "0"))
+world_size = int(os.getenv("WORLD_SIZE", "1"))
 
 
 class Model(torch.nn.Module):
@@ -19,7 +19,7 @@ class Model(torch.nn.Module):
             self.ml.append(openfold3.base.model.primitives.linear.Linear(500, 500))
 
     def forward(self, batch):
-        for i, l in enumerate(self.ml):
+        for _, l in enumerate(self.ml):
             # print(f"{i}: {l.weight.device}")
             batch = l(batch)
 
@@ -28,13 +28,14 @@ class Model(torch.nn.Module):
 
 class DummyDataset(torch.utils.data.Dataset):
     def __init__(self):
-        self.batch = torch.rand(500, 500) 
+        self.batch = torch.rand(500, 500)
 
     def __getitem__(self, idx):
         return copy.deepcopy(self.batch)
 
     def __len__(self):
         return 1000
+
 
 dd = DummyDataset()
 dl = torch.utils.data.DataLoader(dd)
@@ -48,9 +49,9 @@ model = deepspeed.init_inference(
     mp_size=world_size,
     checkpoint=None,
     replace_method=None,
-    #replace_method="auto"
+    # replace_method="auto"
 )
 
 out = model(example)
-#if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
+# if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
 #    print(out)

@@ -12,40 +12,44 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from functools import reduce
+
+"""AF2 Structure Module.
+
+TODO: Separate out IPA, AngelResnet, PointProjection, etc. into layers package.
+"""
+
 import importlib
 import math
 import sys
+from functools import reduce
 from operator import mul
+from typing import Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn as nn
-from typing import Optional, Tuple, Sequence, Union
 
 from openfold3.core.model.layers.transition import StructureModuleTransition
 from openfold3.core.model.primitives import LayerNorm, Linear, ipa_point_weights_init_
-
 from openfold3.core.np.residue_constants import (
-    restype_rigid_group_default_frame,
-    restype_atom14_to_rigid_group,
     restype_atom14_mask,
     restype_atom14_rigid_group_positions,
+    restype_atom14_to_rigid_group,
+    restype_rigid_group_default_frame,
 )
-from openfold3.core.utils.geometry.quat_rigid import QuatRigid
-from openfold3.core.utils.geometry.rigid_matrix_vector import Rigid3Array
-from openfold3.core.utils.geometry.vector import Vec3Array, square_euclidean_distance
 from openfold3.core.utils.feats import (
     frames_and_literature_positions_to_atom14_pos,
     torsion_angles_to_frames,
 )
+from openfold3.core.utils.geometry.quat_rigid import QuatRigid
+from openfold3.core.utils.geometry.rigid_matrix_vector import Rigid3Array
+from openfold3.core.utils.geometry.vector import Vec3Array, square_euclidean_distance
 from openfold3.core.utils.precision_utils import is_fp16_enabled
-from openfold3.core.utils.rigid_utils import Rotation, Rigid
+from openfold3.core.utils.rigid_utils import Rigid, Rotation
 from openfold3.core.utils.tensor_utils import (
     dict_multimap,
-    permute_final_dims,
     flatten_final_dims,
+    permute_final_dims,
 )
-
 
 # To avoid errors if memory-efficient attention kernel is not installed
 attn_core_is_installed = importlib.util.find_spec("attn_core_inplace_cuda") is not None
@@ -60,7 +64,7 @@ class AngleResnetBlock(nn.Module):
             c_hidden:
                 Hidden channel dimension
         """
-        super(AngleResnetBlock, self).__init__()
+        super().__init__()
 
         self.c_hidden = c_hidden
 
@@ -70,7 +74,6 @@ class AngleResnetBlock(nn.Module):
         self.relu = nn.ReLU()
 
     def forward(self, a: torch.Tensor) -> torch.Tensor:
-
         s_initial = a
 
         a = self.relu(a)
@@ -100,7 +103,7 @@ class AngleResnet(nn.Module):
             epsilon:
                 Small constant for normalization
         """
-        super(AngleResnet, self).__init__()
+        super().__init__()
 
         self.c_in = c_in
         self.c_hidden = c_hidden
@@ -158,7 +161,7 @@ class AngleResnet(nn.Module):
         unnormalized_s = s
         norm_denom = torch.sqrt(
             torch.clamp(
-                torch.sum(s ** 2, dim=-1, keepdim=True),
+                torch.sum(s**2, dim=-1, keepdim=True),
                 min=self.eps,
             )
         )
@@ -168,7 +171,8 @@ class AngleResnet(nn.Module):
 
 
 class PointProjection(nn.Module):
-    def __init__(self,
+    def __init__(
+        self,
         c_hidden: int,
         num_points: int,
         no_heads: int,
@@ -185,8 +189,9 @@ class PointProjection(nn.Module):
         precision = torch.float32 if self.is_multimer else None
         self.linear = Linear(c_hidden, no_heads * 3 * num_points, precision=precision)
 
-    def forward(self, 
-        activations: torch.Tensor, 
+    def forward(
+        self,
+        activations: torch.Tensor,
         rigids: Union[Rigid, Rigid3Array],
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         # TODO: Needs to run in high precision during training
@@ -198,15 +203,13 @@ class PointProjection(nn.Module):
                 points_local.shape[:-1] + (self.no_heads, -1)
             )
 
-        points_local = torch.split(
-            points_local, points_local.shape[-1] // 3, dim=-1
-        )
+        points_local = torch.split(points_local, points_local.shape[-1] // 3, dim=-1)
 
         points_local = torch.stack(points_local, dim=-1).view(out_shape)
 
         points_global = rigids[..., None, None].apply(points_local)
 
-        if(self.return_local_points):
+        if self.return_local_points:
             return points_global, points_local
 
         return points_global
@@ -216,6 +219,7 @@ class InvariantPointAttention(nn.Module):
     """
     Implements AF2 Algorithm 22.
     """
+
     def __init__(
         self,
         c_s: int,
@@ -243,7 +247,7 @@ class InvariantPointAttention(nn.Module):
             no_v_points:
                 Number of value points to generate
         """
-        super(InvariantPointAttention, self).__init__()
+        super().__init__()
 
         self.c_s = c_s
         self.c_z = c_z
@@ -263,27 +267,18 @@ class InvariantPointAttention(nn.Module):
         self.linear_q = Linear(self.c_s, hc, bias=(not is_multimer))
 
         self.linear_q_points = PointProjection(
-            self.c_s,
-            self.no_qk_points,
-            self.no_heads,
-            self.is_multimer
+            self.c_s, self.no_qk_points, self.no_heads, self.is_multimer
         )
 
-        if(is_multimer):
+        if is_multimer:
             self.linear_k = Linear(self.c_s, hc, bias=False)
             self.linear_v = Linear(self.c_s, hc, bias=False)
             self.linear_k_points = PointProjection(
-                self.c_s,
-                self.no_qk_points,
-                self.no_heads,
-                self.is_multimer
+                self.c_s, self.no_qk_points, self.no_heads, self.is_multimer
             )
 
             self.linear_v_points = PointProjection(
-                self.c_s,
-                self.no_v_points,
-                self.no_heads,
-                self.is_multimer
+                self.c_s, self.no_v_points, self.no_heads, self.is_multimer
             )
         else:
             self.linear_kv = Linear(self.c_s, 2 * hc)
@@ -291,12 +286,12 @@ class InvariantPointAttention(nn.Module):
                 self.c_s,
                 self.no_qk_points + self.no_v_points,
                 self.no_heads,
-                self.is_multimer
+                self.is_multimer,
             )
 
         self.linear_b = Linear(self.c_z, self.no_heads)
 
-        self.head_weights = nn.Parameter(torch.zeros((no_heads)))
+        self.head_weights = nn.Parameter(torch.zeros(no_heads))
         ipa_point_weights_init_(self.head_weights)
 
         concat_out_dim = self.no_heads * (
@@ -330,7 +325,7 @@ class InvariantPointAttention(nn.Module):
         Returns:
             [*, N_res, C_s] single representation update
         """
-        if (_offload_inference and inplace_safe):
+        if _offload_inference and inplace_safe:
             z = _z_reference_list
         else:
             z = [z]
@@ -349,7 +344,7 @@ class InvariantPointAttention(nn.Module):
 
         # The following two blocks are equivalent
         # They're separated only to preserve compatibility with old AF weights
-        if(self.is_multimer):
+        if self.is_multimer:
             # [*, N_res, H * C_hidden]
             k = self.linear_k(s)
             v = self.linear_v(s)
@@ -386,12 +381,12 @@ class InvariantPointAttention(nn.Module):
         # [*, N_res, N_res, H]
         b = self.linear_b(z[0])
 
-        if (_offload_inference):
-            assert (sys.getrefcount(z[0]) == 2)
+        if _offload_inference:
+            assert sys.getrefcount(z[0]) == 2
             z[0] = z[0].cpu()
 
         # [*, H, N_res, N_res]
-        if (is_fp16_enabled()):
+        if is_fp16_enabled():
             with torch.cuda.amp.autocast(enabled=False):
                 a = torch.matmul(
                     permute_final_dims(q.float(), (1, 0, 2)),  # [*, H, N_res, C_hidden]
@@ -404,15 +399,15 @@ class InvariantPointAttention(nn.Module):
             )
 
         a *= math.sqrt(1.0 / (3 * self.c_hidden))
-        a += (math.sqrt(1.0 / 3) * permute_final_dims(b, (2, 0, 1)))
+        a += math.sqrt(1.0 / 3) * permute_final_dims(b, (2, 0, 1))
 
         # [*, N_res, N_res, H, P_q, 3]
         pt_att = q_pts.unsqueeze(-4) - k_pts.unsqueeze(-5)
 
-        if (inplace_safe):
+        if inplace_safe:
             pt_att *= pt_att
         else:
-            pt_att = pt_att ** 2
+            pt_att = pt_att**2
 
         pt_att = sum(torch.unbind(pt_att, dim=-1))
 
@@ -423,7 +418,7 @@ class InvariantPointAttention(nn.Module):
             1.0 / (3 * (self.no_qk_points * 9.0 / 2))
         )
 
-        if (inplace_safe):
+        if inplace_safe:
             pt_att *= head_weights
         else:
             pt_att = pt_att * head_weights
@@ -457,26 +452,21 @@ class InvariantPointAttention(nn.Module):
         # Compute output
         ################
         # [*, N_res, H, C_hidden]
-        o = torch.matmul(
-            a, v.transpose(-2, -3).to(dtype=a.dtype)
-        ).transpose(-2, -3)
+        o = torch.matmul(a, v.transpose(-2, -3).to(dtype=a.dtype)).transpose(-2, -3)
 
         # [*, N_res, H * C_hidden]
         o = flatten_final_dims(o, 2)
 
         # [*, H, 3, N_res, P_v]
-        if (inplace_safe):
+        if inplace_safe:
             v_pts = permute_final_dims(v_pts, (1, 3, 0, 2))
-            o_pt = [
-                torch.matmul(a, v.to(a.dtype))
-                for v in torch.unbind(v_pts, dim=-3)
-            ]
+            o_pt = [torch.matmul(a, v.to(a.dtype)) for v in torch.unbind(v_pts, dim=-3)]
             o_pt = torch.stack(o_pt, dim=-3)
         else:
             o_pt = torch.sum(
                 (
-                        a[..., None, :, :, None]
-                        * permute_final_dims(v_pts, (1, 3, 0, 2))[..., None, :, :]
+                    a[..., None, :, :, None]
+                    * permute_final_dims(v_pts, (1, 3, 0, 2))[..., None, :, :]
                 ),
                 dim=-2,
             )
@@ -487,14 +477,14 @@ class InvariantPointAttention(nn.Module):
 
         # [*, N_res, H * P_v]
         o_pt_norm = flatten_final_dims(
-            torch.sqrt(torch.sum(o_pt ** 2, dim=-1) + self.eps), 2
+            torch.sqrt(torch.sum(o_pt**2, dim=-1) + self.eps), 2
         )
 
         # [*, N_res, H * P_v, 3]
         o_pt = o_pt.reshape(*o_pt.shape[:-3], -1, 3)
         o_pt = torch.unbind(o_pt, dim=-1)
 
-        if (_offload_inference):
+        if _offload_inference:
             z[0] = z[0].to(o_pt.device)
 
         # [*, N_res, H, C_z]
@@ -505,21 +495,21 @@ class InvariantPointAttention(nn.Module):
 
         # [*, N_res, C_s]
         s = self.linear_out(
-            torch.cat(
-                (o, *o_pt, o_pt_norm, o_pair), dim=-1
-            ).to(dtype=z[0].dtype)
+            torch.cat((o, *o_pt, o_pt_norm, o_pair), dim=-1).to(dtype=z[0].dtype)
         )
 
         return s
 
 
-#TODO: This module follows the refactoring done in IPA for multimer. Running the regular IPA above
-# in multimer mode should be equivalent, but tests do not pass unless using this version. Determine
-# whether or not the increase in test error matters in practice.
+# TODO: This module follows the refactoring done in IPA for multimer.
+# Running the regular IPA above.
+# in multimer mode should be equivalent, but tests do not pass unless
+# using this version. Determine whether the increase in test error matters in practice.
 class InvariantPointAttentionMultimer(nn.Module):
     """
     Implements AF2-Multimer version of AF2 Algorithm 22.
     """
+
     def __init__(
         self,
         c_s: int,
@@ -547,7 +537,7 @@ class InvariantPointAttentionMultimer(nn.Module):
             no_v_points:
                 Number of value points to generate
         """
-        super(InvariantPointAttentionMultimer, self).__init__()
+        super().__init__()
 
         self.c_s = c_s
         self.c_z = c_z
@@ -566,31 +556,22 @@ class InvariantPointAttentionMultimer(nn.Module):
         self.linear_q = Linear(self.c_s, hc, bias=False)
 
         self.linear_q_points = PointProjection(
-            self.c_s,
-            self.no_qk_points,
-            self.no_heads,
-            is_multimer=True
+            self.c_s, self.no_qk_points, self.no_heads, is_multimer=True
         )
 
         self.linear_k = Linear(self.c_s, hc, bias=False)
         self.linear_v = Linear(self.c_s, hc, bias=False)
         self.linear_k_points = PointProjection(
-            self.c_s,
-            self.no_qk_points,
-            self.no_heads,
-            is_multimer=True
+            self.c_s, self.no_qk_points, self.no_heads, is_multimer=True
         )
 
         self.linear_v_points = PointProjection(
-            self.c_s,
-            self.no_v_points,
-            self.no_heads,
-            is_multimer=True
+            self.c_s, self.no_v_points, self.no_heads, is_multimer=True
         )
 
         self.linear_b = Linear(self.c_z, self.no_heads)
 
-        self.head_weights = nn.Parameter(torch.zeros((no_heads)))
+        self.head_weights = nn.Parameter(torch.zeros(no_heads))
         ipa_point_weights_init_(self.head_weights)
 
         concat_out_dim = self.no_heads * (
@@ -623,19 +604,20 @@ class InvariantPointAttentionMultimer(nn.Module):
         Returns:
             [*, N_res, C_s] single representation update
         """
-        if(_offload_inference and inplace_safe):
+        if _offload_inference and inplace_safe:
             z = _z_reference_list
         else:
             z = [z]
 
-        a = 0.
+        a = 0.0
 
-        point_variance = (max(self.no_qk_points, 1) * 9.0 / 2)
+        point_variance = max(self.no_qk_points, 1) * 9.0 / 2
         point_weights = math.sqrt(1.0 / point_variance)
 
-        softplus = lambda x: torch.logaddexp(x, torch.zeros_like(x))
-
-        head_weights = softplus(self.head_weights)
+        # Apply softplus to head weights
+        head_weights = torch.logaddexp(
+            self.head_weights, torch.zeros_like(self.head_weights)
+        )
         point_weights = point_weights * head_weights
 
         #######################################
@@ -648,12 +630,14 @@ class InvariantPointAttentionMultimer(nn.Module):
         # [*, N_res, H, P_qk, 3]
         k_pts = Vec3Array.from_array(self.linear_k_points(s, r))
 
-        pt_att = square_euclidean_distance(q_pts.unsqueeze(-3), k_pts.unsqueeze(-4), epsilon=0.)
+        pt_att = square_euclidean_distance(
+            q_pts.unsqueeze(-3), k_pts.unsqueeze(-4), epsilon=0.0
+        )
         pt_att = torch.sum(pt_att * point_weights[..., None], dim=-1) * (-0.5)
         pt_att = pt_att.to(dtype=s.dtype)
         a = a + pt_att
 
-        scalar_variance = max(self.c_hidden, 1) * 1.
+        scalar_variance = max(self.c_hidden, 1) * 1.0
         scalar_weights = math.sqrt(1.0 / scalar_variance)
 
         # [*, N_res, H * C_hidden]
@@ -665,7 +649,7 @@ class InvariantPointAttentionMultimer(nn.Module):
         k = k.view(k.shape[:-1] + (self.no_heads, -1))
 
         q = q * scalar_weights
-        a = a + torch.einsum('...qhc,...khc->...qkh', q, k)
+        a = a + torch.einsum("...qhc,...khc->...qkh", q, k)
 
         ##########################
         # Compute attention scores
@@ -673,8 +657,8 @@ class InvariantPointAttentionMultimer(nn.Module):
         # [*, N_res, N_res, H]
         b = self.linear_b(z[0])
 
-        if (_offload_inference):
-            assert (sys.getrefcount(z[0]) == 2)
+        if _offload_inference:
+            assert sys.getrefcount(z[0]) == 2
             z[0] = z[0].cpu()
 
         a = a + b
@@ -684,7 +668,7 @@ class InvariantPointAttentionMultimer(nn.Module):
         square_mask = self.inf * (square_mask - 1)
 
         a = a + square_mask.unsqueeze(-1)
-        a = a * math.sqrt(1. / 3)  # Normalize by number of logit terms (3)
+        a = a * math.sqrt(1.0 / 3)  # Normalize by number of logit terms (3)
         a = self.softmax(a)
 
         # [*, N_res, H * C_hidden]
@@ -693,7 +677,7 @@ class InvariantPointAttentionMultimer(nn.Module):
         # [*, N_res, H, C_hidden]
         v = v.view(v.shape[:-1] + (self.no_heads, -1))
 
-        o = torch.einsum('...qkh, ...khc->...qhc', a, v)
+        o = torch.einsum("...qkh, ...khc->...qhc", a, v)
 
         # [*, N_res, H * C_hidden]
         o = flatten_final_dims(o, 2)
@@ -721,19 +705,17 @@ class InvariantPointAttentionMultimer(nn.Module):
         # [*, N_res, H * P_v]
         o_pt_norm = o_pt.norm(epsilon=1e-8)
 
-        if (_offload_inference):
+        if _offload_inference:
             z[0] = z[0].to(o_pt.x.device)
 
-        o_pair = torch.einsum('...ijh, ...ijc->...ihc', a, z[0].to(dtype=a.dtype))
+        o_pair = torch.einsum("...ijh, ...ijc->...ihc", a, z[0].to(dtype=a.dtype))
 
         # [*, N_res, H * C_z]
         o_pair = flatten_final_dims(o_pair, 2)
 
         # [*, N_res, C_s]
         s = self.linear_out(
-            torch.cat(
-                (o, *o_pt_flat, o_pt_norm, o_pair), dim=-1
-            ).to(dtype=z[0].dtype)
+            torch.cat((o, *o_pt_flat, o_pt_norm, o_pair), dim=-1).to(dtype=z[0].dtype)
         )
 
         return s
@@ -750,7 +732,7 @@ class BackboneUpdate(nn.Module):
             c_s:
                 Single representation channel dimension
         """
-        super(BackboneUpdate, self).__init__()
+        super().__init__()
 
         self.c_s = c_s
 
@@ -761,7 +743,7 @@ class BackboneUpdate(nn.Module):
         Args:
             [*, N_res, C_s] single representation
         Returns:
-            [*, N_res, 6] update vector 
+            [*, N_res, 6] update vector
         """
         # [*, 6]
         update = self.linear(s)
@@ -824,7 +806,7 @@ class StructureModule(nn.Module):
             inf:
                 Large number used for attention masking
         """
-        super(StructureModule, self).__init__()
+        super().__init__()
 
         self.c_s = c_s
         self.c_z = c_z
@@ -854,7 +836,11 @@ class StructureModule(nn.Module):
 
         self.linear_in = Linear(self.c_s, self.c_s)
 
-        ipa = InvariantPointAttention if not self.is_multimer else InvariantPointAttentionMultimer
+        ipa = (
+            InvariantPointAttention
+            if not self.is_multimer
+            else InvariantPointAttentionMultimer
+        )
         self.ipa = ipa(
             self.c_s,
             self.c_z,
@@ -925,8 +911,8 @@ class StructureModule(nn.Module):
         z = self.layer_norm_z(evoformer_output_dict["pair"])
 
         z_reference_list = None
-        if (_offload_inference):
-            assert (sys.getrefcount(evoformer_output_dict["pair"]) == 2)
+        if _offload_inference:
+            assert sys.getrefcount(evoformer_output_dict["pair"]) == 2
             evoformer_output_dict["pair"] = evoformer_output_dict["pair"].cpu()
             z_reference_list = [z]
             z = None
@@ -937,28 +923,28 @@ class StructureModule(nn.Module):
 
         # [*, N]
         rigids = Rigid.identity(
-            s.shape[:-1], 
-            s.dtype, 
-            s.device, 
+            s.shape[:-1],
+            s.dtype,
+            s.device,
             self.training,
             fmt="quat",
         )
         outputs = []
-        for i in range(self.no_blocks):
+        for _ in range(self.no_blocks):
             # [*, N, C_s]
             s = s + self.ipa(
-                s, 
-                z, 
-                rigids, 
-                mask, 
+                s,
+                z,
+                rigids,
+                mask,
                 inplace_safe=inplace_safe,
-                _offload_inference=_offload_inference, 
-                _z_reference_list=z_reference_list
+                _offload_inference=_offload_inference,
+                _z_reference_list=z_reference_list,
             )
             s = self.ipa_dropout(s)
             s = self.layer_norm_ipa(s)
             s = self.transition(s)
-           
+
             # [*, N]
             rigids = rigids.compose_q_update_vec(self.bb_update(s))
 
@@ -966,16 +952,11 @@ class StructureModule(nn.Module):
             # quaternion-based transformations to rotation-matrix ones
             # here
             backb_to_global = Rigid(
-                Rotation(
-                    rot_mats=rigids.get_rots().get_rot_mats(), 
-                    quats=None
-                ),
+                Rotation(rot_mats=rigids.get_rots().get_rot_mats(), quats=None),
                 rigids.get_trans(),
             )
 
-            backb_to_global = backb_to_global.scale_translation(
-                self.trans_scale_factor
-            )
+            backb_to_global = backb_to_global.scale_translation(self.trans_scale_factor)
 
             # [*, N, 7, 2]
             unnormalized_angles, angles = self.angle_resnet(s, s_initial)
@@ -992,7 +973,7 @@ class StructureModule(nn.Module):
             )
 
             scaled_rigids = rigids.scale_translation(self.trans_scale_factor)
-            
+
             preds = {
                 "frames": scaled_rigids.to_tensor_7(),
                 "sidechain_frames": all_frames_to_global.to_tensor_4x4(),
@@ -1008,10 +989,8 @@ class StructureModule(nn.Module):
 
         del z, z_reference_list
 
-        if (_offload_inference):
-            evoformer_output_dict["pair"] = (
-                evoformer_output_dict["pair"].to(s.device)
-            )
+        if _offload_inference:
+            evoformer_output_dict["pair"] = evoformer_output_dict["pair"].to(s.device)
 
         outputs = dict_multimap(torch.stack, outputs)
         outputs["single"] = s
@@ -1019,12 +998,12 @@ class StructureModule(nn.Module):
         return outputs
 
     def _forward_multimer(
-            self,
-            evoformer_output_dict,
-            aatype,
-            mask=None,
-            inplace_safe=False,
-            _offload_inference=False,
+        self,
+        evoformer_output_dict,
+        aatype,
+        mask=None,
+        inplace_safe=False,
+        _offload_inference=False,
     ):
         s = evoformer_output_dict["single"]
 
@@ -1039,8 +1018,8 @@ class StructureModule(nn.Module):
         z = self.layer_norm_z(evoformer_output_dict["pair"])
 
         z_reference_list = None
-        if (_offload_inference):
-            assert (sys.getrefcount(evoformer_output_dict["pair"]) == 2)
+        if _offload_inference:
+            assert sys.getrefcount(evoformer_output_dict["pair"]) == 2
             evoformer_output_dict["pair"] = evoformer_output_dict["pair"].cpu()
             z_reference_list = [z]
             z = None
@@ -1051,11 +1030,11 @@ class StructureModule(nn.Module):
 
         # [*, N]
         rigids = Rigid3Array.identity(
-            s.shape[:-1], 
-            s.device, 
+            s.shape[:-1],
+            s.device,
         )
         outputs = []
-        for i in range(self.no_blocks):
+        for _ in range(self.no_blocks):
             # [*, N, C_s]
             s = s + self.ipa(
                 s,
@@ -1064,7 +1043,7 @@ class StructureModule(nn.Module):
                 mask,
                 inplace_safe=inplace_safe,
                 _offload_inference=_offload_inference,
-                _z_reference_list=z_reference_list
+                _z_reference_list=z_reference_list,
             )
             s = self.ipa_dropout(s)
             s = self.layer_norm_ipa(s)
@@ -1086,7 +1065,7 @@ class StructureModule(nn.Module):
                 all_frames_to_global,
                 aatype,
             )
-            
+
             preds = {
                 "frames": rigids.scale_translation(self.trans_scale_factor).to_tensor(),
                 "sidechain_frames": all_frames_to_global.to_tensor_4x4(),
@@ -1103,10 +1082,8 @@ class StructureModule(nn.Module):
 
         del z, z_reference_list
 
-        if (_offload_inference):
-            evoformer_output_dict["pair"] = (
-                evoformer_output_dict["pair"].to(s.device)
-            )
+        if _offload_inference:
+            evoformer_output_dict["pair"] = evoformer_output_dict["pair"].to(s.device)
 
         outputs = dict_multimap(torch.stack, outputs)
         outputs["single"] = s
@@ -1134,10 +1111,14 @@ class StructureModule(nn.Module):
         Returns:
             A dictionary of outputs
         """
-        if(self.is_multimer):
-            outputs = self._forward_multimer(evoformer_output_dict, aatype, mask, inplace_safe, _offload_inference)
+        if self.is_multimer:
+            outputs = self._forward_multimer(
+                evoformer_output_dict, aatype, mask, inplace_safe, _offload_inference
+            )
         else:
-            outputs = self._forward_monomer(evoformer_output_dict, aatype, mask, inplace_safe, _offload_inference)
+            outputs = self._forward_monomer(
+                evoformer_output_dict, aatype, mask, inplace_safe, _offload_inference
+            )
 
         return outputs
 
@@ -1193,7 +1174,9 @@ class StructureModule(nn.Module):
         return torsion_angles_to_frames(r, alpha, f, self.default_frames)
 
     def frames_and_literature_positions_to_atom14_pos(
-            self, r, f  # [*, N, 8]  # [*, N]
+        self,
+        r,
+        f,  # [*, N, 8]  # [*, N]
     ):
         # Lazily initialize the residue constants on the correct device
         self._init_residue_constants(r.dtype, r.device)

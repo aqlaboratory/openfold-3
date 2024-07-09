@@ -14,7 +14,7 @@
 # limitations under the License.
 
 import copy
-from typing import Mapping, Tuple, List, Dict, Sequence
+from typing import Dict, List, Mapping, Sequence, Tuple
 
 import ml_collections
 import numpy as np
@@ -40,11 +40,12 @@ def np_to_tensor_dict(
         A dictionary of features mapping feature names to features. Only the given
         features are returned, all other ones are filtered out.
     """
+
     # torch generates warnings if feature is already a torch Tensor
-    to_tensor = lambda t: torch.tensor(t) if type(t) != torch.Tensor else t.clone().detach()
-    tensor_dict = {
-        k: to_tensor(v) for k, v in np_example.items() if k in features
-    }
+    def to_tensor(t):
+        return torch.tensor(t) if type(t) != torch.Tensor else t.clone().detach()
+
+    tensor_dict = {k: to_tensor(v) for k, v in np_example.items() if k in features}
 
     return tensor_dict
 
@@ -79,22 +80,20 @@ def np_example_to_features(
     np_example: FeatureDict,
     config: ml_collections.ConfigDict,
     mode: str,
-    is_multimer: bool = False
+    is_multimer: bool = False,
 ):
     np_example = dict(np_example)
 
     seq_length = np_example["seq_length"]
     num_res = int(seq_length[0]) if seq_length.ndim != 0 else int(seq_length)
     cfg, feature_names = make_data_config(config, mode=mode, num_res=num_res)
- 
-    if "deletion_matrix_int" in np_example:
-        np_example["deletion_matrix"] = np_example.pop(
-            "deletion_matrix_int"
-        ).astype(np.float32)
 
-    tensor_dict = np_to_tensor_dict(
-        np_example=np_example, features=feature_names
-    )
+    if "deletion_matrix_int" in np_example:
+        np_example["deletion_matrix"] = np_example.pop("deletion_matrix_int").astype(
+            np.float32
+        )
+
+    tensor_dict = np_to_tensor_dict(np_example=np_example, features=feature_names)
 
     with torch.no_grad():
         if is_multimer:
@@ -143,7 +142,7 @@ class FeaturePipeline:
     ) -> FeatureDict:
         # if(is_multimer and mode != "predict"):
         #     raise ValueError("Multimer mode is not currently trainable")
-        
+
         return np_example_to_features(
             np_example=raw_features,
             config=self.config,

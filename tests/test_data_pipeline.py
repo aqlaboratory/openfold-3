@@ -14,14 +14,14 @@
 
 import pickle
 import shutil
+import unittest
 from pathlib import Path
 
 import numpy as np
-import unittest
 
+import tests.compare_utils as compare_utils
 from openfold3.core.data.data_pipeline import DataPipeline
 from openfold3.core.data.templates import HhsearchHitFeaturizer
-import tests.compare_utils as compare_utils
 from tests.config import consts
 
 if compare_utils.alphafold_is_installed():
@@ -30,8 +30,8 @@ if compare_utils.alphafold_is_installed():
 
 class TestDataPipeline(unittest.TestCase):
     @compare_utils.skip_unless_alphafold_installed()
-    def test_fasta_compare(self): 
-        # AlphaFold runs the alignments and feature processing at the same 
+    def test_fasta_compare(self):
+        # AlphaFold runs the alignments and feature processing at the same
         # time, taking forever. As such, we precompute AlphaFold's features
         # using scripts/generate_alphafold_feature_dict.py and the default
         # databases.
@@ -68,11 +68,12 @@ class TestDataPipeline(unittest.TestCase):
         )
 
         openfold_feature_dict = data_pipeline.process_fasta(
-            str(data_dir / "short.fasta"),
-            str(data_dir / "alignments")
+            str(data_dir / "short.fasta"), str(data_dir / "alignments")
         )
 
-        openfold_feature_dict["template_all_atom_masks"] = openfold_feature_dict["template_all_atom_mask"]
+        openfold_feature_dict["template_all_atom_masks"] = openfold_feature_dict[
+            "template_all_atom_mask"
+        ]
 
         checked = []
 
@@ -84,14 +85,10 @@ class TestDataPipeline(unittest.TestCase):
         # The first row of both MSAs should be the same, no matter what
         self.assertTrue(np.all(m_a[0, :] == m_o[0, :]))
 
-        # Each row of each MSA should appear exactly once somewhere in its 
+        # Each row of each MSA should appear exactly once somewhere in its
         # counterpart
         matching_rows = np.all((m_a[:, None, ...] == m_o[None, :, ...]), axis=-1)
-        self.assertTrue(
-            np.all(
-                np.sum(matching_rows, axis=-1) == 1
-            )
-        )
+        self.assertTrue(np.all(np.sum(matching_rows, axis=-1) == 1))
 
         checked.append("msa")
 
@@ -100,20 +97,15 @@ class TestDataPipeline(unittest.TestCase):
         rearranged_o_dmi = openfold_feature_dict["deletion_matrix_int"]
         rearranged_o_dmi = rearranged_o_dmi[matching_idx, :]
         self.assertTrue(
-            np.all(
-                alphafold_feature_dict["deletion_matrix_int"] == 
-                rearranged_o_dmi
-            )
+            np.all(alphafold_feature_dict["deletion_matrix_int"] == rearranged_o_dmi)
         )
 
         checked.append("deletion_matrix_int")
 
         # Remaining features have to be precisely equal
         for k, v in alphafold_feature_dict.items():
-            self.assertTrue(
-                k in checked or np.all(v == openfold_feature_dict[k])
-            )
-               
+            self.assertTrue(k in checked or np.all(v == openfold_feature_dict[k]))
+
 
 if __name__ == "__main__":
     unittest.main()

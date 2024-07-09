@@ -1,16 +1,16 @@
+import json
 from argparse import ArgumentParser
 from pathlib import Path
-import json
 
 
 def main(args):
     # get the super index
-    with open(args.alignment_db_super_index_path, "r") as fp:
+    with open(args.alignment_db_super_index_path) as fp:
         super_index = json.load(fp)
 
     # get all chains and sequences
     chains_to_seqs = {}
-    with open(args.all_chains_fasta, "r") as fp:
+    with open(args.all_chains_fasta) as fp:
         lines = fp.readlines()
 
         # iterate through chain-sequence pairs
@@ -47,7 +47,10 @@ def main(args):
         json.dump(super_index, fp)
 
     print(
-        f"No corresponding alignment found for the following {len(remaining_unaligned_chains)} chains:",
+        (
+            "No corresponding alignment found for the following "
+            f"{len(remaining_unaligned_chains)} chains:"
+        ),
         remaining_unaligned_chains,
     )
 
