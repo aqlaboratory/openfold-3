@@ -2,7 +2,7 @@ import torch
 import unittest 
 import numpy as np
 
-from openfold3.core.model.heads.confidence_heads import (
+from openfold3.core.model.heads.prediction_heads import (
     Pairformer_Embedding, 
     PredictedAlignedErrorHead, 
     PredictedDistanceErrorHead, 

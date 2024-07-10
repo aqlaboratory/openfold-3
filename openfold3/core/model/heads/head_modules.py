@@ -16,13 +16,13 @@
 import torch
 import torch.nn as nn
 
-from openfold3.core.utils.loss import (
+from openfold3.core.loss.loss import (
     compute_plddt,
     compute_tm,
     compute_predicted_aligned_error,
 )
 
-from openfold3.core.model.heads.confidence_heads import (
+from openfold3.core.model.heads.prediction_heads import (
     Pairformer_Embedding, 
     PredictedAlignedErrorHead, 
     PredictedDistanceErrorHead, 
