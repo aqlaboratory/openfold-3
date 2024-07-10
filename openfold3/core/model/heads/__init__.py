@@ -4,7 +4,7 @@ from .prediction_heads import (
     ExperimentallyResolvedHead,
     ExperimentallyResolvedHeadAllAtom,
     MaskedMSAHead,
-    Pairformer_Embedding,
+    PairformerEmbedding,
     PerResidueLDDAllAtom,
     PerResidueLDDTCaPredictor,
     PredictedAlignedErrorHead,
@@ -13,7 +13,7 @@ from .prediction_heads import (
 )
 
 __all__ = [
-    "Pairformer_Embedding",
+    "PairformerEmbedding",
     "PredictedAlignedErrorHead",
     "PredictedDistanceErrorHead",
     "PerResidueLDDTCaPredictor",

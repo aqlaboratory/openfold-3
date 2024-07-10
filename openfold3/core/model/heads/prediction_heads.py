@@ -20,7 +20,7 @@ from openfold3.core.model.latent.pairformer import PairFormerStack
 from openfold3.core.model.primitives import LayerNorm, Linear
 
 
-class Pairformer_Embedding(nn.Module):
+class PairformerEmbedding(nn.Module):
     """
     Implements AF3 Algorithm 31, line 1 - 6
     """

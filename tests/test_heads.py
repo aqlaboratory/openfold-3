@@ -6,7 +6,7 @@ import torch
 from openfold3.core.model.heads.head_modules import AuxiliaryHeadsAllAtom
 from openfold3.core.model.heads.prediction_heads import (
     ExperimentallyResolvedHeadAllAtom,
-    Pairformer_Embedding,
+    PairformerEmbedding,
     PerResidueLDDAllAtom,
     PredictedAlignedErrorHead,
     PredictedDistanceErrorHead,
@@ -105,7 +105,7 @@ class TestExperimentallyResolvedHeadAllAtom(unittest.TestCase):
         np.testing.assert_array_equal(out.shape, expected_shape)
 
 
-class TestPairformer_Embedding(unittest.TestCase):
+class TestPairformerEmbedding(unittest.TestCase):
     def test_pairformer_embedding_shape(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
@@ -115,7 +115,6 @@ class TestPairformer_Embedding(unittest.TestCase):
         min_bin = 3.25
         max_bin = 20.75
         no_bin = 15
-        inf = 1e8
 
         c_hidden_pair_bias = 12
         no_heads_pair_bias = 3
@@ -126,7 +125,6 @@ class TestPairformer_Embedding(unittest.TestCase):
         transition_n = 2
         pair_dropout = 0.25
         inf = 1e9
-        eps = 1e-10
 
         pairformer_stack_config = {
             "c_s": c_s,
@@ -137,15 +135,15 @@ class TestPairformer_Embedding(unittest.TestCase):
             "c_hidden_pair_att": c_hidden_pair_att,
             "no_heads_pair": no_heads_pair,
             "no_blocks": no_blocks,
+            "transition_type": "swiglu",
             "transition_n": transition_n,
             "pair_dropout": pair_dropout,
             "fuse_projection_weights": False,
             "blocks_per_ckpt": None,
             "inf": inf,
-            "eps": eps,
         }
 
-        pair_emb = Pairformer_Embedding(
+        pair_emb = PairformerEmbedding(
             min_bin, max_bin, no_bin, inf, c_s, c_z, pairformer_stack_config
         )
 
@@ -186,7 +184,6 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         min_bin = 3.25
         max_bin = 20.75
         no_bin = 15
-        inf = 1e8
 
         c_hidden_pair_bias = 12
         no_heads_pair_bias = 3
@@ -197,7 +194,6 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         transition_n = 2
         pair_dropout = 0.25
         inf = 1e9
-        eps = 1e-10
 
         config = {
             "pae": {"c_z": c_z, "c_out": c_out},
@@ -221,12 +217,12 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
                     "c_hidden_pair_att": c_hidden_pair_att,
                     "no_heads_pair": no_heads_pair,
                     "no_blocks": no_blocks,
+                    "transition_type": "swiglu",
                     "transition_n": transition_n,
                     "pair_dropout": pair_dropout,
                     "fuse_projection_weights": False,
                     "blocks_per_ckpt": None,
                     "inf": inf,
-                    "eps": eps,
                 },
             },
             "tm": {

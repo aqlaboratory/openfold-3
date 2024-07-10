@@ -28,7 +28,7 @@ from openfold3.core.model.heads.prediction_heads import (
     ExperimentallyResolvedHead,
     ExperimentallyResolvedHeadAllAtom,
     MaskedMSAHead,
-    Pairformer_Embedding,
+    PairformerEmbedding,
     PerResidueLDDAllAtom,
     PerResidueLDDTCaPredictor,
     PredictedAlignedErrorHead,
@@ -152,7 +152,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
                 'experimentally_resolved': experimentally_resolved config
         """
         super().__init__()
-        self.pairformer_embedding = Pairformer_Embedding(
+        self.pairformer_embedding = PairformerEmbedding(
             **config["pairformer_embedding"],
         )
 
