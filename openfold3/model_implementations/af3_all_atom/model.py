@@ -82,9 +82,8 @@ class AlphaFold3(nn.Module):
             **self.config.model.sample_diffusion, diffusion_module=self.diffusion_module
         )
 
-        self.confidence_head = None
-
-        self.distogram_head = None
+        # Confidence and Distogram Heads
+        self.aux_heads = None
 
     def _disable_activation_checkpointing(self):
         """
@@ -238,22 +237,12 @@ class AlphaFold3(nn.Module):
                 batch=batch, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
             )
 
-        # # Compute confidences
-        # p_plddt, p_pae, p_pde, p_resolved = self.confidence_head(
-        #     si_input, si_trunk, zij_trunk, x_pred
-        # )
-        #
-        # # Compute distogram
-        # p_distogram = self.distogram_head(zij_trunk)
+        output = {"x_pred": x_pred}
 
-        return {
-            "x_pred": x_pred,
-            # "p_plddt": p_plddt,
-            # "p_pae": p_pae,
-            # "p_pde": p_pde,
-            # "p_resolved": p_resolved,
-            # "p_distogram": p_distogram,
-        }
+        # # Compute confidences
+        # output.update(self.aux_heads(si_input, si_trunk, zij_trunk, x_pred))
+
+        return output
 
     def _train_diffusion(
         self,
@@ -261,7 +250,7 @@ class AlphaFold3(nn.Module):
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> Dict:
         """
         Run diffusion training over no_samples noised versions of the input structure.
 
@@ -275,7 +264,11 @@ class AlphaFold3(nn.Module):
             zij_trunk:
                 [*, N_token, N_token, C_z] Pair representation output from model trunk
         Returns:
-            [*, N_sample, N_atom, 3] Predicted atom positions
+            Output dictionary containing the following keys:
+                "noise_level" ([*])
+                    Noise level at a diffusion step
+                "x_sample" ([*, N_samples, N_atom, 3]):
+                    Predicted atom positions
         """
         # Expand sampling dimension
         # Is this ideal?
@@ -313,7 +306,12 @@ class AlphaFold3(nn.Module):
             zij_trunk=zij_trunk,
         )
 
-        return xl
+        output = {
+            "noise_level": t,
+            "x_sample": xl,
+        }
+
+        return output
 
     def forward(self, batch: Dict) -> Dict:
         """
@@ -445,13 +443,13 @@ class AlphaFold3(nn.Module):
 
         # Run training step (if necessary)
         if self.training:
-            xl = self._train_diffusion(
+            diffusion_output = self._train_diffusion(
                 batch=batch,
                 si_input=si_input,
                 si_trunk=si_trunk,
                 zij_trunk=zij_trunk,
             )
 
-            output["x_sample"] = xl
+            output.update(diffusion_output)
 
         return output
