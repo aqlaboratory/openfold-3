@@ -68,7 +68,7 @@ class Pairformer_Embedding(nn.Module):
             zij: pairwise embedding, [*, n_token, n_token, c_z]
             x_pred: representative atom predicted coordinates per token, [*, n_token, 3]
             single_mask: single mask feat associated with pairformer stack [*, n_token]
-            pair_mask: pair mask feat associated with pairformer stack 
+            pair_mask: pair mask feat associated with pairformer stack
                 [*, n_token, n_token]
             chuck_size: feat associated with pairformer stack
 
@@ -103,7 +103,7 @@ class Pairformer_Embedding(nn.Module):
 
 class PredictedAlignedErrorHead(nn.Module):
     """
-    Implements PredictedAlignedError Head (Algorithm 31, Line 5) for 
+    Implements PredictedAlignedError Head (Algorithm 31, Line 5) for
     AF3 (subsection 4.3.2)
     """
 
@@ -141,7 +141,7 @@ class PredictedAlignedErrorHead(nn.Module):
 
 class PredictedDistanceErrorHead(nn.Module):
     """
-    Implements PredictedDistanceError Head (Algorithm 31, Line 6) for 
+    Implements PredictedDistanceError Head (Algorithm 31, Line 6) for
     AF3 (subsection 4.3.3)
     """
 

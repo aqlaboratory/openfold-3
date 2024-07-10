@@ -1,28 +1,28 @@
+from .head_modules import AuxiliaryHeadsAF2, AuxiliaryHeadsAllAtom
 from .prediction_heads import (
-    Pairformer_Embedding,
-    PredictedAlignedErrorHead,
-    PredictedDistanceErrorHead,
-    PerResidueLDDTCaPredictor,
-    PerResidueLDDAllAtom,
+    DistogramHead,
     ExperimentallyResolvedHead,
     ExperimentallyResolvedHeadAllAtom,
-    DistogramHead,
+    MaskedMSAHead,
+    Pairformer_Embedding,
+    PerResidueLDDAllAtom,
+    PerResidueLDDTCaPredictor,
+    PredictedAlignedErrorHead,
+    PredictedDistanceErrorHead,
     TMScoreHead,
-    MaskedMSAHead
 )
-from .head_modules import AuxiliaryHeadsAF2, AuxiliaryHeadsAllAtom
 
 __all__ = [
-    'Pairformer_Embedding',
-    'PredictedAlignedErrorHead',
-    'PredictedDistanceErrorHead',
-    'PerResidueLDDTCaPredictor',
-    'PerResidueLDDAllAtom',
-    'ExperimentallyResolvedHead',
-    'ExperimentallyResolvedHeadAllAtom',
-    'DistogramHead',
-    'TMScoreHead',
-    'MaskedMSAHead',
-    'AuxiliaryHeadsAF2',
-    'AuxiliaryHeadsAllAtom'
+    "Pairformer_Embedding",
+    "PredictedAlignedErrorHead",
+    "PredictedDistanceErrorHead",
+    "PerResidueLDDTCaPredictor",
+    "PerResidueLDDAllAtom",
+    "ExperimentallyResolvedHead",
+    "ExperimentallyResolvedHeadAllAtom",
+    "DistogramHead",
+    "TMScoreHead",
+    "MaskedMSAHead",
+    "AuxiliaryHeadsAF2",
+    "AuxiliaryHeadsAllAtom",
 ]
