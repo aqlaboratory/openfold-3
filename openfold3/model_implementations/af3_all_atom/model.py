@@ -174,7 +174,7 @@ class AlphaFold3(nn.Module):
                     _mask_trans=True,
                 )
 
-                del input_tensors
+                del input_tensors, msa_mask
             else:
                 z = self.msa_module(
                     m,
@@ -188,7 +188,7 @@ class AlphaFold3(nn.Module):
                     _mask_trans=True,
                 )
 
-            del m, msa_mask
+                del m, msa_mask
 
             s = s_init + self.linear_s(self.layer_norm_s(s))
             s, z = self.pairformer_stack(
