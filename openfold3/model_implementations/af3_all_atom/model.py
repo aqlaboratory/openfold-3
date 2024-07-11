@@ -25,6 +25,7 @@ from torch import nn
 
 from openfold3.core.model.feature_embedders import InputEmbedderAllAtom
 from openfold3.core.model.feature_embedders.input_embedders import MSAModuleEmbedder
+from openfold3.core.model.heads.head_modules import AuxiliaryHeadsAllAtom
 from openfold3.core.model.latent.msa_module import MSAModuleStack
 from openfold3.core.model.latent.pairformer import PairFormerStack
 from openfold3.core.model.latent.template_module import TemplateEmbedderAllAtom
@@ -83,7 +84,7 @@ class AlphaFold3(nn.Module):
         )
 
         # Confidence and Distogram Heads
-        self.aux_heads = None
+        self.aux_heads = AuxiliaryHeadsAllAtom(config=self.config.model.heads)
 
     def _disable_activation_checkpointing(self):
         """

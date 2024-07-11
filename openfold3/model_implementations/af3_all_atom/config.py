@@ -29,7 +29,6 @@ n_key = mlc.FieldReference(128, field_type=int)
 
 # templates_enabled = mlc.FieldReference(True, field_type=bool)
 eps = mlc.FieldReference(1e-8, field_type=float)
-aux_distogram_bins = mlc.FieldReference(64, field_type=int)
 blocks_per_ckpt = mlc.FieldReference(None, field_type=int)
 chunk_size = mlc.FieldReference(None, field_type=int)
 tune_chunk_size = mlc.FieldReference(True, field_type=bool)
@@ -255,6 +254,54 @@ config = mlc.ConfigDict(
                 "s_max": 160.0,
                 "s_min": 4e-4,
                 "p": 7,
+            },
+            "heads": {
+                "pairformer_embedding": {
+                    "pairformer": {
+                        "c_s": c_s,
+                        "c_z": c_z,
+                        "c_hidden_pair_bias": 24,  # c_s / no_heads_pair_bias
+                        "no_heads_pair_bias": 16,
+                        "c_hidden_mul": 128,
+                        "c_hidden_pair_att": 32,
+                        "no_heads_pair": 4,
+                        "no_blocks": 4,
+                        "transition_type": "swiglu",
+                        "transition_n": 4,
+                        "pair_dropout": 0.25,
+                        "fuse_projection_weights": False,
+                        "blocks_per_ckpt": blocks_per_ckpt,
+                        "inf": 1e9,
+                        "clear_cache_between_blocks": False,
+                        "tune_chunk_size": tune_chunk_size,
+                    },
+                    "c_s": c_s,
+                    "c_z": c_z,
+                    "min_bin": 3.25,
+                    "max_bin": 20.75,
+                    "no_bin": 15,
+                    "inf": 1e8,
+                },
+                "pae": {
+                    "c_z": c_z,
+                    "c_out": 64,
+                },
+                "pde": {
+                    "c_z": c_z,
+                    "c_out": 64,
+                },
+                "lddt": {
+                    "c_s": c_s,
+                    "c_out": 50,
+                },
+                "distogram": {
+                    "c_z": c_z,
+                    "c_out": 64,
+                },
+                "experimentally_resolved": {
+                    "c_s": c_s,
+                    "c_out": 2,
+                },
             },
         },
         "loss": {

@@ -25,9 +25,12 @@ class PairformerEmbedding(nn.Module):
     Implements AF3 Algorithm 31, line 1 - 6
     """
 
-    def __init__(self, min_bin, max_bin, no_bin, inf, c_s, c_z, config):
+    def __init__(self, pairformer, c_s, c_z, min_bin, max_bin, no_bin, inf):
         """
         Args:
+            pairformer: config for PairFormerStack used
+            c_s: single embedding dimension
+            c_z: pair embedding dimension
             min_bin: minimum value for bin (3.25). The value is slightly
             different from SI. Previous AF2 implementation utilized these values
             for bins.
@@ -35,9 +38,6 @@ class PairformerEmbedding(nn.Module):
             max_bin: maximum value for bin (20.75). ibid
             no_bin: number of bins (15). ibid
             inf: inf (1e8). ibid
-            c_s: single embedding dimension
-            c_z: pair embedding dimension
-            config: config for PairFormerStack used
         """
         super().__init__()
         self.min_bin = min_bin
@@ -49,7 +49,7 @@ class PairformerEmbedding(nn.Module):
         self.linear_j = Linear(c_s, c_z, bias=False, init="relu")
 
         self.linear_distance = Linear(self.no_bin, c_z, bias=False, init="relu")
-        self.pairformer_stack = PairFormerStack(**config)
+        self.pairformer_stack = PairFormerStack(**pairformer)
 
     def forward(
         self,
@@ -389,7 +389,7 @@ class TMScoreHead(nn.Module):
         super().__init__()
 
         self.c_z = c_z
-        self.no_bins = c_out
+        self.c_out = c_out
 
         self.linear = Linear(self.c_z, self.c_out, init="final")
 

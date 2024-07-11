@@ -144,7 +144,7 @@ class TestPairformerEmbedding(unittest.TestCase):
         }
 
         pair_emb = PairformerEmbedding(
-            min_bin, max_bin, no_bin, inf, c_s, c_z, pairformer_stack_config
+            pairformer_stack_config, c_s, c_z, min_bin, max_bin, no_bin, inf
         )
 
         si_input = torch.ones(batch_size, n_token, c_s)
@@ -202,13 +202,7 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
             "distogram": {"c_z": c_z, "c_out": c_out},
             "experimentally_resolved": {"c_s": c_s, "c_out": c_out},
             "pairformer_embedding": {
-                "min_bin": min_bin,
-                "max_bin": max_bin,
-                "no_bin": no_bin,
-                "inf": inf,
-                "c_s": c_s,
-                "c_z": c_z,
-                "config": {
+                "pairformer": {
                     "c_s": c_s,
                     "c_z": c_z,
                     "c_hidden_pair_bias": c_hidden_pair_bias,
@@ -224,6 +218,12 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
                     "blocks_per_ckpt": None,
                     "inf": inf,
                 },
+                "c_s": c_s,
+                "c_z": c_z,
+                "min_bin": min_bin,
+                "max_bin": max_bin,
+                "no_bin": no_bin,
+                "inf": inf,
             },
             "tm": {
                 "enabled": False,

@@ -635,11 +635,11 @@ config = mlc.ConfigDict(
                 },
                 "distogram": {
                     "c_z": c_z,
-                    "no_bins": aux_distogram_bins,
+                    "c_out": aux_distogram_bins,
                 },
                 "tm": {
                     "c_z": c_z,
-                    "no_bins": aux_distogram_bins,
+                    "c_out": aux_distogram_bins,
                     "enabled": tm_enabled,
                 },
                 "masked_msa": {
