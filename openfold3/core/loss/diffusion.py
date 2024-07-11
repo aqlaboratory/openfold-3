@@ -283,6 +283,7 @@ def diffusion_loss(
 
     return torch.mean(l)
 
+
 class DiffusionLoss(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -291,10 +292,10 @@ class DiffusionLoss(nn.Module):
     def forward(self, batch, output):
         return diffusion_loss(
             batch=batch,
-            x=output['x_pred'],
-            x_gt=batch['gt_atom_positions'],
+            x=output["x_pred"],
+            x_gt=batch["gt_atom_positions"],
             atom_mask=batch["atom_mask"],
-            t=output['noise_level'],
+            t=output["noise_level"],
             sigma_data=self.config.sigma_data,
             alpha_bond=self.config.alpha_bond,
             alpha_dna=self.config.alpha_dna,

@@ -261,7 +261,7 @@ config = mlc.ConfigDict(
             "alpha_confidence": 1.0e-4,
             "alpha_diffusion": 4.0,
             "alpha_distogram": 3.0e-2,
-            "alpha_pae": None, # varies based on training and finetuning
+            "alpha_pae": None,  # varies based on training and finetuning
             "diffusion": {
                 "sigma_data": sigma_data,
                 "alpha_bond": 0.0,  # varies based on training and finetuning

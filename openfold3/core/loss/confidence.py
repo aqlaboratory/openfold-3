@@ -1,13 +1,10 @@
 import math
-import sys
 from typing import Dict, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-sys.path.append('/Users/itamarshamir/Git/openfold3')
-# from torch.linalg import vecdot
 from openfold3.core.utils.tensor_utils import (
     permute_final_dims,
 )
@@ -67,8 +64,9 @@ def pLDDT(
     C1_mask = F.one_hot(C1_mask, num_classes=dx.shape[-1]).sum(dim=-2)  # [*, N]
 
     # Restrict to bespoke inclusion radius
-    c = ((dx_gt < 30.0) * Ca_mask.unsqueeze(-2) + 
-         (dx_gt < 15.0) * C1_mask.unsqueeze(-2))  # [*, N, N]
+    c = (dx_gt < 30.0) * Ca_mask.unsqueeze(-2) + (dx_gt < 15.0) * C1_mask.unsqueeze(
+        -2
+    )  # [*, N, N]
 
     # atom mask and avoid self term
     # TODO check dtypes for masks

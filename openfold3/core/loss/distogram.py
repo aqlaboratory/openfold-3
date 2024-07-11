@@ -72,10 +72,10 @@ class DistogramLoss(nn.Module):
         self.config = config.loss.distogram
 
     def forward(self, batch, output):
-        x_gt = batch["x_gt"] # [*, N, 3]
-        frame_idx = batch["frame_idx"] # [*, T, 3]
-        token_mask = batch["token_mask"] # [*, T]
-        distogram_logits = output["p_distogram"] # [*, T, T, 64]
+        x_gt = batch["x_gt"]  # [*, N, 3]
+        frame_idx = batch["frame_idx"]  # [*, T, 3]
+        token_mask = batch["token_mask"]  # [*, T]
+        distogram_logits = output["p_distogram"]  # [*, T, T, 64]
 
         return distogram_loss(
             x_gt,
