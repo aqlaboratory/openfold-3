@@ -409,6 +409,8 @@ class AlphaFold3(nn.Module):
                     Predicted binned experimentally resolved logits
                 "p_distogram" ([*, N_token, N_token, 64]):
                     Predicted binned distogram logits
+                "noise_level" ([*])
+                    Training only, noise level at a diffusion step
                 "x_sample" ([*, N_samples, N_atom, 3]):
                     Training only, predicted atom positions
 
