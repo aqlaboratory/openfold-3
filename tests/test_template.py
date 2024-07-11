@@ -96,6 +96,7 @@ class TestTemplatePairStack(unittest.TestCase):
             c_hidden_tri_mul=c_hidden_tri_mul,
             no_blocks=no_blocks,
             no_heads=no_heads,
+            transition_type="relu",
             pair_transition_n=pt_inner_dim,
             dropout_rate=dropout,
             tri_mul_first=tri_mul_first,

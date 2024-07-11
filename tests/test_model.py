@@ -53,6 +53,7 @@ class TestModel(unittest.TestCase):
                 cls.am_modules = alphafold.model.modules
                 cls.am_rigid = alphafold.model.r3
 
+    @compare_utils.skip_unless_cuda_available()
     def test_dry_run(self):
         n_seq = consts.n_seq
         n_templ = consts.n_templ
@@ -106,6 +107,7 @@ class TestModel(unittest.TestCase):
         with torch.no_grad():
             model(batch)
 
+    @compare_utils.skip_unless_cuda_available()
     def test_dry_run_seqemb_mode(self):
         n_seq = 1
         n_templ = consts.n_templ
