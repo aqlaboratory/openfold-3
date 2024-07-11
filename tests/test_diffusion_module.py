@@ -38,6 +38,7 @@ class TestDiffusionModule(unittest.TestCase):
 
         xl_noisy = torch.randn((batch_size, n_atom, 3))
         t = torch.ones(1)
+        atom_mask = torch.ones((batch_size, n_atom))
         si_input = torch.rand((batch_size, n_token, c_s_input))
         si_trunk = torch.rand((batch_size, n_token, c_s))
         zij_trunk = torch.rand((batch_size, n_token, n_token, c_z))
@@ -59,16 +60,14 @@ class TestDiffusionModule(unittest.TestCase):
             "ref_charge": torch.ones((batch_size, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, n_atom)),
-            "atom_to_token_index": torch.eye(n_token)
-            .repeat_interleave(4, dim=0)
-            .unsqueeze(0)
-            .repeat(batch_size, 1, 1),
+            "atom_to_token_index": torch.ones((batch_size, n_atom)),
         }
 
         xl = dm(
             batch=batch,
             xl_noisy=xl_noisy,
             t=t,
+            atom_mask=atom_mask,
             si_input=si_input,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
@@ -90,6 +89,7 @@ class TestDiffusionModule(unittest.TestCase):
 
         xl_noisy = torch.randn((batch_size, n_sample, n_atom, 3))
         t = torch.ones((batch_size, n_sample))
+        atom_mask = torch.ones((batch_size, 1, n_atom))
         si_input = torch.rand((batch_size, 1, n_token, c_s_input))
         si_trunk = torch.rand((batch_size, 1, n_token, c_s))
         zij_trunk = torch.rand((batch_size, 1, n_token, n_token, c_z))
@@ -111,14 +111,13 @@ class TestDiffusionModule(unittest.TestCase):
             "ref_charge": torch.ones((batch_size, 1, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, 1, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, 1, n_atom)),
-            "atom_to_token_index": torch.eye(n_token)
-            .repeat_interleave(4, dim=0)[None, None, :, :]
-            .repeat(batch_size, 1, 1, 1),
+            "atom_to_token_index": torch.ones((batch_size, 1, n_atom)),
         }
 
         xl = dm(
             batch=batch,
             xl_noisy=xl_noisy,
+            atom_mask=atom_mask,
             t=t,
             si_input=si_input,
             si_trunk=si_trunk,
@@ -161,10 +160,7 @@ class TestSampleDiffusion(unittest.TestCase):
             "ref_charge": torch.ones((batch_size, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, n_atom)),
-            "atom_to_token_index": torch.eye(n_token)
-            .repeat_interleave(4, dim=0)
-            .unsqueeze(0)
-            .repeat(batch_size, 1, 1),
+            "atom_to_token_index": torch.ones((batch_size, n_atom)),
         }
 
         si_input = torch.rand((batch_size, n_token, c_s_input))

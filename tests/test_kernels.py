@@ -1,14 +1,15 @@
-#!/usr/bin/env python
 import unittest
 
 import torch
 
+import tests.compare_utils as compare_utils
 from openfold3.core.model.primitives.attention import _attention
 from openfold3.core.utils.kernel.attention_core import attention_core
 from tests.config import consts
 
 
 class TestAttentionCore(unittest.TestCase):
+    @compare_utils.skip_unless_cuda_available()
     def test_attention_core_forward(self):
         n_res = consts.n_res
         h = consts.n_heads_extra_msa
@@ -27,6 +28,7 @@ class TestAttentionCore(unittest.TestCase):
 
         self.assertTrue(torch.max(torch.abs(out_repro - out_gt)) < consts.eps)
 
+    @compare_utils.skip_unless_cuda_available()
     def test_attention_core_backward(self):
         n_res = consts.n_res
         h = consts.n_heads_extra_msa

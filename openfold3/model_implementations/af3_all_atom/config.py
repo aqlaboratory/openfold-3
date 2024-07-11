@@ -1,93 +1,4 @@
-import copy
-import importlib
-
 import ml_collections as mlc
-
-
-def set_inf(c, inf):
-    for k, v in c.items():
-        if isinstance(v, mlc.ConfigDict):
-            set_inf(v, inf)
-        elif k == "inf":
-            c[k] = inf
-
-
-def enforce_config_constraints(config):
-    def string_to_setting(s):
-        path = s.split(".")
-        setting = config
-        for p in path:
-            setting = setting.get(p)
-
-        return setting
-
-    mutually_exclusive_bools = [
-        ("globals.use_lma", "globals.use_flash", "globals.use_deepspeed_evo_attention"),
-    ]
-
-    for options in mutually_exclusive_bools:
-        option_settings = [string_to_setting(o) for o in options]
-        if sum(option_settings) > 1:
-            raise ValueError(f"Only one of {', '.join(options)} may be set at a time")
-
-    fa_is_installed = importlib.util.find_spec("flash_attn") is not None
-    if config.globals.use_flash and not fa_is_installed:
-        raise ValueError("use_flash requires that FlashAttention is installed")
-
-    deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
-    ds4s_is_installed = (
-        deepspeed_is_installed
-        and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
-    )
-    if config.globals.use_deepspeed_evo_attention and not ds4s_is_installed:
-        raise ValueError(
-            "use_deepspeed_evo_attention requires that DeepSpeed be installed "
-            "and that the deepspeed.ops.deepspeed4science package exists"
-        )
-
-
-def model_config(
-    name,
-    train=False,
-    low_prec=False,
-    long_sequence_inference=False,
-    use_deepspeed_evoformer_attention=False,
-):
-    c = copy.deepcopy(config)
-
-    # TODO: Named model configs unless this is moved somewhere else
-
-    if long_sequence_inference:
-        assert not train
-        c.globals.offload_inference = True
-        # Default to DeepSpeed memory-efficient attention kernel unless use_lma
-        # is explicitly set
-        c.globals.use_deepspeed_evo_attention = bool(not c.globals.use_lma)
-        c.globals.use_flash = False
-        c.model.template.offload_inference = True
-        c.model.template.template_pair_stack.tune_chunk_size = False
-        c.model.msa.msa_module.tune_chunk_size = False
-        c.model.pairformer.tune_chunk_size = False
-
-    if use_deepspeed_evoformer_attention:
-        c.globals.use_deepspeed_evo_attention = True
-
-    if train:
-        c.globals.blocks_per_ckpt = 1
-        c.globals.chunk_size = None
-        c.globals.use_lma = False
-        c.globals.offload_inference = False
-
-    if low_prec:
-        c.globals.eps = 1e-4
-        # If we want exact numerical parity with the original, inf can't be
-        # a global constant
-        set_inf(c, 1e4)
-
-    enforce_config_constraints(c)
-
-    return c
-
 
 NUM_TOKENS = "num tokens placeholder"
 NUM_ATOMS = "num atoms placeholder"
@@ -150,12 +61,19 @@ config = mlc.ConfigDict(
                     "deletion_value": [NUM_MSA_SEQ, NUM_TOKENS],
                     "profile": [NUM_TOKENS, 32],
                     "deletion_mean": [NUM_TOKENS],
-                    "template_restype": [NUM_TEMPLATES, NUM_TOKENS],
+                    "template_restype": [NUM_TEMPLATES, NUM_TOKENS, 32],
                     "template_pseudo_beta_mask": [NUM_TEMPLATES, NUM_TOKENS],
                     "template_backbone_frame_mask": [NUM_TEMPLATES, NUM_TOKENS],
                     "template_distogram": [NUM_TEMPLATES, NUM_TOKENS, NUM_TOKENS, 39],
                     "template_unit_vector": [NUM_TEMPLATES, NUM_TOKENS, NUM_TOKENS, 3],
                     "token_bonds": [NUM_TOKENS, NUM_TOKENS],
+                    # Features not included in AF3 docs
+                    "atom_to_token_index": [NUM_ATOMS],
+                    "token_mask": [NUM_TOKENS],
+                    "msa_mask": [NUM_MSA_SEQ, NUM_TOKENS],
+                    "num_main_msa_seqs": [],
+                    "gt_atom_positions": [NUM_ATOMS, 3],
+                    "gt_atom_mask": [NUM_ATOMS],
                 }
             }
         },
