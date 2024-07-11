@@ -151,7 +151,7 @@ def bond_loss(
     # Construct polymer-ligand per-token bond mask
     # [*, N_token, N_token]
     bond_mask = batch["token_bonds"] * (
-        batch["is_polymer"][..., None, :] * batch["is_ligand"][..., None]
+        batch["is_protein"][..., None, :] * batch["is_ligand"][..., None]
     )
 
     # Construct polymer-ligand per-atom bond mask

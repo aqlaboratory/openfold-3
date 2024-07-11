@@ -26,8 +26,8 @@ import numpy as np
 from Bio import PDB
 from Bio.Data import PDBData
 
-from openfold3 import core as residue_constants
 from openfold3.core.data.errors import MultipleChainsError
+from openfold3.core.np import residue_constants
 
 # Type aliases:
 ChainId = str

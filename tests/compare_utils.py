@@ -43,6 +43,10 @@ def skip_unless_alphafold_installed():
     return unittest.skipUnless(alphafold_is_installed(), "Requires AlphaFold")
 
 
+def skip_unless_cuda_available():
+    return unittest.skipUnless(torch.cuda.is_available(), "Requires GPU")
+
+
 def import_alphafold():
     """
     If AlphaFold is installed using the provided setuptools script, this
