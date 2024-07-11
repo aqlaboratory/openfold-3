@@ -51,8 +51,9 @@ class TestDiffusionLoss(unittest.TestCase):
 
     def test_mse_loss(self):
         batch_size = consts.batch_size
-        n_token = 4 * consts.n_res
-        n_atom = 16 * consts.n_res
+        n_token_per_group = 4
+        n_token = 4 * n_token_per_group
+        n_atom = 4 * n_token
         alpha_dna = 5
         alpha_rna = 5
         alpha_ligand = 10
@@ -60,45 +61,45 @@ class TestDiffusionLoss(unittest.TestCase):
         x1_gt = torch.randn((batch_size, n_atom, 3))
         x2_gt = torch.randn((batch_size, n_atom, 3))
         atom_mask = torch.ones((batch_size, n_atom)).bool()
-        atom_mask[1, -44:] = 0
+        atom_mask[1, -12:] = 0
 
         x1 = centre_random_augmentation(x1_gt, atom_mask)
         x2 = centre_random_augmentation(x2_gt, atom_mask)
 
         batch = {
-            "is_polymer": torch.concat(
+            "is_protein": torch.concat(
                 [
-                    torch.ones((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
+                    torch.ones((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
                 ],
                 dim=-1,
             ),
             "is_dna": torch.concat(
                 [
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.ones((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.ones((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
                 ],
                 dim=-1,
             ),
             "is_rna": torch.concat(
                 [
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.ones((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.ones((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
                 ],
                 dim=-1,
             ),
             "is_ligand": torch.concat(
                 [
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.ones((batch_size, consts.n_res)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.ones((batch_size, n_token_per_group)),
                 ],
                 dim=-1,
             ),
@@ -133,8 +134,9 @@ class TestDiffusionLoss(unittest.TestCase):
     @compare_utils.skip_unless_cuda_available()
     def test_bond_loss(self):
         batch_size = consts.batch_size
-        n_token = 4 * consts.n_res
-        n_atom = 16 * consts.n_res
+        n_token_per_group = 4
+        n_token = 4 * n_token_per_group
+        n_atom = 4 * n_token
 
         x_gt = torch.randn((batch_size, n_atom, 3))
         atom_mask = torch.ones((batch_size, n_atom))
@@ -143,39 +145,39 @@ class TestDiffusionLoss(unittest.TestCase):
         x = centre_random_augmentation(x_gt, atom_mask)
 
         batch = {
-            "is_polymer": torch.concat(
+            "is_protein": torch.concat(
                 [
-                    torch.ones((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
+                    torch.ones((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
                 ],
                 dim=-1,
             ),
             "is_dna": torch.concat(
                 [
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.ones((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.ones((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
                 ],
                 dim=-1,
             ),
             "is_rna": torch.concat(
                 [
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.ones((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.ones((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
                 ],
                 dim=-1,
             ),
             "is_ligand": torch.concat(
                 [
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.ones((batch_size, consts.n_res)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.ones((batch_size, n_token_per_group)),
                 ],
                 dim=-1,
             ),
@@ -193,8 +195,9 @@ class TestDiffusionLoss(unittest.TestCase):
 
     def test_smooth_lddt_loss(self):
         batch_size = consts.batch_size
-        n_token = 4 * consts.n_res
-        n_atom = 16 * consts.n_res
+        n_token_per_group = 4
+        n_token = 4 * n_token_per_group
+        n_atom = 4 * n_token
 
         x_gt = torch.randn((batch_size, n_atom, 3))
         atom_mask = torch.ones((batch_size, n_atom))
@@ -203,39 +206,39 @@ class TestDiffusionLoss(unittest.TestCase):
         x = centre_random_augmentation(x_gt, atom_mask)
 
         batch = {
-            "is_polymer": torch.concat(
+            "is_protein": torch.concat(
                 [
-                    torch.ones((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
+                    torch.ones((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
                 ],
                 dim=-1,
             ),
             "is_dna": torch.concat(
                 [
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.ones((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.ones((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
                 ],
                 dim=-1,
             ),
             "is_rna": torch.concat(
                 [
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.ones((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.ones((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
                 ],
                 dim=-1,
             ),
             "is_ligand": torch.concat(
                 [
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.ones((batch_size, consts.n_res)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.ones((batch_size, n_token_per_group)),
                 ],
                 dim=-1,
             ),
@@ -252,51 +255,51 @@ class TestDiffusionLoss(unittest.TestCase):
     @compare_utils.skip_unless_cuda_available()
     def test_diffusion_loss(self):
         batch_size = consts.batch_size
-        n_token = 4 * consts.n_res
-        n_atom = 16 * consts.n_res
+        n_token_per_group = 4
+        n_token = 4 * n_token_per_group
+        n_atom = 4 * n_token
         sigma_data = 16
         alpha_bond = 1
 
         x_gt = torch.randn((batch_size, n_atom, 3))
         atom_mask = torch.ones((batch_size, n_atom))
-        atom_mask[1, -44:] = 0
 
         x = centre_random_augmentation(x_gt, atom_mask)
 
         batch = {
-            "is_polymer": torch.concat(
+            "is_protein": torch.concat(
                 [
-                    torch.ones((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
+                    torch.ones((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
                 ],
                 dim=-1,
             ),
             "is_dna": torch.concat(
                 [
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.ones((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.ones((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
                 ],
                 dim=-1,
             ),
             "is_rna": torch.concat(
                 [
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.ones((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.ones((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
                 ],
                 dim=-1,
             ),
             "is_ligand": torch.concat(
                 [
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.zeros((batch_size, consts.n_res)),
-                    torch.ones((batch_size, consts.n_res)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.zeros((batch_size, n_token_per_group)),
+                    torch.ones((batch_size, n_token_per_group)),
                 ],
                 dim=-1,
             ),
