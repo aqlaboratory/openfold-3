@@ -225,8 +225,9 @@ class TestTemplateEmbedderAllAtom(unittest.TestCase):
         }
 
         z = torch.ones((batch_size, n_token, n_token, c_z))
+        pair_mask = torch.randint(0, 2, size=(batch_size, n_token, n_token))
 
-        t = embedder(batch=batch, z=z, chunk_size=None)
+        t = embedder(batch=batch, z=z, pair_mask=pair_mask, chunk_size=None)
 
         self.assertTrue(t.shape == (batch_size, n_token, n_token, c_z))
 
