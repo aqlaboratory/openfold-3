@@ -16,7 +16,6 @@ import unittest
 
 import torch
 
-import tests.compare_utils as compare_utils
 from openfold3.core.loss.diffusion import (
     bond_loss,
     diffusion_loss,
