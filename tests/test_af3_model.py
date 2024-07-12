@@ -7,8 +7,9 @@ from openfold3.model_implementations.af3_all_atom.config import config
 from openfold3.model_implementations.af3_all_atom.model import AlphaFold3
 from tests.config import consts
 from tests.data_utils import random_af3_features
+from tests import compare_utils
 
-
+@compare_utils.skip_unless_cuda_available()
 class TestAF3Model(unittest.TestCase):
     def test_shape(self):
         batch_size = consts.batch_size
