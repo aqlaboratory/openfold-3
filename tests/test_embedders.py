@@ -30,6 +30,7 @@ from openfold3.core.model.feature_embedders import (
     TemplateSingleEmbedderMultimer,
 )
 from openfold3.model_implementations.af2_monomer.config import model_config
+from openfold3.model_implementations.af3_all_atom.config import config as af3_config
 from tests.config import consts, monomer_consts, multimer_consts
 from tests.data_utils import random_asym_ids, random_template_feats
 
@@ -92,22 +93,16 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
         n_atom = 4 * consts.n_res
-        c_s = consts.c_s
-        c_z = consts.c_z
-        max_relative_idx = 32
-        max_relative_chain = 2
-        c_atom_ref = 390
-        c_atom = 64
-        c_atom_pair = 16
-        c_token = 768
-        c_s_input = c_token + 65
-        c_hidden_att = 48  # c_token / no_heads
         one_hot_dim = 32
+        c_s_input = af3_config.model.input_embedder.c_s_input
+        c_s = af3_config.model.input_embedder.c_s
+        c_z = af3_config.model.input_embedder.c_z
 
         batch = {
             "token_index": torch.arange(0, n_token)
             .unsqueeze(0)
             .repeat((batch_size, 1)),
+            "token_mask": torch.ones((batch_size, n_token)),
             "residue_index": torch.arange(0, n_token)
             .unsqueeze(0)
             .repeat((batch_size, 1)),
@@ -120,29 +115,14 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
             "ref_charge": torch.ones((batch_size, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, n_atom)),
-            "atom_to_token_index": torch.eye(n_token)
-            .repeat_interleave(4, dim=0)
-            .unsqueeze(0)
-            .repeat(batch_size, 1, 1),
-            "atom_mask": torch.ones((batch_size, n_atom)),
+            "atom_to_token_index": torch.ones((batch_size, n_atom)),
             "restype": torch.rand((batch_size, n_token, one_hot_dim)),
             "profile": torch.rand((batch_size, n_token, one_hot_dim)),
             "deletion_mean": torch.rand((batch_size, n_token)),
             "token_bonds": torch.rand((batch_size, n_token, n_token)),
         }
 
-        ie = InputEmbedderAllAtom(
-            c_atom_ref=c_atom_ref,
-            c_atom=c_atom,
-            c_atom_pair=c_atom_pair,
-            c_token=c_token,
-            c_s_input=c_s_input,
-            c_s=c_s,
-            c_z=c_z,
-            c_hidden_att=c_hidden_att,
-            max_relative_idx=max_relative_idx,
-            max_relative_chain=max_relative_chain,
-        )
+        ie = InputEmbedderAllAtom(**af3_config.model.input_embedder)
 
         s_input, s, z = ie(batch=batch)
 
@@ -271,7 +251,6 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         batch_size = 2
         n_templ = 4
         n_res = 5
-        c_feats = 88
 
         c = model_config(monomer_consts.model)
         c_t = c.model.template.template_pair_embedder.c_out
@@ -314,17 +293,35 @@ class TestTemplatePairEmbedders(unittest.TestCase):
 
         self.assertTrue(x.shape == (batch_size, n_templ, n_res, n_res, c_t))
 
-        tpe = TemplatePairEmbedderAllAtom(c_in=c_feats, c_z=c_z, c_out=c_t)
+    def test_all_atom(self):
+        batch_size = 2
+        n_templ = 3
+        n_token = 10
+        c_z = af3_config.model.template.template_pair_embedder.c_z
+        c_t = af3_config.model.template.template_pair_embedder.c_out
 
-        x = tpe(
-            batch=batch,
-            distogram_config=c.model.template.distogram,
-            query_embedding=z,
-            multichain_mask_2d=multichain_mask_2d,
-            inf=multimer_consts.inf,
+        tpe = TemplatePairEmbedderAllAtom(
+            **af3_config.model.template.template_pair_embedder
         )
 
-        self.assertTrue(x.shape == (batch_size, n_templ, n_res, n_res, c_t))
+        batch = {
+            "asym_id": torch.ones((batch_size, n_token)),
+            "template_restype": torch.ones((batch_size, n_templ, n_token, 32)),
+            "template_pseudo_beta_mask": torch.ones((batch_size, n_templ, n_token)),
+            "template_backbone_frame_mask": torch.ones((batch_size, n_templ, n_token)),
+            "template_distogram": torch.ones(
+                (batch_size, n_templ, n_token, n_token, 39)
+            ),
+            "template_unit_vector": torch.ones(
+                (batch_size, n_templ, n_token, n_token, 3)
+            ),
+        }
+
+        z = torch.ones((batch_size, n_token, n_token, c_z))
+
+        emb = tpe(batch, z)
+
+        self.assertTrue(emb.shape == (batch_size, n_templ, n_token, n_token, c_t))
 
 
 if __name__ == "__main__":

@@ -22,7 +22,7 @@ feature embedding functions in openfold3.core.model.feature_embedders.
 import math
 import sys
 from functools import partial
-from typing import Optional
+from typing import Dict, Optional
 
 import torch
 from ml_collections import ConfigDict
@@ -84,8 +84,8 @@ class TemplatePairBlock(PairBlock):
             tri_mul_first:
                 Whether to perform triangular multiplication before attention
             fuse_projection_weights:
-                When True, uses FusedTriangleMultiplicativeUpdate variant in the Pair
-                Stack. Used in Multimer pipeline.
+                When True, uses FusedTriangleMultiplicativeUpdate variant in
+                the Pair Stack. Used in Multimer pipeline.
             inf:
                 Large constant used for masking
         """
@@ -386,7 +386,7 @@ class TemplateEmbedderMonomer(nn.Module):
         use_lma=False,
         inplace_safe=False,
     ):
-        """ "
+        """
         Args:
             batch:
                 Input feature dictionary
@@ -536,7 +536,7 @@ class TemplateEmbedderMultimer(nn.Module):
         use_lma=False,
         inplace_safe=False,
     ):
-        """ "
+        """
         Args:
             batch:
                 Input feature dictionary
@@ -625,16 +625,14 @@ class TemplateEmbedderAllAtom(nn.Module):
 
     def forward(
         self,
-        batch,
-        z,
-        pair_mask,
-        templ_dim,
-        chunk_size,
-        multichain_mask_2d,
-        _mask_trans=True,
-        use_deepspeed_evo_attention=False,
-        use_lma=False,
-        inplace_safe=False,
+        batch: Dict,
+        z: torch.Tensor,
+        pair_mask: torch.Tensor,
+        chunk_size: int,
+        _mask_trans: bool = True,
+        use_deepspeed_evo_attention: bool = False,
+        use_lma: bool = False,
+        inplace_safe: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -644,12 +642,8 @@ class TemplateEmbedderAllAtom(nn.Module):
                 [*, N_token, N_token, C_z] Pair embedding
             pair_mask:
                 [*, N_token, N_token] Pair mask
-            templ_dim:
-                The template dimension of the template tensors in batch
             chunk_size:
                 Inference-time subbatch size.
-            multichain_mask_2d:
-                [*, N_token, N_token] Multichain mask built from asym IDs
             _mask_trans:
                 Whether to mask the output of the transition layers
             use_deepspeed_evo_attention:
@@ -665,20 +659,18 @@ class TemplateEmbedderAllAtom(nn.Module):
             t:
                 [*, N_token, N_token, C_z] Template embedding
         """
-        n_templ = batch["template_aatype"].shape[templ_dim]
 
-        template_embeds = self.template_pair_embedder(
-            batch=batch,
-            distogram_config=self.config.distogram,
-            query_embedding=z,
-            multichain_mask_2d=multichain_mask_2d,
-            inf=self.config.inf,
-        )
+        # [*, N_templ, N_token, N_token, C_t]
+        template_embeds = self.template_pair_embedder(batch, z)
+        n_templ = template_embeds.shape[-4]
 
-        # [*, S_t, N, N, C_z]
+        # [*, 1, N_token, N_token]
+        pair_mask = pair_mask[..., None, :, :].to(dtype=z.dtype)
+
+        # [*, N_templ, N_token, N_token, C_z]
         t = self.template_pair_stack(
             template_embeds,
-            pair_mask.unsqueeze(-3).to(dtype=z.dtype),
+            pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_lma=use_lma,
@@ -686,7 +678,7 @@ class TemplateEmbedderAllAtom(nn.Module):
             _mask_trans=_mask_trans,
         )
 
-        # [*, N, N, C_z]
+        # [*, N_token, N_token, C_z]
         t = torch.sum(t, dim=-4) / n_templ
         t = torch.nn.functional.relu(t)
         t = self.linear_t(t)
