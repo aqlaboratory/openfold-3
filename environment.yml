@@ -28,7 +28,7 @@ dependencies:
   - mkl=2022.1
   - aria2
   - git
-  - ruff==0.5.2
+  - ruff>=0.5.0
   - bioconda::hmmer
   - bioconda::hhsuite
   - bioconda::kalign2
