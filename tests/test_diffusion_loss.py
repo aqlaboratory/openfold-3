@@ -16,7 +16,6 @@ import unittest
 
 import torch
 
-import tests.compare_utils as compare_utils
 from openfold3.core.loss.diffusion import (
     bond_loss,
     diffusion_loss,
@@ -131,7 +130,6 @@ class TestDiffusionLoss(unittest.TestCase):
         self.assertTrue(mse.shape == (batch_size,))
         self.assertTrue(torch.sum((mse - mse_gt) > 1e-5) == 0)
 
-    @compare_utils.skip_unless_cuda_available()
     def test_bond_loss(self):
         batch_size = consts.batch_size
         n_token_per_group = 4
@@ -252,7 +250,6 @@ class TestDiffusionLoss(unittest.TestCase):
 
         self.assertTrue(loss.shape == (batch_size,))
 
-    @compare_utils.skip_unless_cuda_available()
     def test_diffusion_loss(self):
         batch_size = consts.batch_size
         n_token_per_group = 4
