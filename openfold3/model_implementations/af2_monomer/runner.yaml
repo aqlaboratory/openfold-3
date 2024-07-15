@@ -1,0 +1,10 @@
+general:
+  preset: model_1
+
+model:
+  template:
+    enabled: false
+
+dataset:
+  - PDBWeighted
+  - short-monomer-distillation

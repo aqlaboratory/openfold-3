@@ -1,5 +1,7 @@
 import ml_collections as mlc
 
+# All the contents from the original config.py relating to data processing
+# are moved here for now. See where these fit in with the new data pipeline.
 data_config_settings = mlc.ConfigDict(
     {
             "predict": {

@@ -3,9 +3,9 @@ import importlib
 
 import ml_collections as mlc
 from openfold3.model_implementations.af2_monomer.features import af2_feature_dict
-from openfold3.model_implementations.af2_monomer.config import inference_config
 
 
+# TODO: This check should be handled at the config interface layer 
 def set_inf(c, inf):
     for k, v in c.items():
         if isinstance(v, mlc.ConfigDict):
@@ -13,7 +13,7 @@ def set_inf(c, inf):
         elif k == "inf":
             c[k] = inf
 
-# TODO: This check should be handled by the CLI, rather than here. To be removed
+# TODO: This check should be handled at the CLI level by enums 
 def enforce_config_constraints(config):
     def string_to_setting(s):
         path = s.split(".")
@@ -53,22 +53,14 @@ def enforce_config_constraints(config):
 
 
 def model_config(
-    name,
     train=False,
     low_prec=False,
     long_sequence_inference=False,
     use_deepspeed_evoformer_attention=False,
 ):
     c = copy.deepcopy(config)
-    if name == "train":
-        # Use base
-    if name == "finetuning":
-        # Directly call right finetuning preset from CLI 
-    if name == "inference":
-        inference_dict = inference_config_registry[inference_mode] 
-        # inference_mode should be model_1, model_1_ptm, etc.
-        c.update(inference_dict)
-
+ 
+    # TODO: Decide how we want to handle these modes. Possible configs in the same file? 
     if long_sequence_inference:
         assert not train
         c.globals.offload_inference = True
