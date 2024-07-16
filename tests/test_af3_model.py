@@ -5,10 +5,12 @@ import torch
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.model_implementations.af3_all_atom.config import config
 from openfold3.model_implementations.af3_all_atom.model import AlphaFold3
+from tests import compare_utils
 from tests.config import consts
 from tests.data_utils import random_af3_features
 
 
+@compare_utils.skip_unless_cuda_available()
 class TestAF3Model(unittest.TestCase):
     def test_shape(self):
         batch_size = consts.batch_size

@@ -388,7 +388,7 @@ class ChunkSizeTuner:
     def _compare_arg_caches(self, ac1, ac2):
         consistent = True
         for a1, a2 in zip(ac1, ac2):
-            assert type(a1) == type(a2)
+            assert type(a1) is type(a2)
             if isinstance(a1, (list, tuple)):
                 consistent &= self._compare_arg_caches(a1, a2)
             elif isinstance(a1, dict):
