@@ -450,9 +450,7 @@ class InputEmbedderAllAtom(nn.Module):
         """
         super().__init__()
 
-        self.atom_attn_enc = AtomAttentionEncoder(
-            **atom_attn_enc, add_noisy_pos=False
-        )
+        self.atom_attn_enc = AtomAttentionEncoder(**atom_attn_enc, add_noisy_pos=False)
 
         self.linear_s = Linear(c_s_input, c_s, bias=False)
         self.linear_z_i = Linear(c_s_input, c_z, bias=False)
