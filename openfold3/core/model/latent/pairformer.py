@@ -100,6 +100,8 @@ class PairFormerBlock(nn.Module):
             c_hidden=c_hidden_pair_bias,
             no_heads=no_heads_pair_bias,
             use_ada_layer_norm=False,
+            use_block_sparse_attn=False,
+            block_size=None,
             gating=True,
             inf=inf,
         )

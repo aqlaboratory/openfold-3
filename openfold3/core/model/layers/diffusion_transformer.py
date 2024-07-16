@@ -39,6 +39,9 @@ class DiffusionTransformerBlock(nn.Module):
         c_hidden: int,
         no_heads: int,
         n_transition: int,
+        use_ada_layer_norm: bool,
+        use_block_sparse_attn: bool,
+        block_size: Optional[int],
         inf: float = 1e9,
     ):
         """
@@ -53,6 +56,12 @@ class DiffusionTransformerBlock(nn.Module):
                 Number of attention heads
             n_transition:
                 Dimension multiplication factor used in transition layer
+            use_ada_layer_norm:
+                Whether to apply AdaLN-Zero conditioning
+            use_block_sparse_attn:
+                Whether to use Triton block sparse attention kernels
+            block_size:
+                Block size to use in block sparse attention
             inf:
                 Large constant used to create mask for attention logits
         """
@@ -66,7 +75,9 @@ class DiffusionTransformerBlock(nn.Module):
             c_z=c_z,
             c_hidden=c_hidden,
             no_heads=no_heads,
-            use_ada_layer_norm=True,
+            use_ada_layer_norm=use_ada_layer_norm,
+            use_block_sparse_attn=use_block_sparse_attn,
+            block_size=block_size,
             gating=True,
             inf=inf,
         )
@@ -83,8 +94,6 @@ class DiffusionTransformerBlock(nn.Module):
         mask: Optional[torch.Tensor] = None,
         beta: Optional[torch.Tensor] = None,
         layout: Optional[torch.Tensor] = None,
-        use_block_sparse_attn: bool = False,
-        block_size: int = 16,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
@@ -93,16 +102,20 @@ class DiffusionTransformerBlock(nn.Module):
         """
         Args:
             a:
-                [*, N_res, C_token] Token-level embedding
+                [*, N, C_token] Token-level embedding
             s:
-                [*, N_res, C_s] Single embedding
+                [*, N, C_s] Single embedding
             z:
-                [*, N_res, N_res, C_z] Pair embedding
+                [*, N, N, C_z] Pair embedding
             mask:
-                [*, N_res] Mask for token-level embedding
+                [*, N] Mask for token-level embedding
             beta:
-                [*, N_res, N_res] Neighborhood mask. Used in Sequence-local
+                [*, N, N] Neighborhood mask. Used in Sequence-local
                 atom attention for rectangular blocks along the diagonal.
+            layout:
+                [N / block_size, N / block_size] Layout config for block sparse
+                attention. Dictates which sections of the attention matrix
+                to compute.
             use_memory_efficient_kernel:
                 Whether to use memory efficient kernel
             use_deepspeed_evo_attention:
@@ -119,8 +132,6 @@ class DiffusionTransformerBlock(nn.Module):
             mask=mask,
             beta=beta,
             layout=layout,
-            use_block_sparse_attn=use_block_sparse_attn,
-            block_size=block_size,
             use_memory_efficient_kernel=use_memory_efficient_kernel,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_lma=use_lma,
@@ -147,6 +158,9 @@ class DiffusionTransformer(nn.Module):
         no_heads: int,
         no_blocks: int,
         n_transition: int,
+        use_ada_layer_norm: bool,
+        use_block_sparse_attn: bool,
+        block_size: Optional[int],
         inf: float,
     ):
         """
@@ -163,6 +177,12 @@ class DiffusionTransformer(nn.Module):
                 Number of attention heads
             n_transition:
                 Dimension multiplication factor used in transition layer
+            use_ada_layer_norm:
+                Whether to apply AdaLN-Zero conditioning
+            use_block_sparse_attn:
+                Whether to use Triton block sparse attention kernels
+            block_size:
+                Block size to use in block sparse attention
             inf:
                 Large constant used to create mask for attention logits
         """
@@ -177,6 +197,9 @@ class DiffusionTransformer(nn.Module):
                     c_hidden=c_hidden,
                     no_heads=no_heads,
                     n_transition=n_transition,
+                    use_ada_layer_norm=use_ada_layer_norm,
+                    use_block_sparse_attn=use_block_sparse_attn,
+                    block_size=block_size,
                     inf=inf,
                 )
                 for _ in range(no_blocks)
@@ -191,8 +214,6 @@ class DiffusionTransformer(nn.Module):
         mask: Optional[torch.Tensor] = None,
         beta: Optional[torch.Tensor] = None,
         layout: Optional[torch.Tensor] = None,
-        use_block_sparse_attn: bool = False,
-        block_size: int = 16,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
@@ -211,6 +232,10 @@ class DiffusionTransformer(nn.Module):
             beta:
                 [*, N_res, N_res] Neighborhood mask. Used in Sequence-local
                 atom attention for rectangular blocks along the diagonal.
+            layout:
+                [N / block_size, N / block_size] Layout config for block sparse
+                attention. Dictates which sections of the attention matrix
+                to compute.
             use_memory_efficient_kernel:
                 Whether to use memory efficient kernel
             use_deepspeed_evo_attention:
@@ -229,8 +254,6 @@ class DiffusionTransformer(nn.Module):
                 mask=mask,
                 beta=beta,
                 layout=layout,
-                use_block_sparse_attn=use_block_sparse_attn,
-                block_size=block_size,
                 use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,

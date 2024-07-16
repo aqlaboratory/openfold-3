@@ -10,6 +10,7 @@ from openfold3.core.model.layers import (
     NoisyPositionEmbedder,
     RefAtomFeatureEmbedder,
 )
+from openfold3.core.model.primitives.initialization import lecun_normal_init_
 from tests.config import consts
 
 
@@ -154,6 +155,7 @@ class TestAtomTransformer(unittest.TestCase):
         n_transition = 2
         n_query = 32
         n_key = 128
+        block_size = 16
         inf = 1e10
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -167,8 +169,10 @@ class TestAtomTransformer(unittest.TestCase):
                 n_transition=n_transition,
                 n_query=n_query,
                 n_key=n_key,
-                inf=inf,
+                use_ada_layer_norm=True,
                 use_block_sparse_attn=use_block_sparse_attn,
+                block_size=block_size,
+                inf=inf,
             )
             .eval()
             .to(device)
@@ -257,6 +261,7 @@ class TestAtomTransformer(unittest.TestCase):
         n_transition = 2
         n_query = 32
         n_key = 128
+        block_size = 16
         inf = 1e10
         eps = consts.eps
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -271,8 +276,10 @@ class TestAtomTransformer(unittest.TestCase):
                 n_transition=n_transition,
                 n_query=n_query,
                 n_key=n_key,
-                inf=inf,
+                use_ada_layer_norm=True,
                 use_block_sparse_attn=False,
+                block_size=block_size,
+                inf=inf,
             )
             .eval()
             .to(device)
@@ -285,14 +292,25 @@ class TestAtomTransformer(unittest.TestCase):
         )
         atom_mask = torch.ones((batch_size, 1, n_atom)).to(device, dtype=dtype)
 
-        with torch.cuda.amp.autocast(dtype=dtype):
-            ql_out = atom_transformer(ql=ql, cl=cl, plm=plm, atom_mask=atom_mask).cpu()
-            atom_transformer.use_block_sparse_attn = True
-            ql_out_block_sparse = atom_transformer(
-                ql=ql, cl=cl, plm=plm, atom_mask=atom_mask
-            ).cpu()
-            err = torch.mean(torch.abs(ql_out - ql_out_block_sparse))
-            self.assertTrue(err < eps, f"Error: {err}")
+        with torch.no_grad():
+            for i in range(no_blocks):
+                apb = atom_transformer.diffusion_transformer.blocks[
+                    i
+                ].attention_pair_bias
+                lecun_normal_init_(apb.mha.linear_g.weight)
+                lecun_normal_init_(apb.mha.linear_o.weight)
+                lecun_normal_init_(apb.linear_ada_out.weight)
+
+            with torch.cuda.amp.autocast(dtype=dtype):
+                ql_out = atom_transformer(
+                    ql=ql, cl=cl, plm=plm, atom_mask=atom_mask
+                ).cpu()
+                atom_transformer.use_block_sparse_attn = True
+                ql_out_block_sparse = atom_transformer(
+                    ql=ql, cl=cl, plm=plm, atom_mask=atom_mask
+                ).cpu()
+                err = torch.mean(torch.abs(ql_out - ql_out_block_sparse))
+                self.assertTrue(err < eps, f"Error: {err}")
 
     @compare_utils.skip_unless_triton_installed()
     def test_compare_block_sparse_fp32(self):
@@ -332,6 +350,9 @@ class TestAtomAttentionEncoder(unittest.TestCase):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
+            use_ada_layer_norm=True,
+            use_block_sparse_attn=False,
+            block_size=None,
             inf=inf,
         )
 
@@ -388,6 +409,9 @@ class TestAtomAttentionEncoder(unittest.TestCase):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
+            use_ada_layer_norm=True,
+            use_block_sparse_attn=False,
+            block_size=None,
             inf=inf,
         )
 
@@ -447,6 +471,9 @@ class TestAtomAttentionDecoder(unittest.TestCase):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
+            use_ada_layer_norm=True,
+            use_block_sparse_attn=False,
+            block_size=None,
             inf=inf,
         )
 
@@ -492,6 +519,9 @@ class TestAtomAttentionDecoder(unittest.TestCase):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
+            use_ada_layer_norm=True,
+            use_block_sparse_attn=False,
+            block_size=None,
             inf=inf,
         )
 

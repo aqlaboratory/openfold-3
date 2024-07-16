@@ -26,6 +26,8 @@ no_samples = mlc.FieldReference(48, field_type=int)
 no_rollout_steps = mlc.FieldReference(20, field_type=int)
 n_query = mlc.FieldReference(32, field_type=int)
 n_key = mlc.FieldReference(128, field_type=int)
+use_block_sparse_attn = mlc.FieldReference(False, field_type=bool)
+block_size = mlc.FieldReference(16, field_type=int)
 
 # templates_enabled = mlc.FieldReference(True, field_type=bool)
 eps = mlc.FieldReference(1e-8, field_type=float)
@@ -100,21 +102,28 @@ config = mlc.ConfigDict(
                 "c_s_input": c_s_input,
                 "c_s": c_s,
                 "c_z": c_z,
-                "c_atom_ref": c_atom_ref,
-                "c_atom": c_atom,
-                "c_atom_pair": c_atom_pair,
-                "c_token": c_token_embedder,
-                # c_atom / no_heads
-                # built into the function (might get float depending on conf.)
-                "c_hidden": 32,
-                "no_heads": 4,
-                "no_blocks": 3,
-                "n_transition": 2,
-                "n_query": n_query,
-                "n_key": n_key,
                 "max_relative_idx": max_relative_idx,
                 "max_relative_chain": max_relative_chain,
-                "inf": 1e10,  # global parameter?
+                "atom_attn_enc": {
+                    "c_s": c_s,
+                    "c_z": c_z,
+                    "c_atom_ref": c_atom_ref,
+                    "c_atom": c_atom,
+                    "c_atom_pair": c_atom_pair,
+                    "c_token": c_token_embedder,
+                    # c_atom / no_heads
+                    # built into the function (might get float depending on conf.)
+                    "c_hidden": 32,
+                    "no_heads": 4,
+                    "no_blocks": 3,
+                    "n_transition": 2,
+                    "n_query": n_query,
+                    "n_key": n_key,
+                    "use_ada_layer_norm": True,
+                    "use_block_sparse_attn": use_block_sparse_attn,
+                    "block_size": block_size,
+                    "inf": 1e10,  # global parameter?
+                },
             },
             "template": {
                 "c_t": c_t,
@@ -220,6 +229,9 @@ config = mlc.ConfigDict(
                     "n_transition": 2,
                     "n_query": n_query,
                     "n_key": n_key,
+                    "use_ada_layer_norm": True,
+                    "use_block_sparse_attn": use_block_sparse_attn,
+                    "block_size": block_size,
                     "inf": 1e9,  # global parameter?
                 },
                 "diffusion_transformer": {
@@ -230,6 +242,9 @@ config = mlc.ConfigDict(
                     "no_heads": 16,
                     "no_blocks": 24,
                     "n_transition": 2,
+                    "use_ada_layer_norm": True,
+                    "use_block_sparse_attn": False,
+                    "block_size": None,
                     "inf": 1e9,  # global parameter?
                 },
                 "atom_attn_dec": {
@@ -242,6 +257,9 @@ config = mlc.ConfigDict(
                     "n_transition": 2,
                     "n_query": n_query,
                     "n_key": n_key,
+                    "use_ada_layer_norm": True,
+                    "use_block_sparse_attn": use_block_sparse_attn,
+                    "block_size": block_size,
                     "inf": 1e9,  # global parameter?
                 },
             },

@@ -46,9 +46,10 @@ class AtomTransformer(nn.Module):
         n_transition: int,
         n_query: int,
         n_key: int,
-        inf: float,
+        use_ada_layer_norm: bool = True,
         use_block_sparse_attn: bool = False,
-        block_size: int = 16,
+        block_size: Optional[int] = 16,
+        inf: float = 1e9,
     ):
         """
         Args:
@@ -68,10 +69,12 @@ class AtomTransformer(nn.Module):
                 Number of queries (block height)
             n_key:
                 Number of keys (block width)
+            use_block_sparse_attn:
+                Whether to use Triton block sparse attention kernels
+            block_size:
+                Block size to use in block sparse attention
             inf:
                 Large number used for attention masking
-            use_block_sparse_attn:
-            block_size:
         """
         super().__init__()
         self.n_query = n_query
@@ -88,7 +91,10 @@ class AtomTransformer(nn.Module):
             no_heads=no_heads,
             no_blocks=no_blocks,
             n_transition=n_transition,
-            inf=inf,
+            use_ada_layer_norm=use_ada_layer_norm,
+            use_block_sparse_attn=self.use_block_sparse_attn,
+            block_size=self.block_size,
+            inf=self.inf,
         )
 
     def forward(
@@ -130,26 +136,37 @@ class AtomTransformer(nn.Module):
         n_center = int(n_blocks // n_query) + 1
         subset_centers = offset + torch.arange(n_center, device=ql.device) * n_query
 
-        # Compute beta
-        # [*, N_atom, N_atom]
+        # If use_block_sparse_attn: [N_atom / block_size, N_query / block_size]
+        # Else: [N_atom, N_query]
         row_mask = torch.abs(
             torch.arange(n_blocks, device=ql.device).unsqueeze(1)
             - subset_centers.unsqueeze(0)
         ) < (n_query / 2)
+
+        # If use_block_sparse_attn: [N_atom / block_size, N_key / block_size]
+        # Else: [N_atom, N_key]
         col_mask = torch.abs(
             torch.arange(n_blocks, device=ql.device).unsqueeze(1)
             - subset_centers.unsqueeze(0)
         ) < (n_key / 2)
+
+        # Compute beta
+        # If use_block_sparse_attn: [N_atom / block_size, N_atom / block_size]
+        # Else: [N_atom, N_atom]
         beta = torch.einsum("li,mi->lm", row_mask.to(ql.dtype), col_mask.to(ql.dtype))
 
         layout = None
         if self.use_block_sparse_attn:
+            # [N_atom / block_size, N_atom / block_size]
             layout = beta
+            # [N_atom, N_atom]
             beta = beta.repeat_interleave(self.block_size, dim=0).repeat_interleave(
                 self.block_size, dim=1
             )
 
         beta = (beta - 1.0) * self.inf  # TODO: check this
+
+        # [*, N_atom, N_atom]
         beta = beta.reshape(len(plm[:-3]) * (1,) + (n_atom, n_atom)).to(ql.device)
 
         # Run diffusion transformer
@@ -161,8 +178,6 @@ class AtomTransformer(nn.Module):
             mask=atom_mask,
             beta=beta,
             layout=layout,
-            use_block_sparse_attn=self.use_block_sparse_attn,
-            block_size=self.block_size,
         )
 
         return ql
@@ -355,7 +370,10 @@ class AtomAttentionEncoder(nn.Module):
         n_transition: int,
         n_query: int,
         n_key: int,
-        inf: float,
+        use_ada_layer_norm: bool,
+        use_block_sparse_attn: bool,
+        block_size: Optional[int] = 16,
+        inf: float = 1e9,
         c_s: Optional[int] = None,
         c_z: Optional[int] = None,
     ):
@@ -383,6 +401,12 @@ class AtomAttentionEncoder(nn.Module):
                 Number of queries (block height)
             n_key:
                 Number of keys (block width)
+            use_ada_layer_norm:
+                Whether to apply AdaLN-Zero conditioning
+            use_block_sparse_attn:
+                Whether to use Triton block sparse attention kernels
+            block_size:
+                Block size to use in block sparse attention
             inf:
                 Large number used for attention masking
             c_s:
@@ -424,6 +448,9 @@ class AtomAttentionEncoder(nn.Module):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
+            use_ada_layer_norm=use_ada_layer_norm,
+            use_block_sparse_attn=use_block_sparse_attn,
+            block_size=block_size,
             inf=inf,
         )
 
@@ -548,7 +575,10 @@ class AtomAttentionDecoder(nn.Module):
         n_transition: int,
         n_query: int,
         n_key: int,
-        inf: float,
+        use_ada_layer_norm: bool,
+        use_block_sparse_attn: bool,
+        block_size: Optional[int] = 16,
+        inf: float = 1e9,
     ):
         """
         Args:
@@ -570,6 +600,12 @@ class AtomAttentionDecoder(nn.Module):
                 Number of queries (block height)
             n_key:
                 Number of keys (block width)
+            use_ada_layer_norm:
+                Whether to apply AdaLN-Zero conditioning
+            use_block_sparse_attn:
+                Whether to use Triton block sparse attention kernels
+            block_size:
+                Block size to use in block sparse attention
             inf:
                 Large number used for attention masking
         """
@@ -586,6 +622,9 @@ class AtomAttentionDecoder(nn.Module):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
+            use_ada_layer_norm=use_ada_layer_norm,
+            use_block_sparse_attn=use_block_sparse_attn,
+            block_size=block_size,
             inf=inf,
         )
 
