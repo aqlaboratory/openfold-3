@@ -51,7 +51,8 @@ if fa_is_installed:
     from flash_attn.bert_padding import unpad_input
     from flash_attn.flash_attn_interface import flash_attn_varlen_kvpacked_func
 
-if importlib.util.find_spec("triton") is not None:
+triton_is_installed = importlib.util.find_spec("triton") is not None
+if triton_is_installed:
     from triton.ops.blocksparse import matmul as blocksparse_matmul
     from triton.ops.blocksparse import softmax as blocksparse_softmax
 
@@ -420,6 +421,8 @@ class BlockSparseAttention(Attention):
         )
 
         self.block_size = block_size
+        if self.block_size not in [16, 32, 64, 128]:
+            raise ValueError("Only block sizes in [16, 32, 64, 128] are supported")
 
     def get_sparse_ops(self, seq_len: int, layout, device: str) -> Tuple:
         """
@@ -503,6 +506,17 @@ class BlockSparseAttention(Attention):
                 attention. Dictates which sections of the attention matrix
                 to compute.
         """
+
+        def flatten_batch_dims(x):
+            return x.reshape((-1, *x.shape[-3:]))
+
+        orig_shape = q.shape
+        batch_dims = orig_shape[:-3]
+        if len(batch_dims) > 1:
+            q = flatten_batch_dims(q)
+            k = flatten_batch_dims(k)
+            v = flatten_batch_dims(v)
+
         sparse_dot_sdd, sparse_dot_dsd, sparse_softmax = self.get_sparse_ops(
             seq_len=q.shape[-2], layout=layout, device=q.device
         )
@@ -511,16 +525,28 @@ class BlockSparseAttention(Attention):
         w = sparse_dot_sdd(q, k)
 
         if biases is not None:
+            # Sum all bias terms together and sparsify the tensor
+            # [*, H, Q, K]
             biases = sum(biases)
             biases = self.sparsify_tensor(
-                biases, layout, self.block_size, batch_dims=biases[:-3]
+                biases, layout, self.block_size, batch_dims=biases.shape[:-3]
             )
+
+            # This is ugly and should be refactored
+            # The batch dim of w must be flat: batch_size * no_samples
+            # Because the bias term is broadcasted over the samples (batch_size * 1),
+            # the shape mismatch requires reshaping the tensor to match the bias shape
+            attn_shape = w.shape
+            w = w.reshape((*batch_dims, *w.shape[-3:]))
             w = w + biases
+            w = w.reshape(attn_shape)
 
         w = sparse_softmax(w)
 
         # Sparse x Dense = Dense
         o = sparse_dot_dsd(w, v)
+
+        o = o.reshape(orig_shape)
 
         return o
 
@@ -547,25 +573,26 @@ class BlockSparseAttention(Attention):
         Returns:
             [*, Q, C_q] attention update
         """
+        if not triton_is_installed:
+            raise ValueError("BlockSparseAttention requires that Triton be installed")
+        if q_x.shape[-2] != layout.shape[-2] * self.block_size:
+            raise ValueError(
+                "Sequence length and layout are inconsistent with block size"
+            )
+        if q_x.shape[-2] % self.block_size != 0:
+            raise ValueError(
+                "Sequence length {q_x.shape[-2]}  must be a multiple of"
+                "block size {self.block_size}"
+            )
+
+        # Apply the same layout across all attention heads
         layout = layout[None].tile((self.no_heads, 1, 1)).long()
 
         # [*, H, Q/K/V, C_hidden]
         q, k, v = self._prep_qkv(q_x, kv_x, apply_scale=True)
 
-        def flatten_batch_dims(x):
-            return x.reshape((-1, *x.shape[-3:]))
-
-        orig_shape = q.shape
-        if len(orig_shape[:-3]) > 1:
-            q = flatten_batch_dims(q)
-            k = flatten_batch_dims(k)
-            v = flatten_batch_dims(v)
-            if biases is not None:
-                biases = [flatten_batch_dims(b) for b in biases]
-
         o = self.attention(q=q, k=k, v=v, biases=biases, layout=layout)
 
-        o = o.reshape(orig_shape)
         o = o.transpose(-2, -3)
 
         o = self._wrap_up(o=o, q_x=q_x)

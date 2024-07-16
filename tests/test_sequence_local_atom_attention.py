@@ -238,6 +238,7 @@ class TestAtomTransformer(unittest.TestCase):
             )
 
     @compare_utils.skip_unless_triton_installed()
+    @compare_utils.skip_unless_cuda_available()
     def test_with_block_sparse_attn(self):
         self.without_n_sample_channel(dtype=torch.float32, use_block_sparse_attn=True)
         self.with_n_sample_channel(dtype=torch.float32, use_block_sparse_attn=True)
@@ -313,10 +314,12 @@ class TestAtomTransformer(unittest.TestCase):
                 self.assertTrue(err < eps, f"Error: {err}")
 
     @compare_utils.skip_unless_triton_installed()
+    @compare_utils.skip_unless_cuda_available()
     def test_compare_block_sparse_fp32(self):
         self.compare_block_sparse(dtype=torch.float32)
 
     @compare_utils.skip_unless_triton_installed()
+    @compare_utils.skip_unless_cuda_available()
     def test_compare_block_sparse_bf16(self):
         self.compare_block_sparse(dtype=torch.bfloat16)
 

@@ -144,24 +144,22 @@ class AttentionPairBias(nn.Module):
             List of bias terms. Includes the pair bias and attention mask.
         """
         if mask is None:
-            # [*, I, J]
+            # [*, N]
             mask = a.new_ones(
                 a.shape[:-1],
             )
 
-        # [*, N_res, N_res]
-        square_mask = mask[..., None] * mask[..., None, :]
-        # [*, 1, N_res, N_res]
-        mask_bias = (self.inf * (square_mask - 1))[..., None, :, :]
+        # [*, 1, 1, N]
+        mask_bias = (self.inf * (mask - 1))[..., None, None, :]
         biases = [mask_bias]
 
-        # [*, N_res, N_res, C_z]
+        # [*, N, N, C_z]
         z = self.layer_norm_z(z)
 
-        # [*, N_res, N_res, no_heads]
+        # [*, N, N, no_heads]
         z = self.linear_z(z)
 
-        # [*, no_heads, N_res, N_res]
+        # [*, no_heads, N, N]
         z = permute_final_dims(z, [2, 0, 1])
 
         if beta is not None:
