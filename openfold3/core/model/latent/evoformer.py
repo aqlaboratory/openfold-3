@@ -16,6 +16,7 @@
 """Evoformer block and stack."""
 
 import sys
+from ml_collections import ConfigDict
 from typing import Optional, Sequence, Tuple
 
 import torch
@@ -45,6 +46,7 @@ class EvoformerBlock(MSABlock):
         no_column_attention: bool,
         opm_first: bool,
         fuse_projection_weights: bool,
+        linear_init_params: ConfigDict,
         inf: float,
         eps: float,
     ):
@@ -63,6 +65,7 @@ class EvoformerBlock(MSABlock):
             pair_dropout=pair_dropout,
             opm_first=opm_first,
             fuse_projection_weights=fuse_projection_weights,
+            linear_init_params=linear_init_params,
             inf=inf,
             eps=eps,
         )
@@ -75,6 +78,7 @@ class EvoformerBlock(MSABlock):
                 c_m,
                 c_hidden_msa_att,
                 no_heads_msa,
+                linear_init_params=linear_init_params.msa_col_att,
                 inf=inf,
             )
 

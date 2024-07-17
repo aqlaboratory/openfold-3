@@ -1,24 +1,17 @@
-default_bias_init = {"bias": True, "init": "default"}
-final_bias_init = {"bias": True, "init": "final"}
-gating_bias_init = {"bias": True, "init": "gating"}
-glorot_bias_init = {"bias": False, "init": "glorot"}
-normal_bias_init = {"bias": False, "init": "normal"}
-relu_bias_init = {"bias": True, "init": "relu"}
-
 ########################
 # Primitives
 ########################
 
 mha_init = {
-    "linear_q": glorot_bias_init,
-    "linear_k": glorot_bias_init,
-    "linear_v": glorot_bias_init,
-    "linear_g": gating_bias_init,
-    "linear_o": final_bias_init,
+    "linear_q": {"bias": False, "init": "glorot"},
+    "linear_k": {"bias": False, "init": "glorot"},
+    "linear_v": {"bias": False, "init": "glorot"},
+    "linear_g": {"bias": True, "init": "gating"},
+    "linear_o": {"bias": True, "init": "final"},
 }
 
 mha_bias_init = {
-    "linear_z": normal_bias_init,
+    "linear_z": {"bias": False, "init": "normal"},
     "mha": mha_init,
 }
 
@@ -27,36 +20,63 @@ mha_bias_init = {
 ########################
 
 tri_mul_init = {
-    "linear_ab_p": default_bias_init,
-    "linear_ab_g": gating_bias_init,
-    "linear_g": gating_bias_init,
-    "linear_z": final_bias_init,
+    "linear_ab_p": {"bias": True, "init": "default"},
+    "linear_ab_g": {"bias": True, "init": "gating"},
+    "linear_g": {"bias": True, "init": "gating"},
+    "linear_z": {"bias": True, "init": "final"},
 }
 
 tri_att_init = mha_bias_init
 
 opm_init = {
-    "linear_1": default_bias_init,
-    "linear_2": default_bias_init,
-    "linear_out": final_bias_init,
+    "linear_1": {"bias": True, "init": "default"},
+    "linear_2": {"bias": True, "init": "default"},
+    "linear_out": {"bias": True, "init": "final"},
 }
 
-msa_row_col_init = mha_bias_init
+msa_row_col_att_init = mha_bias_init
 
-msa_global_init = mha_init
+msa_global_att_init = {
+    "mha": mha_init
+}
 
 transition_init = {
-    "layers": relu_bias_init,
-    "linear_out": final_bias_init,
+    "layers": {"bias": True, "init": "relu"},
+    "linear_out": {"bias": True, "init": "final"},
 }
 
 ########################
 # Feature Embedders
 ########################
 
-input_emb_init = {}
+input_emb_init = {
+    "linear_tf_z_i": {"bias": True, "init": "default"},
+    "linear_tf_z_j": {"bias": True, "init": "default"},
+    "linear_tf_m": {"bias": True, "init": "default"},
+    "linear_msa_m": {"bias": True, "init": "default"},
+    "linear_relpos": {"bias": True, "init": "default"},
+}
 
-templ_feat_emb_init = {}
+recycling_emb_init = {
+    "linear": {"bias": True, "init": "default"}
+}
+
+templ_single_feat_emb_init = {
+    "template_single_embedder": {"bias": True, "init": "default"},
+    "template_projector": {"bias": True, "init": "default"},
+}
+
+templ_pair_feat_emb_init = {
+    "dgram_linear": {"bias": True, "init": "relu"},
+    "aatype_linear_1": {"bias": True, "init": "relu"},
+    "aatype_linear_2": {"bias": True, "init": "relu"},
+    "query_embedding_linear": {"bias": True, "init": "relu"},
+    "pseudo_beta_mask_linear": {"bias": True, "init": "relu"},
+    "x_linear": {"bias": True, "init": "relu"},
+    "y_linear": {"bias": True, "init": "relu"},
+    "z_linear": {"bias": True, "init": "relu"},
+    "backbone_mask_linear": {"bias": True, "init": "relu"},
+}
 
 ########################
 # Heads

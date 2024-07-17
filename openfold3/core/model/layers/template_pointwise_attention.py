@@ -62,7 +62,7 @@ class TemplatePointwiseAttention(nn.Module):
             self.c_t,
             self.c_hidden,
             self.no_heads,
-            linear_init_params=linear_init_params,
+            linear_init_params=linear_init_params.mha,
             gating=False,
         )
 

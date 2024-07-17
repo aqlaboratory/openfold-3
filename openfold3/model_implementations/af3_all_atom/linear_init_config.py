@@ -1,10 +1,3 @@
-default_bias_init = {"bias": False, "init": "default"}
-gating_bias_init = {"bias": True, "init": "gating"}
-glorot_bias_init = {"bias": False, "init": "glorot"}
-final_bias_init = {"bias": False, "init": "final"}  # Same as gating init with no bias
-normal_bias_init = {"bias": False, "init": "normal"}
-relu_bias_init = {"bias": False, "init": "relu"}
-
 ########################
 # Primitives
 ########################
@@ -15,14 +8,17 @@ swiglu_init = {
 }
 
 # TODO: Verify these inits
-ada_ln_init = {"linear_g": gating_bias_init, "linear_s": final_bias_init}
+ada_ln_init = {
+    "linear_g": {"bias": True, "init": "gating"},
+    "linear_s": {"bias": False, "init": "final"}
+}
 
 mha_init = {
-    "linear_q": glorot_bias_init,
-    "linear_k": glorot_bias_init,
-    "linear_v": glorot_bias_init,
-    "linear_g": final_bias_init,
-    "linear_o": final_bias_init,
+    "linear_q": {"bias": False, "init": "glorot"},
+    "linear_k": {"bias": False, "init": "glorot"},
+    "linear_v": {"bias": False, "init": "glorot"},
+    "linear_g": {"bias": False, "init": "final"},
+    "linear_o": {"bias": False, "init": "final"},
 }
 
 ########################
@@ -32,53 +28,53 @@ mha_init = {
 att_pair_bias_init = {
     "ada_ln": ada_ln_init,
     "linear_ada_out": {"bias": True, "init": "gating_ada_zero"},
-    "linear_z": normal_bias_init,
+    "linear_z": {"bias": False, "init": "normal"},
     "mha": {
         "linear_q": {"bias": True, "init": "glorot"},
-        "linear_k": glorot_bias_init,
-        "linear_v": glorot_bias_init,
-        "linear_g": final_bias_init,
-        "linear_o": final_bias_init,
+        "linear_k": {"bias": False, "init": "glorot"},
+        "linear_v": {"bias": False, "init": "glorot"},
+        "linear_g": {"bias": False, "init": "final"},
+        "linear_o": {"bias": False, "init": "final"},
     },
 }
 
 tri_mul_init = {
-    "linear_a_p": default_bias_init,
-    "linear_a_g": final_bias_init,
-    "linear_b_p": default_bias_init,
-    "linear_b_g": final_bias_init,
-    "linear_g": final_bias_init,
-    "linear_z": final_bias_init,
+    "linear_a_p": {"bias": False, "init": "default"},
+    "linear_a_g": {"bias": False, "init": "final"},
+    "linear_b_p": {"bias": False, "init": "default"},
+    "linear_b_g": {"bias": False, "init": "final"},
+    "linear_g": {"bias": False, "init": "final"},
+    "linear_z": {"bias": False, "init": "final"},
 }
 
 tri_att_init = {
-    "linear_z": normal_bias_init,
+    "linear_z": {"bias": False, "init": "normal"},
     "mha": mha_init,
 }
 
 opm_init = {
-    "linear_1": default_bias_init,
-    "linear_2": default_bias_init,
+    "linear_1": {"bias": False, "init": "default"},
+    "linear_2": {"bias": False, "init": "default"},
     "linear_out": {"bias": True, "init": "final"},
 }
 
 msa_pair_bias_init = {
-    "linear_z": normal_bias_init,
-    "linear_v": glorot_bias_init,
-    "linear_o": final_bias_init,
-    "linear_g": gating_bias_init,
+    "linear_z": {"bias": False, "init": "normal"},
+    "linear_v": {"bias": False, "init": "glorot"},
+    "linear_o": {"bias": False, "init": "final"},
+    "linear_g": {"bias": False, "init": "gating"},
 }
 
 transition_init = {
     "swiglu": swiglu_init,
-    "linear_out": final_bias_init,
+    "linear_out": {"bias": False, "init": "final"},
 }
 
 cond_transition_init = {
     "ada_ln": ada_ln_init,
     "swiglu": swiglu_init,
     "linear_g": {"bias": True, "init": "gating_ada_zero"},
-    "linear_out": final_bias_init,
+    "linear_out": {"bias": False, "init": "final"},
 }
 
 diffusion_transformer_init = {
@@ -89,40 +85,41 @@ diffusion_transformer_init = {
 atom_transformer_init = {"diffusion_transformer": diffusion_transformer_init}
 
 ref_atom_emb_init = {
-    "linear_feats": default_bias_init,
-    "linear_ref_offset": default_bias_init,
-    "linear_inv_sq_dists": default_bias_init,
-    "linear_valid_mask": default_bias_init,
+    "linear_feats": {"bias": False, "init": "default"},
+    "linear_ref_offset": {"bias": False, "init": "default"},
+    "linear_inv_sq_dists": {"bias": False, "init": "default"},
+    "linear_valid_mask": {"bias": False, "init": "default"},
 }
 
 noisy_pos_emb_init = {
-    "linear_s": default_bias_init,
-    "linear_z": default_bias_init,
-    "linear_r": default_bias_init,
+    "linear_s": {"bias": False, "init": "default"},
+    "linear_z": {"bias": False, "init": "default"},
+    "linear_r": {"bias": False, "init": "default"},
 }
 
 atom_att_enc_init = {
     "ref_atom_emb": ref_atom_emb_init,
     "noisy_pos_emb": noisy_pos_emb_init,
-    "linear_l": relu_bias_init,
-    "linear_m": relu_bias_init,
-    "pair_mlp": relu_bias_init,
+    "linear_l": {"bias": False, "init": "relu"},
+    "linear_m": {"bias": False, "init": "relu"},
+    "pair_mlp": {"bias": False, "init": "relu"},
     "atom_transformer": atom_transformer_init,
-    "linear_q": relu_bias_init,
+    "linear_q": {"bias": False, "init": "relu"},
 }
 
 atom_att_dec_init = {
-    "linear_q_in": default_bias_init,
+    "linear_q_in": {"bias": False, "init": "default"},
     "atom_transformer": atom_transformer_init,
-    "linear_q_out": final_bias_init,
+    "linear_q_out": {"bias": False, "init": "final"},
 }
 
 diffusion_conditioning = {
-    "linear_z": default_bias_init,
+    "relpos_emb": {"linear_relpos": {"bias": False, "init": "default"}},
+    "linear_z": {"bias": False, "init": "default"},
     "transition_z": transition_init,
-    "linear_s": default_bias_init,
+    "linear_s": {"bias": False, "init": "default"},
     "fourier_emb": {"linear": {"bias": True, "init": "fourier"}},
-    "linear_n": default_bias_init,
+    "linear_n": {"bias": False, "init": "default"},
     "transition_s": transition_init,
 }
 
@@ -131,13 +128,24 @@ diffusion_conditioning = {
 ########################
 
 input_emb_init = {
-    "linear_s": default_bias_init,
-    "linear_z_i": default_bias_init,
-    "linear_z_j": default_bias_init,
-    "atom_att_enc": {},
+    "atom_att_enc": atom_att_enc_init,
+    "linear_s": {"bias": False, "init": "default"},
+    "linear_z_i": {"bias": False, "init": "default"},
+    "linear_z_j": {"bias": False, "init": "default"},
+    "relpos_emb": {"linear_relpos": {"bias": False, "init": "default"}},
+    "linear_token_bonds": {"bias": False, "init": "default"},
 }
 
-templ_feat_emb_init = {}
+msa_module_emb = {
+    "linear_m": {"bias": False, "init": "default"},
+    "linear_s_input": {"bias": False, "init": "default"},
+}
+
+# TODO: check initialization
+templ_pair_feat_emb_init = {
+    "linear_a": {"bias": False, "init": "default"},
+    "linear_z": {"bias": False, "init": "relu"},
+}
 
 ########################
 # Heads
@@ -149,15 +157,15 @@ templ_feat_emb_init = {}
 ########################
 
 pair_block_init = {
-    "tri_mul_init": tri_mul_init,
-    "tri_att_init": tri_att_init,
-    "transition_init": transition_init,
+    "tri_mul": tri_mul_init,
+    "tri_att": tri_att_init,
+    "pair_transition": transition_init,
 }
 
 msa_module_emb_init = {}
 
 msa_module_init = {
-    "pair_block_init": pair_block_init,
+    "pair_block": pair_block_init,
     "opm_init": opm_init,
 }
 

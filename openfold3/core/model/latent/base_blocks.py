@@ -21,6 +21,7 @@ the EvoformerStack, ExtraMSAStack, and MSAModule.
 
 import sys
 from abc import ABC, abstractmethod
+from ml_collections import ConfigDict
 from typing import Optional, Sequence, Tuple
 
 import torch
@@ -63,6 +64,7 @@ class MSABlock(nn.Module, ABC):
         pair_dropout: float,
         opm_first: bool,
         fuse_projection_weights: bool,
+        linear_init_params: ConfigDict,
         inf: float,
         eps: float,
     ):
@@ -101,6 +103,8 @@ class MSABlock(nn.Module, ABC):
             fuse_projection_weights:
                 When True, uses FusedTriangleMultiplicativeUpdate variant in
                 the Pair Stack. Used in Multimer pipeline.
+            linear_init_params:
+                Linear layer initialization parameters
             inf:
                 Large constant for masking
             eps:
@@ -115,6 +119,7 @@ class MSABlock(nn.Module, ABC):
             c_z=c_z,
             c_hidden=c_hidden_msa_att,
             no_heads=no_heads_msa,
+            linear_init_params=linear_init_params.msa_row_att,
             inf=inf,
         )
 
@@ -124,11 +129,13 @@ class MSABlock(nn.Module, ABC):
             self.msa_transition = ReLUTransition(
                 c_in=c_m,
                 n=transition_n,
+                linear_init_params=linear_init_params.msa_transition,
             )
         elif transition_type == "swiglu":
             self.msa_transition = SwiGLUTransition(
                 c_in=c_m,
                 n=transition_n,
+                linear_init_params=linear_init_params.msa_transition,
             )
         else:
             raise ValueError(f"Transition type {transition_type} is not available")
@@ -137,6 +144,7 @@ class MSABlock(nn.Module, ABC):
             c_m,
             c_z,
             c_hidden_opm,
+            linear_init_params=linear_init_params.opm
         )
 
         self.pair_stack = PairBlock(
@@ -148,6 +156,7 @@ class MSABlock(nn.Module, ABC):
             transition_n=transition_n,
             pair_dropout=pair_dropout,
             fuse_projection_weights=fuse_projection_weights,
+            linear_init_params=linear_init_params.pair_block,
             inf=inf,
         )
 
@@ -219,6 +228,7 @@ class PairBlock(nn.Module):
         transition_n: int,
         pair_dropout: float,
         fuse_projection_weights: bool,
+        linear_init_params: ConfigDict,
         inf: float,
     ):
         """
@@ -241,6 +251,8 @@ class PairBlock(nn.Module):
             fuse_projection_weights:
                 When True, uses FusedTriangleMultiplicativeUpdate variant in the Pair
                 Stack. Used in Multimer pipeline.
+            linear_init_params:
+                Linear layer initialization parameters
             inf:
                 Large constant used for masking
         """
@@ -250,31 +262,37 @@ class PairBlock(nn.Module):
             self.tri_mul_out = FusedTriangleMultiplicationOutgoing(
                 c_z,
                 c_hidden_mul,
+                linear_init_params=linear_init_params.tri_mul
             )
             self.tri_mul_in = FusedTriangleMultiplicationIncoming(
                 c_z,
                 c_hidden_mul,
+                linear_init_params=linear_init_params.tri_mul
             )
         else:
             self.tri_mul_out = TriangleMultiplicationOutgoing(
                 c_z,
                 c_hidden_mul,
+                linear_init_params=linear_init_params.tri_mul
             )
             self.tri_mul_in = TriangleMultiplicationIncoming(
                 c_z,
                 c_hidden_mul,
+                linear_init_params=linear_init_params.tri_mul
             )
 
         self.tri_att_start = TriangleAttention(
             c_z,
             c_hidden_pair_att,
             no_heads_pair,
+            linear_init_params=linear_init_params.tri_att,
             inf=inf,
         )
         self.tri_att_end = TriangleAttention(
             c_z,
             c_hidden_pair_att,
             no_heads_pair,
+            linear_init_params=linear_init_params.tri_att,
             inf=inf,
         )
 
@@ -282,11 +300,13 @@ class PairBlock(nn.Module):
             self.pair_transition = ReLUTransition(
                 c_in=c_z,
                 n=transition_n,
+                linear_init_params=linear_init_params.pair_transition,
             )
         elif transition_type == "swiglu":
             self.pair_transition = SwiGLUTransition(
                 c_in=c_z,
                 n=transition_n,
+                linear_init_params=linear_init_params.pair_transition,
             )
         else:
             raise ValueError(f"Transition type {transition_type} is not available")

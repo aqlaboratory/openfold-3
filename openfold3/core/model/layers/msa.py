@@ -438,7 +438,7 @@ class MSAColumnGlobalAttention(nn.Module):
             no_heads=no_heads,
             inf=inf,
             eps=eps,
-            linear_init_params=linear_init_params,
+            linear_init_params=linear_init_params.mha,
         )
 
     @torch.jit.ignore
