@@ -426,63 +426,31 @@ class InputEmbedderAllAtom(nn.Module):
 
     def __init__(
         self,
-        c_atom_ref: int,
         c_s_input: int,
         c_s: int,
         c_z: int,
-        c_atom: int,
-        c_atom_pair: int,
-        c_token: int,
-        c_hidden: int,
-        no_heads: int,
-        no_blocks: int,
-        n_transition: int,
-        n_query: int,
-        n_key: int,
-        inf: float,
         max_relative_idx: int,
         max_relative_chain: int,
+        atom_attn_enc: Dict,
     ):
         """
         Args:
-            c_atom_ref:
-                Reference per-atom feature dimension
-            c_atom:
-                Atom embedding channel dimension
-            c_atom_pair:
-                Atom pair embedding channel dimension
-            c_token:
-                Token representation channel dimension
             c_s_input:
                 Per token input representation channel dimension
             c_s:
                 Single representation channel dimension
             c_z:
                 Pair representation channel dimension
-            c_hidden_att:
-                Hidden channel dimension
             max_relative_idx:
                 Maximum relative position and token indices clipped
             max_relative_chain:
                 Maximum relative chain indices clipped
-            **kwargs:
+            atom_attn_enc:
+                Config for the AtomAttentionEncoder
         """
         super().__init__()
 
-        self.atom_attn_enc = AtomAttentionEncoder(
-            c_atom_ref=c_atom_ref,
-            c_atom=c_atom,
-            c_atom_pair=c_atom_pair,
-            c_token=c_token,
-            add_noisy_pos=False,
-            c_hidden=c_hidden,
-            no_heads=no_heads,
-            no_blocks=no_blocks,
-            n_transition=n_transition,
-            n_query=n_query,
-            n_key=n_key,
-            inf=inf,
-        )
+        self.atom_attn_enc = AtomAttentionEncoder(**atom_attn_enc, add_noisy_pos=False)
 
         self.linear_s = Linear(c_s_input, c_s, bias=False)
         self.linear_z_i = Linear(c_s_input, c_z, bias=False)
