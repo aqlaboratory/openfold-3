@@ -21,11 +21,11 @@ the EvoformerStack, ExtraMSAStack, and MSAModule.
 
 import sys
 from abc import ABC, abstractmethod
-from ml_collections import ConfigDict
 from typing import Optional, Sequence, Tuple
 
 import torch
 import torch.nn as nn
+from ml_collections import ConfigDict
 
 from openfold3.core.model.layers.msa import MSARowAttentionWithPairBias
 from openfold3.core.model.layers.outer_product_mean import OuterProductMean
@@ -141,10 +141,7 @@ class MSABlock(nn.Module, ABC):
             raise ValueError(f"Transition type {transition_type} is not available")
 
         self.outer_product_mean = OuterProductMean(
-            c_m,
-            c_z,
-            c_hidden_opm,
-            linear_init_params=linear_init_params.opm
+            c_m, c_z, c_hidden_opm, linear_init_params=linear_init_params.opm
         )
 
         self.pair_stack = PairBlock(
@@ -260,25 +257,17 @@ class PairBlock(nn.Module):
 
         if fuse_projection_weights:
             self.tri_mul_out = FusedTriangleMultiplicationOutgoing(
-                c_z,
-                c_hidden_mul,
-                linear_init_params=linear_init_params.tri_mul
+                c_z, c_hidden_mul, linear_init_params=linear_init_params.tri_mul
             )
             self.tri_mul_in = FusedTriangleMultiplicationIncoming(
-                c_z,
-                c_hidden_mul,
-                linear_init_params=linear_init_params.tri_mul
+                c_z, c_hidden_mul, linear_init_params=linear_init_params.tri_mul
             )
         else:
             self.tri_mul_out = TriangleMultiplicationOutgoing(
-                c_z,
-                c_hidden_mul,
-                linear_init_params=linear_init_params.tri_mul
+                c_z, c_hidden_mul, linear_init_params=linear_init_params.tri_mul
             )
             self.tri_mul_in = TriangleMultiplicationIncoming(
-                c_z,
-                c_hidden_mul,
-                linear_init_params=linear_init_params.tri_mul
+                c_z, c_hidden_mul, linear_init_params=linear_init_params.tri_mul
             )
 
         self.tri_att_start = TriangleAttention(

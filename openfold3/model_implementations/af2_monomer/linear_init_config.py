@@ -36,15 +36,11 @@ opm_init = {
     "linear_out": {"bias": True, "init": "final"},
 }
 
-template_pointwise_init = {
-    "mha": mha_init
-}
+template_pointwise_init = {"mha": mha_init}
 
 msa_row_col_att_init = mha_bias_init
 
-msa_global_att_init = {
-    "mha": mha_init
-}
+msa_global_att_init = {"mha": mha_init}
 
 transition_init = {
     "layers": {"bias": True, "init": "relu"},
@@ -68,20 +64,16 @@ preembed_init = {
     "linear_preemb_m": {"bias": True, "init": "default"},
     "linear_preemb_z_i": {"bias": True, "init": "default"},
     "linear_preemb_z_j": {"bias": True, "init": "default"},
-    "linear_relpos": {"bias": True, "init": "default"}
+    "linear_relpos": {"bias": True, "init": "default"},
 }
 
-recycling_emb_init = {
-    "linear": {"bias": True, "init": "default"}
-}
+recycling_emb_init = {"linear": {"bias": True, "init": "default"}}
 
-extra_msa_emb_init = {
-    "linear": {"bias": True, "init": "default"}
-}
+extra_msa_emb_init = {"linear": {"bias": True, "init": "default"}}
 
 templ_single_feat_emb_init = {
     "linear_1": {"bias": True, "init": "relu"},
-    "linear_2": {"bias": True, "init": "relu"}
+    "linear_2": {"bias": True, "init": "relu"},
 }
 
 templ_pair_feat_emb_init = {
@@ -97,9 +89,7 @@ templ_pair_feat_emb_init = {
 # Latent
 ########################
 
-msa_block_init = {
-
-}
+msa_block_init = {}
 
 pair_block_init = {
     "tri_mul_init": tri_mul_init,

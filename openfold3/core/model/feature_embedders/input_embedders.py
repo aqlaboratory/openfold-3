@@ -78,7 +78,9 @@ class InputEmbedder(nn.Module):
         # RPE stuff
         self.relpos_k = relpos_k
         self.no_bins = 2 * relpos_k + 1
-        self.linear_relpos = Linear(self.no_bins, c_z, **linear_init_params.linear_relpos)
+        self.linear_relpos = Linear(
+            self.no_bins, c_z, **linear_init_params.linear_relpos
+        )
 
     def relpos(self, ri: torch.Tensor):
         """
@@ -351,7 +353,9 @@ class RelposAllAtom(nn.Module):
             + 2
         )
 
-        self.linear_relpos = Linear(self.no_bins, c_z, **linear_init_params.linear_relpos)
+        self.linear_relpos = Linear(
+            self.no_bins, c_z, **linear_init_params.linear_relpos
+        )
 
     @staticmethod
     def relpos(
@@ -436,46 +440,28 @@ class InputEmbedderAllAtom(nn.Module):
 
     def __init__(
         self,
-        c_atom_ref: int,
         c_s_input: int,
         c_s: int,
         c_z: int,
-        c_atom: int,
-        c_atom_pair: int,
-        c_token: int,
-        c_hidden: int,
-        no_heads: int,
-        no_blocks: int,
-        n_transition: int,
-        n_query: int,
-        n_key: int,
-        inf: float,
         max_relative_idx: int,
         max_relative_chain: int,
+        atom_attn_enc: Dict,
         linear_init_params: ConfigDict,
     ):
         """
         Args:
-            c_atom_ref:
-                Reference per-atom feature dimension
-            c_atom:
-                Atom embedding channel dimension
-            c_atom_pair:
-                Atom pair embedding channel dimension
-            c_token:
-                Token representation channel dimension
             c_s_input:
                 Per token input representation channel dimension
             c_s:
                 Single representation channel dimension
             c_z:
                 Pair representation channel dimension
-            c_hidden_att:
-                Hidden channel dimension
             max_relative_idx:
                 Maximum relative position and token indices clipped
             max_relative_chain:
                 Maximum relative chain indices clipped
+            atom_attn_enc:
+                Config for the AtomAttentionEncoder
             linear_init_params:
                 Linear layer initialization parameters
             **kwargs:
@@ -483,19 +469,9 @@ class InputEmbedderAllAtom(nn.Module):
         super().__init__()
 
         self.atom_attn_enc = AtomAttentionEncoder(
-            c_atom_ref=c_atom_ref,
-            c_atom=c_atom,
-            c_atom_pair=c_atom_pair,
-            c_token=c_token,
+            **atom_attn_enc,
             add_noisy_pos=False,
-            c_hidden=c_hidden,
-            no_heads=no_heads,
-            no_blocks=no_blocks,
-            n_transition=n_transition,
-            n_query=n_query,
-            n_key=n_key,
-            inf=inf,
-            linear_init_params=linear_init_params.atom_att_enc
+            linear_init_params=linear_init_params.atom_att_enc,
         )
 
         self.linear_s = Linear(c_s_input, c_s, **linear_init_params.linear_s)
@@ -509,7 +485,9 @@ class InputEmbedderAllAtom(nn.Module):
             linear_init_params=linear_init_params.relpos_emb,
         )
 
-        self.linear_token_bonds = Linear(1, c_z, **linear_init_params.linear_token_bonds)
+        self.linear_token_bonds = Linear(
+            1, c_z, **linear_init_params.linear_token_bonds
+        )
 
     def forward(
         self, batch: Dict, inplace_safe: bool = False
@@ -571,7 +549,9 @@ class MSAModuleEmbedder(nn.Module):
     tensor offloading during inference.
     """
 
-    def __init__(self, c_m_feats: int, c_m: int, c_s_input: int, linear_init_params: ConfigDict):
+    def __init__(
+        self, c_m_feats: int, c_m: int, c_s_input: int, linear_init_params: ConfigDict
+    ):
         """
         Args:
             c_m_feats:
@@ -586,7 +566,9 @@ class MSAModuleEmbedder(nn.Module):
         super().__init__()
 
         self.linear_m = Linear(c_m_feats, c_m, **linear_init_params.linear_m)
-        self.linear_s_input = Linear(c_s_input, c_m, **linear_init_params.linear_s_input)
+        self.linear_s_input = Linear(
+            c_s_input, c_m, **linear_init_params.linear_s_input
+        )
 
     def forward(
         self, batch: Dict, s_input: torch.Tensor
@@ -684,14 +666,22 @@ class PreembeddingEmbedder(nn.Module):
         self.c_m = c_m
 
         self.linear_tf_m = Linear(tf_dim, c_m, **linear_init_params.linear_tf_m)
-        self.linear_preemb_m = Linear(self.preembedding_dim, c_m, **linear_init_params.linear_preemb_m)
-        self.linear_preemb_z_i = Linear(self.preembedding_dim, c_z, **linear_init_params.linear_preemb_z_i)
-        self.linear_preemb_z_j = Linear(self.preembedding_dim, c_z, **linear_init_params.linear_preemb_z_j)
+        self.linear_preemb_m = Linear(
+            self.preembedding_dim, c_m, **linear_init_params.linear_preemb_m
+        )
+        self.linear_preemb_z_i = Linear(
+            self.preembedding_dim, c_z, **linear_init_params.linear_preemb_z_i
+        )
+        self.linear_preemb_z_j = Linear(
+            self.preembedding_dim, c_z, **linear_init_params.linear_preemb_z_j
+        )
 
         # Relative Positional Encoding
         self.relpos_k = relpos_k
         self.no_bins = 2 * relpos_k + 1
-        self.linear_relpos = Linear(self.no_bins, c_z, **linear_init_params.linear_relpos)
+        self.linear_relpos = Linear(
+            self.no_bins, c_z, **linear_init_params.linear_relpos
+        )
 
     def relpos(self, ri: torch.Tensor):
         """

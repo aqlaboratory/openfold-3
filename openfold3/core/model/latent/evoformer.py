@@ -16,10 +16,10 @@
 """Evoformer block and stack."""
 
 import sys
-from ml_collections import ConfigDict
 from typing import Optional, Sequence, Tuple
 
 import torch
+from ml_collections import ConfigDict
 
 from openfold3.core.model.latent.base_blocks import MSABlock
 from openfold3.core.model.latent.base_stacks import MSAStack

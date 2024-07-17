@@ -36,9 +36,7 @@ opm_init = {
 
 msa_row_col_att_init = mha_bias_init
 
-msa_global_att_init = {
-    "mha": mha_init
-}
+msa_global_att_init = {"mha": mha_init}
 
 transition_init = {
     "layers": {"bias": True, "init": "relu"},
@@ -57,9 +55,7 @@ input_emb_init = {
     "linear_relpos": {"bias": True, "init": "default"},
 }
 
-recycling_emb_init = {
-    "linear": {"bias": True, "init": "default"}
-}
+recycling_emb_init = {"linear": {"bias": True, "init": "default"}}
 
 templ_single_feat_emb_init = {
     "template_single_embedder": {"bias": True, "init": "default"},

@@ -60,7 +60,7 @@ class DiffusionConditioning(nn.Module):
             c_z=self.c_z,
             max_relative_idx=max_relative_idx,
             max_relative_chain=max_relative_chain,
-            linear_init_params=linear_init_params.relpos_emb
+            linear_init_params=linear_init_params.relpos_emb,
         )
 
         self.layer_norm_z = LayerNorm(2 * self.c_z)

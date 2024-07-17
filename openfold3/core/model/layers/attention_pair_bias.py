@@ -24,6 +24,7 @@ from torch import nn
 from openfold3.core.model.primitives import (
     AdaLN,
     Attention,
+    BlockSparseAttention,
     LayerNorm,
     Linear,
 )
@@ -47,6 +48,8 @@ class AttentionPairBias(nn.Module):
         no_heads: int,
         linear_init_params: ConfigDict,
         use_ada_layer_norm: bool = False,
+        use_block_sparse_attn: bool = False,
+        block_size: Optional[int] = 16,
         gating: bool = True,
         inf=1e9,
     ):
@@ -70,6 +73,10 @@ class AttentionPairBias(nn.Module):
                 Linear layer initialization parameters
             use_ada_layer_norm:
                 Whether to apply AdaLN-Zero conditioning
+            use_block_sparse_attn:
+                Whether to use Triton block sparse attention kernels
+            block_size:
+                Block size to use in block sparse attention
             gating:
                 Whether the output should be gated using query data
             inf:
@@ -78,6 +85,7 @@ class AttentionPairBias(nn.Module):
         super().__init__()
 
         self.use_ada_layer_norm = use_ada_layer_norm
+        self.use_block_sparse_attn = use_block_sparse_attn
         self.c_q = c_q
         self.c_s = c_s
         self.c_z = c_z
@@ -96,15 +104,27 @@ class AttentionPairBias(nn.Module):
         self.layer_norm_z = LayerNorm(self.c_z)
         self.linear_z = Linear(self.c_z, no_heads, **linear_init_params.linear_z)
 
-        self.mha = Attention(
-            c_q=c_q,
-            c_k=c_k,
-            c_v=c_v,
-            c_hidden=c_hidden,
-            no_heads=no_heads,
-            linear_init_params=linear_init_params.mha,
-            gating=gating,
-        )
+        if self.use_block_sparse_attn:
+            self.mha = BlockSparseAttention(
+                c_q=c_q,
+                c_k=c_k,
+                c_v=c_v,
+                c_hidden=c_hidden,
+                no_heads=no_heads,
+                block_size=block_size,
+                linear_init_params=linear_init_params.mha,
+                gating=gating,
+            )
+        else:
+            self.mha = Attention(
+                c_q=c_q,
+                c_k=c_k,
+                c_v=c_v,
+                c_hidden=c_hidden,
+                no_heads=no_heads,
+                linear_init_params=linear_init_params.mha,
+                gating=gating,
+            )
 
         self.sigmoid = nn.Sigmoid()
 
@@ -162,6 +182,7 @@ class AttentionPairBias(nn.Module):
         s: Optional[torch.Tensor] = None,
         beta: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
+        layout: Optional[torch.Tensor] = None,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
@@ -180,6 +201,10 @@ class AttentionPairBias(nn.Module):
                 attention for rectangular blocks along the diagonal.
             mask:
                 [*, N] Mask for token or atom-level embedding
+            layout:
+                [N / block_size, N / block_size] Layout config for block sparse
+                attention. Dictates which sections of the attention matrix
+                to compute.
             use_memory_efficient_kernel:
                 Whether to use memory efficient kernel
             use_deepspeed_evo_attention:
@@ -193,15 +218,18 @@ class AttentionPairBias(nn.Module):
 
         biases = self._prep_bias(a, z, beta, mask)
 
-        # Do we support all the memory efficient kernel types?
-        a = self.mha(
-            q_x=a,
-            kv_x=a,
-            biases=biases,
-            use_memory_efficient_kernel=use_memory_efficient_kernel,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_lma=use_lma,
-        )
+        if self.use_block_sparse_attn:
+            a = self.mha(q_x=a, kv_x=a, biases=biases, layout=layout)
+        else:
+            # Do we support all the memory efficient kernel types?
+            a = self.mha(
+                q_x=a,
+                kv_x=a,
+                biases=biases,
+                use_memory_efficient_kernel=use_memory_efficient_kernel,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_lma=use_lma,
+            )
 
         if self.use_ada_layer_norm:
             a = self.sigmoid(self.linear_ada_out(s)) * a

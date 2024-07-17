@@ -42,6 +42,9 @@ class TestDiffusionTransformer(unittest.TestCase):
             no_heads,
             no_blocks,
             n_transition,
+            use_ada_layer_norm=True,
+            use_block_sparse_attn=False,
+            block_size=None,
             inf=inf,
         ).eval()
 
@@ -53,7 +56,7 @@ class TestDiffusionTransformer(unittest.TestCase):
 
         shape_a_before = a.shape
 
-        a = dt(a, s, z, beta=beta, mask=single_mask)
+        a = dt(a, s, z, mask=single_mask, beta=beta)
 
         self.assertTrue(a.shape == shape_a_before)
 

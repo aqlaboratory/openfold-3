@@ -10,7 +10,7 @@ swiglu_init = {
 # TODO: Verify these inits
 ada_ln_init = {
     "linear_g": {"bias": True, "init": "gating"},
-    "linear_s": {"bias": False, "init": "final"}
+    "linear_s": {"bias": False, "init": "final"},
 }
 
 mha_init = {

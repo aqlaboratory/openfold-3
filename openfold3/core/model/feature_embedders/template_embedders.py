@@ -17,11 +17,12 @@
 Template feature embedders. Used in the template stack to build the final template
 embeddings.
 """
-from ml_collections import ConfigDict
+
 from typing import Dict
 
 import torch
 import torch.nn as nn
+from ml_collections import ConfigDict
 
 from openfold3.core.data.data_transforms import pseudo_beta_fn
 from openfold3.core.model.primitives import LayerNorm, Linear
@@ -237,8 +238,12 @@ class TemplateSingleEmbedderMultimer(nn.Module):
                 Linear layer initialization parameters
         """
         super().__init__()
-        self.template_single_embedder = Linear(c_in, c_out, **linear_init_params.template_single_embedder)
-        self.template_projector = Linear(c_out, c_out, **linear_init_params.template_projector)
+        self.template_single_embedder = Linear(
+            c_in, c_out, **linear_init_params.template_single_embedder
+        )
+        self.template_projector = Linear(
+            c_out, c_out, **linear_init_params.template_projector
+        )
 
     def forward(self, batch: Dict):
         """
@@ -324,16 +329,26 @@ class TemplatePairEmbedderMultimer(nn.Module):
         super().__init__()
 
         self.dgram_linear = Linear(c_dgram, c_out, **linear_init_params.dgram_linear)
-        self.aatype_linear_1 = Linear(c_aatype, c_out, **linear_init_params.aatype_linear_1)
-        self.aatype_linear_2 = Linear(c_aatype, c_out, **linear_init_params.aatype_linear_2)
+        self.aatype_linear_1 = Linear(
+            c_aatype, c_out, **linear_init_params.aatype_linear_1
+        )
+        self.aatype_linear_2 = Linear(
+            c_aatype, c_out, **linear_init_params.aatype_linear_2
+        )
         self.query_embedding_layer_norm = LayerNorm(c_in)
-        self.query_embedding_linear = Linear(c_in, c_out, **linear_init_params.query_embedding_linear)
+        self.query_embedding_linear = Linear(
+            c_in, c_out, **linear_init_params.query_embedding_linear
+        )
 
-        self.pseudo_beta_mask_linear = Linear(1, c_out, **linear_init_params.pseudo_beta_mask_linear)
+        self.pseudo_beta_mask_linear = Linear(
+            1, c_out, **linear_init_params.pseudo_beta_mask_linear
+        )
         self.x_linear = Linear(1, c_out, **linear_init_params.x_linear)
         self.y_linear = Linear(1, c_out, **linear_init_params.y_linear)
         self.z_linear = Linear(1, c_out, **linear_init_params.z_linear)
-        self.backbone_mask_linear = Linear(1, c_out, **linear_init_params.backbone_mask_linear)
+        self.backbone_mask_linear = Linear(
+            1, c_out, **linear_init_params.backbone_mask_linear
+        )
 
     def forward(
         self,
@@ -444,9 +459,7 @@ class TemplatePairEmbedderAllAtom(nn.Module):
 
         self.linear_a = Linear(c_in, c_out, **linear_init_params.linear_a)
         self.layer_norm_z = LayerNorm(c_z)
-        self.linear_z = Linear(
-            c_z, c_out, **linear_init_params.linear_z
-        )
+        self.linear_z = Linear(c_z, c_out, **linear_init_params.linear_z)
 
     def forward(self, batch, z):
         """
