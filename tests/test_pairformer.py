@@ -15,7 +15,9 @@
 import unittest
 
 import torch
+from ml_collections import ConfigDict
 
+import openfold3.model_implementations.af3_all_atom.linear_init_config as lin_init
 from openfold3.core.model.latent import PairFormerStack
 from tests.config import consts
 
@@ -50,6 +52,7 @@ class TestPairFormer(unittest.TestCase):
             transition_n=transition_n,
             pair_dropout=pair_dropout,
             fuse_projection_weights=False,
+            linear_init_params=ConfigDict(lin_init.pairformer_init),
             blocks_per_ckpt=None,
             inf=inf,
         ).eval()

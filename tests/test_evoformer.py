@@ -17,7 +17,9 @@ import unittest
 
 import numpy as np
 import torch
+from ml_collections import ConfigDict
 
+import openfold3.model_implementations.af2_monomer.linear_init_config as lin_init
 import tests.compare_utils as compare_utils
 from openfold3.core.model.latent import EvoformerStack, ExtraMSAStack
 from openfold3.core.model.layers.transition import ReLUTransition
@@ -74,6 +76,7 @@ class TestEvoformerStack(unittest.TestCase):
             no_column_attention=False,
             opm_first=opm_first,
             fuse_projection_weights=fuse_projection_weights,
+            linear_init_params=ConfigDict(lin_init.evo_block_init),
             blocks_per_ckpt=None,
             inf=inf,
             eps=eps,
@@ -132,6 +135,7 @@ class TestEvoformerStack(unittest.TestCase):
             no_column_attention=True,
             opm_first=False,
             fuse_projection_weights=False,
+            linear_init_params=ConfigDict(lin_init.evo_block_init),
             blocks_per_ckpt=None,
             inf=inf,
             eps=eps,
@@ -267,6 +271,7 @@ class TestExtraMSAStack(unittest.TestCase):
                 pair_stack_dropout,
                 opm_first,
                 fuse_projection_weights,
+                linear_init_params=ConfigDict(lin_init.extra_msa_block_init),
                 ckpt=False,
                 inf=inf,
                 eps=eps,
@@ -313,7 +318,9 @@ class TestMSATransition(unittest.TestCase):
         c_m = 7
         n = 11
 
-        mt = ReLUTransition(c_in=c_m, n=n)
+        mt = ReLUTransition(
+            c_in=c_m, n=n, linear_init_params=ConfigDict(lin_init.transition_init)
+        )
 
         m = torch.rand((batch_size, s_t, n_r, c_m))
 

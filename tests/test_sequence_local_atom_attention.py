@@ -1,7 +1,9 @@
 import unittest
 
 import torch
+from ml_collections import ConfigDict
 
+import openfold3.model_implementations.af3_all_atom.linear_init_config as lin_init
 import tests.compare_utils as compare_utils
 from openfold3.core.model.layers import (
     AtomAttentionDecoder,
@@ -23,7 +25,10 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
         c_atom_pair = 16
 
         embedder = RefAtomFeatureEmbedder(
-            c_atom_ref=c_atom_ref, c_atom=c_atom, c_atom_pair=c_atom_pair
+            c_atom_ref=c_atom_ref,
+            c_atom=c_atom,
+            c_atom_pair=c_atom_pair,
+            linear_init_params=ConfigDict(lin_init.ref_atom_emb_init),
         )
 
         batch = {
@@ -48,7 +53,10 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
         c_atom_pair = 16
 
         embedder = RefAtomFeatureEmbedder(
-            c_atom_ref=c_atom_ref, c_atom=c_atom, c_atom_pair=c_atom_pair
+            c_atom_ref=c_atom_ref,
+            c_atom=c_atom,
+            c_atom_pair=c_atom_pair,
+            linear_init_params=ConfigDict(lin_init.ref_atom_emb_init),
         )
 
         batch = {
@@ -77,7 +85,11 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
         c_atom_pair = 16
 
         embedder = NoisyPositionEmbedder(
-            c_s=c_s, c_z=c_z, c_atom=c_atom, c_atom_pair=c_atom_pair
+            c_s=c_s,
+            c_z=c_z,
+            c_atom=c_atom,
+            c_atom_pair=c_atom_pair,
+            linear_init_params=ConfigDict(lin_init.noisy_pos_emb_init),
         )
 
         cl = torch.ones((batch_size, n_atom, c_atom))
@@ -115,7 +127,11 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
         n_sample = 3
 
         embedder = NoisyPositionEmbedder(
-            c_s=c_s, c_z=c_z, c_atom=c_atom, c_atom_pair=c_atom_pair
+            c_s=c_s,
+            c_z=c_z,
+            c_atom=c_atom,
+            c_atom_pair=c_atom_pair,
+            linear_init_params=ConfigDict(lin_init.noisy_pos_emb_init),
         )
 
         cl = torch.ones((batch_size, 1, n_atom, c_atom))
@@ -169,6 +185,7 @@ class TestAtomTransformer(unittest.TestCase):
                 n_transition=n_transition,
                 n_query=n_query,
                 n_key=n_key,
+                linear_init_params=ConfigDict(lin_init.atom_transformer_init),
                 use_ada_layer_norm=True,
                 use_block_sparse_attn=use_block_sparse_attn,
                 block_size=block_size,
@@ -277,6 +294,7 @@ class TestAtomTransformer(unittest.TestCase):
                 n_transition=n_transition,
                 n_query=n_query,
                 n_key=n_key,
+                linear_init_params=ConfigDict(lin_init.atom_transformer_init),
                 use_ada_layer_norm=True,
                 use_block_sparse_attn=False,
                 block_size=block_size,
@@ -353,6 +371,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
+            linear_init_params=ConfigDict(lin_init.atom_att_enc_init),
             use_ada_layer_norm=True,
             use_block_sparse_attn=False,
             block_size=None,
@@ -412,6 +431,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
+            linear_init_params=ConfigDict(lin_init.atom_att_enc_init),
             use_ada_layer_norm=True,
             use_block_sparse_attn=False,
             block_size=None,
@@ -474,6 +494,7 @@ class TestAtomAttentionDecoder(unittest.TestCase):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
+            linear_init_params=ConfigDict(lin_init.atom_att_dec_init),
             use_ada_layer_norm=True,
             use_block_sparse_attn=False,
             block_size=None,
@@ -522,6 +543,7 @@ class TestAtomAttentionDecoder(unittest.TestCase):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
+            linear_init_params=ConfigDict(lin_init.atom_att_dec_init),
             use_ada_layer_norm=True,
             use_block_sparse_attn=False,
             block_size=None,

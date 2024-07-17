@@ -16,7 +16,9 @@ import unittest
 
 import numpy as np
 import torch
+from ml_collections import ConfigDict
 
+import openfold3.model_implementations.af2_monomer.linear_init_config as lin_init
 import tests.compare_utils as compare_utils
 from openfold3.core.model.layers import ReLUTransition
 from openfold3.core.utils.tensor_utils import tree_map
@@ -33,7 +35,9 @@ class TestPairTransition(unittest.TestCase):
         c_z = consts.c_z
         n = 4
 
-        pt = ReLUTransition(c_in=c_z, n=n)
+        pt = ReLUTransition(
+            c_in=c_z, n=n, linear_init_params=ConfigDict(lin_init.transition_init)
+        )
 
         batch_size = consts.batch_size
         n_res = consts.n_res

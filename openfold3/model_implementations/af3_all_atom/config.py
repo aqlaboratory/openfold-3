@@ -222,7 +222,7 @@ config = mlc.ConfigDict(
                     "c_fourier_emb": 256,
                     "max_relative_idx": max_relative_idx,
                     "max_relative_chain": max_relative_chain,
-                    "linear_init_params": lin_init.diffusion_conditioning,
+                    "linear_init_params": lin_init.diffusion_cond_init,
                 },
                 "atom_attn_enc": {
                     "c_s": c_s,

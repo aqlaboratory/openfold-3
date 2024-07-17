@@ -60,7 +60,7 @@ opm_init = {
     "linear_out": {"bias": True, "init": "final"},
 }
 
-msa_pair_bias_init = {
+msa_pair_avg_init = {
     "linear_z": {"bias": False, "init": "normal"},
     "linear_v": {"bias": False, "init": "glorot"},
     "linear_o": {"bias": False, "init": "final"},
@@ -115,7 +115,7 @@ atom_att_dec_init = {
     "linear_q_out": {"bias": False, "init": "final"},
 }
 
-diffusion_conditioning = {
+diffusion_cond_init = {
     "relpos_emb": {"linear_relpos": {"bias": False, "init": "default"}},
     "linear_z": {"bias": False, "init": "default"},
     "transition_z": transition_init,
@@ -173,7 +173,7 @@ msa_block_init = {
 
 msa_module_init = {
     **msa_block_init,
-    "msa_pair_avg": msa_pair_bias_init,
+    "msa_pair_avg": msa_pair_avg_init,
 }
 
 pairformer_init = {

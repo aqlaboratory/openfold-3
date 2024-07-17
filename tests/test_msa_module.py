@@ -15,7 +15,9 @@
 import unittest
 
 import torch
+from ml_collections import ConfigDict
 
+import openfold3.model_implementations.af3_all_atom.linear_init_config as lin_init
 from openfold3.core.model.latent import MSAModuleStack
 from openfold3.core.model.layers.transition import SwiGLUTransition
 from tests.config import consts
@@ -58,6 +60,7 @@ class TestMSAModule(unittest.TestCase):
             pair_dropout=pair_dropout,
             opm_first=True,
             fuse_projection_weights=False,
+            linear_init_params=ConfigDict(lin_init.msa_module_init),
             blocks_per_ckpt=None,
             inf=inf,
             eps=eps,
@@ -83,7 +86,9 @@ class TestMSAModuleTransition(unittest.TestCase):
         c_m = 7
         n = 11
 
-        mt = SwiGLUTransition(c_in=c_m, n=n)
+        mt = SwiGLUTransition(
+            c_in=c_m, n=n, linear_init_params=ConfigDict(lin_init.transition_init)
+        )
 
         m = torch.rand((batch_size, s_t, n_r, c_m))
 

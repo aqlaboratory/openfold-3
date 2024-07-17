@@ -17,7 +17,9 @@ import unittest
 
 import numpy as np
 import torch
+from ml_collections import ConfigDict
 
+import openfold3.model_implementations.af2_monomer.linear_init_config as lin_init_af2
 import tests.compare_utils as compare_utils
 from openfold3.core.model.latent import TemplateEmbedderAllAtom, TemplatePairStack
 from openfold3.core.model.layers.template_pointwise_attention import (
@@ -44,7 +46,14 @@ class TestTemplatePointwiseAttention(unittest.TestCase):
         n_res = consts.n_res
         inf = 1e7
 
-        tpa = TemplatePointwiseAttention(c_t, c_z, c, no_heads, inf=inf)
+        tpa = TemplatePointwiseAttention(
+            c_t,
+            c_z,
+            c,
+            no_heads,
+            linear_init_params=ConfigDict(lin_init_af2.template_pointwise_init),
+            inf=inf,
+        )
 
         t = torch.rand((batch_size, n_seq, n_res, n_res, c_t))
         z = torch.rand((batch_size, n_res, n_res, c_z))
@@ -99,6 +108,7 @@ class TestTemplatePairStack(unittest.TestCase):
             dropout_rate=dropout,
             tri_mul_first=tri_mul_first,
             fuse_projection_weights=fuse_projection_weights,
+            linear_init_params=ConfigDict(lin_init_af2.pair_block_init),
             blocks_per_ckpt=None,
             inf=inf,
             eps=eps,
