@@ -1,10 +1,14 @@
-general:
-  preset: model_1
+preset:
+  model: model_1
+  dataset:
+    - PDBWeighted
+    - short-monomer-distillation
 
 model:
   template:
     enabled: false
 
 dataset:
-  - PDBWeighted
-  - short-monomer-distillation
+  PDBWeighted:
+    config:
+      num_templates: 4
