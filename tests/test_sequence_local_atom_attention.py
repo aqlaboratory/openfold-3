@@ -1,4 +1,5 @@
 import unittest
+from contextlib import nullcontext
 
 import torch
 from ml_collections import ConfigDict
@@ -200,7 +201,12 @@ class TestAtomTransformer(unittest.TestCase):
         plm = plm.to(device, dtype=dtype)
         atom_mask = atom_mask.to(device, dtype=dtype)
 
-        with torch.cuda.amp.autocast(dtype=dtype):
+        cuda_context = (
+            torch.cuda.amp.autocast(dtype=dtype)
+            if torch.cuda.is_available()
+            else nullcontext()
+        )
+        with cuda_context:
             ql = atom_transformer(ql=ql, cl=cl, plm=plm, atom_mask=atom_mask).cpu()
 
         self.assertTrue(ql.shape == out_shape)
@@ -320,7 +326,12 @@ class TestAtomTransformer(unittest.TestCase):
                 lecun_normal_init_(apb.mha.linear_o.weight)
                 lecun_normal_init_(apb.linear_ada_out.weight)
 
-            with torch.cuda.amp.autocast(dtype=dtype):
+            cuda_context = (
+                torch.cuda.amp.autocast(dtype=dtype)
+                if torch.cuda.is_available()
+                else nullcontext()
+            )
+            with cuda_context:
                 ql_out = atom_transformer(
                     ql=ql, cl=cl, plm=plm, atom_mask=atom_mask
                 ).cpu()

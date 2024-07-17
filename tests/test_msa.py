@@ -186,7 +186,7 @@ class TestMSAColumnGlobalAttention(unittest.TestCase):
             c_m,
             c,
             no_heads,
-            linear_init_params=ConfigDict(lin_init_af2.mha_global_att_init),
+            linear_init_params=ConfigDict(lin_init_af2.msa_global_att_init),
         )
 
         x = torch.rand((batch_size, n_seq, n_res, c_m))
