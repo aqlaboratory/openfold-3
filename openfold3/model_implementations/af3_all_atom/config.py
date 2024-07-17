@@ -212,6 +212,7 @@ config = mlc.ConfigDict(
                     "c_s": c_s,
                     "c_token": c_token_diffusion,
                     "sigma_data": sigma_data,
+                    "linear_init_params": lin_init.diffusion_module_init,
                 },
                 "diffusion_conditioning": {
                     "c_s_input": c_s_input,

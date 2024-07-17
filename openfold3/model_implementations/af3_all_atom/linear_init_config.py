@@ -185,3 +185,10 @@ pairformer_init = {
 ########################
 # Structure
 ########################
+
+# TODO: Maybe structure this like other modules, where the configs are contained
+# in one dict for the full module. Because of the way the params are passed,
+# we only need to define the top level linear layers here.
+diffusion_module_init = {
+    "linear_s": {"bias": False, "init": "default"},
+}

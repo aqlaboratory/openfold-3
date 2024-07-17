@@ -107,3 +107,42 @@ extra_msa_block_init = {**msa_block_init, "msa_col_att": msa_global_att_init}
 ########################
 # Structure
 ########################
+
+angle_resnet_block_init = {
+    "linear_1": {"bias": True, "init": "default"},
+    "linear_2": {"bias": True, "init": "final"},
+}
+
+angle_resnet_init = {
+    "linear_in": {"bias": True, "init": "default"},
+    "linear_initial": {"bias": True, "init": "default"},
+    "angle_resnet_block": angle_resnet_block_init,
+    "linear_out": {"bias": True, "init": "default"},
+}
+
+point_proj_init = {
+    "linear": {"bias": True, "init": "default"},
+}
+
+ipa_init = {
+    "linear_q": {"bias": False, "init": "default"},
+    "linear_q_points": point_proj_init,
+    "linear_k": {"bias": False, "init": "default"},
+    "linear_v": {"bias": False, "init": "default"},
+    "linear_k_points": point_proj_init,
+    "linear_v_points": point_proj_init,
+    "linear_b": {"bias": True, "init": "default"},
+    "linear_out": {"bias": True, "init": "final"},
+}
+
+bb_update_init = {
+    "linear": {"bias": True, "init": "final"},
+}
+
+structure_module_init = {
+    "linear_in": {"bias": True, "init": "default"},
+    "ipa": ipa_init,
+    "transition": transition_init,
+    "bb_update": bb_update_init,
+    "angle_resnet": angle_resnet_init,
+}

@@ -8,12 +8,14 @@ from openfold3.core.utils.geometry.vector import Vec3Array
 
 
 class QuatRigid(nn.Module):
-    def __init__(self, c_hidden, full_quat):
+    def __init__(self, c_hidden, full_quat, linear_init_params):
         super().__init__()
         self.full_quat = full_quat
         rigid_dim = 7 if self.full_quat else 6
 
-        self.linear = Linear(c_hidden, rigid_dim, init="final", precision=torch.float32)
+        self.linear = Linear(
+            c_hidden, rigid_dim, precision=torch.float32, **linear_init_params.linear
+        )
 
     def forward(self, activations: torch.Tensor) -> Rigid3Array:
         # NOTE: During training, this needs to be run in higher precision

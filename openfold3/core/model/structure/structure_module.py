@@ -27,6 +27,7 @@ from typing import Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn as nn
+from ml_collections import ConfigDict
 
 from openfold3.core.model.layers.transition import StructureModuleTransition
 from openfold3.core.model.primitives import LayerNorm, Linear, ipa_point_weights_init_
@@ -58,7 +59,7 @@ if attn_core_is_installed:
 
 
 class AngleResnetBlock(nn.Module):
-    def __init__(self, c_hidden):
+    def __init__(self, c_hidden, linear_init_params):
         """
         Args:
             c_hidden:
@@ -68,8 +69,12 @@ class AngleResnetBlock(nn.Module):
 
         self.c_hidden = c_hidden
 
-        self.linear_1 = Linear(self.c_hidden, self.c_hidden, init="relu")
-        self.linear_2 = Linear(self.c_hidden, self.c_hidden, init="final")
+        self.linear_1 = Linear(
+            self.c_hidden, self.c_hidden, **linear_init_params.linear_1
+        )
+        self.linear_2 = Linear(
+            self.c_hidden, self.c_hidden, **linear_init_params.linear_2
+        )
 
         self.relu = nn.ReLU()
 
@@ -89,7 +94,9 @@ class AngleResnet(nn.Module):
     Implements AF2 Algorithm 20, lines 11-14
     """
 
-    def __init__(self, c_in, c_hidden, no_blocks, no_angles, epsilon):
+    def __init__(
+        self, c_in, c_hidden, no_blocks, no_angles, linear_init_params, epsilon
+    ):
         """
         Args:
             c_in:
@@ -100,6 +107,8 @@ class AngleResnet(nn.Module):
                 Number of resnet blocks
             no_angles:
                 Number of torsion angles to generate
+            linear_init_params:
+                Initialization parameters for linear layers
             epsilon:
                 Small constant for normalization
         """
@@ -111,15 +120,24 @@ class AngleResnet(nn.Module):
         self.no_angles = no_angles
         self.eps = epsilon
 
-        self.linear_in = Linear(self.c_in, self.c_hidden)
-        self.linear_initial = Linear(self.c_in, self.c_hidden)
+        self.linear_in = Linear(
+            self.c_in, self.c_hidden, **linear_init_params.linear_in
+        )
+        self.linear_initial = Linear(
+            self.c_in, self.c_hidden, **linear_init_params.linear_initial
+        )
 
         self.layers = nn.ModuleList()
         for _ in range(self.no_blocks):
-            layer = AngleResnetBlock(c_hidden=self.c_hidden)
+            layer = AngleResnetBlock(
+                c_hidden=self.c_hidden,
+                linear_init_params=linear_init_params.angle_resnet_block,
+            )
             self.layers.append(layer)
 
-        self.linear_out = Linear(self.c_hidden, self.no_angles * 2)
+        self.linear_out = Linear(
+            self.c_hidden, self.no_angles * 2, **linear_init_params.linear_out
+        )
 
         self.relu = nn.ReLU()
 
@@ -177,6 +195,7 @@ class PointProjection(nn.Module):
         num_points: int,
         no_heads: int,
         is_multimer: bool,
+        linear_init_params: ConfigDict,
         return_local_points: bool = False,
     ):
         super().__init__()
@@ -187,7 +206,12 @@ class PointProjection(nn.Module):
 
         # Multimer requires this to be run with fp32 precision during training
         precision = torch.float32 if self.is_multimer else None
-        self.linear = Linear(c_hidden, no_heads * 3 * num_points, precision=precision)
+        self.linear = Linear(
+            c_hidden,
+            no_heads * 3 * num_points,
+            precision=precision,
+            **linear_init_params.linear,
+        )
 
     def forward(
         self,
@@ -228,6 +252,7 @@ class InvariantPointAttention(nn.Module):
         no_heads: int,
         no_qk_points: int,
         no_v_points: int,
+        linear_init_params: ConfigDict,
         inf: float = 1e5,
         eps: float = 1e-8,
         is_multimer: bool = False,
@@ -246,6 +271,8 @@ class InvariantPointAttention(nn.Module):
                 Number of query/key points to generate
             no_v_points:
                 Number of value points to generate
+            linear_init_params:
+                Initialization parameters for linear layers
         """
         super().__init__()
 
@@ -264,32 +291,45 @@ class InvariantPointAttention(nn.Module):
         # Here as in the official source, they have bias and use the default
         # Lecun initialization.
         hc = self.c_hidden * self.no_heads
-        self.linear_q = Linear(self.c_s, hc, bias=(not is_multimer))
+        self.linear_q = Linear(self.c_s, hc, **linear_init_params.linear_q)
 
         self.linear_q_points = PointProjection(
-            self.c_s, self.no_qk_points, self.no_heads, self.is_multimer
+            c_hidden=self.c_s,
+            num_points=self.no_qk_points,
+            no_heads=self.no_heads,
+            is_multimer=self.is_multimer,
+            linear_init_params=linear_init_params.linear_q_points,
         )
 
         if is_multimer:
-            self.linear_k = Linear(self.c_s, hc, bias=False)
-            self.linear_v = Linear(self.c_s, hc, bias=False)
+            self.linear_k = Linear(self.c_s, hc, **linear_init_params.linear_k)
+            self.linear_v = Linear(self.c_s, hc, **linear_init_params.linear_v)
             self.linear_k_points = PointProjection(
-                self.c_s, self.no_qk_points, self.no_heads, self.is_multimer
+                c_hidden=self.c_s,
+                num_points=self.no_qk_points,
+                no_heads=self.no_heads,
+                is_multimer=self.is_multimer,
+                linear_init_params=linear_init_params.linear_k_points,
             )
 
             self.linear_v_points = PointProjection(
-                self.c_s, self.no_v_points, self.no_heads, self.is_multimer
-            )
-        else:
-            self.linear_kv = Linear(self.c_s, 2 * hc)
-            self.linear_kv_points = PointProjection(
                 self.c_s,
-                self.no_qk_points + self.no_v_points,
+                self.no_v_points,
                 self.no_heads,
                 self.is_multimer,
+                linear_init_params=linear_init_params.linear_v_points,
+            )
+        else:
+            self.linear_kv = Linear(self.c_s, 2 * hc, **linear_init_params.linear_kv)
+            self.linear_kv_points = PointProjection(
+                c_hidden=self.c_s,
+                num_points=self.no_qk_points + self.no_v_points,
+                no_heads=self.no_heads,
+                is_multimer=self.is_multimer,
+                linear_init_params=linear_init_params.linear_kv_points,
             )
 
-        self.linear_b = Linear(self.c_z, self.no_heads)
+        self.linear_b = Linear(self.c_z, self.no_heads, **linear_init_params.linear_b)
 
         self.head_weights = nn.Parameter(torch.zeros(no_heads))
         ipa_point_weights_init_(self.head_weights)
@@ -297,7 +337,9 @@ class InvariantPointAttention(nn.Module):
         concat_out_dim = self.no_heads * (
             self.c_z + self.c_hidden + self.no_v_points * 4
         )
-        self.linear_out = Linear(concat_out_dim, self.c_s, init="final")
+        self.linear_out = Linear(
+            concat_out_dim, self.c_s, **linear_init_params.linear_out
+        )
 
         self.softmax = nn.Softmax(dim=-1)
         self.softplus = nn.Softplus()
@@ -518,6 +560,7 @@ class InvariantPointAttentionMultimer(nn.Module):
         no_heads: int,
         no_qk_points: int,
         no_v_points: int,
+        linear_init_params: ConfigDict,
         inf: float = 1e5,
         eps: float = 1e-8,
         is_multimer: bool = True,
@@ -536,6 +579,8 @@ class InvariantPointAttentionMultimer(nn.Module):
                 Number of query/key points to generate
             no_v_points:
                 Number of value points to generate
+            linear_init_params:
+                Initialization parameters for linear layers
         """
         super().__init__()
 
@@ -553,23 +598,35 @@ class InvariantPointAttentionMultimer(nn.Module):
         # Here as in the official source, they have bias and use the default
         # Lecun initialization.
         hc = self.c_hidden * self.no_heads
-        self.linear_q = Linear(self.c_s, hc, bias=False)
+        self.linear_q = Linear(self.c_s, hc, **linear_init_params.linear_q)
 
         self.linear_q_points = PointProjection(
-            self.c_s, self.no_qk_points, self.no_heads, is_multimer=True
+            c_hidden=self.c_s,
+            num_points=self.no_qk_points,
+            no_heads=self.no_heads,
+            is_multimer=True,
+            linear_init_params=linear_init_params.linear_q_points,
         )
 
-        self.linear_k = Linear(self.c_s, hc, bias=False)
-        self.linear_v = Linear(self.c_s, hc, bias=False)
+        self.linear_k = Linear(self.c_s, hc, **linear_init_params.linear_k)
+        self.linear_v = Linear(self.c_s, hc, **linear_init_params.linear_v)
         self.linear_k_points = PointProjection(
-            self.c_s, self.no_qk_points, self.no_heads, is_multimer=True
+            c_hidden=self.c_s,
+            num_points=self.no_qk_points,
+            no_heads=self.no_heads,
+            is_multimer=True,
+            linear_init_params=linear_init_params.linear_k_points,
         )
 
         self.linear_v_points = PointProjection(
-            self.c_s, self.no_v_points, self.no_heads, is_multimer=True
+            c_hidden=self.c_s,
+            num_points=self.no_v_points,
+            no_heads=self.no_heads,
+            is_multimer=True,
+            linear_init_params=linear_init_params.linear_v_points,
         )
 
-        self.linear_b = Linear(self.c_z, self.no_heads)
+        self.linear_b = Linear(self.c_z, self.no_heads, **linear_init_params.linear_b)
 
         self.head_weights = nn.Parameter(torch.zeros(no_heads))
         ipa_point_weights_init_(self.head_weights)
@@ -577,7 +634,9 @@ class InvariantPointAttentionMultimer(nn.Module):
         concat_out_dim = self.no_heads * (
             self.c_z + self.c_hidden + self.no_v_points * 4
         )
-        self.linear_out = Linear(concat_out_dim, self.c_s, init="final")
+        self.linear_out = Linear(
+            concat_out_dim, self.c_s, **linear_init_params.linear_out
+        )
 
         self.softmax = nn.Softmax(dim=-2)
 
@@ -726,7 +785,7 @@ class BackboneUpdate(nn.Module):
     Implements part of AF2 Algorithm 23.
     """
 
-    def __init__(self, c_s):
+    def __init__(self, c_s, linear_init_params):
         """
         Args:
             c_s:
@@ -736,7 +795,7 @@ class BackboneUpdate(nn.Module):
 
         self.c_s = c_s
 
-        self.linear = Linear(self.c_s, 6, init="final")
+        self.linear = Linear(self.c_s, 6, **linear_init_params.linear)
 
     def forward(self, s: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -767,6 +826,7 @@ class StructureModule(nn.Module):
         no_resnet_blocks,
         no_angles,
         trans_scale_factor,
+        linear_init_params,
         epsilon,
         inf,
         is_multimer=False,
@@ -801,6 +861,8 @@ class StructureModule(nn.Module):
                 Number of angles to generate in the angle resnet
             trans_scale_factor:
                 Scale of single representation transition hidden dimension
+            linear_init_params:
+                Parameters used for linear layer initialization
             epsilon:
                 Small number used in angle resnet normalization
             inf:
@@ -834,7 +896,7 @@ class StructureModule(nn.Module):
         self.layer_norm_s = LayerNorm(self.c_s)
         self.layer_norm_z = LayerNorm(self.c_z)
 
-        self.linear_in = Linear(self.c_s, self.c_s)
+        self.linear_in = Linear(self.c_s, self.c_s, **linear_init_params.linear_in)
 
         ipa = (
             InvariantPointAttention
@@ -848,6 +910,7 @@ class StructureModule(nn.Module):
             self.no_heads_ipa,
             self.no_qk_points,
             self.no_v_points,
+            linear_init_params=linear_init_params.ipa,
             inf=self.inf,
             eps=self.epsilon,
             is_multimer=self.is_multimer,
@@ -860,19 +923,27 @@ class StructureModule(nn.Module):
             self.c_s,
             self.no_transition_layers,
             self.dropout_rate,
+            linear_init_params=linear_init_params.transition,
         )
 
         if self.is_multimer:
-            self.bb_update = QuatRigid(self.c_s, full_quat=False)
+            self.bb_update = QuatRigid(
+                self.c_s,
+                full_quat=False,
+                linear_init_params=linear_init_params.bb_update,
+            )
         else:
-            self.bb_update = BackboneUpdate(self.c_s)
+            self.bb_update = BackboneUpdate(
+                self.c_s, linear_init_params=linear_init_params.bb_update
+            )
 
         self.angle_resnet = AngleResnet(
-            self.c_s,
-            self.c_resnet,
-            self.no_resnet_blocks,
-            self.no_angles,
-            self.epsilon,
+            c_in=self.c_s,
+            c_hidden=self.c_resnet,
+            no_blocks=self.no_resnet_blocks,
+            no_angles=self.no_angles,
+            linear_init_params=linear_init_params.angle_resnet,
+            epsilon=self.epsilon,
         )
 
     def _forward_monomer(

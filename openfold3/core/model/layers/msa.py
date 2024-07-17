@@ -91,7 +91,7 @@ class MSAAttention(nn.Module):
             c_q=self.c_in,
             c_k=self.c_in,
             c_v=self.c_in,
-            c_hidden=c_hidden,
+            c_hidden=self.c_hidden,
             no_heads=self.no_heads,
             linear_init_params=linear_init_params.mha,
         )

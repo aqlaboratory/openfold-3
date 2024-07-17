@@ -118,7 +118,11 @@ class DiffusionModule(nn.Module):
         )
 
         self.layer_norm_s = LayerNorm(self.c_s)
-        self.linear_s = Linear(self.c_s, self.c_token, bias=False)
+        self.linear_s = Linear(
+            self.c_s,
+            self.c_token,
+            **config.diffusion_module.linear_init_params.linear_s,
+        )
 
         self.diffusion_transformer = DiffusionTransformer(
             **config.diffusion_transformer

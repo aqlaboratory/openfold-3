@@ -636,6 +636,7 @@ config = mlc.ConfigDict(
                 "no_resnet_blocks": 2,
                 "no_angles": 7,
                 "trans_scale_factor": 10,
+                "linear_init_params": lin_init.structure_module_init,
                 "epsilon": eps,  # 1e-12,
                 "inf": 1e5,
             },
@@ -888,7 +889,10 @@ multimer_config_update = mlc.ConfigDict(
                 "fuse_projection_weights": True,
                 "linear_init_params": lin_init_mult.evo_block_init,
             },
-            "structure_module": {"trans_scale_factor": 20},
+            "structure_module": {
+                "trans_scale_factor": 20,
+                "linear_init_params": lin_init_mult.structure_module_init,
+            },
             "heads": {
                 "tm": {"ptm_weight": 0.2, "iptm_weight": 0.8, "enabled": True},
                 "masked_msa": {"c_out": 22},
