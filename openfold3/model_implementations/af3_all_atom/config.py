@@ -1,5 +1,7 @@
 import ml_collections as mlc
 
+import openfold3.model_implementations.af3_all_atom.linear_init_config as lin_init
+
 NUM_TOKENS = "num tokens placeholder"
 NUM_ATOMS = "num atoms placeholder"
 NUM_MSA_SEQ = "msa placeholder"
@@ -124,6 +126,7 @@ config = mlc.ConfigDict(
                     "block_size": block_size,
                     "inf": 1e10,  # global parameter?
                 },
+                "linear_init_params": lin_init.input_emb_init,
             },
             "template": {
                 "c_t": c_t,
@@ -132,6 +135,7 @@ config = mlc.ConfigDict(
                     "c_in": 108,
                     "c_z": c_z,
                     "c_out": c_t,
+                    "linear_init_params": lin_init.templ_pair_feat_emb_init,
                 },
                 "template_pair_stack": {
                     "c_t": c_t,
@@ -147,6 +151,7 @@ config = mlc.ConfigDict(
                     "dropout_rate": 0.25,
                     "tri_mul_first": True,
                     "fuse_projection_weights": False,
+                    "linear_init_params": lin_init.pair_block_init,
                     "blocks_per_ckpt": blocks_per_ckpt,
                     "tune_chunk_size": tune_chunk_size,
                     "inf": 1e9,
@@ -157,6 +162,7 @@ config = mlc.ConfigDict(
                     "c_m_feats": 34,
                     "c_m": c_m,
                     "c_s_input": c_s_input,
+                    "linear_init_params": lin_init.msa_module_emb_init,
                 },
                 "msa_module": {
                     "c_m": c_m,
@@ -174,6 +180,7 @@ config = mlc.ConfigDict(
                     "pair_dropout": 0.25,
                     "opm_first": True,
                     "fuse_projection_weights": False,
+                    "linear_init_params": lin_init.msa_module_init,
                     "blocks_per_ckpt": blocks_per_ckpt,
                     "inf": 1e9,
                     "eps": eps,
@@ -194,6 +201,7 @@ config = mlc.ConfigDict(
                 "transition_n": 4,
                 "pair_dropout": 0.25,
                 "fuse_projection_weights": False,
+                "linear_init_params": lin_init.pairformer_init,
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "inf": 1e9,
                 "clear_cache_between_blocks": False,
@@ -213,6 +221,7 @@ config = mlc.ConfigDict(
                     "c_fourier_emb": 256,
                     "max_relative_idx": max_relative_idx,
                     "max_relative_chain": max_relative_chain,
+                    "linear_init_params": lin_init.diffusion_conditioning,
                 },
                 "atom_attn_enc": {
                     "c_s": c_s,
@@ -229,6 +238,7 @@ config = mlc.ConfigDict(
                     "n_transition": 2,
                     "n_query": n_query,
                     "n_key": n_key,
+                    "linear_init_params": lin_init.atom_att_enc_init,
                     "use_ada_layer_norm": True,
                     "use_block_sparse_attn": use_block_sparse_attn,
                     "block_size": block_size,
@@ -242,6 +252,7 @@ config = mlc.ConfigDict(
                     "no_heads": 16,
                     "no_blocks": 24,
                     "n_transition": 2,
+                    "linear_init_params": lin_init.diffusion_transformer_init,
                     "use_ada_layer_norm": True,
                     "use_block_sparse_attn": False,
                     "block_size": None,
@@ -257,6 +268,7 @@ config = mlc.ConfigDict(
                     "n_transition": 2,
                     "n_query": n_query,
                     "n_key": n_key,
+                    "linear_init_params": lin_init.atom_att_dec_init,
                     "use_ada_layer_norm": True,
                     "use_block_sparse_attn": use_block_sparse_attn,
                     "block_size": block_size,

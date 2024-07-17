@@ -21,6 +21,11 @@ mha_init = {
     "linear_o": {"bias": False, "init": "final"},
 }
 
+mha_bias_init = {
+    "linear_z": {"bias": False, "init": "normal"},
+    "mha": mha_init,
+}
+
 ########################
 # Layers
 ########################
@@ -47,10 +52,7 @@ tri_mul_init = {
     "linear_z": {"bias": False, "init": "final"},
 }
 
-tri_att_init = {
-    "linear_z": {"bias": False, "init": "normal"},
-    "mha": mha_init,
-}
+tri_att_init = mha_bias_init
 
 opm_init = {
     "linear_1": {"bias": False, "init": "default"},
@@ -136,7 +138,7 @@ input_emb_init = {
     "linear_token_bonds": {"bias": False, "init": "default"},
 }
 
-msa_module_emb = {
+msa_module_emb_init = {
     "linear_m": {"bias": False, "init": "default"},
     "linear_s_input": {"bias": False, "init": "default"},
 }
@@ -162,14 +164,23 @@ pair_block_init = {
     "pair_transition": transition_init,
 }
 
-msa_module_emb_init = {}
-
-msa_module_init = {
+msa_block_init = {
+    "msa_row_att": mha_bias_init,
+    "msa_transition": transition_init,
+    "opm": opm_init,
     "pair_block": pair_block_init,
-    "opm_init": opm_init,
 }
 
-pairformer_init = {}
+msa_module_init = {
+    **msa_block_init,
+    "msa_pair_avg": msa_pair_bias_init,
+}
+
+pairformer_init = {
+    "pair_block": pair_block_init,
+    "att_pair_bias": att_pair_bias_init,
+    "transition": transition_init,
+}
 
 ########################
 # Structure

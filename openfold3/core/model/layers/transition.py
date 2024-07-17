@@ -277,9 +277,13 @@ class ConditionedTransitionBlock(nn.Module):
         self.c_s = c_s
         self.n = n
 
-        self.layer_norm = AdaLN(c_a=self.c_a, c_s=self.c_s, **linear_init_params.ada_ln)
+        self.layer_norm = AdaLN(
+            c_a=self.c_a, c_s=self.c_s, linear_init_params=linear_init_params.ada_ln
+        )
 
-        self.swiglu = SwiGLU(self.c_a, self.n * self.c_a, **linear_init_params.swiglu)
+        self.swiglu = SwiGLU(
+            self.c_a, self.n * self.c_a, linear_init_params=linear_init_params.swiglu
+        )
 
         self.sigmoid = nn.Sigmoid()
         self.linear_g = Linear(self.c_s, self.c_a, **linear_init_params.linear_g)
@@ -337,7 +341,10 @@ class StructureModuleTransition(nn.Module):
         self.layers = nn.ModuleList(
             [
                 ReLUTransitionLayer(
-                    num_relu_layers=2, c_in=self.c, n=1, **linear_init_params.layers
+                    num_relu_layers=2,
+                    c_in=self.c,
+                    n=1,
+                    linear_init_params=linear_init_params,
                 )
                 for _ in range(self.num_layers)
             ]

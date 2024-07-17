@@ -248,6 +248,7 @@ class EvoformerStack(MSAStack):
         no_column_attention: bool,
         opm_first: bool,
         fuse_projection_weights: bool,
+        linear_init_params: ConfigDict,
         blocks_per_ckpt: Optional[int],
         inf: float,
         eps: float,
@@ -297,6 +298,8 @@ class EvoformerStack(MSAStack):
             fuse_projection_weights:
                 When True, uses FusedTriangleMultiplicativeUpdate variant in the Pair
                 Stack. Used in Multimer pipeline.
+            linear_init_params:
+                Parameters for linear layer initialization
             blocks_per_ckpt:
                 Number of Evoformer blocks in each activation checkpoint
             inf:
@@ -332,16 +335,15 @@ class EvoformerStack(MSAStack):
                 no_column_attention=no_column_attention,
                 opm_first=opm_first,
                 fuse_projection_weights=fuse_projection_weights,
+                linear_init_params=linear_init_params,
                 inf=inf,
                 eps=eps,
             )
             self.blocks.append(block)
 
-        self.linear = Linear(c_m, c_s)
+        self.linear = Linear(c_m, c_s, **linear_init_params.linear)
 
-    def _wrap_up(
-        self, m: torch.Tensor, z: torch.Tensor
-    ) -> list[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _wrap_up(self, m: torch.Tensor, z: torch.Tensor) -> Sequence[torch.Tensor]:
         """Generate the single embedding and return all three embeddings.
 
         Returns:

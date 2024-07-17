@@ -22,6 +22,7 @@ MSAModuleEmbedder.
 from typing import Optional
 
 import torch
+from ml_collections import ConfigDict
 
 from openfold3.core.model.latent.base_stacks import MSAStack
 from openfold3.core.model.latent.evoformer import EvoformerBlock
@@ -47,6 +48,7 @@ class MSAModuleBlock(EvoformerBlock):
         pair_dropout: float,
         opm_first: bool,
         fuse_projection_weights: bool,
+        linear_init_params: ConfigDict,
         inf: float,
         eps: float,
     ):
@@ -84,6 +86,8 @@ class MSAModuleBlock(EvoformerBlock):
             fuse_projection_weights:
                 When True, uses FusedTriangleMultiplicativeUpdate variant in
                 the Pair Stack. Used in Multimer pipeline.
+            linear_init_params:
+                Parameters for linear layer initialization
             inf:
                 Large constant for masking
             eps:
@@ -105,6 +109,7 @@ class MSAModuleBlock(EvoformerBlock):
             no_column_attention=True,
             opm_first=opm_first,
             fuse_projection_weights=fuse_projection_weights,
+            linear_init_params=linear_init_params,
             inf=inf,
             eps=eps,
         )
@@ -116,6 +121,7 @@ class MSAModuleBlock(EvoformerBlock):
             c_z=c_z,
             c_hidden=c_hidden_msa_att,
             no_heads=no_heads_msa,
+            linear_init_params=linear_init_params.msa_pair_avg,
             inf=inf,
         )
 
@@ -142,6 +148,7 @@ class MSAModuleStack(MSAStack):
         pair_dropout: float,
         opm_first: bool,
         fuse_projection_weights: bool,
+        linear_init_params: ConfigDict,
         blocks_per_ckpt: Optional[int],
         inf: float,
         eps: float,
@@ -185,6 +192,8 @@ class MSAModuleStack(MSAStack):
             fuse_projection_weights:
                 When True, uses FusedTriangleMultiplicativeUpdate variant in
                 the Pair Stack. Used in Multimer pipeline.
+            linear_init_params:
+                Parameters for linear layer initialization
             blocks_per_ckpt:
                 Number of MSAModule blocks in each activation checkpoint
             inf:
@@ -219,6 +228,7 @@ class MSAModuleStack(MSAStack):
                 pair_dropout=pair_dropout,
                 opm_first=opm_first,
                 fuse_projection_weights=fuse_projection_weights,
+                linear_init_params=linear_init_params,
                 inf=inf,
                 eps=eps,
             )

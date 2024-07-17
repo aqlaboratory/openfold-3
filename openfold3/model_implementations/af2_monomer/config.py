@@ -4,6 +4,9 @@ import re
 
 import ml_collections as mlc
 
+import openfold3.model_implementations.af2_monomer.linear_init_config as lin_init
+import openfold3.model_implementations.af2_multimer.linear_init_config as lin_init_mult
+
 
 def set_inf(c, inf):
     for k, v in c.items():
@@ -490,6 +493,7 @@ config = mlc.ConfigDict(
                 "c_z": c_z,
                 "c_m": c_m,
                 "relpos_k": 32,
+                "linear_init_params": lin_init.input_emb_init,
             },
             "recycling_embedder": {
                 "c_z": c_z,
@@ -497,6 +501,7 @@ config = mlc.ConfigDict(
                 "min_bin": 3.25,
                 "max_bin": 20.75,
                 "no_bins": 15,
+                "linear_init_params": lin_init.recycling_emb_init,
                 "inf": 1e8,
             },
             "template": {
@@ -509,10 +514,12 @@ config = mlc.ConfigDict(
                     # DISCREPANCY: c_in is supposed to be 51.
                     "c_in": 57,
                     "c_out": c_m,
+                    "linear_init_params": lin_init.templ_single_feat_emb_init,
                 },
                 "template_pair_embedder": {
                     "c_in": 88,
                     "c_out": c_t,
+                    "linear_init_params": lin_init.templ_pair_feat_emb_init,
                 },
                 "template_pair_stack": {
                     "c_t": c_t,
@@ -527,6 +534,7 @@ config = mlc.ConfigDict(
                     "dropout_rate": 0.25,
                     "tri_mul_first": False,
                     "fuse_projection_weights": False,
+                    "linear_init_params": lin_init.pair_block_init,
                     "blocks_per_ckpt": blocks_per_ckpt,
                     "tune_chunk_size": tune_chunk_size,
                     "inf": 1e9,
@@ -538,6 +546,7 @@ config = mlc.ConfigDict(
                     # It's actually 16.
                     "c_hidden": 16,
                     "no_heads": 4,
+                    "linear_init_params": lin_init.template_pointwise_init,
                     "inf": 1e5,  # 1e9,
                 },
                 "inf": 1e5,  # 1e9,
@@ -561,6 +570,7 @@ config = mlc.ConfigDict(
                 "extra_msa_embedder": {
                     "c_in": 25,
                     "c_out": c_e,
+                    "linear_init_params": lin_init.extra_msa_emb_init,
                 },
                 "extra_msa_stack": {
                     "c_m": c_e,
@@ -578,6 +588,7 @@ config = mlc.ConfigDict(
                     "pair_dropout": 0.25,
                     "opm_first": False,
                     "fuse_projection_weights": False,
+                    "linear_init_params": lin_init.extra_msa_block_init,
                     "clear_cache_between_blocks": False,
                     "tune_chunk_size": tune_chunk_size,
                     "inf": 1e9,
@@ -604,6 +615,7 @@ config = mlc.ConfigDict(
                 "no_column_attention": False,
                 "opm_first": False,
                 "fuse_projection_weights": False,
+                "linear_init_params": lin_init.evo_block_init,
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "clear_cache_between_blocks": False,
                 "tune_chunk_size": tune_chunk_size,
@@ -837,18 +849,25 @@ multimer_config_update = mlc.ConfigDict(
                 "max_relative_chain": 2,
                 "max_relative_idx": 32,
                 "use_chain_relative": True,
+                "linear_init_params": lin_init_mult.input_emb_init,
             },
             "template": {
-                "template_single_embedder": {"c_in": 34, "c_out": c_m},
+                "template_single_embedder": {
+                    "c_in": 34,
+                    "c_out": c_m,
+                    "linear_init_params": lin_init_mult.templ_single_feat_emb_init,
+                },
                 "template_pair_embedder": {
                     "c_in": c_z,
                     "c_out": c_t,
                     "c_dgram": 39,
                     "c_aatype": 22,
+                    "linear_init_params": lin_init_mult.templ_pair_feat_emb_init,
                 },
                 "template_pair_stack": {
                     "tri_mul_first": True,
                     "fuse_projection_weights": True,
+                    "linear_init_params": lin_init_mult.pair_block_init,
                 },
                 "c_t": c_t,
                 "c_z": c_z,
@@ -858,9 +877,17 @@ multimer_config_update = mlc.ConfigDict(
                 # "extra_msa_embedder": {
                 #     "num_extra_msa": 2048
                 # },
-                "extra_msa_stack": {"opm_first": True, "fuse_projection_weights": True}
+                "extra_msa_stack": {
+                    "opm_first": True,
+                    "fuse_projection_weights": True,
+                    "linear_init_params": lin_init_mult.extra_msa_block_init,
+                },
             },
-            "evoformer_stack": {"opm_first": True, "fuse_projection_weights": True},
+            "evoformer_stack": {
+                "opm_first": True,
+                "fuse_projection_weights": True,
+                "linear_init_params": lin_init_mult.evo_block_init,
+            },
             "structure_module": {"trans_scale_factor": 20},
             "heads": {
                 "tm": {"ptm_weight": 0.2, "iptm_weight": 0.8, "enabled": True},
@@ -918,6 +945,7 @@ seq_mode_config = mlc.ConfigDict(
                 "c_z": c_z,
                 "c_m": c_m,
                 "relpos_k": 32,
+                "linear_init_params": lin_init.preembed_init,
             },
             "extra_msa": {
                 "enabled": False  # Disable Extra MSA Stack

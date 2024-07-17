@@ -19,6 +19,7 @@ import sys
 from typing import Optional, Sequence, Tuple
 
 import torch
+from ml_collections import ConfigDict
 
 from openfold3.core.model.latent.base_blocks import MSABlock
 from openfold3.core.model.latent.base_stacks import MSAStack
@@ -51,6 +52,7 @@ class ExtraMSABlock(MSABlock):
         pair_dropout: float,
         opm_first: bool,
         fuse_projection_weights: bool,
+        linear_init_params: ConfigDict,
         inf: float,
         eps: float,
         ckpt: bool,
@@ -70,6 +72,7 @@ class ExtraMSABlock(MSABlock):
             pair_dropout=pair_dropout,
             opm_first=opm_first,
             fuse_projection_weights=fuse_projection_weights,
+            linear_init_params=linear_init_params,
             inf=inf,
             eps=eps,
         )
@@ -80,6 +83,7 @@ class ExtraMSABlock(MSABlock):
             c_in=c_m,
             c_hidden=c_hidden_msa_att,
             no_heads=no_heads_msa,
+            linear_init_params=linear_init_params.msa_col_att,
             inf=inf,
             eps=eps,
         )
@@ -257,6 +261,7 @@ class ExtraMSAStack(MSAStack):
         pair_dropout: float,
         opm_first: bool,
         fuse_projection_weights: bool,
+        linear_init_params: ConfigDict,
         inf: float,
         eps: float,
         ckpt: bool,
@@ -304,6 +309,8 @@ class ExtraMSAStack(MSAStack):
             fuse_projection_weights:
                 When True, uses FusedTriangleMultiplicativeUpdate variant in the Pair
                 Stack. Used in Multimer pipeline.
+            linear_init_params:
+                Parameters for linear layer initialization
             inf:
                 Large constant for masking
             eps:
@@ -342,6 +349,7 @@ class ExtraMSAStack(MSAStack):
                 pair_dropout=pair_dropout,
                 opm_first=opm_first,
                 fuse_projection_weights=fuse_projection_weights,
+                linear_init_params=linear_init_params,
                 inf=inf,
                 eps=eps,
                 ckpt=False,

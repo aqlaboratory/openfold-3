@@ -93,7 +93,7 @@ class AttentionPairBias(nn.Module):
 
         if self.use_ada_layer_norm:
             self.layer_norm_a = AdaLN(
-                c_a=self.c_q, c_s=self.c_s, **linear_init_params.ada_ln
+                c_a=self.c_q, c_s=self.c_s, linear_init_params=linear_init_params.ada_ln
             )
             self.linear_ada_out = Linear(
                 self.c_s, self.c_q, **linear_init_params.linear_ada_out

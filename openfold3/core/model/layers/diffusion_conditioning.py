@@ -68,7 +68,11 @@ class DiffusionConditioning(nn.Module):
 
         self.transition_z = nn.ModuleList(
             [
-                SwiGLUTransition(c_in=self.c_z, n=2, **linear_init_params.transition_z)
+                SwiGLUTransition(
+                    c_in=self.c_z,
+                    n=2,
+                    linear_init_params=linear_init_params.transition_z,
+                )
                 for _ in range(2)
             ]
         )

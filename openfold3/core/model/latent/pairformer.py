@@ -19,6 +19,7 @@ from functools import partial
 from typing import Optional, Tuple
 
 import torch
+from ml_collections import ConfigDict
 from torch import nn
 
 from openfold3.core.model.latent.base_blocks import PairBlock
@@ -45,6 +46,7 @@ class PairFormerBlock(nn.Module):
         transition_n: int,
         pair_dropout: float,
         fuse_projection_weights: bool,
+        linear_init_params: ConfigDict,
         inf: float,
     ):
         """
@@ -74,6 +76,8 @@ class PairFormerBlock(nn.Module):
             fuse_projection_weights:
                 When True, uses FusedTriangleMultiplicativeUpdate variant in
                 the Pair Stack. Used in Multimer pipeline.
+            linear_init_params:
+                Parameters for initializing linear layers
             inf:
                 Large constant used for masking
         """
@@ -88,6 +92,7 @@ class PairFormerBlock(nn.Module):
             transition_n=transition_n,
             pair_dropout=pair_dropout,
             fuse_projection_weights=fuse_projection_weights,
+            linear_init_params=linear_init_params.pair_block,
             inf=inf,
         )
 
@@ -99,6 +104,7 @@ class PairFormerBlock(nn.Module):
             c_z=c_z,
             c_hidden=c_hidden_pair_bias,
             no_heads=no_heads_pair_bias,
+            linear_init_params=linear_init_params.att_pair_bias,
             use_ada_layer_norm=False,
             use_block_sparse_attn=False,
             block_size=None,
@@ -109,6 +115,7 @@ class PairFormerBlock(nn.Module):
         self.single_transition = SwiGLUTransition(
             c_in=c_s,
             n=transition_n,
+            linear_init_params=linear_init_params.transition,
         )
 
     def forward(
@@ -215,6 +222,7 @@ class PairFormerStack(nn.Module):
         transition_n: int,
         pair_dropout: float,
         fuse_projection_weights: bool,
+        linear_init_params: ConfigDict,
         blocks_per_ckpt: Optional[int],
         inf: float,
         clear_cache_between_blocks: bool = False,
@@ -250,6 +258,8 @@ class PairFormerStack(nn.Module):
             fuse_projection_weights:
                 When True, uses FusedTriangleMultiplicativeUpdate variant in
                 the Pair Stack. Used in Multimer pipeline.
+            linear_init_params:
+                Parameters for initializing linear layers
             blocks_per_ckpt:
                 Number of blocks per activation checkpoint. None disables
                 activation checkpointing
@@ -281,6 +291,7 @@ class PairFormerStack(nn.Module):
                 transition_n=transition_n,
                 pair_dropout=pair_dropout,
                 fuse_projection_weights=fuse_projection_weights,
+                linear_init_params=linear_init_params,
                 inf=inf,
             )
             self.blocks.append(block)

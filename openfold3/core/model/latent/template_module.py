@@ -61,6 +61,7 @@ class TemplatePairBlock(PairBlock):
         dropout_rate: float,
         tri_mul_first: bool,
         fuse_projection_weights: bool,
+        linear_init_params: ConfigDict,
         inf: float,
         **kwargs,
     ):
@@ -86,6 +87,8 @@ class TemplatePairBlock(PairBlock):
             fuse_projection_weights:
                 When True, uses FusedTriangleMultiplicativeUpdate variant in
                 the Pair Stack. Used in Multimer pipeline.
+            linear_init_params:
+                Configuration for linear initialization
             inf:
                 Large constant used for masking
         """
@@ -98,6 +101,7 @@ class TemplatePairBlock(PairBlock):
             transition_n=pair_transition_n,
             pair_dropout=dropout_rate,
             fuse_projection_weights=fuse_projection_weights,
+            linear_init_params=linear_init_params,
             inf=inf,
         )
 
@@ -208,6 +212,7 @@ class TemplatePairStack(nn.Module):
         dropout_rate,
         tri_mul_first,
         fuse_projection_weights,
+        linear_init_params,
         blocks_per_ckpt,
         tune_chunk_size: bool = False,
         inf=1e9,
@@ -237,6 +242,8 @@ class TemplatePairStack(nn.Module):
             fuse_projection_weights:
                 When True, uses FusedTriangleMultiplicativeUpdate variant in
                 the Pair Stack. Used in Multimer pipeline.
+            linear_init_params:
+                Configuration for linear initialization
             blocks_per_ckpt:
                 Number of blocks per activation checkpoint. None disables
                 activation checkpointing
@@ -261,6 +268,7 @@ class TemplatePairStack(nn.Module):
                 dropout_rate=dropout_rate,
                 tri_mul_first=tri_mul_first,
                 fuse_projection_weights=fuse_projection_weights,
+                linear_init_params=linear_init_params,
                 inf=inf,
             )
             self.blocks.append(block)
@@ -362,16 +370,16 @@ class TemplateEmbedderMonomer(nn.Module):
 
         self.config = config
         self.template_single_embedder = TemplateSingleEmbedderMonomer(
-            **config["template_single_embedder"],
+            **config.template_single_embedder,
         )
         self.template_pair_embedder = TemplatePairEmbedderMonomer(
-            **config["template_pair_embedder"],
+            **config.template_pair_embedder,
         )
         self.template_pair_stack = TemplatePairStack(
-            **config["template_pair_stack"],
+            **config.template_pair_stack,
         )
         self.template_pointwise_att = TemplatePointwiseAttention(
-            **config["template_pointwise_attention"],
+            **config.template_pointwise_attention,
         )
 
     def forward(
@@ -512,13 +520,13 @@ class TemplateEmbedderMultimer(nn.Module):
 
         self.config = config
         self.template_single_embedder = TemplateSingleEmbedderMultimer(
-            **config["template_single_embedder"],
+            **config.template_single_embedder,
         )
         self.template_pair_embedder = TemplatePairEmbedderMultimer(
-            **config["template_pair_embedder"],
+            **config.template_pair_embedder,
         )
         self.template_pair_stack = TemplatePairStack(
-            **config["template_pair_stack"],
+            **config.template_pair_stack,
         )
 
         self.linear_t = Linear(config.c_t, config.c_z)
@@ -615,10 +623,10 @@ class TemplateEmbedderAllAtom(nn.Module):
 
         self.config = config
         self.template_pair_embedder = TemplatePairEmbedderAllAtom(
-            **config["template_pair_embedder"],
+            **config.template_pair_embedder,
         )
         self.template_pair_stack = TemplatePairStack(
-            **config["template_pair_stack"],
+            **config.template_pair_stack,
         )
 
         self.linear_t = Linear(config.c_t, config.c_z, bias=False)

@@ -84,10 +84,25 @@ templ_pair_feat_emb_init = {
 ########################
 
 pair_block_init = {
-    "tri_mul_init": tri_mul_init,
-    "tri_att_init": tri_att_init,
-    "transition_init": transition_init,
+    "tri_mul": tri_mul_init,
+    "tri_att": tri_att_init,
+    "pair_transition": transition_init,
 }
+
+msa_block_init = {
+    "msa_row_att": mha_bias_init,
+    "msa_transition": transition_init,
+    "opm": opm_init,
+    "pair_block": pair_block_init,
+}
+
+evo_block_init = {
+    **msa_block_init,
+    "msa_col_att": mha_bias_init,
+    "linear": {"bias": True, "init": "default"},
+}
+
+extra_msa_block_init = {**msa_block_init, "msa_col_att": msa_global_att_init}
 
 ########################
 # Structure
