@@ -23,6 +23,7 @@ from typing import Dict, Tuple
 
 import torch
 import torch.nn as nn
+from ml_collections import ConfigDict
 
 from openfold3.core.model.layers import AtomAttentionEncoder
 from openfold3.core.model.primitives import LayerNorm, Linear
@@ -862,7 +863,7 @@ class FourierEmbedding(nn.Module):
     Implements AF3 Algorithm 22.
     """
 
-    def __init__(self, c: int):
+    def __init__(self, c: int, linear_init_params: ConfigDict):
         """
         Args:
             c:
@@ -870,7 +871,7 @@ class FourierEmbedding(nn.Module):
         """
         super().__init__()
 
-        self.linear = Linear(in_dim=1, out_dim=c, bias=True, init="fourier")
+        self.linear = Linear(in_dim=1, out_dim=c, **linear_init_params.linear)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

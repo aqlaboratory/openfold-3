@@ -25,6 +25,7 @@ from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
+from ml_collections import ConfigDict
 
 from openfold3.core.utils.checkpointing import get_checkpoint_fn
 from openfold3.core.utils.precision_utils import is_fp16_enabled
@@ -177,6 +178,7 @@ class Attention(nn.Module):
         c_v: int,
         c_hidden: int,
         no_heads: int,
+        linear_init_params: ConfigDict,
         gating: bool = True,
     ):
         """
@@ -191,6 +193,8 @@ class Attention(nn.Module):
                 Per-head hidden dimension
             no_heads:
                 Number of attention heads
+            linear_init_params:
+                Linear layer initialization parameters
             gating:
                 Whether the output should be gated using query data
         """
@@ -207,20 +211,22 @@ class Attention(nn.Module):
         # stated in the supplement, but the overall channel dimension.
 
         self.linear_q = Linear(
-            self.c_q, self.c_hidden * self.no_heads, bias=False, init="glorot"
+            self.c_q, self.c_hidden * self.no_heads, **linear_init_params.linear_q
         )
         self.linear_k = Linear(
-            self.c_k, self.c_hidden * self.no_heads, bias=False, init="glorot"
+            self.c_k, self.c_hidden * self.no_heads, **linear_init_params.linear_k
         )
         self.linear_v = Linear(
-            self.c_v, self.c_hidden * self.no_heads, bias=False, init="glorot"
+            self.c_v, self.c_hidden * self.no_heads, **linear_init_params.linear_v
         )
-        self.linear_o = Linear(self.c_hidden * self.no_heads, self.c_q, init="final")
+        self.linear_o = Linear(
+            self.c_hidden * self.no_heads, self.c_q, **linear_init_params.linear_o
+        )
 
         self.linear_g = None
         if self.gating:
             self.linear_g = Linear(
-                self.c_q, self.c_hidden * self.no_heads, init="gating"
+                self.c_q, self.c_hidden * self.no_heads, **linear_init_params.linear_g
             )
 
         self.sigmoid = nn.Sigmoid()
@@ -373,7 +379,7 @@ class Attention(nn.Module):
 
 
 class GlobalAttention(nn.Module):
-    def __init__(self, c_in, c_hidden, no_heads, inf, eps):
+    def __init__(self, c_in, c_hidden, no_heads, inf, eps, linear_init_params):
         super().__init__()
 
         self.c_in = c_in
@@ -382,22 +388,16 @@ class GlobalAttention(nn.Module):
         self.inf = inf
         self.eps = eps
 
-        self.linear_q = Linear(c_in, c_hidden * no_heads, bias=False, init="glorot")
+        self.linear_q = Linear(c_in, c_hidden * no_heads, **linear_init_params.linear_q)
 
         self.linear_k = Linear(
             c_in,
             c_hidden,
-            bias=False,
-            init="glorot",
+            **linear_init_params.linear_k,
         )
-        self.linear_v = Linear(
-            c_in,
-            c_hidden,
-            bias=False,
-            init="glorot",
-        )
-        self.linear_g = Linear(c_in, c_hidden * no_heads, init="gating")
-        self.linear_o = Linear(c_hidden * no_heads, c_in, init="final")
+        self.linear_v = Linear(c_in, c_hidden, **linear_init_params.linear_v)
+        self.linear_g = Linear(c_in, c_hidden * no_heads, **linear_init_params.linear_g)
+        self.linear_o = Linear(c_hidden * no_heads, c_in, **linear_init_params.linear_o)
 
         self.sigmoid = nn.Sigmoid()
 

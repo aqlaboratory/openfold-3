@@ -16,6 +16,7 @@
 """Activation functions."""
 
 import torch
+from ml_collections import ConfigDict
 from torch import nn
 
 from .linear import Linear
@@ -24,21 +25,20 @@ from .linear import Linear
 class SwiGLU(nn.Module):
     """SwiGLU activation function."""
 
-    def __init__(self, c_in: int, c_out: int, bias: bool = False, init="he_normal"):
+    def __init__(self, c_in: int, c_out: int, linear_init_params: ConfigDict):
         """
         Args:
             c_in: Number of input channels
             c_out: Number of output channels
-            bias: Whether to include a bias term in linear layers
-            init: Linear layer initialization method
+            linear_init_params: Linear layer initialization parameters
         """
         super().__init__()
 
         self.c_in = c_in
         self.c_out = c_out
 
-        self.linear_a = Linear(self.c_in, self.c_out, bias=bias, init=init)
-        self.linear_b = Linear(self.c_in, self.c_out, bias=bias, init=init)
+        self.linear_a = Linear(self.c_in, self.c_out, **linear_init_params.linear_a)
+        self.linear_b = Linear(self.c_in, self.c_out, **linear_init_params.linear_b)
         self.swish = nn.SiLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

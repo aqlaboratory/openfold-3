@@ -32,7 +32,7 @@ class TemplatePointwiseAttention(nn.Module):
     Implements AF2 Algorithm 17.
     """
 
-    def __init__(self, c_t, c_z, c_hidden, no_heads, inf, **kwargs):
+    def __init__(self, c_t, c_z, c_hidden, no_heads, inf, linear_init_params, **kwargs):
         """
         Args:
             c_t:
@@ -45,6 +45,8 @@ class TemplatePointwiseAttention(nn.Module):
                 Number of attention heads
             inf:
                 Large constant for masking
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -60,6 +62,7 @@ class TemplatePointwiseAttention(nn.Module):
             self.c_t,
             self.c_hidden,
             self.no_heads,
+            linear_init_params=linear_init_params,
             gating=False,
         )
 

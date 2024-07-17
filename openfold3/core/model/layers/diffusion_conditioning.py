@@ -1,6 +1,7 @@
 from typing import Dict, Tuple
 
 import torch
+from ml_collections import ConfigDict
 from torch import nn
 
 from openfold3.core.model.feature_embedders.input_embedders import (
@@ -26,6 +27,7 @@ class DiffusionConditioning(nn.Module):
         max_relative_idx: int,
         max_relative_chain: int,
         sigma_data: float,
+        linear_init_params: ConfigDict,
     ):
         """
         Args:
@@ -43,6 +45,8 @@ class DiffusionConditioning(nn.Module):
                 Maximum relative chain indices clipped
             sigma_data:
                 Constant determined by data variance
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -59,21 +63,37 @@ class DiffusionConditioning(nn.Module):
         )
 
         self.layer_norm_z = LayerNorm(2 * self.c_z)
-        self.linear_z = Linear(2 * self.c_z, self.c_z, bias=False)
+        self.linear_z = Linear(2 * self.c_z, self.c_z, **linear_init_params.linear_z)
 
         self.transition_z = nn.ModuleList(
-            [SwiGLUTransition(c_in=self.c_z, n=2) for _ in range(2)]
+            [
+                SwiGLUTransition(c_in=self.c_z, n=2, **linear_init_params.transition_z)
+                for _ in range(2)
+            ]
         )
 
         self.layer_norm_s = LayerNorm(self.c_s + self.c_s_input)
-        self.linear_s = Linear(self.c_s + self.c_s_input, self.c_s, bias=False)
+        self.linear_s = Linear(
+            self.c_s + self.c_s_input, self.c_s, **linear_init_params.linear_z
+        )
 
-        self.fourier_emb = FourierEmbedding(c=c_fourier_emb)
+        self.fourier_emb = FourierEmbedding(
+            c=c_fourier_emb, linear_init_params=linear_init_params.fourier_emb
+        )
         self.layer_norm_n = LayerNorm(self.c_fourier_emb)
-        self.linear_n = Linear(self.c_fourier_emb, self.c_s, bias=False)
+        self.linear_n = Linear(
+            self.c_fourier_emb, self.c_s, **linear_init_params.linear_n
+        )
 
         self.transition_s = nn.ModuleList(
-            [SwiGLUTransition(c_in=self.c_s, n=2) for _ in range(2)]
+            [
+                SwiGLUTransition(
+                    c_in=self.c_s,
+                    n=2,
+                    linear_init_params=linear_init_params.transition_s,
+                )
+                for _ in range(2)
+            ]
         )
 
     def forward(

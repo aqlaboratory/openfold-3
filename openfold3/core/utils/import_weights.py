@@ -213,7 +213,7 @@ def generate_translation_dict(model, version, is_multimer=False):
     def TriAttParams(tri_att):
         return {
             "query_norm": LayerNormParams(tri_att.layer_norm),
-            "feat_2d_weights": LinearWeight(tri_att.linear.weight),
+            "feat_2d_weights": LinearWeight(tri_att.linear_z.weight),
             "attention": AttentionGatedParams(tri_att.mha),
         }
 

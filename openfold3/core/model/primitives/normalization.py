@@ -19,6 +19,7 @@ import importlib
 
 import torch
 import torch.nn as nn
+from ml_collections import ConfigDict
 
 from .linear import Linear
 
@@ -81,11 +82,14 @@ class AdaLN(nn.Module):
     Implements AF3 Algorithm 26.
     """
 
-    def __init__(self, c_a: int, c_s: int, eps: float = 1e-5):
+    def __init__(
+        self, c_a: int, c_s: int, linear_init_params: ConfigDict, eps: float = 1e-5
+    ):
         """
         Args:
             c_a: Number of input channels for input tensor
             c_s: Number of input channels for shift/scale tensor
+            linear_init_params: Linear layer initialization parameters
             eps: Epsilon value for numerical stability
         """
         super().__init__()
@@ -102,8 +106,8 @@ class AdaLN(nn.Module):
         )
 
         self.sigmoid = nn.Sigmoid()
-        self.linear_g = Linear(self.c_s, self.c_a, init="final")
-        self.linear_s = Linear(self.c_s, self.c_a, bias=False, init="final")
+        self.linear_g = Linear(self.c_s, self.c_a, **linear_init_params.linear_g)
+        self.linear_s = Linear(self.c_s, self.c_a, **linear_init_params.linear_s)
 
     def forward(self, a: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
         """

@@ -29,7 +29,9 @@ from openfold3.core.utils.tensor_utils import (
 
 
 class TriangleAttention(nn.Module):
-    def __init__(self, c_in, c_hidden, no_heads, starting=True, inf=1e9):
+    def __init__(
+        self, c_in, c_hidden, no_heads, linear_init_params, starting=True, inf=1e9
+    ):
         """
         Args:
             c_in:
@@ -49,10 +51,15 @@ class TriangleAttention(nn.Module):
 
         self.layer_norm = LayerNorm(self.c_in)
 
-        self.linear = Linear(c_in, self.no_heads, bias=False, init="normal")
+        self.linear_z = Linear(c_in, self.no_heads, **linear_init_params.linear_z)
 
         self.mha = Attention(
-            self.c_in, self.c_in, self.c_in, self.c_hidden, self.no_heads
+            c_q=self.c_in,
+            c_k=self.c_in,
+            c_v=self.c_in,
+            c_hidden=c_hidden,
+            no_heads=self.no_heads,
+            linear_init_params=linear_init_params.mha,
         )
 
     @torch.jit.ignore
@@ -120,7 +127,7 @@ class TriangleAttention(nn.Module):
         mask_bias = (self.inf * (mask - 1))[..., :, None, None, :]
 
         # [*, H, I, J]
-        triangle_bias = permute_final_dims(self.linear(x), (2, 0, 1))
+        triangle_bias = permute_final_dims(self.linear_z(x), (2, 0, 1))
 
         # [*, 1, H, I, J]
         triangle_bias = triangle_bias.unsqueeze(-4)

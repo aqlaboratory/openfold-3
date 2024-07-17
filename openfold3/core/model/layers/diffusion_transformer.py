@@ -20,6 +20,7 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
+from ml_collections import ConfigDict
 
 from .attention_pair_bias import AttentionPairBias
 from .transition import ConditionedTransitionBlock
@@ -39,6 +40,7 @@ class DiffusionTransformerBlock(nn.Module):
         c_hidden: int,
         no_heads: int,
         n_transition: int,
+        linear_init_params: ConfigDict,
         inf: float = 1e9,
     ):
         """
@@ -53,6 +55,8 @@ class DiffusionTransformerBlock(nn.Module):
                 Number of attention heads
             n_transition:
                 Dimension multiplication factor used in transition layer
+            linear_init_params:
+                Linear layer initialization parameters
             inf:
                 Large constant used to create mask for attention logits
         """
@@ -66,13 +70,17 @@ class DiffusionTransformerBlock(nn.Module):
             c_z=c_z,
             c_hidden=c_hidden,
             no_heads=no_heads,
+            linear_init_params=linear_init_params.att_pair_bias,
             use_ada_layer_norm=True,
             gating=True,
             inf=inf,
         )
 
         self.conditioned_transition = ConditionedTransitionBlock(
-            c_a=c_a, c_s=c_s, n=n_transition
+            c_a=c_a,
+            c_s=c_s,
+            n=n_transition,
+            linear_init_params=linear_init_params.cond_transition,
         )
 
     def forward(
@@ -141,6 +149,7 @@ class DiffusionTransformer(nn.Module):
         no_heads: int,
         no_blocks: int,
         n_transition: int,
+        linear_init_params: ConfigDict,
         inf: float,
     ):
         """
@@ -157,6 +166,8 @@ class DiffusionTransformer(nn.Module):
                 Number of attention heads
             n_transition:
                 Dimension multiplication factor used in transition layer
+            linear_init_params:
+                Linear layer initialization parameters
             inf:
                 Large constant used to create mask for attention logits
         """
@@ -171,6 +182,7 @@ class DiffusionTransformer(nn.Module):
                     c_hidden=c_hidden,
                     no_heads=no_heads,
                     n_transition=n_transition,
+                    linear_init_params=linear_init_params,
                     inf=inf,
                 )
                 for _ in range(no_blocks)
