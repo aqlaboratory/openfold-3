@@ -370,7 +370,6 @@ def shift_up_atom_indices(
     atom_array.atom_idx[update_mask] += shift
 
 
-# TODO: make this faster?
 # TODO: code is a bit redundant but not sure if bad
 def add_unresolved_polymer_residues(
     atom_array: struc.AtomArray,
