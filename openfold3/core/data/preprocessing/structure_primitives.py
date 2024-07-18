@@ -305,12 +305,21 @@ def build_unresolved_polymer_segment(
     return segment_atom_array
 
 
-# TODO: add documentation
-def shift_downstream_atom_indices(
-    atom_array: struc.AtomArray, shift: int, geq_atom_idx: int
+def shift_up_atom_indices(
+    atom_array: struc.AtomArray, shift: int, idx_threshold: int
 ) -> None:
-    # Update atom indices for all atoms greater or equal to the given atom index
-    update_mask = atom_array.atom_idx >= geq_atom_idx
+    """Shifts all atom indices higher than a threshold by a certain amount
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to shift atom indices in.
+        shift:
+            Amount by which to shift the atom indices.
+        idx_threshold:
+            Threshold index above which to shift the atom indices.
+    """
+    # Update atom indices for all atoms greater than the given atom index
+    update_mask = atom_array.atom_idx > idx_threshold
     atom_array.atom_idx[update_mask] += shift
 
 
@@ -394,8 +403,10 @@ def add_unresolved_polymer_residues(
             n_added_atoms = len(segment)
 
             # Shift all atom indices up, then insert the unresolved segment
-            shift_downstream_atom_indices(
-                extended_atom_array, n_added_atoms, geq_atom_idx=first_atom.atom_idx
+            shift_up_atom_indices(
+                extended_atom_array,
+                n_added_atoms,
+                idx_threshold=first_atom.atom_idx - 1,
             )
             extended_atom_array += segment
 
@@ -432,8 +443,8 @@ def add_unresolved_polymer_residues(
             n_added_atoms = len(segment)
 
             # Shift all atom indices up, then insert the unresolved segment
-            shift_downstream_atom_indices(
-                extended_atom_array, n_added_atoms, geq_atom_idx=last_atom.atom_idx + 1
+            shift_up_atom_indices(
+                extended_atom_array, n_added_atoms, idx_threshold=last_atom.atom_idx
             )
             extended_atom_array += segment
 
@@ -479,8 +490,10 @@ def add_unresolved_polymer_residues(
             n_added_atoms = len(segment)
 
             # Shift all atom indices up, then insert the unresolved segment
-            shift_downstream_atom_indices(
-                extended_atom_array, n_added_atoms, geq_atom_idx=break_end_atom.atom_idx
+            shift_up_atom_indices(
+                extended_atom_array,
+                n_added_atoms,
+                idx_threshold=break_end_atom.atom_idx - 1,
             )
             extended_atom_array += segment
 
