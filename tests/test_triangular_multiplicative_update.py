@@ -13,24 +13,23 @@
 # limitations under the License.
 
 import re
-import numpy as np
 import unittest
 
+import numpy as np
 import torch
 
-from openfold3.base.model.layers.modules.triangular_multiplicative_update import (
-    TriangleMultiplicationOutgoing,
-    FusedTriangleMultiplicationOutgoing
-)
-from openfold3.base.utils.tensor_utils import tree_map
-
 import tests.compare_utils as compare_utils
+from openfold3.core.model.layers.triangular_multiplicative_update import (
+    FusedTriangleMultiplicationOutgoing,
+    TriangleMultiplicationOutgoing,
+)
+from openfold3.core.utils.tensor_utils import tree_map
 from tests.config import consts
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
-    import jax
     import haiku as hk
+    import jax
 
 
 class TestTriangularMultiplicativeUpdate(unittest.TestCase):
@@ -61,9 +60,7 @@ class TestTriangularMultiplicativeUpdate(unittest.TestCase):
         self.assertTrue(shape_before == shape_after)
 
     def _tri_mul_compare(self, incoming=False):
-        name = "triangle_multiplication_" + (
-            "incoming" if incoming else "outgoing"
-        )
+        name = "triangle_multiplication_" + ("incoming" if incoming else "outgoing")
 
         def run_tri_mul(pair_act, pair_mask):
             config = compare_utils.get_alphafold_config()
@@ -88,8 +85,7 @@ class TestTriangularMultiplicativeUpdate(unittest.TestCase):
 
         # Fetch pretrained parameters (but only from one block)]
         params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/"
-            + name
+            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/" + name
         )
         params = tree_map(lambda n: n[0], params, jax.Array)
 
@@ -106,7 +102,8 @@ class TestTriangularMultiplicativeUpdate(unittest.TestCase):
         out_repro = module(
             torch.as_tensor(pair_act, dtype=torch.float32).cuda(),
             mask=torch.as_tensor(pair_mask, dtype=torch.float32).cuda(),
-            inplace_safe=True, _inplace_chunk_size=4,
+            inplace_safe=True,
+            _inplace_chunk_size=4,
         ).cpu()
 
         compare_utils.assert_mean_abs_diff_small(out_gt, out_repro, consts.eps)
@@ -121,7 +118,7 @@ class TestTriangularMultiplicativeUpdate(unittest.TestCase):
 
     def _tri_mul_inplace(self, incoming=False):
         n_res = consts.n_res
-        
+
         pair_act = np.random.rand(n_res, n_res, consts.c_z).astype(np.float32)
         pair_mask = np.random.randint(low=0, high=2, size=(n_res, n_res))
         pair_mask = pair_mask.astype(np.float32)
@@ -137,21 +134,25 @@ class TestTriangularMultiplicativeUpdate(unittest.TestCase):
             mask=torch.as_tensor(pair_mask, dtype=torch.float32).cuda(),
             inplace_safe=False,
         ).cpu()
-        
+
         # This has to come second because inference mode is in-place
         out_inplace = module(
             torch.as_tensor(pair_act, dtype=torch.float32).cuda(),
             mask=torch.as_tensor(pair_mask, dtype=torch.float32).cuda(),
-            inplace_safe=True, _inplace_chunk_size=2,
+            inplace_safe=True,
+            _inplace_chunk_size=2,
         ).cpu()
 
         self.assertTrue(torch.mean(torch.abs(out_stock - out_inplace)) < consts.eps)
 
+    @compare_utils.skip_unless_cuda_available()
     def test_tri_mul_out_inference(self):
         self._tri_mul_inplace()
 
+    @compare_utils.skip_unless_cuda_available()
     def test_tri_mul_in_inference(self):
         self._tri_mul_inplace(incoming=True)
+
 
 if __name__ == "__main__":
     unittest.main()

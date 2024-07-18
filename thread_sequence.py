@@ -1,21 +1,27 @@
 import argparse
-import os
 import logging
+import os
 import random
 
 import numpy
 import torch
 
-from openfold3.base.data import feature_pipeline
-from openfold3.base.data.data_pipeline import make_sequence_features_with_custom_template
-from openfold3.base.np import protein
-from openfold3.base.utils.script_utils import (load_models_from_command_line, parse_fasta, run_model, prep_output,
-                                               relax_protein)
-from openfold3.base.utils.tensor_utils import (
+from openfold3.core.data import feature_pipeline
+from openfold3.core.data.data_pipeline import (
+    make_sequence_features_with_custom_template,
+)
+from openfold3.core.np import protein
+from openfold3.core.utils.script_utils import (
+    load_models_from_command_line,
+    parse_fasta,
+    prep_output,
+    relax_protein,
+    run_model,
+)
+from openfold3.core.utils.tensor_utils import (
     tensor_tree_map,
 )
-from openfold3.systems.monomer_multimer.config import model_config
-
+from openfold3.model_implementations.af2_monomer.config import model_config
 from scripts.utils import add_data_args
 
 logging.basicConfig()
@@ -25,10 +31,7 @@ logger.setLevel(level=logging.INFO)
 torch_versions = torch.__version__.split(".")
 torch_major_version = int(torch_versions[0])
 torch_minor_version = int(torch_versions[1])
-if(
-    torch_major_version > 1 or
-    (torch_major_version == 1 and torch_minor_version >= 12)
-):
+if torch_major_version > 1 or (torch_major_version == 1 and torch_minor_version >= 12):
     # Gives a large speedup on Ampere-class GPUs
     torch.set_float32_matmul_precision("high")
 
@@ -61,9 +64,11 @@ def main(args):
         args.input_mmcif,
         args.template_id,
         args.chain_id,
-        args.kalign_binary_path)
+        args.kalign_binary_path,
+    )
     processed_feature_dict = feature_processor.process_features(
-        feature_dict, mode='predict',
+        feature_dict,
+        mode="predict",
     )
     processed_feature_dict = {
         k: torch.as_tensor(v, device=args.model_device)
@@ -75,18 +80,17 @@ def main(args):
         args.model_device,
         args.openfold_checkpoint_path,
         args.jax_param_path,
-        args.output_dir)
-    output_name = f'{query_tag}_{args.config_preset}'
+        args.output_dir,
+    )
+    output_name = f"{query_tag}_{args.config_preset}"
     for model, output_directory in model_generator:
         out = run_model(model, processed_feature_dict, query_tag, args.output_dir)
 
         # Toss out the recycling dimensions --- we don't need them anymore
         processed_feature_dict = tensor_tree_map(
-            lambda x: numpy.array(x[..., -1].cpu()),
-            processed_feature_dict
+            lambda x: numpy.array(x[..., -1].cpu()), processed_feature_dict
         )
         out = tensor_tree_map(lambda x: numpy.array(x.cpu()), out)
-
 
         unrelaxed_protein = prep_output(
             out,
@@ -94,79 +98,109 @@ def main(args):
             feature_dict,
             feature_processor,
             args.config_preset,
-            200, # this is the ri_multimer_gap. There's no multimer sequences here, so it doesnt matter what its set to
-            args.subtract_plddt
+            # this is the ri_multimer_gap. There's no multimer sequences here, so it
+            # doesnt matter what its set to
+            200,
+            args.subtract_plddt,
         )
 
         unrelaxed_output_path = os.path.join(
-            output_directory, f'{output_name}_unrelaxed.pdb'
+            output_directory, f"{output_name}_unrelaxed.pdb"
         )
 
-        with open(unrelaxed_output_path, 'w') as fp:
+        with open(unrelaxed_output_path, "w") as fp:
             fp.write(protein.to_pdb(unrelaxed_protein))
 
         logger.info(f"Output written to {unrelaxed_output_path}...")
 
         logger.info(f"Running relaxation on {unrelaxed_output_path}...")
-        relax_protein(config, args.model_device, unrelaxed_protein, output_directory, output_name, False)
+        relax_protein(
+            config,
+            args.model_device,
+            unrelaxed_protein,
+            output_directory,
+            output_name,
+            False,
+        )
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("input_fasta", type=str, help="the path to a fasta file containing a single sequence to thread")
-    parser.add_argument("input_mmcif", type=str, help="the path to an mmcif file to thread the sequence on to")
-
-    parser.add_argument("--template_id", type=str, help="a PDB id or other identifier for the template")
-
     parser.add_argument(
-        "--chain_id", type=str,
-        help="""The chain ID of the chain in the template to use"""
+        "input_fasta",
+        type=str,
+        help="the path to a fasta file containing a single sequence to thread",
+    )
+    parser.add_argument(
+        "input_mmcif",
+        type=str,
+        help="the path to an mmcif file to thread the sequence on to",
     )
 
     parser.add_argument(
-        "--model_device", type=str, default="cpu",
+        "--template_id", type=str, help="a PDB id or other identifier for the template"
+    )
+
+    parser.add_argument(
+        "--chain_id",
+        type=str,
+        help="""The chain ID of the chain in the template to use""",
+    )
+
+    parser.add_argument(
+        "--model_device",
+        type=str,
+        default="cpu",
         help="""Name of the device on which to run the model. Any valid torch
-             device name is accepted (e.g. "cpu", "cuda:0")"""
+             device name is accepted (e.g. "cpu", "cuda:0")""",
     )
     parser.add_argument(
-        "--config_preset", type=str, default="model_1",
-        help="""Name of a model config preset defined in openfold/config.py"""
+        "--config_preset",
+        type=str,
+        default="model_1",
+        help="""Name of a model config preset defined in openfold/config.py""",
     )
     parser.add_argument(
-        "--jax_param_path", type=str, default=None,
+        "--jax_param_path",
+        type=str,
+        default=None,
         help="""Path to JAX model parameters. If None, and openfold_checkpoint_path
              is also None, parameters are selected automatically according to 
-             the model name from openfold3/resources/params"""
+             the model name from openfold3/resources/params""",
     )
     parser.add_argument(
-        "--openfold_checkpoint_path", type=str, default=None,
+        "--openfold_checkpoint_path",
+        type=str,
+        default=None,
         help="""Path to OpenFold checkpoint. Can be either a DeepSpeed 
-             checkpoint directory or a .pt file"""
+             checkpoint directory or a .pt file""",
     )
     parser.add_argument(
-        "--output_dir", type=str, default=os.getcwd(),
+        "--output_dir",
+        type=str,
+        default=os.getcwd(),
         help="""Name of the directory in which to output the prediction""",
     )
     parser.add_argument(
-        "--subtract_plddt", action="store_true", default=False,
+        "--subtract_plddt",
+        action="store_true",
+        default=False,
         help=""""Whether to output (100 - pLDDT) in the B-factor column instead
-                 of the pLDDT itself"""
+                 of the pLDDT itself""",
     )
 
-    parser.add_argument(
-        "--data_random_seed", type=str, default=None
-    )
+    parser.add_argument("--data_random_seed", type=str, default=None)
 
     add_data_args(parser)
 
     args = parser.parse_args()
 
-    if(args.jax_param_path is None and args.openfold_checkpoint_path is None):
+    if args.jax_param_path is None and args.openfold_checkpoint_path is None:
         args.jax_param_path = os.path.join(
-            "openfold", "resources", "params",
-            "params_" + args.config_preset + ".npz"
+            "openfold", "resources", "params", "params_" + args.config_preset + ".npz"
         )
 
-    if(args.model_device == "cpu" and torch.cuda.is_available()):
+    if args.model_device == "cpu" and torch.cuda.is_available():
         logging.warning(
             """The model is being run on CPU. Consider specifying 
             --model_device for better performance"""
