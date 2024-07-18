@@ -78,7 +78,7 @@ def assign_molecule_types(atom_array: struc.AtomArray) -> None:
     chain_start_idxs = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
 
     # Create molecule type annotation
-    molecule_types = np.zeros(len(atom_array))
+    molecule_types = np.zeros(len(atom_array), dtype=int)
 
     # Zip together chain starts and ends
     for chain_start, chain_end in zip(chain_start_idxs[:-1], chain_start_idxs[1:]):
