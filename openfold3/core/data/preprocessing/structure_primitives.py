@@ -196,6 +196,22 @@ def connect_residues(
     chain: int,
     bond_type: Literal["peptide", "phosphate"],
 ) -> None:
+    """Connects two residues in the AtomArray
+
+    This function adds an appropriate bond between two residues in the AtomArray based
+    on the canonical way of connecting residues in the given polymer type (peptide or
+    nucleic acid).
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to add the bond to.
+        res_id_1:
+            Residue ID of the first (upstream) residue to connect. (e.g. will contribute
+            the carboxylic carbon in a peptide bond)
+        res_id_2:
+            Residue ID of the second (downstream) residue to connect. (e.g. will
+            contribute the amino nitrogen in a peptide bond)
+    """
     # General masks
     chain_mask = atom_array.chain_id_renumbered == chain
     res_id_1_mask = (atom_array.res_id == res_id_1) & chain_mask
@@ -227,7 +243,6 @@ def connect_residues(
     )
 
 
-# TODO: Add docstring
 def build_unresolved_polymer_segment(
     residue_codes: list[str],
     ccd: CIFFile,
@@ -236,6 +251,38 @@ def build_unresolved_polymer_segment(
     terminal_start: bool = False,
     terminal_end: bool = False,
 ) -> struc.AtomArray:
+    """Builds a polymeric segment with unresolved residues
+
+    This function builds a polymeric segment with unresolved residues based on a list of
+    residue 3-letter codes that have matching entries in the Chemical Component
+    Dictionary (CCD). The segment is built by adding all atoms of the unresolved
+    residues to the AtomArray with dummy coordinates. The BondList of the resulting
+    AtomArray is filled appropriately to contain both intra-residue and inter-residue
+    bonds.
+
+    Args:
+        residue_codes:
+            List of 3-letter residue codes of the unresolved residues.
+        ccd:
+            Parsed Chemical Component Dictionary (CCD) containing the residue
+            information.
+        polymer_type:
+            Type of the polymer segment. Can be either "protein" or "nucleic_acid".
+        default_annotations:
+            Any annotations and custom annotations to be added to the atoms in the
+            output AtomArray. All annotations are kept constant for all atoms in the
+            segment except for res_id and atom_idx which are incrementally increased
+            appropriately (with the first atom/residue index matching the one in the
+            default annotations).
+        terminal_start:
+            Whether the segment is the start of the overall sequence. For proteins this
+            will have no effect but for nucleic acids the otherwise overhanging 5'
+            phosphate is pruned.
+        terminal_end:
+            Whether the segment is the end of the overall sequence. For proteins this
+            will keep the terminal oxygen, for nucleic acids the otherwise overhanging
+            3' phosphate is pruned.
+    """
     if polymer_type == "nucleic_acid":
         logging.info("Building unresolved nucleic acid segment!")  # dev-only: del later
 
@@ -330,6 +377,23 @@ def add_unresolved_polymer_residues(
     cif_data: CIFBlock,
     ccd: CIFFile,
 ) -> struc.AtomArray:
+    """Adds all missing polymer residues to the AtomArray
+
+    Missing residues are added to the AtomArray explicitly with dummy NaN coordinates
+    and the full atom annotations and bonding patterns. This is useful for contiguous
+    cropping or inferring the whole sequence of a polymer chain.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to add missing residues to.
+        cif_data:
+            Parsed mmCIF data of the structure. Note that this expects a CIFBlock which
+            requires one prior level of indexing into the CIFFile, e.g.
+            `cif_data=cif_file["4H1W"]`.
+        ccd:
+            Parsed Chemical Component Dictionary (CCD) containing the residue
+            information.
+    """
     # Flat list of residue-wise entity IDs for all polymeric sequences
     entity_ids_flat = cif_data["entity_poly_seq"]["entity_id"].as_array(dtype=int)
 
