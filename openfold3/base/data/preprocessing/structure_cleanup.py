@@ -329,7 +329,7 @@ def get_res_atoms_in_ccd_mask(
         res_atom_array:
             AtomArray containing the atoms of a single residue
         ccd:
-            CIFFile containing the parsed CCD (components.cif)
+            CIFFile containing the parsed Chemical Component Dictionary (components.cif)
 
     Returns:
         Mask for atoms in the residue that are present in the CCD
