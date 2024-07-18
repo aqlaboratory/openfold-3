@@ -35,6 +35,35 @@ def assign_renumbered_chain_ids(atom_array: struc.AtomArray) -> None:
     atom_array.set_annotation("chain_id_renumbered", chain_ids_per_atom)
 
 
+def assign_atom_indices(atom_array: struc.AtomArray) -> None:
+    """Assigns atom indices to the AtomArray
+
+    Atom indices are a simple range from 0 to the number of atoms in the AtomArray which
+    is used as a convenience feature.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to assign atom indices to.
+    """
+    atom_array.set_annotation("atom_idx", range(len(atom_array)))
+
+
+def assign_entity_ids(atom_array: struc.AtomArray) -> None:
+    """Assigns entity IDs to the AtomArray
+
+    Entity IDs are assigned to each chain in the AtomArray based on the
+    "label_entity_id" field. The entity ID is stored in the "entity_id" field of the
+    AtomArray.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to assign entity IDs to.
+    """
+    # Cast entity IDs from string to int and shorten name
+    atom_array.set_annotation("entity_id", atom_array.label_entity_id.astype(int))
+    atom_array.del_annotation("label_entity_id")
+
+
 def assign_molecule_types(atom_array: struc.AtomArray) -> None:
     """Assigns molecule types to the AtomArray
 
