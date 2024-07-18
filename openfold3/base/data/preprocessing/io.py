@@ -5,7 +5,12 @@ from typing import NamedTuple
 import biotite.structure as struc
 from biotite.structure.io import pdbx
 
-from .structure_primitives import assign_renumbered_chain_ids
+from .structure_primitives import (
+    assign_atom_indices,
+    assign_entity_ids,
+    assign_molecule_types,
+    assign_renumbered_chain_ids,
+)
 
 
 class ParsedStructure(NamedTuple):
@@ -54,6 +59,7 @@ def parse_mmcif_bioassembly(
             altloc="occupancy",
             use_author_fields=use_author_fields,
             include_bonds=include_bonds,
+            extra_fields=["label_entity_id"],
         )
     else:
         logging.warning(
@@ -66,8 +72,20 @@ def parse_mmcif_bioassembly(
             altloc="occupancy",
             use_author_fields=use_author_fields,
             include_bonds=include_bonds,
+            extra_fields=["label_entity_id"],
         )
 
+    # Add entity IDs
+    assign_entity_ids(atom_array)
+
+    # Add atom indices for convenience
+    assign_atom_indices(atom_array)
+
+    # Add molecule types for convenience
+    assign_molecule_types(atom_array)
+
+    # Renumber chain IDs from 0 to avoid duplicate chain labels after bioassembly
+    # expansion
     assign_renumbered_chain_ids(atom_array)
 
     return ParsedStructure(cif_file, atom_array)
