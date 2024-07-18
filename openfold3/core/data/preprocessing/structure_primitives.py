@@ -513,4 +513,3 @@ def add_unresolved_polymer_residues(
     )
 
     return extended_atom_array
-
