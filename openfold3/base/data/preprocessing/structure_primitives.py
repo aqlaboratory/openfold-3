@@ -165,6 +165,17 @@ def get_interface_token_center_atoms(
     Returns:
         AtomArray with interface token center atoms.
     """
+    if "af3_token_center_atom" not in query_atom_array.get_annotation_categories():
+        raise ValueError(
+            "Token center atoms not found in query atom array, run "
+            "tokenize_atom_array first"
+        )
+    elif "af3_token_center_atom" not in target_atom_array.get_annotation_categories():
+        raise ValueError(
+            "Token center atoms not found in target atom array, run "
+            "tokenize_atom_array first"
+        )
+
     query_token_centers = query_atom_array[query_atom_array.af3_token_center_atom]
     target_token_centers = target_atom_array[target_atom_array.af3_token_center_atom]
 
