@@ -59,6 +59,23 @@ def get_resolution(cif_data: CIFBlock) -> float:
     return resolution
 
 
+def get_experimental_method(cif_data: CIFBlock) -> str:
+    """Get the experimental method used to determine the structure.
+    
+    Args:
+        cif_data:
+            Parsed mmCIF data of the structure. Note that this expects a CIFBlock which
+            requires one prior level of indexing into the CIFFile, e.g.
+            `cif_data=cif_file["4H1W"]`.
+    
+    Returns:
+        The experimental method used to determine the structure.
+    """
+    method = cif_data["exptl"]["method"].as_item()
+    
+    return method
+
+
 def get_entity_to_canonical_seq_dict(cif_data: CIFBlock) -> dict[int, str]:
     """Get a dictionary mapping entity IDs to their canonical sequences.
 
