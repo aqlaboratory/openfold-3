@@ -1,3 +1,10 @@
+"""
+Defaults for Linear layer weight and bias initializations. Common modules
+(i.e. Triangle Attention, OPM) default to the AF3 settings. These defaults
+exist to allow users to import the individual modules without having to
+specifying the initialization settings.
+"""
+
 from ml_collections import ConfigDict
 
 ########################
@@ -32,13 +39,15 @@ mha_init = ConfigDict(
 )
 
 # AF3
-block_sparse_mha_init = {
-    "linear_q": {"bias": True, "init": "glorot"},
-    "linear_k": {"bias": False, "init": "glorot"},
-    "linear_v": {"bias": False, "init": "glorot"},
-    "linear_g": {"bias": False, "init": "final"},
-    "linear_o": {"bias": False, "init": "final"},
-}
+block_sparse_mha_init = ConfigDict(
+    {
+        "linear_q": {"bias": True, "init": "glorot"},
+        "linear_k": {"bias": False, "init": "glorot"},
+        "linear_v": {"bias": False, "init": "glorot"},
+        "linear_g": {"bias": False, "init": "final"},
+        "linear_o": {"bias": False, "init": "final"},
+    }
+)
 
 # AF3
 mha_bias_init = ConfigDict(
@@ -112,6 +121,14 @@ msa_pair_avg_init = ConfigDict(
     }
 )
 
+# AF3
+swiglu_transition_init = ConfigDict(
+    {
+        "swiglu": swiglu_init,
+        "linear_out": {"bias": False, "init": "final"},
+    }
+)
+
 # AF2
 relu_transition_init = ConfigDict(
     {
@@ -120,13 +137,7 @@ relu_transition_init = ConfigDict(
     }
 )
 
-# AF3
-swiglu_transition_init = ConfigDict(
-    {
-        "swiglu": swiglu_init,
-        "linear_out": {"bias": False, "init": "final"},
-    }
-)
+transition_init = {"swiglu": swiglu_transition_init, "relu": relu_transition_init}
 
 # AF3
 cond_transition_init = ConfigDict(
@@ -324,12 +335,11 @@ all_atom_templ_pair_feat_emb_init = ConfigDict(
 # Latent
 ########################
 
-# AF3
 pair_block_init = ConfigDict(
     {
         "tri_mul": tri_mul_init,
         "tri_att": tri_att_init,
-        "pair_transition": swiglu_transition_init,
+        "pair_transition": transition_init,
     }
 )
 
@@ -337,13 +347,9 @@ pair_block_init = ConfigDict(
 msa_block_init = ConfigDict(
     {
         "msa_row_att": mha_bias_init,
-        "msa_transition": relu_transition_init,
+        "msa_transition": transition_init,
         "opm": opm_init,
-        "pair_block": {
-            "tri_mul": tri_mul_init,
-            "tri_att": tri_att_init,
-            "pair_transition": relu_transition_init,
-        },
+        "pair_block": pair_block_init,
     }
 )
 
@@ -364,10 +370,7 @@ extra_msa_block_init = ConfigDict(
 # AF3
 msa_module_init = ConfigDict(
     {
-        "msa_row_att": mha_bias_init,
-        "msa_transition": relu_transition_init,
-        "opm": opm_init,
-        "pair_block": pair_block_init,
+        **msa_block_init,
         "msa_pair_avg": msa_pair_avg_init,
     }
 )
@@ -421,12 +424,10 @@ point_proj_init = ConfigDict(
 # AF2-Monomer
 monomer_ipa_init = ConfigDict(
     {
-        "linear_q": {"bias": False, "init": "default"},
+        "linear_q": {"bias": True, "init": "default"},
         "linear_q_points": point_proj_init,
-        "linear_k": {"bias": False, "init": "default"},
-        "linear_v": {"bias": False, "init": "default"},
-        "linear_k_points": point_proj_init,
-        "linear_v_points": point_proj_init,
+        "linear_kv": {"bias": True, "init": "default"},
+        "linear_kv_points": point_proj_init,
         "linear_b": {"bias": True, "init": "default"},
         "linear_out": {"bias": True, "init": "final"},
     }
@@ -435,10 +436,12 @@ monomer_ipa_init = ConfigDict(
 # AF2-Multimer
 multimer_ipa_init = ConfigDict(
     {
-        "linear_q": {"bias": True, "init": "default"},
+        "linear_q": {"bias": False, "init": "default"},
         "linear_q_points": point_proj_init,
-        "linear_kv": {"bias": True, "init": "default"},
-        "linear_kv_points": point_proj_init,
+        "linear_k": {"bias": False, "init": "default"},
+        "linear_v": {"bias": False, "init": "default"},
+        "linear_k_points": point_proj_init,
+        "linear_v_points": point_proj_init,
         "linear_b": {"bias": True, "init": "default"},
         "linear_out": {"bias": True, "init": "final"},
     }

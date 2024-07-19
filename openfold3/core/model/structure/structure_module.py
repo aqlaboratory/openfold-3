@@ -262,7 +262,7 @@ class InvariantPointAttention(nn.Module):
         inf: float = 1e5,
         eps: float = 1e-8,
         is_multimer: bool = False,
-        linear_init_params: ConfigDict = lin_init.monomer_ipa_init,
+        linear_init_params: Optional[ConfigDict] = None,
     ):
         """
         Args:
@@ -292,6 +292,13 @@ class InvariantPointAttention(nn.Module):
         self.inf = inf
         self.eps = eps
         self.is_multimer = is_multimer
+
+        if linear_init_params is None:
+            linear_init_params = (
+                lin_init.multimer_ipa_init
+                if self.is_multimer
+                else lin_init.monomer_ipa_init
+            )
 
         # These linear layers differ from their specifications in the
         # supplement. There, they lack bias and use Glorot initialization.

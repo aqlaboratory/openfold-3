@@ -130,13 +130,13 @@ class MSABlock(nn.Module, ABC):
             self.msa_transition = ReLUTransition(
                 c_in=c_m,
                 n=transition_n,
-                linear_init_params=linear_init_params.msa_transition,
+                linear_init_params=linear_init_params.msa_transition.relu,
             )
         elif transition_type == "swiglu":
             self.msa_transition = SwiGLUTransition(
                 c_in=c_m,
                 n=transition_n,
-                linear_init_params=linear_init_params.msa_transition,
+                linear_init_params=linear_init_params.msa_transition.swiglu,
             )
         else:
             raise ValueError(f"Transition type {transition_type} is not available")
@@ -290,13 +290,13 @@ class PairBlock(nn.Module):
             self.pair_transition = ReLUTransition(
                 c_in=c_z,
                 n=transition_n,
-                linear_init_params=linear_init_params.pair_transition,
+                linear_init_params=linear_init_params.pair_transition.relu,
             )
         elif transition_type == "swiglu":
             self.pair_transition = SwiGLUTransition(
                 c_in=c_z,
                 n=transition_n,
-                linear_init_params=linear_init_params.pair_transition,
+                linear_init_params=linear_init_params.pair_transition.swiglu,
             )
         else:
             raise ValueError(f"Transition type {transition_type} is not available")
