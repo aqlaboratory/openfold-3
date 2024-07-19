@@ -6,6 +6,7 @@ import numpy as np
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from scipy.spatial.distance import cdist
 
+from .metadata_extraction import get_entity_to_three_letter_codes_dict
 from .tables import (
     MOLECULE_TYPE_ID_DNA,
     MOLECULE_TYPE_ID_LIGAND,
