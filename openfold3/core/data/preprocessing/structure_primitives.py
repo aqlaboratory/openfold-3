@@ -3,6 +3,7 @@ from typing import Literal
 
 import biotite.structure as struc
 import numpy as np
+from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from scipy.spatial.distance import cdist
 
@@ -19,7 +20,7 @@ from .tables import (
 )
 
 
-def assign_renumbered_chain_ids(atom_array: struc.AtomArray) -> None:
+def assign_renumbered_chain_ids(atom_array: AtomArray) -> None:
     """Adds a renumbered chain index to the AtomArray
 
     Iterates through all chains in the atom array and assigns unique numerical chain IDs
@@ -41,7 +42,7 @@ def assign_renumbered_chain_ids(atom_array: struc.AtomArray) -> None:
     atom_array.set_annotation("chain_id_renumbered", chain_ids_per_atom)
 
 
-def assign_atom_indices(atom_array: struc.AtomArray) -> None:
+def assign_atom_indices(atom_array: AtomArray) -> None:
     """Assigns atom indices to the AtomArray
 
     Atom indices are a simple range from 0 to the number of atoms in the AtomArray which
@@ -54,7 +55,7 @@ def assign_atom_indices(atom_array: struc.AtomArray) -> None:
     atom_array.set_annotation("atom_idx", range(len(atom_array)))
 
 
-def assign_entity_ids(atom_array: struc.AtomArray) -> None:
+def assign_entity_ids(atom_array: AtomArray) -> None:
     """Assigns entity IDs to the AtomArray
 
     Entity IDs are assigned to each chain in the AtomArray based on the
@@ -70,7 +71,7 @@ def assign_entity_ids(atom_array: struc.AtomArray) -> None:
     atom_array.del_annotation("label_entity_id")
 
 
-def assign_molecule_type_ids(atom_array: struc.AtomArray) -> None:
+def assign_molecule_type_ids(atom_array: AtomArray) -> None:
     """Assigns molecule types to the AtomArray
 
     Assigns molecule type IDs to each chain based on its residue names. Possible
@@ -110,10 +111,10 @@ def assign_molecule_type_ids(atom_array: struc.AtomArray) -> None:
 
 
 def get_interface_atoms(
-    query_atom_array: struc.AtomArray,
-    target_atom_array: struc.AtomArray,
+    query_atom_array: AtomArray,
+    target_atom_array: AtomArray,
     distance_threshold: float = 15.0,
-) -> struc.AtomArray:
+) -> AtomArray:
     """Returns interface atoms in the query based on the target
 
     This will find atoms in the query that are within a given distance threshold of any
@@ -149,10 +150,10 @@ def get_interface_atoms(
 
 
 def get_interface_token_center_atoms(
-    query_atom_array: struc.AtomArray,
-    target_atom_array: struc.AtomArray,
+    query_atom_array: AtomArray,
+    target_atom_array: AtomArray,
     distance_threshold: float = 15.0,
-) -> struc.AtomArray:
+) -> AtomArray:
     """Gets interface token center atoms in the query based on the target
 
     This will find token center atoms in the query that are within a given distance
@@ -191,7 +192,7 @@ def get_interface_token_center_atoms(
 
 
 def connect_residues(
-    atom_array: struc.AtomArray,
+    atom_array: AtomArray,
     res_id_1: int,
     res_id_2: int,
     chain: int,
@@ -251,7 +252,7 @@ def build_unresolved_polymer_segment(
     default_annotations: dict,
     terminal_start: bool = False,
     terminal_end: bool = False,
-) -> struc.AtomArray:
+) -> AtomArray:
     """Builds a polymeric segment with unresolved residues
 
     This function builds a polymeric segment with unresolved residues based on a list of
@@ -357,7 +358,7 @@ def build_unresolved_polymer_segment(
 
 
 def shift_up_atom_indices(
-    atom_array: struc.AtomArray, shift: int, idx_threshold: int
+    atom_array: AtomArray, shift: int, idx_threshold: int
 ) -> None:
     """Shifts all atom indices higher than a threshold by a certain amount
 
@@ -376,10 +377,10 @@ def shift_up_atom_indices(
 
 # TODO: code is a bit redundant but not sure if bad
 def add_unresolved_polymer_residues(
-    atom_array: struc.AtomArray,
+    atom_array: AtomArray,
     cif_data: CIFBlock,
     ccd: CIFFile,
-) -> struc.AtomArray:
+) -> AtomArray:
     """Adds all missing polymer residues to the AtomArray
 
     Missing residues are added to the AtomArray explicitly with dummy NaN coordinates

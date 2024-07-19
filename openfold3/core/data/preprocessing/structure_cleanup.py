@@ -2,6 +2,7 @@ from itertools import combinations
 
 import biotite.structure as struc
 import numpy as np
+from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from scipy.spatial.distance import cdist, pdist, squareform
 
@@ -11,7 +12,7 @@ from .tables import CRYSTALLIZATION_AIDS
 from .tokenization import tokenize_atom_array
 
 
-def convert_MSE_to_MET(atom_array: struc.AtomArray) -> None:
+def convert_MSE_to_MET(atom_array: AtomArray) -> None:
     """Converts selenomethionine (MSE) residues to methionine (MET) in-place
 
     Will change the residue names and convert selenium atoms to sulfur atoms in the
@@ -31,7 +32,7 @@ def convert_MSE_to_MET(atom_array: struc.AtomArray) -> None:
     atom_array.atom_name[mse_selenium_atoms] = "SD"
 
 
-def fix_single_arginine_naming(arg_atom_array: struc.AtomArray) -> None:
+def fix_single_arginine_naming(arg_atom_array: AtomArray) -> None:
     """Resolves naming ambiguities for a single arginine residue
 
     This ensures that NH1 is always closer to CD than NH2, following 2.1 of the
@@ -50,7 +51,7 @@ def fix_single_arginine_naming(arg_atom_array: struc.AtomArray) -> None:
         nh2.atom_name = ["NH1"]
 
 
-def fix_arginine_naming(atom_array: struc.AtomArray) -> None:
+def fix_arginine_naming(atom_array: AtomArray) -> None:
     """Resolves naming ambiguities for all arginine residues in the AtomArray
 
     (see fix_single_arginine_naming for more details)
@@ -64,7 +65,7 @@ def fix_arginine_naming(atom_array: struc.AtomArray) -> None:
         fix_single_arginine_naming(arginine)
 
 
-def remove_waters(atom_array: struc.AtomArray) -> struc.AtomArray:
+def remove_waters(atom_array: AtomArray) -> AtomArray:
     """Removes water molecules from the AtomArray
 
     Returns a new AtomArray with all water (or heavy water) molecules removed.
@@ -82,8 +83,8 @@ def remove_waters(atom_array: struc.AtomArray) -> struc.AtomArray:
 
 
 def remove_crystallization_aids(
-    atom_array: struc.AtomArray, ccd_codes=CRYSTALLIZATION_AIDS
-) -> struc.AtomArray:
+    atom_array: AtomArray, ccd_codes=CRYSTALLIZATION_AIDS
+) -> AtomArray:
     """Removes crystallization aids from the AtomArray
 
     Will remove all ligands that are classified as crystallization aids following 2.5.4
@@ -104,7 +105,7 @@ def remove_crystallization_aids(
     return atom_array
 
 
-def remove_hydrogens(atom_array: struc.AtomArray) -> struc.AtomArray:
+def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
     """Removes all hydrogen atoms from the AtomArray
 
     Args:
@@ -119,8 +120,8 @@ def remove_hydrogens(atom_array: struc.AtomArray) -> struc.AtomArray:
 
 
 def remove_small_polymers(
-    atom_array: struc.AtomArray, max_residues: int = 3
-) -> struc.AtomArray:
+    atom_array: AtomArray, max_residues: int = 3
+) -> AtomArray:
     """Removes small polymer chains from the AtomArray
 
     Follows 2.5.4 of the AlphaFold3 SI and removes all polymer chains with up to
@@ -163,7 +164,7 @@ def remove_small_polymers(
     return atom_array
 
 
-def remove_fully_unknown_polymers(atom_array: struc.AtomArray) -> struc.AtomArray:
+def remove_fully_unknown_polymers(atom_array: AtomArray) -> AtomArray:
     """Removes polymer chains with all unknown residues from the AtomArray
 
     Follows 2.5.4 of the AlphaFold3 SI.
@@ -197,8 +198,8 @@ def remove_fully_unknown_polymers(atom_array: struc.AtomArray) -> struc.AtomArra
 
 
 def remove_chain_and_attached_ligands(
-    atom_array: struc.AtomArray, chain_id: int
-) -> struc.AtomArray:
+    atom_array: AtomArray, chain_id: int
+) -> AtomArray:
     """Removes a chain from an AtomArray including all attached covalent ligands
 
     While not explicitly stated in the AlphaFold3 SI, the intent of this function is to
@@ -238,10 +239,10 @@ def remove_chain_and_attached_ligands(
 
 
 def remove_clashing_chains(
-    atom_array: struc.AtomArray,
+    atom_array: AtomArray,
     clash_distance: float = 1.7,
     clash_percentage: float = 0.3,
-) -> struc.AtomArray:
+) -> AtomArray:
     """Removes chains with a high fraction of clashes
 
     This follows 2.5.4 of the AlphaFold3 SI. Pairs of chains are considered to clash if
@@ -323,7 +324,7 @@ def remove_clashing_chains(
 
 
 def get_res_atoms_in_ccd_mask(
-    res_atom_array: struc.AtomArray, ccd: CIFFile
+    res_atom_array: AtomArray, ccd: CIFFile
 ) -> np.ndarray:
     """Returns a mask for atoms in a residue that are present in the CCD
 
@@ -343,7 +344,7 @@ def get_res_atoms_in_ccd_mask(
     return mask
 
 
-def remove_non_CCD_atoms(atom_array: struc.AtomArray, ccd: CIFFile) -> struc.AtomArray:
+def remove_non_CCD_atoms(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
     """Removes atoms that are not present in the CCD residue definition
 
     Follows 2.5.4 of the AlphaFold3 SI and removes all atoms that do not appear in the
@@ -370,8 +371,8 @@ def remove_non_CCD_atoms(atom_array: struc.AtomArray, ccd: CIFFile) -> struc.Ato
 
 
 def remove_chains_with_CA_gaps(
-    atom_array: struc.AtomArray, distance_threshold: float = 10.0
-) -> struc.AtomArray:
+    atom_array: AtomArray, distance_threshold: float = 10.0
+) -> AtomArray:
     """Removes protein chains where consecutive C-alpha atoms are too far apart
 
     This follows 2.5.4 of the AlphaFold3 SI and removes protein chains where the
@@ -416,8 +417,8 @@ def remove_chains_with_CA_gaps(
 
 
 def subset_large_structure(
-    atom_array: struc.AtomArray, n_chains: int = 20
-) -> struc.AtomArray:
+    atom_array: AtomArray, n_chains: int = 20
+) -> AtomArray:
     """Subsets structures with too many chains to n chains
 
     Follows 2.5.4 of the AlphaFold3 SI. Will select a random interface token center atom
