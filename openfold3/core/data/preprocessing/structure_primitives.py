@@ -273,7 +273,7 @@ def build_unresolved_polymer_segment(
             output AtomArray. All annotations are kept constant for all atoms in the
             segment except for res_id and atom_idx which are incrementally increased
             appropriately (with the first atom/residue index matching the one in the
-            default annotations).
+            default annotations), and occupancy which is set to 0.0.
         terminal_start:
             Whether the segment is the start of the overall sequence. For proteins this
             will have no effect but for nucleic acids the otherwise overhanging 5'
@@ -285,6 +285,9 @@ def build_unresolved_polymer_segment(
     """
     if polymer_type == "nucleic_acid":
         logging.info("Building unresolved nucleic acid segment!")  # dev-only: del later
+        
+    # Set occupancy to 0.0
+    default_annotations["occupancy"] = 0.0
 
     atom_list = []
 
