@@ -49,17 +49,22 @@ def parse_mmcif_bioassembly(
     cif_file = pdbx.CIFFile.read(file_path)
 
     (pdb_id,) = cif_file.keys()  # Single-element unpacking
+    
+    # Shared args between get_assembly and get_structure
+    parser_args = {
+        "pdbx_file": cif_file,
+        "model": 1,
+        "altloc": "occupancy",
+        "use_author_fields": use_author_fields,
+        "include_bonds": include_bonds,
+        "extra_fields": ["label_entity_id", "occupancy"],
+    }
 
     # Check if the CIF file contains bioassembly information
     if "pdbx_struct_assembly_gen" in cif_file[pdb_id]:
         atom_array = pdbx.get_assembly(
-            cif_file,
+            **parser_args,
             assembly_id="1",
-            model=1,
-            altloc="occupancy",
-            use_author_fields=use_author_fields,
-            include_bonds=include_bonds,
-            extra_fields=["label_entity_id"],
         )
     else:
         logging.warning(
@@ -67,12 +72,7 @@ def parse_mmcif_bioassembly(
             "falling back to parsing the asymmetric unit."
         )
         atom_array = pdbx.get_structure(
-            cif_file,
-            model=1,
-            altloc="occupancy",
-            use_author_fields=use_author_fields,
-            include_bonds=include_bonds,
-            extra_fields=["label_entity_id"],
+            **parser_args,
         )
 
     # Add entity IDs
