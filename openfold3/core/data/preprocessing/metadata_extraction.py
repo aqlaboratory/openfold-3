@@ -1,6 +1,6 @@
 import biotite.structure as struc
 import numpy as np
-from biotite.structure.io.pdbx import CIFBlock
+from biotite.structure.io.pdbx import CIFBlock, CIFFile
 
 
 def get_release_date(cif_data: CIFBlock) -> str:
@@ -74,6 +74,21 @@ def get_experimental_method(cif_data: CIFBlock) -> str:
     method = cif_data["exptl"]["method"].as_item()
     
     return method
+
+
+def get_cif_block(cif_file: CIFFile) -> CIFBlock:
+    """Get the CIF block of the structure.
+
+    Args:
+        cif_file:
+            Parsed mmCIF file containing the structure.
+
+    Returns:
+        The CIF block of the structure.
+    """
+    (cif_block,) = cif_file.keys()
+
+    return cif_block
 
 
 def get_entity_to_canonical_seq_dict(cif_data: CIFBlock) -> dict[int, str]:
