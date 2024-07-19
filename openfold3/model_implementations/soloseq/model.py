@@ -26,7 +26,7 @@ from openfold3.core.model.feature_embedders.input_embedders import (
 from openfold3.core.model.heads.token_heads import AuxiliaryHeads
 from openfold3.core.model.latent.evoformer import EvoformerStack
 from openfold3.core.model.latent.extra_msa import ExtraMSAStack
-from openfold3.core.model.latent.template import (
+from openfold3.core.model.latent.template_module import (
     TemplateEmbedderMonomer,
     TemplateEmbedderMultimer,
     embed_templates_average,

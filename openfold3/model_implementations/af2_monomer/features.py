@@ -5,7 +5,7 @@ NUM_MSA_SEQ = "msa placeholder"
 NUM_EXTRA_SEQ = "extra msa placeholder"
 NUM_TEMPLATES = "num templates placeholder"
 
-af2_feature_dict = mlc.ConfigDict(
+feature_dict = mlc.ConfigDict(
     {
         "feat": {
             "aatype": [NUM_RES],
