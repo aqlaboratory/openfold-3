@@ -8,7 +8,7 @@ from biotite.structure.io import pdbx
 from .structure_primitives import (
     assign_atom_indices,
     assign_entity_ids,
-    assign_molecule_types,
+    assign_molecule_type_ids,
     assign_renumbered_chain_ids,
 )
 
@@ -82,7 +82,7 @@ def parse_mmcif_bioassembly(
     assign_atom_indices(atom_array)
 
     # Add molecule types for convenience
-    assign_molecule_types(atom_array)
+    assign_molecule_type_ids(atom_array)
 
     # Renumber chain IDs from 0 to avoid duplicate chain labels after bioassembly
     # expansion

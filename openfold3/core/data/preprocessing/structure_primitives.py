@@ -69,12 +69,12 @@ def assign_entity_ids(atom_array: struc.AtomArray) -> None:
     atom_array.del_annotation("label_entity_id")
 
 
-def assign_molecule_types(atom_array: struc.AtomArray) -> None:
+def assign_molecule_type_ids(atom_array: struc.AtomArray) -> None:
     """Assigns molecule types to the AtomArray
 
-    Assigns molecule types to each chain based on its residue names. Possible molecule
-    types are protein, RNA, DNA, and ligand. The molecule type is stored in the
-    "molecule_type" field of the AtomArray.
+    Assigns molecule type IDs to each chain based on its residue names. Possible
+    molecule types are protein, RNA, DNA, and ligand. The molecule type is stored in the
+    "molecule_type_id" field of the AtomArray.
 
     Args:
         atom_array:
@@ -83,7 +83,7 @@ def assign_molecule_types(atom_array: struc.AtomArray) -> None:
     chain_start_idxs = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
 
     # Create molecule type annotation
-    molecule_types = np.zeros(len(atom_array), dtype=int)
+    molecule_type_ids = np.zeros(len(atom_array), dtype=int)
 
     # Zip together chain starts and ends
     for chain_start, chain_end in zip(chain_start_idxs[:-1], chain_start_idxs[1:]):
@@ -91,21 +91,21 @@ def assign_molecule_types(atom_array: struc.AtomArray) -> None:
 
         # Assign protein if any standard protein residue is present
         if residues_in_chain & set(STANDARD_PROTEIN_RESIDUES):
-            molecule_types[chain_start:chain_end] = MOLECULE_TYPE_ID_PROTEIN
+            molecule_type_ids[chain_start:chain_end] = MOLECULE_TYPE_ID_PROTEIN
 
         # Assign RNA if any standard RNA residue is present
         elif residues_in_chain & set(STANDARD_RNA_RESIDUES):
-            molecule_types[chain_start:chain_end] = MOLECULE_TYPE_ID_RNA
+            molecule_type_ids[chain_start:chain_end] = MOLECULE_TYPE_ID_RNA
 
         # Assign DNA if any standard DNA residue is present
         elif residues_in_chain & set(STANDARD_DNA_RESIDUES):
-            molecule_types[chain_start:chain_end] = MOLECULE_TYPE_ID_DNA
+            molecule_type_ids[chain_start:chain_end] = MOLECULE_TYPE_ID_DNA
 
         # Assign ligand otherwise
         else:
-            molecule_types[chain_start:chain_end] = MOLECULE_TYPE_ID_LIGAND
+            molecule_type_ids[chain_start:chain_end] = MOLECULE_TYPE_ID_LIGAND
 
-    atom_array.set_annotation("molecule_type", molecule_types)
+    atom_array.set_annotation("molecule_type_id", molecule_type_ids)
 
 
 def get_interface_atoms(
@@ -421,7 +421,7 @@ def add_unresolved_polymer_residues(
     for chain_start, chain_end in zip(chain_starts[:-1], chain_starts[1:] - 1):
         # Infer some chain-wise properties from first atom (could use any atom)
         first_atom = extended_atom_array[chain_start]
-        chain_type = first_atom.molecule_type
+        chain_type = first_atom.molecule_type_id
         chain_entity_id = first_atom.entity_id
         chain_id = first_atom.chain_id_renumbered
 
