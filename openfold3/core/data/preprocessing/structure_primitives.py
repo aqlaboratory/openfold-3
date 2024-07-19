@@ -391,8 +391,8 @@ def add_unresolved_polymer_residues(
             AtomArray containing the structure to add missing residues to.
         cif_data:
             Parsed mmCIF data of the structure. Note that this expects a CIFBlock which
-            requires one prior level of indexing into the CIFFile, e.g.
-            `cif_data=cif_file["4H1W"]`.
+            requires one prior level of indexing into the CIFFile, (see
+            `metadata_extraction.get_cif_block`)
         ccd:
             Parsed Chemical Component Dictionary (CCD) containing the residue
             information.

@@ -11,8 +11,7 @@ def get_release_date(cif_data: CIFBlock) -> str:
     Args:
         cif_data:
             Parsed mmCIF data of the structure. Note that this expects a CIFBlock which
-            requires one prior level of indexing into the CIFFile, e.g.
-            `cif_data=cif_file["4H1W"]`.
+            requires one prior level of indexing into the CIFFile, (see `get_cif_block`)
 
     Returns:
         The release date of the structure.
@@ -36,8 +35,7 @@ def get_resolution(cif_data: CIFBlock) -> float:
     Args:
         cif_data:
             Parsed mmCIF data of the structure. Note that this expects a CIFBlock which
-            requires one prior level of indexing into the CIFFile, e.g.
-            `cif_data=cif_file["4H1W"]`.
+            requires one prior level of indexing into the CIFFile, (see `get_cif_block`)
 
     Returns:
         The resolution of the structure.
@@ -65,8 +63,7 @@ def get_experimental_method(cif_data: CIFBlock) -> str:
     Args:
         cif_data:
             Parsed mmCIF data of the structure. Note that this expects a CIFBlock which
-            requires one prior level of indexing into the CIFFile, e.g.
-            `cif_data=cif_file["4H1W"]`.
+            requires one prior level of indexing into the CIFFile, (see `get_cif_block`)
     
     Returns:
         The experimental method used to determine the structure.
@@ -132,8 +129,7 @@ def get_chain_to_canonical_seq_dict(
             AtomArray containing the chain IDs and entity IDs.
         cif_data:
             Parsed mmCIF data of the structure. Note that this expects a CIFBlock which
-            requires one prior level of indexing into the CIFFile, e.g.
-            `cif_data=cif_file["4H1W"]`.
+            requires one prior level of indexing into the CIFFile, (see `get_cif_block`)
     """
     entity_to_seq_dict = get_entity_to_canonical_seq_dict(cif_data)
     chain_to_entity_dict = get_chain_to_entity_dict(atom_array)
@@ -153,8 +149,7 @@ def get_entity_to_three_letter_codes_dict(cif_data: CIFBlock) -> dict[int, list[
     Args:
         cif_data:
             Parsed mmCIF data of the structure. Note that this expects a CIFBlock which
-            requires one prior level of indexing into the CIFFile, e.g.
-            `cif_data=cif_file["4H1W"]`.
+            requires one prior level of indexing into the CIFFile, (see `get_cif_block`)
 
     Returns:
         A dictionary mapping entity IDs to their three-letter-code sequences.
@@ -187,8 +182,7 @@ def get_chain_to_three_letter_codes_dict(
             AtomArray containing the chain IDs and entity IDs.
         cif_data:
             Parsed mmCIF data of the structure. Note that this expects a CIFBlock which
-            requires one prior level of indexing into the CIFFile, e.g.
-            `cif_data=cif_file["4H1W"]`.
+            requires one prior level of indexing into the CIFFile, (see `get_cif_block`)
 
     Returns:
         A dictionary mapping renumbered chain IDs to their three-letter-code sequences.
