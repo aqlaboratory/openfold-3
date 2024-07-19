@@ -247,9 +247,9 @@ class AlphaFold(nn.Module):
                 m = torch.cat([m, template_embeds["template_single_embedding"]], dim=-3)
 
                 # [*, S, N]
+                torsion_angles_mask = feats["template_torsion_angles_mask"]
                 msa_mask = torch.cat(
-                    [feats["msa_mask"], template_embeds["template_mask"]],
-                    dim=-2,
+                    [feats["msa_mask"], torsion_angles_mask[..., 2]], dim=-2
                 )
 
         # Embed extra MSA features + merge with pairwise embeddings

@@ -16,10 +16,7 @@ import unittest
 
 import numpy as np
 import torch
-from ml_collections import ConfigDict
 
-import openfold3.model_implementations.af2_monomer.linear_init_config as lin_init_af2
-import openfold3.model_implementations.af3_all_atom.linear_init_config as lin_init_af3
 import tests.compare_utils as compare_utils
 from openfold3.core.model.layers import (
     MSAColumnAttention,
@@ -52,7 +49,6 @@ class TestMSARowAttentionWithPairBias(unittest.TestCase):
             c_z,
             c,
             no_heads,
-            linear_init_params=ConfigDict(lin_init_af2.mha_bias_init),
         )
 
         m = torch.rand((batch_size, n_seq, n_res, c_m))
@@ -118,9 +114,7 @@ class TestMSAColumnAttention(unittest.TestCase):
         c = 44
         no_heads = 4
 
-        msaca = MSAColumnAttention(
-            c_m, c, no_heads, linear_init_params=ConfigDict(lin_init_af2.mha_bias_init)
-        )
+        msaca = MSAColumnAttention(c_m, c, no_heads)
 
         x = torch.rand((batch_size, n_seq, n_res, c_m))
 
@@ -186,7 +180,6 @@ class TestMSAColumnGlobalAttention(unittest.TestCase):
             c_m,
             c,
             no_heads,
-            linear_init_params=ConfigDict(lin_init_af2.msa_global_att_init),
         )
 
         x = torch.rand((batch_size, n_seq, n_res, c_m))
@@ -258,7 +251,6 @@ class TestMSAPairWeightedAveraging(unittest.TestCase):
             c_hidden=c,
             c_z=c_z,
             no_heads=no_heads,
-            linear_init_params=ConfigDict(lin_init_af3.msa_pair_avg_init),
         )
 
         m = torch.rand((batch_size, n_seq, n_res, c_m))

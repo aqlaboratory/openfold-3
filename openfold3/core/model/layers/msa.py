@@ -24,6 +24,7 @@ from typing import List, Optional, Tuple
 import torch
 from torch import nn
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import (
     Attention,
     GlobalAttention,
@@ -45,10 +46,10 @@ class MSAAttention(nn.Module):
         c_in,
         c_hidden,
         no_heads,
-        linear_init_params,
         pair_bias=False,
         c_z=None,
         inf=1e9,
+        linear_init_params=lin_init.mha_bias_init,
     ):
         """
         Args:
@@ -58,8 +59,6 @@ class MSAAttention(nn.Module):
                 Per-head hidden channel dimension
             no_heads:
                 Number of attention heads
-            linear_init_params:
-                Linear layer initialization parameters
             pair_bias:
                 Whether to use pair embedding bias
             c_z:
@@ -67,6 +66,8 @@ class MSAAttention(nn.Module):
                 is true
             inf:
                 A large number to be used in computing the attention mask
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -307,7 +308,15 @@ class MSARowAttentionWithPairBias(MSAAttention):
     Implements AF2 Algorithm 7.
     """
 
-    def __init__(self, c_m, c_z, c_hidden, no_heads, linear_init_params, inf=1e9):
+    def __init__(
+        self,
+        c_m,
+        c_z,
+        c_hidden,
+        no_heads,
+        inf=1e9,
+        linear_init_params=lin_init.mha_bias_init,
+    ):
         """
         Args:
             c_m:
@@ -318,19 +327,19 @@ class MSARowAttentionWithPairBias(MSAAttention):
                 Per-head hidden channel dimension
             no_heads:
                 Number of attention heads
-            linear_init_params:
-                Linear layer initialization parameters
             inf:
                 Large number used to construct attention masks
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__(
             c_in=c_m,
             c_hidden=c_hidden,
             no_heads=no_heads,
-            linear_init_params=linear_init_params,
             pair_bias=True,
             c_z=c_z,
             inf=inf,
+            linear_init_params=linear_init_params,
         )
 
 
@@ -342,7 +351,14 @@ class MSAColumnAttention(nn.Module):
     most inheritance isn't supported by TorchScript.
     """
 
-    def __init__(self, c_m, c_hidden, no_heads, linear_init_params, inf=1e9):
+    def __init__(
+        self,
+        c_m,
+        c_hidden,
+        no_heads,
+        inf=1e9,
+        linear_init_params=lin_init.mha_bias_init,
+    ):
         """
         Args:
             c_m:
@@ -351,10 +367,10 @@ class MSAColumnAttention(nn.Module):
                 Per-head hidden channel dimension
             no_heads:
                 Number of attention heads
-            linear_init_params:
-                Linear layer initialization parameters
             inf:
                 Large number used to construct attention masks
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -367,10 +383,10 @@ class MSAColumnAttention(nn.Module):
             c_in=c_m,
             c_hidden=c_hidden,
             no_heads=no_heads,
-            linear_init_params=linear_init_params,
             pair_bias=False,
             c_z=None,
             inf=inf,
+            linear_init_params=linear_init_params,
         )
 
     def forward(
@@ -421,9 +437,9 @@ class MSAColumnGlobalAttention(nn.Module):
         c_in,
         c_hidden,
         no_heads,
-        linear_init_params,
         inf=1e9,
         eps=1e-10,
+        linear_init_params=lin_init.msa_global_att_init,
     ):
         super().__init__()
 
@@ -512,8 +528,8 @@ class MSAPairWeightedAveraging(nn.Module):
         c_hidden,
         c_z,
         no_heads,
-        linear_init_params,
         inf=1e9,
+        linear_init_params=lin_init.msa_pair_avg_init,
     ):
         """
         Args:
@@ -525,10 +541,10 @@ class MSAPairWeightedAveraging(nn.Module):
                 Pair embedding channel dimension.
             no_heads:
                 Number of attention heads
-            linear_init_params:
-                Linear layer initialization parameters
             inf:
                 A large number to be used in computing the attention mask
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 

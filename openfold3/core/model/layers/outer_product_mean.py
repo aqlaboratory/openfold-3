@@ -21,6 +21,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.chunk_utils import chunk_layer
 from openfold3.core.utils.precision_utils import is_fp16_enabled
@@ -31,7 +32,9 @@ class OuterProductMean(nn.Module):
     Implements AF2 Algorithm 10 / AF3 Algorithm 9.
     """
 
-    def __init__(self, c_m, c_z, c_hidden, linear_init_params, eps=1e-3):
+    def __init__(
+        self, c_m, c_z, c_hidden, eps=1e-3, linear_init_params=lin_init.opm_init
+    ):
         """
         Args:
             c_m:
@@ -40,6 +43,8 @@ class OuterProductMean(nn.Module):
                 Pair embedding channel dimension
             c_hidden:
                 Hidden channel dimension
+            eps:
+                Epsilon value for numerical stability
             linear_init_params:
                 Linear layer initialization parameters
         """

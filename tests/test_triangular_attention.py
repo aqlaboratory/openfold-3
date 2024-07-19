@@ -16,9 +16,7 @@ import unittest
 
 import numpy as np
 import torch
-from ml_collections import ConfigDict
 
-import openfold3.model_implementations.af2_monomer.linear_init_config as lin_init
 import tests.compare_utils as compare_utils
 from openfold3.core.model.layers import TriangleAttention
 from openfold3.core.utils.tensor_utils import tree_map
@@ -41,7 +39,6 @@ class TestTriangularAttention(unittest.TestCase):
             c_z,
             c,
             no_heads,
-            linear_init_params=ConfigDict(lin_init.tri_att_init),
             starting=starting,
         )
 

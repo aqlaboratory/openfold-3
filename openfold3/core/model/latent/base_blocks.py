@@ -27,6 +27,7 @@ import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers.msa import MSARowAttentionWithPairBias
 from openfold3.core.model.layers.outer_product_mean import OuterProductMean
 from openfold3.core.model.layers.transition import ReLUTransition, SwiGLUTransition
@@ -64,9 +65,9 @@ class MSABlock(nn.Module, ABC):
         pair_dropout: float,
         opm_first: bool,
         fuse_projection_weights: bool,
-        linear_init_params: ConfigDict,
         inf: float,
         eps: float,
+        linear_init_params: ConfigDict = lin_init.msa_block_init,
     ):
         """
         Args:
@@ -103,12 +104,12 @@ class MSABlock(nn.Module, ABC):
             fuse_projection_weights:
                 When True, uses FusedTriangleMultiplicativeUpdate variant in
                 the Pair Stack. Used in Multimer pipeline.
-            linear_init_params:
-                Linear layer initialization parameters
             inf:
                 Large constant for masking
             eps:
                 Small constant for numerical stability
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -119,8 +120,8 @@ class MSABlock(nn.Module, ABC):
             c_z=c_z,
             c_hidden=c_hidden_msa_att,
             no_heads=no_heads_msa,
-            linear_init_params=linear_init_params.msa_row_att,
             inf=inf,
+            linear_init_params=linear_init_params.msa_row_att,
         )
 
         self.msa_dropout_layer = DropoutRowwise(msa_dropout)
@@ -153,8 +154,8 @@ class MSABlock(nn.Module, ABC):
             transition_n=transition_n,
             pair_dropout=pair_dropout,
             fuse_projection_weights=fuse_projection_weights,
-            linear_init_params=linear_init_params.pair_block,
             inf=inf,
+            linear_init_params=linear_init_params.pair_block,
         )
 
     def _compute_opm(
@@ -225,8 +226,8 @@ class PairBlock(nn.Module):
         transition_n: int,
         pair_dropout: float,
         fuse_projection_weights: bool,
-        linear_init_params: ConfigDict,
         inf: float,
+        linear_init_params: ConfigDict = lin_init.pair_block_init,
     ):
         """
         Args:
@@ -248,10 +249,10 @@ class PairBlock(nn.Module):
             fuse_projection_weights:
                 When True, uses FusedTriangleMultiplicativeUpdate variant in the Pair
                 Stack. Used in Multimer pipeline.
-            linear_init_params:
-                Linear layer initialization parameters
             inf:
                 Large constant used for masking
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -274,15 +275,15 @@ class PairBlock(nn.Module):
             c_z,
             c_hidden_pair_att,
             no_heads_pair,
-            linear_init_params=linear_init_params.tri_att,
             inf=inf,
+            linear_init_params=linear_init_params.tri_att,
         )
         self.tri_att_end = TriangleAttention(
             c_z,
             c_hidden_pair_att,
             no_heads_pair,
-            linear_init_params=linear_init_params.tri_att,
             inf=inf,
+            linear_init_params=linear_init_params.tri_att,
         )
 
         if transition_type == "relu":

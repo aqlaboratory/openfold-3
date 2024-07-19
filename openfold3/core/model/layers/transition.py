@@ -24,6 +24,7 @@ import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import AdaLN, LayerNorm, Linear, SwiGLU
 from openfold3.core.utils.chunk_utils import chunk_layer
 
@@ -33,7 +34,9 @@ class ReLUTransitionLayer(nn.Module):
     Feed-forward network applied to activations after attention.
     """
 
-    def __init__(self, num_relu_layers, c_in, n, linear_init_params):
+    def __init__(
+        self, num_relu_layers, c_in, n, linear_init_params=lin_init.relu_transition_init
+    ):
         """
         Args:
             num_relu_layers:
@@ -89,7 +92,7 @@ class ReLUTransition(nn.Module):
     Implements AF2 Algorithm 9 and 15
     """
 
-    def __init__(self, c_in, n, linear_init_params):
+    def __init__(self, c_in, n, linear_init_params=lin_init.relu_transition_init):
         """
         Args:
             c_in:
@@ -170,7 +173,12 @@ class SwiGLUTransition(nn.Module):
     Implements AF3 Algorithm 11.
     """
 
-    def __init__(self, c_in: int, n: int, linear_init_params: ConfigDict):
+    def __init__(
+        self,
+        c_in: int,
+        n: int,
+        linear_init_params: ConfigDict = lin_init.swiglu_transition_init,
+    ):
         """
         Args:
             c_in:
@@ -259,7 +267,13 @@ class ConditionedTransitionBlock(nn.Module):
     Implements AF3 Algorithm 25.
     """
 
-    def __init__(self, c_a: int, c_s: int, n: int, linear_init_params: ConfigDict):
+    def __init__(
+        self,
+        c_a: int,
+        c_s: int,
+        n: int,
+        linear_init_params: ConfigDict = lin_init.cond_transition_init,
+    ):
         """
 
         Args:
@@ -324,7 +338,13 @@ class StructureModuleTransition(nn.Module):
     Implements AF2 Algorithm 20 lines 8-9.
     """
 
-    def __init__(self, c, num_layers, dropout_rate, linear_init_params):
+    def __init__(
+        self,
+        c,
+        num_layers,
+        dropout_rate,
+        linear_init_params=lin_init.relu_transition_init,
+    ):
         """
         Args:
             c: Input channel dimension

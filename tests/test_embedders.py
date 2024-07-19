@@ -15,10 +15,7 @@
 import unittest
 
 import torch
-from ml_collections import ConfigDict
 
-import openfold3.model_implementations.af2_monomer.linear_init_config as lin_init_mon
-import openfold3.model_implementations.af2_multimer.linear_init_config as lin_init_mult
 from openfold3.core.model.feature_embedders import (
     InputEmbedder,
     InputEmbedderAllAtom,
@@ -32,7 +29,12 @@ from openfold3.core.model.feature_embedders import (
     TemplateSingleEmbedderMonomer,
     TemplateSingleEmbedderMultimer,
 )
-from openfold3.model_implementations.af2_monomer.base_config import model_config
+from openfold3.model_implementations.af2_monomer.base_config import (
+    model_config as monomer_model_config,
+)
+from openfold3.model_implementations.af2_multimer.config import (
+    model_config as multimer_model_config,
+)
 from openfold3.model_implementations.af3_all_atom.config import config as af3_config
 from tests.config import consts, monomer_consts, multimer_consts
 from tests.data_utils import random_asym_ids, random_template_feats
@@ -46,7 +48,7 @@ class TestInputEmbedder(unittest.TestCase):
         n_res = 17
         n_clust = 19
 
-        config = model_config(monomer_consts.model)
+        config = monomer_model_config(monomer_consts.model)
         input_emb_config = config.model.input_embedder
         input_emb_config.update({"c_z": c_z, "c_m": c_m})
 
@@ -64,7 +66,7 @@ class TestInputEmbedder(unittest.TestCase):
         self.assertTrue(msa_emb.shape == (b, n_clust, n_res, c_m))
         self.assertTrue(pair_emb.shape == (b, n_res, n_res, c_z))
 
-        config = model_config(multimer_consts.model)
+        config = multimer_model_config(multimer_consts.model)
         input_emb_config = config.model.input_embedder
         input_emb_config.update({"c_z": c_z, "c_m": c_m})
 
@@ -188,7 +190,6 @@ class TestPreembeddingEmbedder(unittest.TestCase):
             c_z,
             c_m,
             relpos_k,
-            ConfigDict(lin_init_mon.preembed_init),
         )
 
         seq_emb, pair_emb = pe(tf, ri, preemb)
@@ -212,7 +213,6 @@ class TestRecyclingEmbedder(unittest.TestCase):
             min_bin,
             max_bin,
             no_bins,
-            ConfigDict(lin_init_mon.recycling_emb_init),
         )
 
         m_1 = torch.rand((batch_size, n, c_m))
@@ -231,7 +231,7 @@ class TestTemplateSingleEmbedders(unittest.TestCase):
         n_templ = 4
         n_res = 256
 
-        c = model_config(monomer_consts.model)
+        c = monomer_model_config(monomer_consts.model)
         c_m = c.model.template.template_single_embedder.c_out
 
         batch = random_template_feats(n_templ, n_res, batch_size=batch_size)
@@ -240,20 +240,18 @@ class TestTemplateSingleEmbedders(unittest.TestCase):
         tae = TemplateSingleEmbedderMonomer(
             c.model.template.template_single_embedder.c_in,
             c_m,
-            ConfigDict(lin_init_mon.templ_single_feat_emb_init),
         )
 
         x = tae(batch)
 
         self.assertTrue(x.shape == (batch_size, n_templ, n_res, c_m))
 
-        c = model_config(multimer_consts.model)
+        c = multimer_model_config(multimer_consts.model)
         c_m = c.model.template.template_single_embedder.c_out
 
         tae = TemplateSingleEmbedderMultimer(
             c.model.template.template_single_embedder.c_in,
             c_m,
-            ConfigDict(lin_init_mult.templ_single_feat_emb_init),
         )
 
         x = tae(batch)
@@ -268,7 +266,7 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         n_templ = 4
         n_res = 5
 
-        c = model_config(monomer_consts.model)
+        c = monomer_model_config(monomer_consts.model)
         c_t = c.model.template.template_pair_embedder.c_out
 
         batch = random_template_feats(n_templ, n_res, batch_size=batch_size)
@@ -286,7 +284,7 @@ class TestTemplatePairEmbedders(unittest.TestCase):
 
         self.assertTrue(x.shape == (batch_size, n_templ, n_res, n_res, c_t))
 
-        c = model_config(multimer_consts.model)
+        c = multimer_model_config(multimer_consts.model)
         c_z = c.model.template.template_pair_embedder.c_in
         c_t = c.model.template.template_pair_embedder.c_out
 

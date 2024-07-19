@@ -21,6 +21,14 @@ mha_init = {
     "linear_o": {"bias": False, "init": "final"},
 }
 
+block_sparse_mha_init = {
+    "linear_q": {"bias": True, "init": "glorot"},
+    "linear_k": {"bias": False, "init": "glorot"},
+    "linear_v": {"bias": False, "init": "glorot"},
+    "linear_g": {"bias": False, "init": "final"},
+    "linear_o": {"bias": False, "init": "final"},
+}
+
 mha_bias_init = {
     "linear_z": {"bias": False, "init": "normal"},
     "mha": mha_init,
@@ -34,13 +42,7 @@ att_pair_bias_init = {
     "ada_ln": ada_ln_init,
     "linear_ada_out": {"bias": True, "init": "gating_ada_zero"},
     "linear_z": {"bias": False, "init": "normal"},
-    "mha": {
-        "linear_q": {"bias": True, "init": "glorot"},
-        "linear_k": {"bias": False, "init": "glorot"},
-        "linear_v": {"bias": False, "init": "glorot"},
-        "linear_g": {"bias": False, "init": "final"},
-        "linear_o": {"bias": False, "init": "final"},
-    },
+    "mha": block_sparse_mha_init,
 }
 
 tri_mul_init = {
@@ -115,12 +117,13 @@ atom_att_dec_init = {
     "linear_q_out": {"bias": False, "init": "final"},
 }
 
+relpos_emb_init = {"linear_relpos": {"bias": False, "init": "default"}}
+
 diffusion_cond_init = {
-    "relpos_emb": {"linear_relpos": {"bias": False, "init": "default"}},
+    "relpos_emb": relpos_emb_init,
     "linear_z": {"bias": False, "init": "default"},
     "transition_z": transition_init,
     "linear_s": {"bias": False, "init": "default"},
-    "fourier_emb": {"linear": {"bias": True, "init": "fourier"}},
     "linear_n": {"bias": False, "init": "default"},
     "transition_s": transition_init,
 }
@@ -130,11 +133,10 @@ diffusion_cond_init = {
 ########################
 
 input_emb_init = {
-    "atom_att_enc": atom_att_enc_init,
     "linear_s": {"bias": False, "init": "default"},
     "linear_z_i": {"bias": False, "init": "default"},
     "linear_z_j": {"bias": False, "init": "default"},
-    "relpos_emb": {"linear_relpos": {"bias": False, "init": "default"}},
+    "relpos_emb": relpos_emb_init,
     "linear_token_bonds": {"bias": False, "init": "default"},
 }
 
@@ -181,6 +183,8 @@ pairformer_init = {
     "att_pair_bias": att_pair_bias_init,
     "transition": transition_init,
 }
+
+templ_module_init = {"linear_t": {"bias": False, "init": "default"}}
 
 ########################
 # Structure

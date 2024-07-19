@@ -1,17 +1,22 @@
 # %%
+from pathlib import Path
+
+import yaml
+
+from openfold3.core.config import config_utils
 from openfold3.model_implementations.af2_monomer import base_config
 
-with open('openfold3/model_implementations/af2_monomer/runner.yaml') as f:
+with open("openfold3/model_implementations/af2_monomer/runner.yaml") as f:
     runner_config = yaml.safe_load(f)
 
 print(runner_config)
 
-with open('openfold3/model_implementations/af2_monomer/reference_config.yml') as f:
-    reference_configs = yaml.safe_load(f) 
+with open("openfold3/model_implementations/af2_monomer/reference_config.yml") as f:
+    reference_configs = yaml.safe_load(f)
 
 # load presets first
 base = base_config.config.copy_and_resolve_references()
-preset = runner_config['general']['preset'] 
+preset = runner_config["general"]["preset"]
 print(preset)
 print(reference_configs[preset])
 
@@ -19,17 +24,14 @@ base.update(reference_configs[preset])
 print(base)
 
 # load other updates from runner config
-if 'model' in runner_config:
-    base['model'].update(runner_config['model'])
+if "model" in runner_config:
+    base["model"].update(runner_config["model"])
 
 print(f"{base.model.template.enabled=}")
 
 # %%
 
-from openfold3.core.utils import config_utils
-from openfold3.model_implementations.af2_monomer import base_config
-
-runner_config = config_utils.load_yaml('runner.yaml')
+runner_config = config_utils.load_yaml(Path("runner.yaml"))
 af2_config = base_config.config
 
 config = config_utils.update_config_dict(af2_config, runner_config)

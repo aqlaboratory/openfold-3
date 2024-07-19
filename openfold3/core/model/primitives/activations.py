@@ -19,13 +19,20 @@ import torch
 from ml_collections import ConfigDict
 from torch import nn
 
+import openfold3.core.config.default_linear_init_config as lin_init
+
 from .linear import Linear
 
 
 class SwiGLU(nn.Module):
     """SwiGLU activation function."""
 
-    def __init__(self, c_in: int, c_out: int, linear_init_params: ConfigDict):
+    def __init__(
+        self,
+        c_in: int,
+        c_out: int,
+        linear_init_params: ConfigDict = lin_init.swiglu_init,
+    ):
         """
         Args:
             c_in: Number of input channels

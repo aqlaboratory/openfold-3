@@ -19,12 +19,16 @@ from pathlib import Path
 import numpy as np
 import torch
 
+import openfold3.model_implementations.af2_monomer.base_config as af2_config
+import openfold3.model_implementations.af2_multimer.config as multimer_config
 from openfold3.core.utils.import_weights import (
     import_jax_weights_,
     import_openfold_weights_,
 )
-from openfold3.model_implementations.af2_monomer.base_config import model_config
 from openfold3.model_implementations.af2_monomer.model import AlphaFold
+from openfold3.model_implementations.af2_multimer.model import (
+    AlphaFold as AlphaFoldMultimer,
+)
 from tests.config import consts
 
 
@@ -35,9 +39,16 @@ class TestImportWeights(unittest.TestCase):
             / f"../openfold3/resources/params/params_{consts.model}.npz"
         )
 
+        model_config = (
+            af2_config.model_config
+            if not consts.is_multimer
+            else multimer_config.model_config
+        )
         c = model_config(consts.model)
         c.globals.blocks_per_ckpt = None
-        model = AlphaFold(c)
+
+        model_type = AlphaFold if not consts.is_multimer else AlphaFoldMultimer
+        model = model_type(c)
         model.eval()
 
         import_jax_weights_(model, npz_path, version=consts.model)
@@ -86,7 +97,7 @@ class TestImportWeights(unittest.TestCase):
         )
 
         if os.path.exists(pt_path):
-            c = model_config(model_name)
+            c = af2_config.model_config(model_name)
             c.globals.blocks_per_ckpt = None
             model = AlphaFold(c)
             model.eval()

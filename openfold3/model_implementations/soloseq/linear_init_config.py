@@ -20,8 +20,10 @@ mha_bias_init = {
 ########################
 
 tri_mul_init = {
-    "linear_ab_p": {"bias": True, "init": "default"},
-    "linear_ab_g": {"bias": True, "init": "gating"},
+    "linear_a_p": {"bias": True, "init": "default"},
+    "linear_a_g": {"bias": True, "init": "gating"},
+    "linear_b_p": {"bias": True, "init": "default"},
+    "linear_b_g": {"bias": True, "init": "gating"},
     "linear_g": {"bias": True, "init": "gating"},
     "linear_z": {"bias": True, "init": "final"},
 }
@@ -34,7 +36,7 @@ opm_init = {
     "linear_out": {"bias": True, "init": "final"},
 }
 
-msa_global_att_init = {"mha": mha_init}
+template_pointwise_init = {"mha": mha_init}
 
 transition_init = {
     "layers": {"bias": True, "init": "relu"},
@@ -45,33 +47,23 @@ transition_init = {
 # Feature Embedders
 ########################
 
-input_emb_init = {
-    "linear_tf_z_i": {"bias": True, "init": "default"},
-    "linear_tf_z_j": {"bias": True, "init": "default"},
+preembed_init = {
     "linear_tf_m": {"bias": True, "init": "default"},
-    "linear_msa_m": {"bias": True, "init": "default"},
+    "linear_preemb_m": {"bias": True, "init": "default"},
+    "linear_preemb_z_i": {"bias": True, "init": "default"},
+    "linear_preemb_z_j": {"bias": True, "init": "default"},
     "linear_relpos": {"bias": True, "init": "default"},
 }
 
 recycling_emb_init = {"linear": {"bias": True, "init": "default"}}
 
-extra_msa_emb_init = {"linear": {"bias": True, "init": "default"}}
-
 templ_single_feat_emb_init = {
-    "template_single_embedder": {"bias": True, "init": "default"},
-    "template_projector": {"bias": True, "init": "default"},
+    "linear_1": {"bias": True, "init": "relu"},
+    "linear_2": {"bias": True, "init": "relu"},
 }
 
 templ_pair_feat_emb_init = {
-    "dgram_linear": {"bias": True, "init": "relu"},
-    "aatype_linear_1": {"bias": True, "init": "relu"},
-    "aatype_linear_2": {"bias": True, "init": "relu"},
-    "query_embedding_linear": {"bias": True, "init": "relu"},
-    "pseudo_beta_mask_linear": {"bias": True, "init": "relu"},
-    "x_linear": {"bias": True, "init": "relu"},
-    "y_linear": {"bias": True, "init": "relu"},
-    "z_linear": {"bias": True, "init": "relu"},
-    "backbone_mask_linear": {"bias": True, "init": "relu"},
+    "linear": {"bias": True, "init": "relu"},
 }
 
 ########################
@@ -98,13 +90,8 @@ msa_block_init = {
 
 evo_block_init = {
     **msa_block_init,
-    "msa_col_att": mha_bias_init,
     "linear": {"bias": True, "init": "default"},
 }
-
-extra_msa_block_init = {**msa_block_init, "msa_col_att": msa_global_att_init}
-
-templ_module_init = {"linear_t": {"bias": True, "init": "default"}}
 
 ########################
 # Structure
@@ -127,12 +114,10 @@ point_proj_init = {
 }
 
 ipa_init = {
-    "linear_q": {"bias": False, "init": "default"},
+    "linear_q": {"bias": True, "init": "default"},
     "linear_q_points": point_proj_init,
-    "linear_k": {"bias": False, "init": "default"},
-    "linear_v": {"bias": False, "init": "default"},
-    "linear_k_points": point_proj_init,
-    "linear_v_points": point_proj_init,
+    "linear_kv": {"bias": True, "init": "default"},
+    "linear_kv_points": point_proj_init,
     "linear_b": {"bias": True, "init": "default"},
     "linear_out": {"bias": True, "init": "final"},
 }

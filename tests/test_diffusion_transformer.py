@@ -15,9 +15,7 @@
 import unittest
 
 import torch
-from ml_collections import ConfigDict
 
-import openfold3.model_implementations.af3_all_atom.linear_init_config as lin_init
 from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
 from openfold3.core.model.layers.transition import ConditionedTransitionBlock
 from openfold3.model_implementations.af3_all_atom.config import config
@@ -74,7 +72,6 @@ class TestConditionedTransitionBlock(unittest.TestCase):
             c_a=c_a,
             c_s=c_s,
             n=n,
-            linear_init_params=ConfigDict(lin_init.cond_transition_init),
         )
 
         a = torch.rand((batch_size, n_r, c_a))

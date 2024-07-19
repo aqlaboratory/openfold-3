@@ -16,10 +16,7 @@ import unittest
 
 import numpy as np
 import torch
-from ml_collections import ConfigDict
 
-import openfold3.model_implementations.af2_monomer.linear_init_config as lin_init_mon
-import openfold3.model_implementations.af2_multimer.linear_init_config as lin_init_mult
 import tests.compare_utils as compare_utils
 from openfold3.core.data.data_transforms import make_atom14_masks_np
 from openfold3.core.model.layers.transition import StructureModuleTransition
@@ -79,8 +76,6 @@ class TestStructureModule(unittest.TestCase):
         trans_scale_factor = 10
         inf = 1e5
 
-        config = lin_init_mult if consts.is_multimer else lin_init_mon
-
         sm = StructureModule(
             c_s,
             c_z,
@@ -95,7 +90,6 @@ class TestStructureModule(unittest.TestCase):
             no_resnet_layers,
             no_angles,
             trans_scale_factor,
-            ConfigDict(config.structure_module_init),
             ar_epsilon,
             inf,
             is_multimer=consts.is_multimer,
@@ -126,7 +120,6 @@ class TestStructureModule(unittest.TestCase):
             c,
             num_layers,
             dropout,
-            linear_init_params=ConfigDict(lin_init_mon.transition_init),
         )
 
         s = torch.rand((batch_size, n, c))
@@ -243,11 +236,9 @@ class TestInvariantPointAttention(unittest.TestCase):
             rotation = Rot3Array.from_array(rot_mats)
             translation = Vec3Array.from_array(trans)
             r = Rigid3Array(rotation, translation)
-            config = lin_init_mult
         else:
             rots = Rotation(rot_mats=rot_mats, quats=None)
             r = Rigid(rots, trans)
-            config = lin_init_mon
 
         ipa = InvariantPointAttention(
             c_m,
@@ -256,7 +247,6 @@ class TestInvariantPointAttention(unittest.TestCase):
             no_heads,
             no_qp,
             no_vp,
-            linear_init_params=ConfigDict(config.ipa_init),
             is_multimer=consts.is_multimer,
         )
 
@@ -348,7 +338,6 @@ class TestAngleResnet(unittest.TestCase):
             c_hidden,
             no_layers,
             no_angles,
-            linear_init_params=ConfigDict(lin_init_mon.angle_resnet_init),
             epsilon=epsilon,
         )
         a = torch.rand((batch_size, n, c_s))

@@ -57,14 +57,6 @@ input_emb_init = {
     "linear_relpos": {"bias": True, "init": "default"},
 }
 
-preembed_init = {
-    "linear_tf_m": {"bias": True, "init": "default"},
-    "linear_preemb_m": {"bias": True, "init": "default"},
-    "linear_preemb_z_i": {"bias": True, "init": "default"},
-    "linear_preemb_z_j": {"bias": True, "init": "default"},
-    "linear_relpos": {"bias": True, "init": "default"},
-}
-
 recycling_emb_init = {"linear": {"bias": True, "init": "default"}}
 
 extra_msa_emb_init = {"linear": {"bias": True, "init": "default"}}

@@ -17,10 +17,7 @@ import unittest
 
 import numpy as np
 import torch
-from ml_collections import ConfigDict
 
-import openfold3.model_implementations.af2_monomer.linear_init_config as lin_init_mon
-import openfold3.model_implementations.af2_multimer.linear_init_config as lin_init_mult
 import tests.compare_utils as compare_utils
 from openfold3.core.model.layers.triangular_multiplicative_update import (
     FusedTriangleMultiplicationOutgoing,
@@ -44,13 +41,11 @@ class TestTriangularMultiplicativeUpdate(unittest.TestCase):
             tm = FusedTriangleMultiplicationOutgoing(
                 c_z,
                 c,
-                linear_init_params=ConfigDict(lin_init_mult.tri_mul_init),
             )
         else:
             tm = TriangleMultiplicationOutgoing(
                 c_z,
                 c,
-                linear_init_params=ConfigDict(lin_init_mon.tri_mul_init),
             )
 
         n_res = consts.c_z

@@ -27,6 +27,7 @@ import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.utils.checkpointing import get_checkpoint_fn
 from openfold3.core.utils.precision_utils import is_fp16_enabled
 from openfold3.core.utils.tensor_utils import (
@@ -183,8 +184,8 @@ class Attention(nn.Module):
         c_v: int,
         c_hidden: int,
         no_heads: int,
-        linear_init_params: ConfigDict,
         gating: bool = True,
+        linear_init_params: ConfigDict = lin_init.mha_init,
     ):
         """
         Args:
@@ -198,10 +199,10 @@ class Attention(nn.Module):
                 Per-head hidden dimension
             no_heads:
                 Number of attention heads
-            linear_init_params:
-                Linear layer initialization parameters
             gating:
                 Whether the output should be gated using query data
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -397,9 +398,9 @@ class BlockSparseAttention(Attention):
         c_v: int,
         c_hidden: int,
         no_heads: int,
-        linear_init_params: ConfigDict,
         gating: bool = True,
         block_size: int = 16,
+        linear_init_params: ConfigDict = lin_init.block_sparse_mha_init,
     ):
         """
         Args:
@@ -413,12 +414,12 @@ class BlockSparseAttention(Attention):
                 Per-head hidden dimension
             no_heads:
                 Number of attention heads
-            linear_init_params:
-                Linear layer initialization parameters
             gating:
                 Whether the output should be gated using query data
             block_size:
                 Block size to use in block sparse attention
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__(
             c_q=c_q,
@@ -426,8 +427,8 @@ class BlockSparseAttention(Attention):
             c_v=c_v,
             c_hidden=c_hidden,
             no_heads=no_heads,
-            linear_init_params=linear_init_params,
             gating=gating,
+            linear_init_params=linear_init_params,
         )
 
         self.block_size = block_size
@@ -611,7 +612,9 @@ class BlockSparseAttention(Attention):
 
 
 class GlobalAttention(nn.Module):
-    def __init__(self, c_in, c_hidden, no_heads, inf, eps, linear_init_params):
+    def __init__(
+        self, c_in, c_hidden, no_heads, inf, eps, linear_init_params=lin_init.mha_init
+    ):
         super().__init__()
 
         self.c_in = c_in

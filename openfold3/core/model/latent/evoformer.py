@@ -21,6 +21,7 @@ from typing import Optional, Sequence, Tuple
 import torch
 from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.latent.base_blocks import MSABlock
 from openfold3.core.model.latent.base_stacks import MSAStack
 from openfold3.core.model.layers.msa import MSAColumnAttention
@@ -46,9 +47,9 @@ class EvoformerBlock(MSABlock):
         no_column_attention: bool,
         opm_first: bool,
         fuse_projection_weights: bool,
-        linear_init_params: ConfigDict,
         inf: float,
         eps: float,
+        linear_init_params: ConfigDict = lin_init.evo_block_init,
     ):
         super().__init__(
             c_m=c_m,
@@ -65,9 +66,9 @@ class EvoformerBlock(MSABlock):
             pair_dropout=pair_dropout,
             opm_first=opm_first,
             fuse_projection_weights=fuse_projection_weights,
-            linear_init_params=linear_init_params,
             inf=inf,
             eps=eps,
+            linear_init_params=linear_init_params,
         )
 
         # Specifically, seqemb mode does not use column attention
@@ -78,8 +79,8 @@ class EvoformerBlock(MSABlock):
                 c_m,
                 c_hidden_msa_att,
                 no_heads_msa,
-                linear_init_params=linear_init_params.msa_col_att,
                 inf=inf,
+                linear_init_params=linear_init_params.msa_col_att,
             )
 
     def forward(
@@ -248,10 +249,10 @@ class EvoformerStack(MSAStack):
         no_column_attention: bool,
         opm_first: bool,
         fuse_projection_weights: bool,
-        linear_init_params: ConfigDict,
         blocks_per_ckpt: Optional[int],
         inf: float,
         eps: float,
+        linear_init_params: ConfigDict = lin_init.evo_block_init,
         clear_cache_between_blocks: bool = False,
         tune_chunk_size: bool = False,
         **kwargs,
@@ -298,14 +299,14 @@ class EvoformerStack(MSAStack):
             fuse_projection_weights:
                 When True, uses FusedTriangleMultiplicativeUpdate variant in the Pair
                 Stack. Used in Multimer pipeline.
-            linear_init_params:
-                Parameters for linear layer initialization
             blocks_per_ckpt:
                 Number of Evoformer blocks in each activation checkpoint
             inf:
                 Large constant for masking
             eps:
                 Small constant for numerical stability
+            linear_init_params:
+                Parameters for linear layer initialization
             clear_cache_between_blocks:
                 Whether to clear CUDA's GPU memory cache between blocks of the stack.
                 Slows down each block but can reduce fragmentation

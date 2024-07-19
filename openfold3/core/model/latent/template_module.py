@@ -28,6 +28,7 @@ import torch
 from ml_collections import ConfigDict
 from torch import nn
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.feature_embedders import (
     TemplatePairEmbedderAllAtom,
     TemplatePairEmbedderMonomer,
@@ -61,8 +62,8 @@ class TemplatePairBlock(PairBlock):
         dropout_rate: float,
         tri_mul_first: bool,
         fuse_projection_weights: bool,
-        linear_init_params: ConfigDict,
         inf: float,
+        linear_init_params: ConfigDict = lin_init.pair_block_init,
         **kwargs,
     ):
         """
@@ -87,10 +88,10 @@ class TemplatePairBlock(PairBlock):
             fuse_projection_weights:
                 When True, uses FusedTriangleMultiplicativeUpdate variant in
                 the Pair Stack. Used in Multimer pipeline.
-            linear_init_params:
-                Configuration for linear initialization
             inf:
                 Large constant used for masking
+            linear_init_params:
+                Configuration for linear initialization
         """
         super().__init__(
             c_z=c_t,
@@ -101,8 +102,8 @@ class TemplatePairBlock(PairBlock):
             transition_n=pair_transition_n,
             pair_dropout=dropout_rate,
             fuse_projection_weights=fuse_projection_weights,
-            linear_init_params=linear_init_params,
             inf=inf,
+            linear_init_params=linear_init_params,
         )
 
         self.tri_mul_first = tri_mul_first
@@ -212,10 +213,10 @@ class TemplatePairStack(nn.Module):
         dropout_rate,
         tri_mul_first,
         fuse_projection_weights,
-        linear_init_params,
         blocks_per_ckpt,
-        tune_chunk_size: bool = False,
         inf=1e9,
+        linear_init_params=lin_init.pair_block_init,
+        tune_chunk_size: bool = False,
         **kwargs,
     ):
         """
@@ -242,15 +243,15 @@ class TemplatePairStack(nn.Module):
             fuse_projection_weights:
                 When True, uses FusedTriangleMultiplicativeUpdate variant in
                 the Pair Stack. Used in Multimer pipeline.
-            linear_init_params:
-                Configuration for linear initialization
             blocks_per_ckpt:
                 Number of blocks per activation checkpoint. None disables
                 activation checkpointing
-            tune_chunk_size:
-                 Whether to dynamically tune the module's chunk size
             inf:
                 Large constant used for masking
+            linear_init_params:
+                Configuration for linear initialization
+            tune_chunk_size:
+                 Whether to dynamically tune the module's chunk size
         """
         super().__init__()
 
@@ -268,8 +269,8 @@ class TemplatePairStack(nn.Module):
                 dropout_rate=dropout_rate,
                 tri_mul_first=tri_mul_first,
                 fuse_projection_weights=fuse_projection_weights,
-                linear_init_params=linear_init_params,
                 inf=inf,
+                linear_init_params=linear_init_params,
             )
             self.blocks.append(block)
 
@@ -529,7 +530,10 @@ class TemplateEmbedderMultimer(nn.Module):
             **config.template_pair_stack,
         )
 
-        self.linear_t = Linear(config.c_t, config.c_z)
+        templ_init = config.get(
+            "linear_init_params", lin_init.multimer_templ_module_init
+        )
+        self.linear_t = Linear(config.c_t, config.c_z, **templ_init.linear_t)
 
     def forward(
         self,
@@ -629,7 +633,10 @@ class TemplateEmbedderAllAtom(nn.Module):
             **config.template_pair_stack,
         )
 
-        self.linear_t = Linear(config.c_t, config.c_z, bias=False)
+        templ_init = config.get(
+            "linear_init_params", lin_init.all_atom_templ_module_init
+        )
+        self.linear_t = Linear(config.c_t, config.c_z, **templ_init.linear_t)
 
     def forward(
         self,

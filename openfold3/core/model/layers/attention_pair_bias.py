@@ -21,6 +21,7 @@ import torch
 from ml_collections import ConfigDict
 from torch import nn
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import (
     AdaLN,
     Attention,
@@ -46,12 +47,12 @@ class AttentionPairBias(nn.Module):
         c_z: int,
         c_hidden: int,
         no_heads: int,
-        linear_init_params: ConfigDict,
         use_ada_layer_norm: bool = False,
         use_block_sparse_attn: bool = False,
         block_size: Optional[int] = 16,
         gating: bool = True,
         inf=1e9,
+        linear_init_params: ConfigDict = lin_init.att_pair_bias_init,
     ):
         """
         Args:
@@ -69,8 +70,6 @@ class AttentionPairBias(nn.Module):
                 Per-head hidden dimension
             no_heads:
                 Number of attention heads
-            linear_init_params:
-                Linear layer initialization parameters
             use_ada_layer_norm:
                 Whether to apply AdaLN-Zero conditioning
             use_block_sparse_attn:
@@ -81,6 +80,8 @@ class AttentionPairBias(nn.Module):
                 Whether the output should be gated using query data
             inf:
                 Large constant used to create mask for attention logits
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -112,8 +113,8 @@ class AttentionPairBias(nn.Module):
                 c_hidden=c_hidden,
                 no_heads=no_heads,
                 block_size=block_size,
-                linear_init_params=linear_init_params.mha,
                 gating=gating,
+                linear_init_params=linear_init_params.mha,
             )
         else:
             self.mha = Attention(
@@ -122,8 +123,8 @@ class AttentionPairBias(nn.Module):
                 c_v=c_v,
                 c_hidden=c_hidden,
                 no_heads=no_heads,
-                linear_init_params=linear_init_params.mha,
                 gating=gating,
+                linear_init_params=linear_init_params.mha,
             )
 
         self.sigmoid = nn.Sigmoid()

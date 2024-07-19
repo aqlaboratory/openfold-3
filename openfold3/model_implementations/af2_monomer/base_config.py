@@ -1,7 +1,9 @@
 from pathlib import Path
 
 import ml_collections as mlc
-from openfold3.core.utils import config_utils
+
+import openfold3.model_implementations.af2_monomer.linear_init_config as lin_init
+from openfold3.core.config import config_utils
 from openfold3.model_implementations.af2_monomer.features import feature_dict
 
 c_z = mlc.FieldReference(128, field_type=int)
@@ -68,7 +70,6 @@ config = mlc.ConfigDict(
                     "is_distillation",
                 ],
             },
-
         },
         # Recurring FieldReferences that can be changed globally here
         "globals": {
@@ -100,6 +101,7 @@ config = mlc.ConfigDict(
                 "c_z": c_z,
                 "c_m": c_m,
                 "relpos_k": 32,
+                "linear_init_params": lin_init.input_emb_init,
             },
             "recycling_embedder": {
                 "c_z": c_z,
@@ -108,6 +110,7 @@ config = mlc.ConfigDict(
                 "max_bin": 20.75,
                 "no_bins": 15,
                 "inf": 1e8,
+                "linear_init_params": lin_init.recycling_emb_init,
             },
             "template": {
                 "distogram": {
@@ -119,10 +122,12 @@ config = mlc.ConfigDict(
                     # DISCREPANCY: c_in is supposed to be 51.
                     "c_in": 57,
                     "c_out": c_m,
+                    "linear_init_params": lin_init.templ_single_feat_emb_init,
                 },
                 "template_pair_embedder": {
                     "c_in": 88,
                     "c_out": c_t,
+                    "linear_init_params": lin_init.templ_pair_feat_emb_init,
                 },
                 "template_pair_stack": {
                     "c_t": c_t,
@@ -138,8 +143,9 @@ config = mlc.ConfigDict(
                     "tri_mul_first": False,
                     "fuse_projection_weights": False,
                     "blocks_per_ckpt": blocks_per_ckpt,
-                    "tune_chunk_size": tune_chunk_size,
                     "inf": 1e9,
+                    "linear_init_params": lin_init.pair_block_init,
+                    "tune_chunk_size": tune_chunk_size,
                 },
                 "template_pointwise_attention": {
                     "c_t": c_t,
@@ -149,6 +155,7 @@ config = mlc.ConfigDict(
                     "c_hidden": 16,
                     "no_heads": 4,
                     "inf": 1e5,  # 1e9,
+                    "linear_init_params": lin_init.template_pointwise_init,
                 },
                 "inf": 1e5,  # 1e9,
                 "eps": eps,  # 1e-6,
@@ -171,6 +178,7 @@ config = mlc.ConfigDict(
                 "extra_msa_embedder": {
                     "c_in": 25,
                     "c_out": c_e,
+                    "linear_init_params": lin_init.extra_msa_emb_init,
                 },
                 "extra_msa_stack": {
                     "c_m": c_e,
@@ -188,11 +196,12 @@ config = mlc.ConfigDict(
                     "pair_dropout": 0.25,
                     "opm_first": False,
                     "fuse_projection_weights": False,
-                    "clear_cache_between_blocks": False,
-                    "tune_chunk_size": tune_chunk_size,
                     "inf": 1e9,
                     "eps": eps,  # 1e-10,
                     "ckpt": blocks_per_ckpt is not None,
+                    "linear_init_params": lin_init.extra_msa_block_init,
+                    "clear_cache_between_blocks": False,
+                    "tune_chunk_size": tune_chunk_size,
                 },
                 "enabled": True,
             },
@@ -215,10 +224,11 @@ config = mlc.ConfigDict(
                 "opm_first": False,
                 "fuse_projection_weights": False,
                 "blocks_per_ckpt": blocks_per_ckpt,
-                "clear_cache_between_blocks": False,
-                "tune_chunk_size": tune_chunk_size,
                 "inf": 1e9,
                 "eps": eps,  # 1e-10,
+                "linear_init_params": lin_init.evo_block_init,
+                "clear_cache_between_blocks": False,
+                "tune_chunk_size": tune_chunk_size,
             },
             "structure_module": {
                 "c_s": c_s,
@@ -236,6 +246,7 @@ config = mlc.ConfigDict(
                 "trans_scale_factor": 10,
                 "epsilon": eps,  # 1e-12,
                 "inf": 1e5,
+                "linear_init_params": lin_init.structure_module_init,
             },
             "heads": {
                 "lddt": {
@@ -268,7 +279,7 @@ config = mlc.ConfigDict(
             # recycling steps.
             "recycle_early_stop_tolerance": -1.0,
         },
-        # TODO: These configurations are only relevant to inference 
+        # TODO: These configurations are only relevant to inference
         "relax": {
             "max_iterations": 0,  # no max
             "tolerance": 2.39,
@@ -353,7 +364,7 @@ config = mlc.ConfigDict(
 
 
 def model_config(model_preset: str):
-    ref_yaml_path = Path(__file__).with_name('reference_config.yml')
+    ref_yaml_path = Path(__file__).with_name("reference_config.yml")
     reference_configs = config_utils.load_yaml(ref_yaml_path)
     model_preset_config = reference_configs[model_preset]
-    return config_utils.update_config_dict(config, model_preset_config) 
+    return config_utils.update_config_dict(config, model_preset_config)

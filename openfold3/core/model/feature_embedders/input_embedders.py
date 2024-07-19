@@ -25,8 +25,9 @@ import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers import AtomAttentionEncoder
-from openfold3.core.model.primitives import LayerNorm, Linear
+from openfold3.core.model.primitives import LayerNorm, Linear, normal_init_
 from openfold3.core.utils.tensor_utils import add, one_hot
 
 
@@ -44,7 +45,7 @@ class InputEmbedder(nn.Module):
         c_z: int,
         c_m: int,
         relpos_k: int,
-        linear_init_params: ConfigDict,
+        linear_init_params: ConfigDict = lin_init.monomer_input_emb_init,
         **kwargs,
     ):
         """
@@ -165,7 +166,7 @@ class InputEmbedderMultimer(nn.Module):
         max_relative_idx: int,
         use_chain_relative: bool,
         max_relative_chain: int,
-        linear_init_params: ConfigDict,
+        linear_init_params: ConfigDict = lin_init.multimer_input_emb_init,
         **kwargs,
     ):
         """
@@ -195,10 +196,10 @@ class InputEmbedderMultimer(nn.Module):
         self.c_z = c_z
         self.c_m = c_m
 
-        self.linear_tf_z_i = Linear(tf_dim, c_z)
-        self.linear_tf_z_j = Linear(tf_dim, c_z)
-        self.linear_tf_m = Linear(tf_dim, c_m)
-        self.linear_msa_m = Linear(msa_dim, c_m)
+        self.linear_tf_z_i = Linear(tf_dim, c_z, **linear_init_params.linear_tf_z_i)
+        self.linear_tf_z_j = Linear(tf_dim, c_z, **linear_init_params.linear_tf_z_j)
+        self.linear_tf_m = Linear(tf_dim, c_m, **linear_init_params.linear_tf_m)
+        self.linear_msa_m = Linear(msa_dim, c_m, **linear_init_params.linear_msa_m)
 
         # RPE stuff
         self.max_relative_idx = max_relative_idx
@@ -208,7 +209,9 @@ class InputEmbedderMultimer(nn.Module):
             self.no_bins = 2 * max_relative_idx + 2 + 1 + 2 * max_relative_chain + 2
         else:
             self.no_bins = 2 * max_relative_idx + 1
-        self.linear_relpos = Linear(self.no_bins, c_z)
+        self.linear_relpos = Linear(
+            self.no_bins, c_z, **linear_init_params.linear_relpos
+        )
 
     def relpos(self, batch):
         pos = batch["residue_index"]
@@ -323,7 +326,7 @@ class RelposAllAtom(nn.Module):
         c_z: int,
         max_relative_idx: int,
         max_relative_chain: int,
-        linear_init_params: ConfigDict,
+        linear_init_params: ConfigDict = lin_init.relpos_emb_init,
     ):
         """
         Args:
@@ -446,7 +449,7 @@ class InputEmbedderAllAtom(nn.Module):
         max_relative_idx: int,
         max_relative_chain: int,
         atom_attn_enc: Dict,
-        linear_init_params: ConfigDict,
+        linear_init_params: ConfigDict = lin_init.all_atom_input_emb_init,
     ):
         """
         Args:
@@ -471,7 +474,6 @@ class InputEmbedderAllAtom(nn.Module):
         self.atom_attn_enc = AtomAttentionEncoder(
             **atom_attn_enc,
             add_noisy_pos=False,
-            linear_init_params=linear_init_params.atom_att_enc,
         )
 
         self.linear_s = Linear(c_s_input, c_s, **linear_init_params.linear_s)
@@ -550,7 +552,11 @@ class MSAModuleEmbedder(nn.Module):
     """
 
     def __init__(
-        self, c_m_feats: int, c_m: int, c_s_input: int, linear_init_params: ConfigDict
+        self,
+        c_m_feats: int,
+        c_m: int,
+        c_s_input: int,
+        linear_init_params: ConfigDict = lin_init.msa_module_emb_init,
     ):
         """
         Args:
@@ -639,7 +645,7 @@ class PreembeddingEmbedder(nn.Module):
         c_z: int,
         c_m: int,
         relpos_k: int,
-        linear_init_params: ConfigDict,
+        linear_init_params: ConfigDict = lin_init.preembed_init,
         **kwargs,
     ):
         """
@@ -738,7 +744,7 @@ class RecyclingEmbedder(nn.Module):
         min_bin: float,
         max_bin: float,
         no_bins: int,
-        linear_init_params: ConfigDict,
+        linear_init_params: ConfigDict = lin_init.recycling_emb_init,
         inf: float = 1e8,
         **kwargs,
     ):
@@ -841,7 +847,7 @@ class ExtraMSAEmbedder(nn.Module):
         self,
         c_in: int,
         c_out: int,
-        linear_init_params: ConfigDict,
+        linear_init_params: ConfigDict = lin_init.extra_msa_emb_init,
         **kwargs,
     ):
         """
@@ -878,15 +884,21 @@ class FourierEmbedding(nn.Module):
     Implements AF3 Algorithm 22.
     """
 
-    def __init__(self, c: int, linear_init_params: ConfigDict):
+    def __init__(self, c: int):
         """
         Args:
             c:
                 Embedding dimension
         """
         super().__init__()
+        w = torch.empty((c, 1))
+        b = torch.empty(c)
 
-        self.linear = Linear(in_dim=1, out_dim=c, **linear_init_params.linear)
+        normal_init_(w)
+        normal_init_(b)
+
+        self.register_buffer("w", w)
+        self.register_buffer("b", b)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -896,4 +908,5 @@ class FourierEmbedding(nn.Module):
         Returns:
             [*, c] Embedding
         """
-        return torch.cos(2 * torch.pi * self.linear(x))
+        x = nn.functional.linear(x, self.w, self.b)
+        return torch.cos(2 * torch.pi * x)

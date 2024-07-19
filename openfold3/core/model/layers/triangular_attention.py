@@ -21,6 +21,7 @@ from typing import List, Optional
 import torch
 import torch.nn as nn
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import Attention, LayerNorm, Linear
 from openfold3.core.utils.chunk_utils import chunk_layer
 from openfold3.core.utils.tensor_utils import (
@@ -30,7 +31,13 @@ from openfold3.core.utils.tensor_utils import (
 
 class TriangleAttention(nn.Module):
     def __init__(
-        self, c_in, c_hidden, no_heads, linear_init_params, starting=True, inf=1e9
+        self,
+        c_in,
+        c_hidden,
+        no_heads,
+        starting=True,
+        inf=1e9,
+        linear_init_params=lin_init.tri_att_init,
     ):
         """
         Args:

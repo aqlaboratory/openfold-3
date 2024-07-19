@@ -23,7 +23,6 @@ import unittest
 
 import numpy as np
 import torch
-from ml_collections import ConfigDict
 from torch.nn import functional as F
 
 import tests.compare_utils as compare_utils
@@ -31,7 +30,6 @@ from openfold3.core.data import data_transforms
 from openfold3.core.model.primitives.attention import Attention
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations.af2_monomer import linear_init_config as lin_init
 from tests.config import consts
 from tests.data_utils import (
     random_asym_ids,
@@ -66,7 +64,6 @@ class TestDeepSpeedKernel(unittest.TestCase):
             c_hidden,
             c_hidden,
             no_heads,
-            linear_init_params=ConfigDict(lin_init.mha_init),
         ).cuda()
 
         # Change output params init for testing since they are initialized with 'final'
@@ -122,7 +119,6 @@ class TestDeepSpeedKernel(unittest.TestCase):
             c_hidden,
             c_hidden,
             no_heads,
-            linear_init_params=ConfigDict(lin_init.mha_init),
         ).cuda()
 
         with torch.no_grad():
@@ -144,7 +140,6 @@ class TestDeepSpeedKernel(unittest.TestCase):
                 c_hidden,
                 c_hidden,
                 no_heads,
-                linear_init_params=ConfigDict(lin_init.mha_init),
             ).cuda()
 
             a_clone.load_state_dict(attn.state_dict())

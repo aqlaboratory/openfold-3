@@ -15,12 +15,10 @@
 import unittest
 
 import torch
-from ml_collections import ConfigDict
 
 import tests.compare_utils as compare_utils
 from openfold3.core.model.primitives.attention import Attention
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
-from openfold3.model_implementations.af2_monomer import linear_init_config as lin_init
 from tests.config import consts
 from tests.data_utils import random_attention_inputs
 
@@ -45,7 +43,6 @@ class TestLMA(unittest.TestCase):
             c_hidden,
             c_hidden,
             no_heads,
-            linear_init_params=ConfigDict(lin_init.mha_init),
         ).cuda()
 
         with torch.no_grad():

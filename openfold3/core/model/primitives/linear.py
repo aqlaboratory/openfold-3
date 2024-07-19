@@ -28,7 +28,6 @@ from .initialization import (
     he_normal_init_,
     kaiming_normal_init_,
     lecun_normal_init_,
-    normal_init_,
 )
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
@@ -107,9 +106,6 @@ class Linear(nn.Linear):
                     self.bias.fill_(-2.0)
                 elif init == "normal":
                     kaiming_normal_init_(self.weight)
-                elif init == "fourier":
-                    normal_init_(self.weight)
-                    normal_init_(self.bias)
                 elif init == "final":
                     final_init_(self.weight)
                 else:

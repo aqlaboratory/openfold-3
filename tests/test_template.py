@@ -17,9 +17,7 @@ import unittest
 
 import numpy as np
 import torch
-from ml_collections import ConfigDict
 
-import openfold3.model_implementations.af2_monomer.linear_init_config as lin_init_af2
 import tests.compare_utils as compare_utils
 from openfold3.core.model.latent import TemplateEmbedderAllAtom, TemplatePairStack
 from openfold3.core.model.layers.template_pointwise_attention import (
@@ -51,7 +49,6 @@ class TestTemplatePointwiseAttention(unittest.TestCase):
             c_z,
             c,
             no_heads,
-            linear_init_params=ConfigDict(lin_init_af2.template_pointwise_init),
             inf=inf,
         )
 
@@ -108,7 +105,6 @@ class TestTemplatePairStack(unittest.TestCase):
             dropout_rate=dropout,
             tri_mul_first=tri_mul_first,
             fuse_projection_weights=fuse_projection_weights,
-            linear_init_params=ConfigDict(lin_init_af2.pair_block_init),
             blocks_per_ckpt=None,
             inf=inf,
             eps=eps,

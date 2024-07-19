@@ -21,6 +21,8 @@ import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
+
 from .linear import Linear
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
@@ -83,14 +85,18 @@ class AdaLN(nn.Module):
     """
 
     def __init__(
-        self, c_a: int, c_s: int, linear_init_params: ConfigDict, eps: float = 1e-5
+        self,
+        c_a: int,
+        c_s: int,
+        eps: float = 1e-5,
+        linear_init_params: ConfigDict = lin_init.ada_ln_init,
     ):
         """
         Args:
             c_a: Number of input channels for input tensor
             c_s: Number of input channels for shift/scale tensor
-            linear_init_params: Linear layer initialization parameters
             eps: Epsilon value for numerical stability
+            linear_init_params: Linear layer initialization parameters
         """
         super().__init__()
 

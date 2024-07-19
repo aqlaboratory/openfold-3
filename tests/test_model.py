@@ -21,10 +21,15 @@ import torch
 import torch.nn as nn
 
 import openfold3.model_implementations.af2_monomer.base_config as af2_config
+import openfold3.model_implementations.af2_multimer.config as multimer_config
+import openfold3.model_implementations.soloseq.config as soloseq_config
 import tests.compare_utils as compare_utils
 from openfold3.core.data import data_transforms
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.model_implementations.af2_monomer.model import AlphaFold
+from openfold3.model_implementations.af2_multimer.model import (
+    AlphaFold as AlphaFoldMultimer,
+)
 from tests.config import consts
 from tests.data_utils import (
     random_asym_ids,
@@ -61,12 +66,18 @@ class TestModel(unittest.TestCase):
         n_res = consts.n_res
         n_extra_seq = consts.n_extra
 
-        c = af2_config.model_config(consts.model)
+        model_config = (
+            af2_config.model_config
+            if not consts.is_multimer
+            else multimer_config.model_config
+        )
+        c = model_config(consts.model)
         c.model.evoformer_stack.no_blocks = 4  # no need to go overboard here
         c.model.evoformer_stack.blocks_per_ckpt = None  # don't want to set up
         # deepspeed for this test
 
-        model = AlphaFold(c).cuda()
+        model_type = AlphaFold if not consts.is_multimer else AlphaFoldMultimer
+        model = model_type(c).cuda()
         model.eval()
 
         batch = {}
@@ -116,7 +127,7 @@ class TestModel(unittest.TestCase):
         n_res = consts.n_res
         msa_dim = 49
 
-        c = model_config("seq_model_esm1b")
+        c = soloseq_config.model_config("seq_model_esm1b")
         c.model.evoformer_stack.no_blocks = 2
         c.model.evoformer_stack.blocks_per_ckpt = None
         model = AlphaFold(c)

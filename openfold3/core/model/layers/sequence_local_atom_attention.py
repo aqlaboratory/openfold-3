@@ -24,6 +24,7 @@ import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers import DiffusionTransformer
 from openfold3.core.model.primitives import LayerNorm, Linear
 
@@ -47,11 +48,11 @@ class AtomTransformer(nn.Module):
         n_transition: int,
         n_query: int,
         n_key: int,
-        linear_init_params: ConfigDict,
         use_ada_layer_norm: bool = True,
         use_block_sparse_attn: bool = False,
         block_size: Optional[int] = 16,
         inf: float = 1e9,
+        linear_init_params: ConfigDict = lin_init.atom_transformer_init,
     ):
         """
         Args:
@@ -71,8 +72,6 @@ class AtomTransformer(nn.Module):
                 Number of queries (block height)
             n_key:
                 Number of keys (block width)
-            linear_init_params:
-                Linear layer initialization parameters
             use_ada_layer_norm:
                 Whether to apply AdaLN-Zero conditioning
             use_block_sparse_attn:
@@ -81,6 +80,8 @@ class AtomTransformer(nn.Module):
                 Block size to use in block sparse attention
             inf:
                 Large number used for attention masking
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
         self.n_query = n_query
@@ -97,11 +98,11 @@ class AtomTransformer(nn.Module):
             no_heads=no_heads,
             no_blocks=no_blocks,
             n_transition=n_transition,
-            linear_init_params=linear_init_params.diffusion_transformer,
             use_ada_layer_norm=use_ada_layer_norm,
             use_block_sparse_attn=self.use_block_sparse_attn,
             block_size=self.block_size,
             inf=self.inf,
+            linear_init_params=linear_init_params.diffusion_transformer,
         )
 
     def forward(
@@ -200,7 +201,7 @@ class RefAtomFeatureEmbedder(nn.Module):
         c_atom_ref: int,
         c_atom: int,
         c_atom_pair: int,
-        linear_init_params: ConfigDict,
+        linear_init_params: ConfigDict = lin_init.ref_atom_emb_init,
     ):
         """
         Args:
@@ -298,7 +299,7 @@ class NoisyPositionEmbedder(nn.Module):
         c_z: int,
         c_atom: int,
         c_atom_pair: int,
-        linear_init_params: ConfigDict,
+        linear_init_params: ConfigDict = lin_init.noisy_pos_emb_init,
     ):
         """
         Args:
@@ -406,13 +407,13 @@ class AtomAttentionEncoder(nn.Module):
         n_transition: int,
         n_query: int,
         n_key: int,
-        linear_init_params: ConfigDict,
         use_ada_layer_norm: bool,
         use_block_sparse_attn: bool,
         block_size: Optional[int] = 16,
         inf: float = 1e9,
         c_s: Optional[int] = None,
         c_z: Optional[int] = None,
+        linear_init_params: ConfigDict = lin_init.atom_att_enc_init,
     ):
         """
         Args:
@@ -438,8 +439,6 @@ class AtomAttentionEncoder(nn.Module):
                 Number of queries (block height)
             n_key:
                 Number of keys (block width)
-            linear_init_params:
-                Linear layer initialization parameters
             use_ada_layer_norm:
                 Whether to apply AdaLN-Zero conditioning
             use_block_sparse_attn:
@@ -452,6 +451,8 @@ class AtomAttentionEncoder(nn.Module):
                 Single representation channel dimension (optional)
             c_z:
                 Pair representation channel dimension (optional)
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
         self.ref_atom_feature_embedder = RefAtomFeatureEmbedder(
@@ -622,11 +623,11 @@ class AtomAttentionDecoder(nn.Module):
         n_transition: int,
         n_query: int,
         n_key: int,
-        linear_init_params: ConfigDict,
         use_ada_layer_norm: bool,
         use_block_sparse_attn: bool,
         block_size: Optional[int] = 16,
         inf: float = 1e9,
+        linear_init_params: ConfigDict = lin_init.atom_att_dec_init,
     ):
         """
         Args:
@@ -648,8 +649,6 @@ class AtomAttentionDecoder(nn.Module):
                 Number of queries (block height)
             n_key:
                 Number of keys (block width)
-            linear_init_params:
-                Linear layer initialization parameters
             use_ada_layer_norm:
                 Whether to apply AdaLN-Zero conditioning
             use_block_sparse_attn:
@@ -658,6 +657,8 @@ class AtomAttentionDecoder(nn.Module):
                 Block size to use in block sparse attention
             inf:
                 Large number used for attention masking
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 

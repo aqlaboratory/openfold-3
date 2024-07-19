@@ -24,6 +24,7 @@ import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.data.data_transforms import pseudo_beta_fn
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.np import residue_constants as rc
@@ -43,7 +44,7 @@ class TemplateSingleEmbedderMonomer(nn.Module):
         self,
         c_in: int,
         c_out: int,
-        linear_init_params: ConfigDict,
+        linear_init_params: ConfigDict = lin_init.monomer_templ_single_feat_emb_init,
         **kwargs,
     ):
         """
@@ -108,7 +109,7 @@ class TemplatePairEmbedderMonomer(nn.Module):
         self,
         c_in: int,
         c_out: int,
-        linear_init_params: ConfigDict,
+        linear_init_params: ConfigDict = lin_init.monomer_templ_pair_feat_emb_init,
         **kwargs,
     ):
         """
@@ -226,7 +227,7 @@ class TemplateSingleEmbedderMultimer(nn.Module):
         self,
         c_in: int,
         c_out: int,
-        linear_init_params: ConfigDict,
+        linear_init_params: ConfigDict = lin_init.multimer_templ_single_feat_emb_init,
     ):
         """
         Args:
@@ -311,7 +312,7 @@ class TemplatePairEmbedderMultimer(nn.Module):
         c_out: int,
         c_dgram: int,
         c_aatype: int,
-        linear_init_params: ConfigDict,
+        linear_init_params: ConfigDict = lin_init.multimer_templ_pair_feat_emb_init,
     ):
         """
         Args:
@@ -443,7 +444,13 @@ class TemplatePairEmbedderAllAtom(nn.Module):
     The resulting embedded template will go into the TemplatePairStack.
     """
 
-    def __init__(self, c_in: int, c_z: int, c_out: int, linear_init_params: ConfigDict):
+    def __init__(
+        self,
+        c_in: int,
+        c_z: int,
+        c_out: int,
+        linear_init_params: ConfigDict = lin_init.all_atom_templ_pair_feat_emb_init,
+    ):
         """
         Args:
             c_in:

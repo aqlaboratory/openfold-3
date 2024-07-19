@@ -29,6 +29,7 @@ import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers.transition import StructureModuleTransition
 from openfold3.core.model.primitives import LayerNorm, Linear, ipa_point_weights_init_
 from openfold3.core.np.residue_constants import (
@@ -41,8 +42,8 @@ from openfold3.core.utils.feats import (
     frames_and_literature_positions_to_atom14_pos,
     torsion_angles_to_frames,
 )
-from openfold3.core.utils.geometry.quat_rigid import QuatRigid
 from openfold3.core.utils.geometry.rigid_matrix_vector import Rigid3Array
+from openfold3.core.utils.geometry.rotation_matrix import Rot3Array
 from openfold3.core.utils.geometry.vector import Vec3Array, square_euclidean_distance
 from openfold3.core.utils.precision_utils import is_fp16_enabled
 from openfold3.core.utils.rigid_utils import Rigid, Rotation
@@ -59,7 +60,7 @@ if attn_core_is_installed:
 
 
 class AngleResnetBlock(nn.Module):
-    def __init__(self, c_hidden, linear_init_params):
+    def __init__(self, c_hidden, linear_init_params=lin_init.angle_resnet_block_init):
         """
         Args:
             c_hidden:
@@ -95,7 +96,13 @@ class AngleResnet(nn.Module):
     """
 
     def __init__(
-        self, c_in, c_hidden, no_blocks, no_angles, linear_init_params, epsilon
+        self,
+        c_in,
+        c_hidden,
+        no_blocks,
+        no_angles,
+        epsilon,
+        linear_init_params=lin_init.angle_resnet_init,
     ):
         """
         Args:
@@ -107,10 +114,10 @@ class AngleResnet(nn.Module):
                 Number of resnet blocks
             no_angles:
                 Number of torsion angles to generate
-            linear_init_params:
-                Initialization parameters for linear layers
             epsilon:
                 Small constant for normalization
+            linear_init_params:
+                Initialization parameters for linear layers
         """
         super().__init__()
 
@@ -195,8 +202,8 @@ class PointProjection(nn.Module):
         num_points: int,
         no_heads: int,
         is_multimer: bool,
-        linear_init_params: ConfigDict,
         return_local_points: bool = False,
+        linear_init_params: ConfigDict = lin_init.point_proj_init,
     ):
         super().__init__()
         self.return_local_points = return_local_points
@@ -252,10 +259,10 @@ class InvariantPointAttention(nn.Module):
         no_heads: int,
         no_qk_points: int,
         no_v_points: int,
-        linear_init_params: ConfigDict,
         inf: float = 1e5,
         eps: float = 1e-8,
         is_multimer: bool = False,
+        linear_init_params: ConfigDict = lin_init.monomer_ipa_init,
     ):
         """
         Args:
@@ -560,10 +567,10 @@ class InvariantPointAttentionMultimer(nn.Module):
         no_heads: int,
         no_qk_points: int,
         no_v_points: int,
-        linear_init_params: ConfigDict,
         inf: float = 1e5,
         eps: float = 1e-8,
         is_multimer: bool = True,
+        linear_init_params: ConfigDict = lin_init.multimer_ipa_init,
     ):
         """
         Args:
@@ -785,7 +792,7 @@ class BackboneUpdate(nn.Module):
     Implements part of AF2 Algorithm 23.
     """
 
-    def __init__(self, c_s, linear_init_params):
+    def __init__(self, c_s, linear_init_params=lin_init.bb_update_init):
         """
         Args:
             c_s:
@@ -810,6 +817,40 @@ class BackboneUpdate(nn.Module):
         return update
 
 
+class QuatRigid(nn.Module):
+    def __init__(self, c_hidden, full_quat, linear_init_params=lin_init.bb_update_init):
+        super().__init__()
+        self.full_quat = full_quat
+        rigid_dim = 7 if self.full_quat else 6
+
+        self.linear = Linear(
+            c_hidden, rigid_dim, precision=torch.float32, **linear_init_params.linear
+        )
+
+    def forward(self, activations: torch.Tensor) -> Rigid3Array:
+        # NOTE: During training, this needs to be run in higher precision
+        rigid_flat = self.linear(activations)
+
+        rigid_flat = torch.unbind(rigid_flat, dim=-1)
+        if self.full_quat:
+            qw, qx, qy, qz = rigid_flat[:4]
+            translation = rigid_flat[4:]
+        else:
+            qx, qy, qz = rigid_flat[:3]
+            qw = torch.ones_like(qx)
+            translation = rigid_flat[3:]
+
+        rotation = Rot3Array.from_quaternion(
+            qw,
+            qx,
+            qy,
+            qz,
+            normalize=True,
+        )
+        translation = Vec3Array(*translation)
+        return Rigid3Array(rotation, translation)
+
+
 class StructureModule(nn.Module):
     def __init__(
         self,
@@ -826,10 +867,10 @@ class StructureModule(nn.Module):
         no_resnet_blocks,
         no_angles,
         trans_scale_factor,
-        linear_init_params,
         epsilon,
         inf,
         is_multimer=False,
+        linear_init_params=None,
         **kwargs,
     ):
         """
@@ -861,12 +902,12 @@ class StructureModule(nn.Module):
                 Number of angles to generate in the angle resnet
             trans_scale_factor:
                 Scale of single representation transition hidden dimension
-            linear_init_params:
-                Parameters used for linear layer initialization
             epsilon:
                 Small number used in angle resnet normalization
             inf:
                 Large number used for attention masking
+            linear_init_params:
+                Parameters used for linear layer initialization
         """
         super().__init__()
 
@@ -886,6 +927,13 @@ class StructureModule(nn.Module):
         self.epsilon = epsilon
         self.inf = inf
         self.is_multimer = is_multimer
+
+        if linear_init_params is None:
+            linear_init_params = (
+                lin_init.multimer_structure_module_init
+                if self.is_multimer
+                else lin_init.monomer_structure_module_init
+            )
 
         # Buffers to be lazily initialized later
         # self.default_frames
@@ -910,10 +958,10 @@ class StructureModule(nn.Module):
             self.no_heads_ipa,
             self.no_qk_points,
             self.no_v_points,
-            linear_init_params=linear_init_params.ipa,
             inf=self.inf,
             eps=self.epsilon,
             is_multimer=self.is_multimer,
+            linear_init_params=linear_init_params.ipa,
         )
 
         self.ipa_dropout = nn.Dropout(self.dropout_rate)
@@ -942,8 +990,8 @@ class StructureModule(nn.Module):
             c_hidden=self.c_resnet,
             no_blocks=self.no_resnet_blocks,
             no_angles=self.no_angles,
-            linear_init_params=linear_init_params.angle_resnet,
             epsilon=self.epsilon,
+            linear_init_params=linear_init_params.angle_resnet,
         )
 
     def _forward_monomer(

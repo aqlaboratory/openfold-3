@@ -16,9 +16,7 @@ import unittest
 
 import numpy as np
 import torch
-from ml_collections import ConfigDict
 
-import openfold3.model_implementations.af2_monomer.linear_init_config as lin_init
 import tests.compare_utils as compare_utils
 from openfold3.core.model.layers import OuterProductMean
 from openfold3.core.utils.tensor_utils import tree_map
@@ -34,9 +32,7 @@ class TestOuterProductMean(unittest.TestCase):
     def test_shape(self):
         c = 31
 
-        opm = OuterProductMean(
-            consts.c_m, consts.c_z, c, linear_init_params=ConfigDict(lin_init.opm_init)
-        )
+        opm = OuterProductMean(consts.c_m, consts.c_z, c)
 
         m = torch.rand((consts.batch_size, consts.n_seq, consts.n_res, consts.c_m))
         mask = torch.randint(0, 2, size=(consts.batch_size, consts.n_seq, consts.n_res))

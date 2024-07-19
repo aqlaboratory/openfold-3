@@ -4,6 +4,7 @@ import torch
 from ml_collections import ConfigDict
 from torch import nn
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.feature_embedders.input_embedders import (
     FourierEmbedding,
     RelposAllAtom,
@@ -27,7 +28,7 @@ class DiffusionConditioning(nn.Module):
         max_relative_idx: int,
         max_relative_chain: int,
         sigma_data: float,
-        linear_init_params: ConfigDict,
+        linear_init_params: ConfigDict = lin_init.diffusion_cond_init,
     ):
         """
         Args:
@@ -82,9 +83,7 @@ class DiffusionConditioning(nn.Module):
             self.c_s + self.c_s_input, self.c_s, **linear_init_params.linear_z
         )
 
-        self.fourier_emb = FourierEmbedding(
-            c=c_fourier_emb, linear_init_params=linear_init_params.fourier_emb
-        )
+        self.fourier_emb = FourierEmbedding(c=c_fourier_emb)
         self.layer_norm_n = LayerNorm(self.c_fourier_emb)
         self.linear_n = Linear(
             self.c_fourier_emb, self.c_s, **linear_init_params.linear_n
