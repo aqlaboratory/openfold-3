@@ -2,11 +2,13 @@ from itertools import combinations
 
 import biotite.structure as struc
 import numpy as np
-from biotite.structure.io.pdbx import CIFFile
+from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from scipy.spatial.distance import cdist, pdist, squareform
 
+from .metadata_extraction import get_experimental_method
 from .structure_primitives import get_interface_token_center_atoms
 from .tables import CRYSTALLIZATION_AIDS
+from .tokenization import tokenize_atom_array
 
 
 def convert_MSE_to_MET(atom_array: struc.AtomArray) -> None:
@@ -464,3 +466,49 @@ def subset_large_structure(
     selected_chain_mask = np.isin(atom_array.chain_id_renumbered, closest_n_chain_ids)
 
     return atom_array[selected_chain_mask]
+
+
+def cleanup_structure_af3_style(
+    atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile
+) -> AtomArray:
+    """Cleans up a structure following the AlphaFold3 SI
+
+    This function applies all cleaning steps outlined in the AlphaFold3 SI 2.5.4. The
+    only non-applied filters are the release date and resolution filters as those are
+    deferred to the training cache generation script for easier adjustment in the
+    future.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to clean up
+        cif_data:
+            Parsed mmCIF data of the structure. Note that this expects a CIFBlock which
+            requires one prior level of indexing into the CIFFile, (see
+            `metadata_extraction.get_cif_block`)
+        ccd:
+            CIFFile containing the parsed CCD (components.cif)
+
+    Returns:
+        AtomArray with all cleaning steps applied
+    """
+    atom_array = atom_array.copy()
+
+    convert_MSE_to_MET(atom_array)
+    fix_arginine_naming(atom_array)
+    atom_array = remove_waters(atom_array)
+
+    if get_experimental_method(cif_data) == "X-RAY DIFFRACTION":
+        atom_array = remove_crystallization_aids(atom_array)
+
+    atom_array = remove_hydrogens(atom_array)
+    atom_array = remove_small_polymers(atom_array)
+    atom_array = remove_fully_unknown_polymers(atom_array)
+    atom_array = remove_clashing_chains(atom_array)
+    atom_array = remove_non_CCD_atoms(atom_array, ccd)
+    atom_array = remove_chains_with_CA_gaps(atom_array)
+
+    tokenize_atom_array(atom_array)
+
+    atom_array = subset_large_structure(atom_array)
+
+    return atom_array
