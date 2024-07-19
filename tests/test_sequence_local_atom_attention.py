@@ -23,7 +23,7 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
         c_atom_pair = 16
 
         embedder = RefAtomFeatureEmbedder(
-            c_atom_ref=c_atom_ref, c_atom=c_atom, c_atom_pair=c_atom_pair
+            c_atom_ref=c_atom_ref.get(), c_atom=c_atom, c_atom_pair=c_atom_pair
         )
 
         batch = {
@@ -47,7 +47,7 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
         c_atom_pair = 16
 
         embedder = RefAtomFeatureEmbedder(
-            c_atom_ref=c_atom_ref, c_atom=c_atom, c_atom_pair=c_atom_pair
+            c_atom_ref=c_atom_ref.get(), c_atom=c_atom, c_atom_pair=c_atom_pair
         )
 
         batch = {
@@ -340,7 +340,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         inf = 1e10
 
         atom_attn_enc = AtomAttentionEncoder(
-            c_atom_ref=c_atom_ref,
+            c_atom_ref=c_atom_ref.get(),
             c_atom=c_atom,
             c_atom_pair=c_atom_pair,
             c_token=c_token,
@@ -398,7 +398,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         atom_attn_enc = AtomAttentionEncoder(
             c_s=c_s,
             c_z=c_z,
-            c_atom_ref=c_atom_ref,
+            c_atom_ref=c_atom_ref.get(),
             c_atom=c_atom,
             c_atom_pair=c_atom_pair,
             c_token=c_token,
