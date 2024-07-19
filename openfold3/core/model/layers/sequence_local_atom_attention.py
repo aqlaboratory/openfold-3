@@ -23,17 +23,17 @@ from typing import Dict, Optional, Tuple
 import torch
 import torch.nn as nn
 
+from openfold3.core.model.layers import DiffusionTransformer
 from openfold3.core.model.primitives import LayerNorm, Linear
-
-from .diffusion_transformer import DiffusionTransformer
 
 TensorDict = Dict[str, torch.Tensor]
 
 
 class AtomTransformer(nn.Module):
-    """Atom Transformer: neighborhood-blocked (32 * 128) diffusion transformer.
+    """
+    Atom Transformer: neighborhood-blocked (32 * 128) diffusion transformer.
 
-    Implements AF3 Algorithm 7
+    Implements AF3 Algorithm 7.
     """
 
     def __init__(
@@ -44,26 +44,45 @@ class AtomTransformer(nn.Module):
         no_heads: int,
         no_blocks: int,
         n_transition: int,
-        inf: float,
+        n_query: int,
+        n_key: int,
+        use_ada_layer_norm: bool = True,
+        use_block_sparse_attn: bool = False,
+        block_size: Optional[int] = 16,
+        inf: float = 1e9,
     ):
         """
         Args:
             c_q:
-                Atom embedding channel dimension
+                Atom single representation channel dimension
             c_p:
-                Pair embedding channel dimension
+                Atom pair representation channel dimension
             c_hidden:
                 Hidden channel dimension
             no_heads:
                 Number of attention heads
             no_blocks:
-                Number of blocks
+                Number of attention blocks
             n_transition:
-                Dimension multiplication factor used in transition layer
+                Number of transition blocks
+            n_query:
+                Number of queries (block height)
+            n_key:
+                Number of keys (block width)
+            use_block_sparse_attn:
+                Whether to use Triton block sparse attention kernels
+            block_size:
+                Block size to use in block sparse attention
             inf:
-                Large constant used to create mask for attention logits
+                Large number used for attention masking
         """
         super().__init__()
+        self.n_query = n_query
+        self.n_key = n_key
+        self.use_block_sparse_attn = use_block_sparse_attn
+        self.block_size = block_size
+        self.inf = inf
+
         self.diffusion_transformer = DiffusionTransformer(
             c_a=c_q,
             c_s=c_q,
@@ -72,7 +91,10 @@ class AtomTransformer(nn.Module):
             no_heads=no_heads,
             no_blocks=no_blocks,
             n_transition=n_transition,
-            inf=inf,
+            use_ada_layer_norm=use_ada_layer_norm,
+            use_block_sparse_attn=self.use_block_sparse_attn,
+            block_size=self.block_size,
+            inf=self.inf,
         )
 
     def forward(
@@ -81,163 +103,181 @@ class AtomTransformer(nn.Module):
         cl: torch.Tensor,
         plm: torch.Tensor,
         atom_mask: torch.Tensor,
-        n_queries: int = 32,
-        n_keys: int = 128,
     ):
         """
         Args:
             ql:
-                [*, N_atom, C_atom] atom embedding
+                [*, N_atom, c_atom] Atom single representation
             cl:
-                [*, N_atom, C_atom] atom embedding
+                [*, N_atom, c_atom] Atom single conditioning
             plm:
-                [*, N_atom, N_atom, C_atompair] pairwise embedding
+                [*, N_atom, N_atom, c_atom_pair] Atom pair representation
             atom_mask:
-                [*, N_atom] atom mask
-            n_queries:
-                Neighborhood block height
-            n_keys:
-                Neighborhood block width
-
+                [*, N_atom] Atom mask
         Returns:
             ql:
-                Diffusion transformer output
+                [*, N_atom, c_atom] Updated atom single representation
         """
-        # 1. Get subset centers
+        # TODO: Add/remove padding from n_atom to make it divisible by block size
+
+        # Define subset centers
+        # [N_center]
         n_atom = ql.shape[-2]
-        subset_centers = torch.arange(int(n_atom // n_queries) + 1) * n_queries + (
-            n_queries // 2 - 0.5
-        )
+        if self.use_block_sparse_attn:
+            n_query = self.n_query // self.block_size
+            n_key = self.n_key // self.block_size
+            n_blocks = n_atom // self.block_size
+        else:
+            n_query = self.n_query
+            n_key = self.n_key
+            n_blocks = n_atom
 
-        # 2. Make Blm: (32 * 128) blocks
-        # [N_atom, Subset]
-        row_condition = (
-            torch.abs(torch.arange(n_atom).unsqueeze(1) - subset_centers.unsqueeze(0))
-            < n_queries / 2
-        )
-        col_condition = (
-            torch.abs(torch.arange(n_atom).unsqueeze(1) - subset_centers.unsqueeze(0))
-            < n_keys / 2
-        )
-        # [N_atom, N_atom]
-        blm = (
-            torch.sum(
-                torch.logical_and(
-                    row_condition.unsqueeze(1), col_condition.unsqueeze(0)
-                ).to(ql.dtype),
-                dim=-1,
+        offset = n_query // 2 - 0.5  # TODO: check this
+        n_center = int(n_blocks // n_query) + 1
+        subset_centers = offset + torch.arange(n_center, device=ql.device) * n_query
+
+        # If use_block_sparse_attn: [N_atom / block_size, N_query / block_size]
+        # Else: [N_atom, N_query]
+        row_mask = torch.abs(
+            torch.arange(n_blocks, device=ql.device).unsqueeze(1)
+            - subset_centers.unsqueeze(0)
+        ) < (n_query / 2)
+
+        # If use_block_sparse_attn: [N_atom / block_size, N_key / block_size]
+        # Else: [N_atom, N_key]
+        col_mask = torch.abs(
+            torch.arange(n_blocks, device=ql.device).unsqueeze(1)
+            - subset_centers.unsqueeze(0)
+        ) < (n_key / 2)
+
+        # Compute beta
+        # If use_block_sparse_attn: [N_atom / block_size, N_atom / block_size]
+        # Else: [N_atom, N_atom]
+        beta = torch.einsum("li,mi->lm", row_mask.to(ql.dtype), col_mask.to(ql.dtype))
+
+        layout = None
+        if self.use_block_sparse_attn:
+            # [N_atom / block_size, N_atom / block_size]
+            layout = beta
+            # [N_atom, N_atom]
+            beta = beta.repeat_interleave(self.block_size, dim=0).repeat_interleave(
+                self.block_size, dim=1
             )
-            * 1e10
-            - 1e10
-        )
 
-        # 3. Call diffusion_transformer
-        ql = self.diffusion_transformer(a=ql, s=cl, z=plm, beta=blm, mask=atom_mask)
+        beta = (beta - 1.0) * self.inf  # TODO: check this
+
+        # [*, N_atom, N_atom]
+        beta = beta.reshape(len(plm[:-3]) * (1,) + (n_atom, n_atom)).to(ql.device)
+
+        # Run diffusion transformer
+        # [*, N_atom, c_atom]
+        ql = self.diffusion_transformer(
+            a=ql,
+            s=cl,
+            z=plm,
+            mask=atom_mask,
+            beta=beta,
+            layout=layout,
+        )
 
         return ql
 
 
-class AtomFeatureEmbedder(nn.Module):
-    """Implements atom feature embedding (Algorithm 5, line 1 - 6)"""
+class RefAtomFeatureEmbedder(nn.Module):
+    """
+    Implements AF3 Algorithm 5 (line 1 - 6).
+    """
 
-    def __init__(self, c_in: int, c_atom: int, c_atom_pair: int):
+    def __init__(self, c_atom_ref: int, c_atom: int, c_atom_pair: int):
         """
         Args:
-            c_in:
-                Parsed feature dims (390)
+            c_atom_ref:
+                Reference atom feature channel dimension (390)
             c_atom:
-                Atom embedding dimension
+                Atom single conditioning channel dimension
             c_atom_pair:
-                Atom pair embedding dimension
+                Atom pair conditioning channel dimension
         """
         super().__init__()
-        self.linear_feats = Linear(c_in, c_atom, bias=False)
+        self.linear_feats = Linear(c_atom_ref, c_atom, bias=False)
         self.linear_ref_offset = Linear(3, c_atom_pair, bias=False)
-        self.linear_inv_dists = Linear(1, c_atom_pair, bias=False)
+        self.linear_inv_sq_dists = Linear(1, c_atom_pair, bias=False)
         self.linear_valid_mask = Linear(1, c_atom_pair, bias=False)
 
     def forward(
         self,
-        atom_feats: TensorDict,
+        batch: TensorDict,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
-            atom_feats: Dictionary with following keys/features:
-                - "ref_pos":  [*, N_atom, 3] atom positions, given in Angstrom
-                - "ref_mask": [*, N_atom] atom mask
-                - "ref_element": [*, N_atom, 128] one-hot encoding of atomic number
-                - "ref_charge": [*, N_atom] atom charge
-                - "ref_atom_name_chars": [*, N_atom, 4, 64] one-hot encoding of
-                    unicode integers representing unique atom names
-                - "ref_space_uid": numerical encoding of the chain id and residue
-                    index [*, n_atom,]
+            batch:
+                Input feature dictionary. Features used in this function:
+                    - "ref_pos": [*, N_atom, 3] atom positions in the
+                        reference conformer
+                    - "ref_mask": [*, N_atom] atom mask for the reference conformer
+                    - "ref_element": [*, N_atom, 128] one-hot encoding of atomic number
+                        in the reference conformer
+                    - "ref_charge": [*, N_atom] atom charge in the reference conformer
+                    - "ref_atom_name_chars": [*, N_atom, 4, 64] one-hot encoding of
+                        unicode integers representing unique atom names in the
+                        reference conformer
+                    - "ref_space_uid": [*, n_atom,] numerical encoding of the chain id
+                        and residue index in the reference conformer
         Returns:
             cl:
-                [*, N_atom, C_atom] atom embedding
+                [*, N_atom, c_atom] Atom single conditioning
             plm:
-                [*, N_atom, N_atom, C_atom_pair] pair embedding
+                [*, N_atom, N_atom, c_atom_pair] Atom pair conditioning
         """
-        # 1. Embed atom features
-        # [*, N_atom, C_in] -> [*, N_atom, C_atom]
-        # TODO: CONFIRM THIS FORMAT ONCE DATALOADER/FEATURIZER DON
+        # Embed atom features
+        # [*, N_atom, c_atom]
         cl = self.linear_feats(
             torch.cat(
-                (
-                    atom_feats["ref_pos"],
-                    atom_feats["ref_mask"].unsqueeze(-1),
-                    atom_feats["ref_element"],
-                    atom_feats["ref_charge"].unsqueeze(-1),
-                    torch.flatten(atom_feats["ref_atom_name_chars"], start_dim=-2),
-                    atom_feats["ref_space_uid"].unsqueeze(-1),
-                ),
+                [
+                    batch["ref_pos"],
+                    batch["ref_mask"].unsqueeze(-1),
+                    batch["ref_element"],
+                    batch["ref_charge"].unsqueeze(-1),
+                    batch["ref_atom_name_chars"].flatten(start_dim=-2),
+                    batch["ref_space_uid"].unsqueeze(-1),
+                ],
                 dim=-1,
             )
-        )
+        )  # CONFIRM THIS FORMAT ONCE DATALOADER/FEATURIZER DONE
 
-        # 2. Embed offsets
-        # [*, N_atom, 3] -> [*, N_atom, N_atom, 3]
-        dlm = atom_feats["ref_pos"].unsqueeze(-3) - atom_feats["ref_pos"].unsqueeze(-2)
-
-        # [*, N_atom] --> [*, N_atom, N_atom]
+        # Embed offsets
+        # dlm: [*, N_atom, N_atom, 3]
+        # vlm: [*, N_atom, N_atom]
+        # plm: [*, N_atom, N_atom, c_atom_pair]
+        dlm = batch["ref_pos"].unsqueeze(-3) - batch["ref_pos"].unsqueeze(-2)
         vlm = (
-            atom_feats["ref_space_uid"].unsqueeze(-2)
-            == atom_feats["ref_space_uid"].unsqueeze(-1)
+            batch["ref_space_uid"].unsqueeze(-2) == batch["ref_space_uid"].unsqueeze(-1)
         ).to(dlm.dtype)
-
-        # [*, N_atom, N_atom, 3] -> [*, N_atom, N_atom, C_atom_pair]
         plm = self.linear_ref_offset(dlm) * vlm.unsqueeze(-1)
 
-        # 3. Embed pairwise inverse squared distance
-        # [*, N_atom, N_atom, 3] -> [*, N_atom, N_atom, C_atom_pair]
-        inv_dists = self.linear_inv_dists(
-            torch.pow(1.0 + torch.norm(dlm, dim=-1).unsqueeze(-1), -1.0)
-        )
-        plm = plm + inv_dists * vlm.unsqueeze(-1)
-
-        # [*, N_atom, N_atom, C_atom_pair]
+        # Embed pairwise inverse squared distances
+        # [*, N_atom, N_atom, c_atom_pair]
+        inv_sq_dists = 1.0 / (1 + torch.sum(dlm**2, dim=-1, keepdim=True))
+        plm = plm + self.linear_inv_sq_dists(inv_sq_dists) * vlm.unsqueeze(-1)
         plm = plm + self.linear_valid_mask(vlm.unsqueeze(-1)) * vlm.unsqueeze(-1)
+
         return cl, plm
 
 
 class NoisyPositionEmbedder(nn.Module):
+    """
+    Implements AF3 Algorithm 5 (line 8 - 12).
+    """
+
     def __init__(self, c_s: int, c_z: int, c_atom: int, c_atom_pair: int):
         """
-        Implements AF3 Algorithm 5 (line 8 - 12)
-
         Args:
-            c_s:
-                Single activation channel dimension
-            c_z:
-                Pair activation channel dimension
             c_atom:
-                Atom embedding dimension
+                Atom single conditioning channel dimension
             c_atom_pair:
-                Atom pair embedding dimension
+                Atom pair conditioning channel dimension
         """
         super().__init__()
-        self.c_s = c_s
-        self.c_z = c_z
-
         self.layer_norm_s = LayerNorm(c_s)
         self.linear_s = Linear(c_s, c_atom, bias=False)
         self.layer_norm_z = LayerNorm(c_z)
@@ -246,61 +286,69 @@ class NoisyPositionEmbedder(nn.Module):
 
     def forward(
         self,
-        atom_feats: TensorDict,
+        batch: TensorDict,
         cl: torch.Tensor,
         plm: torch.Tensor,
         ql: torch.Tensor,
-        s_trunk: torch.Tensor,
-        zij: torch.Tensor,
+        si_trunk: torch.Tensor,
+        zij_trunk: torch.Tensor,
         rl: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
-            atom_feats: TensorDict with features:
-                - "atom_to_token_index": atom to token index
-                    feature [*, n_atom, n_token,]
-            cl: atom embedding [*, n_atom, c_atom]
-            plm: atom pair embedding [*, n_atom, n_atom, c_atom]
-            ql: token embedding [*, n_atom, c_atom]
-            s_trunk: trunk embedding (per tokens) [*, n_token, c_s]
-            zij: pairwise token embedding [*, n_token, n_token, c_z]
-            rl: noisy coordinates [*, n_atom, 3]
-
+            batch:
+                Input feature dictionary. Features used in this function:
+                    - "atom_to_token_index": [*, N_atom] Token index per atom
+            cl:
+                [*, N_atom, c_atom] Atom single conditioning
+            plm:
+                [*, N_atom, N_atom, c_atom_pair] Atom pair conditioning
+            ql:
+                [*, N_atom, c_atom] Atom single representation
+            si_trunk:
+                [*, N_token, c_s] Trunk single representation
+            zij_trunk:
+                [*, N_token, N_token, c_z] Trunk pair representation
+            rl:
+                [*, N_atom, 3] Noisy atom positions
         Returns:
-            cl: atom embedding with token embd projection [*, n_atom, c_atom]
-            plm: atom pair embedding [*, n_atom, n_atom, c_atom_pair]
-            ql: atom embedding with noisy coordinate projection [*, n_atom, c_atom]
+            cl:
+                [*, N_atom, c_atom] Atom single conditioning with trunk single
+                    representation embedded
+            plm:
+                [*, N_atom, N_atom, c_atom_pair] Atom pair conditioning with trunk pair
+                    representation embedded
+            ql:
+                [*, N_atom, c_atom] Atom single representation with noisy coordinate
+                    projection
         """
+        # Create an one-hot mapping from atom to token index
+        n_token = si_trunk.shape[-2]
+        atom_to_onehot_token_index = torch.nn.functional.one_hot(
+            batch["atom_to_token_index"].to(torch.int64), num_classes=n_token
+        ).to(batch["atom_to_token_index"].dtype)
 
-        # 1. project trunk embedding (s_trunk) onto atom embedding
-        cl = cl + self.linear_s(
-            self.layer_norm_s(
-                torch.sum(
-                    s_trunk.unsqueeze(-3)
-                    * atom_feats["atom_to_token_index"].unsqueeze(-1),
-                    dim=-2,
-                )
-            )
+        # Broadcast trunk single representation into atom single conditioning
+        # [*, N_atom, c_atom]
+        sl_trunk = torch.einsum(
+            "...ic,...li->...lc", si_trunk, atom_to_onehot_token_index
         )
+        cl = cl + self.linear_s(self.layer_norm_s(sl_trunk))
 
-        # 2. project pair embedding
-        # [b, n_token, n_token, c_z]
-        # [b, n_atom, 1, n_token, 1] * [b, 1, n_atom, 1, n_token]
-        atom_pair_to_token_index = (
-            atom_feats["atom_to_token_index"][..., None, :, None]
-            * atom_feats["atom_to_token_index"][..., None, :, None, :]
-        )  # [*, n_atom, n_atom, n_token, n_token]
-        plm = plm + self.linear_z(
-            self.layer_norm_z(
-                torch.sum(
-                    zij[..., None, None, :, :, :] * atom_pair_to_token_index[..., None],
-                    dim=(-2, -3),
-                )
-            )
-        )  # [*, n_atom, n_atom, c_z]
+        # Broadcast trunk pair representation into atom pair conditioning
+        # [*, N_atom, N_atom, c_atom_pair]
+        zlj_trunk = torch.einsum(
+            "...ijc,...li->...ljc", zij_trunk, atom_to_onehot_token_index
+        )
+        zlm_trunk = torch.einsum(
+            "...ljc,...mj->...lmc", zlj_trunk, atom_to_onehot_token_index
+        )
+        plm = plm + self.linear_z(self.layer_norm_z(zlm_trunk))
 
-        # 3. noisy coordinate projection
+        # Add noisy coordinate projection
+        # [*, N_atom, c_atom]
         ql = ql + self.linear_r(rl)
+
         return cl, plm, ql
 
 
@@ -311,64 +359,76 @@ class AtomAttentionEncoder(nn.Module):
 
     def __init__(
         self,
-        c_s: int,
-        c_z: int,
         c_atom_ref: int,
         c_atom: int,
         c_atom_pair: int,
         c_token: int,
-        c_hidden: int,
         add_noisy_pos: bool,
-        no_heads: int = 4,
-        no_blocks: int = 3,
-        n_transition: int = 2,
+        c_hidden: int,
+        no_heads: int,
+        no_blocks: int,
+        n_transition: int,
+        n_query: int,
+        n_key: int,
+        use_ada_layer_norm: bool,
+        use_block_sparse_attn: bool,
+        block_size: Optional[int] = 16,
         inf: float = 1e9,
+        c_s: Optional[int] = None,
+        c_z: Optional[int] = None,
     ):
         """
         Args:
-            c_s:
-                Single representation channel dimension
-            c_z:
-                Pair representation channel dimension
             c_atom_ref:
-                Reference per-atom feature dimension
+                Reference atom feature channel dimension (390)
             c_atom:
-                Atom emebedding channel dimension
+                Atom single representation channel dimension
             c_atom_pair:
-                Atom pair embedding channel dimension
+                Atom pair representation channel dimension
             c_token:
-                Token representation channel dimension
+                Token single representation channel dimension
+            add_noisy_pos:
+                Whether to add noisy positions and trunk embeddings
             c_hidden:
                 Hidden channel dimension
-            add_noisy_pos:
-                Whether to add noised positions and trunk embeddings
             no_heads:
                 Number of attention heads
             no_blocks:
                 Number of attention blocks
             n_transition:
-                Dimension multiplication factor used in transition layer
+                Number of transition blocks
+            n_query:
+                Number of queries (block height)
+            n_key:
+                Number of keys (block width)
+            use_ada_layer_norm:
+                Whether to apply AdaLN-Zero conditioning
+            use_block_sparse_attn:
+                Whether to use Triton block sparse attention kernels
+            block_size:
+                Block size to use in block sparse attention
             inf:
                 Large number used for attention masking
+            c_s:
+                Single representation channel dimension (optional)
+            c_z:
+                Pair representation channel dimension (optional)
         """
         super().__init__()
-
-        self.add_noisy_pos = add_noisy_pos
-
-        self.atom_feature_emb = AtomFeatureEmbedder(
-            c_in=c_atom_ref, c_atom=c_atom, c_atom_pair=c_atom_pair
+        self.ref_atom_feature_embedder = RefAtomFeatureEmbedder(
+            c_atom_ref=c_atom_ref, c_atom=c_atom, c_atom_pair=c_atom_pair
         )
 
         if add_noisy_pos:
-            self.noisy_position_emb = NoisyPositionEmbedder(
+            self.noisy_position_embedder = NoisyPositionEmbedder(
                 c_s=c_s, c_z=c_z, c_atom=c_atom, c_atom_pair=c_atom_pair
             )
 
         self.relu = nn.ReLU()
-        self.linear_l = Linear(
+        self.linear_l = Linear(c_atom, c_atom_pair, bias=False, init="relu")
+        self.linear_m = Linear(
             c_atom, c_atom_pair, bias=False, init="relu"
-        )  # ** changed to (c_atom, c_atompair) from (c_atom, c_atom)
-        self.linear_m = Linear(c_atom, c_atom_pair, bias=False, init="relu")  # ibid
+        )  # TODO: check initialization
 
         self.pair_mlp = nn.Sequential(
             nn.ReLU(),
@@ -386,82 +446,115 @@ class AtomAttentionEncoder(nn.Module):
             no_heads=no_heads,
             no_blocks=no_blocks,
             n_transition=n_transition,
+            n_query=n_query,
+            n_key=n_key,
+            use_ada_layer_norm=use_ada_layer_norm,
+            use_block_sparse_attn=use_block_sparse_attn,
+            block_size=block_size,
             inf=inf,
         )
 
-        self.c_token = c_token
         self.linear_q = nn.Sequential(
             Linear(c_atom, c_token, bias=False, init="relu"), nn.ReLU()
         )
 
     def forward(
         self,
-        atom_feats: TensorDict,
+        batch: TensorDict,
         atom_mask: torch.Tensor,
         rl: Optional[torch.Tensor] = None,
         si_trunk: Optional[torch.Tensor] = None,
-        zij: Optional[torch.Tensor] = None,
+        zij_trunk: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
-            atom_feats: TensorDict with following keys/features:
-                - "ref_pos": atom position, given in Angstrom [*, n_atom, 3]
-                - "ref_mask": atom mask [*, n_atom, 1]
-                - "ref_element": one hot encoding of atomic number
-                    (up to 128) [*, n_atom, 128]
-                - "ref_charge": atom charge [*, n_atom, 1]
-                - "ref_atom_name_chars" WHAT IS THIS? [*, n_atom, 4, 64]
-                - "ref_space_uid": numerical encoding of the chain id and
-                    residue index [*, n_atom, 1]
-                ...
-                - "atom_to_token_index": atom to token index [*, n_atom, n_token,]
+            batch:
+                Input feature dictionary. Features used in this function:
+                    - "ref_pos": [*, N_atom, 3] atom positions in the
+                        reference conformer
+                    - "ref_mask": [*, N_atom] atom mask for the reference conformer
+                    - "ref_element": [*, N_atom, 128] one-hot encoding of atomic number
+                        in the reference conformer
+                    - "ref_charge": [*, N_atom] atom charge in the reference conformer
+                    - "ref_atom_name_chars": [*, N_atom, 4, 64] one-hot encoding of
+                        unicode integers representing unique atom names in the
+                        reference conformer
+                    - "ref_space_uid": [*, n_atom,] numerical encoding of the chain id
+                        and residue index in the reference conformer
+                    - "token_mask": [*, N_token] token mask
+                    - "atom_to_token_index": [*, N_atom] Token index per atom
             atom_mask:
-                [*, N_atom] atom mask
+                [*, N_atom] Atom mask
             rl:
-                [*, N_atom, 3] noised coordinates
+                [*, N_atom, 3] Noisy atom positions (optional)
             si_trunk:
-                [*, N_at, 3] trunk embedding
-            zij:
-                pair embedding
-
+                [*, N_atom, c_s] Trunk single representation (optional)
+            zij_trunk:
+                [*, N_atom, N_atom, c_z] Trunk pair representation (optional)
         Returns:
             ai:
-                token level embedding [*, n_token, c_token]
-            ql: atom level embedding with noisy coordinate info
-                projection [*, n_atom, c_atom]
-            cl: atom level embedding with atom features [*, n_atom, c_atom]
-            plm: atom pairwise embedding [*, n_atom, n_atom, c_atom_pair]
+                [*, N_token, c_token] Token representation
+            ql:
+                [*, N_atom, c_atom] Atom single representation
+            cl:
+                [*, N_atom, c_atom] Atom single conditioning
+            plm:
+                [*, N_atom, N_atom, c_atom_pair] Atom pair representation
         """
-        # 1. atom feature projection (line 1- 6)
-        cl, plm = self.atom_feature_emb(
-            atom_feats
-        )  # [*, n_atom, c_atom], [*, n_atom, n_atom, c_atom_pair]
+        # Embed reference atom features
+        # cl: [*, N_atom, c_atom]
+        # plm: [*, N_atom, N_atom, c_atom_pair]
+        cl, plm = self.ref_atom_feature_embedder(batch)
 
-        ql = cl.detach().clone()
-        # 2. noisy pos projection (line 8 - 12)
+        # Initialize atom single representation
+        # [*, N_atom, c_atom]
+        ql = cl
+        # why detach? ql = cl.detach().clone()
+
+        # Embed noisy atom positions and trunk embeddings
+        # cl: [*, N_atom, c_atom]
+        # plm: [*, N_atom, N_atom, c_atom_pair]
+        # ql: [*, N_atom, c_atom]
         if rl is not None:
-            cl, plm, ql = self.noisy_position_emb(
-                atom_feats, cl, plm, ql, si_trunk, zij, rl
+            cl, plm, ql = self.noisy_position_embedder(
+                batch=batch,
+                cl=cl,
+                plm=plm,
+                ql=ql,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                rl=rl,
             )
 
-        # 3. add the combined single conditioning to the pair rep (line 13 - 14)
+        # Add the combined single conditioning to the pair rep (line 13 - 14)
+        # [*, N_atom, N_atom, c_atom_pair]
         plm = (
             plm
             + self.linear_l(self.relu(cl.unsqueeze(-3)))
             + self.linear_m(self.relu(cl.unsqueeze(-2)))
-        )  # [*, n_atom, c_atom] --> [*, n_atom, n_atom, atom_pair]
+        )
         plm = plm + self.pair_mlp(plm)
 
-        # 4. cross attention transformer (line 15)
+        # Cross attention transformer (line 15)
+        # [*, N_atom, c_atom]
         ql = self.atom_transformer(ql=ql, cl=cl, plm=plm, atom_mask=atom_mask)
 
-        # 5. aggregate
-        token_to_atom_index = atom_feats["atom_to_token_index"].transpose(-1, -2)
-        ai = torch.sum(
-            self.linear_q(ql).unsqueeze(-3) * token_to_atom_index.unsqueeze(-1), dim=-2
-        ) / torch.sum(
-            token_to_atom_index, dim=-1, keepdim=True
-        )  # [b, n_token, c_token]
+        # Create atom to token index conversion matrix
+        # [*, N_token, N_atom]
+        n_token = batch["token_mask"].shape[-1]
+        token_to_onehot_atom_index = (
+            torch.nn.functional.one_hot(
+                batch["atom_to_token_index"].to(torch.int64), num_classes=n_token
+            )
+            .transpose(-1, -2)
+            .to(batch["atom_to_token_index"].dtype)
+        )
+
+        # Aggregate per-atom representation to per-token representation
+        # [*, N_token, c_token]
+        ai = torch.einsum(
+            "...lc,...il->...ic", self.linear_q(ql), token_to_onehot_atom_index
+        ) / torch.sum(token_to_onehot_atom_index, dim=-1, keepdim=True)
 
         return ai, ql, cl, plm
 
@@ -477,21 +570,44 @@ class AtomAttentionDecoder(nn.Module):
         c_atom_pair: int,
         c_token: int,
         c_hidden: int,
-        no_heads: int = 4,
-        no_blocks: int = 3,
-        n_transition: int = 2,
+        no_heads: int,
+        no_blocks: int,
+        n_transition: int,
+        n_query: int,
+        n_key: int,
+        use_ada_layer_norm: bool,
+        use_block_sparse_attn: bool,
+        block_size: Optional[int] = 16,
         inf: float = 1e9,
     ):
         """
-        args:
-            c_token: token embedding dimension
-            c_atom: atom embedding dimension
-            c_atom_pair: atom pair embedding dimension
-            c_hidden: hidden dimension (for atom transformer)
-            no_heads: number of heads (for atom transformer)
-            no_blocks: number of blocks (for atom transformer)
-            n_transition: transition (for aotm transformer)
+        Args:
+            c_atom:
+                Atom single representation channel dimension
+            c_atom_pair:
+                Atom pair representation channel dimension
+            c_token:
+                Token single representation channel dimension
+            c_hidden:
+                Hidden channel dimension
+            no_heads:
+                Number of attention heads
+            no_blocks:
+                Number of attention blocks
+            n_transition:
+                Number of transition blocks
+            n_query:
+                Number of queries (block height)
+            n_key:
+                Number of keys (block width)
+            use_ada_layer_norm:
+                Whether to apply AdaLN-Zero conditioning
+            use_block_sparse_attn:
+                Whether to use Triton block sparse attention kernels
+            block_size:
+                Block size to use in block sparse attention
             inf:
+                Large number used for attention masking
         """
         super().__init__()
 
@@ -504,6 +620,11 @@ class AtomAttentionDecoder(nn.Module):
             no_heads=no_heads,
             no_blocks=no_blocks,
             n_transition=n_transition,
+            n_query=n_query,
+            n_key=n_key,
+            use_ada_layer_norm=use_ada_layer_norm,
+            use_block_sparse_attn=use_block_sparse_attn,
+            block_size=block_size,
             inf=inf,
         )
 
@@ -512,42 +633,48 @@ class AtomAttentionDecoder(nn.Module):
 
     def forward(
         self,
-        atom_feats: TensorDict,
-        ai: torch.Tensor,
-        ql_skip: torch.Tensor,
-        cl_skip: torch.Tensor,
-        plm: torch.Tensor,
+        batch: TensorDict,
         atom_mask: torch.Tensor,
+        ai: torch.Tensor,
+        ql: torch.Tensor,
+        cl: torch.Tensor,
+        plm: torch.Tensor,
     ) -> torch.Tensor:
         """
-        args:
-            atom_feats: TensorDict
-                - "atom_to_token_index: atom to token index [*, n_atom, n_token]
-            ai: token embedding [*, n_token, c_token]
-            ql_skip: atom embedding [*, n_atom, c_atom]
-            cl_skip: atom embedding [*, n_atom, c_atom]
-            plm: pairwise embedding [*, n_atom, n_atom, c_atom_pair]
-
-        returns:
-            r_update: predicted coordinate noise [*, n_atom, 3]
+        Args:
+            batch:
+                Input feature dictionary. Features used in this function:
+                    - "atom_to_token_index": [*, N_atom] Token index per atom
+            atom_mask:
+                [*, N_atom] Atom mask
+            ai:
+                [*, N_token, c_token] Token representation
+            ql:
+                [*, N_atom, c_atom] Atom single representation
+            cl:
+                [*, N_atom, c_atom] Atom single conditioning
+            plm:
+                [*, N_atom, N_atom, c_atom_pair] Atom pair representation
+        Returns:
+            rl_update:
+                [*, N_atom, 3] Atom position updates
         """
-        # 'atom_to_token_index': [b, n_atom, n_token]
+        # Broadcast per-token activations to atoms
+        # [*, N_atom, c_atom]
+        n_token = ai.shape[-2]
+        atom_to_onehot_token_index = torch.nn.functional.one_hot(
+            batch["atom_to_token_index"].to(torch.int64), num_classes=n_token
+        ).to(batch["atom_to_token_index"].dtype)
+        ql = ql + torch.einsum(
+            "...ic,...li->...lc", self.linear_q_in(ai), atom_to_onehot_token_index
+        )
 
-        # 1. broadcast projected token embd
-        ql_skip = ql_skip + torch.sum(
-            self.linear_q_in(ai).unsqueeze(-3)
-            * atom_feats["atom_to_token_index"].unsqueeze(-1),
-            dim=-2,
-        )  # [*, n_atom, c_atom]
+        # Atom transformer
+        # [*, N_atom, c_atom]
+        ql = self.atom_transformer(ql=ql, cl=cl, plm=plm, atom_mask=atom_mask)
 
-        # 2. atom transformer
-        q_out = self.atom_transformer(
-            ql_skip, cl_skip, plm, atom_mask
-        )  # q_out: shape [*, n_atom, c_atom]
+        # Compute updates for atom positions
+        # [*, N_atom, 3]
+        rl_update = self.linear_q_out(self.layer_norm(ql))
 
-        # 3. predict the noise
-        r_update = self.linear_q_out(
-            self.layer_norm(q_out)
-        )  # [*, n_atom, c_atom] -> [*, n_atom, 3]
-
-        return r_update
+        return rl_update

@@ -22,3 +22,4 @@ conda env config vars set KMP_AFFINITY=none
 
 export LIBRARY_PATH=$CONDA_PREFIX/lib:$LIBRARY_PATH
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+export PATH=$PATH:/sbin  # TODO: Check if this is necessary, or is NERSC-specific

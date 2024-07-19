@@ -14,7 +14,7 @@
 # limitations under the License.
 
 """
-Embedders for input features. Includes InputEmbedders for monomer, multimer, soloseq",
+Embedders for input features. Includes InputEmbedders for monomer, multimer, soloseq,
 and all-atom models. Also includes the RecyclingEmbedder and ExtraMSAEmbedder.
 """
 
@@ -24,9 +24,7 @@ from typing import Dict, Tuple
 import torch
 import torch.nn as nn
 
-from openfold3.core.model.layers.sequence_local_atom_attention import (
-    AtomAttentionEncoder,
-)
+from openfold3.core.model.layers import AtomAttentionEncoder
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.tensor_utils import add, one_hot
 
@@ -314,9 +312,8 @@ class RelposAllAtom(nn.Module):
     def __init__(
         self,
         c_z: int,
-        max_relative_idx: int = 2,
-        max_relative_chain: int = 32,
-        **kwargs,
+        max_relative_idx: int,
+        max_relative_chain: int,
     ):
         """
         Args:
@@ -429,54 +426,31 @@ class InputEmbedderAllAtom(nn.Module):
 
     def __init__(
         self,
-        c_atom_ref: int,
-        c_atom: int,
-        c_atom_pair: int,
-        c_token: int,
         c_s_input: int,
         c_s: int,
         c_z: int,
-        c_hidden_att: int,
         max_relative_idx: int,
         max_relative_chain: int,
-        **kwargs,
+        atom_attn_enc: Dict,
     ):
         """
         Args:
-            c_atom_ref:
-                Reference per-atom feature dimension
-            c_atom:
-                Atom embedding channel dimension
-            c_atom_pair:
-                Atom pair embedding channel dimension
-            c_token:
-                Token representation channel dimension
             c_s_input:
                 Per token input representation channel dimension
             c_s:
                 Single representation channel dimension
             c_z:
                 Pair representation channel dimension
-            c_hidden_att:
-                Hidden channel dimension
             max_relative_idx:
                 Maximum relative position and token indices clipped
             max_relative_chain:
                 Maximum relative chain indices clipped
-            **kwargs:
+            atom_attn_enc:
+                Config for the AtomAttentionEncoder
         """
         super().__init__()
 
-        self.atom_attn_enc = AtomAttentionEncoder(
-            c_s=c_s,
-            c_z=c_z,
-            c_atom_ref=c_atom_ref,
-            c_atom=c_atom,
-            c_atom_pair=c_atom_pair,
-            c_token=c_token,
-            c_hidden=c_hidden_att,
-            add_noisy_pos=False,
-        )
+        self.atom_attn_enc = AtomAttentionEncoder(**atom_attn_enc, add_noisy_pos=False)
 
         self.linear_s = Linear(c_s_input, c_s, bias=False)
         self.linear_z_i = Linear(c_s_input, c_z, bias=False)
@@ -488,7 +462,7 @@ class InputEmbedderAllAtom(nn.Module):
             max_relative_chain=max_relative_chain,
         )
 
-        self.linear_tok_bonds = Linear(1, c_z, bias=False)
+        self.linear_token_bonds = Linear(1, c_z, bias=False)
 
     def forward(
         self, batch: Dict, inplace_safe: bool = False
@@ -507,10 +481,15 @@ class InputEmbedderAllAtom(nn.Module):
             z:
                 [*, N_token, N_token, C_z] Pair representation
         """
-        a, _, _, _ = self.atom_attn_enc(
-            atom_feats=batch,
-            atom_mask=batch["atom_mask"],  # TODO: Change to match diffusion module code
+        n_token = batch["token_mask"].shape[-1]
+        atom_to_onehot_token_index = torch.nn.functional.one_hot(
+            batch["atom_to_token_index"].to(torch.int64), num_classes=n_token
+        ).to(batch["atom_to_token_index"].dtype)
+        atom_mask = torch.einsum(
+            "...li,...i->...l", atom_to_onehot_token_index, batch["token_mask"]
         )
+
+        a, _, _, _ = self.atom_attn_enc(batch=batch, atom_mask=atom_mask)
 
         # [*, N_token, C_s_input]
         s_input = torch.cat(
@@ -528,13 +507,13 @@ class InputEmbedderAllAtom(nn.Module):
 
         s_input_emb_i = self.linear_z_i(s_input)
         s_input_emb_j = self.linear_z_j(s_input)
-        tok_bonds_emb = self.linear_tok_bonds(batch["token_bonds"].unsqueeze(-1))
+        token_bonds_emb = self.linear_token_bonds(batch["token_bonds"].unsqueeze(-1))
 
         # [*, N_token, N_token, C_z]
         z = self.relpos(batch)
         z = add(z, s_input_emb_i[..., None, :], inplace=inplace_safe)
         z = add(z, s_input_emb_j[..., None, :, :], inplace=inplace_safe)
-        z = add(z, tok_bonds_emb, inplace=inplace_safe)
+        z = add(z, token_bonds_emb, inplace=inplace_safe)
 
         return s_input, s, z
 
@@ -562,7 +541,7 @@ class MSAModuleEmbedder(nn.Module):
 
     def forward(
         self, batch: Dict, s_input: torch.Tensor
-    ) -> list[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:
@@ -844,3 +823,29 @@ class ExtraMSAEmbedder(nn.Module):
         x = self.linear(x)
 
         return x
+
+
+class FourierEmbedding(nn.Module):
+    """
+    Implements AF3 Algorithm 22.
+    """
+
+    def __init__(self, c: int):
+        """
+        Args:
+            c:
+                Embedding dimension
+        """
+        super().__init__()
+
+        self.linear = Linear(in_dim=1, out_dim=c, bias=True, init="fourier")
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x:
+                [*, 1] Input tensor
+        Returns:
+            [*, c] Embedding
+        """
+        return torch.cos(2 * torch.pi * self.linear(x))
