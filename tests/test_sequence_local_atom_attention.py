@@ -11,6 +11,7 @@ from openfold3.core.model.layers import (
     RefAtomFeatureEmbedder,
 )
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
+from openfold3.model_implementations.af3_all_atom.config import c_atom_ref
 from tests.config import consts
 
 
@@ -18,7 +19,6 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
     def test_without_n_sample_channel(self):
         batch_size = consts.batch_size
         n_atom = 4 * consts.n_res
-        c_atom_ref = 390
         c_atom = 64
         c_atom_pair = 16
 
@@ -43,7 +43,6 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
     def test_with_n_sample_channel(self):
         batch_size = consts.batch_size
         n_atom = 4 * consts.n_res
-        c_atom_ref = 390
         c_atom = 64
         c_atom_pair = 16
 
@@ -329,7 +328,6 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
         n_atom = 4 * consts.n_res
-        c_atom_ref = 390
         c_atom = 128
         c_atom_pair = 16
         c_token = 384
@@ -385,7 +383,6 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         n_atom = 4 * consts.n_res
         c_s = consts.c_s
         c_z = consts.c_z
-        c_atom_ref = 390
         c_atom = 128
         c_atom_pair = 16
         c_token = 384

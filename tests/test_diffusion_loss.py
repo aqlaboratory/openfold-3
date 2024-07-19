@@ -259,9 +259,9 @@ class TestDiffusionLoss(unittest.TestCase):
         alpha_bond = 1
 
         x_gt = torch.randn((batch_size, n_atom, 3))
-        atom_mask = torch.ones((batch_size, n_atom))
+        atom_mask_gt = torch.ones((batch_size, n_atom))
 
-        x = centre_random_augmentation(x_gt, atom_mask)
+        x = centre_random_augmentation(x_gt, atom_mask_gt)
 
         batch = {
             "is_protein": torch.concat(
@@ -313,7 +313,7 @@ class TestDiffusionLoss(unittest.TestCase):
             batch=batch,
             x=x,
             x_gt=x_gt,
-            atom_mask=atom_mask,
+            atom_mask_gt=atom_mask_gt,
             t=t,
             sigma_data=sigma_data,
             alpha_bond=alpha_bond,

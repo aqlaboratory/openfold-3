@@ -181,13 +181,13 @@ class SwiGLUTransition(nn.Module):
         self.linear_out = Linear(self.n * self.c_in, c_in, bias=False, init="final")
 
     def _transition(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        # [*, N_res, C_in]
+        # [*, N, C_in]
         x = self.layer_norm(x)
 
-        # [*, N_res, C_hidden]
+        # [*, N, C_hidden]
         x = self.swiglu(x)
 
-        # [*, N_res, C_in]
+        # [*, N, C_in]
         x = self.linear_out(x)
         x = x * mask
 
@@ -216,19 +216,19 @@ class SwiGLUTransition(nn.Module):
         """
         Args:
             x:
-                [*, N_res, C_in] Input activation
+                [*, N, C_in] Input activation
             mask:
-                [*, N_res] Input mask
+                [*, N] Input mask
             chunk_size
                 Chunk size for chunking the input tensor
         Returns:
             x:
-                [*, N_res, C_in] Activation update
+                [*, N, C_in] Activation update
         """
         if mask is None:
             mask = x.new_ones(x.shape[:-1])
 
-        # [*, N_res, 1]
+        # [*, N, 1]
         mask = mask.unsqueeze(-1)
 
         if chunk_size is not None:
@@ -269,8 +269,43 @@ class ConditionedTransitionBlock(nn.Module):
         self.linear_g = Linear(self.c_s, self.c_a, init="gating_ada_zero")
         self.linear_out = Linear(self.n * self.c_a, self.c_a, bias=False, init="final")
 
+    def _transition(
+        self, a: torch.Tensor, s: torch.Tensor, mask: torch.Tensor
+    ) -> torch.Tensor:
+        # [*, N, C_in]
+        a = self.layer_norm(a, s)
+
+        # [*, N, C_hidden]
+        b = self.swiglu(a)
+
+        # AdaLN-zero
+        # [*, N, C_in]
+        a = self.sigmoid(self.linear_g(s)) * self.linear_out(b)
+        a = a * mask
+
+        return a
+
+    @torch.jit.ignore
+    def _chunk(
+        self,
+        a: torch.Tensor,
+        s: torch.Tensor,
+        mask: torch.Tensor,
+        chunk_size: int,
+    ) -> torch.Tensor:
+        return chunk_layer(
+            self._transition,
+            {"a": a, "s": s, "mask": mask},
+            chunk_size=chunk_size,
+            no_batch_dims=len(a.shape[:-2]),
+        )
+
     def forward(
-        self, a: torch.Tensor, s: torch.Tensor, mask: Optional[torch.Tensor] = None
+        self,
+        a: torch.Tensor,
+        s: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+        chunk_size: Optional[int] = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -287,11 +322,10 @@ class ConditionedTransitionBlock(nn.Module):
 
         mask = mask.unsqueeze(-1)
 
-        a = self.layer_norm(a, s)
-        b = self.swiglu(a)
-        # AdaLN-zero
-        a = self.sigmoid(self.linear_g(s)) * self.linear_out(b)
-        a = a * mask
+        if chunk_size is not None:
+            a = self._chunk(a=a, s=s, mask=mask, chunk_size=chunk_size)
+        else:
+            a = self._transition(a=a, s=s, mask=mask)
 
         return a
 

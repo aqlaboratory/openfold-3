@@ -306,6 +306,9 @@ class PairBlock(nn.Module):
         if not inplace_safe:
             z = z + self.ps_dropout_row_layer(tmu_update)
         else:
+            # TODO: Inplace operations won't work if we enable dropout during inference
+            # Potentially add check to make sure dropout is disabled if using
+            # inplace ops
             z = tmu_update
 
         del tmu_update
@@ -353,6 +356,8 @@ class PairBlock(nn.Module):
         if inplace_safe:
             z = z.contiguous()
 
+        # Using dropout_row_layer since the dimensions were transposed before
+        # calling the attention layer
         z = add(
             z,
             self.ps_dropout_row_layer(

@@ -546,7 +546,7 @@ class MSAPairWeightedAveraging(nn.Module):
         mask: Optional[torch.Tensor],
     ) -> torch.Tensor:
         if mask is None:
-            # [*, I, J]
+            # [*, N_seq, N_res]
             mask = m.new_ones(
                 m.shape[:-1],
             )

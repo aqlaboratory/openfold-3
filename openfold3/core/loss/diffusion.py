@@ -22,7 +22,7 @@ def weighted_rigid_align(
     x: torch.Tensor,
     x_gt: torch.Tensor,
     w: torch.Tensor,
-    atom_mask: torch.Tensor,
+    atom_mask_gt: torch.Tensor,
 ) -> torch.Tensor:
     """
     Implements AF3 Algorithm 28.
@@ -34,21 +34,21 @@ def weighted_rigid_align(
             [*, N_atom, 3] Groundtruth atom positions (reference point clouds)
         w:
             [*, N_atom] Weights based on molecule type
-        atom_mask:
+        atom_mask_gt:
             [*, N_atom] Atom mask
     Returns:
         [*, N_atom, 3] Aligned atom positions
     """
     # Mean-centre positions
-    w_mean = torch.sum(w * atom_mask, dim=-1, keepdim=True) / torch.sum(
-        atom_mask, dim=-1, keepdim=True
+    w_mean = torch.sum(w * atom_mask_gt, dim=-1, keepdim=True) / torch.sum(
+        atom_mask_gt, dim=-1, keepdim=True
     )
-    wx_mean = torch.sum(x * w[..., None] * atom_mask[..., None], dim=-2) / torch.sum(
-        atom_mask, dim=-1, keepdim=True
+    wx_mean = torch.sum(x * w[..., None] * atom_mask_gt[..., None], dim=-2) / torch.sum(
+        atom_mask_gt, dim=-1, keepdim=True
     )
     wx_gt_mean = torch.sum(
-        x_gt * w[..., None] * atom_mask[..., None], dim=-2
-    ) / torch.sum(atom_mask, dim=-1, keepdim=True)
+        x_gt * w[..., None] * atom_mask_gt[..., None], dim=-2
+    ) / torch.sum(atom_mask_gt, dim=-1, keepdim=True)
     mu = wx_mean / w_mean
     mu_gt = wx_gt_mean / w_mean
     x = x - mu[..., None, :]
@@ -56,7 +56,7 @@ def weighted_rigid_align(
 
     # Construct covariance matrix
     H = x_gt[..., None] * x[..., None, :]
-    H = H * w[..., None, None] * atom_mask[..., None, None]
+    H = H * w[..., None, None] * atom_mask_gt[..., None, None]
     H = torch.sum(H, dim=-3)
 
     # Find optimal rotation from single value decomposition
@@ -78,7 +78,7 @@ def mse_loss(
     batch: Dict,
     x: torch.Tensor,
     x_gt: torch.Tensor,
-    atom_mask: torch.Tensor,
+    atom_mask_gt: torch.Tensor,
     alpha_dna: float,
     alpha_rna: float,
     alpha_ligand: float,
@@ -93,7 +93,7 @@ def mse_loss(
             [*, N_atom, 3] Atom positions
         x_gt:
             [*, N_atom, 3] Groundtruth atom positions
-        atom_mask:
+        atom_mask_gt:
             [*, N_atom] Atom mask
         alpha_dna:
             Upweight factor for DNA atoms
@@ -116,17 +116,17 @@ def mse_loss(
     w = torch.sum(batch["atom_to_token_index"] * w[..., None, :], dim=-1)
 
     # Perform weighted rigid alignment
-    x_gt_aligned = weighted_rigid_align(x=x_gt, x_gt=x, w=w, atom_mask=atom_mask)
+    x_gt_aligned = weighted_rigid_align(x=x_gt, x_gt=x, w=w, atom_mask_gt=atom_mask_gt)
 
     return (
         (1 / 3.0)
-        * torch.sum(torch.sum((x - x_gt_aligned) ** 2, dim=-1) * w * atom_mask)
-        / torch.sum(atom_mask, dim=-1)
+        * torch.sum(torch.sum((x - x_gt_aligned) ** 2, dim=-1) * w * atom_mask_gt)
+        / torch.sum(atom_mask_gt, dim=-1)
     )
 
 
 def bond_loss(
-    batch: Dict, x: torch.Tensor, x_gt: torch.Tensor, atom_mask: torch.Tensor
+    batch: Dict, x: torch.Tensor, x_gt: torch.Tensor, atom_mask_gt: torch.Tensor
 ) -> torch.Tensor:
     """
     Implements AF3 Equation 5.
@@ -138,7 +138,7 @@ def bond_loss(
             [*, N_atom, 3] Atom positions
         x_gt:
             [*, N_atom, 3] Groundtruth atom positions
-        atom_mask:
+        atom_mask_gt:
             [*, N_atom] Atom mask
     Returns:
         [*] Auxiliary loss for bonded ligands
@@ -164,14 +164,14 @@ def bond_loss(
     )
 
     # Compute polymer-ligand bond loss
-    mask = bond_mask * (atom_mask[..., None] * atom_mask[..., None, :])
+    mask = bond_mask * (atom_mask_gt[..., None] * atom_mask_gt[..., None, :])
     return torch.sum((dx - dx_gt) ** 2 * mask, dim=(-1, -2)) / torch.sum(
         mask, dim=(-1, -2)
     )
 
 
 def smooth_lddt_loss(
-    batch: Dict, x: torch.Tensor, x_gt: torch.Tensor, atom_mask: torch.Tensor
+    batch: Dict, x: torch.Tensor, x_gt: torch.Tensor, atom_mask_gt: torch.Tensor
 ) -> torch.Tensor:
     """
     Implements AF3 Algorithm 27.
@@ -183,7 +183,7 @@ def smooth_lddt_loss(
             [*, N_atom, 3] Atom positions
         x_gt:
             [*, N_atom, 3] Groundtruth atom positions
-        atom_mask:
+        atom_mask_gt:
             [*, N_atom] Atom mask
     Returns:
         [*] Auxiliary structure-based loss based on smooth LDDT
@@ -216,7 +216,7 @@ def smooth_lddt_loss(
 
     # [*]
     mask = 1 - torch.eye(x.shape[-2], device=x.device).tile(*x.shape[:-2], 1, 1)
-    mask = mask * (atom_mask[..., None] * atom_mask[..., None, :])
+    mask = mask * (atom_mask_gt[..., None] * atom_mask_gt[..., None, :])
     ce_mean = torch.sum(c * e * mask, dim=(-1, -2)) / torch.sum(mask, dim=(-1, -2))
     c_mean = torch.sum(c * mask, dim=(-1, -2)) / torch.sum(mask, dim=(-1, -2))
     lddt = ce_mean / c_mean
@@ -228,7 +228,7 @@ def diffusion_loss(
     batch: Dict,
     x: torch.Tensor,
     x_gt: torch.Tensor,
-    atom_mask: torch.Tensor,
+    atom_mask_gt: torch.Tensor,
     t: torch.Tensor,
     sigma_data: float,
     alpha_bond: float,
@@ -246,7 +246,7 @@ def diffusion_loss(
             [*, N_atom, 3] Atom positions
         x_gt:
             [*, N_atom, 3] Groundtruth atom positions
-        atom_mask:
+        atom_mask_gt:
             [*, N_atom] Atom mask
         t:
             [*] Noise level at a diffusion step
@@ -267,15 +267,17 @@ def diffusion_loss(
         batch=batch,
         x=x,
         x_gt=x_gt,
-        atom_mask=atom_mask,
+        atom_mask_gt=atom_mask_gt,
         alpha_dna=alpha_dna,
         alpha_rna=alpha_rna,
         alpha_ligand=alpha_ligand,
     )
 
-    l_bond = bond_loss(batch=batch, x=x, x_gt=x_gt, atom_mask=atom_mask)
+    l_bond = bond_loss(batch=batch, x=x, x_gt=x_gt, atom_mask_gt=atom_mask_gt)
 
-    l_smooth_lddt = smooth_lddt_loss(batch=batch, x=x, x_gt=x_gt, atom_mask=atom_mask)
+    l_smooth_lddt = smooth_lddt_loss(
+        batch=batch, x=x, x_gt=x_gt, atom_mask_gt=atom_mask_gt
+    )
 
     w = (t**2 + sigma_data**2) / (t + sigma_data) ** 2
     l = w * (l_mse + alpha_bond * l_bond) + l_smooth_lddt
