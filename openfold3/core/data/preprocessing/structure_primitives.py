@@ -286,7 +286,7 @@ def build_unresolved_polymer_segment(
     """
     if polymer_type == "nucleic_acid":
         logging.info("Building unresolved nucleic acid segment!")  # dev-only: del later
-        
+
     # Set occupancy to 0.0
     default_annotations["occupancy"] = 0.0
 
