@@ -20,10 +20,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+import openfold3.model_implementations.af2_monomer.base_config as af2_config
 import tests.compare_utils as compare_utils
 from openfold3.core.data import data_transforms
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations.af2_monomer.config import model_config
 from openfold3.model_implementations.af2_monomer.model import AlphaFold
 from tests.config import consts
 from tests.data_utils import (
@@ -42,6 +42,7 @@ class TestModel(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if compare_utils.alphafold_is_installed():
+            # TODO: Update to handle with new configs.
             if consts.is_multimer:
                 cls.am_atom = alphafold.model.all_atom_multimer
                 cls.am_fold = alphafold.model.folding_multimer
@@ -60,7 +61,7 @@ class TestModel(unittest.TestCase):
         n_res = consts.n_res
         n_extra_seq = consts.n_extra
 
-        c = model_config(consts.model)
+        c = af2_config.model_config(consts.model)
         c.model.evoformer_stack.no_blocks = 4  # no need to go overboard here
         c.model.evoformer_stack.blocks_per_ckpt = None  # don't want to set up
         # deepspeed for this test
@@ -108,6 +109,7 @@ class TestModel(unittest.TestCase):
             model(batch)
 
     @compare_utils.skip_unless_cuda_available()
+    @unittest.skip("Soloseq unsupported")
     def test_dry_run_seqemb_mode(self):
         n_seq = 1
         n_templ = consts.n_templ

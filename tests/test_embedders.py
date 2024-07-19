@@ -32,7 +32,7 @@ from openfold3.core.model.feature_embedders import (
     TemplateSingleEmbedderMonomer,
     TemplateSingleEmbedderMultimer,
 )
-from openfold3.model_implementations.af2_monomer.config import model_config
+from openfold3.model_implementations.af2_monomer.base_config import model_config
 from openfold3.model_implementations.af3_all_atom.config import config as af3_config
 from tests.config import consts, monomer_consts, multimer_consts
 from tests.data_utils import random_asym_ids, random_template_feats

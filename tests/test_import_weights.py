@@ -23,7 +23,7 @@ from openfold3.core.utils.import_weights import (
     import_jax_weights_,
     import_openfold_weights_,
 )
-from openfold3.model_implementations.af2_monomer.config import model_config
+from openfold3.model_implementations.af2_monomer.base_config import model_config
 from openfold3.model_implementations.af2_monomer.model import AlphaFold
 from tests.config import consts
 

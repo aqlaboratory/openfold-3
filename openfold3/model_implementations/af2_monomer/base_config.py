@@ -1,7 +1,7 @@
-import copy
-import importlib
+from pathlib import Path
 
 import ml_collections as mlc
+from openfold3.core.utils import config_utils
 from openfold3.model_implementations.af2_monomer.features import feature_dict
 
 c_z = mlc.FieldReference(128, field_type=int)
@@ -350,3 +350,10 @@ config = mlc.ConfigDict(
         "ema": {"decay": 0.999},
     }
 )
+
+
+def model_config(model_preset: str):
+    ref_yaml_path = Path(__file__).with_name('reference_config.yml')
+    reference_configs = config_utils.load_yaml(ref_yaml_path)
+    model_preset_config = reference_configs[model_preset]
+    return config_utils.update_config_dict(config, model_preset_config) 
