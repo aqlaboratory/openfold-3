@@ -396,21 +396,8 @@ def add_unresolved_polymer_residues(
             Parsed Chemical Component Dictionary (CCD) containing the residue
             information.
     """
-    # Flat list of residue-wise entity IDs for all polymeric sequences
-    entity_ids_flat = cif_data["entity_poly_seq"]["entity_id"].as_array(dtype=int)
-
-    # Get sequence lengths for every polymeric entity
-    entity_ids, new_entity_starts, seq_lengths = np.unique(
-        entity_ids_flat, return_index=True, return_counts=True
-    )
-    entity_id_to_seqlength = dict(zip(entity_ids, seq_lengths))
-
-    # Get full (3-letter code) residue sequence for every polymeric entity
-    entity_monomers = cif_data["entity_poly_seq"]["mon_id"].as_array()
-    entity_id_to_seqres = {
-        entity_id: entity_monomers[start : start + length]
-        for entity_id, start, length in zip(entity_ids, new_entity_starts, seq_lengths)
-    }
+    # Three-letter residue codes of all monomers in the entire sequence
+    entity_id_to_3l_seq = get_entity_to_three_letter_codes_dict(cif_data)
 
     # This will be extended with unresolved residues
     extended_atom_array = atom_array.copy()
@@ -442,14 +429,14 @@ def add_unresolved_polymer_residues(
                 raise ValueError(f"Unknown molecule type: {chain_type}")
 
         # Three-letter residue codes of the full chain
-        chain_seqres = entity_id_to_seqres[chain_entity_id]
+        chain_3l_seq = entity_id_to_3l_seq[chain_entity_id]
 
         # Atom annotations of first atom (as template for unresolved residue
         # annotations while updating res_id and atom_idx)
         template_annotations = first_atom._annot.copy()
         template_annotations["ins_code"] = ""
 
-        # Fill missing residues at chain start
+        ## Fill missing residues at chain start
         if first_atom.res_id > 1:
             n_missing_residues = first_atom.res_id - 1
 
@@ -458,7 +445,7 @@ def add_unresolved_polymer_residues(
             default_annotations["atom_idx"] = first_atom.atom_idx
 
             segment = build_unresolved_polymer_segment(
-                residue_codes=chain_seqres[:n_missing_residues],
+                residue_codes=chain_3l_seq[:n_missing_residues],
                 ccd=ccd,
                 polymer_type=polymer_type,
                 default_annotations=default_annotations,
@@ -485,20 +472,19 @@ def add_unresolved_polymer_residues(
                 bond_type=bond_type,
             )
 
-        # Fill missing residues at chain end
+        ## Fill missing residues at chain end
         last_atom = extended_atom_array[chain_end]
+        full_seq_length = len(entity_id_to_3l_seq[chain_entity_id])
 
-        if last_atom.res_id < entity_id_to_seqlength[chain_entity_id]:
-            n_missing_residues = (
-                entity_id_to_seqlength[chain_entity_id] - last_atom.res_id
-            )
+        if last_atom.res_id < full_seq_length:
+            n_missing_residues = full_seq_length - last_atom.res_id
 
             default_annotations = template_annotations.copy()
             default_annotations["res_id"] = last_atom.res_id + 1
             default_annotations["atom_idx"] = last_atom.atom_idx + 1
 
             segment = build_unresolved_polymer_segment(
-                residue_codes=chain_seqres[-n_missing_residues:],
+                residue_codes=chain_3l_seq[-n_missing_residues:],
                 ccd=ccd,
                 polymer_type=polymer_type,
                 default_annotations=default_annotations,
@@ -527,7 +513,7 @@ def add_unresolved_polymer_residues(
         res_id_gaps = np.diff(extended_atom_array.res_id[chain_start : chain_end + 1])
         chain_break_start_idxs = np.where(res_id_gaps > 1)[0] + chain_start
 
-        # Fill missing residues within the chain
+        ## Fill missing residues within the chain
         for chain_break_start_idx in chain_break_start_idxs:
             chain_break_end_idx = chain_break_start_idx + 1
             break_start_atom = extended_atom_array[chain_break_start_idx]
@@ -540,7 +526,7 @@ def add_unresolved_polymer_residues(
             default_annotations["atom_idx"] = break_start_atom.atom_idx + 1
 
             # Residue IDs start with 1 so the indices are offset
-            segment_residue_codes = chain_seqres[
+            segment_residue_codes = chain_3l_seq[
                 break_start_atom.res_id : break_end_atom.res_id - 1
             ]
 
