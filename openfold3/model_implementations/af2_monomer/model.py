@@ -29,7 +29,7 @@ from openfold3.core.model.latent.template_module import (
     embed_templates_average,
     embed_templates_offload,
 )
-from openfold3.core.model.structure.structure_module import StructureModule
+from openfold3.core.model.structure.structure_module import StructureModuleMonomer
 from openfold3.core.np import residue_constants
 from openfold3.core.utils.feats import (
     atom14_to_atom37,
@@ -82,10 +82,8 @@ class AlphaFold(nn.Module):
             **self.config["evoformer_stack"],
         )
 
-        # TODO: Revisit Structure module to modularize it and remove is_multimer flag?
         # Most of the piping has to do with the recycling dimensions
-        self.structure_module = StructureModule(
-            is_multimer=False,
+        self.structure_module = StructureModuleMonomer(
             **self.config["structure_module"],
         )
         # TODO: Specify using AuxiliaryHeadsAF2
