@@ -276,15 +276,24 @@ class TestDeepSpeedKernel(unittest.TestCase):
             model = compare_utils.get_global_pretrained_openfold()
             model.globals.use_deepspeed_evo_attention = False
             if consts.is_multimer:
-                args = (template_feats, batch, torch.as_tensor(pair_act).cuda(),  torch.as_tensor(pair_mask).cuda())
+                args = (
+                    template_feats,
+                    batch,
+                    torch.as_tensor(pair_act).cuda(),
+                    torch.as_tensor(pair_mask).cuda(),
+                )
             else:
-                args = (batch, torch.as_tensor(pair_act).cuda(),  torch.as_tensor(pair_mask).cuda())
+                args = (
+                    batch,
+                    torch.as_tensor(pair_act).cuda(),
+                    torch.as_tensor(pair_mask).cuda(),
+                )
 
             out_repro = model.embed_templates(
-                    *args,
-                    templ_dim=0,
-                    inplace_safe=False,
-                )
+                *args,
+                templ_dim=0,
+                inplace_safe=False,
+            )
             out_repro = out_repro["template_pair_embedding"].cpu()
 
             model.globals.use_deepspeed_evo_attention = True

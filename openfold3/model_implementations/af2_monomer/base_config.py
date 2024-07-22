@@ -364,7 +364,7 @@ config = mlc.ConfigDict(
 
 
 def model_config(model_preset: str):
-    if model_preset == 'initial_training':
+    if model_preset == "initial_training":
         return config
     else:
         ref_yaml_path = Path(__file__).with_name("reference_config.yml")
