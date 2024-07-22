@@ -1,28 +1,35 @@
-from typing import Sequence, Optional
 import dataclasses
+from typing import Optional, Sequence
 
-DeletionMatrix = Sequence[Sequence[int]]
+import numpy as np
+
 
 @dataclasses.dataclass(frozen=True)
 class Msa:
     """Class representing a parsed MSA file"""
 
-    sequences: Sequence[str]
-    deletion_matrix: DeletionMatrix
-    descriptions: Optional[Sequence[str]]
-
-    def __post_init__(self):
-        if not (
-            len(self.sequences) == len(self.deletion_matrix) == len(self.descriptions)
-        ):
-            raise ValueError("All fields for an MSA must have the same length")
+    msa: np.array
+    deletion_matrix: np.array
+    headers: Optional[Sequence[str]]
 
     def __len__(self):
         return len(self.sequences)
 
     def truncate(self, max_seqs: int):
         return Msa(
-            sequences=self.sequences[:max_seqs],
+            msa=self.msa[:max_seqs],
             deletion_matrix=self.deletion_matrix[:max_seqs],
-            descriptions=self.descriptions[:max_seqs],
+            headers=self.descriptions[:max_seqs],
         )
+
+
+def parse_headers(msa: Msa):
+    """_summary_
+
+    Args:
+        msa (Msa): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    return msa.headers
