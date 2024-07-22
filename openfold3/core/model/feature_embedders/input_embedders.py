@@ -354,7 +354,9 @@ class RelposAllAtom(nn.Module):
             + num_same_entity_features
         )
 
-        self.linear_relpos = Linear(self.num_dims, c_z, **linear_init_params.linear_relpos)
+        self.linear_relpos = Linear(
+            self.num_dims, c_z, **linear_init_params.linear_relpos
+        )
 
     @staticmethod
     def relpos(
@@ -484,7 +486,9 @@ class InputEmbedderAllAtom(nn.Module):
         )
 
         # Expecting binary feature "token_bonds" of shape [*, N_token, N_token, 1]
-        self.linear_token_bonds = Linear(1, c_z, **linear_init_params.linear_token_bonds)
+        self.linear_token_bonds = Linear(
+            1, c_z, **linear_init_params.linear_token_bonds
+        )
 
     def forward(
         self, batch: Dict, inplace_safe: bool = False
