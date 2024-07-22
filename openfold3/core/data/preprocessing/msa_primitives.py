@@ -33,3 +33,4 @@ def parse_headers(msa: Msa):
         _type_: _description_
     """
     return msa.headers
+
