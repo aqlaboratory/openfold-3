@@ -25,7 +25,9 @@ from typing import Optional, Sequence, Tuple
 
 import torch
 import torch.nn as nn
+from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers.msa import MSARowAttentionWithPairBias
 from openfold3.core.model.layers.outer_product_mean import OuterProductMean
 from openfold3.core.model.layers.transition import ReLUTransition, SwiGLUTransition
@@ -65,6 +67,7 @@ class MSABlock(nn.Module, ABC):
         fuse_projection_weights: bool,
         inf: float,
         eps: float,
+        linear_init_params: ConfigDict = lin_init.msa_block_init,
     ):
         """
         Args:
@@ -105,6 +108,8 @@ class MSABlock(nn.Module, ABC):
                 Large constant for masking
             eps:
                 Small constant for numerical stability
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -116,6 +121,7 @@ class MSABlock(nn.Module, ABC):
             c_hidden=c_hidden_msa_att,
             no_heads=no_heads_msa,
             inf=inf,
+            linear_init_params=linear_init_params.msa_row_att,
         )
 
         self.msa_dropout_layer = DropoutRowwise(msa_dropout)
@@ -124,19 +130,19 @@ class MSABlock(nn.Module, ABC):
             self.msa_transition = ReLUTransition(
                 c_in=c_m,
                 n=transition_n,
+                linear_init_params=linear_init_params.msa_transition.relu,
             )
         elif transition_type == "swiglu":
             self.msa_transition = SwiGLUTransition(
                 c_in=c_m,
                 n=transition_n,
+                linear_init_params=linear_init_params.msa_transition.swiglu,
             )
         else:
             raise ValueError(f"Transition type {transition_type} is not available")
 
         self.outer_product_mean = OuterProductMean(
-            c_m,
-            c_z,
-            c_hidden_opm,
+            c_m, c_z, c_hidden_opm, linear_init_params=linear_init_params.opm
         )
 
         self.pair_stack = PairBlock(
@@ -149,6 +155,7 @@ class MSABlock(nn.Module, ABC):
             pair_dropout=pair_dropout,
             fuse_projection_weights=fuse_projection_weights,
             inf=inf,
+            linear_init_params=linear_init_params.pair_block,
         )
 
     def _compute_opm(
@@ -220,6 +227,7 @@ class PairBlock(nn.Module):
         pair_dropout: float,
         fuse_projection_weights: bool,
         inf: float,
+        linear_init_params: ConfigDict = lin_init.pair_block_init,
     ):
         """
         Args:
@@ -243,26 +251,24 @@ class PairBlock(nn.Module):
                 Stack. Used in Multimer pipeline.
             inf:
                 Large constant used for masking
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
         if fuse_projection_weights:
             self.tri_mul_out = FusedTriangleMultiplicationOutgoing(
-                c_z,
-                c_hidden_mul,
+                c_z, c_hidden_mul, linear_init_params=linear_init_params.tri_mul
             )
             self.tri_mul_in = FusedTriangleMultiplicationIncoming(
-                c_z,
-                c_hidden_mul,
+                c_z, c_hidden_mul, linear_init_params=linear_init_params.tri_mul
             )
         else:
             self.tri_mul_out = TriangleMultiplicationOutgoing(
-                c_z,
-                c_hidden_mul,
+                c_z, c_hidden_mul, linear_init_params=linear_init_params.tri_mul
             )
             self.tri_mul_in = TriangleMultiplicationIncoming(
-                c_z,
-                c_hidden_mul,
+                c_z, c_hidden_mul, linear_init_params=linear_init_params.tri_mul
             )
 
         self.tri_att_start = TriangleAttention(
@@ -270,23 +276,27 @@ class PairBlock(nn.Module):
             c_hidden_pair_att,
             no_heads_pair,
             inf=inf,
+            linear_init_params=linear_init_params.tri_att,
         )
         self.tri_att_end = TriangleAttention(
             c_z,
             c_hidden_pair_att,
             no_heads_pair,
             inf=inf,
+            linear_init_params=linear_init_params.tri_att,
         )
 
         if transition_type == "relu":
             self.pair_transition = ReLUTransition(
                 c_in=c_z,
                 n=transition_n,
+                linear_init_params=linear_init_params.pair_transition.relu,
             )
         elif transition_type == "swiglu":
             self.pair_transition = SwiGLUTransition(
                 c_in=c_z,
                 n=transition_n,
+                linear_init_params=linear_init_params.pair_transition.swiglu,
             )
         else:
             raise ValueError(f"Transition type {transition_type} is not available")

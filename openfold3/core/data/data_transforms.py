@@ -30,7 +30,7 @@ from openfold3.core.utils.tensor_utils import (
     tensor_tree_map,
     tree_map,
 )
-from openfold3.model_implementations.af2_monomer.config import (
+from openfold3.model_implementations.af2_monomer.features import (
     NUM_EXTRA_SEQ,
     NUM_MSA_SEQ,
     NUM_RES,

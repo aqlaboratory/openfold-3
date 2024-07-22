@@ -22,6 +22,7 @@ from typing import Dict, Optional
 import torch
 import torch.nn as nn
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers import (
     AtomAttentionDecoder,
     AtomAttentionEncoder,
@@ -127,8 +128,16 @@ class DiffusionModule(nn.Module):
             **config.atom_attn_enc, add_noisy_pos=True
         )
 
+        diff_mod_init = config.diffusion_module.get(
+            "linear_init_params", lin_init.diffusion_module_init
+        )
+
         self.layer_norm_s = LayerNorm(self.c_s)
-        self.linear_s = Linear(self.c_s, self.c_token, bias=False)
+        self.linear_s = Linear(
+            self.c_s,
+            self.c_token,
+            **diff_mod_init.linear_s,
+        )
 
         self.diffusion_transformer = DiffusionTransformer(
             **config.diffusion_transformer

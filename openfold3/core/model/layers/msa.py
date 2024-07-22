@@ -24,6 +24,7 @@ from typing import List, Optional, Tuple
 import torch
 from torch import nn
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import (
     Attention,
     GlobalAttention,
@@ -48,6 +49,7 @@ class MSAAttention(nn.Module):
         pair_bias=False,
         c_z=None,
         inf=1e9,
+        linear_init_params=lin_init.mha_bias_init,
     ):
         """
         Args:
@@ -64,6 +66,8 @@ class MSAAttention(nn.Module):
                 is true
             inf:
                 A large number to be used in computing the attention mask
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -80,14 +84,17 @@ class MSAAttention(nn.Module):
         self.linear_z = None
         if self.pair_bias:
             self.layer_norm_z = LayerNorm(self.c_z)
-            self.linear_z = Linear(self.c_z, self.no_heads, bias=False, init="normal")
+            self.linear_z = Linear(
+                self.c_z, self.no_heads, **linear_init_params.linear_z
+            )
 
         self.mha = Attention(
-            self.c_in,
-            self.c_in,
-            self.c_in,
-            self.c_hidden,
-            self.no_heads,
+            c_q=self.c_in,
+            c_k=self.c_in,
+            c_v=self.c_in,
+            c_hidden=self.c_hidden,
+            no_heads=self.no_heads,
+            linear_init_params=linear_init_params.mha,
         )
 
     @torch.jit.ignore
@@ -301,7 +308,15 @@ class MSARowAttentionWithPairBias(MSAAttention):
     Implements AF2 Algorithm 7.
     """
 
-    def __init__(self, c_m, c_z, c_hidden, no_heads, inf=1e9):
+    def __init__(
+        self,
+        c_m,
+        c_z,
+        c_hidden,
+        no_heads,
+        inf=1e9,
+        linear_init_params=lin_init.mha_bias_init,
+    ):
         """
         Args:
             c_m:
@@ -314,14 +329,17 @@ class MSARowAttentionWithPairBias(MSAAttention):
                 Number of attention heads
             inf:
                 Large number used to construct attention masks
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__(
-            c_m,
-            c_hidden,
-            no_heads,
+            c_in=c_m,
+            c_hidden=c_hidden,
+            no_heads=no_heads,
             pair_bias=True,
             c_z=c_z,
             inf=inf,
+            linear_init_params=linear_init_params,
         )
 
 
@@ -333,7 +351,14 @@ class MSAColumnAttention(nn.Module):
     most inheritance isn't supported by TorchScript.
     """
 
-    def __init__(self, c_m, c_hidden, no_heads, inf=1e9):
+    def __init__(
+        self,
+        c_m,
+        c_hidden,
+        no_heads,
+        inf=1e9,
+        linear_init_params=lin_init.mha_bias_init,
+    ):
         """
         Args:
             c_m:
@@ -344,6 +369,8 @@ class MSAColumnAttention(nn.Module):
                 Number of attention heads
             inf:
                 Large number used to construct attention masks
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -359,6 +386,7 @@ class MSAColumnAttention(nn.Module):
             pair_bias=False,
             c_z=None,
             inf=inf,
+            linear_init_params=linear_init_params,
         )
 
     def forward(
@@ -411,6 +439,7 @@ class MSAColumnGlobalAttention(nn.Module):
         no_heads,
         inf=1e9,
         eps=1e-10,
+        linear_init_params=lin_init.msa_global_att_init,
     ):
         super().__init__()
 
@@ -428,6 +457,7 @@ class MSAColumnGlobalAttention(nn.Module):
             no_heads=no_heads,
             inf=inf,
             eps=eps,
+            linear_init_params=linear_init_params.mha,
         )
 
     @torch.jit.ignore
@@ -461,8 +491,6 @@ class MSAColumnGlobalAttention(nn.Module):
         chunk_size: Optional[int] = None,
         use_lma: bool = False,
     ) -> torch.Tensor:
-        n_seq, n_res, c_in = m.shape[-3:]
-
         if mask is None:
             # [*, N_seq, N_res]
             mask = torch.ones(
@@ -501,6 +529,7 @@ class MSAPairWeightedAveraging(nn.Module):
         c_z,
         no_heads,
         inf=1e9,
+        linear_init_params=lin_init.msa_pair_avg_init,
     ):
         """
         Args:
@@ -514,6 +543,8 @@ class MSAPairWeightedAveraging(nn.Module):
                 Number of attention heads
             inf:
                 A large number to be used in computing the attention mask
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -526,15 +557,15 @@ class MSAPairWeightedAveraging(nn.Module):
         self.layer_norm_m = LayerNorm(self.c_in)
 
         self.layer_norm_z = LayerNorm(self.c_z)
-        self.linear_z = Linear(self.c_z, self.no_heads, bias=False, init="normal")
+        self.linear_z = Linear(self.c_z, self.no_heads, **linear_init_params.linear_z)
 
         self.linear_v = Linear(
-            self.c_in, self.c_hidden * self.no_heads, bias=False, init="glorot"
+            self.c_in, self.c_hidden * self.no_heads, **linear_init_params.linear_v
         )
-        self.linear_o = Linear(c_hidden * no_heads, c_in, bias=False, init="final")
+        self.linear_o = Linear(c_hidden * no_heads, c_in, **linear_init_params.linear_o)
 
         self.linear_g = Linear(
-            self.c_in, self.c_hidden * self.no_heads, bias=False, init="gating"
+            self.c_in, self.c_hidden * self.no_heads, **linear_init_params.linear_g
         )
 
         self.sigmoid = nn.Sigmoid()

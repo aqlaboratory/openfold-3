@@ -22,7 +22,9 @@ from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
+from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers import DiffusionTransformer
 from openfold3.core.model.primitives import LayerNorm, Linear
 
@@ -140,6 +142,7 @@ class AtomTransformer(nn.Module):
         use_block_sparse_attn: bool = False,
         block_size: Optional[int] = 16,
         inf: float = 1e9,
+        linear_init_params: ConfigDict = lin_init.atom_transformer_init,
     ):
         """
         Args:
@@ -159,12 +162,16 @@ class AtomTransformer(nn.Module):
                 Number of queries (block height)
             n_key:
                 Number of keys (block width)
+            use_ada_layer_norm:
+                Whether to apply AdaLN-Zero conditioning
             use_block_sparse_attn:
                 Whether to use Triton block sparse attention kernels
             block_size:
                 Block size to use in block sparse attention
             inf:
                 Large number used for attention masking
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
         self.n_query = n_query
@@ -185,6 +192,7 @@ class AtomTransformer(nn.Module):
             use_block_sparse_attn=self.use_block_sparse_attn,
             block_size=self.block_size,
             inf=self.inf,
+            linear_init_params=linear_init_params.diffusion_transformer,
         )
 
     def forward(
@@ -250,7 +258,13 @@ class RefAtomFeatureEmbedder(nn.Module):
     Implements AF3 Algorithm 5 (line 1 - 6).
     """
 
-    def __init__(self, c_atom_ref: int, c_atom: int, c_atom_pair: int):
+    def __init__(
+        self,
+        c_atom_ref: int,
+        c_atom: int,
+        c_atom_pair: int,
+        linear_init_params: ConfigDict = lin_init.ref_atom_emb_init,
+    ):
         """
         Args:
             c_atom_ref:
@@ -259,12 +273,22 @@ class RefAtomFeatureEmbedder(nn.Module):
                 Atom single conditioning channel dimension
             c_atom_pair:
                 Atom pair conditioning channel dimension
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
-        self.linear_feats = Linear(c_atom_ref, c_atom, bias=False)
-        self.linear_ref_offset = Linear(3, c_atom_pair, bias=False)
-        self.linear_inv_sq_dists = Linear(1, c_atom_pair, bias=False)
-        self.linear_valid_mask = Linear(1, c_atom_pair, bias=False)
+        self.linear_feats = Linear(
+            c_atom_ref, c_atom, **linear_init_params.linear_feats
+        )
+        self.linear_ref_offset = Linear(
+            3, c_atom_pair, **linear_init_params.linear_ref_offset
+        )
+        self.linear_inv_sq_dists = Linear(
+            1, c_atom_pair, **linear_init_params.linear_inv_sq_dists
+        )
+        self.linear_valid_mask = Linear(
+            1, c_atom_pair, **linear_init_params.linear_valid_mask
+        )
 
     def forward(
         self,
@@ -330,20 +354,33 @@ class NoisyPositionEmbedder(nn.Module):
     Implements AF3 Algorithm 5 (line 8 - 12).
     """
 
-    def __init__(self, c_s: int, c_z: int, c_atom: int, c_atom_pair: int):
+    def __init__(
+        self,
+        c_s: int,
+        c_z: int,
+        c_atom: int,
+        c_atom_pair: int,
+        linear_init_params: ConfigDict = lin_init.noisy_pos_emb_init,
+    ):
         """
         Args:
+            c_s:
+                Single representation channel dimension
+            c_z:
+                Pair representation channel dimension
             c_atom:
                 Atom single conditioning channel dimension
             c_atom_pair:
                 Atom pair conditioning channel dimension
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
         self.layer_norm_s = LayerNorm(c_s)
-        self.linear_s = Linear(c_s, c_atom, bias=False)
+        self.linear_s = Linear(c_s, c_atom, **linear_init_params.linear_s)
         self.layer_norm_z = LayerNorm(c_z)
-        self.linear_z = Linear(c_z, c_atom_pair, bias=False)
-        self.linear_r = Linear(3, c_atom, bias=False)
+        self.linear_z = Linear(c_z, c_atom_pair, **linear_init_params.linear_z)
+        self.linear_r = Linear(3, c_atom, **linear_init_params.linear_r)
 
     def forward(
         self,
@@ -437,6 +474,7 @@ class AtomAttentionEncoder(nn.Module):
         inf: float = 1e9,
         c_s: Optional[int] = None,
         c_z: Optional[int] = None,
+        linear_init_params: ConfigDict = lin_init.atom_att_enc_init,
     ):
         """
         Args:
@@ -474,30 +512,39 @@ class AtomAttentionEncoder(nn.Module):
                 Single representation channel dimension (optional)
             c_z:
                 Pair representation channel dimension (optional)
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
         self.ref_atom_feature_embedder = RefAtomFeatureEmbedder(
-            c_atom_ref=c_atom_ref, c_atom=c_atom, c_atom_pair=c_atom_pair
+            c_atom_ref=c_atom_ref,
+            c_atom=c_atom,
+            c_atom_pair=c_atom_pair,
+            linear_init_params=linear_init_params.ref_atom_emb,
         )
 
         if add_noisy_pos:
             self.noisy_position_embedder = NoisyPositionEmbedder(
-                c_s=c_s, c_z=c_z, c_atom=c_atom, c_atom_pair=c_atom_pair
+                c_s=c_s,
+                c_z=c_z,
+                c_atom=c_atom,
+                c_atom_pair=c_atom_pair,
+                linear_init_params=linear_init_params.noisy_pos_emb,
             )
 
         self.relu = nn.ReLU()
-        self.linear_l = Linear(c_atom, c_atom_pair, bias=False, init="relu")
+        self.linear_l = Linear(c_atom, c_atom_pair, **linear_init_params.linear_l)
         self.linear_m = Linear(
-            c_atom, c_atom_pair, bias=False, init="relu"
+            c_atom, c_atom_pair, **linear_init_params.linear_m
         )  # TODO: check initialization
 
         self.pair_mlp = nn.Sequential(
             nn.ReLU(),
-            Linear(c_atom_pair, c_atom_pair, bias=False, init="relu"),
+            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp),
             nn.ReLU(),
-            Linear(c_atom_pair, c_atom_pair, bias=False, init="relu"),
+            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp),
             nn.ReLU(),
-            Linear(c_atom_pair, c_atom_pair, bias=False, init="relu"),
+            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp),
         )
 
         self.atom_transformer = AtomTransformer(
@@ -513,10 +560,11 @@ class AtomAttentionEncoder(nn.Module):
             use_block_sparse_attn=use_block_sparse_attn,
             block_size=block_size,
             inf=inf,
+            linear_init_params=linear_init_params.atom_transformer,
         )
 
         self.linear_q = nn.Sequential(
-            Linear(c_atom, c_token, bias=False, init="relu"), nn.ReLU()
+            Linear(c_atom, c_token, **linear_init_params.linear_q), nn.ReLU()
         )
 
     def forward(
@@ -644,6 +692,7 @@ class AtomAttentionDecoder(nn.Module):
         use_block_sparse_attn: bool,
         block_size: Optional[int] = 16,
         inf: float = 1e9,
+        linear_init_params: ConfigDict = lin_init.atom_att_dec_init,
     ):
         """
         Args:
@@ -673,10 +722,12 @@ class AtomAttentionDecoder(nn.Module):
                 Block size to use in block sparse attention
             inf:
                 Large number used for attention masking
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
-        self.linear_q_in = Linear(c_token, c_atom, bias=False)
+        self.linear_q_in = Linear(c_token, c_atom, **linear_init_params.linear_q_in)
 
         self.atom_transformer = AtomTransformer(
             c_q=c_atom,
@@ -691,10 +742,11 @@ class AtomAttentionDecoder(nn.Module):
             use_block_sparse_attn=use_block_sparse_attn,
             block_size=block_size,
             inf=inf,
+            linear_init_params=linear_init_params.atom_transformer,
         )
 
         self.layer_norm = LayerNorm(c_in=c_atom)
-        self.linear_q_out = Linear(c_atom, 3, bias=False, init="final")
+        self.linear_q_out = Linear(c_atom, 3, **linear_init_params.linear_q_out)
 
     def forward(
         self,
