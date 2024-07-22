@@ -70,7 +70,6 @@ class Linear(nn.Linear):
                 "gating": Weights=0, Bias=1
                 "gating_ada_zero": Weights=0, Bias=-2
                 "normal": Normal initialization with std=1/sqrt(fan_in)
-                "fourier": Normal initialization with std=1 for both weights and bias
                 "final": Weights=0, Bias=0
 
                 Overridden by init_fn if the latter is not None.

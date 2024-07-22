@@ -26,7 +26,7 @@ mha_init = ConfigDict(
         "linear_q": {"bias": False, "init": "glorot"},
         "linear_k": {"bias": False, "init": "glorot"},
         "linear_v": {"bias": False, "init": "glorot"},
-        "linear_g": {"bias": False, "init": "final"},
+        "linear_g": {"bias": False, "init": "gating"},
         "linear_o": {"bias": False, "init": "final"},
     }
 )
@@ -36,7 +36,7 @@ block_sparse_mha_init = ConfigDict(
         "linear_q": {"bias": True, "init": "glorot"},
         "linear_k": {"bias": False, "init": "glorot"},
         "linear_v": {"bias": False, "init": "glorot"},
-        "linear_g": {"bias": False, "init": "final"},
+        "linear_g": {"bias": False, "init": "gating"},
         "linear_o": {"bias": False, "init": "final"},
     }
 )
@@ -64,10 +64,21 @@ att_pair_bias_init = ConfigDict(
 tri_mul_init = ConfigDict(
     {
         "linear_a_p": {"bias": False, "init": "default"},
-        "linear_a_g": {"bias": False, "init": "final"},
+        "linear_a_g": {"bias": False, "init": "gating"},
         "linear_b_p": {"bias": False, "init": "default"},
-        "linear_b_g": {"bias": False, "init": "final"},
-        "linear_g": {"bias": False, "init": "final"},
+        "linear_b_g": {"bias": False, "init": "gating"},
+        "linear_g": {"bias": False, "init": "gating"},
+        "linear_z": {"bias": False, "init": "final"},
+    }
+)
+
+# Not used by default, but config is included in case the
+# "fuse_projection_weights" option is set to True
+fused_tri_mul_init = ConfigDict(
+    {
+        "linear_ab_p": {"bias": False, "init": "default"},
+        "linear_ab_g": {"bias": False, "init": "gating"},
+        "linear_g": {"bias": False, "init": "gating"},
         "linear_z": {"bias": False, "init": "final"},
     }
 )
@@ -86,8 +97,8 @@ msa_pair_avg_init = ConfigDict(
     {
         "linear_z": {"bias": False, "init": "normal"},
         "linear_v": {"bias": False, "init": "glorot"},
-        "linear_o": {"bias": False, "init": "final"},
         "linear_g": {"bias": False, "init": "gating"},
+        "linear_o": {"bias": False, "init": "final"},
     }
 )
 
@@ -218,6 +229,7 @@ templ_pair_feat_emb_init = ConfigDict(
 pair_block_init = ConfigDict(
     {
         "tri_mul": tri_mul_init,
+        "fused_tri_mul": fused_tri_mul_init,
         "tri_att": tri_att_init,
         "pair_transition": transition_init,
     }

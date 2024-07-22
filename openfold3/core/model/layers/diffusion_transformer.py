@@ -104,6 +104,7 @@ class DiffusionTransformerBlock(nn.Module):
         mask: Optional[torch.Tensor] = None,
         beta: Optional[torch.Tensor] = None,
         layout: Optional[torch.Tensor] = None,
+        chunk_size: Optional[int] = None,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
@@ -126,6 +127,8 @@ class DiffusionTransformerBlock(nn.Module):
                 [N / block_size, N / block_size] Layout config for block sparse
                 attention. Dictates which sections of the attention matrix
                 to compute.
+            chunk_size:
+                Inference-time subbatch size
             use_memory_efficient_kernel:
                 Whether to use memory efficient kernel
             use_deepspeed_evo_attention:
@@ -148,7 +151,9 @@ class DiffusionTransformerBlock(nn.Module):
         )
 
         trans_mask = mask if _mask_trans else None
-        a = b + self.conditioned_transition(a=a, s=s, mask=trans_mask)
+        a = b + self.conditioned_transition(
+            a=a, s=s, mask=trans_mask, chunk_size=chunk_size
+        )
 
         return a
 
@@ -228,6 +233,7 @@ class DiffusionTransformer(nn.Module):
         mask: Optional[torch.Tensor] = None,
         beta: Optional[torch.Tensor] = None,
         layout: Optional[torch.Tensor] = None,
+        chunk_size: Optional[int] = None,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
@@ -250,6 +256,8 @@ class DiffusionTransformer(nn.Module):
                 [N / block_size, N / block_size] Layout config for block sparse
                 attention. Dictates which sections of the attention matrix
                 to compute.
+            chunk_size:
+                Inference-time subbatch size
             use_memory_efficient_kernel:
                 Whether to use memory efficient kernel
             use_deepspeed_evo_attention:
@@ -268,6 +276,7 @@ class DiffusionTransformer(nn.Module):
                 mask=mask,
                 beta=beta,
                 layout=layout,
+                chunk_size=chunk_size,
                 use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,

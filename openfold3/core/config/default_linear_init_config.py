@@ -338,6 +338,7 @@ all_atom_templ_pair_feat_emb_init = ConfigDict(
 pair_block_init = ConfigDict(
     {
         "tri_mul": tri_mul_init,
+        "fused_tri_mul": fused_tri_mul_init,
         "tri_att": tri_att_init,
         "pair_transition": transition_init,
     }

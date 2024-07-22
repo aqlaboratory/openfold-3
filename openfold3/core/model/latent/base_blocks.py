@@ -258,10 +258,10 @@ class PairBlock(nn.Module):
 
         if fuse_projection_weights:
             self.tri_mul_out = FusedTriangleMultiplicationOutgoing(
-                c_z, c_hidden_mul, linear_init_params=linear_init_params.tri_mul
+                c_z, c_hidden_mul, linear_init_params=linear_init_params.fused_tri_mul
             )
             self.tri_mul_in = FusedTriangleMultiplicationIncoming(
-                c_z, c_hidden_mul, linear_init_params=linear_init_params.tri_mul
+                c_z, c_hidden_mul, linear_init_params=linear_init_params.fused_tri_mul
             )
         else:
             self.tri_mul_out = TriangleMultiplicationOutgoing(
@@ -316,6 +316,9 @@ class PairBlock(nn.Module):
         if not inplace_safe:
             z = z + self.ps_dropout_row_layer(tmu_update)
         else:
+            # TODO: Inplace operations won't work if we enable dropout during inference
+            # Potentially add check to make sure dropout is disabled if using
+            # inplace ops
             z = tmu_update
 
         del tmu_update
@@ -363,6 +366,8 @@ class PairBlock(nn.Module):
         if inplace_safe:
             z = z.contiguous()
 
+        # Using dropout_row_layer since the dimensions were transposed before
+        # calling the attention layer
         z = add(
             z,
             self.ps_dropout_row_layer(

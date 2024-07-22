@@ -18,7 +18,6 @@ Embedders for input features. Includes InputEmbedders for monomer, multimer, sol
 and all-atom models. Also includes the RecyclingEmbedder and ExtraMSAEmbedder.
 """
 
-import random
 from typing import Dict, Tuple
 
 import torch
@@ -28,7 +27,7 @@ from ml_collections import ConfigDict
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers import AtomAttentionEncoder
 from openfold3.core.model.primitives import LayerNorm, Linear, normal_init_
-from openfold3.core.utils.tensor_utils import add, one_hot
+from openfold3.core.utils.tensor_utils import add, binned_one_hot
 
 
 class InputEmbedder(nn.Module):
@@ -233,7 +232,7 @@ class InputEmbedderMultimer(nn.Module):
             boundaries = torch.arange(
                 start=0, end=2 * self.max_relative_idx + 2, device=final_offset.device
             )
-            rel_pos = one_hot(
+            rel_pos = binned_one_hot(
                 final_offset,
                 boundaries,
             )
@@ -263,7 +262,7 @@ class InputEmbedderMultimer(nn.Module):
             boundaries = torch.arange(
                 start=0, end=2 * max_rel_chain + 2, device=final_rel_chain.device
             )
-            rel_chain = one_hot(
+            rel_chain = binned_one_hot(
                 final_rel_chain,
                 boundaries,
             )
@@ -273,7 +272,7 @@ class InputEmbedderMultimer(nn.Module):
             boundaries = torch.arange(
                 start=0, end=2 * self.max_relative_idx + 1, device=clipped_offset.device
             )
-            rel_pos = one_hot(
+            rel_pos = binned_one_hot(
                 clipped_offset,
                 boundaries,
             )
@@ -319,7 +318,7 @@ class InputEmbedderMultimer(nn.Module):
 
 
 class RelposAllAtom(nn.Module):
-    """AF3 Algorithm 3 implementation."""
+    """Relative Positional Encoding. Implements AF3 Algorithm 3."""
 
     def __init__(
         self,
@@ -338,26 +337,25 @@ class RelposAllAtom(nn.Module):
                 Maximum relative chain indices clipped
             linear_init_params:
                 Linear layer initialization parameters
-            **kwargs:
         """
         super().__init__()
 
-        # RPE stuff
         self.max_relative_idx = max_relative_idx
         self.max_relative_chain = max_relative_chain
 
-        self.no_bins = (
-            2 * max_relative_idx
-            + 2
-            + 2 * max_relative_idx
-            + 2
-            + 1
-            + 2 * max_relative_chain
-            + 2
+        num_rel_pos_bins = 2 * max_relative_idx + 2
+        num_rel_token_bins = 2 * max_relative_idx + 2
+        num_rel_chain_bins = 2 * max_relative_chain + 2
+        num_same_entity_features = 1
+        self.num_dims = (
+            num_rel_pos_bins
+            + num_rel_token_bins
+            + num_rel_chain_bins
+            + num_same_entity_features
         )
 
         self.linear_relpos = Linear(
-            self.no_bins, c_z, **linear_init_params.linear_relpos
+            self.num_dims, c_z, **linear_init_params.linear_relpos
         )
 
     @staticmethod
@@ -367,7 +365,7 @@ class RelposAllAtom(nn.Module):
         """
         Args:
             pos:
-                [*, N_token] Residue index
+                [*, N_token] Token index
             condition:
                 [*, N_token, N_token] Condition for clipping
             rel_clip_idx:
@@ -377,7 +375,7 @@ class RelposAllAtom(nn.Module):
                 [*, N_token, N_token, 2 * rel_clip_idx + 2] Relative position embedding
         """
         offset = pos[..., None] - pos[..., None, :]
-        clipped_offset = torch.clamp(offset + rel_clip_idx, 0, 2 * rel_clip_idx)
+        clipped_offset = torch.clamp(offset + rel_clip_idx, min=0, max=2 * rel_clip_idx)
         final_offset = torch.where(
             condition,
             clipped_offset,
@@ -386,7 +384,7 @@ class RelposAllAtom(nn.Module):
         boundaries = torch.arange(
             start=0, end=2 * rel_clip_idx + 2, device=final_offset.device
         )
-        rel_pos = one_hot(
+        rel_pos = binned_one_hot(
             final_offset,
             boundaries,
         )
@@ -487,6 +485,7 @@ class InputEmbedderAllAtom(nn.Module):
             linear_init_params=linear_init_params.relpos_emb,
         )
 
+        # Expecting binary feature "token_bonds" of shape [*, N_token, N_token, 1]
         self.linear_token_bonds = Linear(
             1, c_z, **linear_init_params.linear_token_bonds
         )
@@ -617,7 +616,7 @@ class MSAModuleEmbedder(nn.Module):
         uniprot_msa_mask, main_msa_mask = torch.split(msa_mask, split_sections, dim=-2)
 
         # Sample Uniform[1, num_main_msa_seqs] sequences from the main MSA
-        n_seq_sample = random.randint(1, num_main_msa_seqs)
+        n_seq_sample = torch.randint(low=1, high=num_main_msa_seqs, size=(1,)).item()
         index_order = torch.randperm(num_main_msa_seqs, device=msa_feat.device)
         index_order = index_order[:n_seq_sample]
 

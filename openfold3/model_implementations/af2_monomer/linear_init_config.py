@@ -45,6 +45,17 @@ tri_mul_init = ConfigDict(
     }
 )
 
+# Not used by default, but config is included in case the
+# "fuse_projection_weights" option is set to True
+fused_tri_mul_init = ConfigDict(
+    {
+        "linear_ab_p": {"bias": True, "init": "default"},
+        "linear_ab_g": {"bias": True, "init": "gating"},
+        "linear_g": {"bias": True, "init": "gating"},
+        "linear_z": {"bias": True, "init": "final"},
+    }
+)
+
 tri_att_init = mha_bias_init
 
 opm_init = ConfigDict(
@@ -118,6 +129,7 @@ templ_pair_feat_emb_init = ConfigDict(
 pair_block_init = ConfigDict(
     {
         "tri_mul": tri_mul_init,
+        "fused_tri_mul": fused_tri_mul_init,
         "tri_att": tri_att_init,
         "pair_transition": transition_init,
     }
