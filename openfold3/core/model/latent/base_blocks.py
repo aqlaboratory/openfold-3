@@ -258,10 +258,10 @@ class PairBlock(nn.Module):
 
         if fuse_projection_weights:
             self.tri_mul_out = FusedTriangleMultiplicationOutgoing(
-                c_z, c_hidden_mul, linear_init_params=linear_init_params.tri_mul
+                c_z, c_hidden_mul, linear_init_params=linear_init_params.fused_tri_mul
             )
             self.tri_mul_in = FusedTriangleMultiplicationIncoming(
-                c_z, c_hidden_mul, linear_init_params=linear_init_params.tri_mul
+                c_z, c_hidden_mul, linear_init_params=linear_init_params.fused_tri_mul
             )
         else:
             self.tri_mul_out = TriangleMultiplicationOutgoing(
