@@ -364,7 +364,10 @@ config = mlc.ConfigDict(
 
 
 def model_config(model_preset: str):
-    ref_yaml_path = Path(__file__).with_name("reference_config.yml")
-    reference_configs = config_utils.load_yaml(ref_yaml_path)
-    model_preset_config = reference_configs[model_preset]
-    return config_utils.update_config_dict(config, model_preset_config)
+    if model_preset == 'initial_training':
+        return config
+    else:
+        ref_yaml_path = Path(__file__).with_name("reference_config.yml")
+        reference_configs = config_utils.load_yaml(ref_yaml_path)
+        model_preset_config = reference_configs[model_preset]
+        return config_utils.update_config_dict(config, model_preset_config)
