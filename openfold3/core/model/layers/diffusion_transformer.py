@@ -20,6 +20,9 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
+from ml_collections import ConfigDict
+
+import openfold3.core.config.default_linear_init_config as lin_init
 
 from .attention_pair_bias import AttentionPairBias
 from .transition import ConditionedTransitionBlock
@@ -43,6 +46,7 @@ class DiffusionTransformerBlock(nn.Module):
         use_block_sparse_attn: bool,
         block_size: Optional[int],
         inf: float = 1e9,
+        linear_init_params: ConfigDict = lin_init.diffusion_transformer_init,
     ):
         """
         Args:
@@ -64,6 +68,8 @@ class DiffusionTransformerBlock(nn.Module):
                 Block size to use in block sparse attention
             inf:
                 Large constant used to create mask for attention logits
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -80,10 +86,14 @@ class DiffusionTransformerBlock(nn.Module):
             block_size=block_size,
             gating=True,
             inf=inf,
+            linear_init_params=linear_init_params.att_pair_bias,
         )
 
         self.conditioned_transition = ConditionedTransitionBlock(
-            c_a=c_a, c_s=c_s, n=n_transition
+            c_a=c_a,
+            c_s=c_s,
+            n=n_transition,
+            linear_init_params=linear_init_params.cond_transition,
         )
 
     def forward(
@@ -162,6 +172,7 @@ class DiffusionTransformer(nn.Module):
         use_block_sparse_attn: bool,
         block_size: Optional[int],
         inf: float,
+        linear_init_params: ConfigDict = lin_init.diffusion_transformer_init,
     ):
         """
         Args:
@@ -185,6 +196,8 @@ class DiffusionTransformer(nn.Module):
                 Block size to use in block sparse attention
             inf:
                 Large constant used to create mask for attention logits
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -201,6 +214,7 @@ class DiffusionTransformer(nn.Module):
                     use_block_sparse_attn=use_block_sparse_attn,
                     block_size=block_size,
                     inf=inf,
+                    linear_init_params=linear_init_params,
                 )
                 for _ in range(no_blocks)
             ]

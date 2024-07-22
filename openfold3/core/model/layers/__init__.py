@@ -1,5 +1,11 @@
+from .angle_resnet import AngleResnet, AngleResnetBlock
 from .attention_pair_bias import AttentionPairBias
+from .backbone_update import BackboneUpdate, QuatRigidUpdate
 from .diffusion_transformer import DiffusionTransformer, DiffusionTransformerBlock
+from .invariant_point_attention import (
+    InvariantPointAttention,
+    InvariantPointAttentionMultimer,
+)
 from .msa import (
     MSAAttention,
     MSAColumnAttention,
@@ -70,4 +76,10 @@ __all__ = [
     "FusedTriangleMultiplicativeUpdate",
     "FusedTriangleMultiplicationIncoming",
     "FusedTriangleMultiplicationOutgoing",
+    "AngleResnetBlock",
+    "AngleResnet",
+    "BackboneUpdate",
+    "QuatRigidUpdate",
+    "InvariantPointAttention",
+    "InvariantPointAttentionMultimer",
 ]

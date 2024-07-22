@@ -22,7 +22,9 @@ MSAModuleEmbedder.
 from typing import Optional
 
 import torch
+from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.latent.base_stacks import MSAStack
 from openfold3.core.model.latent.evoformer import EvoformerBlock
 from openfold3.core.model.layers.msa import MSAPairWeightedAveraging
@@ -49,6 +51,7 @@ class MSAModuleBlock(EvoformerBlock):
         fuse_projection_weights: bool,
         inf: float,
         eps: float,
+        linear_init_params: ConfigDict = lin_init.msa_module_init,
     ):
         """
         Args:
@@ -88,6 +91,8 @@ class MSAModuleBlock(EvoformerBlock):
                 Large constant for masking
             eps:
                 Small constant for numerical stability
+            linear_init_params:
+                Parameters for linear layer initialization
         """
         super().__init__(
             c_m=c_m,
@@ -107,6 +112,7 @@ class MSAModuleBlock(EvoformerBlock):
             fuse_projection_weights=fuse_projection_weights,
             inf=inf,
             eps=eps,
+            linear_init_params=linear_init_params,
         )
 
         # Column attention is disabled and MSAPairWeightedAveraging replace
@@ -117,6 +123,7 @@ class MSAModuleBlock(EvoformerBlock):
             c_hidden=c_hidden_msa_att,
             no_heads=no_heads_msa,
             inf=inf,
+            linear_init_params=linear_init_params.msa_pair_avg,
         )
 
 
@@ -145,6 +152,7 @@ class MSAModuleStack(MSAStack):
         blocks_per_ckpt: Optional[int],
         inf: float,
         eps: float,
+        linear_init_params: ConfigDict = lin_init.msa_module_init,
         clear_cache_between_blocks: bool = False,
         tune_chunk_size: bool = False,
         **kwargs,
@@ -191,6 +199,8 @@ class MSAModuleStack(MSAStack):
                 Large constant for masking
             eps:
                 Small constant for numerical stability
+            linear_init_params:
+                Parameters for linear layer initialization
             clear_cache_between_blocks:
                 Whether to clear CUDA's GPU memory cache between blocks of the
                 stack. Slows down each block but can reduce fragmentation
@@ -221,6 +231,7 @@ class MSAModuleStack(MSAStack):
                 fuse_projection_weights=fuse_projection_weights,
                 inf=inf,
                 eps=eps,
+                linear_init_params=linear_init_params,
             )
             self.blocks.append(block)
 
