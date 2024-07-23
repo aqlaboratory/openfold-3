@@ -43,7 +43,9 @@ def np_to_tensor_dict(
 
     # torch generates warnings if feature is already a torch Tensor
     def to_tensor(t):
-        return torch.tensor(t) if type(t) != torch.Tensor else t.clone().detach()
+        return (
+            torch.tensor(t) if not isinstance(t, torch.Tensor) else t.clone().detach()
+        )
 
     tensor_dict = {k: to_tensor(v) for k, v in np_example.items() if k in features}
 

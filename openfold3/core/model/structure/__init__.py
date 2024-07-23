@@ -1,19 +1,7 @@
 from .structure_module import (
-    AngleResnet,
-    AngleResnetBlock,
-    BackboneUpdate,
-    InvariantPointAttention,
-    InvariantPointAttentionMultimer,
-    PointProjection,
-    StructureModule,
+    BaseStructureModule,
+    StructureModuleMonomer,
+    StructureModuleMultimer,
 )
 
-__all__ = [
-    "AngleResnetBlock",
-    "AngleResnet",
-    "PointProjection",
-    "InvariantPointAttention",
-    "InvariantPointAttentionMultimer",
-    "BackboneUpdate",
-    "StructureModule",
-]
+__all__ = ["BaseStructureModule", "StructureModuleMonomer", "StructureModuleMultimer"]

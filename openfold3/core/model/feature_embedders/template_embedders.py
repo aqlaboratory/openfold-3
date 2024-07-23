@@ -22,7 +22,9 @@ from typing import Dict
 
 import torch
 import torch.nn as nn
+from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.data.data_transforms import pseudo_beta_fn
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.np import residue_constants as rc
@@ -42,6 +44,7 @@ class TemplateSingleEmbedderMonomer(nn.Module):
         self,
         c_in: int,
         c_out: int,
+        linear_init_params: ConfigDict = lin_init.monomer_templ_single_feat_emb_init,
         **kwargs,
     ):
         """
@@ -50,15 +53,17 @@ class TemplateSingleEmbedderMonomer(nn.Module):
                 Final dimension of "template_angle_feat"
             c_out:
                 Output channel dimension
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
         self.c_out = c_out
         self.c_in = c_in
 
-        self.linear_1 = Linear(self.c_in, self.c_out, init="relu")
+        self.linear_1 = Linear(self.c_in, self.c_out, **linear_init_params.linear_1)
         self.relu = nn.ReLU()
-        self.linear_2 = Linear(self.c_out, self.c_out, init="relu")
+        self.linear_2 = Linear(self.c_out, self.c_out, **linear_init_params.linear_2)
 
     def forward(self, template_feats: Dict) -> torch.Tensor:
         """
@@ -104,6 +109,7 @@ class TemplatePairEmbedderMonomer(nn.Module):
         self,
         c_in: int,
         c_out: int,
+        linear_init_params: ConfigDict = lin_init.monomer_templ_pair_feat_emb_init,
         **kwargs,
     ):
         """
@@ -112,6 +118,8 @@ class TemplatePairEmbedderMonomer(nn.Module):
                 Final dimension of template pair features
             c_out:
                 Output channel dimension
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -119,7 +127,7 @@ class TemplatePairEmbedderMonomer(nn.Module):
         self.c_out = c_out
 
         # Despite there being no relu nearby, the source uses that initializer
-        self.linear = Linear(self.c_in, self.c_out, init="relu")
+        self.linear = Linear(self.c_in, self.c_out, **linear_init_params.linear)
 
     def forward(
         self,
@@ -219,6 +227,7 @@ class TemplateSingleEmbedderMultimer(nn.Module):
         self,
         c_in: int,
         c_out: int,
+        linear_init_params: ConfigDict = lin_init.multimer_templ_single_feat_emb_init,
     ):
         """
         Args:
@@ -226,10 +235,16 @@ class TemplateSingleEmbedderMultimer(nn.Module):
                 Final dimension of single template features
             c_out:
                 Output channel dimension
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
-        self.template_single_embedder = Linear(c_in, c_out)
-        self.template_projector = Linear(c_out, c_out)
+        self.template_single_embedder = Linear(
+            c_in, c_out, **linear_init_params.template_single_embedder
+        )
+        self.template_projector = Linear(
+            c_out, c_out, **linear_init_params.template_projector
+        )
 
     def forward(self, batch: Dict):
         """
@@ -297,6 +312,7 @@ class TemplatePairEmbedderMultimer(nn.Module):
         c_out: int,
         c_dgram: int,
         c_aatype: int,
+        linear_init_params: ConfigDict = lin_init.multimer_templ_pair_feat_emb_init,
     ):
         """
         Args:
@@ -308,20 +324,32 @@ class TemplatePairEmbedderMultimer(nn.Module):
                 Distogram feature embedding dimension
             c_aatype:
                 Template aatype feature embedding dimension
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
-        self.dgram_linear = Linear(c_dgram, c_out, init="relu")
-        self.aatype_linear_1 = Linear(c_aatype, c_out, init="relu")
-        self.aatype_linear_2 = Linear(c_aatype, c_out, init="relu")
+        self.dgram_linear = Linear(c_dgram, c_out, **linear_init_params.dgram_linear)
+        self.aatype_linear_1 = Linear(
+            c_aatype, c_out, **linear_init_params.aatype_linear_1
+        )
+        self.aatype_linear_2 = Linear(
+            c_aatype, c_out, **linear_init_params.aatype_linear_2
+        )
         self.query_embedding_layer_norm = LayerNorm(c_in)
-        self.query_embedding_linear = Linear(c_in, c_out, init="relu")
+        self.query_embedding_linear = Linear(
+            c_in, c_out, **linear_init_params.query_embedding_linear
+        )
 
-        self.pseudo_beta_mask_linear = Linear(1, c_out, init="relu")
-        self.x_linear = Linear(1, c_out, init="relu")
-        self.y_linear = Linear(1, c_out, init="relu")
-        self.z_linear = Linear(1, c_out, init="relu")
-        self.backbone_mask_linear = Linear(1, c_out, init="relu")
+        self.pseudo_beta_mask_linear = Linear(
+            1, c_out, **linear_init_params.pseudo_beta_mask_linear
+        )
+        self.x_linear = Linear(1, c_out, **linear_init_params.x_linear)
+        self.y_linear = Linear(1, c_out, **linear_init_params.y_linear)
+        self.z_linear = Linear(1, c_out, **linear_init_params.z_linear)
+        self.backbone_mask_linear = Linear(
+            1, c_out, **linear_init_params.backbone_mask_linear
+        )
 
     def forward(
         self,
@@ -416,7 +444,13 @@ class TemplatePairEmbedderAllAtom(nn.Module):
     The resulting embedded template will go into the TemplatePairStack.
     """
 
-    def __init__(self, c_in, c_z, c_out):
+    def __init__(
+        self,
+        c_in: int,
+        c_z: int,
+        c_out: int,
+        linear_init_params: ConfigDict = lin_init.all_atom_templ_pair_feat_emb_init,
+    ):
         """
         Args:
             c_in:
@@ -425,14 +459,14 @@ class TemplatePairEmbedderAllAtom(nn.Module):
                 Pair embedding dimension
             c_out:
                 Output channel dimension
+            linear_init_params:
+                Linear layer initialization
         """
         super().__init__()
 
-        self.linear_a = Linear(c_in, c_out, bias=False)
+        self.linear_a = Linear(c_in, c_out, **linear_init_params.linear_a)
         self.layer_norm_z = LayerNorm(c_z)
-        self.linear_z = Linear(
-            c_z, c_out, bias=False, init="relu"
-        )  # TODO: check initialization
+        self.linear_z = Linear(c_z, c_out, **linear_init_params.linear_z)
 
     def forward(self, batch, z):
         """

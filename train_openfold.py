@@ -348,6 +348,10 @@ def main(args):
     if args.script_modules:
         script_preset_(model_module)
 
+    # Model config + data config
+    # for entry in data_config:
+    #     entry['dataset_config'] = {**config.data, **entry['dataset_config']}
+
     if "multimer" in args.config_preset:
         data_module = OpenFoldMultimerDataModule(
             config=config.data, batch_seed=args.seed, **vars(args)

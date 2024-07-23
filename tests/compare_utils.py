@@ -7,9 +7,13 @@ import unittest
 import numpy as np
 import torch
 
+import openfold3.model_implementations.af2_monomer.base_config as af2_config
+import openfold3.model_implementations.af2_multimer.config as multimer_config
 from openfold3.core.utils.import_weights import import_jax_weights_
-from openfold3.model_implementations.af2_monomer.config import model_config
 from openfold3.model_implementations.af2_monomer.model import AlphaFold
+from openfold3.model_implementations.af2_multimer.model import (
+    AlphaFold as AlphaFoldMultimer,
+)
 from tests.config import consts
 
 # Give JAX some GPU memory discipline
@@ -33,6 +37,11 @@ def skip_unless_ds4s_installed():
 def skip_unless_flash_attn_installed():
     fa_is_installed = importlib.util.find_spec("flash_attn") is not None
     return unittest.skipUnless(fa_is_installed, "Requires Flash Attention")
+
+
+def skip_unless_triton_installed():
+    triton_is_installed = importlib.util.find_spec("triton") is not None
+    return unittest.skipUnless(triton_is_installed, "Requires Triton")
 
 
 def alphafold_is_installed():
@@ -81,7 +90,13 @@ _model = None
 def get_global_pretrained_openfold():
     global _model
     if _model is None:
-        _model = AlphaFold(model_config(consts.model))
+        model_config = (
+            af2_config.model_config
+            if not consts.is_multimer
+            else multimer_config.model_config
+        )
+        model_type = AlphaFold if not consts.is_multimer else AlphaFoldMultimer
+        _model = model_type(model_config(consts.model))
         _model = _model.eval()
         if not os.path.exists(_param_path):
             raise FileNotFoundError(

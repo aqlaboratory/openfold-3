@@ -213,7 +213,7 @@ def generate_translation_dict(model, version, is_multimer=False):
     def TriAttParams(tri_att):
         return {
             "query_norm": LayerNormParams(tri_att.layer_norm),
-            "feat_2d_weights": LinearWeight(tri_att.linear.weight),
+            "feat_2d_weights": LinearWeight(tri_att.linear_z.weight),
             "attention": AttentionGatedParams(tri_att.mha),
         }
 
@@ -671,6 +671,8 @@ def convert_deprecated_v2_keys(state_dict):
     """
 
     replacements = {
+        "tri_att_start.linear.weight": "tri_att_start.linear_z.weight",
+        "tri_att_end.linear.weight": "tri_att_end.linear_z.weight",
         "msa_transition.linear_1": "msa_transition.transition_mlp.layers.0.0",
         "msa_transition.linear_2": "msa_transition.transition_mlp.linear_out",
         "pair_transition.linear_1": "pair_transition.transition_mlp.layers.0.0",

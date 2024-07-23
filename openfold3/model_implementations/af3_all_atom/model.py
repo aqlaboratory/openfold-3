@@ -235,7 +235,11 @@ class AlphaFold3(nn.Module):
         # Compute atom positions
         with torch.no_grad():
             x_pred = self.sample_diffusion(
-                batch=batch, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
+                batch=batch,
+                si_input=si_input,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                chunk_size=self.globals.chunk_size,
             )
 
         output = {"x_pred": x_pred}
@@ -305,6 +309,7 @@ class AlphaFold3(nn.Module):
             si_input=si_input,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
+            chunk_size=self.globals.chunk_size,
         )
 
         output = {

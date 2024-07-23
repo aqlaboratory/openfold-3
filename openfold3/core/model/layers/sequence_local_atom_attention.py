@@ -22,11 +22,103 @@ from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
+from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers import DiffusionTransformer
 from openfold3.core.model.primitives import LayerNorm, Linear
 
 TensorDict = Dict[str, torch.Tensor]
+
+
+def compute_neighborhood_mask(
+    n_query: int,
+    n_key: int,
+    n_atom: int,
+    create_sparsity_mask: bool,
+    block_size: Optional[int],
+    no_batch_dims: int,
+    device: torch.device,
+    dtype: torch.dtype,
+    inf: float,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Compute neighborhood mask for Sequence-local atom attention.
+
+    Args:
+        n_query:
+            Number of queries (block height)
+        n_key:
+            Number of keys (block width)
+        n_atom:
+            Number of atoms
+        create_sparsity_mask:
+            Whether to create the sparsity layout mask used in block sparse attention
+        block_size:
+            Block size to use in block sparse attention
+        no_batch_dims:
+            Number of batch dimensions
+        device:
+            Device to use
+        dtype:
+            Dtype to use
+        inf:
+            Large number used for attention masking
+
+    Returns:
+        beta:
+            [*, N_atom, N_atom] Atom neighborhood mask
+        layout:
+            # [N_atom / block_size, N_atom / block_size] Sparsity layout mask
+    """
+    if create_sparsity_mask:
+        n_query = n_query // block_size
+        n_key = n_key // block_size
+        n_blocks = n_atom // block_size
+    else:
+        n_query = n_query
+        n_key = n_key
+        n_blocks = n_atom
+
+    offset = n_query // 2 - 0.5
+    n_center = int(n_blocks // n_query) + 1
+
+    # Define subset centers
+    # [N_center]
+    subset_centers = offset + torch.arange(n_center, device=device) * n_query
+
+    # If use_block_sparse_attn: [N_atom / block_size, N_query / block_size]
+    # Else: [N_atom, N_query]
+    row_mask = torch.abs(
+        torch.arange(n_blocks, device=device).unsqueeze(1) - subset_centers.unsqueeze(0)
+    ) < (n_query / 2)
+
+    # If use_block_sparse_attn: [N_atom / block_size, N_key / block_size]
+    # Else: [N_atom, N_key]
+    col_mask = torch.abs(
+        torch.arange(n_blocks, device=device).unsqueeze(1) - subset_centers.unsqueeze(0)
+    ) < (n_key / 2)
+
+    # Compute beta
+    # If use_block_sparse_attn: [N_atom / block_size, N_atom / block_size]
+    # Else: [N_atom, N_atom]
+    beta = torch.einsum("li,mi->lm", row_mask.to(dtype), col_mask.to(dtype))
+
+    layout = None
+    if create_sparsity_mask:
+        # [N_atom / block_size, N_atom / block_size]
+        layout = beta
+        # [N_atom, N_atom]
+        beta = beta.repeat_interleave(block_size, dim=0).repeat_interleave(
+            block_size, dim=1
+        )
+
+    beta = (beta - 1.0) * inf
+
+    # [*, N_atom, N_atom]
+    beta = beta.reshape(no_batch_dims * (1,) + (n_atom, n_atom)).to(device)
+
+    return beta, layout
 
 
 class AtomTransformer(nn.Module):
@@ -46,7 +138,11 @@ class AtomTransformer(nn.Module):
         n_transition: int,
         n_query: int,
         n_key: int,
-        inf: float,
+        use_ada_layer_norm: bool = True,
+        use_block_sparse_attn: bool = False,
+        block_size: Optional[int] = 16,
+        inf: float = 1e9,
+        linear_init_params: ConfigDict = lin_init.atom_transformer_init,
     ):
         """
         Args:
@@ -66,13 +162,24 @@ class AtomTransformer(nn.Module):
                 Number of queries (block height)
             n_key:
                 Number of keys (block width)
+            use_ada_layer_norm:
+                Whether to apply AdaLN-Zero conditioning
+            use_block_sparse_attn:
+                Whether to use Triton block sparse attention kernels
+            block_size:
+                Block size to use in block sparse attention
             inf:
                 Large number used for attention masking
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
         self.n_query = n_query
         self.n_key = n_key
+        self.use_block_sparse_attn = use_block_sparse_attn
+        self.block_size = block_size
         self.inf = inf
+
         self.diffusion_transformer = DiffusionTransformer(
             c_a=c_q,
             c_s=c_q,
@@ -81,7 +188,11 @@ class AtomTransformer(nn.Module):
             no_heads=no_heads,
             no_blocks=no_blocks,
             n_transition=n_transition,
-            inf=inf,
+            use_ada_layer_norm=use_ada_layer_norm,
+            use_block_sparse_attn=self.use_block_sparse_attn,
+            block_size=self.block_size,
+            inf=self.inf,
+            linear_init_params=linear_init_params.diffusion_transformer,
         )
 
     def forward(
@@ -90,6 +201,7 @@ class AtomTransformer(nn.Module):
         cl: torch.Tensor,
         plm: torch.Tensor,
         atom_mask: torch.Tensor,
+        chunk_size: Optional[int] = None,
     ):
         """
         Args:
@@ -101,34 +213,42 @@ class AtomTransformer(nn.Module):
                 [*, N_atom, N_atom, c_atom_pair] Atom pair representation
             atom_mask:
                 [*, N_atom] Atom mask
+            chunk_size:
+                Inference-time subbatch size
         Returns:
             ql:
                 [*, N_atom, c_atom] Updated atom single representation
         """
-        # Define subset centers
-        # [N_center]
-        n_atom = ql.shape[-2]
-        offset = self.n_query // 2 - 0.5  # TODO: check this
-        n_center = int(n_atom // self.n_query) + 1
-        subset_centers = offset + torch.arange(n_center) * self.n_query
+        # TODO: Add/remove padding from n_atom to make it divisible by block size
 
-        # Compute beta
-        # [*, N_atom, N_atom]
-        row_mask = torch.abs(
-            torch.arange(n_atom).unsqueeze(1) - subset_centers.unsqueeze(0)
-        ) < (self.n_query / 2)
-        col_mask = torch.abs(
-            torch.arange(n_atom).unsqueeze(1) - subset_centers.unsqueeze(0)
-        ) < (self.n_key / 2)
-        blm = (
-            torch.einsum("li,mi->lm", row_mask.to(ql.dtype), col_mask.to(ql.dtype))
-            - 1.0
-        ) * self.inf  # TODO: check this
-        blm = blm.reshape(len(plm[:-3]) * (1,) + (n_atom, n_atom)).to(ql.device)
+        n_atom = ql.shape[-2]
+
+        # Create atom neighborhood mask
+        # beta: [*, N_atom, N_atom]
+        # layout: [N_atom / block_size, N_atom / block_size]
+        beta, layout = compute_neighborhood_mask(
+            n_query=self.n_query,
+            n_key=self.n_key,
+            n_atom=n_atom,
+            create_sparsity_mask=self.use_block_sparse_attn,
+            block_size=self.block_size,
+            no_batch_dims=len(ql.shape[:-2]),
+            device=ql.device,
+            dtype=ql.dtype,
+            inf=self.inf,
+        )
 
         # Run diffusion transformer
         # [*, N_atom, c_atom]
-        ql = self.diffusion_transformer(a=ql, s=cl, z=plm, beta=blm, mask=atom_mask)
+        ql = self.diffusion_transformer(
+            a=ql,
+            s=cl,
+            z=plm,
+            mask=atom_mask,
+            beta=beta,
+            layout=layout,
+            chunk_size=chunk_size,
+        )
 
         return ql
 
@@ -138,7 +258,13 @@ class RefAtomFeatureEmbedder(nn.Module):
     Implements AF3 Algorithm 5 (line 1 - 6).
     """
 
-    def __init__(self, c_atom_ref: int, c_atom: int, c_atom_pair: int):
+    def __init__(
+        self,
+        c_atom_ref: int,
+        c_atom: int,
+        c_atom_pair: int,
+        linear_init_params: ConfigDict = lin_init.ref_atom_emb_init,
+    ):
         """
         Args:
             c_atom_ref:
@@ -147,12 +273,22 @@ class RefAtomFeatureEmbedder(nn.Module):
                 Atom single conditioning channel dimension
             c_atom_pair:
                 Atom pair conditioning channel dimension
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
-        self.linear_feats = Linear(c_atom_ref, c_atom, bias=False)
-        self.linear_ref_offset = Linear(3, c_atom_pair, bias=False)
-        self.linear_inv_sq_dists = Linear(1, c_atom_pair, bias=False)
-        self.linear_valid_mask = Linear(1, c_atom_pair, bias=False)
+        self.linear_feats = Linear(
+            c_atom_ref, c_atom, **linear_init_params.linear_feats
+        )
+        self.linear_ref_offset = Linear(
+            3, c_atom_pair, **linear_init_params.linear_ref_offset
+        )
+        self.linear_inv_sq_dists = Linear(
+            1, c_atom_pair, **linear_init_params.linear_inv_sq_dists
+        )
+        self.linear_valid_mask = Linear(
+            1, c_atom_pair, **linear_init_params.linear_valid_mask
+        )
 
     def forward(
         self,
@@ -185,11 +321,10 @@ class RefAtomFeatureEmbedder(nn.Module):
             torch.cat(
                 [
                     batch["ref_pos"],
+                    batch["ref_charge"].unsqueeze(-1),
                     batch["ref_mask"].unsqueeze(-1),
                     batch["ref_element"],
-                    batch["ref_charge"].unsqueeze(-1),
                     batch["ref_atom_name_chars"].flatten(start_dim=-2),
-                    batch["ref_space_uid"].unsqueeze(-1),
                 ],
                 dim=-1,
             )
@@ -199,7 +334,7 @@ class RefAtomFeatureEmbedder(nn.Module):
         # dlm: [*, N_atom, N_atom, 3]
         # vlm: [*, N_atom, N_atom]
         # plm: [*, N_atom, N_atom, c_atom_pair]
-        dlm = batch["ref_pos"].unsqueeze(-3) - batch["ref_pos"].unsqueeze(-2)
+        dlm = batch["ref_pos"].unsqueeze(-2) - batch["ref_pos"].unsqueeze(-3)
         vlm = (
             batch["ref_space_uid"].unsqueeze(-2) == batch["ref_space_uid"].unsqueeze(-1)
         ).to(dlm.dtype)
@@ -219,20 +354,33 @@ class NoisyPositionEmbedder(nn.Module):
     Implements AF3 Algorithm 5 (line 8 - 12).
     """
 
-    def __init__(self, c_s: int, c_z: int, c_atom: int, c_atom_pair: int):
+    def __init__(
+        self,
+        c_s: int,
+        c_z: int,
+        c_atom: int,
+        c_atom_pair: int,
+        linear_init_params: ConfigDict = lin_init.noisy_pos_emb_init,
+    ):
         """
         Args:
+            c_s:
+                Single representation channel dimension
+            c_z:
+                Pair representation channel dimension
             c_atom:
                 Atom single conditioning channel dimension
             c_atom_pair:
                 Atom pair conditioning channel dimension
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
         self.layer_norm_s = LayerNorm(c_s)
-        self.linear_s = Linear(c_s, c_atom, bias=False)
+        self.linear_s = Linear(c_s, c_atom, **linear_init_params.linear_s)
         self.layer_norm_z = LayerNorm(c_z)
-        self.linear_z = Linear(c_z, c_atom_pair, bias=False)
-        self.linear_r = Linear(3, c_atom, bias=False)
+        self.linear_z = Linear(c_z, c_atom_pair, **linear_init_params.linear_z)
+        self.linear_r = Linear(3, c_atom, **linear_init_params.linear_r)
 
     def forward(
         self,
@@ -320,9 +468,13 @@ class AtomAttentionEncoder(nn.Module):
         n_transition: int,
         n_query: int,
         n_key: int,
-        inf: float,
+        use_ada_layer_norm: bool,
+        use_block_sparse_attn: bool,
+        block_size: Optional[int] = 16,
+        inf: float = 1e9,
         c_s: Optional[int] = None,
         c_z: Optional[int] = None,
+        linear_init_params: ConfigDict = lin_init.atom_att_enc_init,
     ):
         """
         Args:
@@ -348,36 +500,51 @@ class AtomAttentionEncoder(nn.Module):
                 Number of queries (block height)
             n_key:
                 Number of keys (block width)
+            use_ada_layer_norm:
+                Whether to apply AdaLN-Zero conditioning
+            use_block_sparse_attn:
+                Whether to use Triton block sparse attention kernels
+            block_size:
+                Block size to use in block sparse attention
             inf:
                 Large number used for attention masking
             c_s:
                 Single representation channel dimension (optional)
             c_z:
                 Pair representation channel dimension (optional)
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
         self.ref_atom_feature_embedder = RefAtomFeatureEmbedder(
-            c_atom_ref=c_atom_ref, c_atom=c_atom, c_atom_pair=c_atom_pair
+            c_atom_ref=c_atom_ref,
+            c_atom=c_atom,
+            c_atom_pair=c_atom_pair,
+            linear_init_params=linear_init_params.ref_atom_emb,
         )
 
         if add_noisy_pos:
             self.noisy_position_embedder = NoisyPositionEmbedder(
-                c_s=c_s, c_z=c_z, c_atom=c_atom, c_atom_pair=c_atom_pair
+                c_s=c_s,
+                c_z=c_z,
+                c_atom=c_atom,
+                c_atom_pair=c_atom_pair,
+                linear_init_params=linear_init_params.noisy_pos_emb,
             )
 
         self.relu = nn.ReLU()
-        self.linear_l = Linear(c_atom, c_atom_pair, bias=False, init="relu")
+        self.linear_l = Linear(c_atom, c_atom_pair, **linear_init_params.linear_l)
         self.linear_m = Linear(
-            c_atom, c_atom_pair, bias=False, init="relu"
+            c_atom, c_atom_pair, **linear_init_params.linear_m
         )  # TODO: check initialization
 
         self.pair_mlp = nn.Sequential(
             nn.ReLU(),
-            Linear(c_atom_pair, c_atom_pair, bias=False, init="relu"),
+            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp),
             nn.ReLU(),
-            Linear(c_atom_pair, c_atom_pair, bias=False, init="relu"),
+            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp),
             nn.ReLU(),
-            Linear(c_atom_pair, c_atom_pair, bias=False, init="relu"),
+            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp),
         )
 
         self.atom_transformer = AtomTransformer(
@@ -389,11 +556,15 @@ class AtomAttentionEncoder(nn.Module):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
+            use_ada_layer_norm=use_ada_layer_norm,
+            use_block_sparse_attn=use_block_sparse_attn,
+            block_size=block_size,
             inf=inf,
+            linear_init_params=linear_init_params.atom_transformer,
         )
 
         self.linear_q = nn.Sequential(
-            Linear(c_atom, c_token, bias=False, init="relu"), nn.ReLU()
+            Linear(c_atom, c_token, **linear_init_params.linear_q), nn.ReLU()
         )
 
     def forward(
@@ -403,6 +574,7 @@ class AtomAttentionEncoder(nn.Module):
         rl: Optional[torch.Tensor] = None,
         si_trunk: Optional[torch.Tensor] = None,
         zij_trunk: Optional[torch.Tensor] = None,
+        chunk_size: Optional[int] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -429,6 +601,8 @@ class AtomAttentionEncoder(nn.Module):
                 [*, N_atom, c_s] Trunk single representation (optional)
             zij_trunk:
                 [*, N_atom, N_atom, c_z] Trunk pair representation (optional)
+            chunk_size:
+                Inference-time subbatch size
         Returns:
             ai:
                 [*, N_token, c_token] Token representation
@@ -446,8 +620,7 @@ class AtomAttentionEncoder(nn.Module):
 
         # Initialize atom single representation
         # [*, N_atom, c_atom]
-        ql = cl
-        # why detach? ql = cl.detach().clone()
+        ql = cl.clone()
 
         # Embed noisy atom positions and trunk embeddings
         # cl: [*, N_atom, c_atom]
@@ -475,7 +648,9 @@ class AtomAttentionEncoder(nn.Module):
 
         # Cross attention transformer (line 15)
         # [*, N_atom, c_atom]
-        ql = self.atom_transformer(ql=ql, cl=cl, plm=plm, atom_mask=atom_mask)
+        ql = self.atom_transformer(
+            ql=ql, cl=cl, plm=plm, atom_mask=atom_mask, chunk_size=chunk_size
+        )
 
         # Create atom to token index conversion matrix
         # [*, N_token, N_atom]
@@ -513,7 +688,11 @@ class AtomAttentionDecoder(nn.Module):
         n_transition: int,
         n_query: int,
         n_key: int,
-        inf: float,
+        use_ada_layer_norm: bool,
+        use_block_sparse_attn: bool,
+        block_size: Optional[int] = 16,
+        inf: float = 1e9,
+        linear_init_params: ConfigDict = lin_init.atom_att_dec_init,
     ):
         """
         Args:
@@ -535,12 +714,20 @@ class AtomAttentionDecoder(nn.Module):
                 Number of queries (block height)
             n_key:
                 Number of keys (block width)
+            use_ada_layer_norm:
+                Whether to apply AdaLN-Zero conditioning
+            use_block_sparse_attn:
+                Whether to use Triton block sparse attention kernels
+            block_size:
+                Block size to use in block sparse attention
             inf:
                 Large number used for attention masking
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
-        self.linear_q_in = Linear(c_token, c_atom, bias=False)
+        self.linear_q_in = Linear(c_token, c_atom, **linear_init_params.linear_q_in)
 
         self.atom_transformer = AtomTransformer(
             c_q=c_atom,
@@ -551,11 +738,15 @@ class AtomAttentionDecoder(nn.Module):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
+            use_ada_layer_norm=use_ada_layer_norm,
+            use_block_sparse_attn=use_block_sparse_attn,
+            block_size=block_size,
             inf=inf,
+            linear_init_params=linear_init_params.atom_transformer,
         )
 
         self.layer_norm = LayerNorm(c_in=c_atom)
-        self.linear_q_out = Linear(c_atom, 3, bias=False, init="final")
+        self.linear_q_out = Linear(c_atom, 3, **linear_init_params.linear_q_out)
 
     def forward(
         self,
@@ -565,6 +756,7 @@ class AtomAttentionDecoder(nn.Module):
         ql: torch.Tensor,
         cl: torch.Tensor,
         plm: torch.Tensor,
+        chunk_size: Optional[int] = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -581,6 +773,8 @@ class AtomAttentionDecoder(nn.Module):
                 [*, N_atom, c_atom] Atom single conditioning
             plm:
                 [*, N_atom, N_atom, c_atom_pair] Atom pair representation
+            chunk_size:
+                Inference-time subbatch size
         Returns:
             rl_update:
                 [*, N_atom, 3] Atom position updates
@@ -597,7 +791,9 @@ class AtomAttentionDecoder(nn.Module):
 
         # Atom transformer
         # [*, N_atom, c_atom]
-        ql = self.atom_transformer(ql=ql, cl=cl, plm=plm, atom_mask=atom_mask)
+        ql = self.atom_transformer(
+            ql=ql, cl=cl, plm=plm, atom_mask=atom_mask, chunk_size=chunk_size
+        )
 
         # Compute updates for atom positions
         # [*, N_atom, 3]

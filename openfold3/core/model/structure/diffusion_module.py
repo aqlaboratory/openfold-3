@@ -17,11 +17,12 @@ Diffusion module. Implements the algorithms in section 3.7 of the
 Supplementary Information.
 """
 
-from typing import Dict
+from typing import Dict, Optional
 
 import torch
 import torch.nn as nn
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers import (
     AtomAttentionDecoder,
     AtomAttentionEncoder,
@@ -29,39 +30,49 @@ from openfold3.core.model.layers import (
 )
 from openfold3.core.model.layers.diffusion_conditioning import DiffusionConditioning
 from openfold3.core.model.primitives import LayerNorm, Linear
+from openfold3.core.utils.rigid_utils import quat_to_rot
+
+
+def sample_rotations(shape, dtype: torch.dtype, device: torch.device) -> torch.Tensor:
+    """Sample random quaternions"""
+    q = torch.randn(*shape, 4, dtype=dtype, device=device)
+    q = q / torch.linalg.norm(q, dim=-1, keepdim=True)
+
+    rots = quat_to_rot(q)
+
+    return rots
 
 
 def centre_random_augmentation(
-    pos: torch.Tensor, pos_mask: torch.Tensor, scale_trans: float = 1.0
+    xl: torch.Tensor, atom_mask: torch.Tensor, scale_trans: float = 1.0
 ) -> torch.Tensor:
     """
     Implements AF3 Algorithm 19.
 
     Args:
-        pos:
+        xl:
             [*, N_atom, 3] Atom positions
-        pos_mask:
+        atom_mask:
             [*, N_atom] Atom mask
         scale_trans:
             Translation scaling factor
     Returns:
         Updated atom position with random global rotation and translation
     """
-    m = torch.rand((*pos.shape[:-2], 3, 3), dtype=pos.dtype, device=pos.device)
-    rots, __ = torch.linalg.qr(m)
+    rots = sample_rotations(shape=xl.shape[:-2], dtype=xl.dtype, device=xl.device)
 
     trans = scale_trans * torch.randn(
-        (*pos.shape[:-2], 3), dtype=pos.dtype, device=pos.device
+        (*xl.shape[:-2], 3), dtype=xl.dtype, device=xl.device
     )
 
-    mean_pos = torch.mean(
-        pos * pos_mask[..., None],
+    mean_xl = torch.sum(
+        xl * atom_mask[..., None],
         dim=-2,
         keepdim=True,
-    )
+    ) / torch.sum(atom_mask[..., None], dim=-2, keepdim=True)
 
     # center coordinates
-    pos_centered = pos - mean_pos
+    pos_centered = xl - mean_xl
     return pos_centered @ rots.transpose(-1, -2) + trans[..., None, :]
 
 
@@ -117,8 +128,16 @@ class DiffusionModule(nn.Module):
             **config.atom_attn_enc, add_noisy_pos=True
         )
 
+        diff_mod_init = config.diffusion_module.get(
+            "linear_init_params", lin_init.diffusion_module_init
+        )
+
         self.layer_norm_s = LayerNorm(self.c_s)
-        self.linear_s = Linear(self.c_s, self.c_token, bias=False)
+        self.linear_s = Linear(
+            self.c_s,
+            self.c_token,
+            **diff_mod_init.linear_s,
+        )
 
         self.diffusion_transformer = DiffusionTransformer(
             **config.diffusion_transformer
@@ -137,6 +156,7 @@ class DiffusionModule(nn.Module):
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
+        chunk_size: Optional[int] = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -154,6 +174,8 @@ class DiffusionModule(nn.Module):
                 [*, N_token, c_s] Single representation
             zij_trunk:
                 [*, N_token, c_s] Pair representation
+            chunk_size:
+                Inference-time subbatch size
         Returns:
             [*, N_atom, 3] Denoised atom positions
         """
@@ -169,18 +191,25 @@ class DiffusionModule(nn.Module):
             rl=rl_noisy,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
+            chunk_size=chunk_size,
         )  # differ from AF3
 
         ai = ai + self.linear_s(self.layer_norm_s(si))
 
         ai = self.diffusion_transformer(
-            a=ai, s=si, z=zij, beta=None, mask=batch["token_mask"]
+            a=ai, s=si, z=zij, mask=batch["token_mask"], chunk_size=chunk_size
         )
 
         ai = self.layer_norm_a(ai)
 
         rl_update = self.atom_attn_dec(
-            batch=batch, atom_mask=atom_mask, ai=ai, ql=ql, cl=cl, plm=plm
+            batch=batch,
+            atom_mask=atom_mask,
+            ai=ai,
+            ql=ql,
+            cl=cl,
+            plm=plm,
+            chunk_size=chunk_size,
         )
 
         xl_out = (
@@ -259,6 +288,7 @@ class SampleDiffusion(nn.Module):
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
+        chunk_size: Optional[int] = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -269,7 +299,9 @@ class SampleDiffusion(nn.Module):
             si_trunk:
                 [*, N_token, c_s] Single representation
             zij_trunk:
-                [*, N_token, N_token, c_z] Pair represnetation
+                [*, N_token, N_token, c_z] Pair representation
+            chunk_size:
+                Inference-time subbatch size
         Returns:
             [*, N_atom, 3] Sampled atom positions
         """
@@ -287,15 +319,15 @@ class SampleDiffusion(nn.Module):
         )
 
         for tau, c_tau in enumerate(self.noise_schedule[1:]):
-            xl = centre_random_augmentation(pos=xl, pos_mask=atom_mask)
+            xl = centre_random_augmentation(xl=xl, atom_mask=atom_mask)
 
             gamma = self.gamma_0 if c_tau > self.gamma_min else 0
 
-            t = self.noise_schedule[tau - 1] * (gamma + 1)
+            t = self.noise_schedule[tau] * (gamma + 1)
 
             noise = (
                 self.noise_scale
-                * torch.sqrt(t**2 - self.noise_schedule[tau - 1] ** 2)
+                * torch.sqrt(t**2 - self.noise_schedule[tau] ** 2)
                 * torch.randn_like(xl)
             )
 
@@ -309,6 +341,7 @@ class SampleDiffusion(nn.Module):
                 si_input=si_input,
                 si_trunk=si_trunk,
                 zij_trunk=zij_trunk,
+                chunk_size=chunk_size,
             )
 
             delta = (xl - xl_denoised) / t

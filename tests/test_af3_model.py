@@ -12,12 +12,13 @@ from tests.data_utils import random_af3_features
 class TestAF3Model(unittest.TestCase):
     def test_shape(self):
         batch_size = consts.batch_size
-        n_token = consts.n_res
-        n_atom = 4 * consts.n_res
+        n_token = 16
+        n_atom = 4 * n_token
         n_msa = 10
         n_templ = 3
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
+        config.model.pairformer.no_blocks = 4  # To avoid memory issues in CI
         af3 = AlphaFold3(config).to(device)
 
         batch = random_af3_features(
