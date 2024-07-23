@@ -1,11 +1,12 @@
 import logging
-from typing import Literal
+from itertools import combinations
+from typing import Generator, Literal, NamedTuple
 
 import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
-from scipy.spatial.distance import cdist
+from scipy.spatial.distance import cdist, pdist, squareform
 
 from .metadata_extraction import get_entity_to_three_letter_codes_dict
 from .tables import (
@@ -108,6 +109,61 @@ def assign_molecule_type_ids(atom_array: AtomArray) -> None:
             molecule_type_ids[chain_start:chain_end] = MOLECULE_TYPE_ID_LIGAND
 
     atom_array.set_annotation("molecule_type_id", molecule_type_ids)
+
+
+class ChainDistPairing(NamedTuple):
+    chain1_id: int  # chain_id of chain 1
+    chain2_id: int  # chain_id of chain 2
+    chain1_chain2_dists: np.ndarray  # pairwise distances between chain 1 and chain 2
+
+
+def pairwise_chain_dist_iter(
+    pairwise_dists: np.ndarray, atom_chain_ids: np.ndarray
+) -> Generator[ChainDistPairing, None, None]:
+    # All possible pairings of chains (ignoring order and without self-pairings)
+    chain_ids = np.unique(atom_chain_ids)
+    chain_pairings = list(combinations(chain_ids, 2))
+
+    # Mask to access every chain
+    chain_masks = {chain_id: atom_chain_ids == chain_id for chain_id in chain_ids}
+
+    # Loop through all pairings and get distances
+    for chain1_id, chain2_id in chain_pairings:
+        chain1_mask = chain_masks[chain1_id]
+        chain2_mask = chain_masks[chain2_id]
+        chain1_chain2_dists = pairwise_dists[chain1_mask][:, chain2_mask]
+
+        yield ChainDistPairing(chain1_id, chain2_id, chain1_chain2_dists)
+
+
+def get_interface_chain_pairs(
+    atom_array: AtomArray, distance_threshold: float = 15.0
+) -> list[tuple[int, int]]:
+    """Returns chain pairings with interface atoms based on a distance threshold
+
+    This will find all pairs of chains in the AtomArray that have at least one atom
+    within a given distance threshold of each other.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to find interface chain pairings in.
+        distance_threshold:
+            Distance threshold in Angstrom. Defaults to 15.0.
+
+    Returns:
+        List of tuples with chain pairings that have interface atoms.
+    """
+    pairwise_dists = squareform(pdist(atom_array.coord, metric="euclidean"))
+
+    interface_pairs = []
+
+    for chain1_id, chain2_id, chain1_chain2_dists in pairwise_chain_dist_iter(
+        pairwise_dists, atom_array.chain_id_renumbered
+    ):
+        if np.any(chain1_chain2_dists < distance_threshold):
+            interface_pairs.append((chain1_id, chain2_id))
+
+    return interface_pairs
 
 
 def get_interface_atoms(

@@ -1,5 +1,4 @@
 from functools import wraps
-from itertools import combinations
 
 import biotite.structure as struc
 import numpy as np
@@ -8,7 +7,11 @@ from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from scipy.spatial.distance import cdist, pdist, squareform
 
 from .metadata_extraction import get_experimental_method
-from .structure_primitives import assign_atom_indices, get_interface_token_center_atoms
+from .structure_primitives import (
+    assign_atom_indices,
+    get_interface_token_center_atoms,
+    pairwise_chain_dist_iter,
+)
 from .tables import CRYSTALLIZATION_AIDS
 from .tokenization import tokenize_atom_array
 
@@ -305,23 +308,11 @@ def remove_clashing_chains(
     # considered clashes
     pairwise_dists[atom_array.bonds.adjacency_matrix()] = np.inf
 
-    # All possible pairings of chains (ignoring order and without self-pairings)
-    chain_ids = np.unique(atom_array.chain_id_renumbered)
-    chain_pairings = list(combinations(chain_ids, 2))
-
-    # Mask to access every chain
-    chain_masks = {
-        chain_id: atom_array.chain_id_renumbered == chain_id for chain_id in chain_ids
-    }
-
     chain_ids_to_remove = set()
 
-    # Loop through all pairings and collect chains to remove
-    for chain1_id, chain2_id in chain_pairings:
-        chain1_mask = chain_masks[chain1_id]
-        chain2_mask = chain_masks[chain2_id]
-        chain1_chain2_dists = pairwise_dists[chain1_mask][:, chain2_mask]
-
+    for chain1_id, chain2_id, chain1_chain2_dists in pairwise_chain_dist_iter(
+        pairwise_dists, atom_array.chain_id_renumbered
+    ):
         chain1_n_clashing_atoms = np.any(
             chain1_chain2_dists < clash_distance, axis=1
         ).sum()
@@ -329,8 +320,10 @@ def remove_clashing_chains(
             chain1_chain2_dists < clash_distance, axis=0
         ).sum()
 
-        chain1_clash_fraction = chain1_n_clashing_atoms / chain_masks[chain1_id].sum()
-        chain2_clash_fraction = chain2_n_clashing_atoms / chain_masks[chain2_id].sum()
+        chain1_mask = atom_array.chain_id_renumbered == chain1_id
+        chain2_mask = atom_array.chain_id_renumbered == chain2_id
+        chain1_clash_fraction = chain1_n_clashing_atoms / chain1_mask.sum()
+        chain2_clash_fraction = chain2_n_clashing_atoms / chain2_mask.sum()
 
         if (
             chain1_clash_fraction > clash_percentage
