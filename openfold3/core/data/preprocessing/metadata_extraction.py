@@ -17,7 +17,7 @@ def get_release_date(cif_data: CIFBlock) -> str:
         The release date of the structure.
     """
     release_dates = cif_data["pdbx_audit_revision_history"]["revision_date"].as_array()
-    
+
     return min(release_dates)
 
 
@@ -28,7 +28,7 @@ def get_resolution(cif_data: CIFBlock) -> float:
     - refine.ls_d_res_high
     - em_3d_reconstruction.resolution
     - reflns.d_resolution_high
-    
+
     and returning the first one that is found. If none of the above data items are
     found, the function returns NaN.
 
@@ -59,17 +59,17 @@ def get_resolution(cif_data: CIFBlock) -> float:
 
 def get_experimental_method(cif_data: CIFBlock) -> str:
     """Get the experimental method used to determine the structure.
-    
+
     Args:
         cif_data:
             Parsed mmCIF data of the structure. Note that this expects a CIFBlock which
             requires one prior level of indexing into the CIFFile, (see `get_cif_block`)
-    
+
     Returns:
         The experimental method used to determine the structure.
     """
     method = cif_data["exptl"]["method"].as_item()
-    
+
     return method
 
 
