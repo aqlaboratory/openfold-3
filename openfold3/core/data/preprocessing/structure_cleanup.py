@@ -6,7 +6,7 @@ import numpy as np
 from biotite.structure.io.pdbx import CIFFile
 from scipy.spatial.distance import cdist, pdist, squareform
 
-from .structure_primitives import get_interface_token_center_atoms, assign_atom_indices
+from .structure_primitives import assign_atom_indices, get_interface_token_center_atoms
 from .tables import CRYSTALLIZATION_AIDS
 
 
