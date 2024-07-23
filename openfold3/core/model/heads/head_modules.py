@@ -222,8 +222,10 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         aux_out = {}
         # 1. distogram head: distogram head needs outputs['pair'] before passing
         # pairformer (main loop: line 17)
-        distogram_logits = self.distogram(outputs["pair"])
-        aux_out["distogram_logits"] = distogram_logits
+        # Not enabled in finetuning 3 stage
+        if self.config["distogram"]["enabled"]:
+            distogram_logits = self.distogram(outputs["pair"])
+            aux_out["distogram_logits"] = distogram_logits
 
         # 2. stop grad
         pair = outputs["pair"].detach()
@@ -252,31 +254,37 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         )
         aux_out["experimentally_resolved_logits"] = experimentally_resolved_logits
 
-        pae_logits = self.pae(zij)
-        aux_out["pae_logits"] = pae_logits
-
         pde_logits = self.pde(zij)
         aux_out["pde_logits"] = pde_logits
 
-        if self.config["tm"]["enabled"]:
+        if self.config["pae"]["enabled"]:
+            pae_logits = self.pae(zij)
+            aux_out["pae_logits"] = pae_logits
+
             tm_logits = pae_logits  # uses pae_logits (SI pg. 27)
             aux_out["tm_logits"] = tm_logits
-            aux_out["ptm_score"] = compute_tm(tm_logits, **self.config.tm)
-            asym_id = outputs.get("asym_id")
-            if asym_id is not None:
-                aux_out["iptm_score"] = compute_tm(
-                    tm_logits, asym_id=asym_id, interface=True, **self.config.tm
-                )
-                aux_out["weighted_ptm_score"] = (
-                    self.config.tm["iptm_weight"] * aux_out["iptm_score"]
-                    + self.config.tm["ptm_weight"] * aux_out["ptm_score"]
-                )
 
-            aux_out.update(
-                compute_predicted_aligned_error(
-                    tm_logits,
-                    **self.config.tm,
-                )
-            )
+            # TODO: Clean up refs to feature dict
+            # For example asym id does not exist in the output dict
+            # Fix TM/PAE configs. These functions are referencing params that would
+            # be in the loss config
+
+            # aux_out["ptm_score"] = compute_tm(tm_logits, **self.config.tm)
+            # asym_id = outputs.get("asym_id")
+            # if asym_id is not None:
+            #     aux_out["iptm_score"] = compute_tm(
+            #         tm_logits, asym_id=asym_id, interface=True, **self.config.tm
+            #     )
+            #     aux_out["weighted_ptm_score"] = (
+            #         self.config.tm["iptm_weight"] * aux_out["iptm_score"]
+            #         + self.config.tm["ptm_weight"] * aux_out["ptm_score"]
+            #     )
+            #
+            # aux_out.update(
+            #     compute_predicted_aligned_error(
+            #         pae_logits,
+            #         **self.config.pae,
+            #     )
+            # )
 
         return aux_out

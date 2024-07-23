@@ -263,8 +263,8 @@ config = mlc.ConfigDict(
                 "tm": {
                     "c_z": c_z,
                     "c_out": aux_distogram_bins,
-                    "enabled": tm_enabled,
                     "linear_init_params": lin_init.tm_score_init,
+                    "enabled": tm_enabled,
                 },
                 "masked_msa": {
                     "c_m": c_m,

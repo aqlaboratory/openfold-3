@@ -2,7 +2,6 @@ import unittest
 
 import numpy as np
 import torch
-from ml_collections import ConfigDict
 
 from openfold3.core.model.heads.head_modules import AuxiliaryHeadsAllAtom
 from openfold3.core.model.heads.prediction_heads import (
@@ -12,6 +11,7 @@ from openfold3.core.model.heads.prediction_heads import (
     PredictedAlignedErrorHead,
     PredictedDistanceErrorHead,
 )
+from openfold3.model_implementations.af3_all_atom.config import config
 from tests.config import consts
 
 # a few additional consts for stronger tests with token_to_atom_idx including modules
@@ -110,45 +110,11 @@ class TestPairformerEmbedding(unittest.TestCase):
     def test_pairformer_embedding_shape(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
-        c_s = consts.c_s
-        c_z = consts.c_z
 
-        min_bin = 3.25
-        max_bin = 20.75
-        no_bin = 15
+        c_s = config.globals.c_s
+        c_z = config.globals.c_z
 
-        c_hidden_pair_bias = 12
-        no_heads_pair_bias = 3
-        c_hidden_mul = 19
-        c_hidden_pair_att = 14
-        no_heads_pair = 7
-        no_blocks = 2
-        transition_n = 2
-        pair_dropout = 0.25
-        inf = 1e9
-
-        pairformer_stack_config = ConfigDict(
-            {
-                "c_s": c_s,
-                "c_z": c_z,
-                "c_hidden_pair_bias": c_hidden_pair_bias,
-                "no_heads_pair_bias": no_heads_pair_bias,
-                "c_hidden_mul": c_hidden_mul,
-                "c_hidden_pair_att": c_hidden_pair_att,
-                "no_heads_pair": no_heads_pair,
-                "no_blocks": no_blocks,
-                "transition_type": "swiglu",
-                "transition_n": transition_n,
-                "pair_dropout": pair_dropout,
-                "fuse_projection_weights": False,
-                "blocks_per_ckpt": None,
-                "inf": inf,
-            }
-        )
-
-        pair_emb = PairformerEmbedding(
-            pairformer_stack_config, c_s, c_z, min_bin, max_bin, no_bin, inf
-        )
+        pair_emb = PairformerEmbedding(**config.model.heads.pairformer_embedding).eval()
 
         si_input = torch.ones(batch_size, n_token, c_s)
         si = torch.ones(batch_size, n_token, c_s)
@@ -181,61 +147,12 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         n_token = consts.n_res
         n_atom = torch.sum(dummy_atom_per_token).item()
 
-        c_s = consts.c_s
-        c_z = consts.c_z
-        c_out = 50
-        min_bin = 3.25
-        max_bin = 20.75
-        no_bin = 15
+        c_s = config.globals.c_s
+        c_z = config.globals.c_z
 
-        c_hidden_pair_bias = 12
-        no_heads_pair_bias = 3
-        c_hidden_mul = 19
-        c_hidden_pair_att = 14
-        no_heads_pair = 7
-        no_blocks = 4
-        transition_n = 2
-        pair_dropout = 0.25
-        inf = 1e9
-
-        config = ConfigDict(
-            {
-                "pae": {"c_z": c_z, "c_out": c_out},
-                "pde": {"c_z": c_z, "c_out": c_out},
-                "lddt": {"c_s": c_s, "c_out": c_out},
-                "distogram": {"c_z": c_z, "c_out": c_out},
-                "experimentally_resolved": {"c_s": c_s, "c_out": c_out},
-                "pairformer_embedding": {
-                    "pairformer": {
-                        "c_s": c_s,
-                        "c_z": c_z,
-                        "c_hidden_pair_bias": c_hidden_pair_bias,
-                        "no_heads_pair_bias": no_heads_pair_bias,
-                        "c_hidden_mul": c_hidden_mul,
-                        "c_hidden_pair_att": c_hidden_pair_att,
-                        "no_heads_pair": no_heads_pair,
-                        "no_blocks": no_blocks,
-                        "transition_type": "swiglu",
-                        "transition_n": transition_n,
-                        "pair_dropout": pair_dropout,
-                        "fuse_projection_weights": False,
-                        "blocks_per_ckpt": None,
-                        "inf": inf,
-                    },
-                    "c_s": c_s,
-                    "c_z": c_z,
-                    "min_bin": min_bin,
-                    "max_bin": max_bin,
-                    "no_bin": no_bin,
-                    "inf": inf,
-                },
-                "tm": {
-                    "enabled": False,
-                },
-            }
-        )
-
-        aux_head = AuxiliaryHeadsAllAtom(config)
+        heads_config = config.model.heads
+        heads_config.pae.enabled = True
+        aux_head = AuxiliaryHeadsAllAtom(heads_config).eval()
 
         si_input = torch.ones(batch_size, n_token, c_s)
         si = torch.ones(batch_size, n_token, c_s)
@@ -286,20 +203,34 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
             chunk_size=4,
         )
 
-        expected_shape_distogram = (batch_size, n_token, n_token, c_out)
+        expected_shape_distogram = (
+            batch_size,
+            n_token,
+            n_token,
+            heads_config.distogram.c_out,
+        )
         np.testing.assert_array_equal(
             aux_out["distogram_logits"].shape, expected_shape_distogram
         )
 
-        expected_shape_pae = (batch_size, n_token, n_token, c_out)
+        expected_shape_pae = (batch_size, n_token, n_token, heads_config.pae.c_out)
         np.testing.assert_array_equal(aux_out["pae_logits"].shape, expected_shape_pae)
 
-        expected_shape_pde = (batch_size, n_token, n_token, c_out)
+        expected_shape_pde = (batch_size, n_token, n_token, heads_config.pde.c_out)
         np.testing.assert_array_equal(aux_out["pde_logits"].shape, expected_shape_pde)
 
-        expected_shape_plddt = (batch_size, n_atom, c_out)
+        expected_shape_plddt = (batch_size, n_atom, heads_config.lddt.c_out)
         np.testing.assert_array_equal(
             aux_out["plddt_logits"].shape, expected_shape_plddt
+        )
+
+        expected_shape_exp_res = (
+            batch_size,
+            n_atom,
+            heads_config.experimentally_resolved.c_out,
+        )
+        np.testing.assert_array_equal(
+            aux_out["experimentally_resolved_logits"].shape, expected_shape_exp_res
         )
 
 

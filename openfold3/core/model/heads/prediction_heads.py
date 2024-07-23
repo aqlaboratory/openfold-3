@@ -129,7 +129,11 @@ class PredictedAlignedErrorHead(nn.Module):
     """
 
     def __init__(
-        self, c_z: int, c_out: int, linear_init_params: ConfigDict = lin_init.pae_init
+        self,
+        c_z: int,
+        c_out: int,
+        linear_init_params: ConfigDict = lin_init.pae_init,
+        **kwargs,
     ):
         """
         Args:
@@ -171,7 +175,11 @@ class PredictedDistanceErrorHead(nn.Module):
     """
 
     def __init__(
-        self, c_z: int, c_out: int, linear_init_params: ConfigDict = lin_init.pde_init
+        self,
+        c_z: int,
+        c_out: int,
+        linear_init_params: ConfigDict = lin_init.pde_init,
+        **kwargs,
     ):
         """
         Args:
@@ -212,7 +220,11 @@ class PerResidueLDDAllAtom(nn.Module):
     """
 
     def __init__(
-        self, c_s: int, c_out: int, linear_init_params: ConfigDict = lin_init.lddt_init
+        self,
+        c_s: int,
+        c_out: int,
+        linear_init_params: ConfigDict = lin_init.lddt_init,
+        **kwargs,
     ):
         """
         Args:
@@ -264,6 +276,7 @@ class PerResidueLDDTCaPredictor(nn.Module):
         c_in: int,
         c_hidden: int,
         linear_init_params: ConfigDict = lin_init.lddt_ca_init,
+        **kwargs,
     ):
         super().__init__()
 
@@ -304,6 +317,7 @@ class ExperimentallyResolvedHeadAllAtom(nn.Module):
         c_s: int,
         c_out: int,
         linear_init_params: ConfigDict = lin_init.exp_res_all_atom_init,
+        **kwargs,
     ):
         """
         Args:
@@ -355,6 +369,7 @@ class ExperimentallyResolvedHead(nn.Module):
         c_s: int,
         c_out: int,
         linear_init_params: ConfigDict = lin_init.exp_res_init,
+        **kwargs,
     ):
         """
         Args:
@@ -399,6 +414,7 @@ class DistogramHead(nn.Module):
         c_z: int,
         c_out: int,
         linear_init_params: ConfigDict = lin_init.distogram_init,
+        **kwargs,
     ):
         """
         Args:
@@ -447,6 +463,7 @@ class TMScoreHead(nn.Module):
         c_z: int,
         c_out: int,
         linear_init_params: ConfigDict = lin_init.tm_score_init,
+        **kwargs,
     ):
         """
         Args:
@@ -490,6 +507,7 @@ class MaskedMSAHead(nn.Module):
         c_m: int,
         c_out: int,
         linear_init_params: ConfigDict = lin_init.masked_msa_init,
+        **kwargs,
     ):
         """
         Args:

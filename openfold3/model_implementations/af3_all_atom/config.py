@@ -321,6 +321,7 @@ config = mlc.ConfigDict(
                     "c_z": c_z,
                     "c_out": 64,
                     "linear_init_params": lin_init.pae_init,
+                    "enabled": False,
                 },
                 "pde": {
                     "c_z": c_z,
@@ -336,6 +337,7 @@ config = mlc.ConfigDict(
                     "c_z": c_z,
                     "c_out": 64,
                     "linear_init_params": lin_init.distogram_init,
+                    "enabled": True,
                 },
                 "experimentally_resolved": {
                     "c_s": c_s,
@@ -351,6 +353,7 @@ config = mlc.ConfigDict(
                 "alpha_dna": 5.0,
                 "alpha_rna": 5.0,
                 "alpha_ligand": 10.0,
+                "enabled": True,
             }
         },
     }
@@ -361,5 +364,12 @@ train_config_update = mlc.ConfigDict({"loss": {"diffusion": {"alpha_bond": 0.0}}
 finetune1_config_update = mlc.ConfigDict({"loss": {"diffusion": {"alpha_bond": 1.0}}})
 
 finetune2_config_update = mlc.ConfigDict({"loss": {"diffusion": {"alpha_bond": 1.0}}})
+
+finetune3_config_update = mlc.ConfigDict(
+    {
+        "model": {"heads": {"pae": {"enabled": True}, "distogram": {"enabled": False}}},
+        "loss": {"diffusion": {"enabled": False}},
+    }
+)
 
 eval_config_update = mlc.ConfigDict({"globals": {"no_rollout_steps": 200}})
