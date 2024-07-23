@@ -40,16 +40,29 @@ def get_resolution(cif_data: CIFBlock) -> float:
     Returns:
         The resolution of the structure.
     """
-    try:
-        resolution = cif_data["refine"]["ls_d_res_high"].as_item()
-    except KeyError:
+    keys_to_check = [
+        ("refine", "ls_d_res_high"),
+        ("em_3d_reconstruction", "resolution"),
+        ("reflns", "d_resolution_high"),
+    ]
+
+    for key in keys_to_check:
         try:
-            resolution = cif_data["em_3d_reconstruction"]["resolution"].as_item()
+            resolution = cif_data[key[0]][key[1]].as_item()
+
+            # Try next if not specified
+            if resolution in ("?", "."):
+                continue
+
+            # If successful, convert to float and return
+            resolution = float(resolution)
+            break
+
+        # Try next if key not found
         except KeyError:
-            try:
-                resolution = cif_data["reflns"]["d_resolution_high"].as_item()
-            except KeyError:
-                resolution = float("nan")
+            continue
+    else:
+        resolution = float("nan")
 
     # dev-only: TODO remove
     assert isinstance(resolution, float), "Resolution is not a float"
