@@ -537,8 +537,8 @@ def cleanup_structure_af3_style(
     atom_array = remove_non_CCD_atoms(atom_array, ccd)
     atom_array = remove_chains_with_CA_gaps(atom_array)
 
+    # Tokenization is needed for the subset_large_structure function
     tokenize_atom_array(atom_array)
-
     atom_array = subset_large_structure(atom_array)
 
     return atom_array
