@@ -129,7 +129,7 @@ def remove_crystallization_aids(
     return atom_array
 
 
-@renumber_atom_idx_post_cleanup()
+@renumber_atom_idx_post_cleanup
 def remove_hydrogens(atom_array: struc.AtomArray) -> struc.AtomArray:
     """Removes all hydrogen atoms from the AtomArray
 
