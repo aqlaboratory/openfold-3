@@ -646,23 +646,28 @@ config = mlc.ConfigDict(
                     "no_bins": 50,
                     "c_in": c_s,
                     "c_hidden": 128,
+                    "linear_init_params": lin_init.lddt_ca_init,
                 },
                 "distogram": {
                     "c_z": c_z,
                     "c_out": aux_distogram_bins,
+                    "linear_init_params": lin_init.distogram_init,
                 },
                 "tm": {
                     "c_z": c_z,
                     "c_out": aux_distogram_bins,
                     "enabled": tm_enabled,
+                    "linear_init_params": lin_init.tm_score_init,
                 },
                 "masked_msa": {
                     "c_m": c_m,
                     "c_out": 23,
+                    "linear_init_params": lin_init.masked_msa_init,
                 },
                 "experimentally_resolved": {
                     "c_s": c_s,
                     "c_out": 37,
+                    "linear_init_params": lin_init.exp_res_init,
                 },
             },
             # A negative value indicates that no early stopping will occur, i.e.

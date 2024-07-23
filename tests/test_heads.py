@@ -2,6 +2,7 @@ import unittest
 
 import numpy as np
 import torch
+from ml_collections import ConfigDict
 
 from openfold3.core.model.heads.head_modules import AuxiliaryHeadsAllAtom
 from openfold3.core.model.heads.prediction_heads import (
@@ -23,7 +24,7 @@ dummy_atom_per_token = torch.randint(1, 22, (n_token,))
 
 
 class TestPredictedAlignedErrorHead(unittest.TestCase):
-    def test_predictedalignederrorhead_shape(self):
+    def test_predicted_aligned_error_head_shape(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
         c_z = consts.c_z
@@ -39,7 +40,7 @@ class TestPredictedAlignedErrorHead(unittest.TestCase):
 
 
 class TestPredictedDistanceErrorHead(unittest.TestCase):
-    def test_predicteddistanceerrorhead_shape(self):
+    def test_predicted_distance_error_head_shape(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
         c_z = consts.c_z
@@ -55,7 +56,7 @@ class TestPredictedDistanceErrorHead(unittest.TestCase):
 
 
 class TestPLDDTHead(unittest.TestCase):
-    def test_plddthead_shape(self):
+    def test_plddt_head_shape(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
         n_atom = torch.sum(dummy_atom_per_token).item()
@@ -81,7 +82,7 @@ class TestPLDDTHead(unittest.TestCase):
 
 
 class TestExperimentallyResolvedHeadAllAtom(unittest.TestCase):
-    def test_experimentallyresolvedheadallatom_shape(self):
+    def test_experimentally_resolved_head_all_atom_shape(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
         n_atom = torch.sum(dummy_atom_per_token).item()
@@ -126,22 +127,24 @@ class TestPairformerEmbedding(unittest.TestCase):
         pair_dropout = 0.25
         inf = 1e9
 
-        pairformer_stack_config = {
-            "c_s": c_s,
-            "c_z": c_z,
-            "c_hidden_pair_bias": c_hidden_pair_bias,
-            "no_heads_pair_bias": no_heads_pair_bias,
-            "c_hidden_mul": c_hidden_mul,
-            "c_hidden_pair_att": c_hidden_pair_att,
-            "no_heads_pair": no_heads_pair,
-            "no_blocks": no_blocks,
-            "transition_type": "swiglu",
-            "transition_n": transition_n,
-            "pair_dropout": pair_dropout,
-            "fuse_projection_weights": False,
-            "blocks_per_ckpt": None,
-            "inf": inf,
-        }
+        pairformer_stack_config = ConfigDict(
+            {
+                "c_s": c_s,
+                "c_z": c_z,
+                "c_hidden_pair_bias": c_hidden_pair_bias,
+                "no_heads_pair_bias": no_heads_pair_bias,
+                "c_hidden_mul": c_hidden_mul,
+                "c_hidden_pair_att": c_hidden_pair_att,
+                "no_heads_pair": no_heads_pair,
+                "no_blocks": no_blocks,
+                "transition_type": "swiglu",
+                "transition_n": transition_n,
+                "pair_dropout": pair_dropout,
+                "fuse_projection_weights": False,
+                "blocks_per_ckpt": None,
+                "inf": inf,
+            }
+        )
 
         pair_emb = PairformerEmbedding(
             pairformer_stack_config, c_s, c_z, min_bin, max_bin, no_bin, inf
@@ -162,7 +165,7 @@ class TestPairformerEmbedding(unittest.TestCase):
         pair_mask = torch.randint(0, 2, size=(batch_size, n_token, n_token))
 
         out_single, out_pair = pair_emb(
-            si_input, si, zij, x_pred, single_mask, pair_mask, chuck_size=4
+            si_input, si, zij, x_pred, single_mask, pair_mask, chunk_size=4
         )
 
         expected_shape_single = (batch_size, n_token, c_s)
@@ -173,7 +176,7 @@ class TestPairformerEmbedding(unittest.TestCase):
 
 
 class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
-    def test_auxiliaryheadsallatom_shape(self):
+    def test_auxiliary_heads_all_atom_shape(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
         n_atom = torch.sum(dummy_atom_per_token).item()
@@ -195,40 +198,42 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         pair_dropout = 0.25
         inf = 1e9
 
-        config = {
-            "pae": {"c_z": c_z, "c_out": c_out},
-            "pde": {"c_z": c_z, "c_out": c_out},
-            "lddt": {"c_s": c_s, "c_out": c_out},
-            "distogram": {"c_z": c_z, "c_out": c_out},
-            "experimentally_resolved": {"c_s": c_s, "c_out": c_out},
-            "pairformer_embedding": {
-                "pairformer": {
+        config = ConfigDict(
+            {
+                "pae": {"c_z": c_z, "c_out": c_out},
+                "pde": {"c_z": c_z, "c_out": c_out},
+                "lddt": {"c_s": c_s, "c_out": c_out},
+                "distogram": {"c_z": c_z, "c_out": c_out},
+                "experimentally_resolved": {"c_s": c_s, "c_out": c_out},
+                "pairformer_embedding": {
+                    "pairformer": {
+                        "c_s": c_s,
+                        "c_z": c_z,
+                        "c_hidden_pair_bias": c_hidden_pair_bias,
+                        "no_heads_pair_bias": no_heads_pair_bias,
+                        "c_hidden_mul": c_hidden_mul,
+                        "c_hidden_pair_att": c_hidden_pair_att,
+                        "no_heads_pair": no_heads_pair,
+                        "no_blocks": no_blocks,
+                        "transition_type": "swiglu",
+                        "transition_n": transition_n,
+                        "pair_dropout": pair_dropout,
+                        "fuse_projection_weights": False,
+                        "blocks_per_ckpt": None,
+                        "inf": inf,
+                    },
                     "c_s": c_s,
                     "c_z": c_z,
-                    "c_hidden_pair_bias": c_hidden_pair_bias,
-                    "no_heads_pair_bias": no_heads_pair_bias,
-                    "c_hidden_mul": c_hidden_mul,
-                    "c_hidden_pair_att": c_hidden_pair_att,
-                    "no_heads_pair": no_heads_pair,
-                    "no_blocks": no_blocks,
-                    "transition_type": "swiglu",
-                    "transition_n": transition_n,
-                    "pair_dropout": pair_dropout,
-                    "fuse_projection_weights": False,
-                    "blocks_per_ckpt": None,
+                    "min_bin": min_bin,
+                    "max_bin": max_bin,
+                    "no_bin": no_bin,
                     "inf": inf,
                 },
-                "c_s": c_s,
-                "c_z": c_z,
-                "min_bin": min_bin,
-                "max_bin": max_bin,
-                "no_bin": no_bin,
-                "inf": inf,
-            },
-            "tm": {
-                "enabled": False,
-            },
-        }
+                "tm": {
+                    "enabled": False,
+                },
+            }
+        )
 
         aux_head = AuxiliaryHeadsAllAtom(config)
 
@@ -278,7 +283,7 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
             token_to_atom_idx,
             single_mask,
             pair_mask,
-            chuck_size=4,
+            chunk_size=4,
         )
 
         expected_shape_distogram = (batch_size, n_token, n_token, c_out)

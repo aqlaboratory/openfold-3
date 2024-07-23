@@ -187,7 +187,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         token_to_atom_idx: torch.Tensor,
         single_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chuck_size: int,
+        chunk_size: int,
     ):
         """
         Args:
@@ -202,7 +202,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             single_mask: single mask feat associated with pairformer stack [*, n_token]
             pair_mask: pair mask feat associated with pairformer stack
                 [*, n_token, n_token]
-            chuck_size: feat associated with pairformer stack (int)
+            chunk_size: feat associated with pairformer stack (int)
 
         Returns:
             aux_out: dict containing following keys:
@@ -241,7 +241,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             coords,
             single_mask,
             pair_mask,
-            chuck_size,
+            chunk_size,
         )
 
         lddt_logits = self.plddt(si, token_to_atom_idx)
