@@ -2,6 +2,23 @@ import biotite.structure as struc
 import numpy as np
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 
+from .tables import MOLECULE_TYPE_ID_TO_NAME
+
+
+def get_pdb_id(cif_file: CIFFile) -> str:
+    """Get the PDB ID of the structure.
+
+    Args:
+        cif_file:
+            Parsed mmCIF file containing the structure.
+
+    Returns:
+        The PDB ID of the structure.
+    """
+    (pdb_id,) = cif_file.keys()
+
+    return pdb_id
+
 
 def get_release_date(cif_data: CIFBlock) -> str:
     """Get the release date of the structure.
@@ -130,7 +147,93 @@ def get_chain_to_entity_dict(atom_array: struc.AtomArray) -> dict[int, int]:
     Returns:
         A dictionary mapping renumbered chain IDs to their entity IDs.
     """
-    return dict(zip(atom_array.chain_id_renumbered, atom_array.entity_id))
+    chain_starts = struc.get_chain_starts(atom_array)
+
+    return dict(
+        zip(
+            atom_array[chain_starts].chain_id_renumbered,
+            atom_array[chain_starts].entity_id,
+        )
+    )
+
+
+def get_chain_to_author_chain_dict(atom_array: struc.AtomArray) -> dict[int, str]:
+    """Get a dictionary mapping renumbered chain IDs to their author chain IDs.
+
+    Args:
+        atom_array:
+            AtomArray containing the chain IDs and author chain IDs.
+
+    Returns:
+        A dictionary mapping renumbered chain IDs to their author chain IDs.
+    """
+    chain_starts = struc.get_chain_starts(atom_array)
+
+    return dict(
+        zip(
+            atom_array[chain_starts].chain_id_renumbered,
+            atom_array[chain_starts].chain_id,
+        )
+    )
+
+
+def get_chain_to_pdb_chain_dict(atom_array: struc.AtomArray) -> dict[int, str]:
+    """Get a dictionary mapping renumbered chain IDs to their PDB chain IDs.
+
+    Args:
+        atom_array:
+            AtomArray containing the chain IDs and PDB chain IDs.
+
+    Returns:
+        A dictionary mapping renumbered chain IDs to their PDB chain IDs.
+    """
+    chain_starts = struc.get_chain_starts(atom_array)
+
+    return dict(
+        zip(
+            atom_array[chain_starts].chain_id_renumbered,
+            atom_array[chain_starts].chain_id,
+        )
+    )
+
+
+def get_chain_to_molecule_type_id_dict(atom_array: struc.AtomArray) -> dict[int, int]:
+    """Get a dictionary mapping renumbered chain IDs to their molecule type IDs.
+
+    Args:
+        atom_array:
+            AtomArray containing the chain IDs and molecule type IDs.
+
+    Returns:
+        A dictionary mapping renumbered chain IDs to their molecule type IDs.
+    """
+    chain_starts = struc.get_chain_starts(atom_array)
+
+    return dict(
+        zip(
+            atom_array[chain_starts].chain_id_renumbered,
+            atom_array[chain_starts].molecule_type_id,
+        )
+    )
+
+
+def get_chain_to_molecule_type_dict(atom_array: struc.AtomArray) -> dict[int, str]:
+    """Get a dictionary mapping renumbered chain IDs to their molecule types.
+
+    Args:
+        atom_array:
+            AtomArray containing the chain IDs and molecule type IDs.
+
+    Returns:
+        A dictionary mapping renumbered chain IDs to their molecule types (as strings
+        instead of IDs).
+    """
+    chain_to_molecule_type_id = get_chain_to_molecule_type_id_dict(atom_array)
+
+    return {
+        chain: MOLECULE_TYPE_ID_TO_NAME[molecule_type_id]
+        for chain, molecule_type_id in chain_to_molecule_type_id.items()
+    }
 
 
 def get_chain_to_canonical_seq_dict(
