@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 from typing import NamedTuple
 
-import biotite.structure as struc
+from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 
 from .structure_primitives import (
@@ -15,7 +15,7 @@ from .structure_primitives import (
 
 class ParsedStructure(NamedTuple):
     cif_file: pdbx.CIFFile
-    atom_array: struc.AtomArray
+    atom_array: AtomArray
 
 
 def parse_mmcif_bioassembly(
@@ -49,7 +49,7 @@ def parse_mmcif_bioassembly(
     cif_file = pdbx.CIFFile.read(file_path)
 
     (pdb_id,) = cif_file.keys()  # Single-element unpacking
-    
+
     # Shared args between get_assembly and get_structure
     parser_args = {
         "pdbx_file": cif_file,
