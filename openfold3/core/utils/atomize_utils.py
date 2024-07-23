@@ -1,5 +1,5 @@
 import math
-from typing import Dict
+from typing import Dict, Optional
 
 import torch
 
@@ -14,6 +14,8 @@ def broadcast_token_feat_to_atoms(
     token_mask: torch.Tensor,
     num_atoms_per_token: torch.Tensor,
     token_feat: torch.Tensor,
+    token_dim: Optional[int] = -1,
+    max_num_atoms_per_token: Optional[int] = None,
 ):
     """
     Broadcast token-level features to atom-level features.
@@ -25,37 +27,62 @@ def broadcast_token_feat_to_atoms(
             [*, N_token] Number of atoms per token
         token_feat:
             [*, N_token] Token-level feature
+        token_dim:
+            Token dimension
+        max_num_atoms_per_token:
+            Maximum number of atoms per token
     Returns:
         atom_feat:
             [*, N_atom] Broadcasted atom-level feature
     """
-    # Flatten batch dimensions
-    batch_dims = token_mask.shape[:-1]
     n_token = token_mask.shape[-1]
-    token_mask = token_mask.reshape((-1, n_token))
-    num_atoms_per_token = num_atoms_per_token.reshape((-1, n_token))
-    token_feat = token_feat.reshape((-1, n_token))
+    batch_dims = token_mask.shape[:-1]
+    feat_dims = token_feat.shape[token_dim:][1:]
 
-    # Construct atom features
+    # Apply token mask
     num_atoms_per_token = num_atoms_per_token * token_mask
-    n_atom = torch.max(torch.sum(num_atoms_per_token, dim=-1))
-    input_token_feat = token_feat * token_mask
-    atom_feat = torch.stack(
-        [
-            torch.concat(
-                [
-                    torch.repeat_interleave(
-                        input=input_token_feat[i], repeats=num_atoms_per_token[i].int()
-                    ),
-                    torch.zeros(int(n_atom - torch.sum(num_atoms_per_token[i]))),
-                ]
-            )
-            for i in range(token_mask.shape[0])
-        ]
+    token_feat = token_feat * token_mask.reshape(
+        (*batch_dims, n_token, *((1,) * len(feat_dims)))
     )
 
-    # Unflatten batch dimensions
-    atom_feat = atom_feat.reshape((*batch_dims, int(n_atom)))
+    # Pad atoms at token level
+    if max_num_atoms_per_token is not None:
+        num_atoms_per_token = torch.stack(
+            [num_atoms_per_token, max_num_atoms_per_token - num_atoms_per_token], dim=-1
+        ).reshape((*batch_dims, 2 * n_token))
+        token_feat = torch.stack(
+            [token_feat, torch.zeros_like(token_feat)], dim=token_dim
+        ).reshape((*batch_dims, 2 * n_token, *feat_dims))
+
+    # Pad atoms at the end
+    # Flatten batch and token dimensions
+    max_num_atoms = torch.max(torch.sum(num_atoms_per_token, dim=-1))
+    padded_num_atoms_per_token = (
+        torch.concat(
+            [
+                num_atoms_per_token,
+                max_num_atoms - torch.sum(num_atoms_per_token, dim=-1, keepdim=True),
+            ],
+            dim=-1,
+        )
+        .reshape(-1)
+        .int()
+    )
+    padded_token_feat = torch.concat(
+        [
+            token_feat,
+            torch.zeros((*batch_dims, 1, *feat_dims), device=token_feat.device),
+        ],
+        dim=token_dim,
+    ).reshape(-1, *feat_dims)
+
+    # Create atom-level features
+    atom_feat = torch.repeat_interleave(
+        input=padded_token_feat, repeats=padded_num_atoms_per_token, dim=0
+    )
+
+    # Unflatten batch and token dimensions
+    atom_feat = atom_feat.reshape((*batch_dims, max_num_atoms.int(), *feat_dims))
 
     return atom_feat
 

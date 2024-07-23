@@ -231,6 +231,43 @@ class TestBroadcastTokenFeatToAtoms(unittest.TestCase):
         self.assertTrue(atom_mask.shape == (2, 1, gt_num_atoms[0]))
         self.assertTrue((num_atoms == gt_num_atoms).all())
 
+    def test_with_two_feat_dim(self):
+        c_s = 10
+
+        num_atoms_per_token = torch.Tensor([[2, 2]])
+        token_mask = torch.Tensor([[1, 1]])
+        si = torch.randn((1, 2, c_s))
+
+        sl = broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=si,
+            token_dim=-2,
+        )
+
+        sl_gt = torch.repeat_interleave(si, repeats=2, dim=1)
+
+        self.assertTrue(sl.shape == (1, 4, c_s))
+        self.assertTrue((torch.abs(sl - sl_gt) < 1e-5).all())
+
+    def test_with_max_num_atoms_per_token(self):
+        num_atoms_per_token = torch.Tensor([[3, 6]])
+
+        token_mask = torch.Tensor([[1, 1]])
+
+        atom_mask = broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=token_mask,
+            max_num_atoms_per_token=10,
+        )
+
+        gt_atom_mask = torch.Tensor(
+            [[1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0]]
+        )
+
+        self.assertTrue((atom_mask == gt_atom_mask).all())
+
 
 class TestGetTokenAtomIndex(unittest.TestCase):
     def test_with_amino_acid_backbone_residue(self):
