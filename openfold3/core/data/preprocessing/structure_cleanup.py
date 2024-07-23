@@ -335,6 +335,13 @@ def get_res_atoms_in_ccd_mask(
         Mask for atoms in the residue that are present in the CCD
     """
     res_name = res_atom_array.res_name[0]
+
+    # This special unknown token doesn't have chem_comp_atom information. Therefore this
+    # function returns an all-False mask which will effectively filter out the unknown
+    # ligand.
+    if res_name == "UNL":
+        return np.zeros(res_atom_array.array_length(), dtype=bool)
+
     allowed_atoms = ccd[res_name]["chem_comp_atom"]["atom_id"].as_array()
 
     mask = np.isin(res_atom_array.atom_name, allowed_atoms)
