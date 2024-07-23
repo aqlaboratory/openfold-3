@@ -20,8 +20,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-import openfold3.model_implementations.af2_monomer.base_config as af2_config
-import openfold3.model_implementations.af2_multimer.config as multimer_config
+from openfold3.model_implementations.config_compiler import model_config
 import openfold3.model_implementations.soloseq.config as soloseq_config
 import tests.compare_utils as compare_utils
 from openfold3.core.data import data_transforms
@@ -66,12 +65,10 @@ class TestModel(unittest.TestCase):
         n_res = consts.n_res
         n_extra_seq = consts.n_extra
 
-        model_config = (
-            af2_config.model_config
-            if not consts.is_multimer
-            else multimer_config.model_config
-        )
-        c = model_config(consts.model)
+        if consts.is_multimer:
+            c = model_config("af2_multimer", consts.model)
+        else:
+            c = model_config("af2_monomer", consts.model)
         c.model.evoformer_stack.no_blocks = 4  # no need to go overboard here
         c.model.evoformer_stack.blocks_per_ckpt = None  # don't want to set up
         # deepspeed for this test
