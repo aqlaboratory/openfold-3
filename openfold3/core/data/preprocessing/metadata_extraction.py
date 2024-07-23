@@ -96,7 +96,8 @@ def get_cif_block(cif_file: CIFFile) -> CIFBlock:
     Returns:
         The CIF block of the structure.
     """
-    (cif_block,) = cif_file.keys()
+    (pdb_id,) = cif_file.keys()
+    cif_block = cif_file[pdb_id]
 
     return cif_block
 
