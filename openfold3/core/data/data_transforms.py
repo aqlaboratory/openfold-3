@@ -30,12 +30,13 @@ from openfold3.core.utils.tensor_utils import (
     tensor_tree_map,
     tree_map,
 )
-from openfold3.model_implementations.af2_monomer.features import (
-    NUM_EXTRA_SEQ,
-    NUM_MSA_SEQ,
-    NUM_RES,
-    NUM_TEMPLATES,
-)
+
+# Replacing the import from model_implementations.af2_monomer.features with a copy 
+# TODO: Find a new home for these if this import is needed. 
+NUM_RES = "num residues placeholder"
+NUM_MSA_SEQ = "msa placeholder"
+NUM_EXTRA_SEQ = "extra msa placeholder"
+NUM_TEMPLATES = "num templates placeholder"
 
 MSA_FEATURE_NAMES = [
     "msa",
