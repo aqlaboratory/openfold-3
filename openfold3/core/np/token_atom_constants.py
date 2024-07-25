@@ -1,4 +1,4 @@
-restypes = [
+PROTEIN_RESTYPES = [
     "ALA",
     "ARG",
     "ASN",
@@ -20,20 +20,28 @@ restypes = [
     "TYR",
     "VAL",
     "UNK",
-    "A",
-    "G",
-    "C",
-    "U",
+]
+
+DNA_NUCLEOTIDE_TYPES = [
     "DA",
     "DG",
     "DC",
     "DT",
-    "N",
     "DN",
-    "GAP",
 ]
 
-amino_acid_name_to_atom_names = {
+RNA_NUCLEOTIDE_TYPES = [
+    "A",
+    "G",
+    "C",
+    "U",
+    "N",
+]
+
+TOKEN_TYPES = PROTEIN_RESTYPES + DNA_NUCLEOTIDE_TYPES + RNA_NUCLEOTIDE_TYPES
+TOKEN_TYPES_WITH_GAP = TOKEN_TYPES + ["GAP"]
+
+AA_NAME_TO_ATOM_NAMES = {
     "ALA": ["N", "CA", "C", "O", "CB"],
     "ARG": ["N", "CA", "C", "O", "CB", "CG", "CD", "NE", "CZ", "NH1", "NH2"],
     "ASN": ["N", "CA", "C", "O", "CB", "CG", "OD1", "ND2"],
@@ -79,9 +87,10 @@ amino_acid_name_to_atom_names = {
     ],
     "TYR": ["N", "CA", "C", "O", "CB", "CG", "CD1", "CD2", "CE1", "CE2", "CZ", "OH"],
     "VAL": ["N", "CA", "C", "O", "CB", "CG1", "CG2"],
+    "UNK": ["N", "CA", "C", "O", "CB", "CG", "OXT"],
 }
 
-nucleotide_backbone_atoms = [
+NUCLEOTIDE_BACKBONE_ATOMS = [
     "P",
     "OP1",
     "OP2",
@@ -96,7 +105,7 @@ nucleotide_backbone_atoms = [
     "C1'",
 ]
 
-nucleotide_atoms = {
+NUCLEOTIDE_ATOMS = {
     "A": ["N9", "C8", "N7", "C5", "C6", "N6", "N1", "C2", "N3", "C4"],
     "C": ["N1", "C2", "O2", "N3", "C4", "N4", "C5", "C6"],
     "G": ["N9", "C8", "N7", "C5", "C6", "O6", "N1", "C2", "N2", "N3", "C4"],
@@ -105,37 +114,31 @@ nucleotide_atoms = {
     "DC": ["N1", "C2", "O2", "N3", "C4", "N4", "C5", "C6"],
     "DG": ["N9", "C8", "N7", "C5", "C6", "O6", "N1", "C2", "N2", "N3", "C4"],
     "DT": ["N1", "C2", "O2", "N3", "C4", "O4", "C5", "C7", "C6"],
+    "N": [],
+    "DN": [],
 }
 
-nucleotide_name_to_atom_names = {
-    n: nucleotide_backbone_atoms + a for n, a in nucleotide_atoms.items()
+NUCLEOTIDE_NAME_TO_ATOM_NAMES = {
+    n: NUCLEOTIDE_BACKBONE_ATOMS + a for n, a in NUCLEOTIDE_ATOMS.items()
 }
 
-residue_name_to_atom_names = {
-    **amino_acid_name_to_atom_names,
-    **nucleotide_name_to_atom_names,
+TOKEN_NAME_TO_ATOM_NAMES = {
+    **AA_NAME_TO_ATOM_NAMES,
+    **NUCLEOTIDE_NAME_TO_ATOM_NAMES,
 }
 
 
-def get_atom_name_to_index(
-    atom_name,
-    restypes,
-    residue_name_to_atom_names,
-):
+def get_atom_name_to_index(atom_name):
     indices = []
-    for name in restypes:
+    for name in TOKEN_TYPES:
         try:
-            indices.append(residue_name_to_atom_names[name].index(atom_name))
-        except (KeyError, ValueError):
+            indices.append(TOKEN_NAME_TO_ATOM_NAMES[name].index(atom_name))
+        except ValueError:
             indices.append(-1)
     return indices
 
 
 atom_name_to_index_by_restype = {
-    atom_name: get_atom_name_to_index(
-        atom_name=atom_name,
-        restypes=restypes,
-        residue_name_to_atom_names=residue_name_to_atom_names,
-    )
+    atom_name: get_atom_name_to_index(atom_name=atom_name)
     for atom_name in ["N", "CA", "C", "CB", "C1'", "C3'", "C4'", "C2", "C4"]
 }

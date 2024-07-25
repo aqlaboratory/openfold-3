@@ -12,16 +12,17 @@ from openfold3.core.model.heads.prediction_heads import (
     PredictedDistanceErrorHead,
 )
 from openfold3.core.np.token_atom_constants import (
-    dna_nucleotide_types,
-    protein_restypes,
-    residue_name_to_atom_names,
-    restypes,
-    rna_nucleotide_types,
+    DNA_NUCLEOTIDE_TYPES,
+    PROTEIN_RESTYPES,
+    RNA_NUCLEOTIDE_TYPES,
+    TOKEN_NAME_TO_ATOM_NAMES,
+    TOKEN_TYPES,
 )
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.model_implementations.af3_all_atom.config import (
     config,
+    finetune3_config_update,
     max_atoms_per_token,
 )
 from tests.config import consts
@@ -158,30 +159,31 @@ class TestPairformerEmbedding(unittest.TestCase):
 
 
 class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
+    # NOTE: Will periodically fail until Yeqing's fixes for unknown tokens are merged
     def test_auxiliary_heads_all_atom_shape(self):
         batch_size = 1
         n_token = consts.n_res
 
         # TODO: Move to data utils
-        restypes_flat = torch.randint(0, len(restypes), (n_token,))
-        restypes_names = [restypes[token_idx] for token_idx in restypes_flat]
+        restypes_flat = torch.randint(0, len(TOKEN_TYPES), (n_token,))
+        restypes_names = [TOKEN_TYPES[token_idx] for token_idx in restypes_flat]
         restypes_one_hot = torch.nn.functional.one_hot(
             restypes_flat,
-            len(restypes),
+            len(TOKEN_TYPES),
         )
 
         num_atoms_per_token = torch.Tensor(
-            [len(residue_name_to_atom_names[name]) for name in restypes_names]
+            [len(TOKEN_NAME_TO_ATOM_NAMES[name]) for name in restypes_names]
         )
 
         is_protein = torch.Tensor(
-            [1 if name in protein_restypes else 0 for name in restypes_names]
+            [1 if name in PROTEIN_RESTYPES else 0 for name in restypes_names]
         )
         is_rna = torch.Tensor(
-            [1 if name in rna_nucleotide_types else 0 for name in restypes_names]
+            [1 if name in RNA_NUCLEOTIDE_TYPES else 0 for name in restypes_names]
         )
         is_dna = torch.Tensor(
-            [1 if name in dna_nucleotide_types else 0 for name in restypes_names]
+            [1 if name in DNA_NUCLEOTIDE_TYPES else 0 for name in restypes_names]
         )
 
         n_atom = torch.max(torch.sum(num_atoms_per_token, dim=-1)).int().item()
@@ -189,8 +191,9 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         c_s = config.globals.c_s
         c_z = config.globals.c_z
 
+        config.update(finetune3_config_update)
         heads_config = config.model.heads
-        heads_config.pae.enabled = True
+        heads_config.distogram.enabled = True
         aux_head = AuxiliaryHeadsAllAtom(heads_config).eval()
 
         si_input = torch.ones(batch_size, n_token, c_s)

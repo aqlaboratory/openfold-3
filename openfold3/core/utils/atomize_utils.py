@@ -5,8 +5,8 @@ import torch
 
 from openfold3.core.np.residue_constants import restype_order
 from openfold3.core.np.token_atom_constants import (
+    TOKEN_TYPES,
     atom_name_to_index_by_restype,
-    restypes,
 )
 
 
@@ -201,18 +201,18 @@ def get_token_representative_atoms(
     is_standard_dna = batch["is_dna"] * (1 - batch["is_atomized"])
     is_standard_rna = batch["is_rna"] * (1 - batch["is_atomized"])
     is_standard_purine = is_standard_dna * (
-        batch["restype"][..., restypes.index("DA")]
-        + batch["restype"][..., restypes.index("DG")]
+        batch["restype"][..., TOKEN_TYPES.index("DA")]
+        + batch["restype"][..., TOKEN_TYPES.index("DG")]
     ) + is_standard_rna * (
-        batch["restype"][..., restypes.index("A")]
-        + batch["restype"][..., restypes.index("G")]
+        batch["restype"][..., TOKEN_TYPES.index("A")]
+        + batch["restype"][..., TOKEN_TYPES.index("G")]
     )
     is_standard_pyrimidine = is_standard_dna * (
-        batch["restype"][..., restypes.index("DC")]
-        + batch["restype"][..., restypes.index("DT")]
+        batch["restype"][..., TOKEN_TYPES.index("DC")]
+        + batch["restype"][..., TOKEN_TYPES.index("DT")]
     ) + is_standard_rna * (
-        batch["restype"][..., restypes.index("C")]
-        + batch["restype"][..., restypes.index("U")]
+        batch["restype"][..., TOKEN_TYPES.index("C")]
+        + batch["restype"][..., TOKEN_TYPES.index("U")]
     )
 
     # Get index of representative atoms
@@ -265,9 +265,9 @@ def get_token_frame_atoms(
     batch: Dict,
     x: torch.Tensor,
     atom_mask: torch.Tensor,
-    angle_threshold: float,
-    eps: float,
-    inf: float,
+    angle_threshold: float = 25.0,
+    eps: float = 1e-8,
+    inf: float = 1e9,
 ):
     """
     Extract frame atoms per token, which returns

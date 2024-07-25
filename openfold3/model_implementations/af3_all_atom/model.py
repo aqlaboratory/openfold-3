@@ -248,15 +248,16 @@ class AlphaFold3(nn.Module):
             "x_pred": x_pred,
         }
 
-        # Compute confidences
-        output.update(
-            self.aux_heads(
-                batch=batch,
-                si_input=si_input,
-                output=output,
-                chunk_size=self.globals.chunk_size,
-            )
-        )
+        # TODO: Add this in only when atomization features are updated in the model
+        # # Compute confidences
+        # output.update(
+        #     self.aux_heads(
+        #         batch=batch,
+        #         si_input=si_input,
+        #         output=output,
+        #         chunk_size=self.globals.chunk_size,
+        #     )
+        # )
 
         return output
 
