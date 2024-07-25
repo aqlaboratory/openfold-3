@@ -36,6 +36,7 @@ eps = mlc.FieldReference(1e-8, field_type=float)
 blocks_per_ckpt = mlc.FieldReference(None, field_type=int)
 chunk_size = mlc.FieldReference(None, field_type=int)
 tune_chunk_size = mlc.FieldReference(True, field_type=bool)
+max_atoms_per_token = mlc.FieldReference(23, field_type=int)
 
 
 config = mlc.ConfigDict(
@@ -289,6 +290,7 @@ config = mlc.ConfigDict(
                 "p": 7,
             },
             "heads": {
+                "max_atoms_per_token": max_atoms_per_token,
                 "pairformer_embedding": {
                     "pairformer": {
                         "c_s": c_s,
@@ -331,6 +333,7 @@ config = mlc.ConfigDict(
                 "lddt": {
                     "c_s": c_s,
                     "c_out": 50,
+                    "max_atoms_per_token": max_atoms_per_token,
                     "linear_init_params": lin_init.lddt_init,
                 },
                 "distogram": {
@@ -342,7 +345,14 @@ config = mlc.ConfigDict(
                 "experimentally_resolved": {
                     "c_s": c_s,
                     "c_out": 2,
+                    "max_atoms_per_token": max_atoms_per_token,
                     "linear_init_params": lin_init.exp_res_all_atom_init,
+                },
+                "confidence": {
+                    "pde": {
+                        "max_bin": 31,
+                        "no_bins": 64,
+                    },
                 },
             },
         },
@@ -367,7 +377,32 @@ finetune2_config_update = mlc.ConfigDict({"loss": {"diffusion": {"alpha_bond": 1
 
 finetune3_config_update = mlc.ConfigDict(
     {
-        "model": {"heads": {"pae": {"enabled": True}, "distogram": {"enabled": False}}},
+        "model": {
+            "heads": {
+                "pae": {"enabled": True},
+                "distogram": {"enabled": False},
+                "confidence": {
+                    "pae": {
+                        "max_bin": 31,
+                        "no_bins": 64,
+                    },
+                    "ptm": {
+                        "max_bin": 31,
+                        "no_bins": 64,
+                        "ptm_weight": 0.2,
+                        "iptm_weight": 0.8,
+                    },
+                    "clash": {
+                        "min_distance": 1.1,
+                        "clash_cutoff_num": 100,
+                        "clash_cutoff_ratio": 0.5,
+                    },
+                    "rasa": {
+                        "cutoff": 0.581,
+                    },
+                },
+            }
+        },
         "loss": {"diffusion": {"enabled": False}},
     }
 )

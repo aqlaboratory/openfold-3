@@ -84,27 +84,36 @@ class PairformerEmbedding(nn.Module):
     ):
         """
         Args:
-            si_input: output of InputFeatureEmbedder [*, n_token, c_s]
-            si: single embedding, [*, n_token, c_s]
-            zij: pairwise embedding, [*, n_token, n_token, c_z]
-            x_pred: representative atom predicted coordinates per token, [*, n_token, 3]
-            single_mask: single mask feat associated with pairformer stack [*, n_token]
-            pair_mask: pair mask feat associated with pairformer stack
-                [*, n_token, n_token]
-            chunk_size: feat associated with pairformer stack
+            si_input:
+                [*, N_token, C_s] Output of InputFeatureEmbedder
+            si:
+                [*, N_token, C_s] Single embedding
+            zij:
+                [*, N_token, N_token, C_z] Pairwise embedding
+            x_pred:
+                [*, N_token, 3] Representative atom predicted coordinates per token
+            single_mask:
+                [*, N_token] Single mask
+            pair_mask:
+                [*, N_token, N_token] Pair mask
+            chunk_size:
+                Inference-time subbatch size. Acts as a minimum if
+                self.tune_chunk_size is True
 
         Returns:
-            si: pairformer stack out single [*, n_token, c_s]
-            zij: pairformer stack out pair [*, n_token, n_token, c_z]
+            si:
+                [*, N_token, C_s] Updated single representation
+            zij:
+                [*, N_token, N_token, C_z] Updated pair representation
         """
-        # 1. si projection to zij
+        # si projection to zij
         zij = (
             zij
             + self.linear_i(si_input.unsqueeze(-2))
             + self.linear_j(si_input.unsqueeze(-3))
         )
 
-        # 2. embed pair distances of representative atoms
+        # Embed pair distances of representative atoms
         bins = torch.linspace(self.min_bin, self.max_bin, self.no_bin)
         squared_bins = bins**2
         upper = torch.cat(
@@ -116,7 +125,7 @@ class PairformerEmbedding(nn.Module):
         dij = ((dij > squared_bins) * (dij < upper)).type(x_pred.dtype)
         zij = zij + self.linear_distance(dij)
 
-        # 3. call pairformer
+        # PairFormer embedding
         si, zij = self.pairformer_stack(si, zij, single_mask, pair_mask, chunk_size)
 
         return si, zij
@@ -155,14 +164,10 @@ class PredictedAlignedErrorHead(nn.Module):
         """
         Args:
             zij:
-                [*, n_res, n_res, c_z] pair embedding
+                [*, N, N, C_z] Pair embedding
         Returns:
             logits:
-                [*, n_res, n_res, c_out] logits
-
-        Note:
-            Previous implementations of losses happened to include softmax so
-            head returns logits. change if necessary.
+                [*, N, N, C_out] Logits
         """
         logits = self.linear(zij)
         return logits
@@ -201,14 +206,10 @@ class PredictedDistanceErrorHead(nn.Module):
         """
         Args:
             zij:
-                [*, n_res, n_res, c_z] pair embedding
+                [*, N, N, C_z] Pair embedding
         Returns:
-            logits: to be fair, it isn't logit (but before applying softmax).
-                [*, n_res, n_res, c_out]
-
-        Note:
-            Previous implementations of losses happened to include softmax so
-            head returns logits. change if necessary.
+            logits:
+                [*, N, N, C_out] Logits
         """
         logits = self.linear(zij + zij.transpose(-2, -3))
         return logits
@@ -223,6 +224,7 @@ class PerResidueLDDAllAtom(nn.Module):
         self,
         c_s: int,
         c_out: int,
+        max_atoms_per_token: int,
         linear_init_params: ConfigDict = lin_init.lddt_init,
         **kwargs,
     ):
@@ -230,6 +232,8 @@ class PerResidueLDDAllAtom(nn.Module):
         Args:
             c_s:
                 Input channel dimension
+            max_atoms_per_token:
+                Maximum atoms per token
             c_out:
                 Number of PLDDT bins
             linear_init_params:
@@ -238,28 +242,35 @@ class PerResidueLDDAllAtom(nn.Module):
         super().__init__()
 
         self.c_s = c_s
+        self.max_atoms_per_token = max_atoms_per_token
         self.c_out = c_out
 
-        self.linear = Linear(self.c_s, self.c_out, **linear_init_params.linear)
+        self.linear = Linear(
+            self.c_s, self.max_atoms_per_token * self.c_out, **linear_init_params.linear
+        )
 
-    def forward(self, s, token_to_atom_idx):
+    def forward(self, s: torch.Tensor, max_atom_per_token_mask: torch.Tensor):
         """
         Args:
             s:
-                [*, n_res, c_s] single embedding
-            token_to_atom_idx: one hot encoding of token to atom
-                [*, n_res, n_atom,]
+                [*, N_token, C_s] Single embedding
+            max_atom_per_token_mask:
+                [*, N_token * max_atoms_per_token] Flat mask of atoms per token
+                padded to max_atoms_per_token
         Returns:
             logits:
-                [*, n_atom, c_out]
-
-        Note:
-            Previous implementations of losses happened to include softmax so
-            head returns logits. change if necessary.
+                [*, N_atom, C_out] Logits
         """
-        logits = self.linear(
-            torch.sum(s[..., None, :, :] * token_to_atom_idx.unsqueeze(-1), dim=-2)
-        )
+        batch_dims = s.shape[:-2]
+        n_token = s.shape[-2]
+        out_flat_shape = (*batch_dims, n_token * self.max_atoms_per_token, self.c_out)
+        logits = self.linear(s).reshape(out_flat_shape)
+
+        # TODO: Fix this to work with batch size > 1
+        # The # of atoms will differ per sample and padding will need to be added
+        logits = torch.masked_select(
+            logits, max_atom_per_token_mask[..., None].bool()
+        ).reshape((*batch_dims, -1, self.c_out))
         return logits
 
 
@@ -316,6 +327,7 @@ class ExperimentallyResolvedHeadAllAtom(nn.Module):
         self,
         c_s: int,
         c_out: int,
+        max_atoms_per_token: int,
         linear_init_params: ConfigDict = lin_init.exp_res_all_atom_init,
         **kwargs,
     ):
@@ -323,6 +335,8 @@ class ExperimentallyResolvedHeadAllAtom(nn.Module):
         Args:
             c_s:
                 Input channel dimension
+            max_atoms_per_token:
+                Maximum atoms per token
             c_out:
                 Number of ExperimentallyResolved Head AllAtom bins
             linear_init_params:
@@ -331,28 +345,35 @@ class ExperimentallyResolvedHeadAllAtom(nn.Module):
         super().__init__()
 
         self.c_s = c_s
+        self.max_atoms_per_token = max_atoms_per_token
         self.c_out = c_out
 
-        self.linear = Linear(self.c_s, self.c_out, **linear_init_params.linear)
+        self.linear = Linear(
+            self.c_s, self.max_atoms_per_token * self.c_out, **linear_init_params.linear
+        )
 
-    def forward(self, s, token_to_atom_idx):
+    def forward(self, s: torch.Tensor, max_atom_per_token_mask: torch.Tensor):
         """
         Args:
             s:
-                [*, n_res, c_s] single embedding
-            token_to_atom_idx: one hot encoding of token to atom
-                [*, n_res, n_atom,]
+                [*, N_token, C_s] Single embedding
+            max_atom_per_token_mask:
+                [*, N_token * max_atoms_per_token] Flat mask of atoms per token
+                padded to max_atoms_per_token
         Returns:
             logits:
-                [*, n_atom, c_out]
-
-        Note:
-            Previous implementations of losses happened to include softmax so
-            head returns logits. change if necessary.
+                [*, N_atom, C_out] Logits
         """
-        logits = self.linear(
-            torch.sum(s[..., None, :, :] * token_to_atom_idx.unsqueeze(-1), dim=-2)
-        )
+        batch_dims = s.shape[:-2]
+        n_token = s.shape[-2]
+        out_flat_shape = (*batch_dims, n_token * self.max_atoms_per_token, self.c_out)
+        logits = self.linear(s).reshape(out_flat_shape)
+
+        # TODO: Fix this to work with batch size > 1
+        # The # of atoms will differ per sample and padding will need to be added
+        logits = torch.masked_select(
+            logits, max_atom_per_token_mask[..., None].bool()
+        ).reshape((*batch_dims, -1, self.c_out))
         return logits
 
 
@@ -391,10 +412,10 @@ class ExperimentallyResolvedHead(nn.Module):
         """
         Args:
             s:
-                [*, N_res, C_s] single embedding
+                [*, N, C_s] Single embedding
         Returns:
             logits:
-                [*, N, C_out] logits
+                [*, N, C_out] Logits
         """
 
         logits = self.linear(s)
@@ -436,16 +457,14 @@ class DistogramHead(nn.Module):
         """
         Args:
             z:
-                [*, N_res, N_res, C_z] pair embedding
+                [*, N, N, C_z] Pair embedding
         Returns:
             logit:
-                [*, N, N, c_out] distogram probability distribution
+                [*, N, N, C_out] Distogram probability distribution
 
         Note:
-            Previous implementations of losses happened to include softmax so
-            head returns logits. change if necessary. For symmetric pairwise
-            PairDistanceError loss (PDE), logits are calculated by linear(zij +
-            zij.transpose(-2, -3))
+            For symmetric pairwise PairDistanceError loss (PDE),
+            logits are calculated by linear(zij + zij.transpose(-2, -3))
         """
 
         logits = self.linear(z)
@@ -485,10 +504,10 @@ class TMScoreHead(nn.Module):
         """
         Args:
             z:
-                [*, N_res, N_res, C_z] pairwise embedding
+                [*, N, N, C_z] Pairwise embedding
         Returns:
             logits:
-                [*, N_res, N_res, c_out] prediction
+                [*, N, N, C_out] Logits
         """
 
         logits = self.linear(z)
@@ -532,7 +551,7 @@ class MaskedMSAHead(nn.Module):
                 [*, N_seq, N_res, C_m] MSA embedding
         Returns:
             logits:
-                [*, N_seq, N_res, c_out] reconstruction
+                [*, N_seq, N_res, C_out] Logits
         """
 
         logits = self.linear(m)

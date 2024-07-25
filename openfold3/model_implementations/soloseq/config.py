@@ -669,6 +669,16 @@ config = mlc.ConfigDict(
                     "c_out": 37,
                     "linear_init_params": lin_init.exp_res_init,
                 },
+                "confidence": {
+                    "pae": {
+                        "max_bin": 31,
+                        "no_bins": 64,
+                    },
+                    "ptm": {
+                        "max_bin": 31,
+                        "no_bins": 64,
+                    },
+                },
             },
             # A negative value indicates that no early stopping will occur, i.e.
             # the model will always run `max_recycling_iters` number of recycling
@@ -901,8 +911,14 @@ multimer_config_update = mlc.ConfigDict(
                 "linear_init_params": lin_init_mult.structure_module_init,
             },
             "heads": {
-                "tm": {"ptm_weight": 0.2, "iptm_weight": 0.8, "enabled": True},
+                "tm": {"enabled": True},
                 "masked_msa": {"c_out": 22},
+                "confidence": {
+                    "ptm": {
+                        "ptm_weight": 0.2,
+                        "iptm_weight": 0.8,
+                    },
+                },
             },
             "recycle_early_stop_tolerance": 0.5,  # For training, value is -1.
         },

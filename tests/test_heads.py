@@ -11,16 +11,21 @@ from openfold3.core.model.heads.prediction_heads import (
     PredictedAlignedErrorHead,
     PredictedDistanceErrorHead,
 )
-from openfold3.model_implementations.af3_all_atom.config import config
+from openfold3.core.np.token_atom_constants import (
+    dna_nucleotide_types,
+    protein_restypes,
+    residue_name_to_atom_names,
+    restypes,
+    rna_nucleotide_types,
+)
+from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
+from openfold3.core.utils.tensor_utils import tensor_tree_map
+from openfold3.model_implementations.af3_all_atom.config import (
+    config,
+    max_atoms_per_token,
+)
 from tests.config import consts
-
-# a few additional consts for stronger tests with token_to_atom_idx including modules
-# PerResidueLDDAllAtom, ExperimentallyResolvedHeadAllAtom, and AuxiliaryHeadsAllAtom
-n_token = consts.n_res
-
-# Varying number of atoms per given token.
-# 1 smallest (small molecules heavy atoms), 22 largest (Adenosine with Phosphate).
-dummy_atom_per_token = torch.randint(1, 22, (n_token,))
+from tests.data_utils import random_asym_ids
 
 
 class TestPredictedAlignedErrorHead(unittest.TestCase):
@@ -57,25 +62,30 @@ class TestPredictedDistanceErrorHead(unittest.TestCase):
 
 class TestPLDDTHead(unittest.TestCase):
     def test_plddt_head_shape(self):
-        batch_size = consts.batch_size
+        batch_size = 1
         n_token = consts.n_res
-        n_atom = torch.sum(dummy_atom_per_token).item()
-
         c_s = consts.c_s
         c_out = 50
 
-        plddt_head = PerResidueLDDAllAtom(c_s, c_out)
-
-        token_identity = torch.eye(n_token)  # shape: [n_token, n_token]
-        token_to_atom_expansion = token_identity.repeat_interleave(
-            dummy_atom_per_token, dim=0
+        plddt_head = PerResidueLDDAllAtom(
+            c_s, c_out, max_atoms_per_token=max_atoms_per_token.get()
         )
-        token_to_atom_idx = token_to_atom_expansion.unsqueeze(0).repeat(
-            batch_size, 1, 1
-        )  # adding batch size. shape: [batch_size, n_atom, n_token]
 
         si = torch.ones((batch_size, n_token, c_s))
-        out = plddt_head(si, token_to_atom_idx)
+        token_mask = torch.ones((batch_size, n_token))
+        num_atoms_per_token = torch.randint(
+            0, max_atoms_per_token.get(), (batch_size, n_token)
+        )
+        n_atom = torch.sum(num_atoms_per_token, dim=-1).int().item()
+
+        max_atom_per_token_mask = broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=token_mask,
+            max_num_atoms_per_token=max_atoms_per_token.get(),
+        )
+
+        out = plddt_head(s=si, max_atom_per_token_mask=max_atom_per_token_mask)
 
         expected_shape = (batch_size, n_atom, c_out)
         np.testing.assert_array_equal(out.shape, expected_shape)
@@ -83,24 +93,30 @@ class TestPLDDTHead(unittest.TestCase):
 
 class TestExperimentallyResolvedHeadAllAtom(unittest.TestCase):
     def test_experimentally_resolved_head_all_atom_shape(self):
-        batch_size = consts.batch_size
+        batch_size = 1
         n_token = consts.n_res
-        n_atom = torch.sum(dummy_atom_per_token).item()
         c_s = consts.c_s
         c_out = 50
 
-        plddt_head = ExperimentallyResolvedHeadAllAtom(c_s, c_out)
-
-        token_identity = torch.eye(n_token)  # shape: [n_token, n_token]
-        token_to_atom_expansion = token_identity.repeat_interleave(
-            dummy_atom_per_token, dim=0
+        exp_res_head = ExperimentallyResolvedHeadAllAtom(
+            c_s, c_out, max_atoms_per_token=max_atoms_per_token.get()
         )
-        token_to_atom_idx = token_to_atom_expansion.unsqueeze(0).repeat(
-            batch_size, 1, 1
-        )  # adding batch_size [batch_size, n_atom, n_token]
 
         si = torch.ones((batch_size, n_token, c_s))
-        out = plddt_head(si, token_to_atom_idx)
+        token_mask = torch.ones((batch_size, n_token))
+        num_atoms_per_token = torch.randint(
+            0, max_atoms_per_token.get(), (batch_size, n_token)
+        )
+        n_atom = torch.sum(num_atoms_per_token, dim=-1).int().item()
+
+        max_atom_per_token_mask = broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=token_mask,
+            max_num_atoms_per_token=max_atoms_per_token.get(),
+        )
+
+        out = exp_res_head(s=si, max_atom_per_token_mask=max_atom_per_token_mask)
 
         expected_shape = (batch_size, n_atom, c_out)
         np.testing.assert_array_equal(out.shape, expected_shape)
@@ -143,9 +159,32 @@ class TestPairformerEmbedding(unittest.TestCase):
 
 class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
     def test_auxiliary_heads_all_atom_shape(self):
-        batch_size = consts.batch_size
+        batch_size = 1
         n_token = consts.n_res
-        n_atom = torch.sum(dummy_atom_per_token).item()
+
+        # TODO: Move to data utils
+        restypes_flat = torch.randint(0, len(restypes), (n_token,))
+        restypes_names = [restypes[token_idx] for token_idx in restypes_flat]
+        restypes_one_hot = torch.nn.functional.one_hot(
+            restypes_flat,
+            len(restypes),
+        )
+
+        num_atoms_per_token = torch.Tensor(
+            [len(residue_name_to_atom_names[name]) for name in restypes_names]
+        )
+
+        is_protein = torch.Tensor(
+            [1 if name in protein_restypes else 0 for name in restypes_names]
+        )
+        is_rna = torch.Tensor(
+            [1 if name in rna_nucleotide_types else 0 for name in restypes_names]
+        )
+        is_dna = torch.Tensor(
+            [1 if name in dna_nucleotide_types else 0 for name in restypes_names]
+        )
+
+        n_atom = torch.max(torch.sum(num_atoms_per_token, dim=-1)).int().item()
 
         c_s = config.globals.c_s
         c_z = config.globals.c_z
@@ -157,49 +196,42 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         si_input = torch.ones(batch_size, n_token, c_s)
         si = torch.ones(batch_size, n_token, c_s)
         zij = torch.ones(batch_size, n_token, n_token, c_z)
+        x_pred = torch.randn(batch_size, n_atom, 3)
+
         outputs = {
-            "single": si,
-            "pair": zij,
+            "si_trunk": si,
+            "zij_trunk": zij,
+            "x_pred": x_pred,
         }
 
-        x_pred = torch.ones(batch_size, n_atom, 3)
-
-        token_representative_atom_idx = torch.zeros((n_token, n_atom))
-        token_idx = torch.arange(n_token)
-        atom_idx = torch.cumsum(dummy_atom_per_token, dim=0) - 1
-        token_representative_atom_idx[token_idx, atom_idx] = (
-            1  # each token gets its representative atom
+        start_atom_index = (
+            torch.cumsum(num_atoms_per_token, dim=-1) - num_atoms_per_token[..., 0]
         )
-        token_representative_atom_idx = token_representative_atom_idx.unsqueeze(
-            0
-        ).repeat(batch_size, 1, 1)
 
-        token_identity = torch.eye(n_token)  # shape: [n_token, n_token]
-        token_to_atom_expansion = token_identity.repeat_interleave(
-            dummy_atom_per_token, dim=0
-        )
-        token_to_atom_idx = token_to_atom_expansion.unsqueeze(0).repeat(
-            batch_size, 1, 1
-        )  # adding batch_size shape: [batch_size, n_atom, n_token]
+        token_mask = torch.ones(n_token)
 
-        single_mask = torch.randint(
-            0,
-            2,
-            size=(
-                batch_size,
-                n_token,
-            ),
-        )
-        pair_mask = torch.randint(0, 2, size=(batch_size, n_token, n_token))
+        batch = {
+            "asym_id": torch.Tensor(random_asym_ids(n_token)),
+            "token_mask": token_mask,
+            "start_atom_index": start_atom_index,
+            "num_atoms_per_token": num_atoms_per_token,
+            "restype": restypes_one_hot,
+            "is_protein": is_protein,
+            "is_dna": is_dna,
+            "is_rna": is_rna,
+            "is_ligand": torch.zeros(n_token),
+            "is_atomized": torch.zeros(n_token),
+        }
+
+        def to_dtype_batch(t):
+            return t.to(dtype=torch.float32).unsqueeze(0)
+
+        batch = tensor_tree_map(to_dtype_batch, batch)
 
         aux_out = aux_head(
+            batch,
             si_input,
             outputs,
-            x_pred,
-            token_representative_atom_idx,
-            token_to_atom_idx,
-            single_mask,
-            pair_mask,
             chunk_size=4,
         )
 

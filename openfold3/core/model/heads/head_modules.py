@@ -21,7 +21,9 @@ import torch.nn as nn
 from openfold3.core.loss.loss import (
     compute_plddt,
     compute_predicted_aligned_error,
-    compute_tm,
+    compute_predicted_distance_error,
+    compute_ptm,
+    compute_weighted_ptm,
 )
 from openfold3.core.model.heads.prediction_heads import (
     DistogramHead,
@@ -34,6 +36,11 @@ from openfold3.core.model.heads.prediction_heads import (
     PredictedAlignedErrorHead,
     PredictedDistanceErrorHead,
     TMScoreHead,
+)
+from openfold3.core.utils.atomize_utils import (
+    broadcast_token_feat_to_atoms,
+    get_token_frame_atoms,
+    get_token_representative_atoms,
 )
 
 
@@ -74,25 +81,31 @@ class AuxiliaryHeadsAF2(nn.Module):
     def forward(self, outputs):
         """
         Args:
-            outputs: a dict containing following keys and tensors:
-                'sm':
-                    'single': single embedding
-                'pair': pair embedding
-                'msa': msa embedding
+            outputs: Dict containing following keys and tensors:
+                "sm":
+                    "single": Single embedding
+                "pair": Pair embedding
+                "msa": MSA embedding
         Returns:
-            aux_out: a dict containing:
-                'lddt_logits': plddt head out [*, n_atoms, bins_plddt]
-                'plddt': computed plddt [*, n_atoms, bins_plddt]
-                'distogram_logits': distogram head out
-                    [*, n_token, n_token, bins_distogram]
-                'masked_msa_logits': masked msa head out[]
-                'experimentally_resolved_logits': resolved head out
-                    [*, n_atoms, bins_resolved]
-                'tm_logits': values identical to pae_logits
-                    [*, n_token, n_token, bins_pae]
-                'ptm_scores':
-                'iptm_score':
-                'weighted_ptm_score':
+            aux_out: Dict containing:
+                "lddt_logits" ([*, N_res, bins_plddt]):
+                    pLDDT head out
+                "plddt" ([*, N_res]):
+                    Computed plddt
+                "distogram_logits" ([*, N_res, N_res, bins_distogram]):
+                    Distogram head out
+                "masked_msa_logits" ([*, N_seq, N_res, bins_masked_msa]):
+                    Masked msa head out
+                "experimentally_resolved_logits" ([*, N_res, bins_resolved]):
+                    Resolved head out
+                "tm_logits" ([*, N_res, N_res, bins_pae]):
+                    Values identical to pae_logits
+                "ptm_score":
+                    Predicted TM score
+                "iptm_score":
+                    Interface predicted TM score
+                "weighted_ptm_score":
+                    Weighted pTM + iPTM score
         """
         aux_out = {}
         lddt_logits = self.plddt(outputs["sm"]["single"])
@@ -113,21 +126,22 @@ class AuxiliaryHeadsAF2(nn.Module):
         if self.config.tm.enabled:
             tm_logits = self.tm(outputs["pair"])
             aux_out["tm_logits"] = tm_logits
-            aux_out["ptm_score"] = compute_tm(tm_logits, **self.config.tm)
+
             asym_id = outputs.get("asym_id")
             if asym_id is not None:
-                aux_out["iptm_score"] = compute_tm(
-                    tm_logits, asym_id=asym_id, interface=True, **self.config.tm
+                ptm_scores = compute_weighted_ptm(
+                    logits=tm_logits, asym_id=asym_id, **self.config.confidence.ptm
                 )
-                aux_out["weighted_ptm_score"] = (
-                    self.config.tm["iptm_weight"] * aux_out["iptm_score"]
-                    + self.config.tm["ptm_weight"] * aux_out["ptm_score"]
+                aux_out.update(ptm_scores)
+            else:
+                aux_out["ptm_score"] = compute_ptm(
+                    tm_logits, **self.config.confidence.ptm
                 )
 
             aux_out.update(
                 compute_predicted_aligned_error(
                     tm_logits,
-                    **self.config.tm,
+                    **self.config.confidence.pae,
                 )
             )
 
@@ -137,21 +151,23 @@ class AuxiliaryHeadsAF2(nn.Module):
 class AuxiliaryHeadsAllAtom(nn.Module):
     """
     Auxiliary head for OF3
-    Implements Algorithm 31 with main inference loop (Algorithm 1) line 16 - 17.
+    Implements AF3 Algorithm 31 with main inference loop (Algorithm 1) line 16 - 17.
     """
 
     def __init__(self, config):
         """
         Args:
             config: ConfigDict with following keys
-                'pairformer_embedding': pairformer embedding config
-                'pae': pae config
-                'pde': pde config
-                'lddt': lddt config
-                'distogram': distogram config
-                'experimentally_resolved': experimentally_resolved config
+                "pairformer_embedding": Pairformer embedding config
+                "pae": PAE config
+                "pde": PDE config
+                "lddt": LDDT config
+                "distogram": Distogram config
+                "experimentally_resolved": Experimentally_resolved config
         """
         super().__init__()
+        self.max_atoms_per_token = config.max_atoms_per_token
+
         self.pairformer_embedding = PairformerEmbedding(
             **config["pairformer_embedding"],
         )
@@ -180,111 +196,149 @@ class AuxiliaryHeadsAllAtom(nn.Module):
 
     def forward(
         self,
+        batch: Dict,
         si_input: torch.Tensor,
-        outputs: Dict,
-        x_pred: torch.Tensor,
-        token_representative_atom_idx: torch.Tensor,
-        token_to_atom_idx: torch.Tensor,
-        single_mask: torch.Tensor,
-        pair_mask: torch.Tensor,
+        output: Dict,
         chunk_size: int,
     ):
         """
         Args:
-            si_input: single, token embedding [*, n_token, c_s]
-            outputs: TensorDict containing outputs
-                'single': single out [*, n_token, c_s]
-                'pair': pair out [*, n_token, n_token, c_z]
-            x_pred: coordinate of representative atom per each token [*, n_atom, 3]
-            token_representative_atom_idx: index of representative atom index for
-                each token: [*, n_token, n_atom]
-            token_to_atom_idx: feature of token to atom idx [*, n_token, n_atom,]
-            single_mask: single mask feat associated with pairformer stack [*, n_token]
-            pair_mask: pair mask feat associated with pairformer stack
-                [*, n_token, n_token]
-            chunk_size: feat associated with pairformer stack (int)
+            batch:
+                Input feature dictionary
+            si_input:
+                [*, N_token, C_s_input] Single (input) representation
+            output:
+                Dict containing outputs
+                    "si_trunk" ([*, N_token, C_s]):
+                        Single representation output from model trunk
+                    "zij_trunk" ([*, N_token, N_token, C_z]):
+                        Pair representation output from model trunk
+                    "x_pred" ([*, N_atom, 3]):
+                        Predicted atom positions
+            chunk_size: Feat associated with pairformer stack (int)
 
         Returns:
-            aux_out: dict containing following keys:
-                'distogram_logits': distogram head out
-                    [*, n_token, n_token, bins_distogram]
-                'pae_logits': pae head out[*, n_token, n_token, bins_pae]
-                'pde_logits': pde head out[*, n_token, n_token, bins_pde]
-                'plddt_logits': plddt head out [*, n_atoms, bins_plddt]
-                'experimentally_resolved_logits': resolved head out
-                    [*, n_atoms, bins_resolved]
-                'tm_logits': values identical to pae_logits
-                    [*, n_token, n_token, bins_pae]
-                'ptm_scores':
-                'iptm_score':
-                'weighted_ptm_score':
+            aux_out:
+                Dict containing following keys:
+                    "distogram_logits" ([*, N_token, N_token, bins_distogram]):
+                        Distogram head out
+                    "pae_logits" ([*, N_token, N_token, bins_pae]):
+                        PAE head out
+                    "pde_logits" ([*, N_token, N_token, bins_pde]):
+                        PDE head out
+                    "plddt_logits" ([*, N_atom, bins_plddt]):
+                        pLDDT head out
+                    "experimentally_resolved_logits" ([*, N_atom, bins_resolved]):
+                        Experimentally resolved head out
+                    "tm_logits" ([*, N_token, N_token, bins_pae]):
+                        Values identical to pae_logits
+                    "ptm_score":
+                        Predicted TM score
+                    "iptm_score":
+                        Interface predicted TM score
+                    "weighted_ptm_score":
+                        Weighted pTM + iPTM score
+
+        Note:
+            Previous implementations of losses include softmax so all
+            heads return logits.
         """
         aux_out = {}
-        # 1. distogram head: distogram head needs outputs['pair'] before passing
-        # pairformer (main loop: line 17)
+
+        si_trunk = output["si_trunk"]
+        zij_trunk = output["zij_trunk"]
+        x_pred = output["x_pred"]
+
+        # Distogram head: Main loop (Algorithm 1), line 17
         # Not enabled in finetuning 3 stage
         if self.config["distogram"]["enabled"]:
-            distogram_logits = self.distogram(outputs["pair"])
+            distogram_logits = self.distogram(z=zij_trunk)
             aux_out["distogram_logits"] = distogram_logits
 
-        # 2. stop grad
-        pair = outputs["pair"].detach()
-        single = outputs["single"].detach()
-        coords = x_pred.detach()
-        coords = torch.sum(
-            coords.unsqueeze(-3) * token_representative_atom_idx.unsqueeze(-1), dim=-2
-        )  # using the representative atom for each token (Ca, C1', and heavy atom)
+        # Stop grad
+        si_trunk = si_trunk.detach()
+        zij_trunk = zij_trunk.detach()
+        x_pred = x_pred.detach()
 
-        # 3. si, zij from pairformer stack outs
-        si, zij = self.pairformer_embedding(
-            si_input,
-            single,
-            pair,
-            coords,
-            single_mask,
-            pair_mask,
-            chunk_size,
+        token_mask = batch["token_mask"]
+        pair_mask = token_mask[..., None] * token_mask[..., None, :]
+
+        # Expand token mask to atom mask
+        atom_mask = broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=batch["num_atoms_per_token"],
+            token_feat=token_mask,
         )
 
-        lddt_logits = self.plddt(si, token_to_atom_idx)
+        # Get representative atoms
+        repr_x_pred, repr_x_mask = get_token_representative_atoms(
+            batch=batch, x=x_pred, atom_mask=atom_mask
+        )
+
+        # Embed trunk outputs
+        si, zij = self.pairformer_embedding(
+            si_input=si_input,
+            si=si_trunk,
+            zij=zij_trunk,
+            x_pred=repr_x_pred,
+            single_mask=repr_x_mask,
+            pair_mask=pair_mask,
+            chunk_size=chunk_size,
+        )
+
+        # Get atom mask padded to MAX_ATOMS_PER_TOKEN
+        # Required to extract pLDDT and experimentally resolved logits for
+        # the flat atom representation
+        max_atom_per_token_mask = broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=batch["num_atoms_per_token"],
+            token_feat=token_mask,
+            max_num_atoms_per_token=self.max_atoms_per_token,
+        )
+
+        lddt_logits = self.plddt(s=si, max_atom_per_token_mask=max_atom_per_token_mask)
         aux_out["plddt_logits"] = lddt_logits
 
+        # Used in modified residue ranking
+        aux_out["plddt"] = compute_plddt(lddt_logits)
+
         experimentally_resolved_logits = self.experimentally_resolved(
-            si, token_to_atom_idx
+            si, max_atom_per_token_mask
         )
         aux_out["experimentally_resolved_logits"] = experimentally_resolved_logits
 
         pde_logits = self.pde(zij)
         aux_out["pde_logits"] = pde_logits
+        aux_out.update(
+            compute_predicted_distance_error(
+                pde_logits,
+                **self.config.confidence.pde,
+            )
+        )
 
         if self.config["pae"]["enabled"]:
             pae_logits = self.pae(zij)
             aux_out["pae_logits"] = pae_logits
+            aux_out.update(
+                compute_predicted_aligned_error(
+                    pae_logits,
+                    **self.config.confidence.pae,
+                )
+            )
 
-            tm_logits = pae_logits  # uses pae_logits (SI pg. 27)
-            aux_out["tm_logits"] = tm_logits
+            _, valid_frame_mask = get_token_frame_atoms(
+                batch=batch, x=x_pred, atom_mask=atom_mask
+            )
 
-            # TODO: Clean up refs to feature dict
-            # For example asym id does not exist in the output dict
-            # Fix TM/PAE configs. These functions are referencing params that would
-            # be in the loss config
-
-            # aux_out["ptm_score"] = compute_tm(tm_logits, **self.config.tm)
-            # asym_id = outputs.get("asym_id")
-            # if asym_id is not None:
-            #     aux_out["iptm_score"] = compute_tm(
-            #         tm_logits, asym_id=asym_id, interface=True, **self.config.tm
-            #     )
-            #     aux_out["weighted_ptm_score"] = (
-            #         self.config.tm["iptm_weight"] * aux_out["iptm_score"]
-            #         + self.config.tm["ptm_weight"] * aux_out["ptm_score"]
-            #     )
-            #
-            # aux_out.update(
-            #     compute_predicted_aligned_error(
-            #         pae_logits,
-            #         **self.config.pae,
-            #     )
-            # )
+            # TODO: Move this and other confidence logic out of the heads module
+            # Compute weighted pTM score
+            # Uses pae_logits (SI pg. 27)
+            ptm_scores = compute_weighted_ptm(
+                logits=pae_logits,
+                asym_id=batch["asym_id"],
+                mask=valid_frame_mask,
+                **self.config.confidence.ptm,
+            )
+            aux_out.update(ptm_scores)
 
         return aux_out
