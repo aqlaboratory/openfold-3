@@ -1,9 +1,6 @@
-from pathlib import Path
-
 import ml_collections as mlc
 
 import openfold3.model_implementations.af2_monomer.linear_init_config as lin_init
-from openfold3.core.config import config_utils
 from openfold3.model_implementations.af2_monomer.features import feature_dict
 
 c_z = mlc.FieldReference(128, field_type=int)
@@ -363,11 +360,3 @@ config = mlc.ConfigDict(
 )
 
 
-def model_config(model_preset: str):
-    if model_preset == "initial_training":
-        return config
-    else:
-        ref_yaml_path = Path(__file__).with_name("reference_config.yml")
-        reference_configs = config_utils.load_yaml(ref_yaml_path)
-        model_preset_config = reference_configs[model_preset]
-        return config_utils.update_config_dict(config, model_preset_config)

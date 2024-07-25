@@ -1,0 +1,13 @@
+finetune1:
+  loss:
+    diffusion:
+      alpha_bond: 1.0
+
+finetune2:
+  loss:
+    diffusion:
+      alpha_bond: 1.0
+
+eval:
+  globals:
+    no_rollout_steps: 200
