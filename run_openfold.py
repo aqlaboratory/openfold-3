@@ -14,7 +14,8 @@ from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
 from openfold3.core.data.data_structures.datamodule import OpenFoldDataModule
-from openfold3.core.model.runners.registry import MODEL_REGISTRY
+from openfold3.core.config.config_utils import load_yaml
+from openfold3.model_implementations.registry import MODEL_REGISTRY, make_config
 from openfold3.core.utils.callbacks import (
     EarlyStoppingVerbose,
     PerformanceLoggingCallback,
@@ -40,7 +41,9 @@ def main(args):
         pl.seed_everything(args.seed, workers=True)
 
     # Initialize model wrapper
-    lightning_module = MODEL_REGISTRY[args.model_name](args.model_config)
+    runner_yaml_config = load_yaml(args.runner_yaml)
+    model_config = make_config(args.model_name, runner_yaml_config.model)
+    lightning_module = MODEL_REGISTRY[args.model_name](model_config)
     # TODO <checkpoint resume logic goes here>
 
     # Script model

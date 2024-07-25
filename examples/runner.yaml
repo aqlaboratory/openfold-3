@@ -1,0 +1,23 @@
+# To demonstrate expected fields for runner yaml, as expected by
+# model_implementations/registry.py 
+# We will read the model preset from a separate field.
+model_preset: model_1
+
+pl_trainer_arguments:
+  num_gpus: 1
+  ...
+
+# Notes on updating the model config:
+# 1. We can also consider placing these in a separate yaml file
+# and finding a way to reference it / pass in a different argument 
+# 2. I'm not sure if we should put the model_preset here instead
+# or if we want to put it as a top level argument
+model_update:
+  model:
+    input_embedder:
+      linear_init_params:
+        linear_s:
+          init: relu
+  loss:
+    diffusion:
+      alpha_dna: 3
