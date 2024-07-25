@@ -1,7 +1,7 @@
 import ml_collections as mlc
 
-import openfold3.model_implementations.af3_all_atom.linear_init_config as lin_init
-from openfold3.model_implementations.af3_all_atom.features import feature_dict
+import openfold3.model_implementations.af3_all_atom.config.linear_init_config as lin_init
+from openfold3.model_implementations.af3_all_atom.config.features import feature_dict
 
 NAME = "af3_all_atom"
 
@@ -255,7 +255,7 @@ config = mlc.ConfigDict(
         "loss": {
             "diffusion": {
                 "sigma_data": sigma_data,
-                "alpha_bond": 0.0,  # 0 for training, 1 for finetuning 
+                "alpha_bond": 0.0,  # 0 for training, 1 for finetuning
                 "alpha_dna": 5.0,
                 "alpha_rna": 5.0,
                 "alpha_ligand": 10.0,
