@@ -224,7 +224,7 @@ def parse_msas_direct(
             # Parse the MSAs with the appropriate parser
             with open(os.path.join(folder_path, file_name)) as msa_string:
                 msas[basename] = MSA_PARSER_REGISTRY[ext](
-                    msa_string, max_seq_counts[basename]
+                    msa_string.read(), max_seq_counts[basename]
                 )
 
     return msas
@@ -284,3 +284,9 @@ def parse_msas_alignment_database(
                 read_msa(start, size), max_seq_counts[basename]
             )
     return msas
+
+
+def parse_msas_assembly():
+    
+
+    return
