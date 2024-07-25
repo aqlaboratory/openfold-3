@@ -31,8 +31,8 @@ from openfold3.core.utils.tensor_utils import (
     tree_map,
 )
 
-# Replacing the import from model_implementations.af2_monomer.features with a copy 
-# TODO: Find a new home for these if this import is needed. 
+# Replacing the import from model_implementations.af2_monomer.features with a copy
+# TODO: Find a new home for these if this import is needed.
 NUM_RES = "num residues placeholder"
 NUM_MSA_SEQ = "msa placeholder"
 NUM_EXTRA_SEQ = "extra msa placeholder"

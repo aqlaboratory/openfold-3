@@ -6,8 +6,8 @@ from openfold3.core.data.data_transforms import curry1
 from openfold3.core.np import residue_constants as rc
 from openfold3.core.utils.tensor_utils import masked_mean
 
-# Replacing the import from model_implementations.af2_monomer.features with a copy 
-# TODO: Find a new home for these if this import is needed. 
+# Replacing the import from model_implementations.af2_monomer.features with a copy
+# TODO: Find a new home for these if this import is needed.
 NUM_RES = "num residues placeholder"
 
 
