@@ -17,7 +17,10 @@ class TestAF3Model(unittest.TestCase):
         n_templ = 3
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        config.model.pairformer.no_blocks = 4  # To avoid memory issues in CI
+        # To avoid memory issues in CI
+        config.model.pairformer.no_blocks = 4
+        config.model.diffusion_module.diffusion_transformer.no_blocks = 4
+
         af3 = AlphaFold3(config).to(device)
 
         batch = random_af3_features(
