@@ -21,6 +21,7 @@ from typing import List, Optional
 import torch
 from torch import nn as nn
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import Attention
 from openfold3.core.utils.chunk_utils import chunk_layer
 from openfold3.core.utils.tensor_utils import permute_final_dims
@@ -32,7 +33,16 @@ class TemplatePointwiseAttention(nn.Module):
     Implements AF2 Algorithm 17.
     """
 
-    def __init__(self, c_t, c_z, c_hidden, no_heads, inf, **kwargs):
+    def __init__(
+        self,
+        c_t,
+        c_z,
+        c_hidden,
+        no_heads,
+        inf,
+        linear_init_params=lin_init.template_pointwise_init,
+        **kwargs,
+    ):
         """
         Args:
             c_t:
@@ -45,6 +55,8 @@ class TemplatePointwiseAttention(nn.Module):
                 Number of attention heads
             inf:
                 Large constant for masking
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -61,6 +73,7 @@ class TemplatePointwiseAttention(nn.Module):
             self.c_hidden,
             self.no_heads,
             gating=False,
+            linear_init_params=linear_init_params.mha,
         )
 
     def _chunk(

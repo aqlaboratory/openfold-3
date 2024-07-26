@@ -37,7 +37,13 @@ class TestLMA(unittest.TestCase):
             c_hidden=c_hidden,
         )
 
-        a = Attention(c_hidden, c_hidden, c_hidden, c_hidden, no_heads).cuda()
+        a = Attention(
+            c_hidden,
+            c_hidden,
+            c_hidden,
+            c_hidden,
+            no_heads,
+        ).cuda()
 
         with torch.no_grad():
             lecun_normal_init_(a.linear_g.weight)

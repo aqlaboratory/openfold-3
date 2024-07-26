@@ -25,6 +25,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.precision_utils import is_fp16_enabled
 from openfold3.core.utils.tensor_utils import permute_final_dims
@@ -37,7 +38,9 @@ class BaseTriangleMultiplicativeUpdate(nn.Module, ABC):
     """
 
     @abstractmethod
-    def __init__(self, c_z, c_hidden, _outgoing):
+    def __init__(
+        self, c_z, c_hidden, _outgoing, linear_init_params=lin_init.tri_mul_init
+    ):
         """
         Args:
             c_z:
@@ -50,8 +53,8 @@ class BaseTriangleMultiplicativeUpdate(nn.Module, ABC):
         self.c_hidden = c_hidden
         self._outgoing = _outgoing
 
-        self.linear_g = Linear(self.c_z, self.c_z, init="gating")
-        self.linear_z = Linear(self.c_hidden, self.c_z, init="final")
+        self.linear_g = Linear(self.c_z, self.c_z, **linear_init_params.linear_g)
+        self.linear_z = Linear(self.c_hidden, self.c_z, **linear_init_params.linear_z)
 
         self.layer_norm_in = LayerNorm(self.c_z)
         self.layer_norm_out = LayerNorm(self.c_hidden)
@@ -112,7 +115,9 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
     Implements AF2 Algorithms 11 and 12 / AF3 Algorithms 12 and 13.
     """
 
-    def __init__(self, c_z, c_hidden, _outgoing=True):
+    def __init__(
+        self, c_z, c_hidden, _outgoing=True, linear_init_params=lin_init.tri_mul_init
+    ):
         """
         Args:
             c_z:
@@ -120,12 +125,25 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             c:
                 Hidden channel dimension
         """
-        super().__init__(c_z=c_z, c_hidden=c_hidden, _outgoing=_outgoing)
+        super().__init__(
+            c_z=c_z,
+            c_hidden=c_hidden,
+            _outgoing=_outgoing,
+            linear_init_params=linear_init_params,
+        )
 
-        self.linear_a_p = Linear(self.c_z, self.c_hidden)
-        self.linear_a_g = Linear(self.c_z, self.c_hidden, init="gating")
-        self.linear_b_p = Linear(self.c_z, self.c_hidden)
-        self.linear_b_g = Linear(self.c_z, self.c_hidden, init="gating")
+        self.linear_a_p = Linear(
+            self.c_z, self.c_hidden, **linear_init_params.linear_a_p
+        )
+        self.linear_a_g = Linear(
+            self.c_z, self.c_hidden, **linear_init_params.linear_a_g
+        )
+        self.linear_b_p = Linear(
+            self.c_z, self.c_hidden, **linear_init_params.linear_b_p
+        )
+        self.linear_b_g = Linear(
+            self.c_z, self.c_hidden, **linear_init_params.linear_b_g
+        )
 
     def _inference_forward(
         self,
@@ -479,7 +497,13 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
     Implements AF2-Multimer version of AF2 Algorithm 11 and 12.
     """
 
-    def __init__(self, c_z, c_hidden, _outgoing=True):
+    def __init__(
+        self,
+        c_z,
+        c_hidden,
+        _outgoing=True,
+        linear_init_params=lin_init.fused_tri_mul_init,
+    ):
         """
         Args:
             c_z:
@@ -487,10 +511,19 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             c:
                 Hidden channel dimension
         """
-        super().__init__(c_z=c_z, c_hidden=c_hidden, _outgoing=_outgoing)
+        super().__init__(
+            c_z=c_z,
+            c_hidden=c_hidden,
+            _outgoing=_outgoing,
+            linear_init_params=linear_init_params,
+        )
 
-        self.linear_ab_p = Linear(self.c_z, self.c_hidden * 2)
-        self.linear_ab_g = Linear(self.c_z, self.c_hidden * 2, init="gating")
+        self.linear_ab_p = Linear(
+            self.c_z, self.c_hidden * 2, **linear_init_params.linear_ab_p
+        )
+        self.linear_ab_g = Linear(
+            self.c_z, self.c_hidden * 2, **linear_init_params.linear_ab_g
+        )
 
     def _inference_forward(
         self,

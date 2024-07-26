@@ -44,7 +44,13 @@ class TestTemplatePointwiseAttention(unittest.TestCase):
         n_res = consts.n_res
         inf = 1e7
 
-        tpa = TemplatePointwiseAttention(c_t, c_z, c, no_heads, inf=inf)
+        tpa = TemplatePointwiseAttention(
+            c_t,
+            c_z,
+            c,
+            no_heads,
+            inf=inf,
+        )
 
         t = torch.rand((batch_size, n_seq, n_res, n_res, c_t))
         z = torch.rand((batch_size, n_res, n_res, c_z))

@@ -16,7 +16,6 @@ import unittest
 
 import torch
 
-import tests.compare_utils as compare_utils
 from openfold3.core.loss.diffusion import (
     bond_loss,
     diffusion_loss,
@@ -41,10 +40,10 @@ class TestDiffusionLoss(unittest.TestCase):
             ],
             dim=-1,
         )
-        atom_mask = torch.ones((batch_size, n_atom))
+        atom_mask_gt = torch.ones((batch_size, n_atom))
 
-        x = centre_random_augmentation(x_gt, atom_mask)
-        x_align = weighted_rigid_align(x=x, x_gt=x_gt, w=w, atom_mask=atom_mask)
+        x = centre_random_augmentation(x_gt, atom_mask_gt)
+        x_align = weighted_rigid_align(x=x, x_gt=x_gt, w=w, atom_mask_gt=atom_mask_gt)
 
         self.assertTrue(x_align.shape == (batch_size, n_atom, 3))
         self.assertTrue(torch.sum(torch.abs(x_align - x_gt) > 1e-5) == 0)
@@ -60,11 +59,11 @@ class TestDiffusionLoss(unittest.TestCase):
 
         x1_gt = torch.randn((batch_size, n_atom, 3))
         x2_gt = torch.randn((batch_size, n_atom, 3))
-        atom_mask = torch.ones((batch_size, n_atom)).bool()
-        atom_mask[1, -12:] = 0
+        atom_mask_gt = torch.ones((batch_size, n_atom)).bool()
+        atom_mask_gt[1, -12:] = 0
 
-        x1 = centre_random_augmentation(x1_gt, atom_mask)
-        x2 = centre_random_augmentation(x2_gt, atom_mask)
+        x1 = centre_random_augmentation(x1_gt, atom_mask_gt)
+        x2 = centre_random_augmentation(x2_gt, atom_mask_gt)
 
         batch = {
             "is_protein": torch.concat(
@@ -113,7 +112,7 @@ class TestDiffusionLoss(unittest.TestCase):
             batch=batch,
             x=x1,
             x_gt=x2,
-            atom_mask=atom_mask,
+            atom_mask_gt=atom_mask_gt,
             alpha_dna=alpha_dna,
             alpha_rna=alpha_rna,
             alpha_ligand=alpha_ligand,
@@ -122,7 +121,7 @@ class TestDiffusionLoss(unittest.TestCase):
             batch=batch,
             x=x1_gt,
             x_gt=x2_gt,
-            atom_mask=atom_mask,
+            atom_mask_gt=atom_mask_gt,
             alpha_dna=alpha_dna,
             alpha_rna=alpha_rna,
             alpha_ligand=alpha_ligand,
@@ -131,7 +130,6 @@ class TestDiffusionLoss(unittest.TestCase):
         self.assertTrue(mse.shape == (batch_size,))
         self.assertTrue(torch.sum((mse - mse_gt) > 1e-5) == 0)
 
-    @compare_utils.skip_unless_cuda_available()
     def test_bond_loss(self):
         batch_size = consts.batch_size
         n_token_per_group = 4
@@ -252,7 +250,6 @@ class TestDiffusionLoss(unittest.TestCase):
 
         self.assertTrue(loss.shape == (batch_size,))
 
-    @compare_utils.skip_unless_cuda_available()
     def test_diffusion_loss(self):
         batch_size = consts.batch_size
         n_token_per_group = 4
@@ -262,9 +259,9 @@ class TestDiffusionLoss(unittest.TestCase):
         alpha_bond = 1
 
         x_gt = torch.randn((batch_size, n_atom, 3))
-        atom_mask = torch.ones((batch_size, n_atom))
+        atom_mask_gt = torch.ones((batch_size, n_atom))
 
-        x = centre_random_augmentation(x_gt, atom_mask)
+        x = centre_random_augmentation(x_gt, atom_mask_gt)
 
         batch = {
             "is_protein": torch.concat(
@@ -316,7 +313,7 @@ class TestDiffusionLoss(unittest.TestCase):
             batch=batch,
             x=x,
             x_gt=x_gt,
-            atom_mask=atom_mask,
+            atom_mask_gt=atom_mask_gt,
             t=t,
             sigma_data=sigma_data,
             alpha_bond=alpha_bond,

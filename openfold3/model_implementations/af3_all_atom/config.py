@@ -1,5 +1,7 @@
 import ml_collections as mlc
 
+import openfold3.model_implementations.af3_all_atom.linear_init_config as lin_init
+
 NUM_TOKENS = "num tokens placeholder"
 NUM_ATOMS = "num atoms placeholder"
 NUM_MSA_SEQ = "msa placeholder"
@@ -11,7 +13,7 @@ c_s = mlc.FieldReference(384, field_type=int)
 c_z = mlc.FieldReference(128, field_type=int)
 c_m = mlc.FieldReference(64, field_type=int)
 c_t = mlc.FieldReference(64, field_type=int)
-c_atom_ref = mlc.FieldReference(390, field_type=int)
+c_atom_ref = mlc.FieldReference(389, field_type=int)
 c_atom = mlc.FieldReference(128, field_type=int)
 c_atom_pair = mlc.FieldReference(16, field_type=int)
 c_token_embedder = mlc.FieldReference(384, field_type=int)
@@ -26,6 +28,8 @@ no_samples = mlc.FieldReference(48, field_type=int)
 no_rollout_steps = mlc.FieldReference(20, field_type=int)
 n_query = mlc.FieldReference(32, field_type=int)
 n_key = mlc.FieldReference(128, field_type=int)
+use_block_sparse_attn = mlc.FieldReference(False, field_type=bool)
+block_size = mlc.FieldReference(16, field_type=int)
 
 # templates_enabled = mlc.FieldReference(True, field_type=bool)
 eps = mlc.FieldReference(1e-8, field_type=float)
@@ -68,7 +72,8 @@ config = mlc.ConfigDict(
                     "template_unit_vector": [NUM_TEMPLATES, NUM_TOKENS, NUM_TOKENS, 3],
                     "token_bonds": [NUM_TOKENS, NUM_TOKENS],
                     # Features not included in AF3 docs
-                    "atom_to_token_index": [NUM_ATOMS],
+                    "num_atoms_per_token": [NUM_TOKENS],
+                    "start_atom_index": [NUM_TOKENS],
                     "token_mask": [NUM_TOKENS],
                     "msa_mask": [NUM_MSA_SEQ, NUM_TOKENS],
                     "num_main_msa_seqs": [],
@@ -100,29 +105,40 @@ config = mlc.ConfigDict(
                 "c_s_input": c_s_input,
                 "c_s": c_s,
                 "c_z": c_z,
-                "c_atom_ref": c_atom_ref,
-                "c_atom": c_atom,
-                "c_atom_pair": c_atom_pair,
-                "c_token": c_token_embedder,
-                # c_atom / no_heads
-                # built into the function (might get float depending on conf.)
-                "c_hidden": 32,
-                "no_heads": 4,
-                "no_blocks": 3,
-                "n_transition": 2,
-                "n_query": n_query,
-                "n_key": n_key,
                 "max_relative_idx": max_relative_idx,
                 "max_relative_chain": max_relative_chain,
-                "inf": 1e10,  # global parameter?
+                "atom_attn_enc": {
+                    "c_s": c_s,
+                    "c_z": c_z,
+                    "c_atom_ref": c_atom_ref,
+                    "c_atom": c_atom,
+                    "c_atom_pair": c_atom_pair,
+                    "c_token": c_token_embedder,
+                    # c_atom / no_heads
+                    # built into the function (might get float depending on conf.)
+                    "c_hidden": 32,
+                    "no_heads": 4,
+                    "no_blocks": 3,
+                    "n_transition": 2,
+                    "n_query": n_query,
+                    "n_key": n_key,
+                    "use_ada_layer_norm": True,
+                    "use_block_sparse_attn": use_block_sparse_attn,
+                    "block_size": block_size,
+                    "inf": 1e10,  # global parameter?
+                    "linear_init_params": lin_init.atom_att_enc_init,
+                },
+                "linear_init_params": lin_init.input_emb_init,
             },
             "template": {
                 "c_t": c_t,
                 "c_z": c_z,
+                "linear_init_param": lin_init.templ_module_init,
                 "template_pair_embedder": {
                     "c_in": 108,
                     "c_z": c_z,
                     "c_out": c_t,
+                    "linear_init_params": lin_init.templ_pair_feat_emb_init,
                 },
                 "template_pair_stack": {
                     "c_t": c_t,
@@ -139,8 +155,9 @@ config = mlc.ConfigDict(
                     "tri_mul_first": True,
                     "fuse_projection_weights": False,
                     "blocks_per_ckpt": blocks_per_ckpt,
-                    "tune_chunk_size": tune_chunk_size,
                     "inf": 1e9,
+                    "linear_init_params": lin_init.pair_block_init,
+                    "tune_chunk_size": tune_chunk_size,
                 },
             },
             "msa": {
@@ -148,6 +165,7 @@ config = mlc.ConfigDict(
                     "c_m_feats": 34,
                     "c_m": c_m,
                     "c_s_input": c_s_input,
+                    "linear_init_params": lin_init.msa_module_emb_init,
                 },
                 "msa_module": {
                     "c_m": c_m,
@@ -168,6 +186,7 @@ config = mlc.ConfigDict(
                     "blocks_per_ckpt": blocks_per_ckpt,
                     "inf": 1e9,
                     "eps": eps,
+                    "linear_init_params": lin_init.msa_module_init,
                     "clear_cache_between_blocks": False,
                     "tune_chunk_size": tune_chunk_size,
                 },
@@ -187,6 +206,7 @@ config = mlc.ConfigDict(
                 "fuse_projection_weights": False,
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "inf": 1e9,
+                "linear_init_params": lin_init.pairformer_init,
                 "clear_cache_between_blocks": False,
                 "tune_chunk_size": tune_chunk_size,
             },
@@ -195,6 +215,7 @@ config = mlc.ConfigDict(
                     "c_s": c_s,
                     "c_token": c_token_diffusion,
                     "sigma_data": sigma_data,
+                    "linear_init_params": lin_init.diffusion_module_init,
                 },
                 "diffusion_conditioning": {
                     "c_s_input": c_s_input,
@@ -204,6 +225,7 @@ config = mlc.ConfigDict(
                     "c_fourier_emb": 256,
                     "max_relative_idx": max_relative_idx,
                     "max_relative_chain": max_relative_chain,
+                    "linear_init_params": lin_init.diffusion_cond_init,
                 },
                 "atom_attn_enc": {
                     "c_s": c_s,
@@ -220,7 +242,11 @@ config = mlc.ConfigDict(
                     "n_transition": 2,
                     "n_query": n_query,
                     "n_key": n_key,
+                    "use_ada_layer_norm": True,
+                    "use_block_sparse_attn": use_block_sparse_attn,
+                    "block_size": block_size,
                     "inf": 1e9,  # global parameter?
+                    "linear_init_params": lin_init.atom_att_enc_init,
                 },
                 "diffusion_transformer": {
                     "c_a": c_token_diffusion,
@@ -230,7 +256,11 @@ config = mlc.ConfigDict(
                     "no_heads": 16,
                     "no_blocks": 24,
                     "n_transition": 2,
+                    "use_ada_layer_norm": True,
+                    "use_block_sparse_attn": False,
+                    "block_size": None,
                     "inf": 1e9,  # global parameter?
+                    "linear_init_params": lin_init.diffusion_transformer_init,
                 },
                 "atom_attn_dec": {
                     "c_atom": c_atom,
@@ -242,7 +272,11 @@ config = mlc.ConfigDict(
                     "n_transition": 2,
                     "n_query": n_query,
                     "n_key": n_key,
+                    "use_ada_layer_norm": True,
+                    "use_block_sparse_attn": use_block_sparse_attn,
+                    "block_size": block_size,
                     "inf": 1e9,  # global parameter?
+                    "linear_init_params": lin_init.atom_att_dec_init,
                 },
             },
             "sample_diffusion": {
@@ -258,10 +292,22 @@ config = mlc.ConfigDict(
             },
         },
         "loss": {
-            "alpha_confidence": 1.0e-4,
-            "alpha_diffusion": 4.0,
-            "alpha_distogram": 3.0e-2,
-            "alpha_pae": None,  # varies based on training and finetuning
+            "confidence": {
+                "no_bins_plddt": 50,
+                "bin_min_plddt": 0.0,
+                "bin_max_plddt": 1.0,
+                "angle_threshold": 25.0,
+                "no_bins_pae": 64,
+                "bin_min_pae": 0.0,
+                "bin_max_pae": 32.0,
+                "no_bins_pde": 64,
+                "bin_min_pde": 0.0,
+                "bin_max_pde": 32.0,
+                "no_bins_resolved": 2,
+                "alpha_pae": 0,
+                "eps": eps,
+                "inf": 1e9,  # global parameter?
+            },
             "diffusion": {
                 "sigma_data": sigma_data,
                 "alpha_bond": 0.0,  # varies based on training and finetuning
@@ -269,21 +315,11 @@ config = mlc.ConfigDict(
                 "alpha_rna": 5.0,
                 "alpha_ligand": 10.0,
             },
-            "confidence": {
-                "n_bins_plddt": 50,
-                "n_bins_pae": 64,
-                "bin_min_pae": 0.0,
-                "bin_max_pae": 32.0,
-                "angle_threshold": 25.0,
-                "n_bins_pde": 64,
-                "bin_min_pde": 0.0,
-                "bin_max_pde": 32.0,
-                "eps": 1.0e-8,
-            },
             "distogram": {
-                "n_bins": 64,
+                "no_bins": 64,
                 "bin_min": 2.0,
                 "bin_max": 22.0,
+                "eps": eps,
             },
         },
     }
@@ -295,6 +331,8 @@ finetune1_config_update = mlc.ConfigDict({"loss": {"diffusion": {"alpha_bond": 1
 
 finetune2_config_update = mlc.ConfigDict({"loss": {"diffusion": {"alpha_bond": 1.0}}})
 
-finetune3_config_update = mlc.ConfigDict({"loss": {"alpha_pae": 1.0}})
+finetune3_config_update = mlc.ConfigDict(
+    {"loss": {"diffusion": {"alpha_bond": 1.0}, "confidence": {"alpha_pae": 1}}}
+)
 
 eval_config_update = mlc.ConfigDict({"globals": {"no_rollout_steps": 200}})
