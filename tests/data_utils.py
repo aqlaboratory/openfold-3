@@ -177,8 +177,8 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ):
 
     n_atom = torch.max(torch.sum(num_atoms_per_token, dim=-1)).int().item()
 
-    start_atom_index = (
-        torch.cumsum(num_atoms_per_token, dim=-1) - num_atoms_per_token[..., 0]
+    start_atom_index = torch.concat(
+        (torch.zeros((1,)), torch.cumsum(num_atoms_per_token, dim=-1)[:-1]), dim=-1
     )
 
     asym_id = (

@@ -152,7 +152,6 @@ class TestPairformerEmbedding(unittest.TestCase):
 
 
 class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
-    # NOTE: Will periodically fail until Yeqing's fixes for unknown tokens are merged
     def test_auxiliary_heads_all_atom_shape(self):
         batch_size = 1
         n_token = consts.n_res
