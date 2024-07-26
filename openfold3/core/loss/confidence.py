@@ -1,650 +1,518 @@
-import math
 from typing import Dict, Tuple
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
-from openfold3.core.utils.tensor_utils import (
-    permute_final_dims,
+from openfold3.core.utils.atomize_utils import (
+    broadcast_token_feat_to_atoms,
+    get_token_atom_index_offset,
+    get_token_frame_atoms,
+    get_token_representative_atoms,
 )
+from openfold3.core.utils.tensor_utils import binned_one_hot
 
 
-def pLDDT(
-    x: torch.Tensor,
-    x_gt: torch.Tensor,
-    frame_idx: torch.Tensor,
-    atom_mask_gt: torch.Tensor,
-    is_protein: torch.Tensor,
-    is_dna: torch.Tensor,
-    is_rna: torch.Tensor,
-    logits: torch.Tensor,
-    n_bins: int = 50,
-    eps: float = 1e-8,
-) -> torch.Tensor:
+def express_coords_in_frames(
+    x: torch.Tensor, phi: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], eps: float
+):
     """
-    Algorithm 27 of the AF3 supplementary.
-    Computes the smooth LDDT loss.
+    Implements AF3 Algorithm 29.
+
     Args:
         x:
-            Predicted coordinates. [*, N, 3]
-        x_gt:
-            Ground truth coordinates. [*, N, 3]
-        frame_idx:
-            Frame indices. [*, T, 3]
-        atom_mask_gt:
-            Mask for atoms not resolved in the GT (position not determined)
-            or to account for padding. [*, N]
-        is_protein:
-            Protein token -> 1, otherwise -> 0. [*, T]
-        is_dna:
-            DNA tokens -> 1, otherwise -> 0. [*, T]
-        is_rna:
-            RNA tokens -> 1, otherwise -> 0. [*, T]
-        logits:
-            predicted lddt logits. [*, N, n_bins]
-        n_bins:
-            Number of bins for lddt. (int)
+            [*, N_token, 3] Atom positions
+        phi:
+            A tuple of atom positions used for frame construction, each
+            has a shape of [*, N_token, 3]
         eps:
-            Small value to avoid division by zero. (float)
+            Small float for numerical stability
     Returns:
-        loss:
-            Smooth LDDT loss.
+        xij:
+            [*, N_token, N_token, 3] Coordinates projected into frame basis
     """
-
-    # distances between all pairs of atoms
-    dx = torch.cdist(x, x)  # [*, N, N]
-    dx_gt = torch.cdist(x_gt, x_gt)  # [*, N, N]
-    delta = torch.abs(dx - dx_gt)  # [*, N, N]
-
-    Ca_mask = frame_idx[..., 1] * is_protein  # [*, T]
-    Ca_mask = F.one_hot(Ca_mask, num_classes=dx.shape[-1]).sum(dim=-2)  # [*, N]
-
-    C1_mask = frame_idx[..., 1] * (is_dna + is_rna)  # [*, T]
-    C1_mask = F.one_hot(C1_mask, num_classes=dx.shape[-1]).sum(dim=-2)  # [*, N]
-
-    # Restrict to bespoke inclusion radius
-    c = (dx_gt < 30.0) * Ca_mask.unsqueeze(-2) + (dx_gt < 15.0) * C1_mask.unsqueeze(
-        -2
-    )  # [*, N, N]
-
-    # atom mask and avoid self term
-    # TODO check dtypes for masks
-    mask = 1 - torch.eye(c.shape[-1], device=c.device)  # [N, N]
-    mask = mask * atom_mask_gt[..., None] * atom_mask_gt[..., None, :]  # [*, N, N]
-    c = c * mask  # [*, N, N]
-
-    thresholds = torch.tensor([0.5, 1.0, 2.0, 4.0]).to(dx.device)
-    lddt = torch.where(delta[..., None] < thresholds, 1.0, 0.0).sum(-1)  # [*, N, N]
-    # TODO: shouldn't this be normalized? (normalized here...)
-    lddt = 0.25 * (lddt * c).sum(dim=-1) / (c.sum(dim=-1) + eps)  # [*, N]
-
-    boundaries = torch.linspace(
-        0.0, 1.0, n_bins + 1, device=lddt.device
-    )  # [n_bins + 1]
-    bins = torch.bucketize(lddt, boundaries[1:-1])  # [*, N]
-
-    # set bin to ignore value (=-100) of F.cross_entropy for masked atoms
-    bins = bins.masked_fill_(~atom_mask_gt.bool(), -100)  # [*, N]
-
-    # compute cross entropy loss
-    logits = permute_final_dims(logits, [1, 0])  # [*, n_bins, N]
-    lddt_loss = F.cross_entropy(logits, bins)
-
-    return lddt_loss
-
-
-def get_phi(
-    batch: Dict[str, torch.Tensor],
-    x_gt: torch.Tensor,
-    x: torch.Tensor,
-    angle_threshold: float = 25,
-    eps: float = 1e-8,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """
-    Subsection 4.3.2 of the AF3 supplementary.
-    Extract coordinates of three atoms for each token, used to define the frame,
-    according to the following rules:
-    1. Proteins: N, C-alpha, C
-    2. Nucleic acids: C1', C3', C4'
-    3. Ligands: each token is a single atom to which we add the two closest neighbors.
-    (If there are less than 3 atoms in the chain, the frame is invalid.
-    If the three atoms are collinear to within 25 degrees, the frame is also invalid.)
-    Args:
-        batch:
-            Batch dictionary.
-        x_gt:
-            Ground truth coordinates. [*, N, 3]
-        x:
-            Predicted coordinates. [*, N, 3]
-        angle_threshold:
-            Threshold for invalid frames. (float)
-    Returns:
-        phi_gt:
-            Ground truth coordinates of 3 atoms per token. [*, T, 3, 3]
-        phi:
-            Predicted coordinates of 3 atoms per token T. [*, T, 3, 3]
-        invalid_frame_mask:
-            Mask for invalid frames. [*, T]
-    """
-
-    # ---------------------------------
-    # ENOUGH ATOMS IN (LIGAND) CHAIN
-    # ---------------------------------
-
-    # mask for (ligand) tokens in chains which include more than 3 tokens
-    chain_id = batch["asym_id"]  # [*, T]
-    valid_frame_mask = []
-    # TODO can this be done without splitting the batch?
-    # TODO chain_id must be int type for bincount, is that the case?
-    for b in chain_id:
-        b_mask = (b[..., None] == torch.where(torch.bincount(b) >= 3)[0]).any(dim=-1)
-        valid_frame_mask.append(b_mask)
-
-    valid_frame_mask = torch.stack(valid_frame_mask)  # [*, T]
-    valid_frame_mask = valid_frame_mask * batch["is_ligand"]  # [*, T]
-
-    # -----------------------------
-    # GET ATOMS FOR LIGAND FRAME
-    # -----------------------------
-
-    T = valid_frame_mask.shape[-1]
-    N = x.shape[-2]
-    atom_to_token = batch["atom_to_token_index"]  # [*, N]
-    atom_to_token = F.one_hot(atom_to_token, T)  # [*, N, T]
-
-    # mask for ligand atoms with valid frame
-    # [*, N, T] * [*, T] -> [*, N]
-    is_ligand_atom_with_frame = (atom_to_token * valid_frame_mask).sum(dim=-1)  # [*, N]
-
-    # indices of three closest neighbors to each atom
-    # TODO closest is assumed to be the atom itselt (d=0.0), can this lead to problems?
-    d = torch.cdist(x_gt, x_gt)  # [*, N, N]
-    _, idx = torch.topk(d, dim=-1, k=3, largest=False)  # [*, N, 3]
-
-    # arrange as (closest neighbor, atom, 2nd closest)
-    idx = idx[..., [1, 0, 2]]
-    idx = idx.unsqueeze(-1).expand(-1, -1, -1, 3)  # [*, N, 3, 3]
-
-    # get the coordinates of atoms corresponding to idx
-    phi_ligand_gt = torch.gather(
-        x_gt.unsqueeze(-3).expand(-1, N, -1, -1), dim=-2, index=idx
-    )  # [*, N, 3, 3]
-    phi_ligand_gt = phi_ligand_gt * is_ligand_atom_with_frame[..., None, None]
-    phi_ligand_gt = permute_final_dims(
-        phi_ligand_gt, [1, 2, 0]
-    ) @ atom_to_token.unsqueeze(-3)  # [*, 3, 3, T]
-    phi_ligand_gt = permute_final_dims(phi_ligand_gt, [2, 0, 1])  # [*, T, 3, 3]
-
-    phi_ligand = torch.gather(
-        x.unsqueeze(-3).expand(-1, N, -1, -1), dim=-2, index=idx
-    )  # [*, N, 3, 3]
-    phi_ligand = phi_ligand * is_ligand_atom_with_frame[..., None, None]
-    phi_ligand = permute_final_dims(phi_ligand, [1, 2, 0]) @ atom_to_token.unsqueeze(
-        -3
-    )  # [*, 3, 3, T]
-    phi_ligand = permute_final_dims(phi_ligand, [2, 0, 1])  # [*, T, 3, 3]
-
-    # -----------------------------
-    # INVALID LIGAND FRAMES
-    # -----------------------------
-
-    def norm(x, eps):
-        return torch.sqrt(torch.sum(x**2, dim=-1) + eps)
-
-    def dot(x, y):
-        return torch.sum(x * y, dim=-1)
-
-    COS_ANGLE_THRESHOLD = math.cos(angle_threshold * math.pi / 180)
-
-    # check if the 3 atoms are collinear to within 25 degrees
-    v1 = phi_ligand[..., 0, :] - phi_ligand[..., 1, :]  # [*, T, 3]
-    v2 = phi_ligand[..., 2, :] - phi_ligand[..., 1, :]  # [*, T, 3]
-
-    cos_angle = dot(v1, v2) / (norm(v1, eps) * norm(v2, eps))  # [*, T]
-
-    valid_frame_mask = (cos_angle >= COS_ANGLE_THRESHOLD) * valid_frame_mask  # [*, T]
-    invalid_frame_mask = (1 - valid_frame_mask) * batch["is_ligand"]  # [*, T]
-
-    # ------------------------------------------------
-    # GET ATOMS FOR PROTEIN AND NUCLEIC ACID FRAMES
-    # ------------------------------------------------
-
-    # TODO: update to correct batch dict convention
-    # Tentatively gives the indices of the 3 atoms associated with the frame of token T.
-    is_not_ligand = 1 - batch["is_ligand"]  # [*, T]
-    frame_idx = batch["frame_idx"]  # [*, T, 3]
-    frame_idx = frame_idx.unsqueeze(-1).expand(-1, -1, -1, 3)  # [*, T, 3, 3]
-
-    phi_gt = torch.gather(
-        x_gt.unsqueeze(-3).expand(-1, T, -1, -1),
-        dim=-2,
-        index=frame_idx,
-    )  # [*, T, 3, 3]
-    phi_gt = phi_gt * is_not_ligand[..., None, None]
-
-    phi = torch.gather(
-        x.unsqueeze(-3).expand(-1, T, -1, -1),
-        dim=-2,
-        index=frame_idx,
-    )  # [*, T, 3, 3]
-    phi = phi * is_not_ligand[..., None, None]
-
-    # -----------------------------
-    # COMBINED PHI
-    # -----------------------------
-
-    phi_gt = phi_gt + phi_ligand_gt  # [*, T, 3, 3]
-    phi = phi + phi_ligand  # [*, T, 3, 3]
-
-    return phi_gt, phi, invalid_frame_mask
-
-
-def expressCoordinatesInFrame(
-    x: torch.Tensor,
-    phi: torch.Tensor,
-    eps: float = 1e-8,
-) -> torch.Tensor:
-    """
-    Algorithm 29 of the AF3 supplementary.
-    Express coordinates in a frame.
-    Args:
-        x:
-            Predicted token coordinates and token (T). [* T, 3]
-        phi:
-            Coordinates of 3 atoms for each token. [*, T', 3, 3]
-    Returns:
-        x_frame:
-            Coordinates expressed in frame. [*, T', T, 3]
-            (More explicitly: R_i^{-1} (x_j - x_i)
-            with frame index i --> T' and the token index j --> T.)
-
-    """
-
-    def norm(x, eps):
-        return torch.sqrt(torch.sum(x**2, dim=-1, keepdim=True) + eps)
-
-    def dot(x, y):
-        return torch.sum(x * y, dim=-1)
-
-    # Extract frame atoms
-    a, b, c = phi.unbind(dim=-2)  # [*, T', 3]
-
+    a, b, c = phi
     w1 = a - b
-    w1 = w1 / norm(w1, eps)
-
     w2 = c - b
-    w2 = w2 / norm(w2, eps)
+    w1_norm = (eps + torch.sum(w1**2, dim=-1, keepdim=True)) ** 0.5
+    w2_norm = (eps + torch.sum(w2**2, dim=-1, keepdim=True)) ** 0.5
+    w1 = w1 / w1_norm
+    w2 = w2 / w2_norm
 
     # Build orthonormal basis
+    # [*, N_token, 3]
     e1 = w1 + w2
-    e1 = e1 / norm(e1, eps)
-    e1 = e1.unsqueeze(-2)  # [*, T', 1, 3]
-
     e2 = w2 - w1
-    e2 = e2 / norm(e2, eps)
-    e2 = e2.unsqueeze(-2)  # [*, T', 1, 3]
-
-    e3 = torch.linalg.cross(e1, e2)  # [*, T', 1, 3]
+    e1_norm = (eps + torch.sum(e1**2, dim=-1, keepdim=True)) ** 0.5
+    e2_norm = (eps + torch.sum(e2**2, dim=-1, keepdim=True)) ** 0.5
+    e1 = e1 / e1_norm
+    e2 = e2 / e2_norm
+    e3 = torch.linalg.cross(e1, e2, dim=-1)
 
     # Project onto frame basis
-    x = x.unsqueeze(-3)  # [*, 1, T, 3]
-    b = b.unsqueeze(-2)  # [*, T', 1, 3]
+    # [*, N_token, N_token, 3]
+    # TODO: check this
+    d = x[..., None, :, :] - b[..., None, :]
+    xij = torch.stack(
+        [
+            torch.einsum("...ik,...ijk->...ij", e1, d),
+            torch.einsum("...ik,...ijk->...ij", e2, d),
+            torch.einsum("...ik,...ijk->...ij", e3, d),
+        ],
+        dim=-1,
+    )
 
-    d = x - b  # [*, T', T, 3]
-    d1 = dot(d, e1)  # [*, T', T]
-    d2 = dot(d, e2)  # [*, T', T]
-    d3 = dot(d, e3)  # [*, T', T]
-
-    x_frame = torch.stack([d1, d2, d3], dim=-1)  # [*, T', T, 3]
-
-    return x_frame
+    return xij
 
 
-def computeAlignmentError(
+def compute_alignment_error(
     x: torch.Tensor,
     x_gt: torch.Tensor,
-    phi: torch.Tensor,
-    phi_gt: torch.Tensor,
-    eps: float = 1e-8,
-) -> torch.Tensor:
+    phi: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    phi_gt: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    eps: float,
+):
     """
-    Algorithm 30 of the AF3 supplementary.
-    Compute the alignment error.
+    Implements AF3 Algorithm 30.
+
     Args:
         x:
-            Predicted token coordinates. [*, T, 3]
+            [*, N_token, 3] Atom positions
         x_gt:
-            Ground truth token coordinates. [*, T, 3]
+            [*, N_token, 3] Groundtruth atom positions
         phi:
-            Coordinates of 3 atoms associated with frame of token T. [*, T, 3, 3]
+            A tuple of atom positions used for frame construction, 
+            each has a shape of [*, N_token, 3]
         phi_gt:
-            GT coordinates of 3 atoms associated with frame of token T. [*, T, 3, 3]
+            A tuple of groundtruth atom positions used for frame 
+            construction, each has a shape of [*, N_token, 3]
+        eps:
+            Small float for numerical stability
     Returns:
-        e:
-            Alignment error per frame (dim=-2) and per token (dim=-1). [*, T, T]
+        [*, N_token, N_token] Alignment error matrix
     """
-
-    x_frame = expressCoordinatesInFrame(x, phi)  # [*, T, T, 3]
-    x_gt_frame = expressCoordinatesInFrame(x_gt, phi_gt)  # [*, T, T, 3]
-
-    e = torch.sum((x_frame - x_gt_frame) ** 2, dim=-1)  # [*, T, T]
-    e = torch.sqrt(e + eps)  # (*, T, T)
-
-    return e
+    xij = express_coords_in_frames(x=x, phi=phi, eps=eps)
+    xij_gt = express_coords_in_frames(x=x_gt, phi=phi_gt, eps=eps)
+    return (torch.sum((xij - xij_gt) ** 2, dim=-1) + eps) ** 0.5
 
 
-def predictedAlignmentError(
+def plddt_loss(
+    batch: Dict,
     x: torch.Tensor,
-    x_gt: torch.Tensor,
-    frame_idx: torch.Tensor,
-    valid_frame: torch.Tensor,
-    pae_logits: torch.Tensor,
-    angle_threshold: float = 25,
-    n_bins: int = 64,
-    bin_min: float = 0.0,
-    bin_max: float = 32.0,
-    eps: float = 1e-8,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Compute the cross entropy loss between the predicted and computed alignment errors.
-    Subsection 4.3.2 of the AF3 supplementary.
-    Args:
-        x:
-            Predicted coordinates. [*, N, 3]
-        x_gt:
-            Ground truth coordinates. [*, N, 3]
-        frame_idx:
-            Holds indices of 3 atoms associated with the frame of each token. [*, T, 3]
-            The 2nd is always the center atom.
-            For proteins: N, C-alpha, C
-            For nucleic acids: C1', C3', C4' (is that the correct order?)
-            For ligands: closest neighbor, atom, 2nd closest neighbor.
-        valid_frame:
-            Mask for valid frames. [*, T]
-            Frame does not exist if
-            (1) number of neighbors in the chain < 2
-            or
-            (2) the 3 atoms are collinear within 25 degrees.
-        pae_logits:
-            Predicted alignmed error logits. [*, T, T, n_bins]
-        angle_threshold:
-            Threshold for invalid frames: float
-        n_bins:
-            Number of bins: int
-        bin_min:
-            Minimum distance.
-        bin_max:
-            Maximum distance.
-    Returns:
-        pae_loss:
-            Predicted alignment error loss. ()
-        PAE:
-            Predicted alignment error. [*, T, T]
-        invalid_frame_mask:
-            Mask for invalid frames. [*, T, T]
-    """
-
-    # phi_gt, phi, invalid_frame_mask = get_phi(
-    #     batch, x_gt, x, angle_threshold, eps
-    # )  # [*, T, 3, 3], [*, T]
-
-    # -------------------------
-    # GET PHI
-    # -------------------------
-
-    T = frame_idx.shape[-2]
-
-    # [*, T, 3, 3]
-    phi = torch.gather(
-        x.unsqueeze(-3).expand(-1, T, -1, -1),  # [*, T, N, 3]
-        dim=-2,
-        index=frame_idx.unsqueeze(-1).expand(-1, -1, -1, 3),  # [*, T, 3, 3]
-    )
-
-    # [*, T, 3, 3]
-    phi_gt = torch.gather(
-        x_gt.unsqueeze(-3).expand(-1, T, -1, -1),
-        dim=-2,
-        index=frame_idx.unsqueeze(-1).expand(-1, -1, -1, 3),
-    )
-
-    # center atom coordinates
-    x_token = phi[..., 1, :]  # [*, T, 3]
-    x_token_gt = phi_gt[..., 1, :]  # [*, T, 3]
-
-    # -------------------------
-    # BIN ALIGNMENT ERROR
-    # -------------------------
-
-    e = computeAlignmentError(x_token, x_token_gt, phi, phi_gt, eps)  # [*, T, T]
-
-    # boundaries = [0.0, 0.5, ...., 31.5, 32.0]
-    boundaries = torch.linspace(
-        bin_min, bin_max, n_bins + 1, device=e.device
-    )  # [n_bins + 1]
-
-    # index of bin for each computed alignment error
-    # top bin: anything > 31.5, bottom bin: anything < 0.5
-    bins = torch.bucketize(e, boundaries[1:-1])  # [*, T, T]
-
-    # set bin to ignore value (=-100) of F.cross_entropy if invalid frame
-    valid_frame = valid_frame.unsqueeze(-1).expand_as(bins)  # [*, T, T]
-    bins = bins.masked_fill_(~valid_frame.bool(), -100)  # [*, T, T]
-
-    # -------------------------
-    # LOSS AND EXPECTED PAE
-    # -------------------------
-
-    # cross entropy loss
-    pae_loss = F.cross_entropy(permute_final_dims(pae_logits, [2, 0, 1]), bins)
-
-    # predicted alignment error (expectation over bins)
-    pae = F.softmax(pae_logits, dim=-1)  # [*, T, T, n_bins]
-    bin_centers = (boundaries[1:] + boundaries[:-1]) / 2  # [n_bins]
-    PAE = (bin_centers * pae).sum(dim=-1)  # [*, T, T]
-
-    return pae_loss, PAE
-
-
-def predictedDistanceError(
-    # batch: Dict[str, torch.Tensor],
-    x: torch.Tensor,
-    x_gt: torch.Tensor,
-    frame_idx: torch.Tensor,
-    pde_logits: torch.Tensor,
-    n_bins: int = 64,
-    bin_min: float = 0.0,
-    bin_max: float = 32.0,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Computes the cross entropy loss between the predicted and computed distance errors.
-    Subsection 4.3.3 of the AF3 supplementary.
-    Args:
-        x:
-            Predicted atom coordinates. [*, N, 3]
-        x_gt:
-            Ground truth coordinates. [*, N, 3]
-        frame_idx:
-            Frame indices (see predictedAlignmentError for more details). [*, T, 3]
-        pde_logits:
-            Predicted distance error logits. [*, T, T, n_bins]
-        n_bins:
-            Number of bins.
-        bin_min:
-            Minimum lower bin.
-        bin_max:
-            Maximum upper bin.
-    Returns:
-        pae_loss:
-            Predicted alignment error loss.
-    """
-    # get token atom coordinates
-    center_idx = frame_idx[..., 1:2]  # [*, T, 1]
-    T = center_idx.shape[-2]
-
-    # [*, T, 3]
-    x_token = torch.gather(
-        x.unsqueeze(-3).expand(-1, T, -1, -1),  # [*, T, N, 3]
-        dim=-2,
-        index=center_idx.unsqueeze(-1).expand(-1, -1, -1, 3),  # [*, T, 1, 3]
-    ).squeeze(-2)
-
-    # [*, T, 3]
-    x_token_gt = torch.gather(
-        x_gt.unsqueeze(-3).expand(-1, T, -1, -1),
-        dim=-2,
-        index=center_idx.unsqueeze(-1).expand(-1, -1, -1, 3),
-    ).squeeze(-2)
-
-    # token atom distances errors
-    d = torch.cdist(x_token, x_token)  # [*, T, T]
-    d_gt = torch.cdist(x_token_gt, x_token_gt)  # [*, T, T]
-    e = torch.abs(d - d_gt)  # [*, T, T]
-
-    # boundaries = [0.0, 0.5, ...., 31.5, 32.0]
-    boundaries = torch.linspace(
-        bin_min, bin_max, n_bins + 1, device=e.device
-    )  # [n_bins + 1]
-    bins = torch.bucketize(e, boundaries[1:-1])  # [*, T, T]
-
-    # cross entropy loss
-    pde_loss = F.cross_entropy(permute_final_dims(pde_logits, [2, 0, 1]), bins)
-
-    # predicted distance error (expectation over bins)
-    bin_centers = (boundaries[1:] + boundaries[:-1]) / 2  # [n_bins]
-    pde = F.softmax(pde_logits, dim=-1)  # [*, T, T, n_bins]
-    PDE = (bin_centers * pde).sum(dim=-1)  # [*, T, T]
-
-    return pde_loss, PDE
-
-
-def experimentally_resolved_prediction(
-    atom_mask_gt: torch.Tensor,
-    atom_mask: torch.Tensor,
-    logits_resolved: torch.Tensor,
+    p_b: torch.Tensor,
+    no_bins: int,
+    bin_min: float,
+    bin_max: float,
+    eps: float,
 ) -> torch.Tensor:
     """
-    Computes the experimentally resolved prediction, subsection 4.3.4 of the AF3.
+    Compute loss on predicted local distance difference test (pLDDT).
+
     Args:
-        atom_mask_gt:
-            Mask for atoms not resolved in the GT (position not determined)
-            or to account for padding. [*, N]
-        atom_mask:
-            mask padded atom indices. [*, N]
-        logits_resolved:
-            Predicted value. [*, N, 2]
+        batch:
+            Feature dictionary
+        x:
+            [*, N_atom, 3] Predicted atom positions
+        p_b:
+            [*, N_atom, no_bins] Predicted probabilities
+        no_bins:
+            Number of bins
+        bin_min:
+            Minimum bin value
+        bin_max:
+            Maximum bin value
+        eps:
+            Small float for numerical stability
     Returns:
-        resolved_loss:
-            Experimentally resolved prediction.
+        [*] Losses on pLDDT
     """
+    # Compute difference in distances
+    # [*, N_atom, N_atom]
+    x_gt = batch["gt_atom_positions"]
+    dx = torch.sum(eps + (x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1) ** 0.5
+    dx_gt = (
+        torch.sum((eps + x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
+        ** 0.5
+    )
+    d = torch.abs(dx_gt - dx)
 
-    # set bin to ignore value (=-100) of F.cross_entropy for masked atoms
-    atom_mask_gt = atom_mask_gt.long()  # [*, N]
-    atom_mask_gt = atom_mask_gt.masked_fill_(~atom_mask.bool(), -100)  # [*, N]
+    # Compute pair mask based on distance and type of atom m
+    # [*, N_atom, N_atom]
+    protein_atom_mask = broadcast_token_feat_to_atoms(
+        token_mask=batch["token_mask"],
+        num_atoms_per_token=batch["num_atoms_per_token"],
+        token_feat=batch["is_protein"],
+    )
+    nucleotide_atom_mask = broadcast_token_feat_to_atoms(
+        token_mask=batch["token_mask"],
+        num_atoms_per_token=batch["num_atoms_per_token"],
+        token_feat=batch["is_dna"] + batch["is_rna"],
+    )
+    pair_mask = (d < 15) * protein_atom_mask[..., None, :] + (
+        d < 30
+    ) * nucleotide_atom_mask[..., None, :]
 
-    resolved_loss = F.cross_entropy(
-        permute_final_dims(logits_resolved, [1, 0]), atom_mask_gt
+    # Construct indices for representative atoms
+    # Note that N_atom is used to denote masked out atoms (including missing
+    # representative atoms and ligand representative atoms)
+    n_atom = x.shape[-2]
+    start_atom_index = batch["start_atom_index"].long()
+    is_standard_protein = batch["is_protein"] * (1 - batch["is_atomized"])
+    is_standard_nucleotide = (batch["is_dna"] + batch["is_rna"]) * (
+        1 - batch["is_atomized"]
+    )
+    ca_atom_index_offset, ca_atom_mask = get_token_atom_index_offset(
+        atom_name="CA", restype=batch["restype"]
+    )
+    c1p_atom_index_offset, c1p_atom_mask = get_token_atom_index_offset(
+        atom_name="C1'", restype=batch["restype"]
+    )
+    rep_index = (
+        (
+            (start_atom_index + ca_atom_index_offset) * 
+            is_standard_protein * ca_atom_mask
+        ) +
+        (
+            (start_atom_index + c1p_atom_index_offset) *
+            is_standard_nucleotide * c1p_atom_mask
+        ) +
+        n_atom * (
+            1 - is_standard_protein * ca_atom_mask - 
+            is_standard_nucleotide * c1p_atom_mask
+        )
     )
 
-    return resolved_loss
+    # Construct atom mask for lddt computation
+    # Note that additional dimension is padded and later removed for masked out atoms
+    # [*, N_atom]
+    atom_mask_shape = list(batch["gt_atom_mask"].shape)
+    padded_atom_mask_shape = list(atom_mask_shape)
+    padded_atom_mask_shape[-1] = padded_atom_mask_shape[-1] + 1
+    atom_mask = torch.zeros(padded_atom_mask_shape, device=x.device).scatter_(
+        index=rep_index.long(), value=1, dim=-1
+    )[..., :-1]
+    atom_mask = atom_mask * batch["gt_atom_mask"]
+
+    # Construct pair atom selection mask for lddt computation
+    # [*, N_atom, N_atom]
+    pair_atom_mask = batch["gt_atom_mask"][..., None] * atom_mask[..., None, :]
+    pair_mask = pair_mask * pair_atom_mask
+
+    # Compute lddt
+    # [*, N_atom]
+    lddt = torch.sum(
+        0.25
+        * ((d < 0.5).int() + (d < 1).int() + (d < 2).int() + (d < 4).int())
+        * pair_mask,
+        dim=-1,
+    ) / (torch.sum(pair_mask, dim=-1) + eps)
+
+    # Compute binned lddt
+    # [*, N_atom, no_bins]
+    bin_size = (bin_max - bin_min) / no_bins
+    v_bins = bin_min + torch.arange(no_bins, device=x.device) * bin_size
+    lddt_b = binned_one_hot(lddt, v_bins)
+
+    # Compute loss on plddt
+    l_plddt = -torch.sum(
+        torch.sum(lddt_b * torch.log(p_b + eps), dim=-1) * batch["gt_atom_mask"], dim=-1
+    ) / (torch.sum(batch["gt_atom_mask"], dim=-1) + eps)
+
+    return l_plddt
 
 
-class ConfidenceLoss(nn.Module):
-    def __init__(self, config):
-        super(ConfidenceLoss).__init__()
-        self.config = config.loss.confidence
-        self.alpha_pae = config.loss.alpha_pae
+def pae_loss(
+    batch: Dict,
+    x: torch.Tensor,
+    p_b: torch.Tensor,
+    angle_threshold: float,
+    no_bins: int,
+    bin_min: float,
+    bin_max: float,
+    eps: float,
+    inf: float,
+):
+    """
+    Compute loss on predicted aligned error (PAE).
 
-    def forward(self, batch, output):
-        """
-        Forward pass for the confidence loss.
-        Args:
-            batch:
-                Batch dictionary.
-            output:
-                Output dictionary.
-        Returns:
-            loss:
-                Confidence loss.
-        """
+    Args:
+        batch:
+            Feature dictionary
+        x:
+            [*, N_atom, 3] Predicted atom positions
+        p_b:
+            [*, N_token, N_token, no_bins] Predicted probabilities
+        angle_threshold:
+            Angle threshold for filtering co-linear atoms
+        no_bins:
+            Number of bins
+        bin_min:
+            Minimum bin value
+        bin_max:
+            Maximum bin value
+        eps:
+            Small float for numerical stability
+        inf:
+            Large float for numerical stability
+    Returns:
+        [*] Losses on PAE
+    """
+    # Extract atom coordinates for frame construction
+    atom_mask = broadcast_token_feat_to_atoms(
+        token_mask=batch["token_mask"],
+        num_atoms_per_token=batch["num_atoms_per_token"],
+        token_feat=batch["token_mask"],
+    )
+    phi, valid_frame_mask = get_token_frame_atoms(
+        batch=batch,
+        x=x,
+        atom_mask=atom_mask,
+        angle_threshold=angle_threshold,
+        eps=eps,
+        inf=inf,
+    )
+    phi_gt, valid_frame_mask_gt = get_token_frame_atoms(
+        batch=batch,
+        x=batch["gt_atom_positions"],
+        atom_mask=batch["gt_atom_mask"],
+        angle_threshold=angle_threshold,
+        eps=eps,
+        inf=inf,
+    )
 
-        # ---------------------------------
-        # UNPACK ARGUMETNS
-        # ---------------------------------
+    # Extract representative atom coordinates
+    rep_x, rep_atom_mask = get_token_representative_atoms(
+        batch=batch, x=x, atom_mask=atom_mask
+    )
+    rep_x_gt, rep_atom_mask_gt = get_token_representative_atoms(
+        batch=batch, x=batch["gt_atom_positions"], atom_mask=batch["gt_atom_mask"]
+    )
 
-        # This might feel excesive...
-        # I think it makes the code more readable and intuitive.
+    # Compute alignment error
+    # [*, N_token, N_token]
+    e = compute_alignment_error(x=rep_x, x_gt=rep_x_gt, phi=phi, phi_gt=phi_gt, eps=eps)
 
-        # masks
-        frame_idx = batch["frame_idx"]  # [*, T, 3]
-        atom_mask_gt = batch["atom_mask_gt"]  # [*, N]
-        atom_mask = batch["atom_mask"]  # [*, N]
-        is_protein = batch["is_protein"]  # [*, T]
-        is_dna = batch["is_dna"]  # [*, T]
-        is_rna = batch["is_rna"]  # [*, T]
-        valid_frame = batch["valid_frame"]  # [*, T]
+    # Compute binned alignment error
+    # [*, N_token, N_token, no_bins]
+    bin_size = (bin_max - bin_min) / no_bins
+    v_bins = bin_min + torch.arange(no_bins, device=p_b.device) * bin_size
+    e_b = binned_one_hot(e, v_bins)
 
-        # atom coordinates
-        x_gt = batch["gt_atom_positions"]  # [*, N, 3]
-        x = output["x_pred"]  # [*, N, 3]
+    # Compute predicted alignment error
+    pair_mask = (valid_frame_mask[..., None] * rep_atom_mask[..., None, :]) * (
+        valid_frame_mask_gt[..., None] * rep_atom_mask_gt[..., None, :]
+    )
 
-        # probability predictions
-        plddt_logits = output["p_plddt"]  # [*, N, 50]
-        pae_logits = output["p_pae"]  # [*, T, T, 64]
-        pde_logits = output["p_pde"]  # [*, T, T, 64]
-        resolved_logits = output["p_resolved"]  # [*, N, 2]
+    # Compute loss on pae
+    l_pae = -torch.sum(
+        torch.sum(e_b * torch.log(p_b + eps), dim=-1) * pair_mask, dim=(-1, -2)
+    ) / (torch.sum(pair_mask, dim=(-1, -2)) + eps)
 
-        # ---------------------------------
-        # CONFIDENCE LOSSES
-        # ---------------------------------
+    return l_pae
 
-        plddt_loss = pLDDT(
-            x,
-            x_gt,
-            frame_idx,
-            atom_mask_gt,
-            is_protein,
-            is_dna,
-            is_rna,
-            plddt_logits,
-            self.config.n_bins_plddt,  # 50
-            self.config.eps,  # 1e-8,
+
+def pde_loss(
+    batch: Dict,
+    x: torch.Tensor,
+    p_b: torch.Tensor,
+    no_bins: int,
+    bin_min: float,
+    bin_max: float,
+    eps: float,
+):
+    """
+    Implements AF3 Equation 12.
+
+    Args:
+        batch:
+            Feature dictionary
+        x:
+            [*, N_atom, 3] Atom positions
+        p_b:
+            [*, N_token, N_token, no_bins] Predicted probabilites for errors in absolute
+            distances (projected into bins)
+        no_bins:
+            Number of distance bins
+        bin_size:
+            Size of each distance bin (in Å)
+        eps:
+            Small constant for numerical stability
+    Returns:
+        l_pde:
+            [*] Loss on predicted distance error
+    """
+    # Extract representative atoms
+    atom_mask = broadcast_token_feat_to_atoms(
+        token_mask=batch["token_mask"],
+        num_atoms_per_token=batch["num_atoms_per_token"],
+        token_feat=batch["token_mask"],
+    )
+    rep_x, _ = get_token_representative_atoms(batch=batch, x=x, atom_mask=atom_mask)
+    rep_x_gt, rep_atom_mask_gt = get_token_representative_atoms(
+        batch=batch, x=batch["gt_atom_positions"], atom_mask=batch["gt_atom_mask"]
+    )
+
+    # Compute prediction target
+    d = (
+        torch.sum(eps + (rep_x[..., None, :] - rep_x[..., None, :, :]) ** 2, dim=-1)
+        ** 0.5
+    )
+    d_gt = (
+        torch.sum(
+            eps + (rep_x_gt[..., None, :] - rep_x_gt[..., None, :, :]) ** 2, dim=-1
+        )
+        ** 0.5
+    )
+    e = torch.abs(d - d_gt)
+
+    # Compute binned prediction target
+    bin_size = (bin_max - bin_min) / no_bins
+    v_bins = bin_min + torch.arange(no_bins, device=e.device) * bin_size
+    e_b = binned_one_hot(e, v_bins)
+
+    # Compute loss on predicted distance error
+    pair_mask = rep_atom_mask_gt[..., None] * rep_atom_mask_gt[..., None, :]
+    l_pde = -torch.sum(
+        torch.sum(e_b * torch.log(p_b + eps), dim=-1) * pair_mask, dim=(-1, -2)
+    ) / (torch.sum(pair_mask, dim=(-1, -2)) + eps)
+
+    return l_pde
+
+
+def resolved_loss(batch: Dict, p_b: torch.Tensor, no_bins: int, eps: float):
+    """
+    Implements AF3 Equation 14.
+
+    Args:
+        batch:
+            Feature dictionary
+        p_b:
+            [*, N_atom, no_bins] Predicted probabilites on whether the atom is
+            resolved in the ground truth
+        no_bins:
+            Number of bins
+        eps:
+            Small constant for numerical stability
+    Returns:
+        l_resolved:
+            [*] Loss on predictions for whether the atom is resolved
+            in the ground truth
+    """
+    # Compute binned prediction target
+    v_bins = torch.arange(no_bins, device=p_b.device)
+    y_b = binned_one_hot(batch["gt_atom_mask"], v_bins)
+
+    # Compute loss on experimentally resolved prediction
+    atom_mask = broadcast_token_feat_to_atoms(
+        token_mask=batch["token_mask"],
+        num_atoms_per_token=batch["num_atoms_per_token"],
+        token_feat=batch["token_mask"],
+    )
+    l_resolved = -torch.sum(
+        torch.sum(y_b * torch.log(p_b + eps), dim=-1) * atom_mask, dim=-1
+    ) / (torch.sum(atom_mask, dim=-1) + eps)
+
+    return l_resolved
+
+
+def confidence_loss(
+    batch: Dict,
+    output: Dict,
+    no_bins_plddt: int,
+    bin_min_plddt: float,
+    bin_max_plddt: float,
+    angle_threshold: float,
+    no_bins_pae: int,
+    bin_min_pae: float,
+    bin_max_pae: float,
+    no_bins_pde: int,
+    bin_min_pde: float,
+    bin_max_pde: float,
+    no_bins_resolved: int,
+    alpha_pae: float,
+    eps: float,
+    inf: float,
+    **kwargs
+):
+    """
+    Compute loss on confidence module.
+
+    Args:
+        batch:
+            Feature dictionary
+        output:
+            Output dictionary
+        no_bins_plddt:
+            Number of bins for pLDDT
+        bin_min_plddt:
+            Minimum bin value for pLDDT
+        bin_max_plddt:
+            Maximum bin value for pLDDT
+        angle_threshold:
+            Angle threshold for filtering co-linear atoms
+        no_bins_pae:
+            Number of bins for PAE
+        bin_min_pae:
+            Minimum bin value for PAE
+        bin_max_pae:
+            Maximum bin value for PAE
+        no_bins_pde
+            Number of bins for PDE
+        bin_min_pde:
+            Minimum bin value for PDE
+        bin_max_pde:
+            Maximum bin value for PDE
+        no_bins_resolved:
+            Number of bins for predictions on whether the 
+            atom is resolved in the ground truth
+        alpha_pae:
+            Weight on PAE loss
+        eps:
+            Small float for numerical stability
+        inf:
+            Large float for numerical stability
+    Returns:
+        Loss on confidence module
+    """
+    l_plddt = plddt_loss(
+        batch=batch,
+        x=output["x_pred"],
+        p_b=output["plddt"],
+        no_bins=no_bins_plddt,
+        bin_min=bin_min_plddt,
+        bin_max=bin_max_plddt,
+        eps=eps,
+    )
+
+    l_pde = pde_loss(
+        batch=batch,
+        x=output["x_pred"],
+        p_b=output["pde"],
+        no_bins=no_bins_pde,
+        bin_min=bin_min_pde,
+        bin_max=bin_max_pde,
+        eps=eps,
+    )
+
+    l_resolved = resolved_loss(
+        batch=batch,
+        p_b=output["resolved"],
+        no_bins=no_bins_resolved,
+        eps=eps,
+    )
+
+    l = l_plddt + l_pde + l_resolved
+    if alpha_pae > 0:
+        l_pae = pae_loss(
+            batch=batch,
+            x=output["x_pred"],
+            p_b=output["pae"],
+            angle_threshold=angle_threshold,
+            no_bins=no_bins_pae,
+            bin_min=bin_min_pae,
+            bin_max=bin_max_pae,
+            eps=eps,
+            inf=inf,
         )
 
-        if self.alpha_pae is not None:
-            pae_loss, PAE = predictedAlignmentError(
-                x,
-                x_gt,
-                frame_idx,
-                valid_frame,
-                pae_logits,
-                self.config.angle_threshold,  # 25.0
-                self.config.n_bins_pae,  # 64
-                self.config.bin_min_pae,  # 0.0
-                self.config.bin_max_pae,  # 32.0
-                self.config.eps,  # 1e-8,
-            )
+        l = l + alpha_pae * l_pae
 
-        pde_loss, PDE = predictedDistanceError(
-            x,
-            x_gt,
-            frame_idx,
-            pde_logits,
-            self.config.n_bins_pde,  # 64
-            self.config.bin_min_pde,  # 0.0
-            self.config.bin_max_pde,  # 32.0
-        )
-
-        resolved_loss = experimentally_resolved_prediction(
-            atom_mask_gt,
-            atom_mask,
-            resolved_logits,
-        )
-
-        confidence_loss = plddt_loss + pde_loss + resolved_loss
-
-        if self.alpha_pae is not None:
-            confidence_loss += self.alpha_pae * pae_loss
-
-        return confidence_loss
+    return torch.mean(l)

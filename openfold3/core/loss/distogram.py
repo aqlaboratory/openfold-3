@@ -1,88 +1,59 @@
+from typing import Dict
+
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+
+from openfold3.core.utils.atomize_utils import get_token_representative_atoms
+from openfold3.core.utils.tensor_utils import binned_one_hot
 
 
 def distogram_loss(
-    x_gt: torch.Tensor,
-    frame_idx: torch.Tensor,
-    token_mask: torch.Tensor,
-    logits: torch.Tensor,
-    n_bins: int = 64,
-    bin_min: float = 2.0,
-    bin_max: float = 22.0,
-) -> torch.Tensor:
+    batch: Dict,
+    p_b: torch.Tensor,
+    no_bins: int,
+    bin_min: float,
+    bin_max: float,
+    eps: float,
+    **kwargs
+):
     """
-    Distogram loss
-    See 1.9.8 of the AF2 supplementary.
+    Computes loss on distogram prediction (Subsection 4.4).
+
     Args:
-        x_gt:
-            Ground truth coordinates. [*, N, 3]
-        frame_idx:
-            Frame indices (see predictedAlignmentError for more details). [*, T, 3]
-        token_mask:
-            Padding for unused token. [*, T]
-        logits:
-            Predicted distance error logits. [*, T, T, n_bins]
-        n_bins:
-            Number of bins.
+        batch:
+            Feature dictionary
+        p_b:
+            [*, N_token, no_bins] Predicted probabilities
+        no_bins:
+            Number of bins
         bin_min:
-            Minimum lower bin.
+            Minimum bin value
         bin_max:
-            Maximum upper bin.
+            Maximum bin value
+        eps:
+            Small float for numerical stability
     Returns:
-        distogram_loss:
+        Loss on distogram prediction
     """
-
-    # coordinates of center atoms for each token
-    center_idx = frame_idx[..., 1:2]  # [*, T, 1]
-    T = center_idx.shape[-2]
-
-    # [*, T, 3]
-    x_gt_token = torch.gather(
-        x_gt.unsqueeze(-3).expand(-1, T, -1, -1),  # [*, T, N, 3]
-        dim=-2,
-        index=center_idx.unsqueeze(-1).expand(-1, -1, -1, 3),  # [*, T, 1, 3]
-    ).squeeze(-2)
-
-    d = torch.cdist(x_gt_token, x_gt_token)  # [*, T, T]
-
-    # boundaries = [0.0, 2.3125, ...,21.6875, 22.0]
-    boundaries = torch.linspace(
-        bin_min,
-        bin_max,
-        n_bins + 1,
-        device=logits.device,
+    # Extract representative atoms
+    rep_x, rep_atom_mask = get_token_representative_atoms(
+        batch=batch, x=batch["gt_atom_positions"], atom_mask=batch["gt_atom_mask"]
     )
 
-    bins = torch.bucketize(d, boundaries[1:-1])  # [*, T, T]
+    # Compute distogram
+    d = (
+        torch.sum(eps + (rep_x[..., None, :] - rep_x[..., None, :, :]) ** 2, dim=-1)
+        ** 0.5
+    )
 
-    # set bins to -100 (ignore_index) for masked token
-    square_mask = token_mask[..., None] * token_mask[..., None, :]  # [*, T, T]
-    bins = bins.masked_fill(~square_mask.bool(), -100)  # [*, T, T]
+    # Compute binned distogram
+    bin_size = (bin_max - bin_min) / no_bins
+    v_bins = bin_min + torch.arange(no_bins, device=d.device) * bin_size
+    d_b = binned_one_hot(d, v_bins)
 
-    distogram_loss = F.cross_entropy(logits, bins)
+    # Compute distogram loss
+    pair_mask = rep_atom_mask[..., None] * rep_atom_mask[..., None, :]
+    loss = -torch.sum(
+        torch.sum(d_b * torch.log(p_b + eps), dim=-1) * pair_mask, dim=(-1, -2)
+    ) / (torch.sum(pair_mask, dim=(-1, -2)) + eps)
 
-    return distogram_loss
-
-
-class DistogramLoss(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.config = config.loss.distogram
-
-    def forward(self, batch, output):
-        x_gt = batch["x_gt"]  # [*, N, 3]
-        frame_idx = batch["frame_idx"]  # [*, T, 3]
-        token_mask = batch["token_mask"]  # [*, T]
-        distogram_logits = output["p_distogram"]  # [*, T, T, 64]
-
-        return distogram_loss(
-            x_gt,
-            frame_idx,
-            token_mask,
-            distogram_logits,
-            self.config.loss.n_bins,
-            self.config.loss.bin_min,
-            self.config.loss.bin_max,
-        )
+    return torch.mean(loss)
