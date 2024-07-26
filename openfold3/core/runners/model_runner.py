@@ -29,7 +29,7 @@ class ModelRunner(pl.LightningModule):
     #     if not self.__class__._registered:
     #         raise DatasetNotRegisteredError()
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, model_class: torch.nn.Module, config: dict) -> None:
         """Assign general attributes and initialize the model.
 
         Args:
@@ -38,11 +38,14 @@ class ModelRunner(pl.LightningModule):
                 arguments.>
         """
         super().__init__()
+        # Save hyperparameters before defining model as recommended here:
+        # https://github.com/Lightning-AI/pytorch-lightning/discussions/13615
+        self.save_hyperparameters()
         self.config = config
+        self.model = model_class(config)
         self.ema = ExponentialMovingAverage(model=self.model, decay=config.ema.decay)
         self.cached_weights = None
         self.last_lr_step = -1
-        self.save_hyperparameters()
 
     def forward(self, batch):
         return self.model(batch)
