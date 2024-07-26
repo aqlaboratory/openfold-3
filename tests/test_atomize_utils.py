@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 
 from openfold3.core.utils.atomize_utils import (
+    aggregate_atom_feat_to_tokens,
     broadcast_token_feat_to_atoms,
     get_token_atom_index_offset,
     get_token_center_atoms,
@@ -20,7 +21,7 @@ def example1():
 
     batch = {
         "restype": restype,
-        "asym_id": torch.Tensor([0, 0]),
+        "asym_id": torch.Tensor([[0, 0]]),
         "token_mask": torch.ones((1, 2)),
         "is_protein": torch.ones((1, 2)),
         "is_dna": torch.zeros((1, 2)),
@@ -65,7 +66,7 @@ def example3():
     # NumAtoms 1: 22 20
     # NumAtoms 2: 23 20
     restype = F.one_hot(
-        torch.Tensor([[21, 24], [26, 27]]).long(), num_classes=32
+        torch.Tensor([[21, 24], [27, 28]]).long(), num_classes=32
     ).float()
 
     batch = {
@@ -96,7 +97,7 @@ def example4():
     token_mask = torch.Tensor([[1] * 21 + [0] * 3, [1] * 24])
     restype = (
         F.one_hot(
-            torch.Tensor([[21] + [24] * 20 + [31] * 3, [26] * 23 + [27]]).long(),
+            torch.Tensor([[21] + [24] * 20 + [31] * 3, [27] * 23 + [28]]).long(),
             num_classes=32,
         ).float()
         * token_mask[..., None]
@@ -135,7 +136,7 @@ def example5():
                 [
                     [20, 20, 20, 7],
                     [20, 20, 20, 21],
-                    [20, 20, 20, 26],
+                    [20, 20, 20, 27],
                     [20, 20, 20, 31],
                 ]
             ).long(),
@@ -190,6 +191,37 @@ def example5():
     atom_mask = torch.Tensor(
         [[1] * 7 + [0] * 19, [1] * 25 + [0], [1] * 26, [1] * 3 + [0] * 23]
     )
+
+    return batch, x, atom_mask
+
+
+def example6():
+    # Unknown residues
+    # Protein: UNK N DN
+    # NumAtoms: 7 12 12
+    token_mask = torch.Tensor([[1, 1, 1, 0]])
+    restype = (
+        F.one_hot(
+            torch.Tensor([[20, 25, 30, 31]]).long(),
+            num_classes=32,
+        ).float()
+        * token_mask[..., None]
+    )
+
+    batch = {
+        "restype": restype,
+        "token_mask": token_mask,
+        "asym_id": torch.Tensor([[0, 1, 1, 2]]),
+        "is_protein": torch.Tensor([[1, 0, 0, 0]]),
+        "is_rna": torch.Tensor([[0, 1, 0, 0]]),
+        "is_dna": torch.Tensor([[0, 0, 1, 0]]),
+        "is_atomized": torch.Tensor([[0, 0, 0, 0]]),
+        "start_atom_index": torch.Tensor([[0, 7, 19, 0]]),
+        "num_atoms_per_token": torch.Tensor([[7, 12, 12, 0]]),
+    }
+
+    x = torch.randn((1, 31, 3))
+    atom_mask = torch.ones((1, 31))
 
     return batch, x, atom_mask
 
@@ -269,46 +301,142 @@ class TestBroadcastTokenFeatToAtoms(unittest.TestCase):
         self.assertTrue((atom_mask == gt_atom_mask).all())
 
 
+class TestAggregateAtomFeatToTokens(unittest.TestCase):
+    def test_with_one_batch_dim(self):
+        num_atoms_per_token = torch.Tensor([[3, 6, 2, 5, 1], [4, 7, 1, 3, 5]])
+
+        token_mask = torch.Tensor([[1, 1, 1, 1, 1], [1, 1, 1, 1, 0]])
+
+        atom_mask = broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=token_mask,
+        )
+        atom_feat = atom_mask.clone()
+
+        token_feat = aggregate_atom_feat_to_tokens(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            atom_mask=atom_mask,
+            atom_feat=atom_feat,
+            eps=1e-9,
+        )
+
+        self.assertTrue((token_feat == token_mask).all())
+
+        atom_mask[0, :4] = 0
+
+        token_feat = aggregate_atom_feat_to_tokens(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            atom_mask=atom_mask,
+            atom_feat=atom_feat,
+            eps=1e-9,
+        )
+
+        token_mask[0, 0] = 0
+
+        self.assertTrue((token_feat == token_mask).all())
+
+    def test_with_two_batch_dim(self):
+        num_atoms_per_token = torch.Tensor(
+            [[3, 6, 2, 5, 1], [4, 7, 1, 3, 5]]
+        ).unsqueeze(1)
+
+        token_mask = torch.Tensor([[1, 1, 1, 1, 1], [1, 1, 1, 1, 0]]).unsqueeze(1)
+
+        atom_mask = broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=token_mask,
+        )
+        atom_feat = atom_mask.clone()
+
+        token_feat = aggregate_atom_feat_to_tokens(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            atom_mask=atom_mask,
+            atom_feat=atom_feat,
+            eps=1e-9,
+        )
+
+        self.assertTrue((token_feat == token_mask).all())
+
+    def test_with_two_feat_dim(self):
+        num_atoms_per_token = torch.Tensor([[3, 6]])
+        token_mask = torch.Tensor([[1, 1]])
+
+        atom_mask = torch.Tensor([[1, 1, 1, 1, 0, 1, 1, 1, 1]])
+        atom_feat = torch.randn((1, 9, 5))
+
+        token_feat = aggregate_atom_feat_to_tokens(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            atom_mask=atom_mask,
+            atom_feat=atom_feat,
+            atom_dim=-2,
+            eps=1e-9,
+        )
+
+        gt_token_feat = torch.concat(
+            [
+                torch.sum(atom_feat[:, :3], dim=-2, keepdim=True) / 3,
+                torch.sum(atom_feat[:, [3, 5, 6, 7, 8]], dim=-2, keepdim=True) / 5,
+            ],
+            dim=-2,
+        )
+
+        self.assertTrue((torch.abs(token_feat - gt_token_feat) < 1e-5).all())
+
+
 class TestGetTokenAtomIndex(unittest.TestCase):
     def test_with_amino_acid_backbone_residue(self):
         restype = F.one_hot(
-            torch.Tensor([[0, 7, 13, 20], [21, 25, 24, 30]]).long(), num_classes=32
+            torch.Tensor([[0, 7, 13, 20], [21, 26, 24, 30]]).long(), num_classes=32
         ).float()
-        atom_index_offset = get_token_atom_index_offset(
+        token_atom_index_offset, token_atom_mask = get_token_atom_index_offset(
             atom_name="CA", restype=restype
-        ).int()
-        gt_atom_index_offset = torch.Tensor([[1, 1, 1, -1], [-1, -1, -1, -1]])
-        self.assertTrue((atom_index_offset == gt_atom_index_offset).all())
+        )
+        gt_token_atom_index_offset = torch.Tensor([[1, 1, 1, 1], [-1, -1, -1, -1]])
+        gt_token_atom_mask = torch.Tensor([[1, 1, 1, 1], [0, 0, 0, 0]])
+        self.assertTrue((token_atom_index_offset == gt_token_atom_index_offset).all())
+        self.assertTrue((token_atom_mask == gt_token_atom_mask).all())
 
     def test_with_amino_acid_sidechain_residue(self):
         restype = F.one_hot(
-            torch.Tensor([[0, 7, 13, 20], [21, 25, 24, 30]]).long(), num_classes=32
+            torch.Tensor([[0, 7, 13, 20], [21, 26, 24, 30]]).long(), num_classes=32
         ).float()
-        atom_index_offset = get_token_atom_index_offset(
+        token_atom_index_offset, token_atom_mask = get_token_atom_index_offset(
             atom_name="CB", restype=restype
-        ).int()
-        gt_atom_index_offset = torch.Tensor([[4, -1, 4, -1], [-1, -1, -1, -1]])
-        self.assertTrue((atom_index_offset == gt_atom_index_offset).all())
+        )
+        gt_token_atom_index_offset = torch.Tensor([[4, -1, 4, 4], [-1, -1, -1, -1]])
+        gt_token_atom_mask = torch.Tensor([[1, 0, 1, 1], [0, 0, 0, 0]])
+        self.assertTrue((token_atom_index_offset == gt_token_atom_index_offset).all())
+        self.assertTrue((token_atom_mask == gt_token_atom_mask).all())
 
     def test_with_nucleotide_backbone_residue(self):
         restype = F.one_hot(
-            torch.Tensor([[0, 7, 13, 20], [21, 25, 24, 30]]).long(), num_classes=32
+            torch.Tensor([[0, 7, 20, 31], [21, 25, 26, 30]]).long(), num_classes=32
         ).float()
-        atom_index_offset = get_token_atom_index_offset(
+        token_atom_index_offset, token_atom_mask = get_token_atom_index_offset(
             atom_name="C3'", restype=restype
-        ).int()
-        gt_atom_index_offset = torch.Tensor([[-1, -1, -1, -1], [7, 7, 7, -1]])
-        self.assertTrue((atom_index_offset == gt_atom_index_offset).all())
+        )
+        gt_token_atom_index_offset = torch.Tensor([[-1, -1, -1, -1], [7, 7, 7, 7]])
+        gt_token_atom_mask = torch.Tensor([[0, 0, 0, 0], [1, 1, 1, 1]])
+        self.assertTrue((token_atom_index_offset == gt_token_atom_index_offset).all())
+        self.assertTrue((token_atom_mask == gt_token_atom_mask).all())
 
     def test_with_nucleotide_sidechain_residue(self):
         restype = F.one_hot(
-            torch.Tensor([[0, 7, 13, 20], [21, 25, 24, 30]]).long(), num_classes=32
+            torch.Tensor([[0, 7, 13, 20], [21, 25, 26, 30]]).long(), num_classes=32
         ).float()
-        atom_index_offset = get_token_atom_index_offset(
+        token_atom_index_offset, token_atom_mask = get_token_atom_index_offset(
             atom_name="C4", restype=restype
-        ).int()
-        gt_atom_index_offset = torch.Tensor([[-1, -1, -1, -1], [21, 21, 16, -1]])
-        self.assertTrue((atom_index_offset == gt_atom_index_offset).all())
+        )
+        gt_token_atom_index_offset = torch.Tensor([[-1, -1, -1, -1], [21, -1, 21, -1]])
+        gt_token_atom_mask = torch.Tensor([[0, 0, 0, 0], [1, 0, 1, 0]])
+        self.assertTrue((token_atom_index_offset == gt_token_atom_index_offset).all())
+        self.assertTrue((token_atom_mask == gt_token_atom_mask).all())
 
 
 class TestGetTokenCenterAtom(unittest.TestCase):
@@ -442,6 +570,30 @@ class TestGetTokenCenterAtom(unittest.TestCase):
         self.assertTrue((torch.abs(center_x - gt_center_x) < 1e-5).all())
         self.assertTrue((center_atom_mask == gt_center_atom_mask).all())
 
+    def test_with_unknown_residues(self):
+        batch, x, atom_mask = example6()
+
+        center_x, center_atom_mask = get_token_center_atoms(
+            batch=batch, x=x, atom_mask=atom_mask
+        )
+
+        gt_center_x = x[:, [1, 18, 30, 0], :]
+
+        gt_center_atom_mask = torch.Tensor([[1, 1, 1, 0]])
+
+        self.assertTrue((torch.abs(center_x - gt_center_x) < 1e-5).all())
+        self.assertTrue((center_atom_mask == gt_center_atom_mask).all())
+
+        atom_mask[0, 18] = 0
+
+        center_x, center_atom_mask = get_token_center_atoms(
+            batch=batch, x=x, atom_mask=atom_mask
+        )
+
+        gt_center_atom_mask[0, 1] = 0
+        self.assertTrue((torch.abs(center_x - gt_center_x) < 1e-5).all())
+        self.assertTrue((center_atom_mask == gt_center_atom_mask).all())
+
 
 class TestGetTokenRepresentativeAtom(unittest.TestCase):
     def test_with_standard_amino_acid_residues(self):
@@ -568,6 +720,29 @@ class TestGetTokenRepresentativeAtom(unittest.TestCase):
         )
 
         gt_rep_atom_mask[2, 1] = 0
+        self.assertTrue((torch.abs(rep_x - gt_rep_x) < 1e-5).all())
+        self.assertTrue((rep_atom_mask == gt_rep_atom_mask).all())
+
+    def test_wtih_unknown_residues(self):
+        batch, x, atom_mask = example6()
+
+        rep_x, rep_atom_mask = get_token_representative_atoms(
+            batch=batch, x=x, atom_mask=atom_mask
+        )
+
+        gt_rep_x = x[:, [4, 0, 0, 0], :]
+        gt_rep_atom_mask = torch.Tensor([[1, 0, 0, 0]])
+
+        self.assertTrue((torch.abs(rep_x - gt_rep_x) < 1e-5).all())
+        self.assertTrue((rep_atom_mask == gt_rep_atom_mask).all())
+
+        atom_mask[0, 4] = 0
+
+        rep_x, rep_atom_mask = get_token_representative_atoms(
+            batch=batch, x=x, atom_mask=atom_mask
+        )
+
+        gt_rep_atom_mask[0, 0] = 0
         self.assertTrue((torch.abs(rep_x - gt_rep_x) < 1e-5).all())
         self.assertTrue((rep_atom_mask == gt_rep_atom_mask).all())
 
@@ -776,6 +951,49 @@ class TestGetTokenFrameAtom(unittest.TestCase):
                 < 1e-5
             ).all()
         )
+        self.assertTrue((valid_frame_mask == gt_valid_frame_mask).all())
+
+    def test_with_unknown_residues(self):
+        angle_threshold = 25.0
+        eps = 1e-8
+        inf = 1e9
+        batch, x, atom_mask = example6()
+
+        (a, b, c), valid_frame_mask = get_token_frame_atoms(
+            batch=batch,
+            x=x,
+            atom_mask=atom_mask,
+            angle_threshold=angle_threshold,
+            eps=eps,
+            inf=inf,
+        )
+
+        gt_a = x[:, [0, 14, 26, 0], :]
+        gt_b = x[:, [1, 18, 30, 0], :]
+        gt_c = x[:, [2, 12, 24, 0], :]
+        gt_valid_frame_mask = torch.Tensor([[1, 1, 1, 0]])
+
+        self.assertTrue((torch.abs(a - gt_a) < 1e-5).all())
+        self.assertTrue((torch.abs(b - gt_b) < 1e-5).all())
+        self.assertTrue((torch.abs(c - gt_c) < 1e-5).all())
+        self.assertTrue((valid_frame_mask == gt_valid_frame_mask).all())
+
+        atom_mask[0, 12] = 0
+
+        (a, b, c), valid_frame_mask = get_token_frame_atoms(
+            batch=batch,
+            x=x,
+            atom_mask=atom_mask,
+            angle_threshold=angle_threshold,
+            eps=eps,
+            inf=inf,
+        )
+
+        gt_valid_frame_mask = torch.Tensor([[1, 0, 1, 0]])
+
+        self.assertTrue((torch.abs(a - gt_a) < 1e-5).all())
+        self.assertTrue((torch.abs(b - gt_b) < 1e-5).all())
+        self.assertTrue((torch.abs(c - gt_c) < 1e-5).all())
         self.assertTrue((valid_frame_mask == gt_valid_frame_mask).all())
 
 

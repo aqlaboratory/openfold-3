@@ -88,7 +88,10 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
         zij_trunk = torch.ones((batch_size, n_token, n_token, c_z))
         rl = torch.randn((batch_size, n_atom, 3))
 
-        batch = {"atom_to_token_index": torch.ones((batch_size, n_atom))}
+        batch = {
+            "token_mask": torch.ones((batch_size, n_token)),
+            "num_atoms_per_token": torch.ones((batch_size, n_token)) * 4,
+        }
 
         cl, plm, ql = embedder(
             batch=batch,
@@ -126,7 +129,10 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
         zij_trunk = torch.ones((batch_size, 1, n_token, n_token, c_z))
         rl = torch.randn((batch_size, n_sample, n_atom, 3))
 
-        batch = {"atom_to_token_index": torch.ones((batch_size, 1, n_atom))}
+        batch = {
+            "token_mask": torch.ones((batch_size, 1, n_token)),
+            "num_atoms_per_token": torch.ones((batch_size, 1, n_token)) * 4,
+        }
 
         cl, plm, ql = embedder(
             batch=batch,
@@ -361,7 +367,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
 
         batch = {
             "token_mask": torch.ones((batch_size, n_token)),
-            "atom_to_token_index": torch.ones((batch_size, n_atom)),
+            "num_atoms_per_token": torch.ones((batch_size, n_token)) * 4,
             "ref_pos": torch.randn((batch_size, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, n_atom)),
             "ref_element": torch.ones((batch_size, n_atom, 128)),
@@ -420,7 +426,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
 
         batch = {
             "token_mask": torch.ones((batch_size, 1, n_token)),
-            "atom_to_token_index": torch.ones((batch_size, 1, n_atom)),
+            "num_atoms_per_token": torch.ones((batch_size, 1, n_token)) * 4,
             "ref_pos": torch.randn((batch_size, 1, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, 1, n_atom)),
             "ref_element": torch.ones((batch_size, 1, n_atom, 128)),
@@ -481,7 +487,8 @@ class TestAtomAttentionDecoder(unittest.TestCase):
         )
 
         batch = {
-            "atom_to_token_index": torch.ones((batch_size, n_atom)),
+            "token_mask": torch.ones((batch_size, n_token)),
+            "num_atoms_per_token": torch.ones((batch_size, n_token)) * 4,
         }
 
         atom_mask = torch.ones((batch_size, n_atom))
@@ -529,7 +536,8 @@ class TestAtomAttentionDecoder(unittest.TestCase):
         )
 
         batch = {
-            "atom_to_token_index": torch.ones((batch_size, 1, n_atom)),
+            "token_mask": torch.ones((batch_size, 1, n_token)),
+            "num_atoms_per_token": torch.ones((batch_size, 1, n_token)) * 4,
         }
 
         atom_mask = torch.ones((batch_size, 1, n_atom))

@@ -29,6 +29,7 @@ from openfold3.core.model.layers import (
 )
 from openfold3.core.model.layers.diffusion_conditioning import DiffusionConditioning
 from openfold3.core.model.primitives import LayerNorm, Linear
+from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 
 
 def centre_random_augmentation(
@@ -271,13 +272,10 @@ class SampleDiffusion(nn.Module):
         Returns:
             [*, N_atom, 3] Sampled atom positions
         """
-
-        n_token = si_trunk.shape[-2]
-        atom_to_onehot_token_index = torch.nn.functional.one_hot(
-            batch["atom_to_token_index"].to(torch.int64), num_classes=n_token
-        ).to(batch["atom_to_token_index"].dtype)
-        atom_mask = torch.einsum(
-            "...li,...i->...l", atom_to_onehot_token_index, batch["token_mask"]
+        atom_mask = broadcast_token_feat_to_atoms(
+            token_mask=batch["token_mask"],
+            num_atoms_per_token=batch["num_atoms_per_token"],
+            token_feat=batch["token_mask"],
         )
 
         xl = self.noise_schedule[0] * torch.randn(
