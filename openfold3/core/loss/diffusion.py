@@ -239,7 +239,7 @@ def diffusion_loss(
     alpha_dna: float = 5.0,
     alpha_rna: float = 5.0,
     alpha_ligand: float = 10.0,
-    **kwargs
+    **kwargs,
 ):
     """
     Implements AF3 Equation 6.

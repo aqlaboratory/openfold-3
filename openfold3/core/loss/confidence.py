@@ -79,10 +79,10 @@ def compute_alignment_error(
         x_gt:
             [*, N_token, 3] Groundtruth atom positions
         phi:
-            A tuple of atom positions used for frame construction, 
+            A tuple of atom positions used for frame construction,
             each has a shape of [*, N_token, 3]
         phi_gt:
-            A tuple of groundtruth atom positions used for frame 
+            A tuple of groundtruth atom positions used for frame
             construction, each has a shape of [*, N_token, 3]
         eps:
             Small float for numerical stability
@@ -166,17 +166,17 @@ def plddt_loss(
         atom_name="C1'", restype=batch["restype"]
     )
     rep_index = (
-        (
-            (start_atom_index + ca_atom_index_offset) * 
-            is_standard_protein * ca_atom_mask
-        ) +
-        (
-            (start_atom_index + c1p_atom_index_offset) *
-            is_standard_nucleotide * c1p_atom_mask
-        ) +
-        n_atom * (
-            1 - is_standard_protein * ca_atom_mask - 
-            is_standard_nucleotide * c1p_atom_mask
+        ((start_atom_index + ca_atom_index_offset) * is_standard_protein * ca_atom_mask)
+        + (
+            (start_atom_index + c1p_atom_index_offset)
+            * is_standard_nucleotide
+            * c1p_atom_mask
+        )
+        + n_atom
+        * (
+            1
+            - is_standard_protein * ca_atom_mask
+            - is_standard_nucleotide * c1p_atom_mask
         )
     )
 
@@ -430,7 +430,7 @@ def confidence_loss(
     alpha_pae: float,
     eps: float,
     inf: float,
-    **kwargs
+    **kwargs,
 ):
     """
     Compute loss on confidence module.
@@ -461,7 +461,7 @@ def confidence_loss(
         bin_max_pde:
             Maximum bin value for PDE
         no_bins_resolved:
-            Number of bins for predictions on whether the 
+            Number of bins for predictions on whether the
             atom is resolved in the ground truth
         alpha_pae:
             Weight on PAE loss

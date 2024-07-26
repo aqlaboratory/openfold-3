@@ -13,7 +13,7 @@ def distogram_loss(
     bin_min: float,
     bin_max: float,
     eps: float,
-    **kwargs
+    **kwargs,
 ):
     """
     Computes loss on distogram prediction (Subsection 4.4).
