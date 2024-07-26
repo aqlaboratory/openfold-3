@@ -312,7 +312,7 @@ config = mlc.ConfigDict(
                         "clear_cache_between_blocks": False,
                         "tune_chunk_size": tune_chunk_size,
                     },
-                    "c_s": c_s,
+                    "c_s_input": c_s_input,
                     "c_z": c_z,
                     "min_bin": 3.25,
                     "max_bin": 20.75,

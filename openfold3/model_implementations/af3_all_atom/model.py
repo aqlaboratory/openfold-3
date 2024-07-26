@@ -248,16 +248,15 @@ class AlphaFold3(nn.Module):
             "x_pred": x_pred,
         }
 
-        # TODO: Add this in only when atomization features are updated in the model
-        # # Compute confidences
-        # output.update(
-        #     self.aux_heads(
-        #         batch=batch,
-        #         si_input=si_input,
-        #         output=output,
-        #         chunk_size=self.globals.chunk_size,
-        #     )
-        # )
+        # Compute confidences
+        output.update(
+            self.aux_heads(
+                batch=batch,
+                si_input=si_input,
+                output=output,
+                chunk_size=self.globals.chunk_size,
+            )
+        )
 
         return output
 
@@ -459,18 +458,16 @@ class AlphaFold3(nn.Module):
             batch=batch, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
         )
 
-        # This should probably go into the if block below since there
-        # is no groundtruth when sampling
-        # TODO: Add multi-chain permutation alignment here
-        #  Permutation code needs to be updated first
-        #  Needs to happen before losses and training diffusion step
-        # ground_truth = {k: v for k, v in batch.items() if k.startswith("gt_")}
-        # batch = multi_chain_permutation_align(
-        #     out=output, features=batch, ground_truth=ground_truth
-        # )
-
         # Run training step (if necessary)
         if self.training:
+            # TODO: Add multi-chain permutation alignment here
+            #  Permutation code needs to be updated first
+            #  Needs to happen before losses and training diffusion step
+            # ground_truth = {k: v for k, v in batch.items() if k.startswith("gt_")}
+            # batch = multi_chain_permutation_align(
+            #     out=output, features=batch, ground_truth=ground_truth
+            # )
+
             diffusion_output = self._train_diffusion(
                 batch=batch,
                 si_input=si_input,

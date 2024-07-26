@@ -11,22 +11,14 @@ from openfold3.core.model.heads.prediction_heads import (
     PredictedAlignedErrorHead,
     PredictedDistanceErrorHead,
 )
-from openfold3.core.np.token_atom_constants import (
-    DNA_NUCLEOTIDE_TYPES,
-    PROTEIN_RESTYPES,
-    RNA_NUCLEOTIDE_TYPES,
-    TOKEN_NAME_TO_ATOM_NAMES,
-    TOKEN_TYPES,
-)
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
-from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.model_implementations.af3_all_atom.config import (
     config,
     finetune3_config_update,
     max_atoms_per_token,
 )
 from tests.config import consts
-from tests.data_utils import random_asym_ids
+from tests.data_utils import random_af3_features
 
 
 class TestPredictedAlignedErrorHead(unittest.TestCase):
@@ -128,12 +120,13 @@ class TestPairformerEmbedding(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
+        c_s_input = config.globals.c_s_input
         c_s = config.globals.c_s
         c_z = config.globals.c_z
 
         pair_emb = PairformerEmbedding(**config.model.heads.pairformer_embedding).eval()
 
-        si_input = torch.ones(batch_size, n_token, c_s)
+        si_input = torch.ones(batch_size, n_token, c_s_input)
         si = torch.ones(batch_size, n_token, c_s)
         zij = torch.ones(batch_size, n_token, n_token, c_z)
         x_pred = torch.ones(batch_size, n_token, 3)
@@ -163,40 +156,24 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
     def test_auxiliary_heads_all_atom_shape(self):
         batch_size = 1
         n_token = consts.n_res
+        n_msa = 10
+        n_templ = 3
 
-        # TODO: Move to data utils
-        restypes_flat = torch.randint(0, len(TOKEN_TYPES), (n_token,))
-        restypes_names = [TOKEN_TYPES[token_idx] for token_idx in restypes_flat]
-        restypes_one_hot = torch.nn.functional.one_hot(
-            restypes_flat,
-            len(TOKEN_TYPES),
-        )
-
-        num_atoms_per_token = torch.Tensor(
-            [len(TOKEN_NAME_TO_ATOM_NAMES[name]) for name in restypes_names]
-        )
-
-        is_protein = torch.Tensor(
-            [1 if name in PROTEIN_RESTYPES else 0 for name in restypes_names]
-        )
-        is_rna = torch.Tensor(
-            [1 if name in RNA_NUCLEOTIDE_TYPES else 0 for name in restypes_names]
-        )
-        is_dna = torch.Tensor(
-            [1 if name in DNA_NUCLEOTIDE_TYPES else 0 for name in restypes_names]
-        )
-
-        n_atom = torch.max(torch.sum(num_atoms_per_token, dim=-1)).int().item()
-
+        c_s_input = config.globals.c_s_input
         c_s = config.globals.c_s
         c_z = config.globals.c_z
+
+        batch = random_af3_features(
+            batch_size=batch_size, n_token=n_token, n_msa=n_msa, n_templ=n_templ
+        )
+        n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
         config.update(finetune3_config_update)
         heads_config = config.model.heads
         heads_config.distogram.enabled = True
         aux_head = AuxiliaryHeadsAllAtom(heads_config).eval()
 
-        si_input = torch.ones(batch_size, n_token, c_s)
+        si_input = torch.ones(batch_size, n_token, c_s_input)
         si = torch.ones(batch_size, n_token, c_s)
         zij = torch.ones(batch_size, n_token, n_token, c_z)
         x_pred = torch.randn(batch_size, n_atom, 3)
@@ -206,30 +183,6 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
             "zij_trunk": zij,
             "x_pred": x_pred,
         }
-
-        start_atom_index = (
-            torch.cumsum(num_atoms_per_token, dim=-1) - num_atoms_per_token[..., 0]
-        )
-
-        token_mask = torch.ones(n_token)
-
-        batch = {
-            "asym_id": torch.Tensor(random_asym_ids(n_token)),
-            "token_mask": token_mask,
-            "start_atom_index": start_atom_index,
-            "num_atoms_per_token": num_atoms_per_token,
-            "restype": restypes_one_hot,
-            "is_protein": is_protein,
-            "is_dna": is_dna,
-            "is_rna": is_rna,
-            "is_ligand": torch.zeros(n_token),
-            "is_atomized": torch.zeros(n_token),
-        }
-
-        def to_dtype_batch(t):
-            return t.to(dtype=torch.float32).unsqueeze(0)
-
-        batch = tensor_tree_map(to_dtype_batch, batch)
 
         aux_out = aux_head(
             batch,

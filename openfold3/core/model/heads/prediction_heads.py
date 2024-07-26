@@ -29,7 +29,7 @@ class PairformerEmbedding(nn.Module):
     def __init__(
         self,
         pairformer: ConfigDict,
-        c_s: int,
+        c_s_input: int,
         c_z: int,
         min_bin: float,
         max_bin: float,
@@ -41,8 +41,8 @@ class PairformerEmbedding(nn.Module):
         Args:
             pairformer:
                 Config for PairFormerStack used
-            c_s:
-                Single embedding dimension
+            c_s_input:
+                Single (input) embedding dimension
             c_z:
                 Pair embedding dimension
             min_bin:
@@ -64,8 +64,8 @@ class PairformerEmbedding(nn.Module):
         self.no_bin = no_bin
         self.inf = inf
 
-        self.linear_i = Linear(c_s, c_z, **linear_init_params.linear_i)
-        self.linear_j = Linear(c_s, c_z, **linear_init_params.linear_j)
+        self.linear_i = Linear(c_s_input, c_z, **linear_init_params.linear_i)
+        self.linear_j = Linear(c_s_input, c_z, **linear_init_params.linear_j)
 
         self.linear_distance = Linear(
             self.no_bin, c_z, **linear_init_params.linear_distance
