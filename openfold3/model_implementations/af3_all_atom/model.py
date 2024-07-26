@@ -388,8 +388,10 @@ class AlphaFold3(nn.Module):
                     "token_bonds" ([*, N_token, N_token])
                         A 2D matrix indicating if there is a bond between
                         any atom in token i and token j
-                    *"atom_to_token_index" ([*, N_atom, N_token])
-                        One-hot encoding of token index per atom
+                    *"num_atoms_per_token" ([*, N_token])
+                        Number of atoms per token
+                    *"start_atom_index" ([*, N_token])
+                        Starting atom index in each token
                     *"token_mask" ([*, N_token])
                         Token-level mask
                     *"msa_mask" ([*, N_msa, N_token])
@@ -440,6 +442,8 @@ class AlphaFold3(nn.Module):
             batch=batch, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
         )
 
+        # This should probably go into the if block below since there
+        # is no groundtruth when sampling
         # TODO: Add multi-chain permutation alignment here
         #  Permutation code needs to be updated first
         #  Needs to happen before losses and training diffusion step

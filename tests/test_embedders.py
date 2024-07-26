@@ -113,7 +113,7 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
             "ref_charge": torch.ones((batch_size, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, n_atom)),
-            "atom_to_token_index": torch.ones((batch_size, n_atom)),
+            "num_atoms_per_token": torch.ones((batch_size, n_token)) * 4,
             "restype": torch.rand((batch_size, n_token, one_hot_dim)),
             "profile": torch.rand((batch_size, n_token, one_hot_dim)),
             "deletion_mean": torch.rand((batch_size, n_token)),
