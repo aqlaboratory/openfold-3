@@ -65,7 +65,7 @@ def dict_multimap(fn, dicts):
     return new_dict
 
 
-def one_hot(x, v_bins):
+def binned_one_hot(x, v_bins):
     reshaped_bins = v_bins.view(((1,) * len(x.shape)) + (len(v_bins),))
     diffs = x[..., None] - reshaped_bins
     am = torch.argmin(torch.abs(diffs), dim=-1)

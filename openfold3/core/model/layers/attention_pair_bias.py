@@ -18,8 +18,10 @@
 from typing import List, Optional
 
 import torch
+from ml_collections import ConfigDict
 from torch import nn
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import (
     AdaLN,
     Attention,
@@ -50,6 +52,7 @@ class AttentionPairBias(nn.Module):
         block_size: Optional[int] = 16,
         gating: bool = True,
         inf=1e9,
+        linear_init_params: ConfigDict = lin_init.att_pair_bias_init,
     ):
         """
         Args:
@@ -77,6 +80,8 @@ class AttentionPairBias(nn.Module):
                 Whether the output should be gated using query data
             inf:
                 Large constant used to create mask for attention logits
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -88,18 +93,18 @@ class AttentionPairBias(nn.Module):
         self.inf = inf
 
         if self.use_ada_layer_norm:
-            self.layer_norm_a = AdaLN(c_a=self.c_q, c_s=self.c_s)
-            self.linear_ada_out = Linear(self.c_s, self.c_q, init="gating_ada_zero")
+            self.layer_norm_a = AdaLN(
+                c_a=self.c_q, c_s=self.c_s, linear_init_params=linear_init_params.ada_ln
+            )
+            self.linear_ada_out = Linear(
+                self.c_s, self.c_q, **linear_init_params.linear_ada_out
+            )
         else:
             self.layer_norm_a = LayerNorm(c_in=self.c_q)
 
         self.layer_norm_z = LayerNorm(self.c_z)
-        self.linear_z = Linear(self.c_z, no_heads, bias=False, init="normal")
+        self.linear_z = Linear(self.c_z, no_heads, **linear_init_params.linear_z)
 
-        # TODO: The linear layer init changes will be handled in Issue#70
-        # linear_q -> bias=True
-        # linear_g -> bias=False
-        # linear_o -> bias=False
         if self.use_block_sparse_attn:
             self.mha = BlockSparseAttention(
                 c_q=c_q,
@@ -109,6 +114,7 @@ class AttentionPairBias(nn.Module):
                 no_heads=no_heads,
                 block_size=block_size,
                 gating=gating,
+                linear_init_params=linear_init_params.mha,
             )
         else:
             self.mha = Attention(
@@ -118,6 +124,7 @@ class AttentionPairBias(nn.Module):
                 c_hidden=c_hidden,
                 no_heads=no_heads,
                 gating=gating,
+                linear_init_params=linear_init_params.mha,
             )
 
         self.sigmoid = nn.Sigmoid()

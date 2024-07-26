@@ -1,5 +1,7 @@
 import ml_collections as mlc
 
+import openfold3.model_implementations.af3_all_atom.linear_init_config as lin_init
+
 NUM_TOKENS = "num tokens placeholder"
 NUM_ATOMS = "num atoms placeholder"
 NUM_MSA_SEQ = "msa placeholder"
@@ -11,7 +13,7 @@ c_s = mlc.FieldReference(384, field_type=int)
 c_z = mlc.FieldReference(128, field_type=int)
 c_m = mlc.FieldReference(64, field_type=int)
 c_t = mlc.FieldReference(64, field_type=int)
-c_atom_ref = mlc.FieldReference(390, field_type=int)
+c_atom_ref = mlc.FieldReference(389, field_type=int)
 c_atom = mlc.FieldReference(128, field_type=int)
 c_atom_pair = mlc.FieldReference(16, field_type=int)
 c_token_embedder = mlc.FieldReference(384, field_type=int)
@@ -124,15 +126,19 @@ config = mlc.ConfigDict(
                     "use_block_sparse_attn": use_block_sparse_attn,
                     "block_size": block_size,
                     "inf": 1e10,  # global parameter?
+                    "linear_init_params": lin_init.atom_att_enc_init,
                 },
+                "linear_init_params": lin_init.input_emb_init,
             },
             "template": {
                 "c_t": c_t,
                 "c_z": c_z,
+                "linear_init_param": lin_init.templ_module_init,
                 "template_pair_embedder": {
                     "c_in": 108,
                     "c_z": c_z,
                     "c_out": c_t,
+                    "linear_init_params": lin_init.templ_pair_feat_emb_init,
                 },
                 "template_pair_stack": {
                     "c_t": c_t,
@@ -149,8 +155,9 @@ config = mlc.ConfigDict(
                     "tri_mul_first": True,
                     "fuse_projection_weights": False,
                     "blocks_per_ckpt": blocks_per_ckpt,
-                    "tune_chunk_size": tune_chunk_size,
                     "inf": 1e9,
+                    "linear_init_params": lin_init.pair_block_init,
+                    "tune_chunk_size": tune_chunk_size,
                 },
             },
             "msa": {
@@ -158,6 +165,7 @@ config = mlc.ConfigDict(
                     "c_m_feats": 34,
                     "c_m": c_m,
                     "c_s_input": c_s_input,
+                    "linear_init_params": lin_init.msa_module_emb_init,
                 },
                 "msa_module": {
                     "c_m": c_m,
@@ -178,6 +186,7 @@ config = mlc.ConfigDict(
                     "blocks_per_ckpt": blocks_per_ckpt,
                     "inf": 1e9,
                     "eps": eps,
+                    "linear_init_params": lin_init.msa_module_init,
                     "clear_cache_between_blocks": False,
                     "tune_chunk_size": tune_chunk_size,
                 },
@@ -197,6 +206,7 @@ config = mlc.ConfigDict(
                 "fuse_projection_weights": False,
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "inf": 1e9,
+                "linear_init_params": lin_init.pairformer_init,
                 "clear_cache_between_blocks": False,
                 "tune_chunk_size": tune_chunk_size,
             },
@@ -205,6 +215,7 @@ config = mlc.ConfigDict(
                     "c_s": c_s,
                     "c_token": c_token_diffusion,
                     "sigma_data": sigma_data,
+                    "linear_init_params": lin_init.diffusion_module_init,
                 },
                 "diffusion_conditioning": {
                     "c_s_input": c_s_input,
@@ -214,6 +225,7 @@ config = mlc.ConfigDict(
                     "c_fourier_emb": 256,
                     "max_relative_idx": max_relative_idx,
                     "max_relative_chain": max_relative_chain,
+                    "linear_init_params": lin_init.diffusion_cond_init,
                 },
                 "atom_attn_enc": {
                     "c_s": c_s,
@@ -234,6 +246,7 @@ config = mlc.ConfigDict(
                     "use_block_sparse_attn": use_block_sparse_attn,
                     "block_size": block_size,
                     "inf": 1e9,  # global parameter?
+                    "linear_init_params": lin_init.atom_att_enc_init,
                 },
                 "diffusion_transformer": {
                     "c_a": c_token_diffusion,
@@ -247,6 +260,7 @@ config = mlc.ConfigDict(
                     "use_block_sparse_attn": False,
                     "block_size": None,
                     "inf": 1e9,  # global parameter?
+                    "linear_init_params": lin_init.diffusion_transformer_init,
                 },
                 "atom_attn_dec": {
                     "c_atom": c_atom,
@@ -262,6 +276,7 @@ config = mlc.ConfigDict(
                     "use_block_sparse_attn": use_block_sparse_attn,
                     "block_size": block_size,
                     "inf": 1e9,  # global parameter?
+                    "linear_init_params": lin_init.atom_att_dec_init,
                 },
             },
             "sample_diffusion": {
