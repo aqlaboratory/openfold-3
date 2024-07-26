@@ -432,9 +432,9 @@ def get_token_frame_atoms(
     batch: Dict,
     x: torch.Tensor,
     atom_mask: torch.Tensor,
-    angle_threshold: float,
-    eps: float,
-    inf: float,
+    angle_threshold: float = 25.0,
+    eps: float = 1e-8,
+    inf: float = 1e9,
 ):
     """
     Extract frame atoms per token, which returns

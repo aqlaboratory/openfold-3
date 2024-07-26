@@ -329,7 +329,48 @@ all_atom_templ_pair_feat_emb_init = ConfigDict(
 ########################
 # Heads
 ########################
-# TODO: Add heads config
+
+# AF2
+lddt_ca_init = ConfigDict(
+    {
+        "linear_1": {"bias": True, "init": "relu"},
+        "linear_2": {"bias": True, "init": "relu"},
+        "linear_3": {"bias": True, "init": "final"},
+    }
+)
+
+# AF2
+exp_res_init = ConfigDict({"linear": {"bias": True, "init": "final"}})
+
+# AF2
+tm_score_init = ConfigDict({"linear": {"bias": True, "init": "final"}})
+
+# AF2
+masked_msa_init = ConfigDict({"linear": {"bias": True, "init": "final"}})
+
+# AF3
+pairformer_head_init = ConfigDict(
+    {
+        "linear_i": {"bias": False, "init": "default"},
+        "linear_j": {"bias": False, "init": "default"},
+        "linear_distance": {"bias": False, "init": "default"},
+    }
+)
+
+# AF3
+pae_init = ConfigDict({"linear": {"bias": False, "init": "final"}})
+
+# AF3
+pde_init = ConfigDict({"linear": {"bias": False, "init": "final"}})
+
+# AF3
+lddt_init = ConfigDict({"linear": {"bias": False, "init": "final"}})
+
+# AF3
+exp_res_all_atom_init = ConfigDict({"linear": {"bias": False, "init": "final"}})
+
+# AF3
+distogram_init = ConfigDict({"linear": {"bias": False, "init": "final"}})
 
 ########################
 # Latent

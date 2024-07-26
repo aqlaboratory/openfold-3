@@ -220,7 +220,24 @@ templ_pair_feat_emb_init = ConfigDict(
 ########################
 # Heads
 ########################
-# TODO: Add heads config
+
+pairformer_head_init = ConfigDict(
+    {
+        "linear_i": {"bias": False, "init": "default"},
+        "linear_j": {"bias": False, "init": "default"},
+        "linear_distance": {"bias": False, "init": "default"},
+    }
+)
+
+pae_init = ConfigDict({"linear": {"bias": False, "init": "final"}})
+
+pde_init = ConfigDict({"linear": {"bias": False, "init": "final"}})
+
+lddt_init = ConfigDict({"linear": {"bias": False, "init": "final"}})
+
+exp_res_all_atom_init = ConfigDict({"linear": {"bias": False, "init": "final"}})
+
+distogram_init = ConfigDict({"linear": {"bias": False, "init": "final"}})
 
 ########################
 # Latent
