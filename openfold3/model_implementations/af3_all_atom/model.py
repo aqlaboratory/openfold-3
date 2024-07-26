@@ -25,6 +25,7 @@ from torch import nn
 
 from openfold3.core.model.feature_embedders import InputEmbedderAllAtom
 from openfold3.core.model.feature_embedders.input_embedders import MSAModuleEmbedder
+from openfold3.core.model.heads.head_modules import AuxiliaryHeadsAllAtom
 from openfold3.core.model.latent.msa_module import MSAModuleStack
 from openfold3.core.model.latent.pairformer import PairFormerStack
 from openfold3.core.model.latent.template_module import TemplateEmbedderAllAtom
@@ -83,7 +84,7 @@ class AlphaFold3(nn.Module):
         )
 
         # Confidence and Distogram Heads
-        self.aux_heads = None
+        self.aux_heads = AuxiliaryHeadsAllAtom(config=self.config.model.heads)
 
     def _disable_activation_checkpointing(self):
         """
@@ -228,8 +229,8 @@ class AlphaFold3(nn.Module):
                 [*, N_token, N_token, C_z] Pair representation output from model trunk
 
         Returns:
-            Output dictionary containing the predicted all-atom positions and
-            confidence/distogram head logits
+            Output dictionary containing the predicted trunk embeddings,
+            all-atom positions, and confidence/distogram head logits
         """
         # Compute atom positions
         with torch.no_grad():
@@ -241,10 +242,21 @@ class AlphaFold3(nn.Module):
                 chunk_size=self.globals.chunk_size,
             )
 
-        output = {"x_pred": x_pred}
+        output = {
+            "si_trunk": si_trunk,
+            "zij_trunk": zij_trunk,
+            "x_pred": x_pred,
+        }
 
-        # # Compute confidences
-        # output.update(self.aux_heads(si_input, si_trunk, zij_trunk, x_pred))
+        # Compute confidences
+        output.update(
+            self.aux_heads(
+                batch=batch,
+                si_input=si_input,
+                output=output,
+                chunk_size=self.globals.chunk_size,
+            )
+        )
 
         return output
 
@@ -404,6 +416,10 @@ class AlphaFold3(nn.Module):
                         Mask for ground truth atom positions
         Returns:
             Output dictionary containing the following keys:
+                "si_trunk" ([*, N_token, C_s]):
+                    Single representation output from model trunk
+                "zij_trunk" ([*, N_token, N_token, C_z]):
+                    Pair representation output from model trunk
                 "x_pred" ([*, N_atom, 3]):
                     Predicted atom positions
                 "p_plddt" ([*, N_atom, 50]):
@@ -442,18 +458,16 @@ class AlphaFold3(nn.Module):
             batch=batch, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
         )
 
-        # This should probably go into the if block below since there
-        # is no groundtruth when sampling
-        # TODO: Add multi-chain permutation alignment here
-        #  Permutation code needs to be updated first
-        #  Needs to happen before losses and training diffusion step
-        # ground_truth = {k: v for k, v in batch.items() if k.startswith("gt_")}
-        # batch = multi_chain_permutation_align(
-        #     out=output, features=batch, ground_truth=ground_truth
-        # )
-
         # Run training step (if necessary)
         if self.training:
+            # TODO: Add multi-chain permutation alignment here
+            #  Permutation code needs to be updated first
+            #  Needs to happen before losses and training diffusion step
+            # ground_truth = {k: v for k, v in batch.items() if k.startswith("gt_")}
+            # batch = multi_chain_permutation_align(
+            #     out=output, features=batch, ground_truth=ground_truth
+            # )
+
             diffusion_output = self._train_diffusion(
                 batch=batch,
                 si_input=si_input,
