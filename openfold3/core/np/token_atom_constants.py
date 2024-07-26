@@ -22,14 +22,6 @@ PROTEIN_RESTYPES = [
     "UNK",
 ]
 
-DNA_NUCLEOTIDE_TYPES = [
-    "DA",
-    "DG",
-    "DC",
-    "DT",
-    "DN",
-]
-
 RNA_NUCLEOTIDE_TYPES = [
     "A",
     "G",
@@ -38,7 +30,15 @@ RNA_NUCLEOTIDE_TYPES = [
     "N",
 ]
 
-TOKEN_TYPES = PROTEIN_RESTYPES + DNA_NUCLEOTIDE_TYPES + RNA_NUCLEOTIDE_TYPES
+DNA_NUCLEOTIDE_TYPES = [
+    "DA",
+    "DG",
+    "DC",
+    "DT",
+    "DN",
+]
+
+TOKEN_TYPES = PROTEIN_RESTYPES + RNA_NUCLEOTIDE_TYPES + DNA_NUCLEOTIDE_TYPES
 TOKEN_TYPES_WITH_GAP = TOKEN_TYPES + ["GAP"]
 
 AA_NAME_TO_ATOM_NAMES = {
@@ -129,13 +129,19 @@ TOKEN_NAME_TO_ATOM_NAMES = {
 
 
 def get_atom_name_to_index(atom_name):
+    """
+    Get atom index (with mask) based on residue type.
+    """
     indices = []
-    for name in TOKEN_TYPES:
+    mask = []
+    for name in TOKEN_TYPES_WITH_GAP:
         try:
             indices.append(TOKEN_NAME_TO_ATOM_NAMES[name].index(atom_name))
-        except ValueError:
+            mask.append(1)
+        except (KeyError, ValueError):
             indices.append(-1)
-    return indices
+            mask.append(0)
+    return {"index": indices, "mask": mask}
 
 
 atom_name_to_index_by_restype = {

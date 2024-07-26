@@ -72,7 +72,8 @@ config = mlc.ConfigDict(
                     "template_unit_vector": [NUM_TEMPLATES, NUM_TOKENS, NUM_TOKENS, 3],
                     "token_bonds": [NUM_TOKENS, NUM_TOKENS],
                     # Features not included in AF3 docs
-                    "atom_to_token_index": [NUM_ATOMS],
+                    "num_atoms_per_token": [NUM_TOKENS],
+                    "start_atom_index": [NUM_TOKENS],
                     "token_mask": [NUM_TOKENS],
                     "msa_mask": [NUM_MSA_SEQ, NUM_TOKENS],
                     "num_main_msa_seqs": [],
@@ -357,6 +358,22 @@ config = mlc.ConfigDict(
             },
         },
         "loss": {
+            "confidence": {
+                "no_bins_plddt": 50,
+                "bin_min_plddt": 0.0,
+                "bin_max_plddt": 1.0,
+                "angle_threshold": 25.0,
+                "no_bins_pae": 64,
+                "bin_min_pae": 0.0,
+                "bin_max_pae": 32.0,
+                "no_bins_pde": 64,
+                "bin_min_pde": 0.0,
+                "bin_max_pde": 32.0,
+                "no_bins_resolved": 2,
+                "alpha_pae": 0,
+                "eps": eps,
+                "inf": 1e9,  # global parameter?
+            },
             "diffusion": {
                 "sigma_data": sigma_data,
                 "alpha_bond": 0.0,  # varies based on training and finetuning
@@ -364,7 +381,13 @@ config = mlc.ConfigDict(
                 "alpha_rna": 5.0,
                 "alpha_ligand": 10.0,
                 "enabled": True,
-            }
+            },
+            "distogram": {
+                "no_bins": 64,
+                "bin_min": 2.0,
+                "bin_max": 22.0,
+                "eps": eps,
+            },
         },
     }
 )
