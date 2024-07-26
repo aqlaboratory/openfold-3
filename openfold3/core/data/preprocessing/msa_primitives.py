@@ -1,30 +1,10 @@
-import dataclasses
-from typing import Optional, Sequence
 
-import numpy as np
 import pandas as pd
 
-
-@dataclasses.dataclass(frozen=False)
-class Msa:
-    """Class representing a parsed MSA file"""
-
-    msa: np.array
-    deletion_matrix: np.array
-    headers: Optional[Sequence[str]]
-
-    def __len__(self):
-        return len(self.sequences)
-
-    def truncate(self, max_seqs: int):
-        return Msa(
-            msa=self.msa[:max_seqs],
-            deletion_matrix=self.deletion_matrix[:max_seqs],
-            headers=self.descriptions[:max_seqs],
-        )
+from openfold3.core.data.preprocessing.io import Msa
 
 
-def process_uniprot_headers(msa: Msa):
+def process_uniprot_headers(msa: Msa) -> None:
     """Reformats the headers of an Msa object parsed from a UniProt MSA.
 
     The list of headers is converted into a DataFrame containing the uniprot_id,
@@ -50,3 +30,8 @@ def process_uniprot_headers(msa: Msa):
         headers.columns = ['uniprot_id', 'species_id', 'chain_start', 'chain_end']
 
     msa.headers = headers
+
+
+def pair_msas():
+
+    return

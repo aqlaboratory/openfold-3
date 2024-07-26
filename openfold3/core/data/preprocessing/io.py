@@ -1,3 +1,4 @@
+import dataclasses
 import os
 import string
 import textwrap
@@ -6,7 +7,24 @@ from typing import Optional, Sequence
 
 import numpy as np
 
-from openfold3.core.data.preprocessing.msa_primitives import Msa
+
+@dataclasses.dataclass(frozen=False)
+class Msa:
+    """Class representing a parsed MSA file"""
+
+    msa: np.array
+    deletion_matrix: np.array
+    headers: Optional[Sequence[str]]
+
+    def __len__(self):
+        return len(self.sequences)
+
+    def truncate(self, max_seqs: int):
+        return Msa(
+            msa=self.msa[:max_seqs],
+            deletion_matrix=self.deletion_matrix[:max_seqs],
+            headers=self.descriptions[:max_seqs],
+        )
 
 
 def _msa_list_to_np(msa: Sequence[str]) -> np.array:
@@ -123,7 +141,7 @@ def parse_stockholm(msa_string: str, max_seq_count: Optional[int] = None) -> Msa
     Returns:
         Msa: A Msa object containing the sequences, deletion matrix and headers.
     """
-    
+
     # Parse each line into header: sequence dictionary
     name_to_sequence = OrderedDict()
     for line in msa_string.splitlines():
@@ -273,7 +291,7 @@ def parse_msas_alignment_database(
                 raise RuntimeError(
                     "All files in the alignments folder must be in .sto or .a3m format."
                 )
-            
+
             # Only include files with specified max values in the max_seq_counts dict
             if max_seq_counts is not None and basename not in max_seq_counts:
                 continue
@@ -286,7 +304,49 @@ def parse_msas_alignment_database(
     return msas
 
 
-def parse_msas_assembly():
-    
+def parse_msas_sample(
+    chain_ids: list[str],
+    alignments_path: str,
+    use_alignment_database: bool,
+    alignment_index: Optional[dict] = None,
+    max_seq_counts: Optional[dict[str, int]] = None,
+) -> dict[str, dict[str, Msa]]:
+    """Parses MSA(s) for a training sample.
 
-    return
+    This function is used to parse MSAs for a one or multiple chains, depending on
+    the number of chains in the parsed PDB file and crop during training.
+
+    Args:
+        chain_ids (list[str]):
+            List of chain ids to parse for a sample.
+        alignments_path (str):
+            Path to the lowest-level directory containing either the directories of MSAs
+            per chain ID or the alignment databases.
+        use_alignment_database (bool):
+            Whether to use the alignment database instead of directly parsing the
+            alignment files.
+        alignment_index (Optional[dict], optional):
+            Dictionary containing the alignment index.
+        max_seq_counts (Optional[dict[str, int]], optional):
+            Dictionary mapping the sequence database from which sequence hits were
+            returned to the max number of sequences to parse from all the hits. See
+            Section 2.2, Tables 1 and 2 in the AlphaFold3 SI for more details.
+
+    Returns:
+        dict[str, dict[str, Msa]]: 
+            A dict mapping chain IDs to a dict of parsed MSAs for the current sample.
+    """
+    sample_msas = {}
+    for chain_id in chain_ids:
+        if use_alignment_database:
+            sample_msas[chain_id] = parse_msas_alignment_database(
+                alignment_index_entry=alignment_index[chain_id],
+                alignment_database_path=alignments_path,
+                max_seq_counts=max_seq_counts,
+            )
+        else:
+            sample_msas[chain_id] = parse_msas_direct(
+                folder_path=os.path.join(alignments_path, chain_id),
+                max_seq_counts=max_seq_counts,
+            )
+    return sample_msas
