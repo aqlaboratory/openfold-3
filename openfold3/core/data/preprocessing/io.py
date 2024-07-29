@@ -54,7 +54,7 @@ def parse_mmcif_bioassembly(
         A NamedTuple containing the parsed CIF file and the AtomArray.
     """
     file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
-    
+
     if file_path.suffix == ".cif":
         cif_class = pdbx.CIFFile
     elif file_path.suffix == ".bcif":
@@ -131,15 +131,15 @@ def write_minimal_cif(
     """
     cif_file = pdbx.CIFFile() if format == "cif" else pdbx.BinaryCIFFile()
     pdbx.set_structure(cif_file, atom_array, include_bonds=include_bonds)
-    
+
     cif_file.write(output_path)
 
 
 class ChainMetadataDict(TypedDict):
-    molecule_type: str # "protein", "RNA", "DNA", "ligand"
-    chain_id_renumbered: int # renumbered chain ID assigned by parse_mmcif_bioassembly
-    chain_id_pdb: str # PDB-assigned chain ID "label_asym_id"
-    chain_id_author: str # Author-assigned chain ID "auth_asym_id"
+    molecule_type: str  # "protein", "RNA", "DNA", "ligand"
+    chain_id_renumbered: int  # renumbered chain ID assigned by parse_mmcif_bioassembly
+    chain_id_pdb: str  # PDB-assigned chain ID "label_asym_id"
+    chain_id_author: str  # Author-assigned chain ID "auth_asym_id"
 
 
 def write_annotated_chains_fasta(
@@ -149,11 +149,11 @@ def write_annotated_chains_fasta(
     chain_metadata_list: list[ChainMetadataDict],
 ) -> Path:
     """Writes a FASTA file annotating chain IDs and molecule types
-    
+
     Will write all chains in the chain_metadata_list to a single FASTA file. The header
     will follow the format
     `>{pdb_id}_{chain_id_pdb}_{chain_id_author}_{chain_id_renum}_{molecule_type}`.
-    
+
     Args:
         output_path:
             Path to write the FASTA file to.
@@ -169,7 +169,7 @@ def write_annotated_chains_fasta(
                   parse_mmcif_bioassembly
                 - chain_id_pdb: PDB-assigned chain ID "label_asym_id"
                 - chain_id_author: Author-assigned chain ID "auth_asym_id"
-    
+
     Returns:
         Path to the written FASTA file.
     """
