@@ -445,11 +445,10 @@ def shift_up_atom_indices(
             Threshold index above which to shift the atom indices.
     """
     # Update atom indices for all atoms greater than the given atom index
-    update_mask = atom_array.atom_idx > idx_threshold
-    atom_array.atom_idx[update_mask] += shift
+    update_mask = atom_array._atom_idx > idx_threshold
+    atom_array._atom_idx[update_mask] += shift
 
 
-# TODO: code is a bit redundant but not sure if bad
 def add_unresolved_polymer_residues(
     atom_array: AtomArray,
     cif_data: CIFBlock,
@@ -478,10 +477,13 @@ def add_unresolved_polymer_residues(
     # This will be extended with unresolved residues
     extended_atom_array = atom_array.copy()
 
+    # Assign temporary atom indices
+    assign_atom_indices(extended_atom_array)
+
     # Iterate through all chains and fill missing residues. To not disrupt the bondlist
     # by slicing the atom_array for an insertion operation, this appends all the missing
     # residue atoms at the end of the atom_array but keeps appropriate bookkeeping of
-    # the residue indices. That way the entire array can be sorted in a single
+    # the atom indices. That way the entire array can be sorted in a single
     # reindexing at the end without losing any bond information.
     chain_starts = struc.get_chain_starts(extended_atom_array, add_exclusive_stop=True)
     for chain_start, chain_end in zip(chain_starts[:-1], chain_starts[1:] - 1):
@@ -518,7 +520,7 @@ def add_unresolved_polymer_residues(
 
             default_annotations = template_annotations.copy()
             default_annotations["res_id"] = 1
-            default_annotations["atom_idx"] = first_atom.atom_idx
+            default_annotations["_atom_idx"] = first_atom._atom_idx
 
             segment = build_unresolved_polymer_segment(
                 residue_codes=chain_3l_seq[:n_missing_residues],
@@ -535,7 +537,7 @@ def add_unresolved_polymer_residues(
             shift_up_atom_indices(
                 extended_atom_array,
                 n_added_atoms,
-                idx_threshold=first_atom.atom_idx - 1,
+                idx_threshold=first_atom._atom_idx - 1,
             )
             extended_atom_array += segment
 
@@ -557,7 +559,7 @@ def add_unresolved_polymer_residues(
 
             default_annotations = template_annotations.copy()
             default_annotations["res_id"] = last_atom.res_id + 1
-            default_annotations["atom_idx"] = last_atom.atom_idx + 1
+            default_annotations["_atom_idx"] = last_atom._atom_idx + 1
 
             segment = build_unresolved_polymer_segment(
                 residue_codes=chain_3l_seq[-n_missing_residues:],
@@ -572,7 +574,7 @@ def add_unresolved_polymer_residues(
 
             # Shift all atom indices up, then insert the unresolved segment
             shift_up_atom_indices(
-                extended_atom_array, n_added_atoms, idx_threshold=last_atom.atom_idx
+                extended_atom_array, n_added_atoms, idx_threshold=last_atom._atom_idx
             )
             extended_atom_array += segment
 
@@ -599,7 +601,7 @@ def add_unresolved_polymer_residues(
 
             default_annotations = template_annotations.copy()
             default_annotations["res_id"] = break_start_atom.res_id + 1
-            default_annotations["atom_idx"] = break_start_atom.atom_idx + 1
+            default_annotations["_atom_idx"] = break_start_atom._atom_idx + 1
 
             # Residue IDs start with 1 so the indices are offset
             segment_residue_codes = chain_3l_seq[
@@ -621,7 +623,7 @@ def add_unresolved_polymer_residues(
             shift_up_atom_indices(
                 extended_atom_array,
                 n_added_atoms,
-                idx_threshold=break_end_atom.atom_idx - 1,
+                idx_threshold=break_end_atom._atom_idx - 1,
             )
             extended_atom_array += segment
 
@@ -642,11 +644,15 @@ def add_unresolved_polymer_residues(
             )
 
     # Finally reorder the array so that the atom indices are in order
-    extended_atom_array = extended_atom_array[np.argsort(extended_atom_array.atom_idx)]
+    extended_atom_array = extended_atom_array[np.argsort(extended_atom_array._atom_idx)]
 
     # dev-only: TODO remove
     assert np.array_equal(
-        extended_atom_array.atom_idx, np.arange(len(extended_atom_array))
+        extended_atom_array._atom_idx, np.arange(len(extended_atom_array))
     )
 
+    # Remove temporary atom indices
+    remove_atom_indices(extended_atom_array)
+
     return extended_atom_array
+
