@@ -1,3 +1,6 @@
+# TODO: rename this file to something more descriptive
+# TODO: add module docstring
+
 import logging
 from itertools import combinations
 from typing import Generator, Literal, NamedTuple
