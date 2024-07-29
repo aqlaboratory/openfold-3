@@ -267,7 +267,6 @@ def remove_chain_and_attached_ligands(
     return atom_array
 
 
-@renumber_atom_idx_post_cleanup
 def remove_clashing_chains(
     atom_array: AtomArray,
     clash_distance: float = 1.7,
