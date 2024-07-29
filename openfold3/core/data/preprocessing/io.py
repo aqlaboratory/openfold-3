@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import NamedTuple
+from typing import Literal, NamedTuple, TypedDict
 
 from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
@@ -110,3 +110,30 @@ def parse_mmcif_bioassembly(
     assign_renumbered_chain_ids(atom_array)
 
     return ParsedStructure(cif_file, atom_array)
+
+
+def write_minimal_cif(
+    atom_array: AtomArray,
+    output_path: Path,
+    format: Literal["cif", "bcif"] = "cif",
+    include_bonds: bool = True,
+) -> None:
+    """Write a minimal CIF file
+
+    The resulting CIF file will only contain the atom_site records and bond information
+    by default, not any other mmCIF metadata.
+
+    Args:
+        atom_array:
+            AtomArray to write to the CIF file.
+        output_path:
+            Path to write the CIF file to.
+        format:
+            Format of the CIF file. Defaults to "cif".
+        include_bonds:
+            Whether to include bond information in the CIF file. Defaults to True.
+    """
+    cif_file = pdbx.CIFFile() if format == "cif" else pdbx.BinaryCIFFile()
+    pdbx.set_structure(cif_file, atom_array, include_bonds=include_bonds)
+    
+    cif_file.write(output_path)
