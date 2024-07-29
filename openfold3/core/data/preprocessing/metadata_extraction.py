@@ -1,3 +1,5 @@
+from typing import Literal
+
 import biotite.structure as struc
 import numpy as np
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
@@ -5,19 +7,27 @@ from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from .tables import MOLECULE_TYPE_ID_TO_NAME
 
 
-def get_pdb_id(cif_file: CIFFile) -> str:
+def get_pdb_id(cif_file: CIFFile, format: Literal["upper", "lower"] = "lower") -> str:
     """Get the PDB ID of the structure.
 
     Args:
         cif_file:
             Parsed mmCIF file containing the structure.
+        format:
+            The case of the PDB ID to return. Options are "upper" and "lower". Defaults
+            to "lower".
 
     Returns:
         The PDB ID of the structure.
     """
     (pdb_id,) = cif_file.keys()
-
-    return pdb_id
+    
+    if format == "upper":
+        return pdb_id.upper()
+    elif format == "lower":
+        return pdb_id.lower()
+    else:
+        raise ValueError(f"Invalid format: {format}")
 
 
 def get_release_date(cif_data: CIFBlock) -> str:
