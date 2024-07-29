@@ -415,6 +415,10 @@ def remove_chains_with_CA_gaps(
         & (atom_array.atom_name == "CA")
     ]
 
+    # If there are no protein chains, return the input atom array
+    if len(protein_chain_ca) == 0:
+        return atom_array
+
     # Match C-alpha atoms with their next C-alpha atom
     ca_without_last = protein_chain_ca[:-1]
     ca_shifted_left = struc.array(np.roll(protein_chain_ca, -1, axis=0)[:-1])
