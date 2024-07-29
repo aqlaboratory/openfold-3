@@ -42,7 +42,7 @@ def parse_mmcif_bioassembly(
 
     Args:
         file_path:
-            Path to the mmCIF file.
+            Path to the mmCIF (or binary mmCIF) file.
         use_author_fields:
             Whether to use author fields. Defaults to False.
         include_bonds:
@@ -53,7 +53,14 @@ def parse_mmcif_bioassembly(
     Returns:
         A NamedTuple containing the parsed CIF file and the AtomArray.
     """
-    cif_file = pdbx.CIFFile.read(file_path)
+    file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
+    
+    if file_path.suffix == ".cif":
+        cif_class = pdbx.CIFFile
+    elif file_path.suffix == ".bcif":
+        cif_class = pdbx.BinaryCIFFile
+
+    cif_file = cif_class.read(file_path)
 
     (pdb_id,) = cif_file.keys()  # Single-element unpacking
 
