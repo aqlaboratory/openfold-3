@@ -36,7 +36,7 @@ class TestLoadPresets:
         assert "model_update" in loaded_yaml_dict
 
         overwritten_config = make_model_config("af2_monomer", test_yaml_file)
-        assert overwritten_config.model.loss.tm.weight == 7
+        assert overwritten_config.loss.tm.weight == 7
 
     def test_registry_model_loads(self):
         # TODO: Change loaded preset to load a smaller test preset
