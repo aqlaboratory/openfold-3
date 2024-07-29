@@ -18,7 +18,7 @@ from typing import Dict
 import torch
 import torch.nn as nn
 
-from openfold3.core.loss.loss import (
+from openfold3.core.metrics.confidence import (
     compute_plddt,
     compute_predicted_aligned_error,
     compute_predicted_distance_error,

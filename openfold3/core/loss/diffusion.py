@@ -13,10 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Diffusion losses."""
+
 from typing import Dict
 
 import torch
-import torch.nn as nn
 
 from openfold3.core.utils.atomize_utils import (
     broadcast_token_feat_to_atoms,
@@ -240,7 +241,7 @@ def diffusion_loss(
     alpha_rna: float = 5.0,
     alpha_ligand: float = 10.0,
     **kwargs,
-):
+) -> [torch.Tensor, Dict]:
     """
     Implements AF3 Equation 6.
 
@@ -262,7 +263,10 @@ def diffusion_loss(
         alpha_ligand:
             Upweight factor for ligand atoms
     Returns:
-        Diffusion loss
+        mean_loss:
+            Diffusion loss
+        loss_breakdown:
+            Dict of individual component losses
     """
     l_mse = mse_loss(
         batch=batch,
@@ -276,27 +280,19 @@ def diffusion_loss(
 
     l_smooth_lddt = smooth_lddt_loss(batch=batch, x=x)
 
+    loss_breakdown = {
+        "mse_loss": l_mse,
+        "bond_loss": l_bond,
+        "smooth_lddt_loss": l_smooth_lddt,
+    }
+
+    loss_breakdown = {
+        k: torch.mean(v).detach().clone() for k, v in loss_breakdown.items()
+    }
+
     w = (t**2 + sigma_data**2) / (t + sigma_data) ** 2
     l = w * (l_mse + alpha_bond * l_bond) + l_smooth_lddt
 
-    return torch.mean(l)
+    mean_loss = torch.mean(l)
 
-
-class DiffusionLoss(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.config = config.loss.diffusion
-
-    def forward(self, batch, output):
-        return diffusion_loss(
-            batch=batch,
-            x=output["x_pred"],
-            x_gt=batch["gt_atom_positions"],
-            atom_mask=batch["atom_mask"],
-            t=output["noise_level"],
-            sigma_data=self.config.sigma_data,
-            alpha_bond=self.config.alpha_bond,
-            alpha_dna=self.config.alpha_dna,
-            alpha_rna=self.config.alpha_rna,
-            alpha_ligand=self.config.alpha_ligand,
-        )
+    return mean_loss, loss_breakdown

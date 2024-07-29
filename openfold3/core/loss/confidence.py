@@ -1,14 +1,194 @@
+# Copyright 2021 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Confidence losses from predicted logits in the Confidence Module."""
+
 from typing import Dict, Tuple
 
 import torch
 
+from openfold3.core.loss.loss_utils import sigmoid_cross_entropy, softmax_cross_entropy
+from openfold3.core.metrics.validation import lddt
+from openfold3.core.np import residue_constants
 from openfold3.core.utils.atomize_utils import (
     broadcast_token_feat_to_atoms,
     get_token_atom_index_offset,
     get_token_frame_atoms,
     get_token_representative_atoms,
 )
+from openfold3.core.utils.rigid_utils import Rigid
 from openfold3.core.utils.tensor_utils import binned_one_hot
+
+########################
+# AF2 Confidence Losses
+########################
+
+
+def ca_plddt_loss(
+    logits: torch.Tensor,
+    all_atom_pred_pos: torch.Tensor,
+    all_atom_positions: torch.Tensor,
+    all_atom_mask: torch.Tensor,
+    resolution: torch.Tensor,
+    cutoff: float = 15.0,
+    no_bins: int = 50,
+    min_resolution: float = 0.1,
+    max_resolution: float = 3.0,
+    eps: float = 1e-10,
+    **kwargs,
+) -> torch.Tensor:
+    ca_pos = residue_constants.atom_order["CA"]
+    all_atom_pred_pos = all_atom_pred_pos[..., ca_pos, :]
+    all_atom_positions = all_atom_positions[..., ca_pos, :]
+    all_atom_mask = all_atom_mask[..., ca_pos : (ca_pos + 1)]  # keep dim
+
+    score = lddt(
+        all_atom_pred_pos, all_atom_positions, all_atom_mask, cutoff=cutoff, eps=eps
+    )
+
+    score[score < 0] = 0
+
+    score = score.detach()
+    bin_index = torch.floor(score * no_bins).long()
+    bin_index = torch.clamp(bin_index, max=(no_bins - 1))
+    lddt_ca_one_hot = torch.nn.functional.one_hot(bin_index, num_classes=no_bins)
+
+    errors = softmax_cross_entropy(logits, lddt_ca_one_hot)
+    all_atom_mask = all_atom_mask.squeeze(-1)
+    loss = torch.sum(errors * all_atom_mask, dim=-1) / (
+        eps + torch.sum(all_atom_mask, dim=-1)
+    )
+
+    loss = loss * ((resolution >= min_resolution) & (resolution <= max_resolution))
+
+    # Average over the batch dimension
+    loss = torch.mean(loss)
+
+    return loss
+
+
+def atom37_experimentally_resolved_loss(
+    logits: torch.Tensor,
+    atom37_atom_exists: torch.Tensor,
+    all_atom_mask: torch.Tensor,
+    resolution: torch.Tensor,
+    min_resolution: float,
+    max_resolution: float,
+    eps: float = 1e-8,
+    **kwargs,
+) -> torch.Tensor:
+    errors = sigmoid_cross_entropy(logits, all_atom_mask)
+    loss = torch.sum(errors * atom37_atom_exists, dim=-1)
+    loss = loss / (eps + torch.sum(atom37_atom_exists, dim=(-1, -2)).unsqueeze(-1))
+    loss = torch.sum(loss, dim=-1)
+
+    loss = loss * ((resolution >= min_resolution) & (resolution <= max_resolution))
+
+    loss = torch.mean(loss)
+
+    return loss
+
+
+def masked_msa_loss(logits, true_msa, bert_mask, num_classes, eps=1e-8, **kwargs):
+    """
+    Computes BERT-style masked MSA loss. Implements subsection 1.9.9.
+
+    Args:
+        logits: [*, N_seq, N_res, 23] predicted residue distribution
+        true_msa: [*, N_seq, N_res] true MSA
+        bert_mask: [*, N_seq, N_res] MSA mask
+    Returns:
+        Masked MSA loss
+    """
+    errors = softmax_cross_entropy(
+        logits, torch.nn.functional.one_hot(true_msa, num_classes=num_classes)
+    )
+
+    # FP16-friendly averaging. Equivalent to:
+    # loss = (
+    #     torch.sum(errors * bert_mask, dim=(-1, -2)) /
+    #     (eps + torch.sum(bert_mask, dim=(-1, -2)))
+    # )
+    loss = errors * bert_mask
+    loss = torch.sum(loss, dim=-1)
+    scale = 0.5
+    denom = eps + torch.sum(scale * bert_mask, dim=(-1, -2))
+    loss = loss / denom[..., None]
+    loss = torch.sum(loss, dim=-1)
+    loss = loss * scale
+
+    loss = torch.mean(loss)
+
+    return loss
+
+
+def tm_loss(
+    logits,
+    final_affine_tensor,
+    backbone_rigid_tensor,
+    backbone_rigid_mask,
+    resolution,
+    max_bin=31,
+    no_bins=64,
+    min_resolution: float = 0.1,
+    max_resolution: float = 3.0,
+    eps=1e-8,
+    **kwargs,
+):
+    # first check whether this is a tensor_7 or tensor_4*4
+    if final_affine_tensor.shape[-1] == 7:
+        pred_affine = Rigid.from_tensor_7(final_affine_tensor)
+    elif final_affine_tensor.shape[-1] == 4:
+        pred_affine = Rigid.from_tensor_4x4(final_affine_tensor)
+    backbone_rigid = Rigid.from_tensor_4x4(backbone_rigid_tensor)
+
+    def _points(affine):
+        pts = affine.get_trans()[..., None, :, :]
+        return affine.invert()[..., None].apply(pts)
+
+    sq_diff = torch.sum((_points(pred_affine) - _points(backbone_rigid)) ** 2, dim=-1)
+
+    sq_diff = sq_diff.detach()
+
+    boundaries = torch.linspace(0, max_bin, steps=(no_bins - 1), device=logits.device)
+    boundaries = boundaries**2
+    true_bins = torch.sum(sq_diff[..., None] > boundaries, dim=-1)
+
+    errors = softmax_cross_entropy(
+        logits, torch.nn.functional.one_hot(true_bins, no_bins)
+    )
+
+    square_mask = backbone_rigid_mask[..., None] * backbone_rigid_mask[..., None, :]
+
+    loss = torch.sum(errors * square_mask, dim=-1)
+    scale = 0.5  # hack to help FP16 training along
+    denom = eps + torch.sum(scale * square_mask, dim=(-1, -2))
+    loss = loss / denom[..., None]
+    loss = torch.sum(loss, dim=-1)
+    loss = loss * scale
+
+    loss = loss * ((resolution >= min_resolution) & (resolution <= max_resolution))
+
+    # Average over the batch dimension
+    loss = torch.mean(loss)
+
+    return loss
+
+
+########################
+# AF3 Confidence Losses
+########################
 
 
 def express_coords_in_frames(
@@ -94,7 +274,7 @@ def compute_alignment_error(
     return (torch.sum((xij - xij_gt) ** 2, dim=-1) + eps) ** 0.5
 
 
-def plddt_loss(
+def all_atom_plddt_loss(
     batch: Dict,
     x: torch.Tensor,
     p_b: torch.Tensor,
@@ -377,7 +557,9 @@ def pde_loss(
     return l_pde
 
 
-def resolved_loss(batch: Dict, p_b: torch.Tensor, no_bins: int, eps: float):
+def all_atom_experimentally_resolved_loss(
+    batch: Dict, p_b: torch.Tensor, no_bins: int, eps: float
+):
     """
     Implements AF3 Equation 14.
 
@@ -416,22 +598,14 @@ def resolved_loss(batch: Dict, p_b: torch.Tensor, no_bins: int, eps: float):
 def confidence_loss(
     batch: Dict,
     output: Dict,
-    no_bins_plddt: int,
-    bin_min_plddt: float,
-    bin_max_plddt: float,
-    angle_threshold: float,
-    no_bins_pae: int,
-    bin_min_pae: float,
-    bin_max_pae: float,
-    no_bins_pde: int,
-    bin_min_pde: float,
-    bin_max_pde: float,
-    no_bins_resolved: int,
-    alpha_pae: float,
+    plddt: Dict,
+    pde: Dict,
+    experimentally_resolved: Dict,
+    pae: Dict,
     eps: float,
     inf: float,
     **kwargs,
-):
+) -> [torch.Tensor, Dict]:
     """
     Compute loss on confidence module.
 
@@ -440,45 +614,43 @@ def confidence_loss(
             Feature dictionary
         output:
             Output dictionary
-        no_bins_plddt:
-            Number of bins for pLDDT
-        bin_min_plddt:
-            Minimum bin value for pLDDT
-        bin_max_plddt:
-            Maximum bin value for pLDDT
-        angle_threshold:
-            Angle threshold for filtering co-linear atoms
-        no_bins_pae:
-            Number of bins for PAE
-        bin_min_pae:
-            Minimum bin value for PAE
-        bin_max_pae:
-            Maximum bin value for PAE
-        no_bins_pde
-            Number of bins for PDE
-        bin_min_pde:
-            Minimum bin value for PDE
-        bin_max_pde:
-            Maximum bin value for PDE
-        no_bins_resolved:
-            Number of bins for predictions on whether the
-            atom is resolved in the ground truth
-        alpha_pae:
-            Weight on PAE loss
+        plddt:
+            Dict for pLDDT loss containing the following:
+                "no_bins": Number of bins
+                "bin_min": Minimum bin value
+                "bin_max": Maximum bin value
+        pde:
+            Dict for PDE loss containing the following:
+                "no_bins": Number of bins
+                "bin_min": Minimum bin value
+                "bin_max": Maximum bin value
+        experimentally_resolved:
+            Dict for experimentally resolved loss containing the following:
+                "no_bins": Number of bins
+        pae:
+            Dict for PAE loss containing the following:
+                "angle_threshold": Angle threshold for filtering co-linear atoms
+                "no_bins": Number of bins
+                "bin_min": Minimum bin value
+                "bin_max": Maximum bin value
+                "alpha_pae": Weight on PAE loss
         eps:
             Small float for numerical stability
         inf:
             Large float for numerical stability
     Returns:
-        Loss on confidence module
+        mean_loss:
+            Loss on confidence module
+        loss_breakdown:
+            Dict of individual component losses
     """
-    l_plddt = plddt_loss(
+    l_plddt = all_atom_plddt_loss(
         batch=batch,
         x=output["x_pred"],
         p_b=output["plddt"],
-        no_bins=no_bins_plddt,
-        bin_min=bin_min_plddt,
-        bin_max=bin_max_plddt,
+        no_bins=plddt["no_bins"],
+        bin_min=plddt["bin_min"],
+        bin_max=plddt["bin_max"],
         eps=eps,
     )
 
@@ -486,33 +658,49 @@ def confidence_loss(
         batch=batch,
         x=output["x_pred"],
         p_b=output["pde"],
-        no_bins=no_bins_pde,
-        bin_min=bin_min_pde,
-        bin_max=bin_max_pde,
+        no_bins=pde["no_bins"],
+        bin_min=pde["bin_min"],
+        bin_max=pde["bin_max"],
         eps=eps,
     )
 
-    l_resolved = resolved_loss(
+    l_resolved = all_atom_experimentally_resolved_loss(
         batch=batch,
         p_b=output["resolved"],
-        no_bins=no_bins_resolved,
+        no_bins=experimentally_resolved["no_bins"],
         eps=eps,
     )
 
+    loss_breakdown = {
+        "plddt_loss": l_plddt,
+        "pde_loss": l_pde,
+        "experimentally_resolved_loss": l_resolved,
+    }
+
     l = l_plddt + l_pde + l_resolved
+
+    alpha_pae = pae["alpha_pae"]
     if alpha_pae > 0:
         l_pae = pae_loss(
             batch=batch,
             x=output["x_pred"],
             p_b=output["pae"],
-            angle_threshold=angle_threshold,
-            no_bins=no_bins_pae,
-            bin_min=bin_min_pae,
-            bin_max=bin_max_pae,
+            angle_threshold=pae["angle_threshold"],
+            no_bins=pae["no_bins"],
+            bin_min=pde["bin_min"],
+            bin_max=pde["bin_max"],
             eps=eps,
             inf=inf,
         )
 
+        loss_breakdown["pae_loss"] = l_pae
+
         l = l + alpha_pae * l_pae
 
-    return torch.mean(l)
+    loss_breakdown = {
+        k: torch.mean(v).detach().clone() for k, v in loss_breakdown.items()
+    }
+
+    mean_loss = torch.mean(l)
+
+    return mean_loss, loss_breakdown

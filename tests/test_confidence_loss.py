@@ -4,11 +4,11 @@ import torch
 import torch.nn.functional as F
 
 from openfold3.core.loss.confidence import (
+    all_atom_experimentally_resolved_loss,
+    all_atom_plddt_loss,
     confidence_loss,
     pae_loss,
     pde_loss,
-    plddt_loss,
-    resolved_loss,
 )
 from openfold3.model_implementations.af3_all_atom.config import config
 
@@ -66,7 +66,7 @@ class TestConfidenceLoss(unittest.TestCase):
             dim=-1,
         )
 
-        l_plddt = plddt_loss(
+        l_plddt = all_atom_plddt_loss(
             batch=batch,
             x=x,
             p_b=p_b,
@@ -153,7 +153,9 @@ class TestConfidenceLoss(unittest.TestCase):
 
         p_b = torch.ones((batch_size, n_atom, no_bins)) * 0.5
 
-        l_resolved = resolved_loss(batch=batch, p_b=p_b, no_bins=no_bins, eps=eps)
+        l_resolved = all_atom_experimentally_resolved_loss(
+            batch=batch, p_b=p_b, no_bins=no_bins, eps=eps
+        )
 
         self.assertTrue(l_resolved.shape == (batch_size,))
 
@@ -162,10 +164,10 @@ class TestConfidenceLoss(unittest.TestCase):
         batch_size, n_token = batch["token_mask"].shape
         n_atom = batch["gt_atom_mask"].shape[1]
 
-        no_bins_plddt = config.loss.confidence.no_bins_plddt
-        no_bins_pae = config.loss.confidence.no_bins_pae
-        no_bins_pde = config.loss.confidence.no_bins_pde
-        no_bins_resolved = config.loss.confidence.no_bins_resolved
+        no_bins_plddt = config.loss.confidence.plddt.no_bins
+        no_bins_pae = config.loss.confidence.pae.no_bins
+        no_bins_pde = config.loss.confidence.pde.no_bins
+        no_bins_resolved = config.loss.confidence.experimentally_resolved.no_bins
 
         output = {
             "x_pred": torch.randn_like(batch["gt_atom_positions"]),
@@ -193,7 +195,7 @@ class TestConfidenceLoss(unittest.TestCase):
             "resolved": torch.ones((batch_size, n_atom, no_bins_resolved)) * 0.5,
         }
 
-        l_confidence = confidence_loss(
+        l_confidence, _ = confidence_loss(
             batch=batch, output=output, **config.loss.confidence
         )
 

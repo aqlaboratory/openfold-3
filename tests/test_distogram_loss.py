@@ -3,7 +3,7 @@ import unittest
 import torch
 import torch.nn.functional as F
 
-from openfold3.core.loss.distogram import distogram_loss
+from openfold3.core.loss.distogram import all_atom_distogram_loss
 from openfold3.model_implementations.af3_all_atom.config import config
 
 
@@ -54,7 +54,7 @@ class TestDistogramLoss(unittest.TestCase):
             dim=-1,
         )
 
-        l = distogram_loss(batch=batch, p_b=p_b, **config.loss.distogram)
+        l = all_atom_distogram_loss(batch=batch, p_b=p_b, **config.loss.distogram)
 
         self.assertTrue(l.shape == ())
 

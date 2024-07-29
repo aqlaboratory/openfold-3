@@ -179,7 +179,7 @@ class TestDiffusionLoss(unittest.TestCase):
 
         t = sigma_data * torch.exp(-1.2 + 1.5 * torch.randn(batch_size))
 
-        loss = diffusion_loss(
+        loss, _ = diffusion_loss(
             batch=batch,
             x=x,
             t=t,
