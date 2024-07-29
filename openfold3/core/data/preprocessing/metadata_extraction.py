@@ -21,7 +21,7 @@ def get_pdb_id(cif_file: CIFFile, format: Literal["upper", "lower"] = "lower") -
         The PDB ID of the structure.
     """
     (pdb_id,) = cif_file.keys()
-    
+
     if format == "upper":
         return pdb_id.upper()
     elif format == "lower":
