@@ -302,7 +302,7 @@ def get_entity_to_three_letter_codes_dict(cif_data: CIFBlock) -> dict[int, list[
 def get_chain_to_three_letter_codes_dict(
     atom_array: struc.AtomArray, cif_data: CIFBlock
 ) -> dict[int, list[str]]:
-    """Get a dictionary mapping renumbered chain IDs to their three-letter-code sequences.
+    """Get dictionary mapping renumbered chain IDs to their three-letter-code sequences.
 
     Args:
         atom_array:
