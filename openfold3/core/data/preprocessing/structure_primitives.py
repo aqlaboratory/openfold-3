@@ -47,13 +47,28 @@ def assign_atom_indices(atom_array: AtomArray) -> None:
     """Assigns atom indices to the AtomArray
 
     Atom indices are a simple range from 0 to the number of atoms in the AtomArray which
-    is used as a convenience feature.
+    is used as a convenience feature. They are stored in the "_atom_idx" field of the
+    AtomArray and meant to be used only temporarily within functions. Should be combined
+    with `remove_atom_indices`.
 
     Args:
         atom_array:
             AtomArray containing the structure to assign atom indices to.
     """
-    atom_array.set_annotation("atom_idx", range(len(atom_array)))
+    atom_array.set_annotation("_atom_idx", range(len(atom_array)))
+
+
+def remove_atom_indices(atom_array: AtomArray) -> None:
+    """Removes atom indices from the AtomArray
+
+    Deletes the "_atom_idx" field from the AtomArray. This is meant to be used after
+    temporary atom indices are no longer needed. Also see `assign_atom_indices`.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to remove atom indices from.
+    """
+    atom_array.del_annotation("_atom_idx")
 
 
 def assign_entity_ids(atom_array: AtomArray) -> None:

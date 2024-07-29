@@ -1,5 +1,3 @@
-from functools import wraps
-
 import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
@@ -10,34 +8,9 @@ from .metadata_extraction import get_experimental_method
 from .structure_primitives import (
     assign_atom_indices,
     get_interface_token_center_atoms,
-    pairwise_chain_dist_iter,
+    remove_atom_indices,
 )
 from .tables import CRYSTALLIZATION_AIDS
-from .tokenization import tokenize_atom_array
-
-
-def renumber_atom_idx_post_cleanup(atom_removal_func):
-    """Decorator to renumber atom indices after a cleanup function
-
-    Args:
-        atom_removal_func:
-            Function that removes atoms from an AtomArray
-
-    Returns:
-        Wrapper function that renumbers atom indices after the cleanup function
-    """
-
-    @wraps(atom_removal_func)
-    def wrapper(atom_array, *args, **kwargs):
-        # Process atom_array with the cleanup function
-        atom_array = atom_removal_func(atom_array, *args, **kwargs)
-
-        # Ensure that the atom indices are renumbered before returning
-        assign_atom_indices(atom_array)
-
-        return atom_array
-
-    return wrapper
 
 
 def convert_MSE_to_MET(atom_array: AtomArray) -> None:
@@ -93,7 +66,6 @@ def fix_arginine_naming(atom_array: AtomArray) -> None:
         fix_single_arginine_naming(arginine)
 
 
-@renumber_atom_idx_post_cleanup
 def remove_waters(atom_array: AtomArray) -> AtomArray:
     """Removes water molecules from the AtomArray
 
@@ -111,7 +83,6 @@ def remove_waters(atom_array: AtomArray) -> AtomArray:
     return atom_array
 
 
-@renumber_atom_idx_post_cleanup
 def remove_crystallization_aids(
     atom_array: AtomArray, ccd_codes=CRYSTALLIZATION_AIDS
 ) -> AtomArray:
@@ -135,7 +106,6 @@ def remove_crystallization_aids(
     return atom_array
 
 
-@renumber_atom_idx_post_cleanup
 def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
     """Removes all hydrogen atoms from the AtomArray
 
@@ -150,7 +120,6 @@ def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
     return atom_array
 
 
-@renumber_atom_idx_post_cleanup
 def remove_small_polymers(atom_array: AtomArray, max_residues: int = 3) -> AtomArray:
     """Removes small polymer chains from the AtomArray
 
@@ -194,7 +163,6 @@ def remove_small_polymers(atom_array: AtomArray, max_residues: int = 3) -> AtomA
     return atom_array
 
 
-@renumber_atom_idx_post_cleanup
 def remove_fully_unknown_polymers(atom_array: AtomArray) -> AtomArray:
     """Removes polymer chains with all unknown residues from the AtomArray
 
@@ -228,7 +196,6 @@ def remove_fully_unknown_polymers(atom_array: AtomArray) -> AtomArray:
     return atom_array_filtered
 
 
-@renumber_atom_idx_post_cleanup
 def remove_chain_and_attached_ligands(
     atom_array: AtomArray, chain_id: int
 ) -> AtomArray:

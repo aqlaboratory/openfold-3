@@ -7,7 +7,6 @@ from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 
 from .structure_primitives import (
-    assign_atom_indices,
     assign_entity_ids,
     assign_molecule_type_ids,
     assign_renumbered_chain_ids,
@@ -35,7 +34,6 @@ def parse_mmcif_bioassembly(
     This function also creates the following additional annotations in the AtomArray:
         - occupancy: inferred from atom_site.occupancy
         - entity_id: inferred from atom_site.label_entity_id
-        - atom_idx: numerical atom indices starting from 0
         - molecule_type_id: numerical code for the molecule type (see tables.py)
         - chain_id_renumbered: numerical chain IDs starting from 0 to circumvent
           duplicate chain IDs after bioassembly expansion. This is used in place of the
@@ -99,9 +97,6 @@ def parse_mmcif_bioassembly(
 
     # Add entity IDs
     assign_entity_ids(atom_array)
-
-    # Add atom indices for convenience
-    assign_atom_indices(atom_array)
 
     # Add molecule types for convenience
     assign_molecule_type_ids(atom_array)
