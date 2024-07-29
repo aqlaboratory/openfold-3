@@ -1032,7 +1032,7 @@ class TestLoss(unittest.TestCase):
 
     @compare_utils.skip_unless_alphafold_installed()
     @unittest.skipIf(
-        not consts.is_multimer and "ptm" not in consts.model,
+        not consts.is_multimer and "ptm" not in consts.model_preset,
         "Not enabled for non-ptm models.",
     )
     def test_tm_loss_compare(self):

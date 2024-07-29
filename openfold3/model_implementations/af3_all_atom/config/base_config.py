@@ -1,6 +1,8 @@
 import ml_collections as mlc
 
-import openfold3.model_implementations.af3_all_atom.config.linear_init_config as lin_init
+from openfold3.model_implementations.af3_all_atom.config import (
+    linear_init_config as lin_init,
+)
 from openfold3.model_implementations.af3_all_atom.config.features import feature_dict
 
 NAME = "af3_all_atom"

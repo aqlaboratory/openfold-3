@@ -7,13 +7,8 @@ import unittest
 import numpy as np
 import torch
 
-import openfold3.model_implementations.af2_monomer.base_config as af2_config
-import openfold3.model_implementations.af2_multimer.config as multimer_config
 from openfold3.core.utils.import_weights import import_jax_weights_
-from openfold3.model_implementations.af2_monomer.model import AlphaFold
-from openfold3.model_implementations.af2_multimer.model import (
-    AlphaFold as AlphaFoldMultimer,
-)
+from openfold3.model_implementations import MODEL_REGISTRY, registry
 from tests.config import consts
 
 # Give JAX some GPU memory discipline
@@ -75,14 +70,14 @@ def import_alphafold():
 
 
 def get_alphafold_config():
-    config = alphafold.model.config.model_config(consts.model)  # noqa
+    config = alphafold.model.config.model_config(consts.model_preset)  # noqa
     config.model.global_config.deterministic = True
     return config
 
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 _param_path = os.path.join(
-    dir_path, "..", f"openfold3/resources/params/params_{consts.model}.npz"
+    dir_path, "..", f"openfold3/resources/params/params_{consts.model_preset}.npz"
 )
 _model = None
 
@@ -90,13 +85,9 @@ _model = None
 def get_global_pretrained_openfold():
     global _model
     if _model is None:
-        model_config = (
-            af2_config.model_config
-            if not consts.is_multimer
-            else multimer_config.model_config
-        )
-        model_type = AlphaFold if not consts.is_multimer else AlphaFoldMultimer
-        _model = model_type(model_config(consts.model))
+        model_config = registry.make_config_with_preset(
+            consts.model_name, consts.model_preset)
+        _model = MODEL_REGISTRY[consts.model_name](model_config)
         _model = _model.eval()
         if not os.path.exists(_param_path):
             raise FileNotFoundError(

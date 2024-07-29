@@ -1,4 +1,5 @@
 # TODO add license
+import copy
 import functools
 import logging
 from typing import Optional
@@ -13,7 +14,7 @@ register_model = functools.partial(register_model_base, model_registry=MODEL_REG
 
 def make_config_with_preset(model_name: str, preset: Optional[str] = None):
     """Retrieves config matching preset for one of the models."""
-    base_config = MODEL_REGISTRY[model_name].base_config
+    base_config = copy.deepcopy(MODEL_REGISTRY[model_name].base_config)
     if preset is None:
         logging.info(f"Using default training configs for {model_name}")
         return base_config

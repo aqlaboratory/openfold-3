@@ -20,15 +20,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from openfold3.model_implementations.config_compiler import model_config
-import openfold3.model_implementations.soloseq.config as soloseq_config
 import tests.compare_utils as compare_utils
 from openfold3.core.data import data_transforms
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations.af2_monomer.model import AlphaFold
-from openfold3.model_implementations.af2_multimer.model import (
-    AlphaFold as AlphaFoldMultimer,
-)
+from openfold3.model_implementations import MODEL_REGISTRY, registry
 from tests.config import consts
 from tests.data_utils import (
     random_asym_ids,
@@ -65,16 +60,13 @@ class TestModel(unittest.TestCase):
         n_res = consts.n_res
         n_extra_seq = consts.n_extra
 
-        if consts.is_multimer:
-            c = model_config("af2_multimer", consts.model)
-        else:
-            c = model_config("af2_monomer", consts.model)
+        # TODO: Refactor using parametrization
+        c = registry.make_config_with_preset(consts.model_name, consts.model_preset)
         c.model.evoformer_stack.no_blocks = 4  # no need to go overboard here
         c.model.evoformer_stack.blocks_per_ckpt = None  # don't want to set up
         # deepspeed for this test
 
-        model_type = AlphaFold if not consts.is_multimer else AlphaFoldMultimer
-        model = model_type(c).cuda()
+        model = MODEL_REGISTRY[consts.model_name](c).cuda()
         model.eval()
 
         batch = {}
@@ -119,6 +111,8 @@ class TestModel(unittest.TestCase):
     @compare_utils.skip_unless_cuda_available()
     @unittest.skip("Soloseq unsupported")
     def test_dry_run_seqemb_mode(self):
+        import openfold3.model_implementations.soloseq.config as soloseq_config
+        from openfold3.model_implementations.soloseq.model import AlphaFold
         n_seq = 1
         n_templ = consts.n_templ
         n_res = consts.n_res
