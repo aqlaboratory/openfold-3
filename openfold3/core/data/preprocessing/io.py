@@ -48,7 +48,8 @@ def parse_mmcif_bioassembly(
         include_bonds:
             Whether to infer bond information. Defaults to True.
         extra_fields:
-            Extra fields to include in the AtomArray. Defaults to None.
+            Extra fields to include in the AtomArray. Defaults to None. Fields
+            "entity_id" and "occupancy" are always included.
 
     Returns:
         A NamedTuple containing the parsed CIF file and the AtomArray.
@@ -64,6 +65,7 @@ def parse_mmcif_bioassembly(
 
     (pdb_id,) = cif_file.keys()  # Single-element unpacking
 
+    # Always include these fields
     extra_fields_preset = ["label_entity_id", "occupancy"]
 
     if extra_fields:
