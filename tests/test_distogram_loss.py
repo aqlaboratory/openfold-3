@@ -46,15 +46,9 @@ class TestDistogramLoss(unittest.TestCase):
         batch_size, n_token = batch["token_mask"].shape
         no_bins = config.loss.distogram.no_bins
 
-        p_b = torch.concat(
-            [
-                torch.ones((batch_size, n_token, n_token, 1)),
-                torch.zeros((batch_size, n_token, n_token, no_bins - 1)),
-            ],
-            dim=-1,
-        )
+        logits = torch.randn((batch_size, n_token, n_token, no_bins))
 
-        l = all_atom_distogram_loss(batch=batch, p_b=p_b, **config.loss.distogram)
+        l = all_atom_distogram_loss(batch=batch, logits=logits, **config.loss.distogram)
 
         self.assertTrue(l.shape == ())
 

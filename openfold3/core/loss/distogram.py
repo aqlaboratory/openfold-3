@@ -74,7 +74,7 @@ def cbeta_distogram_loss(
 
 def all_atom_distogram_loss(
     batch: Dict,
-    p_b: torch.Tensor,
+    logits: torch.Tensor,
     no_bins: int,
     bin_min: float,
     bin_max: float,
@@ -87,8 +87,8 @@ def all_atom_distogram_loss(
     Args:
         batch:
             Feature dictionary
-        p_b:
-            [*, N_token, no_bins] Predicted probabilities
+        logits:
+            [*, N_token, no_bins] Predicted logits
         no_bins:
             Number of bins
         bin_min:
@@ -116,10 +116,13 @@ def all_atom_distogram_loss(
     v_bins = bin_min + torch.arange(no_bins, device=d.device) * bin_size
     d_b = binned_one_hot(d, v_bins)
 
-    # Compute distogram loss
     pair_mask = rep_atom_mask[..., None] * rep_atom_mask[..., None, :]
-    loss = -torch.sum(
-        torch.sum(d_b * torch.log(p_b + eps), dim=-1) * pair_mask, dim=(-1, -2)
-    ) / (torch.sum(pair_mask, dim=(-1, -2)) + eps)
+
+    errors = softmax_cross_entropy(logits, d_b)
+
+    # Compute distogram loss
+    loss = torch.sum(errors * pair_mask, dim=(-1, -2)) / (
+        torch.sum(pair_mask, dim=(-1, -2)) + eps
+    )
 
     return torch.mean(loss)

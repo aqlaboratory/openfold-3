@@ -195,7 +195,7 @@ class AlphaFold3Loss(nn.Module):
         losses.update(l_diffusion_breakdown)
 
         l_distogram = all_atom_distogram_loss(
-            batch=batch, p_b=output["p_distogram"], **self.config.distogram
+            batch=batch, logits=output["p_distogram"], **self.config.distogram
         )
         losses["distogram_loss"] = l_distogram.detach().clone()
 
