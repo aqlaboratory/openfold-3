@@ -167,11 +167,22 @@ class AlphaFold3Loss(nn.Module):
 
         losses = {}
 
-        l_confidence, l_confidence_breakdown = confidence_loss(
-            batch=batch, output=output, **self.config.confidence
+        resolution = batch["resolution"].item()
+        is_distillation = batch["is_distillation"].item()
+
+        apply_confidence_loss = all(
+            [
+                resolution >= self.config.min_resolution,
+                resolution <= self.config.max_resolution,
+                not is_distillation,
+            ]
         )
 
-        losses.update(l_confidence_breakdown)
+        if apply_confidence_loss:
+            l_confidence, l_confidence_breakdown = confidence_loss(
+                batch=batch, output=output, **self.config.confidence
+            )
+            losses.update(l_confidence_breakdown)
 
         l_diffusion, l_diffusion_breakdown = diffusion_loss(
             batch=batch,
@@ -181,13 +192,11 @@ class AlphaFold3Loss(nn.Module):
             t=output["noise_level"],
             **self.config.diffusion,
         )
-
         losses.update(l_diffusion_breakdown)
 
         l_distogram = all_atom_distogram_loss(
             batch=batch, p_b=output["p_distogram"], **self.config.distogram
         )
-
         losses["distogram_loss"] = l_distogram.detach().clone()
 
         cum_loss = (

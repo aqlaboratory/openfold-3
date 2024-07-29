@@ -79,6 +79,8 @@ config = mlc.ConfigDict(
                     "num_main_msa_seqs": [],
                     "gt_atom_positions": [NUM_ATOMS, 3],
                     "gt_atom_mask": [NUM_ATOMS],
+                    "resolution": [],
+                    "is_distillation": [],
                 }
             }
         },
@@ -358,6 +360,11 @@ config = mlc.ConfigDict(
             },
         },
         "loss": {
+            "alpha_confidence": 1e-4,
+            "alpha_diffusion": 4.0,
+            "alpha_distogram": 3e-2,
+            "min_resolution": 0.1,
+            "max_resolution": 4.0,
             "confidence": {
                 "plddt": {
                     "no_bins": 50,

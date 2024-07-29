@@ -17,6 +17,7 @@
 from typing import Dict, Tuple
 
 import torch
+import torch.nn.functional as F
 
 from openfold3.core.loss.loss_utils import sigmoid_cross_entropy, softmax_cross_entropy
 from openfold3.core.metrics.validation import lddt
@@ -62,7 +63,7 @@ def ca_plddt_loss(
     score = score.detach()
     bin_index = torch.floor(score * no_bins).long()
     bin_index = torch.clamp(bin_index, max=(no_bins - 1))
-    lddt_ca_one_hot = torch.nn.functional.one_hot(bin_index, num_classes=no_bins)
+    lddt_ca_one_hot = F.one_hot(bin_index, num_classes=no_bins)
 
     errors = softmax_cross_entropy(logits, lddt_ca_one_hot)
     all_atom_mask = all_atom_mask.squeeze(-1)
@@ -111,9 +112,7 @@ def masked_msa_loss(logits, true_msa, bert_mask, num_classes, eps=1e-8, **kwargs
     Returns:
         Masked MSA loss
     """
-    errors = softmax_cross_entropy(
-        logits, torch.nn.functional.one_hot(true_msa, num_classes=num_classes)
-    )
+    errors = softmax_cross_entropy(logits, F.one_hot(true_msa, num_classes=num_classes))
 
     # FP16-friendly averaging. Equivalent to:
     # loss = (
@@ -165,9 +164,7 @@ def tm_loss(
     boundaries = boundaries**2
     true_bins = torch.sum(sq_diff[..., None] > boundaries, dim=-1)
 
-    errors = softmax_cross_entropy(
-        logits, torch.nn.functional.one_hot(true_bins, no_bins)
-    )
+    errors = softmax_cross_entropy(logits, F.one_hot(true_bins, no_bins))
 
     square_mask = backbone_rigid_mask[..., None] * backbone_rigid_mask[..., None, :]
 
@@ -277,7 +274,7 @@ def compute_alignment_error(
 def all_atom_plddt_loss(
     batch: Dict,
     x: torch.Tensor,
-    p_b: torch.Tensor,
+    logits: torch.Tensor,
     no_bins: int,
     bin_min: float,
     bin_max: float,
@@ -291,8 +288,8 @@ def all_atom_plddt_loss(
             Feature dictionary
         x:
             [*, N_atom, 3] Predicted atom positions
-        p_b:
-            [*, N_atom, no_bins] Predicted probabilities
+        logits:
+            [*, N_atom, no_bins] Predicted logits
         no_bins:
             Number of bins
         bin_min:
@@ -391,10 +388,12 @@ def all_atom_plddt_loss(
     v_bins = bin_min + torch.arange(no_bins, device=x.device) * bin_size
     lddt_b = binned_one_hot(lddt, v_bins)
 
+    errors = softmax_cross_entropy(logits, lddt_b)
+
     # Compute loss on plddt
-    l_plddt = -torch.sum(
-        torch.sum(lddt_b * torch.log(p_b + eps), dim=-1) * batch["gt_atom_mask"], dim=-1
-    ) / (torch.sum(batch["gt_atom_mask"], dim=-1) + eps)
+    l_plddt = torch.sum(errors * batch["gt_atom_mask"], dim=-1) / (
+        torch.sum(batch["gt_atom_mask"], dim=-1) + eps
+    )
 
     return l_plddt
 
@@ -402,7 +401,7 @@ def all_atom_plddt_loss(
 def pae_loss(
     batch: Dict,
     x: torch.Tensor,
-    p_b: torch.Tensor,
+    logits: torch.Tensor,
     angle_threshold: float,
     no_bins: int,
     bin_min: float,
@@ -418,8 +417,8 @@ def pae_loss(
             Feature dictionary
         x:
             [*, N_atom, 3] Predicted atom positions
-        p_b:
-            [*, N_token, N_token, no_bins] Predicted probabilities
+        logits:
+            [*, N_token, N_token, no_bins] Predicted logits
         angle_threshold:
             Angle threshold for filtering co-linear atoms
         no_bins:
@@ -473,7 +472,7 @@ def pae_loss(
     # Compute binned alignment error
     # [*, N_token, N_token, no_bins]
     bin_size = (bin_max - bin_min) / no_bins
-    v_bins = bin_min + torch.arange(no_bins, device=p_b.device) * bin_size
+    v_bins = bin_min + torch.arange(no_bins, device=logits.device) * bin_size
     e_b = binned_one_hot(e, v_bins)
 
     # Compute predicted alignment error
@@ -481,10 +480,12 @@ def pae_loss(
         valid_frame_mask_gt[..., None] * rep_atom_mask_gt[..., None, :]
     )
 
+    errors = softmax_cross_entropy(logits, e_b)
+
     # Compute loss on pae
-    l_pae = -torch.sum(
-        torch.sum(e_b * torch.log(p_b + eps), dim=-1) * pair_mask, dim=(-1, -2)
-    ) / (torch.sum(pair_mask, dim=(-1, -2)) + eps)
+    l_pae = torch.sum(errors * pair_mask, dim=(-1, -2)) / (
+        torch.sum(pair_mask, dim=(-1, -2)) + eps
+    )
 
     return l_pae
 
@@ -492,7 +493,7 @@ def pae_loss(
 def pde_loss(
     batch: Dict,
     x: torch.Tensor,
-    p_b: torch.Tensor,
+    logits: torch.Tensor,
     no_bins: int,
     bin_min: float,
     bin_max: float,
@@ -506,8 +507,8 @@ def pde_loss(
             Feature dictionary
         x:
             [*, N_atom, 3] Atom positions
-        p_b:
-            [*, N_token, N_token, no_bins] Predicted probabilites for errors in absolute
+        logits:
+            [*, N_token, N_token, no_bins] Predicted logits for errors in absolute
             distances (projected into bins)
         no_bins:
             Number of distance bins
@@ -548,17 +549,20 @@ def pde_loss(
     v_bins = bin_min + torch.arange(no_bins, device=e.device) * bin_size
     e_b = binned_one_hot(e, v_bins)
 
-    # Compute loss on predicted distance error
     pair_mask = rep_atom_mask_gt[..., None] * rep_atom_mask_gt[..., None, :]
-    l_pde = -torch.sum(
-        torch.sum(e_b * torch.log(p_b + eps), dim=-1) * pair_mask, dim=(-1, -2)
-    ) / (torch.sum(pair_mask, dim=(-1, -2)) + eps)
+
+    errors = softmax_cross_entropy(logits, e_b)
+
+    # Compute loss on predicted distance error
+    l_pde = torch.sum(errors * pair_mask, dim=(-1, -2)) / (
+        torch.sum(pair_mask, dim=(-1, -2)) + eps
+    )
 
     return l_pde
 
 
 def all_atom_experimentally_resolved_loss(
-    batch: Dict, p_b: torch.Tensor, no_bins: int, eps: float
+    batch: Dict, logits: torch.Tensor, no_bins: int, eps: float
 ):
     """
     Implements AF3 Equation 14.
@@ -566,8 +570,8 @@ def all_atom_experimentally_resolved_loss(
     Args:
         batch:
             Feature dictionary
-        p_b:
-            [*, N_atom, no_bins] Predicted probabilites on whether the atom is
+        logits:
+            [*, N_atom, no_bins] Predicted logits for whether the atom is
             resolved in the ground truth
         no_bins:
             Number of bins
@@ -579,8 +583,7 @@ def all_atom_experimentally_resolved_loss(
             in the ground truth
     """
     # Compute binned prediction target
-    v_bins = torch.arange(no_bins, device=p_b.device)
-    y_b = binned_one_hot(batch["gt_atom_mask"], v_bins)
+    y_b = F.one_hot(batch["gt_atom_mask"].long(), num_classes=no_bins)
 
     # Compute loss on experimentally resolved prediction
     atom_mask = broadcast_token_feat_to_atoms(
@@ -588,9 +591,12 @@ def all_atom_experimentally_resolved_loss(
         num_atoms_per_token=batch["num_atoms_per_token"],
         token_feat=batch["token_mask"],
     )
-    l_resolved = -torch.sum(
-        torch.sum(y_b * torch.log(p_b + eps), dim=-1) * atom_mask, dim=-1
-    ) / (torch.sum(atom_mask, dim=-1) + eps)
+
+    errors = softmax_cross_entropy(logits, y_b)
+
+    l_resolved = torch.sum(errors * atom_mask, dim=-1) / (
+        torch.sum(atom_mask, dim=-1) + eps
+    )
 
     return l_resolved
 
@@ -647,7 +653,7 @@ def confidence_loss(
     l_plddt = all_atom_plddt_loss(
         batch=batch,
         x=output["x_pred"],
-        p_b=output["plddt"],
+        logits=output["plddt"],
         no_bins=plddt["no_bins"],
         bin_min=plddt["bin_min"],
         bin_max=plddt["bin_max"],
@@ -657,7 +663,7 @@ def confidence_loss(
     l_pde = pde_loss(
         batch=batch,
         x=output["x_pred"],
-        p_b=output["pde"],
+        logits=output["pde"],
         no_bins=pde["no_bins"],
         bin_min=pde["bin_min"],
         bin_max=pde["bin_max"],
@@ -666,7 +672,7 @@ def confidence_loss(
 
     l_resolved = all_atom_experimentally_resolved_loss(
         batch=batch,
-        p_b=output["resolved"],
+        logits=output["resolved"],
         no_bins=experimentally_resolved["no_bins"],
         eps=eps,
     )
@@ -684,7 +690,7 @@ def confidence_loss(
         l_pae = pae_loss(
             batch=batch,
             x=output["x_pred"],
-            p_b=output["pae"],
+            logits=output["pae"],
             angle_threshold=pae["angle_threshold"],
             no_bins=pae["no_bins"],
             bin_min=pde["bin_min"],

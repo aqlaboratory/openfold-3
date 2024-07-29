@@ -58,18 +58,12 @@ class TestConfidenceLoss(unittest.TestCase):
 
         x = torch.randn_like(batch["gt_atom_positions"])
 
-        p_b = torch.concat(
-            [
-                torch.zeros((batch_size, n_atom, no_bins - 1)),
-                torch.ones((batch_size, n_atom, 1)),
-            ],
-            dim=-1,
-        )
+        logits = torch.randn((batch_size, n_atom, no_bins))
 
         l_plddt = all_atom_plddt_loss(
             batch=batch,
             x=x,
-            p_b=p_b,
+            logits=logits,
             no_bins=no_bins,
             bin_min=bin_min,
             bin_max=bin_max,
@@ -91,18 +85,12 @@ class TestConfidenceLoss(unittest.TestCase):
 
         x = torch.randn_like(batch["gt_atom_positions"])
 
-        p_b = torch.concat(
-            [
-                torch.ones((batch_size, n_token, n_token, 1)),
-                torch.zeros((batch_size, n_token, n_token, no_bins - 1)),
-            ],
-            dim=-1,
-        )
+        logits = torch.randn((batch_size, n_token, n_token, no_bins))
 
         l_pae = pae_loss(
             batch=batch,
             x=x,
-            p_b=p_b,
+            logits=logits,
             angle_threshold=angle_threshold,
             no_bins=no_bins,
             bin_min=bin_min,
@@ -124,18 +112,12 @@ class TestConfidenceLoss(unittest.TestCase):
 
         x = torch.randn_like(batch["gt_atom_positions"])
 
-        p_b = torch.concat(
-            [
-                torch.ones((batch_size, n_token, n_token, 1)),
-                torch.zeros((batch_size, n_token, n_token, no_bins - 1)),
-            ],
-            dim=-1,
-        )
+        logits = torch.randn((batch_size, n_token, n_token, no_bins))
 
         l_pde = pde_loss(
             batch=batch,
             x=x,
-            p_b=p_b,
+            logits=logits,
             no_bins=no_bins,
             bin_min=bin_min,
             bin_max=bin_max,
@@ -151,10 +133,10 @@ class TestConfidenceLoss(unittest.TestCase):
         batch = self.setup_features()
         batch_size, n_atom = batch["gt_atom_mask"].shape
 
-        p_b = torch.ones((batch_size, n_atom, no_bins)) * 0.5
+        logits = torch.randn((batch_size, n_atom, no_bins))
 
         l_resolved = all_atom_experimentally_resolved_loss(
-            batch=batch, p_b=p_b, no_bins=no_bins, eps=eps
+            batch=batch, logits=logits, no_bins=no_bins, eps=eps
         )
 
         self.assertTrue(l_resolved.shape == (batch_size,))
@@ -171,28 +153,10 @@ class TestConfidenceLoss(unittest.TestCase):
 
         output = {
             "x_pred": torch.randn_like(batch["gt_atom_positions"]),
-            "plddt": torch.concat(
-                [
-                    torch.zeros((batch_size, n_atom, no_bins_plddt - 1)),
-                    torch.ones((batch_size, n_atom, 1)),
-                ],
-                dim=-1,
-            ),
-            "pae": torch.concat(
-                [
-                    torch.ones((batch_size, n_token, n_token, 1)),
-                    torch.zeros((batch_size, n_token, n_token, no_bins_pae - 1)),
-                ],
-                dim=-1,
-            ),
-            "pde": torch.concat(
-                [
-                    torch.ones((batch_size, n_token, n_token, 1)),
-                    torch.zeros((batch_size, n_token, n_token, no_bins_pde - 1)),
-                ],
-                dim=-1,
-            ),
-            "resolved": torch.ones((batch_size, n_atom, no_bins_resolved)) * 0.5,
+            "plddt": torch.randn((batch_size, n_atom, no_bins_plddt)),
+            "pae": torch.randn((batch_size, n_token, n_token, no_bins_pae)),
+            "pde": torch.randn((batch_size, n_token, n_token, no_bins_pde)),
+            "resolved": torch.randn((batch_size, n_atom, no_bins_resolved)),
         }
 
         l_confidence, _ = confidence_loss(
