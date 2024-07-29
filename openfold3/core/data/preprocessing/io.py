@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 from typing import Literal, NamedTuple, TypedDict
 
+import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 
@@ -205,3 +206,13 @@ def write_annotated_chains_fasta(
 
     return output_path
 
+
+def encode_numpy_types(obj: object):
+    """An encoding function for NumPy types (useful for JSON serialisation)"""
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
