@@ -347,9 +347,9 @@ def build_unresolved_polymer_segment(
         default_annotations:
             Any annotations and custom annotations to be added to the atoms in the
             output AtomArray. All annotations are kept constant for all atoms in the
-            segment except for res_id and atom_idx which are incrementally increased
-            appropriately (with the first atom/residue index matching the one in the
-            default annotations), and occupancy which is set to 0.0.
+            segment except for res_id and _atom_idx (if present) which are incrementally
+            increased appropriately (with the first atom/residue index matching the one
+            in the default annotations), and occupancy which is set to 0.0.
         terminal_start:
             Whether the segment is the start of the overall sequence. For proteins this
             will have no effect but for nucleic acids the otherwise overhanging 5'
@@ -361,6 +361,8 @@ def build_unresolved_polymer_segment(
     """
     if polymer_type == "nucleic_acid":
         logging.info("Building unresolved nucleic acid segment!")  # dev-only: del later
+
+    atom_idx_is_present = "_atom_idx" in default_annotations
 
     # Set occupancy to 0.0
     default_annotations["occupancy"] = 0.0
@@ -407,18 +409,21 @@ def build_unresolved_polymer_segment(
 
         # Add atoms for all unresolved residues
         for atom, element in zip(atom_names, atom_elements):
-            annotations = default_annotations.copy()
-            annotations["atom_name"] = atom
-            annotations["element"] = element
-            annotations["res_name"] = residue_code
+            atom_annotations = default_annotations.copy()
+            atom_annotations["atom_name"] = atom
+            atom_annotations["element"] = element
+            atom_annotations["res_name"] = residue_code
 
             base_res_id = default_annotations["res_id"]
-            base_atom_idx = default_annotations["atom_idx"]
-            annotations["res_id"] = base_res_id + added_residues
-            annotations["atom_idx"] = base_atom_idx + added_atoms
+            atom_annotations["res_id"] = base_res_id + added_residues
+
+            # Avoid error if _atom_idx is not set
+            if atom_idx_is_present:
+                base_atom_idx = default_annotations["_atom_idx"]
+                atom_annotations["_atom_idx"] = base_atom_idx + added_atoms
 
             # Append unresolved atom explicitly but with dummy coordinates
-            atom_list.append(struc.Atom([np.nan, np.nan, np.nan], **annotations))
+            atom_list.append(struc.Atom([np.nan, np.nan, np.nan], **atom_annotations))
 
             added_atoms += 1
 
