@@ -10,11 +10,22 @@ import numpy as np
 
 @dataclasses.dataclass(frozen=False)
 class Msa:
-    """Class representing a parsed MSA file"""
+    """Class representing a parsed MSA file.
+
+    The metadata attrubute gets updated in certain functions of the MSA preparation.
+    
+    Attributes:
+        msa: np.array
+            A 2D numpy array containing the aligned sequences.
+        deletion_matrix: np.array
+            A 2D numpy array containing the cumulative deletion counts up to each 
+            position for each row in the MSA.
+        metadata: Optional[Sequence[str]]
+            A list of metadata persed from sequence headers of the MSA."""
 
     msa: np.array
     deletion_matrix: np.array
-    headers: Optional[Sequence[str]]
+    metadata: Optional[Sequence[str]]
 
     def __len__(self):
         return len(self.sequences)
@@ -23,8 +34,23 @@ class Msa:
         return Msa(
             msa=self.msa[:max_seqs],
             deletion_matrix=self.deletion_matrix[:max_seqs],
-            headers=self.descriptions[:max_seqs],
+            metadata=self.descriptions[:max_seqs],
         )
+
+
+@dataclasses.dataclass(frozen=False)
+class MsaCollection:
+    """Class representing a collection MSAs for a single sample.
+
+    Attributes:
+        rep_msa_map: dict[str, dict[str, Msa]]
+            Dictionary mapping representative chain IDs to dictionaries of Msa objects.
+        chain_rep_map: dict[str, str]
+            Dictionary mapping chain IDs to representative chain IDs.
+    """
+
+    rep_msa_map: dict[str, dict[str, Msa]]
+    chain_rep_map: dict[str, str]
 
 
 def _msa_list_to_np(msa: Sequence[str]) -> np.array:
@@ -61,17 +87,17 @@ def parse_fasta(
 
     Returns:
         tuple[Sequence[str], Sequence[str]]:
-            A list of sequences and a list of headers.
+            A list of sequences and a list of metadata.
     """
 
     sequences = []
-    headers = []
+    metadata = []
     index = -1
     for line in fasta_string.splitlines():
         line = line.strip()
         if line.startswith(">"):
             index += 1
-            headers.append(line[1:])  # Remove the '>' at the beginning.
+            metadata.append(line[1:])  # Remove the '>' at the beginning.
             sequences.append("")
             continue
         elif line.startswith("#"):
@@ -83,7 +109,7 @@ def parse_fasta(
         if (max_seq_count is not None) & (len(sequences) == max_seq_count):
             break
 
-    return sequences, headers
+    return sequences, metadata
 
 
 def parse_a3m(msa_string: str, max_seq_count: Optional[int] = None) -> Msa:
@@ -99,10 +125,10 @@ def parse_a3m(msa_string: str, max_seq_count: Optional[int] = None) -> Msa:
             The maximum number of sequences to parse from the file.
 
     Returns:
-        Msa: A Msa object containing the sequences, deletion matrix and headers.
+        Msa: A Msa object containing the sequences, deletion matrix and metadata.
     """
 
-    sequences, headers = parse_fasta(msa_string, max_seq_count)
+    sequences, metadata = parse_fasta(msa_string, max_seq_count)
     deletion_matrix = []
     for msa_sequence in sequences:
         deletion_vec = []
@@ -123,7 +149,7 @@ def parse_a3m(msa_string: str, max_seq_count: Optional[int] = None) -> Msa:
     msa = _msa_list_to_np(msa)
     deletion_matrix = np.array(deletion_matrix)
 
-    return Msa(msa=msa, deletion_matrix=deletion_matrix, headers=headers)
+    return Msa(msa=msa, deletion_matrix=deletion_matrix, metadata=metadata)
 
 
 def parse_stockholm(msa_string: str, max_seq_count: Optional[int] = None) -> Msa:
@@ -139,7 +165,7 @@ def parse_stockholm(msa_string: str, max_seq_count: Optional[int] = None) -> Msa
             The maximum number of sequences to parse from the file.
 
     Returns:
-        Msa: A Msa object containing the sequences, deletion matrix and headers.
+        Msa: A Msa object containing the sequences, deletion matrix and metadata.
     """
 
     # Parse each line into header: sequence dictionary
@@ -188,9 +214,9 @@ def parse_stockholm(msa_string: str, max_seq_count: Optional[int] = None) -> Msa
     # Embed in numpy array
     msa = _msa_list_to_np(msa)
     deletion_matrix = np.array(deletion_matrix)
-    headers = list(name_to_sequence.keys())
+    metadata = list(name_to_sequence.keys())
 
-    return Msa(msa=msa, deletion_matrix=deletion_matrix, headers=headers)
+    return Msa(msa=msa, deletion_matrix=deletion_matrix, metadata=metadata)
 
 
 MSA_PARSER_REGISTRY = {".a3m": parse_a3m, ".sto": parse_stockholm}
@@ -305,20 +331,20 @@ def parse_msas_alignment_database(
 
 
 def parse_msas_sample(
-    chain_ids: list[str],
+    chain_ids: list[list[str], list[str]],
     alignments_path: str,
     use_alignment_database: bool,
     alignment_index: Optional[dict] = None,
     max_seq_counts: Optional[dict[str, int]] = None,
-) -> dict[str, dict[str, Msa]]:
+) -> MsaCollection:
     """Parses MSA(s) for a training sample.
 
     This function is used to parse MSAs for a one or multiple chains, depending on
     the number of chains in the parsed PDB file and crop during training.
 
     Args:
-        chain_ids (list[str]):
-            List of chain ids to parse for a sample.
+        chain_ids (list[tuple[str, str]]):
+            Two lists of chain IDs and representative chain IDs to parse for a sample.
         alignments_path (str):
             Path to the lowest-level directory containing either the directories of MSAs
             per chain ID or the alignment databases.
@@ -333,20 +359,34 @@ def parse_msas_sample(
             Section 2.2, Tables 1 and 2 in the AlphaFold3 SI for more details.
 
     Returns:
-        dict[str, dict[str, Msa]]: 
-            A dict mapping chain IDs to a dict of parsed MSAs for the current sample.
+        MsaCollection:
+            A collection of Msa objects and chain IDs for a single sample.
     """
-    sample_msas = {}
-    for chain_id in chain_ids:
+    # Parse MSAs for each representative ID
+    # This requires parsing MSAs for duplicate chains only once
+    representative_chain_ids = list(set(chain_ids[1]))
+    representative_msas = {}
+    for rep_id in representative_chain_ids:
         if use_alignment_database:
-            sample_msas[chain_id] = parse_msas_alignment_database(
-                alignment_index_entry=alignment_index[chain_id],
+            representative_msas[rep_id] = parse_msas_alignment_database(
+                alignment_index_entry=alignment_index[rep_id],
                 alignment_database_path=alignments_path,
                 max_seq_counts=max_seq_counts,
             )
         else:
-            sample_msas[chain_id] = parse_msas_direct(
-                folder_path=os.path.join(alignments_path, chain_id),
+            representative_msas[rep_id] = parse_msas_direct(
+                folder_path=os.path.join(alignments_path, rep_id),
                 max_seq_counts=max_seq_counts,
             )
-    return sample_msas
+
+    # Reindex the parsed MSAs to the original chain IDs
+    # This copies identical Msa objects to the original chain IDs
+    rep_msa_map = {}
+    chain_rep_map = {}
+
+    for chain_id, rep_id in zip(chain_ids[0], chain_ids[1]):
+        if rep_id not in rep_msa_map:
+            rep_msa_map[rep_id] = representative_msas[rep_id]
+            chain_rep_map[chain_id] = rep_id
+
+    return MsaCollection(rep_msa_map=rep_msa_map, chain_rep_map=chain_rep_map)
