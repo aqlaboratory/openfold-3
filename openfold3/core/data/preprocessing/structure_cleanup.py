@@ -216,23 +216,53 @@ def remove_chain_and_attached_ligands(
     Returns:
         AtomArray with the specified chain and all attached covalent ligands removed
     """
+    # Assign temporary helper indices
+    assign_atom_indices(atom_array)
+
     chain_mask = atom_array.chain_id_renumbered == chain_id
 
     # If the chain itself is a hetero-chain, only remove the chain
     if np.all(atom_array.hetero[chain_mask]):
         return atom_array[~chain_mask]
 
-    # Get first atom of the chain
-    first_chain_atom_idx = np.nonzero(chain_mask)[0][0]
+    # Remove everything but the particular chain and all ligands, so that when we search
+    # for connected atoms to the chain we will only find the directly connected ligands
+    # and not e.g. a covalent ligand in another chain that has a disulfide bond to the
+    # specified chain and is therefore indirectly "connected".
+    atom_array_subset = atom_array[chain_mask | atom_array.hetero]
+    chain_mask_subset = atom_array_subset.chain_id_renumbered == chain_id
+
+    # Get first atom of the chain in the subset array
+    first_chain_atom_idx = np.nonzero(chain_mask_subset)[0][0]
 
     # Identify bonded ligands as connected atoms with hetero flag
-    connected_atoms_mask = struc.find_connected(
-        atom_array.bonds, first_chain_atom_idx, as_mask=True
+    connected_atoms_mask_subset = np.asarray(
+        struc.find_connected(
+            atom_array_subset.bonds, first_chain_atom_idx, as_mask=True
+        ),
+        dtype=bool,
     )
-    connected_ligand_atoms_mask = connected_atoms_mask & atom_array.hetero
+    connected_ligand_atoms_mask_subset = (
+        connected_atoms_mask_subset & atom_array_subset.hetero
+    )
+
+    # Mark the original chain and all connected ligands for deletion
+    atom_deletion_mask = chain_mask_subset | connected_ligand_atoms_mask_subset
+
+    # Determine indices of atoms to keep in original array
+    atom_deletion_indices = atom_array_subset._atom_idx[atom_deletion_mask]
+    atom_retained_indices = np.setdiff1d(
+        atom_array._atom_idx, atom_deletion_indices, assume_unique=True
+    )
+
+    if np.any(connected_ligand_atoms_mask_subset):
+        breakpoint()
 
     # Remove chain and connected ligands
-    atom_array = atom_array[~(chain_mask | connected_ligand_atoms_mask)]
+    atom_array = atom_array[atom_retained_indices]
+
+    # Clean up temporary indices
+    remove_atom_indices(atom_array)
 
     return atom_array
 
