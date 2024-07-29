@@ -368,7 +368,6 @@ def get_res_atoms_in_ccd_mask(res_atom_array: AtomArray, ccd: CIFFile) -> np.nda
     return mask
 
 
-@renumber_atom_idx_post_cleanup
 def remove_non_CCD_atoms(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
     """Removes atoms that are not present in the CCD residue definition
 
@@ -395,7 +394,6 @@ def remove_non_CCD_atoms(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
     return atom_array[atom_mask]
 
 
-@renumber_atom_idx_post_cleanup
 def remove_chains_with_CA_gaps(
     atom_array: AtomArray, distance_threshold: float = 10.0
 ) -> AtomArray:
@@ -446,7 +444,6 @@ def remove_chains_with_CA_gaps(
     return atom_array
 
 
-@renumber_atom_idx_post_cleanup
 def subset_large_structure(atom_array: AtomArray, n_chains: int = 20) -> AtomArray:
     """Subsets structures with too many chains to n chains
 
