@@ -646,23 +646,38 @@ config = mlc.ConfigDict(
                     "no_bins": 50,
                     "c_in": c_s,
                     "c_hidden": 128,
+                    "linear_init_params": lin_init.lddt_ca_init,
                 },
                 "distogram": {
                     "c_z": c_z,
-                    "no_bins": aux_distogram_bins,
+                    "c_out": aux_distogram_bins,
+                    "linear_init_params": lin_init.distogram_init,
                 },
                 "tm": {
                     "c_z": c_z,
-                    "no_bins": aux_distogram_bins,
+                    "c_out": aux_distogram_bins,
+                    "linear_init_params": lin_init.tm_score_init,
                     "enabled": tm_enabled,
                 },
                 "masked_msa": {
                     "c_m": c_m,
                     "c_out": 23,
+                    "linear_init_params": lin_init.masked_msa_init,
                 },
                 "experimentally_resolved": {
                     "c_s": c_s,
                     "c_out": 37,
+                    "linear_init_params": lin_init.exp_res_init,
+                },
+                "confidence": {
+                    "pae": {
+                        "max_bin": 31,
+                        "no_bins": 64,
+                    },
+                    "ptm": {
+                        "max_bin": 31,
+                        "no_bins": 64,
+                    },
                 },
             },
             # A negative value indicates that no early stopping will occur, i.e.
@@ -896,8 +911,14 @@ multimer_config_update = mlc.ConfigDict(
                 "linear_init_params": lin_init_mult.structure_module_init,
             },
             "heads": {
-                "tm": {"ptm_weight": 0.2, "iptm_weight": 0.8, "enabled": True},
+                "tm": {"enabled": True},
                 "masked_msa": {"c_out": 22},
+                "confidence": {
+                    "ptm": {
+                        "ptm_weight": 0.2,
+                        "iptm_weight": 0.8,
+                    },
+                },
             },
             "recycle_early_stop_tolerance": 0.5,  # For training, value is -1.
         },

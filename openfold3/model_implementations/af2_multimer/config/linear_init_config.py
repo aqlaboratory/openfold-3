@@ -126,7 +126,22 @@ templ_pair_feat_emb_init = ConfigDict(
 ########################
 # Heads
 ########################
-# TODO: Add heads config
+
+lddt_ca_init = ConfigDict(
+    {
+        "linear_1": {"bias": True, "init": "relu"},
+        "linear_2": {"bias": True, "init": "relu"},
+        "linear_3": {"bias": True, "init": "final"},
+    }
+)
+
+exp_res_init = ConfigDict({"linear": {"bias": True, "init": "final"}})
+
+distogram_init = ConfigDict({"linear": {"bias": True, "init": "final"}})
+
+tm_score_init = ConfigDict({"linear": {"bias": True, "init": "final"}})
+
+masked_msa_init = ConfigDict({"linear": {"bias": True, "init": "final"}})
 
 ########################
 # Latent

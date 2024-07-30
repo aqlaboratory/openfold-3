@@ -32,10 +32,10 @@ block_size = mlc.FieldReference(16, field_type=int)
 
 # templates_enabled = mlc.FieldReference(True, field_type=bool)
 eps = mlc.FieldReference(1e-8, field_type=float)
-aux_distogram_bins = mlc.FieldReference(64, field_type=int)
 blocks_per_ckpt = mlc.FieldReference(None, field_type=int)
 chunk_size = mlc.FieldReference(None, field_type=int)
 tune_chunk_size = mlc.FieldReference(True, field_type=bool)
+max_atoms_per_token = mlc.FieldReference(23, field_type=int)
 
 
 config = mlc.ConfigDict(
@@ -253,15 +253,104 @@ config = mlc.ConfigDict(
                 "s_min": 4e-4,
                 "p": 7,
             },
+            "heads": {
+                "max_atoms_per_token": max_atoms_per_token,
+                "pairformer_embedding": {
+                    "pairformer": {
+                        "c_s": c_s,
+                        "c_z": c_z,
+                        "c_hidden_pair_bias": 24,  # c_s / no_heads_pair_bias
+                        "no_heads_pair_bias": 16,
+                        "c_hidden_mul": 128,
+                        "c_hidden_pair_att": 32,
+                        "no_heads_pair": 4,
+                        "no_blocks": 4,
+                        "transition_type": "swiglu",
+                        "transition_n": 4,
+                        "pair_dropout": 0.25,
+                        "fuse_projection_weights": False,
+                        "blocks_per_ckpt": blocks_per_ckpt,
+                        "inf": 1e9,
+                        "linear_init_params": lin_init.pairformer_init,
+                        "clear_cache_between_blocks": False,
+                        "tune_chunk_size": tune_chunk_size,
+                    },
+                    "c_s_input": c_s_input,
+                    "c_z": c_z,
+                    "min_bin": 3.25,
+                    "max_bin": 20.75,
+                    "no_bin": 15,
+                    "inf": 1e8,
+                    "linear_init_params": lin_init.pairformer_head_init,
+                },
+                "pae": {
+                    "c_z": c_z,
+                    "c_out": 64,
+                    "linear_init_params": lin_init.pae_init,
+                    "enabled": False,
+                },
+                "pde": {
+                    "c_z": c_z,
+                    "c_out": 64,
+                    "linear_init_params": lin_init.pde_init,
+                },
+                "lddt": {
+                    "c_s": c_s,
+                    "c_out": 50,
+                    "max_atoms_per_token": max_atoms_per_token,
+                    "linear_init_params": lin_init.lddt_init,
+                },
+                "distogram": {
+                    "c_z": c_z,
+                    "c_out": 64,
+                    "linear_init_params": lin_init.distogram_init,
+                    "enabled": True,
+                },
+                "experimentally_resolved": {
+                    "c_s": c_s,
+                    "c_out": 2,
+                    "max_atoms_per_token": max_atoms_per_token,
+                    "linear_init_params": lin_init.exp_res_all_atom_init,
+                },
+                "confidence": {
+                    "pde": {
+                        "max_bin": 31,
+                        "no_bins": 64,
+                    },
+                },
+            },
         },
         "loss": {
+            "confidence": {
+                "no_bins_plddt": 50,
+                "bin_min_plddt": 0.0,
+                "bin_max_plddt": 1.0,
+                "angle_threshold": 25.0,
+                "no_bins_pae": 64,
+                "bin_min_pae": 0.0,
+                "bin_max_pae": 32.0,
+                "no_bins_pde": 64,
+                "bin_min_pde": 0.0,
+                "bin_max_pde": 32.0,
+                "no_bins_resolved": 2,
+                "alpha_pae": 0,
+                "eps": eps,
+                "inf": 1e9,  # global parameter?
+            },
             "diffusion": {
                 "sigma_data": sigma_data,
                 "alpha_bond": 0.0,  # 0 for training, 1 for finetuning
                 "alpha_dna": 5.0,
                 "alpha_rna": 5.0,
                 "alpha_ligand": 10.0,
-            }
+                "enabled": True,
+            },
+            "distogram": {
+                "no_bins": 64,
+                "bin_min": 2.0,
+                "bin_max": 22.0,
+                "eps": eps,
+            },
         },
     }
 )

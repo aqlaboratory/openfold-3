@@ -18,6 +18,14 @@ import numpy as np
 import torch
 from scipy.spatial.transform import Rotation
 
+from openfold3.core.np.token_atom_constants import (
+    DNA_NUCLEOTIDE_TYPES,
+    PROTEIN_RESTYPES,
+    RNA_NUCLEOTIDE_TYPES,
+    TOKEN_NAME_TO_ATOM_NAMES,
+    TOKEN_TYPES,
+    TOKEN_TYPES_WITH_GAP,
+)
 from tests.config import consts
 
 
@@ -145,25 +153,51 @@ def random_attention_inputs(
     return q, kv, mask, biases
 
 
-def random_af3_features(batch_size, n_token, n_atom, n_msa, n_templ):
+def random_af3_features(batch_size, n_token, n_msa, n_templ):
+    restypes_flat = torch.randint(0, len(TOKEN_TYPES), (n_token,))
+    restypes_names = [TOKEN_TYPES[token_idx] for token_idx in restypes_flat]
+    restypes_one_hot = torch.nn.functional.one_hot(
+        restypes_flat,
+        len(TOKEN_TYPES_WITH_GAP),
+    )
+
+    num_atoms_per_token = torch.Tensor(
+        [len(TOKEN_NAME_TO_ATOM_NAMES[name]) for name in restypes_names]
+    )
+
+    is_protein = torch.Tensor(
+        [1.0 if name in PROTEIN_RESTYPES else 0.0 for name in restypes_names]
+    )
+    is_rna = torch.Tensor(
+        [1.0 if name in RNA_NUCLEOTIDE_TYPES else 0.0 for name in restypes_names]
+    )
+    is_dna = torch.Tensor(
+        [1.0 if name in DNA_NUCLEOTIDE_TYPES else 0.0 for name in restypes_names]
+    )
+
+    n_atom = torch.max(torch.sum(num_atoms_per_token, dim=-1)).int().item()
+
+    start_atom_index = torch.concat(
+        (torch.zeros((1,)), torch.cumsum(num_atoms_per_token, dim=-1)[:-1]), dim=-1
+    )
+
+    asym_id = (
+        torch.Tensor(random_asym_ids(n_token)).unsqueeze(0).repeat((batch_size, 1))
+    )
+
     return {
         # Input features
         "residue_index": torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
         "token_index": torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-        "asym_id": torch.zeros((batch_size, n_token)),
-        "entity_id": torch.zeros((batch_size, n_token)),
-        "sym_id": torch.zeros((batch_size, n_token)),
-        "restype": torch.concat(
-            [
-                torch.ones((batch_size, n_token, 1)),
-                torch.zeros((batch_size, n_token, 31)),
-            ],
-            dim=-1,
-        ),
-        "is_protein": torch.ones((batch_size, n_token)),
-        "is_dna": torch.zeros((batch_size, n_token)),
-        "is_rna": torch.zeros((batch_size, n_token)),
+        "asym_id": asym_id,
+        "entity_id": asym_id.clone(),
+        "sym_id": torch.ones((batch_size, n_token)),
+        "restype": restypes_one_hot.unsqueeze(0).repeat((batch_size, 1, 1)),
+        "is_protein": is_protein.unsqueeze(0).repeat((batch_size, 1)),
+        "is_dna": is_dna.unsqueeze(0).repeat((batch_size, 1)),
+        "is_rna": is_rna.unsqueeze(0).repeat((batch_size, 1)),
         "is_ligand": torch.zeros((batch_size, n_token)),
+        "is_atomized": torch.zeros((batch_size, n_token)),
         # Reference conformation features
         "ref_pos": torch.randn((batch_size, n_atom, 3)),
         "ref_mask": torch.ones((batch_size, n_atom)),
@@ -187,10 +221,8 @@ def random_af3_features(batch_size, n_token, n_atom, n_msa, n_templ):
         "token_bonds": torch.ones((batch_size, n_token, n_token)),
         # Additional features
         "token_mask": torch.ones((batch_size, n_token)),
-        "atom_to_token_index": torch.arange(n_token, dtype=torch.float32)
-        .repeat_interleave(int(n_atom / n_token))
-        .unsqueeze(0)
-        .repeat(batch_size, 1),
+        "start_atom_index": start_atom_index.unsqueeze(0).repeat((batch_size, 1)),
+        "num_atoms_per_token": num_atoms_per_token.unsqueeze(0).repeat((batch_size, 1)),
         "msa_mask": torch.ones((batch_size, n_msa, n_token)),
         "num_main_msa_seqs": torch.Tensor([int(n_msa / 2)]),
         "gt_atom_positions": torch.ones((batch_size, n_atom, 3)),

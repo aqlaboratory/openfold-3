@@ -29,8 +29,8 @@ from openfold3.core.loss.loss import (
     chain_center_of_mass_loss,
     compute_fape,
     compute_plddt,
+    compute_ptm,
     compute_renamed_ground_truth,
-    compute_tm,
     distogram_loss,
     experimentally_resolved_loss,
     find_structural_violations,
@@ -285,7 +285,7 @@ class TestLoss(unittest.TestCase):
         ptm_gt = alphafold.common.confidence.predicted_tm_score(logits, boundaries)
         ptm_gt = torch.tensor(ptm_gt)
         logits_t = torch.tensor(logits)
-        ptm_repro = compute_tm(logits_t, no_bins=no_bins, max_bin=max_bin)
+        ptm_repro = compute_ptm(logits_t, no_bins=no_bins, max_bin=max_bin)
 
         self.assertTrue(torch.max(torch.abs(ptm_gt - ptm_repro)) < consts.eps)
 
@@ -295,12 +295,12 @@ class TestLoss(unittest.TestCase):
                 logits, boundaries, asym_id=asym_id, interface=True
             )
             iptm_gt = torch.tensor(iptm_gt)
-            iptm_repro = compute_tm(
+            iptm_repro = compute_ptm(
                 logits_t,
-                no_bins=no_bins,
-                max_bin=max_bin,
                 asym_id=torch.tensor(asym_id),
                 interface=True,
+                no_bins=no_bins,
+                max_bin=max_bin,
             )
 
             self.assertTrue(torch.max(torch.abs(iptm_gt - iptm_repro)) < consts.eps)

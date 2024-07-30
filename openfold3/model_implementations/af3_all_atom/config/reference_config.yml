@@ -8,6 +8,32 @@ finetune2:
     diffusion:
       alpha_bond: 1.0
 
+finetune3:
+  model:
+    heads:
+      pae:
+        enabled: True
+      distogram:
+        enabled: False
+      confidence:
+        pae:
+          max_bin: 31
+          no_bins: 64
+        ptm:
+          max_bin: 31
+          no_bins: 64
+          ptm_weight: 0.2
+          iptm_weight: 0.8
+        clash:
+          min_distance: 1.1
+          clash_cutoff_num: 100
+          clash_cutoff_ratio: 0.5
+        rasa:
+          cutoff: 0.581
+    loss:
+      diffusion:
+        enabled: False
+
 eval:
   globals:
     no_rollout_steps: 200

@@ -13,21 +13,24 @@ class TestAF3Model(unittest.TestCase):
     def test_shape(self):
         batch_size = consts.batch_size
         n_token = 16
-        n_atom = 4 * n_token
         n_msa = 10
         n_templ = 3
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        config.model.pairformer.no_blocks = 4  # To avoid memory issues in CI
+        # To avoid memory issues in CI
+        config.model.pairformer.no_blocks = 4
+        config.model.diffusion_module.diffusion_transformer.no_blocks = 4
+
         af3 = AlphaFold3(config).to(device)
 
         batch = random_af3_features(
             batch_size=batch_size,
             n_token=n_token,
-            n_atom=n_atom,
             n_msa=n_msa,
             n_templ=n_templ,
         )
+
+        n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
         def to_device(t):
             return t.to(torch.device(device))
