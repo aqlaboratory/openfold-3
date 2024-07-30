@@ -18,18 +18,20 @@ class ParsedStructure(NamedTuple):
     atom_array: AtomArray
 
 
-def parse_mmcif_bioassembly(
+def parse_mmcif(
     file_path: Path | str,
-    use_author_fields: bool = False,
+    expand_bioassembly: bool = False,
     include_bonds: bool = True,
     extra_fields: list | None = None,
+    use_author_fields: bool = False,
 ) -> ParsedStructure:
-    """Convenience wrapper around biotite's bioassembly CIF parsing
+    """Convenience wrapper around biotite's CIF parsing
 
-    Parses the mmCIF file, expands the first bioassembly, and creates an AtomArray from
-    it. This includes only the first model, resolves alternative locations by taking the
-    one with the highest occupancy, defaults to inferring bond information, and defaults
-    to using the PDB-automated chain/residue annotation instead of author annotations.
+    Parses the mmCIF file and creates an AtomArray from it while optionally expanding
+    the first bioassembly. This includes only the first model, resolves alternative
+    locations by taking the one with the highest occupancy, defaults to inferring bond
+    information, and defaults to using the PDB-automated chain/residue annotation
+    instead of author annotations.
 
     This function also creates the following additional annotations in the AtomArray:
         - occupancy: inferred from atom_site.occupancy
@@ -42,13 +44,18 @@ def parse_mmcif_bioassembly(
     Args:
         file_path:
             Path to the mmCIF (or binary mmCIF) file.
-        use_author_fields:
-            Whether to use author fields. Defaults to False.
+        expand_bioassembly:
+            Whether to expand the first bioassembly. Defaults to False.
         include_bonds:
             Whether to infer bond information. Defaults to True.
         extra_fields:
             Extra fields to include in the AtomArray. Defaults to None. Fields
             "entity_id" and "occupancy" are always included.
+        use_author_fields:
+            Whether to use author fields. Note that the structure preprocessing and
+            cleanup functions in this module were only tested with the PDB-auto-assigned
+            labels (i.e. this argument set to False), so be careful when enabling this
+            setting. Defaults to False.
 
     Returns:
         A NamedTuple containing the parsed CIF file and the AtomArray.
@@ -59,6 +66,8 @@ def parse_mmcif_bioassembly(
         cif_class = pdbx.CIFFile
     elif file_path.suffix == ".bcif":
         cif_class = pdbx.BinaryCIFFile
+    else:
+        raise ValueError("File must be in mmCIF or binary mmCIF format")
 
     cif_file = cif_class.read(file_path)
 
@@ -68,7 +77,7 @@ def parse_mmcif_bioassembly(
     extra_fields_preset = ["label_entity_id", "occupancy"]
 
     if extra_fields:
-        extra_fields_preset.extend(extra_fields)
+        extra_fields = extra_fields_preset + extra_fields
 
     # Shared args between get_assembly and get_structure
     parser_args = {
@@ -77,20 +86,23 @@ def parse_mmcif_bioassembly(
         "altloc": "occupancy",
         "use_author_fields": use_author_fields,
         "include_bonds": include_bonds,
-        "extra_fields": extra_fields_preset,
+        "extra_fields": extra_fields,
     }
 
     # Check if the CIF file contains bioassembly information
-    if "pdbx_struct_assembly_gen" in cif_file[pdb_id]:
+    if expand_bioassembly & ("pdbx_struct_assembly_gen" not in cif_file[pdb_id]):
+        logging.warning(
+            "No bioassembly information found in the CIF file, "
+            "falling back to parsing the asymmetric unit."
+        )
+        expand_bioassembly = False
+    
+    if expand_bioassembly:
         atom_array = pdbx.get_assembly(
             **parser_args,
             assembly_id="1",
         )
     else:
-        logging.warning(
-            "No bioassembly information found in the CIF file, "
-            "falling back to parsing the asymmetric unit."
-        )
         atom_array = pdbx.get_structure(
             **parser_args,
         )
