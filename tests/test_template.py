@@ -23,7 +23,9 @@ from openfold3.core.model.latent import TemplateEmbedderAllAtom, TemplatePairSta
 from openfold3.core.model.layers.template_pointwise_attention import (
     TemplatePointwiseAttention,
 )
-from openfold3.model_implementations.af3_all_atom.config import config as af3_config
+from openfold3.model_implementations.af3_all_atom.config.base_config import (
+    config as af3_config,
+)
 from tests.config import consts
 from tests.data_utils import random_asym_ids, random_template_feats
 

@@ -20,7 +20,7 @@ from openfold3.core.model.structure.diffusion_module import (
     DiffusionModule,
     SampleDiffusion,
 )
-from openfold3.model_implementations.af3_all_atom.config import config
+from openfold3.model_implementations.af3_all_atom.config.base_config import config
 from tests.config import consts
 
 

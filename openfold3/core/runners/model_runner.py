@@ -4,16 +4,8 @@
 import pytorch_lightning as pl
 import torch
 
-from openfold3.core.loss.loss import lddt_ca
-from openfold3.core.np import residue_constants
 from openfold3.core.utils.exponential_moving_average import ExponentialMovingAverage
-from openfold3.core.utils.superimposition import superimpose
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.core.utils.validation_metrics import (
-    drmsd,
-    gdt_ha,
-    gdt_ts,
-)
 
 
 # TODO implement shared hooks and methods for OpenFold models

@@ -1,27 +1,19 @@
 import ml_collections as mlc
 
-import openfold3.model_implementations.af2_monomer.config.linear_init_config as lin_init
-import openfold3.model_implementations.af2_monomer.config.base_config as af2_monomer_config
-import openfold3.model_implementations.af2_multimer.config.linear_init_config as lin_init_mult
+import openfold3.model_implementations.af2_monomer.config.base_config as af2_monomer_config  # noqa: E501
 from openfold3.core.config.config_utils import update_config_dict
+from openfold3.model_implementations.af2_multimer.config import (
+    linear_init_config as lin_init_mult,
+)
 from openfold3.model_implementations.af2_multimer.config.features import (
     feature_dict as multimer_feature_dict,
 )
 
-c_z = mlc.FieldReference(128, field_type=int)
-c_m = mlc.FieldReference(256, field_type=int)
-c_t = mlc.FieldReference(64, field_type=int)
-c_e = mlc.FieldReference(64, field_type=int)
-c_s = mlc.FieldReference(384, field_type=int)
-
-blocks_per_ckpt = mlc.FieldReference(None, field_type=int)
-chunk_size = mlc.FieldReference(4, field_type=int)
-aux_distogram_bins = mlc.FieldReference(64, field_type=int)
-tm_enabled = mlc.FieldReference(False, field_type=bool)
-eps = mlc.FieldReference(1e-8, field_type=float)
-templates_enabled = mlc.FieldReference(True, field_type=bool)
-embed_template_torsion_angles = mlc.FieldReference(True, field_type=bool)
-tune_chunk_size = mlc.FieldReference(True, field_type=bool)
+c_z = af2_monomer_config.c_z 
+c_m = af2_monomer_config.c_m 
+c_t = af2_monomer_config.c_t 
+c_e = af2_monomer_config.c_e 
+c_s = af2_monomer_config.c_s 
 
 NUM_RES = "num residues placeholder"
 NUM_MSA_SEQ = "msa placeholder"

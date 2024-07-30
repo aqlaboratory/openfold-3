@@ -87,14 +87,14 @@ def get_global_pretrained_openfold():
     if _model is None:
         model_config = registry.make_config_with_preset(
             consts.model_name, consts.model_preset)
-        _model = MODEL_REGISTRY[consts.model_name](model_config)
+        _model = MODEL_REGISTRY[consts.model_name](model_config).model
         _model = _model.eval()
         if not os.path.exists(_param_path):
             raise FileNotFoundError(
                 """Cannot load pretrained parameters. Make sure to run the 
                 installation script before running tests."""
             )
-        import_jax_weights_(_model, _param_path, version=consts.model)
+        import_jax_weights_(_model, _param_path, version=consts.model_preset)
         _model = _model.cuda()
 
     return _model

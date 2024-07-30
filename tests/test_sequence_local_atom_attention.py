@@ -12,7 +12,7 @@ from openfold3.core.model.layers import (
     RefAtomFeatureEmbedder,
 )
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
-from openfold3.model_implementations.af3_all_atom.config import c_atom_ref
+from openfold3.model_implementations.af3_all_atom.config.base_config import c_atom_ref
 from tests.config import consts
 
 

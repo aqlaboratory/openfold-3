@@ -15,12 +15,10 @@
 import torch
 import torch.nn as nn
 
-from openfold3.core.data import data_transforms, data_transforms_multimer
+from openfold3.core.data import data_transforms
 from openfold3.core.model.feature_embedders.input_embedders import (
     ExtraMSAEmbedder,
-    InputEmbedder,
     InputEmbedderMultimer,
-    PreembeddingEmbedder,
     RecyclingEmbedder,
 )
 from openfold3.core.model.heads.token_heads import AuxiliaryHeads
@@ -28,8 +26,6 @@ from openfold3.core.model.latent.evoformer import EvoformerStack
 from openfold3.core.model.latent.extra_msa import ExtraMSAStack
 from openfold3.core.model.latent.template_module import (
     TemplateEmbedderMultimer,
-    embed_templates_average,
-    embed_templates_offload,
 )
 from openfold3.core.model.structure.structure_module import (
     StructureModuleMultimer,
