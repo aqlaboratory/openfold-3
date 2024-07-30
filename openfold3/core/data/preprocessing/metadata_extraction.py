@@ -177,12 +177,18 @@ def get_chain_to_author_chain_dict(atom_array: struc.AtomArray) -> dict[int, str
     Returns:
         A dictionary mapping renumbered chain IDs to their author chain IDs.
     """
+    if "auth_asym_id" not in atom_array.get_annotation_categories():
+        raise ValueError(
+            "The AtomArray does not contain author chain IDs. "
+            "Make sure to load the 'auth_asym_id' field when parsing the structure."
+        )
+
     chain_starts = struc.get_chain_starts(atom_array)
 
     return dict(
         zip(
             atom_array[chain_starts].chain_id_renumbered,
-            atom_array[chain_starts].chain_id,
+            atom_array[chain_starts].auth_asym_id,
         )
     )
 
