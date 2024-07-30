@@ -98,7 +98,7 @@ def parse_mmcif(
             "falling back to parsing the asymmetric unit."
         )
         expand_bioassembly = False
-    
+
     if expand_bioassembly:
         atom_array = pdbx.get_assembly(
             **parser_args,
