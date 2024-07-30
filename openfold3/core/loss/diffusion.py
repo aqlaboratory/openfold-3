@@ -245,7 +245,7 @@ def smooth_lddt_loss(batch: Dict, x: torch.Tensor, eps: float) -> torch.Tensor:
     )
 
     # [*]
-    mask = 1 - torch.eye(x.shape[-2], device=x.device).tile((*x.shape[:-2], 1, 1))
+    mask = 1 - torch.eye(x.shape[-2], device=x.device, dtype=x.dtype).tile((*x.shape[:-2], 1, 1))
     mask = mask * (
         batch["gt_atom_mask"][..., None] * batch["gt_atom_mask"][..., None, :]
     )

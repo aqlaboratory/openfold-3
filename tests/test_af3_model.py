@@ -51,6 +51,8 @@ class TestAF3Model(unittest.TestCase):
         )
 
     def test_model_with_loss(self):
+        # TODO: Add more serious test, this is just to check that the
+        # full integration runs without errors
         batch_size = consts.batch_size
         n_token = 16
         n_msa = 10

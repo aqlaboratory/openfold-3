@@ -335,11 +335,13 @@ def all_atom_plddt_loss(
     is_standard_nucleotide = (batch["is_dna"] + batch["is_rna"]) * (
         1 - batch["is_atomized"]
     )
+
+    restype = batch["restype"].to(dtype=x.dtype)
     ca_atom_index_offset, ca_atom_mask = get_token_atom_index_offset(
-        atom_name="CA", restype=batch["restype"]
+        atom_name="CA", restype=restype
     )
     c1p_atom_index_offset, c1p_atom_mask = get_token_atom_index_offset(
-        atom_name="C1'", restype=batch["restype"]
+        atom_name="C1'", restype=restype
     )
     rep_index = (
         ((start_atom_index + ca_atom_index_offset) * is_standard_protein * ca_atom_mask)
@@ -362,7 +364,7 @@ def all_atom_plddt_loss(
     atom_mask_shape = list(batch["gt_atom_mask"].shape)
     padded_atom_mask_shape = list(atom_mask_shape)
     padded_atom_mask_shape[-1] = padded_atom_mask_shape[-1] + 1
-    atom_mask = torch.zeros(padded_atom_mask_shape, device=x.device)
+    atom_mask = torch.zeros(padded_atom_mask_shape, device=x.device, dtype=x.dtype)
     atom_mask = atom_mask.scatter_(
         index=rep_index.long(), src=torch.ones_like(atom_mask), dim=-1
     )[..., :-1]
