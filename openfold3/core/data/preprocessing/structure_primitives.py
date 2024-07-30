@@ -218,17 +218,17 @@ def get_interface_atom_pair_idxs(
         sort_by_chain:
             If True, will sort each individual atom pair so that the corresponding chain
             IDs are in ascending order. Otherwise, atom pairs will be ordered in a way
-            that the first index is always smaller than the second index and sorted by
-            the first atom index. Defaults to False.
+            that the first index is always smaller than the second index. Defaults to
+            False.
 
     Returns:
         atom_pairs: np.ndarray
             Array of atom pair indices with the first atom in the first column and the
             second atom in the second column. If `sort_by_chain` is False (default),
-            pairs will be sorted by the first atom index and stored non-redundantly, so
-            that i < j for any pair (i, j). If `sort_by_chain` is True, pairs will be
-            sorted again so that the corresponding chain IDs are in ascending order
-            within each pair, which may result in pairs where j < i.
+            pairs will be stored non-redundantly, so that i < j for any pair (i, j). If
+            `sort_by_chain` is True, the atom indices in each pair will be sorted such
+            that the corresponding chain IDs are in ascending order within each pair,
+            which may result in pairs where j < i.
     """
     kdtree = KDTree(atom_array.coord)
 
@@ -236,9 +236,6 @@ def get_interface_atom_pair_idxs(
 
     # Pair the chain IDs
     chain_pairs = atom_array.chain_id_renumbered[atom_pair_idxs]
-
-    # dev-only, TODO: remove
-    assert np.array_equal(atom_pair_idxs[:, 0], np.sort(atom_pair_idxs[:, 0]))
 
     if sort_by_chain:
         # Sort by chain within-pair to canonicalize
@@ -899,3 +896,45 @@ def add_unresolved_polymer_residues(
 
     return extended_atom_array
 
+
+# TODO: not sure yet if this function is actually necessary
+def add_canonical_one_letter_codes(
+    atom_array: AtomArray,
+    cif_data: CIFBlock,
+) -> None:
+    # Get canonical sequences for each entity
+    polymer_entities = cif_data["entity_poly"]["entity_id"].as_array(dtype=int)
+    polymer_canonical_seqs = cif_data["entity_poly"][
+        "pdbx_seq_one_letter_code_can"
+    ].as_array()
+    polymer_canonical_seqs = np.char.replace(polymer_canonical_seqs, "\n", "")
+
+    entity_id_to_seq = dict(zip(polymer_entities, polymer_canonical_seqs))
+
+    # Add new annotation category for one-letter codes
+    atom_array.set_annotation(
+        "one_letter_code_can", np.empty(len(atom_array), dtype="U1")
+    )
+
+    # Set one-letter codes for each residue
+    for entity_id, seq in entity_id_to_seq.items():
+        entity_mask = atom_array.entity_id == entity_id
+        entity_array = atom_array[entity_mask]
+
+        n_seq_repetitions = len(np.unique(entity_array.chain_id_renumbered))
+        seqs_repeated = seq * n_seq_repetitions
+
+        if len(seqs_repeated) != struc.get_residue_count(entity_array):
+            raise ValueError(
+                "Sequence length does not match the number of residues in the entity. "
+                "Make sure to run add_unresolved_polymer_residues first if the "
+                "structure contains unresolved residues."
+            )
+
+        atom_wise_seqs = struc.spread_residue_wise(
+            atom_array[entity_mask], np.array(list(seq * n_seq_repetitions), dtype="U1")
+        )
+
+        atom_array.one_letter_code_can[entity_mask] = atom_wise_seqs
+
+    return atom_array
