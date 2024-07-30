@@ -107,7 +107,7 @@ class AlphaFold(nn.Module):
             inplace_safe=inplace_safe,
             _mask_trans=self.config._mask_trans,
         )
-        # Not sure if we need this? Does not seem to be used in multimer? 
+        # Not sure if we need this? Does not seem to be used in multimer?
         feats["template_torsion_angles_mask"] = template_embeds["template_mask"]
 
         return template_embeds

@@ -9,7 +9,7 @@ from openfold3.core.runners.registry_base import register_model_base
 
 # Record of ModelEntries
 MODEL_REGISTRY = {}
-register_model = functools.partial(register_model_base, model_registry=MODEL_REGISTRY) 
+register_model = functools.partial(register_model_base, model_registry=MODEL_REGISTRY)
 
 
 def make_config_with_preset(model_name: str, preset: Optional[str] = None):

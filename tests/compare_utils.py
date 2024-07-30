@@ -86,7 +86,8 @@ def get_global_pretrained_openfold():
     global _model
     if _model is None:
         model_config = registry.make_config_with_preset(
-            consts.model_name, consts.model_preset)
+            consts.model_name, consts.model_preset
+        )
         _model = MODEL_REGISTRY[consts.model_name](model_config).model
         _model = _model.eval()
         if not os.path.exists(_param_path):

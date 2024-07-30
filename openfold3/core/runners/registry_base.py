@@ -14,7 +14,7 @@ class ModelEntry:
     model_runner: ModelRunner
     base_config: ConfigDict
     reference_config_path: Optional[Path]
-    # List of available presets for the model_factory 
+    # List of available presets for the model_factory
     presets: Optional[list[str]]
 
     def __call__(self, config):
@@ -28,10 +28,10 @@ def register_model_base(
     reference_config_path: Optional[Path] = None,
     model_registry: Optional[dict[str, Any]] = None,
 ):
-    """Register ModelEntry container with ModelRunner and configuration settings. 
+    """Register ModelEntry container with ModelRunner and configuration settings.
 
     Args:
-        name: Name to use for model entry 
+        name: Name to use for model entry
         base_config: Base configuration class for model entry
         reference_config_path: Path to yaml with configuration presets.
         model_register: Map of ModelRunner and configs by name

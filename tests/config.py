@@ -3,7 +3,7 @@ import ml_collections as mlc
 monomer_consts = mlc.ConfigDict(
     {
         "model_name": "af2_monomer",
-        "model_preset": "model_1_ptm", 
+        "model_preset": "model_1_ptm",
         "is_multimer": False,  # monomer: False, multimer: True
         "chunk_size": 4,
         "batch_size": 2,

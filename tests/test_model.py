@@ -113,6 +113,7 @@ class TestModel(unittest.TestCase):
     def test_dry_run_seqemb_mode(self):
         import openfold3.model_implementations.soloseq.config as soloseq_config
         from openfold3.model_implementations.soloseq.model import AlphaFold
+
         n_seq = 1
         n_templ = consts.n_templ
         n_res = consts.n_res

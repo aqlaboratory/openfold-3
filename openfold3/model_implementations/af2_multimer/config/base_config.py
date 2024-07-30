@@ -9,11 +9,11 @@ from openfold3.model_implementations.af2_multimer.config.features import (
     feature_dict as multimer_feature_dict,
 )
 
-c_z = af2_monomer_config.c_z 
-c_m = af2_monomer_config.c_m 
-c_t = af2_monomer_config.c_t 
-c_e = af2_monomer_config.c_e 
-c_s = af2_monomer_config.c_s 
+c_z = af2_monomer_config.c_z
+c_m = af2_monomer_config.c_m
+c_t = af2_monomer_config.c_t
+c_e = af2_monomer_config.c_e
+c_s = af2_monomer_config.c_s
 
 NUM_RES = "num residues placeholder"
 NUM_MSA_SEQ = "msa placeholder"
