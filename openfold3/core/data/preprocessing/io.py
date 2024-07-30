@@ -78,6 +78,8 @@ def parse_mmcif(
 
     if extra_fields:
         extra_fields = extra_fields_preset + extra_fields
+    else:
+        extra_fields = extra_fields_preset
 
     # Shared args between get_assembly and get_structure
     parser_args = {
