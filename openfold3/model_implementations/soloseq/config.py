@@ -5,7 +5,7 @@ import re
 import ml_collections as mlc
 
 import openfold3.model_implementations.af2_monomer.config.linear_init_config as lin_init
-import openfold3.model_implementations.af2_multimer.config.linear_init_config as lin_init_mult
+import openfold3.model_implementations.af2_multimer.config.linear_init_config as lin_init_mult  # noqa: E501
 import openfold3.model_implementations.soloseq.linear_init_config as lin_init_soloseq
 
 
