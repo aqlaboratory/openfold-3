@@ -395,6 +395,7 @@ config = mlc.ConfigDict(
                 "alpha_dna": 5.0,
                 "alpha_rna": 5.0,
                 "alpha_ligand": 10.0,
+                "eps": eps,
                 "enabled": True,
             },
             "distogram": {

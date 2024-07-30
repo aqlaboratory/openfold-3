@@ -220,25 +220,19 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         Returns:
             aux_out:
                 Dict containing following keys:
-                    "distogram_logits" ([*, N_token, N_token, bins_distogram]):
-                        Distogram head out
-                    "pae_logits" ([*, N_token, N_token, bins_pae]):
-                        PAE head out
-                    "pde_logits" ([*, N_token, N_token, bins_pde]):
-                        PDE head out
-                    "plddt_logits" ([*, N_atom, bins_plddt]):
-                        pLDDT head out
-                    "experimentally_resolved_logits" ([*, N_atom, bins_resolved]):
-                        Experimentally resolved head out
-                    "tm_logits" ([*, N_token, N_token, bins_pae]):
-                        Values identical to pae_logits
-                    "ptm_score":
-                        Predicted TM score
-                    "iptm_score":
-                        Interface predicted TM score
-                    "weighted_ptm_score":
-                        Weighted pTM + iPTM score
-
+                    "plddt_logits" ([*, N_atom, 50]):
+                        Predicted binned PLDDT logits
+                    "pae_logits" ([*, N_token, N_token, 64]):
+                        Predicted binned PAE logits
+                    "pde_logits" ([*, N_token, N_token, 64]):
+                        Predicted binned PDE logits
+                    "experimentally_resolved_logits" ([*, N_atom, 2]):
+                        Predicted binned experimentally resolved logits
+                    "distogram_logits" ([*, N_token, N_token, 64]):
+                        Predicted binned distogram logits
+                    "confidence_scores":
+                        Dict containing the following confidence measures:
+                        pLDDT, PDE, PAE, pTM, iPTM, weighted pTM
         Note:
             Previous implementations of losses include softmax so all
             heads return logits.
@@ -300,7 +294,8 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         aux_out["plddt_logits"] = lddt_logits
 
         # Used in modified residue ranking
-        aux_out["plddt"] = compute_plddt(lddt_logits)
+        aux_out["confidence_scores"] = {}
+        aux_out["confidence_scores"]["plddt"] = compute_plddt(lddt_logits)
 
         experimentally_resolved_logits = self.experimentally_resolved(
             si, max_atom_per_token_mask
@@ -309,7 +304,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
 
         pde_logits = self.pde(zij)
         aux_out["pde_logits"] = pde_logits
-        aux_out.update(
+        aux_out["confidence_scores"].update(
             compute_predicted_distance_error(
                 pde_logits,
                 **self.config.confidence.pde,
@@ -319,7 +314,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         if self.config["pae"]["enabled"]:
             pae_logits = self.pae(zij)
             aux_out["pae_logits"] = pae_logits
-            aux_out.update(
+            aux_out["confidence_scores"].update(
                 compute_predicted_aligned_error(
                     pae_logits,
                     **self.config.confidence.pae,
@@ -339,6 +334,6 @@ class AuxiliaryHeadsAllAtom(nn.Module):
                 mask=valid_frame_mask,
                 **self.config.confidence.ptm,
             )
-            aux_out.update(ptm_scores)
+            aux_out["confidence_scores"].update(ptm_scores)
 
         return aux_out

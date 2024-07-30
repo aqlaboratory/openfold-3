@@ -209,8 +209,8 @@ def express_coords_in_frames(
     a, b, c = phi
     w1 = a - b
     w2 = c - b
-    w1_norm = (eps + torch.sum(w1**2, dim=-1, keepdim=True)) ** 0.5
-    w2_norm = (eps + torch.sum(w2**2, dim=-1, keepdim=True)) ** 0.5
+    w1_norm = torch.sqrt(torch.sum(w1**2, dim=-1, keepdim=True))
+    w2_norm = torch.sqrt(torch.sum(w2**2, dim=-1, keepdim=True))
     w1 = w1 / w1_norm
     w2 = w2 / w2_norm
 
@@ -218,8 +218,8 @@ def express_coords_in_frames(
     # [*, N_token, 3]
     e1 = w1 + w2
     e2 = w2 - w1
-    e1_norm = (eps + torch.sum(e1**2, dim=-1, keepdim=True)) ** 0.5
-    e2_norm = (eps + torch.sum(e2**2, dim=-1, keepdim=True)) ** 0.5
+    e1_norm = torch.sqrt(torch.sum(e1**2, dim=-1, keepdim=True))
+    e2_norm = torch.sqrt(torch.sum(e2**2, dim=-1, keepdim=True))
     e1 = e1 / e1_norm
     e2 = e2 / e2_norm
     e3 = torch.linalg.cross(e1, e2, dim=-1)
@@ -268,7 +268,7 @@ def compute_alignment_error(
     """
     xij = express_coords_in_frames(x=x, phi=phi, eps=eps)
     xij_gt = express_coords_in_frames(x=x_gt, phi=phi_gt, eps=eps)
-    return (torch.sum((xij - xij_gt) ** 2, dim=-1) + eps) ** 0.5
+    return torch.sqrt(torch.sum((xij - xij_gt) ** 2, dim=-1))
 
 
 def all_atom_plddt_loss(
@@ -304,10 +304,9 @@ def all_atom_plddt_loss(
     # Compute difference in distances
     # [*, N_atom, N_atom]
     x_gt = batch["gt_atom_positions"]
-    dx = torch.sum(eps + (x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1) ** 0.5
-    dx_gt = (
-        torch.sum((eps + x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
-        ** 0.5
+    dx = torch.sqrt(torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1))
+    dx_gt = torch.sqrt(
+        torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
     )
     d = torch.abs(dx_gt - dx)
 
@@ -363,8 +362,9 @@ def all_atom_plddt_loss(
     atom_mask_shape = list(batch["gt_atom_mask"].shape)
     padded_atom_mask_shape = list(atom_mask_shape)
     padded_atom_mask_shape[-1] = padded_atom_mask_shape[-1] + 1
-    atom_mask = torch.zeros(padded_atom_mask_shape, device=x.device).scatter_(
-        index=rep_index.long(), value=1, dim=-1
+    atom_mask = torch.zeros(padded_atom_mask_shape, device=x.device)
+    atom_mask = atom_mask.scatter_(
+        index=rep_index.long(), src=torch.ones_like(atom_mask), dim=-1
     )[..., :-1]
     atom_mask = atom_mask * batch["gt_atom_mask"]
 
@@ -386,7 +386,7 @@ def all_atom_plddt_loss(
     # [*, N_atom, no_bins]
     bin_size = (bin_max - bin_min) / no_bins
     v_bins = bin_min + torch.arange(no_bins, device=x.device) * bin_size
-    lddt_b = binned_one_hot(lddt, v_bins)
+    lddt_b = binned_one_hot(lddt, v_bins).to(dtype=x.dtype)
 
     errors = softmax_cross_entropy(logits, lddt_b)
 
@@ -473,7 +473,7 @@ def pae_loss(
     # [*, N_token, N_token, no_bins]
     bin_size = (bin_max - bin_min) / no_bins
     v_bins = bin_min + torch.arange(no_bins, device=logits.device) * bin_size
-    e_b = binned_one_hot(e, v_bins)
+    e_b = binned_one_hot(e, v_bins).to(dtype=logits.dtype)
 
     # Compute predicted alignment error
     pair_mask = (valid_frame_mask[..., None] * rep_atom_mask[..., None, :]) * (
@@ -532,22 +532,18 @@ def pde_loss(
     )
 
     # Compute prediction target
-    d = (
-        torch.sum(eps + (rep_x[..., None, :] - rep_x[..., None, :, :]) ** 2, dim=-1)
-        ** 0.5
+    d = torch.sqrt(
+        torch.sum((rep_x[..., None, :] - rep_x[..., None, :, :]) ** 2, dim=-1)
     )
-    d_gt = (
-        torch.sum(
-            eps + (rep_x_gt[..., None, :] - rep_x_gt[..., None, :, :]) ** 2, dim=-1
-        )
-        ** 0.5
+    d_gt = torch.sqrt(
+        torch.sum((rep_x_gt[..., None, :] - rep_x_gt[..., None, :, :]) ** 2, dim=-1)
     )
     e = torch.abs(d - d_gt)
 
     # Compute binned prediction target
     bin_size = (bin_max - bin_min) / no_bins
     v_bins = bin_min + torch.arange(no_bins, device=e.device) * bin_size
-    e_b = binned_one_hot(e, v_bins)
+    e_b = binned_one_hot(e, v_bins).to(dtype=e.dtype)
 
     pair_mask = rep_atom_mask_gt[..., None] * rep_atom_mask_gt[..., None, :]
 
@@ -653,7 +649,7 @@ def confidence_loss(
     l_plddt = all_atom_plddt_loss(
         batch=batch,
         x=output["x_pred"],
-        logits=output["plddt"],
+        logits=output["plddt_logits"],
         no_bins=plddt["no_bins"],
         bin_min=plddt["bin_min"],
         bin_max=plddt["bin_max"],
@@ -663,7 +659,7 @@ def confidence_loss(
     l_pde = pde_loss(
         batch=batch,
         x=output["x_pred"],
-        logits=output["pde"],
+        logits=output["pde_logits"],
         no_bins=pde["no_bins"],
         bin_min=pde["bin_min"],
         bin_max=pde["bin_max"],
@@ -672,7 +668,7 @@ def confidence_loss(
 
     l_resolved = all_atom_experimentally_resolved_loss(
         batch=batch,
-        logits=output["resolved"],
+        logits=output["experimentally_resolved_logits"],
         no_bins=experimentally_resolved["no_bins"],
         eps=eps,
     )
@@ -690,7 +686,7 @@ def confidence_loss(
         l_pae = pae_loss(
             batch=batch,
             x=output["x_pred"],
-            logits=output["pae"],
+            logits=output["pae_logits"],
             angle_threshold=pae["angle_threshold"],
             no_bins=pae["no_bins"],
             bin_min=pde["bin_min"],

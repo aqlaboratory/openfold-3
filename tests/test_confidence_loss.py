@@ -153,10 +153,12 @@ class TestConfidenceLoss(unittest.TestCase):
 
         output = {
             "x_pred": torch.randn_like(batch["gt_atom_positions"]),
-            "plddt": torch.randn((batch_size, n_atom, no_bins_plddt)),
-            "pae": torch.randn((batch_size, n_token, n_token, no_bins_pae)),
-            "pde": torch.randn((batch_size, n_token, n_token, no_bins_pde)),
-            "resolved": torch.randn((batch_size, n_atom, no_bins_resolved)),
+            "plddt_logits": torch.randn((batch_size, n_atom, no_bins_plddt)),
+            "pae_logits": torch.randn((batch_size, n_token, n_token, no_bins_pae)),
+            "pde_logits": torch.randn((batch_size, n_token, n_token, no_bins_pde)),
+            "experimentally_resolved_logits": torch.randn(
+                (batch_size, n_atom, no_bins_resolved)
+            ),
         }
 
         l_confidence, _ = confidence_loss(
