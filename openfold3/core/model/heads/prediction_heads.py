@@ -114,7 +114,9 @@ class PairformerEmbedding(nn.Module):
         )
 
         # Embed pair distances of representative atoms
-        bins = torch.linspace(self.min_bin, self.max_bin, self.no_bin)
+        bins = torch.linspace(
+            self.min_bin, self.max_bin, self.no_bin, device=zij.device, dtype=zij.dtype
+        )
         squared_bins = bins**2
         upper = torch.cat(
             [squared_bins[1:], squared_bins.new_tensor([self.inf])], dim=-1
