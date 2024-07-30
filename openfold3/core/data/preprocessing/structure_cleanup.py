@@ -1,12 +1,12 @@
 import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
-from biotite.structure.io.pdbx import CIFBlock, CIFFile
-from scipy.spatial.distance import cdist, pdist, squareform
+from biotite.structure.io.pdbx import CIFFile
+from scipy.spatial.distance import cdist
 
-from .metadata_extraction import get_experimental_method
 from .structure_primitives import (
     assign_atom_indices,
+    chain_paired_interface_atom_iter,
     get_interface_token_center_atoms,
     remove_atom_indices,
 )
@@ -291,36 +291,33 @@ def remove_clashing_chains(
     Returns:
         AtomArray with clashing chains removed.
     """
-    pairwise_dists = squareform(pdist(atom_array.coord, metric="euclidean"))
+    # Get atom counts of each chain in the total atom array (index of the resulting
+    # array corresponds to chain_id, value to atom count)
+    chain_atom_counts = np.bincount(atom_array.chain_id_renumbered)
 
-    # Mask out self-distances
-    np.fill_diagonal(pairwise_dists, np.inf)
-
-    # Early break if no clashes are present
-    if not np.any(pairwise_dists < clash_distance):
-        return atom_array
-
-    # Mask out distances between covalently bonded atoms which should not be
-    # considered clashes
-    pairwise_dists[atom_array.bonds.adjacency_matrix()] = np.inf
-
+    ## Get the clashing chains to remove
     chain_ids_to_remove = set()
 
-    for chain1_id, chain2_id, chain1_chain2_dists in pairwise_chain_dist_iter(
-        pairwise_dists, atom_array.chain_id_renumbered
+    # Get all the atom pairs corresponding to clashes and their chain IDs
+    for pair_chain_ids, pair_atom_idxs in chain_paired_interface_atom_iter(
+        atom_array, distance_threshold=clash_distance, ignore_covalent=True
     ):
-        chain1_n_clashing_atoms = np.any(
-            chain1_chain2_dists < clash_distance, axis=1
-        ).sum()
-        chain2_n_clashing_atoms = np.any(
-            chain1_chain2_dists < clash_distance, axis=0
-        ).sum()
+        chain1_id, chain2_id = pair_chain_ids
 
-        chain1_mask = atom_array.chain_id_renumbered == chain1_id
-        chain2_mask = atom_array.chain_id_renumbered == chain2_id
-        chain1_clash_fraction = chain1_n_clashing_atoms / chain1_mask.sum()
-        chain2_clash_fraction = chain2_n_clashing_atoms / chain2_mask.sum()
+        chain1_clashing_atom_idxs = pair_atom_idxs[:, 0]
+        chain2_clashing_atom_idxs = pair_atom_idxs[:, 1]
 
+        # Calculate numbers of unique clashing atoms
+        chain1_n_clashing_atoms = np.unique(chain1_clashing_atom_idxs).size
+        chain2_n_clashing_atoms = np.unique(chain2_clashing_atom_idxs).size
+
+        # Get fractions of clashing atoms respective to each chain's total atom count
+        chain1_n_atoms = chain_atom_counts[chain1_id]
+        chain2_n_atoms = chain_atom_counts[chain2_id]
+        chain1_clash_fraction = chain1_n_clashing_atoms / chain1_n_atoms
+        chain2_clash_fraction = chain2_n_clashing_atoms / chain2_n_atoms
+
+        # If clash, remove chain with higher fraction of clashing atoms
         if (
             chain1_clash_fraction > clash_percentage
             or chain2_clash_fraction > clash_percentage
@@ -444,7 +441,11 @@ def remove_chains_with_CA_gaps(
     return atom_array
 
 
-def subset_large_structure(atom_array: AtomArray, n_chains: int = 20) -> AtomArray:
+def subset_large_structure(
+    atom_array: AtomArray,
+    n_chains: int = 20,
+    interface_distance_threshold: float = 15.0,
+) -> AtomArray:
     """Subsets structures with too many chains to n chains
 
     Follows 2.5.4 of the AlphaFold3 SI. Will select a random interface token center atom
@@ -458,14 +459,17 @@ def subset_large_structure(atom_array: AtomArray, n_chains: int = 20) -> AtomArr
             AtomArray containing the structure to subset
         n_chains:
             Number of chains to keep in the subset
+        interface_distance_threshold:
+            Distance threshold in Å that an interface token center atom must have to any
+            token center atom in another chain to be considered an interface token
+            center atom
 
     Returns:
         AtomArray with the closest n_chains based on token center atom distances
     """
-
     # Select random interface token center atom
     interface_token_center_atoms = get_interface_token_center_atoms(
-        atom_array, atom_array
+        atom_array, distance_threshold=interface_distance_threshold
     )
     selected_atom = np.random.choice(interface_token_center_atoms)
 

@@ -2,14 +2,13 @@
 # TODO: add module docstring
 
 import logging
-from itertools import combinations
-from typing import Generator, Literal, NamedTuple
+from typing import Generator, Literal
 
 import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
-from scipy.spatial.distance import cdist, pdist, squareform
+from scipy.spatial import KDTree
 
 from .metadata_extraction import get_entity_to_three_letter_codes_dict
 from .tables import (
@@ -129,62 +128,138 @@ def assign_molecule_type_ids(atom_array: AtomArray) -> None:
     atom_array.set_annotation("molecule_type_id", molecule_type_ids)
 
 
-class ChainDistPairing(NamedTuple):
-    chain1_id: int  # chain_id of chain 1
-    chain2_id: int  # chain_id of chain 2
-    chain1_chain2_dists: np.ndarray  # pairwise distances between chain 1 and chain 2
+def get_query_interface_atom_pair_idxs(
+    query_atom_array: AtomArray,
+    target_atom_array: AtomArray,
+    distance_threshold: float = 15.0,
+    return_chain_pairs: bool = False,
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+    """Returns interface atom pair indices of the query based on the target.
+
+    Takes in a set of query and target atoms and will return all pairs between query
+    and target atoms that have different chain IDs and are within a given distance
+    threshold of each other. Optionally, it can also return the chain IDs of the matched
+    atom pairs.
+
+    Uses a KDTree internally which will speed up the search for larger structures.
+
+    Args:
+        query_atom_array:
+            AtomArray containing the first set of atoms
+        target_atom_array:
+            AtomArray containing the second set of atoms
+        distance_threshold:
+            Distance threshold in Angstrom. Defaults to 15.0.
+        return_chain_pairs:
+            Whether to return the chain IDs of the matched atom pairs. Defaults to
+            False.
+
+    Returns:
+        atom_pairs: np.ndarray
+            Array of atom pair indices with query atoms in the first column and target
+            atoms in the second column. Pairs will be sorted by the query atom index.
+        chain_pairs: np.ndarray
+            Array of chain ID pairs corresponding to the atom pairs. Only returned if
+            `return_chain_pairs` is True.
+    """
+    kdtree_query = KDTree(query_atom_array.coord)
+    kdtree_target = KDTree(target_atom_array.coord)
+    search_result = kdtree_query.query_ball_tree(kdtree_target, distance_threshold)
+
+    # Get to same output format as kdtree.query_pairs
+    atom_pair_idxs = np.array(
+        [(i, j) for i, j_list in enumerate(search_result) for j in j_list]
+    )
+
+    # Pair the chain IDs
+    chain_pairs = np.column_stack(
+        (
+            query_atom_array.chain_id_renumbered[atom_pair_idxs[:, 0]],
+            target_atom_array.chain_id_renumbered[
+                atom_pair_idxs[:, 1]
+            ],  # change to target
+        )
+    )
+
+    # Get only cross-chain contacts
+    cross_chain_mask = chain_pairs[:, 0] != chain_pairs[:, 1]
+    atom_pair_idxs = atom_pair_idxs[cross_chain_mask]
+
+    # Optionally also return the matched chain IDs for the atom pairs
+    if return_chain_pairs:
+        chain_pairs = chain_pairs[cross_chain_mask]
+        return atom_pair_idxs, chain_pairs
+    else:
+        return atom_pair_idxs
 
 
-def pairwise_chain_dist_iter(
-    pairwise_dists: np.ndarray, atom_chain_ids: np.ndarray
-) -> Generator[ChainDistPairing, None, None]:
-    # All possible pairings of chains (ignoring order and without self-pairings)
-    chain_ids = np.unique(atom_chain_ids)
-    chain_pairings = list(combinations(chain_ids, 2))
+def get_interface_atom_pair_idxs(
+    atom_array: AtomArray,
+    distance_threshold: float = 15.0,
+    return_chain_pairs: bool = False,
+    sort_by_chain: bool = False,
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+    """Returns interface atom pair indices within a structure.
 
-    # Mask to access every chain
-    chain_masks = {chain_id: atom_chain_ids == chain_id for chain_id in chain_ids}
+    Takes in an AtomArray and will return all pairs of atoms that have different chain
+    IDs and are within a given distance threshold of each other. Optionally, it can also
+    return the chain IDs of the matched atom pairs.
 
-    # Loop through all pairings and get distances
-    for chain1_id, chain2_id in chain_pairings:
-        chain1_mask = chain_masks[chain1_id]
-        chain2_mask = chain_masks[chain2_id]
-        chain1_chain2_dists = pairwise_dists[chain1_mask][:, chain2_mask]
-
-        yield ChainDistPairing(chain1_id, chain2_id, chain1_chain2_dists)
-
-
-def get_interface_chain_pairs(
-    atom_array: AtomArray, distance_threshold: float = 15.0
-) -> list[tuple[int, int]]:
-    """Returns chain pairings with interface atoms based on a distance threshold
-
-    This will find all pairs of chains in the AtomArray that have at least one atom
-    within a given distance threshold of each other.
+    Uses a KDTree internally which will speed up the search for larger structures.
 
     Args:
         atom_array:
-            AtomArray containing the structure to find interface chain pairings in.
+            AtomArray containing the structure to find interface atom pairs in.
         distance_threshold:
             Distance threshold in Angstrom. Defaults to 15.0.
+        return_chain_pairs:
+            Whether to return the chain IDs of the matched atom pairs. Defaults to
+            False.
+        sort_by_chain:
+            If True, will sort each individual atom pair so that the corresponding chain
+            IDs are in ascending order. Otherwise, atom pairs will be ordered in a way
+            that the first index is always smaller than the second index and sorted by
+            the first atom index. Defaults to False.
 
     Returns:
-        List of tuples with chain pairings that have interface atoms.
+        atom_pairs: np.ndarray
+            Array of atom pair indices with the first atom in the first column and the
+            second atom in the second column. If `sort_by_chain` is False (default),
+            pairs will be sorted by the first atom index and stored non-redundantly, so
+            that i < j for any pair (i, j). If `sort_by_chain` is True, pairs will be
+            sorted again so that the corresponding chain IDs are in ascending order
+            within each pair, which may result in pairs where j < i.
     """
-    pairwise_dists = squareform(pdist(atom_array.coord, metric="euclidean"))
+    kdtree = KDTree(atom_array.coord)
 
-    interface_pairs = []
+    atom_pair_idxs = kdtree.query_pairs(distance_threshold, output_type="ndarray")
 
-    for chain1_id, chain2_id, chain1_chain2_dists in pairwise_chain_dist_iter(
-        pairwise_dists, atom_array.chain_id_renumbered
-    ):
-        if np.any(chain1_chain2_dists < distance_threshold):
-            interface_pairs.append((chain1_id, chain2_id))
+    # Pair the chain IDs
+    chain_pairs = atom_array.chain_id_renumbered[atom_pair_idxs]
 
-    return interface_pairs
+    # dev-only, TODO: remove
+    assert np.array_equal(atom_pair_idxs[:, 0], np.sort(atom_pair_idxs[:, 0]))
+
+    if sort_by_chain:
+        # Sort by chain within-pair to canonicalize
+        # (e.g. [(1, 2), (2, 1)] -> [(1, 2), (1, 2)])
+        chain_sort_idx = np.argsort(chain_pairs, axis=1)
+        chain_pairs = np.take_along_axis(chain_pairs, chain_sort_idx, axis=1)
+        atom_pair_idxs = np.take_along_axis(atom_pair_idxs, chain_sort_idx, axis=1)
+
+    # Get only cross-chain contacts
+    cross_chain_mask = chain_pairs[:, 0] != chain_pairs[:, 1]
+    atom_pair_idxs = atom_pair_idxs[cross_chain_mask]
+
+    # Optionally also return the matched chain IDs for the atom pairs
+    if return_chain_pairs:
+        chain_pairs = chain_pairs[cross_chain_mask]
+        return atom_pair_idxs, chain_pairs
+    else:
+        return atom_pair_idxs
 
 
-def get_interface_atoms(
+def get_query_interface_atoms(
     query_atom_array: AtomArray,
     target_atom_array: AtomArray,
     distance_threshold: float = 15.0,
@@ -203,27 +278,190 @@ def get_interface_atoms(
             Distance threshold in Angstrom. Defaults to 15.0.
 
     Returns:
+        Subset of the query AtomArray just containing interface atoms.
+    """
+    # Get all interface atom pairs of query-target
+    interface_atom_pairs = get_query_interface_atom_pair_idxs(
+        query_atom_array, target_atom_array, distance_threshold
+    )
+    # Subset to just unique (sorted) atoms of the query
+    query_interface_atoms = query_atom_array[np.unique(interface_atom_pairs[:, 0])]
+
+    return query_interface_atoms
+
+
+def get_interface_atoms(
+    atom_array: AtomArray,
+    distance_threshold: float = 15.0,
+) -> AtomArray:
+    """Returns interface atoms in a structure.
+
+    This will find atoms in a structure that are within a given distance threshold of
+    any atom with a different chain in the same structure.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to find interface atoms in.
+        distance_threshold:
+            Distance threshold in Angstrom. Defaults to 15.0.
+
+    Returns:
         AtomArray with interface atoms.
     """
-    pairwise_dists = cdist(query_atom_array.coord, target_atom_array.coord)
+    # Get all pairs of atoms within the distance threshold
+    interface_atom_pair_idxs = get_interface_atom_pair_idxs(
+        atom_array, distance_threshold
+    )
 
-    # All unique chains in the query
-    query_chain_ids = set(query_atom_array.chain_id_renumbered)
+    # Return all atoms participating in any of the pairs
+    return atom_array[np.unique(interface_atom_pair_idxs.flatten())]
 
-    # Set masks to avoid intra-chain comparisons
-    for chain in query_chain_ids:
-        query_chain_mask = query_atom_array.chain_id_renumbered == chain
-        target_chain_mask = target_atom_array.chain_id_renumbered == chain
 
-        query_chain_block_mask = np.ix_(query_chain_mask, target_chain_mask)
-        pairwise_dists[query_chain_block_mask] = np.inf
+def get_interface_chain_id_pairs(
+    atom_array: AtomArray, distance_threshold: float = 15.0
+) -> np.ndarray:
+    """Returns chain pairings with interface atoms based on a distance threshold
 
-    interface_atom_mask = np.any(pairwise_dists < distance_threshold, axis=1)
+    This will find all pairs of chains in the AtomArray that have at least one atom
+    within a given distance threshold of each other.
 
-    return query_atom_array[interface_atom_mask]
+    Args:
+        atom_array:
+            AtomArray containing the structure to find interface chain pairings in.
+        distance_threshold:
+            Distance threshold in Angstrom. Defaults to 15.0.
+
+    Returns:
+        List of tuples with unique chain pairings that have interface atoms, so that
+        chain_id_1 < chain_id_2 for a pair (chain_id_1, chain_id_2).
+    """
+    _, chain_pairs = get_interface_atom_pair_idxs(
+        atom_array,
+        distance_threshold=distance_threshold,
+        return_chain_pairs=True,
+        sort_by_chain=True,
+    )
+
+    return np.unique(chain_pairs, axis=0)
+
+
+def chain_paired_interface_atom_iter(
+    atom_array: AtomArray,
+    distance_threshold: float = 15.0,
+    ignore_covalent: bool = False,
+) -> Generator[tuple[tuple[int, int], np.ndarray[np.integer, np.integer]], None, None]:
+    """Yields interface atom pairs grouped by unique chain pairs.
+
+    Interface atoms are defined as atoms that are within a given distance threshold of
+    each other and have different chain IDs. For each unique pair of chains that have at
+    least one interface contact, this function will yield the corresponding chain IDs as
+    well as all interface atoms between this pair of chains.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to find interface atom pairs in.
+        distance_threshold:
+            Distance threshold in Angstrom. Defaults to 15.0.
+        ignore_covalent:
+            Whether to ignore pairs corresponding to covalently bonded atoms. Defaults
+            to False.
+
+    Yields:
+        chain_ids:
+            Tuple of chain IDs of the pair (sorted so that chain_id_1 < chain_id_2)
+        atom_pair_idxs:
+            Array of atom pair indices corresponding to the chain pairing with the first
+            chain's atom in the first column and the second chain's atom in the second
+            column.
+    """
+    # Get all interface atom pairs and their corresponding chain ID pairs
+    atom_pair_idxs, chain_pairs = get_interface_atom_pair_idxs(
+        atom_array,
+        distance_threshold=distance_threshold,
+        return_chain_pairs=True,
+        sort_by_chain=True,
+    )
+
+    if atom_pair_idxs.size == 0:
+        return
+
+    # Optionally remove pairs corresponding to covalently bonded atoms
+    if ignore_covalent:
+        # Subset the atom_array to only the relevant atoms to avoid computing huge
+        # adjacency matrix
+        unique_atoms, unique_atom_idx = np.unique(atom_pair_idxs, return_inverse=True)
+        subset_atom_array = atom_array[unique_atoms]
+
+        # Maps the original atom pairs to their indices in the unique atom list
+        unique_atom_idx = unique_atom_idx.reshape(atom_pair_idxs.shape)
+
+        subset_adjmat = subset_atom_array.bonds.adjacency_matrix()
+        covalent_pair_mask = subset_adjmat[unique_atom_idx[:, 0], unique_atom_idx[:, 1]]
+
+        # Remove the covalent atom pairs
+        atom_pair_idxs = atom_pair_idxs[~covalent_pair_mask]
+        chain_pairs = chain_pairs[~covalent_pair_mask]
+
+        # If all pairs were covalent, return
+        if atom_pair_idxs.size == 0:
+            return
+
+    # Sort to group together occurrences of the same pair
+    # (e.g. [(0, 1), (0, 2), (0, 1)] -> [(0, 1), (0, 1), (0, 2)])
+    group_sort_idx = np.lexsort((chain_pairs[:, 1], chain_pairs[:, 0]))
+    chain_pairs_grouped = chain_pairs[group_sort_idx]
+    atom_pairs_grouped = atom_pair_idxs[group_sort_idx]
+
+    # Get indices of the first occurrence of each pair
+    changes = (
+        np.roll(chain_pairs_grouped, shift=1, axis=0) != chain_pairs_grouped
+    ).any(axis=1)
+    group_start_idx = np.nonzero(changes)[0]
+
+    # Get indices where the pair changes
+    group_end_idx = np.roll(group_start_idx, shift=-1)
+    group_end_idx[-1] = len(chain_pairs_grouped)
+
+    for start_idx, end_idx in zip(group_start_idx, group_end_idx):
+        yield (
+            tuple(chain_pairs_grouped[start_idx]),
+            atom_pairs_grouped[start_idx:end_idx],
+        )
 
 
 def get_interface_token_center_atoms(
+    atom_array: AtomArray,
+    distance_threshold: float = 15.0,
+) -> AtomArray:
+    """Gets interface token center atoms within a structure.
+
+    This will find token center atoms that are within a given distance threshold of
+    any token center atom with a different chain in the same structure.
+
+    For example used in 2.5.4 of the AlphaFold3 SI (subsetting of large bioassemblies)
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to find interface token center atoms in.
+        distance_threshold:
+            Distance threshold in Angstrom. Defaults to 15.0.
+
+    Returns:
+        AtomArray with interface token center atoms.
+    """
+
+    if "af3_token_center_atom" not in atom_array.get_annotation_categories():
+        raise ValueError(
+            "Token center atoms not found in atom array, run "
+            "tokenize_atom_array first"
+        )
+
+    token_center_atoms = atom_array[atom_array.af3_token_center_atom]
+
+    return get_interface_atoms(token_center_atoms, distance_threshold)
+
+
+def get_query_interface_token_center_atoms(
     query_atom_array: AtomArray,
     target_atom_array: AtomArray,
     distance_threshold: float = 15.0,
@@ -260,7 +498,7 @@ def get_interface_token_center_atoms(
     query_token_centers = query_atom_array[query_atom_array.af3_token_center_atom]
     target_token_centers = target_atom_array[target_atom_array.af3_token_center_atom]
 
-    return get_interface_atoms(
+    return get_query_interface_atoms(
         query_token_centers, target_token_centers, distance_threshold
     )
 
