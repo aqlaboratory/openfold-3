@@ -27,12 +27,15 @@ from openmm import app as openmm_app
 from openmm import unit
 from openmm.app.internal.pdbstructure import PdbStructure
 
-import openfold3.core.loss.loss as loss
+from openfold3.core.loss.violation import (
+    compute_violation_metrics_np,
+    find_structural_violations_np,
+)
 from openfold3.core.np import (
     protein,
     residue_constants,
 )
-from openfold3.core.np.relax import cleanup, utils
+from openfold3.core.relax import cleanup, utils
 
 ENERGY = unit.kilocalories_per_mole
 LENGTH = unit.angstroms
@@ -355,7 +358,7 @@ def find_violations(prot_np: protein.Protein):
     batch["seq_mask"] = np.ones_like(batch["aatype"], np.float32)
     batch = make_atom14_positions(batch)
 
-    violations = loss.find_structural_violations_np(
+    violations = find_structural_violations_np(
         batch=batch,
         atom14_pred_positions=batch["atom14_gt_positions"],
         config=ml_collections.ConfigDict(
@@ -365,7 +368,7 @@ def find_violations(prot_np: protein.Protein):
             }
         ),
     )
-    violation_metrics = loss.compute_violation_metrics_np(
+    violation_metrics = compute_violation_metrics_np(
         batch=batch,
         atom14_pred_positions=batch["atom14_gt_positions"],
         violations=violations,

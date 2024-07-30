@@ -20,7 +20,7 @@ from typing import Any, Dict, Sequence, Tuple
 import numpy as np
 
 from openfold3.core.np import protein
-from openfold3.core.np.relax import amber_minimize, utils
+from openfold3.core.relax import amber_minimize, utils
 
 
 class AmberRelaxation:

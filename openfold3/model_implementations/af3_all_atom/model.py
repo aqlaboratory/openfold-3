@@ -36,7 +36,7 @@ from openfold3.core.model.structure.diffusion_module import (
 )
 
 # from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation_align
-from openfold3.core.utils.tensor_utils import add
+from openfold3.core.utils.tensor_utils import add, tensor_tree_map
 
 
 class AlphaFold3(nn.Module):
@@ -291,8 +291,8 @@ class AlphaFold3(nn.Module):
         si_input = si_input.unsqueeze(1)
         si_trunk = si_trunk.unsqueeze(1)
         zij_trunk = zij_trunk.unsqueeze(1)
-        for key in batch:
-            batch[key] = batch[key].unsqueeze(1)
+
+        batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
 
         # Ground truth positions
         xl_gt = batch["gt_atom_positions"]
@@ -327,6 +327,9 @@ class AlphaFold3(nn.Module):
             "noise_level": t,
             "x_sample": xl,
         }
+
+        # Remove sample dimension
+        tensor_tree_map(lambda t: t.squeeze(1), batch)
 
         return output
 
@@ -422,16 +425,19 @@ class AlphaFold3(nn.Module):
                     Pair representation output from model trunk
                 "x_pred" ([*, N_atom, 3]):
                     Predicted atom positions
-                "p_plddt" ([*, N_atom, 50]):
+                "plddt_logits" ([*, N_atom, 50]):
                     Predicted binned PLDDT logits
-                "p_pae" ([*, N_token, N_token, 64]):
+                "pae_logits" ([*, N_token, N_token, 64]):
                     Predicted binned PAE logits
-                "p_pde" ([*, N_token, N_token, 64]):
+                "pde_logits" ([*, N_token, N_token, 64]):
                     Predicted binned PDE logits
-                "p_resolved" ([*, N_atom, 2]):
+                "experimentally_resolved_logits" ([*, N_atom, 2]):
                     Predicted binned experimentally resolved logits
-                "p_distogram" ([*, N_token, N_token, 64]):
+                "distogram_logits" ([*, N_token, N_token, 64]):
                     Predicted binned distogram logits
+                "confidence_scores":
+                    Dict containing the following confidence measures:
+                    pLDDT, PDE, PAE, pTM, iPTM, weighted pTM
                 "noise_level" ([*])
                     Training only, noise level at a diffusion step
                 "x_sample" ([*, N_samples, N_atom, 3]):

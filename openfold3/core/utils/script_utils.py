@@ -10,7 +10,8 @@ from pytorch_lightning.utilities.deepspeed import (
     convert_zero_checkpoint_to_fp32_state_dict,
 )
 
-from openfold3.core.np import protein, relax, residue_constants
+from openfold3.core.np import protein, residue_constants
+from openfold3.core.relax.relax import AmberRelaxation
 from openfold3.core.utils.import_weights import (
     import_jax_weights_,
     import_openfold_weights_,
@@ -254,7 +255,7 @@ def relax_protein(
     output_name,
     cif_output=False,
 ):
-    amber_relaxer = relax.AmberRelaxation(
+    amber_relaxer = AmberRelaxation(
         use_gpu=(model_device != "cpu"),
         **config.relax,
     )

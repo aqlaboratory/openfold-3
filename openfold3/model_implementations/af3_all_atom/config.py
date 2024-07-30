@@ -79,6 +79,8 @@ config = mlc.ConfigDict(
                     "num_main_msa_seqs": [],
                     "gt_atom_positions": [NUM_ATOMS, 3],
                     "gt_atom_mask": [NUM_ATOMS],
+                    "resolution": [],
+                    "is_distillation": [],
                 }
             }
         },
@@ -358,19 +360,32 @@ config = mlc.ConfigDict(
             },
         },
         "loss": {
+            "alpha_confidence": 1e-4,
+            "alpha_diffusion": 4.0,
+            "alpha_distogram": 3e-2,
+            "min_resolution": 0.1,
+            "max_resolution": 4.0,
             "confidence": {
-                "no_bins_plddt": 50,
-                "bin_min_plddt": 0.0,
-                "bin_max_plddt": 1.0,
-                "angle_threshold": 25.0,
-                "no_bins_pae": 64,
-                "bin_min_pae": 0.0,
-                "bin_max_pae": 32.0,
-                "no_bins_pde": 64,
-                "bin_min_pde": 0.0,
-                "bin_max_pde": 32.0,
-                "no_bins_resolved": 2,
-                "alpha_pae": 0,
+                "plddt": {
+                    "no_bins": 50,
+                    "bin_min": 0.0,
+                    "bin_max": 1.0,
+                },
+                "pde": {
+                    "no_bins": 64,
+                    "bin_min": 0.0,
+                    "bin_max": 32.0,
+                },
+                "experimentally_resolved": {
+                    "no_bins": 2,
+                },
+                "pae": {
+                    "angle_threshold": 25.0,
+                    "no_bins": 64,
+                    "bin_min": 0.0,
+                    "bin_max": 32.0,
+                    "alpha_pae": 0.0,
+                },
                 "eps": eps,
                 "inf": 1e9,  # global parameter?
             },
@@ -380,6 +395,7 @@ config = mlc.ConfigDict(
                 "alpha_dna": 5.0,
                 "alpha_rna": 5.0,
                 "alpha_ligand": 10.0,
+                "eps": eps,
                 "enabled": True,
             },
             "distogram": {
@@ -426,7 +442,14 @@ finetune3_config_update = mlc.ConfigDict(
                 },
             }
         },
-        "loss": {"diffusion": {"enabled": False}},
+        "loss": {
+            "confidence": {
+                "pae": {
+                    "alpha_pae": 1.0,
+                }
+            },
+            "diffusion": {"enabled": False},
+        },
     }
 )
 
