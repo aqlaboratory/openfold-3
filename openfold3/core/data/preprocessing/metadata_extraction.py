@@ -4,7 +4,7 @@ import biotite.structure as struc
 import numpy as np
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 
-from .tables import MOLECULE_TYPE_ID_TO_NAME
+from .tables import MOLECULE_TYPE_TO_NAME
 
 
 def get_pdb_id(cif_file: CIFFile, format: Literal["upper", "lower"] = "lower") -> str:
@@ -247,7 +247,7 @@ def get_chain_to_molecule_type_dict(atom_array: struc.AtomArray) -> dict[int, st
     chain_to_molecule_type_id = get_chain_to_molecule_type_id_dict(atom_array)
 
     return {
-        chain: MOLECULE_TYPE_ID_TO_NAME[molecule_type_id]
+        chain: MOLECULE_TYPE_TO_NAME[molecule_type_id]
         for chain, molecule_type_id in chain_to_molecule_type_id.items()
     }
 

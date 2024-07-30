@@ -6,13 +6,11 @@ from biotite.structure import AtomArray
 
 from .structure_primitives import assign_atom_indices, remove_atom_indices
 from .tables import (
-    MOLECULE_TYPE_ID_DNA,
-    MOLECULE_TYPE_ID_PROTEIN,
-    MOLECULE_TYPE_ID_RNA,
     NUCLEIC_ACID_MAIN_CHAIN_ATOMS,
     PROTEIN_MAIN_CHAIN_ATOMS,
     STANDARD_RESIDUES,
     TOKEN_CENTER_ATOMS,
+    MoleculeType,
 )
 
 
@@ -96,10 +94,10 @@ def tokenize_atom_array(atom_array: AtomArray):
     # Find atoms connecting residues in the same chain via side chains
     is_side_chain = (
         ~np.isin(atom_names, NUCLEIC_ACID_MAIN_CHAIN_ATOMS)
-        & np.isin(molecule_types, [MOLECULE_TYPE_ID_RNA, MOLECULE_TYPE_ID_DNA])
+        & np.isin(molecule_types, [MoleculeType.RNA, MoleculeType.DNA])
     ) | (
         ~np.isin(atom_names, PROTEIN_MAIN_CHAIN_ATOMS)
-        & (molecule_types == MOLECULE_TYPE_ID_PROTEIN)
+        & (molecule_types == MoleculeType.PROTEIN)
     )
     is_same_chain = (
         chain_ids[bondlist_standard[:, 0]] == chain_ids[bondlist_standard[:, 1]]

@@ -1,4 +1,6 @@
 # Standard residues as defined in AF3 SI, Table 13
+from enum import IntEnum
+
 STANDARD_PROTEIN_RESIDUES = [
     "ALA",
     "ARG",
@@ -39,17 +41,21 @@ TOKEN_CENTER_ATOMS = ["CA", "C1'"]
 NUCLEIC_ACID_MAIN_CHAIN_ATOMS = ["C3'", "C4'", "C5'", "O3'", "O5'", "P"]
 PROTEIN_MAIN_CHAIN_ATOMS = ["N", "C", "CA", "O"]
 
-# Molecule type used in tokenization
-MOLECULE_TYPE_ID_PROTEIN = 0
-MOLECULE_TYPE_ID_RNA = 1
-MOLECULE_TYPE_ID_DNA = 2
-MOLECULE_TYPE_ID_LIGAND = 3
 
-MOLECULE_TYPE_ID_TO_NAME = {
-    MOLECULE_TYPE_ID_PROTEIN: "protein",
-    MOLECULE_TYPE_ID_RNA: "RNA",
-    MOLECULE_TYPE_ID_DNA: "DNA",
-    MOLECULE_TYPE_ID_LIGAND: "ligand",
+# Molecule type used in tokenization
+class MoleculeType(IntEnum):
+    PROTEIN = 0
+    RNA = 1
+    DNA = 2
+    LIGAND = 3
+
+
+# String names for writing output files etc.
+MOLECULE_TYPE_TO_NAME = {
+    MoleculeType.PROTEIN: "protein",
+    MoleculeType.RNA: "RNA",
+    MoleculeType.DNA: "DNA",
+    MoleculeType.LIGAND: "ligand",
 }
 
 # Removed crystallization aids as defined in AF3 SI, Table 9

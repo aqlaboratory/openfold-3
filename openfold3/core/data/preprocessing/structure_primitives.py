@@ -12,14 +12,11 @@ from scipy.spatial import KDTree
 
 from .metadata_extraction import get_entity_to_three_letter_codes_dict
 from .tables import (
-    MOLECULE_TYPE_ID_DNA,
-    MOLECULE_TYPE_ID_LIGAND,
-    MOLECULE_TYPE_ID_PROTEIN,
-    MOLECULE_TYPE_ID_RNA,
     NUCLEIC_ACID_PHOSPHATE_ATOMS,
     STANDARD_DNA_RESIDUES,
     STANDARD_PROTEIN_RESIDUES,
     STANDARD_RNA_RESIDUES,
+    MoleculeType,
 )
 
 
@@ -111,19 +108,19 @@ def assign_molecule_type_ids(atom_array: AtomArray) -> None:
 
         # Assign protein if any standard protein residue is present
         if residues_in_chain & set(STANDARD_PROTEIN_RESIDUES):
-            molecule_type_ids[chain_start:chain_end] = MOLECULE_TYPE_ID_PROTEIN
+            molecule_type_ids[chain_start:chain_end] = MoleculeType.PROTEIN
 
         # Assign RNA if any standard RNA residue is present
         elif residues_in_chain & set(STANDARD_RNA_RESIDUES):
-            molecule_type_ids[chain_start:chain_end] = MOLECULE_TYPE_ID_RNA
+            molecule_type_ids[chain_start:chain_end] = MoleculeType.RNA
 
         # Assign DNA if any standard DNA residue is present
         elif residues_in_chain & set(STANDARD_DNA_RESIDUES):
-            molecule_type_ids[chain_start:chain_end] = MOLECULE_TYPE_ID_DNA
+            molecule_type_ids[chain_start:chain_end] = MoleculeType.DNA
 
         # Assign ligand otherwise
         else:
-            molecule_type_ids[chain_start:chain_end] = MOLECULE_TYPE_ID_LIGAND
+            molecule_type_ids[chain_start:chain_end] = MoleculeType.LIGAND
 
     atom_array.set_annotation("molecule_type_id", molecule_type_ids)
 
@@ -734,13 +731,13 @@ def add_unresolved_polymer_residues(
         chain_id = first_atom.chain_id_renumbered
 
         # Only interested in polymer chains
-        if chain_type == MOLECULE_TYPE_ID_LIGAND:
+        if chain_type == MoleculeType.LIGAND:
             continue
         else:
-            if chain_type == MOLECULE_TYPE_ID_PROTEIN:
+            if chain_type == MoleculeType.PROTEIN:
                 polymer_type = "protein"
                 bond_type = "peptide"
-            elif chain_type in (MOLECULE_TYPE_ID_RNA, MOLECULE_TYPE_ID_DNA):
+            elif chain_type in (MoleculeType.RNA, MoleculeType.DNA):
                 polymer_type = "nucleic_acid"
                 bond_type = "phosphate"
             else:
