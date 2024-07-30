@@ -40,8 +40,8 @@ class ProcessedStructure(NamedTuple):
 
 
 def process_structure(cif_path: Path, ccd: CIFFile) -> ProcessedStructure:
-    cif_file, atom_array = io.parse_mmcif_bioassembly(
-        cif_path, extra_fields=["auth_asym_id"]
+    cif_file, atom_array = io.parse_mmcif(
+        cif_path, expand_bioassembly=True, extra_fields=["auth_asym_id"]
     )
 
     # Get block with all the primary CIF data
