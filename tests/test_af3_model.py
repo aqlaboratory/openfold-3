@@ -2,14 +2,16 @@ import unittest
 
 import torch
 
+from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations.af3_all_atom.config.base_config import config
-from openfold3.model_implementations.af3_all_atom.model import AlphaFold3
+from openfold3.model_implementations import registry, MODEL_REGISTRY
 from tests.config import consts
 from tests.data_utils import random_af3_features
 
-
 class TestAF3Model(unittest.TestCase):
+    def setUp(self):
+        self.config = MODEL_REGISTRY['af3_all_atom'].base_config
+
     def test_shape(self):
         batch_size = consts.batch_size
         n_token = 16
@@ -18,10 +20,10 @@ class TestAF3Model(unittest.TestCase):
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
         # To avoid memory issues in CI
-        config.model.pairformer.no_blocks = 4
-        config.model.diffusion_module.diffusion_transformer.no_blocks = 4
+        self.config.model.pairformer.no_blocks = 4
+        self.config.model.diffusion_module.diffusion_transformer.no_blocks = 4
 
-        af3 = AlphaFold3(config).to(device)
+        af3 = MODEL_REGISTRY["af3_all_atom"](self.config).to(device)
 
         batch = random_af3_features(
             batch_size=batch_size,
@@ -43,8 +45,47 @@ class TestAF3Model(unittest.TestCase):
 
         self.assertTrue(x_pred.shape == (batch_size, n_atom, 3))
         self.assertTrue(
-            x_sample.shape == (batch_size, config.globals.no_samples, n_atom, 3)
+            x_sample.shape == (batch_size, self.config.globals.no_samples, n_atom, 3)
         )
+
+    def test_model_with_loss(self):
+        # TODO: Add more serious test, this is just to check that the
+        # full integration runs without errors
+        batch_size = consts.batch_size
+        n_token = 16
+        n_msa = 10
+        n_templ = 3
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        finetune3_config = registry.make_config_with_preset("af3_all_atom", "finetune3")
+        finetune3_config.model.heads.distogram.enabled = True
+
+        # To avoid memory issues in CI
+        finetune3_config.model.pairformer.no_blocks = 4
+        finetune3_config.model.diffusion_module.diffusion_transformer.no_blocks = 4
+
+        af3 = MODEL_REGISTRY["af3_all_atom"](finetune3_config).to(device)
+
+        batch = random_af3_features(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=n_msa,
+            n_templ=n_templ,
+        )
+
+        def to_device(t):
+            return t.to(torch.device(device))
+
+        batch = tensor_tree_map(to_device, batch)
+
+        outputs = af3(batch=batch)
+
+        af3_loss = AlphaFold3Loss(config=finetune3_config.loss)
+        loss, loss_breakdown = af3_loss(
+            batch=batch, output=outputs, _return_breakdown=True
+        )
+
+        self.assertTrue(loss.shape == ())
 
 
 if __name__ == "__main__":

@@ -31,6 +31,9 @@ finetune3:
         rasa:
           cutoff: 0.581
     loss:
+      confidence:
+        pae:
+          alpha_pae: 1.0
       diffusion:
         enabled: False
 

@@ -43,6 +43,8 @@ feature_dict = mlc.ConfigDict(
             "num_main_msa_seqs": [],
             "gt_atom_positions": [NUM_ATOMS, 3],
             "gt_atom_mask": [NUM_ATOMS],
+            "resolution": [],
+            "is_distillation": [],
         },
     }
 )

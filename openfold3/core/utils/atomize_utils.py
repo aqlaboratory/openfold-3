@@ -239,7 +239,7 @@ def get_token_atom_index_offset(atom_name: str, restype: torch.Tensor):
         atom_name:
             Atom name to get indices
         restype:
-            [*, N_token, 32] One-hot residue types
+            [*, N_token, 32] One-hot residue types. Must be float dtype.
     Returns:
         token_atom_index_offset:
             [*, N_token] Atom indices (within their residues) of the given atom name
@@ -249,16 +249,20 @@ def get_token_atom_index_offset(atom_name: str, restype: torch.Tensor):
     token_atom_index_offset = torch.einsum(
         "...k,k->...",
         restype,
-        torch.Tensor(
-            atom_name_to_index_by_restype[atom_name]["index"], device=restype.device
-        ).to(restype.dtype),
+        torch.tensor(
+            atom_name_to_index_by_restype[atom_name]["index"],
+            device=restype.device,
+            dtype=restype.dtype,
+        ),
     )
     token_atom_mask = torch.einsum(
         "...k,k->...",
         restype,
-        torch.Tensor(
-            atom_name_to_index_by_restype[atom_name]["mask"], device=restype.device
-        ).to(restype.dtype),
+        torch.tensor(
+            atom_name_to_index_by_restype[atom_name]["mask"],
+            device=restype.device,
+            dtype=restype.dtype,
+        ),
     )
     return token_atom_index_offset, token_atom_mask
 
@@ -291,11 +295,13 @@ def get_token_center_atoms(batch: Dict, x: torch.Tensor, atom_mask: torch.Tensor
     is_standard_nucleotide = (batch["is_dna"] + batch["is_rna"]) * (
         1 - batch["is_atomized"]
     )
+
+    restype = batch["restype"].to(dtype=x.dtype)
     protein_token_atom_index_offset, protein_token_atom_mask = (
-        get_token_atom_index_offset(atom_name="CA", restype=batch["restype"])
+        get_token_atom_index_offset(atom_name="CA", restype=restype)
     )
     nucleotide_token_atom_index_offset, nucleotide_token_atom_mask = (
-        get_token_atom_index_offset(atom_name="C1'", restype=batch["restype"])
+        get_token_atom_index_offset(atom_name="C1'", restype=restype)
     )
     center_index = (
         (start_atom_index + protein_token_atom_index_offset) * is_standard_protein
@@ -377,18 +383,19 @@ def get_token_representative_atoms(
     )
 
     # Get index of representative atoms
+    restype = batch["restype"].to(dtype=x.dtype)
     start_atom_index = batch["start_atom_index"].long()
     cb_atom_index_offset, cb_atom_mask = get_token_atom_index_offset(
-        atom_name="CB", restype=batch["restype"]
+        atom_name="CB", restype=restype
     )
     ca_atom_index_offset, ca_atom_mask = get_token_atom_index_offset(
-        atom_name="CA", restype=batch["restype"]
+        atom_name="CA", restype=restype
     )
     c4_atom_index_offset, c4_atom_mask = get_token_atom_index_offset(
-        atom_name="C4", restype=batch["restype"]
+        atom_name="C4", restype=restype
     )
     c2_atom_index_offset, c2_atom_mask = get_token_atom_index_offset(
-        atom_name="C2", restype=batch["restype"]
+        atom_name="C2", restype=restype
     )
     rep_index = (
         (
@@ -494,23 +501,25 @@ def get_token_frame_atoms(
     is_standard_nucleotide = (batch["is_dna"] + batch["is_rna"]) * (
         1 - batch["is_atomized"]
     )
+
+    restype = batch["restype"].to(dtype=x.dtype)
     n_atom_index_offset, n_atom_mask = get_token_atom_index_offset(
-        atom_name="N", restype=batch["restype"]
+        atom_name="N", restype=restype
     )
     ca_atom_index_offset, ca_atom_mask = get_token_atom_index_offset(
-        atom_name="CA", restype=batch["restype"]
+        atom_name="CA", restype=restype
     )
     c_atom_index_offset, c_atom_mask = get_token_atom_index_offset(
-        atom_name="C", restype=batch["restype"]
+        atom_name="C", restype=restype
     )
     c3p_atom_index_offset, c3p_atom_mask = get_token_atom_index_offset(
-        atom_name="C3'", restype=batch["restype"]
+        atom_name="C3'", restype=restype
     )
     c1p_atom_index_offset, c1p_atom_mask = get_token_atom_index_offset(
-        atom_name="C1'", restype=batch["restype"]
+        atom_name="C1'", restype=restype
     )
     c4p_atom_index_offset, c4p_atom_mask = get_token_atom_index_offset(
-        atom_name="C4'", restype=batch["restype"]
+        atom_name="C4'", restype=restype
     )
     frame_atoms = {
         "a": {

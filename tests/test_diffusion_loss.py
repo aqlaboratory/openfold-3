@@ -15,6 +15,7 @@
 import unittest
 
 import torch
+import torch.nn.functional as F
 
 from openfold3.core.loss.diffusion import (
     bond_loss,
@@ -28,6 +29,44 @@ from tests.config import consts
 
 
 class TestDiffusionLoss(unittest.TestCase):
+    def setup_features(self):
+        # Example: UNK UNK UNK ALA GLY/A A DT
+        # NumAtoms: 1 1 1 5 4 22 21
+        token_mask = torch.ones((1, 10))
+        restype = F.one_hot(
+            torch.Tensor([[20, 20, 20, 0, 7, 7, 7, 7, 21, 29]]).long(), num_classes=32
+        ).float()
+        num_atoms_per_token = torch.Tensor([[1, 1, 1, 5, 1, 1, 1, 1, 22, 21]])
+        start_atom_index = torch.Tensor([[0, 1, 2, 3, 8, 9, 10, 11, 12, 34]])
+        asym_id = torch.Tensor([[0, 0, 0, 1, 1, 1, 1, 1, 2, 3]])
+
+        is_protein = torch.Tensor([[0, 0, 0, 1, 1, 1, 1, 1, 0, 0]])
+        is_rna = torch.Tensor([[0, 0, 0, 0, 0, 0, 0, 0, 1, 0]])
+        is_dna = torch.Tensor([[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]])
+        is_ligand = torch.Tensor([[1, 1, 1, 0, 0, 0, 0, 0, 0, 0]])
+        is_atomized = torch.Tensor([[1, 1, 1, 0, 1, 1, 1, 1, 0, 0]])
+
+        token_bonds = torch.ones((1, 10, 10))
+
+        gt_atom_mask = torch.ones((1, 55))
+        gt_atom_positions = torch.randn((1, 55, 3))
+
+        return {
+            "token_mask": token_mask,
+            "restype": restype,
+            "num_atoms_per_token": num_atoms_per_token,
+            "start_atom_index": start_atom_index,
+            "asym_id": asym_id,
+            "is_protein": is_protein,
+            "is_rna": is_rna,
+            "is_dna": is_dna,
+            "is_ligand": is_ligand,
+            "is_atomized": is_atomized,
+            "token_bonds": token_bonds,
+            "gt_atom_mask": gt_atom_mask,
+            "gt_atom_positions": gt_atom_positions,
+        }
+
     def test_weighted_rigid_align(self):
         batch_size = consts.batch_size
         n_atom = 2 * consts.n_res
@@ -43,283 +82,112 @@ class TestDiffusionLoss(unittest.TestCase):
         atom_mask_gt = torch.ones((batch_size, n_atom))
 
         x = centre_random_augmentation(x_gt, atom_mask_gt)
-        x_align = weighted_rigid_align(x=x, x_gt=x_gt, w=w, atom_mask_gt=atom_mask_gt)
+        x_align = weighted_rigid_align(
+            x=x, x_gt=x_gt, w=w, atom_mask_gt=atom_mask_gt, eps=consts.eps
+        )
 
         self.assertTrue(x_align.shape == (batch_size, n_atom, 3))
         self.assertTrue(torch.sum(torch.abs(x_align - x_gt) > 1e-5) == 0)
 
     def test_mse_loss(self):
-        batch_size = consts.batch_size
-        n_token_per_group = 4
-        n_token = 4 * n_token_per_group
-        n_atom = 4 * n_token
+        n_sample = 2
         alpha_dna = 5
         alpha_rna = 5
         alpha_ligand = 10
 
-        x1_gt = torch.randn((batch_size, n_atom, 3))
-        x2_gt = torch.randn((batch_size, n_atom, 3))
-        atom_mask_gt = torch.ones((batch_size, n_atom)).bool()
-        atom_mask_gt[1, -12:] = 0
+        batch = self.setup_features()
+        batch_size = batch["gt_atom_mask"].shape[0]
 
-        x1 = centre_random_augmentation(x1_gt, atom_mask_gt)
-        x2 = centre_random_augmentation(x2_gt, atom_mask_gt)
-
-        batch = {
-            "is_protein": torch.concat(
-                [
-                    torch.ones((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                ],
-                dim=-1,
-            ),
-            "is_dna": torch.concat(
-                [
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.ones((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                ],
-                dim=-1,
-            ),
-            "is_rna": torch.concat(
-                [
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.ones((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                ],
-                dim=-1,
-            ),
-            "is_ligand": torch.concat(
-                [
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.ones((batch_size, n_token_per_group)),
-                ],
-                dim=-1,
-            ),
-            "atom_to_token_index": torch.eye(n_token)
-            .repeat_interleave(4, dim=0)
-            .unsqueeze(0)
-            .repeat(batch_size, 1, 1),
-        }
+        x = centre_random_augmentation(
+            xl=batch["gt_atom_positions"].repeat((1, n_sample, 1, 1)),
+            atom_mask=batch["gt_atom_mask"],
+        )
 
         mse = mse_loss(
             batch=batch,
-            x=x1,
-            x_gt=x2,
-            atom_mask_gt=atom_mask_gt,
+            x=x,
             alpha_dna=alpha_dna,
             alpha_rna=alpha_rna,
             alpha_ligand=alpha_ligand,
-        )
-        mse_gt = mse_loss(
-            batch=batch,
-            x=x1_gt,
-            x_gt=x2_gt,
-            atom_mask_gt=atom_mask_gt,
-            alpha_dna=alpha_dna,
-            alpha_rna=alpha_rna,
-            alpha_ligand=alpha_ligand,
+            eps=consts.eps,
         )
 
-        self.assertTrue(mse.shape == (batch_size,))
-        self.assertTrue(torch.sum((mse - mse_gt) > 1e-5) == 0)
+        self.assertTrue(mse.shape == (batch_size, n_sample))
+        self.assertTrue((mse < 1e-5).all())
 
     def test_bond_loss(self):
-        batch_size = consts.batch_size
-        n_token_per_group = 4
-        n_token = 4 * n_token_per_group
-        n_atom = 4 * n_token
+        n_sample = 2
 
-        x_gt = torch.randn((batch_size, n_atom, 3))
-        atom_mask = torch.ones((batch_size, n_atom))
-        atom_mask[1, -44:] = 0
+        batch = self.setup_features()
+        batch_size = batch["gt_atom_mask"].shape[0]
 
-        x = centre_random_augmentation(x_gt, atom_mask)
+        x = centre_random_augmentation(
+            xl=batch["gt_atom_positions"].repeat((1, n_sample, 1, 1)),
+            atom_mask=batch["gt_atom_mask"],
+        )
 
-        batch = {
-            "is_protein": torch.concat(
-                [
-                    torch.ones((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                ],
-                dim=-1,
-            ),
-            "is_dna": torch.concat(
-                [
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.ones((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                ],
-                dim=-1,
-            ),
-            "is_rna": torch.concat(
-                [
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.ones((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                ],
-                dim=-1,
-            ),
-            "is_ligand": torch.concat(
-                [
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.ones((batch_size, n_token_per_group)),
-                ],
-                dim=-1,
-            ),
-            "atom_to_token_index": torch.eye(n_token)
-            .repeat_interleave(4, dim=0)
-            .unsqueeze(0)
-            .repeat(batch_size, 1, 1),
-            "token_bonds": torch.ones((batch_size, n_token, n_token)),
-        }
+        loss = bond_loss(batch, x, eps=consts.eps)
 
-        loss = bond_loss(batch, x, x_gt, atom_mask)
-
-        self.assertTrue(loss.shape == (batch_size,))
-        self.assertTrue(torch.sum(loss > 1e-5) == 0)
+        self.assertTrue(loss.shape == (batch_size, n_sample))
+        self.assertTrue((loss < 1e-5).all())
 
     def test_smooth_lddt_loss(self):
-        batch_size = consts.batch_size
-        n_token_per_group = 4
-        n_token = 4 * n_token_per_group
-        n_atom = 4 * n_token
+        n_sample = 2
 
-        x_gt = torch.randn((batch_size, n_atom, 3))
-        atom_mask = torch.ones((batch_size, n_atom))
-        atom_mask[1, -44:] = 0
+        batch = self.setup_features()
+        batch_size = batch["gt_atom_mask"].shape[0]
 
-        x = centre_random_augmentation(x_gt, atom_mask)
+        x = centre_random_augmentation(
+            xl=batch["gt_atom_positions"].repeat((1, n_sample, 1, 1)),
+            atom_mask=batch["gt_atom_mask"],
+        )
 
-        batch = {
-            "is_protein": torch.concat(
-                [
-                    torch.ones((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                ],
-                dim=-1,
-            ),
-            "is_dna": torch.concat(
-                [
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.ones((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                ],
-                dim=-1,
-            ),
-            "is_rna": torch.concat(
-                [
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.ones((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                ],
-                dim=-1,
-            ),
-            "is_ligand": torch.concat(
-                [
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.ones((batch_size, n_token_per_group)),
-                ],
-                dim=-1,
-            ),
-            "atom_to_token_index": torch.eye(n_token)
-            .repeat_interleave(4, dim=0)
-            .unsqueeze(0)
-            .repeat(batch_size, 1, 1),
-        }
+        loss = smooth_lddt_loss(batch, x, eps=consts.eps)
 
-        loss = smooth_lddt_loss(batch, x, x_gt, atom_mask)
+        gt_loss = 1 - 0.25 * (
+            torch.sigmoid(torch.Tensor([0.5]))
+            + torch.sigmoid(torch.Tensor([1.0]))
+            + torch.sigmoid(torch.Tensor([2.0]))
+            + torch.sigmoid(torch.Tensor([4.0]))
+        )
+        gt_loss = gt_loss[None, ...]
 
-        self.assertTrue(loss.shape == (batch_size,))
+        self.assertTrue(loss.shape == (batch_size, n_sample))
+        self.assertTrue((torch.abs(loss - gt_loss) < 1e-5).all())
 
     def test_diffusion_loss(self):
-        batch_size = consts.batch_size
-        n_token_per_group = 4
-        n_token = 4 * n_token_per_group
-        n_atom = 4 * n_token
+        n_sample = 2
         sigma_data = 16
         alpha_bond = 1
 
-        x_gt = torch.randn((batch_size, n_atom, 3))
-        atom_mask_gt = torch.ones((batch_size, n_atom))
+        batch = self.setup_features()
+        batch_size = batch["gt_atom_mask"].shape[0]
 
-        x = centre_random_augmentation(x_gt, atom_mask_gt)
-
-        batch = {
-            "is_protein": torch.concat(
-                [
-                    torch.ones((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                ],
-                dim=-1,
-            ),
-            "is_dna": torch.concat(
-                [
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.ones((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                ],
-                dim=-1,
-            ),
-            "is_rna": torch.concat(
-                [
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.ones((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                ],
-                dim=-1,
-            ),
-            "is_ligand": torch.concat(
-                [
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.zeros((batch_size, n_token_per_group)),
-                    torch.ones((batch_size, n_token_per_group)),
-                ],
-                dim=-1,
-            ),
-            "atom_to_token_index": torch.eye(n_token)
-            .repeat_interleave(4, dim=0)
-            .unsqueeze(0)
-            .repeat(batch_size, 1, 1),
-            "token_bonds": torch.ones((batch_size, n_token, n_token)),
-        }
+        x = centre_random_augmentation(
+            xl=batch["gt_atom_positions"].repeat((1, n_sample, 1, 1)),
+            atom_mask=batch["gt_atom_mask"],
+        )
 
         t = sigma_data * torch.exp(-1.2 + 1.5 * torch.randn(batch_size))
 
-        loss = diffusion_loss(
+        loss, _ = diffusion_loss(
             batch=batch,
             x=x,
-            x_gt=x_gt,
-            atom_mask_gt=atom_mask_gt,
             t=t,
             sigma_data=sigma_data,
             alpha_bond=alpha_bond,
+            eps=consts.eps,
+        )
+
+        gt_loss = 1 - 0.25 * (
+            torch.sigmoid(torch.Tensor([0.5]))
+            + torch.sigmoid(torch.Tensor([1.0]))
+            + torch.sigmoid(torch.Tensor([2.0]))
+            + torch.sigmoid(torch.Tensor([4.0]))
         )
 
         self.assertTrue(loss.shape == ())
+        self.assertTrue((torch.abs(loss - gt_loss) < 1e-5).all())
 
 
 if __name__ == "__main__":

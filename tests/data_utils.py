@@ -225,6 +225,8 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ):
         "num_atoms_per_token": num_atoms_per_token.unsqueeze(0).repeat((batch_size, 1)),
         "msa_mask": torch.ones((batch_size, n_msa, n_token)),
         "num_main_msa_seqs": torch.Tensor([int(n_msa / 2)]),
-        "gt_atom_positions": torch.ones((batch_size, n_atom, 3)),
+        "gt_atom_positions": torch.randn((batch_size, n_atom, 3)),
         "gt_atom_mask": torch.ones((batch_size, n_atom)),
+        "resolution": torch.Tensor([2.0]),
+        "is_distillation": torch.BoolTensor([False]),
     }
