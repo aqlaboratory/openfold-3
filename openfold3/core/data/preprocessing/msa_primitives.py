@@ -283,7 +283,7 @@ def map_to_paired_msa_per_chain(
         for chain_id in uniprot_hits
     }
 
-    # For each chain, sort MSA rows by the paired species indices
+    # For each chain, sort MSA rows, deletion matrix and metadata by the paired indices
     species_index = {v: i for i, v in enumerate(species)}
     for chain_idx, chain_id in enumerate(uniprot_hits):
         # Get the array of species for each aligned sequences to the query chain
@@ -351,7 +351,6 @@ def create_paired(
     pairing_masks = get_pairing_masks(count_array, ["shared_by_two", "less_than_600"])
 
     # Find species indices that pair rows
-    # Follows strategy outlined in the AF3 SI version of the AF2-Multimer pairing code
     paired_rows_index, missing_rows_index = find_pairing_indices(
         count_array,
         pairing_masks,
@@ -393,7 +392,7 @@ def create_unpaired(msa_collection: MsaCollection):
     pass
 
 
-def prepare_msas(
+def process_msas(
     chain_ids, alignments_path, use_alignment_database, alignment_index, max_seq_counts
 ):
     """Prepares the arrays needed to create MSA feature tensors.

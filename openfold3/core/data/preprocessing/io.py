@@ -1,4 +1,5 @@
 import dataclasses
+import math
 import os
 import string
 import textwrap
@@ -13,12 +14,12 @@ class Msa:
     """Class representing a parsed MSA file.
 
     The metadata attrubute gets updated in certain functions of the MSA preparation.
-    
+
     Attributes:
         msa: np.array
             A 2D numpy array containing the aligned sequences.
         deletion_matrix: np.array
-            A 2D numpy array containing the cumulative deletion counts up to each 
+            A 2D numpy array containing the cumulative deletion counts up to each
             position for each row in the MSA.
         metadata: Optional[Sequence[str]]
             A list of metadata persed from sequence headers of the MSA."""
@@ -28,14 +29,32 @@ class Msa:
     metadata: Optional[Sequence[str]]
 
     def __len__(self):
-        return len(self.sequences)
+        return self.msa.shape[0]
 
-    def truncate(self, max_seqs: int):
-        return Msa(
-            msa=self.msa[:max_seqs],
-            deletion_matrix=self.deletion_matrix[:max_seqs],
-            metadata=self.descriptions[:max_seqs],
-        )
+    def truncate(self, max_seq_count: int) -> None:
+        """Truncate the MSA to a maximum number of sequences.
+
+        Args:
+            max_seq_count (int): Number of sequences to keep in the MSA.
+
+        Returns:
+            None
+        """
+
+        if not isinstance(max_seq_count, int) |  (max_seq_count == math.inf):
+            raise ValueError("max_seq_count should be an integer or math.inf.")
+
+        if self.__len__() > max_seq_count:
+            if max_seq_count == math.inf:
+                max_seq_count = self.__len__()
+
+            self.msa = self.msa[:max_seq_count, :]
+            self.deletion_matrix = self.deletion_matrix[:max_seq_count, :]
+            self.metadata = (
+                self.metadata[:max_seq_count]
+                if isinstance(self.metadata, list)
+                else self.metadata.iloc[:(max_seq_count - 1)]
+            )
 
 
 @dataclasses.dataclass(frozen=False)
@@ -105,9 +124,6 @@ def parse_fasta(
         elif not line:
             continue  # Skip blank lines.
         sequences[index] += line
-        # Break if we have enough sequences
-        if (max_seq_count is not None) & (len(sequences) == max_seq_count):
-            break
 
     return sequences, metadata
 
@@ -149,7 +165,13 @@ def parse_a3m(msa_string: str, max_seq_count: Optional[int] = None) -> Msa:
     msa = _msa_list_to_np(msa)
     deletion_matrix = np.array(deletion_matrix)
 
-    return Msa(msa=msa, deletion_matrix=deletion_matrix, metadata=metadata)
+    parsed_msa = Msa(msa=msa, deletion_matrix=deletion_matrix, metadata=metadata)
+
+    # Crop the MSA
+    if max_seq_count is not None:
+        parsed_msa.truncate(max_seq_count)
+
+    return parsed_msa
 
 
 def parse_stockholm(msa_string: str, max_seq_count: Optional[int] = None) -> Msa:
@@ -178,9 +200,6 @@ def parse_stockholm(msa_string: str, max_seq_count: Optional[int] = None) -> Msa
         if name not in name_to_sequence:
             name_to_sequence[name] = ""
         name_to_sequence[name] += sequence
-        # Break if we have enough sequences
-        if (max_seq_count is not None) & (len(name_to_sequence) == max_seq_count):
-            break
 
     msa = []
     deletion_matrix = []
@@ -216,7 +235,13 @@ def parse_stockholm(msa_string: str, max_seq_count: Optional[int] = None) -> Msa
     deletion_matrix = np.array(deletion_matrix)
     metadata = list(name_to_sequence.keys())
 
-    return Msa(msa=msa, deletion_matrix=deletion_matrix, metadata=metadata)
+    parsed_msa = Msa(msa=msa, deletion_matrix=deletion_matrix, metadata=metadata)
+
+    # Crop the MSA
+    if max_seq_count is not None:
+        parsed_msa.truncate(max_seq_count)
+
+    return parsed_msa
 
 
 MSA_PARSER_REGISTRY = {".a3m": parse_a3m, ".sto": parse_stockholm}
@@ -246,19 +271,20 @@ def parse_msas_direct(
 
     if len(file_names) == 0:
         raise RuntimeError(
-            textwrap.dedent(f"""
-                           No alignments found in {folder_path}. Folders for chains 
-                           without any aligned sequences need to contain at least one
-                           .sto file with only the query sequence.
-                           """)
+            textwrap.dedent(
+                           "No alignments found in {folder_path}. Folders for chains" 
+                           "without any aligned sequences need to contain at least one"
+                           ".sto file with only the query sequence."
+                           )
         )
     else:
         for file_name in file_names:
             # Split extensions from the filenames
             basename, ext = os.path.splitext(file_name)
             if ext not in [".sto", ".a3m"]:
-                raise RuntimeError(
-                    "All files in the alignments folder must be in .sto or .a3m format."
+                raise NotImplementedError(
+                    "Currently only .sto and .a3m file parsing is supported for"
+                     f"alignment parsing, not {ext}."
                 )
 
             # Only include files with specified max values in the max_seq_counts dict
@@ -266,9 +292,9 @@ def parse_msas_direct(
                 continue
 
             # Parse the MSAs with the appropriate parser
-            with open(os.path.join(folder_path, file_name)) as msa_string:
+            with open(os.path.join(folder_path, file_name)) as f:
                 msas[basename] = MSA_PARSER_REGISTRY[ext](
-                    msa_string.read(), max_seq_counts[basename]
+                    f.read(), max_seq_counts[basename]
                 )
 
     return msas
@@ -301,12 +327,12 @@ def parse_msas_alignment_database(
 
     with open(
         os.path.join(alignment_database_path, alignment_index_entry["db"]), "rb"
-    ) as fp:
+    ) as f:
 
         def read_msa(start, size):
             """Helper function to parse an alignment database file."""
-            fp.seek(start)
-            msa = fp.read(size).decode("utf-8")
+            f.seek(start)
+            msa = f.read(size).decode("utf-8")
             return msa
 
         alignments_to_parse = []
@@ -314,8 +340,9 @@ def parse_msas_alignment_database(
             # Split extensions from the filenames
             basename, ext = os.path.splitext(file_name)
             if ext not in [".sto", ".a3m"]:
-                raise RuntimeError(
-                    "All files in the alignments folder must be in .sto or .a3m format."
+                raise NotImplementedError(
+                    "Currently only .sto and .a3m file parsing is supported for"
+                     f"alignment parsing, not {ext}."
                 )
 
             # Only include files with specified max values in the max_seq_counts dict
