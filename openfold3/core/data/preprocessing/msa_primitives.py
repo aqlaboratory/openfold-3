@@ -2,13 +2,15 @@ from typing import Sequence
 
 import numpy as np
 import pandas as pd
-from numpy.typing import NDArray
 
 from openfold3.core.data.preprocessing.io import Msa, MsaCollection, parse_msas_sample
 
 
 def extract_uniprot_hits(msa_collection: MsaCollection) -> dict[str, Msa]:
     """Parses out UniProt Msa objects for unique protein chains from the MsaCollection.
+
+    This function does not return UniProt MSAs for chains that only contain the query
+    i.e. single sequence MSAs.
 
     Args:
         msa_collection (MsaCollection):
@@ -19,14 +21,11 @@ def extract_uniprot_hits(msa_collection: MsaCollection) -> dict[str, Msa]:
             Dict mapping chain IDs to Msa objects containing UniProt MSAs.
     """
     chain_ids = msa_collection.rep_msa_map.keys()
-    # Get uniprot hits
+    # Get uniprot hits, exclude MSAs only with query
     return {
-        chain_id: (
-            msa_collection.rep_msa_map[chain_id]["uniprot_hits"]
-            if "uniprot_hits" in msa_collection.rep_msa_map[chain_id]
-            else msa_collection.rep_msa_map[chain_id]["uniprot"]
-        )
+        chain_id: msa_collection.rep_msa_map[chain_id]["uniprot_hits"]
         for chain_id in chain_ids
+        if len(msa_collection.rep_msa_map[chain_id]["uniprot_hits"]) > 1
     }
 
 
@@ -96,7 +95,7 @@ def sort_msa_by_distance_to_query(msa: Msa) -> None:
 
 def count_species_per_chain(
     uniprot_hits: dict[str, Msa],
-) -> tuple[NDArray[np.int32], list[str]]:
+) -> tuple[np.ndarray[np.int32], list[str]]:
     """Counts the occurrences of sequences from species in each chain's UniProt MSA.
 
     Args:
@@ -104,7 +103,7 @@ def count_species_per_chain(
             Dict mapping chain IDs to Msa objects containing UniProt MSAs.
 
     Returns:
-        NDArray[np.int32], list[str]:
+        np.ndarray[np.int32], list[str]:
             The array of occurrence counts (number of chains x number of unique species)
             and the list species with at least one sequence among MSAs of all chains.
     """
@@ -148,8 +147,8 @@ def count_species_per_chain(
 
 
 def get_pairing_masks(
-    count_array: NDArray[np.int32], mask_keys: Sequence[str]
-) -> NDArray[np.bool_]:
+    count_array: np.ndarray[np.int32], mask_keys: Sequence[str]
+) -> np.ndarray[np.bool_]:
     """Generates masks for the pairing process.
 
     Useful for excluding things like species that occur only in on chain (will not be
@@ -157,13 +156,13 @@ def get_pairing_masks(
     in the AF2-Multimer pairing code).
 
     Args:
-        count_array (NDArray[np.int32]):
+        count_array (np.ndarray[np.int32]):
             The array of species occurrence counts per chain.
         mask_keys (Sequence[str]):
             List of strings indicating which mask to add.
 
     Returns:
-        NDArray[np.bool_]: The union of all masks to apply during pairing.
+        np.ndarray[np.bool_]: The union of all masks to apply during pairing.
     """
     pairing_masks = np.ones(count_array.shape[1], dtype=bool)
 
@@ -181,8 +180,8 @@ def get_pairing_masks(
 
 
 def find_pairing_indices(
-    count_array: NDArray[np.int32],
-    pairing_masks: NDArray[np.bool_],
+    count_array: np.ndarray[np.int32],
+    pairing_masks: np.ndarray[np.bool_],
     paired_row_cutoff: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """The main function for finding indices that pair rows in the MSA arrays.
@@ -191,9 +190,9 @@ def find_pairing_indices(
     excludes block-diagonal elements (unpaired rows).
 
     Args:
-        count_array (NDArray[np.int32]):
+        count_array (np.ndarray[np.int32]):
             The array of species occurrence counts per chain
-        pairing_masks (NDArray[np.bool_]):
+        pairing_masks (np.ndarray[np.bool_]):
             The union of all masks to apply during pairing.
         paired_row_cutoff (int):
             The maximum number of rows to pair.
@@ -258,32 +257,47 @@ def find_pairing_indices(
 
 def map_to_paired_msa_per_chain(
     uniprot_hits: dict[str, Msa],
-    paired_rows_index: NDArray[np.int32],
-    missing_rows_index: NDArray[np.int32],
-    species,
-) -> dict[str, NDArray[np.str_]]:
-    """_summary_
+    paired_rows_index: np.ndarray[np.int32],
+    missing_rows_index: np.ndarray[np.int32],
+    species: list,
+) -> dict[str, Msa]:
+    """Maps paired species indices to MSA row indices.
 
     Args:
-        uniprot_hits (dict[str, Msa]): _description_
-        paired_rows_index (NDArray[np.int32]): _description_
-        missing_rows_index (NDArray[np.int32]): _description_
-        species (_type_): _description_
+        uniprot_hits (dict[str, Msa]):
+            Dict mapping chain IDs to Msa objects containing UniProt MSAs.
+        paired_rows_index (np.ndarray[np.int32]):
+            Array containing the indices that pair rows in MSAs of an assembly across
+            chains.
+        missing_rows_index (np.ndarray[np.int32]):
+            Mask for partially paired rows for each chain that cannot be fully paired.
+        species (list):
+            List of species with at least one sequence among MSAs of all chains, in the
+            order used by entries ofe th paired_rows_index.
 
     Returns:
-        dict[str, NDArray[np.str_]]: _description_
+        dict[str, Msa]:
+            Dict mapping chain IDs to Msa objects containing the paired MSAs and paired
+            deletion matrices. Metadata fields are empty.
     """
 
     # Map species indices back to MSA row indices
-    # Pre-allocate MSA array
+    # Pre-allocate MSA objects
     paired_msa_per_chain = {
-        chain_id: np.full(
-            (paired_rows_index.shape[0], uniprot_hits[chain_id].msa.shape[-1]), "-"
+        chain_id: Msa(
+            msa=np.full(
+                (paired_rows_index.shape[0], uniprot_hits[chain_id].msa.shape[-1]), "-"
+            ),
+            deletion_matrix=np.zeros(
+                (paired_rows_index.shape[0], uniprot_hits[chain_id].msa.shape[-1]),
+                dtype=int,
+            ),
+            metadata=pd.DataFrame(),
         )
         for chain_id in uniprot_hits
     }
 
-    # For each chain, sort MSA rows, deletion matrix and metadata by the paired indices
+    # For each chain, sort MSA rows by the paired species indices
     species_index = {v: i for i, v in enumerate(species)}
     for chain_idx, chain_id in enumerate(uniprot_hits):
         # Get the array of species for each aligned sequences to the query chain
@@ -312,16 +326,66 @@ def map_to_paired_msa_per_chain(
             msa_rows[row_idx] = first_true_row
             used_rows.add(first_true_row)
 
-        paired_msa_per_chain[chain_id][missing_rows_index[:, chain_idx], :] = (
+        # Update MSA and deletion matrix with paired data
+        paired_msa_per_chain[chain_id].msa[missing_rows_index[:, chain_idx], :] = (
             uniprot_hits[chain_id].msa[msa_rows, :]
         )
+        paired_msa_per_chain[chain_id].deletion_matrix[
+            missing_rows_index[:, chain_idx], :
+        ] = uniprot_hits[chain_id].deletion_matrix[msa_rows, :]
 
     return paired_msa_per_chain
 
 
+def merge_paired_msas(
+    msa_collection: MsaCollection, paired_msa_per_chain: dict[str, Msa]
+) -> Msa:
+    """Creates a single MSA object from paired MSA arrays.
+
+    Args:
+        msa_collection (MsaCollection):
+            A collection of Msa objects and chain IDs for a single sample.
+        dict[str, Msa]:
+            Dict mapping chain IDs to Msa objects containing the paired MSAs and paired
+            deletion matrices. Metadata fields are empty.
+
+    Returns:
+        Msa:
+            A single Msa object containing the paired MSA arrays and deletion matrices
+            for all processed chain IDs.
+    """
+    # Initialize paired MSA object
+    num_rows = paired_msa_per_chain[next(iter(paired_msa_per_chain))].msa.shape[0]
+    num_cols = msa_collection.num_cols
+    paired_msa = Msa(
+        msa=np.full((num_rows, num_cols), "-"),
+        deletion_matrix=np.zeros((num_rows, num_cols), dtype=int),
+        metadata=pd.DataFrame(),
+    )
+
+    # Update paired MSA with paired data for each chain using the representatives
+    col_offset = 0
+    for chain_id in msa_collection.chain_rep_map:
+        rep_id = msa_collection.chain_rep_map[chain_id]
+        rep_paired_msa = paired_msa_per_chain[rep_id]
+        n_col_paired_i = rep_paired_msa.msa.shape[1]
+
+        # Replace slices in msa and deletion matrix
+        paired_msa.msa[:, col_offset : (col_offset + n_col_paired_i)] = (
+            rep_paired_msa.msa
+        )
+        paired_msa.deletion_matrix[:, col_offset : (col_offset + n_col_paired_i)] = (
+            rep_paired_msa.deletion_matrix
+        )
+
+        col_offset += n_col_paired_i
+
+    return paired_msa
+
+
 def create_paired(
     msa_collection: MsaCollection, paired_row_cutoff: int
-) -> NDArray[np.str_]:
+) -> Msa:
     """Creates paired MSA arrays from UniProt MSAs.
 
     Follows the AF2-Multimer strategy for pairing rows of UniProt MSAs based on species
@@ -363,8 +427,9 @@ def create_paired(
     )
 
     # Expand across duplicate chains and concatenate
+    paired_msa = merge_paired_msas(msa_collection, paired_msa_per_chain)
 
-    return
+    return paired_msa
 
 
 def find_monomer_homomer(msa_collection: MsaCollection) -> bool:
@@ -419,7 +484,7 @@ def process_msas(
 
     if not is_monomer_homomer:
         # Create paired UniProt MSA arrays
-        pass
+        paired_msa = create_paired(msa_collection, paired_row_cutoff=8191)
 
     # Create unpaired non-UniProt MSA arrays
 

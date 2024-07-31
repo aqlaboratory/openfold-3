@@ -41,7 +41,7 @@ class Msa:
             None
         """
 
-        if not isinstance(max_seq_count, int) |  (max_seq_count == math.inf):
+        if not isinstance(max_seq_count, int) | (max_seq_count == math.inf):
             raise ValueError("max_seq_count should be an integer or math.inf.")
 
         if self.__len__() > max_seq_count:
@@ -53,7 +53,7 @@ class Msa:
             self.metadata = (
                 self.metadata[:max_seq_count]
                 if isinstance(self.metadata, list)
-                else self.metadata.iloc[:(max_seq_count - 1)]
+                else self.metadata.iloc[: (max_seq_count - 1)]
             )
 
 
@@ -64,12 +64,19 @@ class MsaCollection:
     Attributes:
         rep_msa_map: dict[str, dict[str, Msa]]
             Dictionary mapping representative chain IDs to dictionaries of Msa objects.
+        rep_seq_map: dict[str, np.ndarray[np.str_]]
+            Dictionary mapping representative chain IDs to numpy arrays of their
+            corresponding query sequences.
         chain_rep_map: dict[str, str]
             Dictionary mapping chain IDs to representative chain IDs.
+        num_cols: int
+            The total number of columns across all chains.
     """
 
     rep_msa_map: dict[str, dict[str, Msa]]
+    rep_seq_map: dict[str, np.ndarray[np.str_]]
     chain_rep_map: dict[str, str]
+    num_cols: int
 
 
 def _msa_list_to_np(msa: Sequence[str]) -> np.array:
@@ -90,9 +97,7 @@ def _msa_list_to_np(msa: Sequence[str]) -> np.array:
     return msa_array
 
 
-def parse_fasta(
-    fasta_string: str, max_seq_count: Optional[int] = None
-) -> tuple[Sequence[str], Sequence[str]]:
+def parse_fasta(fasta_string: str) -> tuple[Sequence[str], Sequence[str]]:
     """Parses FASTA file.
 
     This function needs to be wrapped in a with open call to read the file.
@@ -101,8 +106,6 @@ def parse_fasta(
         fasta_string:
             The string contents of a fasta file. The first sequence in the file
             should be the query sequence.
-        max_seq_count:
-            The maximum number of sequences to parse from the file.
 
     Returns:
         tuple[Sequence[str], Sequence[str]]:
@@ -144,7 +147,7 @@ def parse_a3m(msa_string: str, max_seq_count: Optional[int] = None) -> Msa:
         Msa: A Msa object containing the sequences, deletion matrix and metadata.
     """
 
-    sequences, metadata = parse_fasta(msa_string, max_seq_count)
+    sequences, metadata = parse_fasta(msa_string)
     deletion_matrix = []
     for msa_sequence in sequences:
         deletion_vec = []
@@ -272,10 +275,10 @@ def parse_msas_direct(
     if len(file_names) == 0:
         raise RuntimeError(
             textwrap.dedent(
-                           "No alignments found in {folder_path}. Folders for chains" 
-                           "without any aligned sequences need to contain at least one"
-                           ".sto file with only the query sequence."
-                           )
+                "No alignments found in {folder_path}. Folders for chains"
+                "without any aligned sequences need to contain at least one"
+                ".sto file with only the query sequence."
+            )
         )
     else:
         for file_name in file_names:
@@ -284,7 +287,7 @@ def parse_msas_direct(
             if ext not in [".sto", ".a3m"]:
                 raise NotImplementedError(
                     "Currently only .sto and .a3m file parsing is supported for"
-                     f"alignment parsing, not {ext}."
+                    f"alignment parsing, not {ext}."
                 )
 
             # Only include files with specified max values in the max_seq_counts dict
@@ -335,20 +338,18 @@ def parse_msas_alignment_database(
             msa = f.read(size).decode("utf-8")
             return msa
 
-        alignments_to_parse = []
         for file_name, start, size in alignment_index_entry["files"]:
             # Split extensions from the filenames
             basename, ext = os.path.splitext(file_name)
             if ext not in [".sto", ".a3m"]:
                 raise NotImplementedError(
                     "Currently only .sto and .a3m file parsing is supported for"
-                     f"alignment parsing, not {ext}."
+                    f"alignment parsing, not {ext}."
                 )
 
             # Only include files with specified max values in the max_seq_counts dict
             if max_seq_counts is not None and basename not in max_seq_counts:
                 continue
-            alignments_to_parse.append([basename, ext, start, size])
 
             # Parse the MSAs with the appropriate parser
             msas[basename] = MSA_PARSER_REGISTRY[ext](
@@ -406,14 +407,25 @@ def parse_msas_sample(
                 max_seq_counts=max_seq_counts,
             )
 
-    # Reindex the parsed MSAs to the original chain IDs
-    # This copies identical Msa objects to the original chain IDs
+    # Reindex the parsed MSAs to the original chain IDs and calculate Msa length and
+    # pull out the query sequence
     rep_msa_map = {}
+    rep_seq_map = {}
     chain_rep_map = {}
+    num_cols = 0
 
     for chain_id, rep_id in zip(chain_ids[0], chain_ids[1]):
+        chain_rep_map[chain_id] = rep_id
+        all_msas_per_chain = representative_msas[rep_id]
+        example_msa = all_msas_per_chain[next(iter(all_msas_per_chain))].msa
+        num_cols += example_msa.shape[1]
         if rep_id not in rep_msa_map:
-            rep_msa_map[rep_id] = representative_msas[rep_id]
-            chain_rep_map[chain_id] = rep_id
+            rep_msa_map[rep_id] = all_msas_per_chain
+            rep_seq_map[rep_id] = example_msa[0, :]
 
-    return MsaCollection(rep_msa_map=rep_msa_map, chain_rep_map=chain_rep_map)
+    return MsaCollection(
+        rep_msa_map=rep_msa_map,
+        rep_seq_map=rep_seq_map,
+        chain_rep_map=chain_rep_map,
+        num_cols=num_cols,
+    )
