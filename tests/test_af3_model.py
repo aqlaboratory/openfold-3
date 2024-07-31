@@ -63,8 +63,8 @@ class TestAF3Model(unittest.TestCase):
 
         config.update(train_config_update)
         config.model.heads.pae.enabled = True
-        config.loss.confidence.pae.alpha_pae = 1.0
-        config.loss.diffusion.alpha_bond = 1.0
+        config.loss.confidence.pae.weight = 1.0
+        config.loss.diffusion.bond_weight = 1.0
 
         # To avoid memory issues in CI
         config.model.pairformer.no_blocks = 4

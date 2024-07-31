@@ -380,9 +380,9 @@ config = mlc.ConfigDict(
             },
         },
         "loss": {
-            "alpha_confidence": 1e-4,
-            "alpha_diffusion": 4.0,
-            "alpha_distogram": 3e-2,
+            "confidence_weight": 1e-4,
+            "diffusion_weight": 4.0,
+            "distogram_weight": 3e-2,
             "min_resolution": 0.1,
             "max_resolution": 4.0,
             "confidence": {
@@ -404,18 +404,18 @@ config = mlc.ConfigDict(
                     "no_bins": 64,
                     "bin_min": 0.0,
                     "bin_max": 32.0,
-                    "alpha_pae": 0.0,
+                    "weight": 0.0,
                 },
                 "eps": eps,
                 "inf": 1e9,  # global parameter?
             },
             "diffusion": {
                 "sigma_data": sigma_data,
-                "alpha_bond": 0.0,  # varies based on training and finetuning
-                "alpha_smooth_lddt": 1.0,  # varies based on finetuning stage
-                "alpha_dna": 5.0,
-                "alpha_rna": 5.0,
-                "alpha_ligand": 10.0,
+                "bond_weight": 0.0,  # varies based on training and finetuning
+                "smooth_lddt_weight": 1.0,  # varies based on finetuning stage
+                "dna_weight": 5.0,
+                "rna_weight": 5.0,
+                "ligand_weight": 10.0,
                 "eps": eps,
             },
             "distogram": {
@@ -431,21 +431,21 @@ config = mlc.ConfigDict(
 train_config_update = mlc.ConfigDict(
     {
         "globals": {"diffusion_training_enabled": True},
-        "loss": {"diffusion": {"alpha_bond": 0.0}},
+        "loss": {"diffusion": {"bond_weight": 0.0}},
     }
 )
 
 finetune1_config_update = mlc.ConfigDict(
     {
         "globals": {"diffusion_training_enabled": True},
-        "loss": {"diffusion": {"alpha_bond": 1.0, "alpha_smooth_lddt": 0.0}},
+        "loss": {"diffusion": {"bond_weight": 1.0, "smooth_lddt_weight": 0.0}},
     }
 )
 
 finetune2_config_update = mlc.ConfigDict(
     {
         "globals": {"diffusion_training_enabled": True},
-        "loss": {"diffusion": {"alpha_bond": 1.0}},
+        "loss": {"diffusion": {"bond_weight": 1.0}},
     }
 )
 
@@ -459,11 +459,11 @@ finetune3_config_update = mlc.ConfigDict(
             }
         },
         "loss": {
-            "alpha_diffusion": 0.0,
-            "alpha_distogram": 0.0,
+            "diffusion_weight": 0.0,
+            "distogram_weight": 0.0,
             "confidence": {
                 "pae": {
-                    "alpha_pae": 1.0,
+                    "weight": 1.0,
                 }
             },
         },

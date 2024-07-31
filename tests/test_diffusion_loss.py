@@ -91,9 +91,9 @@ class TestDiffusionLoss(unittest.TestCase):
 
     def test_mse_loss(self):
         n_sample = 2
-        alpha_dna = 5
-        alpha_rna = 5
-        alpha_ligand = 10
+        dna_weight = 5
+        rna_weight = 5
+        ligand_weight = 10
 
         batch = self.setup_features()
         batch_size = batch["gt_atom_mask"].shape[0]
@@ -106,9 +106,9 @@ class TestDiffusionLoss(unittest.TestCase):
         mse = mse_loss(
             batch=batch,
             x=x,
-            alpha_dna=alpha_dna,
-            alpha_rna=alpha_rna,
-            alpha_ligand=alpha_ligand,
+            dna_weight=dna_weight,
+            rna_weight=rna_weight,
+            ligand_weight=ligand_weight,
             eps=consts.eps,
         )
 
@@ -158,8 +158,8 @@ class TestDiffusionLoss(unittest.TestCase):
     def test_diffusion_loss(self):
         n_sample = 2
         sigma_data = 16
-        alpha_bond = 1.0
-        alpha_smooth_lddt = 1.0
+        bond_weight = 1.0
+        smooth_lddt_weight = 1.0
 
         batch = self.setup_features()
         batch_size = batch["gt_atom_mask"].shape[0]
@@ -176,8 +176,8 @@ class TestDiffusionLoss(unittest.TestCase):
             x=x,
             t=t,
             sigma_data=sigma_data,
-            alpha_bond=alpha_bond,
-            alpha_smooth_lddt=alpha_smooth_lddt,
+            bond_weight=bond_weight,
+            smooth_lddt_weight=smooth_lddt_weight,
             eps=consts.eps,
         )
 
