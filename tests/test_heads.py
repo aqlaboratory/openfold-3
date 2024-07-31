@@ -12,9 +12,8 @@ from openfold3.core.model.heads.prediction_heads import (
     PredictedDistanceErrorHead,
 )
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
-from openfold3.model_implementations.af3_all_atom.config import (
-    config,
-    finetune3_config_update,
+from openfold3.model_implementations import registry, MODEL_REGISTRY
+from openfold3.model_implementations.af3_all_atom.config.base_config import (
     max_atoms_per_token,
 )
 from tests.config import consts
@@ -120,6 +119,8 @@ class TestPairformerEmbedding(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
+        config = registry.make_config_with_preset("af3_all_atom")
+
         c_s_input = config.globals.c_s_input
         c_s = config.globals.c_s
         c_z = config.globals.c_z
@@ -158,6 +159,7 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         n_msa = 10
         n_templ = 3
 
+        config = registry.make_config_with_preset("af3_all_atom", "finetune3")
         c_s_input = config.globals.c_s_input
         c_s = config.globals.c_s
         c_z = config.globals.c_z
@@ -167,7 +169,6 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         )
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
-        config.update(finetune3_config_update)
         heads_config = config.model.heads
         heads_config.distogram.enabled = True
         aux_head = AuxiliaryHeadsAllAtom(heads_config).eval()
