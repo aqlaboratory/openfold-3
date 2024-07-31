@@ -26,6 +26,7 @@ max_relative_idx = mlc.FieldReference(32, field_type=int)
 max_relative_chain = mlc.FieldReference(2, field_type=int)
 no_samples = mlc.FieldReference(48, field_type=int)
 no_rollout_steps = mlc.FieldReference(20, field_type=int)
+diffusion_training_enabled = mlc.FieldReference(False, field_type=bool)
 n_query = mlc.FieldReference(32, field_type=int)
 n_key = mlc.FieldReference(128, field_type=int)
 use_block_sparse_attn = mlc.FieldReference(False, field_type=bool)
@@ -92,6 +93,7 @@ config = mlc.ConfigDict(
             "no_cycles": 4,
             "no_samples": no_samples,
             "no_rollout_steps": no_rollout_steps,
+            "diffusion_training_enabled": diffusion_training_enabled,
             "blocks_per_ckpt": blocks_per_ckpt,
             "chunk_size": chunk_size,
             # Use DeepSpeed memory-efficient attention kernel. Mutually
@@ -426,16 +428,30 @@ config = mlc.ConfigDict(
     }
 )
 
-train_config_update = mlc.ConfigDict({"loss": {"diffusion": {"alpha_bond": 0.0}}})
-
-finetune1_config_update = mlc.ConfigDict(
-    {"loss": {"diffusion": {"alpha_bond": 1.0, "alpha_smooth_lddt": 0.0}}}
+train_config_update = mlc.ConfigDict(
+    {
+        "globals": {"diffusion_training_enabled": True},
+        "loss": {"diffusion": {"alpha_bond": 0.0}},
+    }
 )
 
-finetune2_config_update = mlc.ConfigDict({"loss": {"diffusion": {"alpha_bond": 1.0}}})
+finetune1_config_update = mlc.ConfigDict(
+    {
+        "globals": {"diffusion_training_enabled": True},
+        "loss": {"diffusion": {"alpha_bond": 1.0, "alpha_smooth_lddt": 0.0}},
+    }
+)
+
+finetune2_config_update = mlc.ConfigDict(
+    {
+        "globals": {"diffusion_training_enabled": True},
+        "loss": {"diffusion": {"alpha_bond": 1.0}},
+    }
+)
 
 finetune3_config_update = mlc.ConfigDict(
     {
+        "globals": {"diffusion_training_enabled": False},
         "model": {
             "heads": {
                 "pae": {"enabled": True},
@@ -454,4 +470,6 @@ finetune3_config_update = mlc.ConfigDict(
     }
 )
 
-eval_config_update = mlc.ConfigDict({"globals": {"no_rollout_steps": 200}})
+eval_config_update = mlc.ConfigDict(
+    {"globals": {"no_rollout_steps": 200, "diffusion_training_enabled": False}}
+)

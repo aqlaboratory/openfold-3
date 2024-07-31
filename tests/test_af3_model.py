@@ -4,7 +4,10 @@ import torch
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations.af3_all_atom.config import config
+from openfold3.model_implementations.af3_all_atom.config import (
+    config,
+    train_config_update,
+)
 from openfold3.model_implementations.af3_all_atom.model import AlphaFold3
 from tests.config import consts
 from tests.data_utils import random_af3_features
@@ -17,6 +20,8 @@ class TestAF3Model(unittest.TestCase):
         n_msa = 10
         n_templ = 3
         device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        config.update(train_config_update)
 
         # To avoid memory issues in CI
         config.model.pairformer.no_blocks = 4
@@ -56,6 +61,7 @@ class TestAF3Model(unittest.TestCase):
         n_templ = 3
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
+        config.update(train_config_update)
         config.model.heads.pae.enabled = True
         config.loss.confidence.pae.alpha_pae = 1.0
         config.loss.diffusion.alpha_bond = 1.0
