@@ -67,12 +67,4 @@ def cleanup_structure_af3(
     atom_array = remove_non_CCD_atoms(atom_array, ccd)
     atom_array = remove_chains_with_CA_gaps(atom_array)
 
-    if len(np.unique(atom_array.chain_id_renumbered)) > 20:
-        breakpoint()
-        # Tokenization is needed for the subset_large_structure function
-        tokenize_atom_array(atom_array)
-        atom_array = subset_large_structure(
-            atom_array, n_chains=20, interface_distance_threshold=15.0
-        )
-
     return atom_array
