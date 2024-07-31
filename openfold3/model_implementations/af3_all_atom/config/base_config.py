@@ -366,5 +366,6 @@ config = mlc.ConfigDict(
                 "eps": eps,
             },
         },
+        "ema": {"decay": 0.999},
     }
 )

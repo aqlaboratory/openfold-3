@@ -4,13 +4,14 @@ import torch
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations import registry, MODEL_REGISTRY
+from openfold3.model_implementations import MODEL_REGISTRY, registry
 from tests.config import consts
 from tests.data_utils import random_af3_features
 
+
 class TestAF3Model(unittest.TestCase):
     def setUp(self):
-        self.config = MODEL_REGISTRY['af3_all_atom'].base_config
+        self.config = MODEL_REGISTRY["af3_all_atom"].base_config
 
     def test_shape(self):
         batch_size = consts.batch_size
