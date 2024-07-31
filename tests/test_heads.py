@@ -14,7 +14,6 @@ from openfold3.core.model.heads.prediction_heads import (
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.model_implementations.af3_all_atom.config import (
     config,
-    finetune3_config_update,
     max_atoms_per_token,
 )
 from tests.config import consts
@@ -167,9 +166,8 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         )
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
-        config.update(finetune3_config_update)
         heads_config = config.model.heads
-        heads_config.distogram.enabled = True
+        heads_config.pae.enabled = True
         aux_head = AuxiliaryHeadsAllAtom(heads_config).eval()
 
         si_input = torch.ones(batch_size, n_token, c_s_input)

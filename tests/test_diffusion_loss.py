@@ -158,7 +158,8 @@ class TestDiffusionLoss(unittest.TestCase):
     def test_diffusion_loss(self):
         n_sample = 2
         sigma_data = 16
-        alpha_bond = 1
+        alpha_bond = 1.0
+        alpha_smooth_lddt = 1.0
 
         batch = self.setup_features()
         batch_size = batch["gt_atom_mask"].shape[0]
@@ -176,6 +177,7 @@ class TestDiffusionLoss(unittest.TestCase):
             t=t,
             sigma_data=sigma_data,
             alpha_bond=alpha_bond,
+            alpha_smooth_lddt=alpha_smooth_lddt,
             eps=consts.eps,
         )
 

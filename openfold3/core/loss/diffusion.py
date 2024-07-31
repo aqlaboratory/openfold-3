@@ -266,6 +266,7 @@ def diffusion_loss(
     t: torch.Tensor,
     sigma_data: float,
     alpha_bond: float,
+    alpha_smooth_lddt: float,
     alpha_dna: float = 5.0,
     alpha_rna: float = 5.0,
     alpha_ligand: float = 10.0,
@@ -285,13 +286,17 @@ def diffusion_loss(
         sigma_data:
             Constant determined by data variance
         alpha_bond:
-            Weight on auxiliary loss for bonded ligands
+            Weight for auxiliary loss for bonded ligands
+        alpha_smooth_lddt
+            Weight for smooth lddt loss
         alpha_dna:
             Upweight factor for DNA atoms
         alpha_rna:
             Upweight factor for RNA atoms
         alpha_ligand:
             Upweight factor for ligand atoms
+        eps:
+            Small constant for stability
     Returns:
         mean_loss:
             Diffusion loss
@@ -309,23 +314,24 @@ def diffusion_loss(
         alpha_ligand=alpha_ligand,
         eps=eps,
     )
+    loss_breakdown = {"mse_loss": l_mse}
 
-    l_bond = bond_loss(batch=batch, x=x, eps=eps)
+    l_bond = 0.0
+    if alpha_bond > 0:
+        l_bond = alpha_bond * bond_loss(batch=batch, x=x, eps=eps)
+        loss_breakdown["bond_loss"] = l_bond
 
-    l_smooth_lddt = smooth_lddt_loss(batch=batch, x=x, eps=eps)
-
-    loss_breakdown = {
-        "mse_loss": l_mse,
-        "bond_loss": l_bond,
-        "smooth_lddt_loss": l_smooth_lddt,
-    }
+    l_smooth_lddt = 0.0
+    if alpha_smooth_lddt > 0:
+        l_smooth_lddt = alpha_smooth_lddt * smooth_lddt_loss(batch=batch, x=x, eps=eps)
+        loss_breakdown["smooth_lddt_loss"] = l_smooth_lddt
 
     loss_breakdown = {
         k: torch.mean(v).detach().clone() for k, v in loss_breakdown.items()
     }
 
     w = (t**2 + sigma_data**2) / (t + sigma_data) ** 2
-    l = w * (l_mse + alpha_bond * l_bond) + l_smooth_lddt
+    l = w * (l_mse + l_bond) + l_smooth_lddt
 
     mean_loss = torch.mean(l)
 

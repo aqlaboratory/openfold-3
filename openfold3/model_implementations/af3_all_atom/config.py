@@ -356,6 +356,24 @@ config = mlc.ConfigDict(
                         "max_bin": 31,
                         "no_bins": 64,
                     },
+                    "pae": {
+                        "max_bin": 31,
+                        "no_bins": 64,
+                    },
+                    "ptm": {
+                        "max_bin": 31,
+                        "no_bins": 64,
+                        "ptm_weight": 0.2,
+                        "iptm_weight": 0.8,
+                    },
+                    "clash": {
+                        "min_distance": 1.1,
+                        "clash_cutoff_num": 100,
+                        "clash_cutoff_ratio": 0.5,
+                    },
+                    "rasa": {
+                        "cutoff": 0.581,
+                    },
                 },
             },
         },
@@ -392,11 +410,11 @@ config = mlc.ConfigDict(
             "diffusion": {
                 "sigma_data": sigma_data,
                 "alpha_bond": 0.0,  # varies based on training and finetuning
+                "alpha_smooth_lddt": 1.0,  # varies based on finetuning stage
                 "alpha_dna": 5.0,
                 "alpha_rna": 5.0,
                 "alpha_ligand": 10.0,
                 "eps": eps,
-                "enabled": True,
             },
             "distogram": {
                 "no_bins": 64,
@@ -410,7 +428,9 @@ config = mlc.ConfigDict(
 
 train_config_update = mlc.ConfigDict({"loss": {"diffusion": {"alpha_bond": 0.0}}})
 
-finetune1_config_update = mlc.ConfigDict({"loss": {"diffusion": {"alpha_bond": 1.0}}})
+finetune1_config_update = mlc.ConfigDict(
+    {"loss": {"diffusion": {"alpha_bond": 1.0, "alpha_smooth_lddt": 0.0}}}
+)
 
 finetune2_config_update = mlc.ConfigDict({"loss": {"diffusion": {"alpha_bond": 1.0}}})
 
@@ -420,35 +440,16 @@ finetune3_config_update = mlc.ConfigDict(
             "heads": {
                 "pae": {"enabled": True},
                 "distogram": {"enabled": False},
-                "confidence": {
-                    "pae": {
-                        "max_bin": 31,
-                        "no_bins": 64,
-                    },
-                    "ptm": {
-                        "max_bin": 31,
-                        "no_bins": 64,
-                        "ptm_weight": 0.2,
-                        "iptm_weight": 0.8,
-                    },
-                    "clash": {
-                        "min_distance": 1.1,
-                        "clash_cutoff_num": 100,
-                        "clash_cutoff_ratio": 0.5,
-                    },
-                    "rasa": {
-                        "cutoff": 0.581,
-                    },
-                },
             }
         },
         "loss": {
+            "alpha_diffusion": 0.0,
+            "alpha_distogram": 0.0,
             "confidence": {
                 "pae": {
                     "alpha_pae": 1.0,
                 }
             },
-            "diffusion": {"enabled": False},
         },
     }
 )
