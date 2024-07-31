@@ -23,6 +23,7 @@ import torch.nn as nn
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
+from openfold3.core.utils.checkpointing import checkpoint_blocks
 
 from .attention_pair_bias import AttentionPairBias
 from .transition import ConditionedTransitionBlock
@@ -177,6 +178,7 @@ class DiffusionTransformer(nn.Module):
         use_block_sparse_attn: bool,
         block_size: Optional[int],
         inf: float,
+        blocks_per_ckpt: Optional[int] = None,
         linear_init_params: ConfigDict = lin_init.diffusion_transformer_init,
     ):
         """
@@ -205,6 +207,7 @@ class DiffusionTransformer(nn.Module):
                 Linear layer initialization parameters
         """
         super().__init__()
+        self.blocks_per_ckpt = blocks_per_ckpt
 
         self.blocks = nn.ModuleList(
             [
@@ -285,7 +288,14 @@ class DiffusionTransformer(nn.Module):
             for b in self.blocks
         ]
 
-        for b in blocks:
-            a = b(a)
+        blocks_per_ckpt = self.blocks_per_ckpt
+        if not torch.is_grad_enabled():
+            blocks_per_ckpt = None
+
+        (a,) = checkpoint_blocks(
+            blocks,
+            args=(a,),
+            blocks_per_ckpt=blocks_per_ckpt,
+        )
 
         return a

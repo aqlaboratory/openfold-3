@@ -262,6 +262,7 @@ config = mlc.ConfigDict(
                     "use_block_sparse_attn": False,
                     "block_size": None,
                     "inf": 1e9,  # global parameter?
+                    "blocks_per_ckpt": blocks_per_ckpt,
                     "linear_init_params": lin_init.diffusion_transformer_init,
                 },
                 "atom_attn_dec": {

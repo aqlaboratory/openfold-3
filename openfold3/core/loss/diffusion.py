@@ -19,10 +19,7 @@ from typing import Dict
 
 import torch
 
-from openfold3.core.utils.atomize_utils import (
-    broadcast_token_feat_to_atoms,
-    get_atom_to_onehot_token_index,
-)
+from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 
 
@@ -180,15 +177,19 @@ def bond_loss(batch: Dict, x: torch.Tensor, eps: float) -> torch.Tensor:
 
     # Construct polymer-ligand per-atom bond mask
     # [*, N_atom, N_atom]
-    atom_to_onehot_token_index = get_atom_to_onehot_token_index(
-        token_mask=batch["token_mask"], num_atoms_per_token=batch["num_atoms_per_token"]
+    bond_mask = broadcast_token_feat_to_atoms(
+        token_mask=batch["token_mask"],
+        num_atoms_per_token=batch["num_atoms_per_token"],
+        token_feat=bond_mask,
+        token_dim=-2,
     )
-    bond_mask = torch.einsum(
-        "...ij,...li->...lj", bond_mask, atom_to_onehot_token_index
+    bond_mask = broadcast_token_feat_to_atoms(
+        token_mask=batch["token_mask"],
+        num_atoms_per_token=batch["num_atoms_per_token"],
+        token_feat=bond_mask.transpose(-1, -2),
+        token_dim=-2,
     )
-    bond_mask = torch.einsum(
-        "...lj,...mj->...lm", bond_mask, atom_to_onehot_token_index
-    )
+    bond_mask = bond_mask.transpose(-1, -2)
 
     # Compute polymer-ligand bond loss
     mask = bond_mask * (
