@@ -56,9 +56,11 @@ def broadcast_token_feat_to_atoms(
             [token_feat, torch.zeros_like(token_feat)], dim=token_dim
         ).reshape((*batch_dims, 2 * n_token, *feat_dims))
 
+    # TODO: Check why when running torch.max(torch.sum(num_atoms_per_token, dim=-1))
+    #  in bf16, the sum is wrong
     # Pad token features
     # Flatten batch and token dimensions
-    max_num_atoms = torch.max(torch.sum(num_atoms_per_token, dim=-1))
+    max_num_atoms = torch.max(torch.sum(num_atoms_per_token.float(), dim=-1)).int()
     padded_token_feat = torch.concat(
         [
             token_feat,
@@ -93,7 +95,7 @@ def broadcast_token_feat_to_atoms(
     )
 
     # Unflatten batch and token dimensions
-    atom_feat = atom_feat.reshape((*feat_batch_dims, max_num_atoms.int(), *feat_dims))
+    atom_feat = atom_feat.reshape((*feat_batch_dims, max_num_atoms, *feat_dims))
 
     return atom_feat
 

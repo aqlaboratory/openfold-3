@@ -264,6 +264,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             token_feat=token_mask,
         )
 
+        # TODO: Check why this gets a CUDA index error sometimes
         # Get representative atoms
         repr_x_pred, repr_x_mask = get_token_representative_atoms(
             batch=batch, x=x_pred, atom_mask=atom_mask

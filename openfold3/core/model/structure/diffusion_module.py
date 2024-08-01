@@ -275,13 +275,16 @@ class SampleDiffusion(nn.Module):
         self.step_scale = step_scale
         self.diffusion_module = diffusion_module
 
-        self.noise_schedule = create_noise_schedule(
+        noise_schedule = create_noise_schedule(
             no_rollout_steps=no_rollout_steps,
             sigma_data=sigma_data,
             s_max=s_max,
             s_min=s_min,
             p=p,
         )
+
+        # TODO: Maybe refactor, this was needed to easily change the dtype
+        self.register_buffer("noise_schedule", noise_schedule)
 
     def forward(
         self,

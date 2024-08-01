@@ -56,7 +56,7 @@ class TestAF3Model(unittest.TestCase):
         config.model.heads.distogram.enabled = True
         config.loss.diffusion.alpha_bond = 1.0
 
-        af3 = AlphaFold3(config).to(device)
+        af3 = AlphaFold3(config).to(device=torch.device(device), dtype=dtype)
 
         batch = random_af3_features(
             batch_size=batch_size,
@@ -67,26 +67,26 @@ class TestAF3Model(unittest.TestCase):
 
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
-        def to_device(t):
-            return t.to(torch.device(device))
+        def to_device_dtype(t):
+            return t.to(device=torch.device(device), dtype=dtype)
 
-        batch = tensor_tree_map(to_device, batch)
+        batch = tensor_tree_map(to_device_dtype, batch)
 
         if train:
-            af3_loss = AlphaFold3Loss(config=config.loss).to(device)
-            with torch.cuda.amp.autocast(dtype=dtype):
-                outputs = af3(batch=batch)
+            af3_loss = AlphaFold3Loss(config=config.loss)
 
-                loss, loss_breakdown = af3_loss(
-                    batch=batch, output=outputs, _return_breakdown=True
-                )
+            outputs = af3(batch=batch)
+
+            loss, loss_breakdown = af3_loss(
+                batch=batch, output=outputs, _return_breakdown=True
+            )
 
             # TODO: Checkpointing will cause this to fail, skipping for now
             if config.globals.blocks_per_ckpt is None:
                 loss.backward()
 
-            x_pred = outputs["x_pred"].cpu()
-            x_sample = outputs["x_sample"].cpu()
+            x_pred = outputs["x_pred"]
+            x_sample = outputs["x_sample"]
 
             self.assertTrue(
                 x_sample.shape == (batch_size, config.globals.no_samples, n_atom, 3)
@@ -96,10 +96,10 @@ class TestAF3Model(unittest.TestCase):
         else:
             af3.eval()
 
-            with torch.no_grad(), torch.cuda.amp.autocast(dtype=dtype):
+            with torch.no_grad():
                 outputs = af3(batch=batch)
 
-            x_pred = outputs["x_pred"].cpu()
+            x_pred = outputs["x_pred"]
 
         self.assertTrue(x_pred.shape == (batch_size, n_atom, 3))
 
@@ -174,7 +174,7 @@ class TestAF3Model(unittest.TestCase):
     @compare_utils.skip_unless_cuda_available()
     def test_shape_large_eval(self):
         batch_size = 1
-        n_token = 256
+        n_token = 384
         n_msa = 2000
         n_templ = 4
 
@@ -195,7 +195,7 @@ class TestAF3Model(unittest.TestCase):
     @compare_utils.skip_unless_cuda_available()
     def test_shape_large_bf16_train(self):
         batch_size = 1
-        n_token = 256
+        n_token = 384
         n_msa = 2000
         n_templ = 4
 

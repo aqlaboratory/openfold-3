@@ -304,7 +304,9 @@ def all_atom_plddt_loss(
     # Compute difference in distances
     # [*, N_atom, N_atom]
     x_gt = batch["gt_atom_positions"]
-    dx = torch.sqrt(eps + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1))
+    dx = torch.sqrt(
+        eps + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
+    )
     dx_gt = torch.sqrt(
         eps + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
     )
@@ -538,7 +540,8 @@ def pde_loss(
         eps + torch.sum((rep_x[..., None, :] - rep_x[..., None, :, :]) ** 2, dim=-1)
     )
     d_gt = torch.sqrt(
-        eps + torch.sum((rep_x_gt[..., None, :] - rep_x_gt[..., None, :, :]) ** 2, dim=-1)
+        eps
+        + torch.sum((rep_x_gt[..., None, :] - rep_x_gt[..., None, :, :]) ** 2, dim=-1)
     )
     e = torch.abs(d - d_gt)
 

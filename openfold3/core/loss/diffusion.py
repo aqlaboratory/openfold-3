@@ -67,11 +67,16 @@ def weighted_rigid_align(
     H = H * w[..., None, None] * atom_mask_gt[..., None, None]
     H = torch.sum(H, dim=-3)
 
+    dtype = H.dtype
+
+    # TODO: Check why autocast did not work in test
     # Find optimal rotation from single value decomposition
-    with torch.cuda.amp.autocast(enabled=False):
-        # SVD (cast to float because doesn't work with bf16/fp16)
-        U, _, V = torch.linalg.svd(H.float())
-        dets = torch.linalg.det(U @ V)
+    # SVD (cast to float because doesn't work with bf16/fp16)
+    U, _, V = torch.linalg.svd(H.float())
+
+    dets = torch.linalg.det(U @ V).to(dtype=dtype)
+    U = U.to(dtype=dtype)
+    V = V.to(dtype=dtype)
 
     # Remove reflection
     F = torch.eye(3, device=x.device, dtype=x.dtype).tile((*H.shape[:-2], 1, 1))
@@ -163,7 +168,9 @@ def bond_loss(batch: Dict, x: torch.Tensor, eps: float) -> torch.Tensor:
     """
     # Compute pairwise distances
     x_gt = batch["gt_atom_positions"]
-    dx = torch.sqrt(eps + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1))
+    dx = torch.sqrt(
+        eps + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
+    )
     dx_gt = torch.sqrt(
         eps + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
     )
@@ -220,7 +227,9 @@ def smooth_lddt_loss(batch: Dict, x: torch.Tensor, eps: float) -> torch.Tensor:
     """
     # [*, N_atom, N_atom]
     x_gt = batch["gt_atom_positions"]
-    dx = torch.sqrt(eps + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1))
+    dx = torch.sqrt(
+        eps + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
+    )
     dx_gt = torch.sqrt(
         eps + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
     )
