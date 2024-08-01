@@ -313,7 +313,7 @@ class SampleDiffusion(nn.Module):
         )
 
         xl = self.noise_schedule[0] * torch.randn(
-            (*atom_mask.shape, 3), device=atom_mask.device
+            (*atom_mask.shape, 3), device=atom_mask.device, dtype=atom_mask.dtype
         )
 
         for tau, c_tau in enumerate(self.noise_schedule[1:]):

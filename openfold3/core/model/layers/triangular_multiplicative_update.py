@@ -242,7 +242,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
                 # This computation is chunked so as not to exceed our 2.5x
                 # budget with a large intermediate tensor
                 linear_g = self.linear_a_g if a else self.linear_b_g
-                c = linear_g.bias.shape[-1]
+                c = linear_g.weight.shape[-2]
                 out_shape = pair.shape[:-3] + (c,) + pair.shape[-3:-1]
                 p = pair.new_zeros(out_shape)
                 for i in range(0, pair.shape[-3], inplace_chunk_size):

@@ -71,10 +71,11 @@ def weighted_rigid_align(
     with torch.cuda.amp.autocast(enabled=False):
         # SVD (cast to float because doesn't work with bf16/fp16)
         U, _, V = torch.linalg.svd(H.float())
+        dets = torch.linalg.det(U @ V)
 
     # Remove reflection
     F = torch.eye(3, device=x.device, dtype=x.dtype).tile((*H.shape[:-2], 1, 1))
-    F[..., -1, -1] = torch.sign(torch.linalg.det(U @ V))
+    F[..., -1, -1] = torch.sign(dets)
     R = U @ F @ V
 
     # Apply alignment
@@ -162,9 +163,9 @@ def bond_loss(batch: Dict, x: torch.Tensor, eps: float) -> torch.Tensor:
     """
     # Compute pairwise distances
     x_gt = batch["gt_atom_positions"]
-    dx = torch.sqrt(torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1))
+    dx = torch.sqrt(eps + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1))
     dx_gt = torch.sqrt(
-        torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
+        eps + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
     )
 
     # Construct polymer-ligand per-token bond mask
@@ -219,9 +220,9 @@ def smooth_lddt_loss(batch: Dict, x: torch.Tensor, eps: float) -> torch.Tensor:
     """
     # [*, N_atom, N_atom]
     x_gt = batch["gt_atom_positions"]
-    dx = torch.sqrt(torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1))
+    dx = torch.sqrt(eps + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1))
     dx_gt = torch.sqrt(
-        torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
+        eps + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
     )
 
     # [*, N_atom, N_atom]

@@ -299,13 +299,14 @@ class AlphaFold3(nn.Module):
 
         # Sample noise schedule for training
         no_samples = self.globals.no_samples
-        batch_size, n_atom, device = xl_gt.shape[0], xl_gt.shape[1], xl_gt.device
-        n = torch.randn((batch_size, no_samples), device=device)
+        batch_size, n_atom = xl_gt.shape[0], xl_gt.shape[-2]
+        device, dtype = xl_gt.device, xl_gt.dtype
+        n = torch.randn((batch_size, no_samples), device=device, dtype=dtype)
         t = self.globals.sigma_data * torch.exp(-1.2 + 1.5 * n)
 
         # Sample noise
         noise = (t[..., None, None] ** 2) * torch.randn(
-            (batch_size, no_samples, n_atom, 3), device=device
+            (batch_size, no_samples, n_atom, 3), device=device, dtype=dtype
         )
 
         # Sample atom positions

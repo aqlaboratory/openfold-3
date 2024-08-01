@@ -209,8 +209,8 @@ def express_coords_in_frames(
     a, b, c = phi
     w1 = a - b
     w2 = c - b
-    w1_norm = torch.sqrt(torch.sum(w1**2, dim=-1, keepdim=True))
-    w2_norm = torch.sqrt(torch.sum(w2**2, dim=-1, keepdim=True))
+    w1_norm = torch.sqrt(eps + torch.sum(w1**2, dim=-1, keepdim=True))
+    w2_norm = torch.sqrt(eps + torch.sum(w2**2, dim=-1, keepdim=True))
     w1 = w1 / w1_norm
     w2 = w2 / w2_norm
 
@@ -218,8 +218,8 @@ def express_coords_in_frames(
     # [*, N_token, 3]
     e1 = w1 + w2
     e2 = w2 - w1
-    e1_norm = torch.sqrt(torch.sum(e1**2, dim=-1, keepdim=True))
-    e2_norm = torch.sqrt(torch.sum(e2**2, dim=-1, keepdim=True))
+    e1_norm = torch.sqrt(eps + torch.sum(e1**2, dim=-1, keepdim=True))
+    e2_norm = torch.sqrt(eps + torch.sum(e2**2, dim=-1, keepdim=True))
     e1 = e1 / e1_norm
     e2 = e2 / e2_norm
     e3 = torch.linalg.cross(e1, e2, dim=-1)
@@ -268,7 +268,7 @@ def compute_alignment_error(
     """
     xij = express_coords_in_frames(x=x, phi=phi, eps=eps)
     xij_gt = express_coords_in_frames(x=x_gt, phi=phi_gt, eps=eps)
-    return torch.sqrt(torch.sum((xij - xij_gt) ** 2, dim=-1))
+    return torch.sqrt(eps + torch.sum((xij - xij_gt) ** 2, dim=-1))
 
 
 def all_atom_plddt_loss(
@@ -304,9 +304,9 @@ def all_atom_plddt_loss(
     # Compute difference in distances
     # [*, N_atom, N_atom]
     x_gt = batch["gt_atom_positions"]
-    dx = torch.sqrt(torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1))
+    dx = torch.sqrt(eps + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1))
     dx_gt = torch.sqrt(
-        torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
+        eps + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
     )
     d = torch.abs(dx_gt - dx)
 
@@ -535,10 +535,10 @@ def pde_loss(
 
     # Compute prediction target
     d = torch.sqrt(
-        torch.sum((rep_x[..., None, :] - rep_x[..., None, :, :]) ** 2, dim=-1)
+        eps + torch.sum((rep_x[..., None, :] - rep_x[..., None, :, :]) ** 2, dim=-1)
     )
     d_gt = torch.sqrt(
-        torch.sum((rep_x_gt[..., None, :] - rep_x_gt[..., None, :, :]) ** 2, dim=-1)
+        eps + torch.sum((rep_x_gt[..., None, :] - rep_x_gt[..., None, :, :]) ** 2, dim=-1)
     )
     e = torch.abs(d - d_gt)
 
