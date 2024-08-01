@@ -4,6 +4,8 @@ import functools
 import logging
 from typing import Optional
 
+from ml_collections import ConfigDict
+
 from openfold3.core.config import config_utils
 from openfold3.core.runners.registry_base import register_model_base
 
@@ -41,3 +43,14 @@ def make_model_config(model_name: str, runner_yaml_path: str):
             config, runner_yaml_dict["model_update"]
         )
     return config
+
+
+def get_lightning_module(config: ConfigDict, model_name: Optional[str] = None):
+    if not model_name:
+        try:
+            model_name = config.model_name
+        except KeyError as exc:
+            raise ValueError(
+                "Model_name must be specified either in config or" " as an argument."
+            ) from exc
+    return MODEL_REGISTRY[model_name].model_runner(config)

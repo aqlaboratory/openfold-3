@@ -23,7 +23,7 @@ import torch.nn as nn
 import tests.compare_utils as compare_utils
 from openfold3.core.data import data_transforms
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations import MODEL_REGISTRY, registry
+from openfold3.model_implementations import registry
 from tests.config import consts
 from tests.data_utils import (
     random_asym_ids,
@@ -66,7 +66,7 @@ class TestModel(unittest.TestCase):
         c.model.evoformer_stack.blocks_per_ckpt = None  # don't want to set up
         # deepspeed for this test
 
-        model = MODEL_REGISTRY[consts.model_name](c).cuda()
+        model = registry.get_lightning_module(c).model.cuda() 
         model.eval()
 
         batch = {}

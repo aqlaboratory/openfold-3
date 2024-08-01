@@ -17,10 +17,6 @@ class ModelEntry:
     # List of available presets for the model_factory
     presets: Optional[list[str]]
 
-    def __call__(self, config):
-        """Creates ModelRunner with provided config settings"""
-        return self.model_runner(config)
-
 
 def register_model_base(
     name: str,
@@ -49,6 +45,9 @@ def register_model_base(
         else:
             presets = None
 
+        # Automatically add/update model name to base config
+        # Makes it easy to refer to this ModelEntry later from a config 
+        base_config.model_name = name
         model_registry[name] = ModelEntry(
             name, runner_cls, base_config, reference_config_path, presets
         )

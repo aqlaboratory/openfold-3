@@ -3,6 +3,8 @@ import ml_collections as mlc
 import openfold3.model_implementations.af2_monomer.config.linear_init_config as lin_init
 from openfold3.model_implementations.af2_monomer.config.features import feature_dict
 
+MODEL_NAME = "af2_monomer"
+
 c_z = mlc.FieldReference(128, field_type=int)
 c_m = mlc.FieldReference(256, field_type=int)
 c_t = mlc.FieldReference(64, field_type=int)

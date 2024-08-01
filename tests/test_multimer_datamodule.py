@@ -23,7 +23,7 @@ from openfold3.core.data.data_modules import OpenFoldMultimerDataModule
 from openfold3.core.loss.loss_module import AlphaFoldLoss
 from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation_align
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations import MODEL_REGISTRY, registry
+from openfold3.model_implementations import registry
 from tests.config import consts
 
 logger = logging.getLogger(__name__)
@@ -71,7 +71,7 @@ class TestMultimerDataModule(unittest.TestCase):
         self.c.model.evoformer_stack.no_blocks = 4  # no need to go overboard here
         self.c.model.evoformer_stack.blocks_per_ckpt = None  # don't want to set up
         # deepspeed for this test
-        self.model = MODEL_REGISTRY[consts.model_name](self.c)
+        self.model = registry.get_lightning_module(self.c) 
         self.loss = AlphaFoldLoss(self.c.loss)
 
     def testPrepareData(self):

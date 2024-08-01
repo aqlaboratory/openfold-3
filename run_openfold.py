@@ -20,7 +20,7 @@ from openfold3.core.utils.callbacks import (
     PerformanceLoggingCallback,
 )
 from openfold3.core.utils.torchscript import script_preset_
-from openfold3.model_implementations.registry import MODEL_REGISTRY, make_config
+from openfold3.model_implementations.registry import make_config, get_lightning_module
 
 
 def main(args):
@@ -45,7 +45,7 @@ def main(args):
     # Update model config with section from yaml with model update
     model_config = make_config(args.model_name, runner_yaml_config.model_updaet)
     # Initialize lightning module with desired config
-    lightning_module = MODEL_REGISTRY[args.model_name](model_config)
+    lightning_module = get_lightning_module(model_config)
     # TODO <checkpoint resume logic goes here>
 
     # Script model

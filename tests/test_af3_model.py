@@ -4,14 +4,14 @@ import torch
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations import MODEL_REGISTRY, registry
+from openfold3.model_implementations import registry
 from tests.config import consts
 from tests.data_utils import random_af3_features
 
 
 class TestAF3Model(unittest.TestCase):
     def setUp(self):
-        self.config = MODEL_REGISTRY["af3_all_atom"].base_config
+        self.config = registry.MODEL_REGISTRY["af3_all_atom"].base_config
 
     def test_shape(self):
         batch_size = consts.batch_size
@@ -24,7 +24,7 @@ class TestAF3Model(unittest.TestCase):
         self.config.model.pairformer.no_blocks = 4
         self.config.model.diffusion_module.diffusion_transformer.no_blocks = 4
 
-        af3 = MODEL_REGISTRY["af3_all_atom"](self.config).to(device)
+        af3 = registry.get_lightning_module(self.config).to(device) 
 
         batch = random_af3_features(
             batch_size=batch_size,
@@ -65,7 +65,7 @@ class TestAF3Model(unittest.TestCase):
         finetune3_config.model.pairformer.no_blocks = 4
         finetune3_config.model.diffusion_module.diffusion_transformer.no_blocks = 4
 
-        af3 = MODEL_REGISTRY["af3_all_atom"](finetune3_config).to(device)
+        af3 = registry.get_lightning_module(finetune3_config).to(device) 
 
         batch = random_af3_features(
             batch_size=batch_size,

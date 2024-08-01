@@ -1,7 +1,5 @@
 from pathlib import Path
 
-from openfold3.model_implementations import registry
-
 
 def _import_specific_py_files_from_dir(pattern: str):
     """Imports files with given pattern."""
@@ -14,4 +12,3 @@ def _import_specific_py_files_from_dir(pattern: str):
 
 # Import all `runner.py` from model directories to register the models
 _import_specific_py_files_from_dir("*/runner.py")
-MODEL_REGISTRY = registry.MODEL_REGISTRY

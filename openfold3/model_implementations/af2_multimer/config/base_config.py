@@ -9,6 +9,8 @@ from openfold3.model_implementations.af2_multimer.config.features import (
     feature_dict as multimer_feature_dict,
 )
 
+MODEL_NAME = "af2_multimer"
+
 c_z = af2_monomer_config.c_z
 c_m = af2_monomer_config.c_m
 c_t = af2_monomer_config.c_t

@@ -5,8 +5,6 @@ from openfold3.model_implementations.af3_all_atom.config import (
 )
 from openfold3.model_implementations.af3_all_atom.config.features import feature_dict
 
-NAME = "af3_all_atom"
-
 # Hidden dimensions
 c_s = mlc.FieldReference(384, field_type=int)
 c_z = mlc.FieldReference(128, field_type=int)

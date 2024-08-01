@@ -3,8 +3,9 @@ import textwrap
 import pytest  # noqa: F401  - used for pytest tmp fixture
 
 from openfold3.core.config import config_utils
-from openfold3.model_implementations import MODEL_REGISTRY
 from openfold3.model_implementations.registry import (
+    MODEL_REGISTRY,
+    get_lightning_module,
     make_config_with_preset,
     make_model_config,
 )
@@ -43,5 +44,5 @@ class TestLoadPresets:
         test_multimer_config = make_config_with_preset(
             "af2_multimer", "model_1_multimer_v3"
         )
-        multimer_runner = MODEL_REGISTRY["af2_multimer"](test_multimer_config)
+        multimer_runner = get_lightning_module(test_multimer_config)
         assert multimer_runner.model.get_submodule("input_embedder")
