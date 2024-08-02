@@ -61,7 +61,7 @@ if triton_is_installed:
 # To avoid errors if memory-efficient attention kernel is not installed
 attn_core_is_installed = importlib.util.find_spec("attn_core_inplace_cuda") is not None
 if attn_core_is_installed:
-    from openfold3.core.utils.kernel.attention_core import attention_core
+    from openfold3.core.kernels.cuda.attention_core import attention_core
 
 DEFAULT_LMA_Q_CHUNK_SIZE = 1024
 DEFAULT_LMA_KV_CHUNK_SIZE = 4096

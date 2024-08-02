@@ -172,7 +172,7 @@ config = mlc.ConfigDict(
                 "msa_module": {
                     "c_m": c_m,
                     "c_z": c_z,
-                    "c_hidden_msa_att": 32,
+                    "c_hidden_msa_att": 8,  # 8 or 32, possible typo in SI
                     "c_hidden_opm": 32,
                     "c_hidden_mul": 128,
                     "c_hidden_pair_att": 32,

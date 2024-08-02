@@ -18,6 +18,7 @@ MSA attention layers. Includes MSARowAttentionWithPairBias, MSAColumnAttention,
 MSAColumnGlobalAttention, and MSAPairWeightedAveraging.
 """
 
+import importlib
 from functools import partial
 from typing import List, Optional, Tuple
 
@@ -38,6 +39,10 @@ from openfold3.core.model.primitives.attention import (
 from openfold3.core.utils.checkpointing import get_checkpoint_fn
 from openfold3.core.utils.chunk_utils import chunk_layer
 from openfold3.core.utils.tensor_utils import flatten_final_dims, permute_final_dims
+
+triton_is_installed = importlib.util.find_spec("triton") is not None
+if triton_is_installed:
+    from openfold3.core.kernels.triton.fused_softmax import fused_softmax
 
 
 class MSAAttention(nn.Module):
@@ -572,16 +577,9 @@ class MSAPairWeightedAveraging(nn.Module):
 
     def _prep_bias(
         self,
-        m: torch.Tensor,
-        z: Optional[torch.Tensor],
-        mask: Optional[torch.Tensor],
-    ) -> torch.Tensor:
-        if mask is None:
-            # [*, N_seq, N_res]
-            mask = m.new_ones(
-                m.shape[:-1],
-            )
-
+        z: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> [torch.Tensor, torch.Tensor]:
         # [*, N_seq, 1, 1, N_res]
         mask_bias = (self.inf * (mask - 1))[..., :, None, None, :]
 
@@ -594,9 +592,7 @@ class MSAPairWeightedAveraging(nn.Module):
         # [*, 1, no_heads, N_res, N_res]
         z = permute_final_dims(z, (2, 0, 1)).unsqueeze(-4)
 
-        z = z + mask_bias
-
-        return z
+        return z, mask_bias
 
     def forward(
         self,
@@ -615,7 +611,13 @@ class MSAPairWeightedAveraging(nn.Module):
                 [*, N_seq, N_res] MSA mask
 
         """
-        bias = self._prep_bias(m, z, mask)
+        if mask is None:
+            # [*, N_seq, N_res]
+            mask = m.new_ones(
+                m.shape[:-1],
+            )
+
+        z, mask_bias = self._prep_bias(z=z, mask=mask)
 
         m = self.layer_norm_m(m)
         v = self.linear_v(m)
@@ -626,7 +628,11 @@ class MSAPairWeightedAveraging(nn.Module):
         # [*, H, Q/K, C_hidden]
         v = v.transpose(-2, -3)
 
-        a = softmax_no_cast(bias, -1)
+        if not triton_is_installed:
+            z = z + mask_bias
+            a = softmax_no_cast(z, -1)
+        else:
+            a = fused_softmax(z, mask)
 
         # [*, H, Q, C_hidden]
         a = torch.matmul(a, v)
