@@ -1,9 +1,55 @@
-from typing import Sequence
+from typing import Optional, Sequence, Union
 
 import numpy as np
 import pandas as pd
 
 from openfold3.core.data.preprocessing.io import Msa, MsaCollection, parse_msas_sample
+
+
+def find_monomer_homomer(msa_collection: MsaCollection) -> bool:
+    """Determines if the sample is a monomer or homomer.
+
+    Args:
+        msa_collection (MsaCollection):
+            A collection of Msa objects and chain IDs for a single sample.
+
+    Returns:
+        bool: Whether the sample is a monomer or a full homomer.
+    """
+    # Extract chain IDs and representative chain IDs
+    chain_rep_map = msa_collection.chain_rep_map
+    chain_ids, representative_chain_ids = (
+        list(chain_rep_map.keys()),
+        list(set(chain_rep_map.values())),
+    )
+    return len(chain_ids) == 1 | (
+        len(representative_chain_ids) == 1 & len(chain_ids) > 1
+    )
+
+
+def create_query(msa_collection: MsaCollection) -> Msa:
+    """Extracts and concatenates the query sequences and deletion matrices.
+
+    Args:
+        msa_collection (MsaCollection):
+            A collection of Msa objects and chain IDs for a single sample.
+
+    Returns:
+        Msa:
+            Msa object containing the query sequence and deletion matrix concatenated
+            for each chain.
+    """
+    query_seq = np.concatenate(
+        [
+            msa_collection.rep_seq_map[v]
+            for (_, v) in msa_collection.chain_rep_map.items()
+        ]
+    )
+    return Msa(
+        msa=query_seq,
+        deletion_matrix=np.zeros(query_seq.shape, dtype=int),
+        metadata=pd.DataFrame(),
+    )
 
 
 def extract_uniprot_hits(msa_collection: MsaCollection) -> dict[str, Msa]:
@@ -337,55 +383,9 @@ def map_to_paired_msa_per_chain(
     return paired_msa_per_chain
 
 
-def merge_paired_msas(
-    msa_collection: MsaCollection, paired_msa_per_chain: dict[str, Msa]
-) -> Msa:
-    """Creates a single MSA object from paired MSA arrays.
-
-    Args:
-        msa_collection (MsaCollection):
-            A collection of Msa objects and chain IDs for a single sample.
-        dict[str, Msa]:
-            Dict mapping chain IDs to Msa objects containing the paired MSAs and paired
-            deletion matrices. Metadata fields are empty.
-
-    Returns:
-        Msa:
-            A single Msa object containing the paired MSA arrays and deletion matrices
-            for all processed chain IDs.
-    """
-    # Initialize paired MSA object
-    num_rows = paired_msa_per_chain[next(iter(paired_msa_per_chain))].msa.shape[0]
-    num_cols = msa_collection.num_cols
-    paired_msa = Msa(
-        msa=np.full((num_rows, num_cols), "-"),
-        deletion_matrix=np.zeros((num_rows, num_cols), dtype=int),
-        metadata=pd.DataFrame(),
-    )
-
-    # Update paired MSA with paired data for each chain using the representatives
-    col_offset = 0
-    for chain_id in msa_collection.chain_rep_map:
-        rep_id = msa_collection.chain_rep_map[chain_id]
-        rep_paired_msa = paired_msa_per_chain[rep_id]
-        n_col_paired_i = rep_paired_msa.msa.shape[1]
-
-        # Replace slices in msa and deletion matrix
-        paired_msa.msa[:, col_offset : (col_offset + n_col_paired_i)] = (
-            rep_paired_msa.msa
-        )
-        paired_msa.deletion_matrix[:, col_offset : (col_offset + n_col_paired_i)] = (
-            rep_paired_msa.deletion_matrix
-        )
-
-        col_offset += n_col_paired_i
-
-    return paired_msa
-
-
 def create_paired(
     msa_collection: MsaCollection, paired_row_cutoff: int
-) -> Msa:
+) -> dict[str, Msa]:
     """Creates paired MSA arrays from UniProt MSAs.
 
     Follows the AF2-Multimer strategy for pairing rows of UniProt MSAs based on species
@@ -397,6 +397,10 @@ def create_paired(
             A collection of Msa objects and chain IDs for a single sample.
         paired_row_cutoff (int):
             The maximum number of rows to pair.
+
+    Returns:
+        dict[str, Msa]:
+            Paired MSAs and deletion matrices for each chain.
     """
     # Get parsed uniprot hits
     uniprot_hits = extract_uniprot_hits(msa_collection)
@@ -426,49 +430,151 @@ def create_paired(
         uniprot_hits, paired_rows_index, missing_rows_index, species
     )
 
-    # Expand across duplicate chains and concatenate
-    paired_msa = merge_paired_msas(msa_collection, paired_msa_per_chain)
-
-    return paired_msa
+    return paired_msa_per_chain
 
 
-def find_monomer_homomer(msa_collection: MsaCollection) -> bool:
-    """Determines if the sample is a monomer or homomer.
+def merge_paired_msas(
+    msa_collection: MsaCollection, paired_msa_per_chain: dict[str, Msa]
+) -> Msa:
+    """Creates a single MSA object from paired MSA arrays.
 
     Args:
         msa_collection (MsaCollection):
             A collection of Msa objects and chain IDs for a single sample.
+        dict[str, Msa]:
+            Dict mapping chain IDs to Msa objects containing the paired MSAs and paired
+            deletion matrices. Metadata fields are empty.
 
     Returns:
-        bool: Whether the sample is a monomer or a full homomer.
+        Msa:
+            A single Msa object containing the paired MSA arrays and deletion matrices
+            for all processed chain IDs.
     """
-    # Extract chain IDs and representative chain IDs
-    chain_rep_map = msa_collection.chain_rep_map
-    chain_ids, representative_chain_ids = (
-        list(chain_rep_map.keys()),
-        list(set(chain_rep_map.values())),
+    # Initialize paired MSA object
+    num_rows = paired_msa_per_chain[next(iter(paired_msa_per_chain))].msa.shape[0]
+    num_cols = sum(
+        [msa_collection.num_cols[v] for (k, v) in msa_collection.chain_rep_map.items()]
     )
-    return len(chain_ids) == 1 | (
-        len(representative_chain_ids) == 1 & len(chain_ids) > 1
+    paired_msa = Msa(
+        msa=np.full((num_rows, num_cols), "-"),
+        deletion_matrix=np.zeros((num_rows, num_cols), dtype=int),
+        metadata=pd.DataFrame(),
     )
 
+    # Update paired MSA with paired data for each chain using the representatives
+    col_offset = 0
+    for chain_id in msa_collection.chain_rep_map:
+        rep_id = msa_collection.chain_rep_map[chain_id]
+        rep_paired_msa = paired_msa_per_chain[rep_id]
+        n_col_paired_i = rep_paired_msa.msa.shape[1]
 
-def create_unpaired(msa_collection: MsaCollection):
-    pass
+        # Replace slices in msa and deletion matrix
+        paired_msa.msa[:, col_offset : (col_offset + n_col_paired_i)] = (
+            rep_paired_msa.msa
+        )
+        paired_msa.deletion_matrix[:, col_offset : (col_offset + n_col_paired_i)] = (
+            rep_paired_msa.deletion_matrix
+        )
+
+        col_offset += n_col_paired_i
+
+    return paired_msa
+
+
+def create_unpaired(
+    msa_collection: MsaCollection,
+    paired_msa_per_chain: Union[dict[str, Msa], None],
+    aln_order: list[str],
+) -> dict[str, Msa]:
+    """Creates unpaired MSA arrays from non-UniProt MSAs.
+
+    Args:
+        msa_collection (MsaCollection):
+            A collection of Msa objects and chain IDs for a single sample.
+        paired_msa_per_chain (Union[dict[str, Msa], None]):
+            Dict of paired Msa objects per chain.
+        aln_order (list[str]):
+            The order in which to concatenate the MSA arrays vertically.
+
+    Returns:
+        dict[str, Msa]:
+            List of Msa objects containing the unpaired MSA arrays and deletion matrices
+            for each chain.
+    """
+    # Iterate over representatives
+    rep_unpaired_msas = {}
+    for rep_id, chain_data in msa_collection.rep_msa_map.items():
+        chain_data = msa_collection.rep_msa_map[rep_id]
+
+        # Get unpaired MSAs and deletion matrices from all non-UniProt MSAs
+        unpaired_msa_redundant = np.concatenate(
+            [chain_data[aln].msa for aln in aln_order if aln in chain_data],
+            axis=0,
+        )
+        unpaired_deletion_matrix_redundant = np.concatenate(
+            [chain_data[aln].deletion_matrix for aln in aln_order if aln in chain_data],
+            axis=0,
+        )
+
+        # Get paired MSAs if any and deduplicate
+        if paired_msa_per_chain is not None:
+            # Get set of paired rows and find unpaired rows not in this set
+            paired_row_set = {tuple(i) for i in paired_msa_per_chain[rep_id].msa}
+            is_unique = ~np.array(
+                [tuple(row) in paired_row_set for row in unpaired_msa_redundant]
+            )
+        else:
+            is_unique = np.ones(unpaired_msa_redundant.shape[0], dtype=bool)
+
+        rep_unpaired_msas[rep_id] = Msa(
+            msa=unpaired_msa_redundant[is_unique, :],
+            deletion_matrix=unpaired_deletion_matrix_redundant[is_unique, :],
+            metadata=pd.DataFrame(),
+        )
+
+    # Reindex dict from representatives to chain IDs
+    unpaired_msas = {}
+    for chain_id, rep_id in msa_collection.chain_rep_map.items():
+        unpaired_msas[chain_id] = rep_unpaired_msas[rep_id]
+
+    return unpaired_msas
 
 
 def process_msas(
-    chain_ids, alignments_path, use_alignment_database, alignment_index, max_seq_counts
+    chain_ids: list[list[str], list[str]],
+    alignments_path: str,
+    max_seq_counts: dict[str, Union[int, float]],
+    use_alignment_database: bool,
+    alignment_index: Optional[dict] = None,
 ):
     """Prepares the arrays needed to create MSA feature tensors.
 
     Args:
-        chain_ids (_type_): _description_
-        alignments_path (_type_): _description_
-        use_alignment_database (_type_): _description_
-        alignment_index (_type_): _description_
-        max_seq_counts (_type_): _description_
+        chain_ids (list[list[str], list[str]]):
+            List of two lists of chain IDs, the first containing the query chain IDs
+            the second the representative chain IDs mapping to directories in the
+            path specified by alignments_path.
+        alignments_path (str):
+            The path to the directories containing the alignment files per chain.
+        max_seq_counts (int):
+            Max number of sequences to keep from each pared
+        use_alignment_database (bool):
+            Whether to use the alignment database.
+        alignment_index (dict):
+            Dictionary containing the alignment index for each chain ID.
+
+    Returns:
+        tuple[Msa, Msa, dict[str, Msa]]:
+            Tuple containing
+                - Msa object for the query sequence
+                - paired Msa concatenated across all chains
+                - dict mapping chain IDs to unpaired Msa objects.
     """
+
+    if use_alignment_database and alignment_index is None:
+        raise ValueError(
+            "Alignment index must be provided if use_alignment_database is True."
+        )
 
     # Parse MSAs for the cropped sample
     msa_collection = parse_msas_sample(
@@ -479,15 +585,34 @@ def process_msas(
         max_seq_counts=max_seq_counts,
     )
 
+    # Create query
+    query_seq = create_query(msa_collection)
+
     # Determine whether to do pairing
     is_monomer_homomer = find_monomer_homomer(msa_collection)
 
     if not is_monomer_homomer:
-        # Create paired UniProt MSA arrays
-        paired_msa = create_paired(msa_collection, paired_row_cutoff=8191)
+        # Create paired UniProt MSA arrays and Rfam
+        paired_msa_per_chain = create_paired(msa_collection, paired_row_cutoff=8191)
+
+        # Expand across duplicate chains and concatenate
+        paired_msa = merge_paired_msas(msa_collection, paired_msa_per_chain)
+
+    else:
+        paired_msa_per_chain = None
+        paired_msa = None
 
     # Create unpaired non-UniProt MSA arrays
+    unpaired_msas = create_unpaired(
+        msa_collection=msa_collection,
+        paired_msa_per_chain=paired_msa_per_chain,
+        aln_order=[
+            "uniref90_hits",
+            "uniprot_hits",
+            "bfd_uniclust_hits",
+            "bfd_uniref_hits",
+            "mgnify_hits",
+        ],
+    )
 
-    # Crop MSA arrays
-
-    # Merge MSA arrays
+    return query_seq, paired_msa, unpaired_msas

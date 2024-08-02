@@ -69,14 +69,14 @@ class MsaCollection:
             corresponding query sequences.
         chain_rep_map: dict[str, str]
             Dictionary mapping chain IDs to representative chain IDs.
-        num_cols: int
-            The total number of columns across all chains.
+        num_cols: dict[str, int]
+            Dict mapping representative chain ID to the number of columns in the MSA.
     """
 
     rep_msa_map: dict[str, dict[str, Msa]]
     rep_seq_map: dict[str, np.ndarray[np.str_]]
     chain_rep_map: dict[str, str]
-    num_cols: int
+    num_cols: dict[str, int]
 
 
 def _msa_list_to_np(msa: Sequence[str]) -> np.array:
@@ -367,8 +367,8 @@ def parse_msas_sample(
 ) -> MsaCollection:
     """Parses MSA(s) for a training sample.
 
-    This function is used to parse MSAs for a one or multiple chains, depending on
-    the number of chains in the parsed PDB file and crop during training.
+    This function is used to parse MSAs for a one or multiple chains, depending on the
+    number of chains in the parsed PDB file and crop during training.
 
     Args:
         chain_ids (list[tuple[str, str]]):
@@ -384,7 +384,9 @@ def parse_msas_sample(
         max_seq_counts (Optional[dict[str, int]], optional):
             Dictionary mapping the sequence database from which sequence hits were
             returned to the max number of sequences to parse from all the hits. See
-            Section 2.2, Tables 1 and 2 in the AlphaFold3 SI for more details.
+            Section 2.2, Tables 1 and 2 in the AlphaFold3 SI for more details. This
+            dict, when provided, is used to specific a) which alignment files to parse
+            and b) the maximum number of sequences to parse.
 
     Returns:
         MsaCollection:
@@ -409,19 +411,16 @@ def parse_msas_sample(
 
     # Reindex the parsed MSAs to the original chain IDs and calculate Msa length and
     # pull out the query sequence
-    rep_msa_map = {}
-    rep_seq_map = {}
-    chain_rep_map = {}
-    num_cols = 0
+    rep_msa_map, rep_seq_map, chain_rep_map, num_cols= {}, {}, {}, {}
 
     for chain_id, rep_id in zip(chain_ids[0], chain_ids[1]):
         chain_rep_map[chain_id] = rep_id
         all_msas_per_chain = representative_msas[rep_id]
         example_msa = all_msas_per_chain[next(iter(all_msas_per_chain))].msa
-        num_cols += example_msa.shape[1]
         if rep_id not in rep_msa_map:
             rep_msa_map[rep_id] = all_msas_per_chain
             rep_seq_map[rep_id] = example_msa[0, :]
+            num_cols[rep_id] = example_msa.shape[1]
 
     return MsaCollection(
         rep_msa_map=rep_msa_map,
