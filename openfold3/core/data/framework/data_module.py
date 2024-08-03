@@ -10,16 +10,16 @@ and highlight where you currently are in the process:
 0. Dataset filtering and cache generation
     raw data -> filtered data
 1. PreprocessingPipeline
-    filtered data -> processed data
-2. FeaturePipeline
-    processed data -> FeatureDict
+    filtered data -> preprocessed data
+2. SampleProcessingPipeline and FeaturePipeline
+    preprocessed data -> parsed/processed data -> FeatureDict
 3. SingleDataset
     datapoints -> __getitem__ -> FeatureDict
 4. StochasticSamplerDataset (optional)
-    Sequence[SingeDataset] -> __getitem__ -> FeatureDict
+    Sequence[SingleDataset] -> __getitem__ -> FeatureDict
 5. DataLoader
     FeatureDict -> batched data
-6. *DataModule* [YOU ARE HERE]
+6. DataModule [YOU ARE HERE]
     SingleDataset/StochasticSamplerDataset -> DataLoader
 7. ModelRunner
     batched data -> model
@@ -33,11 +33,11 @@ import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader
 
-from openfold3.core.data.data_structures.single_datasets import (
+from openfold3.core.data.framework.single_datasets import (
     DATASET_REGISTRY,
     OpenFoldSingleDataset,
 )
-from openfold3.core.data.data_structures.stochastic_sampler_dataset import (
+from openfold3.core.data.framework.stochastic_sampler_dataset import (
     StochasticSamplerDataset,
 )
 from openfold3.core.utils.tensor_utils import dict_multimap

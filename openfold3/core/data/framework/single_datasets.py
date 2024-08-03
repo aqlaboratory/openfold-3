@@ -12,13 +12,13 @@ and highlight where you currently are in the process:
 0. Dataset filtering and cache generation
     raw data -> filtered data
 1. PreprocessingPipeline
-    filtered data -> processed data
-2. FeaturePipeline
-    processed data -> FeatureDict
-3. *SingleDataset* [YOU ARE HERE]
+    filtered data -> preprocessed data
+2. SampleProcessingPipeline and FeaturePipeline
+    preprocessed data -> parsed/processed data -> FeatureDict
+3. SingleDataset [YOU ARE HERE]
     datapoints -> __getitem__ -> FeatureDict
 4. StochasticSamplerDataset (optional)
-    Sequence[SingeDataset] -> __getitem__ -> FeatureDict
+    Sequence[SingleDataset] -> __getitem__ -> FeatureDict
 5. DataLoader
     FeatureDict -> batched data
 6. DataModule
@@ -33,13 +33,13 @@ from typing import Any
 
 from torch.utils.data import Dataset
 
-from openfold3.core.data.featurization.feature_pipelines import (
-    AF3BioAssemblyFeaturePipeline,
-)
-from openfold3.core.data.preprocessing.preprocessing_pipelines import (
-    BioAssemblyPreprocessingPipeline,
-    TFDNAPreprocessingPipeline,
-)
+# from openfold3.core.data.featurization.feature_pipelines import (
+#     AF3BioAssemblyFeaturePipeline,
+# )
+# from openfold3.core.data.preprocessing.preprocessing_pipelines import (
+#     BioAssemblyPreprocessingPipeline,
+#     TFDNAPreprocessingPipeline,
+# )
 
 DATASET_REGISTRY = {}
 
@@ -113,8 +113,8 @@ class WeightedPDBDataset(SingleDataset):
 
         # argument error checks here
 
-        self._preprocessing_pipeline = BioAssemblyPreprocessingPipeline(dataset_config)
-        self._feature_pipeline = AF3BioAssemblyFeaturePipeline(dataset_config)
+        self._preprocessing_pipeline = "BioAssemblyPreprocessingPipeline(dataset_config)"
+        self._feature_pipeline = "AF3BioAssemblyFeaturePipeline(dataset_config)"
 
         # Parse data cache
         # with open(dataset_config['data_cache'], 'r') as f:
@@ -208,8 +208,8 @@ class TFPositiveDataset(SingleDataset):
 
     def __init__(self, data_config) -> None:
         super().__init__()
-        self._preprocessing_pipeline = TFDNAPreprocessingPipeline(data_config)
-        self._feature_pipeline = AF3BioAssemblyFeaturePipeline(data_config)
+        self._preprocessing_pipeline = "TFDNAPreprocessingPipeline(data_config)"
+        self._feature_pipeline = "AF3BioAssemblyFeaturePipeline(data_config)"
 
         with open(data_config["data_cache"]) as f:
             self.data_cache = json.load(f)
@@ -238,8 +238,8 @@ class TFNegativeDataset(SingleDataset):
 
     def __init__(self, data_config) -> None:
         super().__init__()
-        self._preprocessing_pipeline = TFDNAPreprocessingPipeline(data_config)
-        self._feature_pipeline = AF3BioAssemblyFeaturePipeline(data_config)
+        self._preprocessing_pipeline = "TFDNAPreprocessingPipeline(data_config)"
+        self._feature_pipeline = "AF3BioAssemblyFeaturePipeline(data_config)"
 
         with open(data_config["data_cache"]) as f:
             self.data_cache = json.load(f)
