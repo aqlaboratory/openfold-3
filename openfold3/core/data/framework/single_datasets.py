@@ -113,8 +113,8 @@ class WeightedPDBDataset(SingleDataset):
 
         # argument error checks here
 
-        self._preprocessing_pipeline = "BioAssemblyPreprocessingPipeline(dataset_config)"
-        self._feature_pipeline = "AF3BioAssemblyFeaturePipeline(dataset_config)"
+        self._preprocessing_pipeline = "<some pipeline>"
+        self._feature_pipeline = "<some pipeline>"
 
         # Parse data cache
         # with open(dataset_config['data_cache'], 'r') as f:
