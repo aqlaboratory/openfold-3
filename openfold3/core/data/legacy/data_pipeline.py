@@ -25,7 +25,7 @@ from typing import Any, Mapping, MutableMapping, Optional, Sequence, Union
 import numpy as np
 import torch
 
-from openfold3.core.data import (
+from openfold3.core.data.legacy import (
     feature_processing_multimer,
     mmcif_parsing,
     msa_identifiers,
@@ -33,7 +33,7 @@ from openfold3.core.data import (
     parsers,
     templates,
 )
-from openfold3.core.data.templates import (
+from openfold3.core.data.legacy.templates import (
     empty_template_feats,
     get_custom_template_features,
 )

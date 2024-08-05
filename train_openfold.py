@@ -15,7 +15,7 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
-from openfold3.core.data.data_modules import (
+from openfold3.core.data.legacy.data_modules import (
     OpenFoldDataModule,
     OpenFoldMultimerDataModule,
 )

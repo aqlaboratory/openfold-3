@@ -6,8 +6,8 @@ import random
 import numpy
 import torch
 
-from openfold3.core.data import feature_pipeline
-from openfold3.core.data.data_pipeline import (
+from openfold3.core.data.legacy import feature_pipeline
+from openfold3.core.data.legacy.data_pipeline import (
     make_sequence_features_with_custom_template,
 )
 from openfold3.core.np import protein
