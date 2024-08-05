@@ -21,7 +21,7 @@ def process_msas_af3(
 ):
     """Prepares the arrays needed to create MSA feature tensors.
 
-    Follows the logic of the AF3 SI in sections 2.2 and 2.3. 
+    Follows the logic of the AF3 SI in sections 2.2 and 2.3.
     1. Query sequence
     2. Paired sequences from UniProt
         - only if n unique protein chains > 1
