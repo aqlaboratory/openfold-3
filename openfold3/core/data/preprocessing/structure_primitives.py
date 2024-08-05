@@ -57,6 +57,52 @@ def assign_atom_indices(atom_array: AtomArray) -> None:
     atom_array.set_annotation("_atom_idx", range(len(atom_array)))
 
 
+def update_author_to_pdb_labels(
+    atom_array: AtomArray,
+    use_author_res_id_if_missing: bool = True,
+    auth_label_annotations: bool = True,
+) -> None:
+    """Changes labels in an author-assigned PDB structure to PDB-assigned labels.
+
+    This assumes that the AtomArray contains author-assigned labels (e.g. auth_asym_id,
+    ...) in the standard fields chain_id, res_id, res_name, and atom_name, and will
+    replace them with the PDB-assigned label_asym_id, label_seq_id, label_comp_id, and
+    label_atom_id.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to change labels in.
+        keep_res_id_if_nan:
+            Whether to keep the author-assigned residue IDs if they are NaN in
+            the PDB labels. This is important for correct bond record parsing/writing in
+            Biotite. Defaults to True.
+        auth_label_annotations:
+            Whether to keep the original author-assigned labels as annotations in the
+            AtomArray.
+
+    """
+    if auth_label_annotations:
+        atom_array.set_annotation("auth_asym_id", atom_array.chain_id)
+        atom_array.set_annotation("auth_seq_id", atom_array.res_id)
+        atom_array.set_annotation("auth_comp_id", atom_array.res_name)
+        atom_array.set_annotation("auth_atom_id", atom_array.atom_name)
+
+    # Replace author-assigned IDs with PDB-assigned IDs
+    atom_array.chain_id = atom_array.label_asym_id
+    atom_array.res_name = atom_array.label_comp_id
+    atom_array.atom_name = atom_array.label_atom_id
+
+    # Set residue IDs to PDB-assigned IDs but fallback to author-assigned IDs if they
+    # are not assigned (important for correct bond record parsing/writing)
+    if use_author_res_id_if_missing:
+        author_res_ids = atom_array.res_id
+        pdb_res_ids = atom_array.label_seq_id
+        merged_res_ids = np.where(
+            pdb_res_ids == ".", author_res_ids, pdb_res_ids
+        ).astype(int)
+        atom_array.res_id = merged_res_ids
+
+
 def remove_atom_indices(atom_array: AtomArray) -> None:
     """Removes atom indices from the AtomArray
 

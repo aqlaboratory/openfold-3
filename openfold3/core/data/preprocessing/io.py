@@ -10,6 +10,7 @@ from .structure_primitives import (
     assign_entity_ids,
     assign_molecule_type_ids,
     assign_renumbered_chain_ids,
+    update_author_to_pdb_labels,
 )
 
 
@@ -23,7 +24,6 @@ def parse_mmcif(
     expand_bioassembly: bool = False,
     include_bonds: bool = True,
     extra_fields: list | None = None,
-    use_author_fields: bool = False,
 ) -> ParsedStructure:
     """Convenience wrapper around biotite's CIF parsing
 
@@ -51,11 +51,6 @@ def parse_mmcif(
         extra_fields:
             Extra fields to include in the AtomArray. Defaults to None. Fields
             "entity_id" and "occupancy" are always included.
-        use_author_fields:
-            Whether to use author fields. Note that the structure preprocessing and
-            cleanup functions in this module were only tested with the PDB-auto-assigned
-            labels (i.e. this argument set to False), so be careful when enabling this
-            setting. Defaults to False.
 
     Returns:
         A NamedTuple containing the parsed CIF file and the AtomArray.
@@ -74,7 +69,16 @@ def parse_mmcif(
     (pdb_id,) = cif_file.keys()  # Single-element unpacking
 
     # Always include these fields
-    extra_fields_preset = ["label_entity_id", "occupancy"]
+    label_fields = [
+        "label_entity_id",
+        "label_atom_id",
+        "label_comp_id",
+        "label_asym_id",
+        "label_seq_id",
+    ]
+    extra_fields_preset = [
+        "occupancy",
+    ] + label_fields
 
     if extra_fields:
         extra_fields = extra_fields_preset + extra_fields
@@ -86,7 +90,7 @@ def parse_mmcif(
         "pdbx_file": cif_file,
         "model": 1,
         "altloc": "occupancy",
-        "use_author_fields": use_author_fields,
+        "use_author_fields": True,
         "include_bonds": include_bonds,
         "extra_fields": extra_fields,
     }
@@ -108,6 +112,9 @@ def parse_mmcif(
         atom_array = pdbx.get_structure(
             **parser_args,
         )
+
+    # Replace author-assigned IDs with PDB-assigned IDs
+    update_author_to_pdb_labels(atom_array)
 
     # Add entity IDs
     assign_entity_ids(atom_array)
