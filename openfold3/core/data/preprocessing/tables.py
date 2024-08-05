@@ -50,14 +50,6 @@ class MoleculeType(IntEnum):
     LIGAND = 3
 
 
-# String names for writing output files etc.
-MOLECULE_TYPE_TO_NAME = {
-    MoleculeType.PROTEIN: "protein",
-    MoleculeType.RNA: "RNA",
-    MoleculeType.DNA: "DNA",
-    MoleculeType.LIGAND: "ligand",
-}
-
 # Removed crystallization aids as defined in AF3 SI, Table 9
 CRYSTALLIZATION_AIDS = [
     "SO4",
