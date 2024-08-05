@@ -3,47 +3,71 @@ from typing import List, Optional
 import torch
 
 
+def get_pair_dist(structure1: torch.Tensor, structure2: torch.Tensor):
+    return torch.cdist(structure1, structure2)
+
+#suboptimal but works
+def create_intra_mask(entity_id: torch.Tensor,
+                      ):
+    """
+    create a mask of diagonal square blocks 
+
+    Args: 
+        entity_id: entity_id of atoms [*, n_atom]
+    Returns: 
+        mask: pair mask of diagonal square blocks [*, n_atom, n_atom]
+    """
+    n_atom = entity_id.shape[-1]
+    mask = torch.zeros(n_atom, n_atom)
+    unique_ids = torch.unique(entity_id)
+    for id in unique_ids:
+        idx = torch.where(entity_id == id.item())[0]
+        mask[idx[..., None], idx] = 1
+    return mask
+
 def lddt(
-    all_atom_pred_pos: torch.Tensor,
-    all_atom_positions: torch.Tensor,
+    pair_dist_pred_pos: torch.Tensor,
+    pair_dist_gt_positions: torch.Tensor,
     all_atom_mask: torch.Tensor,
+    entity_id: torch.Tensor, 
     cutoff: Optional[float] = 15.0,
     eps: Optional[float] = 1e-10,
 ) -> torch.Tensor:
     """
-    Calculates lddt scores
+    Calculates lddt scores from pair distances
 
     Args: 
-        all_atom_pred_pos: predicted atom coordinates [*, n_atom, 3]
-        all_atom_positions: gt atom coordinates [*, n_atom, 3]
+        pair_dist_pred_pos: pairwise distance of prediction [*, n_atom, n_atom, 3]
+        all_atom_positions: pairwise distance of gt [*, n_atom, n_atom, 3]
         all_atom_mask: mask [*, n_atom]
+        entity_id: entity id [*, n_atom]
         cutoff: distance cutoff  
             - Nucleic Acids (DNA/RNA) 30.
             - Other biomolecules (Protein/Ligands) 15.
         eps: epsilon 
 
     Returns: 
-        scores: lddt scores [*]
+        intra_score: intra lddt scores [*]
+        inter_score: inter lddt scores [*]
     """
 
-    if len(all_atom_pred_pos.shape) != len(all_atom_positions.shape):
-        all_atom_positions = all_atom_positions.unsqueeze(-3)
+    if len(pair_dist_pred_pos.shape) != len(pair_dist_gt_positions.shape):
+        pair_dist_gt_positions = pair_dist_gt_positions.unsqueeze(-3)
         all_atom_mask = all_atom_mask.unsqueeze(-2)
 
-    # get pairwise distances
-    pair_dist_true = torch.cdist(all_atom_positions, all_atom_positions)
-    pair_dist_pred = torch.cdist(all_atom_pred_pos, all_atom_pred_pos)
-
     # create a mask
-    n_atom = all_atom_positions.shape[-2]    
+    n_atom = pair_dist_gt_positions.shape[-2]    
     dists_to_score = (
-        (pair_dist_true < cutoff) * 
+        (pair_dist_gt_positions < cutoff) * 
         (all_atom_mask[..., None] * all_atom_mask[..., None, :] * 
         (1.0 - torch.eye(n_atom, device=all_atom_mask.device))
         )
         )
 
-    dist_l1 = torch.abs(pair_dist_true - pair_dist_pred)
+    intra_mask = create_intra_mask(entity_id)
+    inter_mask = 1 - intra_mask
+
+    dist_l1 = torch.abs(pair_dist_gt_positions - pair_dist_pred_pos)
 
     score = (
         (dist_l1 < 0.5).type(dist_l1.dtype) + 
@@ -54,10 +78,17 @@ def lddt(
     score = score * 0.25
 
     # normalize
-    norm = 1.0 / (eps + torch.sum(dists_to_score, dim= (-1, -2)))
-    score = norm * (eps + torch.sum(dists_to_score * score, dim= (-1, -2)))
+    intra_norm = 1.0 / (eps + torch.sum(dists_to_score * intra_mask, dim= (-1, -2)))
+    intra_score = intra_norm * (eps + torch.sum(dists_to_score * intra_mask * score, 
+                                                dim= (-1, -2))
+                                                )
 
-    return score
+    inter_norm = 1.0 / (eps + torch.sum(dists_to_score * inter_mask, dim= (-1, -2)))
+    inter_score = inter_norm * (eps + torch.sum(dists_to_score * score * inter_mask, 
+                                                dim= (-1, -2))
+                                                )
+
+    return intra_score, inter_score
 
 def interface_lddt(
     all_atom_pred_pos_1: torch.Tensor,
@@ -122,9 +153,10 @@ def interface_lddt(
     return score
 
 def drmsd(
-        all_atom_pred_pos: torch.Tensor,
-        all_atom_positions: torch.Tensor,
+        pair_dist_pred_pos: torch.Tensor,
+        pair_dist_gt_positions: torch.Tensor,
         all_atom_mask: torch.Tensor,
+        entity_id: torch.Tensor,
         ) -> torch.Tensor:
     """ 
     Computes drmsds
@@ -132,31 +164,39 @@ def drmsd(
     Args: 
         all_atom_pred_pos: predicted coordinates [*, n_atom, 3]
         all_atom_positions: gt coordinates [*, n_atom, 3]
-        all_atom_mask: [*, n_atom]
+        entity_id: entity id [*, n_atom]
 
     Returns:
-        drmsd: computed drmsds
+        intra_drmsd: computed intra_drmsd
+        inter_drmsd: computed inter_drmsd
     """
-    # get pairwise distance
-    d1 = torch.cdist(all_atom_pred_pos, all_atom_pred_pos) 
-    d2 = torch.cdist(all_atom_positions, all_atom_positions)
-
-    if d1.shape != d2.shape:
-        d2 = d2.unsqueeze(-3) 
+    if pair_dist_pred_pos.shape != pair_dist_gt_positions.shape:
+        pair_dist_gt_positions = pair_dist_gt_positions.unsqueeze(-3) 
         all_atom_mask = all_atom_mask.unsqueeze(-2) 
 
-    drmsd = d1 - d2 
+    drmsd = pair_dist_pred_pos - pair_dist_gt_positions 
     drmsd = drmsd ** 2 
     
     # apply mask
-    drmsd = drmsd * (all_atom_mask[..., None] * all_atom_mask[..., None, :]) 
-    drmsd = torch.sum(drmsd, dim=(-1, -2))
+    mask = (all_atom_mask[..., None] * all_atom_mask[..., None, :]) 
+    intra_mask = create_intra_mask(entity_id)
+    inter_mask = 1 - intra_mask
 
-    n = d1.shape[-1] if all_atom_mask is None else torch.sum(all_atom_mask, dim = -1)
-    drmsd = drmsd * (1 / (n * (n - 1)))
-    drmsd = torch.sqrt(drmsd) 
+    intra_drmsd = drmsd * (mask * intra_mask)
+    inter_drmsd = drmsd * (mask * inter_mask)
+    intra_drmsd = torch.sum(intra_drmsd, dim=(-1, -2))
+    inter_drmsd = torch.sum(inter_drmsd, dim=(-1, -2))
 
-    return drmsd
+    n_intra = torch.sum(intra_mask, dim = (-1, -2))
+    n_inter = torch.sum(inter_mask, dim = (-1, -2))
+    
+    intra_drmsd = intra_drmsd * (1 / (n_intra))
+    inter_drmsd = inter_drmsd * (1 / (n_inter))
+    
+    intra_drmsd = torch.sqrt(intra_drmsd) 
+    inter_drmsd = torch.sqrt(inter_drmsd) 
+    return intra_drmsd, inter_drmsd
+
 
 def gdt(
         all_atom_pred_pos: torch.Tensor,
