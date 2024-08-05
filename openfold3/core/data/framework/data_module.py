@@ -33,9 +33,9 @@ import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader
 
-from openfold3.core.data.framework.single_datasets import (
+from openfold3.core.data.framework.single_datasets.abstract_single_dataset import (
     DATASET_REGISTRY,
-    OpenFoldSingleDataset,
+    SingleDataset,
 )
 from openfold3.core.data.framework.stochastic_sampler_dataset import (
     StochasticSamplerDataset,
@@ -138,7 +138,7 @@ class DataModule(pl.LightningDataModule):
         dataset_configs: list[Sequence[dict]],
         dataset_types: list[Sequence[str]],
         type_to_init: str,
-    ) -> list[Sequence[OpenFoldSingleDataset]]:
+    ) -> list[Sequence[SingleDataset]]:
         """Initializes datasets.
 
         Args:

@@ -17,7 +17,7 @@ import random
 
 import torch
 
-from openfold3.core.data import data_transforms
+from openfold3.core.data.legacy import data_transforms
 
 
 def nonensembled_transform_fns(common_cfg, mode_cfg):

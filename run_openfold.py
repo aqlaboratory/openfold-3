@@ -13,7 +13,7 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
-from openfold3.core.data.data_structures.datamodule import OpenFoldDataModule
+from openfold3.core.data.framework.data_module import DataModule
 from openfold3.core.model.runners.registry import MODEL_REGISTRY
 from openfold3.core.utils.callbacks import (
     EarlyStoppingVerbose,
@@ -48,7 +48,7 @@ def main(args):
         script_preset_(lightning_module)  # TODO check if this works
 
     # Initialize data wrapper
-    lightning_data_module = OpenFoldDataModule(args.data_config)
+    lightning_data_module = DataModule(args.data_config)
 
     # Set up trainer arguments and callbacks
     callbacks = []

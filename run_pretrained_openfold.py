@@ -24,7 +24,7 @@ import time
 import numpy as np
 import torch
 
-from openfold3.core.data import data_pipeline, feature_pipeline, templates
+from openfold3.core.data.legacy import data_pipeline, feature_pipeline, templates
 from openfold3.core.data.tools import hhsearch, hmmsearch
 from openfold3.core.np import protein
 from openfold3.core.utils.script_utils import (
