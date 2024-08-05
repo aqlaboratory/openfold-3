@@ -1,14 +1,23 @@
 import json
 import os
+from collections import defaultdict
 from pathlib import Path
 from typing import NamedTuple
 
+import biotite.structure as struc
 import click
+import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFFile
+from pdbeccdutils.core import ccd_reader
+from rdkit import Chem
 from tqdm import tqdm
 
 import openfold3.core.data.preprocessing.io as io
+from openfold3.core.data.preprocessing.ligand_primitives import (
+    mol_from_atomarray,
+    mol_from_parsed_component,
+)
 from openfold3.core.data.preprocessing.metadata_extraction import (
     get_chain_to_author_chain_dict,
     get_chain_to_canonical_seq_dict,
@@ -27,16 +36,28 @@ from openfold3.core.data.preprocessing.structure_primitives import (
     assign_renumbered_chain_ids,
     get_interface_chain_id_pairs,
 )
+from openfold3.core.data.preprocessing.tables import MoleculeType
 
 print("PID:", os.getpid())
 
+ChainID = str
+EntityID = int
+ChemCompID = str
 
-# make this a dataclass?
+
+# TODO: move explanation to docstring
 class ProcessedStructure(NamedTuple):
     cif_file: CIFFile  # parsed CIF file information
     atom_array: AtomArray  # cleaned structure
     metadata_dict: dict  # structure-, chain-, and interface-level metadata
-    chain_to_canonical_seq: dict  # mapping of chain IDs to canonical sequences
+    chain_to_canonical_seq: dict[
+        ChainID, str
+    ]  # mapping of chain IDs to canonical sequences
+    ligand_ccd_components_to_chains: dict[ChemCompID, list[ChainID]]
+    other_ccd_components: list[
+        ChemCompID
+    ]  # 3-letter codes of residue names that are in the CCD
+    special_ligand_entities: list[EntityID]
 
 
 def process_structure(cif_path: Path, ccd: CIFFile) -> ProcessedStructure:
@@ -84,6 +105,7 @@ def process_structure(cif_path: Path, ccd: CIFFile) -> ProcessedStructure:
     interface_chain_pairs = get_interface_chain_id_pairs(atom_array)
     interface_metadata_list = []
 
+    # TODO: remove this and keep all metadata just in chains
     for chain_1, chain_2 in interface_chain_pairs:
         interface_metadata = {
             "molecule_type": [
@@ -104,12 +126,62 @@ def process_structure(cif_path: Path, ccd: CIFFile) -> ProcessedStructure:
     metadata_dict["chains"] = chain_metadata_list
     metadata_dict["interfaces"] = interface_metadata_list
 
+    # Find ligands
+    ligand_filter = atom_array.molecule_type_id == MoleculeType.LIGAND
+    ligand_atom_array = atom_array[ligand_filter]
+    ligand_ccd_components_to_chains = defaultdict(list)
+    special_ligand_entities = set()
+
+    if ligand_atom_array.array_length() != 0:
+        lig_chain_starts = struc.get_chain_starts(
+            ligand_atom_array, add_exclusive_stop=True
+        )
+        for chain_start, chain_end in zip(lig_chain_starts[:-1], lig_chain_starts[1:]):
+            ligand_chain = ligand_atom_array[chain_start:chain_end]
+
+            if struc.get_residue_count(ligand_chain) == 1:
+                ccd_id = ligand_chain.res_name[0]
+                chain_id = ligand_chain.chain_id_renumbered[0]
+                ligand_ccd_components_to_chains[ccd_id].append(chain_id)
+            else:
+                special_ligand_entities.add(ligand_chain.entity_id[0])
+
+    # Get other components
+    other_ccd_components = set()
+    for resname in np.unique(atom_array[~ligand_filter].res_name):
+        other_ccd_components.add(resname)
+
     return ProcessedStructure(
         cif_file=cif_file,
         atom_array=atom_array,
         metadata_dict=metadata_dict,
         chain_to_canonical_seq=chain_to_canonical_seq,
+        ligand_ccd_components_to_chains=ligand_ccd_components_to_chains,
+        other_ccd_components=other_ccd_components,
+        special_ligand_entities=special_ligand_entities,
     )
+
+
+# TODO: remove
+class CCDParsedComponentsFakeDict:
+    """Temporary dict for faster debugging."""
+
+    def __init__(self):
+        self.components = {}
+        self.ideal_path = Path(
+            "/global/cfs/cdirs/m4351/ljarosch/of3_data/pdb_data/ideal_ligand_files/cif_files"
+        )
+
+    def __getitem__(self, key):
+        if key in self.components:
+            return self.components[key]
+        else:
+            ccd_result = ccd_reader.read_pdb_cif_file(
+                str(self.ideal_path / f"{key}.cif")
+            )
+            component = ccd_result.component
+            self.components[key] = component
+            return component
 
 
 @click.command()
@@ -137,26 +209,91 @@ def process_structure(cif_path: Path, ccd: CIFFile) -> ProcessedStructure:
 def main(
     mmcif_folder: Path, ccd_path: Path, output_folder: Path, include_cifs: bool = False
 ) -> None:
+    # Set output paths
+    output_folder.mkdir(exist_ok=True, parents=True)
+    metadata_json_path = output_folder / "metadata.json"
+    ccd_components_path = output_folder / "ccd_component_sdfs"
+    ccd_components_path.mkdir(exist_ok=True, parents=True)
+
+    # Biotite-parsed CCD for regular metadata access
     ccd = CIFFile.read(ccd_path)
 
-    metadata = {}
+    # Preprocessed Component objects for every CCD component returned by pdbeccdutils
+    # parsed_ccd_components = {
+    #     ccd_id: result.component
+    #     for ccd_id, result in ccd_reader.read_pdb_components_file(
+    #         str(ccd_path)
+    #     ).items()
+    # }
+    parsed_ccd_components = CCDParsedComponentsFakeDict()
+
+    print("Parsed components.")
+
+    all_metadata = {}
+
+    saved_ccd_components = set()
+    ccd_component_to_canonical_smiles = {}
 
     # TODO: remove enumerate and break condition
     for i, cif_path in enumerate(tqdm(mmcif_folder.glob("*.cif"))):
-        # if i < 21:
-        #     continue
-
         if i == 30:
             break
 
         print(f"Processing {cif_path}")
         processed_structure = process_structure(cif_path, ccd)
         pdb_id = get_pdb_id(processed_structure.cif_file)
+        structure_metadata = processed_structure.metadata_dict
+        atom_array = processed_structure.atom_array
 
         output_subfolder = output_folder / pdb_id
         output_subfolder.mkdir(exist_ok=True, parents=True)
+        special_component_sdfs_path = output_subfolder / "special_ligand_sdfs"
+        special_component_sdfs_path.mkdir(exist_ok=True)
 
-        metadata[pdb_id] = processed_structure.metadata_dict
+        ccd_id_to_chains = processed_structure.ligand_ccd_components_to_chains
+
+        for ccd_id, chains in ccd_id_to_chains.items():
+            if ccd_id in saved_ccd_components:
+                canonical_smiles = ccd_component_to_canonical_smiles[ccd_id]
+            else:
+                mol = mol_from_parsed_component(
+                    parsed_ccd_components[ccd_id], assign_fallback_conformer=True
+                )
+                canonical_smiles = mol.GetProp("canonical_smiles")
+                ccd_component_to_canonical_smiles[ccd_id] = canonical_smiles
+
+                with Chem.SDWriter(ccd_components_path / f"{ccd_id}.sdf") as writer:
+                    writer.write(mol)
+
+            for chain_metadata in structure_metadata["chains"]:
+                if chain_metadata["chain_id_renumbered"] in chains:
+                    chain_metadata["canonical_smiles"] = canonical_smiles
+
+        for ccd_id in processed_structure.other_ccd_components:
+            if ccd_id in saved_ccd_components:
+                continue
+
+            mol = mol_from_parsed_component(
+                parsed_ccd_components[ccd_id], assign_fallback_conformer=True
+            )
+
+            with Chem.SDWriter(ccd_components_path / f"{ccd_id}.sdf") as writer:
+                writer.write(mol)
+
+        for entity_id in processed_structure.special_ligand_entities:
+            entity_atom_array = atom_array[atom_array.entity_id == entity_id]
+            mol = mol_from_atomarray(entity_atom_array, assign_fallback_conformer=True)
+
+            mol_sdf_path = special_component_sdfs_path / f"{entity_id}.sdf"
+            with Chem.SDWriter(mol_sdf_path) as writer:
+                writer.write(mol)
+
+            for chain_metadata in structure_metadata["chains"]:
+                if chain_metadata["entity_id"] == entity_id:
+                    chain_metadata["canonical_smiles"] = mol.GetProp("canonical_smiles")
+
+        # Set final metadata for structure
+        all_metadata[pdb_id] = structure_metadata
 
         # Save cleaned bCIF file (this will be minimal and only include AtomSite
         # records)
@@ -188,9 +325,11 @@ def main(
 
         print(f"Processed {pdb_id}: {bcif_path}, {fasta_path}")
 
-    json_path = output_folder / "metadata.json"
-    with open(json_path, "w") as f:
-        json.dump(metadata, f, indent=4, default=io.encode_numpy_types)
+    with open(metadata_json_path, "w") as f:
+        json.dump(all_metadata, f, indent=4, default=io.encode_numpy_types)
+
+    # TODO: handle model conformer save date etc. (can't just handle dates on cache
+    # level because of reference conformers -____-)
 
 
 if __name__ == "__main__":
