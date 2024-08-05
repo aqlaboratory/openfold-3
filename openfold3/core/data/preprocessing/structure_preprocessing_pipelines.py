@@ -5,7 +5,6 @@ procedures of different models.
 
 # TODO: give this file a different name
 
-import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 
@@ -23,9 +22,7 @@ from openfold3.core.data.preprocessing.structure_cleanup import (
     remove_non_CCD_atoms,
     remove_small_polymers,
     remove_waters,
-    subset_large_structure,
 )
-from openfold3.core.data.preprocessing.tokenization import tokenize_atom_array
 
 
 def cleanup_structure_af3(
@@ -34,9 +31,9 @@ def cleanup_structure_af3(
     """Cleans up a structure following the AlphaFold3 SI
 
     This function applies all cleaning steps outlined in the AlphaFold3 SI 2.5.4. The
-    only non-applied filters are the release date and resolution filters as those are
-    deferred to the training cache generation script for easier adjustment in the
-    future.
+    only non-applied filters are the release date, resolution, and number of chain
+    filters, as those are deferred to the training cache generation script for easier
+    adjustment in the future.
 
     Args:
         atom_array:
