@@ -20,11 +20,11 @@ import unittest
 import torch
 
 from openfold3.core.data.data_modules import OpenFoldMultimerDataModule
-from openfold3.core.loss.loss import AlphaFoldLoss
+from openfold3.core.loss.loss_module import AlphaFoldLoss
 from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation_align
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations.af2_monomer.config import model_config
-from openfold3.model_implementations.af2_monomer.model import AlphaFold
+from openfold3.model_implementations.af2_multimer.config import model_config
+from openfold3.model_implementations.af2_multimer.model import AlphaFold
 from tests.config import consts
 
 logger = logging.getLogger(__name__)

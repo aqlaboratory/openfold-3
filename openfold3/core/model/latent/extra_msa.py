@@ -19,7 +19,9 @@ import sys
 from typing import Optional, Sequence, Tuple
 
 import torch
+from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.latent.base_blocks import MSABlock
 from openfold3.core.model.latent.base_stacks import MSAStack
 from openfold3.core.model.layers.msa import MSAColumnGlobalAttention
@@ -54,6 +56,7 @@ class ExtraMSABlock(MSABlock):
         inf: float,
         eps: float,
         ckpt: bool,
+        linear_init_params: ConfigDict = lin_init.extra_msa_block_init,
     ):
         super().__init__(
             c_m=c_m,
@@ -72,6 +75,7 @@ class ExtraMSABlock(MSABlock):
             fuse_projection_weights=fuse_projection_weights,
             inf=inf,
             eps=eps,
+            linear_init_params=linear_init_params,
         )
 
         self.ckpt = ckpt
@@ -82,6 +86,7 @@ class ExtraMSABlock(MSABlock):
             no_heads=no_heads_msa,
             inf=inf,
             eps=eps,
+            linear_init_params=linear_init_params.msa_col_att,
         )
 
     def forward(
@@ -260,6 +265,7 @@ class ExtraMSAStack(MSAStack):
         inf: float,
         eps: float,
         ckpt: bool,
+        linear_init_params: ConfigDict = lin_init.extra_msa_block_init,
         clear_cache_between_blocks: bool = False,
         tune_chunk_size: bool = False,
         **kwargs,
@@ -310,6 +316,8 @@ class ExtraMSAStack(MSAStack):
                 Small constant for numerical stability
             ckpt:
                 Whether to checkpoint blocks
+            linear_init_params:
+                Parameters for linear layer initialization
             clear_cache_between_blocks:
                 Whether to clear CUDA's GPU memory cache between blocks of the stack.
                 Slows down each block but can reduce fragmentation
@@ -345,6 +353,7 @@ class ExtraMSAStack(MSAStack):
                 inf=inf,
                 eps=eps,
                 ckpt=False,
+                linear_init_params=linear_init_params,
             )
             self.blocks.append(block)
 

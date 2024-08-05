@@ -19,8 +19,10 @@ from functools import partial
 from typing import Optional, Tuple
 
 import torch
+from ml_collections import ConfigDict
 from torch import nn
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.latent.base_blocks import PairBlock
 from openfold3.core.model.layers.attention_pair_bias import AttentionPairBias
 from openfold3.core.model.layers.transition import SwiGLUTransition
@@ -46,6 +48,7 @@ class PairFormerBlock(nn.Module):
         pair_dropout: float,
         fuse_projection_weights: bool,
         inf: float,
+        linear_init_params: ConfigDict = lin_init.pairformer_init,
     ):
         """
         Args:
@@ -76,6 +79,8 @@ class PairFormerBlock(nn.Module):
                 the Pair Stack. Used in Multimer pipeline.
             inf:
                 Large constant used for masking
+            linear_init_params:
+                Parameters for initializing linear layers
         """
         super().__init__()
 
@@ -89,6 +94,7 @@ class PairFormerBlock(nn.Module):
             pair_dropout=pair_dropout,
             fuse_projection_weights=fuse_projection_weights,
             inf=inf,
+            linear_init_params=linear_init_params.pair_block,
         )
 
         self.attn_pair_bias = AttentionPairBias(
@@ -104,11 +110,13 @@ class PairFormerBlock(nn.Module):
             block_size=None,
             gating=True,
             inf=inf,
+            linear_init_params=linear_init_params.att_pair_bias,
         )
 
         self.single_transition = SwiGLUTransition(
             c_in=c_s,
             n=transition_n,
+            linear_init_params=linear_init_params.transition,
         )
 
     def forward(
@@ -217,6 +225,7 @@ class PairFormerStack(nn.Module):
         fuse_projection_weights: bool,
         blocks_per_ckpt: Optional[int],
         inf: float,
+        linear_init_params: ConfigDict = lin_init.pairformer_init,
         clear_cache_between_blocks: bool = False,
         tune_chunk_size: bool = False,
         **kwargs,
@@ -255,6 +264,8 @@ class PairFormerStack(nn.Module):
                 activation checkpointing
             inf:
                 Large constant used for masking
+            linear_init_params:
+                Parameters for initializing linear layers
             clear_cache_between_blocks:
                 Whether to clear CUDA's GPU memory cache between blocks of the
                 stack. Slows down each block but can reduce fragmentation
@@ -282,6 +293,7 @@ class PairFormerStack(nn.Module):
                 pair_dropout=pair_dropout,
                 fuse_projection_weights=fuse_projection_weights,
                 inf=inf,
+                linear_init_params=linear_init_params,
             )
             self.blocks.append(block)
 

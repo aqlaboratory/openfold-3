@@ -28,6 +28,7 @@ import torch
 from ml_collections import ConfigDict
 from torch import nn
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.feature_embedders import (
     TemplatePairEmbedderAllAtom,
     TemplatePairEmbedderMonomer,
@@ -62,6 +63,7 @@ class TemplatePairBlock(PairBlock):
         tri_mul_first: bool,
         fuse_projection_weights: bool,
         inf: float,
+        linear_init_params: ConfigDict = lin_init.pair_block_init,
         **kwargs,
     ):
         """
@@ -88,6 +90,8 @@ class TemplatePairBlock(PairBlock):
                 the Pair Stack. Used in Multimer pipeline.
             inf:
                 Large constant used for masking
+            linear_init_params:
+                Configuration for linear initialization
         """
         super().__init__(
             c_z=c_t,
@@ -99,6 +103,7 @@ class TemplatePairBlock(PairBlock):
             pair_dropout=dropout_rate,
             fuse_projection_weights=fuse_projection_weights,
             inf=inf,
+            linear_init_params=linear_init_params,
         )
 
         self.tri_mul_first = tri_mul_first
@@ -209,8 +214,9 @@ class TemplatePairStack(nn.Module):
         tri_mul_first,
         fuse_projection_weights,
         blocks_per_ckpt,
-        tune_chunk_size: bool = False,
         inf=1e9,
+        linear_init_params=lin_init.pair_block_init,
+        tune_chunk_size: bool = False,
         **kwargs,
     ):
         """
@@ -240,10 +246,12 @@ class TemplatePairStack(nn.Module):
             blocks_per_ckpt:
                 Number of blocks per activation checkpoint. None disables
                 activation checkpointing
-            tune_chunk_size:
-                 Whether to dynamically tune the module's chunk size
             inf:
                 Large constant used for masking
+            linear_init_params:
+                Configuration for linear initialization
+            tune_chunk_size:
+                 Whether to dynamically tune the module's chunk size
         """
         super().__init__()
 
@@ -262,6 +270,7 @@ class TemplatePairStack(nn.Module):
                 tri_mul_first=tri_mul_first,
                 fuse_projection_weights=fuse_projection_weights,
                 inf=inf,
+                linear_init_params=linear_init_params,
             )
             self.blocks.append(block)
 
@@ -362,16 +371,16 @@ class TemplateEmbedderMonomer(nn.Module):
 
         self.config = config
         self.template_single_embedder = TemplateSingleEmbedderMonomer(
-            **config["template_single_embedder"],
+            **config.template_single_embedder,
         )
         self.template_pair_embedder = TemplatePairEmbedderMonomer(
-            **config["template_pair_embedder"],
+            **config.template_pair_embedder,
         )
         self.template_pair_stack = TemplatePairStack(
-            **config["template_pair_stack"],
+            **config.template_pair_stack,
         )
         self.template_pointwise_att = TemplatePointwiseAttention(
-            **config["template_pointwise_attention"],
+            **config.template_pointwise_attention,
         )
 
     def forward(
@@ -512,16 +521,19 @@ class TemplateEmbedderMultimer(nn.Module):
 
         self.config = config
         self.template_single_embedder = TemplateSingleEmbedderMultimer(
-            **config["template_single_embedder"],
+            **config.template_single_embedder,
         )
         self.template_pair_embedder = TemplatePairEmbedderMultimer(
-            **config["template_pair_embedder"],
+            **config.template_pair_embedder,
         )
         self.template_pair_stack = TemplatePairStack(
-            **config["template_pair_stack"],
+            **config.template_pair_stack,
         )
 
-        self.linear_t = Linear(config.c_t, config.c_z)
+        templ_init = config.get(
+            "linear_init_params", lin_init.multimer_templ_module_init
+        )
+        self.linear_t = Linear(config.c_t, config.c_z, **templ_init.linear_t)
 
     def forward(
         self,
@@ -615,13 +627,16 @@ class TemplateEmbedderAllAtom(nn.Module):
 
         self.config = config
         self.template_pair_embedder = TemplatePairEmbedderAllAtom(
-            **config["template_pair_embedder"],
+            **config.template_pair_embedder,
         )
         self.template_pair_stack = TemplatePairStack(
-            **config["template_pair_stack"],
+            **config.template_pair_stack,
         )
 
-        self.linear_t = Linear(config.c_t, config.c_z, bias=False)
+        templ_init = config.get(
+            "linear_init_params", lin_init.all_atom_templ_module_init
+        )
+        self.linear_t = Linear(config.c_t, config.c_z, **templ_init.linear_t)
 
     def forward(
         self,
