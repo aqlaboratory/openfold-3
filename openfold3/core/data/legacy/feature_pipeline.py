@@ -20,7 +20,7 @@ import ml_collections
 import numpy as np
 import torch
 
-from openfold3.core.data import input_pipeline, input_pipeline_multimer
+from openfold3.core.data.legacy import input_pipeline, input_pipeline_multimer
 
 FeatureDict = Mapping[str, np.ndarray]
 TensorDict = Dict[str, torch.Tensor]

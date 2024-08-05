@@ -20,7 +20,7 @@ from typing import Optional, Sequence
 
 from absl import logging
 
-from openfold3.core.data import parsers
+from openfold3.core.data.legacy import parsers
 from openfold3.core.data.tools import hmmbuild, utils
 
 

@@ -19,7 +19,7 @@ from typing import Iterable, List, Mapping, MutableMapping
 
 import numpy as np
 
-from openfold3.core.data import msa_pairing
+from openfold3.core.data.legacy import msa_pairing
 from openfold3.core.np import residue_constants
 
 # TODO: Move this into the config

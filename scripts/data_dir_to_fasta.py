@@ -4,7 +4,7 @@ import os
 import string
 from collections import defaultdict
 
-from openfold3.core.data import mmcif_parsing
+from openfold3.core.data.legacy import mmcif_parsing
 from openfold3.core.np import protein, residue_constants
 
 

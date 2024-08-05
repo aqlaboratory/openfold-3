@@ -15,7 +15,7 @@
 import torch
 import torch.nn as nn
 
-from openfold3.core.data import data_transforms, data_transforms_multimer
+from openfold3.core.data.legacy import data_transforms, data_transforms_multimer
 from openfold3.core.model.feature_embedders.input_embedders import (
     ExtraMSAEmbedder,
     InputEmbedder,
