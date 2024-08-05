@@ -21,7 +21,7 @@ import numpy as np
 import torch
 
 import tests.compare_utils as compare_utils
-from openfold3.core.data import data_transforms
+from openfold3.core.data.legacy import data_transforms
 from openfold3.core.loss.confidence import (
     atom37_experimentally_resolved_loss,
     ca_plddt_loss,

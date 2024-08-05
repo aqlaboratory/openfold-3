@@ -17,7 +17,7 @@ import random
 
 import torch
 
-from openfold3.core.data import data_transforms, data_transforms_multimer
+from openfold3.core.data.legacy import data_transforms, data_transforms_multimer
 
 
 def groundtruth_transforms_fns():

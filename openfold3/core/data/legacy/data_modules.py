@@ -10,7 +10,7 @@ import ml_collections as mlc
 import pytorch_lightning as pl
 import torch
 
-from openfold3.core.data import (
+from openfold3.core.data.legacy import (
     data_pipeline,
     feature_pipeline,
     mmcif_parsing,

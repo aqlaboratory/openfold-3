@@ -21,7 +21,7 @@ import os
 import subprocess
 from typing import Optional, Sequence
 
-from openfold3.core.data import parsers
+from openfold3.core.data.legacy import parsers
 from openfold3.core.data.tools import utils
 
 

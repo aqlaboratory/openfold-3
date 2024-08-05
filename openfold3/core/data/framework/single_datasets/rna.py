@@ -1,6 +1,6 @@
 import json
 
-from openfold3.core.data.framework.single_datasets import (
+from openfold3.core.data.framework.single_datasets.abstract_single_dataset import (
     SingleDataset,
     register_dataset,
 )
