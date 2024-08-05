@@ -12,13 +12,13 @@ and highlight where you currently are in the process:
 0. Dataset filtering and cache generation
     raw data -> filtered data
 1. PreprocessingPipeline
-    filtered data -> processed data
-2. FeaturePipeline
-    processed data -> FeatureDict
+    filtered data -> preprocessed data
+2. SampleProcessingPipeline and FeaturePipeline
+    preprocessed data -> parsed/processed data -> FeatureDict
 3. SingleDataset
     datapoints -> __getitem__ -> FeatureDict
-4. *StochasticSamplerDataset (optional)* [YOU ARE HERE]
-    Sequence[SingeDataset] -> __getitem__ -> FeatureDict
+4. StochasticSamplerDataset (optional) [YOU ARE HERE]
+    Sequence[SingleDataset] -> __getitem__ -> FeatureDict
 5. DataLoader
     FeatureDict -> batched data
 6. DataModule
