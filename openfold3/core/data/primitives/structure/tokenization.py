@@ -1,26 +1,27 @@
-"""This module contains building blocks for tokenization and chain assignment."""
-
 # TODO add license
 
 import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
 
-from openfold3.core.data.resources.tables import (
-    MOLECULE_TYPE_ID_DNA,
-    MOLECULE_TYPE_ID_LIGAND,
-    MOLECULE_TYPE_ID_PROTEIN,
-    MOLECULE_TYPE_ID_RNA,
+from openfold3.core.data.primitives.structure.index import assign_atom_indices, remove_atom_indices
+from .tables import (
     NUCLEIC_ACID_MAIN_CHAIN_ATOMS,
     PROTEIN_MAIN_CHAIN_ATOMS,
-    STANDARD_DNA_RESIDUES,
-    STANDARD_PROTEIN_RESIDUES,
     STANDARD_RESIDUES,
-    STANDARD_RNA_RESIDUES,
     TOKEN_CENTER_ATOMS,
+    MoleculeType,
 )
 
 
+# NOTE for LJ changes:
+# - removed af3_atom_id in favor of _atom_idx with assign/remove functions
+# - removed assign_chains
+# - changed af3_chain_id to chain_id_renumbered
+# - changed af3_molecule_type to molecule_type_id
+# TODO for nits/potential changes:
+# - change af3 in all annotations, e.g. af3_aux_residue_id to aux_residue_id and
+#   af3_token_id to token_id
 def tokenize_atom_array(atom_array: AtomArray):
     """Generates token ids, token center atom annotations and atom id annotations for a
     biotite atom_array.
@@ -36,11 +37,12 @@ def tokenize_atom_array(atom_array: AtomArray):
     Returns:
         None
     """
+    # Create temporary atom indices
+    assign_atom_indices(atom_array)
 
-    # Create atom id annotation and auxiliary residue id annotation
+    # Create auxiliary residue id annotation
     # The auxiliary residue id is used to tokenize covalently modified residues
     # per atom and is removed afterwards
-    atom_array.set_annotation("af3_atom_id", np.arange(len(atom_array)))
     atom_array.set_annotation(
         "af3_aux_residue_id",
         struc.spread_residue_wise(
@@ -55,7 +57,7 @@ def tokenize_atom_array(atom_array: AtomArray):
 
     # Get ids where residue-tokens start
     is_standard_residue_atom = np.isin(atom_array.res_id, standard_residue_ids)
-    standard_residue_atom_ids = atom_array.af3_atom_id[is_standard_residue_atom]
+    standard_residue_atom_ids = atom_array._atom_idx[is_standard_residue_atom]
     residue_token_start_ids = np.unique(
         struc.get_residue_starts_for(atom_array, standard_residue_atom_ids)
     )
@@ -82,20 +84,20 @@ def tokenize_atom_array(atom_array: AtomArray):
     is_one_heteroatom = is_heteoratom[bondlist[:, 0]] ^ is_heteoratom[bondlist[:, 1]]
     # - two non-heteroatoms in different chains
     #   (standard residues covalently linking different chains)
-    chain_ids = atom_array.af3_chain_id
+    chain_ids = atom_array.chain_id_renumbered
     is_different_chain = chain_ids[bondlist[:, 0]] != chain_ids[bondlist[:, 1]]
     # - two non-heteroatoms in the same chain but side chains of different residues
     #   (standard residues covalently linking non-consecutive residues in the same
     #   chain)
     atom_names = atom_array.atom_name
-    molecule_types = atom_array.af3_molecule_type
+    molecule_types = atom_array.molecule_type_id
     # Find atoms connecting residues in the same chain via side chains
     is_side_chain = (
         ~np.isin(atom_names, NUCLEIC_ACID_MAIN_CHAIN_ATOMS)
-        & np.isin(molecule_types, [MOLECULE_TYPE_ID_RNA, MOLECULE_TYPE_ID_DNA])
+        & np.isin(molecule_types, [MoleculeType.RNA, MoleculeType.DNA])
     ) | (
         ~np.isin(atom_names, PROTEIN_MAIN_CHAIN_ATOMS)
-        & (molecule_types == MOLECULE_TYPE_ID_PROTEIN)
+        & (molecule_types == MoleculeType.PROTEIN)
     )
     is_same_chain = (
         chain_ids[bondlist_standard[:, 0]] == chain_ids[bondlist_standard[:, 1]]
@@ -134,7 +136,7 @@ def tokenize_atom_array(atom_array: AtomArray):
             atom_array.af3_aux_residue_id,
             nonhetero_atoms_in_covalent_modification.af3_aux_residue_id,
         )
-    ].af3_atom_id
+    ]._atom_idx
 
     # Remove the corresponding residue token start ids
     modified_residue_token_start_ids = np.unique(
@@ -143,11 +145,9 @@ def tokenize_atom_array(atom_array: AtomArray):
     residue_token_start_ids = residue_token_start_ids[
         ~np.isin(residue_token_start_ids, modified_residue_token_start_ids)
     ]
-    # Remove auxiliary residue id annotation
-    atom_array.del_annotation("af3_aux_residue_id")
 
     # Get atom-token ids
-    atom_token_start_ids = atom_array.af3_atom_id[~is_standard_residue_atom]
+    atom_token_start_ids = atom_array._atom_idx[~is_standard_residue_atom]
 
     # Combine all token start ids
     all_token_start_ids = np.sort(
@@ -174,62 +174,8 @@ def tokenize_atom_array(atom_array: AtomArray):
     af3_token_center_atoms[atomized_residue_token_start_ids] = True
     atom_array.set_annotation("af3_token_center_atom", af3_token_center_atoms)
 
-    return None
-
-
-def assign_chains(atom_array: AtomArray):
-    """Generates chain ids and molecule types for a biotite atom_array.
-
-    Separate chain ids are given to each protein chain, nucleic acid chain and
-    non-covalent ligands including lipids, glycans and small molecules. For ligands
-    covalently bound to polymers, we follow the PDB auto-assigned chain ids: small PTMs
-    and ligands are assigned to the same chain as the polymer they are bound to, whereas
-    glycans are assigned to a separate chain. Note: chain assignment needs to be ran
-    before tokenization to create certain features used by the tokenizer.
-
-    Updates the input biotite AtomArray with added 'af3_chain_id' and
-    'af3_molecule_type' annotations and a 'chain_id_map' class attribute in-place.
-
-    Args:
-        atom_array (AtomArray): biotite atom array of the first bioassembly of a PDB
-        entry
-
-    Returns:
-        None
-    """
-
-    # Get chain id start indices
-    chain_start_ids = struc.get_chain_starts(atom_array)
-
-    # Create chain ids
-    # This is necessary to do because some PDB-assigned homomeric chain
-    # IDs are not unique
-    chain_id_repeats = np.diff(np.append(chain_start_ids, len(atom_array)))
-    chain_ids_per_atom = np.repeat(np.arange(len(chain_id_repeats)), chain_id_repeats)
-    atom_array.set_annotation("af3_chain_id", chain_ids_per_atom)
-
-    # Create chain id map from our chain IDs to auto-assigned PDB chain IDs
-    atom_array.chain_id_map = {
-        k: v for (k, v) in list(set(zip(atom_array.af3_chain_id, atom_array.chain_id)))
-    }
-
-    # Create molecule type annotation
-    molecule_types = np.zeros(len(atom_array))
-    for start_id, end_id in zip(chain_start_ids, chain_start_ids + chain_id_repeats):
-        residues_in_chain = set(atom_array[start_id:end_id].res_name)
-        # Assign protein
-        if residues_in_chain & set(STANDARD_PROTEIN_RESIDUES):
-            molecule_types[start_id:end_id] = MOLECULE_TYPE_ID_PROTEIN
-        # Assign RNA
-        elif residues_in_chain & set(STANDARD_RNA_RESIDUES):
-            molecule_types[start_id:end_id] = MOLECULE_TYPE_ID_RNA
-        # Assign DNA
-        elif residues_in_chain & set(STANDARD_DNA_RESIDUES):
-            molecule_types[start_id:end_id] = MOLECULE_TYPE_ID_DNA
-        # Assign ligand
-        else:
-            molecule_types[start_id:end_id] = MOLECULE_TYPE_ID_LIGAND
-
-    atom_array.set_annotation("af3_molecule_type", molecule_types)
+    # Remove temporary atom & residue indices
+    remove_atom_indices(atom_array)
+    atom_array.del_annotation("af3_aux_residue_id")
 
     return None
