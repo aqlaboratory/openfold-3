@@ -771,7 +771,7 @@ def add_unresolved_polymer_residues(
     # the atom indices. That way the entire array can be sorted in a single
     # reindexing at the end without losing any bond information.
     chain_starts = struc.get_chain_starts(extended_atom_array, add_exclusive_stop=True)
-    for chain_start, chain_end in zip(chain_starts[:-1], chain_starts[1:] - 1):
+    for chain_start, chain_end in zip(chain_starts[:-1], chain_starts[1:]):
         # Infer some chain-wise properties from first atom (could use any atom)
         first_atom = extended_atom_array[chain_start]
         chain_type = first_atom.molecule_type_id
