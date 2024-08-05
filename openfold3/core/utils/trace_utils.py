@@ -133,7 +133,7 @@ def trace_model_(model, sample_input):
         # All trace inputs need to be tensors. This wrapper takes care of that
         def traced_block_wrapper(*args, **kwargs):
             def to_tensor(t):
-                return torch.tensor(t) if type(t) != torch.Tensor else t
+                return torch.tensor(t) if not isinstance(t, torch.Tensor) else t
 
             args = [to_tensor(a) for a in args]
             kwargs = {k: to_tensor(v) for k, v in kwargs.items()}

@@ -1,5 +1,11 @@
+from .angle_resnet import AngleResnet, AngleResnetBlock
 from .attention_pair_bias import AttentionPairBias
+from .backbone_update import BackboneUpdate, QuatRigidUpdate
 from .diffusion_transformer import DiffusionTransformer, DiffusionTransformerBlock
+from .invariant_point_attention import (
+    InvariantPointAttention,
+    InvariantPointAttentionMultimer,
+)
 from .msa import (
     MSAAttention,
     MSAColumnAttention,
@@ -11,10 +17,12 @@ from .outer_product_mean import OuterProductMean
 from .sequence_local_atom_attention import (
     AtomAttentionDecoder,
     AtomAttentionEncoder,
-    AtomFeatureEmbedder,
     AtomTransformer,
     NoisyPositionEmbedder,
+    RefAtomFeatureEmbedder,
 )
+
+# from .diffusion_conditioning import DiffusionConditioning
 from .template_pointwise_attention import TemplatePointwiseAttention
 from .transition import (
     ConditionedTransitionBlock,
@@ -41,6 +49,7 @@ __all__ = [
     "AttentionPairBias",
     "DiffusionTransformerBlock",
     "DiffusionTransformer",
+    # 'DiffusionConditioning',
     "MSAAttention",
     "MSARowAttentionWithPairBias",
     "MSAColumnAttention",
@@ -50,7 +59,7 @@ __all__ = [
     "AtomAttentionEncoder",
     "AtomAttentionDecoder",
     "AtomTransformer",
-    "AtomFeatureEmbedder",
+    "RefAtomFeatureEmbedder",
     "NoisyPositionEmbedder",
     "TemplatePointwiseAttention",
     "ReLUTransitionLayer",
@@ -67,4 +76,10 @@ __all__ = [
     "FusedTriangleMultiplicativeUpdate",
     "FusedTriangleMultiplicationIncoming",
     "FusedTriangleMultiplicationOutgoing",
+    "AngleResnetBlock",
+    "AngleResnet",
+    "BackboneUpdate",
+    "QuatRigidUpdate",
+    "InvariantPointAttention",
+    "InvariantPointAttentionMultimer",
 ]

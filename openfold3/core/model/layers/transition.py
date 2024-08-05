@@ -22,7 +22,9 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
+from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import AdaLN, LayerNorm, Linear, SwiGLU
 from openfold3.core.utils.chunk_utils import chunk_layer
 
@@ -32,7 +34,9 @@ class ReLUTransitionLayer(nn.Module):
     Feed-forward network applied to activations after attention.
     """
 
-    def __init__(self, num_relu_layers, c_in, n):
+    def __init__(
+        self, num_relu_layers, c_in, n, linear_init_params=lin_init.relu_transition_init
+    ):
         """
         Args:
             num_relu_layers:
@@ -42,6 +46,8 @@ class ReLUTransitionLayer(nn.Module):
             n:
                 Factor multiplied to c_in to obtain the hidden channel
                 dimension
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -52,7 +58,7 @@ class ReLUTransitionLayer(nn.Module):
         self.layers = nn.ModuleList(
             [
                 nn.Sequential(
-                    Linear(self.c_in, self.n * self.c_in, bias=True, init="relu"),
+                    Linear(self.c_in, self.n * self.c_in, **linear_init_params.layers),
                     nn.ReLU(),
                 )
                 for _ in range(self.num_relu_layers)
@@ -86,7 +92,7 @@ class ReLUTransition(nn.Module):
     Implements AF2 Algorithm 9 and 15
     """
 
-    def __init__(self, c_in, n):
+    def __init__(self, c_in, n, linear_init_params=lin_init.relu_transition_init):
         """
         Args:
             c_in:
@@ -94,6 +100,8 @@ class ReLUTransition(nn.Module):
             n:
                 Factor multiplied to c_in to obtain the hidden channel
                 dimension
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -102,7 +110,10 @@ class ReLUTransition(nn.Module):
 
         self.layer_norm = LayerNorm(self.c_in)
         self.transition_mlp = ReLUTransitionLayer(
-            num_relu_layers=1, c_in=self.c_in, n=self.n
+            num_relu_layers=1,
+            c_in=self.c_in,
+            n=self.n,
+            linear_init_params=linear_init_params,
         )
 
     def _transition(self, x, mask):
@@ -162,7 +173,12 @@ class SwiGLUTransition(nn.Module):
     Implements AF3 Algorithm 11.
     """
 
-    def __init__(self, c_in: int, n: int = 4):
+    def __init__(
+        self,
+        c_in: int,
+        n: int,
+        linear_init_params: ConfigDict = lin_init.swiglu_transition_init,
+    ):
         """
         Args:
             c_in:
@@ -170,6 +186,8 @@ class SwiGLUTransition(nn.Module):
             n:
                 Factor by which c_in is multiplied to obtain hidden channel
                 dimension
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -177,17 +195,21 @@ class SwiGLUTransition(nn.Module):
         self.n = n
 
         self.layer_norm = LayerNorm(self.c_in)
-        self.swiglu = SwiGLU(self.c_in, self.n * self.c_in)
-        self.linear_out = Linear(self.n * self.c_in, c_in, bias=False, init="final")
+        self.swiglu = SwiGLU(
+            self.c_in, self.n * self.c_in, linear_init_params=linear_init_params.swiglu
+        )
+        self.linear_out = Linear(
+            self.n * self.c_in, c_in, **linear_init_params.linear_out
+        )
 
     def _transition(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        # [*, N_res, C_in]
+        # [*, N, C_in]
         x = self.layer_norm(x)
 
-        # [*, N_res, C_hidden]
+        # [*, N, C_hidden]
         x = self.swiglu(x)
 
-        # [*, N_res, C_in]
+        # [*, N, C_in]
         x = self.linear_out(x)
         x = x * mask
 
@@ -216,19 +238,19 @@ class SwiGLUTransition(nn.Module):
         """
         Args:
             x:
-                [*, N_res, C_in] Input activation
+                [*, N, C_in] Input activation
             mask:
-                [*, N_res] Input mask
+                [*, N] Input mask
             chunk_size
                 Chunk size for chunking the input tensor
         Returns:
             x:
-                [*, N_res, C_in] Activation update
+                [*, N, C_in] Activation update
         """
         if mask is None:
             mask = x.new_ones(x.shape[:-1])
 
-        # [*, N_res, 1]
+        # [*, N, 1]
         mask = mask.unsqueeze(-1)
 
         if chunk_size is not None:
@@ -245,7 +267,13 @@ class ConditionedTransitionBlock(nn.Module):
     Implements AF3 Algorithm 25.
     """
 
-    def __init__(self, c_a: int, c_s: int, n: int = 2):
+    def __init__(
+        self,
+        c_a: int,
+        c_s: int,
+        n: int,
+        linear_init_params: ConfigDict = lin_init.cond_transition_init,
+    ):
         """
 
         Args:
@@ -254,6 +282,8 @@ class ConditionedTransitionBlock(nn.Module):
             n:
                 Factor by which c_in is multiplied to obtain hidden channel
                 dimension
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -261,16 +291,57 @@ class ConditionedTransitionBlock(nn.Module):
         self.c_s = c_s
         self.n = n
 
-        self.layer_norm = AdaLN(c_a=self.c_a, c_s=self.c_s)
+        self.layer_norm = AdaLN(
+            c_a=self.c_a, c_s=self.c_s, linear_init_params=linear_init_params.ada_ln
+        )
 
-        self.swiglu = SwiGLU(self.c_a, self.n * self.c_a)
+        self.swiglu = SwiGLU(
+            self.c_a, self.n * self.c_a, linear_init_params=linear_init_params.swiglu
+        )
 
         self.sigmoid = nn.Sigmoid()
-        self.linear_g = Linear(self.c_s, self.c_a, init="gating_ada_zero")
-        self.linear_out = Linear(self.n * self.c_a, self.c_a, bias=False, init="final")
+        self.linear_g = Linear(self.c_s, self.c_a, **linear_init_params.linear_g)
+        self.linear_out = Linear(
+            self.n * self.c_a, self.c_a, **linear_init_params.linear_out
+        )
+
+    def _transition(
+        self, a: torch.Tensor, s: torch.Tensor, mask: torch.Tensor
+    ) -> torch.Tensor:
+        # [*, N, C_in]
+        a = self.layer_norm(a, s)
+
+        # [*, N, C_hidden]
+        b = self.swiglu(a)
+
+        # AdaLN-zero
+        # [*, N, C_in]
+        a = self.sigmoid(self.linear_g(s)) * self.linear_out(b)
+        a = a * mask
+
+        return a
+
+    @torch.jit.ignore
+    def _chunk(
+        self,
+        a: torch.Tensor,
+        s: torch.Tensor,
+        mask: torch.Tensor,
+        chunk_size: int,
+    ) -> torch.Tensor:
+        return chunk_layer(
+            self._transition,
+            {"a": a, "s": s, "mask": mask},
+            chunk_size=chunk_size,
+            no_batch_dims=len(a.shape[:-2]),
+        )
 
     def forward(
-        self, a: torch.Tensor, s: torch.Tensor, mask: Optional[torch.Tensor] = None
+        self,
+        a: torch.Tensor,
+        s: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+        chunk_size: Optional[int] = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -287,11 +358,10 @@ class ConditionedTransitionBlock(nn.Module):
 
         mask = mask.unsqueeze(-1)
 
-        a = self.layer_norm(a, s)
-        b = self.swiglu(a)
-        # AdaLN-zero
-        a = self.sigmoid(self.linear_g(s)) * self.linear_out(b)
-        a = a * mask
+        if chunk_size is not None:
+            a = self._chunk(a=a, s=s, mask=mask, chunk_size=chunk_size)
+        else:
+            a = self._transition(a=a, s=s, mask=mask)
 
         return a
 
@@ -302,12 +372,19 @@ class StructureModuleTransition(nn.Module):
     Implements AF2 Algorithm 20 lines 8-9.
     """
 
-    def __init__(self, c, num_layers, dropout_rate):
+    def __init__(
+        self,
+        c,
+        num_layers,
+        dropout_rate,
+        linear_init_params=lin_init.relu_transition_init,
+    ):
         """
         Args:
             c: Input channel dimension
             num_layers: Number of ReLUTransitionLayers
             dropout_rate: Dropout rate
+            linear_init_params: Linear layer initialization parameters
         """
         super().__init__()
 
@@ -317,7 +394,12 @@ class StructureModuleTransition(nn.Module):
 
         self.layers = nn.ModuleList(
             [
-                ReLUTransitionLayer(num_relu_layers=2, c_in=self.c, n=1)
+                ReLUTransitionLayer(
+                    num_relu_layers=2,
+                    c_in=self.c,
+                    n=1,
+                    linear_init_params=linear_init_params,
+                )
                 for _ in range(self.num_layers)
             ]
         )

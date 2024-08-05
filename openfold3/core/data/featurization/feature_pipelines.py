@@ -57,3 +57,4 @@ class AF3BioAssemblyFeaturePipeline(FeaturePipeline):
 #         # MSA features
 #         # Template features
 #         # Bond features
+

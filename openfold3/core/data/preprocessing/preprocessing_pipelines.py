@@ -89,3 +89,4 @@ class BioAssemblyPreprocessingPipeline(PreprocessingPipeline):
 class TFDNAPreprocessingPipeline(PreprocessingPipeline):
     def forward(self, index: int) -> dict:
         pass
+
