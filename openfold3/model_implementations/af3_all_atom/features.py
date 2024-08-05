@@ -14,7 +14,7 @@ feature_dict = mlc.ConfigDict(
             "asym_id": [NUM_TOKEN],
             "entity_id": [NUM_TOKEN],
             "sym_id": [NUM_TOKEN],
-            "restype": [NUM_TOKEN, 32],
+            "restype": [NUM_TOKEN, None],
             "is_protein": [NUM_TOKEN],
             "is_rna": [NUM_TOKEN],
             "is_dna": [NUM_TOKEN],
