@@ -150,18 +150,20 @@ def assign_molecule_type_ids(atom_array: AtomArray) -> None:
 
     # Zip together chain starts and ends
     for chain_start, chain_end in zip(chain_start_idxs[:-1], chain_start_idxs[1:]):
-        residues_in_chain = set(atom_array[chain_start:chain_end].res_name)
+        chain_array = atom_array[chain_start:chain_end]
+        is_polymeric = struc.get_residue_count(chain_array) > 1
+        residues_in_chain = set(chain_array.res_name)
 
-        # Assign protein if any standard protein residue is present
-        if residues_in_chain & set(STANDARD_PROTEIN_RESIDUES):
+        # Assign protein if polymeric and any standard protein residue is present
+        if (residues_in_chain & set(STANDARD_PROTEIN_RESIDUES)) and is_polymeric:
             molecule_type_ids[chain_start:chain_end] = MoleculeType.PROTEIN
 
-        # Assign RNA if any standard RNA residue is present
-        elif residues_in_chain & set(STANDARD_RNA_RESIDUES):
+        # Assign RNA if polymeric and any standard RNA residue is present
+        elif (residues_in_chain & set(STANDARD_RNA_RESIDUES)) and is_polymeric:
             molecule_type_ids[chain_start:chain_end] = MoleculeType.RNA
 
-        # Assign DNA if any standard DNA residue is present
-        elif residues_in_chain & set(STANDARD_DNA_RESIDUES):
+        # Assign DNA if polymeric and any standard DNA residue is present
+        elif (residues_in_chain & set(STANDARD_DNA_RESIDUES)) and is_polymeric:
             molecule_type_ids[chain_start:chain_end] = MoleculeType.DNA
 
         # Assign ligand otherwise
