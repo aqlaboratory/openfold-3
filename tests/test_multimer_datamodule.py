@@ -19,12 +19,11 @@ import unittest
 
 import torch
 
-from openfold3.core.data.data_modules import OpenFoldMultimerDataModule
-from openfold3.core.loss.loss import AlphaFoldLoss
+from openfold3.core.data.legacy.data_modules import OpenFoldMultimerDataModule
+from openfold3.core.loss.loss_module import AlphaFoldLoss
 from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation_align
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations.af2_monomer.config import model_config
-from openfold3.model_implementations.af2_monomer.model import AlphaFold
+from openfold3.model_implementations import registry
 from tests.config import consts
 
 logger = logging.getLogger(__name__)
@@ -41,7 +40,7 @@ class TestMultimerDataModule(unittest.TestCase):
 
         use model_1_multimer_v3 for now
         """
-        self.config = model_config(consts.model, train=True, low_prec=True)
+        self.config = registry.make_config_with_preset(consts.model_name)
         self.data_module = OpenFoldMultimerDataModule(
             config=self.config.data,
             batch_seed=42,
@@ -64,7 +63,7 @@ class TestMultimerDataModule(unittest.TestCase):
             ),
         )
         # setup model
-        self.c = model_config(consts.model, train=True)
+        self.c = registry.make_config_with_preset(consts.model_name)
 
         self.c.loss.masked_msa.num_classes = (
             22  # somehow need overwrite this part in multimer loss config
@@ -72,7 +71,7 @@ class TestMultimerDataModule(unittest.TestCase):
         self.c.model.evoformer_stack.no_blocks = 4  # no need to go overboard here
         self.c.model.evoformer_stack.blocks_per_ckpt = None  # don't want to set up
         # deepspeed for this test
-        self.model = AlphaFold(self.c)
+        self.model = registry.get_lightning_module(self.c)
         self.loss = AlphaFoldLoss(self.c.loss)
 
     def testPrepareData(self):

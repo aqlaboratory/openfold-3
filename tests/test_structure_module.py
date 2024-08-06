@@ -18,12 +18,16 @@ import numpy as np
 import torch
 
 import tests.compare_utils as compare_utils
-from openfold3.core.data.data_transforms import make_atom14_masks_np
+from openfold3.core.data.legacy.data_transforms import make_atom14_masks_np
+from openfold3.core.model.layers.angle_resnet import AngleResnet
+from openfold3.core.model.layers.invariant_point_attention import (
+    InvariantPointAttention,
+    InvariantPointAttentionMultimer,
+)
 from openfold3.core.model.layers.transition import StructureModuleTransition
 from openfold3.core.model.structure.structure_module import (
-    AngleResnet,
-    InvariantPointAttention,
-    StructureModule,
+    StructureModuleMonomer,
+    StructureModuleMultimer,
 )
 from openfold3.core.np.residue_constants import (
     restype_atom14_mask,
@@ -76,23 +80,28 @@ class TestStructureModule(unittest.TestCase):
         trans_scale_factor = 10
         inf = 1e5
 
-        sm = StructureModule(
-            c_s,
-            c_z,
-            c_ipa,
-            c_resnet,
-            no_heads_ipa,
-            no_query_points,
-            no_value_points,
-            dropout_rate,
-            no_layers,
-            no_transition_layers,
-            no_resnet_layers,
-            no_angles,
-            trans_scale_factor,
-            ar_epsilon,
-            inf,
-            is_multimer=consts.is_multimer,
+        structure_module = (
+            StructureModuleMonomer
+            if not consts.is_multimer
+            else StructureModuleMultimer
+        )
+
+        sm = structure_module(
+            c_s=c_s,
+            c_z=c_z,
+            c_ipa=c_ipa,
+            c_resnet=c_resnet,
+            no_heads_ipa=no_heads_ipa,
+            no_qk_points=no_query_points,
+            no_v_points=no_value_points,
+            dropout_rate=dropout_rate,
+            no_blocks=no_layers,
+            no_transition_layers=no_transition_layers,
+            no_resnet_blocks=no_resnet_layers,
+            no_angles=no_angles,
+            trans_scale_factor=trans_scale_factor,
+            epsilon=ar_epsilon,
+            inf=inf,
         )
 
         s = torch.rand((batch_size, n, c_s))
@@ -116,7 +125,11 @@ class TestStructureModule(unittest.TestCase):
         num_layers = 3
         dropout = 0.1
 
-        smt = StructureModuleTransition(c, num_layers, dropout)
+        smt = StructureModuleTransition(
+            c,
+            num_layers,
+            dropout,
+        )
 
         s = torch.rand((batch_size, n, c))
 
@@ -236,8 +249,18 @@ class TestInvariantPointAttention(unittest.TestCase):
             rots = Rotation(rot_mats=rot_mats, quats=None)
             r = Rigid(rots, trans)
 
-        ipa = InvariantPointAttention(
-            c_m, c_z, c_hidden, no_heads, no_qp, no_vp, is_multimer=consts.is_multimer
+        invariant_point_attention = (
+            InvariantPointAttention
+            if not consts.is_multimer
+            else InvariantPointAttentionMultimer
+        )
+        ipa = invariant_point_attention(
+            c_m,
+            c_z,
+            c_hidden,
+            no_heads,
+            no_qp,
+            no_vp,
         )
 
         shape_before = s.shape
@@ -323,7 +346,13 @@ class TestAngleResnet(unittest.TestCase):
         no_angles = 7
         epsilon = 1e-12
 
-        ar = AngleResnet(c_s, c_hidden, no_layers, no_angles, epsilon)
+        ar = AngleResnet(
+            c_s,
+            c_hidden,
+            no_layers,
+            no_angles,
+            epsilon=epsilon,
+        )
         a = torch.rand((batch_size, n, c_s))
         a_initial = torch.rand((batch_size, n, c_s))
 

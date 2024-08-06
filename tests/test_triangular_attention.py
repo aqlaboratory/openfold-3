@@ -35,7 +35,12 @@ class TestTriangularAttention(unittest.TestCase):
         no_heads = 4
         starting = True
 
-        tan = TriangleAttention(c_z, c, no_heads, starting)
+        tan = TriangleAttention(
+            c_z,
+            c,
+            no_heads,
+            starting=starting,
+        )
 
         batch_size = consts.batch_size
         n_res = consts.n_res

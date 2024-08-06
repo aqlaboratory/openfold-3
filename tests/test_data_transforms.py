@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from openfold3.core.data.data_transforms import (
+from openfold3.core.data.legacy.data_transforms import (
     MSA_FEATURE_NAMES,
     add_distillation_flag,
     correct_msa_restypes,
@@ -79,9 +79,7 @@ class TestDataTransforms(unittest.TestCase):
 
     def test_correct_msa_restypes(self):
         protein = {"msa": torch.as_tensor(self.features["msa"], dtype=torch.int64)}
-        print(protein.keys())
         protein = correct_msa_restypes(protein)
-        print(protein.keys())
         assert torch.all(
             torch.eq(
                 torch.as_tensor(self.features["msa"].shape),

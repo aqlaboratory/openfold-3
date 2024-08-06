@@ -19,7 +19,9 @@ import sys
 from typing import Optional, Sequence, Tuple
 
 import torch
+from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.latent.base_blocks import MSABlock
 from openfold3.core.model.latent.base_stacks import MSAStack
 from openfold3.core.model.layers.msa import MSAColumnAttention
@@ -47,6 +49,7 @@ class EvoformerBlock(MSABlock):
         fuse_projection_weights: bool,
         inf: float,
         eps: float,
+        linear_init_params: ConfigDict = lin_init.evo_block_init,
     ):
         super().__init__(
             c_m=c_m,
@@ -65,6 +68,7 @@ class EvoformerBlock(MSABlock):
             fuse_projection_weights=fuse_projection_weights,
             inf=inf,
             eps=eps,
+            linear_init_params=linear_init_params,
         )
 
         # Specifically, seqemb mode does not use column attention
@@ -76,6 +80,7 @@ class EvoformerBlock(MSABlock):
                 c_hidden_msa_att,
                 no_heads_msa,
                 inf=inf,
+                linear_init_params=linear_init_params.msa_col_att,
             )
 
     def forward(
@@ -247,6 +252,7 @@ class EvoformerStack(MSAStack):
         blocks_per_ckpt: Optional[int],
         inf: float,
         eps: float,
+        linear_init_params: ConfigDict = lin_init.evo_block_init,
         clear_cache_between_blocks: bool = False,
         tune_chunk_size: bool = False,
         **kwargs,
@@ -299,6 +305,8 @@ class EvoformerStack(MSAStack):
                 Large constant for masking
             eps:
                 Small constant for numerical stability
+            linear_init_params:
+                Parameters for linear layer initialization
             clear_cache_between_blocks:
                 Whether to clear CUDA's GPU memory cache between blocks of the stack.
                 Slows down each block but can reduce fragmentation
@@ -328,16 +336,15 @@ class EvoformerStack(MSAStack):
                 no_column_attention=no_column_attention,
                 opm_first=opm_first,
                 fuse_projection_weights=fuse_projection_weights,
+                linear_init_params=linear_init_params,
                 inf=inf,
                 eps=eps,
             )
             self.blocks.append(block)
 
-        self.linear = Linear(c_m, c_s)
+        self.linear = Linear(c_m, c_s, **linear_init_params.linear)
 
-    def _wrap_up(
-        self, m: torch.Tensor, z: torch.Tensor
-    ) -> list[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _wrap_up(self, m: torch.Tensor, z: torch.Tensor) -> Sequence[torch.Tensor]:
         """Generate the single embedding and return all three embeddings.
 
         Returns:

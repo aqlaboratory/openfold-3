@@ -37,7 +37,7 @@ class TestTriangularMultiplicativeUpdate(unittest.TestCase):
         c_z = consts.c_z
         c = 11
 
-        if re.fullmatch("^model_[1-5]_multimer_v3$", consts.model):
+        if re.fullmatch("^model_[1-5]_multimer_v3$", consts.model_preset):
             tm = FusedTriangleMultiplicationOutgoing(
                 c_z,
                 c,
@@ -145,9 +145,11 @@ class TestTriangularMultiplicativeUpdate(unittest.TestCase):
 
         self.assertTrue(torch.mean(torch.abs(out_stock - out_inplace)) < consts.eps)
 
+    @compare_utils.skip_unless_cuda_available()
     def test_tri_mul_out_inference(self):
         self._tri_mul_inplace()
 
+    @compare_utils.skip_unless_cuda_available()
     def test_tri_mul_in_inference(self):
         self._tri_mul_inplace(incoming=True)
 

@@ -19,7 +19,7 @@ import torch
 
 import openfold3.core.utils.feats as feats
 import tests.compare_utils as compare_utils
-from openfold3.core.data import data_transforms
+from openfold3.core.data.legacy import data_transforms
 from openfold3.core.np.residue_constants import (
     restype_atom14_mask,
     restype_atom14_rigid_group_positions,

@@ -25,7 +25,9 @@ from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
+from ml_collections import ConfigDict
 
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.utils.checkpointing import get_checkpoint_fn
 from openfold3.core.utils.precision_utils import is_fp16_enabled
 from openfold3.core.utils.tensor_utils import (
@@ -50,6 +52,11 @@ fa_is_installed = importlib.util.find_spec("flash_attn") is not None
 if fa_is_installed:
     from flash_attn.bert_padding import unpad_input
     from flash_attn.flash_attn_interface import flash_attn_varlen_kvpacked_func
+
+triton_is_installed = importlib.util.find_spec("triton") is not None
+if triton_is_installed:
+    from triton.ops.blocksparse import matmul as blocksparse_matmul
+    from triton.ops.blocksparse import softmax as blocksparse_softmax
 
 # To avoid errors if memory-efficient attention kernel is not installed
 attn_core_is_installed = importlib.util.find_spec("attn_core_inplace_cuda") is not None
@@ -178,6 +185,7 @@ class Attention(nn.Module):
         c_hidden: int,
         no_heads: int,
         gating: bool = True,
+        linear_init_params: ConfigDict = lin_init.mha_init,
     ):
         """
         Args:
@@ -193,6 +201,8 @@ class Attention(nn.Module):
                 Number of attention heads
             gating:
                 Whether the output should be gated using query data
+            linear_init_params:
+                Linear layer initialization parameters
         """
         super().__init__()
 
@@ -207,20 +217,22 @@ class Attention(nn.Module):
         # stated in the supplement, but the overall channel dimension.
 
         self.linear_q = Linear(
-            self.c_q, self.c_hidden * self.no_heads, bias=False, init="glorot"
+            self.c_q, self.c_hidden * self.no_heads, **linear_init_params.linear_q
         )
         self.linear_k = Linear(
-            self.c_k, self.c_hidden * self.no_heads, bias=False, init="glorot"
+            self.c_k, self.c_hidden * self.no_heads, **linear_init_params.linear_k
         )
         self.linear_v = Linear(
-            self.c_v, self.c_hidden * self.no_heads, bias=False, init="glorot"
+            self.c_v, self.c_hidden * self.no_heads, **linear_init_params.linear_v
         )
-        self.linear_o = Linear(self.c_hidden * self.no_heads, self.c_q, init="final")
+        self.linear_o = Linear(
+            self.c_hidden * self.no_heads, self.c_q, **linear_init_params.linear_o
+        )
 
         self.linear_g = None
         if self.gating:
             self.linear_g = Linear(
-                self.c_q, self.c_hidden * self.no_heads, init="gating"
+                self.c_q, self.c_hidden * self.no_heads, **linear_init_params.linear_g
             )
 
         self.sigmoid = nn.Sigmoid()
@@ -372,8 +384,237 @@ class Attention(nn.Module):
         return o
 
 
+class BlockSparseAttention(Attention):
+    """
+    Block-sparse attention using triton kernels. Allows multiple bias vectors.
+    """
+
+    sparse_op_cache = {}  # Cache used for precomputing triton ops based on seq len
+
+    def __init__(
+        self,
+        c_q: int,
+        c_k: int,
+        c_v: int,
+        c_hidden: int,
+        no_heads: int,
+        gating: bool = True,
+        block_size: int = 16,
+        linear_init_params: ConfigDict = lin_init.block_sparse_mha_init,
+    ):
+        """
+        Args:
+            c_q:
+                Input dimension of query data
+            c_k:
+                Input dimension of key data
+            c_v:
+                Input dimension of value data
+            c_hidden:
+                Per-head hidden dimension
+            no_heads:
+                Number of attention heads
+            gating:
+                Whether the output should be gated using query data
+            block_size:
+                Block size to use in block sparse attention
+            linear_init_params:
+                Linear layer initialization parameters
+        """
+        super().__init__(
+            c_q=c_q,
+            c_k=c_k,
+            c_v=c_v,
+            c_hidden=c_hidden,
+            no_heads=no_heads,
+            gating=gating,
+            linear_init_params=linear_init_params,
+        )
+
+        self.block_size = block_size
+        if self.block_size not in [16, 32, 64, 128]:
+            raise ValueError("Only block sizes in [16, 32, 64, 128] are supported")
+
+    def get_sparse_ops(self, seq_len: int, layout, device: str) -> Tuple:
+        """
+        Initialize matmul and softmax kernels. The kernels generate look-up tables
+        for incrementing pointers based on sequence length and block size.
+        Save this to avoid recomputing. Method copied from DeepSpeed sparse attention:
+        https://github.com/microsoft/DeepSpeed/blob/master/
+        deepspeed/ops/sparse_attention/sparse_self_attention.py#L64
+
+        TODO: Possibly move to using DeepSpeed if bf16 is supported
+        """
+        if seq_len not in BlockSparseAttention.sparse_op_cache:
+            # Init Triton kernels
+            # Infer device from query
+            sparse_dot_sdd = blocksparse_matmul(
+                layout,
+                self.block_size,
+                "sdd",
+                trans_a=False,
+                trans_b=True,
+                device=device,
+            )
+
+            sparse_dot_dsd = blocksparse_matmul(
+                layout,
+                self.block_size,
+                "dsd",
+                trans_a=False,
+                trans_b=False,
+                device=device,
+            )
+
+            sparse_softmax = blocksparse_softmax(
+                layout,
+                self.block_size,
+                device=device,
+            )
+
+            BlockSparseAttention.sparse_op_cache[seq_len] = (
+                sparse_dot_sdd,
+                sparse_dot_dsd,
+                sparse_softmax,
+            )
+        return BlockSparseAttention.sparse_op_cache[seq_len]
+
+    @staticmethod
+    def sparsify_tensor(
+        x: torch.Tensor, mask: torch.Tensor, block: int, batch_dims: Tuple[int]
+    ) -> torch.Tensor:
+        """Convert a regular tensor to sparse format"""
+        ret = torch.empty(
+            (*batch_dims, mask.sum(), block, block), dtype=x.dtype, device=x.device
+        )
+        for idx, (h, i, j) in enumerate(zip(*torch.nonzero(mask, as_tuple=True))):
+            ret[..., idx, :, :] = x[
+                ..., h, i * block : (i + 1) * block, j * block : (j + 1) * block
+            ]
+        return ret
+
+    def attention(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        biases: Optional[List[torch.Tensor]],
+        layout: torch.Tensor,
+    ) -> torch.Tensor:
+        """Run block-sparse attention.
+
+        Args:
+            q:
+                [*, H, Q, C_hidden] query data
+            k:
+                [*, H, K, C_hidden] key data
+            v:
+                [*, H, V, C_hidden] value data
+            biases:
+                List of biases that broadcast to [*, H, Q, K]
+            layout:
+                [Q / block_size, Q / block_size] Layout config for block sparse
+                attention. Dictates which sections of the attention matrix
+                to compute.
+        """
+
+        def flatten_batch_dims(x):
+            return x.reshape((-1, *x.shape[-3:]))
+
+        orig_shape = q.shape
+        batch_dims = orig_shape[:-3]
+        if len(batch_dims) > 1:
+            q = flatten_batch_dims(q)
+            k = flatten_batch_dims(k)
+            v = flatten_batch_dims(v)
+
+        sparse_dot_sdd, sparse_dot_dsd, sparse_softmax = self.get_sparse_ops(
+            seq_len=q.shape[-2], layout=layout, device=q.device
+        )
+
+        # Dense x Dense = Sparse
+        w = sparse_dot_sdd(q, k)
+
+        if biases is not None:
+            # Sum all bias terms together and sparsify the tensor
+            # [*, H, Q, K]
+            biases = sum(biases)
+            biases = self.sparsify_tensor(
+                biases, layout, self.block_size, batch_dims=biases.shape[:-3]
+            )
+
+            # This is ugly and should be refactored
+            # The batch dim of w must be flat: batch_size * no_samples
+            # Because the bias term is broadcasted over the samples (batch_size * 1),
+            # the shape mismatch requires reshaping the tensor to match the bias shape
+            attn_shape = w.shape
+            w = w.reshape((*batch_dims, *w.shape[-3:]))
+            w = w + biases
+            w = w.reshape(attn_shape)
+
+        w = sparse_softmax(w)
+
+        # Sparse x Dense = Dense
+        o = sparse_dot_dsd(w, v)
+
+        o = o.reshape(orig_shape)
+
+        return o
+
+    def forward(
+        self,
+        q_x: torch.Tensor,
+        kv_x: torch.Tensor,
+        biases: Optional[List[torch.Tensor]],
+        layout: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Args:
+            q_x:
+                [*, Q, C_q] query data
+            kv_x:
+                [*, K, C_k] key data
+            biases:
+                List of biases that broadcast to [*, H, Q, K]
+            layout:
+                [N / block_size, N / block_size] Layout config for block sparse
+                attention. Dictates which sections of the attention matrix
+                to compute.
+
+        Returns:
+            [*, Q, C_q] attention update
+        """
+        if not triton_is_installed:
+            raise ValueError("BlockSparseAttention requires that Triton be installed")
+        if q_x.shape[-2] != layout.shape[-2] * self.block_size:
+            raise ValueError(
+                "Sequence length and layout are inconsistent with block size"
+            )
+        if q_x.shape[-2] % self.block_size != 0:
+            raise ValueError(
+                "Sequence length {q_x.shape[-2]}  must be a multiple of"
+                "block size {self.block_size}"
+            )
+
+        # Apply the same layout across all attention heads
+        layout = layout[None].tile((self.no_heads, 1, 1)).long()
+
+        # [*, H, Q/K/V, C_hidden]
+        q, k, v = self._prep_qkv(q_x, kv_x, apply_scale=True)
+
+        o = self.attention(q=q, k=k, v=v, biases=biases, layout=layout)
+
+        o = o.transpose(-2, -3)
+
+        o = self._wrap_up(o=o, q_x=q_x)
+
+        return o
+
+
 class GlobalAttention(nn.Module):
-    def __init__(self, c_in, c_hidden, no_heads, inf, eps):
+    def __init__(
+        self, c_in, c_hidden, no_heads, inf, eps, linear_init_params=lin_init.mha_init
+    ):
         super().__init__()
 
         self.c_in = c_in
@@ -382,22 +623,16 @@ class GlobalAttention(nn.Module):
         self.inf = inf
         self.eps = eps
 
-        self.linear_q = Linear(c_in, c_hidden * no_heads, bias=False, init="glorot")
+        self.linear_q = Linear(c_in, c_hidden * no_heads, **linear_init_params.linear_q)
 
         self.linear_k = Linear(
             c_in,
             c_hidden,
-            bias=False,
-            init="glorot",
+            **linear_init_params.linear_k,
         )
-        self.linear_v = Linear(
-            c_in,
-            c_hidden,
-            bias=False,
-            init="glorot",
-        )
-        self.linear_g = Linear(c_in, c_hidden * no_heads, init="gating")
-        self.linear_o = Linear(c_hidden * no_heads, c_in, init="final")
+        self.linear_v = Linear(c_in, c_hidden, **linear_init_params.linear_v)
+        self.linear_g = Linear(c_in, c_hidden * no_heads, **linear_init_params.linear_g)
+        self.linear_o = Linear(c_hidden * no_heads, c_in, **linear_init_params.linear_o)
 
         self.sigmoid = nn.Sigmoid()
 

@@ -44,7 +44,12 @@ class TestMSARowAttentionWithPairBias(unittest.TestCase):
         no_heads = 4
         chunk_size = None
 
-        mrapb = MSARowAttentionWithPairBias(c_m, c_z, c, no_heads)
+        mrapb = MSARowAttentionWithPairBias(
+            c_m,
+            c_z,
+            c,
+            no_heads,
+        )
 
         m = torch.rand((batch_size, n_seq, n_res, c_m))
         z = torch.rand((batch_size, n_res, n_res, c_z))
@@ -171,7 +176,11 @@ class TestMSAColumnGlobalAttention(unittest.TestCase):
         c = 44
         no_heads = 4
 
-        msagca = MSAColumnGlobalAttention(c_m, c, no_heads)
+        msagca = MSAColumnGlobalAttention(
+            c_m,
+            c,
+            no_heads,
+        )
 
         x = torch.rand((batch_size, n_seq, n_res, c_m))
 
@@ -238,7 +247,10 @@ class TestMSAPairWeightedAveraging(unittest.TestCase):
         no_heads = 4
 
         mrapb = MSAPairWeightedAveraging(
-            c_in=c_m, c_hidden=c, c_z=c_z, no_heads=no_heads
+            c_in=c_m,
+            c_hidden=c,
+            c_z=c_z,
+            no_heads=no_heads,
         )
 
         m = torch.rand((batch_size, n_seq, n_res, c_m))

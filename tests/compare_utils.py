@@ -8,8 +8,7 @@ import numpy as np
 import torch
 
 from openfold3.core.utils.import_weights import import_jax_weights_
-from openfold3.model_implementations.af2_monomer.config import model_config
-from openfold3.model_implementations.af2_monomer.model import AlphaFold
+from openfold3.model_implementations import registry
 from tests.config import consts
 
 # Give JAX some GPU memory discipline
@@ -35,12 +34,21 @@ def skip_unless_flash_attn_installed():
     return unittest.skipUnless(fa_is_installed, "Requires Flash Attention")
 
 
+def skip_unless_triton_installed():
+    triton_is_installed = importlib.util.find_spec("triton") is not None
+    return unittest.skipUnless(triton_is_installed, "Requires Triton")
+
+
 def alphafold_is_installed():
     return importlib.util.find_spec("alphafold") is not None
 
 
 def skip_unless_alphafold_installed():
     return unittest.skipUnless(alphafold_is_installed(), "Requires AlphaFold")
+
+
+def skip_unless_cuda_available():
+    return unittest.skipUnless(torch.cuda.is_available(), "Requires GPU")
 
 
 def import_alphafold():
@@ -62,14 +70,14 @@ def import_alphafold():
 
 
 def get_alphafold_config():
-    config = alphafold.model.config.model_config(consts.model)  # noqa
+    config = alphafold.model.config.model_config(consts.model_preset)  # noqa
     config.model.global_config.deterministic = True
     return config
 
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 _param_path = os.path.join(
-    dir_path, "..", f"openfold3/resources/params/params_{consts.model}.npz"
+    dir_path, "..", f"openfold3/resources/params/params_{consts.model_preset}.npz"
 )
 _model = None
 
@@ -77,14 +85,18 @@ _model = None
 def get_global_pretrained_openfold():
     global _model
     if _model is None:
-        _model = AlphaFold(model_config(consts.model))
+        model_config = registry.make_config_with_preset(
+            consts.model_name, consts.model_preset
+        )
+        _lightning_module = registry.get_lightning_module(model_config)
+        _model = _lightning_module.model
         _model = _model.eval()
         if not os.path.exists(_param_path):
             raise FileNotFoundError(
                 """Cannot load pretrained parameters. Make sure to run the 
                 installation script before running tests."""
             )
-        import_jax_weights_(_model, _param_path, version=consts.model)
+        import_jax_weights_(_model, _param_path, version=consts.model_preset)
         _model = _model.cuda()
 
     return _model

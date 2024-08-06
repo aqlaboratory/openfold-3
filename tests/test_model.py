@@ -21,10 +21,9 @@ import torch
 import torch.nn as nn
 
 import tests.compare_utils as compare_utils
-from openfold3.core.data import data_transforms
+from openfold3.core.data.legacy import data_transforms
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations.af2_monomer.config import model_config
-from openfold3.model_implementations.af2_monomer.model import AlphaFold
+from openfold3.model_implementations import registry
 from tests.config import consts
 from tests.data_utils import (
     random_asym_ids,
@@ -42,6 +41,7 @@ class TestModel(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if compare_utils.alphafold_is_installed():
+            # TODO: Update to handle with new configs.
             if consts.is_multimer:
                 cls.am_atom = alphafold.model.all_atom_multimer
                 cls.am_fold = alphafold.model.folding_multimer
@@ -53,18 +53,20 @@ class TestModel(unittest.TestCase):
                 cls.am_modules = alphafold.model.modules
                 cls.am_rigid = alphafold.model.r3
 
+    @compare_utils.skip_unless_cuda_available()
     def test_dry_run(self):
         n_seq = consts.n_seq
         n_templ = consts.n_templ
         n_res = consts.n_res
         n_extra_seq = consts.n_extra
 
-        c = model_config(consts.model)
+        # TODO: Refactor using parametrization
+        c = registry.make_config_with_preset(consts.model_name, consts.model_preset)
         c.model.evoformer_stack.no_blocks = 4  # no need to go overboard here
         c.model.evoformer_stack.blocks_per_ckpt = None  # don't want to set up
         # deepspeed for this test
 
-        model = AlphaFold(c).cuda()
+        model = registry.get_lightning_module(c).model.cuda()
         model.eval()
 
         batch = {}
@@ -106,13 +108,18 @@ class TestModel(unittest.TestCase):
         with torch.no_grad():
             model(batch)
 
+    @compare_utils.skip_unless_cuda_available()
+    @unittest.skip("Soloseq unsupported")
     def test_dry_run_seqemb_mode(self):
+        import openfold3.model_implementations.soloseq.config as soloseq_config
+        from openfold3.model_implementations.soloseq.model import AlphaFold
+
         n_seq = 1
         n_templ = consts.n_templ
         n_res = consts.n_res
         msa_dim = 49
 
-        c = model_config("seq_model_esm1b")
+        c = soloseq_config.model_config("seq_model_esm1b")
         c.model.evoformer_stack.no_blocks = 2
         c.model.evoformer_stack.blocks_per_ckpt = None
         model = AlphaFold(c)

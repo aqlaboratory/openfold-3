@@ -16,6 +16,7 @@ import unittest
 
 import torch
 
+import tests.compare_utils as compare_utils
 from openfold3.core.model.primitives.attention import Attention
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
 from tests.config import consts
@@ -23,6 +24,7 @@ from tests.data_utils import random_attention_inputs
 
 
 class TestLMA(unittest.TestCase):
+    @compare_utils.skip_unless_cuda_available()
     def test_lma_vs_attention(self):
         c_hidden = 32
         no_heads = 4
@@ -35,7 +37,13 @@ class TestLMA(unittest.TestCase):
             c_hidden=c_hidden,
         )
 
-        a = Attention(c_hidden, c_hidden, c_hidden, c_hidden, no_heads).cuda()
+        a = Attention(
+            c_hidden,
+            c_hidden,
+            c_hidden,
+            c_hidden,
+            no_heads,
+        ).cuda()
 
         with torch.no_grad():
             lecun_normal_init_(a.linear_g.weight)

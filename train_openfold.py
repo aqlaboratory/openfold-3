@@ -15,11 +15,17 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
-from openfold3.core.data.data_modules import (
+from openfold3.core.data.legacy.data_modules import (
     OpenFoldDataModule,
     OpenFoldMultimerDataModule,
 )
-from openfold3.core.loss.loss import AlphaFoldLoss, lddt_ca
+from openfold3.core.loss.loss_module import AlphaFoldLoss
+from openfold3.core.metrics.validation import (
+    drmsd,
+    gdt_ha,
+    gdt_ts,
+    lddt_ca,
+)
 from openfold3.core.np import residue_constants
 from openfold3.core.utils.callbacks import (
     EarlyStoppingVerbose,
@@ -35,11 +41,6 @@ from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation
 from openfold3.core.utils.superimposition import superimpose
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.core.utils.torchscript import script_preset_
-from openfold3.core.utils.validation_metrics import (
-    drmsd,
-    gdt_ha,
-    gdt_ts,
-)
 from openfold3.model_implementations.af2_monomer.config import model_config
 from openfold3.model_implementations.af2_monomer.model import AlphaFold
 

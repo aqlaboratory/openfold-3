@@ -137,7 +137,10 @@ setup(
     packages=find_packages(exclude=["tests", "scripts"]),
     include_package_data=True,
     package_data={
-        "openfold3": ["core/utils/kernel/csrc/*"],
+        "openfold3": [
+            "core/utils/kernel/csrc/*",
+            "model_implementations/*/config/*.yml",
+        ],
         "": ["resources/stereo_chemical_props.txt"],
     },
     ext_modules=modules,
