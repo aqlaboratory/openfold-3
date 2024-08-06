@@ -134,14 +134,14 @@ class DataModule(pl.LightningDataModule):
         ):
             raise ValueError(
                 "An unsupported combination of dataset types was found in"
-                 f"data_config: {dataset_types_unique}. The supported dataset"
-                 "combinations are: ['train'], ['train', 'validation'], ['test'],"
-                 "['prediction']."
+                f"data_config: {dataset_types_unique}. The supported dataset"
+                "combinations are: ['train'], ['train', 'validation'], ['test'],"
+                "['prediction']."
             )
         elif (len(dataset_types_unique) == 1) & ("validation" in dataset_types):
             raise ValueError(
                 "Validation dataset(s) were provided without any training datasets."
-                "The supported dataset combinations are: ['train'], ['train', " 
+                "The supported dataset combinations are: ['train'], ['train', "
                 "'validation'], ['test'], ['prediction']."
             )
 
@@ -163,7 +163,7 @@ class DataModule(pl.LightningDataModule):
             dataset_configs (list[Sequence[dict]]):
                 List of configs to pass each dataset class.
             dataset_types (list[Sequence[str]]):
-                List of dataset types, elements can be train, validation, test, 
+                List of dataset types, elements can be train, validation, test,
                 prediction.
             type_to_init (str):
                 One of train, validation, test, prediction.
