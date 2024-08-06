@@ -159,7 +159,7 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         n_msa = 10
         n_templ = 3
 
-        config = registry.make_config_with_preset("af3_all_atom", "finetune3")
+        config = registry.make_config_with_preset("af3_all_atom")
         c_s_input = config.globals.c_s_input
         c_s = config.globals.c_s
         c_z = config.globals.c_z
@@ -170,7 +170,7 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
         heads_config = config.model.heads
-        heads_config.distogram.enabled = True
+        heads_config.pae.enabled = True
         aux_head = AuxiliaryHeadsAllAtom(heads_config).eval()
 
         si_input = torch.ones(batch_size, n_token, c_s_input)

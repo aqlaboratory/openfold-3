@@ -640,7 +640,7 @@ def confidence_loss(
                 "no_bins": Number of bins
                 "bin_min": Minimum bin value
                 "bin_max": Maximum bin value
-                "alpha_pae": Weight on PAE loss
+                "weight": Weight on PAE loss
         eps:
             Small float for numerical stability
         inf:
@@ -686,8 +686,8 @@ def confidence_loss(
 
     l = l_plddt + l_pde + l_resolved
 
-    alpha_pae = pae["alpha_pae"]
-    if alpha_pae > 0:
+    pae_weight = pae["weight"]
+    if pae_weight > 0:
         l_pae = pae_loss(
             batch=batch,
             x=output["x_pred"],
@@ -702,7 +702,7 @@ def confidence_loss(
 
         loss_breakdown["pae_loss"] = l_pae
 
-        l = l + alpha_pae * l_pae
+        l = l + pae_weight * l_pae
 
     loss_breakdown = {
         k: torch.mean(v).detach().clone() for k, v in loss_breakdown.items()

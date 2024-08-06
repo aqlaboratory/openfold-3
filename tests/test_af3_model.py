@@ -89,14 +89,17 @@ class TestAF3Model(unittest.TestCase):
         n_templ = 3
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        finetune3_config = registry.make_config_with_preset("af3_all_atom", "finetune3")
-        finetune3_config.model.heads.distogram.enabled = True
+        self.config.model.heads.pae.enabled = True
+        self.config.loss.confidence.pae.weight = 1.0
+        self.config.loss.diffusion.bond_weight = 1.0
 
         # To avoid memory issues in CI
-        finetune3_config.model.pairformer.no_blocks = 4
-        finetune3_config.model.diffusion_module.diffusion_transformer.no_blocks = 4
+        self.config.model.pairformer.no_blocks = 4
+        self.config.model.diffusion_module.diffusion_transformer.no_blocks = 4
 
-        af3 = registry.get_lightning_module(finetune3_config).to(device)
+        af3 = registry.get_lightning_module(self.config, model_name="af3_all_atom").to(
+            device
+        )
 
         batch = random_af3_features(
             batch_size=batch_size,

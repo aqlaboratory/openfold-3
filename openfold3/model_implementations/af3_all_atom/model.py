@@ -465,8 +465,7 @@ class AlphaFold3(nn.Module):
             batch=batch, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
         )
 
-        # Run training step (if necessary)
-        if self.training:
+        if self.training:  # noqa: SIM102
             # TODO: Add multi-chain permutation alignment here
             #  Permutation code needs to be updated first
             #  Needs to happen before losses and training diffusion step
@@ -475,13 +474,15 @@ class AlphaFold3(nn.Module):
             #     out=output, features=batch, ground_truth=ground_truth
             # )
 
-            diffusion_output = self._train_diffusion(
-                batch=batch,
-                si_input=si_input,
-                si_trunk=si_trunk,
-                zij_trunk=zij_trunk,
-            )
+            # Run training step (if necessary)
+            if self.globals.diffusion_training_enabled:
+                diffusion_output = self._train_diffusion(
+                    batch=batch,
+                    si_input=si_input,
+                    si_trunk=si_trunk,
+                    zij_trunk=zij_trunk,
+                )
 
-            output.update(diffusion_output)
+                output.update(diffusion_output)
 
         return output
