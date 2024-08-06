@@ -57,6 +57,19 @@ def assign_atom_indices(atom_array: AtomArray) -> None:
     atom_array.set_annotation("_atom_idx", range(len(atom_array)))
 
 
+def remove_atom_indices(atom_array: AtomArray) -> None:
+    """Removes atom indices from the AtomArray
+
+    Deletes the "_atom_idx" field from the AtomArray. This is meant to be used after
+    temporary atom indices are no longer needed. Also see `assign_atom_indices`.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to remove atom indices from.
+    """
+    atom_array.del_annotation("_atom_idx")
+
+
 def update_author_to_pdb_labels(
     atom_array: AtomArray,
     use_author_res_id_if_missing: bool = True,
@@ -101,19 +114,6 @@ def update_author_to_pdb_labels(
             pdb_res_ids == ".", author_res_ids, pdb_res_ids
         ).astype(int)
         atom_array.res_id = merged_res_ids
-
-
-def remove_atom_indices(atom_array: AtomArray) -> None:
-    """Removes atom indices from the AtomArray
-
-    Deletes the "_atom_idx" field from the AtomArray. This is meant to be used after
-    temporary atom indices are no longer needed. Also see `assign_atom_indices`.
-
-    Args:
-        atom_array:
-            AtomArray containing the structure to remove atom indices from.
-    """
-    atom_array.del_annotation("_atom_idx")
 
 
 def assign_entity_ids(atom_array: AtomArray) -> None:
