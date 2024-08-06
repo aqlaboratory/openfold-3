@@ -23,7 +23,9 @@ from openfold3.core.model.latent import TemplateEmbedderAllAtom, TemplatePairSta
 from openfold3.core.model.layers.template_pointwise_attention import (
     TemplatePointwiseAttention,
 )
-from openfold3.model_implementations.af3_all_atom.config import config as af3_config
+from openfold3.model_implementations.af3_all_atom.config.base_config import (
+    config as af3_config,
+)
 from tests.config import consts
 from tests.data_utils import random_asym_ids, random_template_feats
 
@@ -88,7 +90,7 @@ class TestTemplatePairStack(unittest.TestCase):
         n_res = consts.n_res
         tri_mul_first = consts.is_multimer
         fuse_projection_weights = bool(
-            re.fullmatch("^model_[1-5]_multimer_v3$", consts.model)
+            re.fullmatch("^model_[1-5]_multimer_v3$", consts.model_preset)
         )
         chunk_size = 4
         inf = 1e7
