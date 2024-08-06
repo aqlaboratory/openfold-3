@@ -20,17 +20,19 @@ from openfold3.core.data.pipelines.preprocessing.structure import (
 from openfold3.core.data.primitives.structure.interface import (
     get_interface_chain_id_pairs,
 )
-from openfold3.core.data.primitives.structure.labels import assign_renumbered_chain_ids
-from openfold3.core.data.primitives.structure.ligand_primitives import (
-    mol_from_atomarray,
-    mol_from_parsed_component,
-)
-from openfold3.core.data.primitives.structure.metadata_extraction import (
+from openfold3.core.data.primitives.structure.labels import (
+    assign_renumbered_chain_ids,
     get_chain_to_author_chain_dict,
-    get_chain_to_canonical_seq_dict,
     get_chain_to_entity_dict,
     get_chain_to_molecule_type_dict,
     get_chain_to_pdb_chain_dict,
+)
+from openfold3.core.data.primitives.structure.ligand import (
+    mol_from_atomarray,
+    mol_from_parsed_component,
+)
+from openfold3.core.data.primitives.structure.metadata import (
+    get_chain_to_canonical_seq_dict,
     get_cif_block,
     get_pdb_id,
     get_release_date,
