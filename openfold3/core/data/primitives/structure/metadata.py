@@ -2,9 +2,12 @@ from typing import Literal
 
 import biotite.structure as struc
 import numpy as np
+from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 
-from ...resources.tables import MoleculeType
+from openfold3.core.data.primitives.structure.labels import (
+    get_chain_to_entity_dict,
+)
 
 
 def get_pdb_id(cif_file: CIFFile, format: Literal["upper", "lower"] = "lower") -> str:
@@ -147,111 +150,6 @@ def get_entity_to_canonical_seq_dict(cif_data: CIFBlock) -> dict[int, str]:
     return dict(zip(polymer_entities, polymer_canonical_seqs))
 
 
-def get_chain_to_entity_dict(atom_array: struc.AtomArray) -> dict[int, int]:
-    """Get a dictionary mapping renumbered chain IDs to their entity IDs.
-
-    Args:
-        atom_array:
-            AtomArray containing the chain IDs and entity IDs.
-
-    Returns:
-        A dictionary mapping renumbered chain IDs to their entity IDs.
-    """
-    chain_starts = struc.get_chain_starts(atom_array)
-
-    return dict(
-        zip(
-            atom_array[chain_starts].chain_id_renumbered,
-            atom_array[chain_starts].entity_id,
-        )
-    )
-
-
-def get_chain_to_author_chain_dict(atom_array: struc.AtomArray) -> dict[int, str]:
-    """Get a dictionary mapping renumbered chain IDs to their author chain IDs.
-
-    Args:
-        atom_array:
-            AtomArray containing the chain IDs and author chain IDs.
-
-    Returns:
-        A dictionary mapping renumbered chain IDs to their author chain IDs.
-    """
-    if "auth_asym_id" not in atom_array.get_annotation_categories():
-        raise ValueError(
-            "The AtomArray does not contain author chain IDs. "
-            "Make sure to load the 'auth_asym_id' field when parsing the structure."
-        )
-
-    chain_starts = struc.get_chain_starts(atom_array)
-
-    return dict(
-        zip(
-            atom_array[chain_starts].chain_id_renumbered,
-            atom_array[chain_starts].auth_asym_id,
-        )
-    )
-
-
-def get_chain_to_pdb_chain_dict(atom_array: struc.AtomArray) -> dict[int, str]:
-    """Get a dictionary mapping renumbered chain IDs to their PDB chain IDs.
-
-    Args:
-        atom_array:
-            AtomArray containing the chain IDs and PDB chain IDs.
-
-    Returns:
-        A dictionary mapping renumbered chain IDs to their PDB chain IDs.
-    """
-    chain_starts = struc.get_chain_starts(atom_array)
-
-    return dict(
-        zip(
-            atom_array[chain_starts].chain_id_renumbered,
-            atom_array[chain_starts].chain_id,
-        )
-    )
-
-
-def get_chain_to_molecule_type_id_dict(atom_array: struc.AtomArray) -> dict[int, int]:
-    """Get a dictionary mapping renumbered chain IDs to their molecule type IDs.
-
-    Args:
-        atom_array:
-            AtomArray containing the chain IDs and molecule type IDs.
-
-    Returns:
-        A dictionary mapping renumbered chain IDs to their molecule type IDs.
-    """
-    chain_starts = struc.get_chain_starts(atom_array)
-
-    return dict(
-        zip(
-            atom_array[chain_starts].chain_id_renumbered,
-            atom_array[chain_starts].molecule_type_id,
-        )
-    )
-
-
-def get_chain_to_molecule_type_dict(atom_array: struc.AtomArray) -> dict[int, str]:
-    """Get a dictionary mapping renumbered chain IDs to their molecule types.
-
-    Args:
-        atom_array:
-            AtomArray containing the chain IDs and molecule type IDs.
-
-    Returns:
-        A dictionary mapping renumbered chain IDs to their molecule types (as strings
-        instead of IDs).
-    """
-    chain_to_molecule_type_id = get_chain_to_molecule_type_id_dict(atom_array)
-
-    return {
-        chain: MoleculeType(molecule_type_id).name.lower()
-        for chain, molecule_type_id in chain_to_molecule_type_id.items()
-    }
-
-
 def get_chain_to_canonical_seq_dict(
     atom_array: struc.AtomArray, cif_data: CIFBlock
 ) -> dict[int, str]:
@@ -330,3 +228,46 @@ def get_chain_to_three_letter_codes_dict(
     }
 
     return chain_to_3l_codes_dict
+
+
+# TODO: not sure yet if this function is actually necessary
+def add_canonical_one_letter_codes(
+    atom_array: AtomArray,
+    cif_data: CIFBlock,
+) -> None:
+    # Get canonical sequences for each entity
+    polymer_entities = cif_data["entity_poly"]["entity_id"].as_array(dtype=int)
+    polymer_canonical_seqs = cif_data["entity_poly"][
+        "pdbx_seq_one_letter_code_can"
+    ].as_array()
+    polymer_canonical_seqs = np.char.replace(polymer_canonical_seqs, "\n", "")
+
+    entity_id_to_seq = dict(zip(polymer_entities, polymer_canonical_seqs))
+
+    # Add new annotation category for one-letter codes
+    atom_array.set_annotation(
+        "one_letter_code_can", np.empty(len(atom_array), dtype="U1")
+    )
+
+    # Set one-letter codes for each residue
+    for entity_id, seq in entity_id_to_seq.items():
+        entity_mask = atom_array.entity_id == entity_id
+        entity_array = atom_array[entity_mask]
+
+        n_seq_repetitions = len(np.unique(entity_array.chain_id_renumbered))
+        seqs_repeated = seq * n_seq_repetitions
+
+        if len(seqs_repeated) != struc.get_residue_count(entity_array):
+            raise ValueError(
+                "Sequence length does not match the number of residues in the entity. "
+                "Make sure to run add_unresolved_polymer_residues first if the "
+                "structure contains unresolved residues."
+            )
+
+        atom_wise_seqs = struc.spread_residue_wise(
+            atom_array[entity_mask], np.array(list(seq * n_seq_repetitions), dtype="U1")
+        )
+
+        atom_array.one_letter_code_can[entity_mask] = atom_wise_seqs
+
+    return atom_array

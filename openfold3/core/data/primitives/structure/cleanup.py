@@ -4,13 +4,15 @@ from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFFile
 from scipy.spatial.distance import cdist
 
-from ...resources.tables import CRYSTALLIZATION_AIDS
-from .structure_primitives import (
-    assign_atom_indices,
+from openfold3.core.data.primitives.structure.interface import (
     chain_paired_interface_atom_iter,
     get_interface_token_center_atoms,
+)
+from openfold3.core.data.primitives.structure.labels import (
+    assign_atom_indices,
     remove_atom_indices,
 )
+from openfold3.core.data.resources.tables import CRYSTALLIZATION_AIDS
 
 
 def convert_MSE_to_MET(atom_array: AtomArray) -> None:

@@ -17,6 +17,10 @@ import openfold3.core.data.io.structure.io as io
 from openfold3.core.data.pipelines.preprocessing.structure import (
     cleanup_structure_af3,
 )
+from openfold3.core.data.primitives.structure.interface import (
+    get_interface_chain_id_pairs,
+)
+from openfold3.core.data.primitives.structure.labels import assign_renumbered_chain_ids
 from openfold3.core.data.primitives.structure.ligand_primitives import (
     mol_from_atomarray,
     mol_from_parsed_component,
@@ -31,10 +35,6 @@ from openfold3.core.data.primitives.structure.metadata_extraction import (
     get_pdb_id,
     get_release_date,
     get_resolution,
-)
-from openfold3.core.data.primitives.structure.structure_primitives import (
-    assign_renumbered_chain_ids,
-    get_interface_chain_id_pairs,
 )
 from openfold3.core.data.resources.tables import MoleculeType
 

@@ -8,10 +8,7 @@ procedures of different models.
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 
-from openfold3.core.data.primitives.structure.metadata_extraction import (
-    get_experimental_method,
-)
-from openfold3.core.data.primitives.structure.structure_cleanup import (
+from openfold3.core.data.primitives.structure.cleanup import (
     convert_MSE_to_MET,
     fix_arginine_naming,
     remove_chains_with_CA_gaps,
@@ -22,6 +19,9 @@ from openfold3.core.data.primitives.structure.structure_cleanup import (
     remove_non_CCD_atoms,
     remove_small_polymers,
     remove_waters,
+)
+from openfold3.core.data.primitives.structure.metadata import (
+    get_experimental_method,
 )
 
 

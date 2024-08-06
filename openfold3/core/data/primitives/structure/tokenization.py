@@ -4,14 +4,17 @@ import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
 
-from ...resources.tables import (
+from openfold3.core.data.primitives.structure.labels import (
+    assign_atom_indices,
+    remove_atom_indices,
+)
+from openfold3.core.data.resources.tables import (
     NUCLEIC_ACID_MAIN_CHAIN_ATOMS,
     PROTEIN_MAIN_CHAIN_ATOMS,
     STANDARD_RESIDUES,
     TOKEN_CENTER_ATOMS,
     MoleculeType,
 )
-from .structure_primitives import assign_atom_indices, remove_atom_indices
 
 
 # NOTE for LJ changes:
