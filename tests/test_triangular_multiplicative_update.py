@@ -37,7 +37,7 @@ class TestTriangularMultiplicativeUpdate(unittest.TestCase):
         c_z = consts.c_z
         c = 11
 
-        if re.fullmatch("^model_[1-5]_multimer_v3$", consts.model):
+        if re.fullmatch("^model_[1-5]_multimer_v3$", consts.model_preset):
             tm = FusedTriangleMultiplicationOutgoing(
                 c_z,
                 c,

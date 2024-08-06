@@ -25,7 +25,7 @@ import torch.nn as nn
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
-from openfold3.core.data.data_transforms import pseudo_beta_fn
+from openfold3.core.data.legacy.data_transforms import pseudo_beta_fn
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.np import residue_constants as rc
 from openfold3.core.utils import all_atom_multimer, geometry

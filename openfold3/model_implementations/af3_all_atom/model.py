@@ -25,6 +25,7 @@ from torch import nn
 
 from openfold3.core.model.feature_embedders import InputEmbedderAllAtom
 from openfold3.core.model.feature_embedders.input_embedders import MSAModuleEmbedder
+from openfold3.core.model.heads.head_modules import AuxiliaryHeadsAllAtom
 from openfold3.core.model.latent.msa_module import MSAModuleStack
 from openfold3.core.model.latent.pairformer import PairFormerStack
 from openfold3.core.model.latent.template_module import TemplateEmbedderAllAtom
@@ -35,7 +36,7 @@ from openfold3.core.model.structure.diffusion_module import (
 )
 
 # from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation_align
-from openfold3.core.utils.tensor_utils import add
+from openfold3.core.utils.tensor_utils import add, tensor_tree_map
 
 
 class AlphaFold3(nn.Module):
@@ -83,7 +84,7 @@ class AlphaFold3(nn.Module):
         )
 
         # Confidence and Distogram Heads
-        self.aux_heads = None
+        self.aux_heads = AuxiliaryHeadsAllAtom(config=self.config.model.heads)
 
     def _disable_activation_checkpointing(self):
         """
@@ -228,8 +229,8 @@ class AlphaFold3(nn.Module):
                 [*, N_token, N_token, C_z] Pair representation output from model trunk
 
         Returns:
-            Output dictionary containing the predicted all-atom positions and
-            confidence/distogram head logits
+            Output dictionary containing the predicted trunk embeddings,
+            all-atom positions, and confidence/distogram head logits
         """
         # Compute atom positions
         with torch.no_grad():
@@ -241,10 +242,21 @@ class AlphaFold3(nn.Module):
                 chunk_size=self.globals.chunk_size,
             )
 
-        output = {"x_pred": x_pred}
+        output = {
+            "si_trunk": si_trunk,
+            "zij_trunk": zij_trunk,
+            "x_pred": x_pred,
+        }
 
-        # # Compute confidences
-        # output.update(self.aux_heads(si_input, si_trunk, zij_trunk, x_pred))
+        # Compute confidences
+        output.update(
+            self.aux_heads(
+                batch=batch,
+                si_input=si_input,
+                output=output,
+                chunk_size=self.globals.chunk_size,
+            )
+        )
 
         return output
 
@@ -279,8 +291,8 @@ class AlphaFold3(nn.Module):
         si_input = si_input.unsqueeze(1)
         si_trunk = si_trunk.unsqueeze(1)
         zij_trunk = zij_trunk.unsqueeze(1)
-        for key in batch:
-            batch[key] = batch[key].unsqueeze(1)
+
+        batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
 
         # Ground truth positions
         xl_gt = batch["gt_atom_positions"]
@@ -315,6 +327,9 @@ class AlphaFold3(nn.Module):
             "noise_level": t,
             "x_sample": xl,
         }
+
+        # Remove sample dimension
+        tensor_tree_map(lambda t: t.squeeze(1), batch)
 
         return output
 
@@ -388,8 +403,10 @@ class AlphaFold3(nn.Module):
                     "token_bonds" ([*, N_token, N_token])
                         A 2D matrix indicating if there is a bond between
                         any atom in token i and token j
-                    *"atom_to_token_index" ([*, N_atom, N_token])
-                        One-hot encoding of token index per atom
+                    *"num_atoms_per_token" ([*, N_token])
+                        Number of atoms per token
+                    *"start_atom_index" ([*, N_token])
+                        Starting atom index in each token
                     *"token_mask" ([*, N_token])
                         Token-level mask
                     *"msa_mask" ([*, N_msa, N_token])
@@ -402,18 +419,25 @@ class AlphaFold3(nn.Module):
                         Mask for ground truth atom positions
         Returns:
             Output dictionary containing the following keys:
+                "si_trunk" ([*, N_token, C_s]):
+                    Single representation output from model trunk
+                "zij_trunk" ([*, N_token, N_token, C_z]):
+                    Pair representation output from model trunk
                 "x_pred" ([*, N_atom, 3]):
                     Predicted atom positions
-                "p_plddt" ([*, N_atom, 50]):
+                "plddt_logits" ([*, N_atom, 50]):
                     Predicted binned PLDDT logits
-                "p_pae" ([*, N_token, N_token, 64]):
+                "pae_logits" ([*, N_token, N_token, 64]):
                     Predicted binned PAE logits
-                "p_pde" ([*, N_token, N_token, 64]):
+                "pde_logits" ([*, N_token, N_token, 64]):
                     Predicted binned PDE logits
-                "p_resolved" ([*, N_atom, 2]):
+                "experimentally_resolved_logits" ([*, N_atom, 2]):
                     Predicted binned experimentally resolved logits
-                "p_distogram" ([*, N_token, N_token, 64]):
+                "distogram_logits" ([*, N_token, N_token, 64]):
                     Predicted binned distogram logits
+                "confidence_scores":
+                    Dict containing the following confidence measures:
+                    pLDDT, PDE, PAE, pTM, iPTM, weighted pTM
                 "noise_level" ([*])
                     Training only, noise level at a diffusion step
                 "x_sample" ([*, N_samples, N_atom, 3]):
@@ -440,16 +464,16 @@ class AlphaFold3(nn.Module):
             batch=batch, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
         )
 
-        # TODO: Add multi-chain permutation alignment here
-        #  Permutation code needs to be updated first
-        #  Needs to happen before losses and training diffusion step
-        # ground_truth = {k: v for k, v in batch.items() if k.startswith("gt_")}
-        # batch = multi_chain_permutation_align(
-        #     out=output, features=batch, ground_truth=ground_truth
-        # )
-
         # Run training step (if necessary)
         if self.training:
+            # TODO: Add multi-chain permutation alignment here
+            #  Permutation code needs to be updated first
+            #  Needs to happen before losses and training diffusion step
+            # ground_truth = {k: v for k, v in batch.items() if k.startswith("gt_")}
+            # batch = multi_chain_permutation_align(
+            #     out=output, features=batch, ground_truth=ground_truth
+            # )
+
             diffusion_output = self._train_diffusion(
                 batch=batch,
                 si_input=si_input,

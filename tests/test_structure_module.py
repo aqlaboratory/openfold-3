@@ -18,7 +18,7 @@ import numpy as np
 import torch
 
 import tests.compare_utils as compare_utils
-from openfold3.core.data.data_transforms import make_atom14_masks_np
+from openfold3.core.data.legacy.data_transforms import make_atom14_masks_np
 from openfold3.core.model.layers.angle_resnet import AngleResnet
 from openfold3.core.model.layers.invariant_point_attention import (
     InvariantPointAttention,

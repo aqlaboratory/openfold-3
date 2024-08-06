@@ -21,27 +21,30 @@ import numpy as np
 import torch
 
 import tests.compare_utils as compare_utils
-from openfold3.core.data import data_transforms
-from openfold3.core.loss.loss import (
+from openfold3.core.data.legacy import data_transforms
+from openfold3.core.loss.confidence import (
+    atom37_experimentally_resolved_loss,
+    ca_plddt_loss,
+    masked_msa_loss,
+    tm_loss,
+)
+from openfold3.core.loss.distogram import cbeta_distogram_loss
+from openfold3.core.loss.loss_utils import compute_renamed_ground_truth
+from openfold3.core.loss.structure import (
     backbone_loss,
-    between_residue_bond_loss,
-    between_residue_clash_loss,
     chain_center_of_mass_loss,
     compute_fape,
-    compute_plddt,
-    compute_renamed_ground_truth,
-    compute_tm,
-    distogram_loss,
-    experimentally_resolved_loss,
-    find_structural_violations,
-    lddt_loss,
-    masked_msa_loss,
     sidechain_loss,
     supervised_chi_loss,
-    tm_loss,
     torsion_angle_loss,
+)
+from openfold3.core.loss.violation import (
+    between_residue_bond_loss,
+    between_residue_clash_loss,
+    find_structural_violations,
     violation_loss,
 )
+from openfold3.core.metrics.confidence import compute_plddt, compute_ptm
 from openfold3.core.np import residue_constants
 from openfold3.core.utils.rigid_utils import (
     Rigid,
@@ -285,7 +288,7 @@ class TestLoss(unittest.TestCase):
         ptm_gt = alphafold.common.confidence.predicted_tm_score(logits, boundaries)
         ptm_gt = torch.tensor(ptm_gt)
         logits_t = torch.tensor(logits)
-        ptm_repro = compute_tm(logits_t, no_bins=no_bins, max_bin=max_bin)
+        ptm_repro = compute_ptm(logits_t, no_bins=no_bins, max_bin=max_bin)
 
         self.assertTrue(torch.max(torch.abs(ptm_gt - ptm_repro)) < consts.eps)
 
@@ -295,12 +298,12 @@ class TestLoss(unittest.TestCase):
                 logits, boundaries, asym_id=asym_id, interface=True
             )
             iptm_gt = torch.tensor(iptm_gt)
-            iptm_repro = compute_tm(
+            iptm_repro = compute_ptm(
                 logits_t,
-                no_bins=no_bins,
-                max_bin=max_bin,
                 asym_id=torch.tensor(asym_id),
                 interface=True,
+                no_bins=no_bins,
+                max_bin=max_bin,
             )
 
             self.assertTrue(torch.max(torch.abs(iptm_gt - iptm_repro)) < consts.eps)
@@ -517,7 +520,7 @@ class TestLoss(unittest.TestCase):
         batch = tree_map(lambda x: torch.tensor(x).cuda(), batch, np.ndarray)
 
         with torch.no_grad():
-            out_repro = distogram_loss(
+            out_repro = cbeta_distogram_loss(
                 logits=value["logits"],
                 min_bin=c_distogram.first_break,
                 max_bin=c_distogram.last_break,
@@ -562,7 +565,7 @@ class TestLoss(unittest.TestCase):
         batch = tree_map(lambda x: torch.tensor(x).cuda(), batch, np.ndarray)
 
         with torch.no_grad():
-            out_repro = experimentally_resolved_loss(
+            out_repro = atom37_experimentally_resolved_loss(
                 logits=value["logits"],
                 min_resolution=c_experimentally_resolved.min_resolution,
                 max_resolution=c_experimentally_resolved.max_resolution,
@@ -799,7 +802,7 @@ class TestLoss(unittest.TestCase):
         value = tree_map(to_tensor, value, np.ndarray)
         batch = tree_map(to_tensor, batch, np.ndarray)
 
-        out_repro = lddt_loss(
+        out_repro = ca_plddt_loss(
             logits=value["predicted_lddt"]["logits"],
             all_atom_pred_pos=value["structure_module"]["final_atom_positions"],
             **{**batch, **c_plddt},
@@ -1032,7 +1035,7 @@ class TestLoss(unittest.TestCase):
 
     @compare_utils.skip_unless_alphafold_installed()
     @unittest.skipIf(
-        not consts.is_multimer and "ptm" not in consts.model,
+        not consts.is_multimer and "ptm" not in consts.model_preset,
         "Not enabled for non-ptm models.",
     )
     def test_tm_loss_compare(self):

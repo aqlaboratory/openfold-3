@@ -28,7 +28,7 @@ import jax.numpy as jnp
 import numpy as np
 import torch
 
-from openfold3.core.data import data_pipeline, feature_pipeline
+from openfold3.core.data.legacy import data_pipeline, feature_pipeline
 from openfold3.core.np import protein, residue_constants
 from openfold3.core.utils.script_utils import load_models_from_command_line, run_model
 from openfold3.core.utils.tensor_utils import tensor_tree_map
