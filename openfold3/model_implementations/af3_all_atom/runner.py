@@ -14,7 +14,8 @@ class AlphaFold3AllAtom(ModelRunner):
     def __init__(self, model_config):
         super().__init__(AlphaFold3, model_config)
         self.loss = AlphaFold3Loss(config=model_config.loss)
-    
+
     def _compute_validation_metrics(
-            self, batch, outputs, superimposition_metrics=False):
+        self, batch, outputs, superimposition_metrics=False
+    ):
         return {}

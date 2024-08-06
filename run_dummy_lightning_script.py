@@ -16,7 +16,7 @@ class DummyAF3Dataset(IterableDataset):
         self.n_token = 16
         self.n_msa = 10
         self.n_templ = 3
-    
+
     def create_random_features(self):
         yield random_af3_features(
             batch_size=1,
@@ -24,9 +24,9 @@ class DummyAF3Dataset(IterableDataset):
             n_msa=self.n_msa,
             n_templ=self.n_templ,
         )
-    
+
     def __iter__(self):
-        return self.create_random_features() 
+        return self.create_random_features()
 
 
 class DummyDataModule(pl.LightningDataModule):
@@ -39,7 +39,7 @@ class DummyDataModule(pl.LightningDataModule):
 
 
 if __name__ == "__main__":
-    lightning_data_module = DummyDataModule() 
+    lightning_data_module = DummyDataModule()
 
     logging.info("Loading model")
     config = registry.make_config_with_preset("af3_all_atom")
