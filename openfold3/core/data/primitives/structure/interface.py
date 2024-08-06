@@ -1,4 +1,3 @@
-# TODO: rename this file to something more descriptive
 # TODO: add module docstring
 
 from typing import Generator
