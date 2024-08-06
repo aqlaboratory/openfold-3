@@ -1,3 +1,5 @@
+"""This module contains building blocks for tokenization and chain assignment."""
+
 # TODO add license
 
 import biotite.structure as struc

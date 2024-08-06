@@ -26,7 +26,7 @@ import torch
 from torch.nn import functional as F
 
 import tests.compare_utils as compare_utils
-from openfold3.core.data import data_transforms
+from openfold3.core.data.legacy import data_transforms
 from openfold3.core.model.primitives.attention import Attention
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
 from openfold3.core.utils.tensor_utils import tensor_tree_map
@@ -58,7 +58,13 @@ class TestDeepSpeedKernel(unittest.TestCase):
             c_hidden=c_hidden,
         )
 
-        a = Attention(c_hidden, c_hidden, c_hidden, c_hidden, no_heads).cuda()
+        a = Attention(
+            c_hidden,
+            c_hidden,
+            c_hidden,
+            c_hidden,
+            no_heads,
+        ).cuda()
 
         # Change output params init for testing since they are initialized with 'final'
         # init (zeros) Otherwise both will just return zero.
@@ -107,7 +113,13 @@ class TestDeepSpeedKernel(unittest.TestCase):
             requires_grad=True,
         )
 
-        attn = Attention(c_hidden, c_hidden, c_hidden, c_hidden, no_heads).cuda()
+        attn = Attention(
+            c_hidden,
+            c_hidden,
+            c_hidden,
+            c_hidden,
+            no_heads,
+        ).cuda()
 
         with torch.no_grad():
             lecun_normal_init_(attn.linear_g.weight)
@@ -122,7 +134,13 @@ class TestDeepSpeedKernel(unittest.TestCase):
 
         def init_attn():
             # Create new attention object with same initial weights
-            a_clone = Attention(c_hidden, c_hidden, c_hidden, c_hidden, no_heads).cuda()
+            a_clone = Attention(
+                c_hidden,
+                c_hidden,
+                c_hidden,
+                c_hidden,
+                no_heads,
+            ).cuda()
 
             a_clone.load_state_dict(attn.state_dict())
             return a_clone
@@ -257,11 +275,22 @@ class TestDeepSpeedKernel(unittest.TestCase):
         with torch.no_grad():
             model = compare_utils.get_global_pretrained_openfold()
             model.globals.use_deepspeed_evo_attention = False
+            if consts.is_multimer:
+                args = (
+                    template_feats,
+                    batch,
+                    torch.as_tensor(pair_act).cuda(),
+                    torch.as_tensor(pair_mask).cuda(),
+                )
+            else:
+                args = (
+                    batch,
+                    torch.as_tensor(pair_act).cuda(),
+                    torch.as_tensor(pair_mask).cuda(),
+                )
+
             out_repro = model.embed_templates(
-                template_feats,
-                batch,
-                torch.as_tensor(pair_act).cuda(),
-                torch.as_tensor(pair_mask).cuda(),
+                *args,
                 templ_dim=0,
                 inplace_safe=False,
             )
@@ -269,10 +298,7 @@ class TestDeepSpeedKernel(unittest.TestCase):
 
             model.globals.use_deepspeed_evo_attention = True
             out_repro_ds = model.embed_templates(
-                template_feats,
-                batch,
-                torch.as_tensor(pair_act).cuda(),
-                torch.as_tensor(pair_mask).cuda(),
+                *args,
                 templ_dim=0,
                 inplace_safe=False,
             )

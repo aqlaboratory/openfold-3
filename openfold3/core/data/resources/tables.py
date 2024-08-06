@@ -1,3 +1,5 @@
+"""This module contains reference tables for the data pipeline."""
+
 # Standard residues as defined in AF3 SI, Table 13
 from enum import IntEnum
 

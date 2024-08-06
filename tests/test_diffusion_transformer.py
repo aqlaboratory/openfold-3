@@ -18,6 +18,7 @@ import torch
 
 from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
 from openfold3.core.model.layers.transition import ConditionedTransitionBlock
+from openfold3.model_implementations.af3_all_atom.config import config
 from tests.config import consts
 
 
@@ -31,22 +32,20 @@ class TestDiffusionTransformer(unittest.TestCase):
         c_hidden = 16
         no_heads = 3
         no_blocks = 2
-        n_transition = 2
-        inf = 1e9
 
-        dt = DiffusionTransformer(
-            c_a,
-            c_s,
-            c_z,
-            c_hidden,
-            no_heads,
-            no_blocks,
-            n_transition,
-            use_ada_layer_norm=True,
-            use_block_sparse_attn=False,
-            block_size=None,
-            inf=inf,
-        ).eval()
+        diff_transformer_config = config.model.diffusion_module.diffusion_transformer
+        diff_transformer_config.update(
+            {
+                "c_a": c_a,
+                "c_s": c_s,
+                "c_z": c_z,
+                "c_hidden": c_hidden,
+                "no_heads": no_heads,
+                "no_blocks": no_blocks,
+            }
+        )
+
+        dt = DiffusionTransformer(**diff_transformer_config).eval()
 
         a = torch.rand((batch_size, n_res, c_a))
         s = torch.rand((batch_size, n_res, c_s))
@@ -69,7 +68,11 @@ class TestConditionedTransitionBlock(unittest.TestCase):
         c_s = 7
         n = 11
 
-        ct = ConditionedTransitionBlock(c_a=c_a, c_s=c_s, n=n)
+        ct = ConditionedTransitionBlock(
+            c_a=c_a,
+            c_s=c_s,
+            n=n,
+        )
 
         a = torch.rand((batch_size, n_r, c_a))
         s = torch.rand((batch_size, n_r, c_s))

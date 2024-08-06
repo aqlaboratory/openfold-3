@@ -5,7 +5,7 @@ import os
 
 import torch
 
-from openfold3.core.data import parsers
+from openfold3.core.data.legacy import parsers
 
 logging.basicConfig(level=logging.INFO)
 

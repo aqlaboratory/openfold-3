@@ -1,4 +1,5 @@
 import unittest
+from contextlib import nullcontext
 
 import torch
 
@@ -11,6 +12,7 @@ from openfold3.core.model.layers import (
     RefAtomFeatureEmbedder,
 )
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
+from openfold3.model_implementations.af3_all_atom.config import c_atom_ref
 from tests.config import consts
 
 
@@ -18,12 +20,11 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
     def test_without_n_sample_channel(self):
         batch_size = consts.batch_size
         n_atom = 4 * consts.n_res
-        c_atom_ref = 390
         c_atom = 64
         c_atom_pair = 16
 
         embedder = RefAtomFeatureEmbedder(
-            c_atom_ref=c_atom_ref, c_atom=c_atom, c_atom_pair=c_atom_pair
+            c_atom_ref=c_atom_ref.get(), c_atom=c_atom, c_atom_pair=c_atom_pair
         )
 
         batch = {
@@ -43,12 +44,11 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
     def test_with_n_sample_channel(self):
         batch_size = consts.batch_size
         n_atom = 4 * consts.n_res
-        c_atom_ref = 390
         c_atom = 64
         c_atom_pair = 16
 
         embedder = RefAtomFeatureEmbedder(
-            c_atom_ref=c_atom_ref, c_atom=c_atom, c_atom_pair=c_atom_pair
+            c_atom_ref=c_atom_ref.get(), c_atom=c_atom, c_atom_pair=c_atom_pair
         )
 
         batch = {
@@ -77,7 +77,10 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
         c_atom_pair = 16
 
         embedder = NoisyPositionEmbedder(
-            c_s=c_s, c_z=c_z, c_atom=c_atom, c_atom_pair=c_atom_pair
+            c_s=c_s,
+            c_z=c_z,
+            c_atom=c_atom,
+            c_atom_pair=c_atom_pair,
         )
 
         cl = torch.ones((batch_size, n_atom, c_atom))
@@ -88,7 +91,10 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
         zij_trunk = torch.ones((batch_size, n_token, n_token, c_z))
         rl = torch.randn((batch_size, n_atom, 3))
 
-        batch = {"atom_to_token_index": torch.ones((batch_size, n_atom))}
+        batch = {
+            "token_mask": torch.ones((batch_size, n_token)),
+            "num_atoms_per_token": torch.ones((batch_size, n_token)) * 4,
+        }
 
         cl, plm, ql = embedder(
             batch=batch,
@@ -115,7 +121,10 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
         n_sample = 3
 
         embedder = NoisyPositionEmbedder(
-            c_s=c_s, c_z=c_z, c_atom=c_atom, c_atom_pair=c_atom_pair
+            c_s=c_s,
+            c_z=c_z,
+            c_atom=c_atom,
+            c_atom_pair=c_atom_pair,
         )
 
         cl = torch.ones((batch_size, 1, n_atom, c_atom))
@@ -126,7 +135,10 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
         zij_trunk = torch.ones((batch_size, 1, n_token, n_token, c_z))
         rl = torch.randn((batch_size, n_sample, n_atom, 3))
 
-        batch = {"atom_to_token_index": torch.ones((batch_size, 1, n_atom))}
+        batch = {
+            "token_mask": torch.ones((batch_size, 1, n_token)),
+            "num_atoms_per_token": torch.ones((batch_size, 1, n_token)) * 4,
+        }
 
         cl, plm, ql = embedder(
             batch=batch,
@@ -183,7 +195,12 @@ class TestAtomTransformer(unittest.TestCase):
         plm = plm.to(device, dtype=dtype)
         atom_mask = atom_mask.to(device, dtype=dtype)
 
-        with torch.cuda.amp.autocast(dtype=dtype):
+        cuda_context = (
+            torch.cuda.amp.autocast(dtype=dtype)
+            if torch.cuda.is_available()
+            else nullcontext()
+        )
+        with cuda_context:
             ql = atom_transformer(ql=ql, cl=cl, plm=plm, atom_mask=atom_mask).cpu()
 
         self.assertTrue(ql.shape == out_shape)
@@ -302,7 +319,12 @@ class TestAtomTransformer(unittest.TestCase):
                 lecun_normal_init_(apb.mha.linear_o.weight)
                 lecun_normal_init_(apb.linear_ada_out.weight)
 
-            with torch.cuda.amp.autocast(dtype=dtype):
+            cuda_context = (
+                torch.cuda.amp.autocast(dtype=dtype)
+                if torch.cuda.is_available()
+                else nullcontext()
+            )
+            with cuda_context:
                 ql_out = atom_transformer(
                     ql=ql, cl=cl, plm=plm, atom_mask=atom_mask
                 ).cpu()
@@ -329,7 +351,6 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
         n_atom = 4 * consts.n_res
-        c_atom_ref = 390
         c_atom = 128
         c_atom_pair = 16
         c_token = 384
@@ -342,7 +363,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         inf = 1e10
 
         atom_attn_enc = AtomAttentionEncoder(
-            c_atom_ref=c_atom_ref,
+            c_atom_ref=c_atom_ref.get(),
             c_atom=c_atom,
             c_atom_pair=c_atom_pair,
             c_token=c_token,
@@ -361,7 +382,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
 
         batch = {
             "token_mask": torch.ones((batch_size, n_token)),
-            "atom_to_token_index": torch.ones((batch_size, n_atom)),
+            "num_atoms_per_token": torch.ones((batch_size, n_token)) * 4,
             "ref_pos": torch.randn((batch_size, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, n_atom)),
             "ref_element": torch.ones((batch_size, n_atom, 128)),
@@ -385,7 +406,6 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         n_atom = 4 * consts.n_res
         c_s = consts.c_s
         c_z = consts.c_z
-        c_atom_ref = 390
         c_atom = 128
         c_atom_pair = 16
         c_token = 384
@@ -401,7 +421,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         atom_attn_enc = AtomAttentionEncoder(
             c_s=c_s,
             c_z=c_z,
-            c_atom_ref=c_atom_ref,
+            c_atom_ref=c_atom_ref.get(),
             c_atom=c_atom,
             c_atom_pair=c_atom_pair,
             c_token=c_token,
@@ -420,7 +440,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
 
         batch = {
             "token_mask": torch.ones((batch_size, 1, n_token)),
-            "atom_to_token_index": torch.ones((batch_size, 1, n_atom)),
+            "num_atoms_per_token": torch.ones((batch_size, 1, n_token)) * 4,
             "ref_pos": torch.randn((batch_size, 1, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, 1, n_atom)),
             "ref_element": torch.ones((batch_size, 1, n_atom, 128)),
@@ -481,7 +501,8 @@ class TestAtomAttentionDecoder(unittest.TestCase):
         )
 
         batch = {
-            "atom_to_token_index": torch.ones((batch_size, n_atom)),
+            "token_mask": torch.ones((batch_size, n_token)),
+            "num_atoms_per_token": torch.ones((batch_size, n_token)) * 4,
         }
 
         atom_mask = torch.ones((batch_size, n_atom))
@@ -529,7 +550,8 @@ class TestAtomAttentionDecoder(unittest.TestCase):
         )
 
         batch = {
-            "atom_to_token_index": torch.ones((batch_size, 1, n_atom)),
+            "token_mask": torch.ones((batch_size, 1, n_token)),
+            "num_atoms_per_token": torch.ones((batch_size, 1, n_token)) * 4,
         }
 
         atom_mask = torch.ones((batch_size, 1, n_atom))

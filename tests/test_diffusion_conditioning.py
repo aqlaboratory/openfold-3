@@ -3,6 +3,7 @@ import unittest
 import torch
 
 from openfold3.core.model.layers.diffusion_conditioning import DiffusionConditioning
+from openfold3.model_implementations.af3_all_atom.config import config
 from tests.config import consts
 
 
@@ -13,26 +14,17 @@ class TestDiffusionConditioning(unittest.TestCase):
         c_s_input = consts.c_s + 65
         c_s = consts.c_s
         c_z = consts.c_z
-        c_fourier_emb = 256
-        max_relative_idx = 32
-        max_relative_chain = 2
-        sigma_data = 16
 
-        dc = DiffusionConditioning(
-            c_s_input=c_s_input,
-            c_s=c_s,
-            c_z=c_z,
-            c_fourier_emb=c_fourier_emb,
-            max_relative_idx=max_relative_idx,
-            max_relative_chain=max_relative_chain,
-            sigma_data=sigma_data,
-        )
+        diff_cond_config = config.model.diffusion_module.diffusion_conditioning
+        diff_cond_config.update({"c_s": c_s, "c_s_input": c_s_input, "c_z": c_z})
+
+        dc = DiffusionConditioning(**diff_cond_config)
 
         si_input = torch.rand((batch_size, n_token, c_s_input))
         si_trunk = torch.rand((batch_size, n_token, c_s))
         zij_trunk = torch.rand((batch_size, n_token, n_token, c_z))
 
-        t = sigma_data * torch.exp(
+        t = diff_cond_config.sigma_data * torch.exp(
             -1.2 + 1.5 * torch.randn(batch_size, device=si_trunk.device)
         )
 
@@ -62,27 +54,18 @@ class TestDiffusionConditioning(unittest.TestCase):
         c_s_input = consts.c_s + 65
         c_s = consts.c_s
         c_z = consts.c_z
-        c_fourier_emb = 256
-        max_relative_idx = 32
-        max_relative_chain = 2
-        sigma_data = 16
         n_sample = 3
 
-        dc = DiffusionConditioning(
-            c_s_input=c_s_input,
-            c_s=c_s,
-            c_z=c_z,
-            c_fourier_emb=c_fourier_emb,
-            max_relative_idx=max_relative_idx,
-            max_relative_chain=max_relative_chain,
-            sigma_data=sigma_data,
-        )
+        diff_cond_config = config.model.diffusion_module.diffusion_conditioning
+        diff_cond_config.update({"c_s": c_s, "c_s_input": c_s_input, "c_z": c_z})
+
+        dc = DiffusionConditioning(**diff_cond_config)
 
         si_input = torch.rand((batch_size, 1, n_token, c_s_input))
         si_trunk = torch.rand((batch_size, 1, n_token, c_s))
         zij_trunk = torch.rand((batch_size, 1, n_token, n_token, c_z))
 
-        t = sigma_data * torch.exp(
+        t = diff_cond_config.sigma_data * torch.exp(
             -1.2 + 1.5 * torch.randn((batch_size, n_sample), device=si_trunk.device)
         )
 
@@ -116,26 +99,17 @@ class TestDiffusionConditioning(unittest.TestCase):
         c_s_input = consts.c_s + 65
         c_s = consts.c_s
         c_z = consts.c_z
-        c_fourier_emb = 256
-        max_relative_idx = 32
-        max_relative_chain = 2
-        sigma_data = 16
 
-        dc = DiffusionConditioning(
-            c_s_input=c_s_input,
-            c_s=c_s,
-            c_z=c_z,
-            c_fourier_emb=c_fourier_emb,
-            max_relative_idx=max_relative_idx,
-            max_relative_chain=max_relative_chain,
-            sigma_data=sigma_data,
-        )
+        diff_cond_config = config.model.diffusion_module.diffusion_conditioning
+        diff_cond_config.update({"c_s": c_s, "c_s_input": c_s_input, "c_z": c_z})
+
+        dc = DiffusionConditioning(**diff_cond_config)
 
         si_input = torch.rand((batch_size, 1, n_token, c_s_input))
         si_trunk = torch.rand((batch_size, 1, n_token, c_s))
         zij_trunk = torch.rand((batch_size, 1, n_token, n_token, c_z))
 
-        t = sigma_data * torch.exp(
+        t = diff_cond_config.sigma_data * torch.exp(
             -1.2 + 1.5 * torch.randn((1, 1), device=si_trunk.device)
         )
 

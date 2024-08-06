@@ -20,8 +20,8 @@ from pathlib import Path
 import numpy as np
 
 import tests.compare_utils as compare_utils
-from openfold3.core.data.data_pipeline import DataPipeline
-from openfold3.core.data.templates import HhsearchHitFeaturizer
+from openfold3.core.data.legacy.data_pipeline import DataPipeline
+from openfold3.core.data.legacy.templates import HhsearchHitFeaturizer
 from tests.config import consts
 
 if compare_utils.alphafold_is_installed():

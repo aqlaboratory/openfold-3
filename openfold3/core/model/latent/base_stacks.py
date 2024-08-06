@@ -135,7 +135,7 @@ class MSAStack(nn.Module, ABC):
 
         return blocks
 
-    def _wrap_up(self, m: torch.Tensor, z: torch.Tensor):
+    def _wrap_up(self, m: torch.Tensor, z: torch.Tensor) -> Sequence[torch.Tensor]:
         """Wrap-up function called at the end of the forward pass
 
         Wraps up the outputs and returns the appropriate tensors depending on the stack

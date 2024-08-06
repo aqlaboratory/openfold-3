@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from openfold3.core.data.data_transforms import (
+from openfold3.core.data.legacy.data_transforms import (
     MSA_FEATURE_NAMES,
     add_distillation_flag,
     correct_msa_restypes,

@@ -3,8 +3,6 @@ Centralized module for pre-assembled workflows corresponding to structure cleanu
 procedures of different models.
 """
 
-# TODO: give this file a different name
-
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 
