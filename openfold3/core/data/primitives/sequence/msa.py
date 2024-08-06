@@ -269,9 +269,10 @@ def get_pairing_masks(
 ) -> np.ndarray[np.bool_]:
     """Generates masks for the pairing process.
 
-    Useful for excluding things like species that occur only in on chain (will not be
+    Useful for excluding things like species that occur only in one chain (will not be
     pairable) or species that occur too frequently in the MSA of a single chain (as done
-    in the AF2-Multimer pairing code).
+    in the AF2-Multimer pairing code: 
+    https://github.com/google-deepmind/alphafold/blob/main/alphafold/data/msa_pairing.py#L216).
 
     Args:
         count_array (np.ndarray[np.int32]):
@@ -525,7 +526,7 @@ def merge_paired_msas(
     # Initialize paired MSA object
     num_rows = paired_msa_per_chain[next(iter(paired_msa_per_chain))].msa.shape[0]
     num_cols = sum(
-        [msa_collection.num_cols[v] for (k, v) in msa_collection.chain_rep_map.items()]
+        [msa_collection.num_cols[v] for (_, v) in msa_collection.chain_rep_map.items()]
     )
     paired_msa = Msa(
         msa=np.full((num_rows, num_cols), "-"),
@@ -553,12 +554,12 @@ def merge_paired_msas(
     return paired_msa
 
 
-def create_unpaired(
+def create_main(
     msa_collection: MsaCollection,
     paired_msa_per_chain: Union[dict[str, Msa], None],
     aln_order: list[str],
 ) -> dict[str, Msa]:
-    """Creates unpaired MSA arrays from non-UniProt MSAs.
+    """Creates main MSA arrays from non-UniProt MSAs.
 
     Args:
         msa_collection (MsaCollection):
@@ -570,20 +571,20 @@ def create_unpaired(
 
     Returns:
         dict[str, Msa]:
-            List of Msa objects containing the unpaired MSA arrays and deletion matrices
+            List of Msa objects containing the main MSA arrays and deletion matrices
             for each chain.
     """
     # Iterate over representatives
-    rep_unpaired_msas = {}
+    rep_main_msas = {}
     for rep_id, chain_data in msa_collection.rep_msa_map.items():
         chain_data = msa_collection.rep_msa_map[rep_id]
 
-        # Get unpaired MSAs and deletion matrices from all non-UniProt MSAs
-        unpaired_msa_redundant = np.concatenate(
+        # Get MSAs forming the main MSA and deletion matrices from all non-UniProt MSAs
+        main_msa_redundant = np.concatenate(
             [chain_data[aln].msa for aln in aln_order if aln in chain_data],
             axis=0,
         )
-        unpaired_deletion_matrix_redundant = np.concatenate(
+        main_deletion_matrix_redundant = np.concatenate(
             [chain_data[aln].deletion_matrix for aln in aln_order if aln in chain_data],
             axis=0,
         )
@@ -593,20 +594,20 @@ def create_unpaired(
             # Get set of paired rows and find unpaired rows not in this set
             paired_row_set = {tuple(i) for i in paired_msa_per_chain[rep_id].msa}
             is_unique = ~np.array(
-                [tuple(row) in paired_row_set for row in unpaired_msa_redundant]
+                [tuple(row) in paired_row_set for row in main_msa_redundant]
             )
         else:
-            is_unique = np.ones(unpaired_msa_redundant.shape[0], dtype=bool)
+            is_unique = np.ones(main_msa_redundant.shape[0], dtype=bool)
 
-        rep_unpaired_msas[rep_id] = Msa(
-            msa=unpaired_msa_redundant[is_unique, :],
-            deletion_matrix=unpaired_deletion_matrix_redundant[is_unique, :],
+        rep_main_msas[rep_id] = Msa(
+            msa=main_msa_redundant[is_unique, :],
+            deletion_matrix=main_deletion_matrix_redundant[is_unique, :],
             metadata=pd.DataFrame(),
         )
 
     # Reindex dict from representatives to chain IDs
-    unpaired_msas = {}
+    main_msas = {}
     for chain_id, rep_id in msa_collection.chain_rep_map.items():
-        unpaired_msas[chain_id] = rep_unpaired_msas[rep_id]
+        main_msas[chain_id] = rep_main_msas[rep_id]
 
-    return unpaired_msas
+    return main_msas

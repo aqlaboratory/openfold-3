@@ -3,9 +3,9 @@
 from typing import Optional, Union
 
 from openfold3.core.data.primitives.sequence.msa import (
+    create_main,
     create_paired,
     create_query,
-    create_unpaired,
     find_monomer_homomer,
     merge_paired_msas,
     parse_msas_sample,
@@ -26,7 +26,7 @@ def process_msas_af3(
     2. Paired sequences from UniProt
         - only if n unique protein chains > 1
         - exclude block-diagonal unpaired sequences
-    3. Unpaired sequences from non-UniProt databases
+    3. Main MSAs for each chain with unpaired sequences from non-UniProt databases
 
     Args:
         chain_ids (list[list[str], list[str]]):
@@ -47,7 +47,7 @@ def process_msas_af3(
             Tuple containing
                 - Msa object for the query sequence
                 - paired Msa concatenated across all chains
-                - dict mapping chain IDs to unpaired Msa objects.
+                - dict mapping chain IDs to main Msa objects.
     """
 
     if use_alignment_database and alignment_index is None:
@@ -64,7 +64,6 @@ def process_msas_af3(
         max_seq_counts=max_seq_counts,
     )
 
-    # TODO yet to add RNA parsing and pairing logic
     # Create query
     query_seq = create_query(msa_collection)
 
@@ -82,8 +81,8 @@ def process_msas_af3(
         paired_msa_per_chain = None
         paired_msa = None
 
-    # Create unpaired non-UniProt MSA arrays
-    unpaired_msas = create_unpaired(
+    # Create main MSA arrays
+    main_msas = create_main(
         msa_collection=msa_collection,
         paired_msa_per_chain=paired_msa_per_chain,
         aln_order=[
@@ -92,7 +91,10 @@ def process_msas_af3(
             "bfd_uniclust_hits",
             "bfd_uniref_hits",
             "mgnify_hits",
+            "rfam_hits",
+            "rnacentral_hits",
+            "nucleotide_collection_hits",
         ],
     )
 
-    return query_seq, paired_msa, unpaired_msas
+    return query_seq, paired_msa, main_msas
