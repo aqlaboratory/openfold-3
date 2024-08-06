@@ -10,13 +10,14 @@ from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from scipy.spatial import KDTree
 
-from ...resources.tables import (
+from openfold3.core.data.resources.tables import (
     NUCLEIC_ACID_PHOSPHATE_ATOMS,
     STANDARD_DNA_RESIDUES,
     STANDARD_PROTEIN_RESIDUES,
     STANDARD_RNA_RESIDUES,
     MoleculeType,
 )
+
 from .metadata_extraction import get_entity_to_three_letter_codes_dict
 
 
