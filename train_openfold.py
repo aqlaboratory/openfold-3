@@ -15,18 +15,14 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
-from openfold3.core.data.legacy.data_modules import (
+from openfold3.core.data.data_modules import (
     OpenFoldDataModule,
     OpenFoldMultimerDataModule,
 )
-from openfold3.core.loss.loss_module import AlphaFoldLoss
-from openfold3.core.metrics.validation import (
-    drmsd,
-    gdt_ha,
-    gdt_ts,
-    lddt_ca,
-)
+from openfold3.core.loss.loss import AlphaFoldLoss, lddt_ca
+from openfold3.core.metrics.validaiton_all_atom import get_validation_metrics
 from openfold3.core.np import residue_constants
+from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.callbacks import (
     EarlyStoppingVerbose,
     PerformanceLoggingCallback,
@@ -170,52 +166,74 @@ class OpenFoldWrapper(pl.LightningModule):
     ):
         metrics = {}
 
-        gt_coords = batch["all_atom_positions"]
-        pred_coords = outputs["final_atom_positions"]
-        all_atom_mask = batch["all_atom_mask"]
+        gt_coords = batch["ref_pos"]
+        pred_coords = outputs["x_pred"]
+        all_atom_mask = batch["ref_mask"]
+        token_mask = batch["token_mask"]
+        num_atoms_per_token = batch["num_atoms_per_token"]
 
-        # This is super janky for superimposition. Fix later
-        gt_coords_masked = gt_coords * all_atom_mask[..., None]
-        pred_coords_masked = pred_coords * all_atom_mask[..., None]
-        ca_pos = residue_constants.atom_order["CA"]
-        gt_coords_masked_ca = gt_coords_masked[..., ca_pos, :]
-        pred_coords_masked_ca = pred_coords_masked[..., ca_pos, :]
-        all_atom_mask_ca = all_atom_mask[..., ca_pos]
+        #broadcast token level features to atom level
+        is_protein_atomized = broadcast_token_feat_to_atoms(token_mask, 
+                                                            num_atoms_per_token, 
+                                                            batch['is_protein'])
+        is_ligand_atomized = broadcast_token_feat_to_atoms(token_mask, 
+                                                           num_atoms_per_token, 
+                                                           batch['is_ligand'])
+        is_rna_atomized = broadcast_token_feat_to_atoms(token_mask, 
+                                                        num_atoms_per_token, 
+                                                        batch['is_rna'])
+        is_dna_atomized = broadcast_token_feat_to_atoms(token_mask, 
+                                                        num_atoms_per_token, 
+                                                        batch['is_dna'])
+        entity_id_atomized = broadcast_token_feat_to_atoms(token_mask, 
+                                                           num_atoms_per_token, 
+                                                           batch['entity_id'])
+        protein_idx = torch.nonzero(is_protein_atomized).squeeze(-1)
 
-        lddt_ca_score = lddt_ca(
-            pred_coords,
-            gt_coords,
-            all_atom_mask,
-            eps=self.config.globals.eps,
-            per_residue=False,
-        )
+        #get metrics
+        protein_validation_metrics = get_validation_metrics(is_protein_atomized, 
+                                                            entity_id_atomized,
+                                                            pred_coords, 
+                                                            gt_coords, 
+                                                            all_atom_mask,
+                                                            protein_idx,
+                                                            ligand_type = 'protein',
+                                                            is_nucleic_acid = False,
+                                                            )
+        metrics = metrics | protein_validation_metrics
 
-        metrics["lddt_ca"] = lddt_ca_score
+        ligand_validation_metrics = get_validation_metrics(is_ligand_atomized, 
+                                                           entity_id_atomized,
+                                                           pred_coords, 
+                                                           gt_coords, 
+                                                           all_atom_mask,
+                                                           protein_idx,
+                                                           ligand_type = 'ligand',
+                                                           is_nucleic_acid = False,
+                                                           )
+        metrics = metrics | ligand_validation_metrics 
 
-        drmsd_ca_score = drmsd(
-            pred_coords_masked_ca,
-            gt_coords_masked_ca,
-            mask=all_atom_mask_ca,  # still required here to compute n
-        )
+        rna_validation_metrics = get_validation_metrics(is_rna_atomized, 
+                                                        entity_id_atomized,
+                                                        pred_coords, 
+                                                        gt_coords, 
+                                                        all_atom_mask,
+                                                        protein_idx,
+                                                        ligand_type = 'rna',
+                                                        is_nucleic_acid = True,
+                                                        )
+        metrics = metrics | rna_validation_metrics
 
-        metrics["drmsd_ca"] = drmsd_ca_score
-
-        if superimposition_metrics:
-            superimposed_pred, alignment_rmsd = superimpose(
-                gt_coords_masked_ca,
-                pred_coords_masked_ca,
-                all_atom_mask_ca,
-            )
-            gdt_ts_score = gdt_ts(
-                superimposed_pred, gt_coords_masked_ca, all_atom_mask_ca
-            )
-            gdt_ha_score = gdt_ha(
-                superimposed_pred, gt_coords_masked_ca, all_atom_mask_ca
-            )
-
-            metrics["alignment_rmsd"] = alignment_rmsd
-            metrics["gdt_ts"] = gdt_ts_score
-            metrics["gdt_ha"] = gdt_ha_score
+        dna_validation_metrics = get_validation_metrics(is_dna_atomized, 
+                                                        entity_id_atomized,
+                                                        pred_coords, 
+                                                        gt_coords, 
+                                                        all_atom_mask,
+                                                        protein_idx,
+                                                        ligand_type = 'dna',
+                                                        is_nucleic_acid = True,
+                                                        )
+        metrics = metrics | dna_validation_metrics
 
         return metrics
 

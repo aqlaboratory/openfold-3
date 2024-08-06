@@ -197,6 +197,75 @@ def drmsd(
     inter_drmsd = torch.sqrt(inter_drmsd) 
     return intra_drmsd, inter_drmsd
 
+def get_validation_metrics(
+        is_ligand_atomized: torch.Tensor, 
+        entity_id_atomized: torch.Tensor,
+        pred_coords: torch.Tensor, 
+        gt_coords: torch.Tensor, 
+        all_atom_mask: torch.Tensor,
+        protein_idx: torch.Tensor,
+        ligand_type: str,
+        is_nucleic_acid: Optional[bool] = False,
+        ):
+    """ 
+    Args: 
+        is_ligand_atomized: broadcasted is_ligand/rna/dna feature [*, n_atom]
+        entity_id_atomized: broadcasted entity_id feature [*, n_atom] 
+        pred_coords: predicted coordinates [*, n_atom, 3]
+        gt_coords: gt coordinates [*, n_atom, 3]
+        all_atom_mask: atom mask [*, n_atom]
+        protein_idx: broadcasted is_protein feature [*, n_atom]
+        ligand_type: 'ligand', 'rna', 'dna' 
+        is_nucleic_acid: boolean indicating if ligand type is nucleic acid
+    Returns: 
+        out: dictionary containing validation metrics
+            intra_lddt: intra ligandtype lddt
+            inter_lddt: inter ligandtype_ligandtype lddt
+            intra_drmsd: intra ligandtype drmsd 
+            inter_lddt_protein_ligand: inter protein-ligandtype lddt
+    """
+    
+    out = {}
+
+    if torch.any(is_ligand_atomized):
+        ligand_idx = torch.nonzero(is_ligand_atomized).squeeze(-1)
+        gt_ligand = gt_coords[ligand_idx, :]
+        pred_ligand = pred_coords[ligand_idx, :]
+        ligand_entity_id = entity_id_atomized[ligand_idx]
+
+        gt_ligand_pair = get_pair_dist(gt_ligand, gt_ligand)
+        pred_ligand_pair = get_pair_dist(pred_ligand, pred_ligand)
+
+        cutoff = 30. if is_nucleic_acid else 15.
+
+        intra_lddt, inter_lddt = lddt(pred_ligand_pair,
+                                      gt_ligand_pair,
+                                      all_atom_mask[ligand_idx],
+                                      ligand_entity_id,
+                                      cutoff = cutoff
+                                      )
+        out['lddt_intra_' + ligand_type] = intra_lddt
+        out['lddt_inter_' + ligand_type + '_' + ligand_type] = inter_lddt        
+        
+        intra_drmsd, inter_drmsd = drmsd(pred_ligand_pair,
+                                         gt_ligand_pair,
+                                         all_atom_mask[ligand_idx],
+                                         ligand_entity_id,
+                                         )
+        out['drmsd_intra_' + ligand_type] = intra_drmsd
+
+        if ligand_type != 'protein':
+            inter_lddt_protein_ligand = interface_lddt(pred_coords[protein_idx, :],
+                                                       pred_coords[ligand_idx, :],
+                                                       gt_coords[protein_idx, :],
+                                                       gt_coords[ligand_idx, :],
+                                                       all_atom_mask[protein_idx],
+                                                       all_atom_mask[ligand_idx],
+                                                       cutoff = cutoff,
+                                                       )
+            out['lddt_inter_protein_' + ligand_type] = inter_lddt_protein_ligand
+    
+    return out
 
 def gdt(
         all_atom_pred_pos: torch.Tensor,
