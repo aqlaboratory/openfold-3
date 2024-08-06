@@ -93,8 +93,8 @@ class ModelRunner(pl.LightningModule):
             )
 
     def training_step(self, batch, batch_idx):
-        if self.ema.device != batch["aatype"].device:
-            self.ema.to(batch["aatype"].device)
+        if self.ema.device != batch["restype"].device:
+            self.ema.to(batch["restype"].device)
 
         # Run the model
         outputs = self.model(batch)
@@ -149,8 +149,3 @@ class ModelRunner(pl.LightningModule):
         self, batch, outputs, superimposition_metrics=False
     ):
         pass
-
-    def on_train_epoch_start(self) -> None:
-        """Resample epoch_len number of samples for the training datasets at the start
-        of each epoch."""
-        self.trainer.train_dataloader.dataset.resample_epoch()

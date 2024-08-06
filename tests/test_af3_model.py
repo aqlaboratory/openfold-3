@@ -48,7 +48,7 @@ class TestAF3Model(unittest.TestCase):
         batch = tensor_tree_map(to_device_dtype, batch)
 
         if train:
-            af3_loss = AlphaFold3Loss(config=config.loss)
+            af3_loss = AlphaFold3Loss(config=self.config.loss)
 
             outputs = af3(batch=batch)
 
@@ -57,14 +57,15 @@ class TestAF3Model(unittest.TestCase):
             )
 
             # TODO: Checkpointing will cause this to fail, skipping for now
-            if config.globals.blocks_per_ckpt is None:
+            if self.config.globals.blocks_per_ckpt is None:
                 loss.backward()
 
             x_pred = outputs["x_pred"]
             x_sample = outputs["x_sample"]
 
             self.assertTrue(
-                x_sample.shape == (batch_size, config.globals.no_samples, n_atom, 3)
+                x_sample.shape
+                == (batch_size, self.config.globals.no_samples, n_atom, 3)
             )
             self.assertTrue(loss.shape == ())
 
@@ -77,10 +78,9 @@ class TestAF3Model(unittest.TestCase):
             x_pred = outputs["x_pred"]
 
         self.assertTrue(
-            x_sample.shape == (batch_size, config.globals.no_samples, n_atom, 3)
+            x_sample.shape == (batch_size, self.config.globals.no_samples, n_atom, 3)
         )
         self.assertTrue(loss.shape == ())
-
 
     def test_shape_small_fp32(self):
         batch_size = consts.batch_size
@@ -112,7 +112,7 @@ class TestAF3Model(unittest.TestCase):
 
         outputs = af3(batch=batch)
 
-        af3_loss = AlphaFold3Loss(config=config.loss)
+        af3_loss = AlphaFold3Loss(config=self.config.loss)
         loss, loss_breakdown = af3_loss(
             batch=batch, output=outputs, _return_breakdown=True
         )
