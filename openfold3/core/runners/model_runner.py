@@ -100,7 +100,7 @@ class ModelRunner(pl.LightningModule):
         outputs = self.model(batch)
 
         # Compute loss
-        loss, loss_breakdown = self.loss(outputs, batch, _return_breakdown=True)
+        loss, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
 
         # Log it
         self._log(loss_breakdown, batch, outputs)
