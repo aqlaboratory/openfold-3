@@ -19,16 +19,11 @@ from pathlib import Path
 import numpy as np
 import torch
 
-import openfold3.model_implementations.af2_monomer.base_config as af2_config
-import openfold3.model_implementations.af2_multimer.config as multimer_config
 from openfold3.core.utils.import_weights import (
     import_jax_weights_,
     import_openfold_weights_,
 )
-from openfold3.model_implementations.af2_monomer.model import AlphaFold
-from openfold3.model_implementations.af2_multimer.model import (
-    AlphaFold as AlphaFoldMultimer,
-)
+from openfold3.model_implementations import registry
 from tests.config import consts
 
 
@@ -36,22 +31,16 @@ class TestImportWeights(unittest.TestCase):
     def test_import_jax_weights_(self):
         npz_path = (
             Path(__file__).parent.resolve()
-            / f"../openfold3/resources/params/params_{consts.model}.npz"
+            / f"../openfold3/resources/params/params_{consts.model_preset}.npz"
         )
 
-        model_config = (
-            af2_config.model_config
-            if not consts.is_multimer
-            else multimer_config.model_config
-        )
-        c = model_config(consts.model)
+        c = registry.make_config_with_preset(consts.model_name, consts.model_preset)
         c.globals.blocks_per_ckpt = None
 
-        model_type = AlphaFold if not consts.is_multimer else AlphaFoldMultimer
-        model = model_type(c)
+        model = registry.get_lightning_module(c).model
         model.eval()
 
-        import_jax_weights_(model, npz_path, version=consts.model)
+        import_jax_weights_(model, npz_path, version=consts.model_preset)
 
         data = np.load(npz_path)
         prefix = "alphafold/alphafold_iteration/"
@@ -97,9 +86,9 @@ class TestImportWeights(unittest.TestCase):
         )
 
         if os.path.exists(pt_path):
-            c = af2_config.model_config(model_name)
+            c = registry.make_config_with_preset("af2_monomer")
             c.globals.blocks_per_ckpt = None
-            model = AlphaFold(c)
+            model = registry.get_lightning_module(c).model
             model.eval()
 
             d = torch.load(pt_path)

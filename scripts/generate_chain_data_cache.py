@@ -13,7 +13,7 @@ from collections import defaultdict
 
 from tqdm import tqdm
 
-from openfold3.core.data.mmcif_parsing import parse
+from openfold3.core.data.legacy.mmcif_parsing import parse
 from openfold3.core.np import protein, residue_constants
 
 

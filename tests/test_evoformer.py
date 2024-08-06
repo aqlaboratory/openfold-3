@@ -51,7 +51,7 @@ class TestEvoformerStack(unittest.TestCase):
         pair_dropout = 0.25
         opm_first = consts.is_multimer
         fuse_projection_weights = bool(
-            re.fullmatch("^model_[1-5]_multimer_v3$", consts.model)
+            re.fullmatch("^model_[1-5]_multimer_v3$", consts.model_preset)
         )
         inf = 1e9
         eps = 1e-10
@@ -245,7 +245,7 @@ class TestExtraMSAStack(unittest.TestCase):
         pair_stack_dropout = 0.25
         opm_first = consts.is_multimer
         fuse_projection_weights = bool(
-            re.fullmatch("^model_[1-5]_multimer_v3$", consts.model)
+            re.fullmatch("^model_[1-5]_multimer_v3$", consts.model_preset)
         )
         inf = 1e9
         eps = 1e-10

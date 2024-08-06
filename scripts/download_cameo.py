@@ -6,7 +6,7 @@ import re
 
 import requests
 
-from openfold3.core.data import mmcif_parsing
+from openfold3.core.data.legacy import mmcif_parsing
 
 VALID_PERIODS = [
     "1-year",

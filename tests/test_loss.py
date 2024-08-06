@@ -21,7 +21,7 @@ import numpy as np
 import torch
 
 import tests.compare_utils as compare_utils
-from openfold3.core.data import data_transforms
+from openfold3.core.data.legacy import data_transforms
 from openfold3.core.loss.confidence import (
     atom37_experimentally_resolved_loss,
     ca_plddt_loss,
@@ -1035,7 +1035,7 @@ class TestLoss(unittest.TestCase):
 
     @compare_utils.skip_unless_alphafold_installed()
     @unittest.skipIf(
-        not consts.is_multimer and "ptm" not in consts.model,
+        not consts.is_multimer and "ptm" not in consts.model_preset,
         "Not enabled for non-ptm models.",
     )
     def test_tm_loss_compare(self):

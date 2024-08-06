@@ -1,0 +1,86 @@
+model_1_multimer_v3:
+  data:
+    train:
+      crop_size: 384
+      max_msa_clusters: 252
+      max_extra_msa: 1152 
+    eval:
+      max_msa_clusters: 252
+      max_extra_msa: 1152 
+    predict:
+      max_msa_clusters: 252
+      max_extra_msa: 1152 
+  model:
+    evoformer_stack:
+      fuse_projection_weights: False
+    extra_msa:
+      extra_msa_stack:
+        fuse_projection_weights: False
+    template:
+      template_pair_stack:
+        fuse_projection_weights: False
+
+
+model_2_multimer_v3:
+  data:
+    train:
+      crop_size: 384
+      max_msa_clusters: 252
+      max_extra_msa: 1152 
+    eval:
+      max_msa_clusters: 252
+      max_extra_msa: 1152 
+    predict:
+      max_msa_clusters: 252
+      max_extra_msa: 1152 
+  model:
+    evoformer_stack:
+      fuse_projection_weights: False
+    extra_msa:
+      extra_msa_stack:
+        fuse_projection_weights: False
+    template:
+      template_pair_stack:
+        fuse_projection_weights: False
+
+
+model_3_multimer_v3:
+  data:
+    train:
+      crop_size: 384
+      max_msa_clusters: 252
+      max_extra_msa: 1152 
+    eval:
+      max_msa_clusters: 252
+      max_extra_msa: 1152 
+    predict:
+      max_msa_clusters: 252
+      max_extra_msa: 1152 
+  model:
+    evoformer_stack:
+      fuse_projection_weights: False
+    extra_msa:
+      extra_msa_stack:
+        fuse_projection_weights: False
+    template:
+      template_pair_stack:
+        fuse_projection_weights: False
+
+
+model_4_multimer_v3:
+  data:
+    train:
+      max_extra_msa: 1152 
+    eval:
+      max_extra_msa: 1152 
+    predict:
+      max_extra_msa: 1152 
+
+model_5_multimer_v3:
+  data:
+    train:
+      max_extra_msa: 1152 
+    eval:
+      max_extra_msa: 1152 
+    predict:
+      max_extra_msa: 1152 
