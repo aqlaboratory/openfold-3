@@ -44,7 +44,8 @@ def main(args):
     runner_yaml_config = config_utils.load_yaml(args.runner_yaml)
     # Update model config with section from yaml with model update
     model_config = registry.make_model_config(
-        args.model_name, runner_yaml_config.model_update_yaml)
+        args.model_name, runner_yaml_config.model_update_yaml
+    )
     # Initialize lightning module with desired config
     lightning_module = registry.get_lightning_module(model_config)
     # TODO <checkpoint resume logic goes here>

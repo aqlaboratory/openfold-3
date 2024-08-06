@@ -37,9 +37,9 @@ def make_model_config(model_name: str, model_update_yaml_path: str):
 
     Args:
         model_name: Expected to be a key in MODEL_REGISTRY
-        model_update_yaml_path: 
+        model_update_yaml_path:
             Path to a yaml file with model updates.
-            Expected to have a `model_update` header 
+            Expected to have a `model_update` header
     Returns:
         Config dict with model config and updates from the yaml file
     """
@@ -60,7 +60,7 @@ def get_lightning_module(config: ConfigDict, model_name: Optional[str] = None):
     the model_name. E.g.
 
     ```
-    model_config = make_model_config("af2_monomer", model_update_yaml) 
+    model_config = make_model_config("af2_monomer", model_update_yaml)
     lightning_module = get_lightning_module(model_config)
     ```
 
@@ -69,8 +69,8 @@ def get_lightning_module(config: ConfigDict, model_name: Optional[str] = None):
 
     Args:
         config: ConfigDict with settings for model construction
-        model_name: 
-            If provided, creates a ModelRunner matching the key in the 
+        model_name:
+            If provided, creates a ModelRunner matching the key in the
             MODEL_REGISTRY
     Returns:
         `core.runners.model_runner.ModelRunner` for specified model_name
