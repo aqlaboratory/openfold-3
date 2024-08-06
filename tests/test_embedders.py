@@ -29,13 +29,10 @@ from openfold3.core.model.feature_embedders import (
     TemplateSingleEmbedderMonomer,
     TemplateSingleEmbedderMultimer,
 )
-from openfold3.model_implementations.af2_monomer.base_config import (
-    model_config as monomer_model_config,
+from openfold3.model_implementations import registry
+from openfold3.model_implementations.af3_all_atom.config.base_config import (
+    config as af3_config,
 )
-from openfold3.model_implementations.af2_multimer.config import (
-    model_config as multimer_model_config,
-)
-from openfold3.model_implementations.af3_all_atom.config import config as af3_config
 from tests.config import consts, monomer_consts, multimer_consts
 from tests.data_utils import random_asym_ids, random_template_feats
 
@@ -48,7 +45,9 @@ class TestInputEmbedder(unittest.TestCase):
         n_res = 17
         n_clust = 19
 
-        config = monomer_model_config(monomer_consts.model)
+        config = registry.make_config_with_preset(
+            monomer_consts.model_name, monomer_consts.model_preset
+        )
         input_emb_config = config.model.input_embedder
         input_emb_config.update({"c_z": c_z, "c_m": c_m})
 
@@ -66,7 +65,9 @@ class TestInputEmbedder(unittest.TestCase):
         self.assertTrue(msa_emb.shape == (b, n_clust, n_res, c_m))
         self.assertTrue(pair_emb.shape == (b, n_res, n_res, c_z))
 
-        config = multimer_model_config(multimer_consts.model)
+        config = registry.make_config_with_preset(
+            multimer_consts.model_name, multimer_consts.model_preset
+        )
         input_emb_config = config.model.input_embedder
         input_emb_config.update({"c_z": c_z, "c_m": c_m})
 
@@ -231,7 +232,9 @@ class TestTemplateSingleEmbedders(unittest.TestCase):
         n_templ = 4
         n_res = 256
 
-        c = monomer_model_config(monomer_consts.model)
+        c = registry.make_config_with_preset(
+            monomer_consts.model_name, monomer_consts.model_preset
+        )
         c_m = c.model.template.template_single_embedder.c_out
 
         batch = random_template_feats(n_templ, n_res, batch_size=batch_size)
@@ -246,7 +249,9 @@ class TestTemplateSingleEmbedders(unittest.TestCase):
 
         self.assertTrue(x.shape == (batch_size, n_templ, n_res, c_m))
 
-        c = multimer_model_config(multimer_consts.model)
+        c = registry.make_config_with_preset(
+            multimer_consts.model_name, multimer_consts.model_preset
+        )
         c_m = c.model.template.template_single_embedder.c_out
 
         tae = TemplateSingleEmbedderMultimer(
@@ -266,7 +271,9 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         n_templ = 4
         n_res = 5
 
-        c = monomer_model_config(monomer_consts.model)
+        c = registry.make_config_with_preset(
+            monomer_consts.model_name, monomer_consts.model_preset
+        )
         c_t = c.model.template.template_pair_embedder.c_out
 
         batch = random_template_feats(n_templ, n_res, batch_size=batch_size)
@@ -284,7 +291,9 @@ class TestTemplatePairEmbedders(unittest.TestCase):
 
         self.assertTrue(x.shape == (batch_size, n_templ, n_res, n_res, c_t))
 
-        c = multimer_model_config(multimer_consts.model)
+        c = registry.make_config_with_preset(
+            multimer_consts.model_name, multimer_consts.model_preset
+        )
         c_z = c.model.template.template_pair_embedder.c_in
         c_t = c.model.template.template_pair_embedder.c_out
 

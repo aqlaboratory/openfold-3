@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 
 from openfold3.core.loss.distogram import all_atom_distogram_loss
-from openfold3.model_implementations.af3_all_atom.config import config
+from openfold3.model_implementations.af3_all_atom.config.base_config import config
 
 
 class TestDistogramLoss(unittest.TestCase):

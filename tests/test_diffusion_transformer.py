@@ -18,7 +18,7 @@ import torch
 
 from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
 from openfold3.core.model.layers.transition import ConditionedTransitionBlock
-from openfold3.model_implementations.af3_all_atom.config import config
+from openfold3.model_implementations.af3_all_atom.config.base_config import config
 from tests.config import consts
 
 
