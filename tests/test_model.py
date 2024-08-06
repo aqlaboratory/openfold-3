@@ -21,7 +21,7 @@ import torch
 import torch.nn as nn
 
 import tests.compare_utils as compare_utils
-from openfold3.core.data import data_transforms
+from openfold3.core.data.legacy import data_transforms
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.model_implementations import registry
 from tests.config import consts

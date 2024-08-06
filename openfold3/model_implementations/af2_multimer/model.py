@@ -15,7 +15,7 @@
 import torch
 import torch.nn as nn
 
-from openfold3.core.data import data_transforms
+from openfold3.core.data.legacy import data_transforms, data_transforms_multimer
 from openfold3.core.model.feature_embedders.input_embedders import (
     ExtraMSAEmbedder,
     InputEmbedderMultimer,
@@ -267,7 +267,7 @@ class AlphaFold(nn.Module):
 
         # Embed extra MSA features + merge with pairwise embeddings
         if self.config.extra_msa.enabled:
-            extra_msa_fn = data_transforms.build_extra_msa_feat
+            extra_msa_fn = data_transforms_multimer.build_extra_msa_feat
 
             # [*, S_e, N, C_e]
             extra_msa_feat = extra_msa_fn(feats).to(dtype=z.dtype)

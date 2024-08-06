@@ -43,7 +43,7 @@ def main(args):
     # Initialize model wrapper
     runner_yaml_config = load_yaml(args.runner_yaml)
     # Update model config with section from yaml with model update
-    model_config = make_config(args.model_name, runner_yaml_config.model_updaet)
+    model_config = make_config(args.model_name, runner_yaml_config.model_update)
     # Initialize lightning module with desired config
     lightning_module = get_lightning_module(model_config)
     # TODO <checkpoint resume logic goes here>
@@ -53,7 +53,7 @@ def main(args):
         script_preset_(lightning_module)  # TODO check if this works
 
     # Initialize data wrapper
-    lightning_data_module = OpenFoldDataModule(args.data_config)
+    lightning_data_module = DataModule(args.data_config)
 
     # Set up trainer arguments and callbacks
     callbacks = []

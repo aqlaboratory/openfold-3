@@ -23,7 +23,7 @@ from concurrent import futures
 from typing import Any, Callable, Mapping, Optional, Sequence
 from urllib import request
 
-from openfold3.core.data import parsers
+from openfold3.core.data.legacy import parsers
 from openfold3.core.data.tools import utils
 
 
