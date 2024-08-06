@@ -7,19 +7,18 @@ from biotite.structure import Atom, AtomArray
 from numpy.random import Generator
 from scipy.spatial.distance import cdist
 
-# TODO import Lukas' version of get_interface_atoms, 
-# get_query_interface_token_center_atoms
-from openfold3.core.data.preprocessing.structure_primitives import get_interface_atoms
+from openfold3.core.data.primitives.structure.interface import (
+    get_query_interface_token_center_atoms,
+)
 
 
-# TODO check implementation
 def crop_contiguous(
     atom_array: AtomArray, token_budget: int, generator: Generator
 ) -> None:
     """Implements Contiguous Cropping from AF3 SI, 2.7.1.
 
     Uses Algorithm 1 from AF-Multimer section 7.2.1. to update the input biotite
-    atom array with added 'af3_crop_mask' annotation in-place. Note: Algorithm 1
+    atom array with added 'crop_mask' annotation in-place. Note: Algorithm 1
     does not work correctly as stated in the AF-Multimer SI, so here we are using
     a fixed version.
 
@@ -36,23 +35,21 @@ def crop_contiguous(
     """
 
     # Get chain ids and permute
-    chains = np.array(list(set(atom_array.af3_chain_id)), dtype=int)
+    chains = np.array(list(set(atom_array.chain_id_renumbered)), dtype=int)
     chains = generator.permutation(chains)
 
     # Create cropping mask annotation
-    atom_array.set_annotation("af3_crop_mask", np.repeat(False, len(atom_array)))
+    atom_array.set_annotation("crop_mask", np.repeat(False, len(atom_array)))
 
     # Cropping loop
-    tokens_remaining = max(atom_array.af3_token_id)
+    tokens_remaining = max(atom_array.token_id)
 
     for chain_id in chains:
         # Get chain atom array
-        atom_array_chain = atom_array[atom_array.af3_chain_id == chain_id]
+        atom_array_chain = atom_array[atom_array.chain_id_renumbered == chain_id]
 
         # Get chain length
-        chain_length = (
-            atom_array_chain.af3_token_id[-1] - atom_array_chain.af3_token_id[0] + 1
-        )
+        chain_length = atom_array_chain.token_id[-1] - atom_array_chain.token_id[0] + 1
         tokens_remaining -= chain_length
 
         # Sample length of crop for current chain
@@ -63,12 +60,10 @@ def crop_contiguous(
         token_budget -= crop_size
 
         crop_start = generator.integers(0, chain_length - crop_size, 1).item()
-        crop_start_global = atom_array_chain[crop_start].af3_atom_id
+        crop_start_global = atom_array_chain[crop_start]._atom_idx
 
         # Edit corresponding segment in crop mask
-        atom_array.af3_crop_mask[crop_start_global : crop_start_global + crop_size] = (
-            True
-        )
+        atom_array.crop_mask[crop_start_global : crop_start_global + crop_size] = True
 
         if token_budget == 0:
             break
@@ -85,7 +80,7 @@ def crop_spatial(
     """Implements Spatial Cropping from AF3 SI, 2.7.2.
 
     Uses Algorithm 2 from AF-Multimer section 7.2.2. to update the input biotite
-    atom array with added 'af3_crop_mask' annotation in-place. Note: we drop the
+    atom array with added 'crop_mask' annotation in-place. Note: we drop the
     index-based distance-untying step from Algorithm 2 (line 1, i * 10^-3 factor)
     because it distorts the distances and results in less convex spatial crops.
 
@@ -127,7 +122,7 @@ def crop_spatial_interface(
     """Implements Spatial Interface Cropping from AF3 SI, 2.7.3.
 
     Uses Algorithm 2 from AF-Multimer section 7.2.2. to update the input biotite
-    atom array with added 'af3_crop_mask' annotation in-place. Note: we drop the
+    atom array with added 'crop_mask' annotation in-place. Note: we drop the
     index-based distance-untying step from Algorithm 2 (line 1, i * 10^-3 factor)
     because it distorts the distances and results in less convex spatial crops.
 
@@ -152,7 +147,7 @@ def crop_spatial_interface(
     )
 
     # Find interface token center atoms
-    preferred_interface_token_center_atoms = get_interface_atoms(
+    preferred_interface_token_center_atoms = get_query_interface_token_center_atoms(
         preferred_token_center_atoms, token_center_atoms
     )
 
@@ -188,17 +183,19 @@ def subset_preferred(
         tuple[AtomArray, AtomArray]:
             Tuple of all and preferred token center atoms.
     """
-    token_center_atoms = atom_array[atom_array.af3_token_center_atom]
+    token_center_atoms = atom_array[atom_array.token_center_atom]
     if preferred_chain_or_interface is not None:
         # If chain provided
         if isinstance(preferred_chain_or_interface, int):
             preferred_token_center_atoms = token_center_atoms[
-                token_center_atoms.af3_chain_id == preferred_chain_or_interface
+                token_center_atoms.chain_id_renumbered == preferred_chain_or_interface
             ]
         # If interface provided
         elif isinstance(preferred_chain_or_interface, tuple):
             preferred_token_center_atoms = token_center_atoms[
-                np.isin(token_center_atoms.af3_chain_id, preferred_chain_or_interface)
+                np.isin(
+                    token_center_atoms.chain_id_renumbered, preferred_chain_or_interface
+                )
             ]
         else:
             raise ValueError(
@@ -243,10 +240,10 @@ def find_spatial_crop(
 
     # Get all atoms for nearest token center atoms
     atom_array.set_annotation(
-        "af3_crop_mask",
+        "crop_mask",
         np.isin(
-            atom_array.af3_token_id,
-            token_center_atoms[nearest_token_center_atom_ids].af3_token_id,
+            atom_array.token_id,
+            token_center_atoms[nearest_token_center_atom_ids].token_id,
         ),
     )
     return None

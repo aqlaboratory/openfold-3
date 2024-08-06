@@ -4,8 +4,11 @@ import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
 
-from openfold3.core.data.primitives.structure.index import assign_atom_indices, remove_atom_indices
-from .tables import (
+from openfold3.core.data.primitives.structure.labels import (
+    assign_atom_indices,
+    remove_atom_indices,
+)
+from openfold3.core.data.resources.tables import (
     NUCLEIC_ACID_MAIN_CHAIN_ATOMS,
     PROTEIN_MAIN_CHAIN_ATOMS,
     STANDARD_RESIDUES,
@@ -14,21 +17,13 @@ from .tables import (
 )
 
 
-# NOTE for LJ changes:
-# - removed af3_atom_id in favor of _atom_idx with assign/remove functions
-# - removed assign_chains
-# - changed af3_chain_id to chain_id_renumbered
-# - changed af3_molecule_type to molecule_type_id
-# TODO for nits/potential changes:
-# - change af3 in all annotations, e.g. af3_aux_residue_id to aux_residue_id and
-#   af3_token_id to token_id
 def tokenize_atom_array(atom_array: AtomArray):
     """Generates token ids, token center atom annotations and atom id annotations for a
     biotite atom_array.
 
     Tokenizes the input atom array according to section 2.6. in the AF3 SI. The
-    tokenization is added to the input atom array as 'af3_token_id' annotation alongside
-    'af3_token_center_atom' and 'af3_atom_id' annotations.
+    tokenization is added to the input atom array as 'token_id' annotation alongside
+    'token_center_atom' and '_atom_idx' annotations.
 
     Args:
         atom_array (AtomArray): biotite atom array of the first bioassembly of a PDB
@@ -44,7 +39,7 @@ def tokenize_atom_array(atom_array: AtomArray):
     # The auxiliary residue id is used to tokenize covalently modified residues
     # per atom and is removed afterwards
     atom_array.set_annotation(
-        "af3_aux_residue_id",
+        "aux_residue_id",
         struc.spread_residue_wise(
             atom_array, np.arange(struc.get_residue_count(atom_array))
         ),
@@ -106,8 +101,8 @@ def tokenize_atom_array(atom_array: AtomArray):
         is_side_chain[bondlist_standard[:, 0]] & is_side_chain[bondlist_standard[:, 1]]
     )
     is_different_residue = (
-        atom_array.af3_aux_residue_id[bondlist_standard[:, 0]]
-        != atom_array.af3_aux_residue_id[bondlist_standard[:, 1]]
+        atom_array.aux_residue_id[bondlist_standard[:, 0]]
+        != atom_array.aux_residue_id[bondlist_standard[:, 1]]
     )
     is_same_chain_diff_sidechain = (
         is_same_chain & is_both_side_chain & is_different_residue
@@ -133,8 +128,8 @@ def tokenize_atom_array(atom_array: AtomArray):
     # Get the set of all atoms in corresponding residues
     atomized_residue_token_start_ids = atom_array[
         np.isin(
-            atom_array.af3_aux_residue_id,
-            nonhetero_atoms_in_covalent_modification.af3_aux_residue_id,
+            atom_array.aux_residue_id,
+            nonhetero_atoms_in_covalent_modification.aux_residue_id,
         )
     ]._atom_idx
 
@@ -163,19 +158,19 @@ def tokenize_atom_array(atom_array: AtomArray):
     # Create token index
     token_id_repeats = np.diff(np.append(all_token_start_ids, n_atoms))
     token_ids_per_atom = np.repeat(np.arange(len(token_id_repeats)), token_id_repeats)
-    atom_array.set_annotation("af3_token_id", token_ids_per_atom)
+    atom_array.set_annotation("token_id", token_ids_per_atom)
 
     # Create token center atom annotation
-    af3_token_center_atoms = np.repeat(True, n_atoms)
-    af3_token_center_atoms[is_standard_residue_atom] = np.isin(
+    token_center_atoms = np.repeat(True, n_atoms)
+    token_center_atoms[is_standard_residue_atom] = np.isin(
         atom_array[is_standard_residue_atom].atom_name, TOKEN_CENTER_ATOMS
     )
     # Edit token center atoms for covalently modified residues
-    af3_token_center_atoms[atomized_residue_token_start_ids] = True
-    atom_array.set_annotation("af3_token_center_atom", af3_token_center_atoms)
+    token_center_atoms[atomized_residue_token_start_ids] = True
+    atom_array.set_annotation("token_center_atom", token_center_atoms)
 
     # Remove temporary atom & residue indices
     remove_atom_indices(atom_array)
-    atom_array.del_annotation("af3_aux_residue_id")
+    atom_array.del_annotation("aux_residue_id")
 
     return None
