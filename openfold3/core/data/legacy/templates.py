@@ -28,8 +28,8 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from openfold3.core.data import mmcif_parsing, parsers
-from openfold3.core.data.errors import Error
+from openfold3.core.data.legacy import mmcif_parsing, parsers
+from openfold3.core.data.legacy.errors import Error
 from openfold3.core.data.tools import kalign
 from openfold3.core.data.tools.utils import to_date
 from openfold3.core.np import residue_constants

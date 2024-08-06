@@ -5,7 +5,7 @@ import pickle
 import tempfile
 from concurrent.futures import ProcessPoolExecutor
 
-from openfold3.core.data import parsers
+from openfold3.core.data.legacy import parsers
 
 
 def parse_stockholm_file(alignment_dir: str, stockholm_file: str):

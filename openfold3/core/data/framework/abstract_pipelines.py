@@ -3,7 +3,7 @@
 SampleProcessingPipeline classes are used to implement the data parsing and filtering
 that needs to happen for individual samples returned in the __getitem__ method of a
 specific SingleDataset class. The logic and order of preprocessing steps are defined in
-the forward method using primitives from data/primitives/sequence and 
+the forward method using primitives from data/primitives/sequence and
 data/primitive/structure.
 
 FeaturePipelines accept parse and processed data from a SampleProcessingPipeline, embed

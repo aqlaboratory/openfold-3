@@ -10,9 +10,9 @@ from shutil import copyfile
 
 from utils import add_data_args
 
-import openfold3.core.data.mmcif_parsing as mmcif_parsing
-from openfold3.core.data.data_pipeline import AlignmentRunner
-from openfold3.core.data.parsers import parse_fasta
+import openfold3.core.data.legacy.mmcif_parsing as mmcif_parsing
+from openfold3.core.data.legacy.data_pipeline import AlignmentRunner
+from openfold3.core.data.legacy.parsers import parse_fasta
 from openfold3.core.data.tools import hhsearch, hmmsearch
 from openfold3.core.np import protein, residue_constants
 
