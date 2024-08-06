@@ -180,7 +180,7 @@ class DataModule(pl.LightningDataModule):
         ]
         if (type_to_init in ["validation", "test", "prediction"]) & (len(datasets) > 1):
             warnings.warn(
-                f"{len(datasets)} {type_to_init} datasets were found, using only the" 
+                f"{len(datasets)} {type_to_init} datasets were found, using only the"
                 "first one.",
                 stacklevel=2,
             )
