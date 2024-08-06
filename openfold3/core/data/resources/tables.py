@@ -1,6 +1,8 @@
 """This module contains reference tables for the data pipeline."""
 
 # Standard residues as defined in AF3 SI, Table 13
+from enum import IntEnum
+
 STANDARD_PROTEIN_RESIDUES = [
     "ALA",
     "ARG",
@@ -30,18 +32,25 @@ STANDARD_DNA_RESIDUES = ["DA", "DG", "DC", "DT", "DN"]
 STANDARD_NUCLEIC_ACID_RESIDUES = STANDARD_RNA_RESIDUES + STANDARD_DNA_RESIDUES
 STANDARD_RESIDUES = STANDARD_PROTEIN_RESIDUES + STANDARD_NUCLEIC_ACID_RESIDUES
 
+# Atom names constituting the phosphate in nucleic acids (including alt_atom_ids which
+# can't hurt)
+NUCLEIC_ACID_PHOSPHATE_ATOMS = ["P", "OP1", "OP2", "OP3", "O1P", "O2P", "O3P"]
+
 # Token center atoms as defined in AF3 SI, Section 2.6.
 TOKEN_CENTER_ATOMS = ["CA", "C1'"]
 
 # Main chain atoms - needed for modified residue tokenization
 NUCLEIC_ACID_MAIN_CHAIN_ATOMS = ["C3'", "C4'", "C5'", "O3'", "O5'", "P"]
-PROTEIN_MAIN_CHAIN_ATOMS = ["N", "CA", "O", "C"]
+PROTEIN_MAIN_CHAIN_ATOMS = ["N", "C", "CA", "O"]
+
 
 # Molecule type used in tokenization
-MOLECULE_TYPE_ID_PROTEIN = 0
-MOLECULE_TYPE_ID_RNA = 1
-MOLECULE_TYPE_ID_DNA = 2
-MOLECULE_TYPE_ID_LIGAND = 3
+class MoleculeType(IntEnum):
+    PROTEIN = 0
+    RNA = 1
+    DNA = 2
+    LIGAND = 3
+
 
 # Removed crystallization aids as defined in AF3 SI, Table 9
 CRYSTALLIZATION_AIDS = [
