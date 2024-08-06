@@ -4,14 +4,14 @@ import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
 
-from .structure_primitives import assign_atom_indices, remove_atom_indices
-from .tables import (
+from ...resources.tables import (
     NUCLEIC_ACID_MAIN_CHAIN_ATOMS,
     PROTEIN_MAIN_CHAIN_ATOMS,
     STANDARD_RESIDUES,
     TOKEN_CENTER_ATOMS,
     MoleculeType,
 )
+from .structure_primitives import assign_atom_indices, remove_atom_indices
 
 
 # NOTE for LJ changes:

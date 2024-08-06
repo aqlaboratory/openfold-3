@@ -13,12 +13,15 @@ from pdbeccdutils.core import ccd_reader
 from rdkit import Chem
 from tqdm import tqdm
 
-import openfold3.core.data.preprocessing.io as io
-from openfold3.core.data.preprocessing.ligand_primitives import (
+import openfold3.core.data.io.structure.io as io
+from openfold3.core.data.pipelines.preprocessing.structure import (
+    cleanup_structure_af3,
+)
+from openfold3.core.data.primitives.structure.ligand_primitives import (
     mol_from_atomarray,
     mol_from_parsed_component,
 )
-from openfold3.core.data.preprocessing.metadata_extraction import (
+from openfold3.core.data.primitives.structure.metadata_extraction import (
     get_chain_to_author_chain_dict,
     get_chain_to_canonical_seq_dict,
     get_chain_to_entity_dict,
@@ -29,14 +32,11 @@ from openfold3.core.data.preprocessing.metadata_extraction import (
     get_release_date,
     get_resolution,
 )
-from openfold3.core.data.preprocessing.structure_preprocessing_pipelines import (
-    cleanup_structure_af3,
-)
-from openfold3.core.data.preprocessing.structure_primitives import (
+from openfold3.core.data.primitives.structure.structure_primitives import (
     assign_renumbered_chain_ids,
     get_interface_chain_id_pairs,
 )
-from openfold3.core.data.preprocessing.tables import MoleculeType
+from openfold3.core.data.resources.tables import MoleculeType
 
 print("PID:", os.getpid())
 

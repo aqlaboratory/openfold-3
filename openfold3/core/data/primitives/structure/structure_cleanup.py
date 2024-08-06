@@ -4,13 +4,13 @@ from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFFile
 from scipy.spatial.distance import cdist
 
+from ...resources.tables import CRYSTALLIZATION_AIDS
 from .structure_primitives import (
     assign_atom_indices,
     chain_paired_interface_atom_iter,
     get_interface_token_center_atoms,
     remove_atom_indices,
 )
-from .tables import CRYSTALLIZATION_AIDS
 
 
 def convert_MSE_to_MET(atom_array: AtomArray) -> None:
@@ -158,6 +158,7 @@ def remove_small_polymers(atom_array: AtomArray, max_residues: int = 3) -> AtomA
     small_polymer_chains = np.unique(atom_array.chain_id_renumbered[small_polymers])
 
     for chain_id in small_polymer_chains:
+        breakpoint()
         atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
 
     return atom_array
@@ -189,6 +190,7 @@ def remove_fully_unknown_polymers(atom_array: AtomArray) -> AtomArray:
 
         # Remove the chain from the AtomArray if all residues are unknown
         if np.all(chain.res_name == "UNK"):
+            breakpoint()
             atom_array_filtered = remove_chain_and_attached_ligands(
                 atom_array_filtered, chain_id
             )
@@ -334,6 +336,7 @@ def remove_clashing_chains(
                     chain_ids_to_remove.add(chain2_id)
 
     for chain_id in chain_ids_to_remove:
+        breakpoint()
         atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
 
     return atom_array
@@ -388,6 +391,9 @@ def remove_non_CCD_atoms(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
     # Inclusion mask over all atoms
     atom_mask = np.concatenate(atom_masks_per_res)
 
+    if not atom_mask.all():
+        breakpoint()
+
     return atom_array[atom_mask]
 
 
@@ -436,6 +442,7 @@ def remove_chains_with_CA_gaps(
     )
 
     for chain_id in chain_ids_to_remove:
+        breakpoint()
         atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
 
     return atom_array
@@ -496,4 +503,5 @@ def subset_large_structure(
     # Subset atom array to the closest n chains
     selected_chain_mask = np.isin(atom_array.chain_id_renumbered, closest_n_chain_ids)
 
+    breakpoint()
     return atom_array[selected_chain_mask]

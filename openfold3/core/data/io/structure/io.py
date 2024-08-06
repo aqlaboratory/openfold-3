@@ -6,7 +6,7 @@ import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 
-from .structure_primitives import (
+from ...primitives.structure.structure_primitives import (
     assign_entity_ids,
     assign_molecule_type_ids,
     assign_renumbered_chain_ids,

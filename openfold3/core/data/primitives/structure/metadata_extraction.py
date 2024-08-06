@@ -4,7 +4,7 @@ import biotite.structure as struc
 import numpy as np
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 
-from .tables import MoleculeType
+from ...resources.tables import MoleculeType
 
 
 def get_pdb_id(cif_file: CIFFile, format: Literal["upper", "lower"] = "lower") -> str:
