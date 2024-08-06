@@ -14,7 +14,8 @@ class ModelEntry:
     model_runner: ModelRunner
     base_config: ConfigDict
     reference_config_path: Optional[Path]
-    # List of available presets for the model_factory
+    # List of available presets available for given model_runner 
+    # Populated upon ModelEntry creation
     presets: Optional[list[str]]
 
 
@@ -51,8 +52,7 @@ def register_model_base(
         model_registry[name] = ModelEntry(
             name, runner_cls, base_config, reference_config_path, presets
         )
+        runner_cls._registered = True
         return runner_cls
 
-    # cls._registered = True  # QUESTION do we want to enforce class registration with
-    # this decorator? Part A.
     return _decorator

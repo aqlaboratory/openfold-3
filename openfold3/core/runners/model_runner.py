@@ -8,6 +8,19 @@ from openfold3.core.utils.exponential_moving_average import ExponentialMovingAve
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 
 
+class ModelRunnerNotRegisteredError(Exception):
+    """A custom error for for unregistered ModelRunners."""
+
+    def __init__(self, model_runner_name: str) -> None:
+        super().__init__()
+        self.model_runner_name= model_runner_name 
+
+    def __str__(self):
+        return f"""ModelRunner {self.model_runner_name} missing from model runner \
+                registry. Wrap you model runner definition using the \
+                model_implementations.registry.register_model decorator."""
+
+
 # TODO implement shared hooks and methods for OpenFold models
 class ModelRunner(pl.LightningModule):
     """High-level LightningModule class implementing hooks shared by OpenFold models.
@@ -15,11 +28,6 @@ class ModelRunner(pl.LightningModule):
     For clarity, where possible, follow the hook order specified in the pseudocode
     provided in the PL documentation:
     https://lightning.ai/docs/pytorch/stable/common/lightning_module.html#hooks"""
-
-    # QUESTION do we want to enforce class registration with this decorator? Part B
-    # def __init__(self) -> None:
-    #     if not self.__class__._registered:
-    #         raise DatasetNotRegisteredError()
 
     def __init__(self, model_class: torch.nn.Module, config: dict) -> None:
         """Assign general attributes and initialize the model.
@@ -30,6 +38,8 @@ class ModelRunner(pl.LightningModule):
                 arguments.>
         """
         super().__init__()
+        if not hasattr(self, '_registered'):
+            raise ModelRunnerNotRegisteredError(self.__class__.__name__)
         # Save hyperparameters before defining model as recommended here:
         # https://github.com/Lightning-AI/pytorch-lightning/discussions/13615
         self.save_hyperparameters()
@@ -144,44 +154,3 @@ class ModelRunner(pl.LightningModule):
         """Resample epoch_len number of samples for the training datasets at the start
         of each epoch."""
         self.trainer.train_dataloader.dataset.resample_epoch()
-
-    # def transfer_batch_to_device(
-    #     self, batch: Any, device: device, dataloader_idx: int
-    # ) -> Any:
-    #     """Device-transfer logic for mid-forward-pass recycling with CPU offloading.
-
-    #     This overwrites the default transfer_batch_to_device hook, which transfers
-    #     the entire batch to the device. This hook is necessary to transfer only the
-    #     constant features to the device and keep the recycling features on the CPU.
-    #     The batch parser method of the wrapper needs to call the recycling features
-    #     from the self._recycling_features attribute and the nn.Module's forward method
-    #     needs to specify the device transfers logic for sub-forward-pass recycling.
-
-    #     Args:
-    #         batch (Any):
-    #             batch containing constant and recycled feature tensors
-    #         device (device):
-    #             _description_
-    #         dataloader_idx (int):
-    #             _description_
-
-    #     Returns:
-    #         dict: constant feature tensors + first set of recycling features
-    #     """
-    #     self._recycling_features = batch[
-    #         "recycling_features"
-    #     ]  # TODO change key if FeatureDict structure changes
-    #     # This workaround is fine for multi-GPU runs with DDP and across
-    #     # multiple samples
-
-    #     # Only return constant features on the batch
-    #     batch = {
-    #         "constant_features": {
-    #             k: v.to(device) for k, v in batch["constant_features"].items()
-    #         }
-    #     }
-    #     return batch
-    #     # This is necessary because keeping the recycling features in the same feature
-    #     # dict as the constant features results in their transfer to GPU by the time
-    #     # the batch variable gets to LightningModule.training_step
-    #     # This is likely due to a bug in the training step call stack ...
