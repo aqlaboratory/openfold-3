@@ -57,8 +57,8 @@ class DatasetNotRegisteredError(Exception):
         self.dataset_name = dataset_name
 
     def __str__(self):
-        return f"""SingleDataset {self.dataset_name} missing from dataset registry. \
-                Wrap your class with the register_dataset decorator."""
+        return (f"SingleDataset {self.dataset_name} missing from dataset registry."
+                "Wrap your class with the register_dataset decorator.")
 
 
 class SingleDataset(ABC, Dataset):
