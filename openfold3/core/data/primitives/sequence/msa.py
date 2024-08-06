@@ -271,7 +271,7 @@ def get_pairing_masks(
 
     Useful for excluding things like species that occur only in one chain (will not be
     pairable) or species that occur too frequently in the MSA of a single chain (as done
-    in the AF2-Multimer pairing code: 
+    in the AF2-Multimer pairing code:
     https://github.com/google-deepmind/alphafold/blob/main/alphafold/data/msa_pairing.py#L216).
 
     Args:
