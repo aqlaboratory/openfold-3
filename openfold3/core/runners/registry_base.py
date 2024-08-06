@@ -14,7 +14,7 @@ class ModelEntry:
     model_runner: ModelRunner
     base_config: ConfigDict
     reference_config_path: Optional[Path]
-    # List of available presets available for given model_runner 
+    # List of available presets available for given model_runner
     # Populated upon ModelEntry creation
     presets: Optional[list[str]]
 
@@ -47,7 +47,7 @@ def register_model_base(
             presets = None
 
         # Automatically add/update model name to base config
-        # Makes it easy to refer to this ModelEntry later from a config 
+        # Makes it easy to refer to this ModelEntry later from a config
         base_config.model_name = name
         model_registry[name] = ModelEntry(
             name, runner_cls, base_config, reference_config_path, presets

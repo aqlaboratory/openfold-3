@@ -13,7 +13,7 @@ class ModelRunnerNotRegisteredError(Exception):
 
     def __init__(self, model_runner_name: str) -> None:
         super().__init__()
-        self.model_runner_name= model_runner_name 
+        self.model_runner_name = model_runner_name
 
     def __str__(self):
         return f"""ModelRunner {self.model_runner_name} missing from model runner \
@@ -38,7 +38,7 @@ class ModelRunner(pl.LightningModule):
                 arguments.>
         """
         super().__init__()
-        if not hasattr(self, '_registered'):
+        if not hasattr(self, "_registered"):
             raise ModelRunnerNotRegisteredError(self.__class__.__name__)
         # Save hyperparameters before defining model as recommended here:
         # https://github.com/Lightning-AI/pytorch-lightning/discussions/13615

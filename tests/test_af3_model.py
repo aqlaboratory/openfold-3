@@ -24,7 +24,7 @@ class TestAF3Model(unittest.TestCase):
         self.config.model.pairformer.no_blocks = 4
         self.config.model.diffusion_module.diffusion_transformer.no_blocks = 4
 
-        af3 = registry.get_lightning_module(self.config).to(device) 
+        af3 = registry.get_lightning_module(self.config).to(device)
 
         batch = random_af3_features(
             batch_size=batch_size,
@@ -65,7 +65,7 @@ class TestAF3Model(unittest.TestCase):
         finetune3_config.model.pairformer.no_blocks = 4
         finetune3_config.model.diffusion_module.diffusion_transformer.no_blocks = 4
 
-        af3 = registry.get_lightning_module(finetune3_config).to(device) 
+        af3 = registry.get_lightning_module(finetune3_config).to(device)
 
         batch = random_af3_features(
             batch_size=batch_size,

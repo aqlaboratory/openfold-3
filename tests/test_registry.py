@@ -4,7 +4,10 @@ import pytest  # noqa: F401  - used for pytest tmp fixture
 import torch
 
 from openfold3.core.config import config_utils
-from openfold3.core.runners.model_runner import ModelRunner, ModelRunnerNotRegisteredError 
+from openfold3.core.runners.model_runner import (
+    ModelRunner,
+    ModelRunnerNotRegisteredError,
+)
 from openfold3.model_implementations.registry import (
     MODEL_REGISTRY,
     get_lightning_module,
@@ -49,13 +52,15 @@ class TestLoadPresets:
         multimer_runner = get_lightning_module(test_multimer_config)
         assert multimer_runner.model.get_submodule("input_embedder")
 
+
 class TestModelRegistry:
     def test_unregistered_model_runner_raises_error(self):
         dummy_model = torch.nn.Linear(5, 7)
-        config = {'model_name': 'unregistered'}
+        config = {"model_name": "unregistered"}
+
         class UnregisteredModelRunner(ModelRunner):
             def __init__(self, model_config):
                 super().__init__(dummy_model, model_config)
 
-        with pytest.raises(ModelRunnerNotRegisteredError) as exc:
+        with pytest.raises(ModelRunnerNotRegisteredError):
             _ = UnregisteredModelRunner(config)
