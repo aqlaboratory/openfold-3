@@ -151,7 +151,7 @@ def mol_from_atomarray(
     )
 
     if assign_fallback_conformer:
-        mol = set_fallback_conformer(mol, cleanup_hs=True)
+        mol = set_fallback_conformer(mol)
 
     return mol
 
@@ -200,6 +200,6 @@ def mol_from_parsed_component(
     mol.SetProp("model_pdb_id", model_pdb_id)
 
     if assign_fallback_conformer:
-        mol = set_fallback_conformer(mol, cleanup_hs=True)
+        mol = set_fallback_conformer(mol)
 
     return mol
