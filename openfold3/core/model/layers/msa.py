@@ -628,11 +628,11 @@ class MSAPairWeightedAveraging(nn.Module):
         # [*, H, Q/K, C_hidden]
         v = v.transpose(-2, -3)
 
-        if not triton_is_installed:
+        if triton_is_installed and z.is_cuda:
+            a = fused_softmax(z, mask)
+        else:
             z = z + mask_bias
             a = softmax_no_cast(z, -1)
-        else:
-            a = fused_softmax(z, mask)
 
         # [*, H, Q, C_hidden]
         a = torch.matmul(a, v)

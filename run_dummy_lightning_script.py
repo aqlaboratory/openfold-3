@@ -13,9 +13,9 @@ class DummyAF3Dataset(IterableDataset):
     def __init__(self):
         super(DummyAF3Dataset).__init__()
         self.config = registry.MODEL_REGISTRY["af3_all_atom"].base_config
-        self.n_token = 16
-        self.n_msa = 10
-        self.n_templ = 3
+        self.n_token = 384
+        self.n_msa = 16384
+        self.n_templ = 4
 
     def create_random_features(self):
         yield random_af3_features(
@@ -43,8 +43,6 @@ if __name__ == "__main__":
 
     logging.info("Loading model")
     config = registry.make_config_with_preset("af3_all_atom")
-    config.model.pairformer.no_blocks = 4
-    config.model.diffusion_module.diffusion_transformer.no_blocks = 4
     lightning_module = registry.get_lightning_module(config)
 
     trainer = pl.Trainer(num_nodes=1, fast_dev_run=1)
