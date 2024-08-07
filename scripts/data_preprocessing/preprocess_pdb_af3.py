@@ -13,9 +13,9 @@ from pdbeccdutils.core import ccd_reader
 from rdkit import Chem
 from tqdm import tqdm
 
-import openfold3.core.data.io.sequence.fasta
-import openfold3.core.data.io.structure.cif
 import openfold3.core.data.io.utils as utils
+from openfold3.core.data.io.sequence.fasta import write_annotated_chains_fasta
+from openfold3.core.data.io.structure.cif import parse_mmcif, write_minimal_cif
 from openfold3.core.data.pipelines.preprocessing.structure import (
     cleanup_structure_af3,
 )
@@ -65,7 +65,7 @@ class ProcessedStructure(NamedTuple):
 
 
 def process_structure(cif_path: Path, ccd: CIFFile) -> ProcessedStructure:
-    cif_file, atom_array = openfold3.core.data.io.structure.cif.parse_mmcif(
+    cif_file, atom_array = parse_mmcif(
         cif_path, expand_bioassembly=True, extra_fields=["auth_asym_id"]
     )
 
@@ -302,7 +302,7 @@ def main(
         # Save cleaned bCIF file (this will be minimal and only include AtomSite
         # records)
         bcif_path = output_subfolder / f"{pdb_id}.bcif"
-        openfold3.core.data.io.structure.cif.write_minimal_cif(
+        write_minimal_cif(
             processed_structure.atom_array,
             bcif_path,
             format="bcif",
@@ -312,7 +312,7 @@ def main(
         # Save additional .cif file if requested
         if include_cifs:
             cif_path = output_subfolder / f"{pdb_id}.cif"
-            openfold3.core.data.io.structure.cif.write_minimal_cif(
+            write_minimal_cif(
                 processed_structure.atom_array,
                 cif_path,
                 format="cif",
@@ -320,7 +320,7 @@ def main(
             )
 
         # Save FASTA file
-        fasta_path = openfold3.core.data.io.sequence.fasta.write_annotated_chains_fasta(
+        fasta_path = write_annotated_chains_fasta(
             output_subfolder / f"{pdb_id}.fasta",
             processed_structure.chain_to_canonical_seq,
             pdb_id,
