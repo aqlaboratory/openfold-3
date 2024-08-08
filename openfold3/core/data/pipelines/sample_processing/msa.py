@@ -2,13 +2,13 @@
 
 from typing import Optional, Union
 
+from openfold3.core.data.io.sequence.msa import parse_msas_sample
 from openfold3.core.data.primitives.sequence.msa import (
     create_main,
     create_paired,
     create_query,
     find_monomer_homomer,
     merge_paired_msas,
-    parse_msas_sample,
 )
 
 

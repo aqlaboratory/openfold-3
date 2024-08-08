@@ -168,7 +168,7 @@ def remove_atom_indices(atom_array: AtomArray) -> None:
 def update_author_to_pdb_labels(
     atom_array: AtomArray,
     use_author_res_id_if_missing: bool = True,
-    auth_label_annotations: bool = True,
+    create_auth_label_annotations: bool = True,
 ) -> None:
     """Changes labels in an author-assigned PDB structure to PDB-assigned labels.
 
@@ -189,7 +189,7 @@ def update_author_to_pdb_labels(
             AtomArray.
 
     """
-    if auth_label_annotations:
+    if create_auth_label_annotations:
         atom_array.set_annotation("auth_asym_id", atom_array.chain_id)
         atom_array.set_annotation("auth_seq_id", atom_array.res_id)
         atom_array.set_annotation("auth_comp_id", atom_array.res_name)
