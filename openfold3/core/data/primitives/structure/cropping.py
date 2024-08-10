@@ -10,6 +10,10 @@ from scipy.spatial.distance import cdist
 from openfold3.core.data.primitives.structure.interface import (
     get_query_interface_token_center_atoms,
 )
+from openfold3.core.data.primitives.structure.labels import (
+    assign_atom_indices,
+    remove_atom_indices,
+)
 
 
 def crop_contiguous(
@@ -36,6 +40,9 @@ def crop_contiguous(
 
     if generator is None:
         generator = default_rng()
+
+    # Assign atom index
+    assign_atom_indices(atom_array)
 
     # Get chain ids and permute
     chains = np.array(list(set(atom_array.chain_id_renumbered)), dtype=int)
@@ -70,6 +77,9 @@ def crop_contiguous(
 
         if token_budget == 0:
             break
+
+    # Remove atom index
+    remove_atom_indices(atom_array)
 
     return None
 
