@@ -4,7 +4,7 @@ from typing import Optional, Union
 
 import numpy as np
 from biotite.structure import Atom, AtomArray
-from numpy.random import Generator
+from numpy.random import Generator, default_rng
 from scipy.spatial.distance import cdist
 
 from openfold3.core.data.primitives.structure.interface import (
@@ -13,7 +13,7 @@ from openfold3.core.data.primitives.structure.interface import (
 
 
 def crop_contiguous(
-    atom_array: AtomArray, token_budget: int, generator: Generator
+    atom_array: AtomArray, token_budget: int, generator: Optional[Generator] = None
 ) -> None:
     """Implements Contiguous Cropping from AF3 SI, 2.7.1.
 
@@ -27,12 +27,15 @@ def crop_contiguous(
             Biotite atom array of the first bioassembly of a PDB entry.
         token_budget (int):
             Token budget i.e. total crop size.
-        generator (Generator):
+        generator (Optional[Generator]):
             A numpy generator set with a specific seed.
 
     Returns:
         None
     """
+
+    if generator is None:
+        generator = default_rng()
 
     # Get chain ids and permute
     chains = np.array(list(set(atom_array.chain_id_renumbered)), dtype=int)
@@ -74,7 +77,7 @@ def crop_contiguous(
 def crop_spatial(
     atom_array: AtomArray,
     token_budget: int,
-    generator: Generator,
+    generator: Optional[Generator] = None,
     preferred_chain_or_interface: Optional[Union[int, tuple[int, int]]] = None,
 ) -> None:
     """Implements Spatial Cropping from AF3 SI, 2.7.2.
@@ -89,7 +92,7 @@ def crop_spatial(
             Biotite atom array of the first bioassembly of a PDB entry.
         token_budget (int):
             Total crop size.
-        generator (Generator):
+        generator (Optional[Generator]):
             A numpy generator set with a specific seed.
         preferred_chain_or_interface (Optional[Union[int, tuple[int, int]]]):
             Integer or integer 2-tuple indicating the preferred chain or interface,
@@ -99,6 +102,10 @@ def crop_spatial(
     Returns:
         None
     """
+
+    if generator is None:
+        generator = default_rng()
+
     # Subset token center atoms to those in the preferred chain/interface if provided
     token_center_atoms, preferred_token_center_atoms = subset_preferred(
         atom_array, preferred_chain_or_interface
@@ -116,7 +123,7 @@ def crop_spatial(
 def crop_spatial_interface(
     atom_array: AtomArray,
     token_budget: int,
-    generator: Generator,
+    generator: Optional[Generator] = None,
     preferred_chain_or_interface: Optional[Union[int, tuple[int, int]]] = None,
 ) -> None:
     """Implements Spatial Interface Cropping from AF3 SI, 2.7.3.
@@ -131,7 +138,7 @@ def crop_spatial_interface(
             Biotite atom array of the first bioassembly of a PDB entry.
         token_budget (int):
             Total crop size.
-        generator (Generator):
+        generator (Optional[Generator]):
             A numpy generator set with a specific seed.
         preferred_chain_or_interface (Optional[Union[int, tuple[int, int]]]):
             Integer or integer 2-tuple indicating the preferred chain or interface,
@@ -141,6 +148,10 @@ def crop_spatial_interface(
     Returns:
         None
     """
+
+    if generator is None:
+        generator = default_rng()
+
     # Subset token center atoms to those in the preferred chain/interface if provided
     token_center_atoms, preferred_token_center_atoms = subset_preferred(
         atom_array, preferred_chain_or_interface
