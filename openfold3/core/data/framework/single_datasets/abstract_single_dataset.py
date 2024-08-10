@@ -65,8 +65,8 @@ class DatasetNotRegisteredError(Exception):
 
 class SingleDataset(ABC, Dataset):
     """Abstract Dataset class implementing necessery attributes and methods.
-    
-    A child class of SingleDataset 
+
+    A child class of SingleDataset
         - must be decorated with the register_dataset decorator
         - must implement the __getitem__ method
         - must implement the datapoint_cache property
@@ -95,7 +95,7 @@ class SingleDataset(ABC, Dataset):
     def get_class_name(self) -> str:
         """Returns the name of the class."""
         return self.__class__.__name__
-    
+
     @abstractmethod
     def __getitem__(self, index: int) -> Any:
         """Getitem of a specific SingleDataset class.
