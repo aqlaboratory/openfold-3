@@ -25,9 +25,10 @@ and highlight where you currently are in the process:
     batched data -> model
 """
 
+import dataclasses
 import warnings
 from functools import partial
-from typing import Dict, List, Sequence
+from typing import Any, Union
 
 import pytorch_lightning as pl
 import torch
@@ -43,10 +44,35 @@ from openfold3.core.data.framework.stochastic_sampler_dataset import (
 from openfold3.core.utils.tensor_utils import dict_multimap
 
 
+@dataclasses.dataclass
+class MultiDatasetConfig:
+    """Dataclass for storing dataset configurations.
+
+    Attributes:
+        classes: list[str]
+            List of dataset class names used as keys into the dataset registry.
+        types: list[str]
+            List of dataset types, elements can be train, validation, test, prediction.
+        configs: list[Union[dict[str, Any], None]]
+            List of dictionaries containing SingleDataset init input paths (!!!) and
+            other config arguments if needed/available.
+        weights: list[float]
+            List of weights used for sampling from each dataset.
+    """
+
+    classes: list[str]
+    types: list[str]
+    configs: list[Union[dict[str, Any], None]]
+    weights: list[float]
+
+    def __len__(self):
+        return len(self.classes)
+
+
 class DataModule(pl.LightningDataModule):
     """A LightningDataModule class for organizing Datasets and DataLoaders."""
 
-    def __init__(self, data_config: List[Sequence[Dict]]) -> None:
+    def __init__(self, data_config: list[dict]) -> None:
         super().__init__()
 
         # Input argument self-assignment
@@ -57,130 +83,220 @@ class DataModule(pl.LightningDataModule):
         self.num_virtual_epochs = data_config["num_virtual_epochs"]
 
         # Parse data_config
-        dataset_classes, dataset_weights, dataset_configs, dataset_types = (
-            self.parse_data_config(data_config)
-        )
+        multi_dataset_config = self.parse_data_config(data_config)
 
         # Initialize datasets
-        if ("train" in dataset_types) | ("validation" in dataset_types):
+        if "train" in multi_dataset_config.types:
             # Initialize train datasets
-            train_datasets = self.init_datasets(
-                dataset_classes, dataset_configs, dataset_types, "train"
-            )
+            train_datasets = self.init_datasets(multi_dataset_config, "train")
 
             self.generator = torch.Generator(device="cpu").manual_seed(self.data_seed)
 
             # Wrap train datasets in the sampler dataset class
             self.train_dataset = StochasticSamplerDataset(
                 datasets=train_datasets,
-                probabilities=dataset_weights,
+                probabilities=multi_dataset_config.weights,
                 virtual_epoch_len=self.virtual_epoch_len,
                 num_virtual_epochs=self.num_virtual_epochs,
                 generator=self.generator,
             )
 
-            # Currently only one validation dataset is supported
+        if "validation" in multi_dataset_config.types:
             self.validation_dataset = self.init_datasets(
-                dataset_classes, dataset_configs, dataset_types, "validation"
+                multi_dataset_config, "validation"
             )[0]
 
-        elif "test" in dataset_types:
-            # Currently only one test dataset is supported
-            self.test_dataset = self.init_datasets(
-                dataset_classes, dataset_configs, dataset_types, "test"
-            )[0]
+        if "test" in multi_dataset_config.types:
+            self.test_dataset = self.init_datasets(multi_dataset_config, "test")[0]
 
-        elif "prediction" in dataset_types:
-            # Currently only one prediction dataset is supported
+        if "prediction" in multi_dataset_config.types:
             self.prediction_dataset = self.init_datasets(
-                dataset_classes, dataset_configs, dataset_types, "prediction"
+                multi_dataset_config, "prediction"
             )[0]
 
-        else:
-            raise ValueError(
-                f"""No valid dataset types were found in data_config. Found: \
-                {dataset_types}."""
-            )
-
-    def parse_data_config(
-        self, data_config: list[Sequence[dict]]
-    ) -> tuple[list, list, list, list]:
+    def parse_data_config(self, data_config: list[dict]) -> MultiDatasetConfig:
         """Parses input data_config into separate lists.
 
         Args:
-            data_config (List[Sequence[Dict]]):
+            data_config (list[dict]):
                 Input data configuration list of dataset dictionaries.
 
         Returns:
-            Tuple[List, List, List, Set]: Lists of dataset classes, weights,
-            configurations and unique set of types.
+            MultiDatasetConfig:
+                Lists of dataset classes, weights, configurations and unique set of
+                types.
         """
-        dataset_classes, dataset_weights, dataset_configs, dataset_types = list(
+
+        def get_cast(
+            dictionary: dict, key: Union[str, int], cast_type: type, default: Any = None
+        ) -> Any:
+            """Simultanously try to get and try to cast a value from a dictionary.
+
+            Args:
+                dictionary (dict):
+                    Dictionary to get the value from.
+                key (Union[str, int]):
+                    Key to get the value from.
+                cast_type (type):
+                    Type to cast the value to.
+                default (Any, optional):
+                    Default value to return if key not available. Defaults to None.
+
+            Raises:
+                ValueError:
+                    If the value cannot be cast to the specified type.
+
+            Returns:
+                Any:
+                    Cast value or default.
+            """
+            value = dictionary.get(key, default)
+            try:
+                return cast_type(value) if value is not None else default
+            except ValueError as exc:
+                raise ValueError(f"Could not cast {key} to {cast_type}.") from exc
+
+        classes, types, configs, weights = list(
             zip(
                 *[
                     (
-                        dataset_entry["dataset_class"],
-                        dataset_entry["weight"],
-                        dataset_entry["config"],
-                        dataset_entry["type"],
+                        get_cast(dataset_entry, "class", str),
+                        get_cast(dataset_entry, "type", str),
+                        dataset_entry.get("config", None),
+                        get_cast(dataset_entry, "weight", float),
                     )
                     for dataset_entry in data_config
                 ]
             )
         )
-        dataset_types_unique = set(dataset_types)
-        if (len(dataset_types_unique) == 2) & (
-            ("train" not in dataset_types) | ("validation" not in dataset_types)
+        multi_dataset_config = MultiDatasetConfig(
+            classes=classes,
+            types=types,
+            configs=configs,
+            weights=weights,
+        )
+
+        # Check dataset configuration
+        self.run_checks(multi_dataset_config)
+
+        return multi_dataset_config
+
+    def run_checks(self, multi_dataset_config: MultiDatasetConfig) -> None:
+        """Runs checks on the provided crop weights and types.
+
+        Checks for valid combinations of SingleDataset types and normalizes weights and
+        cropping weights if available and they do not sum to 1. Updates
+        multi_dataset_config in place.
+
+        Args:
+            multi_dataset_config: DatasetConfig:
+                Parsed dataset config.
+
+        Returns:
+            None.
+        """
+
+        # Check if provided weights sum to 1
+        if sum(multi_dataset_config.weights) != 1:
+            warnings.warn(
+                "Dataset weights do not sum to 1. Normalizing weights.",
+                stacklevel=2,
+            )
+            multi_dataset_config.weights = [
+                weight / sum(multi_dataset_config.weights)
+                for weight in multi_dataset_config.weights
+            ]
+
+        # Check if provided crop weights sum to 1
+        for idx, crop_weight in enumerate(multi_dataset_config.configs):
+            if sum(crop_weight.values()) != 1:
+                warnings.warn(
+                    f"Dataset {multi_dataset_config.classes[idx]} crop weights do not "
+                    "sum to 1. Normalizing weights.",
+                    stacklevel=2,
+                )
+                multi_dataset_config.crop_weights[idx] = {
+                    key: value / sum(crop_weight.values())
+                    for key, value in crop_weight.items()
+                }
+
+        # Check if provided dataset type combination is valid
+        types = multi_dataset_config.types
+        types_unique = set(types)
+        supported_combinations = (
+            "{'train'}, {'train', 'validation'}, " "{'test'}, {'prediction'}"
+        )
+        if (len(types_unique) == 2) & (
+            ("train" not in types) | ("validation" not in types)
         ):
             raise ValueError(
                 "An unsupported combination of dataset types was found in"
-                f"data_config: {dataset_types_unique}. The supported dataset"
-                "combinations are: ['train'], ['train', 'validation'], ['test'],"
-                "['prediction']."
+                f"data_config: {types_unique}. The supported dataset"
+                f"combinations are: {supported_combinations}."
             )
-        elif (len(dataset_types_unique) == 1) & ("validation" in dataset_types):
+        elif (len(types_unique) == 1) & ("validation" in types):
             raise ValueError(
                 "Validation dataset(s) were provided without any training datasets."
-                "The supported dataset combinations are: ['train'], ['train', "
-                "'validation'], ['test'], ['prediction']."
+                f"The supported dataset combinations are: {supported_combinations}."
             )
-
-        return dataset_classes, dataset_weights, dataset_configs, dataset_types
+        elif (len(types_unique) == 1) & (
+            all(
+                [
+                    "train" not in types,
+                    "validation" not in types,
+                    "test" not in types,
+                    "prediction" not in types,
+                ]
+            )
+        ):
+            raise ValueError(
+                "An unsupported combination of dataset types was found in"
+                f"data_config: {types_unique}. The supported dataset"
+                f"combinations are: {supported_combinations}."
+            )
+        elif any(
+            [
+                type_ not in ["train", "validation", "test", "prediction"]
+                for type_ in types_unique
+            ]
+        ):
+            raise ValueError(
+                f"An unsupported dataset type was found in data_config: {types_unique}."
+                " Supported types are: train, validation, test, prediction."
+            )
 
     def init_datasets(
         self,
-        dataset_classes: list[Sequence[str]],
-        dataset_configs: list[Sequence[dict]],
-        dataset_types: list[Sequence[str]],
+        multi_dataset_config: MultiDatasetConfig,
         type_to_init: str,
-    ) -> list[Sequence[SingleDataset]]:
+    ) -> list[SingleDataset]:
         """Initializes datasets.
 
         Args:
-            dataset_classes (list[Sequence[str]]):
-                List of strings matching the specific SingleDataset classes to
-                initialize.
-            dataset_configs (list[Sequence[dict]]):
-                List of configs to pass each dataset class.
-            dataset_types (list[Sequence[str]]):
-                List of dataset types, elements can be train, validation, test,
-                prediction.
+            multi_dataset_config (MultiDatasetConfig):
+                Parsed config of all input datasets.
             type_to_init (str):
                 One of train, validation, test, prediction.
 
         Returns:
             list[Sequence[SingleDataset]]: List of initialized SingleDataset objects.
         """
+        # Note that the dataset config already contains the paths!
         datasets = [
             DATASET_REGISTRY[dataset_class](dataset_config)
             for dataset_class, dataset_config, dataset_type in zip(
-                dataset_classes, dataset_configs, dataset_types
+                multi_dataset_config.classes,
+                multi_dataset_config.configs,
+                multi_dataset_config.types,
             )
             if dataset_type == type_to_init
         ]
+
         if (type_to_init in ["validation", "test", "prediction"]) & (len(datasets) > 1):
+            datasets = datasets[:1]
             warnings.warn(
-                f"{len(datasets)} {type_to_init} datasets were found, using only the"
+                f"Currently only one {type_to_init} dataset is supported, but "
+                f"{len(datasets)} datasets were found. Using only the "
                 "first one.",
                 stacklevel=2,
             )
@@ -215,15 +331,35 @@ class DataModule(pl.LightningDataModule):
         )
 
     def train_dataloader(self) -> DataLoader:
+        """Creates training dataloader.
+
+        Returns:
+            DataLoader: training dataloader.
+        """
         return self.generate_dataloader("train")
 
     def val_dataloader(self) -> DataLoader:
+        """Creates validation dataloader.
+
+        Returns:
+            DataLoader: validation dataloader.
+        """
         return self.generate_dataloader("validation")
 
     def test_dataloader(self) -> DataLoader:
+        """Creates test dataloader.
+
+        Returns:
+            DataLoader: test dataloader.
+        """
         return self.generate_dataloader("test")
 
     def predict_dataloader(self) -> DataLoader:
+        """Creates prediction dataloader.
+
+        Returns:
+            DataLoader: prediction dataloader.
+        """
         return self.generate_dataloader("prediction")
 
 

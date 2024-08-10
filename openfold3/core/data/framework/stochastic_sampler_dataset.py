@@ -70,8 +70,18 @@ class StochasticSamplerDataset(Dataset):
     def __len__(self):
         return self.epoch_len
 
-    def __getitem__(self, index: tuple[int, int]) -> Any:
+    def __getitem__(self, index: int) -> Any:
+        """Wrapper getitem for indexing into the unrolled examples.
+
+        Args:
+            index (int):
+                Index of the example to retrieve, passed from the DataLoader.
+        """
+        # Get the dataset-datapoint pair for the given index
         dataset_idx, datapoint_idx = self.indices[index]
+
+        # Index into the list of datasets then datapoints for the given dataset
+        # This calls the __getitem__ method of the SingleDataset class
         return self.datasets[dataset_idx][datapoint_idx]
 
     def resample_epoch(self):
