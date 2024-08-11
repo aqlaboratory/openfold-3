@@ -266,6 +266,7 @@ class ExtraMSAStack(MSAStack):
         eps: float,
         ckpt: bool,
         linear_init_params: ConfigDict = lin_init.extra_msa_block_init,
+        use_reentrant: Optional[bool] = None,
         clear_cache_between_blocks: bool = False,
         tune_chunk_size: bool = False,
         **kwargs,
@@ -318,6 +319,10 @@ class ExtraMSAStack(MSAStack):
                 Whether to checkpoint blocks
             linear_init_params:
                 Parameters for linear layer initialization
+            use_reentrant:
+                Whether to use reentrant variant of checkpointing. If set,
+                torch checkpointing will be used (DeepSpeed does not support
+                this feature)
             clear_cache_between_blocks:
                 Whether to clear CUDA's GPU memory cache between blocks of the stack.
                 Slows down each block but can reduce fragmentation
@@ -328,6 +333,7 @@ class ExtraMSAStack(MSAStack):
         blocks_per_ckpt = None if not ckpt else no_blocks
         super().__init__(
             blocks_per_ckpt=blocks_per_ckpt,
+            use_reentrant=use_reentrant,
             clear_cache_between_blocks=clear_cache_between_blocks,
             tune_chunk_size=tune_chunk_size,
         )

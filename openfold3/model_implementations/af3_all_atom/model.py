@@ -137,71 +137,88 @@ class AlphaFold3(nn.Module):
         token_mask = batch["token_mask"]
         pair_mask = token_mask[..., None] * token_mask[..., None, :]
 
-        for _ in range(self.globals.no_cycles):
-            # [*, N_token, N_token, C_z]
-            z = z_init + self.linear_z(self.layer_norm_z(z))
+        is_grad_enabled = torch.is_grad_enabled()
 
-            z = add(
-                z,
-                self.template_embedder(
-                    batch=batch,
-                    z=z,
-                    pair_mask=pair_mask,
-                    chunk_size=self.globals.chunk_size,
-                    _mask_trans=True,
-                    use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
-                    use_lma=self.globals.use_lma,
-                    inplace_safe=inplace_safe,
-                ),
-                inplace=inplace_safe,
-            )
+        for cycle_no in range(self.globals.no_cycles):
+            # Enable grad iff we're training and it's the final recycling layer
+            is_final_iter = cycle_no == (self.globals.no_cycles - 1)
+            with torch.set_grad_enabled(is_grad_enabled and is_final_iter):
+                if is_final_iter and torch.is_autocast_enabled():
+                    # Sidestep AMP bug (PyTorch issue #65766)
+                    torch.clear_autocast_cache()
 
-            m, msa_mask = self.msa_module_embedder(batch=batch, s_input=s_input)
+                # [*, N_token, N_token, C_z]
+                z = z_init + self.linear_z(self.layer_norm_z(z))
 
-            # Run MSA + pair embeddings through the MsaModule
-            # m: [*, N_seq, N_token, C_m]
-            # z: [*, N_token, N_token, C_z]
-            if self.globals.offload_inference:
-                input_tensors = [m, z]
-                del m, z
-                z = self.msa_module.forward_offload(
-                    input_tensors,
-                    msa_mask=msa_mask.to(dtype=input_tensors[0].dtype),
-                    pair_mask=pair_mask.to(dtype=input_tensors[1].dtype),
-                    chunk_size=self.globals.chunk_size,
-                    use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
-                    use_lma=self.globals.use_lma,
-                    _mask_trans=True,
-                )
-
-                del input_tensors, msa_mask
-            else:
-                z = self.msa_module(
-                    m,
+                z = add(
                     z,
-                    msa_mask=msa_mask.to(dtype=m.dtype),
-                    pair_mask=pair_mask.to(dtype=z.dtype),
+                    self.template_embedder(
+                        batch=batch,
+                        z=z,
+                        pair_mask=pair_mask,
+                        chunk_size=self.globals.chunk_size,
+                        _mask_trans=True,
+                        use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
+                        use_lma=self.globals.use_lma,
+                        inplace_safe=inplace_safe,
+                    ),
+                    inplace=inplace_safe,
+                )
+
+                # TODO: Check if this is necessary
+                # for feat in ["msa", "has_deletion", "deletion_value"]:
+                #     batch[feat] = batch[feat].to(device=s_input.device)
+
+                m, msa_mask = self.msa_module_embedder(batch=batch, s_input=s_input)
+
+                # TODO: Check if this is necessary
+                # for feat in ["msa", "has_deletion", "deletion_value"]:
+                #     batch[feat] = batch[feat].cpu()
+
+                # Run MSA + pair embeddings through the MsaModule
+                # m: [*, N_seq, N_token, C_m]
+                # z: [*, N_token, N_token, C_z]
+                if self.globals.offload_inference:
+                    input_tensors = [m, z]
+                    del m, z
+                    z = self.msa_module.forward_offload(
+                        input_tensors,
+                        msa_mask=msa_mask.to(dtype=input_tensors[0].dtype),
+                        pair_mask=pair_mask.to(dtype=input_tensors[1].dtype),
+                        chunk_size=self.globals.chunk_size,
+                        use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
+                        use_lma=self.globals.use_lma,
+                        _mask_trans=True,
+                    )
+
+                    del input_tensors, msa_mask
+                else:
+                    z = self.msa_module(
+                        m,
+                        z,
+                        msa_mask=msa_mask.to(dtype=m.dtype),
+                        pair_mask=pair_mask.to(dtype=z.dtype),
+                        chunk_size=self.globals.chunk_size,
+                        use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
+                        use_lma=self.globals.use_lma,
+                        inplace_safe=inplace_safe,
+                        _mask_trans=True,
+                    )
+
+                    del m, msa_mask
+
+                s = s_init + self.linear_s(self.layer_norm_s(s))
+                s, z = self.pairformer_stack(
+                    s=s,
+                    z=z,
+                    single_mask=token_mask.to(dtype=z.dtype),
+                    pair_mask=pair_mask.to(dtype=s.dtype),
                     chunk_size=self.globals.chunk_size,
                     use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
                     use_lma=self.globals.use_lma,
                     inplace_safe=inplace_safe,
                     _mask_trans=True,
                 )
-
-                del m, msa_mask
-
-            s = s_init + self.linear_s(self.layer_norm_s(s))
-            s, z = self.pairformer_stack(
-                s=s,
-                z=z,
-                single_mask=token_mask.to(dtype=z.dtype),
-                pair_mask=pair_mask.to(dtype=s.dtype),
-                chunk_size=self.globals.chunk_size,
-                use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
-                use_lma=self.globals.use_lma,
-                inplace_safe=inplace_safe,
-                _mask_trans=True,
-            )
 
         del s_init, z_init
 

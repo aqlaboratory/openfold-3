@@ -580,8 +580,8 @@ class MSAPairWeightedAveraging(nn.Module):
         z: torch.Tensor,
         mask: torch.Tensor,
     ) -> [torch.Tensor, torch.Tensor]:
-        # [*, N_seq, 1, 1, N_res]
-        mask_bias = (self.inf * (mask - 1))[..., :, None, None, :]
+        # [*, 1, 1, N_token, N_token]
+        mask_bias = (self.inf * (mask - 1))[..., None, None, :, :]
 
         # [*, N_res, N_res, C_z]
         z = self.layer_norm_z(z)
@@ -604,17 +604,17 @@ class MSAPairWeightedAveraging(nn.Module):
         """
         Args:
             m:
-                [*, N_seq, N_res, C_m] MSA embedding
+                [*, N_seq, N_token, C_m] MSA embedding
             z:
-                [*, N_res, N_res, C_z] Pair embedding
+                [*, N_token, N_token, C_z] Pair embedding
             mask:
-                [*, N_seq, N_res] MSA mask
+                [*, N_token, N_token] Pair mask
 
         """
         if mask is None:
-            # [*, N_seq, N_res]
-            mask = m.new_ones(
-                m.shape[:-1],
+            # [*, N_token, N_token]
+            mask = z.new_ones(
+                z.shape[:-1],
             )
 
         z, mask_bias = self._prep_bias(z=z, mask=mask)
@@ -628,10 +628,10 @@ class MSAPairWeightedAveraging(nn.Module):
         # [*, H, Q/K, C_hidden]
         v = v.transpose(-2, -3)
 
+        z = z + mask_bias
         if triton_is_installed and z.is_cuda:
-            a = fused_softmax(z, mask)
+            a = fused_softmax(z)
         else:
-            z = z + mask_bias
             a = softmax_no_cast(z, -1)
 
         # [*, H, Q, C_hidden]

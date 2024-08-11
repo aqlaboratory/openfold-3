@@ -180,6 +180,7 @@ class DiffusionTransformer(nn.Module):
         inf: float,
         blocks_per_ckpt: Optional[int] = None,
         linear_init_params: ConfigDict = lin_init.diffusion_transformer_init,
+        use_reentrant: Optional[bool] = None,
     ):
         """
         Args:
@@ -205,9 +206,15 @@ class DiffusionTransformer(nn.Module):
                 Large constant used to create mask for attention logits
             linear_init_params:
                 Linear layer initialization parameters
+            use_reentrant:
+                Whether to use reentrant variant of checkpointing. If set,
+                torch checkpointing will be used (DeepSpeed does not support
+                this feature)
         """
         super().__init__()
+
         self.blocks_per_ckpt = blocks_per_ckpt
+        self.use_reentrant = use_reentrant
 
         self.blocks = nn.ModuleList(
             [
@@ -296,6 +303,7 @@ class DiffusionTransformer(nn.Module):
             blocks,
             args=(a,),
             blocks_per_ckpt=blocks_per_ckpt,
+            use_reentrant=self.use_reentrant,
         )
 
         return a

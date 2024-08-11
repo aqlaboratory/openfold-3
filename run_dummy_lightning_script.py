@@ -1,6 +1,8 @@
 import logging
 
 import pytorch_lightning as pl
+from pytorch_lightning.plugins.environments import MPIEnvironment
+from pytorch_lightning.strategies import DeepSpeedStrategy
 from torch.utils.data import DataLoader, IterableDataset
 
 from openfold3.model_implementations import registry
@@ -13,6 +15,7 @@ class DummyAF3Dataset(IterableDataset):
     def __init__(self):
         super(DummyAF3Dataset).__init__()
         self.config = registry.MODEL_REGISTRY["af3_all_atom"].base_config
+
         self.n_token = 384
         self.n_msa = 16384
         self.n_templ = 4
@@ -43,7 +46,25 @@ if __name__ == "__main__":
 
     logging.info("Loading model")
     config = registry.make_config_with_preset("af3_all_atom")
+    config.globals.use_deepspeed_evo_attention = True
+    config.model.input_embedder.atom_attn_enc.use_block_sparse_attn = True
+    config.model.diffusion_module.atom_attn_enc.use_block_sparse_attn = True
+    config.model.diffusion_module.atom_attn_dec.use_block_sparse_attn = True
+    config.globals.blocks_per_ckpt = 1
+    config.globals.chunk_size = None
+
     lightning_module = registry.get_lightning_module(config)
 
-    trainer = pl.Trainer(num_nodes=1, fast_dev_run=1)
+    strategy = DeepSpeedStrategy(
+        config="deepspeed_config.json", cluster_environment=MPIEnvironment()
+    )
+
+    trainer = pl.Trainer(
+        num_nodes=1,
+        devices=4,
+        fast_dev_run=1,
+        precision="bf16-mixed",
+        strategy=strategy,
+    )
+
     trainer.fit(lightning_module, lightning_data_module)

@@ -51,8 +51,9 @@ class TestAF3Model(unittest.TestCase):
             use_block_sparse
         )
 
-        self.config.model.heads.distogram.enabled = True
-        self.config.loss.diffusion.alpha_bond = 1.0
+        self.config.model.heads.pae.enabled = True
+        self.config.loss.confidence.pae.weight = 1.0
+        self.config.loss.diffusion.bond_weight = 1.0
 
         af3 = registry.get_lightning_module(self.config).to(device=device, dtype=dtype)
 
@@ -79,9 +80,7 @@ class TestAF3Model(unittest.TestCase):
                 batch=batch, output=outputs, _return_breakdown=True
             )
 
-            # TODO: Checkpointing will cause this to fail, skipping for now
-            if self.config.globals.blocks_per_ckpt is None:
-                loss.backward()
+            loss.backward()
 
             x_pred = outputs["x_pred"]
             x_sample = outputs["x_sample"]
