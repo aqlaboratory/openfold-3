@@ -64,6 +64,7 @@ config = mlc.ConfigDict(
             # exclusive with use_deepspeed_evo_attention and use_flash.
             "use_lma": False,
             "offload_inference": False,
+            "last_recycle_grad_only": True,
         },
         "model": {
             "input_embedder": {

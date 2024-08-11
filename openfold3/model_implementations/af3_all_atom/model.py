@@ -140,9 +140,16 @@ class AlphaFold3(nn.Module):
         is_grad_enabled = torch.is_grad_enabled()
 
         for cycle_no in range(self.globals.no_cycles):
-            # Enable grad iff we're training and it's the final recycling layer
             is_final_iter = cycle_no == (self.globals.no_cycles - 1)
-            with torch.set_grad_enabled(is_grad_enabled and is_final_iter):
+
+            # Enable grad when we're training
+            # If last_recycle_grad_only is set, only enable grad on the last cycle
+            enable_grad = (
+                is_grad_enabled and is_final_iter
+                if self.globals.last_recycle_grad_only
+                else is_grad_enabled
+            )
+            with torch.set_grad_enabled(enable_grad):
                 if is_final_iter and torch.is_autocast_enabled():
                     # Sidestep AMP bug (PyTorch issue #65766)
                     torch.clear_autocast_cache()
