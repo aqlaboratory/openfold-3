@@ -155,6 +155,13 @@ def tokenize_atom_array(atom_array: AtomArray):
         )
     )
 
+    # Add is_atomized annotation
+    is_atomized = np.repeat(False, n_atoms)
+    is_atomized[
+        np.concatenate([atom_token_start_ids, atomized_residue_token_start_ids])
+    ] = True
+    atom_array.set_annotation("is_atomized", is_atomized)
+
     # Create token index
     token_id_repeats = np.diff(np.append(all_token_start_ids, n_atoms))
     token_ids_per_atom = np.repeat(np.arange(len(token_id_repeats)), token_id_repeats)
