@@ -102,7 +102,9 @@ def all_atom_distogram_loss(
     """
     # Extract representative atoms
     rep_x, rep_atom_mask = get_token_representative_atoms(
-        batch=batch, x=batch["gt_atom_positions"], atom_mask=batch["gt_atom_mask"]
+        batch=batch,
+        x=batch["ground_truth"]["atom_positions"],
+        atom_mask=batch["ground_truth"]["atom_resolved_mask"],
     )
 
     # Compute distogram

@@ -82,11 +82,11 @@ class TestAF3Model(unittest.TestCase):
 
             loss.backward()
 
-            x_pred = outputs["x_pred"]
-            x_sample = outputs["x_sample"]
+            atom_positions_predicted = outputs["atom_positions_predicted"]
+            atom_positions_diffusion = outputs["atom_positions_diffusion"]
 
             self.assertTrue(
-                x_sample.shape
+                atom_positions_diffusion.shape
                 == (batch_size, self.config.globals.no_samples, n_atom, 3)
             )
             self.assertTrue(loss.shape == ())
@@ -97,9 +97,9 @@ class TestAF3Model(unittest.TestCase):
             with torch.no_grad():
                 outputs = af3(batch=batch)
 
-            x_pred = outputs["x_pred"]
+            atom_positions_predicted = outputs["atom_positions_predicted"]
 
-        self.assertTrue(x_pred.shape == (batch_size, n_atom, 3))
+        self.assertTrue(atom_positions_predicted.shape == (batch_size, n_atom, 3))
 
     def test_shape_small_fp32(self):
         batch_size = consts.batch_size

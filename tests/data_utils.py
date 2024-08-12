@@ -187,46 +187,82 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ):
 
     return {
         # Input features
-        "residue_index": torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-        "token_index": torch.arange(0, n_token).unsqueeze(0).repeat((batch_size, 1)),
-        "asym_id": asym_id,
-        "entity_id": asym_id.clone(),
-        "sym_id": torch.ones((batch_size, n_token)),
-        "restype": restypes_one_hot.unsqueeze(0).repeat((batch_size, 1, 1)),
-        "is_protein": is_protein.unsqueeze(0).repeat((batch_size, 1)),
-        "is_dna": is_dna.unsqueeze(0).repeat((batch_size, 1)),
-        "is_rna": is_rna.unsqueeze(0).repeat((batch_size, 1)),
-        "is_ligand": torch.zeros((batch_size, n_token)),
-        "is_atomized": torch.zeros((batch_size, n_token)),
+        "residue_index": torch.arange(0, n_token)
+        .unsqueeze(0)
+        .repeat((batch_size, 1))
+        .to(dtype=torch.int32),
+        "token_index": torch.arange(0, n_token)
+        .unsqueeze(0)
+        .repeat((batch_size, 1))
+        .to(dtype=torch.int32),
+        "asym_id": asym_id.to(dtype=torch.int32),
+        "entity_id": asym_id.clone().to(dtype=torch.int32),
+        "sym_id": torch.ones((batch_size, n_token)).to(dtype=torch.int32),
+        "restype": restypes_one_hot.unsqueeze(0)
+        .repeat((batch_size, 1, 1))
+        .to(dtype=torch.int32),
+        "is_protein": is_protein.unsqueeze(0)
+        .repeat((batch_size, 1))
+        .to(dtype=torch.int32),
+        "is_dna": is_dna.unsqueeze(0).repeat((batch_size, 1)).to(dtype=torch.int32),
+        "is_rna": is_rna.unsqueeze(0).repeat((batch_size, 1)).to(dtype=torch.int32),
+        "is_ligand": torch.zeros((batch_size, n_token)).to(dtype=torch.int32),
+        "is_atomized": torch.zeros((batch_size, n_token)).to(dtype=torch.int32),
         # Reference conformation features
-        "ref_pos": torch.randn((batch_size, n_atom, 3)),
-        "ref_mask": torch.ones((batch_size, n_atom)),
-        "ref_element": torch.ones((batch_size, n_atom, 128)),
-        "ref_charge": torch.ones((batch_size, n_atom)),
-        "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
-        "ref_space_uid": torch.zeros((batch_size, n_atom)),
+        "ref_pos": torch.randn((batch_size, n_atom, 3)).to(dtype=torch.float32),
+        "ref_mask": torch.ones((batch_size, n_atom)).to(dtype=torch.int32),
+        "ref_element": torch.ones((batch_size, n_atom, 128)).to(dtype=torch.int32),
+        "ref_charge": torch.ones((batch_size, n_atom)).to(dtype=torch.float32),
+        "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)).to(
+            dtype=torch.int32
+        ),
+        "ref_space_uid": torch.zeros((batch_size, n_atom)).to(dtype=torch.int32),
         # MSA features
-        "msa": torch.ones((batch_size, n_msa, n_token, 32)),
-        "has_deletion": torch.ones((batch_size, n_msa, n_token)),
-        "deletion_value": torch.ones((batch_size, n_msa, n_token)),
-        "profile": torch.ones((batch_size, n_token, 32)),
-        "deletion_mean": torch.ones((batch_size, n_token)),
+        "msa": torch.ones((batch_size, n_msa, n_token, 32)).to(dtype=torch.int32),
+        "has_deletion": torch.ones((batch_size, n_msa, n_token)).to(
+            dtype=torch.float32
+        ),
+        "deletion_value": torch.ones((batch_size, n_msa, n_token)).to(
+            dtype=torch.float32
+        ),
+        "profile": torch.ones((batch_size, n_token, 32)).to(dtype=torch.float32),
+        "deletion_mean": torch.ones((batch_size, n_token)).to(dtype=torch.float32),
         # Template features
-        "template_restype": torch.ones((batch_size, n_templ, n_token, 32)),
-        "template_pseudo_beta_mask": torch.ones((batch_size, n_templ, n_token)),
-        "template_backbone_frame_mask": torch.ones((batch_size, n_templ, n_token)),
-        "template_distogram": torch.ones((batch_size, n_templ, n_token, n_token, 39)),
-        "template_unit_vector": torch.ones((batch_size, n_templ, n_token, n_token, 3)),
+        "template_restype": torch.ones((batch_size, n_templ, n_token, 32)).to(
+            dtype=torch.int32
+        ),
+        "template_pseudo_beta_mask": torch.ones((batch_size, n_templ, n_token)).to(
+            dtype=torch.float32
+        ),
+        "template_backbone_frame_mask": torch.ones((batch_size, n_templ, n_token)).to(
+            dtype=torch.float32
+        ),
+        "template_distogram": torch.ones(
+            (batch_size, n_templ, n_token, n_token, 39)
+        ).to(dtype=torch.int32),
+        "template_unit_vector": torch.ones(
+            (batch_size, n_templ, n_token, n_token, 3)
+        ).to(dtype=torch.float32),
         # Bond features
-        "token_bonds": torch.ones((batch_size, n_token, n_token)),
+        "token_bonds": torch.ones((batch_size, n_token, n_token)).to(dtype=torch.int32),
         # Additional features
-        "token_mask": torch.ones((batch_size, n_token)),
-        "start_atom_index": start_atom_index.unsqueeze(0).repeat((batch_size, 1)),
-        "num_atoms_per_token": num_atoms_per_token.unsqueeze(0).repeat((batch_size, 1)),
-        "msa_mask": torch.ones((batch_size, n_msa, n_token)),
-        "num_main_msa_seqs": torch.Tensor([int(n_msa / 2)]),
-        "gt_atom_positions": torch.randn((batch_size, n_atom, 3)),
-        "gt_atom_mask": torch.ones((batch_size, n_atom)),
-        "resolution": torch.Tensor([2.0]),
+        "token_mask": torch.ones((batch_size, n_token)).to(dtype=torch.float32),
+        "start_atom_index": start_atom_index.unsqueeze(0)
+        .repeat((batch_size, 1))
+        .to(dtype=torch.int32),
+        "num_atoms_per_token": num_atoms_per_token.unsqueeze(0)
+        .repeat((batch_size, 1))
+        .to(dtype=torch.int32),
+        "msa_mask": torch.ones((batch_size, n_msa, n_token)).to(dtype=torch.float32),
+        "num_paired_seqs": torch.Tensor([int(n_msa / 2)]).to(dtype=torch.int32),
+        "resolution": torch.Tensor([2.0]).to(dtype=torch.float32),
         "is_distillation": torch.BoolTensor([False]),
+        "ground_truth": {
+            "atom_positions": torch.randn((batch_size, n_atom, 3)).to(
+                dtype=torch.float32
+            ),
+            "atom_resolved_mask": torch.ones((batch_size, n_atom)).to(
+                dtype=torch.float32
+            ),
+        },
     }

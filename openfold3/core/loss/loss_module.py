@@ -189,7 +189,7 @@ class AlphaFold3Loss(nn.Module):
         if diffusion_weight > 0:
             l_diffusion, l_diffusion_breakdown = diffusion_loss(
                 batch=batch,
-                x=output["x_sample"],
+                x=output["atom_positions_diffusion"],
                 t=output["noise_level"],
                 **self.config.diffusion,
             )

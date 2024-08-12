@@ -303,7 +303,7 @@ def all_atom_plddt_loss(
     """
     # Compute difference in distances
     # [*, N_atom, N_atom]
-    x_gt = batch["gt_atom_positions"]
+    x_gt = batch["ground_truth"]["atom_positions"]
     dx = torch.cdist(x, x)
     dx_gt = torch.cdist(x_gt, x_gt)
     d = torch.abs(dx_gt - dx)
@@ -359,18 +359,19 @@ def all_atom_plddt_loss(
     # Construct atom mask for lddt computation
     # Note that additional dimension is padded and later removed for masked out atoms
     # [*, N_atom]
-    atom_mask_shape = list(batch["gt_atom_mask"].shape)
+    atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
+    atom_mask_shape = list(atom_mask_gt.shape)
     padded_atom_mask_shape = list(atom_mask_shape)
     padded_atom_mask_shape[-1] = padded_atom_mask_shape[-1] + 1
     atom_mask = torch.zeros(padded_atom_mask_shape, device=x.device, dtype=x.dtype)
     atom_mask = atom_mask.scatter_(
         index=rep_index.long(), src=torch.ones_like(atom_mask), dim=-1
     )[..., :-1]
-    atom_mask = atom_mask * batch["gt_atom_mask"]
+    atom_mask = atom_mask * atom_mask_gt
 
     # Construct pair atom selection mask for lddt computation
     # [*, N_atom, N_atom]
-    pair_atom_mask = batch["gt_atom_mask"][..., None] * atom_mask[..., None, :]
+    pair_atom_mask = atom_mask_gt[..., None] * atom_mask[..., None, :]
     pair_mask = pair_mask * pair_atom_mask
 
     # Compute lddt
@@ -391,8 +392,8 @@ def all_atom_plddt_loss(
     errors = softmax_cross_entropy(logits, lddt_b)
 
     # Compute loss on plddt
-    l_plddt = torch.sum(errors * batch["gt_atom_mask"], dim=-1) / (
-        torch.sum(batch["gt_atom_mask"], dim=-1) + eps
+    l_plddt = torch.sum(errors * atom_mask_gt, dim=-1) / (
+        torch.sum(atom_mask_gt, dim=-1) + eps
     )
 
     return l_plddt
@@ -448,10 +449,13 @@ def pae_loss(
         eps=eps,
         inf=inf,
     )
+
+    atom_positions_gt = batch["ground_truth"]["atom_positions"]
+    atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
     phi_gt, valid_frame_mask_gt = get_token_frame_atoms(
         batch=batch,
-        x=batch["gt_atom_positions"],
-        atom_mask=batch["gt_atom_mask"],
+        x=atom_positions_gt,
+        atom_mask=atom_mask_gt,
         angle_threshold=angle_threshold,
         eps=eps,
         inf=inf,
@@ -462,7 +466,7 @@ def pae_loss(
         batch=batch, x=x, atom_mask=atom_mask
     )
     rep_x_gt, rep_atom_mask_gt = get_token_representative_atoms(
-        batch=batch, x=batch["gt_atom_positions"], atom_mask=batch["gt_atom_mask"]
+        batch=batch, x=atom_positions_gt, atom_mask=atom_mask_gt
     )
 
     # Compute alignment error
@@ -528,7 +532,9 @@ def pde_loss(
     )
     rep_x, _ = get_token_representative_atoms(batch=batch, x=x, atom_mask=atom_mask)
     rep_x_gt, rep_atom_mask_gt = get_token_representative_atoms(
-        batch=batch, x=batch["gt_atom_positions"], atom_mask=batch["gt_atom_mask"]
+        batch=batch,
+        x=batch["ground_truth"]["atom_positions"],
+        atom_mask=batch["ground_truth"]["atom_resolved_mask"],
     )
 
     # Compute prediction target
@@ -575,7 +581,8 @@ def all_atom_experimentally_resolved_loss(
             in the ground truth
     """
     # Compute binned prediction target
-    y_b = F.one_hot(batch["gt_atom_mask"].long(), num_classes=no_bins)
+    atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
+    y_b = F.one_hot(atom_mask_gt.long(), num_classes=no_bins)
 
     # Compute loss on experimentally resolved prediction
     atom_mask = broadcast_token_feat_to_atoms(
@@ -644,7 +651,7 @@ def confidence_loss(
     """
     l_plddt = all_atom_plddt_loss(
         batch=batch,
-        x=output["x_pred"],
+        x=output["atom_positions_predicted"],
         logits=output["plddt_logits"],
         no_bins=plddt["no_bins"],
         bin_min=plddt["bin_min"],
@@ -654,7 +661,7 @@ def confidence_loss(
 
     l_pde = pde_loss(
         batch=batch,
-        x=output["x_pred"],
+        x=output["atom_positions_predicted"],
         logits=output["pde_logits"],
         no_bins=pde["no_bins"],
         bin_min=pde["bin_min"],
@@ -681,7 +688,7 @@ def confidence_loss(
     if pae_weight > 0:
         l_pae = pae_loss(
             batch=batch,
-            x=output["x_pred"],
+            x=output["atom_positions_predicted"],
             logits=output["pae_logits"],
             angle_threshold=pae["angle_threshold"],
             no_bins=pae["no_bins"],
