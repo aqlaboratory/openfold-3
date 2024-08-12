@@ -168,12 +168,8 @@ def bond_loss(batch: Dict, x: torch.Tensor, eps: float) -> torch.Tensor:
     """
     # Compute pairwise distances
     x_gt = batch["gt_atom_positions"]
-    dx = torch.sqrt(
-        eps + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
-    )
-    dx_gt = torch.sqrt(
-        eps + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
-    )
+    dx = torch.cdist(x, x)
+    dx_gt = torch.cdist(x_gt, x_gt)
 
     # Construct polymer-ligand per-token bond mask
     # TODO: double check this
@@ -227,12 +223,8 @@ def smooth_lddt_loss(batch: Dict, x: torch.Tensor, eps: float) -> torch.Tensor:
     """
     # [*, N_atom, N_atom]
     x_gt = batch["gt_atom_positions"]
-    dx = torch.sqrt(
-        eps + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
-    )
-    dx_gt = torch.sqrt(
-        eps + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
-    )
+    dx = torch.cdist(x, x)
+    dx_gt = torch.cdist(x_gt, x_gt)
 
     # [*, N_atom, N_atom]
     d = torch.abs(dx_gt - dx)

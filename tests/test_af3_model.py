@@ -66,10 +66,10 @@ class TestAF3Model(unittest.TestCase):
 
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
-        def to_device_dtype(t):
-            return t.to(device=torch.device(device), dtype=dtype)
+        def to_device(t):
+            return t.to(device=torch.device(device))
 
-        batch = tensor_tree_map(to_device_dtype, batch)
+        batch = tensor_tree_map(to_device, batch)
 
         if train:
             af3_loss = AlphaFold3Loss(config=self.config.loss)
