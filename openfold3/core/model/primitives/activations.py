@@ -24,6 +24,7 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from .linear import Linear
 
 
+# TODO: Add optimized version, maybe use the op in flash attention
 class SwiGLU(nn.Module):
     """SwiGLU activation function."""
 

@@ -42,7 +42,7 @@ def broadcast_token_feat_to_atoms(
     feat_dims = token_feat.shape[token_dim:][1:]
 
     # Apply token mask
-    num_atoms_per_token = num_atoms_per_token * token_mask
+    num_atoms_per_token = num_atoms_per_token * token_mask.int()
     token_feat = token_feat * token_mask.reshape(
         (*batch_dims, n_token, *((1,) * len(feat_dims)))
     )
@@ -56,11 +56,9 @@ def broadcast_token_feat_to_atoms(
             [token_feat, torch.zeros_like(token_feat)], dim=token_dim
         ).reshape((*batch_dims, 2 * n_token, *feat_dims))
 
-    # TODO: Check why when running torch.max(torch.sum(num_atoms_per_token, dim=-1))
-    #  in bf16, the sum is wrong
     # Pad token features
     # Flatten batch and token dimensions
-    max_num_atoms = torch.max(torch.sum(num_atoms_per_token.float(), dim=-1)).int()
+    max_num_atoms = torch.max(torch.sum(num_atoms_per_token, dim=-1)).int()
     padded_token_feat = torch.concat(
         [
             token_feat,
@@ -250,22 +248,20 @@ def get_token_atom_index_offset(atom_name: str, restype: torch.Tensor):
     """
     token_atom_index_offset = torch.einsum(
         "...k,k->...",
-        restype,
+        restype.float(),
         torch.tensor(
             atom_name_to_index_by_restype[atom_name]["index"],
             device=restype.device,
-            dtype=restype.dtype,
-        ),
-    )
+        ).float(),
+    ).long()
     token_atom_mask = torch.einsum(
         "...k,k->...",
-        restype,
+        restype.float(),
         torch.tensor(
             atom_name_to_index_by_restype[atom_name]["mask"],
             device=restype.device,
-            dtype=restype.dtype,
-        ),
-    )
+        ).float(),
+    ).long()
     return token_atom_index_offset, token_atom_mask
 
 
@@ -298,7 +294,7 @@ def get_token_center_atoms(batch: Dict, x: torch.Tensor, atom_mask: torch.Tensor
         1 - batch["is_atomized"]
     )
 
-    restype = batch["restype"].to(dtype=x.dtype)
+    restype = batch["restype"]
     protein_token_atom_index_offset, protein_token_atom_mask = (
         get_token_atom_index_offset(atom_name="CA", restype=restype)
     )
@@ -385,7 +381,7 @@ def get_token_representative_atoms(
     )
 
     # Get index of representative atoms
-    restype = batch["restype"].to(dtype=x.dtype)
+    restype = batch["restype"]
     start_atom_index = batch["start_atom_index"].long()
     cb_atom_index_offset, cb_atom_mask = get_token_atom_index_offset(
         atom_name="CB", restype=restype
@@ -504,7 +500,7 @@ def get_token_frame_atoms(
         1 - batch["is_atomized"]
     )
 
-    restype = batch["restype"].to(dtype=x.dtype)
+    restype = batch["restype"]
     n_atom_index_offset, n_atom_mask = get_token_atom_index_offset(
         atom_name="N", restype=restype
     )

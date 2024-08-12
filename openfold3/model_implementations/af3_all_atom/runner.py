@@ -5,6 +5,7 @@ import torch
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
+from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.model_implementations.af3_all_atom.config.base_config import config
 from openfold3.model_implementations.af3_all_atom.model import AlphaFold3
 from openfold3.model_implementations.registry import register_model
@@ -17,6 +18,41 @@ class AlphaFold3AllAtom(ModelRunner):
     def __init__(self, model_config):
         super().__init__(AlphaFold3, model_config)
         self.loss = AlphaFold3Loss(config=model_config.loss)
+
+    def training_step(self, batch, batch_idx):
+        if self.ema.device != batch["restype"].device:
+            self.ema.to(batch["restype"].device)
+
+        # Run the model
+        batch, outputs = self.model(batch)
+
+        # Compute loss
+        loss, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
+
+        # Log it
+        self._log(loss_breakdown, batch, outputs)
+
+        return loss
+
+    def eval_step(self, batch, batch_idx):
+        # At the start of validation, load the EMA weights
+        if self.cached_weights is None:
+            # model.state_dict() contains references to model weights rather
+            # than copies. Therefore, we need to clone them before calling
+            # load_state_dict().
+            def clone_param(t):
+                return t.detach().clone()
+
+            self.cached_weights = tensor_tree_map(clone_param, self.model.state_dict())
+            self.model.load_state_dict(self.ema.state_dict()["params"])
+
+        # Run the model
+        batch, outputs = self(batch)
+
+        # Compute loss and other metrics
+        _, loss_breakdown = self.loss(outputs, batch, _return_breakdown=True)
+
+        self._log(loss_breakdown, batch, outputs, train=False)
 
     def configure_optimizers(
         self,

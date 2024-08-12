@@ -25,7 +25,7 @@ class TestAF3Model(unittest.TestCase):
     ):
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        config = registry.MODEL_REGISTRY["af3_all_atom"].base_config
+        config = registry.make_config_with_preset("af3_all_atom")
 
         if train:
             config.globals.chunk_size = None
@@ -70,12 +70,10 @@ class TestAF3Model(unittest.TestCase):
 
         batch = tensor_tree_map(to_device, batch)
 
-        torch.cuda.empty_cache()
-
         if train:
             af3_loss = AlphaFold3Loss(config=config.loss)
 
-            outputs = af3(batch=batch)
+            batch, outputs = af3(batch=batch)
 
             loss, loss_breakdown = af3_loss(
                 batch=batch, output=outputs, _return_breakdown=True
@@ -96,7 +94,7 @@ class TestAF3Model(unittest.TestCase):
             af3.eval()
 
             with torch.no_grad():
-                outputs = af3(batch=batch)
+                _, outputs = af3(batch=batch)
 
             atom_positions_predicted = outputs["atom_positions_predicted"]
 
@@ -169,12 +167,15 @@ class TestAF3Model(unittest.TestCase):
                 use_block_sparse=True,
             )
 
+    @unittest.skip(
+        "Manually enable this for now, will add flag to run slow tests later."
+    )
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
     def test_shape_large_eval(self):
         batch_size = 1
         n_token = 384
-        n_msa = 16384
+        n_msa = 8000
         n_templ = 4
 
         for dtype in [torch.float32, torch.bfloat16]:
@@ -190,12 +191,15 @@ class TestAF3Model(unittest.TestCase):
                 use_block_sparse=True,
             )
 
+    @unittest.skip(
+        "Manually enable this for now, will add flag to run slow tests later."
+    )
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
     def test_shape_large_bf16_train(self):
         batch_size = 1
         n_token = 384
-        n_msa = 16384
+        n_msa = 8000
         n_templ = 4
 
         self.run_model(

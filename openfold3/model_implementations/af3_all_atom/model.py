@@ -358,7 +358,7 @@ class AlphaFold3(nn.Module):
 
         return output
 
-    def forward(self, batch: Dict) -> Dict:
+    def forward(self, batch: Dict) -> [Dict, Dict]:
         """
         Args:
             batch:
@@ -463,7 +463,8 @@ class AlphaFold3(nn.Module):
                         *"atom_resolved_mask" ([*, N_atom])
                             Mask for ground truth atom positions
         Returns:
-            Output dictionary containing the following keys:
+            batch: Updated batch dictionary post permutation alignment
+            output: Output dictionary containing the following keys:
                 "si_trunk" ([*, N_token, C_s]):
                     Single representation output from model trunk
                 "zij_trunk" ([*, N_token, N_token, C_z]):
@@ -534,4 +535,4 @@ class AlphaFold3(nn.Module):
 
                 output.update(diffusion_output)
 
-        return output
+        return batch, output
