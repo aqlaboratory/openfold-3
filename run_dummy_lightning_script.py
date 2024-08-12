@@ -5,6 +5,7 @@ from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.strategies import DeepSpeedStrategy
 from torch.utils.data import DataLoader, IterableDataset
 
+from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.model_implementations import registry
 from tests.data_utils import random_af3_features
 
@@ -17,16 +18,25 @@ class DummyAF3Dataset(IterableDataset):
         self.config = registry.make_config_with_preset("af3_all_atom")
 
         self.n_token = 384
-        self.n_msa = 16384
+
+        # For full MSA size
+        # self.n_msa = 16384
+        self.n_msa = 8000
+
         self.n_templ = 4
 
     def create_random_features(self):
-        yield random_af3_features(
+        feats = random_af3_features(
             batch_size=1,
             n_token=self.n_token,
             n_msa=self.n_msa,
             n_templ=self.n_templ,
         )
+
+        # Batch dim is added by collator, quick fix to remove it
+        # This will get replaced with actual dataloader anyway
+        feats = tensor_tree_map(lambda x: x.squeeze(0), feats)
+        yield feats
 
     def __iter__(self):
         return self.create_random_features()

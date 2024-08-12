@@ -172,15 +172,7 @@ class AlphaFold3(nn.Module):
                     inplace=inplace_safe,
                 )
 
-                # TODO: Check if this is necessary
-                # for feat in ["msa", "has_deletion", "deletion_value"]:
-                #     batch[feat] = batch[feat].to(device=s_input.device)
-
                 m, msa_mask = self.msa_module_embedder(batch=batch, s_input=s_input)
-
-                # TODO: Check if this is necessary
-                # for feat in ["msa", "has_deletion", "deletion_value"]:
-                #     batch[feat] = batch[feat].cpu()
 
                 # Run MSA + pair embeddings through the MsaModule
                 # m: [*, N_seq, N_token, C_m]
