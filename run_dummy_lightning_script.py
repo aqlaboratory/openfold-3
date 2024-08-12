@@ -14,7 +14,7 @@ class DummyAF3Dataset(IterableDataset):
 
     def __init__(self):
         super(DummyAF3Dataset).__init__()
-        self.config = registry.MODEL_REGISTRY["af3_all_atom"].base_config
+        self.config = registry.make_config_with_preset("af3_all_atom")
 
         self.n_token = 384
         self.n_msa = 16384

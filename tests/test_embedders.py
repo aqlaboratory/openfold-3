@@ -30,9 +30,6 @@ from openfold3.core.model.feature_embedders import (
     TemplateSingleEmbedderMultimer,
 )
 from openfold3.model_implementations import registry
-from openfold3.model_implementations.af3_all_atom.config.base_config import (
-    config as af3_config,
-)
 from tests.config import consts, monomer_consts, multimer_consts
 from tests.data_utils import random_asym_ids, random_template_feats
 
@@ -93,6 +90,8 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
         n_token = consts.n_res
         n_atom = 4 * consts.n_res
         one_hot_dim = 32
+
+        af3_config = registry.make_config_with_preset("af3_all_atom")
         c_s_input = af3_config.model.input_embedder.c_s_input
         c_s = af3_config.model.input_embedder.c_s
         c_z = af3_config.model.input_embedder.c_z
@@ -139,6 +138,8 @@ class TestMSAModuleEmbedder(unittest.TestCase):
         c_token = 768
         c_s_input = c_token + 65
         one_hot_dim = 32
+
+        af3_config = registry.make_config_with_preset("af3_all_atom")
 
         msa_emb_config = af3_config.model.msa.msa_module_embedder
         msa_emb_config.update({"c_s_input": c_s_input})
@@ -319,6 +320,9 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         batch_size = 2
         n_templ = 3
         n_token = 10
+
+        af3_config = registry.make_config_with_preset("af3_all_atom")
+
         c_z = af3_config.model.template.template_pair_embedder.c_z
         c_t = af3_config.model.template.template_pair_embedder.c_out
 

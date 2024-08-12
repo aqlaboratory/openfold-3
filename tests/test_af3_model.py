@@ -11,9 +11,6 @@ from tests.data_utils import random_af3_features
 
 
 class TestAF3Model(unittest.TestCase):
-    def setUp(self):
-        self.config = registry.MODEL_REGISTRY["af3_all_atom"].base_config
-
     def run_model(
         self,
         batch_size,
@@ -28,34 +25,36 @@ class TestAF3Model(unittest.TestCase):
     ):
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
+        config = registry.MODEL_REGISTRY["af3_all_atom"].base_config
+
         if train:
-            self.config.globals.chunk_size = None
+            config.globals.chunk_size = None
 
             # Needed to run large model
             if not reduce_model_size:
-                self.config.globals.blocks_per_ckpt = 1
+                config.globals.blocks_per_ckpt = 1
 
         if reduce_model_size:
             # To avoid memory issues in CI
-            self.config.model.pairformer.no_blocks = 4
-            self.config.model.diffusion_module.diffusion_transformer.no_blocks = 4
+            config.model.pairformer.no_blocks = 4
+            config.model.diffusion_module.diffusion_transformer.no_blocks = 4
 
-        self.config.globals.use_deepspeed_evo_attention = use_deepspeed_evo_attention
-        self.config.model.input_embedder.atom_attn_enc.use_block_sparse_attn = (
+        config.globals.use_deepspeed_evo_attention = use_deepspeed_evo_attention
+        config.model.input_embedder.atom_attn_enc.use_block_sparse_attn = (
             use_block_sparse
         )
-        self.config.model.diffusion_module.atom_attn_enc.use_block_sparse_attn = (
+        config.model.diffusion_module.atom_attn_enc.use_block_sparse_attn = (
             use_block_sparse
         )
-        self.config.model.diffusion_module.atom_attn_dec.use_block_sparse_attn = (
+        config.model.diffusion_module.atom_attn_dec.use_block_sparse_attn = (
             use_block_sparse
         )
 
-        self.config.model.heads.pae.enabled = True
-        self.config.loss.confidence.pae.weight = 1.0
-        self.config.loss.diffusion.bond_weight = 1.0
+        config.model.heads.pae.enabled = True
+        config.loss.confidence.pae.weight = 1.0
+        config.loss.diffusion.bond_weight = 1.0
 
-        af3 = registry.get_lightning_module(self.config).to(device=device, dtype=dtype)
+        af3 = registry.get_lightning_module(config).to(device=device, dtype=dtype)
 
         batch = random_af3_features(
             batch_size=batch_size,
@@ -71,8 +70,10 @@ class TestAF3Model(unittest.TestCase):
 
         batch = tensor_tree_map(to_device, batch)
 
+        torch.cuda.empty_cache()
+
         if train:
-            af3_loss = AlphaFold3Loss(config=self.config.loss)
+            af3_loss = AlphaFold3Loss(config=config.loss)
 
             outputs = af3(batch=batch)
 
@@ -87,7 +88,7 @@ class TestAF3Model(unittest.TestCase):
 
             self.assertTrue(
                 atom_positions_diffusion.shape
-                == (batch_size, self.config.globals.no_samples, n_atom, 3)
+                == (batch_size, config.globals.no_samples, n_atom, 3)
             )
             self.assertTrue(loss.shape == ())
 
@@ -103,7 +104,7 @@ class TestAF3Model(unittest.TestCase):
 
     def test_shape_small_fp32(self):
         batch_size = consts.batch_size
-        n_token = 16
+        n_token = 18
         n_msa = 10
         n_templ = 3
 
@@ -137,7 +138,7 @@ class TestAF3Model(unittest.TestCase):
     @compare_utils.skip_unless_cuda_available()
     def test_shape_small_kernels(self):
         batch_size = consts.batch_size
-        n_token = 16
+        n_token = 18
         n_msa = 10
         n_templ = 3
 

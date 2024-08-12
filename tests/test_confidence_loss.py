@@ -10,7 +10,7 @@ from openfold3.core.loss.confidence import (
     pae_loss,
     pde_loss,
 )
-from openfold3.model_implementations.af3_all_atom.config.base_config import config
+from openfold3.model_implementations.registry import make_config_with_preset
 
 
 class TestConfidenceLoss(unittest.TestCase):
@@ -147,6 +147,8 @@ class TestConfidenceLoss(unittest.TestCase):
         batch = self.setup_features()
         batch_size, n_token = batch["token_mask"].shape
         n_atom = batch["ground_truth"]["atom_resolved_mask"].shape[1]
+
+        config = make_config_with_preset("af3_all_atom")
 
         no_bins_plddt = config.loss.confidence.plddt.no_bins
         no_bins_pae = config.loss.confidence.pae.no_bins

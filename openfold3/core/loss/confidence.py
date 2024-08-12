@@ -222,7 +222,15 @@ def express_coords_in_frames(
     e2_norm = torch.linalg.norm(e2, dim=-1, keepdim=True)
     e1 = e1 / (e1_norm + eps)
     e2 = e2 / (e2_norm + eps)
-    e3 = torch.linalg.cross(e1, e2, dim=-1)
+
+    # BF16-friendly cross product
+    e3 = [
+        e1[..., 1] * e2[..., 2] - e1[..., 2] * e2[..., 1],
+        e1[..., 2] * e2[..., 0] - e1[..., 0] * e2[..., 2],
+        e1[..., 0] * e2[..., 1] - e1[..., 1] * e2[..., 0],
+    ]
+
+    e3 = torch.stack(e3, dim=-1)
 
     # Project onto frame basis
     # [*, N_token, N_token, 3]
