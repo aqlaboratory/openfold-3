@@ -504,3 +504,71 @@ def subset_large_structure(
 
     breakpoint()
     return atom_array[selected_chain_mask]
+
+
+def remove_terminal_atoms(atom_array: AtomArray) -> AtomArray:
+    """Removes terminal atoms like OXT and OP3.
+
+    Models like AF3 and AF2 expect all tokens with the same restype to map to the same
+    number of atoms. This makes it awkward to represent terminal atoms like OXT/OP3
+    which only appear in the small subset of residues at the end/beginning of a
+    protein/NA chain. This function therefore removes these atoms from the AtomArray.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to remove terminal atoms from.
+
+    Returns:
+        AtomArray with terminal atoms removed.
+    """
+    chain_starts = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
+
+    terminal_atom_mask = np.zeros(len(atom_array), dtype=bool)
+
+    std_protein_residues = set(STANDARD_PROTEIN_RESIDUES)
+    std_nucleic_acid_residues = set(STANDARD_NUCLEIC_ACID_RESIDUES)
+
+    # Iterate through all chains
+    for chain_start, chain_end in zip(chain_starts[:-1], chain_starts[1:]):
+        chain = atom_array[chain_start:chain_end]
+        chain_idx = np.arange(chain_start, chain_end)
+
+        # Search for OXT in last residue
+        if chain.molecule_type_id[0] == MoleculeType.PROTEIN:
+            last_res_name = chain.res_name[-1]
+
+            # Non-standard residues are fully atomized in AF3 and therefore can have
+            # terminal atoms
+            if last_res_name not in std_protein_residues:
+                continue
+
+            last_res_id = chain.res_id[-1]
+            last_res_mask = chain.res_id == last_res_id
+            oxt_mask = chain.atom_name[last_res_mask] == "OXT"
+
+            # Mark OXT atom for removal
+            terminal_atom_mask[chain_idx[last_res_mask]] = oxt_mask
+
+        # Search for OP3 in first residue (5' end)
+        elif chain.molecule_type_id[0] in (MoleculeType.DNA, MoleculeType.RNA):
+            last_res_name = chain.res_name[0]
+
+            # Non-standard residues are fully atomized in AF3 and therefore can have
+            # terminal atoms
+            if last_res_name not in std_nucleic_acid_residues:
+                continue
+
+            first_res_id = chain.res_id[0]
+            first_res_mask = chain.res_id == first_res_id
+            op3_mask = chain.atom_name[first_res_mask] == "OP3"
+
+            # Mark OP3 atom for removal
+            terminal_atom_mask[chain_idx[first_res_mask]] = op3_mask
+
+        else:
+            continue
+
+    atom_array = atom_array[~terminal_atom_mask]
+    logger.debug(f"Removed {terminal_atom_mask.sum()} terminal atoms")
+
+    return atom_array
