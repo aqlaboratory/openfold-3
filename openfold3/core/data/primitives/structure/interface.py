@@ -344,6 +344,11 @@ def chain_paired_interface_atom_iter(
         if atom_pair_idxs.size == 0:
             return
 
+    # Subsequent code is only necessary if there are multiple pairs
+    if atom_pair_idxs.shape[0] == 1:
+        yield tuple(chain_pairs[0]), atom_pair_idxs
+        return
+
     # Sort to group together occurrences of the same pair
     # (e.g. [(0, 1), (0, 2), (0, 1)] -> [(0, 1), (0, 1), (0, 2)])
     group_sort_idx = np.lexsort((chain_pairs[:, 1], chain_pairs[:, 0]))
@@ -356,7 +361,12 @@ def chain_paired_interface_atom_iter(
     ).any(axis=1)
     group_start_idx = np.nonzero(changes)[0]
 
-    # Get indices where the pair changes
+    if len(group_start_idx) == 0:
+        # If there is only one group, yield it directly
+        yield tuple(chain_pairs_grouped[0]), atom_pairs_grouped
+        return
+
+    # Get indices where a new group of chain pairs starts
     group_end_idx = np.roll(group_start_idx, shift=-1)
     group_end_idx[-1] = len(chain_pairs_grouped)
 
