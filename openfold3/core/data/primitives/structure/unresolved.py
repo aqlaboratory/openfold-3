@@ -1,3 +1,4 @@
+import contextlib
 import logging
 from typing import Literal
 
@@ -8,69 +9,34 @@ from biotite.structure.io.pdbx import CIFBlock, CIFFile
 
 from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
-    remove_atom_indices,
 )
 from openfold3.core.data.primitives.structure.metadata import (
+    get_chain_to_canonical_seq_dict,
     get_entity_to_three_letter_codes_dict,
 )
 from openfold3.core.data.resources.tables import (
-    NUCLEIC_ACID_PHOSPHATE_ATOMS,
+    NUCLEIC_ACID_PHOSPHATE_OXYGENS,
+    STANDARD_NUCLEIC_ACID_RESIDUES,
+    STANDARD_PROTEIN_RESIDUES,
     MoleculeType,
 )
 
+logger = logging.getLogger(__name__)
 
-def connect_residues(
-    atom_array: AtomArray,
-    res_id_1: int,
-    res_id_2: int,
-    chain: int,
-    bond_type: Literal["peptide", "phosphate"],
-) -> None:
-    """Connects two residues in the AtomArray
 
-    This function adds an appropriate bond between two residues in the AtomArray based
-    on the canonical way of connecting residues in the given polymer type (peptide or
-    nucleic acid).
+# TODO: Check if this can result in hypervalence in some cases
+def update_bond_list(atom_array: AtomArray) -> None:
+    """Updates the bond list of the AtomArray in-place with any missing bonds.
+
+    Runs biotite's `connect_via_residue_names` on the AtomArray and merges the result
+    with the already existing bond list.
 
     Args:
         atom_array:
-            AtomArray containing the structure to add the bond to.
-        res_id_1:
-            Residue ID of the first (upstream) residue to connect. (e.g. will contribute
-            the carboxylic carbon in a peptide bond)
-        res_id_2:
-            Residue ID of the second (downstream) residue to connect. (e.g. will
-            contribute the amino nitrogen in a peptide bond)
+            AtomArray containing the structure to update the bond list for.
     """
-    # General masks
-    chain_mask = atom_array.chain_id_renumbered == chain
-    res_id_1_mask = (atom_array.res_id == res_id_1) & chain_mask
-    res_id_2_mask = (atom_array.res_id == res_id_2) & chain_mask
-
-    if bond_type == "peptide":
-        # Get the index of the C atom in the first residue
-        (res_id_1_atom_idx,) = np.where(res_id_1_mask & (atom_array.atom_name == "C"))[
-            0
-        ]
-
-        # Equivalently get the index of the N atom in the second residue
-        (res_id_2_atom_idx,) = np.where(res_id_2_mask & (atom_array.atom_name == "N"))[
-            0
-        ]
-
-    # Analogously select nucleic acid atoms
-    elif bond_type == "phosphate":
-        (res_id_1_atom_idx,) = np.where(
-            res_id_1_mask & (atom_array.atom_name == "O3'")
-        )[0]
-
-        (res_id_2_atom_idx,) = np.where(res_id_2_mask & (atom_array.atom_name == "P"))[
-            0
-        ]
-
-    atom_array.bonds.add_bond(
-        res_id_1_atom_idx, res_id_2_atom_idx, struc.BondType.SINGLE
-    )
+    bond_list_update = struc.connect_via_residue_names(atom_array)
+    atom_array.bonds = atom_array.bonds.merge(bond_list_update)
 
 
 def build_unresolved_polymer_segment(
@@ -80,6 +46,7 @@ def build_unresolved_polymer_segment(
     default_annotations: dict,
     terminal_start: bool = False,
     terminal_end: bool = False,
+    add_bonds: bool = True,
 ) -> AtomArray:
     """Builds a polymeric segment with unresolved residues
 
@@ -112,9 +79,11 @@ def build_unresolved_polymer_segment(
             Whether the segment is the end of the overall sequence. For proteins this
             will keep the terminal oxygen, for nucleic acids the otherwise overhanging
             3' phosphate is pruned.
+        add_bonds:
+            Whether to add bonds between the residues in the segment. Defaults to True.
     """
     if polymer_type == "nucleic_acid":
-        logging.info("Building unresolved nucleic acid segment!")  # dev-only: del later
+        logger.info("Building unresolved nucleic acid segment!")  # dev-only: del later
 
     atom_idx_is_present = "_atom_idx" in default_annotations
 
@@ -135,26 +104,20 @@ def build_unresolved_polymer_segment(
         hydrogen_mask = atom_elements != "H"
 
         if polymer_type == "nucleic_acid":
-            # Prune 5' phosphate if segment is nucleic acid and segment-start is overall
-            # sequence start to prevent overhanging phosphates
             if terminal_start and added_residues == 0:
-                phosphate_mask = ~np.isin(atom_names, NUCLEIC_ACID_PHOSPHATE_ATOMS)
-                atom_mask = hydrogen_mask & phosphate_mask
-
-            # Always prune terminal phosphate-oxygens because they would only need to be
-            # kept in overhanging phosphates which we remove above (in-sequence
-            # connecting phosphate-oxygens are annotated as O3' and kept)
+                # Keep overhanging phosphate for sequence start
+                atom_mask = hydrogen_mask
             else:
+                # Prune terminal phosphate-oxygens (which are not part of the backbone)
                 po3_mask = ~np.isin(atom_names, ["OP3", "O3P"])
                 atom_mask = hydrogen_mask & po3_mask
 
         elif polymer_type == "protein":
-            # If segment is protein and segment-end is overall sequence end, do not
-            # exclude terminal oxygen
             if terminal_end and added_residues == last_residue_idx:
+                # Include OXT for terminal residue
                 atom_mask = hydrogen_mask
-            # For any other protein residue, exclude terminal oxygen
             else:
+                # For any other protein residue, exclude terminal oxygen
                 oxt_mask = atom_names != "OXT"
                 atom_mask = hydrogen_mask & oxt_mask
 
@@ -184,14 +147,15 @@ def build_unresolved_polymer_segment(
     segment_atom_array = struc.array(atom_list)
 
     # build standard connectivities
-    bond_list = struc.connect_via_residue_names(segment_atom_array)
-    segment_atom_array.bonds = bond_list
+    if add_bonds:
+        bond_list = struc.connect_via_residue_names(segment_atom_array)
+        segment_atom_array.bonds = bond_list
 
     return segment_atom_array
 
 
 def _shift_up_atom_indices(
-    atom_array: AtomArray, shift: int, idx_threshold: int
+    atom_array: AtomArray, shift: int, greater_than: int, label: str = "_atom_idx"
 ) -> None:
     """Shifts all atom indices higher than a threshold by a certain amount
 
@@ -200,12 +164,14 @@ def _shift_up_atom_indices(
             AtomArray containing the structure to shift atom indices in.
         shift:
             Amount by which to shift the atom indices.
-        idx_threshold:
+        greater_than:
             Threshold index above which to shift the atom indices.
+        label:
+            Annotation label to update. Defaults to "_atom_idx".
     """
     # Update atom indices for all atoms greater than the given atom index
-    update_mask = atom_array._atom_idx > idx_threshold
-    atom_array._atom_idx[update_mask] += shift
+    update_mask = atom_array.get_annotation(label) > greater_than
+    atom_array.get_annotation(label)[update_mask] += shift
 
 
 def add_unresolved_polymer_residues(
@@ -245,12 +211,12 @@ def add_unresolved_polymer_residues(
     # the atom indices. That way the entire array can be sorted in a single
     # reindexing at the end without losing any bond information.
     chain_starts = struc.get_chain_starts(extended_atom_array, add_exclusive_stop=True)
-    for chain_start, chain_end in zip(chain_starts[:-1], chain_starts[1:]):
+    for chain_start, chain_end in zip(chain_starts[:-1], chain_starts[1:] - 1):
         # Infer some chain-wise properties from first atom (could use any atom)
         first_atom = extended_atom_array[chain_start]
         chain_type = first_atom.molecule_type_id
         chain_entity_id = first_atom.entity_id
-        chain_id = first_atom.chain_id_renumbered
+        # chain_id = first_atom.chain_id_renumbered
 
         # Only interested in polymer chains
         if chain_type == MoleculeType.LIGAND:
@@ -258,10 +224,10 @@ def add_unresolved_polymer_residues(
         else:
             if chain_type == MoleculeType.PROTEIN:
                 polymer_type = "protein"
-                bond_type = "peptide"
+                # bond_type = "peptide"
             elif chain_type in (MoleculeType.RNA, MoleculeType.DNA):
                 polymer_type = "nucleic_acid"
-                bond_type = "phosphate"
+                # bond_type = "phosphate"
             else:
                 raise ValueError(f"Unknown molecule type: {chain_type}")
 
@@ -288,6 +254,7 @@ def add_unresolved_polymer_residues(
                 default_annotations=default_annotations,
                 terminal_start=True,
                 terminal_end=False,
+                add_bonds=False,
             )
 
             n_added_atoms = len(segment)
@@ -296,18 +263,9 @@ def add_unresolved_polymer_residues(
             _shift_up_atom_indices(
                 extended_atom_array,
                 n_added_atoms,
-                idx_threshold=first_atom._atom_idx - 1,
+                greater_than=first_atom._atom_idx - 1,
             )
             extended_atom_array += segment
-
-            # Connect residues in BondList
-            connect_residues(
-                extended_atom_array,
-                first_atom.res_id - 1,
-                first_atom.res_id,
-                chain=chain_id,
-                bond_type=bond_type,
-            )
 
         ## Fill missing residues at chain end
         last_atom = extended_atom_array[chain_end]
@@ -327,24 +285,16 @@ def add_unresolved_polymer_residues(
                 default_annotations=default_annotations,
                 terminal_start=False,
                 terminal_end=True,
+                add_bonds=False,
             )
 
             n_added_atoms = len(segment)
 
             # Shift all atom indices up, then insert the unresolved segment
             _shift_up_atom_indices(
-                extended_atom_array, n_added_atoms, idx_threshold=last_atom._atom_idx
+                extended_atom_array, n_added_atoms, greater_than=last_atom._atom_idx
             )
             extended_atom_array += segment
-
-            # Connect residues in BondList
-            connect_residues(
-                extended_atom_array,
-                last_atom.res_id,
-                last_atom.res_id + 1,
-                chain=chain_id,
-                bond_type=bond_type,
-            )
 
         # Gaps between consecutive residues
         res_id_gaps = np.diff(extended_atom_array.res_id[chain_start : chain_end + 1])
@@ -374,6 +324,7 @@ def add_unresolved_polymer_residues(
                 default_annotations=default_annotations,
                 terminal_start=False,
                 terminal_end=False,
+                add_bonds=False,
             )
 
             n_added_atoms = len(segment)
@@ -382,25 +333,9 @@ def add_unresolved_polymer_residues(
             _shift_up_atom_indices(
                 extended_atom_array,
                 n_added_atoms,
-                idx_threshold=break_end_atom._atom_idx - 1,
+                greater_than=break_end_atom._atom_idx - 1,
             )
             extended_atom_array += segment
-
-            # Connect residues at start and end of added segment
-            connect_residues(
-                extended_atom_array,
-                break_start_atom.res_id,
-                break_start_atom.res_id + 1,
-                chain=chain_id,
-                bond_type=bond_type,
-            )
-            connect_residues(
-                extended_atom_array,
-                break_end_atom.res_id - 1,
-                break_end_atom.res_id,
-                chain=chain_id,
-                bond_type=bond_type,
-            )
 
     # Finally reorder the array so that the atom indices are in order
     extended_atom_array = extended_atom_array[np.argsort(extended_atom_array._atom_idx)]
@@ -410,7 +345,210 @@ def add_unresolved_polymer_residues(
         extended_atom_array._atom_idx, np.arange(len(extended_atom_array))
     )
 
+    # Add bonds between and within all the added residues
+    update_bond_list(extended_atom_array)
+
     # Remove temporary atom indices
-    remove_atom_indices(extended_atom_array)
+    atom_array.del_annotation("_atom_idx")
+
+    return extended_atom_array
+
+
+def add_unresolved_atoms_within_residue(
+    atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile
+) -> AtomArray:
+    # Get theoretical lengths of each chain (needed to identify true terminal residues)
+    chain_to_seq = get_chain_to_canonical_seq_dict(atom_array, cif_data)
+    chain_to_seqlen = {chain: len(seq) for chain, seq in chain_to_seq.items()}
+
+    # Full atom array that will hold the new atoms
+    extended_atom_array = atom_array.copy()
+
+    # We need atom indices for bookkeeping of where to insert the missing atoms
+    # (_atom_sort_idx) but also want to keep the original indices of the non-missing
+    # atoms for indexing operations (_atom_idx)
+    assign_atom_indices(extended_atom_array, "_atom_idx")
+    assign_atom_indices(extended_atom_array, "_atom_sort_idx")
+
+    std_protein_residues = set(STANDARD_PROTEIN_RESIDUES)
+    std_na_residues = set(STANDARD_NUCLEIC_ACID_RESIDUES)
+
+    missing_atom_list = []
+
+    for chain in struc.chain_iter(extended_atom_array):
+        chain_id = chain.chain_id_renumbered[0]
+
+        (chain_molecule_type_id,) = np.unique(chain.molecule_type_id)
+        chain_molecule_type = MoleculeType(chain_molecule_type_id)
+
+        is_ligand = chain_molecule_type == MoleculeType.LIGAND
+        is_protein = chain_molecule_type == MoleculeType.PROTEIN
+        is_nucleic_acid = chain_molecule_type in (MoleculeType.RNA, MoleculeType.DNA)
+
+        # Skip covalently connected ligand chains
+        if (struc.get_residue_count(chain) > 1) & is_ligand:
+            continue
+
+        # Find unresolved atoms for all residues in each chain
+        for residue in struc.residue_iter(chain):
+            res_name = residue.res_name[0]
+
+            # Atoms in the structure
+            resolved_atom_set = set(residue.atom_name.tolist())
+
+            # Atoms that should be present according to the CCD
+            all_atoms = ccd[res_name]["chem_comp_atom"]["atom_id"].as_array()
+            all_atom_elements = ccd[res_name]["chem_comp_atom"][
+                "type_symbol"
+            ].as_array()
+            all_atoms_no_h = all_atoms[all_atom_elements != "H"].tolist()
+
+            if is_protein or is_nucleic_acid:
+                res_id = residue.res_id[0]
+                is_first_residue = res_id == 1
+                is_last_residue = res_id == chain_to_seqlen[chain_id]
+
+                # Handle terminal atom inclusion
+                if is_protein and not is_last_residue:
+                    if res_name not in std_protein_residues:
+                        logger.debug(
+                            "Adding unresolved atoms within protein chain for non-"
+                            f"standard protein residue: {res_name}"
+                        )
+                    # Skip terminal oxygen for mid-sequence amino acids
+                    with contextlib.suppress(ValueError):
+                        all_atoms_no_h.remove("OXT")
+                    assert "OXT" not in resolved_atom_set  # TODO: remove
+                elif is_nucleic_acid and not is_first_residue:
+                    if res_name not in std_na_residues:
+                        logger.debug(
+                            "Adding unresolved atoms within NA chain for non-standard "
+                            f"NA residue: {res_name}"
+                        )
+
+                    # Find the "leaving oxygen" for the phosphate group which isn't
+                    # always OP3 (e.g. in non-standard nucleic acids)
+                    op3_present = "OP3" in all_atoms_no_h
+                    o3p_present = "O3P" in all_atoms_no_h
+                    if op3_present or o3p_present:
+                        phosphate_oxygens = set(NUCLEIC_ACID_PHOSPHATE_OXYGENS) & set(
+                            all_atoms_no_h
+                        )
+                        resolved_phosphate_oxygens = (
+                            phosphate_oxygens & resolved_atom_set
+                        )
+
+                        # Set an arbitrary one of the missing phosphate oxygens as the
+                        # "leaving oxygen" that is displaced by the phosphodiester bond
+                        # and should not be added back as a missing atom
+                        leaving_oxygen = next(
+                            iter(phosphate_oxygens - resolved_phosphate_oxygens)
+                        )
+                        assert bool(leaving_oxygen)  # TODO: remove
+                    else:
+                        # For normal nucleic acids, the leaving oxygen is always OP3
+                        leaving_oxygen = "OP3"
+
+                    all_atoms_no_h.remove(leaving_oxygen)
+
+            assert resolved_atom_set.issubset(all_atoms_no_h)  # TODO: remove
+
+            unresolved_atom_set = set(all_atoms_no_h) - resolved_atom_set
+
+            # Skip if all atoms are resolved
+            if len(unresolved_atom_set) == 0:
+                continue
+            else:
+                if is_first_residue:
+                    logger.debug(
+                        "Adding unresolved atoms %s to start residue: (%s, %s, %s, %s)",
+                        unresolved_atom_set,
+                        residue.res_name[0],
+                        residue.res_id[0],
+                        residue.chain_id[0],
+                        residue.auth_seq_id[0],
+                    )
+                elif is_last_residue:
+                    logger.debug(
+                        "Adding unresolved atoms %s to end residue: (%s, %s, %s, %s)",
+                        unresolved_atom_set,
+                        residue.res_name[0],
+                        residue.res_id[0],
+                        residue.chain_id[0],
+                        residue.auth_seq_id[0],
+                    )
+                else:
+                    logger.debug(
+                        "Adding unresolved atoms %s to residue: (%s, %s, %s, %s)",
+                        unresolved_atom_set,
+                        residue.res_name[0],
+                        residue.res_id[0],
+                        residue.chain_id[0],
+                        residue.auth_seq_id[0],
+                    )
+
+            # Push up the atom indices of the subsequent atoms to account for the full
+            # residue length
+            n_missing_atoms = len(unresolved_atom_set)
+            _shift_up_atom_indices(
+                extended_atom_array,
+                n_missing_atoms,
+                greater_than=residue._atom_sort_idx[-1],
+                label="_atom_sort_idx",
+            )
+
+            # Rewrite atom indices and add missing atoms to end of atom list
+            residue_atom_selection_iter = iter(range(len(residue)))
+            residue_first_atom_idx = residue._atom_sort_idx[0]
+            print(res_name)
+            for atom_idx, atom_name in enumerate(
+                all_atoms_no_h, start=residue_first_atom_idx
+            ):
+                if atom_name in resolved_atom_set:
+                    residue._atom_sort_idx[next(residue_atom_selection_iter)] = atom_idx
+                else:
+                    atom_annotations = residue[0]._annot.copy()
+                    atom_annotations["atom_name"] = atom_name
+                    atom_annotations["_atom_sort_idx"] = atom_idx
+                    atom_annotations["occupancy"] = 0.0
+
+                    # Add missing atom with dummy coordinates
+                    missing_atom_list.append(
+                        struc.Atom([np.nan, np.nan, np.nan], **atom_annotations)
+                    )
+
+    if len(missing_atom_list) == 0:
+        return extended_atom_array
+
+    # Add atoms to end of the atom array
+    missing_atom_array = struc.array(missing_atom_list)
+    extended_atom_array += missing_atom_array
+
+    # Reorder appropriately
+    extended_atom_array = extended_atom_array[
+        np.argsort(extended_atom_array._atom_sort_idx)
+    ]
+
+    # Remove temporary atom indices
+    atom_array.del_annotation("_atom_idx")
+    atom_array.del_annotation("_atom_sort_idx")
+
+    # Add bonds within all the added atoms
+    update_bond_list(extended_atom_array)
+
+    logger.debug("Added unresolved atoms within residues.")  # TODO: remove
+
+    return extended_atom_array
+
+
+# TODO: add docstring
+def add_unresolved_atoms(atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile):
+    # Add missing atoms within residues
+    extended_atom_array = add_unresolved_atoms_within_residue(atom_array, cif_data, ccd)
+
+    # Add missing residues
+    extended_atom_array = add_unresolved_polymer_residues(
+        extended_atom_array, cif_data, ccd
+    )
 
     return extended_atom_array
