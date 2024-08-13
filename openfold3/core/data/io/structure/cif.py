@@ -20,6 +20,7 @@ class ParsedStructure(NamedTuple):
     atom_array: AtomArray
 
 
+# TODO: update docstring with new residue ID handling and preset fields
 def parse_mmcif(
     file_path: Path | str,
     expand_bioassembly: bool = False,
@@ -79,6 +80,7 @@ def parse_mmcif(
     ]
     extra_fields_preset = [
         "occupancy",
+        "charge",
     ] + label_fields
 
     if extra_fields:
