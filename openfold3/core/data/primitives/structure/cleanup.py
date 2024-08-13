@@ -3,7 +3,7 @@ import logging
 import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
-from biotite.structure.io.pdbx import CIFFile
+from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from scipy.spatial.distance import cdist
 
 from openfold3.core.data.primitives.structure.interface import (
@@ -12,7 +12,15 @@ from openfold3.core.data.primitives.structure.interface import (
 )
 from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
-    remove_atom_indices,
+)
+from openfold3.core.data.primitives.structure.metadata import (
+    get_chain_to_canonical_seq_dict,
+)
+from openfold3.core.data.resources.tables import (
+    CRYSTALLIZATION_AIDS,
+    STANDARD_NUCLEIC_ACID_RESIDUES,
+    STANDARD_PROTEIN_RESIDUES,
+    MoleculeType,
 )
 
 logger = logging.getLogger(__name__)
@@ -125,7 +133,9 @@ def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
     return atom_array
 
 
-def remove_small_polymers(atom_array: AtomArray, max_residues: int = 3) -> AtomArray:
+def remove_small_polymers(
+    atom_array: AtomArray, cif_data: CIFBlock, max_residues: int = 3
+) -> AtomArray:
     """Removes small polymer chains from the AtomArray
 
     Follows 2.5.4 of the AlphaFold3 SI and removes all polymer chains with up to
@@ -140,31 +150,15 @@ def remove_small_polymers(atom_array: AtomArray, max_residues: int = 3) -> AtomA
     Returns:
         AtomArray with all polymer chains with fewer than min_residues residues removed.
     """
-    # Get polymers of all sizes
-    all_nucleotides = struc.filter_polymer(
-        atom_array, pol_type="nucleotide", min_size=2
-    )
-    all_proteins = struc.filter_polymer(atom_array, pol_type="peptide", min_size=2)
-    all_polymers = all_nucleotides | all_proteins
-
-    # Get polymers that are not small
-    not_small_nucleotides = struc.filter_polymer(
-        atom_array, pol_type="nucleotide", min_size=max_residues + 1
-    )
-    not_small_proteins = struc.filter_polymer(
-        atom_array, pol_type="peptide", min_size=max_residues + 1
-    )
-    not_small_polymers = not_small_nucleotides | not_small_proteins
-
-    # Get small polymers by subtracting the not small polymers from all polymers
-    small_polymers = all_polymers & ~not_small_polymers
-
-    # Remove small polymers
-    small_polymer_chains = np.unique(atom_array.chain_id_renumbered[small_polymers])
+    chain_to_seq = get_chain_to_canonical_seq_dict(atom_array, cif_data)
+    small_polymer_chains = [
+        chain for chain, seq in chain_to_seq.items() if len(seq) <= max_residues
+    ]
 
     for chain_id in small_polymer_chains:
         breakpoint()
         atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
+        logger.debug(f"Removed small polymer chain {chain_id}")
 
     return atom_array
 
