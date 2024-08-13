@@ -156,7 +156,9 @@ def build_unresolved_polymer_segment(
 
 
 def _shift_up_atom_indices(
-    atom_array: AtomArray, shift: int, greater_than: int,
+    atom_array: AtomArray,
+    shift: int,
+    greater_than: int,
 ) -> None:
     """Shifts all atom indices higher than a threshold by a certain amount
 
@@ -524,9 +526,7 @@ def add_unresolved_atoms_within_residue(
     extended_atom_array += missing_atom_array
 
     # Reorder appropriately
-    extended_atom_array = extended_atom_array[
-        np.argsort(extended_atom_array._atom_idx)
-    ]
+    extended_atom_array = extended_atom_array[np.argsort(extended_atom_array._atom_idx)]
 
     # Remove temporary atom indices
     remove_atom_indices(extended_atom_array)
