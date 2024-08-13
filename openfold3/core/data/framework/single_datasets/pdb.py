@@ -59,7 +59,9 @@ class WeightedPDBDataset(SingleDataset):
             pdb_id=pdb_id,
             crop_weights=self.crop_weights,
             token_budget=self.token_budget,
-            preferred_chain_or_interface=self.data_cache[index]['preferred_chain_or_interface'],
+            preferred_chain_or_interface=self.data_cache[index][
+                "preferred_chain_or_interface"
+            ],
             ciftype=".bcif",
         )
         features = featurize_target_gt_structure_af3(

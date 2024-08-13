@@ -201,6 +201,7 @@ def parse_msas_direct(
 
     return msas
 
+
 def parse_msas_alignment_database(
     alignment_index_entry: dict,
     alignment_database_path: str,

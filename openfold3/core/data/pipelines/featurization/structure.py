@@ -13,12 +13,12 @@ from openfold3.core.data.primitives.featurization.structure import (
     create_token_mask,
     encode_one_hot,
     extract_starts_entities,
-    get_with_unknown,
 )
-from openfold3.core.data.resources.tables import (
+from openfold3.core.data.resources.residues import (
+    STANDARD_RESIDUES_WITH_GAP_3,
     MoleculeType,
+    get_with_unknown_3,
 )
-from openfold3.core.np.token_atom_constants import TOKEN_TYPES_WITH_GAP
 
 
 def featurize_structure_af3(
@@ -66,9 +66,11 @@ def featurize_structure_af3(
     )
     features["sym_id"] = torch.tensor(create_sym_id(entity_ids), dtype=torch.int)
     restype_index = torch.tensor(
-        get_with_unknown(atom_array.res_name[token_starts]), dtype=torch.int64
+        get_with_unknown_3(atom_array.res_name[token_starts]), dtype=torch.int64
     )
-    features["restype"] = encode_one_hot(restype_index, len(TOKEN_TYPES_WITH_GAP))
+    features["restype"] = encode_one_hot(
+        restype_index, len(STANDARD_RESIDUES_WITH_GAP_3)
+    )
     features["is_protein"] = torch.tensor(
         atom_array.molecule_type_id[token_starts] == MoleculeType.PROTEIN,
         dtype=torch.bool,

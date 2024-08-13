@@ -12,7 +12,7 @@ from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
     remove_atom_indices,
 )
-from openfold3.core.data.resources.tables import CRYSTALLIZATION_AIDS
+from openfold3.core.data.resources.lists import CRYSTALLIZATION_AIDS
 
 
 def convert_MSE_to_MET(atom_array: AtomArray) -> None:

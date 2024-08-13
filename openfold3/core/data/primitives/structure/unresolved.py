@@ -13,7 +13,7 @@ from openfold3.core.data.primitives.structure.labels import (
 from openfold3.core.data.primitives.structure.metadata import (
     get_entity_to_three_letter_codes_dict,
 )
-from openfold3.core.data.resources.tables import (
+from openfold3.core.data.resources.residues import (
     NUCLEIC_ACID_PHOSPHATE_ATOMS,
     MoleculeType,
 )

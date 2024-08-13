@@ -2,9 +2,9 @@ import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
 
-from openfold3.core.data.resources.tables import (
+from openfold3.core.data.resources.residues import (
     STANDARD_DNA_RESIDUES,
-    STANDARD_PROTEIN_RESIDUES,
+    STANDARD_PROTEIN_RESIDUES_3,
     STANDARD_RNA_RESIDUES,
     MoleculeType,
 )
@@ -250,7 +250,7 @@ def assign_molecule_type_ids(atom_array: AtomArray) -> None:
         residues_in_chain = set(chain_array.res_name)
 
         # Assign protein if polymeric and any standard protein residue is present
-        if (residues_in_chain & set(STANDARD_PROTEIN_RESIDUES)) and is_polymeric:
+        if (residues_in_chain & set(STANDARD_PROTEIN_RESIDUES_3)) and is_polymeric:
             molecule_type_ids[chain_start:chain_end] = MoleculeType.PROTEIN
 
         # Assign RNA if polymeric and any standard RNA residue is present

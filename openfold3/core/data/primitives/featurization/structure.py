@@ -8,10 +8,6 @@ import numpy as np
 import torch
 from biotite.structure import AtomArray
 
-from openfold3.core.np.token_atom_constants import TOKEN_TYPES_WITH_GAP
-
-RESTYPE_INDEX = {k: v for v, k in enumerate(TOKEN_TYPES_WITH_GAP)}
-
 
 def get_token_starts(
     atom_array: AtomArray, add_exclusive_stop: bool = False
@@ -34,21 +30,6 @@ def get_token_starts(
     if add_exclusive_stop:
         token_starts = np.append(token_starts, len(atom_array))
     return token_starts
-
-
-@np.vectorize
-def get_with_unknown(key: str) -> int:
-    """Wraps a RESTYPE_INDEX dictionary lookup with a default value of "UNK".
-
-    Args:
-        key (str):
-            Key to look up in the dictionary.
-
-    Returns:
-        int:
-            Index of residue type.
-    """
-    return RESTYPE_INDEX.get(key, RESTYPE_INDEX["UNK"])
 
 
 def encode_one_hot(x: torch.Tensor, num_classes: int) -> torch.Tensor:

@@ -40,7 +40,7 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_release_date,
     get_resolution,
 )
-from openfold3.core.data.resources.tables import MoleculeType
+from openfold3.core.data.resources.residues import MoleculeType
 
 print("PID:", os.getpid())
 

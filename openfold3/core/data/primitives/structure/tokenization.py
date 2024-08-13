@@ -8,10 +8,10 @@ from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
     remove_atom_indices,
 )
-from openfold3.core.data.resources.tables import (
+from openfold3.core.data.resources.residues import (
     NUCLEIC_ACID_MAIN_CHAIN_ATOMS,
     PROTEIN_MAIN_CHAIN_ATOMS,
-    STANDARD_RESIDUES,
+    STANDARD_RESIDUES_3,
     TOKEN_CENTER_ATOMS,
     MoleculeType,
 )
@@ -48,7 +48,7 @@ def tokenize_atom_array(atom_array: AtomArray):
     # Get standard residues
     n_atoms = len(atom_array)
     residue_ids, residue_names = struc.get_residues(atom_array)
-    standard_residue_ids = residue_ids[np.isin(residue_names, STANDARD_RESIDUES)]
+    standard_residue_ids = residue_ids[np.isin(residue_names, STANDARD_RESIDUES_3)]
 
     # Get ids where residue-tokens start
     is_standard_residue_atom = np.isin(atom_array.res_id, standard_residue_ids)
