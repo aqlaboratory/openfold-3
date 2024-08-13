@@ -500,7 +500,7 @@ def add_unresolved_atoms_within_residue(
             # Rewrite atom indices and add missing atoms to end of atom list
             residue_atom_selection_iter = iter(range(len(residue)))
             residue_first_atom_idx = residue._atom_idx[0]
-            print(res_name)
+
             for atom_idx, atom_name in enumerate(
                 all_atoms_no_h, start=residue_first_atom_idx
             ):
