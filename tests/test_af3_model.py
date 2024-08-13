@@ -175,7 +175,7 @@ class TestAF3Model(unittest.TestCase):
     def test_shape_large_eval(self):
         batch_size = 1
         n_token = 384
-        n_msa = 8000
+        n_msa = 16384
         n_templ = 4
 
         for dtype in [torch.float32, torch.bfloat16]:
@@ -199,7 +199,7 @@ class TestAF3Model(unittest.TestCase):
     def test_shape_large_bf16_train(self):
         batch_size = 1
         n_token = 384
-        n_msa = 8000
+        n_msa = 16384
         n_templ = 4
 
         self.run_model(
