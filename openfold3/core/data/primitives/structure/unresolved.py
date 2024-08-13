@@ -9,6 +9,7 @@ from biotite.structure.io.pdbx import CIFBlock, CIFFile
 
 from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
+    remove_atom_indices,
 )
 from openfold3.core.data.primitives.structure.metadata import (
     get_chain_to_canonical_seq_dict,
@@ -155,9 +156,13 @@ def build_unresolved_polymer_segment(
 
 
 def _shift_up_atom_indices(
-    atom_array: AtomArray, shift: int, greater_than: int, label: str = "_atom_idx"
+    atom_array: AtomArray, shift: int, greater_than: int,
 ) -> None:
     """Shifts all atom indices higher than a threshold by a certain amount
+
+    Atom indices are expected to be present in the "_atom_idx" annotation of the
+    AtomArray. This function adds the `shift` to all atom indices greater than a given
+    threshold.
 
     Args:
         atom_array:
@@ -166,12 +171,10 @@ def _shift_up_atom_indices(
             Amount by which to shift the atom indices.
         greater_than:
             Threshold index above which to shift the atom indices.
-        label:
-            Annotation label to update. Defaults to "_atom_idx".
     """
     # Update atom indices for all atoms greater than the given atom index
-    update_mask = atom_array.get_annotation(label) > greater_than
-    atom_array.get_annotation(label)[update_mask] += shift
+    update_mask = atom_array._atom_idx > greater_than
+    atom_array._atom_idx[update_mask] += shift
 
 
 def add_unresolved_polymer_residues(
@@ -349,7 +352,7 @@ def add_unresolved_polymer_residues(
     update_bond_list(extended_atom_array)
 
     # Remove temporary atom indices
-    atom_array.del_annotation("_atom_idx")
+    remove_atom_indices(extended_atom_array)
 
     return extended_atom_array
 
@@ -365,10 +368,7 @@ def add_unresolved_atoms_within_residue(
     extended_atom_array = atom_array.copy()
 
     # We need atom indices for bookkeeping of where to insert the missing atoms
-    # (_atom_sort_idx) but also want to keep the original indices of the non-missing
-    # atoms for indexing operations (_atom_idx)
-    assign_atom_indices(extended_atom_array, "_atom_idx")
-    assign_atom_indices(extended_atom_array, "_atom_sort_idx")
+    assign_atom_indices(extended_atom_array)
 
     std_protein_residues = set(STANDARD_PROTEIN_RESIDUES)
     std_na_residues = set(STANDARD_NUCLEIC_ACID_RESIDUES)
@@ -493,23 +493,22 @@ def add_unresolved_atoms_within_residue(
             _shift_up_atom_indices(
                 extended_atom_array,
                 n_missing_atoms,
-                greater_than=residue._atom_sort_idx[-1],
-                label="_atom_sort_idx",
+                greater_than=residue._atom_idx[-1],
             )
 
             # Rewrite atom indices and add missing atoms to end of atom list
             residue_atom_selection_iter = iter(range(len(residue)))
-            residue_first_atom_idx = residue._atom_sort_idx[0]
+            residue_first_atom_idx = residue._atom_idx[0]
             print(res_name)
             for atom_idx, atom_name in enumerate(
                 all_atoms_no_h, start=residue_first_atom_idx
             ):
                 if atom_name in resolved_atom_set:
-                    residue._atom_sort_idx[next(residue_atom_selection_iter)] = atom_idx
+                    residue._atom_idx[next(residue_atom_selection_iter)] = atom_idx
                 else:
                     atom_annotations = residue[0]._annot.copy()
                     atom_annotations["atom_name"] = atom_name
-                    atom_annotations["_atom_sort_idx"] = atom_idx
+                    atom_annotations["_atom_idx"] = atom_idx
                     atom_annotations["occupancy"] = 0.0
 
                     # Add missing atom with dummy coordinates
@@ -526,12 +525,11 @@ def add_unresolved_atoms_within_residue(
 
     # Reorder appropriately
     extended_atom_array = extended_atom_array[
-        np.argsort(extended_atom_array._atom_sort_idx)
+        np.argsort(extended_atom_array._atom_idx)
     ]
 
     # Remove temporary atom indices
-    atom_array.del_annotation("_atom_idx")
-    atom_array.del_annotation("_atom_sort_idx")
+    remove_atom_indices(extended_atom_array)
 
     # Add bonds within all the added atoms
     update_bond_list(extended_atom_array)

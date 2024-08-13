@@ -12,6 +12,7 @@ from openfold3.core.data.primitives.structure.interface import (
 )
 from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
+    remove_atom_indices,
 )
 from openfold3.core.data.primitives.structure.metadata import (
     get_chain_to_canonical_seq_dict,
