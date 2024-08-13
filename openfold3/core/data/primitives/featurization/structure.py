@@ -16,11 +16,14 @@ RESTYPE_INDEX = {k: v for v, k in enumerate(TOKEN_TYPES_WITH_GAP)}
 def get_token_starts(
     atom_array: AtomArray, add_exclusive_stop: bool = False
 ) -> np.ndarray:
-    """_summary_
+    """Gets the indices of the first atom of each token.
 
     Args:
-        atom_array (AtomArray): _description_
-        add_exclusive_stop (bool, optional): _description_. Defaults to False.
+        atom_array (AtomArray):
+            AtomArray of the target or ground truth structure
+        add_exclusive_stop (bool, optional):
+            Whether to add append an int with the size of the input atom array at the
+            end of returned indices. Defaults to False.
 
     Returns:
         np.ndarray: _description_
@@ -34,27 +37,32 @@ def get_token_starts(
 
 
 @np.vectorize
-def get_with_unknown(key):
-    """_summary_
+def get_with_unknown(key: str) -> int:
+    """Wraps a RESTYPE_INDEX dictionary lookup with a default value of "UNK".
 
     Args:
-        key (_type_): _description_
+        key (str):
+            Key to look up in the dictionary.
 
     Returns:
-        _type_: _description_
+        int:
+            Index of residue type.
     """
     return RESTYPE_INDEX.get(key, RESTYPE_INDEX["UNK"])
 
 
-def encode_one_hot(x, num_classes):
-    """_summary_
+def encode_one_hot(x: torch.Tensor, num_classes: int) -> torch.Tensor:
+    """Encodes a tensor of indices as a one-hot tensor.
 
     Args:
-        x (_type_): _description_
-        num_classes (_type_): _description_
+        x (torch.Tensor):
+            Tensor of numerically encoded residues.
+        num_classes (int):
+            Number of classes to encode.
 
     Returns:
-        _type_: _description_
+        torch.Tensor:
+            One-hot encoded tensor.
     """
     x_one_hot = torch.zeros(*x.shape, num_classes, device=x.device)
     x_one_hot.scatter_(-1, x.unsqueeze(-1), 1)
@@ -62,13 +70,15 @@ def encode_one_hot(x, num_classes):
 
 
 def create_sym_id(entity_ids: np.ndarray) -> np.ndarray:
-    """_summary_
+    """Creates sym_id feature as outlined in AF3 SI Table 5.
 
     Args:
-        entity_ids (np.array): _description_
+        entity_ids (np.array):
+            Entity ids of the target or ground truth structure.
 
     Returns:
-        _type_: _description_
+        np.ndarray:
+            Array of sym_ids.
     """
     output_array = np.zeros_like(entity_ids)
     counter = 0
@@ -101,14 +111,17 @@ def extract_starts_entities(atom_array: AtomArray) -> tuple[np.ndarray, np.ndarr
 
 
 def create_token_bonds(atom_array: AtomArray, token_index: np.ndarray) -> torch.Tensor:
-    """_summary_
+    """Creates token_bonds feature as outlined in AF3 SI Table 5.
 
     Args:
-        atom_array (AtomArray): _description_
-        token_index (np.ndarray): _description_
+        atom_array (AtomArray):
+            AtomArray of the target or ground truth structure.
+        token_index (np.ndarray):
+            Indices of tokens in the cropped AtomArray.
 
     Returns:
-        torch.Tensor: _description_
+        torch.Tensor:
+            token_bonds feature.
     """
     # Get bonds from whole cropped array
     bonds = atom_array.bonds.as_array()
@@ -153,3 +166,21 @@ def create_token_bonds(atom_array: AtomArray, token_index: np.ndarray) -> torch.
         ] = True
 
     return torch.tensor(token_bonds, dtype=torch.bool)
+
+
+def create_token_mask(token_allocated: int, token_budget: int) -> torch.Tensor:
+    """Creates token_mask feature.
+
+    Args:
+        token_allocated (int):
+            Number of tokens allocated.
+        token_budget (int):
+            Crop size.
+
+    Returns:
+        torch.Tensor:
+            token_mask that can be used as a padding mask along the token dim.
+    """
+    token_mask = torch.zeros(token_budget, dtype=torch.bool)
+    token_mask[:token_allocated] = True
+    return token_mask
