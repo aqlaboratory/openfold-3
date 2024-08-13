@@ -20,6 +20,7 @@ from openfold3.core.data.io.structure.cif import parse_mmcif, write_minimal_cif
 from openfold3.core.data.pipelines.preprocessing.structure import (
     cleanup_structure_af3,
 )
+from openfold3.core.data.primitives.structure.cleanup import remove_terminal_atoms
 from openfold3.core.data.primitives.structure.interface import (
     get_interface_chain_id_pairs,
 )
@@ -41,6 +42,7 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_release_date,
     get_resolution,
 )
+from openfold3.core.data.primitives.structure.unresolved import add_unresolved_atoms
 from openfold3.core.data.resources.tables import MoleculeType
 
 print("PID:", os.getpid())
@@ -48,6 +50,10 @@ print("PID:", os.getpid())
 ChainID = str
 EntityID = int
 ChemCompID = str
+
+
+class AssemblyTooLargeError(Exception):
+    """Raised when the assembly is too large to process."""
 
 
 # TODO: move explanation to docstring
@@ -70,19 +76,32 @@ def process_structure(cif_path: Path, ccd: CIFFile) -> ProcessedStructure:
         cif_path, expand_bioassembly=True, extra_fields=["auth_asym_id"]
     )
 
+    if struc.get_chain_count(atom_array) > 300:
+        raise AssemblyTooLargeError
+
     # Get block with all the primary CIF data
     cif_data = get_cif_block(cif_file)
 
     # Apply full structure cleanup
     atom_array = cleanup_structure_af3(atom_array, cif_data, ccd)
 
+    # Infer interface pairs
+    interface_chain_pairs = get_interface_chain_id_pairs(atom_array)
+
+    # Add unresolved atoms explicitly with NaN coordinates
+    atom_array = add_unresolved_atoms(atom_array, cif_data, ccd)
+
+    # Remove terminal atoms
+    atom_array = remove_terminal_atoms(atom_array)
+
     # Renumber chain IDs so that they're consistent with what you would get when parsing
     # the processed structure (which could have deleted chains in preprocessing)
     assign_renumbered_chain_ids(atom_array)
 
     # Get basic metadata
+    release_date = get_release_date(cif_data).strftime("%Y-%m-%d")
     metadata_dict = {
-        "release_date": get_release_date(cif_data),
+        "release_date": release_date,
         "resolution": get_resolution(cif_data),
     }
 
@@ -96,6 +115,7 @@ def process_structure(cif_path: Path, ccd: CIFFile) -> ProcessedStructure:
     # Create list of chains with metadata
     chain_metadata_list = []
 
+    # TODO: adjust with renumbered chain IDs
     for chain in chain_to_pdb_chain:
         chain_metadata = {
             "molecule_type": chain_to_molecule_type[chain],
@@ -106,24 +126,12 @@ def process_structure(cif_path: Path, ccd: CIFFile) -> ProcessedStructure:
         }
         chain_metadata_list.append(chain_metadata)
 
-    # Create list of interfaces with metadata
-    interface_chain_pairs = get_interface_chain_id_pairs(atom_array)
+    # Create list of interfaces (TODO: split into primitive)
     interface_metadata_list = []
 
-    # TODO: remove this and keep all metadata just in chains
     for chain_1, chain_2 in interface_chain_pairs:
         interface_metadata = {
-            "molecule_type": [
-                chain_to_molecule_type[chain_1],
-                chain_to_molecule_type[chain_2],
-            ],
             "chain_id_renumbered": [chain_1, chain_2],
-            "chain_id_pdb": [chain_to_pdb_chain[chain_1], chain_to_pdb_chain[chain_2]],
-            "chain_id_author": [
-                chain_to_author_chain[chain_1],
-                chain_to_author_chain[chain_2],
-            ],
-            "entity_id": [chain_to_entity[chain_1], chain_to_entity[chain_2]],
         }
         interface_metadata_list.append(interface_metadata)
 
@@ -131,30 +139,9 @@ def process_structure(cif_path: Path, ccd: CIFFile) -> ProcessedStructure:
     metadata_dict["chains"] = chain_metadata_list
     metadata_dict["interfaces"] = interface_metadata_list
 
-    # Find ligands
-    ligand_filter = atom_array.molecule_type_id == MoleculeType.LIGAND
-    ligand_atom_array = atom_array[ligand_filter]
-    ligand_ccd_components_to_chains = defaultdict(list)
-    special_ligand_entities = set()
-
-    if ligand_atom_array.array_length() != 0:
-        lig_chain_starts = struc.get_chain_starts(
-            ligand_atom_array, add_exclusive_stop=True
-        )
-        for chain_start, chain_end in zip(lig_chain_starts[:-1], lig_chain_starts[1:]):
-            ligand_chain = ligand_atom_array[chain_start:chain_end]
-
-            if struc.get_residue_count(ligand_chain) == 1:
-                ccd_id = ligand_chain.res_name[0]
-                chain_id = ligand_chain.chain_id_renumbered[0]
-                ligand_ccd_components_to_chains[ccd_id].append(chain_id)
-            else:
-                special_ligand_entities.add(ligand_chain.entity_id[0])
-
-    # Get other components
-    other_ccd_components = set()
-    for resname in np.unique(atom_array[~ligand_filter].res_name):
-        other_ccd_components.add(resname)
+    ligand_ccd_components_to_chains, other_ccd_components, special_ligand_entities = (
+        get_components(atom_array)
+    )
 
     return ProcessedStructure(
         cif_file=cif_file,
@@ -164,6 +151,44 @@ def process_structure(cif_path: Path, ccd: CIFFile) -> ProcessedStructure:
         ligand_ccd_components_to_chains=ligand_ccd_components_to_chains,
         other_ccd_components=other_ccd_components,
         special_ligand_entities=special_ligand_entities,
+    )
+
+
+class ProcessedComponents(NamedTuple):
+    ligand_ccd_components_to_chains: dict[ChemCompID, list[ChainID]]
+    other_ccd_components: list[ChemCompID]
+    special_ligand_entities: list[EntityID]
+
+
+def get_components(atom_array: AtomArray) -> ProcessedComponents:
+    ligand_ccd_components_to_chains = defaultdict(list)
+    special_ligand_entities = set()
+
+    # Get ligand components
+    ligand_filter = atom_array.molecule_type_id == MoleculeType.LIGAND
+    ligand_atom_array = atom_array[ligand_filter]
+
+    if ligand_atom_array.array_length() != 0:
+        for ligand_chain in struc.chain_iter(ligand_atom_array):
+            # Append standard single-residue ligands to ligand CCD components
+            if struc.get_residue_count(ligand_chain) == 1:
+                ccd_id = ligand_chain.res_name[0]
+                chain_id = ligand_chain.chain_id_renumbered[0]
+                ligand_ccd_components_to_chains[ccd_id].append(chain_id)
+            # Append special ligands that do not correspond to a single CCD ID to
+            # special ligand entities
+            else:
+                special_ligand_entities.add(ligand_chain.entity_id[0])
+
+    # Get other non-ligand standard components like protein and nucleic acid residues
+    other_ccd_components = set()
+    for resname in np.unique(atom_array[~ligand_filter].res_name):
+        other_ccd_components.add(resname)
+
+    return ProcessedComponents(
+        ligand_ccd_components_to_chains=dict(ligand_ccd_components_to_chains),
+        other_ccd_components=list(other_ccd_components),
+        special_ligand_entities=list(special_ligand_entities),
     )
 
 
@@ -215,7 +240,8 @@ def main(
     mmcif_folder: Path, ccd_path: Path, output_folder: Path, include_cifs: bool = False
 ) -> None:
     # Set output paths
-    output_folder.mkdir(exist_ok=True, parents=True)
+    output_cif_folder = output_folder / "cif_files"
+    output_cif_folder.mkdir(exist_ok=True, parents=True)
     metadata_json_path = output_folder / "metadata.json"
     ccd_components_path = output_folder / "ccd_component_sdfs"
     ccd_components_path.mkdir(exist_ok=True, parents=True)
@@ -241,18 +267,28 @@ def main(
 
     # TODO: remove enumerate and break condition
     for i, cif_path in enumerate(tqdm(mmcif_folder.glob("*.cif"))):
-        if i == 30:
-            break
+        if i < 644:
+            continue
+        # # if i == 30:
+        # #     break
+        # if i == 300:
+        #     break
 
         print(f"Processing {cif_path}")
-        processed_structure = process_structure(cif_path, ccd)
+        try:
+            processed_structure = process_structure(cif_path, ccd)
+        except AssemblyTooLargeError:
+            logger.info(f"Skipping structure {cif_path} due to too large assembly")
+            continue
+
         pdb_id = get_pdb_id(processed_structure.cif_file)
         structure_metadata = processed_structure.metadata_dict
         atom_array = processed_structure.atom_array
 
-        output_subfolder = output_folder / pdb_id
-        output_subfolder.mkdir(exist_ok=True, parents=True)
-        special_component_sdfs_path = output_subfolder / "special_ligand_sdfs"
+        # Make output subfolders
+        output_cif_subfolder = output_cif_folder / pdb_id
+        output_cif_subfolder.mkdir(exist_ok=True, parents=True)
+        special_component_sdfs_path = output_cif_subfolder / "special_ligand_sdfs"
         special_component_sdfs_path.mkdir(exist_ok=True)
 
         ccd_id_to_chains = processed_structure.ligand_ccd_components_to_chains
@@ -264,7 +300,7 @@ def main(
                 mol = mol_from_parsed_component(
                     parsed_ccd_components[ccd_id], assign_fallback_conformer=True
                 )
-                canonical_smiles = mol.GetProp("canonical_smiles")
+                canonical_smiles = Chem.MolToSmiles(mol)
                 ccd_component_to_canonical_smiles[ccd_id] = canonical_smiles
 
                 with Chem.SDWriter(ccd_components_path / f"{ccd_id}.sdf") as writer:
@@ -287,22 +323,31 @@ def main(
 
         for entity_id in processed_structure.special_ligand_entities:
             entity_atom_array = atom_array[atom_array.entity_id == entity_id]
-            mol = mol_from_atomarray(entity_atom_array, assign_fallback_conformer=True)
 
-            mol_sdf_path = special_component_sdfs_path / f"{entity_id}.sdf"
+            # Get first chain of entity
+            first_entity_chain_id = entity_atom_array.chain_id_renumbered[0]
+            first_entity_chain_atom_array = entity_atom_array[
+                entity_atom_array.chain_id_renumbered == first_entity_chain_id
+            ]
+
+            mol = mol_from_atomarray(
+                first_entity_chain_atom_array, assign_fallback_conformer=True
+            )
+
+            mol_sdf_path = special_component_sdfs_path / f"entity_{entity_id}.sdf"
             with Chem.SDWriter(mol_sdf_path) as writer:
                 writer.write(mol)
 
             for chain_metadata in structure_metadata["chains"]:
                 if chain_metadata["entity_id"] == entity_id:
-                    chain_metadata["canonical_smiles"] = mol.GetProp("canonical_smiles")
+                    chain_metadata["canonical_smiles"] = Chem.MolToSmiles(mol)
 
         # Set final metadata for structure
         all_metadata[pdb_id] = structure_metadata
 
         # Save cleaned bCIF file (this will be minimal and only include AtomSite
-        # records)
-        bcif_path = output_subfolder / f"{pdb_id}.bcif"
+        # & bond records)
+        bcif_path = output_cif_subfolder / f"{pdb_id}.bcif"
         write_minimal_cif(
             processed_structure.atom_array,
             bcif_path,
@@ -310,9 +355,9 @@ def main(
             include_bonds=True,
         )
 
-        # Save additional .cif file if requested
+        # Save additional minimal .cif file if requested
         if include_cifs:
-            cif_path = output_subfolder / f"{pdb_id}.cif"
+            cif_path = output_cif_subfolder / f"{pdb_id}.cif"
             write_minimal_cif(
                 processed_structure.atom_array,
                 cif_path,
@@ -322,7 +367,7 @@ def main(
 
         # Save FASTA file
         fasta_path = write_annotated_chains_fasta(
-            output_subfolder / f"{pdb_id}.fasta",
+            output_cif_subfolder / f"{pdb_id}.fasta",
             processed_structure.chain_to_canonical_seq,
             pdb_id,
             processed_structure.metadata_dict["chains"],
