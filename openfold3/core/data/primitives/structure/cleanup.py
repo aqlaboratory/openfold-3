@@ -78,6 +78,8 @@ def fix_arginine_naming(atom_array: AtomArray) -> None:
     for arginine in struc.residue_iter(atom_array[arginines]):
         fix_single_arginine_naming(arginine)
 
+    logger.debug("Fixed arginine naming")
+
 
 def remove_waters(atom_array: AtomArray) -> AtomArray:
     """Removes water molecules from the AtomArray
@@ -92,6 +94,8 @@ def remove_waters(atom_array: AtomArray) -> AtomArray:
     """
     water_residues = (atom_array.res_name == "HOH") | (atom_array.res_name == "DOD")
     atom_array = atom_array[~water_residues]
+
+    logger.debug("Removed water molecules")
 
     return atom_array
 
@@ -189,6 +193,7 @@ def remove_fully_unknown_polymers(atom_array: AtomArray) -> AtomArray:
 
         # Remove the chain from the AtomArray if all residues are unknown
         if np.all(chain.res_name == "UNK"):
+            logger.debug("Removed fully unknown polymer chain")
             breakpoint()
             atom_array_filtered = remove_chain_and_attached_ligands(
                 atom_array_filtered, chain_id
