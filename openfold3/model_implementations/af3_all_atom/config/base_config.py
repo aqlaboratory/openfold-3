@@ -64,6 +64,7 @@ config = mlc.ConfigDict(
             # exclusive with use_deepspeed_evo_attention and use_flash.
             "use_lma": False,
             "offload_inference": False,
+            "last_recycle_grad_only": True,
         },
         "model": {
             "input_embedder": {
@@ -122,6 +123,7 @@ config = mlc.ConfigDict(
                     "blocks_per_ckpt": blocks_per_ckpt,
                     "inf": 1e9,
                     "linear_init_params": lin_init.pair_block_init,
+                    "use_reentrant": False,
                     "tune_chunk_size": tune_chunk_size,
                 },
             },
@@ -135,7 +137,7 @@ config = mlc.ConfigDict(
                 "msa_module": {
                     "c_m": c_m,
                     "c_z": c_z,
-                    "c_hidden_msa_att": 32,
+                    "c_hidden_msa_att": 8,  # 8 or 32, possible typo in SI
                     "c_hidden_opm": 32,
                     "c_hidden_mul": 128,
                     "c_hidden_pair_att": 32,
@@ -152,6 +154,7 @@ config = mlc.ConfigDict(
                     "inf": 1e9,
                     "eps": eps,
                     "linear_init_params": lin_init.msa_module_init,
+                    "use_reentrant": False,
                     "clear_cache_between_blocks": False,
                     "tune_chunk_size": tune_chunk_size,
                 },
@@ -172,6 +175,7 @@ config = mlc.ConfigDict(
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "inf": 1e9,
                 "linear_init_params": lin_init.pairformer_init,
+                "use_reentrant": False,
                 "clear_cache_between_blocks": False,
                 "tune_chunk_size": tune_chunk_size,
             },
@@ -225,7 +229,9 @@ config = mlc.ConfigDict(
                     "use_block_sparse_attn": False,
                     "block_size": None,
                     "inf": 1e9,  # global parameter?
+                    "blocks_per_ckpt": blocks_per_ckpt,
                     "linear_init_params": lin_init.diffusion_transformer_init,
+                    "use_reentrant": False,
                 },
                 "atom_attn_dec": {
                     "c_atom": c_atom,
@@ -274,6 +280,7 @@ config = mlc.ConfigDict(
                         "blocks_per_ckpt": blocks_per_ckpt,
                         "inf": 1e9,
                         "linear_init_params": lin_init.pairformer_init,
+                        "use_reentrant": False,
                         "clear_cache_between_blocks": False,
                         "tune_chunk_size": tune_chunk_size,
                     },

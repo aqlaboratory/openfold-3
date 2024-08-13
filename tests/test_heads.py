@@ -130,7 +130,7 @@ class TestPairformerEmbedding(unittest.TestCase):
         si_input = torch.ones(batch_size, n_token, c_s_input)
         si = torch.ones(batch_size, n_token, c_s)
         zij = torch.ones(batch_size, n_token, n_token, c_z)
-        x_pred = torch.ones(batch_size, n_token, 3)
+        atom_positions_predicted = torch.ones(batch_size, n_token, 3)
         single_mask = torch.randint(
             0,
             2,
@@ -142,7 +142,13 @@ class TestPairformerEmbedding(unittest.TestCase):
         pair_mask = torch.randint(0, 2, size=(batch_size, n_token, n_token))
 
         out_single, out_pair = pair_emb(
-            si_input, si, zij, x_pred, single_mask, pair_mask, chunk_size=4
+            si_input,
+            si,
+            zij,
+            atom_positions_predicted,
+            single_mask,
+            pair_mask,
+            chunk_size=4,
         )
 
         expected_shape_single = (batch_size, n_token, c_s)
@@ -176,12 +182,12 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         si_input = torch.ones(batch_size, n_token, c_s_input)
         si = torch.ones(batch_size, n_token, c_s)
         zij = torch.ones(batch_size, n_token, n_token, c_z)
-        x_pred = torch.randn(batch_size, n_atom, 3)
+        atom_positions_predicted = torch.randn(batch_size, n_atom, 3)
 
         outputs = {
             "si_trunk": si,
             "zij_trunk": zij,
-            "x_pred": x_pred,
+            "atom_positions_predicted": atom_positions_predicted,
         }
 
         aux_out = aux_head(

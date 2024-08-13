@@ -47,7 +47,7 @@ class AlphaFoldLoss(nn.Module):
         super().__init__()
         self.config = config
 
-    def loss(self, out, batch, _return_breakdown=False):
+    def loss(self, batch, out, _return_breakdown=False):
         """
         Rename previous forward() as loss()
         so that can be reused in the subclass
@@ -189,7 +189,7 @@ class AlphaFold3Loss(nn.Module):
         if diffusion_weight > 0:
             l_diffusion, l_diffusion_breakdown = diffusion_loss(
                 batch=batch,
-                x=output["x_sample"],
+                x=output["atom_positions_diffusion"],
                 t=output["noise_level"],
                 **self.config.diffusion,
             )

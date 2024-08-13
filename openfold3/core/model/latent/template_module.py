@@ -216,6 +216,7 @@ class TemplatePairStack(nn.Module):
         blocks_per_ckpt,
         inf=1e9,
         linear_init_params=lin_init.pair_block_init,
+        use_reentrant: Optional[bool] = None,
         tune_chunk_size: bool = False,
         **kwargs,
     ):
@@ -250,12 +251,17 @@ class TemplatePairStack(nn.Module):
                 Large constant used for masking
             linear_init_params:
                 Configuration for linear initialization
+            use_reentrant:
+                Whether to use reentrant variant of checkpointing. If set,
+                torch checkpointing will be used (DeepSpeed does not support
+                this feature)
             tune_chunk_size:
                  Whether to dynamically tune the module's chunk size
         """
         super().__init__()
 
         self.blocks_per_ckpt = blocks_per_ckpt
+        self.use_reentrant = use_reentrant
 
         self.blocks = nn.ModuleList()
         for _ in range(no_blocks):
@@ -351,6 +357,7 @@ class TemplatePairStack(nn.Module):
             blocks=blocks,
             args=(t,),
             blocks_per_ckpt=self.blocks_per_ckpt if self.training else None,
+            use_reentrant=self.use_reentrant,
         )
 
         t = self.layer_norm(t)

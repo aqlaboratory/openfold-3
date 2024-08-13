@@ -19,10 +19,7 @@ from typing import Dict
 
 import torch
 
-from openfold3.core.utils.atomize_utils import (
-    broadcast_token_feat_to_atoms,
-    get_atom_to_onehot_token_index,
-)
+from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 
 
@@ -70,14 +67,20 @@ def weighted_rigid_align(
     H = H * w[..., None, None] * atom_mask_gt[..., None, None]
     H = torch.sum(H, dim=-3)
 
+    dtype = H.dtype
+
+    # TODO: Check why autocast did not work in test
     # Find optimal rotation from single value decomposition
-    with torch.cuda.amp.autocast(enabled=False):
-        # SVD (cast to float because doesn't work with bf16/fp16)
-        U, _, V = torch.linalg.svd(H.float())
+    # SVD (cast to float because doesn't work with bf16/fp16)
+    U, _, V = torch.linalg.svd(H.float())
+
+    dets = torch.linalg.det(U @ V).to(dtype=dtype)
+    U = U.to(dtype=dtype)
+    V = V.to(dtype=dtype)
 
     # Remove reflection
     F = torch.eye(3, device=x.device, dtype=x.dtype).tile((*H.shape[:-2], 1, 1))
-    F[..., -1, -1] = torch.sign(torch.linalg.det(U @ V))
+    F[..., -1, -1] = torch.sign(dets)
     R = U @ F @ V
 
     # Apply alignment
@@ -128,22 +131,25 @@ def mse_loss(
         token_feat=w,
     )
 
+    atom_positions_gt = batch["ground_truth"]["atom_positions"]
+    atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
+
     # Perform weighted rigid alignment
     x_gt_aligned = weighted_rigid_align(
-        x=batch["gt_atom_positions"],
+        x=atom_positions_gt,
         x_gt=x,
         w=w,
-        atom_mask_gt=batch["gt_atom_mask"],
+        atom_mask_gt=atom_mask_gt,
         eps=eps,
     )
 
     mse = (
         (1 / 3.0)
         * torch.sum(
-            torch.sum((x - x_gt_aligned) ** 2, dim=-1) * w * batch["gt_atom_mask"],
+            torch.sum((x - x_gt_aligned) ** 2, dim=-1) * w * atom_mask_gt,
             dim=-1,
         )
-        / torch.sum(batch["gt_atom_mask"] + eps, dim=-1)
+        / torch.sum(atom_mask_gt + eps, dim=-1)
     )
 
     return mse
@@ -163,11 +169,15 @@ def bond_loss(batch: Dict, x: torch.Tensor, eps: float) -> torch.Tensor:
     Returns:
         [*] Auxiliary loss for bonded ligands
     """
+    x_gt = batch["ground_truth"]["atom_positions"]
+    atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
+
     # Compute pairwise distances
-    x_gt = batch["gt_atom_positions"]
-    dx = torch.sqrt(torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1))
+    dx = torch.sqrt(
+        eps**2 + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
+    )
     dx_gt = torch.sqrt(
-        torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
+        eps**2 + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
     )
 
     # Construct polymer-ligand per-token bond mask
@@ -180,20 +190,22 @@ def bond_loss(batch: Dict, x: torch.Tensor, eps: float) -> torch.Tensor:
 
     # Construct polymer-ligand per-atom bond mask
     # [*, N_atom, N_atom]
-    atom_to_onehot_token_index = get_atom_to_onehot_token_index(
-        token_mask=batch["token_mask"], num_atoms_per_token=batch["num_atoms_per_token"]
+    bond_mask = broadcast_token_feat_to_atoms(
+        token_mask=batch["token_mask"],
+        num_atoms_per_token=batch["num_atoms_per_token"],
+        token_feat=bond_mask,
+        token_dim=-2,
     )
-    bond_mask = torch.einsum(
-        "...ij,...li->...lj", bond_mask, atom_to_onehot_token_index
+    bond_mask = broadcast_token_feat_to_atoms(
+        token_mask=batch["token_mask"],
+        num_atoms_per_token=batch["num_atoms_per_token"],
+        token_feat=bond_mask.transpose(-1, -2),
+        token_dim=-2,
     )
-    bond_mask = torch.einsum(
-        "...lj,...mj->...lm", bond_mask, atom_to_onehot_token_index
-    )
+    bond_mask = bond_mask.transpose(-1, -2)
 
     # Compute polymer-ligand bond loss
-    mask = bond_mask * (
-        batch["gt_atom_mask"][..., None] * batch["gt_atom_mask"][..., None, :]
-    )
+    mask = bond_mask * (atom_mask_gt[..., None] * atom_mask_gt[..., None, :])
 
     loss = torch.sum((dx - dx_gt) ** 2 * mask, dim=(-1, -2)) / torch.sum(
         mask + eps, dim=(-1, -2)
@@ -216,11 +228,15 @@ def smooth_lddt_loss(batch: Dict, x: torch.Tensor, eps: float) -> torch.Tensor:
     Returns:
         [*] Auxiliary structure-based loss based on smooth LDDT
     """
+    x_gt = batch["ground_truth"]["atom_positions"]
+    atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
+
     # [*, N_atom, N_atom]
-    x_gt = batch["gt_atom_positions"]
-    dx = torch.sqrt(torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1))
+    dx = torch.sqrt(
+        eps**2 + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
+    )
     dx_gt = torch.sqrt(
-        torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
+        eps**2 + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1),
     )
 
     # [*, N_atom, N_atom]
@@ -248,9 +264,7 @@ def smooth_lddt_loss(batch: Dict, x: torch.Tensor, eps: float) -> torch.Tensor:
     mask = 1 - torch.eye(x.shape[-2], device=x.device, dtype=x.dtype).tile(
         (*x.shape[:-2], 1, 1)
     )
-    mask = mask * (
-        batch["gt_atom_mask"][..., None] * batch["gt_atom_mask"][..., None, :]
-    )
+    mask = mask * (atom_mask_gt[..., None] * atom_mask_gt[..., None, :])
     ce_mean = torch.sum(c * e * mask, dim=(-1, -2)) / torch.sum(
         mask + eps, dim=(-1, -2)
     )

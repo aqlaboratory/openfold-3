@@ -18,6 +18,7 @@ MSA attention layers. Includes MSARowAttentionWithPairBias, MSAColumnAttention,
 MSAColumnGlobalAttention, and MSAPairWeightedAveraging.
 """
 
+import importlib
 from functools import partial
 from typing import List, Optional, Tuple
 
@@ -38,6 +39,10 @@ from openfold3.core.model.primitives.attention import (
 from openfold3.core.utils.checkpointing import get_checkpoint_fn
 from openfold3.core.utils.chunk_utils import chunk_layer
 from openfold3.core.utils.tensor_utils import flatten_final_dims, permute_final_dims
+
+triton_is_installed = importlib.util.find_spec("triton") is not None
+if triton_is_installed:
+    from openfold3.core.kernels.triton.fused_softmax import fused_softmax
 
 
 class MSAAttention(nn.Module):
@@ -572,18 +577,11 @@ class MSAPairWeightedAveraging(nn.Module):
 
     def _prep_bias(
         self,
-        m: torch.Tensor,
-        z: Optional[torch.Tensor],
-        mask: Optional[torch.Tensor],
-    ) -> torch.Tensor:
-        if mask is None:
-            # [*, N_seq, N_res]
-            mask = m.new_ones(
-                m.shape[:-1],
-            )
-
-        # [*, N_seq, 1, 1, N_res]
-        mask_bias = (self.inf * (mask - 1))[..., :, None, None, :]
+        z: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> [torch.Tensor, torch.Tensor]:
+        # [*, 1, 1, N_token, N_token]
+        mask_bias = (self.inf * (mask - 1))[..., None, None, :, :]
 
         # [*, N_res, N_res, C_z]
         z = self.layer_norm_z(z)
@@ -594,9 +592,7 @@ class MSAPairWeightedAveraging(nn.Module):
         # [*, 1, no_heads, N_res, N_res]
         z = permute_final_dims(z, (2, 0, 1)).unsqueeze(-4)
 
-        z = z + mask_bias
-
-        return z
+        return z, mask_bias
 
     def forward(
         self,
@@ -608,14 +604,20 @@ class MSAPairWeightedAveraging(nn.Module):
         """
         Args:
             m:
-                [*, N_seq, N_res, C_m] MSA embedding
+                [*, N_seq, N_token, C_m] MSA embedding
             z:
-                [*, N_res, N_res, C_z] Pair embedding
+                [*, N_token, N_token, C_z] Pair embedding
             mask:
-                [*, N_seq, N_res] MSA mask
+                [*, N_token, N_token] Pair mask
 
         """
-        bias = self._prep_bias(m, z, mask)
+        if mask is None:
+            # [*, N_token, N_token]
+            mask = z.new_ones(
+                z.shape[:-1],
+            )
+
+        z, mask_bias = self._prep_bias(z=z, mask=mask)
 
         m = self.layer_norm_m(m)
         v = self.linear_v(m)
@@ -626,7 +628,11 @@ class MSAPairWeightedAveraging(nn.Module):
         # [*, H, Q/K, C_hidden]
         v = v.transpose(-2, -3)
 
-        a = softmax_no_cast(bias, -1)
+        z = z + mask_bias
+        if triton_is_installed and z.is_cuda:
+            a = fused_softmax(z)
+        else:
+            a = softmax_no_cast(z, -1)
 
         # [*, H, Q, C_hidden]
         a = torch.matmul(a, v)

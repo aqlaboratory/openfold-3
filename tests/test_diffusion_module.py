@@ -20,7 +20,7 @@ from openfold3.core.model.structure.diffusion_module import (
     DiffusionModule,
     SampleDiffusion,
 )
-from openfold3.model_implementations.af3_all_atom.config.base_config import config
+from openfold3.model_implementations.registry import make_config_with_preset
 from tests.config import consts
 
 
@@ -29,6 +29,8 @@ class TestDiffusionModule(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
         n_atom = 4 * consts.n_res
+
+        config = make_config_with_preset("af3_all_atom")
 
         c_s_input = config.globals.c_s_input
         c_s = config.globals.c_s
@@ -81,6 +83,8 @@ class TestDiffusionModule(unittest.TestCase):
         n_atom = 4 * consts.n_res
         n_sample = 3
 
+        config = make_config_with_preset("af3_all_atom")
+
         c_s_input = config.globals.c_s_input
         c_s = config.globals.c_s
         c_z = config.globals.c_z
@@ -132,6 +136,8 @@ class TestSampleDiffusion(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
         n_atom = 4 * consts.n_res
+
+        config = make_config_with_preset("af3_all_atom")
 
         c_s_input = config.globals.c_s_input
         c_s = config.globals.c_s

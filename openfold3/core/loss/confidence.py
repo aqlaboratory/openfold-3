@@ -209,8 +209,8 @@ def express_coords_in_frames(
     a, b, c = phi
     w1 = a - b
     w2 = c - b
-    w1_norm = torch.sqrt(torch.sum(w1**2, dim=-1, keepdim=True))
-    w2_norm = torch.sqrt(torch.sum(w2**2, dim=-1, keepdim=True))
+    w1_norm = torch.sqrt(eps**2 + torch.sum(w1**2, dim=-1, keepdim=True))
+    w2_norm = torch.sqrt(eps**2 + torch.sum(w2**2, dim=-1, keepdim=True))
     w1 = w1 / w1_norm
     w2 = w2 / w2_norm
 
@@ -218,11 +218,19 @@ def express_coords_in_frames(
     # [*, N_token, 3]
     e1 = w1 + w2
     e2 = w2 - w1
-    e1_norm = torch.sqrt(torch.sum(e1**2, dim=-1, keepdim=True))
-    e2_norm = torch.sqrt(torch.sum(e2**2, dim=-1, keepdim=True))
+    e1_norm = torch.sqrt(eps**2 + torch.sum(e1**2, dim=-1, keepdim=True))
+    e2_norm = torch.sqrt(eps**2 + torch.sum(e2**2, dim=-1, keepdim=True))
     e1 = e1 / e1_norm
     e2 = e2 / e2_norm
-    e3 = torch.linalg.cross(e1, e2, dim=-1)
+
+    # BF16-friendly cross product
+    e3 = [
+        e1[..., 1] * e2[..., 2] - e1[..., 2] * e2[..., 1],
+        e1[..., 2] * e2[..., 0] - e1[..., 0] * e2[..., 2],
+        e1[..., 0] * e2[..., 1] - e1[..., 1] * e2[..., 0],
+    ]
+
+    e3 = torch.stack(e3, dim=-1)
 
     # Project onto frame basis
     # [*, N_token, N_token, 3]
@@ -268,7 +276,7 @@ def compute_alignment_error(
     """
     xij = express_coords_in_frames(x=x, phi=phi, eps=eps)
     xij_gt = express_coords_in_frames(x=x_gt, phi=phi_gt, eps=eps)
-    return torch.sqrt(torch.sum((xij - xij_gt) ** 2, dim=-1))
+    return torch.sqrt(eps**2 + torch.sum((xij - xij_gt) ** 2, dim=-1))
 
 
 def all_atom_plddt_loss(
@@ -303,10 +311,12 @@ def all_atom_plddt_loss(
     """
     # Compute difference in distances
     # [*, N_atom, N_atom]
-    x_gt = batch["gt_atom_positions"]
-    dx = torch.sqrt(torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1))
+    x_gt = batch["ground_truth"]["atom_positions"]
+    dx = torch.sqrt(
+        eps**2 + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
+    )
     dx_gt = torch.sqrt(
-        torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
+        eps**2 + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
     )
     d = torch.abs(dx_gt - dx)
 
@@ -336,7 +346,7 @@ def all_atom_plddt_loss(
         1 - batch["is_atomized"]
     )
 
-    restype = batch["restype"].to(dtype=x.dtype)
+    restype = batch["restype"]
     ca_atom_index_offset, ca_atom_mask = get_token_atom_index_offset(
         atom_name="CA", restype=restype
     )
@@ -361,18 +371,19 @@ def all_atom_plddt_loss(
     # Construct atom mask for lddt computation
     # Note that additional dimension is padded and later removed for masked out atoms
     # [*, N_atom]
-    atom_mask_shape = list(batch["gt_atom_mask"].shape)
+    atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
+    atom_mask_shape = list(atom_mask_gt.shape)
     padded_atom_mask_shape = list(atom_mask_shape)
     padded_atom_mask_shape[-1] = padded_atom_mask_shape[-1] + 1
     atom_mask = torch.zeros(padded_atom_mask_shape, device=x.device, dtype=x.dtype)
     atom_mask = atom_mask.scatter_(
         index=rep_index.long(), src=torch.ones_like(atom_mask), dim=-1
     )[..., :-1]
-    atom_mask = atom_mask * batch["gt_atom_mask"]
+    atom_mask = atom_mask * atom_mask_gt
 
     # Construct pair atom selection mask for lddt computation
     # [*, N_atom, N_atom]
-    pair_atom_mask = batch["gt_atom_mask"][..., None] * atom_mask[..., None, :]
+    pair_atom_mask = atom_mask_gt[..., None] * atom_mask[..., None, :]
     pair_mask = pair_mask * pair_atom_mask
 
     # Compute lddt
@@ -393,8 +404,8 @@ def all_atom_plddt_loss(
     errors = softmax_cross_entropy(logits, lddt_b)
 
     # Compute loss on plddt
-    l_plddt = torch.sum(errors * batch["gt_atom_mask"], dim=-1) / (
-        torch.sum(batch["gt_atom_mask"], dim=-1) + eps
+    l_plddt = torch.sum(errors * atom_mask_gt, dim=-1) / (
+        torch.sum(atom_mask_gt, dim=-1) + eps
     )
 
     return l_plddt
@@ -450,10 +461,13 @@ def pae_loss(
         eps=eps,
         inf=inf,
     )
+
+    atom_positions_gt = batch["ground_truth"]["atom_positions"]
+    atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
     phi_gt, valid_frame_mask_gt = get_token_frame_atoms(
         batch=batch,
-        x=batch["gt_atom_positions"],
-        atom_mask=batch["gt_atom_mask"],
+        x=atom_positions_gt,
+        atom_mask=atom_mask_gt,
         angle_threshold=angle_threshold,
         eps=eps,
         inf=inf,
@@ -464,7 +478,7 @@ def pae_loss(
         batch=batch, x=x, atom_mask=atom_mask
     )
     rep_x_gt, rep_atom_mask_gt = get_token_representative_atoms(
-        batch=batch, x=batch["gt_atom_positions"], atom_mask=batch["gt_atom_mask"]
+        batch=batch, x=atom_positions_gt, atom_mask=atom_mask_gt
     )
 
     # Compute alignment error
@@ -530,15 +544,18 @@ def pde_loss(
     )
     rep_x, _ = get_token_representative_atoms(batch=batch, x=x, atom_mask=atom_mask)
     rep_x_gt, rep_atom_mask_gt = get_token_representative_atoms(
-        batch=batch, x=batch["gt_atom_positions"], atom_mask=batch["gt_atom_mask"]
+        batch=batch,
+        x=batch["ground_truth"]["atom_positions"],
+        atom_mask=batch["ground_truth"]["atom_resolved_mask"],
     )
 
     # Compute prediction target
     d = torch.sqrt(
-        torch.sum((rep_x[..., None, :] - rep_x[..., None, :, :]) ** 2, dim=-1)
+        eps**2 + torch.sum((rep_x[..., None, :] - rep_x[..., None, :, :]) ** 2, dim=-1)
     )
     d_gt = torch.sqrt(
-        torch.sum((rep_x_gt[..., None, :] - rep_x_gt[..., None, :, :]) ** 2, dim=-1)
+        eps**2
+        + torch.sum((rep_x_gt[..., None, :] - rep_x_gt[..., None, :, :]) ** 2, dim=-1)
     )
     e = torch.abs(d - d_gt)
 
@@ -581,7 +598,8 @@ def all_atom_experimentally_resolved_loss(
             in the ground truth
     """
     # Compute binned prediction target
-    y_b = F.one_hot(batch["gt_atom_mask"].long(), num_classes=no_bins)
+    atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
+    y_b = F.one_hot(atom_mask_gt.long(), num_classes=no_bins)
 
     # Compute loss on experimentally resolved prediction
     atom_mask = broadcast_token_feat_to_atoms(
@@ -650,7 +668,7 @@ def confidence_loss(
     """
     l_plddt = all_atom_plddt_loss(
         batch=batch,
-        x=output["x_pred"],
+        x=output["atom_positions_predicted"],
         logits=output["plddt_logits"],
         no_bins=plddt["no_bins"],
         bin_min=plddt["bin_min"],
@@ -660,7 +678,7 @@ def confidence_loss(
 
     l_pde = pde_loss(
         batch=batch,
-        x=output["x_pred"],
+        x=output["atom_positions_predicted"],
         logits=output["pde_logits"],
         no_bins=pde["no_bins"],
         bin_min=pde["bin_min"],
@@ -687,7 +705,7 @@ def confidence_loss(
     if pae_weight > 0:
         l_pae = pae_loss(
             batch=batch,
-            x=output["x_pred"],
+            x=output["atom_positions_predicted"],
             logits=output["pae_logits"],
             angle_threshold=pae["angle_threshold"],
             no_bins=pae["no_bins"],

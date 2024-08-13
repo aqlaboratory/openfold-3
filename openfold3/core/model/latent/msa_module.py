@@ -19,18 +19,20 @@ Note that this does not include the MSA sampling, which is handled in the
 MSAModuleEmbedder.
 """
 
-from typing import Optional
+import sys
+from typing import Optional, Sequence, Tuple
 
 import torch
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
+from openfold3.core.model.latent.base_blocks import MSABlock
 from openfold3.core.model.latent.base_stacks import MSAStack
-from openfold3.core.model.latent.evoformer import EvoformerBlock
 from openfold3.core.model.layers.msa import MSAPairWeightedAveraging
+from openfold3.core.utils.tensor_utils import add
 
 
-class MSAModuleBlock(EvoformerBlock):
+class MSAModuleBlock(MSABlock):
     """Implements block of AF3 Algorithm 8."""
 
     def __init__(
@@ -107,7 +109,6 @@ class MSAModuleBlock(EvoformerBlock):
             transition_n=transition_n,
             msa_dropout=msa_dropout,
             pair_dropout=pair_dropout,
-            no_column_attention=True,
             opm_first=opm_first,
             fuse_projection_weights=fuse_projection_weights,
             inf=inf,
@@ -125,6 +126,126 @@ class MSAModuleBlock(EvoformerBlock):
             inf=inf,
             linear_init_params=linear_init_params.msa_pair_avg,
         )
+
+    def forward(
+        self,
+        m: Optional[torch.Tensor],
+        z: Optional[torch.Tensor],
+        msa_mask: torch.Tensor,
+        pair_mask: torch.Tensor,
+        chunk_size: Optional[int] = None,
+        use_deepspeed_evo_attention: bool = False,
+        use_lma: bool = False,
+        use_flash: bool = False,
+        inplace_safe: bool = False,
+        _mask_trans: bool = True,
+        _attn_chunk_size: Optional[int] = None,
+        _offload_inference: bool = False,
+        _offloadable_inputs: Optional[Sequence[torch.Tensor]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        msa_trans_mask = msa_mask if _mask_trans else None
+
+        if _attn_chunk_size is None:
+            _attn_chunk_size = chunk_size
+
+        if _offload_inference and inplace_safe:
+            input_tensors = _offloadable_inputs
+            del _offloadable_inputs
+        else:
+            input_tensors = [m, z]
+
+        m, z = input_tensors
+
+        if self.opm_first:
+            del m, z
+
+            m, z = self._compute_opm(
+                input_tensors=input_tensors,
+                msa_mask=msa_mask,
+                chunk_size=chunk_size,
+                inplace_safe=inplace_safe,
+                _offload_inference=_offload_inference,
+            )
+
+        m = add(
+            m,
+            self.msa_dropout_layer(
+                self.msa_att_row(
+                    m,
+                    z=z,
+                    mask=pair_mask,
+                )
+            ),
+            inplace=inplace_safe,
+        )
+
+        if _offload_inference and inplace_safe:
+            # m: GPU, z: CPU
+            del m, z
+            assert sys.getrefcount(input_tensors[1]) == 2
+            input_tensors[1] = input_tensors[1].cpu()
+            torch.cuda.empty_cache()
+            m, z = input_tensors
+
+        m = add(
+            m,
+            self.msa_transition(
+                m,
+                mask=msa_trans_mask,
+                chunk_size=chunk_size,
+            ),
+            inplace=inplace_safe,
+        )
+
+        if not self.opm_first:
+            if not inplace_safe:
+                input_tensors = [m, z]
+
+            del m, z
+
+            m, z = self._compute_opm(
+                input_tensors=input_tensors,
+                msa_mask=msa_mask,
+                chunk_size=chunk_size,
+                inplace_safe=inplace_safe,
+                _offload_inference=_offload_inference,
+            )
+
+        if _offload_inference and inplace_safe:
+            # m: CPU, z: GPU
+            del m, z
+            assert sys.getrefcount(input_tensors[0]) == 2
+            device = input_tensors[0].device
+            input_tensors[0] = input_tensors[0].cpu()
+            input_tensors[1] = input_tensors[1].to(device)
+            m, z = input_tensors
+
+        if not inplace_safe:
+            input_tensors = [m, z]
+
+        del m, z
+
+        z = self.pair_stack(
+            z=input_tensors[1],
+            pair_mask=pair_mask,
+            chunk_size=chunk_size,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_lma=use_lma,
+            inplace_safe=inplace_safe,
+            _mask_trans=_mask_trans,
+            _attn_chunk_size=_attn_chunk_size,
+        )
+
+        if _offload_inference and inplace_safe:
+            # m: GPU, z: GPU
+            device = z.device
+            assert sys.getrefcount(input_tensors[0]) == 2
+            input_tensors[0] = input_tensors[0].to(device)
+            m, _ = input_tensors
+        else:
+            m = input_tensors[0]
+
+        return m, z
 
 
 class MSAModuleStack(MSAStack):
@@ -153,6 +274,7 @@ class MSAModuleStack(MSAStack):
         inf: float,
         eps: float,
         linear_init_params: ConfigDict = lin_init.msa_module_init,
+        use_reentrant: Optional[bool] = None,
         clear_cache_between_blocks: bool = False,
         tune_chunk_size: bool = False,
         **kwargs,
@@ -201,6 +323,10 @@ class MSAModuleStack(MSAStack):
                 Small constant for numerical stability
             linear_init_params:
                 Parameters for linear layer initialization
+            use_reentrant:
+                Whether to use reentrant variant of checkpointing. If set,
+                torch checkpointing will be used (DeepSpeed does not support
+                this feature)
             clear_cache_between_blocks:
                 Whether to clear CUDA's GPU memory cache between blocks of the
                 stack. Slows down each block but can reduce fragmentation
@@ -209,6 +335,7 @@ class MSAModuleStack(MSAStack):
         """
         super().__init__(
             blocks_per_ckpt=blocks_per_ckpt,
+            use_reentrant=use_reentrant,
             clear_cache_between_blocks=clear_cache_between_blocks,
             tune_chunk_size=tune_chunk_size,
         )

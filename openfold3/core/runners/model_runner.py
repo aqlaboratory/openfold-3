@@ -93,14 +93,17 @@ class ModelRunner(pl.LightningModule):
             )
 
     def training_step(self, batch, batch_idx):
-        if self.ema.device != batch["aatype"].device:
-            self.ema.to(batch["aatype"].device)
+        example_feat = next(
+            iter(v for v in batch.values() if isinstance(v, torch.Tensor))
+        )
+        if self.ema.device != example_feat.device:
+            self.ema.to(example_feat.device)
 
         # Run the model
         outputs = self.model(batch)
 
         # Compute loss
-        loss, loss_breakdown = self.loss(outputs, batch, _return_breakdown=True)
+        loss, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
 
         # Log it
         self._log(loss_breakdown, batch, outputs)
@@ -149,8 +152,3 @@ class ModelRunner(pl.LightningModule):
         self, batch, outputs, superimposition_metrics=False
     ):
         pass
-
-    def on_train_epoch_start(self) -> None:
-        """Resample epoch_len number of samples for the training datasets at the start
-        of each epoch."""
-        self.trainer.train_dataloader.dataset.resample_epoch()

@@ -275,13 +275,16 @@ class SampleDiffusion(nn.Module):
         self.step_scale = step_scale
         self.diffusion_module = diffusion_module
 
-        self.noise_schedule = create_noise_schedule(
+        noise_schedule = create_noise_schedule(
             no_rollout_steps=no_rollout_steps,
             sigma_data=sigma_data,
             s_max=s_max,
             s_min=s_min,
             p=p,
         )
+
+        # TODO: Maybe refactor, this was needed to easily change the dtype
+        self.register_buffer("noise_schedule", noise_schedule)
 
     def forward(
         self,
@@ -313,7 +316,7 @@ class SampleDiffusion(nn.Module):
         )
 
         xl = self.noise_schedule[0] * torch.randn(
-            (*atom_mask.shape, 3), device=atom_mask.device
+            (*atom_mask.shape, 3), device=atom_mask.device, dtype=atom_mask.dtype
         )
 
         for tau, c_tau in enumerate(self.noise_schedule[1:]):

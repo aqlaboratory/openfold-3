@@ -5,26 +5,56 @@ import torch
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.model_implementations import registry
+from tests import compare_utils
 from tests.config import consts
 from tests.data_utils import random_af3_features
 
 
 class TestAF3Model(unittest.TestCase):
-    def setUp(self):
-        self.config = registry.MODEL_REGISTRY["af3_all_atom"].base_config
-
-    def test_shape(self):
-        batch_size = consts.batch_size
-        n_token = 16
-        n_msa = 10
-        n_templ = 3
+    def run_model(
+        self,
+        batch_size,
+        n_token,
+        n_msa,
+        n_templ,
+        dtype,
+        train=True,
+        reduce_model_size=True,
+        use_deepspeed_evo_attention=False,
+        use_block_sparse=False,
+    ):
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        # To avoid memory issues in CI
-        self.config.model.pairformer.no_blocks = 4
-        self.config.model.diffusion_module.diffusion_transformer.no_blocks = 4
+        config = registry.make_config_with_preset("af3_all_atom")
 
-        af3 = registry.get_lightning_module(self.config).to(device)
+        if train:
+            config.globals.chunk_size = None
+
+            # Needed to run large model
+            if not reduce_model_size:
+                config.globals.blocks_per_ckpt = 1
+
+        if reduce_model_size:
+            # To avoid memory issues in CI
+            config.model.pairformer.no_blocks = 4
+            config.model.diffusion_module.diffusion_transformer.no_blocks = 4
+
+        config.globals.use_deepspeed_evo_attention = use_deepspeed_evo_attention
+        config.model.input_embedder.atom_attn_enc.use_block_sparse_attn = (
+            use_block_sparse
+        )
+        config.model.diffusion_module.atom_attn_enc.use_block_sparse_attn = (
+            use_block_sparse
+        )
+        config.model.diffusion_module.atom_attn_dec.use_block_sparse_attn = (
+            use_block_sparse
+        )
+
+        config.model.heads.pae.enabled = True
+        config.loss.confidence.pae.weight = 1.0
+        config.loss.diffusion.bond_weight = 1.0
+
+        af3 = registry.get_lightning_module(config).to(device=device, dtype=dtype)
 
         batch = random_af3_features(
             batch_size=batch_size,
@@ -36,60 +66,153 @@ class TestAF3Model(unittest.TestCase):
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
         def to_device(t):
-            return t.to(torch.device(device))
+            return t.to(device=torch.device(device))
 
         batch = tensor_tree_map(to_device, batch)
 
-        outputs = af3(batch=batch)
-        x_pred = outputs["x_pred"].cpu()
-        x_sample = outputs["x_sample"].cpu()
+        if train:
+            af3_loss = AlphaFold3Loss(config=config.loss)
 
-        self.assertTrue(x_pred.shape == (batch_size, n_atom, 3))
-        self.assertTrue(
-            x_sample.shape == (batch_size, self.config.globals.no_samples, n_atom, 3)
-        )
+            batch, outputs = af3(batch=batch)
 
-    def test_model_with_loss(self):
-        # TODO: Add more serious test, this is just to check that the
-        # full integration runs without errors
+            loss, loss_breakdown = af3_loss(
+                batch=batch, output=outputs, _return_breakdown=True
+            )
+
+            loss.backward()
+
+            atom_positions_predicted = outputs["atom_positions_predicted"]
+            atom_positions_diffusion = outputs["atom_positions_diffusion"]
+
+            self.assertTrue(
+                atom_positions_diffusion.shape
+                == (batch_size, config.globals.no_samples, n_atom, 3)
+            )
+            self.assertTrue(loss.shape == ())
+
+        else:
+            af3.eval()
+
+            with torch.no_grad():
+                _, outputs = af3(batch=batch)
+
+            atom_positions_predicted = outputs["atom_positions_predicted"]
+
+        self.assertTrue(atom_positions_predicted.shape == (batch_size, n_atom, 3))
+
+    def test_shape_small_fp32(self):
         batch_size = consts.batch_size
-        n_token = 16
+        n_token = 18
         n_msa = 10
         n_templ = 3
-        device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        self.config.model.heads.pae.enabled = True
-        self.config.loss.confidence.pae.weight = 1.0
-        self.config.loss.diffusion.bond_weight = 1.0
-
-        # To avoid memory issues in CI
-        self.config.model.pairformer.no_blocks = 4
-        self.config.model.diffusion_module.diffusion_transformer.no_blocks = 4
-
-        af3 = registry.get_lightning_module(self.config, model_name="af3_all_atom").to(
-            device
-        )
-
-        batch = random_af3_features(
+        # Train
+        self.run_model(
             batch_size=batch_size,
             n_token=n_token,
             n_msa=n_msa,
             n_templ=n_templ,
+            dtype=torch.float32,
+            train=True,
+            reduce_model_size=True,
+            use_deepspeed_evo_attention=False,
+            use_block_sparse=False,
         )
 
-        def to_device(t):
-            return t.to(torch.device(device))
-
-        batch = tensor_tree_map(to_device, batch)
-
-        outputs = af3(batch=batch)
-
-        af3_loss = AlphaFold3Loss(config=self.config.loss)
-        loss, loss_breakdown = af3_loss(
-            batch=batch, output=outputs, _return_breakdown=True
+        # Eval
+        self.run_model(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=n_msa,
+            n_templ=n_templ,
+            dtype=torch.float32,
+            train=False,
+            reduce_model_size=True,
+            use_deepspeed_evo_attention=False,
+            use_block_sparse=False,
         )
 
-        self.assertTrue(loss.shape == ())
+    @compare_utils.skip_unless_triton_installed()
+    @compare_utils.skip_unless_cuda_available()
+    def test_shape_small_kernels(self):
+        batch_size = consts.batch_size
+        n_token = 18
+        n_msa = 10
+        n_templ = 3
+
+        for dtype in [torch.float32, torch.bfloat16]:
+            # Train
+            self.run_model(
+                batch_size=batch_size,
+                n_token=n_token,
+                n_msa=n_msa,
+                n_templ=n_templ,
+                dtype=dtype,
+                train=True,
+                reduce_model_size=True,
+                use_deepspeed_evo_attention=True,
+                use_block_sparse=True,
+            )
+
+            # Eval
+            self.run_model(
+                batch_size=batch_size,
+                n_token=n_token,
+                n_msa=n_msa,
+                n_templ=n_templ,
+                dtype=dtype,
+                train=False,
+                reduce_model_size=True,
+                use_deepspeed_evo_attention=True,
+                use_block_sparse=True,
+            )
+
+    @unittest.skip(
+        "Manually enable this for now, will add flag to run slow tests later."
+    )
+    @compare_utils.skip_unless_triton_installed()
+    @compare_utils.skip_unless_cuda_available()
+    def test_shape_large_eval(self):
+        batch_size = 1
+        n_token = 384
+        n_msa = 8000
+        n_templ = 4
+
+        for dtype in [torch.float32, torch.bfloat16]:
+            self.run_model(
+                batch_size=batch_size,
+                n_token=n_token,
+                n_msa=n_msa,
+                n_templ=n_templ,
+                dtype=dtype,
+                train=False,
+                reduce_model_size=False,
+                use_deepspeed_evo_attention=True,
+                use_block_sparse=True,
+            )
+
+    @unittest.skip(
+        "Manually enable this for now, will add flag to run slow tests later."
+    )
+    @compare_utils.skip_unless_triton_installed()
+    @compare_utils.skip_unless_cuda_available()
+    def test_shape_large_bf16_train(self):
+        batch_size = 1
+        n_token = 384
+        n_msa = 8000
+        n_templ = 4
+
+        self.run_model(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=n_msa,
+            n_templ=n_templ,
+            dtype=torch.bfloat16,
+            train=True,
+            reduce_model_size=False,
+            use_deepspeed_evo_attention=True,
+            use_block_sparse=True,
+        )
 
 
 if __name__ == "__main__":

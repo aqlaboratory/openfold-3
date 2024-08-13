@@ -137,71 +137,87 @@ class AlphaFold3(nn.Module):
         token_mask = batch["token_mask"]
         pair_mask = token_mask[..., None] * token_mask[..., None, :]
 
-        for _ in range(self.globals.no_cycles):
-            # [*, N_token, N_token, C_z]
-            z = z_init + self.linear_z(self.layer_norm_z(z))
+        is_grad_enabled = torch.is_grad_enabled()
 
-            z = add(
-                z,
-                self.template_embedder(
-                    batch=batch,
-                    z=z,
-                    pair_mask=pair_mask,
-                    chunk_size=self.globals.chunk_size,
-                    _mask_trans=True,
-                    use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
-                    use_lma=self.globals.use_lma,
-                    inplace_safe=inplace_safe,
-                ),
-                inplace=inplace_safe,
+        for cycle_no in range(self.globals.no_cycles):
+            is_final_iter = cycle_no == (self.globals.no_cycles - 1)
+
+            # Enable grad when we're training
+            # If last_recycle_grad_only is set, only enable grad on the last cycle
+            enable_grad = (
+                is_grad_enabled and is_final_iter
+                if self.globals.last_recycle_grad_only
+                else is_grad_enabled
             )
+            with torch.set_grad_enabled(enable_grad):
+                if is_final_iter and torch.is_autocast_enabled():
+                    # Sidestep AMP bug (PyTorch issue #65766)
+                    torch.clear_autocast_cache()
 
-            m, msa_mask = self.msa_module_embedder(batch=batch, s_input=s_input)
+                # [*, N_token, N_token, C_z]
+                z = z_init + self.linear_z(self.layer_norm_z(z))
 
-            # Run MSA + pair embeddings through the MsaModule
-            # m: [*, N_seq, N_token, C_m]
-            # z: [*, N_token, N_token, C_z]
-            if self.globals.offload_inference:
-                input_tensors = [m, z]
-                del m, z
-                z = self.msa_module.forward_offload(
-                    input_tensors,
-                    msa_mask=msa_mask.to(dtype=input_tensors[0].dtype),
-                    pair_mask=pair_mask.to(dtype=input_tensors[1].dtype),
-                    chunk_size=self.globals.chunk_size,
-                    use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
-                    use_lma=self.globals.use_lma,
-                    _mask_trans=True,
-                )
-
-                del input_tensors, msa_mask
-            else:
-                z = self.msa_module(
-                    m,
+                z = add(
                     z,
-                    msa_mask=msa_mask.to(dtype=m.dtype),
-                    pair_mask=pair_mask.to(dtype=z.dtype),
+                    self.template_embedder(
+                        batch=batch,
+                        z=z,
+                        pair_mask=pair_mask,
+                        chunk_size=self.globals.chunk_size,
+                        _mask_trans=True,
+                        use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
+                        use_lma=self.globals.use_lma,
+                        inplace_safe=inplace_safe,
+                    ),
+                    inplace=inplace_safe,
+                )
+
+                m, msa_mask = self.msa_module_embedder(batch=batch, s_input=s_input)
+
+                # Run MSA + pair embeddings through the MsaModule
+                # m: [*, N_seq, N_token, C_m]
+                # z: [*, N_token, N_token, C_z]
+                if self.globals.offload_inference:
+                    input_tensors = [m, z]
+                    del m, z
+                    z = self.msa_module.forward_offload(
+                        input_tensors,
+                        msa_mask=msa_mask.to(dtype=input_tensors[0].dtype),
+                        pair_mask=pair_mask.to(dtype=input_tensors[1].dtype),
+                        chunk_size=self.globals.chunk_size,
+                        use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
+                        use_lma=self.globals.use_lma,
+                        _mask_trans=True,
+                    )
+
+                    del input_tensors, msa_mask
+                else:
+                    z = self.msa_module(
+                        m,
+                        z,
+                        msa_mask=msa_mask.to(dtype=m.dtype),
+                        pair_mask=pair_mask.to(dtype=z.dtype),
+                        chunk_size=self.globals.chunk_size,
+                        use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
+                        use_lma=self.globals.use_lma,
+                        inplace_safe=inplace_safe,
+                        _mask_trans=True,
+                    )
+
+                    del m, msa_mask
+
+                s = s_init + self.linear_s(self.layer_norm_s(s))
+                s, z = self.pairformer_stack(
+                    s=s,
+                    z=z,
+                    single_mask=token_mask.to(dtype=z.dtype),
+                    pair_mask=pair_mask.to(dtype=s.dtype),
                     chunk_size=self.globals.chunk_size,
                     use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
                     use_lma=self.globals.use_lma,
                     inplace_safe=inplace_safe,
                     _mask_trans=True,
                 )
-
-                del m, msa_mask
-
-            s = s_init + self.linear_s(self.layer_norm_s(s))
-            s, z = self.pairformer_stack(
-                s=s,
-                z=z,
-                single_mask=token_mask.to(dtype=z.dtype),
-                pair_mask=pair_mask.to(dtype=s.dtype),
-                chunk_size=self.globals.chunk_size,
-                use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
-                use_lma=self.globals.use_lma,
-                inplace_safe=inplace_safe,
-                _mask_trans=True,
-            )
 
         del s_init, z_init
 
@@ -234,7 +250,7 @@ class AlphaFold3(nn.Module):
         """
         # Compute atom positions
         with torch.no_grad():
-            x_pred = self.sample_diffusion(
+            atom_positions_predicted = self.sample_diffusion(
                 batch=batch,
                 si_input=si_input,
                 si_trunk=si_trunk,
@@ -245,7 +261,7 @@ class AlphaFold3(nn.Module):
         output = {
             "si_trunk": si_trunk,
             "zij_trunk": zij_trunk,
-            "x_pred": x_pred,
+            "atom_positions_predicted": atom_positions_predicted,
         }
 
         # Compute confidences
@@ -279,11 +295,12 @@ class AlphaFold3(nn.Module):
                 [*, N_token, C_s] Single representation output from model trunk
             zij_trunk:
                 [*, N_token, N_token, C_z] Pair representation output from model trunk
+
         Returns:
             Output dictionary containing the following keys:
                 "noise_level" ([*])
                     Noise level at a diffusion step
-                "x_sample" ([*, N_samples, N_atom, 3]):
+                "atom_positions_diffusion" ([*, N_samples, N_atom, 3]):
                     Predicted atom positions
         """
         # Expand sampling dimension
@@ -293,19 +310,19 @@ class AlphaFold3(nn.Module):
         zij_trunk = zij_trunk.unsqueeze(1)
 
         batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
-
-        # Ground truth positions
-        xl_gt = batch["gt_atom_positions"]
+        xl_gt = batch["ground_truth"]["atom_positions"]
+        atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
 
         # Sample noise schedule for training
         no_samples = self.globals.no_samples
-        batch_size, n_atom, device = xl_gt.shape[0], xl_gt.shape[1], xl_gt.device
-        n = torch.randn((batch_size, no_samples), device=device)
+        batch_size, n_atom = xl_gt.shape[0], xl_gt.shape[-2]
+        device, dtype = xl_gt.device, xl_gt.dtype
+        n = torch.randn((batch_size, no_samples), device=device, dtype=dtype)
         t = self.globals.sigma_data * torch.exp(-1.2 + 1.5 * n)
 
         # Sample noise
         noise = (t[..., None, None] ** 2) * torch.randn(
-            (batch_size, no_samples, n_atom, 3), device=device
+            (batch_size, no_samples, n_atom, 3), device=device, dtype=dtype
         )
 
         # Sample atom positions
@@ -315,7 +332,7 @@ class AlphaFold3(nn.Module):
         xl = self.diffusion_module(
             batch=batch,
             xl_noisy=xl_noisy,
-            atom_mask=batch["gt_atom_mask"],
+            atom_mask=atom_mask_gt,
             t=t,
             si_input=si_input,
             si_trunk=si_trunk,
@@ -325,7 +342,7 @@ class AlphaFold3(nn.Module):
 
         output = {
             "noise_level": t,
-            "x_sample": xl,
+            "atom_positions_diffusion": xl,
         }
 
         # Remove sample dimension
@@ -333,7 +350,7 @@ class AlphaFold3(nn.Module):
 
         return output
 
-    def forward(self, batch: Dict) -> Dict:
+    def forward(self, batch: Dict) -> [Dict, Dict]:
         """
         Args:
             batch:
@@ -411,19 +428,40 @@ class AlphaFold3(nn.Module):
                         Token-level mask
                     *"msa_mask" ([*, N_msa, N_token])
                         MSA mask
-                    *"num_main_msa_seqs" ([*])
+                    *"num_paired_seqs" ([*])
                         Number of main MSA seqs used in MSA sampling (non-uniprot)
-                    *"gt_atom_positions" ([*, N_atom, 3])
-                        Ground truth atom positions for training
-                    *"gt_atom_mask" ([*, N_atom])
-                        Mask for ground truth atom positions
+                    "ground_truth" (Dict):
+                        "residue_index" ([*, N_token])
+                            Residue number in the token’s original input chain
+                        "token_index" ([*, N_token])
+                            Token number
+                        "asym_id" ([*, N_token])
+                            Unique integer for each distinct chain
+                        "entity_id" ([*, N_token])
+                            Unique integer for each distinct sequence
+                        "is_protein" ([*, N_token])
+                            Molecule type mask
+                        "is_ligand" ([*, N_token])
+                            Molecule type mask
+                        "token_bonds" ([*, N_token, N_token])
+                            A 2D matrix indicating if there is a bond between
+                            any atom in token i and token j
+                        *"num_atoms_per_token" ([*, N_token])
+                            Number of atoms per token
+                        *"token_mask" ([*, N_token])
+                            Token-level mask
+                        *"atom_positions" ([*, N_atom, 3])
+                            Ground truth atom positions for training
+                        *"atom_resolved_mask" ([*, N_atom])
+                            Mask for ground truth atom positions
         Returns:
-            Output dictionary containing the following keys:
+            batch: Updated batch dictionary post permutation alignment
+            output: Output dictionary containing the following keys:
                 "si_trunk" ([*, N_token, C_s]):
                     Single representation output from model trunk
                 "zij_trunk" ([*, N_token, N_token, C_z]):
                     Pair representation output from model trunk
-                "x_pred" ([*, N_atom, 3]):
+                "atom_positions_predicted" ([*, N_atom, 3]):
                     Predicted atom positions
                 "plddt_logits" ([*, N_atom, 50]):
                     Predicted binned PLDDT logits
@@ -440,15 +478,19 @@ class AlphaFold3(nn.Module):
                     pLDDT, PDE, PAE, pTM, iPTM, weighted pTM
                 "noise_level" ([*])
                     Training only, noise level at a diffusion step
-                "x_sample" ([*, N_samples, N_atom, 3]):
+                "atom_positions_diffusion" ([*, N_samples, N_atom, 3]):
                     Training only, predicted atom positions
 
         """
         # This needs to be done manually for DeepSpeed's sake
         dtype = next(self.parameters()).dtype
-        for k in batch:
-            if batch[k].dtype == torch.float32:
-                batch[k] = batch[k].to(dtype=dtype)
+
+        def to_dtype(t: torch.Tensor):
+            if t.dtype == torch.float32:
+                return t.to(dtype=dtype)
+            return t
+
+        batch = tensor_tree_map(to_dtype, batch)
 
         # Controls whether the model uses in-place operations throughout
         # The dual condition accounts for activation checkpoints
@@ -468,7 +510,8 @@ class AlphaFold3(nn.Module):
             # TODO: Add multi-chain permutation alignment here
             #  Permutation code needs to be updated first
             #  Needs to happen before losses and training diffusion step
-            # ground_truth = {k: v for k, v in batch.items() if k.startswith("gt_")}
+            #  New batch will include the cropped and assigned GT dict
+            # ground_truth = batch.pop("ground_truth")
             # batch = multi_chain_permutation_align(
             #     out=output, features=batch, ground_truth=ground_truth
             # )
@@ -484,4 +527,4 @@ class AlphaFold3(nn.Module):
 
                 output.update(diffusion_output)
 
-        return output
+        return batch, output

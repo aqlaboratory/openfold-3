@@ -38,6 +38,7 @@ class MSAStack(nn.Module, ABC):
     def __init__(
         self,
         blocks_per_ckpt: Optional[int],
+        use_reentrant: Optional[bool] = None,
         clear_cache_between_blocks: bool = False,
         tune_chunk_size: bool = False,
         **kwargs,
@@ -46,6 +47,10 @@ class MSAStack(nn.Module, ABC):
         Args:
             blocks_per_ckpt:
                 Number of blocks in each activation checkpoint
+            use_reentrant:
+                Whether to use reentrant variant of checkpointing. If set,
+                torch checkpointing will be used (DeepSpeed does not support
+                this feature)
             clear_cache_between_blocks:
                 Whether to clear CUDA's GPU memory cache between blocks of the
                 stack. Slows down each block but can reduce fragmentation
@@ -55,6 +60,7 @@ class MSAStack(nn.Module, ABC):
         super().__init__()
 
         self.blocks_per_ckpt = blocks_per_ckpt
+        self.use_reentrant = use_reentrant
         self.clear_cache_between_blocks = clear_cache_between_blocks
 
         # Must be composed in subclasses
@@ -258,6 +264,7 @@ class MSAStack(nn.Module, ABC):
             blocks,
             args=(m, z),
             blocks_per_ckpt=blocks_per_ckpt,
+            use_reentrant=self.use_reentrant,
         )
 
         return self._wrap_up(m, z)
