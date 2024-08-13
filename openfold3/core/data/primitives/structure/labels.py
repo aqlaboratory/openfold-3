@@ -240,29 +240,35 @@ def assign_molecule_type_ids(atom_array: AtomArray) -> None:
     """
     chain_start_idxs = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
 
+    std_protein_residues = set(STANDARD_PROTEIN_RESIDUES)
+    std_dna_residues = set(STANDARD_DNA_RESIDUES)
+    std_rna_residues = set(STANDARD_RNA_RESIDUES)
+
     # Create molecule type annotation
     molecule_type_ids = np.zeros(len(atom_array), dtype=int)
 
-    # Zip together chain starts and ends
-    for chain_start, chain_end in zip(chain_start_idxs[:-1], chain_start_idxs[1:]):
-        chain_array = atom_array[chain_start:chain_end]
+    # Zip together chain starts
+    for chain_start, next_chain_start in zip(
+        chain_start_idxs[:-1], chain_start_idxs[1:]
+    ):
+        chain_array = atom_array[chain_start:next_chain_start]
         is_polymeric = struc.get_residue_count(chain_array) > 1
         residues_in_chain = set(chain_array.res_name)
 
         # Assign protein if polymeric and any standard protein residue is present
-        if (residues_in_chain & set(STANDARD_PROTEIN_RESIDUES)) and is_polymeric:
-            molecule_type_ids[chain_start:chain_end] = MoleculeType.PROTEIN
+        if (residues_in_chain & std_protein_residues) and is_polymeric:
+            molecule_type_ids[chain_start:next_chain_start] = MoleculeType.PROTEIN
 
         # Assign RNA if polymeric and any standard RNA residue is present
-        elif (residues_in_chain & set(STANDARD_RNA_RESIDUES)) and is_polymeric:
-            molecule_type_ids[chain_start:chain_end] = MoleculeType.RNA
+        elif (residues_in_chain & std_rna_residues) and is_polymeric:
+            molecule_type_ids[chain_start:next_chain_start] = MoleculeType.RNA
 
         # Assign DNA if polymeric and any standard DNA residue is present
-        elif (residues_in_chain & set(STANDARD_DNA_RESIDUES)) and is_polymeric:
-            molecule_type_ids[chain_start:chain_end] = MoleculeType.DNA
+        elif (residues_in_chain & std_dna_residues) and is_polymeric:
+            molecule_type_ids[chain_start:next_chain_start] = MoleculeType.DNA
 
         # Assign ligand otherwise
         else:
-            molecule_type_ids[chain_start:chain_end] = MoleculeType.LIGAND
+            molecule_type_ids[chain_start:next_chain_start] = MoleculeType.LIGAND
 
     atom_array.set_annotation("molecule_type_id", molecule_type_ids)
