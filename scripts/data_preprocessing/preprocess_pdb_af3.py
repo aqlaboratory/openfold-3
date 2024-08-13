@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from collections import defaultdict
 from pathlib import Path
@@ -337,4 +338,7 @@ def main(
 
 
 if __name__ == "__main__":
+    logger = logging.getLogger("openfold3")
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(logging.StreamHandler())
     main()

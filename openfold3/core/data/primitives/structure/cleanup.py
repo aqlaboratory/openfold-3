@@ -1,3 +1,5 @@
+import logging
+
 import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
@@ -12,7 +14,8 @@ from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
     remove_atom_indices,
 )
-from openfold3.core.data.resources.tables import CRYSTALLIZATION_AIDS
+
+logger = logging.getLogger(__name__)
 
 
 def convert_MSE_to_MET(atom_array: AtomArray) -> None:

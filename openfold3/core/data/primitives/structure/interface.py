@@ -1,10 +1,13 @@
 # TODO: add module docstring
 
+import logging
 from typing import Generator
 
 import numpy as np
 from biotite.structure import AtomArray
 from scipy.spatial import KDTree
+
+logger = logging.getLogger(__name__)
 
 
 def get_query_interface_atom_pair_idxs(

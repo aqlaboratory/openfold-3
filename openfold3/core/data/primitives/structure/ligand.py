@@ -1,9 +1,13 @@
+import logging
+
 import numpy as np
 from biotite.structure import AtomArray, BondType
 from pdbeccdutils.core.ccd_reader import Component
 from rdkit import Chem
 from rdkit.Chem import AllChem, Mol
 from rdkit.Geometry import Point3D
+
+logger = logging.getLogger(__name__)
 
 PERIODIC_TABLE = Chem.GetPeriodicTable()
 
