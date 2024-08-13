@@ -115,10 +115,8 @@ def get_query_interface_atom_pair_idxs(
     # Pair the chain IDs
     chain_pairs = np.column_stack(
         (
-            query_atom_array.chain_id_renumbered[atom_pair_idxs[:, 0]],
-            target_atom_array.chain_id_renumbered[
-                atom_pair_idxs[:, 1]
-            ],  # change to target
+            query_atom_array.chain_id[atom_pair_idxs[:, 0]],
+            target_atom_array.chain_id[atom_pair_idxs[:, 1]],  # change to target
         )
     )
 
@@ -176,7 +174,7 @@ def get_interface_atom_pair_idxs(
     atom_pair_idxs = kdtree.query_pairs(distance_threshold)
 
     # Pair the chain IDs
-    chain_pairs = atom_array.chain_id_renumbered[atom_pair_idxs]
+    chain_pairs = atom_array.chain_id[atom_pair_idxs]
 
     if sort_by_chain:
         # Sort by chain within-pair to canonicalize

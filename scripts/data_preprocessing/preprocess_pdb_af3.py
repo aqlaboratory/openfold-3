@@ -25,7 +25,6 @@ from openfold3.core.data.primitives.structure.interface import (
     get_interface_chain_id_pairs,
 )
 from openfold3.core.data.primitives.structure.labels import (
-    assign_renumbered_chain_ids,
     get_chain_to_author_chain_dict,
     get_chain_to_entity_dict,
     get_chain_to_molecule_type_dict,
@@ -94,10 +93,6 @@ def process_structure(cif_path: Path, ccd: CIFFile) -> ProcessedStructure:
     # Remove terminal atoms
     atom_array = remove_terminal_atoms(atom_array)
 
-    # Renumber chain IDs so that they're consistent with what you would get when parsing
-    # the processed structure (which could have deleted chains in preprocessing)
-    assign_renumbered_chain_ids(atom_array)
-
     # Get basic metadata
     release_date = get_release_date(cif_data).strftime("%Y-%m-%d")
     metadata_dict = {
@@ -115,11 +110,10 @@ def process_structure(cif_path: Path, ccd: CIFFile) -> ProcessedStructure:
     # Create list of chains with metadata
     chain_metadata_list = []
 
-    # TODO: adjust with renumbered chain IDs
     for chain in chain_to_pdb_chain:
         chain_metadata = {
             "molecule_type": chain_to_molecule_type[chain],
-            "chain_id_renumbered": chain,
+            "chain_id": chain,
             "chain_id_pdb": chain_to_pdb_chain[chain],
             "chain_id_author": chain_to_author_chain[chain],
             "entity_id": chain_to_entity[chain],
@@ -131,7 +125,7 @@ def process_structure(cif_path: Path, ccd: CIFFile) -> ProcessedStructure:
 
     for chain_1, chain_2 in interface_chain_pairs:
         interface_metadata = {
-            "chain_id_renumbered": [chain_1, chain_2],
+            "chain_id": [chain_1, chain_2],
         }
         interface_metadata_list.append(interface_metadata)
 
@@ -173,7 +167,7 @@ def get_components(atom_array: AtomArray) -> ProcessedComponents:
             # Append standard single-residue ligands to ligand CCD components
             if struc.get_residue_count(ligand_chain) == 1:
                 ccd_id = ligand_chain.res_name[0]
-                chain_id = ligand_chain.chain_id_renumbered[0]
+                chain_id = ligand_chain.chain_id[0]
                 ligand_ccd_components_to_chains[ccd_id].append(chain_id)
             # Append special ligands that do not correspond to a single CCD ID to
             # special ligand entities
@@ -307,7 +301,7 @@ def main(
                     writer.write(mol)
 
             for chain_metadata in structure_metadata["chains"]:
-                if chain_metadata["chain_id_renumbered"] in chains:
+                if chain_metadata["chain_id"] in chains:
                     chain_metadata["canonical_smiles"] = canonical_smiles
 
         for ccd_id in processed_structure.other_ccd_components:
@@ -325,9 +319,9 @@ def main(
             entity_atom_array = atom_array[atom_array.entity_id == entity_id]
 
             # Get first chain of entity
-            first_entity_chain_id = entity_atom_array.chain_id_renumbered[0]
+            first_entity_chain_id = entity_atom_array.chain_id[0]
             first_entity_chain_atom_array = entity_atom_array[
-                entity_atom_array.chain_id_renumbered == first_entity_chain_id
+                entity_atom_array.chain_id == first_entity_chain_id
             ]
 
             mol = mol_from_atomarray(

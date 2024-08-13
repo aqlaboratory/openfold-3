@@ -155,7 +155,7 @@ def get_entity_to_canonical_seq_dict(cif_data: CIFBlock) -> dict[int, str]:
 def get_chain_to_canonical_seq_dict(
     atom_array: struc.AtomArray, cif_data: CIFBlock
 ) -> dict[int, str]:
-    """Get a dictionary mapping renumbered chain IDs to their canonical sequences.
+    """Get a dictionary mapping chain IDs to their canonical sequences.
 
     Args:
         atom_array:
@@ -208,7 +208,7 @@ def get_entity_to_three_letter_codes_dict(cif_data: CIFBlock) -> dict[int, list[
 def get_chain_to_three_letter_codes_dict(
     atom_array: struc.AtomArray, cif_data: CIFBlock
 ) -> dict[int, list[str]]:
-    """Get dictionary mapping renumbered chain IDs to their three-letter-code sequences.
+    """Get dictionary mapping chain IDs to their three-letter-code sequences.
 
     Args:
         atom_array:
@@ -218,7 +218,7 @@ def get_chain_to_three_letter_codes_dict(
             requires one prior level of indexing into the CIFFile, (see `get_cif_block`)
 
     Returns:
-        A dictionary mapping renumbered chain IDs to their three-letter-code sequences.
+        A dictionary mapping chain IDs to their three-letter-code sequences.
     """
     entity_ids_to_3l_codes = get_entity_to_three_letter_codes_dict(cif_data)
     chain_to_entity_dict = get_chain_to_entity_dict(atom_array)
@@ -256,7 +256,7 @@ def add_canonical_one_letter_codes(
         entity_mask = atom_array.entity_id == entity_id
         entity_array = atom_array[entity_mask]
 
-        n_seq_repetitions = len(np.unique(entity_array.chain_id_renumbered))
+        n_seq_repetitions = len(np.unique(entity_array.chain_id))
         seqs_repeated = seq * n_seq_repetitions
 
         if len(seqs_repeated) != struc.get_residue_count(entity_array):

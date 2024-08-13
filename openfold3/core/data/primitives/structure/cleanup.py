@@ -190,7 +190,7 @@ def remove_fully_unknown_polymers(atom_array: AtomArray) -> AtomArray:
 
     for chain in struc.chain_iter(atom_array[polymers]):
         # Explicit single-element unpacking (will fail if >1 chain_id)
-        (chain_id,) = np.unique(chain.chain_id_renumbered)
+        (chain_id,) = np.unique(chain.chain_id)
 
         # Remove the chain from the AtomArray if all residues are unknown
         if np.all(chain.res_name == "UNK"):
@@ -218,7 +218,7 @@ def remove_chain_and_attached_ligands(
         atom_array:
             AtomArray containing the structure to remove the chain from.
         chain_id:
-            chain ID of the chain to remove (uses the "chain_id_renumbered" field)
+            chain ID of the chain to remove
 
     Returns:
         AtomArray with the specified chain and all attached covalent ligands removed
@@ -226,7 +226,7 @@ def remove_chain_and_attached_ligands(
     # Assign temporary helper indices
     assign_atom_indices(atom_array)
 
-    chain_mask = atom_array.chain_id_renumbered == chain_id
+    chain_mask = atom_array.chain_id == chain_id
 
     # If the chain itself is a hetero-chain, only remove the chain
     if np.all(atom_array.hetero[chain_mask]):
@@ -237,7 +237,7 @@ def remove_chain_and_attached_ligands(
     # and not e.g. a covalent ligand in another chain that has a disulfide bond to the
     # specified chain and is therefore indirectly "connected".
     atom_array_subset = atom_array[chain_mask | atom_array.hetero]
-    chain_mask_subset = atom_array_subset.chain_id_renumbered == chain_id
+    chain_mask_subset = atom_array_subset.chain_id == chain_id
 
     # Get first atom of the chain in the subset array
     first_chain_atom_idx = np.nonzero(chain_mask_subset)[0][0]
@@ -300,7 +300,7 @@ def remove_clashing_chains(
     """
     # Get atom counts of each chain in the total atom array (index of the resulting
     # array corresponds to chain_id, value to atom count)
-    chain_atom_counts = np.bincount(atom_array.chain_id_renumbered)
+    chain_atom_counts = np.bincount(atom_array.chain_id)
 
     ## Get the clashing chains to remove
     chain_ids_to_remove = set()
@@ -443,7 +443,7 @@ def remove_chains_with_CA_gaps(
 
     # Find chains where the distance between consecutive C-alpha atoms is too large
     chain_ids_to_remove = np.unique(
-        protein_chain_ca[:-1][ca_dists > distance_threshold].chain_id_renumbered
+        protein_chain_ca[:-1][ca_dists > distance_threshold].chain_id
     )
 
     for chain_id in chain_ids_to_remove:
@@ -494,7 +494,7 @@ def subset_large_structure(
 
     # Sort (atom-wise) chain IDs by distance
     sort_by_dist_idx = np.argsort(dists_to_all_token_centers)
-    chain_ids_sorted = all_token_center_atoms.chain_id_renumbered[sort_by_dist_idx]
+    chain_ids_sorted = all_token_center_atoms.chain_id[sort_by_dist_idx]
 
     # Get unique chain IDs sorted by distance to selected atom
     unique_chain_idxs_sorted = np.sort(
@@ -506,7 +506,7 @@ def subset_large_structure(
     closest_n_chain_ids = chain_ids_sorted[closest_n_chain_ids_idxs]
 
     # Subset atom array to the closest n chains
-    selected_chain_mask = np.isin(atom_array.chain_id_renumbered, closest_n_chain_ids)
+    selected_chain_mask = np.isin(atom_array.chain_id, closest_n_chain_ids)
 
     breakpoint()
     return atom_array[selected_chain_mask]

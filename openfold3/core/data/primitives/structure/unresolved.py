@@ -221,7 +221,6 @@ def add_unresolved_polymer_residues(
         first_atom = extended_atom_array[chain_start]
         chain_type = first_atom.molecule_type_id
         chain_entity_id = first_atom.entity_id
-        # chain_id = first_atom.chain_id_renumbered
 
         # Only interested in polymer chains
         if chain_type == MoleculeType.LIGAND:
@@ -378,7 +377,7 @@ def add_unresolved_atoms_within_residue(
     missing_atom_list = []
 
     for chain in struc.chain_iter(extended_atom_array):
-        chain_id = chain.chain_id_renumbered[0]
+        chain_id = chain.chain_id[0]
 
         (chain_molecule_type_id,) = np.unique(chain.molecule_type_id)
         chain_molecule_type = MoleculeType(chain_molecule_type_id)

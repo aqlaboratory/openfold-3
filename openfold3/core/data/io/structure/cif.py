@@ -39,6 +39,7 @@ def parse_mmcif(
         - occupancy: inferred from atom_site.occupancy
         - entity_id: inferred from atom_site.label_entity_id
         - molecule_type_id: numerical code for the molecule type (see tables.py)
+        TODO: update this docstring with new chain ID handling
         - chain_id_renumbered: numerical chain IDs starting from 0 to circumvent
           duplicate chain IDs after bioassembly expansion. This is used in place of the
           original chain ID in all of the cleanup and preprocessing functions.
