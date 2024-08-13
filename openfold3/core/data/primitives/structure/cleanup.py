@@ -124,7 +124,7 @@ def remove_crystallization_aids(
 
 
 def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
-    """Removes all hydrogen atoms from the AtomArray
+    """Removes all hydrogen (and deuterium) atoms from the AtomArray
 
     Args:
         atom_array: AtomArray containing the structure to remove hydrogens from.
