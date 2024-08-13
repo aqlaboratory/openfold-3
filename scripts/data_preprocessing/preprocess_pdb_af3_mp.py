@@ -254,7 +254,9 @@ def main(
     # logger.info("Parsing CCD components...")
     # parsed_ccd_components = {
     #     ccd_id: result.component
-    #     for ccd_id, result in ccd_reader.read_pdb_components_file(str(ccd_path)).items()
+    #     for ccd_id, result in (
+    #       ccd_reader.read_pdb_components_file(str(ccd_path)).items()
+    #     )
     # }
     logger.info("Starting processing...")
 

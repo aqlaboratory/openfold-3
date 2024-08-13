@@ -246,9 +246,7 @@ def main(
     # Preprocessed Component objects for every CCD component returned by pdbeccdutils
     parsed_ccd_components = {
         ccd_id: result.component
-        for ccd_id, result in ccd_reader.read_pdb_components_file(
-            str(ccd_path)
-        ).items()
+        for ccd_id, result in ccd_reader.read_pdb_components_file(str(ccd_path)).items()
     }
     # parsed_ccd_components = CCDParsedComponentsFakeDict()
 
@@ -260,7 +258,7 @@ def main(
     ccd_component_to_canonical_smiles = {}
 
     # TODO: remove enumerate and break condition
-    for i, cif_path in enumerate(tqdm(mmcif_folder.glob("*.cif"))):
+    for i, cif_path in enumerate(tqdm(mmcif_folder.glob("*.cif"))): # noqa: B007
         # if i < 644:
         #     continue
         # # if i == 30:
