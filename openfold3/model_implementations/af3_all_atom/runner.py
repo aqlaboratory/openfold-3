@@ -20,8 +20,11 @@ class AlphaFold3AllAtom(ModelRunner):
         self.loss = AlphaFold3Loss(config=model_config.loss)
 
     def training_step(self, batch, batch_idx):
-        if self.ema.device != batch["restype"].device:
-            self.ema.to(batch["restype"].device)
+        example_feat = next(
+            iter(v for v in batch.values() if isinstance(v, torch.Tensor))
+        )
+        if self.ema.device != example_feat.device:
+            self.ema.to(example_feat.device)
 
         # Run the model
         batch, outputs = self.model(batch)
