@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 import biotite.structure as struc
@@ -33,7 +34,7 @@ def get_pdb_id(cif_file: CIFFile, format: Literal["upper", "lower"] = "lower") -
         raise ValueError(f"Invalid format: {format}")
 
 
-def get_release_date(cif_data: CIFBlock) -> str:
+def get_release_date(cif_data: CIFBlock) -> datetime:
     """Get the release date of the structure.
 
     Release date is defined as the earliest revision date of the structure.
@@ -47,6 +48,7 @@ def get_release_date(cif_data: CIFBlock) -> str:
         The release date of the structure.
     """
     release_dates = cif_data["pdbx_audit_revision_history"]["revision_date"].as_array()
+    release_dates = [datetime.strptime(date, "%Y-%m-%d") for date in release_dates]
 
     return min(release_dates)
 
