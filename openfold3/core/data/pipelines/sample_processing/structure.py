@@ -1,6 +1,7 @@
 """This module contains pipelines for processing structural features on-the-fly."""
 
 from pathlib import Path
+from typing import Optional
 
 from biotite.structure import AtomArray
 
@@ -18,6 +19,7 @@ def process_target_structure_af3(
     crop_weights: dict[str, float],
     token_budget: int,
     preferred_chain_or_interface: str,
+    ciftype: Optional[str] = ".bcif",
 ) -> tuple[AtomArray, AtomArray]:
     """AF3 pipeline for processing target structure into AtomArrays.
 
@@ -32,6 +34,8 @@ def process_target_structure_af3(
             Crop size.
         preferred_chain_or_interface (str):
             Sampled preferred chain or interface to sample the crop around.
+        ciftype (Optional[str], optional):
+            File extension of the target structure. One of .cif, .bcif.
 
     Returns:
         tuple[AtomArray, AtomArray]:
@@ -41,7 +45,7 @@ def process_target_structure_af3(
     """
     # Parse target structure
     structure = parse_mmcif(
-        file_path=target_path + pdb_id + pdb_id + ".bcif",
+        file_path=target_path / Path(pdb_id + "/" + pdb_id + ciftype),
         expand_bioassembly=True,
         include_bonds=True,
     )

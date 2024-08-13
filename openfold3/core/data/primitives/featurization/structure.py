@@ -104,7 +104,7 @@ def extract_starts_entities(atom_array: AtomArray) -> tuple[np.ndarray, np.ndarr
         tuple[np.ndarray, np.ndarray]:
             Residue starts and entity ids.
     """
-    token_starts_with_stop = struc.get_token_starts(atom_array, add_exclusive_stop=True)
+    token_starts_with_stop = get_token_starts(atom_array, add_exclusive_stop=True)
     chain_starts = struc.get_chain_starts(atom_array)
     entity_ids = atom_array.entity_id[chain_starts]
     return token_starts_with_stop, entity_ids
