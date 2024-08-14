@@ -20,9 +20,9 @@ from openfold3.core.data.data_modules import (
     OpenFoldMultimerDataModule,
 )
 from openfold3.core.loss.loss import AlphaFoldLoss, lddt_ca
-from openfold3.core.metrics.validaiton_all_atom import get_validation_metrics
+from openfold3.core.metrics.validaiton_all_atom import get_validation_metrics #delete
 from openfold3.core.np import residue_constants
-from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
+from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms #delete
 from openfold3.core.utils.callbacks import (
     EarlyStoppingVerbose,
     PerformanceLoggingCallback,
@@ -164,6 +164,7 @@ class OpenFoldWrapper(pl.LightningModule):
     def _compute_validation_metrics(
         self, batch, outputs, superimposition_metrics=False
     ):
+        ### DELETE: now at a new place. 
         metrics = {}
 
         gt_coords = batch["ref_pos"]

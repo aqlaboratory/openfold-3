@@ -3,25 +3,22 @@ from typing import List, Optional
 import torch
 
 
-def get_pair_dist(structure1: torch.Tensor, structure2: torch.Tensor):
-    return torch.cdist(structure1, structure2)
-
 #suboptimal but works
-def create_intra_mask(entity_id: torch.Tensor,
+def create_intra_mask(asym_id: torch.Tensor,
                       ):
     """
     create a mask of diagonal square blocks 
 
     Args: 
-        entity_id: entity_id of atoms [*, n_atom]
+        asym_id: atomized asym_id [n_atom]
     Returns: 
-        mask: pair mask of diagonal square blocks [*, n_atom, n_atom]
+        mask: pair mask of diagonal square blocks [n_atom, n_atom]
     """
-    n_atom = entity_id.shape[-1]
+    n_atom = asym_id.shape[-1]
     mask = torch.zeros(n_atom, n_atom)
-    unique_ids = torch.unique(entity_id)
+    unique_ids = torch.unique(asym_id)
     for id in unique_ids:
-        idx = torch.where(entity_id == id.item())[0]
+        idx = torch.argwhere(asym_id == id.item()).squeeze(-1)
         mask[idx[..., None], idx] = 1
     return mask
 
@@ -29,7 +26,7 @@ def lddt(
     pair_dist_pred_pos: torch.Tensor,
     pair_dist_gt_positions: torch.Tensor,
     all_atom_mask: torch.Tensor,
-    entity_id: torch.Tensor, 
+    asym_id: torch.Tensor, 
     cutoff: Optional[float] = 15.0,
     eps: Optional[float] = 1e-10,
 ) -> torch.Tensor:
@@ -40,7 +37,7 @@ def lddt(
         pair_dist_pred_pos: pairwise distance of prediction [*, n_atom, n_atom, 3]
         all_atom_positions: pairwise distance of gt [*, n_atom, n_atom, 3]
         all_atom_mask: mask [*, n_atom]
-        entity_id: entity id [*, n_atom]
+        asym_id: entity id [*, n_atom]
         cutoff: distance cutoff  
             - Nucleic Acids (DNA/RNA) 30.
             - Other biomolecules (Protein/Ligands) 15.
@@ -64,7 +61,7 @@ def lddt(
         )
         )
 
-    intra_mask = create_intra_mask(entity_id)
+    intra_mask = create_intra_mask(asym_id)
     inter_mask = 1 - intra_mask
 
     dist_l1 = torch.abs(pair_dist_gt_positions - pair_dist_pred_pos)
@@ -156,7 +153,7 @@ def drmsd(
         pair_dist_pred_pos: torch.Tensor,
         pair_dist_gt_positions: torch.Tensor,
         all_atom_mask: torch.Tensor,
-        entity_id: torch.Tensor,
+        asym_id: torch.Tensor,
         ) -> torch.Tensor:
     """ 
     Computes drmsds
@@ -164,7 +161,8 @@ def drmsd(
     Args: 
         all_atom_pred_pos: predicted coordinates [*, n_atom, 3]
         all_atom_positions: gt coordinates [*, n_atom, 3]
-        entity_id: entity id [*, n_atom]
+        all_atom_mask: atom mask [n_atom]
+        asym_id: asym_id [n_atom]
 
     Returns:
         intra_drmsd: computed intra_drmsd
@@ -179,7 +177,7 @@ def drmsd(
     
     # apply mask
     mask = (all_atom_mask[..., None] * all_atom_mask[..., None, :]) 
-    intra_mask = create_intra_mask(entity_id)
+    intra_mask = create_intra_mask(asym_id)
     inter_mask = 1 - intra_mask
 
     intra_drmsd = drmsd * (mask * intra_mask)
@@ -197,9 +195,12 @@ def drmsd(
     inter_drmsd = torch.sqrt(inter_drmsd) 
     return intra_drmsd, inter_drmsd
 
+def get_pair_dist(structure1: torch.Tensor, structure2: torch.Tensor):
+    return torch.cdist(structure1, structure2)
+
 def get_validation_metrics(
         is_ligand_atomized: torch.Tensor, 
-        entity_id_atomized: torch.Tensor,
+        asym_id_atomized: torch.Tensor,
         pred_coords: torch.Tensor, 
         gt_coords: torch.Tensor, 
         all_atom_mask: torch.Tensor,
@@ -209,12 +210,12 @@ def get_validation_metrics(
         ):
     """ 
     Args: 
-        is_ligand_atomized: broadcasted is_ligand/rna/dna feature [*, n_atom]
-        entity_id_atomized: broadcasted entity_id feature [*, n_atom] 
+        is_ligand_atomized: broadcasted is_ligand/rna/dna feature [n_atom]
+        asym_id_atomized: broadcasted asym_id feature [n_atom] 
         pred_coords: predicted coordinates [*, n_atom, 3]
         gt_coords: gt coordinates [*, n_atom, 3]
-        all_atom_mask: atom mask [*, n_atom]
-        protein_idx: broadcasted is_protein feature [*, n_atom]
+        all_atom_mask: atom mask [n_atom]
+        protein_idx: broadcasted is_protein feature [n_atom]
         ligand_type: 'ligand', 'rna', 'dna' 
         is_nucleic_acid: boolean indicating if ligand type is nucleic acid
     Returns: 
@@ -223,44 +224,47 @@ def get_validation_metrics(
             inter_lddt: inter ligandtype_ligandtype lddt
             intra_drmsd: intra ligandtype drmsd 
             inter_lddt_protein_ligand: inter protein-ligandtype lddt
+    
+    Notes: 
+        if no ligands: returns an empty dict {}
     """
     
     out = {}
 
     if torch.any(is_ligand_atomized):
-        ligand_idx = torch.nonzero(is_ligand_atomized).squeeze(-1)
-        gt_ligand = gt_coords[ligand_idx, :]
-        pred_ligand = pred_coords[ligand_idx, :]
-        ligand_entity_id = entity_id_atomized[ligand_idx]
+        ligand_idx = torch.nonzero(is_ligand_atomized).squeeze(-1) #[n_lig]
+        gt_ligand = gt_coords[..., ligand_idx, :] #[*, n_lig, 3]
+        pred_ligand = pred_coords[..., ligand_idx, :] #[*, n_lig, 3]
+        ligand_asym_id = asym_id_atomized[..., ligand_idx] #[n_lig]
 
-        gt_ligand_pair = get_pair_dist(gt_ligand, gt_ligand)
-        pred_ligand_pair = get_pair_dist(pred_ligand, pred_ligand)
+        gt_ligand_pair = get_pair_dist(gt_ligand, gt_ligand) #[*, nlig, nlig]
+        pred_ligand_pair = get_pair_dist(pred_ligand, pred_ligand) #[*, nlig, nlig]
 
         cutoff = 30. if is_nucleic_acid else 15.
 
         intra_lddt, inter_lddt = lddt(pred_ligand_pair,
                                       gt_ligand_pair,
-                                      all_atom_mask[ligand_idx],
-                                      ligand_entity_id,
+                                      all_atom_mask[..., ligand_idx],
+                                      ligand_asym_id,
                                       cutoff = cutoff
                                       )
         out['lddt_intra_' + ligand_type] = intra_lddt
-        out['lddt_inter_' + ligand_type + '_' + ligand_type] = inter_lddt        
+        out['lddt_inter_' + ligand_type + '_' + ligand_type] = inter_lddt
         
         intra_drmsd, inter_drmsd = drmsd(pred_ligand_pair,
                                          gt_ligand_pair,
-                                         all_atom_mask[ligand_idx],
-                                         ligand_entity_id,
+                                         all_atom_mask[..., ligand_idx],
+                                         ligand_asym_id,
                                          )
         out['drmsd_intra_' + ligand_type] = intra_drmsd
 
         if ligand_type != 'protein':
-            inter_lddt_protein_ligand = interface_lddt(pred_coords[protein_idx, :],
-                                                       pred_coords[ligand_idx, :],
-                                                       gt_coords[protein_idx, :],
-                                                       gt_coords[ligand_idx, :],
-                                                       all_atom_mask[protein_idx],
-                                                       all_atom_mask[ligand_idx],
+            inter_lddt_protein_ligand = interface_lddt(pred_coords[..., protein_idx, :],
+                                                       pred_coords[..., ligand_idx, :],
+                                                       gt_coords[..., protein_idx, :],
+                                                       gt_coords[..., ligand_idx, :],
+                                                       all_atom_mask[..., protein_idx],
+                                                       all_atom_mask[..., ligand_idx],
                                                        cutoff = cutoff,
                                                        )
             out['lddt_inter_protein_' + ligand_type] = inter_lddt_protein_ligand
@@ -362,3 +366,46 @@ def batched_kabsch(
              dim= (-1, -2))) / n_atom
     
     return translation, rotation, rmsd
+
+def get_superimpose_metrics(       
+        all_atom_pred_pos: torch.Tensor, 
+        all_atom_positions: torch.Tensor, 
+        all_atom_mask: torch.Tensor,       
+):
+    """ 
+    Computes superimposition metrics
+
+    Args: 
+        all_atom_pred_pos: pred coordinates [*, n_atom, 3]
+        all_atom_positions: gt coordinates [*, n_atom, 3]
+        all_atom_mask: atom mask [*, n_atom]
+    """
+    out = {}
+
+    translation, rotation, rmsd = batched_kabsch(all_atom_pred_pos,
+                                                 all_atom_positions,
+                                                 all_atom_mask,
+                                                 )
+    out['superimpose_rmsd'] = rmsd
+
+    pred_centered = all_atom_pred_pos - torch.mean(all_atom_pred_pos, 
+                                                   dim = -2, 
+                                                   keepdim = True
+                                                   )
+    gt_centered = all_atom_positions - torch.mean(all_atom_positions, 
+                                                  dim = -2, 
+                                                  keepdim = True,
+                                                  )
+    pred_superimposed = pred_centered @ rotation.transpose(-1, -2)
+    
+    gdt_ts_score = gdt_ts(pred_superimposed, 
+                          gt_centered, 
+                          all_atom_mask,
+                          )
+    gdt_ha_score = gdt_ha(pred_superimposed, 
+                          gt_centered, 
+                          all_atom_mask,
+                          )
+    out['gdt_ts'] = gdt_ts_score
+    out['gdt_ha'] = gdt_ha_score
+    return out

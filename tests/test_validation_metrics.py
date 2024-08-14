@@ -4,11 +4,13 @@ import unittest
 import numpy as np
 import torch
 
-from openfold3.core.utils.validation_metrics import (
+from openfold3.core.metrics.validaiton_all_atom import (
     batched_kabsch,
     drmsd,
     gdt_ha,
     gdt_ts,
+    get_superimpose_metrics,
+    get_validation_metrics,
     interface_lddt,
     lddt,
 )
@@ -48,22 +50,43 @@ class TestLDDT(unittest.TestCase):
 
         gt_structure = torch.randn(batch_size, n_atom, 3)
         predicted_structure = torch.randn(batch_size, n_atom, 3)
-        mask = torch.ones(batch_size, n_atom)
+        atom_mask = torch.ones(batch_size, n_atom)
+
+        pair_gt = torch.cdist(gt_structure, gt_structure)
+        pair_pred = torch.cdist(predicted_structure, predicted_structure)
+
+        asym_id = torch.randint(low = 0, high = 21, size = (n_atom,))
 
         #shape test
-        out_lddt = lddt(gt_structure, predicted_structure, mask)
+        intra_lddt, inter_lddt = lddt(pair_pred,
+                                      pair_gt, 
+                                      atom_mask, 
+                                      asym_id,
+                                      )
         exp_shape = (batch_size,)
-        np.testing.assert_equal(out_lddt.shape, exp_shape)
+        np.testing.assert_equal(intra_lddt.shape, exp_shape)
+        np.testing.assert_equal(inter_lddt.shape, exp_shape)
 
         #rototranslation. lddt should give 1.0s 
         gt_structure_rototranslated = random_rotation_translation(gt_structure)
         exp_outputs = torch.ones(batch_size)
-        np.testing.assert_allclose(lddt(gt_structure_rototranslated, 
-                                        gt_structure, 
-                                        mask), 
-                                        exp_outputs, 
-                                        atol = 1e-5
-                                        )
+
+        pair_rototranslated = torch.cdist(gt_structure_rototranslated, 
+                                          gt_structure_rototranslated,
+                                          )
+        intra_lddt_rt, inter_lddt_rt = lddt(pair_rototranslated,
+                                            pair_gt,
+                                            atom_mask, 
+                                            asym_id,
+                                            )
+        np.testing.assert_allclose(intra_lddt_rt, 
+                                   exp_outputs, 
+                                   atol = 1e-5,
+                                   )
+        np.testing.assert_allclose(inter_lddt_rt, 
+                                   exp_outputs, 
+                                   atol = 1e-5,
+                                   )
 
 class TestInterfaceLDDT(unittest.TestCase):
     def test_interface_lddt(self):
@@ -88,9 +111,7 @@ class TestInterfaceLDDT(unittest.TestCase):
         exp_shape = (batch_size,)
         np.testing.assert_equal(out_interface_lddt.shape, exp_shape)
 
-        #rototranslation test
-        #should give 1.s 
-
+        #rototranslation test. should give 1.s 
         #combine coordinates and rototranslate them
         predicted_coordinates = torch.cat((gt_structure_1, gt_structure_2), dim = 1)
         combined_coordinates = random_rotation_translation(predicted_coordinates)
@@ -119,24 +140,63 @@ class TestDRMSD(unittest.TestCase):
         predicted_structure = torch.randn(batch_size, n_atom, 3)
         mask = torch.ones(batch_size, n_atom)
 
+        pair_gt = torch.cdist(gt_structure,
+                              gt_structure,
+                              )
+        pair_pred = torch.cdist(predicted_structure,
+                                predicted_structure,
+                                )
+        asym_id = torch.randint(low = 0, high = 21, size = (n_atom,))
+
         #shape test
-        out_drmsd = drmsd(gt_structure, 
-                         predicted_structure, 
-                         mask
-                         )
+        intra_drmsd, inter_drmsd = drmsd(pair_pred, 
+                                         pair_gt, 
+                                         mask,
+                                         asym_id,
+                                         )
         exp_shape = (batch_size,)
-        np.testing.assert_equal(out_drmsd.shape, exp_shape)
+        np.testing.assert_equal(intra_drmsd.shape, exp_shape)
+        np.testing.assert_equal(inter_drmsd.shape, exp_shape)
 
         #rototranslation. should give 0.s 
         gt_structure_rototranslated = random_rotation_translation(gt_structure)
+        pair_gt_rt = torch.cdist(gt_structure_rototranslated, gt_structure_rototranslated)
         exp_outputs = torch.zeros(batch_size)
-        out_drmsd = drmsd(gt_structure_rototranslated, 
-                          gt_structure, 
-                          mask,
-                          )
-        np.testing.assert_allclose(out_drmsd, exp_outputs, atol = 1e-5)
+        intra_drmsd_rt, inter_drmsd_rt = drmsd(pair_gt_rt, 
+                                               pair_gt, 
+                                               mask,
+                                               asym_id,
+                                               )
+        np.testing.assert_allclose(intra_drmsd_rt, exp_outputs, atol = 1e-5)
+        np.testing.assert_allclose(inter_drmsd_rt, exp_outputs, atol = 1e-5)
 
+class TestGetValidationMetrics(unittest.TestCase):
+    def test_get_validation_metrics(self):
+        batch_size = consts.batch_size 
+        n_atom = 1000
 
+        coords_pred = torch.randn(batch_size, n_atom, 3)
+        coords_gt = torch.randn(batch_size, n_atom, 3)
+
+        is_ligand_atomized = torch.randint(low = 0, high = 2, size = (n_atom,))
+        protein_idx_atomized = 1 - is_ligand_atomized
+        asym_id_atomized = torch.randint(low = 0, high = 21, size = (n_atom,))
+        all_atom_mask = torch.ones((n_atom,))
+
+        out = get_validation_metrics(is_ligand_atomized,
+                                     asym_id_atomized,
+                                     coords_pred,
+                                     coords_gt,
+                                     all_atom_mask,
+                                     protein_idx_atomized,
+                                     ligand_type = 'ligand'
+                                     )
+        exp_shape = (batch_size,)
+        
+        for k, v in out.items():
+            np.testing.assert_equal(v.shape, exp_shape)
+
+        
 class TestBatchedKabsch(unittest.TestCase):
     def test_batched_kabsch(self):
         batch_size = consts.batch_size 
@@ -234,6 +294,23 @@ class TestGDT(unittest.TestCase):
 
         np.testing.assert_allclose(out_gdt_ts, exp_gdt_ts_outs, atol = 1e-5)
         np.testing.assert_allclose(out_gdt_ha, exp_gdt_ha_outs, atol = 1e-5)
+
+class TestGetSuperimposeMetrics(unittest.TestCase):
+    def test_get_superimpose_metrics(self):
+        batch_size = consts.batch_size 
+        n_atom = 1000
+
+        coords_pred = torch.randn(batch_size, n_atom, 3)
+        coords_gt = torch.randn(batch_size, n_atom, 3)
+        all_atom_mask = torch.ones((n_atom,))
+
+        out = get_superimpose_metrics(coords_pred,
+                                      coords_gt,
+                                      all_atom_mask)
+        exp_shape = (batch_size,)
+        
+        for k, v in out.items():
+            np.testing.assert_equal(v.shape, exp_shape)
 
 if __name__ == "__main__":
     unittest.main()
