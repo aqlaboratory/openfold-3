@@ -89,7 +89,7 @@ def set_fallback_conformer(mol: Mol) -> Chem.Mol:
         # If it works, no need to supply a conformer because dataloading can handle it
         # on the fly
         mol = compute_conformer(mol)
-        mol.SetProp("use_fallback_conformer", "False")
+        mol.SetProp("use_conformer", "False")
     except ConformerGenerationError:
         conf_names = [conf.GetProp("name") for conf in mol.GetConformers()]
 
