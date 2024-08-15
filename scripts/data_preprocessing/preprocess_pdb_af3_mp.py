@@ -2,6 +2,8 @@ import json
 import logging
 import os
 from collections import defaultdict
+from multiprocessing import Manager
+from multiprocessing.pool import Pool
 from pathlib import Path
 from typing import NamedTuple
 
@@ -14,7 +16,7 @@ from pdbeccdutils.core import ccd_reader
 from rdkit import Chem
 from tqdm import tqdm
 
-import openfold3.core.data.io.utils as utils
+from openfold3.core.data.io import utils
 from openfold3.core.data.io.sequence.fasta import write_annotated_chains_fasta
 from openfold3.core.data.io.structure.cif import parse_mmcif, write_minimal_cif
 from openfold3.core.data.pipelines.preprocessing.structure import (
@@ -186,26 +188,20 @@ def get_components(atom_array: AtomArray) -> ProcessedComponents:
     )
 
 
-# TODO: remove
-class CCDParsedComponentsFakeDict:
-    """Temporary dict for faster debugging."""
+class ManagerSet:
+    """A set-like object that can be shared across processes using a Manager."""
 
-    def __init__(self):
-        self.components = {}
-        self.ideal_path = Path(
-            "/global/cfs/cdirs/m4351/ljarosch/of3_data/pdb_data/ideal_ligand_files/cif_files"
-        )
+    def __init__(self, manager):
+        self.dict = manager.dict()
 
-    def __getitem__(self, key):
-        if key in self.components:
-            return self.components[key]
-        else:
-            ccd_result = ccd_reader.read_pdb_cif_file(
-                str(self.ideal_path / f"{key}.cif")
-            )
-            component = ccd_result.component
-            self.components[key] = component
-            return component
+    def add(self, item):
+        self.dict[item] = None
+
+    def __contains__(self, item):
+        return item in self.dict
+
+    def __len__(self):
+        return len(self.dict)
 
 
 @click.command()
@@ -220,6 +216,11 @@ class CCDParsedComponentsFakeDict:
     help="Path to a Chemical Component Dictionary (CCD) .cif file",
 )
 @click.option(
+    "--components_cif_folder",
+    type=click.Path(file_okay=False, dir_okay=True, exists=True, path_type=Path),
+    help="Path to a folder containing .cif files for CCD components",
+)
+@click.option(
     "--output_folder",
     type=click.Path(file_okay=False, dir_okay=True, exists=False, path_type=Path),
     help="Folder to save cleaned bCIF files and other extracted files in",
@@ -230,52 +231,112 @@ class CCDParsedComponentsFakeDict:
     default=False,
     help="Whether to save additional .cif files alongside the .bcif files",
 )
+@click.option(
+    "--num_processes",
+    type=int,
+    default=None,
+    help="Number of processes to use for multiprocessing",
+)
 def main(
-    mmcif_folder: Path, ccd_path: Path, output_folder: Path, include_cifs: bool = False
+    mmcif_folder: Path,
+    ccd_path: Path,
+    components_cif_folder: Path,
+    output_folder: Path,
+    include_cifs: bool,
+    num_processes: int | None,
 ) -> None:
-    # Set output paths
-    output_cif_folder = output_folder / "cif_files"
-    output_cif_folder.mkdir(exist_ok=True, parents=True)
-    metadata_json_path = output_folder / "metadata.json"
-    ccd_components_path = output_folder / "ccd_component_sdfs"
-    ccd_components_path.mkdir(exist_ok=True, parents=True)
+    setup_folders(output_folder)
 
     # Biotite-parsed CCD for regular metadata access
     ccd = CIFFile.read(ccd_path)
 
-    # Preprocessed Component objects for every CCD component returned by pdbeccdutils
-    parsed_ccd_components = {
-        ccd_id: result.component
-        for ccd_id, result in ccd_reader.read_pdb_components_file(str(ccd_path)).items()
-    }
-    # parsed_ccd_components = CCDParsedComponentsFakeDict()
+    # # Preprocessed Component objects for every CCD component returned by pdbeccdutils
+    # logger.info("Parsing CCD components...")
+    # parsed_ccd_components = {
+    #     ccd_id: result.component
+    #     for ccd_id, result in (
+    #       ccd_reader.read_pdb_components_file(str(ccd_path)).items()
+    #     )
+    # }
+    logger.info("Starting processing...")
 
-    print("Parsed components.")
+    logger.debug("Getting list of CIF files...")
+    cif_files = list(mmcif_folder.glob("*.cif"))[:1_000]
+    logger.debug("Creating Manager...")
+    manager = Manager()
+    # logger.debug("Creating parsed_ccd_components...")
+    # logger.debug(f"{type(parsed_ccd_components)}")
+    # parsed_ccd_components = manager.dict(parsed_ccd_components)
+    logger.debug("Creating all_metadata...")
+    all_metadata = manager.dict()  # Using Manager to handle metadata across processes
+    logger.debug("Creating ccd_component_to_canonical_smiles...")
+    ccd_component_to_canonical_smiles = manager.dict()
+    logger.debug("Creating saved_ccd_components...")
+    saved_ccd_components = ManagerSet(manager)
 
-    all_metadata = {}
+    logger.debug("Starting multi-processing...")
+    with Pool(num_processes) as pool:
+        list(
+            tqdm(
+                pool.imap(
+                    process_file,
+                    [
+                        (
+                            path,
+                            ccd,
+                            components_cif_folder,
+                            output_folder,
+                            include_cifs,
+                            all_metadata,
+                            ccd_component_to_canonical_smiles,
+                            saved_ccd_components,
+                        )
+                        for path in cif_files
+                    ],
+                    chunksize=10,
+                ),
+                total=len(cif_files),
+            )
+        )
 
-    saved_ccd_components = set()
-    ccd_component_to_canonical_smiles = {}
+    # Write the collected metadata to JSON
+    with open(output_folder / "metadata.json", "w") as f:
+        json.dump(
+            dict(all_metadata), f, indent=4, default=utils.encode_numpy_types
+        )  # Convert Manager dict to regular dict
 
-    # TODO: remove enumerate and break condition
-    for i, cif_path in enumerate(tqdm(mmcif_folder.glob("*.cif"))): # noqa: B007
-        # if i < 644:
-        #     continue
-        # # if i == 30:
-        # #     break
-        # if i == 300:
-        #     break
 
-        print(f"Processing {cif_path}")
+def setup_folders(output_folder: Path):
+    output_folder.mkdir(parents=True, exist_ok=True)
+    (output_folder / "cif_files").mkdir(exist_ok=True)
+    (output_folder / "ccd_component_sdfs").mkdir(exist_ok=True)
+
+
+def process_file(args):
+    (
+        cif_path,
+        ccd,
+        components_cif_folder,
+        output_folder,
+        include_cifs,
+        all_metadata,
+        ccd_component_to_canonical_smiles,
+        saved_ccd_components,
+    ) = args
+
+    try:
         try:
             processed_structure = process_structure(cif_path, ccd)
         except AssemblyTooLargeError:
             logger.info(f"Skipping structure {cif_path} due to too large assembly")
-            continue
+            return
 
         pdb_id = get_pdb_id(processed_structure.cif_file)
         structure_metadata = processed_structure.metadata_dict
         atom_array = processed_structure.atom_array
+
+        output_cif_folder = output_folder / "cif_files"
+        ccd_components_path = output_folder / "ccd_component_sdfs"
 
         # Make output subfolders
         output_cif_subfolder = output_cif_folder / pdb_id
@@ -289,14 +350,21 @@ def main(
             if ccd_id in saved_ccd_components:
                 canonical_smiles = ccd_component_to_canonical_smiles[ccd_id]
             else:
+                # TODO: get_component() function
+                ccd_result = ccd_reader.read_pdb_cif_file(
+                    str(components_cif_folder / f"{ccd_id}.cif")
+                )
+                component = ccd_result.component
                 mol = mol_from_parsed_component(
-                    parsed_ccd_components[ccd_id], assign_fallback_conformer=True
+                    component, assign_fallback_conformer=True
                 )
                 canonical_smiles = Chem.MolToSmiles(mol)
                 ccd_component_to_canonical_smiles[ccd_id] = canonical_smiles
 
                 with Chem.SDWriter(ccd_components_path / f"{ccd_id}.sdf") as writer:
                     writer.write(mol)
+
+                saved_ccd_components.add(ccd_id)
 
             for chain_metadata in structure_metadata["chains"]:
                 if chain_metadata["chain_id"] in chains:
@@ -306,12 +374,16 @@ def main(
             if ccd_id in saved_ccd_components:
                 continue
 
-            mol = mol_from_parsed_component(
-                parsed_ccd_components[ccd_id], assign_fallback_conformer=True
+            ccd_result = ccd_reader.read_pdb_cif_file(
+                str(components_cif_folder / f"{ccd_id}.cif")
             )
+            component = ccd_result.component
+            mol = mol_from_parsed_component(component, assign_fallback_conformer=True)
 
             with Chem.SDWriter(ccd_components_path / f"{ccd_id}.sdf") as writer:
                 writer.write(mol)
+
+            saved_ccd_components.add(ccd_id)
 
         for entity_id in processed_structure.special_ligand_entities:
             entity_atom_array = atom_array[atom_array.entity_id == entity_id]
@@ -358,24 +430,23 @@ def main(
             )
 
         # Save FASTA file
-        fasta_path = write_annotated_chains_fasta(
+        write_annotated_chains_fasta(
             output_cif_subfolder / f"{pdb_id}.fasta",
             processed_structure.chain_to_canonical_seq,
             pdb_id,
             processed_structure.metadata_dict["chains"],
         )
 
-        print(f"Processed {pdb_id}: {bcif_path}, {fasta_path}")
-
-    with open(metadata_json_path, "w") as f:
-        json.dump(all_metadata, f, indent=4, default=utils.encode_numpy_types)
-
-    # TODO: handle model conformer save date etc. (can't just handle dates on cache
-    # level because of reference conformers -____-)
+    except Exception:
+        logger.exception(f"Error processing {cif_path}")
 
 
 if __name__ == "__main__":
     logger = logging.getLogger("openfold3")
-    logger.setLevel(logging.DEBUG)
-    logger.addHandler(logging.StreamHandler())
+    logger.setLevel(logging.INFO)
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter("%(asctime)s %(levelname)s: %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
     main()

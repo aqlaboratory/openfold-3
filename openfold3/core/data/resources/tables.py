@@ -34,7 +34,7 @@ STANDARD_RESIDUES = STANDARD_PROTEIN_RESIDUES + STANDARD_NUCLEIC_ACID_RESIDUES
 
 # Atom names constituting the phosphate in nucleic acids (including alt_atom_ids which
 # can't hurt)
-NUCLEIC_ACID_PHOSPHATE_ATOMS = ["P", "OP1", "OP2", "OP3", "O1P", "O2P", "O3P"]
+NUCLEIC_ACID_PHOSPHATE_OXYGENS = ["OP1", "OP2", "OP3", "O1P", "O2P", "O3P"]
 
 # Token center atoms as defined in AF3 SI, Section 2.6.
 TOKEN_CENTER_ATOMS = ["CA", "C1'"]

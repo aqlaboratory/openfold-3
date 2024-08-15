@@ -6,7 +6,7 @@ from typing import TypedDict
 
 class ChainMetadataDict(TypedDict):
     molecule_type: str  # "protein", "RNA", "DNA", "ligand"
-    chain_id_renumbered: int  # renumbered chain ID assigned by parse_mmcif_bioassembly
+    chain_id: int  # renumbered chain ID assigned by parse_mmcif_bioassembly
     chain_id_pdb: str  # PDB-assigned chain ID "label_asym_id"
     chain_id_author: str  # Author-assigned chain ID "auth_asym_id"
 
@@ -21,7 +21,7 @@ def write_annotated_chains_fasta(
 
     Will write all chains in the chain_metadata_list to a single FASTA file. The header
     will follow the format
-    `>{pdb_id}_{chain_id_pdb}_{chain_id_author}_{chain_id_renum}_{molecule_type}`.
+    `>{pdb_id}_{chain_id}_{chain_id_pdb}_{chain_id_author}_{molecule_type}`.
 
     Args:
         output_path:
@@ -33,11 +33,10 @@ def write_annotated_chains_fasta(
         chain_metadata_list:
             List of dictionaries containing chain metadata. Each dictionary should
             contain the following keys:
-                - molecule_type: "protein", "RNA", "DNA", "ligand"
-                - chain_id_renumbered: renumbered chain ID assigned by
-                  parse_mmcif_bioassembly
+                - chain_id: renumbered chain ID assigned by parse_mmcif_bioassembly
                 - chain_id_pdb: PDB-assigned chain ID "label_asym_id"
                 - chain_id_author: Author-assigned chain ID "auth_asym_id"
+                - molecule_type: "protein", "RNA", "DNA", "ligand"
 
     Returns:
         Path to the written FASTA file.
@@ -52,16 +51,15 @@ def write_annotated_chains_fasta(
         if mol_type == "ligand":
             continue
 
-        chain_id_renum = chain_data["chain_id_renumbered"]
+        chain_id = chain_data["chain_id"]
         chain_id_pdb = chain_data["chain_id_pdb"]
         chain_id_author = chain_data["chain_id_author"]
 
         # Header stores multiple chain IDs and molecule type
         chain_header = (
-            f">{pdb_id}_{chain_id_pdb}_{chain_id_author}_{chain_id_renum}_"
-            f"{mol_type}\n"
+            f">{pdb_id}_{chain_id}_{chain_id_pdb}_{chain_id_author}_" f"{mol_type}\n"
         )
-        seq = chain_to_sequence[chain_id_renum] + "\n"
+        seq = chain_to_sequence[chain_id] + "\n"
 
         fasta_lines.extend([chain_header, seq])
 

@@ -1,10 +1,72 @@
 # TODO: add module docstring
 
+import logging
 from typing import Generator
 
 import numpy as np
 from biotite.structure import AtomArray
 from scipy.spatial import KDTree
+from typing_extensions import Self
+
+logger = logging.getLogger(__name__)
+
+
+class NaNRobustKDTree:
+    """Utility wrapper around scipy.spatial.KDTree that can handle NaNs.
+
+    NaN support is handled by running the function on the non-NaN coordinates, and
+    mapping the returned indices back to the corresponding indices in the original
+    array. This class only implements the `query` and `query_ball_tree` methods.
+    """
+
+    def __init__(self, data, *args, **kwargs):
+        self._orig_data = data
+
+        # Remove rows with NaNs
+        self._nan_mask = np.any(np.isnan(self._orig_data), axis=1)
+        valid_data = self._orig_data[~self._nan_mask]
+
+        # Create a mapping from the new data index to the original data index
+        self._orig_data_index = np.arange(self._orig_data.shape[0])
+        self._data_index_map = self._orig_data_index[~self._nan_mask]
+
+        self._kdtree = KDTree(valid_data, *args, **kwargs)
+
+    def query_pairs(self, r: float, p: float = 2.0, eps: float = 0.0) -> np.ndarray:
+        """NaN-robust version of KDTree.query_pairs.
+
+        Runs KDTree.query_pairs but re-indexes the results to be consistent with the
+        original array. See scipy.spatial.KDTree.query_pairs for more information.
+        """
+        valid_data_results = self._kdtree.query_pairs(r, p, eps, output_type="ndarray")
+        orig_data_results = self._data_index_map[valid_data_results]
+
+        return orig_data_results
+
+    def query_ball_tree(
+        self, other: Self, r: float, p: float = 2.0, eps: float = 0.0
+    ) -> list[list]:
+        """NaN-robust version of KDTree.query_ball_tree.
+
+        Runs KDTree.query_ball_tree but re-indexes the results to be consistent with the
+        original array. See scipy.spatial.KDTree.query_ball_tree for more information.
+        """
+        if not isinstance(other, NaNRobustKDTree):
+            raise ValueError("The other tree must be of type NaNRobustKDTree")
+
+        other_kdtree = other._kdtree
+        valid_data_results = self._kdtree.query_ball_tree(other_kdtree, r, p, eps)
+
+        orig_data_results = [[] for _ in range(self._orig_data.shape[0])]
+
+        for idx, result in enumerate(valid_data_results):
+            for i, value in enumerate(result):
+                result[i] = other._data_index_map[value]
+
+            orig_data_idx = self._data_index_map[idx]
+            orig_data_results[orig_data_idx].extend(result)
+
+        return orig_data_results
 
 
 def get_query_interface_atom_pair_idxs(
@@ -41,8 +103,8 @@ def get_query_interface_atom_pair_idxs(
             Array of chain ID pairs corresponding to the atom pairs. Only returned if
             `return_chain_pairs` is True.
     """
-    kdtree_query = KDTree(query_atom_array.coord)
-    kdtree_target = KDTree(target_atom_array.coord)
+    kdtree_query = NaNRobustKDTree(query_atom_array.coord)
+    kdtree_target = NaNRobustKDTree(target_atom_array.coord)
     search_result = kdtree_query.query_ball_tree(kdtree_target, distance_threshold)
 
     # Get to same output format as kdtree.query_pairs
@@ -53,10 +115,8 @@ def get_query_interface_atom_pair_idxs(
     # Pair the chain IDs
     chain_pairs = np.column_stack(
         (
-            query_atom_array.chain_id_renumbered[atom_pair_idxs[:, 0]],
-            target_atom_array.chain_id_renumbered[
-                atom_pair_idxs[:, 1]
-            ],  # change to target
+            query_atom_array.chain_id[atom_pair_idxs[:, 0]],
+            target_atom_array.chain_id[atom_pair_idxs[:, 1]],  # change to target
         )
     )
 
@@ -109,12 +169,12 @@ def get_interface_atom_pair_idxs(
             that the corresponding chain IDs are in ascending order within each pair,
             which may result in pairs where j < i.
     """
-    kdtree = KDTree(atom_array.coord)
+    kdtree = NaNRobustKDTree(atom_array.coord)
 
-    atom_pair_idxs = kdtree.query_pairs(distance_threshold, output_type="ndarray")
+    atom_pair_idxs = kdtree.query_pairs(distance_threshold)
 
     # Pair the chain IDs
-    chain_pairs = atom_array.chain_id_renumbered[atom_pair_idxs]
+    chain_pairs = atom_array.chain_id[atom_pair_idxs]
 
     if sort_by_chain:
         # Sort by chain within-pair to canonicalize
@@ -282,6 +342,11 @@ def chain_paired_interface_atom_iter(
         if atom_pair_idxs.size == 0:
             return
 
+    # Subsequent code is only necessary if there are multiple pairs
+    if atom_pair_idxs.shape[0] == 1:
+        yield tuple(chain_pairs[0]), atom_pair_idxs
+        return
+
     # Sort to group together occurrences of the same pair
     # (e.g. [(0, 1), (0, 2), (0, 1)] -> [(0, 1), (0, 1), (0, 2)])
     group_sort_idx = np.lexsort((chain_pairs[:, 1], chain_pairs[:, 0]))
@@ -294,7 +359,12 @@ def chain_paired_interface_atom_iter(
     ).any(axis=1)
     group_start_idx = np.nonzero(changes)[0]
 
-    # Get indices where the pair changes
+    if len(group_start_idx) == 0:
+        # If there is only one group, yield it directly
+        yield tuple(chain_pairs_grouped[0]), atom_pairs_grouped
+        return
+
+    # Get indices where a new group of chain pairs starts
     group_end_idx = np.roll(group_start_idx, shift=-1)
     group_end_idx[-1] = len(chain_pairs_grouped)
 

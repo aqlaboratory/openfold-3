@@ -41,3 +41,4 @@ dependencies:
       - git+https://github.com/NVIDIA/dllogger.git
       - flash-attn
       - triton==2.1.0
+      - pdbeccdutils

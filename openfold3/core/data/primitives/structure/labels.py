@@ -11,34 +11,34 @@ from openfold3.core.data.resources.tables import (
 
 
 def get_chain_to_entity_dict(atom_array: struc.AtomArray) -> dict[int, int]:
-    """Get a dictionary mapping renumbered chain IDs to their entity IDs.
+    """Get a dictionary mapping chain IDs to their entity IDs.
 
     Args:
         atom_array:
             AtomArray containing the chain IDs and entity IDs.
 
     Returns:
-        A dictionary mapping renumbered chain IDs to their entity IDs.
+        A dictionary mapping chain IDs to their entity IDs.
     """
     chain_starts = struc.get_chain_starts(atom_array)
 
     return dict(
         zip(
-            atom_array[chain_starts].chain_id_renumbered,
+            atom_array[chain_starts].chain_id,
             atom_array[chain_starts].entity_id,
         )
     )
 
 
 def get_chain_to_author_chain_dict(atom_array: struc.AtomArray) -> dict[int, str]:
-    """Get a dictionary mapping renumbered chain IDs to their author chain IDs.
+    """Get a dictionary mapping chain IDs to their author chain IDs.
 
     Args:
         atom_array:
             AtomArray containing the chain IDs and author chain IDs.
 
     Returns:
-        A dictionary mapping renumbered chain IDs to their author chain IDs.
+        A dictionary mapping chain IDs to their author chain IDs.
     """
     if "auth_asym_id" not in atom_array.get_annotation_categories():
         raise ValueError(
@@ -50,62 +50,62 @@ def get_chain_to_author_chain_dict(atom_array: struc.AtomArray) -> dict[int, str
 
     return dict(
         zip(
-            atom_array[chain_starts].chain_id_renumbered,
+            atom_array[chain_starts].chain_id,
             atom_array[chain_starts].auth_asym_id,
         )
     )
 
 
 def get_chain_to_pdb_chain_dict(atom_array: struc.AtomArray) -> dict[int, str]:
-    """Get a dictionary mapping renumbered chain IDs to their PDB chain IDs.
+    """Get a dictionary mapping chain IDs to their PDB chain IDs.
 
     Args:
         atom_array:
             AtomArray containing the chain IDs and PDB chain IDs.
 
     Returns:
-        A dictionary mapping renumbered chain IDs to their PDB chain IDs.
+        A dictionary mapping chain IDs to their PDB chain IDs.
     """
     chain_starts = struc.get_chain_starts(atom_array)
 
     return dict(
         zip(
-            atom_array[chain_starts].chain_id_renumbered,
             atom_array[chain_starts].chain_id,
+            atom_array[chain_starts].label_asym_id,
         )
     )
 
 
 def get_chain_to_molecule_type_id_dict(atom_array: struc.AtomArray) -> dict[int, int]:
-    """Get a dictionary mapping renumbered chain IDs to their molecule type IDs.
+    """Get a dictionary mapping chain IDs to their molecule type IDs.
 
     Args:
         atom_array:
             AtomArray containing the chain IDs and molecule type IDs.
 
     Returns:
-        A dictionary mapping renumbered chain IDs to their molecule type IDs.
+        A dictionary mapping chain IDs to their molecule type IDs.
     """
     chain_starts = struc.get_chain_starts(atom_array)
 
     return dict(
         zip(
-            atom_array[chain_starts].chain_id_renumbered,
+            atom_array[chain_starts].chain_id,
             atom_array[chain_starts].molecule_type_id,
         )
     )
 
 
 def get_chain_to_molecule_type_dict(atom_array: struc.AtomArray) -> dict[int, str]:
-    """Get a dictionary mapping renumbered chain IDs to their molecule types.
+    """Get a dictionary mapping chain IDs to their molecule types.
 
     Args:
         atom_array:
             AtomArray containing the chain IDs and molecule type IDs.
 
     Returns:
-        A dictionary mapping renumbered chain IDs to their molecule types (as strings
-        instead of IDs).
+        A dictionary mapping chain IDs to their molecule types (as strings instead of
+        IDs).
     """
     chain_to_molecule_type_id = get_chain_to_molecule_type_id_dict(atom_array)
 
@@ -115,17 +115,21 @@ def get_chain_to_molecule_type_dict(atom_array: struc.AtomArray) -> dict[int, st
     }
 
 
-def assign_renumbered_chain_ids(atom_array: AtomArray) -> None:
-    """Adds a renumbered chain index to the AtomArray
+def assign_renumbered_chain_ids(
+    atom_array: AtomArray, store_original_as: str | None = None
+) -> None:
+    """Renumbers the chain IDs in the AtomArray starting from 0
 
     Iterates through all chains in the atom array and assigns unique numerical chain IDs
-    starting with 0 to each chain in the "chain_id_renumbered" field. This is useful for
-    bioassembly parsing where chain IDs can be duplicated after the assembly is
-    expanded.
+    starting with 0 to each chain. This is useful for bioassembly parsing where chain
+    IDs can be duplicated after the assembly is expanded.
 
     Args:
         atom_array:
             AtomArray containing the structure to assign renumbered chain IDs to.
+        store_original_as:
+            If set, the original chain IDs are stored in the specified field of the
+            AtomArray. If None, the original chain IDs are discarded. Defaults to None.
     """
     chain_start_idxs = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
 
@@ -134,7 +138,12 @@ def assign_renumbered_chain_ids(atom_array: AtomArray) -> None:
     chain_ids_per_atom = np.repeat(
         np.arange(len(chain_id_n_repeats)), chain_id_n_repeats
     )
-    atom_array.set_annotation("chain_id_renumbered", chain_ids_per_atom)
+
+    if store_original_as is not None:
+        atom_array.set_annotation(store_original_as, atom_array.chain_id)
+
+    # Have to set via _annot to override the <U4 chain_id default dtype
+    atom_array._annot["chain_id"] = chain_ids_per_atom
 
 
 def assign_atom_indices(atom_array: AtomArray) -> None:
@@ -240,29 +249,35 @@ def assign_molecule_type_ids(atom_array: AtomArray) -> None:
     """
     chain_start_idxs = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
 
+    std_protein_residues = set(STANDARD_PROTEIN_RESIDUES)
+    std_dna_residues = set(STANDARD_DNA_RESIDUES)
+    std_rna_residues = set(STANDARD_RNA_RESIDUES)
+
     # Create molecule type annotation
     molecule_type_ids = np.zeros(len(atom_array), dtype=int)
 
-    # Zip together chain starts and ends
-    for chain_start, chain_end in zip(chain_start_idxs[:-1], chain_start_idxs[1:]):
-        chain_array = atom_array[chain_start:chain_end]
+    # Zip together chain starts
+    for chain_start, next_chain_start in zip(
+        chain_start_idxs[:-1], chain_start_idxs[1:]
+    ):
+        chain_array = atom_array[chain_start:next_chain_start]
         is_polymeric = struc.get_residue_count(chain_array) > 1
         residues_in_chain = set(chain_array.res_name)
 
         # Assign protein if polymeric and any standard protein residue is present
-        if (residues_in_chain & set(STANDARD_PROTEIN_RESIDUES)) and is_polymeric:
-            molecule_type_ids[chain_start:chain_end] = MoleculeType.PROTEIN
+        if (residues_in_chain & std_protein_residues) and is_polymeric:
+            molecule_type_ids[chain_start:next_chain_start] = MoleculeType.PROTEIN
 
         # Assign RNA if polymeric and any standard RNA residue is present
-        elif (residues_in_chain & set(STANDARD_RNA_RESIDUES)) and is_polymeric:
-            molecule_type_ids[chain_start:chain_end] = MoleculeType.RNA
+        elif (residues_in_chain & std_rna_residues) and is_polymeric:
+            molecule_type_ids[chain_start:next_chain_start] = MoleculeType.RNA
 
         # Assign DNA if polymeric and any standard DNA residue is present
-        elif (residues_in_chain & set(STANDARD_DNA_RESIDUES)) and is_polymeric:
-            molecule_type_ids[chain_start:chain_end] = MoleculeType.DNA
+        elif (residues_in_chain & std_dna_residues) and is_polymeric:
+            molecule_type_ids[chain_start:next_chain_start] = MoleculeType.DNA
 
         # Assign ligand otherwise
         else:
-            molecule_type_ids[chain_start:chain_end] = MoleculeType.LIGAND
+            molecule_type_ids[chain_start:next_chain_start] = MoleculeType.LIGAND
 
     atom_array.set_annotation("molecule_type_id", molecule_type_ids)
