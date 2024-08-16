@@ -89,7 +89,15 @@ def set_fallback_conformer(mol: Mol) -> Chem.Mol:
         # If it works, no need to supply a conformer because dataloading can handle it
         # on the fly
         mol = compute_conformer(mol)
-        mol.SetProp("use_fallback_conformer", "False")
+        mol.SetProp("use_conformer", "False")
+
+        mol.ClearProp("model_pdb_id")
+        mol.ClearProp("model_used_atom_mask")
+        mol.ClearProp("ideal_used_atom_mask")
+
+        used_atom_mask = [1] * mol.GetNumAtoms()
+        mol.SetProp("used_atom_mask", " ".join(str(x) for x in used_atom_mask))
+
     except ConformerGenerationError:
         conf_names = [conf.GetProp("name") for conf in mol.GetConformers()]
 
@@ -100,11 +108,15 @@ def set_fallback_conformer(mol: Mol) -> Chem.Mol:
             mol.ClearProp("model_pdb_id")
             mol.ClearProp("model_used_atom_mask")
 
+            mol.SetProp("used_atom_mask", mol.GetProp("ideal_used_atom_mask"))
+
         elif "Model" in conf_names and mol.GetProp("model_pdb_id") != "?":
             logger.debug("Ideal not found, using Model coordinates as fallback")
 
             fallback_conf = mol.GetConformer(conf_names.index("Model"))
             mol.ClearProp("ideal_used_atom_mask")
+
+            mol.SetProp("used_atom_mask", mol.GetProp("model_used_atom_mask"))
 
             # assert that not all coordinates are 0, dev-only TODO: remove
             assert not all(
