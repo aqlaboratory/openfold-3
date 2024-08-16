@@ -106,9 +106,9 @@ def process_msas_af3(
         ],
     )
 
-    return MsaProcessedCollection(query_sequences=query_seqs, 
-                                  paired_msas=paired_msas, 
-                                  main_msas=main_msas)
+    return MsaProcessedCollection(
+        query_sequences=query_seqs, paired_msas=paired_msas, main_msas=main_msas
+    )
 
 
 def process_msas_cropped_af3(

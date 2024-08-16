@@ -587,7 +587,8 @@ def expand_paired_msas(
     # # Initialize paired MSA object
     # num_rows = paired_msa_per_chain[next(iter(paired_msa_per_chain))].msa.shape[0]
     # num_cols = sum(
-    #     [msa_collection.num_cols[v] for (_, v) in msa_collection.chain_rep_map.items()]
+    #     [msa_collection.num_cols[v]
+    # for (_, v) in msa_collection.chain_rep_map.items()]
     # )
     # paired_msa = Msa(
     #     msa=np.full((num_rows, num_cols), "-"),

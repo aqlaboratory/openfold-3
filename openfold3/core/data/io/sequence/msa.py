@@ -9,7 +9,7 @@ from typing import Optional, Sequence
 import numpy as np
 
 from openfold3.core.data.io.sequence.fasta import parse_fasta
-from openfold3.core.data.primitives.sequence.msa import MsaParsed, MsaCollection
+from openfold3.core.data.primitives.sequence.msa import MsaCollection, MsaParsed
 
 
 def _msa_list_to_np(msa: Sequence[str]) -> np.array:
