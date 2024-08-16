@@ -9,7 +9,7 @@ from typing import Optional, Sequence
 import numpy as np
 
 from openfold3.core.data.io.sequence.fasta import parse_fasta
-from openfold3.core.data.primitives.sequence.msa import Msa, MsaCollection
+from openfold3.core.data.primitives.sequence.msa import MsaParsed, MsaCollection
 
 
 def _msa_list_to_np(msa: Sequence[str]) -> np.array:
@@ -30,7 +30,7 @@ def _msa_list_to_np(msa: Sequence[str]) -> np.array:
     return msa_array
 
 
-def parse_a3m(msa_string: str, max_seq_count: Optional[int] = None) -> Msa:
+def parse_a3m(msa_string: str, max_seq_count: Optional[int] = None) -> MsaParsed:
     """Parses sequences and deletion matrix from a3m format alignment.
 
     This function needs to be wrapped in a with open call to read the file.
@@ -67,7 +67,7 @@ def parse_a3m(msa_string: str, max_seq_count: Optional[int] = None) -> Msa:
     msa = _msa_list_to_np(msa)
     deletion_matrix = np.array(deletion_matrix)
 
-    parsed_msa = Msa(msa=msa, deletion_matrix=deletion_matrix, metadata=metadata)
+    parsed_msa = MsaParsed(msa=msa, deletion_matrix=deletion_matrix, metadata=metadata)
 
     # Crop the MSA
     if max_seq_count is not None:
@@ -76,7 +76,7 @@ def parse_a3m(msa_string: str, max_seq_count: Optional[int] = None) -> Msa:
     return parsed_msa
 
 
-def parse_stockholm(msa_string: str, max_seq_count: Optional[int] = None) -> Msa:
+def parse_stockholm(msa_string: str, max_seq_count: Optional[int] = None) -> MsaParsed:
     """Parses sequences and deletion matrix from stockholm format alignment.
 
     This function needs to be wrapped in a with open call to read the file.
@@ -137,7 +137,7 @@ def parse_stockholm(msa_string: str, max_seq_count: Optional[int] = None) -> Msa
     deletion_matrix = np.array(deletion_matrix)
     metadata = list(name_to_sequence.keys())
 
-    parsed_msa = Msa(msa=msa, deletion_matrix=deletion_matrix, metadata=metadata)
+    parsed_msa = MsaParsed(msa=msa, deletion_matrix=deletion_matrix, metadata=metadata)
 
     # Crop the MSA
     if max_seq_count is not None:
@@ -151,7 +151,7 @@ MSA_PARSER_REGISTRY = {".a3m": parse_a3m, ".sto": parse_stockholm}
 
 def parse_msas_direct(
     folder_path: Sequence[str], max_seq_counts: Optional[dict[str, int]] = None
-) -> dict[str, Msa]:
+) -> dict[str, MsaParsed]:
     """Parses a set of MSA files into a dictionary of Msa objects.
 
     This function is used to parse MSAs for a single chain.
@@ -206,7 +206,7 @@ def parse_msas_alignment_database(
     alignment_index_entry: dict,
     alignment_database_path: str,
     max_seq_counts: Optional[dict[str, int]] = None,
-) -> dict[str, Msa]:
+) -> dict[str, MsaParsed]:
     """Parses an entry from an alignment database into a dictionary of Msa objects.
 
     This function is used to parse MSAs for a single chain.
@@ -258,7 +258,7 @@ def parse_msas_alignment_database(
 
 
 def parse_msas_sample(
-    chain_ids: list[list[str], list[str]],
+    chain_rep_map: dict[int, str],
     alignments_path: str,
     use_alignment_database: bool,
     alignment_index: Optional[dict] = None,
@@ -270,8 +270,11 @@ def parse_msas_sample(
     number of chains in the parsed PDB file and crop during training.
 
     Args:
-        chain_ids (list[tuple[str, str]]):
-            Two lists of chain IDs and representative chain IDs to parse for a sample.
+        chain_rep_map (dict[int, str]):
+            Dict mapping chain IDs to representative chain IDs to parse for a sample.
+            The representative chain IDs are used to find the directory from which to
+            parse the MSAs or is used to index the alignment database, so they need to
+            match the corresponding directory names.
         alignments_path (str):
             Path to the lowest-level directory containing either the directories of MSAs
             per chain ID or the alignment databases.
@@ -293,7 +296,7 @@ def parse_msas_sample(
     """
     # Parse MSAs for each representative ID
     # This requires parsing MSAs for duplicate chains only once
-    representative_chain_ids = list(set(chain_ids[1]))
+    representative_chain_ids = list(set(chain_rep_map.values()))
     representative_msas = {}
     for rep_id in representative_chain_ids:
         if use_alignment_database:
@@ -310,10 +313,9 @@ def parse_msas_sample(
 
     # Reindex the parsed MSAs to the original chain IDs and calculate Msa length and
     # pull out the query sequence
-    rep_msa_map, rep_seq_map, chain_rep_map, num_cols = {}, {}, {}, {}
+    rep_msa_map, rep_seq_map, num_cols = {}, {}, {}
 
-    for chain_id, rep_id in zip(chain_ids[0], chain_ids[1]):
-        chain_rep_map[chain_id] = rep_id
+    for _, rep_id in chain_rep_map.items():
         all_msas_per_chain = representative_msas[rep_id]
         example_msa = all_msas_per_chain[next(iter(all_msas_per_chain))].msa
         if rep_id not in rep_msa_map:

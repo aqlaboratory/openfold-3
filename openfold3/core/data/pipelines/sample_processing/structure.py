@@ -50,6 +50,7 @@ def process_target_structure_af3(
         include_bonds=True,
     )
     atom_array = structure.atom_array
+    # atom_array = atom_array[atom_array.res_name != "HOH"]
 
     # Tokenize
     tokenize_atom_array(atom_array=atom_array)

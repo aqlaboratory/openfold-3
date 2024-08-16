@@ -53,39 +53,39 @@ def featurize_structure_af3(
     features = {}
     # Indexing
     features["residue_index"] = torch.tensor(
-        atom_array.res_id[token_starts], dtype=torch.int
+        atom_array.res_id[token_starts], dtype=torch.int32
     )
     features["token_index"] = torch.tensor(
-        atom_array.token_id[token_starts], dtype=torch.int
+        atom_array.token_id[token_starts], dtype=torch.int32
     )
     features["asym_id"] = torch.tensor(
-        atom_array.chain_id_renumbered[token_starts], dtype=torch.int
+        atom_array.chain_id_renumbered[token_starts], dtype=torch.int32
     )
     features["entity_id"] = torch.tensor(
-        atom_array.entity_id[token_starts], dtype=torch.int
+        atom_array.entity_id[token_starts], dtype=torch.int32
     )
-    features["sym_id"] = torch.tensor(create_sym_id(entity_ids), dtype=torch.int)
+    features["sym_id"] = torch.tensor(create_sym_id(entity_ids), dtype=torch.int32)
     restype_index = torch.tensor(
         get_with_unknown_3(atom_array.res_name[token_starts]), dtype=torch.int64
     )
     features["restype"] = encode_one_hot(
         restype_index, len(STANDARD_RESIDUES_WITH_GAP_3)
-    )
+    ).to(torch.int32)
     features["is_protein"] = torch.tensor(
         atom_array.molecule_type_id[token_starts] == MoleculeType.PROTEIN,
-        dtype=torch.bool,
+        dtype=torch.int32,
     )
     features["is_rna"] = torch.tensor(
         atom_array.molecule_type_id[token_starts] == MoleculeType.RNA,
-        dtype=torch.bool,
+        dtype=torch.int32,
     )
     features["is_dna"] = torch.tensor(
         atom_array.molecule_type_id[token_starts] == MoleculeType.DNA,
-        dtype=torch.bool,
+        dtype=torch.int32,
     )
     features["is_ligand"] = torch.tensor(
         atom_array.molecule_type_id[token_starts] == MoleculeType.LIGAND,
-        dtype=torch.bool,
+        dtype=torch.int32,
     )
 
     # Bonds
@@ -99,22 +99,22 @@ def featurize_structure_af3(
     # Atomization
     features["num_atoms_per_token"] = torch.tensor(
         np.diff(token_starts_with_stop),
-        dtype=torch.int,
+        dtype=torch.int32,
     )
     features["start_atom_index"] = torch.tensor(
         token_starts,
-        dtype=torch.int,
+        dtype=torch.int32,
     )
     features["is_atomized"] = torch.tensor(
-        atom_array.is_atomized[token_starts], dtype=torch.bool
+        atom_array.is_atomized[token_starts], dtype=torch.int32
     )
 
     # Ground-truth-specific features
     # TODO reorganize GT feature logic
     if is_gt:
-        features["atom_positions"] = torch.tensor(atom_array.coord, dtype=torch.float)
+        features["atom_positions"] = torch.tensor(atom_array.coord, dtype=torch.float32)
         features["atom_resolved_mask"] = torch.tensor(
-            atom_array.occupancy, dtype=torch.bool
+            atom_array.occupancy, dtype=torch.float32
         )
 
     # Pad and return

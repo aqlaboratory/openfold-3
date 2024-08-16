@@ -146,7 +146,7 @@ def create_token_bonds(atom_array: AtomArray, token_index: np.ndarray) -> torch.
             bonds_atomized_token_ids[1],
         ] = True
 
-    return torch.tensor(token_bonds, dtype=torch.bool)
+    return torch.tensor(token_bonds, dtype=torch.int32)
 
 
 def create_token_mask(token_allocated: int, token_budget: int) -> torch.Tensor:
@@ -162,6 +162,6 @@ def create_token_mask(token_allocated: int, token_budget: int) -> torch.Tensor:
         torch.Tensor:
             token_mask that can be used as a padding mask along the token dim.
     """
-    token_mask = torch.zeros(token_budget, dtype=torch.bool)
+    token_mask = torch.zeros(token_budget, dtype=torch.float32)
     token_mask[:token_allocated] = True
     return token_mask
