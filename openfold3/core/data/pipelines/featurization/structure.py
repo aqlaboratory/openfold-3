@@ -5,6 +5,8 @@ from typing import Union
 import numpy as np
 import torch
 from biotite.structure import AtomArray
+from rdkit.Chem import Mol
+from torch.nn.functional import one_hot
 
 from openfold3.core.data.primitives.featurization.structure import (
     create_sym_id,
@@ -13,6 +15,7 @@ from openfold3.core.data.primitives.featurization.structure import (
     extract_starts_entities,
     get_with_unknown,
 )
+from openfold3.core.data.primitives.structure.ligand import PERIODIC_TABLE
 from openfold3.core.data.resources.tables import (
     MoleculeType,
 )
@@ -130,3 +133,51 @@ def featurize_target_gt_structure_af3(
     features_gt = featurize_structure_af3(atom_array_gt, is_gt=True)
     features_target["ground_truth"] = features_gt
     return features_target
+
+
+# TODO: better docstring
+def featurize_ref_conformers_af3(
+    mol_list: list[Mol]
+):
+    """AF3 pipeline for creating reference conformer features."""
+    ref_pos = []
+    ref_mask = []
+    ref_element = []
+    ref_charge = []
+    ref_atom_name_chars = []
+    ref_space_uid = [] # deviation from SI, TODO: explain
+    
+    for mol_idx, mol in enumerate(mol_list):
+        conf = mol.GetConformer()
+        
+        for atom in mol.GetAtoms():
+            ref_pos.append(conf.GetAtomPosition(atom.GetIdx()))
+            ref_mask.append(int(atom.GetProp("used_mask")))
+            
+            element_symbol = atom.GetSymbol()
+            ref_element.append(PERIODIC_TABLE.GetAtomicNumber(element_symbol))
+
+            ref_charge.append(atom.GetFormalCharge())
+            ref_space_uid.append(mol_idx)
+
+            atom_name_padded = atom.GetProp("name").ljust(4)
+            chars = []
+            for char in atom_name_padded:
+                chars.append(ord(char) - 32)
+            ref_atom_name_chars.append(chars)
+    
+    ref_pos = torch.tensor(ref_pos, dtype=torch.float32)
+    ref_mask = torch.tensor(ref_mask, dtype=torch.int32)
+    ref_element = one_hot(torch.tensor(ref_element), 128).to(torch.int32)
+    ref_charge = torch.tensor(ref_charge, dtype=torch.float32)
+    ref_atom_name_chars = one_hot(torch.tensor(ref_atom_name_chars), 64).to(torch.int32)
+    ref_space_uid = torch.tensor(ref_space_uid, dtype=torch.int32)
+    
+    return {
+        "ref_pos": ref_pos,
+        "ref_mask": ref_mask,
+        "ref_element": ref_element,
+        "ref_charge": ref_charge,
+        "ref_atom_name_chars": ref_atom_name_chars,
+        "ref_space_uid": ref_space_uid,
+    }

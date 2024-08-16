@@ -12,7 +12,6 @@ from rdkit.Geometry import Point3D
 
 from openfold3.core.data.io.structure.mol import (
     read_single_annotated_sdf,
-    read_single_sdf,
 )
 from openfold3.core.data.primitives.structure.labels import assign_atom_indices
 
@@ -115,7 +114,6 @@ def set_fallback_conformer(mol: Mol) -> Chem.Mol:
         # on the fly
         mol = compute_conformer(mol)
         mol.SetProp("use_conformer", "False")
-<<<<<<< Updated upstream
 
         mol.ClearProp("model_pdb_id")
         mol.ClearProp("model_used_atom_mask")
@@ -124,8 +122,6 @@ def set_fallback_conformer(mol: Mol) -> Chem.Mol:
         used_atom_mask = [1] * mol.GetNumAtoms()
         mol.SetProp("used_atom_mask", " ".join(str(x) for x in used_atom_mask))
 
-=======
->>>>>>> Stashed changes
     except ConformerGenerationError:
         conf_names = [conf.GetProp("name") for conf in mol.GetConformers()]
 
@@ -343,6 +339,7 @@ def resolve_conformer(mol: Mol) -> Mol:
 
             mol.AddConformer(get_allzero_conformer(mol), assignId=True)
 
+    return mol
 
 def subset_mol_by_atom_names(mol: Mol, atom_names: set):
     """Removes atoms from a molecule that are not in a set of atom names."""
@@ -414,7 +411,7 @@ def assign_reference_molecules(
         if entity_id in special_entities:
             special_entity = True
             identifier = entity_id
-            mol_path = special_ligand_sdfs_path / f"{entity_id}_entity.sdf"
+            mol_path = special_ligand_sdfs_path / f"entity_{entity_id}.sdf"
         else:
             special_entity = False
             identifier = ccd_code
@@ -446,16 +443,6 @@ def assign_reference_molecules(
                 ref_mol_ids.extend([current_ref_mol_id] * n_res_atoms)
 
                 next_residue_chain = look_ahead_next_chain_id(res_end)
-
-        else:
-            if ccd_code not in identifier_to_mol:
-                mol = read_single_sdf(ccd_sdfs_path / f"{ccd_code}.sdf")
-                identifier_to_mol[ccd_code] = mol
-            else:
-                mol = identifier_to_mol[ccd_code]
-
-            # Add atom-wise conformer IDs
-            ref_mol_ids.extend([current_ref_mol_id] * n_res_atoms)
 
         # Set the final conformer of the molecule
         mol = resolve_conformer(mol)

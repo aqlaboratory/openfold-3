@@ -6,7 +6,7 @@ from rdkit import Chem
 from rdkit.Chem import Mol
 
 
-def read_single_sdf(path: Path) -> Mol:
+def read_single_sdf(path: Path | str) -> Mol:
     """Reads an SDF file and returns the RDKit Mol object.
 
     Args:
@@ -16,6 +16,9 @@ def read_single_sdf(path: Path) -> Mol:
     Returns:
         The RDKit Mol object.
     """
+    if not isinstance(path, Path):
+        path = Path
+    
     reader = Chem.SDMolSupplier(str(path))
     mol = next(reader)
 
@@ -23,7 +26,7 @@ def read_single_sdf(path: Path) -> Mol:
 
 
 # TODO: improve docstring (explain what used_mask is)
-def read_single_annotated_sdf(path: Path) -> Mol:
+def read_single_annotated_sdf(path: Path | str) -> Mol:
     """Reads an annotated SDF file and returns the RDKit Mol object."""
 
     mol = read_single_sdf(path)
@@ -34,6 +37,10 @@ def read_single_annotated_sdf(path: Path) -> Mol:
     
     for atom, used, name in zip(mol.GetAtoms(), used_atom_mask, atom_names):
         atom.SetProp("name", name)
-        atom.SetProp("used_mask", bool(int(used)))
+        atom.SetProp("used_mask", used)
+    
+    # delete old properties
+    mol.ClearProp("used_atom_mask")
+    mol.ClearProp("atom_names")
     
     return mol
