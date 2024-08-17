@@ -97,7 +97,7 @@ class StochasticSamplerDataset(Dataset):
 
         # For each dataset, sample datapoint indices
         datapoint_indices = torch.zeros(self.epoch_len, dtype=torch.long)
-        for dataset_idx, num_datapoints in zip(
+        for dataset_idx, num_datapoints_per_dataset in zip(
             torch.unique(dataset_indices), torch.bincount(dataset_indices)
         ):
             datapoint_idx_generator = torch.Generator(
@@ -116,7 +116,7 @@ class StochasticSamplerDataset(Dataset):
             # Sample datapoint indices
             datapoint_indices_i = torch.multinomial(
                 input=datapoint_probabilities,
-                num_samples=num_datapoints,
+                num_samples=num_datapoints_per_dataset,
                 replacement=True,
                 generator=datapoint_idx_generator,
             )

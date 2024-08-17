@@ -28,8 +28,9 @@ and highlight where you currently are in the process:
 """
 
 from abc import ABC, abstractmethod, property
-from typing import Any
+from typing import Union
 
+import torch
 from torch.utils.data import Dataset
 
 DATASET_REGISTRY = {}
@@ -97,17 +98,21 @@ class SingleDataset(ABC, Dataset):
         return self.__class__.__name__
 
     @abstractmethod
-    def __getitem__(self, index: int) -> Any:
+    def __getitem__(self, index: int) -> dict[str, Union[torch.Tensor]]:
         """Getitem of a specific SingleDataset class.
 
         Called by the DataLoader directly or indirectly via the StochasticSamplerDataset
-        getitem method and indexes into . Implements a series of steps to process the
-        raw data into intermediate arrays via pipelines from pipelines.sample_processing
-        and tensorize these arrays to create tensors for the model from
-        pipelines.featurization.
+        getitem method and indexes into the data cache. Implements a series of steps to
+        process the raw data into intermediate arrays via pipelines from
+        pipelines.sample_processing and tensorize these arrays to create tensors for the
+        model from pipelines.featurization.
 
         Args:
             index (int):
                 Index of the datapoint to retrieve.
+
+        Returns:
+            dict[str, Union[torch.Tensor]]:
+                Featuredict.
         """
         pass

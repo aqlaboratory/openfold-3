@@ -26,12 +26,14 @@ and highlight where you currently are in the process:
 """
 
 import dataclasses
+import enum
 import warnings
 from functools import partial
 from typing import Any, Union
 
 import pytorch_lightning as pl
 import torch
+import torch.distributed as dist
 from torch.utils.data import DataLoader
 
 from openfold3.core.data.framework.single_datasets.abstract_single_dataset import (
@@ -69,6 +71,15 @@ class MultiDatasetConfig:
         return len(self.classes)
 
 
+class DatasetType(enum.Enum):
+    """Enum for dataset types."""
+
+    TRAIN = enum.auto()
+    VALIDATION = enum.auto()
+    TEST = enum.auto()
+    PREDICTION = enum.auto()
+
+
 class DataModule(pl.LightningDataModule):
     """A LightningDataModule class for organizing Datasets and DataLoaders."""
 
@@ -85,10 +96,36 @@ class DataModule(pl.LightningDataModule):
         # Parse data_config
         multi_dataset_config = self.parse_data_config(data_config)
 
+        # Set up worker_init_fn as a closure
+        def worker_init_fn(worker_id: int) -> None:
+            """Worker initialization function for setting random seeds.
+
+            Args:
+                worker_id (int):
+                    Worker ID.
+            """
+            # Get the process rank (in DDP, each process is assigned a rank)
+            rank = dist.get_rank() if dist.is_initialized() else 0
+
+            # Calculate a unique seed based on the global seed, rank, and worker ID
+            # Use dataset seed here and ensure it's within 32-bit range
+            seed = self.data_seed % 2**32
+            # Modify seed with rank and worker ID
+            seed += rank * 1000 + worker_id
+
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed(seed)
+            # For multi-GPU scenarios
+            torch.cuda.manual_seed_all(seed)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+
+        self.worker_init_fn = worker_init_fn
+
         # Initialize datasets
-        if "train" in multi_dataset_config.types:
+        if DatasetType.train in multi_dataset_config.types:
             # Initialize train datasets
-            train_datasets = self.init_datasets(multi_dataset_config, "train")
+            train_datasets = self.init_datasets(multi_dataset_config, DatasetType.train)
 
             self.generator = torch.Generator(device="cpu").manual_seed(self.data_seed)
 
@@ -208,44 +245,58 @@ class DataModule(pl.LightningDataModule):
             ]
 
         # Check if provided crop weights sum to 1
-        for idx, crop_weight in enumerate(multi_dataset_config.configs):
-            if sum(crop_weight.values()) != 1:
+        for idx, config_i in enumerate(multi_dataset_config.configs):
+            if sum(config_i["crop_weights"].values()) != 1:
                 warnings.warn(
                     f"Dataset {multi_dataset_config.classes[idx]} crop weights do not "
                     "sum to 1. Normalizing weights.",
                     stacklevel=2,
                 )
-                multi_dataset_config.crop_weights[idx] = {
-                    key: value / sum(crop_weight.values())
-                    for key, value in crop_weight.items()
+                multi_dataset_config.configs[idx]["crop_weights"] = {
+                    key: value / sum(config_i["crop_weights"].values())
+                    for key, value in config_i["crop_weights"].items()
                 }
 
         # Check if provided dataset type combination is valid
         types = multi_dataset_config.types
         types_unique = set(types)
-        supported_combinations = (
-            "{'train'}, {'train', 'validation'}, " "{'test'}, {'prediction'}"
-        )
-        if (len(types_unique) == 2) & (
-            ("train" not in types) | ("validation" not in types)
-        ):
+        supported_types = {
+            DatasetType.train,
+            DatasetType.validation,
+            DatasetType.test,
+            DatasetType.prediction,
+        }
+        supported_combinations = [
+            {DatasetType.train},
+            {DatasetType.train, DatasetType.validation},
+            {DatasetType.test},
+            {DatasetType.prediction},
+        ]
+
+        if types_unique not in supported_combinations:
             raise ValueError(
                 "An unsupported combination of dataset types was found in"
                 f"data_config: {types_unique}. The supported dataset"
                 f"combinations are: {supported_combinations}."
             )
-        elif (len(types_unique) == 1) & ("validation" in types):
+        if types_unique == {"validation"}:
             raise ValueError(
                 "Validation dataset(s) were provided without any training datasets."
                 f"The supported dataset combinations are: {supported_combinations}."
             )
+        elif any([type_ not in supported_types for type_ in types_unique]):
+            raise ValueError(
+                f"An unsupported dataset type was found in data_config: {types_unique}."
+                " Supported types are: train, validation, test, prediction."
+            )
+        # REMOVE THIS WITH ENUM
         elif (len(types_unique) == 1) & (
             all(
                 [
-                    "train" not in types,
-                    "validation" not in types,
-                    "test" not in types,
-                    "prediction" not in types,
+                    DatasetType.train not in types,
+                    DatasetType.validation not in types,
+                    DatasetType.test not in types,
+                    DatasetType.prediction not in types,
                 ]
             )
         ):
@@ -253,16 +304,6 @@ class DataModule(pl.LightningDataModule):
                 "An unsupported combination of dataset types was found in"
                 f"data_config: {types_unique}. The supported dataset"
                 f"combinations are: {supported_combinations}."
-            )
-        elif any(
-            [
-                type_ not in ["train", "validation", "test", "prediction"]
-                for type_ in types_unique
-            ]
-        ):
-            raise ValueError(
-                f"An unsupported dataset type was found in data_config: {types_unique}."
-                " Supported types are: train, validation, test, prediction."
             )
 
     def init_datasets(
@@ -314,11 +355,11 @@ class DataModule(pl.LightningDataModule):
         """
         dataset = (
             self.train_dataset
-            if stage == "train"
+            if stage == DatasetType.train
             else self.validation_dataset
-            if stage == "validation"
+            if stage == DatasetType.validation
             else self.test_dataset
-            if stage == "test"
+            if stage == DatasetType.test
             else self.prediction_dataset
         )
 
@@ -328,6 +369,7 @@ class DataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             collate_fn=openfold_batch_collator,
             generator=self.generator,
+            worker_init_fn=self.worker_init_fn,
         )
 
     def train_dataloader(self) -> DataLoader:
@@ -336,7 +378,7 @@ class DataModule(pl.LightningDataModule):
         Returns:
             DataLoader: training dataloader.
         """
-        return self.generate_dataloader("train")
+        return self.generate_dataloader(DatasetType.train)
 
     def val_dataloader(self) -> DataLoader:
         """Creates validation dataloader.
@@ -344,7 +386,7 @@ class DataModule(pl.LightningDataModule):
         Returns:
             DataLoader: validation dataloader.
         """
-        return self.generate_dataloader("validation")
+        return self.generate_dataloader(DatasetType.validation)
 
     def test_dataloader(self) -> DataLoader:
         """Creates test dataloader.
@@ -352,7 +394,7 @@ class DataModule(pl.LightningDataModule):
         Returns:
             DataLoader: test dataloader.
         """
-        return self.generate_dataloader("test")
+        return self.generate_dataloader(DatasetType.test)
 
     def predict_dataloader(self) -> DataLoader:
         """Creates prediction dataloader.
@@ -360,7 +402,7 @@ class DataModule(pl.LightningDataModule):
         Returns:
             DataLoader: prediction dataloader.
         """
-        return self.generate_dataloader("prediction")
+        return self.generate_dataloader(DatasetType.prediction)
 
 
 def openfold_batch_collator(prots):
