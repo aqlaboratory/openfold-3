@@ -20,6 +20,9 @@ ignore = [
     "E741",
     "SIM108",
 ]
+exclude = [
+    "notebooks/OpenFold.ipynb"
+]
 
 [tool.pytest.ini_options]
 log_cli = true
