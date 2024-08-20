@@ -2,12 +2,9 @@ from pathlib import Path
 
 import torch
 
-from openfold3.core.metrics.validaiton_all_atom import (
-    get_pair_dist,
+from openfold3.core.metrics.validation_all_atom import (
     get_superimpose_metrics,
     get_validation_metrics,
-    interface_lddt,
-    lddt,
 )
 from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
@@ -28,13 +25,13 @@ class AlphaFold3AllAtom(ModelRunner):
     ):
         metrics = {}
 
-        gt_coords = batch["Ground_Truth"]["ref_pos"] #confirm the name
+        gt_coords = batch["Ground_Truth"]["ref_pos"] 
         pred_coords = outputs["x_pred"]
         all_atom_mask = batch["ref_mask"]
         token_mask = batch["token_mask"]
         num_atoms_per_token = batch["Ground_Truth"]["num_atoms_per_token"]
 
-        #get rid of modified residue tokens 
+        #getting rid of modified residue tokens 
         is_protein = batch["Groud_Truth"]["is_protein"] 
         is_rna = batch["Groud_Truth"]["is_rna"] 
         is_dna = batch["Groud_Truth"]["is_dna"] 
@@ -68,7 +65,7 @@ class AlphaFold3AllAtom(ModelRunner):
                                                             gt_coords, 
                                                             all_atom_mask,
                                                             protein_idx,
-                                                            ligand_type = 'protein',
+                                                            substrate = 'protein',
                                                             is_nucleic_acid = False,
                                                             )
         metrics = metrics | protein_validation_metrics
@@ -79,7 +76,7 @@ class AlphaFold3AllAtom(ModelRunner):
                                                            gt_coords, 
                                                            all_atom_mask,
                                                            protein_idx,
-                                                           ligand_type = 'ligand',
+                                                           substrate = 'ligand',
                                                            is_nucleic_acid = False,
                                                            )
         metrics = metrics | ligand_validation_metrics 
@@ -90,7 +87,7 @@ class AlphaFold3AllAtom(ModelRunner):
                                                         gt_coords, 
                                                         all_atom_mask,
                                                         protein_idx,
-                                                        ligand_type = 'rna',
+                                                        substrate = 'rna',
                                                         is_nucleic_acid = True,
                                                         )
         metrics = metrics | rna_validation_metrics
@@ -101,50 +98,10 @@ class AlphaFold3AllAtom(ModelRunner):
                                                         gt_coords, 
                                                         all_atom_mask,
                                                         protein_idx,
-                                                        ligand_type = 'dna',
+                                                        substrate = 'dna',
                                                         is_nucleic_acid = True,
                                                         )
         metrics = metrics | dna_validation_metrics
-
-        #extra LDDTs for model selections:
-        #interLDDT: ligand_dna. Should I bother including these metrics??? also, 
-        if torch.any(is_ligand_atomized) and torch.any(is_dna_atomized):
-            metrics.update({'lddt_inter_ligand_dna': interface_lddt(
-                pred_coords[is_ligand_atomized],
-                pred_coords[is_dna_atomized],
-                gt_coords[is_ligand_atomized],
-                gt_coords[is_dna_atomized],
-                all_atom_mask[is_ligand_atomized], 
-                all_atom_mask[is_dna_atomized], 
-                cutoff= 30.,
-                )})
-        #interLDDT: ligand_rna
-        if torch.any(is_ligand_atomized) and torch.any(is_rna_atomized):
-            metrics.update({'lddt_inter_ligand_rna': interface_lddt(
-                pred_coords[is_ligand_atomized],
-                pred_coords[is_rna_atomized],
-                gt_coords[is_ligand_atomized],
-                gt_coords[is_rna_atomized],
-                all_atom_mask[is_ligand_atomized], 
-                all_atom_mask[is_rna_atomized], 
-                cutoff= 30.,
-                )})
-            
-        #intraLDDT: modified_residues
-        is_modified_res = batch["Groud_Truth"]['is_atomized']
-        is_modified_res = is_modified_res * (1 - batch["Groud_Truth"]['is_ligand'])
-        is_modified_res_atomized = broadcast_token_feat_to_atoms(token_mask, 
-                                                                 num_atoms_per_token, 
-                                                                 is_modified_res)
-        pred_modified_res_pair = get_pair_dist(pred_coords[is_modified_res_atomized],
-                                               pred_coords[is_modified_res_atomized])
-        gt_modified_res_pair = get_pair_dist(gt_coords[is_modified_res_atomized],
-                                             gt_coords[is_modified_res_atomized])
-        intra_mod_res_lddt, _ = lddt(pred_modified_res_pair,
-                                     gt_modified_res_pair,
-                                     all_atom_mask[is_modified_res_atomized], 
-                                     asym_id_atomized[is_modified_res_atomized])
-        metrics.update({'lddt_intra_modified_residues': intra_mod_res_lddt})
 
         if superimposition_metrics:
             superimpose_metrics = get_superimpose_metrics(pred_coords,
@@ -154,4 +111,3 @@ class AlphaFold3AllAtom(ModelRunner):
             metrics = metrics | superimpose_metrics
 
         return metrics
-

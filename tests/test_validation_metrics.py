@@ -308,7 +308,6 @@ class TestGetSuperimposeMetrics(unittest.TestCase):
                                       coords_gt,
                                       all_atom_mask)
         exp_shape = (batch_size,)
-        
         for k, v in out.items():
             np.testing.assert_equal(v.shape, exp_shape)
 
