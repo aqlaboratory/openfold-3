@@ -285,7 +285,8 @@ class InvariantPointAttention(nn.Module):
 
         # This einsum is equivalent to:
         # Transpose v : [*, N_res, H, C_hidden] -> [*, H, N_res, C_hidden]
-        # Matmul a, v: [*, H, N_res, N_res] x [*, H, N_res, C_hidden] -> [*, H, N_res, C_hidden]
+        # Matmul a, v: [*, H, N_res, N_res] x [*, H, N_res, C_hidden]
+        #               -> [*, H, N_res, C_hidden]
         # Transpose o: [*, H, N_res, C_hidden] -> [*, N_res, H, C_hidden]
         # Einsum notation: [H:h, N_res:(n,m), C_hidden:c]
         # n,m are used because using n,n in output would be ambiguous einstein notation
@@ -317,7 +318,8 @@ class InvariantPointAttention(nn.Module):
         # [*, N_res, H, C_z]
         # This einsum is equivalent to:
         # Transpose a : [*, H, N_res, N_res] -> [*, N_res, H, N_res]
-        # Matmul a, z: [*, N_res, H, N_res] x [*, N_res, N_res, C_z] -> [*, N_res, H, C_z]
+        # Matmul a, z: [*, N_res, H, N_res] x [*, N_res, N_res, C_z]
+        #               -> [*, N_res, H, C_z]
         o_pair = torch.einsum("...hnm,...nmc->...nhc", a, z[0].to(dtype=a.dtype))
 
         # [*, N_res, H * C_z]
