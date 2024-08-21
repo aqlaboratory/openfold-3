@@ -292,22 +292,12 @@ class InvariantPointAttention(nn.Module):
         # [*, N_res, H * C_hidden]
         o = flatten_final_dims(o, 2)
 
-        # [*, H, 3, N_res, P_v]
-        if inplace_safe:
-            v_pts = permute_final_dims(v_pts, (1, 3, 0, 2))
-            o_pt = [torch.matmul(a, v.to(a.dtype)) for v in torch.unbind(v_pts, dim=-3)]
-            o_pt = torch.stack(o_pt, dim=-3)
-        else:
-            o_pt = torch.sum(
-                (
-                    a[..., None, :, :, None]
-                    * permute_final_dims(v_pts, (1, 3, 0, 2))[..., None, :, :]
-                ),
-                dim=-2,
-            )
+        # IMPORTANT: This has been changed from the original version where there was
+        # a very particular indexing to ensure fp32; if precion problems occur,
+        # this is a place to look into.
+        with torch.cuda.amp.autocast(enabled=False):
+            o_pt = torch.einsum("...hnm, ...mhpt->...nhpt", a, v_pts.to(dtype=a.dtype))
 
-        # [*, N_res, H, P_v, 3]
-        o_pt = permute_final_dims(o_pt, (2, 0, 3, 1))
         o_pt = r[..., None, None].invert_apply(o_pt)
 
         # [*, N_res, H * P_v]
