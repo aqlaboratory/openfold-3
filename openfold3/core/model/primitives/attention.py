@@ -30,10 +30,7 @@ from ml_collections import ConfigDict
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.utils.checkpointing import get_checkpoint_fn
 from openfold3.core.utils.precision_utils import is_fp16_enabled
-from openfold3.core.utils.tensor_utils import (
-    flatten_final_dims,
-    permute_final_dims,
-)
+from openfold3.core.utils.tensor_utils import flatten_final_dims
 
 from .linear import Linear
 
