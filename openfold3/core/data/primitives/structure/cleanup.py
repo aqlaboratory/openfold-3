@@ -464,7 +464,7 @@ def subset_large_structure(
     and return the closest N chains based on minimum distances between any token center
     atoms.
 
-    Requires the 'af3_token_center_atom' annotation created by the tokenizer function.
+    Requires the 'token_center_atom' annotation created by the tokenizer function.
 
     Args:
         atom_array:
@@ -486,7 +486,7 @@ def subset_large_structure(
     selected_atom = np.random.choice(interface_token_center_atoms)
 
     # Get distances of atom to all token center atoms
-    all_token_center_atoms = atom_array[atom_array.af3_token_center_atom]
+    all_token_center_atoms = atom_array[atom_array.token_center_atom]
     dists_to_all_token_centers = cdist(
         selected_atom.coord.reshape(1, 3),
         all_token_center_atoms.coord,
