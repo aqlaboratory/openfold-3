@@ -296,7 +296,7 @@ class InvariantPointAttention(nn.Module):
         o = flatten_final_dims(o, 2)
 
         # IMPORTANT: This has been changed from the original version where there was
-        # a very particular indexing to ensure fp32; if precion problems occur,
+        # a very particular indexing to ensure fp32; if precision problems occur,
         # this is a place to look into.
         with torch.cuda.amp.autocast(enabled=False):
             o_pt = torch.einsum("...hnm, ...mhpt->...nhpt", a, v_pts.to(dtype=a.dtype))
