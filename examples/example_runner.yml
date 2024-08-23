@@ -1,0 +1,84 @@
+# Mode will eventually match with allowed usage modes in run_openfold.py
+mode: train
+# Model name, currently only af3_all_atom supported 
+model_name: af3_all_atom
+# Can be found in of3/model_implementations/<model_name>/configs/reference_config.yml 
+architecture_preset: initial_training 
+setting_preset: deepspeed 
+
+# General run settings
+mpi_plugin: false
+seed: 42
+checkpoint_every_epoch: false
+batch_size: 1
+num_gpus: 1
+output_dir: ../test_train_output 
+deepspeed_config_path: ./deepspeed_config.json
+log_lr : True
+
+# All fields here must match pl.Trainer kwargs
+pl_trainer:
+  num_nodes: 1
+  precision: bf16
+  max_epochs: 1
+  log_every_n_steps: 25
+  num_sanity_val_steps: 0 
+  reload_dataloaders_every_n_epochs: 1 
+
+early_stopping: 
+  min_delta: 0
+  patience: 3
+
+# Include to use wand checkpointing / logging 
+wandb:
+  id: none
+  checkpoint_path: /PATH/CHECKPOINT 
+  project: PROJECT_NAME 
+  entity: YOUR_USERNAME
+  group: GROUP_NAME
+  experiment_name: EXPERIMENT_NAME
+
+# This section makes updates to training the model
+# Will not accept updates to model section 
+custom_setting:
+  settings:
+    use_deepspeed_evo_attention: True
+    blocks_per_checkpoint: 1
+
+# Use this section to make updates to model parameters, if any 
+custom_architecture:
+  model:
+    pairformer:
+      no_blocks: 4
+    diffusion_module:
+      diffusion_transformer:
+        no_blocks: 4
+
+dataset_paths:
+  PDB-weighted:
+    alignments: /<PDB_PATH>/alignments/
+    mmcif_structures: /<PDB_PATH>/mmcif/
+    template_mmcif_structures: /<PDB_PATH>/template_mmcif/
+  short-monomer-distillation:
+    alignments: /<SHORT_MONOMER_PATH>/alignments/
+    mmcif_structures: /<SHORT_MONOMER_PATH>/mmcif/
+    template_mmcif_structures: /<SHORT_MONOMER_PATH>/template_mmcif/
+
+dataset_config:
+  train:
+    PDB-weighted:
+      class: PDBWeightedDataset 
+      weight: 0.5
+      config:
+        use_templates: false
+        shuffle_top_k_prefiltered: True
+        loss_weight_mode: default 
+        cropping:
+          crop_size: 368  # TODO: Check
+        dataset_args:
+          dna_helix_length: 100
+    monomer-distillation:
+      class: MonmerDistillationDataset      
+      weight: 0.2
+      config:
+        loss_weight_mode: self-distillation
