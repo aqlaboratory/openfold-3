@@ -32,9 +32,9 @@ class TestDiffusionModule(unittest.TestCase):
 
         config = make_config_with_preset("af3_all_atom")
 
-        c_s_input = config.globals.c_s_input
-        c_s = config.globals.c_s
-        c_z = config.globals.c_z
+        c_s_input = config.model.shared.c_s_input
+        c_s = config.model.shared.c_s
+        c_z = config.model.shared.c_z
 
         dm = DiffusionModule(config=config.model.diffusion_module)
 
@@ -85,9 +85,9 @@ class TestDiffusionModule(unittest.TestCase):
 
         config = make_config_with_preset("af3_all_atom")
 
-        c_s_input = config.globals.c_s_input
-        c_s = config.globals.c_s
-        c_z = config.globals.c_z
+        c_s_input = config.model.shared.c_s_input
+        c_s = config.model.shared.c_s
+        c_z = config.model.shared.c_z
 
         dm = DiffusionModule(config=config.model.diffusion_module)
 
@@ -139,9 +139,9 @@ class TestSampleDiffusion(unittest.TestCase):
 
         config = make_config_with_preset("af3_all_atom")
 
-        c_s_input = config.globals.c_s_input
-        c_s = config.globals.c_s
-        c_z = config.globals.c_z
+        c_s_input = config.model.shared.c_s_input
+        c_s = config.model.shared.c_s
+        c_z = config.model.shared.c_z
 
         sample_config = config.model.sample_diffusion
         sample_config.no_rollout_steps = 2

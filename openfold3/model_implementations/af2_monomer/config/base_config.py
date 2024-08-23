@@ -93,6 +93,7 @@ config = mlc.ConfigDict(
             "eps": eps,
         },
         "model": {
+            "ema": {"decay": 0.999},
             "_mask_trans": False,
             "input_embedder": {
                 "tf_dim": 22,
@@ -372,6 +373,5 @@ config = mlc.ConfigDict(
             },
             "eps": eps,
         },
-        "ema": {"decay": 0.999},
     }
 )

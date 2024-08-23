@@ -45,7 +45,9 @@ class ModelRunner(pl.LightningModule):
         self.save_hyperparameters()
         self.config = config
         self.model = model_class(config)
-        self.ema = ExponentialMovingAverage(model=self.model, decay=config.ema.decay)
+        self.ema = ExponentialMovingAverage(
+            model=self.model, decay=config.model.ema.decay
+        )
         self.cached_weights = None
         self.last_lr_step = -1
 

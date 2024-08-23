@@ -28,18 +28,18 @@ class TestAF3Model(unittest.TestCase):
         config = registry.make_config_with_preset("af3_all_atom")
 
         if train:
-            config.globals.chunk_size = None
+            config.settings.chunk_size = None
 
             # Needed to run large model
             if not reduce_model_size:
-                config.globals.blocks_per_ckpt = 1
+                config.settings.blocks_per_ckpt = 1
 
         if reduce_model_size:
             # To avoid memory issues in CI
             config.model.pairformer.no_blocks = 4
             config.model.diffusion_module.diffusion_transformer.no_blocks = 4
 
-        config.globals.use_deepspeed_evo_attention = use_deepspeed_evo_attention
+        config.settings.use_deepspeed_evo_attention = use_deepspeed_evo_attention
         config.model.input_embedder.atom_attn_enc.use_block_sparse_attn = (
             use_block_sparse
         )
@@ -86,7 +86,7 @@ class TestAF3Model(unittest.TestCase):
 
             self.assertTrue(
                 atom_positions_diffusion.shape
-                == (batch_size, config.globals.no_samples, n_atom, 3)
+                == (batch_size, config.model.shared.diffusion.no_samples, n_atom, 3)
             )
             self.assertTrue(loss.shape == ())
 

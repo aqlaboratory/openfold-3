@@ -41,22 +41,11 @@ max_atoms_per_token = mlc.FieldReference(23, field_type=int)
 
 config = mlc.ConfigDict(
     {
-        "data": {
-            "common": {
-                "feat": feature_dict,
-            }
-        },
-        "globals": {
-            "c_s_input": c_s_input,
-            "c_s": c_s,
-            "c_z": c_z,
-            "sigma_data": sigma_data,
-            "no_cycles": 4,
-            "no_samples": no_samples,
-            "no_rollout_steps": no_rollout_steps,
-            "diffusion_training_enabled": diffusion_training_enabled,
+        "settings": {
             "blocks_per_ckpt": blocks_per_ckpt,
             "chunk_size": chunk_size,
+            "use_block_sparse_attn": use_block_sparse_attn,
+            "diffusion_training_enabled": diffusion_training_enabled,
             # Use DeepSpeed memory-efficient attention kernel. Mutually
             # exclusive with use_lma and use_flash.
             "use_deepspeed_evo_attention": False,
@@ -64,9 +53,25 @@ config = mlc.ConfigDict(
             # exclusive with use_deepspeed_evo_attention and use_flash.
             "use_lma": False,
             "offload_inference": False,
-            "last_recycle_grad_only": True,
         },
         "model": {
+            "optimizer": {
+                "learning_rate": 1e-3,
+                "eps": 1e-5,
+            },
+            "ema": {"decay": 0.999},
+            "shared": {
+                "c_s_input": c_s_input,
+                "c_s": c_s,
+                "c_z": c_z,
+                "no_cycles": 4,
+                "last_recycle_grad_only": True,
+                "diffusion": {
+                    "sigma_data": sigma_data,
+                    "no_samples": no_samples,
+                    "no_rollout_steps": no_rollout_steps,
+                },
+            },
             "input_embedder": {
                 "c_s_input": c_s_input,
                 "c_s": c_s,
@@ -348,11 +353,13 @@ config = mlc.ConfigDict(
             },
         },
         "loss": {
+            # To be removed with implementation of loss config
+            "min_resolution": 0.1,
+            "max_resolution": 4.0,
             "confidence_weight": 1e-4,
             "diffusion_weight": 4.0,
             "distogram_weight": 3e-2,
-            "min_resolution": 0.1,
-            "max_resolution": 4.0,
+            # Move to models.heads
             "confidence": {
                 "plddt": {
                     "no_bins": 50,
@@ -377,6 +384,7 @@ config = mlc.ConfigDict(
                 "eps": eps,
                 "inf": 1e9,  # global parameter?
             },
+            # where to put this?
             "diffusion": {
                 "sigma_data": sigma_data,
                 "bond_weight": 0.0,  # varies based on training and finetuning
@@ -386,13 +394,51 @@ config = mlc.ConfigDict(
                 "ligand_weight": 10.0,
                 "eps": eps,
             },
+            # move to model.heads
             "distogram": {
                 "no_bins": 64,
                 "bin_min": 2.0,
                 "bin_max": 22.0,
                 "eps": eps,
             },
+            "loss_weight_modes": {
+                # TODO: double check these settings
+                "default": {
+                    "diffusion": 4.0,
+                    "distogram": 3e-2,
+                    "plddt": 1e-4,
+                    "pae": 1e-4,
+                    "ptm": 0.0,
+                },
+                # Custom losses will be applied as updates to the default loss
+                "custom": {
+                    "self_distillation": {
+                        "pae": 0.0,
+                        "plddt": 0.0,
+                        "pde": 0.0,
+                    },
+                },
+            },
         },
-        "ema": {"decay": 0.999},
+    }
+)
+
+data_config = mlc.ConfigDict(
+    {
+        "templates": {
+            "use_templates": True,
+            "max_template_hits": 4,
+            "max_templates": 4,
+        },
+        "msa": {
+            "uniprot_msa_depth": 8_000,
+            "main_msa_depth": 16_000,
+        },
+        "loss_weight_mode": "default",
+        "cropping": {
+            "crop_size": 768,
+        },
+        "min_resolution": 0.1,
+        "max_resolution": 4.0,
     }
 )

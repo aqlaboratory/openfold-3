@@ -121,9 +121,9 @@ class TestPairformerEmbedding(unittest.TestCase):
 
         config = registry.make_config_with_preset("af3_all_atom")
 
-        c_s_input = config.globals.c_s_input
-        c_s = config.globals.c_s
-        c_z = config.globals.c_z
+        c_s_input = config.model.shared.c_s_input
+        c_s = config.model.shared.c_s
+        c_z = config.model.shared.c_z
 
         pair_emb = PairformerEmbedding(**config.model.heads.pairformer_embedding).eval()
 
@@ -166,9 +166,9 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         n_templ = 3
 
         config = registry.make_config_with_preset("af3_all_atom")
-        c_s_input = config.globals.c_s_input
-        c_s = config.globals.c_s
-        c_z = config.globals.c_z
+        c_s_input = config.model.shared.c_s_input
+        c_s = config.model.shared.c_s
+        c_z = config.model.shared.c_z
 
         batch = random_af3_features(
             batch_size=batch_size, n_token=n_token, n_msa=n_msa, n_templ=n_templ
