@@ -3,21 +3,15 @@ Helper functions for converting between yaml, dicts, and config dicts.
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 import yaml
-from ml_collections import ConfigDict
 
 
-def load_yaml(path: Path) -> dict[str, Any]:
+def load_yaml(path: Union[Path, str]) -> dict[str, Any]:
     """Loads a yaml file as a dictionary."""
+    if not isinstance(path, Path):
+        path = Path(path)
     with path.open() as f:
         yaml_dict = yaml.safe_load(f)
     return yaml_dict
-
-
-def update_config_dict(config_dict: ConfigDict, update_dict: dict):
-    """Makes updates to a copy of the given config dict."""
-    base = config_dict.copy_and_resolve_references()
-    base.update(update_dict)
-    return base

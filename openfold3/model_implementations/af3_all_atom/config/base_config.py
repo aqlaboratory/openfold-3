@@ -423,7 +423,8 @@ config = mlc.ConfigDict(
     }
 )
 
-data_config = mlc.ConfigDict(
+# Maybe we do want this in `config.data`
+base_data_config = mlc.ConfigDict(
     {
         "templates": {
             "use_templates": True,

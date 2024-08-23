@@ -64,7 +64,7 @@ dataset_paths:
     mmcif_structures: /<SHORT_MONOMER_PATH>/mmcif/
     template_mmcif_structures: /<SHORT_MONOMER_PATH>/template_mmcif/
 
-dataset_config:
+dataset_configs:
   train:
     PDB-weighted:
       class: PDBWeightedDataset 

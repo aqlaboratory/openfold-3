@@ -1,4 +1,5 @@
 import dataclasses
+import logging
 from pathlib import Path
 from typing import Any, Optional
 
@@ -17,6 +18,20 @@ class ModelEntry:
     # List of available presets available for given model_runner
     # Populated upon ModelEntry creation
     presets: Optional[list[str]]
+
+    def get_config_with_preset(self, preset: Optional[str] = None):
+        if preset is None:
+            logging.info(f"Using default training configs for {model_name}")
+            return self.base_config
+
+        if preset not in self.presets:
+            raise KeyError(
+                f"{preset} preset is not supported for {self.name}"
+                f"Allowed presets are {self.presets}"
+            )
+        reference_configs = config_utils.load_yaml(self.reference_config_path)
+        preset_config = reference_configs[preset]
+        return self.base_config.update(preset_config)
 
 
 def register_model_base(
