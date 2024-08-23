@@ -30,10 +30,7 @@ from ml_collections import ConfigDict
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.utils.checkpointing import get_checkpoint_fn
 from openfold3.core.utils.precision_utils import is_fp16_enabled
-from openfold3.core.utils.tensor_utils import (
-    flatten_final_dims,
-    permute_final_dims,
-)
+from openfold3.core.utils.tensor_utils import flatten_final_dims
 
 from .linear import Linear
 
@@ -93,21 +90,38 @@ def _attention(
     value: torch.Tensor,
     biases: List[torch.Tensor],
 ) -> torch.Tensor:
-    # [*, H, C_hidden, K]
-    key = permute_final_dims(key, (1, 0))
+    """Attention operation with bias terms.
 
-    # [*, H, Q, K]
-    a = torch.matmul(query, key)
+    For clarity, the dimensions are as follows:
+        *: Batch dimensions
+        H: Number of heads
+        K, Q, V: Key, query, value dimensions
+        C_hidden: Hidden dimension
 
+    Args:
+        query (shape [*, H, Q, C_hidden]): query tensor
+        key (shape [*, H, K, C_hidden]): key tensor
+        value (shape [*, H, V, C_hidden]): value tensor
+        biases : list of bias tensors
+
+    Returns:
+        shape [*, H, V, C_hidden]: attention output
+    """
+
+    # Generate attention scores
+    scores = torch.einsum("...qc, ...kc->...qk", query, key)
+
+    # Add the biases
     for b in biases:
-        a += b
+        scores += b
 
-    a = softmax_no_cast(a, -1)
+    # Normalize the scores
+    scores = softmax_no_cast(scores, dim=-1)
 
-    # [*, H, Q, C_hidden]
-    a = torch.matmul(a, value)
+    # Multiply scores by values
+    attention = torch.einsum("...qk, ...kc->...qc", scores, value)
 
-    return a
+    return attention
 
 
 @torch.jit.ignore
@@ -661,19 +675,7 @@ class GlobalAttention(nn.Module):
 
         bias = (self.inf * (mask - 1))[..., :, None, :]
         if not use_lma:
-            # [*, N_res, H, N_seq]
-            a = torch.matmul(
-                q,
-                k.transpose(-1, -2),  # [*, N_res, C_hidden, N_seq]
-            )
-            a += bias
-            a = softmax_no_cast(a)
-
-            # [*, N_res, H, C_hidden]
-            o = torch.matmul(
-                a,
-                v,
-            )
+            o = _attention(q, k, v, [bias])
         else:
             o = _lma(
                 q, k, v, [bias], DEFAULT_LMA_Q_CHUNK_SIZE, DEFAULT_LMA_KV_CHUNK_SIZE
