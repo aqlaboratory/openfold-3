@@ -225,7 +225,7 @@ class InvariantPointAttention(nn.Module):
         # n,m are used because using n,n would be ambiguous einstein notation
         if is_fp16_enabled():
             with torch.cuda.amp.autocast(enabled=False):
-                a = torch.einsum("...nhc,...mhc->...hnm", q, k)
+                a = torch.einsum("...nhc,...mhc->...hnm", q.float(), k.float())
         else:
             a = torch.einsum("...nhc,...mhc->...hnm", q, k)
 
