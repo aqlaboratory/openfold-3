@@ -298,7 +298,7 @@ class InvariantPointAttention(nn.Module):
         # IMPORTANT: This has been changed from the original version where there was
         # a very particular indexing to ensure fp32; if precision problems occur,
         # this is a place to look into.
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast("cuda", enabled=False):
             o_pt = torch.einsum("...hnm, ...mhpt->...nhpt", a, v_pts.to(dtype=a.dtype))
 
         o_pt = r[..., None, None].invert_apply(o_pt)
