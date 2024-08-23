@@ -35,10 +35,7 @@ class AttentionCoreFunction(torch.autograd.Function):
         k = k.contiguous()
 
         # [*, H, Q, K]
-        attention_logits = torch.matmul(
-            q,
-            k.transpose(-1, -2),
-        )
+        attention_logits = torch.einsum("...ij,...kj->...ik", q, k)
 
         if bias_1 is not None:
             attention_logits += bias_1
@@ -51,7 +48,7 @@ class AttentionCoreFunction(torch.autograd.Function):
             attention_logits.shape[-1],
         )
 
-        o = torch.matmul(attention_logits, v)
+        o = torch.einsum("...ik,...kj->...ij", attention_logits, v)
 
         ctx.bias_1_shape = bias_1.shape if bias_1 is not None else None
         ctx.bias_2_shape = bias_2.shape if bias_2 is not None else None
@@ -64,7 +61,7 @@ class AttentionCoreFunction(torch.autograd.Function):
         q, k, v, attention_logits = ctx.saved_tensors
         grad_q = grad_k = grad_v = grad_bias_1 = grad_bias_2 = None
 
-        grad_v = torch.matmul(attention_logits.transpose(-1, -2), grad_output)
+        grad_v = torch.einsum("...ij,...ik->...jk", attention_logits, grad_output)
 
         attn_core_inplace_cuda.backward_(
             attention_logits,
@@ -89,11 +86,8 @@ class AttentionCoreFunction(torch.autograd.Function):
                 keepdim=True,
             )
 
-        grad_q = torch.matmul(attention_logits, k)
-        grad_k = torch.matmul(
-            q.transpose(-1, -2),
-            attention_logits,
-        ).transpose(-1, -2)
+        grad_q = torch.einsum("...ik,...kj->...ij", attention_logits, k)
+        grad_k = torch.einsum("...ij,...ik->...kj", q, attention_logits)
 
         return grad_q, grad_k, grad_v, grad_bias_1, grad_bias_2
 
