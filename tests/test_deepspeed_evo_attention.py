@@ -206,7 +206,7 @@ class TestDeepSpeedKernel(unittest.TestCase):
             "pair": torch.randint(0, 2, (n_res, n_res), device="cuda", dtype=dtype),
         }
 
-        with torch.cuda.amp.autocast(dtype=dtype):
+        with torch.amp.autocast("cuda", dtype=dtype):
             model = compare_utils.get_global_pretrained_openfold()
             out_repro_msa, out_repro_pair = model.evoformer.blocks[0](
                 activations["msa"],
@@ -356,7 +356,7 @@ class TestDeepSpeedKernel(unittest.TestCase):
             return t.permute(*range(len(t.shape))[1:], 0)
 
         batch = tensor_tree_map(move_dim, batch)
-        with torch.no_grad(), torch.cuda.amp.autocast(dtype=torch.bfloat16):
+        with torch.no_grad(), torch.amp.autocast("cuda", dtype=torch.bfloat16):
             model = compare_utils.get_global_pretrained_openfold()
             model.globals.use_deepspeed_evo_attention = False
             out_repro = model(batch)

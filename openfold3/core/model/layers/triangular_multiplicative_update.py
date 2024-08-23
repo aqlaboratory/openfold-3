@@ -462,7 +462,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             b = b / b.std()
 
         if is_fp16_enabled():
-            with torch.cuda.amp.autocast(enabled=False):
+            with torch.amp.autocast("cuda", enabled=False):
                 x = self._combine_projections(a.float(), b.float())
         else:
             x = self._combine_projections(a, b)
@@ -627,7 +627,7 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             b = b / b.std()
 
         if is_fp16_enabled():
-            with torch.cuda.amp.autocast(enabled=False):
+            with torch.amp.autocast("cuda", enabled=False):
                 x = self._combine_projections(a.float(), b.float())
         else:
             x = self._combine_projections(a, b)

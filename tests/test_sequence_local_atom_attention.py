@@ -196,7 +196,7 @@ class TestAtomTransformer(unittest.TestCase):
         atom_mask = atom_mask.to(device, dtype=dtype)
 
         cuda_context = (
-            torch.cuda.amp.autocast(dtype=dtype)
+            torch.amp.autocast("cuda", dtype=dtype)
             if torch.cuda.is_available()
             else nullcontext()
         )
@@ -320,7 +320,7 @@ class TestAtomTransformer(unittest.TestCase):
                 lecun_normal_init_(apb.linear_ada_out.weight)
 
             cuda_context = (
-                torch.cuda.amp.autocast(dtype=dtype)
+                torch.amp.autocast("cuda", dtype=dtype)
                 if torch.cuda.is_available()
                 else nullcontext()
             )

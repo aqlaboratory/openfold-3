@@ -222,7 +222,7 @@ class InvariantPointAttention(nn.Module):
 
         # [*, H, N_res, N_res]
         if is_fp16_enabled():
-            with torch.cuda.amp.autocast(enabled=False):
+            with torch.amp.autocast("cuda", enabled=False):
                 a = torch.matmul(
                     permute_final_dims(q.float(), (1, 0, 2)),  # [*, H, N_res, C_hidden]
                     permute_final_dims(k.float(), (1, 2, 0)),  # [*, H, C_hidden, N_res]
