@@ -19,10 +19,7 @@ from typing import Dict
 
 import torch
 
-from openfold3.core.utils.atomize_utils import (
-    broadcast_token_feat_to_atoms,
-    get_atom_to_onehot_token_index,
-)
+from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 
 
@@ -70,14 +67,20 @@ def weighted_rigid_align(
     H = H * w[..., None, None] * atom_mask_gt[..., None, None]
     H = torch.sum(H, dim=-3)
 
+    dtype = H.dtype
+
+    # TODO: Check why autocast did not work in test
     # Find optimal rotation from single value decomposition
-    with torch.cuda.amp.autocast(enabled=False):
-        # SVD (cast to float because doesn't work with bf16/fp16)
-        U, _, V = torch.linalg.svd(H.float())
+    # SVD (cast to float because doesn't work with bf16/fp16)
+    U, _, V = torch.linalg.svd(H.float())
+
+    dets = torch.linalg.det(U @ V).to(dtype=dtype)
+    U = U.to(dtype=dtype)
+    V = V.to(dtype=dtype)
 
     # Remove reflection
     F = torch.eye(3, device=x.device, dtype=x.dtype).tile((*H.shape[:-2], 1, 1))
-    F[..., -1, -1] = torch.sign(torch.linalg.det(U @ V))
+    F[..., -1, -1] = torch.sign(dets)
     R = U @ F @ V
 
     # Apply alignment
@@ -89,9 +92,9 @@ def weighted_rigid_align(
 def mse_loss(
     batch: Dict,
     x: torch.Tensor,
-    alpha_dna: float,
-    alpha_rna: float,
-    alpha_ligand: float,
+    dna_weight: float,
+    rna_weight: float,
+    ligand_weight: float,
     eps: float,
 ) -> torch.Tensor:
     """
@@ -102,11 +105,11 @@ def mse_loss(
             Feature dictionary
         x:
             [*, N_atom, 3] Atom positions
-        alpha_dna:
+        dna_weight:
             Upweight factor for DNA atoms
-        alpha_rna:
+        rna_weight:
             Upweight factor for RNA atoms
-        alpha_ligand:
+        ligand_weight:
             Upweight factor for ligand atoms
         eps:
             Small constant for stability
@@ -115,9 +118,9 @@ def mse_loss(
     """
     # Construct per-token weights based on molecule types
     # [*, n_token]
-    w_dna = batch["is_dna"] * alpha_dna
-    w_rna = batch["is_rna"] * alpha_rna
-    w_ligand = batch["is_ligand"] * alpha_ligand
+    w_dna = batch["is_dna"] * dna_weight
+    w_rna = batch["is_rna"] * rna_weight
+    w_ligand = batch["is_ligand"] * ligand_weight
     w = torch.ones_like(batch["is_dna"]) + w_dna + w_rna + w_ligand
 
     # Convert per-token weights to per-atom weights
@@ -128,22 +131,25 @@ def mse_loss(
         token_feat=w,
     )
 
+    atom_positions_gt = batch["ground_truth"]["atom_positions"]
+    atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
+
     # Perform weighted rigid alignment
     x_gt_aligned = weighted_rigid_align(
-        x=batch["gt_atom_positions"],
+        x=atom_positions_gt,
         x_gt=x,
         w=w,
-        atom_mask_gt=batch["gt_atom_mask"],
+        atom_mask_gt=atom_mask_gt,
         eps=eps,
     )
 
     mse = (
         (1 / 3.0)
         * torch.sum(
-            torch.sum((x - x_gt_aligned) ** 2, dim=-1) * w * batch["gt_atom_mask"],
+            torch.sum((x - x_gt_aligned) ** 2, dim=-1) * w * atom_mask_gt,
             dim=-1,
         )
-        / torch.sum(batch["gt_atom_mask"] + eps, dim=-1)
+        / torch.sum(atom_mask_gt + eps, dim=-1)
     )
 
     return mse
@@ -163,11 +169,15 @@ def bond_loss(batch: Dict, x: torch.Tensor, eps: float) -> torch.Tensor:
     Returns:
         [*] Auxiliary loss for bonded ligands
     """
+    x_gt = batch["ground_truth"]["atom_positions"]
+    atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
+
     # Compute pairwise distances
-    x_gt = batch["gt_atom_positions"]
-    dx = torch.sqrt(torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1))
+    dx = torch.sqrt(
+        eps**2 + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
+    )
     dx_gt = torch.sqrt(
-        torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
+        eps**2 + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
     )
 
     # Construct polymer-ligand per-token bond mask
@@ -180,20 +190,22 @@ def bond_loss(batch: Dict, x: torch.Tensor, eps: float) -> torch.Tensor:
 
     # Construct polymer-ligand per-atom bond mask
     # [*, N_atom, N_atom]
-    atom_to_onehot_token_index = get_atom_to_onehot_token_index(
-        token_mask=batch["token_mask"], num_atoms_per_token=batch["num_atoms_per_token"]
+    bond_mask = broadcast_token_feat_to_atoms(
+        token_mask=batch["token_mask"],
+        num_atoms_per_token=batch["num_atoms_per_token"],
+        token_feat=bond_mask,
+        token_dim=-2,
     )
-    bond_mask = torch.einsum(
-        "...ij,...li->...lj", bond_mask, atom_to_onehot_token_index
+    bond_mask = broadcast_token_feat_to_atoms(
+        token_mask=batch["token_mask"],
+        num_atoms_per_token=batch["num_atoms_per_token"],
+        token_feat=bond_mask.transpose(-1, -2),
+        token_dim=-2,
     )
-    bond_mask = torch.einsum(
-        "...lj,...mj->...lm", bond_mask, atom_to_onehot_token_index
-    )
+    bond_mask = bond_mask.transpose(-1, -2)
 
     # Compute polymer-ligand bond loss
-    mask = bond_mask * (
-        batch["gt_atom_mask"][..., None] * batch["gt_atom_mask"][..., None, :]
-    )
+    mask = bond_mask * (atom_mask_gt[..., None] * atom_mask_gt[..., None, :])
 
     loss = torch.sum((dx - dx_gt) ** 2 * mask, dim=(-1, -2)) / torch.sum(
         mask + eps, dim=(-1, -2)
@@ -216,11 +228,15 @@ def smooth_lddt_loss(batch: Dict, x: torch.Tensor, eps: float) -> torch.Tensor:
     Returns:
         [*] Auxiliary structure-based loss based on smooth LDDT
     """
+    x_gt = batch["ground_truth"]["atom_positions"]
+    atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
+
     # [*, N_atom, N_atom]
-    x_gt = batch["gt_atom_positions"]
-    dx = torch.sqrt(torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1))
+    dx = torch.sqrt(
+        eps**2 + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
+    )
     dx_gt = torch.sqrt(
-        torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
+        eps**2 + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1),
     )
 
     # [*, N_atom, N_atom]
@@ -248,9 +264,7 @@ def smooth_lddt_loss(batch: Dict, x: torch.Tensor, eps: float) -> torch.Tensor:
     mask = 1 - torch.eye(x.shape[-2], device=x.device, dtype=x.dtype).tile(
         (*x.shape[:-2], 1, 1)
     )
-    mask = mask * (
-        batch["gt_atom_mask"][..., None] * batch["gt_atom_mask"][..., None, :]
-    )
+    mask = mask * (atom_mask_gt[..., None] * atom_mask_gt[..., None, :])
     ce_mean = torch.sum(c * e * mask, dim=(-1, -2)) / torch.sum(
         mask + eps, dim=(-1, -2)
     )
@@ -265,10 +279,11 @@ def diffusion_loss(
     x: torch.Tensor,
     t: torch.Tensor,
     sigma_data: float,
-    alpha_bond: float,
-    alpha_dna: float = 5.0,
-    alpha_rna: float = 5.0,
-    alpha_ligand: float = 10.0,
+    bond_weight: float,
+    smooth_lddt_weight: float,
+    dna_weight: float = 5.0,
+    rna_weight: float = 5.0,
+    ligand_weight: float = 10.0,
     eps: float = 1e-8,
     **kwargs,
 ) -> [torch.Tensor, Dict]:
@@ -284,14 +299,18 @@ def diffusion_loss(
             [*] Noise level at a diffusion step
         sigma_data:
             Constant determined by data variance
-        alpha_bond:
-            Weight on auxiliary loss for bonded ligands
-        alpha_dna:
+        bond_weight:
+            Weight for auxiliary loss for bonded ligands
+        smooth_lddt_weight
+            Weight for smooth lddt loss
+        dna_weight:
             Upweight factor for DNA atoms
-        alpha_rna:
+        rna_weight:
             Upweight factor for RNA atoms
-        alpha_ligand:
+        ligand_weight:
             Upweight factor for ligand atoms
+        eps:
+            Small constant for stability
     Returns:
         mean_loss:
             Diffusion loss
@@ -304,28 +323,29 @@ def diffusion_loss(
     l_mse = mse_loss(
         batch=batch,
         x=x,
-        alpha_dna=alpha_dna,
-        alpha_rna=alpha_rna,
-        alpha_ligand=alpha_ligand,
+        dna_weight=dna_weight,
+        rna_weight=rna_weight,
+        ligand_weight=ligand_weight,
         eps=eps,
     )
+    loss_breakdown = {"mse_loss": l_mse}
 
-    l_bond = bond_loss(batch=batch, x=x, eps=eps)
+    l_bond = 0.0
+    if bond_weight > 0:
+        l_bond = bond_weight * bond_loss(batch=batch, x=x, eps=eps)
+        loss_breakdown["bond_loss"] = l_bond
 
-    l_smooth_lddt = smooth_lddt_loss(batch=batch, x=x, eps=eps)
-
-    loss_breakdown = {
-        "mse_loss": l_mse,
-        "bond_loss": l_bond,
-        "smooth_lddt_loss": l_smooth_lddt,
-    }
+    l_smooth_lddt = 0.0
+    if smooth_lddt_weight > 0:
+        l_smooth_lddt = smooth_lddt_weight * smooth_lddt_loss(batch=batch, x=x, eps=eps)
+        loss_breakdown["smooth_lddt_loss"] = l_smooth_lddt
 
     loss_breakdown = {
         k: torch.mean(v).detach().clone() for k, v in loss_breakdown.items()
     }
 
     w = (t**2 + sigma_data**2) / (t + sigma_data) ** 2
-    l = w * (l_mse + alpha_bond * l_bond) + l_smooth_lddt
+    l = w * (l_mse + l_bond) + l_smooth_lddt
 
     mean_loss = torch.mean(l)
 

@@ -222,6 +222,13 @@ class AttentionPairBias(nn.Module):
         if self.use_block_sparse_attn:
             a = self.mha(q_x=a, kv_x=a, biases=biases, layout=layout)
         else:
+            # TODO: Make this less awkward, DS kernel has strict shape asserts
+            #  and expects batch and seq dims to exist
+            #  Current reshape function only expects missing batch dim
+            if use_deepspeed_evo_attention:
+                a = a.unsqueeze(1)
+                biases = [b.unsqueeze(1) for b in biases]
+
             # Do we support all the memory efficient kernel types?
             a = self.mha(
                 q_x=a,
@@ -231,6 +238,9 @@ class AttentionPairBias(nn.Module):
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
             )
+
+            if use_deepspeed_evo_attention:
+                a = a.squeeze(1)
 
         if self.use_ada_layer_norm:
             a = self.sigmoid(self.linear_ada_out(s)) * a

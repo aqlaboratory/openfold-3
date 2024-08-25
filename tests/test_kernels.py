@@ -3,8 +3,8 @@ import unittest
 import torch
 
 import tests.compare_utils as compare_utils
+from openfold3.core.kernels.cuda.attention_core import attention_core
 from openfold3.core.model.primitives.attention import _attention
-from openfold3.core.utils.kernel.attention_core import attention_core
 from tests.config import consts
 
 

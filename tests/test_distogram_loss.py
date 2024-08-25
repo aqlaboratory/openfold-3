@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 
 from openfold3.core.loss.distogram import all_atom_distogram_loss
-from openfold3.model_implementations.af3_all_atom.config.base_config import config
+from openfold3.model_implementations.registry import make_config_with_preset
 
 
 class TestDistogramLoss(unittest.TestCase):
@@ -37,13 +37,18 @@ class TestDistogramLoss(unittest.TestCase):
             "is_rna": is_rna,
             "is_dna": is_dna,
             "is_atomized": is_atomized,
-            "gt_atom_mask": gt_atom_mask,
-            "gt_atom_positions": gt_atom_positions,
+            "ground_truth": {
+                "atom_resolved_mask": gt_atom_mask,
+                "atom_positions": gt_atom_positions,
+            },
         }
 
     def test_distogram_loss(self):
         batch = self.setup_features()
         batch_size, n_token = batch["token_mask"].shape
+
+        config = make_config_with_preset("af3_all_atom")
+
         no_bins = config.loss.distogram.no_bins
 
         logits = torch.randn((batch_size, n_token, n_token, no_bins))
