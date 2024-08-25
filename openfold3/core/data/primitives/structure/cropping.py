@@ -82,8 +82,6 @@ def crop_contiguous(
     # Remove atom index
     remove_atom_indices(atom_array)
 
-    return None
-
 
 def crop_spatial(
     atom_array: AtomArray,
@@ -128,8 +126,6 @@ def crop_spatial(
     # Find spatial crop
     find_spatial_crop(reference_atom, token_center_atoms, token_budget, atom_array)
 
-    return None
-
 
 def crop_spatial_interface(
     atom_array: AtomArray,
@@ -168,18 +164,19 @@ def crop_spatial_interface(
         atom_array, preferred_chain_or_interface
     )
 
-    # Find interface token center atoms
-    preferred_interface_token_center_atoms = get_query_interface_token_center_atoms(
-        preferred_token_center_atoms, token_center_atoms
-    )
+    # Skip interface subsetting if there is only one chain
+    # Making the interface spatial crop equivalent to non-interface spatial crop
+    if len(set(atom_array.chain_id_renumbered)) > 1:
+        # Find interface token center atoms
+        preferred_interface_token_center_atoms = get_query_interface_token_center_atoms(
+            preferred_token_center_atoms, token_center_atoms
+        )
 
     # Get reference atom
     reference_atom = generator.choice(preferred_interface_token_center_atoms, size=1)[0]
 
     # Find spatial crop
     find_spatial_crop(reference_atom, token_center_atoms, token_budget, atom_array)
-
-    return None
 
 
 def subset_preferred(
@@ -268,7 +265,6 @@ def find_spatial_crop(
             token_center_atoms[nearest_token_center_atom_ids].token_id,
         ),
     )
-    return None
 
 
 CROP_REGISTRY = {
@@ -328,12 +324,19 @@ def apply_crop(
         crop_weights (dict[str, float]):
             Dictionary of crop weights.
     """
-    crop_function, crop_function_argnames = sample_crop_fuction(crop_weights)
-    crop_input = {
-        "atom_array": atom_array,
-        "token_budget": token_budget,
-        "preferred_chain_or_interface": preferred_chain_or_interface,
-    }
-    crop_function(
-        **{k: v for k, v in crop_input.items() if k in crop_function_argnames}
-    )
+
+    # Take whole assembly if it fits in the budget
+    if len(set(atom_array.token_id)) <= token_budget:
+        atom_array.set_annotation("crop_mask", np.repeat(True, len(atom_array)))
+
+    # Otherwise crop
+    else:
+        crop_function, crop_function_argnames = sample_crop_fuction(crop_weights)
+        crop_input = {
+            "atom_array": atom_array,
+            "token_budget": token_budget,
+            "preferred_chain_or_interface": preferred_chain_or_interface,
+        }
+        crop_function(
+            **{k: v for k, v in crop_input.items() if k in crop_function_argnames}
+        )

@@ -719,7 +719,7 @@ def create_crop_to_seq_map(
         ]
         # # Get chain and representative chain ID
         chain_rep_map[chain_id_in_crop] = data_cache_entry_chains[chain_id_in_crop][
-            "representative_chain_id"
+            "representative_id"
         ]
 
         # Create token -> residue map

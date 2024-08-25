@@ -1,3 +1,5 @@
+import json
+import math
 from typing import Union
 
 import torch
@@ -6,10 +8,14 @@ from openfold3.core.data.framework.single_datasets.abstract_single_dataset impor
     SingleDataset,
     register_dataset,
 )
+from openfold3.core.data.pipelines.featurization.msa import featurize_msa_af3
 from openfold3.core.data.pipelines.featurization.structure import (
     featurize_target_gt_structure_af3,
 )
-from openfold3.core.data.pipelines.sample_processing.msa import process_msas_af3
+from openfold3.core.data.pipelines.featurization.template import (
+    featurize_templates_dummy_af3,
+)
+from openfold3.core.data.pipelines.sample_processing.msa import process_msas_cropped_af3
 from openfold3.core.data.pipelines.sample_processing.structure import (
     process_target_structure_af3,
 )
@@ -22,25 +28,25 @@ class WeightedPDBDataset(SingleDataset):
     def __init__(self, dataset_config) -> None:
         super().__init__()
 
-        # argument error checks here
+        self.target_path = dataset_config["target_path"]
+        self.alignments_path = dataset_config["alignments_path"]
+        self.crop_weights = dataset_config["crop_weights"]
+        self.token_budget = dataset_config["token_budget"]
+        self.n_templates = dataset_config["n_templates"]
+        self.use_alignment_database = dataset_config["use_alignment_database"]
 
-        self._preprocessing_pipeline = "<some pipeline>"
-        self._feature_pipeline = "<some pipeline>"
+        if self.use_alignment_database:
+            with open(dataset_config["alignment_index_path"]) as f:
+                self.alignment_index = json.load(f)
+        else:
+            self.alignment_index = None
+        with open(dataset_config["dataset_cache_path"]) as f:
+            self.data_cache = json.load(f)
 
-        # Parse data cache
-        # with open(dataset_config['data_cache'], 'r') as f:
-        #     self.data_cache = json.load(f)
+        # Create datapoint cache (flat list of chains and interfaces)
 
         # Calculate datapoint probabilities
         self.calculate_datapoint_probabilities()
-
-    @property
-    def preprocessing_pipeline(self):
-        return self._preprocessing_pipeline
-
-    @property
-    def feature_pipeline(self):
-        return self._feature_pipeline
 
     def calculate_datapoint_probabilities(self):
         """Implements equation 1 from section 2.5.1 of the AF3 SI."""
@@ -53,6 +59,8 @@ class WeightedPDBDataset(SingleDataset):
         # Parse training cache
         pdb_id = self.data_cache[index]["pdb_id"]
 
+        features = {}
+
         # Target structure and duplicate-expanded GT structure features
         atom_array_cropped, atom_array_gt = process_target_structure_af3(
             target_path=self.target_path,
@@ -64,22 +72,38 @@ class WeightedPDBDataset(SingleDataset):
             ],
             ciftype=".bcif",
         )
-        features = featurize_target_gt_structure_af3(
-            atom_array_cropped, atom_array_gt, self.token_budget
+        features.update(
+            featurize_target_gt_structure_af3(
+                atom_array_cropped, atom_array_gt, self.token_budget
+            )
         )
 
         # MSA features
-        query_seq, paired_msa, main_msas = process_msas_af3(
-            chain_ids=self.data_cache[index]["chain_ids"],
-            alignments_path=self.alignments_path,
-            max_seq_counts=self.max_seq_counts,
+        msa_processed, _ = process_msas_cropped_af3(
+            atom_array_cropped,
+            self.data_cache[pdb_id]["chains"],
+            self.alignments_path,
+            max_seq_counts={
+                "uniref90_hits": 10000,
+                "uniprot_hits": 50000,
+                "bfd_uniclust_hits": math.inf,
+                "bfd_uniref_hits": math.inf,
+                "mgnify_hits": 5000,
+                "rfam_hits": 10000,
+                "rnacentral_hits": 10000,
+                "nucleotide_collection_hits": 10000,
+            },
             use_alignment_database=self.use_alignment_database,
+            token_budget=self.token_budget,
+            max_rows_paired=8191,
             alignment_index=self.alignment_index,
         )
-        """<MSA featurization pipeline>"""
+        features.update(featurize_msa_af3(msa_processed))
 
         # Template features
-        """<Dummy template featurization pipeline until review>"""
+        features.update(
+            featurize_templates_dummy_af3(1, self.n_templates, self.token_budget)
+        )
 
         # Reference conformer features
         """<Lukas' reference conformer pipelines>"""

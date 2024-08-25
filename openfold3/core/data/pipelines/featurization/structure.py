@@ -112,7 +112,9 @@ def featurize_structure_af3(
     # Ground-truth-specific features
     # TODO reorganize GT feature logic
     if is_gt:
-        features["atom_positions"] = torch.tensor(atom_array.coord, dtype=torch.float32)
+        features["atom_positions"] = torch.nan_to_num(
+            torch.tensor(atom_array.coord, dtype=torch.float32)
+        )
         features["atom_resolved_mask"] = torch.tensor(
             atom_array.occupancy, dtype=torch.float32
         )
