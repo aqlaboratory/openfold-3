@@ -79,14 +79,13 @@ class BaseTriangleMultiplicativeUpdate(nn.Module, ABC):
             for i in range(0, a.shape[-3], _inplace_chunk_size):
                 a_chunk = a[..., i : i + _inplace_chunk_size, :, :]
                 b_chunk = b[..., i : i + _inplace_chunk_size, :, :]
-                a[..., i : i + _inplace_chunk_size, :, :] = torch.matmul(
-                    a_chunk,
-                    b_chunk,
+                a[..., i : i + _inplace_chunk_size, :, :] = torch.einsum(
+                    "...ij,...jk->...ik", a_chunk, b_chunk
                 )
 
             p = a
         else:
-            p = torch.matmul(a, b)
+            p = torch.einsum("...ij,...jk->...ik", a, b)
 
         return permute_final_dims(p, (1, 2, 0))
 
@@ -242,7 +241,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
                 # This computation is chunked so as not to exceed our 2.5x
                 # budget with a large intermediate tensor
                 linear_g = self.linear_a_g if a else self.linear_b_g
-                c = linear_g.bias.shape[-1]
+                c = linear_g.weight.shape[-2]
                 out_shape = pair.shape[:-3] + (c,) + pair.shape[-3:-1]
                 p = pair.new_zeros(out_shape)
                 for i in range(0, pair.shape[-3], inplace_chunk_size):
@@ -375,10 +374,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
                 )
                 del z_chunk_b
 
-                x_chunk = torch.matmul(
-                    a,
-                    b_chunk,
-                )
+                x_chunk = torch.einsum("...ij,...jk->...ik", a, b_chunk)
                 x_chunk = permute_final_dims(x_chunk, (1, 2, 0))
                 x_chunk = self.layer_norm_out(x_chunk)
                 x_chunk = self.linear_z(x_chunk)
@@ -401,7 +397,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
                     z[z_slicer] = x_chunk
         else:
             b = compute_projection(z, mask, False, False)
-            x = torch.matmul(a, b)
+            x = torch.einsum("...ij,...jk->...ik", a, b)
             x = self.layer_norm_out(x)
             x = self.linear_z(x)
             g = self.linear_g(z)

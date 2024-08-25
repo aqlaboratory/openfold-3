@@ -213,7 +213,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
                         Single representation output from model trunk
                     "zij_trunk" ([*, N_token, N_token, C_z]):
                         Pair representation output from model trunk
-                    "x_pred" ([*, N_atom, 3]):
+                    "atom_positions_predicted" ([*, N_atom, 3]):
                         Predicted atom positions
             chunk_size: Feat associated with pairformer stack (int)
 
@@ -241,7 +241,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
 
         si_trunk = output["si_trunk"]
         zij_trunk = output["zij_trunk"]
-        x_pred = output["x_pred"]
+        atom_positions_predicted = output["atom_positions_predicted"]
 
         # Distogram head: Main loop (Algorithm 1), line 17
         # Not enabled in finetuning 3 stage
@@ -252,7 +252,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         # Stop grad
         si_trunk = si_trunk.detach()
         zij_trunk = zij_trunk.detach()
-        x_pred = x_pred.detach()
+        atom_positions_predicted = atom_positions_predicted.detach()
 
         token_mask = batch["token_mask"]
         pair_mask = token_mask[..., None] * token_mask[..., None, :]
@@ -264,9 +264,10 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             token_feat=token_mask,
         )
 
+        # TODO: Check why this gets a CUDA index error sometimes
         # Get representative atoms
         repr_x_pred, repr_x_mask = get_token_representative_atoms(
-            batch=batch, x=x_pred, atom_mask=atom_mask
+            batch=batch, x=atom_positions_predicted, atom_mask=atom_mask
         )
 
         # Embed trunk outputs
@@ -322,7 +323,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             )
 
             _, valid_frame_mask = get_token_frame_atoms(
-                batch=batch, x=x_pred, atom_mask=atom_mask
+                batch=batch, x=atom_positions_predicted, atom_mask=atom_mask
             )
 
             # TODO: Move this and other confidence logic out of the heads module
