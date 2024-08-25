@@ -48,7 +48,13 @@ class DatapointCollection:
     def create_empty(cls):
         """Create an empty instance of the dataclass."""
         return cls(
-            pdb_id=[], datapoint=[], n_prot=[], n_nuc=[], n_ligand=[], type=[], n_clust=[]
+            pdb_id=[],
+            datapoint=[],
+            n_prot=[],
+            n_nuc=[],
+            n_ligand=[],
+            type=[],
+            n_clust=[],
         )
 
     def append(
