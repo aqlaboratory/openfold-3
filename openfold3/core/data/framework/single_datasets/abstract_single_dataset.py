@@ -27,7 +27,7 @@ and highlight where you currently are in the process:
     batched data -> model
 """
 
-from abc import ABC, abstractmethod, property
+from abc import ABC, abstractmethod
 from typing import Union
 
 import torch

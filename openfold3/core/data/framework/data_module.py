@@ -27,15 +27,22 @@ and highlight where you currently are in the process:
 
 import dataclasses
 import enum
+import random
 import warnings
 from functools import partial
-from typing import Any, Union
+from typing import Any, Optional, Union
 
 import pytorch_lightning as pl
 import torch
-import torch.distributed as dist
+import torch.utils
+import torch.utils.data
+from lightning_fabric.utilities.rank_zero import (
+    rank_zero_only,
+)
+from lightning_utilities.core.imports import RequirementCache
 from torch.utils.data import DataLoader
 
+from openfold3.core.data.framework.lightning_utils import _generate_seed_sequence
 from openfold3.core.data.framework.single_datasets.abstract_single_dataset import (
     DATASET_REGISTRY,
     SingleDataset,
@@ -44,6 +51,8 @@ from openfold3.core.data.framework.stochastic_sampler_dataset import (
     StochasticSamplerDataset,
 )
 from openfold3.core.utils.tensor_utils import dict_multimap
+
+_NUMPY_AVAILABLE = RequirementCache("numpy")
 
 
 @dataclasses.dataclass
@@ -70,14 +79,36 @@ class MultiDatasetConfig:
     def __len__(self):
         return len(self.classes)
 
+    def get_subset(self, index: bool) -> "MultiDatasetConfig":
+        """Returns a subset of the MultiDatasetConfig.
+
+        Args:
+            index (bool):
+                Index of the subset.
+
+        Returns:
+            MultiDatasetConfig:
+                Subset of the MultiDatasetConfig.
+        """
+
+        def apply_bool(value, index):
+            return [v for v, i in zip(value, index) if i]
+
+        return MultiDatasetConfig(
+            classes=apply_bool(self.classes, index),
+            types=apply_bool(self.types, index),
+            configs=apply_bool(self.configs, index),
+            weights=apply_bool(self.weights, index),
+        )
+
 
 class DatasetType(enum.Enum):
     """Enum for dataset types."""
 
-    TRAIN = enum.auto()
-    VALIDATION = enum.auto()
-    TEST = enum.auto()
-    PREDICTION = enum.auto()
+    train = enum.auto()
+    validation = enum.auto()
+    test = enum.auto()
+    prediction = enum.auto()
 
 
 class DataModule(pl.LightningDataModule):
@@ -90,65 +121,89 @@ class DataModule(pl.LightningDataModule):
         self.batch_size = data_config["batch_size"]
         self.num_workers = data_config["num_workers"]
         self.data_seed = data_config["data_seed"]
-        self.virtual_epoch_len = data_config["virtual_epoch_len"]
-        self.num_virtual_epochs = data_config["num_virtual_epochs"]
+        self.epoch_len = data_config["epoch_len"]
+        self.num_epochs = data_config["num_epochs"]
 
-        # Parse data_config
-        multi_dataset_config = self.parse_data_config(data_config)
+        # Parse datasets
+        multi_dataset_config = self.parse_data_config(data_config["datasets"])
 
-        # Set up worker_init_fn as a closure
-        def worker_init_fn(worker_id: int) -> None:
-            """Worker initialization function for setting random seeds.
+        # Custom worker init function with manual data seed
+        def worker_init_function_with_data_seed(
+            worker_id: int, rank: Optional[int] = None
+        ) -> None:
+            """Modified default Lightning worker_init_fn with manual data seed.
+
+            This worker_init_fn enables decoupling stochastic processes in the data
+            pipeline from those in the model. Taken from Pytorch Lightning 2.4.1 source
+            code: https://github.com/Lightning-AI/pytorch-lightning/blob/f3f10d460338ca8b2901d5cd43456992131767ec/src/lightning/fabric/utilities/seed.py#L85
 
             Args:
                 worker_id (int):
-                    Worker ID.
+                    Worker id.
+                rank (Optional[int], optional):
+                    Worker process rank. Defaults to None.
             """
-            # Get the process rank (in DDP, each process is assigned a rank)
-            rank = dist.get_rank() if dist.is_initialized() else 0
+            # implementation notes: https://github.com/pytorch/pytorch/issues/5059#issuecomment-817392562
+            global_rank = rank if rank is not None else rank_zero_only.rank
+            process_seed = self.data_seed
+            # back out the base seed so we can use all the bits
+            base_seed = process_seed - worker_id
+            seed_sequence = _generate_seed_sequence(
+                base_seed, worker_id, global_rank, count=4
+            )
+            torch.manual_seed(seed_sequence[0])  # torch takes a 64-bit seed
+            random.seed(
+                (seed_sequence[1] << 32) | seed_sequence[2]
+            )  # combine two 64-bit seeds
+            if _NUMPY_AVAILABLE:
+                import numpy as np
 
-            # Calculate a unique seed based on the global seed, rank, and worker ID
-            # Use dataset seed here and ensure it's within 32-bit range
-            seed = self.data_seed % 2**32
-            # Modify seed with rank and worker ID
-            seed += rank * 1000 + worker_id
+                np.random.seed(
+                    seed_sequence[3] & 0xFFFFFFFF
+                )  # numpy takes 32-bit seed only
 
-            torch.manual_seed(seed)
-            torch.cuda.manual_seed(seed)
-            # For multi-GPU scenarios
-            torch.cuda.manual_seed_all(seed)
-            torch.backends.cudnn.deterministic = True
-            torch.backends.cudnn.benchmark = False
-
-        self.worker_init_fn = worker_init_fn
+        self.worker_init_function_with_data_seed = worker_init_function_with_data_seed
 
         # Initialize datasets
         if DatasetType.train in multi_dataset_config.types:
             # Initialize train datasets
             train_datasets = self.init_datasets(multi_dataset_config, DatasetType.train)
-
+            multi_dataset_config_train = multi_dataset_config.get_subset(
+                [type == DatasetType.train for type in multi_dataset_config.types]
+            )
             self.generator = torch.Generator(device="cpu").manual_seed(self.data_seed)
 
             # Wrap train datasets in the sampler dataset class
             self.train_dataset = StochasticSamplerDataset(
                 datasets=train_datasets,
-                probabilities=multi_dataset_config.weights,
-                virtual_epoch_len=self.virtual_epoch_len,
-                num_virtual_epochs=self.num_virtual_epochs,
+                dataset_probabilities=multi_dataset_config_train.weights,
+                epoch_len=self.epoch_len,
+                num_epochs=self.num_epochs,
                 generator=self.generator,
             )
 
-        if "validation" in multi_dataset_config.types:
+        if DatasetType.validation in multi_dataset_config.types:
+            multi_dataset_config_validation = multi_dataset_config.get_subset(
+                [type == DatasetType.validation for type in multi_dataset_config.types]
+            )
             self.validation_dataset = self.init_datasets(
-                multi_dataset_config, "validation"
+                multi_dataset_config_validation, DatasetType.validation
             )[0]
 
-        if "test" in multi_dataset_config.types:
-            self.test_dataset = self.init_datasets(multi_dataset_config, "test")[0]
+        if DatasetType.test in multi_dataset_config.types:
+            multi_dataset_config_test = multi_dataset_config.get_subset(
+                [type == DatasetType.test for type in multi_dataset_config.types]
+            )
+            self.test_dataset = self.init_datasets(
+                multi_dataset_config_test, DatasetType.test
+            )[0]
 
-        if "prediction" in multi_dataset_config.types:
+        if DatasetType.prediction in multi_dataset_config.types:
+            multi_dataset_config_prediction = multi_dataset_config.get_subset(
+                [type == DatasetType.prediction for type in multi_dataset_config.types]
+            )
             self.prediction_dataset = self.init_datasets(
-                multi_dataset_config, "prediction"
+                multi_dataset_config_prediction, DatasetType.prediction
             )[0]
 
     def parse_data_config(self, data_config: list[dict]) -> MultiDatasetConfig:
@@ -198,7 +253,7 @@ class DataModule(pl.LightningDataModule):
                 *[
                     (
                         get_cast(dataset_entry, "class", str),
-                        get_cast(dataset_entry, "type", str),
+                        DatasetType[get_cast(dataset_entry, "type", str)],
                         dataset_entry.get("config", None),
                         get_cast(dataset_entry, "weight", float),
                     )
@@ -234,25 +289,28 @@ class DataModule(pl.LightningDataModule):
         """
 
         # Check if provided weights sum to 1
-        if sum(multi_dataset_config.weights) != 1:
+        train_dataset_config = multi_dataset_config.get_subset(
+            [type == DatasetType.train for type in multi_dataset_config.types]
+        )
+        if sum(train_dataset_config.weights) != 1:
             warnings.warn(
                 "Dataset weights do not sum to 1. Normalizing weights.",
                 stacklevel=2,
             )
-            multi_dataset_config.weights = [
-                weight / sum(multi_dataset_config.weights)
-                for weight in multi_dataset_config.weights
+            train_dataset_config.weights = [
+                weight / sum(train_dataset_config.weights)
+                for weight in train_dataset_config.weights
             ]
 
         # Check if provided crop weights sum to 1
-        for idx, config_i in enumerate(multi_dataset_config.configs):
+        for idx, config_i in enumerate(train_dataset_config.configs):
             if sum(config_i["crop_weights"].values()) != 1:
                 warnings.warn(
-                    f"Dataset {multi_dataset_config.classes[idx]} crop weights do not "
+                    f"Dataset {train_dataset_config.classes[idx]} crop weights do not "
                     "sum to 1. Normalizing weights.",
                     stacklevel=2,
                 )
-                multi_dataset_config.configs[idx]["crop_weights"] = {
+                train_dataset_config.configs[idx]["crop_weights"] = {
                     key: value / sum(config_i["crop_weights"].values())
                     for key, value in config_i["crop_weights"].items()
                 }
@@ -279,7 +337,7 @@ class DataModule(pl.LightningDataModule):
                 f"data_config: {types_unique}. The supported dataset"
                 f"combinations are: {supported_combinations}."
             )
-        if types_unique == {"validation"}:
+        if types_unique == {DatasetType.validation}:
             raise ValueError(
                 "Validation dataset(s) were provided without any training datasets."
                 f"The supported dataset combinations are: {supported_combinations}."
@@ -333,7 +391,10 @@ class DataModule(pl.LightningDataModule):
             if dataset_type == type_to_init
         ]
 
-        if (type_to_init in ["validation", "test", "prediction"]) & (len(datasets) > 1):
+        if (
+            type_to_init
+            in [DatasetType.validation, DatasetType.test, DatasetType.prediction]
+        ) & (len(datasets) > 1):
             datasets = datasets[:1]
             warnings.warn(
                 f"Currently only one {type_to_init} dataset is supported, but "
@@ -369,7 +430,7 @@ class DataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             collate_fn=openfold_batch_collator,
             generator=self.generator,
-            worker_init_fn=self.worker_init_fn,
+            worker_init_fn=self.worker_init_function_with_data_seed,
         )
 
     def train_dataloader(self) -> DataLoader:

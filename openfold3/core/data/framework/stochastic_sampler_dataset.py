@@ -55,7 +55,7 @@ class StochasticSamplerDataset(Dataset):
             epoch_len (int):
                 Number of datapoints to sample in total for each virtual epoch.
             num_epochs (int):
-                Total number of virtual epochs.
+                Total number of virtual epochs. Used for calculating coverage.
             generator (torch.Generator):
                 torch.Generator instance for reproducibility.
         """
@@ -66,6 +66,7 @@ class StochasticSamplerDataset(Dataset):
         self.epoch_len = epoch_len
         self.num_epochs = num_epochs
         self.generator = generator
+        self.resample_epoch()
 
     def __len__(self):
         return self.epoch_len
@@ -88,6 +89,7 @@ class StochasticSamplerDataset(Dataset):
         """Resample epoch_len number of samples according to the provided
         probabilities."""
         # Sample dataset indices
+        n_datasets = len(self.datasets)
         dataset_indices = torch.multinomial(
             input=self.dataset_probabilities,
             num_samples=self.epoch_len,
@@ -98,33 +100,37 @@ class StochasticSamplerDataset(Dataset):
         # For each dataset, sample datapoint indices
         datapoint_indices = torch.zeros(self.epoch_len, dtype=torch.long)
         for dataset_idx, num_datapoints_per_dataset in zip(
-            torch.unique(dataset_indices), torch.bincount(dataset_indices)
+            torch.arange(n_datasets),
+            torch.bincount(dataset_indices, minlength=n_datasets),
         ):
-            datapoint_idx_generator = torch.Generator(
-                device=self.generator.device
-            ).manual_seed(
-                torch.randint(
-                    low=0, high=100000, size=(1,), generator=self.generator
-                ).item()
-            )
+            if num_datapoints_per_dataset > 0:
+                datapoint_idx_generator = torch.Generator(
+                    device=self.generator.device
+                ).manual_seed(
+                    torch.randint(
+                        low=0, high=100000, size=(1,), generator=self.generator
+                    ).item()
+                )
 
-            # Retrieve datapoint probabilities for given dataset
-            datapoint_probabilities = torch.tensor(
-                self.datasets[dataset_idx].datapoint_probabilities
-            )
+                # Retrieve datapoint probabilities for given dataset
+                datapoint_probabilities = torch.tensor(
+                    self.datasets[dataset_idx].datapoint_probabilities
+                )
 
-            # Sample datapoint indices
-            datapoint_indices_i = torch.multinomial(
-                input=datapoint_probabilities,
-                num_samples=num_datapoints_per_dataset,
-                replacement=True,
-                generator=datapoint_idx_generator,
-            )
+                # Sample datapoint indices
+                datapoint_indices_i = torch.multinomial(
+                    input=datapoint_probabilities,
+                    num_samples=num_datapoints_per_dataset,
+                    replacement=True,
+                    generator=datapoint_idx_generator,
+                )
 
-            # Add to datapoint index container to pair with dataset indices
-            datapoint_indices[torch.where(dataset_indices == dataset_idx)] = (
-                datapoint_indices_i
-            )
+                # Add to datapoint index container to pair with dataset indices
+                datapoint_indices[torch.where(dataset_indices == dataset_idx)] = (
+                    datapoint_indices_i
+                )
+            else:
+                continue
 
         self.indices = torch.stack((dataset_indices, datapoint_indices), dim=1).tolist()
 
