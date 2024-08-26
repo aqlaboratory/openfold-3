@@ -1,12 +1,11 @@
 import ml_collections as mlc
 
-import openfold3.model_implementations.af3_all_atom.linear_init_config as lin_init
+from openfold3.model_implementations.af3_all_atom.config import (
+    linear_init_config as lin_init,
+)
+from openfold3.model_implementations.af3_all_atom.config.features import feature_dict
 
-NUM_TOKENS = "num tokens placeholder"
-NUM_ATOMS = "num atoms placeholder"
-NUM_MSA_SEQ = "msa placeholder"
-NUM_TEMPLATES = "num templates placeholder"
-
+MODEL_NAME = "af3_all_atom"
 
 # Hidden dimensions
 c_s = mlc.FieldReference(384, field_type=int)
@@ -26,6 +25,7 @@ max_relative_idx = mlc.FieldReference(32, field_type=int)
 max_relative_chain = mlc.FieldReference(2, field_type=int)
 no_samples = mlc.FieldReference(48, field_type=int)
 no_rollout_steps = mlc.FieldReference(20, field_type=int)
+diffusion_training_enabled = mlc.FieldReference(True, field_type=bool)
 n_query = mlc.FieldReference(32, field_type=int)
 n_key = mlc.FieldReference(128, field_type=int)
 use_block_sparse_attn = mlc.FieldReference(False, field_type=bool)
@@ -43,45 +43,7 @@ config = mlc.ConfigDict(
     {
         "data": {
             "common": {
-                "feat": {
-                    "residue_index": [NUM_TOKENS],
-                    "token_index": [NUM_TOKENS],
-                    "asym_id": [NUM_TOKENS],
-                    "entity_id": [NUM_TOKENS],
-                    "sym_id": [NUM_TOKENS],
-                    "restype": [NUM_TOKENS, 32],
-                    "is_protein": [NUM_TOKENS],
-                    "is_rna": [NUM_TOKENS],
-                    "is_dna": [NUM_TOKENS],
-                    "is_ligand": [NUM_TOKENS],
-                    "ref_pos": [NUM_ATOMS, 3],
-                    "ref_mask": [NUM_ATOMS],
-                    "ref_element": [NUM_ATOMS, 128],
-                    "ref_charge": [NUM_ATOMS],
-                    "ref_atom_name_chars": [NUM_ATOMS, 4, 64],
-                    "ref_space_uid": [NUM_ATOMS],
-                    "msa": [NUM_MSA_SEQ, NUM_TOKENS, 32],
-                    "has_deletion": [NUM_MSA_SEQ, NUM_TOKENS],
-                    "deletion_value": [NUM_MSA_SEQ, NUM_TOKENS],
-                    "profile": [NUM_TOKENS, 32],
-                    "deletion_mean": [NUM_TOKENS],
-                    "template_restype": [NUM_TEMPLATES, NUM_TOKENS, 32],
-                    "template_pseudo_beta_mask": [NUM_TEMPLATES, NUM_TOKENS],
-                    "template_backbone_frame_mask": [NUM_TEMPLATES, NUM_TOKENS],
-                    "template_distogram": [NUM_TEMPLATES, NUM_TOKENS, NUM_TOKENS, 39],
-                    "template_unit_vector": [NUM_TEMPLATES, NUM_TOKENS, NUM_TOKENS, 3],
-                    "token_bonds": [NUM_TOKENS, NUM_TOKENS],
-                    # Features not included in AF3 docs
-                    "num_atoms_per_token": [NUM_TOKENS],
-                    "start_atom_index": [NUM_TOKENS],
-                    "token_mask": [NUM_TOKENS],
-                    "msa_mask": [NUM_MSA_SEQ, NUM_TOKENS],
-                    "num_main_msa_seqs": [],
-                    "gt_atom_positions": [NUM_ATOMS, 3],
-                    "gt_atom_mask": [NUM_ATOMS],
-                    "resolution": [],
-                    "is_distillation": [],
-                }
+                "feat": feature_dict,
             }
         },
         "globals": {
@@ -92,6 +54,7 @@ config = mlc.ConfigDict(
             "no_cycles": 4,
             "no_samples": no_samples,
             "no_rollout_steps": no_rollout_steps,
+            "diffusion_training_enabled": diffusion_training_enabled,
             "blocks_per_ckpt": blocks_per_ckpt,
             "chunk_size": chunk_size,
             # Use DeepSpeed memory-efficient attention kernel. Mutually
@@ -101,6 +64,7 @@ config = mlc.ConfigDict(
             # exclusive with use_deepspeed_evo_attention and use_flash.
             "use_lma": False,
             "offload_inference": False,
+            "last_recycle_grad_only": True,
         },
         "model": {
             "input_embedder": {
@@ -159,6 +123,7 @@ config = mlc.ConfigDict(
                     "blocks_per_ckpt": blocks_per_ckpt,
                     "inf": 1e9,
                     "linear_init_params": lin_init.pair_block_init,
+                    "use_reentrant": False,
                     "tune_chunk_size": tune_chunk_size,
                 },
             },
@@ -172,7 +137,7 @@ config = mlc.ConfigDict(
                 "msa_module": {
                     "c_m": c_m,
                     "c_z": c_z,
-                    "c_hidden_msa_att": 32,
+                    "c_hidden_msa_att": 8,  # 8 or 32, possible typo in SI
                     "c_hidden_opm": 32,
                     "c_hidden_mul": 128,
                     "c_hidden_pair_att": 32,
@@ -189,6 +154,7 @@ config = mlc.ConfigDict(
                     "inf": 1e9,
                     "eps": eps,
                     "linear_init_params": lin_init.msa_module_init,
+                    "use_reentrant": False,
                     "clear_cache_between_blocks": False,
                     "tune_chunk_size": tune_chunk_size,
                 },
@@ -209,6 +175,7 @@ config = mlc.ConfigDict(
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "inf": 1e9,
                 "linear_init_params": lin_init.pairformer_init,
+                "use_reentrant": False,
                 "clear_cache_between_blocks": False,
                 "tune_chunk_size": tune_chunk_size,
             },
@@ -262,7 +229,9 @@ config = mlc.ConfigDict(
                     "use_block_sparse_attn": False,
                     "block_size": None,
                     "inf": 1e9,  # global parameter?
+                    "blocks_per_ckpt": blocks_per_ckpt,
                     "linear_init_params": lin_init.diffusion_transformer_init,
+                    "use_reentrant": False,
                 },
                 "atom_attn_dec": {
                     "c_atom": c_atom,
@@ -311,6 +280,7 @@ config = mlc.ConfigDict(
                         "blocks_per_ckpt": blocks_per_ckpt,
                         "inf": 1e9,
                         "linear_init_params": lin_init.pairformer_init,
+                        "use_reentrant": False,
                         "clear_cache_between_blocks": False,
                         "tune_chunk_size": tune_chunk_size,
                     },
@@ -356,13 +326,31 @@ config = mlc.ConfigDict(
                         "max_bin": 31,
                         "no_bins": 64,
                     },
+                    "pae": {
+                        "max_bin": 31,
+                        "no_bins": 64,
+                    },
+                    "ptm": {
+                        "max_bin": 31,
+                        "no_bins": 64,
+                        "ptm_weight": 0.2,
+                        "iptm_weight": 0.8,
+                    },
+                    "clash": {
+                        "min_distance": 1.1,
+                        "clash_cutoff_num": 100,
+                        "clash_cutoff_ratio": 0.5,
+                    },
+                    "rasa": {
+                        "cutoff": 0.581,
+                    },
                 },
             },
         },
         "loss": {
-            "alpha_confidence": 1e-4,
-            "alpha_diffusion": 4.0,
-            "alpha_distogram": 3e-2,
+            "confidence_weight": 1e-4,
+            "diffusion_weight": 4.0,
+            "distogram_weight": 3e-2,
             "min_resolution": 0.1,
             "max_resolution": 4.0,
             "confidence": {
@@ -384,19 +372,19 @@ config = mlc.ConfigDict(
                     "no_bins": 64,
                     "bin_min": 0.0,
                     "bin_max": 32.0,
-                    "alpha_pae": 0.0,
+                    "weight": 0.0,
                 },
                 "eps": eps,
                 "inf": 1e9,  # global parameter?
             },
             "diffusion": {
                 "sigma_data": sigma_data,
-                "alpha_bond": 0.0,  # varies based on training and finetuning
-                "alpha_dna": 5.0,
-                "alpha_rna": 5.0,
-                "alpha_ligand": 10.0,
+                "bond_weight": 0.0,  # varies based on training and finetuning
+                "smooth_lddt_weight": 1.0,  # varies based on finetuning stage
+                "dna_weight": 5.0,
+                "rna_weight": 5.0,
+                "ligand_weight": 10.0,
                 "eps": eps,
-                "enabled": True,
             },
             "distogram": {
                 "no_bins": 64,
@@ -405,52 +393,6 @@ config = mlc.ConfigDict(
                 "eps": eps,
             },
         },
+        "ema": {"decay": 0.999},
     }
 )
-
-train_config_update = mlc.ConfigDict({"loss": {"diffusion": {"alpha_bond": 0.0}}})
-
-finetune1_config_update = mlc.ConfigDict({"loss": {"diffusion": {"alpha_bond": 1.0}}})
-
-finetune2_config_update = mlc.ConfigDict({"loss": {"diffusion": {"alpha_bond": 1.0}}})
-
-finetune3_config_update = mlc.ConfigDict(
-    {
-        "model": {
-            "heads": {
-                "pae": {"enabled": True},
-                "distogram": {"enabled": False},
-                "confidence": {
-                    "pae": {
-                        "max_bin": 31,
-                        "no_bins": 64,
-                    },
-                    "ptm": {
-                        "max_bin": 31,
-                        "no_bins": 64,
-                        "ptm_weight": 0.2,
-                        "iptm_weight": 0.8,
-                    },
-                    "clash": {
-                        "min_distance": 1.1,
-                        "clash_cutoff_num": 100,
-                        "clash_cutoff_ratio": 0.5,
-                    },
-                    "rasa": {
-                        "cutoff": 0.581,
-                    },
-                },
-            }
-        },
-        "loss": {
-            "confidence": {
-                "pae": {
-                    "alpha_pae": 1.0,
-                }
-            },
-            "diffusion": {"enabled": False},
-        },
-    }
-)
-
-eval_config_update = mlc.ConfigDict({"globals": {"no_rollout_steps": 200}})

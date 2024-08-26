@@ -30,7 +30,6 @@ from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
     broadcast_token_feat_to_atoms,
-    get_atom_to_onehot_token_index,
 )
 
 TensorDict = Dict[str, torch.Tensor]
@@ -224,7 +223,18 @@ class AtomTransformer(nn.Module):
             ql:
                 [*, N_atom, c_atom] Updated atom single representation
         """
-        # TODO: Add/remove padding from n_atom to make it divisible by block size
+        pad_len = 0
+        if self.use_block_sparse_attn:
+            pad_len = (
+                self.block_size - cl.shape[-2] % self.block_size
+            ) % self.block_size
+            if pad_len > 0:
+                ql = torch.nn.functional.pad(ql, (0, 0, 0, pad_len), value=0.0)
+                cl = torch.nn.functional.pad(cl, (0, 0, 0, pad_len), value=0.0)
+                plm = torch.nn.functional.pad(
+                    plm, (0, 0, 0, pad_len, 0, pad_len), value=0.0
+                )
+                atom_mask = torch.nn.functional.pad(atom_mask, (0, pad_len), value=0.0)
 
         n_atom = ql.shape[-2]
 
@@ -254,6 +264,9 @@ class AtomTransformer(nn.Module):
             layout=layout,
             chunk_size=chunk_size,
         )
+
+        if pad_len > 0:
+            ql = ql[..., :-pad_len, :]
 
         return ql
 
@@ -426,28 +439,34 @@ class NoisyPositionEmbedder(nn.Module):
                 [*, N_atom, c_atom] Atom single representation with noisy coordinate
                     projection
         """
-        # Create an one-hot mapping from atom to token index
-        atom_to_onehot_token_index = get_atom_to_onehot_token_index(
-            token_mask=batch["token_mask"],
-            num_atoms_per_token=batch["num_atoms_per_token"],
-        )
 
         # Broadcast trunk single representation into atom single conditioning
         # [*, N_atom, c_atom]
-        sl_trunk = torch.einsum(
-            "...ic,...li->...lc", si_trunk, atom_to_onehot_token_index
+        sl_trunk = broadcast_token_feat_to_atoms(
+            token_mask=batch["token_mask"],
+            num_atoms_per_token=batch["num_atoms_per_token"],
+            token_feat=si_trunk,
+            token_dim=-2,
         )
         cl = cl + self.linear_s(self.layer_norm_s(sl_trunk))
 
         # Broadcast trunk pair representation into atom pair conditioning
         # [*, N_atom, N_atom, c_atom_pair]
         zij_trunk = self.linear_z(self.layer_norm_z(zij_trunk))
-        zlj_trunk = torch.einsum(
-            "...ijc,...li->...ljc", zij_trunk, atom_to_onehot_token_index
+        zlj_trunk = broadcast_token_feat_to_atoms(
+            token_mask=batch["token_mask"],
+            num_atoms_per_token=batch["num_atoms_per_token"],
+            token_feat=zij_trunk,
+            token_dim=-3,
         )
-        zlm_trunk = torch.einsum(
-            "...ljc,...mj->...lmc", zlj_trunk, atom_to_onehot_token_index
+        zlm_trunk = broadcast_token_feat_to_atoms(
+            token_mask=batch["token_mask"],
+            num_atoms_per_token=batch["num_atoms_per_token"],
+            token_feat=zlj_trunk.transpose(-2, -3),
+            token_dim=-3,
         )
+        zlm_trunk = zlm_trunk.transpose(-2, -3)
+
         plm = plm + zlm_trunk
 
         # Add noisy coordinate projection

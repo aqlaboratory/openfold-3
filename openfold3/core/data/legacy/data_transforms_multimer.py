@@ -5,7 +5,10 @@ import torch
 from openfold3.core.data.legacy.data_transforms import curry1
 from openfold3.core.np import residue_constants as rc
 from openfold3.core.utils.tensor_utils import masked_mean
-from openfold3.model_implementations.af2_monomer.features import NUM_RES
+
+# Replacing the import from model_implementations.af2_monomer.features with a copy
+# TODO: Find a new home for these if this import is needed.
+NUM_RES = "num residues placeholder"
 
 
 def gumbel_noise(

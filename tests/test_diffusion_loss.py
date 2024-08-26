@@ -63,8 +63,10 @@ class TestDiffusionLoss(unittest.TestCase):
             "is_ligand": is_ligand,
             "is_atomized": is_atomized,
             "token_bonds": token_bonds,
-            "gt_atom_mask": gt_atom_mask,
-            "gt_atom_positions": gt_atom_positions,
+            "ground_truth": {
+                "atom_resolved_mask": gt_atom_mask,
+                "atom_positions": gt_atom_positions,
+            },
         }
 
     def test_weighted_rigid_align(self):
@@ -91,24 +93,24 @@ class TestDiffusionLoss(unittest.TestCase):
 
     def test_mse_loss(self):
         n_sample = 2
-        alpha_dna = 5
-        alpha_rna = 5
-        alpha_ligand = 10
+        dna_weight = 5
+        rna_weight = 5
+        ligand_weight = 10
 
         batch = self.setup_features()
-        batch_size = batch["gt_atom_mask"].shape[0]
+        batch_size = batch["ground_truth"]["atom_resolved_mask"].shape[0]
 
         x = centre_random_augmentation(
-            xl=batch["gt_atom_positions"].repeat((1, n_sample, 1, 1)),
-            atom_mask=batch["gt_atom_mask"],
+            xl=batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1)),
+            atom_mask=batch["ground_truth"]["atom_resolved_mask"],
         )
 
         mse = mse_loss(
             batch=batch,
             x=x,
-            alpha_dna=alpha_dna,
-            alpha_rna=alpha_rna,
-            alpha_ligand=alpha_ligand,
+            dna_weight=dna_weight,
+            rna_weight=rna_weight,
+            ligand_weight=ligand_weight,
             eps=consts.eps,
         )
 
@@ -119,11 +121,11 @@ class TestDiffusionLoss(unittest.TestCase):
         n_sample = 2
 
         batch = self.setup_features()
-        batch_size = batch["gt_atom_mask"].shape[0]
+        batch_size = batch["ground_truth"]["atom_resolved_mask"].shape[0]
 
         x = centre_random_augmentation(
-            xl=batch["gt_atom_positions"].repeat((1, n_sample, 1, 1)),
-            atom_mask=batch["gt_atom_mask"],
+            xl=batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1)),
+            atom_mask=batch["ground_truth"]["atom_resolved_mask"],
         )
 
         loss = bond_loss(batch, x, eps=consts.eps)
@@ -135,11 +137,11 @@ class TestDiffusionLoss(unittest.TestCase):
         n_sample = 2
 
         batch = self.setup_features()
-        batch_size = batch["gt_atom_mask"].shape[0]
+        batch_size = batch["ground_truth"]["atom_resolved_mask"].shape[0]
 
         x = centre_random_augmentation(
-            xl=batch["gt_atom_positions"].repeat((1, n_sample, 1, 1)),
-            atom_mask=batch["gt_atom_mask"],
+            xl=batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1)),
+            atom_mask=batch["ground_truth"]["atom_resolved_mask"],
         )
 
         loss = smooth_lddt_loss(batch, x, eps=consts.eps)
@@ -158,14 +160,15 @@ class TestDiffusionLoss(unittest.TestCase):
     def test_diffusion_loss(self):
         n_sample = 2
         sigma_data = 16
-        alpha_bond = 1
+        bond_weight = 1.0
+        smooth_lddt_weight = 1.0
 
         batch = self.setup_features()
-        batch_size = batch["gt_atom_mask"].shape[0]
+        batch_size = batch["ground_truth"]["atom_resolved_mask"].shape[0]
 
         x = centre_random_augmentation(
-            xl=batch["gt_atom_positions"].repeat((1, n_sample, 1, 1)),
-            atom_mask=batch["gt_atom_mask"],
+            xl=batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1)),
+            atom_mask=batch["ground_truth"]["atom_resolved_mask"],
         )
 
         t = sigma_data * torch.exp(-1.2 + 1.5 * torch.randn(batch_size))
@@ -175,7 +178,8 @@ class TestDiffusionLoss(unittest.TestCase):
             x=x,
             t=t,
             sigma_data=sigma_data,
-            alpha_bond=alpha_bond,
+            bond_weight=bond_weight,
+            smooth_lddt_weight=smooth_lddt_weight,
             eps=consts.eps,
         )
 
