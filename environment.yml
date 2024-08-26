@@ -25,7 +25,6 @@ dependencies:
   - pytest
   - ml-collections
   - mkl=2022.1
-  - libaio
   - aria2
   - git
   - ruff>=0.5.0
@@ -40,4 +39,3 @@ dependencies:
       - dm-tree==0.1.6
       - git+https://github.com/NVIDIA/dllogger.git
       - flash-attn
-      - triton==2.1.0  # Temporary downgrade while kernels get moved to new repo

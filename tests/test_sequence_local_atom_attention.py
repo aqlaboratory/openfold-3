@@ -83,12 +83,12 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
             c_atom_pair=c_atom_pair,
         )
 
-        cl = torch.ones((batch_size, n_atom, c_atom))
-        plm = torch.ones((batch_size, n_atom, n_atom, c_atom_pair))
-        ql = torch.ones((batch_size, n_atom, c_atom))
+        cl = torch.randn((batch_size, n_atom, c_atom))
+        plm = torch.randn((batch_size, n_atom, n_atom, c_atom_pair))
+        ql = torch.randn((batch_size, n_atom, c_atom))
 
-        si_trunk = torch.ones((batch_size, n_token, c_s))
-        zij_trunk = torch.ones((batch_size, n_token, n_token, c_z))
+        si_trunk = torch.randn((batch_size, n_token, c_s))
+        zij_trunk = torch.randn((batch_size, n_token, n_token, c_z))
         rl = torch.randn((batch_size, n_atom, 3))
 
         batch = {
@@ -127,12 +127,12 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
             c_atom_pair=c_atom_pair,
         )
 
-        cl = torch.ones((batch_size, 1, n_atom, c_atom))
-        plm = torch.ones((batch_size, 1, n_atom, n_atom, c_atom_pair))
-        ql = torch.ones((batch_size, 1, n_atom, c_atom))
+        cl = torch.randn((batch_size, 1, n_atom, c_atom))
+        plm = torch.randn((batch_size, 1, n_atom, n_atom, c_atom_pair))
+        ql = torch.randn((batch_size, 1, n_atom, c_atom))
 
-        si_trunk = torch.ones((batch_size, 1, n_token, c_s))
-        zij_trunk = torch.ones((batch_size, 1, n_token, n_token, c_z))
+        si_trunk = torch.randn((batch_size, 1, n_token, c_s))
+        zij_trunk = torch.randn((batch_size, 1, n_token, n_token, c_z))
         rl = torch.randn((batch_size, n_sample, n_atom, 3))
 
         batch = {
@@ -212,9 +212,12 @@ class TestAtomTransformer(unittest.TestCase):
         c_atom = 128
         c_atom_pair = 16
 
-        ql = torch.ones((batch_size, n_atom, c_atom))
-        cl = torch.ones((batch_size, n_atom, c_atom))
-        plm = torch.ones((batch_size, n_atom, n_atom, c_atom_pair))
+        # Note: These values were previously ones() instead of randn()
+        # Torch to_sparse_bsr() has a bug where it was calculating 4 fewer
+        # blocks than expected when using ones() as input.
+        ql = torch.randn((batch_size, n_atom, c_atom))
+        cl = torch.randn((batch_size, n_atom, c_atom))
+        plm = torch.randn((batch_size, n_atom, n_atom, c_atom_pair))
         atom_mask = torch.ones((batch_size, n_atom))
 
         out_shape = (batch_size, n_atom, c_atom)
@@ -231,9 +234,9 @@ class TestAtomTransformer(unittest.TestCase):
         c_atom_pair = 16
         n_sample = 3
 
-        ql = torch.ones((batch_size, n_sample, n_atom, c_atom))
-        cl = torch.ones((batch_size, 1, n_atom, c_atom))
-        plm = torch.ones((batch_size, 1, n_atom, n_atom, c_atom_pair))
+        ql = torch.randn((batch_size, n_sample, n_atom, c_atom))
+        cl = torch.randn((batch_size, 1, n_atom, c_atom))
+        plm = torch.randn((batch_size, 1, n_atom, n_atom, c_atom_pair))
         atom_mask = torch.ones((batch_size, 1, n_atom))
 
         out_shape = (batch_size, n_sample, n_atom, c_atom)
@@ -303,9 +306,9 @@ class TestAtomTransformer(unittest.TestCase):
             .to(device)
         )
 
-        ql = torch.ones((batch_size, n_sample, n_atom, c_atom)).to(device, dtype=dtype)
-        cl = torch.ones((batch_size, 1, n_atom, c_atom)).to(device, dtype=dtype)
-        plm = torch.ones((batch_size, 1, n_atom, n_atom, c_atom_pair)).to(
+        ql = torch.randn((batch_size, n_sample, n_atom, c_atom)).to(device, dtype=dtype)
+        cl = torch.randn((batch_size, 1, n_atom, c_atom)).to(device, dtype=dtype)
+        plm = torch.randn((batch_size, 1, n_atom, n_atom, c_atom_pair)).to(
             device, dtype=dtype
         )
         atom_mask = torch.ones((batch_size, 1, n_atom)).to(device, dtype=dtype)
@@ -451,8 +454,8 @@ class TestAtomAttentionEncoder(unittest.TestCase):
 
         atom_mask = torch.ones((batch_size, 1, n_atom))
         rl = torch.randn((batch_size, n_sample, n_atom, 3))
-        si_trunk = torch.ones((batch_size, 1, n_token, c_s))
-        zij_trunk = torch.ones((batch_size, 1, n_token, n_token, c_z))
+        si_trunk = torch.randn((batch_size, 1, n_token, c_s))
+        zij_trunk = torch.randn((batch_size, 1, n_token, n_token, c_z))
 
         ai, ql, cl, plm = atom_attn_enc(
             batch=batch,
@@ -506,10 +509,10 @@ class TestAtomAttentionDecoder(unittest.TestCase):
         }
 
         atom_mask = torch.ones((batch_size, n_atom))
-        ai = torch.ones((batch_size, n_token, c_token))
-        ql = torch.ones((batch_size, n_atom, c_atom))
-        cl = torch.ones((batch_size, n_atom, c_atom))
-        plm = torch.ones((batch_size, n_atom, n_atom, c_atom_pair))
+        ai = torch.randn((batch_size, n_token, c_token))
+        ql = torch.randn((batch_size, n_atom, c_atom))
+        cl = torch.randn((batch_size, n_atom, c_atom))
+        plm = torch.randn((batch_size, n_atom, n_atom, c_atom_pair))
 
         rl_update = atom_attn_dec(
             batch=batch, atom_mask=atom_mask, ai=ai, ql=ql, cl=cl, plm=plm
@@ -555,10 +558,10 @@ class TestAtomAttentionDecoder(unittest.TestCase):
         }
 
         atom_mask = torch.ones((batch_size, 1, n_atom))
-        ai = torch.ones((batch_size, n_sample, n_token, c_token))
-        ql = torch.ones((batch_size, n_sample, n_atom, c_atom))
-        cl = torch.ones((batch_size, 1, n_atom, c_atom))
-        plm = torch.ones((batch_size, 1, n_atom, n_atom, c_atom_pair))
+        ai = torch.randn((batch_size, n_sample, n_token, c_token))
+        ql = torch.randn((batch_size, n_sample, n_atom, c_atom))
+        cl = torch.randn((batch_size, 1, n_atom, c_atom))
+        plm = torch.randn((batch_size, 1, n_atom, n_atom, c_atom_pair))
 
         rl_update = atom_attn_dec(
             batch=batch, atom_mask=atom_mask, ai=ai, ql=ql, cl=cl, plm=plm

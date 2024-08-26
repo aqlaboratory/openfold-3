@@ -52,8 +52,8 @@ if fa_is_installed:
 
 triton_is_installed = importlib.util.find_spec("triton") is not None
 if triton_is_installed:
-    from triton.ops.blocksparse import matmul as blocksparse_matmul
-    from triton.ops.blocksparse import softmax as blocksparse_softmax
+    from openfold3.core.kernels.triton.blocksparse import matmul as blocksparse_matmul
+    from openfold3.core.kernels.triton.blocksparse import softmax as blocksparse_softmax
 
 # To avoid errors if memory-efficient attention kernel is not installed
 attn_core_is_installed = importlib.util.find_spec("attn_core_inplace_cuda") is not None
