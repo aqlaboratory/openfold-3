@@ -19,7 +19,6 @@ from openfold3.core.data.primitives.structure.metadata import (
 )
 from openfold3.core.data.resources.lists import (
     CRYSTALLIZATION_AIDS,
-
 )
 from openfold3.core.data.resources.residues import (
     STANDARD_NUCLEIC_ACID_RESIDUES,
