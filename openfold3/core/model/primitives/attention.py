@@ -52,8 +52,8 @@ if fa_is_installed:
 
 triton_is_installed = importlib.util.find_spec("triton") is not None
 if triton_is_installed:
-    from triton.ops.blocksparse import matmul as blocksparse_matmul
-    from triton.ops.blocksparse import softmax as blocksparse_softmax
+    from openfold3.core.kernels.triton.blocksparse import matmul as blocksparse_matmul
+    from openfold3.core.kernels.triton.blocksparse import softmax as blocksparse_softmax
 
 # To avoid errors if memory-efficient attention kernel is not installed
 attn_core_is_installed = importlib.util.find_spec("attn_core_inplace_cuda") is not None
@@ -75,7 +75,7 @@ def softmax_no_cast(t: torch.Tensor, dim: int = -1) -> torch.Tensor:
         deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
     )
     if d is torch.bfloat16 and not deepspeed_is_initialized:
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast("cuda", enabled=False):
             s = torch.nn.functional.softmax(t, dim=dim)
     else:
         s = torch.nn.functional.softmax(t, dim=dim)
@@ -498,13 +498,14 @@ class BlockSparseAttention(Attention):
         x: torch.Tensor, mask: torch.Tensor, block: int, batch_dims: Tuple[int]
     ) -> torch.Tensor:
         """Convert a regular tensor to sparse format"""
-        ret = torch.empty(
-            (*batch_dims, mask.sum(), block, block), dtype=x.dtype, device=x.device
+        block_bias = (
+            x.to_sparse_bsr((block, block))
+            .values()
+            .reshape(*batch_dims, -1, block, block)
         )
-        for idx, (h, i, j) in enumerate(zip(*torch.nonzero(mask, as_tuple=True))):
-            ret[..., idx, :, :] = x[
-                ..., h, i * block : (i + 1) * block, j * block : (j + 1) * block
-            ]
+        ret = torch.index_select(
+            block_bias, dim=-3, index=torch.nonzero(mask.flatten()).squeeze()
+        )
         return ret
 
     def attention(

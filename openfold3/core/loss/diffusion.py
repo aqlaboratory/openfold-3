@@ -121,7 +121,7 @@ def mse_loss(
     w_dna = batch["is_dna"] * dna_weight
     w_rna = batch["is_rna"] * rna_weight
     w_ligand = batch["is_ligand"] * ligand_weight
-    w = torch.ones_like(batch["is_dna"]) + w_dna + w_rna + w_ligand
+    w = batch["is_protein"] + w_dna + w_rna + w_ligand
 
     # Convert per-token weights to per-atom weights
     # [*, n_atom]

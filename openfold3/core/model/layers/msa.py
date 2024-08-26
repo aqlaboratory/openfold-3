@@ -634,7 +634,7 @@ class MSAPairWeightedAveraging(nn.Module):
         else:
             a = softmax_no_cast(z, -1)
 
-        # [*, H, Q, C_hidden]
+        # [*, Q, H, C_hidden]
         a = torch.einsum("...hqk,...hkc->...qhc", a, v)
 
         g = self.sigmoid(self.linear_g(m))

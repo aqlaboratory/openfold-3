@@ -1,7 +1,9 @@
+import logging
+
 import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
-from biotite.structure.io.pdbx import CIFFile
+from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from scipy.spatial.distance import cdist
 
 from openfold3.core.data.primitives.structure.interface import (
@@ -12,7 +14,20 @@ from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
     remove_atom_indices,
 )
-from openfold3.core.data.resources.lists import CRYSTALLIZATION_AIDS
+from openfold3.core.data.primitives.structure.metadata import (
+    get_chain_to_canonical_seq_dict,
+)
+from openfold3.core.data.resources.lists import (
+    CRYSTALLIZATION_AIDS,
+
+)
+from openfold3.core.data.resources.residues import (
+    STANDARD_NUCLEIC_ACID_RESIDUES,
+    STANDARD_PROTEIN_RESIDUES,
+    MoleculeType,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def convert_MSE_to_MET(atom_array: AtomArray) -> None:
@@ -67,6 +82,8 @@ def fix_arginine_naming(atom_array: AtomArray) -> None:
     for arginine in struc.residue_iter(atom_array[arginines]):
         fix_single_arginine_naming(arginine)
 
+    logger.debug("Fixed arginine naming")
+
 
 def remove_waters(atom_array: AtomArray) -> AtomArray:
     """Removes water molecules from the AtomArray
@@ -81,6 +98,8 @@ def remove_waters(atom_array: AtomArray) -> AtomArray:
     """
     water_residues = (atom_array.res_name == "HOH") | (atom_array.res_name == "DOD")
     atom_array = atom_array[~water_residues]
+
+    logger.debug("Removed water molecules")
 
     return atom_array
 
@@ -109,7 +128,7 @@ def remove_crystallization_aids(
 
 
 def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
-    """Removes all hydrogen atoms from the AtomArray
+    """Removes all hydrogen (and deuterium) atoms from the AtomArray
 
     Args:
         atom_array: AtomArray containing the structure to remove hydrogens from.
@@ -122,7 +141,9 @@ def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
     return atom_array
 
 
-def remove_small_polymers(atom_array: AtomArray, max_residues: int = 3) -> AtomArray:
+def remove_small_polymers(
+    atom_array: AtomArray, cif_data: CIFBlock, max_residues: int = 3
+) -> AtomArray:
     """Removes small polymer chains from the AtomArray
 
     Follows 2.5.4 of the AlphaFold3 SI and removes all polymer chains with up to
@@ -137,31 +158,15 @@ def remove_small_polymers(atom_array: AtomArray, max_residues: int = 3) -> AtomA
     Returns:
         AtomArray with all polymer chains with fewer than min_residues residues removed.
     """
-    # Get polymers of all sizes
-    all_nucleotides = struc.filter_polymer(
-        atom_array, pol_type="nucleotide", min_size=2
-    )
-    all_proteins = struc.filter_polymer(atom_array, pol_type="peptide", min_size=2)
-    all_polymers = all_nucleotides | all_proteins
-
-    # Get polymers that are not small
-    not_small_nucleotides = struc.filter_polymer(
-        atom_array, pol_type="nucleotide", min_size=max_residues + 1
-    )
-    not_small_proteins = struc.filter_polymer(
-        atom_array, pol_type="peptide", min_size=max_residues + 1
-    )
-    not_small_polymers = not_small_nucleotides | not_small_proteins
-
-    # Get small polymers by subtracting the not small polymers from all polymers
-    small_polymers = all_polymers & ~not_small_polymers
-
-    # Remove small polymers
-    small_polymer_chains = np.unique(atom_array.chain_id_renumbered[small_polymers])
+    chain_to_seq = get_chain_to_canonical_seq_dict(atom_array, cif_data)
+    small_polymer_chains = [
+        chain for chain, seq in chain_to_seq.items() if len(seq) <= max_residues
+    ]
 
     for chain_id in small_polymer_chains:
         breakpoint()
         atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
+        logger.debug(f"Removed small polymer chain {chain_id}")
 
     return atom_array
 
@@ -188,10 +193,11 @@ def remove_fully_unknown_polymers(atom_array: AtomArray) -> AtomArray:
 
     for chain in struc.chain_iter(atom_array[polymers]):
         # Explicit single-element unpacking (will fail if >1 chain_id)
-        (chain_id,) = np.unique(chain.chain_id_renumbered)
+        (chain_id,) = np.unique(chain.chain_id)
 
         # Remove the chain from the AtomArray if all residues are unknown
         if np.all(chain.res_name == "UNK"):
+            logger.debug("Removed fully unknown polymer chain")
             breakpoint()
             atom_array_filtered = remove_chain_and_attached_ligands(
                 atom_array_filtered, chain_id
@@ -215,7 +221,7 @@ def remove_chain_and_attached_ligands(
         atom_array:
             AtomArray containing the structure to remove the chain from.
         chain_id:
-            chain ID of the chain to remove (uses the "chain_id_renumbered" field)
+            chain ID of the chain to remove
 
     Returns:
         AtomArray with the specified chain and all attached covalent ligands removed
@@ -223,7 +229,7 @@ def remove_chain_and_attached_ligands(
     # Assign temporary helper indices
     assign_atom_indices(atom_array)
 
-    chain_mask = atom_array.chain_id_renumbered == chain_id
+    chain_mask = atom_array.chain_id == chain_id
 
     # If the chain itself is a hetero-chain, only remove the chain
     if np.all(atom_array.hetero[chain_mask]):
@@ -234,7 +240,7 @@ def remove_chain_and_attached_ligands(
     # and not e.g. a covalent ligand in another chain that has a disulfide bond to the
     # specified chain and is therefore indirectly "connected".
     atom_array_subset = atom_array[chain_mask | atom_array.hetero]
-    chain_mask_subset = atom_array_subset.chain_id_renumbered == chain_id
+    chain_mask_subset = atom_array_subset.chain_id == chain_id
 
     # Get first atom of the chain in the subset array
     first_chain_atom_idx = np.nonzero(chain_mask_subset)[0][0]
@@ -297,7 +303,7 @@ def remove_clashing_chains(
     """
     # Get atom counts of each chain in the total atom array (index of the resulting
     # array corresponds to chain_id, value to atom count)
-    chain_atom_counts = np.bincount(atom_array.chain_id_renumbered)
+    chain_atom_counts = np.bincount(atom_array.chain_id)
 
     ## Get the clashing chains to remove
     chain_ids_to_remove = set()
@@ -338,7 +344,7 @@ def remove_clashing_chains(
                     chain_ids_to_remove.add(chain2_id)
 
     for chain_id in chain_ids_to_remove:
-        breakpoint()
+        # breakpoint()
         atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
 
     return atom_array
@@ -440,7 +446,7 @@ def remove_chains_with_CA_gaps(
 
     # Find chains where the distance between consecutive C-alpha atoms is too large
     chain_ids_to_remove = np.unique(
-        protein_chain_ca[:-1][ca_dists > distance_threshold].chain_id_renumbered
+        protein_chain_ca[:-1][ca_dists > distance_threshold].chain_id
     )
 
     for chain_id in chain_ids_to_remove:
@@ -491,7 +497,7 @@ def subset_large_structure(
 
     # Sort (atom-wise) chain IDs by distance
     sort_by_dist_idx = np.argsort(dists_to_all_token_centers)
-    chain_ids_sorted = all_token_center_atoms.chain_id_renumbered[sort_by_dist_idx]
+    chain_ids_sorted = all_token_center_atoms.chain_id[sort_by_dist_idx]
 
     # Get unique chain IDs sorted by distance to selected atom
     unique_chain_idxs_sorted = np.sort(
@@ -503,7 +509,77 @@ def subset_large_structure(
     closest_n_chain_ids = chain_ids_sorted[closest_n_chain_ids_idxs]
 
     # Subset atom array to the closest n chains
-    selected_chain_mask = np.isin(atom_array.chain_id_renumbered, closest_n_chain_ids)
+    selected_chain_mask = np.isin(atom_array.chain_id, closest_n_chain_ids)
 
     breakpoint()
     return atom_array[selected_chain_mask]
+
+
+def remove_std_residue_terminal_atoms(atom_array: AtomArray) -> AtomArray:
+    """Removes terminal atoms like OXT and OP3 from standard residues.
+
+    Models like AF3 and AF2 expect all tokens with the same restype to map to the same
+    number of atoms. This makes it awkward to represent terminal atoms like OXT/OP3
+    which only appear in the small subset of residues at the end/beginning of a
+    protein/NA chain. This function therefore removes these atoms from the AtomArray.
+    Note that terminal atoms can be kept for any non-standard residues, as they are
+    tokenized per-atom and do not require a fixed number of atoms per residue.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to remove terminal atoms from.
+
+    Returns:
+        AtomArray with terminal atoms removed.
+    """
+    chain_starts = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
+
+    terminal_atom_mask = np.zeros(len(atom_array), dtype=bool)
+
+    std_protein_residues = set(STANDARD_PROTEIN_RESIDUES)
+    std_nucleic_acid_residues = set(STANDARD_NUCLEIC_ACID_RESIDUES)
+
+    # Iterate through all chains
+    for chain_start, chain_end in zip(chain_starts[:-1], chain_starts[1:]):
+        chain = atom_array[chain_start:chain_end]
+        chain_idx = np.arange(chain_start, chain_end)
+
+        # Search for OXT in last residue
+        if chain.molecule_type_id[0] == MoleculeType.PROTEIN:
+            last_res_name = chain.res_name[-1]
+
+            # Non-standard residues are fully atomized in AF3 and therefore can have
+            # terminal atoms
+            if last_res_name not in std_protein_residues:
+                continue
+
+            last_res_id = chain.res_id[-1]
+            last_res_mask = chain.res_id == last_res_id
+            oxt_mask = chain.atom_name[last_res_mask] == "OXT"
+
+            # Mark OXT atom for removal
+            terminal_atom_mask[chain_idx[last_res_mask]] = oxt_mask
+
+        # Search for OP3 in first residue (5' end)
+        elif chain.molecule_type_id[0] in (MoleculeType.DNA, MoleculeType.RNA):
+            last_res_name = chain.res_name[0]
+
+            # Non-standard residues are fully atomized in AF3 and therefore can have
+            # terminal atoms
+            if last_res_name not in std_nucleic_acid_residues:
+                continue
+
+            first_res_id = chain.res_id[0]
+            first_res_mask = chain.res_id == first_res_id
+            op3_mask = chain.atom_name[first_res_mask] == "OP3"
+
+            # Mark OP3 atom for removal
+            terminal_atom_mask[chain_idx[first_res_mask]] = op3_mask
+
+        else:
+            continue
+
+    atom_array = atom_array[~terminal_atom_mask]
+    logger.debug(f"Removed {terminal_atom_mask.sum()} terminal atoms")
+
+    return atom_array

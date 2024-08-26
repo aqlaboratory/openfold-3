@@ -224,7 +224,7 @@ class InvariantPointAttention(nn.Module):
         # Einsum notation: [H:h, N_res:(n,m), C_hidden:c]
         # n,m are used because using n,n would be ambiguous einstein notation
         if is_fp16_enabled():
-            with torch.cuda.amp.autocast(enabled=False):
+            with torch.amp.autocast("cuda", enabled=False):
                 a = torch.einsum("...nhc,...mhc->...hnm", q.float(), k.float())
         else:
             a = torch.einsum("...nhc,...mhc->...hnm", q, k)
@@ -298,7 +298,7 @@ class InvariantPointAttention(nn.Module):
         # IMPORTANT: This has been changed from the original version where there was
         # a very particular indexing to ensure fp32; if precision problems occur,
         # this is a place to look into.
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast("cuda", enabled=False):
             o_pt = torch.einsum("...hnm, ...mhpt->...nhpt", a, v_pts.to(dtype=a.dtype))
 
         o_pt = r[..., None, None].invert_apply(o_pt)
