@@ -24,8 +24,8 @@ def get_chain_to_entity_dict(atom_array: struc.AtomArray) -> dict[int, int]:
 
     return dict(
         zip(
-            atom_array[chain_starts].chain_id,
-            atom_array[chain_starts].entity_id,
+            atom_array[chain_starts].chain_id.tolist(),
+            atom_array[chain_starts].entity_id.tolist(),
         )
     )
 
@@ -50,8 +50,8 @@ def get_chain_to_author_chain_dict(atom_array: struc.AtomArray) -> dict[int, str
 
     return dict(
         zip(
-            atom_array[chain_starts].chain_id,
-            atom_array[chain_starts].auth_asym_id,
+            atom_array[chain_starts].chain_id.tolist(),
+            atom_array[chain_starts].auth_asym_id.tolist(),
         )
     )
 
@@ -70,8 +70,8 @@ def get_chain_to_pdb_chain_dict(atom_array: struc.AtomArray) -> dict[int, str]:
 
     return dict(
         zip(
-            atom_array[chain_starts].chain_id,
-            atom_array[chain_starts].label_asym_id,
+            atom_array[chain_starts].chain_id.tolist(),
+            atom_array[chain_starts].label_asym_id.tolist(),
         )
     )
 
@@ -90,8 +90,8 @@ def get_chain_to_molecule_type_id_dict(atom_array: struc.AtomArray) -> dict[int,
 
     return dict(
         zip(
-            atom_array[chain_starts].chain_id,
-            atom_array[chain_starts].molecule_type_id,
+            atom_array[chain_starts].chain_id.tolist(),
+            atom_array[chain_starts].molecule_type_id.tolist(),
         )
     )
 

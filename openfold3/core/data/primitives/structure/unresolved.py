@@ -344,6 +344,9 @@ def add_unresolved_polymer_residues(
     # Finally reorder the array so that the atom indices are in order
     extended_atom_array = extended_atom_array[np.argsort(extended_atom_array._atom_idx)]
 
+    # TODO: make numerical chain ID handling cleaner
+    extended_atom_array._annot["chain_id"] = extended_atom_array.chain_id.astype(int)
+
     # dev-only: TODO remove
     assert np.array_equal(
         extended_atom_array._atom_idx, np.arange(len(extended_atom_array))
@@ -526,6 +529,9 @@ def add_unresolved_atoms_within_residue(
 
     # Reorder appropriately
     extended_atom_array = extended_atom_array[np.argsort(extended_atom_array._atom_idx)]
+
+    # TODO: make numerical chain ID handling cleaner
+    extended_atom_array._annot["chain_id"] = extended_atom_array.chain_id.astype(int)
 
     # Remove temporary atom indices
     remove_atom_indices(extended_atom_array)
