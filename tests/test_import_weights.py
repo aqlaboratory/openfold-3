@@ -91,7 +91,7 @@ class TestImportWeights(unittest.TestCase):
             model = registry.get_lightning_module(c).model
             model.eval()
 
-            d = torch.load(pt_path)
+            d = torch.load(pt_path, weights_only=True)
             import_openfold_weights_(
                 model=model,
                 state_dict=d,
