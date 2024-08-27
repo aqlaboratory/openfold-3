@@ -30,10 +30,7 @@ from ml_collections import ConfigDict
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.utils.checkpointing import get_checkpoint_fn
 from openfold3.core.utils.precision_utils import is_fp16_enabled
-from openfold3.core.utils.tensor_utils import (
-    flatten_final_dims,
-    permute_final_dims,
-)
+from openfold3.core.utils.tensor_utils import flatten_final_dims
 
 from .linear import Linear
 
@@ -55,8 +52,8 @@ if fa_is_installed:
 
 triton_is_installed = importlib.util.find_spec("triton") is not None
 if triton_is_installed:
-    from triton.ops.blocksparse import matmul as blocksparse_matmul
-    from triton.ops.blocksparse import softmax as blocksparse_softmax
+    from openfold3.core.kernels.triton.blocksparse import matmul as blocksparse_matmul
+    from openfold3.core.kernels.triton.blocksparse import softmax as blocksparse_softmax
 
 # To avoid errors if memory-efficient attention kernel is not installed
 attn_core_is_installed = importlib.util.find_spec("attn_core_inplace_cuda") is not None
@@ -78,7 +75,7 @@ def softmax_no_cast(t: torch.Tensor, dim: int = -1) -> torch.Tensor:
         deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
     )
     if d is torch.bfloat16 and not deepspeed_is_initialized:
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast("cuda", enabled=False):
             s = torch.nn.functional.softmax(t, dim=dim)
     else:
         s = torch.nn.functional.softmax(t, dim=dim)
@@ -93,21 +90,38 @@ def _attention(
     value: torch.Tensor,
     biases: List[torch.Tensor],
 ) -> torch.Tensor:
-    # [*, H, C_hidden, K]
-    key = permute_final_dims(key, (1, 0))
+    """Attention operation with bias terms.
 
-    # [*, H, Q, K]
-    a = torch.matmul(query, key)
+    For clarity, the dimensions are as follows:
+        *: Batch dimensions
+        H: Number of heads
+        K, Q, V: Key, query, value dimensions
+        C_hidden: Hidden dimension
 
+    Args:
+        query (shape [*, H, Q, C_hidden]): query tensor
+        key (shape [*, H, K, C_hidden]): key tensor
+        value (shape [*, H, V, C_hidden]): value tensor
+        biases : list of bias tensors
+
+    Returns:
+        shape [*, H, V, C_hidden]: attention output
+    """
+
+    # Generate attention scores
+    scores = torch.einsum("...qc, ...kc->...qk", query, key)
+
+    # Add the biases
     for b in biases:
-        a += b
+        scores += b
 
-    a = softmax_no_cast(a, -1)
+    # Normalize the scores
+    scores = softmax_no_cast(scores, dim=-1)
 
-    # [*, H, Q, C_hidden]
-    a = torch.matmul(a, value)
+    # Multiply scores by values
+    attention = torch.einsum("...qk, ...kc->...qc", scores, value)
 
-    return a
+    return attention
 
 
 @torch.jit.ignore
@@ -484,13 +498,14 @@ class BlockSparseAttention(Attention):
         x: torch.Tensor, mask: torch.Tensor, block: int, batch_dims: Tuple[int]
     ) -> torch.Tensor:
         """Convert a regular tensor to sparse format"""
-        ret = torch.empty(
-            (*batch_dims, mask.sum(), block, block), dtype=x.dtype, device=x.device
+        block_bias = (
+            x.to_sparse_bsr((block, block))
+            .values()
+            .reshape(*batch_dims, -1, block, block)
         )
-        for idx, (h, i, j) in enumerate(zip(*torch.nonzero(mask, as_tuple=True))):
-            ret[..., idx, :, :] = x[
-                ..., h, i * block : (i + 1) * block, j * block : (j + 1) * block
-            ]
+        ret = torch.index_select(
+            block_bias, dim=-3, index=torch.nonzero(mask.flatten()).squeeze()
+        )
         return ret
 
     def attention(
@@ -660,19 +675,7 @@ class GlobalAttention(nn.Module):
 
         bias = (self.inf * (mask - 1))[..., :, None, :]
         if not use_lma:
-            # [*, N_res, H, N_seq]
-            a = torch.matmul(
-                q,
-                k.transpose(-1, -2),  # [*, N_res, C_hidden, N_seq]
-            )
-            a += bias
-            a = softmax_no_cast(a)
-
-            # [*, N_res, H, C_hidden]
-            o = torch.matmul(
-                a,
-                v,
-            )
+            o = _attention(q, k, v, [bias])
         else:
             o = _lma(
                 q, k, v, [bias], DEFAULT_LMA_Q_CHUNK_SIZE, DEFAULT_LMA_KV_CHUNK_SIZE

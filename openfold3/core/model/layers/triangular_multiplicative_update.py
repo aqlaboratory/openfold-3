@@ -79,14 +79,13 @@ class BaseTriangleMultiplicativeUpdate(nn.Module, ABC):
             for i in range(0, a.shape[-3], _inplace_chunk_size):
                 a_chunk = a[..., i : i + _inplace_chunk_size, :, :]
                 b_chunk = b[..., i : i + _inplace_chunk_size, :, :]
-                a[..., i : i + _inplace_chunk_size, :, :] = torch.matmul(
-                    a_chunk,
-                    b_chunk,
+                a[..., i : i + _inplace_chunk_size, :, :] = torch.einsum(
+                    "...ij,...jk->...ik", a_chunk, b_chunk
                 )
 
             p = a
         else:
-            p = torch.matmul(a, b)
+            p = torch.einsum("...ij,...jk->...ik", a, b)
 
         return permute_final_dims(p, (1, 2, 0))
 
@@ -375,10 +374,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
                 )
                 del z_chunk_b
 
-                x_chunk = torch.matmul(
-                    a,
-                    b_chunk,
-                )
+                x_chunk = torch.einsum("...ij,...jk->...ik", a, b_chunk)
                 x_chunk = permute_final_dims(x_chunk, (1, 2, 0))
                 x_chunk = self.layer_norm_out(x_chunk)
                 x_chunk = self.linear_z(x_chunk)
@@ -401,7 +397,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
                     z[z_slicer] = x_chunk
         else:
             b = compute_projection(z, mask, False, False)
-            x = torch.matmul(a, b)
+            x = torch.einsum("...ij,...jk->...ik", a, b)
             x = self.layer_norm_out(x)
             x = self.linear_z(x)
             g = self.linear_g(z)
@@ -462,7 +458,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             b = b / b.std()
 
         if is_fp16_enabled():
-            with torch.cuda.amp.autocast(enabled=False):
+            with torch.amp.autocast("cuda", enabled=False):
                 x = self._combine_projections(a.float(), b.float())
         else:
             x = self._combine_projections(a, b)
@@ -627,7 +623,7 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             b = b / b.std()
 
         if is_fp16_enabled():
-            with torch.cuda.amp.autocast(enabled=False):
+            with torch.amp.autocast("cuda", enabled=False):
                 x = self._combine_projections(a.float(), b.float())
         else:
             x = self._combine_projections(a, b)

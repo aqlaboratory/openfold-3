@@ -1,7 +1,8 @@
 [tool.ruff]
 line-length = 88
 exclude = [
-    "notebooks/OpenFold.ipynb"
+    "notebooks/OpenFold.ipynb",
+    "openfold3/core/kernels/triton/blocksparse/*"
 ]
 
 [tool.ruff.lint]

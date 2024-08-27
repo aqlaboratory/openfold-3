@@ -33,6 +33,7 @@ from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.model.structure.diffusion_module import (
     DiffusionModule,
     SampleDiffusion,
+    centre_random_augmentation,
 )
 
 # from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation_align
@@ -318,11 +319,14 @@ class AlphaFold3(nn.Module):
         no_samples = self.shared.diffusion.no_samples
         batch_size, n_atom = xl_gt.shape[0], xl_gt.shape[-2]
         device, dtype = xl_gt.device, xl_gt.dtype
+
+        xl_gt = xl_gt.tile((1, no_samples, 1, 1))
+        xl_gt = centre_random_augmentation(xl=xl_gt, atom_mask=atom_mask_gt)
         n = torch.randn((batch_size, no_samples), device=device, dtype=dtype)
         t = self.shared.diffusion.sigma_data * torch.exp(-1.2 + 1.5 * n)
 
         # Sample noise
-        noise = (t[..., None, None] ** 2) * torch.randn(
+        noise = t[..., None, None] * torch.randn(
             (batch_size, no_samples, n_atom, 3), device=device, dtype=dtype
         )
 
