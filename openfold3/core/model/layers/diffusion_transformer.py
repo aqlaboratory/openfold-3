@@ -202,6 +202,9 @@ class DiffusionTransformer(nn.Module):
                 Whether to use Triton block sparse attention kernels
             block_size:
                 Block size to use in block sparse attention
+            blocks_per_ckpt:
+                Number of blocks per checkpoint. If set, checkpointing will
+                be used to save memory.
             inf:
                 Large constant used to create mask for attention logits
             linear_init_params:
