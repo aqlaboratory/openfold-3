@@ -12,6 +12,9 @@ from openfold3.core.data.framework.single_datasets.abstract_single_dataset impor
     SingleDataset,
     register_dataset,
 )
+from openfold3.core.data.pipelines.featurization.conformer import (
+    featurize_conformers_dummy_af3,
+)
 from openfold3.core.data.pipelines.featurization.msa import featurize_msa_af3
 from openfold3.core.data.pipelines.featurization.structure import (
     featurize_target_gt_structure_af3,
@@ -168,6 +171,7 @@ class WeightedPDBDataset(SingleDataset):
                     - use_alignment_database: Whether to use the alignment database.
                     - alignment_index_path: Path to the alignment index.
                     - dataset_cache_path: Path to the dataset cache.
+                    - reference molecule paths: Paths to reference molecules.
         """
         super().__init__()
 
@@ -277,7 +281,7 @@ class WeightedPDBDataset(SingleDataset):
         )
 
         # Reference conformer features
-        """<Lukas' reference conformer pipelines>"""
+        features.update(featurize_conformers_dummy_af3(1, len(atom_array_cropped)))
 
         # Loss switches
         features["resolution"] = self.data_cache[index]["resolution"]
