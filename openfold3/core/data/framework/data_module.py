@@ -367,14 +367,14 @@ class DataModule(pl.LightningDataModule):
     def init_datasets(
         self,
         multi_dataset_config: MultiDatasetConfig,
-        type_to_init: str,
+        type_to_init: DatasetType,
     ) -> list[SingleDataset]:
         """Initializes datasets.
 
         Args:
             multi_dataset_config (MultiDatasetConfig):
                 Parsed config of all input datasets.
-            type_to_init (str):
+            type_to_init (DatasetType):
                 One of train, validation, test, prediction.
 
         Returns:
