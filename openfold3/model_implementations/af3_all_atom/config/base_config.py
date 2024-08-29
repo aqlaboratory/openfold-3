@@ -454,5 +454,6 @@ data_config_template = mlc.ConfigDict(
         "dataset_cache_path": PLACEHOLDER_PATH,
         "reference_molecule_directory": PLACEHOLDER_PATH,
         "template_cache_path": PLACEHOLDER_PATH, 
+        "template_structures_path": PLACEHOLDER_PATH,
     }
 )

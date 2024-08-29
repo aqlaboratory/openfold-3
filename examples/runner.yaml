@@ -45,6 +45,7 @@ dataset_paths:
     reference_molecule_directory: /<REFERENCE_PATH>/molecules 
     dataset_cache_path: <PDB_PATH>/data_cache 
     template_cache_path: <PDB_PATH>/template_cache 
+    template_structures_path: /<PDB_PATH>/template_mmcif/
   short-monomer-distillation:
     alignments_path: /<MONOMER_PATH>/alignments/
     alignment_index_path: /<MONOMER_PATH>/alignments/
@@ -52,6 +53,7 @@ dataset_paths:
     reference_molecule_directory: /<REFERENCE_PATH>/molecules 
     dataset_cache_path: <MONOMER_PATH>/data_cache 
     template_cache_path: <MONOMER_PATH>/template_cache 
+    template_structures_path: /<MONOMER_PATH>/template_mmcif/
 
 dataset_configs:
   train:
