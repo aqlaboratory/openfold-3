@@ -11,4 +11,6 @@ def _import_specific_py_files_from_dir(pattern: str):
 
 
 # Import all `runner.py` from model directories to register the models
-_import_specific_py_files_from_dir("*/runner.py")
+# _import_specific_py_files_from_dir("*/runner.py")
+
+__import__("openfold3.model_implementations.af3_all_atom.runner")
