@@ -45,3 +45,11 @@ eval:
       shared:
         diffusion:
           no_rollout_steps: 200
+
+train:
+  model_update:
+    settings:
+      use_deepspeed_evo_attention: True
+      blocks_per_ckpt: 1
+      chunk_size: null
+      use_block_sparse_attn: True
