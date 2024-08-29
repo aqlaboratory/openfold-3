@@ -1,0 +1,37 @@
+config:
+  alignment_index_path: /<PDB_PATH>/alignments/
+  alignments_path: /<PDB_PATH>/alignments/
+  crop_weights:
+    contiguous: 0.2
+    spatial: 0.4
+    spatial_interface: 0.4
+  dataset_cache_path: <PDB_PATH>/data_cache
+  loss:
+    confidence_loss_names:
+    - plddt
+    - pde
+    - experimentally_resolved
+    - pae
+    diffusion_loss_names:
+    - bond
+    - smooth_lddt
+    - mse
+    loss_weight:
+      bond: 1.0
+      distogram: 0.03
+      mse: 4.0
+      pae: 0.0001
+      pde: 0.0
+      plddt: 0.0001
+      ptm: 0.0
+      smooth_lddt: 4.0
+    max_resolution: 4.0
+    min_resolution: 0.1
+  n_templates: 1
+  reference_molecule_directory: /<REFERENCE_PATH>/molecules
+  target_path: /<PDB_PATH>/mmcif/
+  token_budget: 384
+  use_alignment_database: true
+mode: train
+name: PDB-weighted
+weight: 0.5
