@@ -1,6 +1,7 @@
 # To demonstrate expected fields for runner yaml, as expected by
 # model_implementations/registry.py 
 # We will read the model preset from a separate field.
+mode: train
 model_name: af3_all_atom
 preset: initial_training 
 
@@ -53,7 +54,7 @@ dataset_paths:
 dataset_configs:
   train:
     PDB-weighted:
-      class: PDBWeightedDataset 
+      class: WeightedPDBDataset 
       weight: 0.5
       config:
         loss_weight_mode: default 
@@ -64,7 +65,7 @@ dataset_configs:
           spatial: 0.4
           spatial_interface: 0.4
     short-monomer-distillation:
-      class: MonomerDistillationDataset      
+      class: ProteinMonomerDataset 
       weight: 0.2
       config:
         loss_weight_mode: self_distillation 

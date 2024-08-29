@@ -1,4 +1,4 @@
-# TODO add license
+# args TODO add license
 
 import argparse
 import logging
@@ -24,6 +24,7 @@ from openfold3.model_implementations import registry
 from openfold3.model_implementations.af3_all_atom.config import (
     base_config as af3_base_config,
 )
+
 
 def get_configs(runner_args):
     # TODO: Find a different way to handle presets since presets possibly contain
@@ -56,15 +57,50 @@ def get_configs(runner_args):
     )
 
     dataset_config = {
-        "batch_size": runner_args.batch_size, 
-        "num_workers":  runner_args.get("num_workers", 2),
-        "data_seed": runner_args.get("data_seed", 17), 
-        "epoch_len": runner_args.get("epoch_len", 1), 
-        "num_epochs": runner_args.pl_trainer.get("max_epochs"), 
+        "batch_size": runner_args.batch_size,
+        "num_workers": runner_args.get("num_workers", 2),
+        "data_seed": runner_args.get("data_seed", 17),
+        "epoch_len": runner_args.get("epoch_len", 1),
+        "num_epochs": runner_args.pl_trainer.get("max_epochs"),
         "datasets": dataset_configs,
     }
 
-    return model_config, dataset_config 
+    return model_config, dataset_config
+
+
+def _configure_wandb_logger(
+    wandb_args: ConfigDict, is_rank_zero: bool, output_dir: str
+) -> WandbLogger:
+    """Configures wandb and wandb logger."""
+
+    def _maybe_get_wandb_id():
+        if is_rank_zero:
+            if hasattr(wandb_args, "id"):
+                return wandb_args.id
+            else:
+                return wandb.util.generate_id()
+        return None
+
+    wandb_id = _maybe_get_wandb_id()
+
+    wandb_init_dict = dict(
+        project=wandb_args.project,
+        entity=wandb_args.entity,
+        group=wandb_args.group,
+        name=wandb_args.experiment_name,
+        dir=output_dir,
+        resume="allow",
+        reinit=True,
+        id=wandb_id,
+    )
+
+    # Only initialize wandb for rank zero worker, or else
+    # each worker will generate a different id
+    if is_rank_zero:
+        wandb.init(**wandb_init_dict)
+
+    wandb_logger = WandbLogger(**wandb_init_dict, log_model=False)
+    return wandb_logger
 
 
 def main(args):
@@ -76,18 +112,18 @@ def main(args):
         pl.seed_everything(args.seed, workers=True)
 
     # Update model config with section from yaml with model update
-    model_config, dataset_configs = get_configs(runner_args)
+    model_config, dataset_config = get_configs(runner_args)
     # Initialize lightning module with desired config
     lightning_module = registry.get_lightning_module(model_config)
     # TODO <checkpoint resume logic goes here>
 
     # Initialize data wrapper
-    lightning_data_module = DataModule(dataset_configs)
+    lightning_data_module = DataModule(dataset_config)
 
     # Set up trainer arguments and callbacks
     callbacks = []
 
-    if args.checkpoint_every_epoch:
+    if runner_args.get("checkpoint_every_epoch"):
         callbacks.append(
             ModelCheckpoint(
                 every_n_epochs=1,
@@ -96,7 +132,7 @@ def main(args):
             )
         )
 
-    if args.early_stopping:
+    if runner_args.get("early_stopping"):
         # TODO check if works/necessary
         callbacks.append(
             EarlyStoppingVerbose(
@@ -110,7 +146,7 @@ def main(args):
             )
         )
 
-    if args.log_performance:
+    if runner_args.get("log_performance"):
         global_batch_size = (
             args.batch_size
             * args.gpus
@@ -125,82 +161,54 @@ def main(args):
             )
         )
 
-    if args.log_lr:
+    if runner_args.get("log_lr"):
         callbacks.append(LearningRateMonitor(logging_interval="step"))
 
     loggers = []
-    if args.wandb:
-        # Create W&B run ID if necessary
-        if (args.checkpoint_path is None) & IS_RANK_ZERO:
-            wandb_run_id = wandb.util.generate_id()
-        elif (args.checkpoint_path is not None) & IS_RANK_ZERO:
-            wandb_run_id = args.wandb_id
-        else:
-            wandb_run_id = None
-        # Initialize W&B for zero-rank process only, ontherwise each process will log
-        # separately onto W&B
-        if args.mpi_plugin & IS_RANK_ZERO:
-            wandb_init_dict = dict(
-                project=args.wandb_project,
-                entity=args.wandb_entity,
-                group=args.wandb_group,
-                name=args.experiment_name,
-                dir=args.output_dir,
-                resume="allow",
-                reinit=True,
-                id=wandb_run_id,
-            )
-            wandb.init(**wandb_init_dict)
-        wandb_logger = WandbLogger(
-            project=args.wandb_project,
-            entity=args.wandb_entity,
-            group=args.wandb_group,
-            name=args.experiment_name,
-            dir=args.output_dir,
-            resume="allow",
-            reinit=True,
-            log_model=False,
-            id=wandb_run_id,
+    if runner_args.get(wandb):
+        wandb_logger = _configure_wandb_logger(
+            runner_args.wandb, IS_RANK_ZERO, runner_args.output_dir
         )
         loggers.append(wandb_logger)
-        # Still don't know what this does @Christina? :D
         if IS_RANK_ZERO:
+            # Save pip environment to wandb
             freeze_path = f"{wandb_logger.experiment.dir}/package_versions.txt"
             os.system(f"{sys.executable} -m pip freeze > {freeze_path}")
             wandb_logger.experiment.save(f"{freeze_path}")
 
-    if args.mpi_plugin:
+    if runner_args.mpi_plugin:
         cluster_environment = MPIEnvironment()
     else:
         cluster_environment = None
 
-    if args.deepsepped_config_path is not None:
+    # Select optimziation strategy
+    IS_MULTIGPU = runner_args.get("num_gpus", 0) > 1
+    IS_MULTINODE = runner_args.get("num_nodes", 1) > 1
+    if runner_args.get("deepspeed_config_path"):
         strategy = DeepSpeedStrategy(
-            config=args.deepspeed_config_path, cluster_environment=cluster_environment
+            config=runner_args.deepspeed_config_path,
+            cluster_environment=cluster_environment,
         )
-        if args.wandb & IS_RANK_ZERO:
-            wandb_logger.experiment.save(args.deepspeed_config_path)
+        if runner_args.get("wandb") & IS_RANK_ZERO:
+            wandb_logger.experiment.save(runner_args.deepspeed_config_path)
             wandb_logger.experiment.save("openfold/config.py")
-    elif ((args.gpus is not None) & (args.gpus > 1)) | (args.num_nodes > 1):
+    elif IS_MULTIGPU or IS_MULTINODE:
         strategy = DDPStrategy(
             find_unused_parameters=False, cluster_environment=cluster_environment
         )
     else:
         strategy = None
 
-    trainer_args = {
-        "num_nodes": args.num_nodes,
-        "precision": args.precision,
-        "max_epochs": args.max_epochs,
-        "log_every_n_steps": args.log_every_n_steps,
-        "flush_logs_ever_n_steps": args.flush_logs_ever_n_steps,
-        "num_sanity_val_steps": args.num_sanity_val_steps,
-        "reload_dataloaders_every_n_epochs": args.reload_dataloaders_every_n_epochs,
-        "default_root_dir": args.output_dir,
-        "strategy": strategy,
-        "callbacks": callbacks,
-        "logger": loggers,
-    }
+    trainer_args = runner_args.pl_trainer.to_dict()
+    trainer_args.update(
+        {
+            "default_root_dir": runner_args.output_dir,
+            "strategy": strategy,
+            "callbacks": callbacks,
+            "logger": loggers,
+        }
+    )
+    print(trainer_args)
 
     trainer = pl.Trainer(**trainer_args)
 

@@ -108,15 +108,16 @@ def make_dataset_configs(
     """
     input_dataset_configs = runner_args.dataset_configs
     output_dataset_configs = []
-    # loop through datasets in a given mode
-    for mode, _datasets_configs in input_dataset_configs.items():
+    # loop through datasets for a given type
+    for dataset_type, _datasets_configs in input_dataset_configs.items():
         # loop through datasets in a given mode
         for name, dataset_specs in _datasets_configs.items():
             dataset_config = ConfigDict(
                 {
                     "name": name,
-                    "mode": mode,
+                    "type": dataset_type,
                     "weight": dataset_specs.weight,
+                    "class": dataset_specs["class"],
                 }
             )
             sub_config = base_data_template.copy_and_resolve_references()
