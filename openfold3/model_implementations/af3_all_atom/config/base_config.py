@@ -354,6 +354,13 @@ model_config = mlc.ConfigDict(
         },
         "loss_module": {
             # TODO: Factor out the number bins from each of these
+            "confidence_loss_names": [
+                "plddt",
+                "pde",
+                "experimentally_resolved",
+                "pae",
+            ],
+            "diffusion_loss_names": ["bond", "smooth_lddt", "mse"],
             "confidence": {
                 "plddt": {
                     "no_bins": 50,
@@ -399,13 +406,6 @@ loss_weight_config = mlc.ConfigDict(
     {
         "min_resolution": 0.1,
         "max_resolution": 4.0,
-        "confidence_loss_names": [
-            "plddt",
-            "pde",
-            "experimentally_resolved",
-            "pae",
-        ],
-        "diffusion_loss_names": ["bond", "smooth_lddt", "mse"],
         "loss_weight_modes": {
             # TODO: double check these settings
             "default": {

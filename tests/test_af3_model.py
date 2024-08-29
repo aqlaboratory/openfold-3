@@ -25,7 +25,9 @@ class TestAF3Model(unittest.TestCase):
     ):
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        config = registry.make_config_with_preset("af3_all_atom")
+        config = registry.make_model_config_with_preset(
+            "af3_all_atom", "initial_training"
+        )
 
         if train:
             config.settings.chunk_size = None
@@ -51,8 +53,6 @@ class TestAF3Model(unittest.TestCase):
         )
 
         config.model.heads.pae.enabled = True
-        config.loss.confidence.pae.weight = 1.0
-        config.loss.diffusion.bond_weight = 1.0
 
         af3 = registry.get_lightning_module(config).to(device=device, dtype=dtype)
 
@@ -71,13 +71,14 @@ class TestAF3Model(unittest.TestCase):
         batch = tensor_tree_map(to_device, batch)
 
         if train:
-            af3_loss = AlphaFold3Loss(config=config.loss)
+            af3_loss = AlphaFold3Loss(config=config.loss_module)
 
             batch, outputs = af3(batch=batch)
 
             loss, loss_breakdown = af3_loss(
                 batch=batch, output=outputs, _return_breakdown=True
             )
+            print(loss_breakdown)
 
             loss.backward()
 

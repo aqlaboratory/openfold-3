@@ -36,8 +36,6 @@ def get_loss_config(loss_config: ConfigDict, loss_mode: str) -> ConfigDict:
         {
             "min_resolution": loss_config.min_resolution,
             "max_resolution": loss_config.max_resolution,
-            "confidence_loss_names": loss_config.confidence_loss_names,
-            "diffusion_loss_names": loss_config.diffusion_loss_names,
         }
     )
     loss_modes_config = loss_config.loss_weight_modes

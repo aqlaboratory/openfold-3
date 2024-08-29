@@ -19,7 +19,7 @@ REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_conf
 class AlphaFold3AllAtom(ModelRunner):
     def __init__(self, model_config):
         super().__init__(AlphaFold3, model_config)
-        self.loss = AlphaFold3Loss(config=model_config.loss)
+        self.loss = AlphaFold3Loss(config=model_config.loss_module)
 
     def training_step(self, batch, batch_idx):
         example_feat = next(

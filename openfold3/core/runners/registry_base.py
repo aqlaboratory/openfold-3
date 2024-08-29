@@ -31,9 +31,7 @@ class ModelEntry:
                 f"Allowed presets are {self.presets}"
             )
         reference_configs = dict(config_utils.load_yaml(self.reference_config_path))
-        preset_model_config = reference_configs[preset].get(
-            "model_update", default=None
-        )
+        preset_model_config = reference_configs[preset].get("model_update")
         if preset_model_config:
             model_config.update(preset_model_config)
         return model_config
