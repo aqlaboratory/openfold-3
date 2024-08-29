@@ -56,6 +56,14 @@ feature_dict = mlc.ConfigDict(
                 "atom_positions": [NUM_ATOMS, 3],
                 "atom_resolved_mask": [NUM_ATOMS],
             },
+            "loss_weight": {
+                "plddt": [],
+                "pde": [],
+                "experimentally_resolved": [],
+                "pae": [],
+                "diffusion": [],
+                "distogram": [],
+            },
         },
     }
 )

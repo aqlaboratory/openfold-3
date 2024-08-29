@@ -2,7 +2,7 @@
 import functools
 from typing import Optional
 
-from ml_collections import ConfigDict, FrozenConfigDict
+from ml_collections import ConfigDict
 
 from openfold3.core.config import config_utils
 from openfold3.core.runners.registry_base import register_model_base
@@ -63,33 +63,95 @@ def make_model_config(model_name: str, model_update_yaml_path: str):
     return config
 
 
-def get_dataset_loss_config(
-    loss_modes_config: ConfigDict, loss_mode: str
-) -> FrozenConfigDict:
-    if loss_mode == "default":
-        return FrozenConfigDict(loss_modes_config.default)
+def get_loss_config(loss_config: ConfigDict, loss_mode: str) -> ConfigDict:
+    """Constructs a loss configuration based on loss mode.
 
-    if loss_mode not in loss_modes_config.custom:
+    Arguments:
+        loss_config:
+            Loss section from main config of model. Expected to have a
+            `loss_weight_modes` key with `default` and optionally `custom` modes. If a
+            custom mode is selected, it will be applied as an update to the loss config.
+        loss_mode:
+            One of the modes specfied by the loss config.
+    Returns:
+        A loss configuration with the weighting scheme indicated by the loss mode.
+    """
+
+    # TODO: Change this to only copy top level arguments to loss config.
+    loss_dict = ConfigDict(
+        {
+            "min_resolution": loss_config.min_resolution,
+            "max_resolution": loss_config.max_resolution,
+            "confidence_loss_names": loss_config.confidence_loss_names,
+        }
+    )
+    loss_modes_config = loss_config.loss_weight_modes
+
+    if loss_mode == "default":
+        loss_dict["loss_weight"] = (
+            loss_modes_config.default.copy_and_resolve_references()
+        )
+
+    elif loss_mode not in loss_modes_config.custom:
         raise KeyError(
             f"{loss_mode} is not supported,"
             " allowed loss modes are: default,"
             f" {list(loss_modes_config.custom.keys())}"
         )
+    else:
+        loss_weight_config = loss_modes_config.default.copy_and_resolve_references()
+        loss_weight_config.update(loss_modes_config.custom[loss_mode])
 
-    loss_config = loss_modes_config.default.copy_and_resolve_references()
-    loss_config.update(loss_modes_config.custom[loss_mode])
-    loss_config = FrozenConfigDict(loss_config)
-    return loss_config
+    loss_dict["loss_weight"] = ConfigDict(loss_weight_config)
+    return loss_dict
 
 
 def make_dataset_configs(runner_args: ConfigDict) -> list[ConfigDict]:
-    # base_data_config
-    # base model config - get losses
-    # Runner yaml:
-    #    configs for each dataset
-    #    dataset_paths
+    """Constructs dataset configuration based on run script arguments.
+
+    The following sections are expected in the runscript arguments.
+    See `openfold3/examples/example_runner.yml` for a full config example.
+
+    ```
+    dataset_configs:
+        train:
+            dataset_1_name:
+                class: <dataset1_class_name>
+                weight: 0.5
+                config:
+                    loss_weight_mode: <loss_mweight_mode>
+                    ...
+            dataset_2_name:
+                ...
+        val:
+            val_dataset_1_name:
+                ...
+        test:
+            test_dataset_1_name:
+                ...
+
+    dataset_paths:
+        dataset_1_name:
+            alignments: /<dataset_1_path>/alignments
+            mmcif: /<dataset_1_path>/mmcif
+            template_mmcif_structures: /<dataset_1_path>/template_mmcif
+        dataset_2_name:
+            ...
+        val_dataset_1_name:
+            ...
+        test_dataset_1_name:
+            ...
+    ```
+
+    Args:
+        runner_args:
+            ConfigDict with `dataset_configs` and `dataset_paths` heading. See
+            full docstring for an example or `openfold3/examples/example_runner.yml`
+    Returns:
+        A list of config dicts, one for each dataset used for training the model.
+    """
     model_name = runner_args.model_name
-    loss_config = MODEL_REGISTRY[model_name].base_config.loss.loss_weight_modes
+    loss_config = MODEL_REGISTRY[model_name].base_config.loss
 
     # Finalize implementation after deciding where this goes
     # base_data_config = MODEL_REGISTRY[model_name].data_config
@@ -106,9 +168,7 @@ def make_dataset_configs(runner_args: ConfigDict) -> list[ConfigDict]:
             dataset_config.mode = mode
             dataset_config.update(dataset_specs)
             dataset_config.paths = runner_args.dataset_paths[name]
-            dataset_config.loss = get_dataset_loss_config(
-                loss_config, dataset_specs.loss_mode
-            )
+            dataset_config.loss = get_loss_config(loss_config, dataset_specs.loss_mode)
             output_dataset_configs.append(dataset_config)
 
     return output_dataset_configs

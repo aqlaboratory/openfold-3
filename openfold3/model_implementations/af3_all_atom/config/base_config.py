@@ -53,13 +53,14 @@ config = mlc.ConfigDict(
             # exclusive with use_deepspeed_evo_attention and use_flash.
             "use_lma": False,
             "offload_inference": False,
-        },
-        "model": {
             "optimizer": {
                 "learning_rate": 1e-3,
                 "eps": 1e-5,
             },
             "ema": {"decay": 0.999},
+            "gradient_clipping": 0.1,
+        },
+        "model": {
             "shared": {
                 "c_s_input": c_s_input,
                 "c_s": c_s,
@@ -352,14 +353,8 @@ config = mlc.ConfigDict(
                 },
             },
         },
-        "loss": {
-            # To be removed with implementation of loss config
-            "min_resolution": 0.1,
-            "max_resolution": 4.0,
-            "confidence_weight": 1e-4,
-            "diffusion_weight": 4.0,
-            "distogram_weight": 3e-2,
-            # Move to models.heads
+        "loss_module": {
+            # Factor out the number bins from each of these
             "confidence": {
                 "plddt": {
                     "no_bins": 50,
@@ -384,11 +379,8 @@ config = mlc.ConfigDict(
                 "eps": eps,
                 "inf": 1e9,  # global parameter?
             },
-            # where to put this?
             "diffusion": {
                 "sigma_data": sigma_data,
-                "bond_weight": 0.0,  # varies based on training and finetuning
-                "smooth_lddt_weight": 1.0,  # varies based on finetuning stage
                 "dna_weight": 5.0,
                 "rna_weight": 5.0,
                 "ligand_weight": 10.0,
@@ -401,29 +393,45 @@ config = mlc.ConfigDict(
                 "bin_max": 22.0,
                 "eps": eps,
             },
-            "loss_weight_modes": {
-                # TODO: double check these settings
-                "default": {
-                    "diffusion": 4.0,
-                    "distogram": 3e-2,
-                    "plddt": 1e-4,
-                    "pae": 1e-4,
-                    "ptm": 0.0,
-                },
-                # Custom losses will be applied as updates to the default loss
-                "custom": {
-                    "self_distillation": {
-                        "pae": 0.0,
-                        "plddt": 0.0,
-                        "pde": 0.0,
-                    },
+        },
+    }
+)
+
+loss_weight_config = mlc.ConfigDict(
+    {
+        "min_resolution": 0.1,
+        "max_resolution": 4.0,
+        "confidence_loss_names": [
+            "plddt",
+            "pde",
+            "experimentally_resolved",
+            "pae",
+        ],
+        "diffusion_loss_names": ["bond", "smooth_lddt", "mse"],
+        "loss_weight_modes": {
+            # TODO: double check these settings
+            "default": {
+                "bond": 0.0,  # varies based on training and finetuning
+                "smooth_lddt": 4.0,  # varies based on finetuning stage
+                "mse": 4.0,
+                "distogram": 3e-2,
+                "plddt": 1e-4,
+                "pae": 1e-4,
+                "pde": 0.0,
+                "ptm": 0.0,
+            },
+            # Custom losses will be applied as updates to the default loss
+            "custom": {
+                "self_distillation": {
+                    "pae": 0.0,
+                    "plddt": 0.0,
+                    "pde": 0.0,
                 },
             },
         },
     }
 )
 
-# Maybe we do want this in `config.data`
 base_data_config = mlc.ConfigDict(
     {
         "templates": {
@@ -439,7 +447,6 @@ base_data_config = mlc.ConfigDict(
         "cropping": {
             "crop_size": 768,
         },
-        "min_resolution": 0.1,
-        "max_resolution": 4.0,
+        "config": {},
     }
 )

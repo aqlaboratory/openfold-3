@@ -59,10 +59,14 @@ dataset_paths:
     alignments: /<PDB_PATH>/alignments/
     mmcif_structures: /<PDB_PATH>/mmcif/
     template_mmcif_structures: /<PDB_PATH>/template_mmcif/
+    reference_molecule_directory: /<REFERENCE_PATH>/molecules 
+    data_cache: <PDB_PATH>/data_cache 
   short-monomer-distillation:
     alignments: /<SHORT_MONOMER_PATH>/alignments/
     mmcif_structures: /<SHORT_MONOMER_PATH>/mmcif/
     template_mmcif_structures: /<SHORT_MONOMER_PATH>/template_mmcif/
+    reference_molecule_directory: /<REFERENCE_PATH>/molecules 
+    data_cache: <PDB_PATH>/data_cache 
 
 dataset_configs:
   train:
@@ -74,7 +78,7 @@ dataset_configs:
         shuffle_top_k_prefiltered: True
         loss_weight_mode: default 
         cropping:
-          crop_size: 368  # TODO: Check
+          crop_size: 768 # TODO: Check
         dataset_args:
           dna_helix_length: 100
     monomer-distillation:
