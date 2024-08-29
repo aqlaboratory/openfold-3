@@ -255,7 +255,7 @@ class WeightedPDBDataset(SingleDataset):
         # MSA features
         msa_processed, _ = process_msas_cropped_af3(
             atom_array_cropped,
-            self.data_cache[pdb_id]["chains"],
+            self.dataset_cache[pdb_id]["chains"],
             self.alignments_path,
             max_seq_counts={
                 "uniref90_hits": 10000,
@@ -283,9 +283,9 @@ class WeightedPDBDataset(SingleDataset):
         features.update(featurize_conformers_dummy_af3(1, len(atom_array_cropped)))
 
         # Loss switches
-        features["resolution"] = self.data_cache[index]["resolution"]
+        features["resolution"] = self.dataset_cache[index]["resolution"]
         features["is_distillation"] = torch.tensor(False)
         return features
 
     def __len__(self):
-        return len(self.data_cache)
+        return len(self.datapoint_cache)
