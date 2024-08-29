@@ -413,6 +413,7 @@ loss_weight_config = mlc.ConfigDict(
                 "smooth_lddt": 4.0,  # varies based on finetuning stage
                 "mse": 4.0,
                 "distogram": 3e-2,
+                "experimentally_resolved": 0.0,
                 "plddt": 1e-4,
                 "pae": 1e-4,
                 "pde": 0.0,
