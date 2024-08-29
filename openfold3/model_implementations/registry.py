@@ -31,11 +31,12 @@ def get_loss_config(loss_config: ConfigDict, loss_mode: str) -> ConfigDict:
         A loss configuration with the weighting scheme indicated by the loss mode.
     """
 
-    # TODO: Change this to only copy top level arguments to loss config.
+    # TODO: Change this to only copy non-nested arguments to loss config.
     loss_dict = ConfigDict(
         {
             "min_resolution": loss_config.min_resolution,
             "max_resolution": loss_config.max_resolution,
+            "confidence_loss_names": loss_config.confidence_loss_names,
         }
     )
     loss_modes_config = loss_config.loss_weight_modes
