@@ -3,9 +3,8 @@ import ml_collections as mlc
 from openfold3.model_implementations.af3_all_atom.config import (
     linear_init_config as lin_init,
 )
-from openfold3.model_implementations.af3_all_atom.config.features import feature_dict
 
-MODEL_NAME = "af3_all_atom"
+PLACEHOLDER_PATH = "placeholder/path"
 
 # Hidden dimensions
 c_s = mlc.FieldReference(384, field_type=int)
@@ -39,7 +38,7 @@ tune_chunk_size = mlc.FieldReference(True, field_type=bool)
 max_atoms_per_token = mlc.FieldReference(23, field_type=int)
 
 
-config = mlc.ConfigDict(
+model_config = mlc.ConfigDict(
     {
         "settings": {
             "blocks_per_ckpt": blocks_per_ckpt,
@@ -354,7 +353,7 @@ config = mlc.ConfigDict(
             },
         },
         "loss_module": {
-            # Factor out the number bins from each of these
+            # TODO: Factor out the number bins from each of these
             "confidence": {
                 "plddt": {
                     "no_bins": 50,
@@ -377,7 +376,7 @@ config = mlc.ConfigDict(
                     "weight": 0.0,
                 },
                 "eps": eps,
-                "inf": 1e9,  # global parameter?
+                "inf": 1e9,
             },
             "diffusion": {
                 "sigma_data": sigma_data,
@@ -386,7 +385,6 @@ config = mlc.ConfigDict(
                 "ligand_weight": 10.0,
                 "eps": eps,
             },
-            # move to model.heads
             "distogram": {
                 "no_bins": 64,
                 "bin_min": 2.0,
@@ -432,21 +430,21 @@ loss_weight_config = mlc.ConfigDict(
     }
 )
 
-base_data_config = mlc.ConfigDict(
+data_config_template = mlc.ConfigDict(
     {
-        "templates": {
-            "use_templates": True,
-            "max_template_hits": 4,
-            "max_templates": 4,
-        },
-        "msa": {
-            "uniprot_msa_depth": 8_000,
-            "main_msa_depth": 16_000,
-        },
+        "n_templates": 0,
+        "use_alignment_database": True,
         "loss_weight_mode": "default",
-        "cropping": {
-            "crop_size": 768,
+        "token_budget": 384,
+        "crop_weights": {
+            "contiguous": 0.2,
+            "spatial": 0.4,
+            "spatial_interface": 0.4,
         },
-        "config": {},
+        "alignments_path": PLACEHOLDER_PATH,
+        "target_path": PLACEHOLDER_PATH,
+        "alignment_index_path": PLACEHOLDER_PATH,
+        "dataset_cache_path": PLACEHOLDER_PATH,
+        "reference_molecule_directory": PLACEHOLDER_PATH,
     }
 )

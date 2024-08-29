@@ -1,27 +1,76 @@
 # To demonstrate expected fields for runner yaml, as expected by
 # model_implementations/registry.py 
 # We will read the model preset from a separate field.
-model_preset: model_1
+model_name: af3_all_atom
+preset: initial_training 
 
-pl_trainer_arguments:
-  num_gpus: 1
-  ...
+mpi_plugin: false
+seed: 42
+checkpoint_every_epoch: false
+batch_size: 1
+num_gpus: 4
+output_dir: ../test_train_output 
+deepspeed_config_path: ./deepspeed_config.json
+log_lr : false 
 
-# Notes on updating the model config:
-# 1. We can also consider placing these in a separate yaml file
-# and finding a way to reference it / pass in a different argument 
-# 2. I'm not sure if we should put the model_preset here instead
-# or if we want to put it as a top level argument
-model_update_yaml: /path/to/model_update.yml
+pl_trainer:
+  num_nodes: 1
+  precision: bf16-mixed
+  max_epochs: 1
+  log_every_n_steps: 25
+  num_sanity_val_steps: 0 
+  reload_dataloaders_every_n_epochs: 1 
 
-
-# A separet model_update.yml file
 model_update:
   model:
     input_embedder:
       linear_init_params:
         linear_s:
           init: relu
-  loss:
-    diffusion:
-      alpha_dna: 3
+    pairformer:
+      no_blocks: 4
+
+loss_weight_update:
+  loss_weight_modes:
+    default:
+      bond: 1.0
+
+
+dataset_paths:
+  PDB-weighted:
+    alignments_path: /<PDB_PATH>/alignments/
+    alignment_index_path: /<PDB_PATH>/alignments/
+    target_path: /<PDB_PATH>/mmcif/
+    reference_molecule_directory: /<REFERENCE_PATH>/molecules 
+    dataset_cache_path: <PDB_PATH>/data_cache 
+  short-monomer-distillation:
+    alignments_path: /<MONOMER_PATH>/alignments/
+    alignment_index_path: /<MONOMER_PATH>/alignments/
+    target_path: /<MONOMER_PATH>/mmcif/
+    reference_molecule_directory: /<REFERENCE_PATH>/molecules 
+    dataset_cache_path: <MONOMER_PATH>/data_cache 
+
+dataset_configs:
+  train:
+    PDB-weighted:
+      class: PDBWeightedDataset 
+      weight: 0.5
+      config:
+        loss_weight_mode: default 
+        token_budget: 384
+        n_templates: 1
+        crop_weights:
+          contiguous: 0.2
+          spatial: 0.4
+          spatial_interface: 0.4
+    short-monomer-distillation:
+      class: MonomerDistillationDataset      
+      weight: 0.2
+      config:
+        loss_weight_mode: self_distillation 
+        token_budget: 384
+        n_templates: 1
+        crop_weights:
+          contiguous: 0.2
+          spatial: 0.4
+          spatial_interface: 0.4

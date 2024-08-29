@@ -7,6 +7,7 @@ import sys
 
 import pytorch_lightning as pl
 import wandb
+from ml_collections import ConfigDict
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
@@ -19,43 +20,69 @@ from openfold3.core.utils.callbacks import (
     EarlyStoppingVerbose,
     PerformanceLoggingCallback,
 )
-from openfold3.core.utils.torchscript import script_preset_
 from openfold3.model_implementations import registry
+from openfold3.model_implementations.af3_all_atom.config import (
+    base_config as af3_base_config,
+)
+
+def get_configs(runner_args):
+    # TODO: Find a different way to handle presets since presets possibly contain
+    #   dataset, loss_weight, and model updates.
+    # Either merge all 3 configs into one giant config
+    # Or else remove the reference_config.yaml from the ModelRunner and handle
+    # the parsing somewhere else
+
+    def _maybe_update_config(config: ConfigDict, update_field: str):
+        if update_field in runner_args:
+            config.update(runner_args.get(update_field))
+        return
+
+    # NB: Any settings specified preset will only be applied to the model config
+    # Make needed dataset / loss weight updates directly in the runner.yaml for now
+    model_config = registry.make_model_config_with_preset(
+        runner_args.model_name, runner_args.preset
+    )
+    _maybe_update_config(model_config, "model_update")
+
+    loss_weight_config = (
+        af3_base_config.loss_weight_config.copy_and_resolve_references()
+    )
+    _maybe_update_config(loss_weight_config, "loss_weight_update")
+
+    dataset_config_template = af3_base_config.data_config_template
+    _maybe_update_config(dataset_config_template, "base_dataset_update")
+    dataset_configs = registry.make_dataset_configs(
+        dataset_config_template, loss_weight_config, runner_args
+    )
+
+    dataset_config = {
+        "batch_size": runner_args.batch_size, 
+        "num_workers":  runner_args.get("num_workers", 2),
+        "data_seed": runner_args.get("data_seed", 17), 
+        "epoch_len": runner_args.get("epoch_len", 1), 
+        "num_epochs": runner_args.pl_trainer.get("max_epochs"), 
+        "datasets": dataset_configs,
+    }
+
+    return model_config, dataset_config 
 
 
 def main(args):
-    # Parse arguments/update input config
-    # IS_LOW_PRECISION = args.precision in [
-    #     "bf16-mixed",
-    #     "16",
-    #     "bf16",
-    #     "16-true",
-    #     "16-mixed",
-    #     "bf16-mixed",
-    # ]
-    IS_RANK_ZERO = args.mpi_plugin and (int(os.environ.get("PMI_RANK")) == 0)
-    # TODO <Set up model and data configs>
+    runner_args = ConfigDict(config_utils.load_yaml(args.runner_yaml))
+    IS_RANK_ZERO = runner_args.mpi_plugin and (int(os.environ.get("PMI_RANK")) == 0)
 
     # Set seed
-    if args.seed is not None:
+    if runner_args.get("seed"):
         pl.seed_everything(args.seed, workers=True)
 
-    # Initialize model wrapper
-    runner_yaml_config = config_utils.load_yaml(args.runner_yaml)
     # Update model config with section from yaml with model update
-    model_config = registry.make_model_config(
-        args.model_name, runner_yaml_config.model_update_yaml
-    )
+    model_config, dataset_configs = get_configs(runner_args)
     # Initialize lightning module with desired config
     lightning_module = registry.get_lightning_module(model_config)
     # TODO <checkpoint resume logic goes here>
 
-    # Script model
-    if args.script_model:
-        script_preset_(lightning_module)  # TODO check if this works
-
     # Initialize data wrapper
-    lightning_data_module = DataModule(args.data_config)
+    lightning_data_module = DataModule(dataset_configs)
 
     # Set up trainer arguments and callbacks
     callbacks = []

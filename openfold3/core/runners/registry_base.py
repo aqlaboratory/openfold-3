@@ -21,7 +21,7 @@ class ModelEntry:
 
     def get_config_with_preset(self, preset: Optional[str] = None):
         model_config = self.base_config.copy_and_resolve_references()
-        if preset is None:
+        if preset is None or preset == "initial_training":
             logging.info(f"Using default training configs for {self.name}")
             return model_config
 

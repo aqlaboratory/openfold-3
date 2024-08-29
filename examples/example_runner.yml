@@ -1,10 +1,9 @@
-# Mode will eventually match with allowed usage modes in run_openfold.py
-mode: train
 # Model name, currently only af3_all_atom supported 
 model_name: af3_all_atom
-# Can be found in of3/model_implementations/<model_name>/configs/reference_config.yml 
-architecture_preset: initial_training 
-setting_preset: deepspeed 
+# Can be found in
+# of3/model_implementations/<model_name>/configs/reference_config.yml 
+# only one preset allowed for now
+preset: initial_training 
 
 # General run settings
 mpi_plugin: false
@@ -39,20 +38,28 @@ wandb:
   experiment_name: EXPERIMENT_NAME
 
 # This section makes updates to training the model
-# Will not accept updates to model section 
-custom_setting:
+model_update:
   settings:
     use_deepspeed_evo_attention: True
     blocks_per_checkpoint: 1
-
-# Use this section to make updates to model parameters, if any 
-custom_architecture:
   model:
     pairformer:
       no_blocks: 4
     diffusion_module:
       diffusion_transformer:
         no_blocks: 4
+  
+# Make updates to the losses
+loss_weight_update:
+  min_resolution: 0.05
+  loss_weight_modes: 
+    default:
+      bond: 0.1
+
+# Make updates to default dataset settings 
+base_dataset_update:
+  cropping:
+    crop_size: 384
 
 dataset_paths:
   PDB-weighted:
@@ -74,15 +81,21 @@ dataset_configs:
       class: PDBWeightedDataset 
       weight: 0.5
       config:
-        use_templates: false
-        shuffle_top_k_prefiltered: True
         loss_weight_mode: default 
-        cropping:
-          crop_size: 768 # TODO: Check
-        dataset_args:
-          dna_helix_length: 100
-    monomer-distillation:
-      class: MonmerDistillationDataset      
+        token_budget: 384
+        n_templates: 1
+        crop_weights:
+          contiguous: 0.2
+          spatial: 0.4
+          spatial_interface: 0.4
+    short-monomer-distillation:
+      class: MonomerDistillationDataset      
       weight: 0.2
       config:
-        loss_weight_mode: self-distillation
+        loss_weight_mode: self_distillation 
+        token_budget: 384
+        n_templates: 1
+        crop_weights:
+          contiguous: 0.2
+          spatial: 0.4
+          spatial_interface: 0.4

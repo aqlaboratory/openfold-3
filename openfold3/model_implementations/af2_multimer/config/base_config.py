@@ -1,5 +1,3 @@
-import copy
-
 import ml_collections as mlc
 
 import openfold3.model_implementations.af2_monomer.config.base_config as af2_monomer_config  # noqa: E501
