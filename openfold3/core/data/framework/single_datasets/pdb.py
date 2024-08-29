@@ -189,6 +189,7 @@ class WeightedPDBDataset(SingleDataset):
             self.dataset_cache = json.load(f)
 
         self.create_datapoint_cache()
+        self.datapoint_probabilities = self.datapoint_cache["weight"].to_numpy()
 
     def create_datapoint_cache(self) -> None:
         """Creates the datapoint_cache with chain/interface probabilities.
