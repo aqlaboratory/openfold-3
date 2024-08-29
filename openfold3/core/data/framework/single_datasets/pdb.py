@@ -15,6 +15,7 @@ from openfold3.core.data.framework.single_datasets.abstract_single_dataset impor
 from openfold3.core.data.pipelines.featurization.conformer import (
     featurize_conformers_dummy_af3,
 )
+from openfold3.core.data.pipelines.featurization.loss_weights import set_loss_weights
 from openfold3.core.data.pipelines.featurization.msa import featurize_msa_af3
 from openfold3.core.data.pipelines.featurization.structure import (
     featurize_target_gt_structure_af3,
@@ -162,34 +163,34 @@ class WeightedPDBDataset(SingleDataset):
 
         Args:
             dataset_config (dict):
-                Input config. Needs to contain keys:
-                    - target_path: Path to the target structure files.
-                    - alignments_path: Path to the alignment files.
-                    - crop_weights: Weights for cropping strategies.
-                    - token_budget: Crop size.
-                    - n_templates: Number of templates.
-                    - use_alignment_database: Whether to use the alignment database.
-                    - alignment_index_path: Path to the alignment index.
-                    - dataset_cache_path: Path to the dataset cache.
+                Input config. See openfold3/examples/pdb_sample_dataset_config.yml for
+                an example.
         """
         super().__init__()
 
+        # Paths/IO
         self.target_path = dataset_config["target_path"]
         self.alignments_path = dataset_config["alignments_path"]
-        self.crop_weights = dataset_config["crop_weights"]
-        self.token_budget = dataset_config["token_budget"]
-        self.n_templates = dataset_config["n_templates"]
         self.use_alignment_database = dataset_config["use_alignment_database"]
         if self.use_alignment_database:
             with open(dataset_config["alignment_index_path"]) as f:
                 self.alignment_index = json.load(f)
         else:
             self.alignment_index = None
+        self.template_cache_path = dataset_config["template_cache_path"]
+        self.template_structures_path = dataset_config["template_structures_path"]
+
+        # Dataset/datapoint cache
         with open(dataset_config["dataset_cache_path"]) as f:
             self.dataset_cache = json.load(f)
-
         self.create_datapoint_cache()
         self.datapoint_probabilities = self.datapoint_cache["weight"].to_numpy()
+
+        # Dataset configuration
+        self.crop_weights = dataset_config["crop_weights"]
+        self.token_budget = dataset_config["token_budget"]
+        self.n_templates = dataset_config["n_templates"]
+        self.loss_settings = dataset_config["loss"]
 
     def create_datapoint_cache(self) -> None:
         """Creates the datapoint_cache with chain/interface probabilities.
@@ -284,8 +285,9 @@ class WeightedPDBDataset(SingleDataset):
         features.update(featurize_conformers_dummy_af3(1, len(atom_array_cropped)))
 
         # Loss switches
-        features["resolution"] = self.dataset_cache[index]["resolution"]
-        features["is_distillation"] = torch.tensor(False)
+        features["loss_weight"] = set_loss_weights(
+            self.loss_settings, self.dataset_cache[pdb_id]["resolution"]
+        )
         return features
 
     def __len__(self):
