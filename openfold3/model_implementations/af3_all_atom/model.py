@@ -34,6 +34,7 @@ from openfold3.core.model.structure.diffusion_module import (
     DiffusionModule,
     SampleDiffusion,
     centre_random_augmentation,
+    create_noise_schedule,
 )
 
 # from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation_align
@@ -251,11 +252,21 @@ class AlphaFold3(nn.Module):
         """
         # Compute atom positions
         with torch.no_grad():
+            noise_sched_config = self.config.model.noise_schedule
+            noise_schedule = create_noise_schedule(
+                no_rollout_steps=noise_sched_config.no_rollout_steps,
+                sigma_data=noise_sched_config.sigma_data,
+                s_max=noise_sched_config.s_max,
+                s_min=noise_sched_config.s_min,
+                p=noise_sched_config.p,
+            )
+
             atom_positions_predicted = self.sample_diffusion(
                 batch=batch,
                 si_input=si_input,
                 si_trunk=si_trunk,
                 zij_trunk=zij_trunk,
+                noise_schedule=noise_schedule,
                 chunk_size=self.globals.chunk_size,
             )
 

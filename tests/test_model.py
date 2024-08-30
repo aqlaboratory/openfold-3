@@ -66,7 +66,7 @@ class TestModel(unittest.TestCase):
         c.model.evoformer_stack.blocks_per_ckpt = None  # don't want to set up
         # deepspeed for this test
 
-        model = registry.get_lightning_module(c).model.cuda()
+        model = registry.get_lightning_module(c, _compile=False).model.cuda()
         model.eval()
 
         batch = {}
