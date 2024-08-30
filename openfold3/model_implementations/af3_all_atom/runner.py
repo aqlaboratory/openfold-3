@@ -25,28 +25,29 @@ class AlphaFold3AllAtom(ModelRunner):
     ):
         metrics = {}
 
-        gt_coords = batch["Ground_Truth"]["ref_pos"] 
+        gt_coords = batch["ground_truth"]["atom_positions"] 
         pred_coords = outputs["x_pred"]
         all_atom_mask = batch["ref_mask"]
         token_mask = batch["token_mask"]
-        num_atoms_per_token = batch["Ground_Truth"]["num_atoms_per_token"]
+        num_atoms_per_token = batch["num_atoms_per_token"]
 
-        #getting rid of modified residue tokens 
-        is_protein = batch["Groud_Truth"]["is_protein"] 
-        is_rna = batch["Groud_Truth"]["is_rna"] 
-        is_dna = batch["Groud_Truth"]["is_dna"] 
-        not_modified_res = (1 - batch["Groud_Truth"]['is_atomized'])
+        #getting rid of modified residues
+        is_protein = batch["is_protein"] 
+        is_rna = batch["is_rna"]
+        is_dna = batch["is_dna"]
+        not_modified_res = (1 - batch['is_atomized'])
 
         is_protein = is_protein * not_modified_res
         is_rna = is_rna * not_modified_res
         is_dna = is_dna * not_modified_res
 
+        #broadcast token level features to atom level features
         is_protein_atomized = broadcast_token_feat_to_atoms(token_mask, 
                                                             num_atoms_per_token, 
                                                             is_protein)
         is_ligand_atomized = broadcast_token_feat_to_atoms(token_mask, 
                                                            num_atoms_per_token, 
-                                                           batch["Groud_Truth"]['is_ligand'])
+                                                           batch['is_ligand'])
         is_rna_atomized = broadcast_token_feat_to_atoms(token_mask, 
                                                         num_atoms_per_token, 
                                                         is_rna)
@@ -55,8 +56,7 @@ class AlphaFold3AllAtom(ModelRunner):
                                                         is_dna)
         asym_id_atomized = broadcast_token_feat_to_atoms(token_mask, 
                                                          num_atoms_per_token, 
-                                                         batch["Groud_Truth"]['asym_id'])
-        protein_idx = torch.nonzero(is_protein_atomized).squeeze(-1)
+                                                         batch['asym_id'])
 
         #get metrics
         protein_validation_metrics = get_validation_metrics(is_protein_atomized, 
@@ -64,7 +64,7 @@ class AlphaFold3AllAtom(ModelRunner):
                                                             pred_coords, 
                                                             gt_coords, 
                                                             all_atom_mask,
-                                                            protein_idx,
+                                                            is_protein_atomized,
                                                             substrate = 'protein',
                                                             is_nucleic_acid = False,
                                                             )
@@ -75,7 +75,7 @@ class AlphaFold3AllAtom(ModelRunner):
                                                            pred_coords, 
                                                            gt_coords, 
                                                            all_atom_mask,
-                                                           protein_idx,
+                                                           is_protein_atomized,
                                                            substrate = 'ligand',
                                                            is_nucleic_acid = False,
                                                            )
@@ -86,7 +86,7 @@ class AlphaFold3AllAtom(ModelRunner):
                                                         pred_coords, 
                                                         gt_coords, 
                                                         all_atom_mask,
-                                                        protein_idx,
+                                                        is_protein_atomized,
                                                         substrate = 'rna',
                                                         is_nucleic_acid = True,
                                                         )
@@ -97,7 +97,7 @@ class AlphaFold3AllAtom(ModelRunner):
                                                         pred_coords, 
                                                         gt_coords, 
                                                         all_atom_mask,
-                                                        protein_idx,
+                                                        is_protein_atomized,
                                                         substrate = 'dna',
                                                         is_nucleic_acid = True,
                                                         )

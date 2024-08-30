@@ -4,7 +4,7 @@ import unittest
 import numpy as np
 import torch
 
-from openfold3.core.metrics.validaiton_all_atom import (
+from openfold3.core.metrics.validation_all_atom import (
     batched_kabsch,
     drmsd,
     gdt_ha,
@@ -20,6 +20,9 @@ from tests.config import consts
 def random_rotation_translation(structure, factor = 100.):
     """ 
     Applies random rotations and translations to a given structure
+
+    Args: 
+        Factor: a multiplier to translation [*, n_atom, 1, 3] 
     """ 
     # rotation: Rx, Ry, Rz
     x_angle, y_angle, z_angle = torch.randn(3) * 2 * math.pi
@@ -173,15 +176,15 @@ class TestDRMSD(unittest.TestCase):
 class TestGetValidationMetrics(unittest.TestCase):
     def test_get_validation_metrics(self):
         batch_size = consts.batch_size 
-        n_atom = 1000
+        n_atom = 50
 
         coords_pred = torch.randn(batch_size, n_atom, 3)
         coords_gt = torch.randn(batch_size, n_atom, 3)
 
-        is_ligand_atomized = torch.randint(low = 0, high = 2, size = (n_atom,))
+        is_ligand_atomized = torch.randint(low = 0, high = 2, size = (batch_size, n_atom,))
         protein_idx_atomized = 1 - is_ligand_atomized
-        asym_id_atomized = torch.randint(low = 0, high = 21, size = (n_atom,))
-        all_atom_mask = torch.ones((n_atom,))
+        asym_id_atomized = torch.randint(low = 0, high = 21, size = (batch_size, n_atom,))
+        all_atom_mask = torch.ones((batch_size, n_atom,))
 
         out = get_validation_metrics(is_ligand_atomized,
                                      asym_id_atomized,
@@ -189,13 +192,13 @@ class TestGetValidationMetrics(unittest.TestCase):
                                      coords_gt,
                                      all_atom_mask,
                                      protein_idx_atomized,
-                                     ligand_type = 'ligand'
+                                     substrate = 'ligand',
+                                     is_nucleic_acid = False
                                      )
         exp_shape = (batch_size,)
         
         for k, v in out.items():
             np.testing.assert_equal(v.shape, exp_shape)
-
         
 class TestBatchedKabsch(unittest.TestCase):
     def test_batched_kabsch(self):

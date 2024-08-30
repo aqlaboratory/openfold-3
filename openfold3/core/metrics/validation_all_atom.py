@@ -13,6 +13,7 @@ def lddt(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Calculates lddt scores from pair distances
+    Compute on all atoms within the same chain_type (protein, ligand, rna, dna)
 
     Args: 
         pair_dist_pred_pos: pairwise distance of prediction [*, n_atom, n_atom]
@@ -27,13 +28,12 @@ def lddt(
     Returns: 
         intra_score: intra lddt scores [*]
         inter_score: inter lddt scores [*]
+
+    Note: 
+        returns nan for inter_score if inter_lddt invalid
+        (ie. single chain, no atom pair within threshold)
     """
-
-    if len(pair_dist_pred_pos.shape) != len(pair_dist_gt_pos.shape):
-        pair_dist_gt_pos = pair_dist_gt_pos.unsqueeze(-3)
-        all_atom_mask = all_atom_mask.unsqueeze(-2)
-
-    # create a mask
+    #create a mask
     n_atom = pair_dist_gt_pos.shape[-2]    
     dists_to_score = (
         (pair_dist_gt_pos < cutoff) * 
@@ -42,12 +42,13 @@ def lddt(
         )
         )
     
+    #distinguish intra- and inter- pair indices based on asym_id
     intra_mask = torch.where(asym_id[..., None] == asym_id[..., None, :], 1, 0)
     inter_mask = 1 - intra_mask
 
     dist_l1 = torch.abs(pair_dist_gt_pos - pair_dist_pred_pos)
 
-    #get score
+    #get lddt scores
     score = (
         (dist_l1 < 0.5).type(dist_l1.dtype) + 
         (dist_l1 < 1.0).type(dist_l1.dtype) + 
@@ -56,16 +57,21 @@ def lddt(
         )
     score = score * 0.25
 
-    # normalize
+    #normalize
     intra_norm = 1.0 / (eps + torch.sum(dists_to_score * intra_mask, dim= (-1, -2)))
     intra_score = intra_norm * (eps + torch.sum(dists_to_score * intra_mask * score, 
                                                 dim= (-1, -2))
                                                 )
+    
+    inter_score = torch.full(intra_score.shape, torch.nan)
+    inter_mask = dists_to_score * inter_mask
 
-    inter_norm = 1.0 / (eps + torch.sum(dists_to_score * inter_mask, dim= (-1, -2)))
-    inter_score = inter_norm * (eps + torch.sum(dists_to_score * score * inter_mask, 
-                                                dim= (-1, -2))
-                                                )
+    #inter_score only applies when atom pairs with different asym_id (inter_mask) and 
+    #distance threshold (dists_to_score)
+    if torch.any(inter_mask):
+        inter_norm = 1.0 / (eps + torch.sum(inter_mask, dim= (-1, -2)))
+        inter_score = inter_norm * (eps + torch.sum(inter_mask * score,
+                                                    dim= (-1, -2)))
 
     return intra_score, inter_score
 
@@ -80,10 +86,10 @@ def interface_lddt(
     eps: Optional[float] = 1e-10,
 ) -> torch.Tensor:
     """
-    Calculates interface_lddt score between two molecules (molecule1, molecule2)
+    Calculates interface_lddt (ilddt) score between two different molecules
 
     Args: 
-        all_atom_pred_pos_1: predicted protein coordinates  [*, n_atom1, 3]
+        all_atom_pred_pos_1: predicted protein coordinates [*, n_atom1, 3]
         all_atom_pred_pos_2: predicted interacting molecule coordinates [*, n_atom2, 3]
         all_atom_gt_pos_1: gt protein coordinates [*, n_atom1, 3]
         all_atom_gt_pos_2: gt interacting molecule coordinates  [*, n_atom2, 3]
@@ -97,25 +103,18 @@ def interface_lddt(
     Returns: 
         scores: ilddt scores [*]
     """ 
-
-    if len(all_atom_pred_pos_1.shape) != len(all_atom_gt_pos_1.shape):
-        all_atom_gt_pos_1 = all_atom_gt_pos_1.unsqueeze(-3)
-        all_atom_gt_pos_2 = all_atom_gt_pos_2.unsqueeze(-3)
-        all_atom_mask1 = all_atom_mask1.unsqueeze(-2)
-        all_atom_mask2 = all_atom_mask2.unsqueeze(-2)
-
-    # get pairwise distance
+    #get pairwise distance
     pair_dist_true = torch.cdist(all_atom_gt_pos_1, all_atom_gt_pos_2)
     pair_dist_pred = torch.cdist(all_atom_pred_pos_1, all_atom_pred_pos_2)
 
-    # create a mask
+    #create a mask
     dists_to_score = (
         (pair_dist_true < cutoff) * 
         (all_atom_mask1[..., None] * all_atom_mask2[..., None, :]
          )
          )
     
-    # get score
+    #get score
     dist_l1 = torch.abs(pair_dist_true - pair_dist_pred)
     score = (
         (dist_l1 < 0.5).type(dist_l1.dtype) + 
@@ -125,7 +124,7 @@ def interface_lddt(
         )
     score = score * 0.25
 
-    # normalize
+    #normalize
     norm = 1.0 / (eps + torch.sum(dists_to_score, dim= (-1, -2)))
     score = norm * (eps + torch.sum(dists_to_score * score, dim= (-1, -2)))
 
@@ -145,108 +144,122 @@ def drmsd(
         pair_dist_gt_pos: gt coordinates [*, n_atom, 3]
         all_atom_mask: atom mask [*, n_atom]
         asym_id: atomized asym_id feature [*, n_atom]
-
     Returns:
         intra_drmsd: drmsd within chains
         inter_drmsd: drmsd across chains 
+
+    Note: 
+        returns nan if inter_drmsd invalid
+        (ie. single chain, no atom pair within threshold)
     """
-    if pair_dist_pred_pos.shape != pair_dist_gt_pos.shape:
-        pair_dist_gt_pos = pair_dist_gt_pos.unsqueeze(-3) 
-        all_atom_mask = all_atom_mask.unsqueeze(-2) 
 
     drmsd = pair_dist_pred_pos - pair_dist_gt_pos 
     drmsd = drmsd ** 2 
     
-    # apply mask
+    #apply mask
     mask = (all_atom_mask[..., None] * all_atom_mask[..., None, :]) 
     intra_mask = torch.where(asym_id[..., None] == asym_id[..., None, :], 1, 0)
     inter_mask = 1 - intra_mask
 
     intra_drmsd = drmsd * (mask * intra_mask)
-    inter_drmsd = drmsd * (mask * inter_mask)
     intra_drmsd = torch.sum(intra_drmsd, dim=(-1, -2))
-    inter_drmsd = torch.sum(inter_drmsd, dim=(-1, -2))
-
     n_intra = torch.sum(intra_mask * mask, dim = (-1, -2))
-    n_inter = torch.sum(inter_mask * mask, dim = (-1, -2))
-    
     intra_drmsd = intra_drmsd * (1 / (n_intra))
-    inter_drmsd = inter_drmsd * (1 / (n_inter))
+
+    inter_drmsd = torch.full(intra_drmsd.shape, torch.nan)
+    inter_mask = inter_mask * mask
+    if torch.any(inter_mask):
+        inter_drmsd = drmsd * (inter_mask)
+        inter_drmsd = torch.sum(inter_drmsd, dim=(-1, -2))
+        n_inter = torch.sum(inter_mask * mask, dim = (-1, -2))
+        inter_drmsd = inter_drmsd * (1 / (n_inter))
     
     intra_drmsd = torch.sqrt(intra_drmsd) 
     inter_drmsd = torch.sqrt(inter_drmsd) 
     return intra_drmsd, inter_drmsd
 
-def get_pair_dist(structure1: torch.Tensor, structure2: torch.Tensor):
-    return torch.cdist(structure1, structure2)
-
 def get_validation_metrics(
-        is_ligand_atomized: torch.Tensor, 
+        is_substrate_atomized: torch.Tensor, 
         asym_id: torch.Tensor,
         pred_coords: torch.Tensor, 
         gt_coords: torch.Tensor, 
         all_atom_mask: torch.Tensor,
-        protein_idx: torch.Tensor,
+        is_protein_atomized: torch.Tensor,
         substrate: str,
         is_nucleic_acid: Optional[bool] = False,
         ) -> Dict[str, torch.Tensor]:
     """ 
+    Compute validation metrics with a given ligand (rna, dna)
+
     Args: 
-        is_ligand_atomized: broadcasted is_ligand/rna/dna feature [*, n_atom]
+        is_substrate_atomized: broadcasted is_ligand/rna/dna feature [*, n_atom]
         asym_id: atomized asym_id feature [*, n_atom] 
         pred_coords: predicted coordinates [*, n_atom, 3]
         gt_coords: gt coordinates [*, n_atom, 3]
         all_atom_mask: atom mask [*, n_atom]
-        protein_idx: broadcasted is_protein feature [*, n_atom]
+        is_protein_atomized: broadcasted is_protein feature [*, n_atom]
         substrate: 'protein', ligand', 'rna', 'dna' 
         is_nucleic_acid: boolean indicating if ligand type is nucleic acid
     Returns: 
         out: dictionary containing validation metrics
-            intra_lddt: intra ligandtype lddt
-            inter_lddt: inter ligandtype_ligandtype lddt
-            intra_drmsd: intra ligandtype drmsd 
-            inter_lddt_protein_ligand: inter protein-ligandtype lddt
+            'lddt_intra_f'{substrate}': intra ligand lddt
+            'lddt_inter_f'{substrate}'_f'{substrate}': inter ligand-ligand lddt
+            'drmsd_intra_f'{substrate}': intra ligand drmsd
+            'lddt_inter_protein_f'{substrate}': inter protein-ligand lddt
     
     Notes: 
-        if no ligands: returns an empty dict {}
+        if no appropriate substrate: returns an empty dict {}
     """
-    
     out = {}
 
-    if torch.any(is_ligand_atomized):
-        ligand_idx = torch.nonzero(is_ligand_atomized).squeeze(-1)
-        gt_ligand = gt_coords[..., ligand_idx, :]
-        pred_ligand = pred_coords[..., ligand_idx, :]
-        ligand_asym_id = asym_id[..., ligand_idx] 
+    if torch.any(is_substrate_atomized):
+        is_substrate_atomized = is_substrate_atomized.bool() 
+        is_protein_atomized = is_protein_atomized.bool() 
 
-        gt_ligand_pair = get_pair_dist(gt_ligand, gt_ligand)
-        pred_ligand_pair = get_pair_dist(pred_ligand, pred_ligand)
+        bs = is_substrate_atomized.shape[: -1] #(bs, (n_sample),)
 
+        #getting appropriate atoms of shape (bs, (n_sample), n_protein/ligand, (3)), 
+        gt_protein = gt_coords[is_protein_atomized].view((bs) + (-1, 3))  
+        gt_ligand = gt_coords[is_substrate_atomized].view((bs) + (-1, 3))
+        pred_protein = pred_coords[is_protein_atomized].view((bs) + (-1, 3))
+        pred_ligand = pred_coords[is_substrate_atomized].view((bs) + (-1, 3))
+        asym_id_ligand = asym_id[is_substrate_atomized].view((bs) + (-1,))
+        all_atom_mask_protein = all_atom_mask[is_protein_atomized].view((bs) + (-1,))
+        all_atom_mask_ligand = all_atom_mask[is_substrate_atomized].view((bs) + (-1,))
+        
+        #(bs,(n_sample), n_lig, n_lig)
+        gt_ligand_pair = torch.cdist(gt_ligand, gt_ligand)
+        pred_ligand_pair = torch.cdist(pred_ligand, pred_ligand)
+
+        #nucleic acids (rna/dna) have higher cutoffs
         cutoff = 30. if is_nucleic_acid else 15.
 
+        #get lddt metrics
         intra_lddt, inter_lddt = lddt(pred_ligand_pair,
                                       gt_ligand_pair,
-                                      all_atom_mask[..., ligand_idx],
-                                      ligand_asym_id,
+                                      all_atom_mask_ligand,
+                                      asym_id_ligand,
                                       cutoff = cutoff
                                       )
         out['lddt_intra_' + substrate] = intra_lddt
         out['lddt_inter_' + substrate + '_' + substrate] = inter_lddt
-        
+
+        #get drmsd metrics
         intra_drmsd, inter_drmsd = drmsd(pred_ligand_pair,
                                          gt_ligand_pair,
-                                         all_atom_mask[..., ligand_idx],
-                                         ligand_asym_id,
+                                         all_atom_mask_ligand,
+                                         asym_id_ligand,
                                          )
         out['drmsd_intra_' + substrate] = intra_drmsd
 
+        #get interface lddt metrics
         if substrate != 'protein':
-            inter_lddt_protein_ligand = interface_lddt(pred_coords[..., protein_idx, :],
-                                                       pred_coords[..., ligand_idx, :],
-                                                       gt_coords[..., protein_idx, :],
-                                                       gt_coords[..., ligand_idx, :],
-                                                       all_atom_mask[..., protein_idx],
-                                                       all_atom_mask[..., ligand_idx],
+            inter_lddt_protein_ligand = interface_lddt(pred_protein,
+                                                       pred_ligand,
+                                                       gt_protein,
+                                                       gt_ligand,
+                                                       all_atom_mask_protein,
+                                                       all_atom_mask_ligand,
                                                        cutoff = cutoff,
                                                        )
             out['lddt_inter_protein_' + substrate] = inter_lddt_protein_ligand
@@ -270,10 +283,6 @@ def gdt(
     Returns:
         gdt score: [*]
     """
-
-    if all_atom_pred_pos.shape != all_atom_gt_pos.shape:
-        all_atom_gt_pos = all_atom_gt_pos.unsqueeze(-3)
-        all_atom_mask = all_atom_mask.unsqueeze(-2)
 
     distances = torch.sqrt(torch.sum((all_atom_pred_pos - 
                                       all_atom_gt_pos) ** 2, 
@@ -312,10 +321,6 @@ def batched_kabsch(
         optimal rotation: [*, 3, 3]
         rmsd: alignment rmsd [*]
     """
-
-    if len(all_atom_pred_pos.shape) != len(all_atom_gt_pos.shape):
-        all_atom_gt_pos = all_atom_gt_pos.unsqueeze(-3)
-        all_atom_mask = all_atom_mask.unsqueeze(-2)
     
     n_atom = all_atom_gt_pos.shape[-2]
     predicted_coordinates = all_atom_pred_pos * all_atom_mask.unsqueeze(-1) 
