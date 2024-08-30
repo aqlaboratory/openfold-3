@@ -53,7 +53,6 @@ config = mlc.ConfigDict(
             "sigma_data": sigma_data,
             "no_cycles": 4,
             "no_samples": no_samples,
-            "no_rollout_steps": no_rollout_steps,
             "diffusion_training_enabled": diffusion_training_enabled,
             "blocks_per_ckpt": blocks_per_ckpt,
             "chunk_size": chunk_size,
