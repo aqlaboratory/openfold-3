@@ -440,7 +440,9 @@ def add_unresolved_atoms_within_residue(
                     op3_present = "OP3" in resolved_atom_set
                     o3p_present = "O3P" in resolved_atom_set
                     if op3_present or o3p_present:
-                        atom_pairs_to_bonds = get_ccd_atom_pair_to_bond_dict(ccd[res_name])
+                        atom_pairs_to_bonds = get_ccd_atom_pair_to_bond_dict(
+                            ccd[res_name]
+                        )
                         atom_ids_to_elements = get_ccd_atom_id_to_element_dict(
                             ccd[res_name]
                         )
