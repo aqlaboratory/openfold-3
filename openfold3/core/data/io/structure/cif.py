@@ -128,7 +128,7 @@ def parse_mmcif(
     # Add molecule types for convenience
     assign_molecule_type_ids(atom_array)
 
-    # Renumber chain IDs from 0 to avoid duplicate chain labels after bioassembly
+    # Renumber chain IDs from 1 to avoid duplicate chain labels after bioassembly
     # expansion
     assign_renumbered_chain_ids(atom_array)
 
