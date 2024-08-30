@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+from typing import Literal
 
 import click
 
@@ -35,6 +36,12 @@ from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif
     ),
 )
 @click.option(
+    "--chunksize",
+    type=int,
+    default=50,
+    help="Number of CIF files to process in each worker task.",
+)
+@click.option(
     "--write-additional-cifs",
     is_flag=False,
     help=(
@@ -42,19 +49,27 @@ from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif
         "inspecting results)."
     ),
 )
+@click.option(
+    "--log-level",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
+    default="WARNING",
+    help="Set the logging level.",
+)
 def main(
     cif_dir: Path,
     ccd_path: Path,
     out_dir: Path,
     num_workers: int | None = None,
+    chunksize: int = 50,
     write_additional_cifs: bool = False,
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
 ) -> None:
     logger = logging.getLogger("openfold3")
-    logger.setLevel(logging.WARNING)
+    logger.setLevel(getattr(logging, log_level.upper()))
     logger.addHandler(logging.StreamHandler())
 
     preprocess_cif_dir_af3(
-        cif_dir, ccd_path, out_dir, num_workers, write_additional_cifs
+        cif_dir, ccd_path, out_dir, num_workers, chunksize, write_additional_cifs
     )
 
 
