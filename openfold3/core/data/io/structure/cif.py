@@ -14,6 +14,8 @@ from openfold3.core.data.primitives.structure.labels import (
     update_author_to_pdb_labels,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class ParsedStructure(NamedTuple):
     cif_file: pdbx.CIFFile
@@ -101,7 +103,7 @@ def parse_mmcif(
 
     # Check if the CIF file contains bioassembly information
     if expand_bioassembly & ("pdbx_struct_assembly_gen" not in cif_file[pdb_id]):
-        logging.warning(
+        logger.warning(
             "No bioassembly information found in the CIF file, "
             "falling back to parsing the asymmetric unit."
         )
