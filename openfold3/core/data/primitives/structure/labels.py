@@ -118,7 +118,7 @@ def get_chain_to_molecule_type_dict(atom_array: struc.AtomArray) -> dict[int, st
 def assign_renumbered_chain_ids(
     atom_array: AtomArray, store_original_as: str | None = None
 ) -> None:
-    """Renumbers the chain IDs in the AtomArray starting from 0
+    """Renumbers the chain IDs in the AtomArray starting from 1
 
     Iterates through all chains in the atom array and assigns unique numerical chain IDs
     starting with 0 to each chain. This is useful for bioassembly parsing where chain
@@ -136,7 +136,7 @@ def assign_renumbered_chain_ids(
     # Assign numerical chain IDs
     chain_id_n_repeats = np.diff(chain_start_idxs)
     chain_ids_per_atom = np.repeat(
-        np.arange(len(chain_id_n_repeats)), chain_id_n_repeats
+        np.arange(1, len(chain_id_n_repeats) + 1), chain_id_n_repeats
     )
 
     if store_original_as is not None:

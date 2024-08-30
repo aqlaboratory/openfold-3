@@ -158,6 +158,7 @@ def get_components(atom_array: AtomArray) -> PDBComponents:
 
         # Asserts that all chains of the same entity have the exact same atoms in the
         # exact same order
+        # TODO: improve atom expansion for non-standard ligands
         assert len(chain_atom_names) == 1
 
     return PDBComponents(

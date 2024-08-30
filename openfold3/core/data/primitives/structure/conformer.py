@@ -55,7 +55,7 @@ def compute_conformer(
 
     # Try standard ETKDGv3 strategy first
     strategy = AllChem.ETKDGv3()
-    strategy.ClearConfs = False
+    strategy.clearConfs = False
     try:
         conf_id = AllChem.EmbedMolecule(mol, strategy)
         if conf_id == -1:
