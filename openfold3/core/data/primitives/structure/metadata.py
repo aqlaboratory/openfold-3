@@ -178,6 +178,10 @@ def get_chain_to_canonical_seq_dict(
 def get_entity_to_three_letter_codes_dict(cif_data: CIFBlock) -> dict[int, list[str]]:
     """Get a dictionary mapping entity IDs to their three-letter-code sequences.
 
+    Note that in the special case of multiple amino acids being set to the same residue
+    ID, this will currently default to taking the first one and make no special attempt
+    to take occupancy into account.
+
     Args:
         cif_data:
             Parsed mmCIF data of the structure. Note that this expects a CIFBlock which
@@ -189,16 +193,26 @@ def get_entity_to_three_letter_codes_dict(cif_data: CIFBlock) -> dict[int, list[
     # Flat list of residue-wise entity IDs for all polymeric sequences
     entity_ids_flat = cif_data["entity_poly_seq"]["entity_id"].as_array(dtype=int)
 
-    # Get sequence lenfths and entity starts for each polymeric entity
-    entity_ids, new_entity_starts, seq_lengths = np.unique(
-        entity_ids_flat, return_index=True, return_counts=True
-    )
+    # Deduplicated entity IDs
+    entity_ids = np.unique(entity_ids_flat)
 
     # Get full (3-letter code) residue sequence for every polymeric entity
     entity_monomers = cif_data["entity_poly_seq"]["mon_id"].as_array()
+
+    entity_residue_ids = cif_data["entity_poly_seq"]["num"].as_array()
+
+    # Get map of residue IDs to monomers sharing that residue ID for every entity
+    res_id_to_monomers = defaultdict(lambda: defaultdict(list))
+    for entity_id, res_id, ccd_id in zip(
+        entity_ids_flat.tolist(), entity_residue_ids.tolist(), entity_monomers.tolist()
+    ):
+        res_id_to_monomers[entity_id][res_id].append(ccd_id)
+
+    # In case where multiple monomers are set to the same residue ID, take the first one
+    # (TODO: this should ideally take occupancy into account)
     entity_id_to_3l_codes = {
-        entity_id.item(): entity_monomers[start : start + length].tolist()
-        for entity_id, start, length in zip(entity_ids, new_entity_starts, seq_lengths)
+        entity_id: [monomers[0] for monomers in res_id_to_monomers[entity_id].values()]
+        for entity_id in entity_ids
     }
 
     return entity_id_to_3l_codes
