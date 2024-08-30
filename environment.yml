@@ -1,4 +1,4 @@
-name: openfold-env 
+name: openfold3-env
 channels:
   - conda-forge
   - bioconda

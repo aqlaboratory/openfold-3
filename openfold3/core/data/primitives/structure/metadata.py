@@ -3,7 +3,6 @@ from typing import Literal
 
 import biotite.structure as struc
 import numpy as np
-from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 
 from openfold3.core.data.primitives.structure.labels import (
@@ -149,7 +148,7 @@ def get_entity_to_canonical_seq_dict(cif_data: CIFBlock) -> dict[int, str]:
     ].as_array()
     polymer_canonical_seqs = np.char.replace(polymer_canonical_seqs, "\n", "")
 
-    return dict(zip(polymer_entities, polymer_canonical_seqs))
+    return dict(zip(polymer_entities.tolist(), polymer_canonical_seqs.tolist()))
 
 
 def get_chain_to_canonical_seq_dict(
@@ -198,7 +197,7 @@ def get_entity_to_three_letter_codes_dict(cif_data: CIFBlock) -> dict[int, list[
     # Get full (3-letter code) residue sequence for every polymeric entity
     entity_monomers = cif_data["entity_poly_seq"]["mon_id"].as_array()
     entity_id_to_3l_codes = {
-        entity_id: entity_monomers[start : start + length]
+        entity_id.item(): entity_monomers[start : start + length].tolist()
         for entity_id, start, length in zip(entity_ids, new_entity_starts, seq_lengths)
     }
 
@@ -230,46 +229,3 @@ def get_chain_to_three_letter_codes_dict(
     }
 
     return chain_to_3l_codes_dict
-
-
-# TODO: not sure yet if this function is actually necessary
-def add_canonical_one_letter_codes(
-    atom_array: AtomArray,
-    cif_data: CIFBlock,
-) -> None:
-    # Get canonical sequences for each entity
-    polymer_entities = cif_data["entity_poly"]["entity_id"].as_array(dtype=int)
-    polymer_canonical_seqs = cif_data["entity_poly"][
-        "pdbx_seq_one_letter_code_can"
-    ].as_array()
-    polymer_canonical_seqs = np.char.replace(polymer_canonical_seqs, "\n", "")
-
-    entity_id_to_seq = dict(zip(polymer_entities, polymer_canonical_seqs))
-
-    # Add new annotation category for one-letter codes
-    atom_array.set_annotation(
-        "one_letter_code_can", np.empty(len(atom_array), dtype="U1")
-    )
-
-    # Set one-letter codes for each residue
-    for entity_id, seq in entity_id_to_seq.items():
-        entity_mask = atom_array.entity_id == entity_id
-        entity_array = atom_array[entity_mask]
-
-        n_seq_repetitions = len(np.unique(entity_array.chain_id))
-        seqs_repeated = seq * n_seq_repetitions
-
-        if len(seqs_repeated) != struc.get_residue_count(entity_array):
-            raise ValueError(
-                "Sequence length does not match the number of residues in the entity. "
-                "Make sure to run add_unresolved_polymer_residues first if the "
-                "structure contains unresolved residues."
-            )
-
-        atom_wise_seqs = struc.spread_residue_wise(
-            atom_array[entity_mask], np.array(list(seq * n_seq_repetitions), dtype="U1")
-        )
-
-        atom_array.one_letter_code_can[entity_mask] = atom_wise_seqs
-
-    return atom_array

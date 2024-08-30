@@ -2,9 +2,9 @@ import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
 
-from openfold3.core.data.resources.tables import (
+from openfold3.core.data.resources.residues import (
     STANDARD_DNA_RESIDUES,
-    STANDARD_PROTEIN_RESIDUES,
+    STANDARD_PROTEIN_RESIDUES_3,
     STANDARD_RNA_RESIDUES,
     MoleculeType,
 )
@@ -24,8 +24,8 @@ def get_chain_to_entity_dict(atom_array: struc.AtomArray) -> dict[int, int]:
 
     return dict(
         zip(
-            atom_array[chain_starts].chain_id,
-            atom_array[chain_starts].entity_id,
+            atom_array[chain_starts].chain_id.tolist(),
+            atom_array[chain_starts].entity_id.tolist(),
         )
     )
 
@@ -50,8 +50,8 @@ def get_chain_to_author_chain_dict(atom_array: struc.AtomArray) -> dict[int, str
 
     return dict(
         zip(
-            atom_array[chain_starts].chain_id,
-            atom_array[chain_starts].auth_asym_id,
+            atom_array[chain_starts].chain_id.tolist(),
+            atom_array[chain_starts].auth_asym_id.tolist(),
         )
     )
 
@@ -70,8 +70,8 @@ def get_chain_to_pdb_chain_dict(atom_array: struc.AtomArray) -> dict[int, str]:
 
     return dict(
         zip(
-            atom_array[chain_starts].chain_id,
-            atom_array[chain_starts].label_asym_id,
+            atom_array[chain_starts].chain_id.tolist(),
+            atom_array[chain_starts].label_asym_id.tolist(),
         )
     )
 
@@ -90,8 +90,8 @@ def get_chain_to_molecule_type_id_dict(atom_array: struc.AtomArray) -> dict[int,
 
     return dict(
         zip(
-            atom_array[chain_starts].chain_id,
-            atom_array[chain_starts].molecule_type_id,
+            atom_array[chain_starts].chain_id.tolist(),
+            atom_array[chain_starts].molecule_type_id.tolist(),
         )
     )
 
@@ -249,7 +249,7 @@ def assign_molecule_type_ids(atom_array: AtomArray) -> None:
     """
     chain_start_idxs = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
 
-    std_protein_residues = set(STANDARD_PROTEIN_RESIDUES)
+    std_protein_residues = set(STANDARD_PROTEIN_RESIDUES_3)
     std_dna_residues = set(STANDARD_DNA_RESIDUES)
     std_rna_residues = set(STANDARD_RNA_RESIDUES)
 

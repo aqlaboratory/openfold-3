@@ -17,8 +17,10 @@ from openfold3.core.data.primitives.structure.labels import (
 from openfold3.core.data.primitives.structure.metadata import (
     get_chain_to_canonical_seq_dict,
 )
-from openfold3.core.data.resources.tables import (
+from openfold3.core.data.resources.lists import (
     CRYSTALLIZATION_AIDS,
+)
+from openfold3.core.data.resources.residues import (
     STANDARD_NUCLEIC_ACID_RESIDUES,
     STANDARD_PROTEIN_RESIDUES,
     MoleculeType,
@@ -341,7 +343,7 @@ def remove_clashing_chains(
                     chain_ids_to_remove.add(chain2_id)
 
     for chain_id in chain_ids_to_remove:
-        breakpoint()
+        # breakpoint()
         atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
 
     return atom_array
@@ -512,13 +514,15 @@ def subset_large_structure(
     return atom_array[selected_chain_mask]
 
 
-def remove_terminal_atoms(atom_array: AtomArray) -> AtomArray:
-    """Removes terminal atoms like OXT and OP3.
+def remove_std_residue_terminal_atoms(atom_array: AtomArray) -> AtomArray:
+    """Removes terminal atoms like OXT and OP3 from standard residues.
 
     Models like AF3 and AF2 expect all tokens with the same restype to map to the same
     number of atoms. This makes it awkward to represent terminal atoms like OXT/OP3
     which only appear in the small subset of residues at the end/beginning of a
     protein/NA chain. This function therefore removes these atoms from the AtomArray.
+    Note that terminal atoms can be kept for any non-standard residues, as they are
+    tokenized per-atom and do not require a fixed number of atoms per residue.
 
     Args:
         atom_array:

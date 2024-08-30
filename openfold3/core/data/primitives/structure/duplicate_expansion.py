@@ -10,7 +10,7 @@ from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
     remove_atom_indices,
 )
-from openfold3.core.data.resources.tables import MoleculeType
+from openfold3.core.data.resources.residues import MoleculeType
 
 
 def expand_duplicate_chains(

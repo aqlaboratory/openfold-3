@@ -36,7 +36,8 @@ class NaNRobustKDTree:
         """NaN-robust version of KDTree.query_pairs.
 
         Runs KDTree.query_pairs but re-indexes the results to be consistent with the
-        original array. See scipy.spatial.KDTree.query_pairs for more information.
+        original array. Also sets the return type to ndarray. See
+        scipy.spatial.KDTree.query_pairs for more information.
         """
         valid_data_results = self._kdtree.query_pairs(r, p, eps, output_type="ndarray")
         orig_data_results = self._data_index_map[valid_data_results]
@@ -116,7 +117,7 @@ def get_query_interface_atom_pair_idxs(
     chain_pairs = np.column_stack(
         (
             query_atom_array.chain_id[atom_pair_idxs[:, 0]],
-            target_atom_array.chain_id[atom_pair_idxs[:, 1]],  # change to target
+            target_atom_array.chain_id[atom_pair_idxs[:, 1]],
         )
     )
 
@@ -268,7 +269,7 @@ def get_interface_chain_id_pairs(
             Distance threshold in Angstrom. Defaults to 15.0.
 
     Returns:
-        List of tuples with unique chain pairings that have interface atoms, so that
+        Nx2 array with unique chain pairings that have interface atoms, sorted so that
         chain_id_1 < chain_id_2 for a pair (chain_id_1, chain_id_2).
     """
     _, chain_pairs = get_interface_atom_pair_idxs(
