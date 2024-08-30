@@ -112,7 +112,7 @@ def get_experimental_method(cif_data: CIFBlock) -> str:
     Returns:
         The experimental method used to determine the structure.
     """
-    method = cif_data["exptl"]["method"].as_item()
+    method = cif_data["exptl"]["method"].as_array()[0].item()
 
     return method
 
