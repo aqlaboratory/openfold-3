@@ -1,4 +1,5 @@
 import logging
+from functools import wraps
 
 import biotite.structure as struc
 import numpy as np
@@ -27,6 +28,20 @@ from openfold3.core.data.resources.tables import (
 logger = logging.getLogger(__name__)
 
 
+def return_on_empty_atom_array(func):
+    """Decorator to make the cleanup functions immediately return on empty inputs."""
+
+    @wraps(func)
+    def wrapper(atom_array: AtomArray, *args, **kwargs):
+        if atom_array.array_length() == 0:
+            return atom_array
+
+        return func(atom_array, *args, **kwargs)
+
+    return wrapper
+
+
+@return_on_empty_atom_array
 def convert_MSE_to_MET(atom_array: AtomArray) -> None:
     """Converts selenomethionine (MSE) residues to methionine (MET) in-place
 
@@ -47,6 +62,7 @@ def convert_MSE_to_MET(atom_array: AtomArray) -> None:
     atom_array.atom_name[mse_selenium_atoms] = "SD"
 
 
+@return_on_empty_atom_array
 def fix_single_arginine_naming(arg_atom_array: AtomArray) -> None:
     """Resolves naming ambiguities for a single arginine residue
 
@@ -66,6 +82,7 @@ def fix_single_arginine_naming(arg_atom_array: AtomArray) -> None:
         nh2.atom_name = ["NH1"]
 
 
+@return_on_empty_atom_array
 def fix_arginine_naming(atom_array: AtomArray) -> None:
     """Resolves naming ambiguities for all arginine residues in the AtomArray
 
@@ -82,6 +99,7 @@ def fix_arginine_naming(atom_array: AtomArray) -> None:
     logger.debug("Fixed arginine naming")
 
 
+@return_on_empty_atom_array
 def remove_waters(atom_array: AtomArray) -> AtomArray:
     """Removes water molecules from the AtomArray
 
@@ -101,6 +119,7 @@ def remove_waters(atom_array: AtomArray) -> AtomArray:
     return atom_array
 
 
+@return_on_empty_atom_array
 def remove_crystallization_aids(
     atom_array: AtomArray, ccd_codes=CRYSTALLIZATION_AIDS
 ) -> AtomArray:
@@ -124,6 +143,7 @@ def remove_crystallization_aids(
     return atom_array
 
 
+@return_on_empty_atom_array
 def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
     """Removes all hydrogen (and deuterium) atoms from the AtomArray
 
@@ -138,6 +158,7 @@ def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
     return atom_array
 
 
+@return_on_empty_atom_array
 def remove_small_polymers(
     atom_array: AtomArray, cif_data: CIFBlock, max_residues: int = 3
 ) -> AtomArray:
@@ -168,6 +189,7 @@ def remove_small_polymers(
     return atom_array
 
 
+@return_on_empty_atom_array
 def remove_fully_unknown_polymers(atom_array: AtomArray) -> AtomArray:
     """Removes polymer chains with all unknown residues from the AtomArray
 
@@ -203,6 +225,7 @@ def remove_fully_unknown_polymers(atom_array: AtomArray) -> AtomArray:
     return atom_array_filtered
 
 
+@return_on_empty_atom_array
 def remove_chain_and_attached_ligands(
     atom_array: AtomArray, chain_id: int
 ) -> AtomArray:
@@ -274,6 +297,7 @@ def remove_chain_and_attached_ligands(
     return atom_array
 
 
+@return_on_empty_atom_array
 def remove_clashing_chains(
     atom_array: AtomArray,
     clash_distance: float = 1.7,
@@ -373,6 +397,7 @@ def get_res_atoms_in_ccd_mask(res_atom_array: AtomArray, ccd: CIFFile) -> np.nda
     return mask
 
 
+@return_on_empty_atom_array
 def remove_non_CCD_atoms(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
     """Removes atoms that are not present in the CCD residue definition
 
@@ -402,6 +427,7 @@ def remove_non_CCD_atoms(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
     return atom_array[atom_mask]
 
 
+@return_on_empty_atom_array
 def remove_chains_with_CA_gaps(
     atom_array: AtomArray, distance_threshold: float = 10.0
 ) -> AtomArray:
@@ -453,6 +479,7 @@ def remove_chains_with_CA_gaps(
     return atom_array
 
 
+@return_on_empty_atom_array
 def subset_large_structure(
     atom_array: AtomArray,
     n_chains: int = 20,
@@ -512,6 +539,7 @@ def subset_large_structure(
     return atom_array[selected_chain_mask]
 
 
+@return_on_empty_atom_array
 def remove_std_residue_terminal_atoms(atom_array: AtomArray) -> AtomArray:
     """Removes terminal atoms like OXT and OP3 from standard residues.
 
