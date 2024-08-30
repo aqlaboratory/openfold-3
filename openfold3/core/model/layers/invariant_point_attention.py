@@ -221,17 +221,13 @@ class InvariantPointAttention(nn.Module):
             z[0] = z[0].cpu()
 
         # [*, H, N_res, N_res]
+        # Einsum notation: [H:h, N_res:(n,m), C_hidden:c]
+        # n,m are used because using n,n would be ambiguous einstein notation
         if is_fp16_enabled():
-            with torch.cuda.amp.autocast(enabled=False):
-                a = torch.matmul(
-                    permute_final_dims(q.float(), (1, 0, 2)),  # [*, H, N_res, C_hidden]
-                    permute_final_dims(k.float(), (1, 2, 0)),  # [*, H, C_hidden, N_res]
-                )
+            with torch.amp.autocast("cuda", enabled=False):
+                a = torch.einsum("...nhc,...mhc->...hnm", q.float(), k.float())
         else:
-            a = torch.matmul(
-                permute_final_dims(q, (1, 0, 2)),  # [*, H, N_res, C_hidden]
-                permute_final_dims(k, (1, 2, 0)),  # [*, H, C_hidden, N_res]
-            )
+            a = torch.einsum("...nhc,...mhc->...hnm", q, k)
 
         a *= math.sqrt(1.0 / (3 * self.c_hidden))
         a += math.sqrt(1.0 / 3) * permute_final_dims(b, (2, 0, 1))
@@ -286,28 +282,25 @@ class InvariantPointAttention(nn.Module):
         ################
         # Compute output
         ################
-        # [*, N_res, H, C_hidden]
-        o = torch.matmul(a, v.transpose(-2, -3).to(dtype=a.dtype)).transpose(-2, -3)
+
+        # This einsum is equivalent to:
+        # Transpose v : [*, N_res, H, C_hidden] -> [*, H, N_res, C_hidden]
+        # Matmul a, v: [*, H, N_res, N_res] x [*, H, N_res, C_hidden]
+        #               -> [*, H, N_res, C_hidden]
+        # Transpose o: [*, H, N_res, C_hidden] -> [*, N_res, H, C_hidden]
+        # Einsum notation: [H:h, N_res:(n,m), C_hidden:c]
+        # n,m are used because using n,n in output would be ambiguous einstein notation
+        o = torch.einsum("...hnm,...mhc->...nhc", a, v.to(dtype=a.dtype))
 
         # [*, N_res, H * C_hidden]
         o = flatten_final_dims(o, 2)
 
-        # [*, H, 3, N_res, P_v]
-        if inplace_safe:
-            v_pts = permute_final_dims(v_pts, (1, 3, 0, 2))
-            o_pt = [torch.matmul(a, v.to(a.dtype)) for v in torch.unbind(v_pts, dim=-3)]
-            o_pt = torch.stack(o_pt, dim=-3)
-        else:
-            o_pt = torch.sum(
-                (
-                    a[..., None, :, :, None]
-                    * permute_final_dims(v_pts, (1, 3, 0, 2))[..., None, :, :]
-                ),
-                dim=-2,
-            )
+        # IMPORTANT: This has been changed from the original version where there was
+        # a very particular indexing to ensure fp32; if precision problems occur,
+        # this is a place to look into.
+        with torch.amp.autocast("cuda", enabled=False):
+            o_pt = torch.einsum("...hnm, ...mhpt->...nhpt", a, v_pts.to(dtype=a.dtype))
 
-        # [*, N_res, H, P_v, 3]
-        o_pt = permute_final_dims(o_pt, (2, 0, 3, 1))
         o_pt = r[..., None, None].invert_apply(o_pt)
 
         # [*, N_res, H * P_v]
@@ -323,7 +316,11 @@ class InvariantPointAttention(nn.Module):
             z[0] = z[0].to(o_pt.device)
 
         # [*, N_res, H, C_z]
-        o_pair = torch.matmul(a.transpose(-2, -3), z[0].to(dtype=a.dtype))
+        # This einsum is equivalent to:
+        # Transpose a : [*, H, N_res, N_res] -> [*, N_res, H, N_res]
+        # Matmul a, z: [*, N_res, H, N_res] x [*, N_res, N_res, C_z]
+        #               -> [*, N_res, H, C_z]
+        o_pair = torch.einsum("...hnm,...nmc->...nhc", a, z[0].to(dtype=a.dtype))
 
         # [*, N_res, H * C_z]
         o_pair = flatten_final_dims(o_pair, 2)

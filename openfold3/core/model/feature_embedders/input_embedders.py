@@ -532,7 +532,9 @@ class InputEmbedderAllAtom(nn.Module):
 
         s_input_emb_i = self.linear_z_i(s_input)
         s_input_emb_j = self.linear_z_j(s_input)
-        token_bonds_emb = self.linear_token_bonds(batch["token_bonds"].unsqueeze(-1))
+        token_bonds_emb = self.linear_token_bonds(
+            batch["token_bonds"].unsqueeze(-1).to(dtype=s.dtype)
+        )
 
         # [*, N_token, N_token, C_z]
         z = self.relpos(batch)
@@ -585,7 +587,7 @@ class MSAModuleEmbedder(nn.Module):
                     - "has_deletion": [*, N_msa, N_token]
                     - "deletion_value": [*, N_msa, N_token]
                     - "msa_mask": [*, N_msa, N_token]
-                    - "num_main_msa_seqs": []
+                    - "num_paired_seqs": []
             s_input:
                 [*, N_token, C_s_input] single embedding
 
@@ -609,8 +611,9 @@ class MSAModuleEmbedder(nn.Module):
 
         # Split uniprot and main MSA sequences. Only main MSA seqs will be sampled.
         # All uniprot seqs are in the final MSA representation.
-        num_main_msa_seqs = int(batch["num_main_msa_seqs"].item())
-        split_sections = [total_msa_seq - num_main_msa_seqs, num_main_msa_seqs]
+        num_paired_seqs = int(batch["num_paired_seqs"].item())
+        num_main_msa_seqs = total_msa_seq - num_paired_seqs
+        split_sections = [num_paired_seqs, num_main_msa_seqs]
         uniprot_msa, main_msa = torch.split(msa_feat, split_sections, dim=-3)
         uniprot_msa_mask, main_msa_mask = torch.split(msa_mask, split_sections, dim=-2)
 

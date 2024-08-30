@@ -26,11 +26,11 @@ BLOCK_ARG = Any
 BLOCK_ARGS = List[BLOCK_ARG]
 
 
-def get_checkpoint_fn():
+def get_checkpoint_fn(use_reentrant: Optional[bool] = None):
     deepspeed_is_configured = (
         deepspeed_is_installed and deepspeed.checkpointing.is_configured()
     )
-    if deepspeed_is_configured:
+    if deepspeed_is_configured and use_reentrant is None:
         checkpoint = deepspeed.checkpointing.checkpoint
     else:
         checkpoint = torch.utils.checkpoint.checkpoint
@@ -43,6 +43,7 @@ def checkpoint_blocks(
     blocks: List[Callable],
     args: BLOCK_ARGS,
     blocks_per_ckpt: Optional[int],
+    use_reentrant: Optional[bool] = None,
 ) -> BLOCK_ARGS:
     """
     Chunk a list of blocks and run each chunk with activation
@@ -60,6 +61,9 @@ def checkpoint_blocks(
             Size of each chunk. A higher value corresponds to fewer
             checkpoints, and trades memory for speed. If None, no checkpointing
             is performed.
+        use_reentrant:
+            Whether to use reentrant checkpointing. If set, torch checkpointing
+            will be used.
     Returns:
         The output of the final block
     """
@@ -86,11 +90,16 @@ def checkpoint_blocks(
     elif blocks_per_ckpt < 1 or blocks_per_ckpt > len(blocks):
         raise ValueError("blocks_per_ckpt must be between 1 and len(blocks)")
 
-    checkpoint = get_checkpoint_fn()
+    checkpoint = get_checkpoint_fn(use_reentrant=use_reentrant)
 
     for s in range(0, len(blocks), blocks_per_ckpt):
         e = s + blocks_per_ckpt
-        args = checkpoint(chunker(s, e), *args)
+
+        if use_reentrant is not None:
+            args = checkpoint(chunker(s, e), *args, use_reentrant=use_reentrant)
+        else:
+            args = checkpoint(chunker(s, e), *args)
+
         args = wrap(args)
 
     return args

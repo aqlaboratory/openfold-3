@@ -393,7 +393,7 @@ class TestGetTokenAtomIndex(unittest.TestCase):
     def test_with_amino_acid_backbone_residue(self):
         restype = F.one_hot(
             torch.Tensor([[0, 7, 13, 20], [21, 26, 24, 30]]).long(), num_classes=32
-        ).float()
+        )
         token_atom_index_offset, token_atom_mask = get_token_atom_index_offset(
             atom_name="CA", restype=restype
         )
@@ -405,7 +405,7 @@ class TestGetTokenAtomIndex(unittest.TestCase):
     def test_with_amino_acid_sidechain_residue(self):
         restype = F.one_hot(
             torch.Tensor([[0, 7, 13, 20], [21, 26, 24, 30]]).long(), num_classes=32
-        ).float()
+        )
         token_atom_index_offset, token_atom_mask = get_token_atom_index_offset(
             atom_name="CB", restype=restype
         )
@@ -417,7 +417,7 @@ class TestGetTokenAtomIndex(unittest.TestCase):
     def test_with_nucleotide_backbone_residue(self):
         restype = F.one_hot(
             torch.Tensor([[0, 7, 20, 31], [21, 25, 26, 30]]).long(), num_classes=32
-        ).float()
+        )
         token_atom_index_offset, token_atom_mask = get_token_atom_index_offset(
             atom_name="C3'", restype=restype
         )
@@ -429,7 +429,7 @@ class TestGetTokenAtomIndex(unittest.TestCase):
     def test_with_nucleotide_sidechain_residue(self):
         restype = F.one_hot(
             torch.Tensor([[0, 7, 13, 20], [21, 25, 26, 30]]).long(), num_classes=32
-        ).float()
+        )
         token_atom_index_offset, token_atom_mask = get_token_atom_index_offset(
             atom_name="C4", restype=restype
         )

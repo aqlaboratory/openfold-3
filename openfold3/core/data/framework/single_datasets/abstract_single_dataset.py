@@ -27,9 +27,10 @@ and highlight where you currently are in the process:
     batched data -> model
 """
 
-from abc import ABC, abstractmethod, property
-from typing import Any
+from abc import ABC, abstractmethod
+from typing import Union
 
+import torch
 from torch.utils.data import Dataset
 
 DATASET_REGISTRY = {}
@@ -57,12 +58,21 @@ class DatasetNotRegisteredError(Exception):
         self.dataset_name = dataset_name
 
     def __str__(self):
-        return f"""SingleDataset {self.dataset_name} missing from dataset registry. \
-                Wrap your class with the register_dataset decorator."""
+        return (
+            f"SingleDataset {self.dataset_name} missing from dataset registry."
+            "Wrap your class with the register_dataset decorator."
+        )
 
 
 class SingleDataset(ABC, Dataset):
-    """Abstract class wrapping a pair of preprocessing and feature pipelines."""
+    """Abstract Dataset class implementing necessery attributes and methods.
+
+    A child class of SingleDataset
+        - must be decorated with the register_dataset decorator
+        - must implement the __getitem__ method
+        - must implement the datapoint_cache property
+        - may overwrite the calculate_datapoint_probabilities method.
+    """
 
     def __init__(self) -> None:
         if not self.__class__._registered:
@@ -70,14 +80,8 @@ class SingleDataset(ABC, Dataset):
 
     @property
     @abstractmethod
-    def preprocessing_pipeline(self):
-        """Calls the forward pass of a PreprocessingPipeline instance."""
-        pass
-
-    @property
-    @abstractmethod
-    def feature_pipeline(self):
-        """Calls the forward pass of a FeaturePipeline instace."""
+    def datapoint_cache(self):
+        """Attribute storing the data cache for the Dataset."""
         pass
 
     def calculate_datapoint_probabilities(self) -> float:
@@ -89,7 +93,26 @@ class SingleDataset(ABC, Dataset):
 
         self.datapoint_probabilities = 1 / len(self.data_cache)
 
-    def __getitem__(self, index) -> Any:
-        data = self.preprocessing_pipeline(index)
-        features = self.feature_pipeline(data)
-        return features
+    def get_class_name(self) -> str:
+        """Returns the name of the class."""
+        return self.__class__.__name__
+
+    @abstractmethod
+    def __getitem__(self, index: int) -> dict[str, Union[torch.Tensor]]:
+        """Getitem of a specific SingleDataset class.
+
+        Called by the DataLoader directly or indirectly via the StochasticSamplerDataset
+        getitem method and indexes into the data cache. Implements a series of steps to
+        process the raw data into intermediate arrays via pipelines from
+        pipelines.sample_processing and tensorize these arrays to create tensors for the
+        model from pipelines.featurization.
+
+        Args:
+            index (int):
+                Index of the datapoint to retrieve.
+
+        Returns:
+            dict[str, Union[torch.Tensor]]:
+                Featuredict.
+        """
+        pass
