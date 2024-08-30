@@ -1,8 +1,11 @@
+from collections import defaultdict
 from datetime import datetime
 from typing import Literal
 
 import biotite.structure as struc
 import numpy as np
+from biotite.structure import BondType
+from biotite.structure.info.bonds import BOND_TYPES
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 
 from openfold3.core.data.primitives.structure.labels import (
@@ -243,3 +246,52 @@ def get_chain_to_three_letter_codes_dict(
     }
 
     return chain_to_3l_codes_dict
+
+
+def get_ccd_atom_pair_to_bond_dict(ccd_entry: CIFBlock) -> dict[(str, str), BondType]:
+    """Gets the list of bonds from a CCD entry.
+
+    Args:
+        ccd_entry:
+            CIFBlock containing the CCD entry.
+
+    Returns:
+        Dictionary mapping each pair of atom names to the respective Biotite bond type.
+    """
+
+    chem_comp_bonds = ccd_entry["chem_comp_bond"]
+
+    atom_pair_to_bond = {}
+
+    for atom_1, atom_2, ccd_bond_type, aromatic_flag in zip(
+        chem_comp_bonds["atom_id_1"].as_array(),
+        chem_comp_bonds["atom_id_2"].as_array(),
+        chem_comp_bonds["value_order"].as_array(),
+        chem_comp_bonds["pdbx_aromatic_flag"].as_array(),
+    ):
+        bond_type = BOND_TYPES[ccd_bond_type, aromatic_flag]
+        atom_pair_to_bond[(atom_1.item(), atom_2.item())] = bond_type
+
+    return atom_pair_to_bond
+
+
+def get_ccd_atom_id_to_element_dict(ccd_entry: CIFBlock) -> dict[str, str]:
+    """Gets the dictionary mapping atom IDs to element symbols from a CCD entry.
+
+    Args:
+        ccd_entry:
+            CIFBlock containing the CCD entry.
+
+    Returns:
+        Dictionary mapping atom IDs to element symbols.
+    """
+
+    atom_id_to_element = {
+        atom_id.item(): element.item()
+        for atom_id, element in zip(
+            ccd_entry["chem_comp_atom"]["atom_id"].as_array(),
+            ccd_entry["chem_comp_atom"]["type_symbol"].as_array(),
+        )
+    }
+
+    return atom_id_to_element
