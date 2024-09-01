@@ -23,7 +23,7 @@ class ConformerGenerationError(ValueError):
 
 def compute_conformer(
     mol: Mol, use_random_coord_init: bool = False, remove_hs: bool = True
-) -> int:
+) -> tuple[Mol, int]:
     """Computes a conformer with the ETKDGv3 strategy.
 
     Wrapper around RDKit's EmbedMolecule, using ETKDGv3, handling hydrogen addition and
@@ -40,7 +40,10 @@ def compute_conformer(
             The function automatically adds hydrogens before conformer generation.
 
     Returns:
-        The conformer ID of the generated conformer.
+        mol:
+            The molecule for which the 3D coordinates should be computed.
+        conformer ID:
+            The ID of the conformer that was generated.
 
     Raises:
         ConformerGenerationError:
@@ -66,7 +69,7 @@ def compute_conformer(
     if conf_id == -1:
         raise ConformerGenerationError("Failed to generate 3D coordinates")
 
-    return conf_id
+    return mol, conf_id
 
 
 # TODO: could improve warning handling of this to send less UFFTYPER warnings
@@ -98,7 +101,7 @@ def multistrategy_compute_conformer(
     """
     # Try standard ETKDGv3 strategy first
     try:
-        conf_id = compute_conformer(
+        mol, conf_id = compute_conformer(
             mol, use_random_coord_init=False, remove_hs=remove_hs
         )
     except ConformerGenerationError as e:
@@ -109,7 +112,7 @@ def multistrategy_compute_conformer(
 
         # Try random coordinates as fallback
         try:
-            conf_id = compute_conformer(
+            mol, conf_id = compute_conformer(
                 mol, use_random_coord_init=True, remove_hs=remove_hs
             )
         except ConformerGenerationError as e:
