@@ -132,7 +132,10 @@ def multistrategy_compute_conformer(
 def add_conformer_atom_mask(mol: Mol) -> AnnotatedMol:
     """Adds a mask of valid atoms, masking out NaN conformer coordinates.
 
-    Uses the first conformer in the molecule.
+    This uses the first conformer in the molecule to find atoms with NaN coordinates and
+    storing them in an appropriate mask attribute. NaN coordinates are usually an
+    artifact of the CCD data, which can have missing coordinates for the stored ideal or
+    model coordinates.
 
     Args:
         mol:
