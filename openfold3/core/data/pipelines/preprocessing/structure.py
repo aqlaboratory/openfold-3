@@ -290,9 +290,10 @@ def preprocess_structure_and_write_outputs_af3(
         # When skipping a structure due to assembly size additionally log the number of
         # chains for informational purposes
         return {
-            "pdb_id": pdb_id,
-            "release_date": release_date,
-            "status": f"skipped: (n_chains: {n_chains})",
+            pdb_id: {
+                "release_date": release_date,
+                "status": f"skipped: (n_chains: {n_chains})",
+            }
         }, {}
 
     atom_array = cleanup_structure_af3(atom_array, cif_data, ccd)
@@ -435,7 +436,7 @@ def preprocess_cif_dir_af3(
     ccd = CIFFile.read(ccd_path)
 
     logger.debug("Reading CIF files")
-    cif_files = [file for file in tqdm(cif_dir.glob("*.cif"))]
+    cif_files = [file for file in tqdm(cif_dir.glob("*.cif"))][:10]
 
     output_dict = {
         "structure_data": {},
