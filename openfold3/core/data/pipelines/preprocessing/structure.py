@@ -177,11 +177,10 @@ def extract_component_data_af3(
 
     def get_reference_molecule_metadata(
         mol: AnnotatedMol,
-        conformer_strategy: Literal["default", "random_init", "failed"],
+        conformer_strategy: Literal["default", "random_init", "use_fallback"],
     ) -> dict:
         """Convenience function to return the metadata for a reference molecule."""
         conf_metadata = {
-            "force_fallback_conformer": conformer_strategy == "failed",
             "conformer_gen_strategy": conformer_strategy,
         }
 
@@ -418,6 +417,7 @@ def preprocess_cif_dir_af3(
     num_workers: int | None = None,
     chunksize: int = 20,
     write_additional_cifs: bool = False,
+    early_stop: int | None = None,
 ) -> None:
     """Preprocesses a directory of PDB files following the AlphaFold3 SI.
 
@@ -433,12 +433,25 @@ def preprocess_cif_dir_af3(
             Path to the CCD file.
         out_dir:
             Path to the output directory.
+        num_workers:
+            Number of workers to use for parallel processing. Use None for all available
+            CPUs, and 0 for a single process (not using the multiprocessing module).
+        chunksize:
+            Number of CIF files to process in each worker task.
+        write_additional_cifs:
+            Whether to additionally write normal .cif files on top of the binary .bcif
+            files
+        early_stop:
+            Stop after processing this many CIFs. Only used for debugging.
     """
     logger.debug("Reading CCD file")
     ccd = CIFFile.read(ccd_path)
 
     logger.debug("Reading CIF files")
     cif_files = [file for file in tqdm(cif_dir.glob("*.cif"))]
+
+    if early_stop is not None:
+        cif_files = cif_files[:early_stop]
 
     output_dict = {
         "structure_data": {},

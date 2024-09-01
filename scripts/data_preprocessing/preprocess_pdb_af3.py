@@ -55,6 +55,12 @@ from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif
     default="WARNING",
     help="Set the logging level.",
 )
+@click.option(
+    "--early-stop",
+    type=int,
+    default=None,
+    help="Stop after processing this many CIFs. Only used for debugging.",
+)
 def main(
     cif_dir: Path,
     ccd_path: Path,
@@ -63,13 +69,20 @@ def main(
     chunksize: int = 50,
     write_additional_cifs: bool = False,
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
+    early_stop: int | None = None,
 ) -> None:
     logger = logging.getLogger("openfold3")
     logger.setLevel(getattr(logging, log_level.upper()))
     logger.addHandler(logging.StreamHandler())
 
     preprocess_cif_dir_af3(
-        cif_dir, ccd_path, out_dir, num_workers, chunksize, write_additional_cifs
+        cif_dir,
+        ccd_path,
+        out_dir,
+        num_workers,
+        chunksize,
+        write_additional_cifs,
+        early_stop,
     )
 
 
