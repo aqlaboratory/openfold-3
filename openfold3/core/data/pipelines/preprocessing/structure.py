@@ -436,7 +436,7 @@ def preprocess_cif_dir_af3(
     ccd = CIFFile.read(ccd_path)
 
     logger.debug("Reading CIF files")
-    cif_files = [file for file in tqdm(cif_dir.glob("*.cif"))][:10]
+    cif_files = [file for file in tqdm(cif_dir.glob("*.cif"))]
 
     output_dict = {
         "structure_data": {},
