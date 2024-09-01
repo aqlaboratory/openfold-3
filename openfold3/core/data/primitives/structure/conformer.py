@@ -176,7 +176,7 @@ def get_allnan_conformer(mol: Mol) -> Chem.Conformer:
     """
     conf = Chem.Conformer(mol.GetNumAtoms())
     for atom_id in range(mol.GetNumAtoms()):
-        conf.SetAtomPosition(atom_id, Point3D(0, 0, 0))
+        conf.SetAtomPosition(atom_id, (np.nan, np.nan, np.nan))
 
     return conf
 
