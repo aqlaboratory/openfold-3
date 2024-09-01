@@ -313,7 +313,7 @@ def preprocess_structure_and_write_outputs_af3(
 
     # Add chain to ligand ID mapping to metadata
     for chain_id, ligand_id in chain_to_ligand_ids.items():
-        chain_int_metadata_dict["chains"][chain_id]["ref_mol_id"] = ligand_id
+        chain_int_metadata_dict["chains"][chain_id]["reference_mol_id"] = ligand_id
 
     structure_metadata_dict = {
         pdb_id: {
