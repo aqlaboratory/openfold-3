@@ -177,11 +177,10 @@ def extract_component_data_af3(
 
     def get_reference_molecule_metadata(
         mol: AnnotatedMol,
-        conformer_strategy: Literal["default", "random_init", "failed"],
+        conformer_strategy: Literal["default", "random_init", "use_fallback"],
     ) -> dict:
         """Convenience function to return the metadata for a reference molecule."""
         conf_metadata = {
-            "force_fallback_conformer": conformer_strategy == "failed",
             "conformer_gen_strategy": conformer_strategy,
         }
 

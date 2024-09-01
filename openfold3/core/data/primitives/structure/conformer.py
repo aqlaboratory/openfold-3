@@ -196,16 +196,22 @@ def replace_nan_coords_with_zeros(mol: Mol) -> None:
 
 def resolve_and_format_fallback_conformer(
     mol: Mol,
-) -> tuple[AnnotatedMol, Literal["default", "random_init", "failed"]]:
+) -> tuple[AnnotatedMol, Literal["default", "random_init", "use_fallback"]]:
     """Retains a single "fallback conformer" in the molecule.
 
-    The fallback conformer can be used by the data module if the conformer generation
-    fails.
+    The purpose of this function is two-fold: The first is to set a single set of
+    coordinates for the molecule that should be used as a fallback in case the
+    on-the-fly conformer generation fails. The second purpose is to already "test out"
+    conformer generation strategies on the fallback conformer and store the strategy
+    that worked, so that the featurization pipeline can use the same strategy to
+    generate new conformers during training.
 
     To set the fallback conformer, this function uses the following strategy:
         1. Try to generate a conformer with `compute_conformer`, tracking the returned
            conformer-generation strategy. If successful, set this computed conformer as
-           the fallback conformer.
+           the fallback conformer. Note that this computed conformer will almost never
+           be used, as the featurization pipeline will be able to generate a new
+           conformer on-the-fly if the conformer generation already worked here.
         2. If this fails, try to use the first stored conformer. For CCD molecules
            created by `mol_from_pdbeccdutils_component`, this will correspond to the
            "Ideal" CCD conformer, or if not present, the "Model" conformer, following
@@ -224,16 +230,19 @@ def resolve_and_format_fallback_conformer(
             NaN coordinates. The NaN coordinates themselves are set to 0, as .sdf files
             can't handle NaNs.
         strategy:
-            The strategy that was used to generate the fallback conformer. Either
-            "default" (ETKDGv3) or "random_init" (ETKDGv3 with random initialization).
-            If conformer generation failed, this will be "failed".
+            The strategy that should be used for conformer generation for this molecule
+            during featurization:
+                - "default": The standard ETKDGv3 strategy
+                - "random_init": The ETKDGv3 strategy with random initialization
+                - "use_fallback": Conformer generation is not possible and the stored
+                  fallback conformer should be used.
     """
     # Test if conformer generation is possible
     try:
         mol, conf_id, strategy = multistrategy_compute_conformer(mol)
         conf = mol.GetConformer(conf_id)
     except ConformerGenerationError:
-        strategy = "failed"
+        strategy = "use_fallback"
         # Try to use first stored conformer
         try:
             conf = next(mol.GetConformers())
