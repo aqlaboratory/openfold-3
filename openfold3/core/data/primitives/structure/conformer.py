@@ -123,9 +123,6 @@ def multistrategy_compute_conformer(
     else:
         success_strategy = "default"
 
-    conf = mol.GetConformer(conf_id)
-    conf.SetProp("name", "Computed")  # following pdbeccdutils ConformerType
-
     return mol, conf_id, success_strategy
 
 
