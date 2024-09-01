@@ -4,7 +4,6 @@ from typing import Literal
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem, Mol
-from rdkit.Geometry import Point3D
 
 from openfold3.core.data.primitives.structure.component import (
     AnnotatedMol,
