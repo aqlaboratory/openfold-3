@@ -21,17 +21,65 @@ class ConformerGenerationError(ValueError):
     pass
 
 
-# TODO: could improve warning handling of this to send less UFFTYPER warnings
 def compute_conformer(
+    mol: Mol, use_random_coord_init: bool = False, remove_hs: bool = True
+) -> int:
+    """Computes a conformer with the ETKDGv3 strategy.
+
+    Wrapper around RDKit's EmbedMolecule, using ETKDGv3, handling hydrogen addition and
+    removal, and raising an explicit ConformerGenerationError instead of returning -1.
+
+    Args:
+        mol:
+            The molecule for which the 3D coordinates should be computed.
+        use_random_coords:
+            Whether to initialize the conformer generation with random coordinates
+            (recommended for failure cases or large molecules)
+        remove_hs:
+            Whether to remove hydrogens from the molecule after conformer generation.
+            The function automatically adds hydrogens before conformer generation.
+
+    Returns:
+        The conformer ID of the generated conformer.
+
+    Raises:
+        ConformerGenerationError:
+            If the conformer generation fails.
+    """
+    try:
+        mol = Chem.AddHs(mol)
+    except Exception as e:
+        logger.warning(f"Failed to add hydrogens before conformer generation: {e}")
+
+    strategy = AllChem.ETKDGv3()
+
+    if use_random_coord_init:
+        strategy.useRandomCoords = True
+
+    strategy.clearConfs = False
+
+    conf_id = AllChem.EmbedMolecule(mol, strategy)
+
+    if remove_hs:
+        mol = safe_remove_all_hs(mol)
+
+    if conf_id == -1:
+        raise ConformerGenerationError("Failed to generate 3D coordinates")
+
+    return conf_id
+
+
+# TODO: could improve warning handling of this to send less UFFTYPER warnings
+def multistrategy_compute_conformer(
     mol: Mol,
     remove_hs: bool = True,
 ) -> tuple[Mol, int, Literal["default", "random_init"]]:
-    """Computes 3D coordinates for a molecule using RDKit.
+    """Computes 3D coordinates for a molecule trying different initializations.
 
-    Tries to compute 3D coordinates for a molecule using the standard ETKDGv3 strategy.
-    If this fails, it falls back to using a different initializion for ETKDGv3 with
-    random starting coordinates. If this also fails, a `ConformerGenerationError` is
-    raised.
+    Tries to compute 3D coordinates for a molecule using the standard RDKit ETKDGv3
+    strategy. If this fails, it falls back to using a different initializion for ETKDGv3
+    with random starting coordinates. If this also fails, a `ConformerGenerationError`
+    is raised.
 
     Args:
         mol:
@@ -48,33 +96,27 @@ def compute_conformer(
             The strategy that was used for conformer generation. Either "default" or
             "random_init".
     """
-    try:
-        mol = Chem.AddHs(mol)
-    except Exception as e:
-        logger.warning(f"Failed to add hydrogens before conformer generation: {e}")
-
     # Try standard ETKDGv3 strategy first
-    strategy = AllChem.ETKDGv3()
-    strategy.clearConfs = False
     try:
-        conf_id = AllChem.EmbedMolecule(mol, strategy)
-        if conf_id == -1:
-            raise ConformerGenerationError("Failed to generate 3D coordinates")
-    except Exception as e:
-        logger.warning(f"Exception when calling EmbedMolecule: {e}, trying random init")
+        conf_id = compute_conformer(
+            mol, use_random_coord_init=False, remove_hs=remove_hs
+        )
+    except ConformerGenerationError as e:
+        logger.warning(
+            f"Exception when trying standard conformer generation: {e}, "
+            + "trying random initialization"
+        )
 
         # Try random coordinates as fallback
         try:
-            strategy.useRandomCoords = True
-            conf_id = AllChem.EmbedMolecule(mol, strategy)
-            if conf_id == -1:
-                raise ConformerGenerationError("Failed to generate 3D coordinates")
-        except Exception as e:
-            logger.warning(
-                f"Exception when calling EmbedMolecule with random coordinates: {e}"
+            conf_id = compute_conformer(
+                mol, use_random_coord_init=True, remove_hs=remove_hs
             )
-            mol = safe_remove_all_hs(mol)
-
+        except ConformerGenerationError as e:
+            logger.warning(
+                "Exception when trying conformer generation with random "
+                + f"initialization: {e}"
+            )
             raise ConformerGenerationError("Failed to generate 3D coordinates") from e
         else:
             success_strategy = "random_init"
@@ -84,16 +126,16 @@ def compute_conformer(
     conf = mol.GetConformer(conf_id)
     conf.SetProp("name", "Computed")  # following pdbeccdutils ConformerType
 
-    if remove_hs:
-        mol = safe_remove_all_hs(mol)
-
     return mol, conf_id, success_strategy
 
 
 def add_conformer_atom_mask(mol: Mol) -> AnnotatedMol:
     """Adds a mask of valid atoms, masking out NaN conformer coordinates.
 
-    Uses the first conformer in the molecule.
+    This uses the first conformer in the molecule to find atoms with NaN coordinates and
+    storing them in an appropriate mask attribute. NaN coordinates are usually an
+    artifact of the CCD data, which can have missing coordinates for the stored ideal or
+    model coordinates.
 
     Args:
         mol:
@@ -188,7 +230,7 @@ def resolve_and_format_fallback_conformer(
     """
     # Test if conformer generation is possible
     try:
-        mol, conf_id, strategy = compute_conformer(mol)
+        mol, conf_id, strategy = multistrategy_compute_conformer(mol)
         conf = mol.GetConformer(conf_id)
     except ConformerGenerationError:
         strategy = "failed"

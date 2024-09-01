@@ -70,7 +70,6 @@ def write_annotated_sdf(mol: AnnotatedMol, out: PathLike | str) -> Path:
         writer.write(mol)
 
 
-# TODO: improve docstring (explain what used_mask is)
 def read_single_annotated_sdf(path: PathLike) -> AnnotatedMol:
     """Reads an SDF file with special atom annotations and returns an RDKit Mol.
 

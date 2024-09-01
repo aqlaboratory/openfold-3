@@ -111,7 +111,7 @@ def get_chain_to_molecule_type_dict(atom_array: struc.AtomArray) -> dict[int, st
     chain_to_molecule_type_id = get_chain_to_molecule_type_id_dict(atom_array)
 
     return {
-        chain: MoleculeType(molecule_type_id).name.lower()
+        chain: MoleculeType(molecule_type_id).name
         for chain, molecule_type_id in chain_to_molecule_type_id.items()
     }
 
