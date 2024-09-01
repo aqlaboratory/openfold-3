@@ -175,11 +175,11 @@ def extract_component_data_af3(
 ) -> tuple[dict, dict]:
     """Extracts component data from a structure."""
 
-    def get_conformer_metadata(
+    def get_reference_molecule_metadata(
         mol: AnnotatedMol,
         conformer_strategy: Literal["default", "random_init", "failed"],
     ) -> dict:
-        """Convenience function to return the conformer metadata for a molecule."""
+        """Convenience function to return the metadata for a reference molecule."""
         conf_metadata = {
             "force_fallback_conformer": conformer_strategy == "failed",
             "conformer_gen_strategy": conformer_strategy,
@@ -202,7 +202,7 @@ def extract_component_data_af3(
 
     # Instantiate output dicts
     chain_to_component_id = {}
-    all_conformer_metadata = {}
+    reference_mol_metadata = {}
 
     # Get all different types of components
     residue_components, std_ligands_to_chains, non_std_ligands_to_chains = (
@@ -258,13 +258,15 @@ def extract_component_data_af3(
     # conformer coordinates
     for mol_id, mol in all_component_mols.items():
         mol, conformer_strategy = resolve_and_format_fallback_conformer(mol)
-        all_conformer_metadata[mol_id] = get_conformer_metadata(mol, conformer_strategy)
+        reference_mol_metadata[mol_id] = get_reference_molecule_metadata(
+            mol, conformer_strategy
+        )
 
         # Write SDF file
         sdf_out_path = sdf_out_dir / f"{mol_id}.sdf"
         write_annotated_sdf(mol, sdf_out_path)
 
-    return chain_to_component_id, all_conformer_metadata
+    return chain_to_component_id, reference_mol_metadata
 
 
 def preprocess_structure_and_write_outputs_af3(
@@ -301,7 +303,7 @@ def preprocess_structure_and_write_outputs_af3(
         atom_array, cif_data
     )
 
-    chain_to_ligand_ids, conformer_metadata_dict = extract_component_data_af3(
+    chain_to_ligand_ids, ref_mol_metadata_dict = extract_component_data_af3(
         atom_array,
         ccd,
         pdb_id,
@@ -311,7 +313,7 @@ def preprocess_structure_and_write_outputs_af3(
 
     # Add chain to ligand ID mapping to metadata
     for chain_id, ligand_id in chain_to_ligand_ids.items():
-        chain_int_metadata_dict["chains"][chain_id]["ligand_id"] = ligand_id
+        chain_int_metadata_dict["chains"][chain_id]["ref_mol_id"] = ligand_id
 
     structure_metadata_dict = {
         pdb_id: {
@@ -334,7 +336,7 @@ def preprocess_structure_and_write_outputs_af3(
     out_fasta_path = out_dir / f"{pdb_id}.fasta"
     write_multichain_fasta(out_fasta_path, chain_to_canonical_seq)
 
-    return structure_metadata_dict, conformer_metadata_dict
+    return structure_metadata_dict, ref_mol_metadata_dict
 
 
 class _AF3PreprocessingWrapper:
@@ -379,7 +381,7 @@ class _AF3PreprocessingWrapper:
 
         logger.debug(f"Processing {cif_file.stem}")
         try:
-            structure_metadata_dict, conformer_metadata_dict = (
+            structure_metadata_dict, ref_mol_metadata_dict = (
                 preprocess_structure_and_write_outputs_af3(
                     input_cif=cif_file,
                     out_dir=out_dir,
@@ -391,11 +393,11 @@ class _AF3PreprocessingWrapper:
             )
 
             # Update the set of processed components in-place
-            processed_mols = set(conformer_metadata_dict.keys())
+            processed_mols = set(ref_mol_metadata_dict.keys())
             self.skip_components.update(processed_mols)
 
             logger.debug(f"Finished processing {cif_file.stem}")
-            return structure_metadata_dict, conformer_metadata_dict
+            return structure_metadata_dict, ref_mol_metadata_dict
 
         except Exception as e:
             tb = traceback.format_exc()  # Get the full traceback
@@ -422,7 +424,7 @@ def preprocess_cif_dir_af3(
     This function applies the full AlphaFold3 structure cleanup pipeline to a directory
     of PDB files. The output is a set of cleaned-up structure files in the output
     directory, as well as a set of metadata files containing chain-level metadata and
-    conformer metadata for all components.
+    reference molecule metadata for all components.
 
     Args:
         cif_dir:
@@ -436,11 +438,11 @@ def preprocess_cif_dir_af3(
     ccd = CIFFile.read(ccd_path)
 
     logger.debug("Reading CIF files")
-    cif_files = [file for file in tqdm(cif_dir.glob("*.cif"))]
+    cif_files = [file for file in tqdm(cif_dir.glob("*.cif"))][:10]
 
     output_dict = {
         "structure_data": {},
-        "conformer_data": {},
+        "reference_molecule_data": {},
     }
 
     reference_mol_out_dir = out_dir / "reference_mols"
@@ -468,29 +470,27 @@ def preprocess_cif_dir_af3(
         write_additional_cifs=write_additional_cifs,
     )
 
-    def update_output_dicts(
-        structure_metadata_dict: dict, conformer_metadata_dict: dict
-    ):
+    def update_output_dicts(structure_metadata_dict: dict, ref_mol_metadata_dict: dict):
         """Convenience function to update the output dicts with the metadata."""
         output_dict["structure_data"].update(structure_metadata_dict)
-        output_dict["conformer_data"].update(conformer_metadata_dict)
+        output_dict["reference_molecule_data"].update(ref_mol_metadata_dict)
 
-        processed_mol_ids.update(conformer_metadata_dict.keys())
+        processed_mol_ids.update(ref_mol_metadata_dict.keys())
 
     ## Preprocess all CIF files, cleaning up structures and writing out metadata
 
     # Use a single process if num_workers is 0 (for debugging)
     logger.debug("Starting processing.")
     if num_workers == 0:
-        for structure_metadata_dict, conformer_metadata_dict in tqdm(
+        for structure_metadata_dict, ref_mol_metadata_dict in tqdm(
             map(wrapped_preprocessing_func, zip(cif_files, cif_output_dirs)),
             total=len(cif_files),
         ):
-            update_output_dicts(structure_metadata_dict, conformer_metadata_dict)
+            update_output_dicts(structure_metadata_dict, ref_mol_metadata_dict)
 
     else:
         with mp.Pool(num_workers) as pool:
-            for i, (structure_metadata_dict, conformer_metadata_dict) in enumerate(
+            for i, (structure_metadata_dict, ref_mol_metadata_dict) in enumerate(
                 tqdm(
                     pool.imap_unordered(
                         wrapped_preprocessing_func,
@@ -500,7 +500,7 @@ def preprocess_cif_dir_af3(
                     total=len(cif_files),
                 )
             ):
-                update_output_dicts(structure_metadata_dict, conformer_metadata_dict)
+                update_output_dicts(structure_metadata_dict, ref_mol_metadata_dict)
 
                 # Periodically save the output dict to avoid losing data in case of a
                 # crash
