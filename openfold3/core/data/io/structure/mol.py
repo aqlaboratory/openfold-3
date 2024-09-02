@@ -24,9 +24,6 @@ def read_single_sdf(path: PathLike) -> Mol:
     Returns:
         The RDKit Mol object.
     """
-    if not isinstance(path, Path):
-        path = Path
-
     reader = Chem.SDMolSupplier(str(path))
     mol = next(reader)
 
