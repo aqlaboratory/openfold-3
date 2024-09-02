@@ -4,11 +4,11 @@ from typing import Optional
 
 from ml_collections import ConfigDict
 
-from openfold3.core.runners.registry_base import register_model_base
+from openfold3.core.runners.registry_base import register_project_base
 
 # Record of ModelEntries
 MODEL_REGISTRY = {}
-register_model = functools.partial(register_model_base, model_registry=MODEL_REGISTRY)
+register_model = functools.partial(register_project_base, model_registry=MODEL_REGISTRY)
 
 
 def make_model_config_with_preset(model_name: str, preset: str):

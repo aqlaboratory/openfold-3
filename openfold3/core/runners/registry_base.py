@@ -10,7 +10,7 @@ from openfold3.core.runners.model_runner import ModelRunner
 
 
 @dataclasses.dataclass
-class ModelEntry:
+class ProjectEntry:
     name: str
     model_runner: ModelRunner
     base_config: ConfigDict
@@ -19,44 +19,46 @@ class ModelEntry:
     # Populated upon ModelEntry creation
     presets: Optional[list[str]]
 
-    def get_config_with_preset(self, preset: Optional[str] = None):
-        model_config = self.base_config.copy_and_resolve_references()
-        if preset is None or preset == "initial_training":
-            logging.info(f"Using default training configs for {self.name}")
-            return model_config
-
+    def update_config_with_preset(self, config: ConfigDict, preset: str) -> None:
         if preset not in self.presets:
             raise KeyError(
                 f"{preset} preset is not supported for {self.name}"
                 f"Allowed presets are {self.presets}"
             )
         reference_configs = dict(config_utils.load_yaml(self.reference_config_path))
-        preset_model_config = reference_configs[preset].get("model_update")
-        if preset_model_config:
-            model_config.update(preset_model_config)
-        return model_config
+        preset_model_config = reference_configs[preset]
+        config.update(preset_model_config)
+        return
+
+    def get_config_with_preset(self, preset: str) -> ConfigDict:
+        config = self.base_config
+        if preset is None or preset == "initial_training":
+            logging.info(f"Using default training configs for {self.name}")
+        else:
+            self.update_config_with_preset(config, preset)
+        return config
 
 
-def register_model_base(
+def register_project_base(
     name: str,
     base_config: ConfigDict,
     reference_config_path: Optional[Path] = None,
-    model_registry: Optional[dict[str, Any]] = None,
+    project_registry: Optional[dict[str, Any]] = None,
 ):
-    """Register ModelEntry container with ModelRunner and configuration settings.
+    """Register ProjectEntry container with ModelRunner and configuration settings.
 
     Args:
         name: Name to use for model entry
         base_config: Base configuration class for model entry
         reference_config_path: Path to yaml with configuration presets.
-        model_register: Map of ModelRunner and configs by name
+        project_registry: Map of ProjectEntries and configs by name
 
     Returns:
-        Type[OpenFoldModelWrapper]: The registered class.
+        Type[ProjectEntry]: The registered class.
     """
 
     def _decorator(runner_cls):
-        if name in model_registry:
+        if name in project_registry:
             raise ValueError("{name} has been previously registered in registry")
         if reference_config_path:
             reference_dict = config_utils.load_yaml(reference_config_path)
@@ -67,7 +69,7 @@ def register_model_base(
         # Automatically add/update model name to base config
         # Makes it easy to refer to this ModelEntry later from a config
         base_config.model_name = name
-        model_registry[name] = ModelEntry(
+        project_registry[name] = ProjectEntry(
             name, runner_cls, base_config, reference_config_path, presets
         )
         runner_cls._registered = True
