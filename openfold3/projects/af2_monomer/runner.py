@@ -7,12 +7,12 @@ from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.projects.af2_monomer.config.base_config import config
 from openfold3.projects.af2_monomer.model import AlphaFold
-from openfold3.projects.registry import register_model
+from openfold3.projects.registry import register_project
 
 REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_config.yml"
 
 
-@register_model("af2_monomer", config, REFERENCE_CONFIG_PATH)
+@register_project("af2_monomer", config, REFERENCE_CONFIG_PATH)
 class AlphaFoldMonomer(ModelRunner):
     def __init__(self, model_config):
         super().__init__(AlphaFold, model_config)
@@ -40,9 +40,3 @@ class AlphaFoldMonomer(ModelRunner):
                 "name": "AlphaFoldLRScheduler",
             },
         }
-
-
-ProjectEntry = ProjectEntry(
-    "af2_monomer", AlphaFoldMonomer, config, REFERENCE_CONFIG_PATH
-)
-register_project("af2_monomer", ProjectEntry)

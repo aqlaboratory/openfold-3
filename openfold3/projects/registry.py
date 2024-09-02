@@ -8,9 +8,18 @@ from openfold3.core.runners.registry_base import make_project_entry
 
 # Record of ModelEntries
 PROJECT_REGISTRY = {}
-register_project = functools.partial(
-    make_project_entry, project_registry=PROJECT_REGISTRY
-)
+
+
+def register_project(name, base_config, reference_config_path):
+    """Creates helper function for registering projects."""
+
+    def _decorator(runner_cls):
+        make_project_entry(
+            name, runner_cls, base_config, reference_config_path, PROJECT_REGISTRY
+        )
+        return runner_cls
+
+    return _decorator
 
 
 def make_model_config_with_preset(project_name: str, preset: str):
