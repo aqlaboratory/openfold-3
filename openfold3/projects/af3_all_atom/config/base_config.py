@@ -1,6 +1,6 @@
 import ml_collections as mlc
 
-from openfold3.model_implementations.af3_all_atom.config import (
+from openfold3.projects.af3_all_atom.config import (
     linear_init_config as lin_init,
 )
 
@@ -453,7 +453,7 @@ data_config_template = mlc.ConfigDict(
         "alignment_index_path": PLACEHOLDER_PATH,
         "dataset_cache_path": PLACEHOLDER_PATH,
         "reference_molecule_directory": PLACEHOLDER_PATH,
-        "template_cache_path": PLACEHOLDER_PATH, 
+        "template_cache_path": PLACEHOLDER_PATH,
         "template_structures_path": PLACEHOLDER_PATH,
     }
 )

@@ -12,8 +12,8 @@ from openfold3.core.model.heads.prediction_heads import (
     PredictedDistanceErrorHead,
 )
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
-from openfold3.model_implementations import registry
-from openfold3.model_implementations.af3_all_atom.config.base_config import (
+from openfold3.projects import registry
+from openfold3.projects.af3_all_atom.config.base_config import (
     max_atoms_per_token,
 )
 from tests.config import consts

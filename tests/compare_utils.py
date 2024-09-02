@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 from openfold3.core.utils.import_weights import import_jax_weights_
-from openfold3.model_implementations import registry
+from openfold3.projects import registry
 from tests.config import consts
 
 # Give JAX some GPU memory discipline

@@ -4,9 +4,9 @@ import torch
 
 from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
-from openfold3.model_implementations.af2_multimer.config.base_config import config
-from openfold3.model_implementations.af2_multimer.model import AlphaFold as AFMultimer
-from openfold3.model_implementations.registry import register_model
+from openfold3.projects.af2_multimer.config.base_config import config
+from openfold3.projects.af2_multimer.model import AlphaFold as AFMultimer
+from openfold3.projects.registry import register_model
 
 REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_config.yml"
 

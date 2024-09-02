@@ -23,7 +23,7 @@ import torch.nn as nn
 import tests.compare_utils as compare_utils
 from openfold3.core.data.legacy import data_transforms
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations import registry
+from openfold3.projects import registry
 from tests.config import consts
 from tests.data_utils import (
     random_asym_ids,
@@ -111,8 +111,8 @@ class TestModel(unittest.TestCase):
     @compare_utils.skip_unless_cuda_available()
     @unittest.skip("Soloseq unsupported")
     def test_dry_run_seqemb_mode(self):
-        import openfold3.model_implementations.soloseq.config as soloseq_config
-        from openfold3.model_implementations.soloseq.model import AlphaFold
+        import openfold3.projects.soloseq.config as soloseq_config
+        from openfold3.projects.soloseq.model import AlphaFold
 
         n_seq = 1
         n_templ = consts.n_templ

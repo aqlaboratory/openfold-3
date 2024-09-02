@@ -20,8 +20,8 @@ from openfold3.core.utils.callbacks import (
     EarlyStoppingVerbose,
     PerformanceLoggingCallback,
 )
-from openfold3.model_implementations import registry
-from openfold3.model_implementations.af3_all_atom.config import (
+from openfold3.projects import registry
+from openfold3.projects.af3_all_atom.config import (
     base_config as af3_base_config,
 )
 

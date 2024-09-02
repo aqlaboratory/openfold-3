@@ -1,7 +1,7 @@
 import ml_collections as mlc
 
-import openfold3.model_implementations.af2_monomer.config.linear_init_config as lin_init
-from openfold3.model_implementations.af2_monomer.config.features import feature_dict
+import openfold3.projects.af2_monomer.config.linear_init_config as lin_init
+from openfold3.projects.af2_monomer.config.features import feature_dict
 
 MODEL_NAME = "af2_monomer"
 

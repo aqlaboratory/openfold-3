@@ -10,7 +10,7 @@ from openfold3.core.loss.confidence import (
     pae_loss,
     pde_loss,
 )
-from openfold3.model_implementations.registry import make_config_with_preset
+from openfold3.projects.registry import make_config_with_preset
 
 
 class TestConfidenceLoss(unittest.TestCase):

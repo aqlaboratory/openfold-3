@@ -29,7 +29,7 @@ from openfold3.core.model.feature_embedders import (
     TemplateSingleEmbedderMonomer,
     TemplateSingleEmbedderMultimer,
 )
-from openfold3.model_implementations import registry
+from openfold3.projects import registry
 from tests.config import consts, monomer_consts, multimer_consts
 from tests.data_utils import random_asym_ids, random_template_feats
 

@@ -8,7 +8,7 @@ from openfold3.core.runners.model_runner import (
     ModelRunner,
     ModelRunnerNotRegisteredError,
 )
-from openfold3.model_implementations.registry import (
+from openfold3.projects.registry import (
     MODEL_REGISTRY,
     get_lightning_module,
     make_config_with_preset,
