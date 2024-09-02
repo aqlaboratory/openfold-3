@@ -1,3 +1,5 @@
+"""Primitives for processing templates."""
+
 import dataclasses
 import logging
 from datetime import datetime

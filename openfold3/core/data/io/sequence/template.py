@@ -1,5 +1,5 @@
 """
-This module contains parsers for template alignments.
+Parsers for template alignments.
 """
 
 import re

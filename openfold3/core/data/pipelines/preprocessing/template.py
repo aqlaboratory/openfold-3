@@ -1,6 +1,4 @@
-"""This module contains preprocessing pipelines for template data.
-
-These pipelines are ran before training/evaluation."""
+"""Preprocessing pipelines for template data ran before training/evaluation."""
 
 import json
 import logging
