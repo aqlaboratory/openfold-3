@@ -16,6 +16,7 @@ Changes from old version:
     - set remove_first_row_gaps argument in parse_hmmsearch_sto to True
     - parse_hmmsearch_a3m and parse_hmmsearch_sto now return a dict[int, TemplateHit]
     - index in TemplateHit dict starts from 0 instead of 1
+    - replaced e_value None with 0
 """
 
 
@@ -25,6 +26,7 @@ class HitMetadata(NamedTuple):
     Args:
         NamedTuple (_type_): _description_
     """
+
     pdb_id: str
     chain: str
     start: int
@@ -45,7 +47,7 @@ class TemplateHit(NamedTuple):
     aligned_cols: int
     hit_sequence: str
     indices_hit: list[int]
-    sum_probs: Optional[float]
+    e_value: Optional[float]
 
 
 def _get_indices(sequence: str, start: int) -> list[int]:
@@ -220,7 +222,7 @@ def parse_hmmsearch_a3m(a3m_string: str) -> dict[int, TemplateHit]:
             index=i,
             name=f"{metadata.pdb_id}_{metadata.chain}",
             aligned_cols=aligned_cols,
-            sum_probs=None,
+            e_value=0,
             hit_sequence=hit_sequence.upper(),
             indices_hit=indices_hit,
         )
