@@ -1,3 +1,4 @@
+from atexit import register
 from pathlib import Path
 
 import torch
@@ -39,3 +40,9 @@ class AlphaFoldMonomer(ModelRunner):
                 "name": "AlphaFoldLRScheduler",
             },
         }
+
+
+ProjectEntry = ProjectEntry(
+    "af2_monomer", AlphaFoldMonomer, config, REFERENCE_CONFIG_PATH
+)
+register_project("af2_monomer", ProjectEntry)

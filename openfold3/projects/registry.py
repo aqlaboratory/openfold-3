@@ -4,17 +4,19 @@ from typing import Optional
 
 from ml_collections import ConfigDict
 
-from openfold3.core.runners.registry_base import register_project_base
+from openfold3.core.runners.registry_base import make_project_entry
 
 # Record of ModelEntries
-MODEL_REGISTRY = {}
-register_model = functools.partial(register_project_base, model_registry=MODEL_REGISTRY)
+PROJECT_REGISTRY = {}
+register_project = functools.partial(
+    make_project_entry, project_registry=PROJECT_REGISTRY
+)
 
 
-def make_model_config_with_preset(model_name: str, preset: str):
+def make_model_config_with_preset(project_name: str, preset: str):
     """Retrieves config matching preset for one of the models."""
-    model_entry = MODEL_REGISTRY[model_name]
-    return model_entry.get_config_with_preset(preset)
+    project_entry = PROJECT_REGISTRY[project_name]
+    return project_entry.get_config_with_preset(preset)
 
 
 def get_loss_config(loss_config: ConfigDict, loss_mode: str) -> ConfigDict:
@@ -163,4 +165,4 @@ def get_lightning_module(config: ConfigDict, model_name: Optional[str] = None):
             raise ValueError(
                 "Model_name must be specified either in config or" " as an argument."
             ) from exc
-    return MODEL_REGISTRY[model_name].model_runner(config)
+    return PROJECT_REGISTRY[model_name].model_runner(config)

@@ -9,7 +9,7 @@ from openfold3.core.runners.model_runner import (
     ModelRunnerNotRegisteredError,
 )
 from openfold3.projects.registry import (
-    MODEL_REGISTRY,
+    PROJECT_REGISTRY,
     get_lightning_module,
     make_config_with_preset,
     make_model_config,
@@ -22,7 +22,7 @@ class TestLoadPresets:
         # TODO: Convert other models to new config format
         # expected_model_entries = {"af2_monomer", "af2_multimer", "af3_all_atom"}
         expected_model_entries = {"af3_all_atom"}
-        assert set(MODEL_REGISTRY.keys()) == expected_model_entries
+        assert set(PROJECT_REGISTRY.keys()) == expected_model_entries
 
     def test_model_preset_loading(self):
         model_config = make_config_with_preset("af3_all_atom", "model_1_ptm")
