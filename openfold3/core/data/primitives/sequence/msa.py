@@ -708,14 +708,14 @@ def create_crop_to_seq_map(
             [MoleculeType.PROTEIN, MoleculeType.RNA],
         )
     ]
-    chain_ids_in_crop = list(set(atom_array_with_aln_in_crop.chain_id_renumbered))
+    chain_ids_in_crop = list(set(atom_array_with_aln_in_crop.chain_id))
 
     chain_rep_map = {}
     tokens_in_chain = {}
     for chain_id_in_crop in chain_ids_in_crop:
         # Get atom array for chain
         atom_array_with_aln_in_crop_chain = atom_array_with_aln_in_crop[
-            atom_array_with_aln_in_crop.chain_id_renumbered == chain_id_in_crop
+            atom_array_with_aln_in_crop.chain_id == chain_id_in_crop
         ]
         # # Get chain and representative chain ID
         chain_rep_map[chain_id_in_crop] = data_cache_entry_chains[chain_id_in_crop][

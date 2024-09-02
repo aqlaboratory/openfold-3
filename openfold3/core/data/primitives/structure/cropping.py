@@ -46,7 +46,7 @@ def crop_contiguous(
     assign_atom_indices(atom_array)
 
     # Get chain ids and permute
-    chains = np.array(list(set(atom_array.chain_id_renumbered)), dtype=int)
+    chains = np.array(list(set(atom_array.chain_id)), dtype=int)
     chains = generator.permutation(chains)
 
     # Create cropping mask annotation
@@ -57,7 +57,7 @@ def crop_contiguous(
 
     for chain_id in chains:
         # Get chain atom array
-        atom_array_chain = atom_array[atom_array.chain_id_renumbered == chain_id]
+        atom_array_chain = atom_array[atom_array.chain_id == chain_id]
 
         # Get chain length
         chain_length = atom_array_chain.token_id[-1] - atom_array_chain.token_id[0] + 1
@@ -166,7 +166,7 @@ def crop_spatial_interface(
 
     # Skip interface subsetting if there is only one chain
     # Making the interface spatial crop equivalent to non-interface spatial crop
-    if len(set(atom_array.chain_id_renumbered)) > 1:
+    if len(set(atom_array.chain_id)) > 1:
         # Find interface token center atoms
         preferred_interface_token_center_atoms = get_query_interface_token_center_atoms(
             preferred_token_center_atoms, token_center_atoms
@@ -207,14 +207,12 @@ def subset_preferred(
         # If chain provided
         if isinstance(preferred_chain_or_interface, int):
             preferred_token_center_atoms = token_center_atoms[
-                token_center_atoms.chain_id_renumbered == preferred_chain_or_interface
+                token_center_atoms.chain_id == preferred_chain_or_interface
             ]
         # If interface provided
         elif isinstance(preferred_chain_or_interface, tuple):
             preferred_token_center_atoms = token_center_atoms[
-                np.isin(
-                    token_center_atoms.chain_id_renumbered, preferred_chain_or_interface
-                )
+                np.isin(token_center_atoms.chain_id, preferred_chain_or_interface)
             ]
         else:
             raise ValueError(
