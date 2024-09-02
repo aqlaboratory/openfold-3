@@ -139,6 +139,7 @@ def write_minimal_cif(
     atom_array: AtomArray,
     output_path: Path,
     format: Literal["cif", "bcif"] = "cif",
+    data_block: str = None,
     include_bonds: bool = True,
 ) -> None:
     """Write a minimal CIF file
@@ -153,10 +154,14 @@ def write_minimal_cif(
             Path to write the CIF file to.
         format:
             Format of the CIF file. Defaults to "cif".
+        data_block:
+            Name of the data block in the CIF file. Defaults to None.
         include_bonds:
             Whether to include bond information in the CIF file. Defaults to True.
     """
     cif_file = pdbx.CIFFile() if format == "cif" else pdbx.BinaryCIFFile()
-    pdbx.set_structure(cif_file, atom_array, include_bonds=include_bonds)
+    pdbx.set_structure(
+        cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
+    )
 
     cif_file.write(output_path)

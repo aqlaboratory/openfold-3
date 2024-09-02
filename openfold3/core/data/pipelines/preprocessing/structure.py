@@ -328,9 +328,11 @@ def preprocess_structure_and_write_outputs_af3(
     out_dir.mkdir(parents=True, exist_ok=True)
     out_cif_path = out_dir / f"{pdb_id}.bcif"
 
-    write_minimal_cif(atom_array, out_cif_path, format="bcif")
+    write_minimal_cif(atom_array, out_cif_path, format="bcif", data_block=pdb_id)
     if write_additional_cifs:
-        write_minimal_cif(atom_array, out_dir / f"{pdb_id}.cif", format="cif")
+        write_minimal_cif(
+            atom_array, out_dir / f"{pdb_id}.cif", format="cif", data_block=pdb_id
+        )
 
     out_fasta_path = out_dir / f"{pdb_id}.fasta"
     write_multichain_fasta(out_fasta_path, chain_to_canonical_seq)
