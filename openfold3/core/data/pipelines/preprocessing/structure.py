@@ -161,7 +161,9 @@ def extract_chain_and_interface_metadata_af3(
             "molecule_type": chain_to_molecule_type[chain_id],
         }
 
-    metadata_dict["interfaces"] = get_interface_chain_id_pairs(atom_array)
+    metadata_dict["interfaces"] = get_interface_chain_id_pairs(
+        atom_array, distance_threshold=5.0
+    )
 
     return metadata_dict
 

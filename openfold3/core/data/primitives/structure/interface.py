@@ -73,7 +73,7 @@ class NaNRobustKDTree:
 def get_query_interface_atom_pair_idxs(
     query_atom_array: AtomArray,
     target_atom_array: AtomArray,
-    distance_threshold: float = 15.0,
+    distance_threshold: float = 5.0,
     return_chain_pairs: bool = False,
 ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
     """Returns interface atom pair indices of the query based on the target.
@@ -91,7 +91,7 @@ def get_query_interface_atom_pair_idxs(
         target_atom_array:
             AtomArray containing the second set of atoms
         distance_threshold:
-            Distance threshold in Angstrom. Defaults to 15.0.
+            Distance threshold in Angstrom. Defaults to 5.0.
         return_chain_pairs:
             Whether to return the chain IDs of the matched atom pairs. Defaults to
             False.
@@ -135,7 +135,7 @@ def get_query_interface_atom_pair_idxs(
 
 def get_interface_atom_pair_idxs(
     atom_array: AtomArray,
-    distance_threshold: float = 15.0,
+    distance_threshold: float = 5.0,
     return_chain_pairs: bool = False,
     sort_by_chain: bool = False,
 ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
@@ -151,7 +151,7 @@ def get_interface_atom_pair_idxs(
         atom_array:
             AtomArray containing the structure to find interface atom pairs in.
         distance_threshold:
-            Distance threshold in Angstrom. Defaults to 15.0.
+            Distance threshold in Angstrom. Defaults to 5.0.
         return_chain_pairs:
             Whether to return the chain IDs of the matched atom pairs. Defaults to
             False.
@@ -199,7 +199,7 @@ def get_interface_atom_pair_idxs(
 def get_query_interface_atoms(
     query_atom_array: AtomArray,
     target_atom_array: AtomArray,
-    distance_threshold: float = 15.0,
+    distance_threshold: float = 5.0,
 ) -> AtomArray:
     """Returns interface atoms in the query based on the target
 
@@ -212,7 +212,7 @@ def get_query_interface_atoms(
         target_atom_array:
             AtomArray containing the structure to compare against.
         distance_threshold:
-            Distance threshold in Angstrom. Defaults to 15.0.
+            Distance threshold in Angstrom. Defaults to 5.0.
 
     Returns:
         Subset of the query AtomArray just containing interface atoms.
@@ -229,7 +229,7 @@ def get_query_interface_atoms(
 
 def get_interface_atoms(
     atom_array: AtomArray,
-    distance_threshold: float = 15.0,
+    distance_threshold: float = 5.0,
 ) -> AtomArray:
     """Returns interface atoms in a structure.
 
@@ -240,7 +240,7 @@ def get_interface_atoms(
         atom_array:
             AtomArray containing the structure to find interface atoms in.
         distance_threshold:
-            Distance threshold in Angstrom. Defaults to 15.0.
+            Distance threshold in Angstrom. Defaults to 5.0.
 
     Returns:
         AtomArray with interface atoms.
@@ -255,7 +255,7 @@ def get_interface_atoms(
 
 
 def get_interface_chain_id_pairs(
-    atom_array: AtomArray, distance_threshold: float = 15.0
+    atom_array: AtomArray, distance_threshold: float = 5.0
 ) -> np.ndarray:
     """Returns chain pairings with interface atoms based on a distance threshold
 
@@ -266,7 +266,7 @@ def get_interface_chain_id_pairs(
         atom_array:
             AtomArray containing the structure to find interface chain pairings in.
         distance_threshold:
-            Distance threshold in Angstrom. Defaults to 15.0.
+            Distance threshold in Angstrom. Defaults to 5.0.
 
     Returns:
         Nx2 array with unique chain pairings that have interface atoms, sorted so that
@@ -284,7 +284,7 @@ def get_interface_chain_id_pairs(
 
 def chain_paired_interface_atom_iter(
     atom_array: AtomArray,
-    distance_threshold: float = 15.0,
+    distance_threshold: float = 5.0,
     ignore_covalent: bool = False,
 ) -> Generator[tuple[tuple[int, int], np.ndarray[np.integer, np.integer]], None, None]:
     """Yields interface atom pairs grouped by unique chain pairs.
@@ -298,7 +298,7 @@ def chain_paired_interface_atom_iter(
         atom_array:
             AtomArray containing the structure to find interface atom pairs in.
         distance_threshold:
-            Distance threshold in Angstrom. Defaults to 15.0.
+            Distance threshold in Angstrom. Defaults to 5.0.
         ignore_covalent:
             Whether to ignore pairs corresponding to covalently bonded atoms. Defaults
             to False.
