@@ -1,4 +1,4 @@
-"""Primitives for processing templates."""
+"""Primitives for processing templates alignments."""
 
 import dataclasses
 import logging

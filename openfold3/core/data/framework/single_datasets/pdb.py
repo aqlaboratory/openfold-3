@@ -7,6 +7,7 @@ from typing import Union
 
 import pandas as pd
 import torch
+from biotite.structure.io import pdbx
 
 from openfold3.core.data.framework.single_datasets.abstract_single_dataset import (
     SingleDataset,
@@ -26,6 +27,9 @@ from openfold3.core.data.pipelines.featurization.template import (
 from openfold3.core.data.pipelines.sample_processing.msa import process_msas_cropped_af3
 from openfold3.core.data.pipelines.sample_processing.structure import (
     process_target_structure_af3,
+)
+from openfold3.core.data.pipelines.sample_processing.template import (
+    process_template_structures_af3,
 )
 from openfold3.core.data.resources.residues import MoleculeType
 
@@ -186,6 +190,9 @@ class WeightedPDBDataset(SingleDataset):
         self.create_datapoint_cache()
         self.datapoint_probabilities = self.datapoint_cache["weight"].to_numpy()
 
+        # CCD
+        self.ccd = pdbx.CIFFile.read(dataset_config["ccd_path"])
+
         # Dataset configuration
         self.crop_weights = dataset_config["crop_weights"]
         self.token_budget = dataset_config["token_budget"]
@@ -277,6 +284,17 @@ class WeightedPDBDataset(SingleDataset):
         features.update(featurize_msa_af3(msa_processed))
 
         # Dummy template features
+        template_slice_collection = process_template_structures_af3(
+            atom_array_cropped=atom_array_cropped,
+            n_templates=self.n_templates,
+            is_train=True,
+            template_cache_path=self.template_cache_path,
+            dataset_cache=self.dataset_cache,
+            pdb_id=pdb_id,
+            template_structures_path=self.template_structures_path,
+            ccd=self.ccd,
+        )
+
         features.update(
             featurize_templates_dummy_af3(1, self.n_templates, self.token_budget)
         )

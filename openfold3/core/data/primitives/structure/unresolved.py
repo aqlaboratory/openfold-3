@@ -18,7 +18,7 @@ from openfold3.core.data.primitives.structure.metadata import (
 from openfold3.core.data.resources.residues import (
     NUCLEIC_ACID_PHOSPHATE_OXYGENS,
     STANDARD_NUCLEIC_ACID_RESIDUES,
-    STANDARD_PROTEIN_RESIDUES,
+    STANDARD_PROTEIN_RESIDUES_3,
     MoleculeType,
 )
 
@@ -374,7 +374,7 @@ def add_unresolved_atoms_within_residue(
     # We need atom indices for bookkeeping of where to insert the missing atoms
     assign_atom_indices(extended_atom_array)
 
-    std_protein_residues = set(STANDARD_PROTEIN_RESIDUES)
+    std_protein_residues = set(STANDARD_PROTEIN_RESIDUES_3)
     std_na_residues = set(STANDARD_NUCLEIC_ACID_RESIDUES)
 
     missing_atom_list = []
