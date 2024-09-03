@@ -79,7 +79,13 @@ def centre_random_augmentation(
 
 # Move this somewhere else?
 def create_noise_schedule(
-    no_rollout_steps: float, sigma_data: float, s_max: float, s_min: float, p: int
+    no_rollout_steps: float,
+    sigma_data: float,
+    s_max: float,
+    s_min: float,
+    p: int,
+    dtype: torch.dtype,
+    device: torch.device,
 ):
     """
     Implements AF3 noise schedule (Page 24).
@@ -96,10 +102,17 @@ def create_noise_schedule(
         p:
             Constant controlling the extent steps near s_min are shortened
             at the cost of longer steps near s_max
+        dtype:
+            Dtype of noise schedule
+        device:
+            Device of noise schedule
     Returns:
         Noise schedule
     """
-    t = torch.arange(0, 1 + no_rollout_steps) / no_rollout_steps
+    t = (
+        torch.arange(0, 1 + no_rollout_steps, dtype=dtype, device=device)
+        / no_rollout_steps
+    )
     return (
         sigma_data * (s_max ** (1 / p) + t * (s_min ** (1 / p) - s_max ** (1 / p))) ** p
     )

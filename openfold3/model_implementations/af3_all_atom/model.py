@@ -252,7 +252,11 @@ class AlphaFold3(nn.Module):
         """
         # Compute atom positions
         with torch.no_grad():
-            noise_schedule = create_noise_schedule(**self.config.model.noise_schedule)
+            noise_schedule = create_noise_schedule(
+                **self.config.model.noise_schedule,
+                dtype=si_input.dtype,
+                device=si_input.device,
+            )
 
             atom_positions_predicted = self.sample_diffusion(
                 batch=batch,

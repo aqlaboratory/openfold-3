@@ -174,7 +174,9 @@ class TestSampleDiffusion(unittest.TestCase):
         with torch.no_grad():
             noise_sched_config = config.model.noise_schedule
             noise_sched_config.no_rollout_steps = 2
-            noise_schedule = create_noise_schedule(**noise_sched_config)
+            noise_schedule = create_noise_schedule(
+                **noise_sched_config, dtype=si_input.dtype, device=si_input.device
+            )
 
             xl = sd(
                 batch=batch,
