@@ -39,7 +39,7 @@ def process_template_structures_af3(
         # Get residue ids for the current chain
         cropped_query_res_ids = get_query_structure_res_ids(
             atom_array_cropped, chain_id
-        )   
+        )
 
         # Get list of templates for chain
         valid_templates = dataset_cache[pdb_id]["chains"][chain_id]["valid_templates"]

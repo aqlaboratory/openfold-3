@@ -294,6 +294,7 @@ class WeightedPDBDataset(SingleDataset):
             template_structures_path=self.template_structures_path,
             ccd=self.ccd,
         )
+        print(template_slice_collection)
 
         features.update(
             featurize_templates_dummy_af3(1, self.n_templates, self.token_budget)
