@@ -1,25 +1,28 @@
 # TODO add license
-import functools
 from typing import Optional
 
 from ml_collections import ConfigDict
 
-from openfold3.core.runners.registry_base import make_project_entry
+from openfold3.core.runners import registry_base
 
 # Record of ModelEntries
 PROJECT_REGISTRY = {}
 
 
 def register_project(name, base_config, reference_config_path):
-    """Creates helper function for registering projects."""
+    """Creates decorator function for registering projects."""
 
     def _decorator(runner_cls):
-        make_project_entry(
+        registry_base.make_project_entry(
             name, runner_cls, base_config, reference_config_path, PROJECT_REGISTRY
         )
         return runner_cls
 
     return _decorator
+
+
+def get_project_entry(project_name):
+    return PROJECT_REGISTRY.get(project_name)
 
 
 def make_model_config_with_preset(project_name: str, preset: str):
@@ -131,13 +134,16 @@ def make_dataset_configs(
                 }
             )
             sub_config = base_data_template.copy_and_resolve_references()
-            sub_config.update(dataset_specs.config)
             for path_name, path in runner_args.dataset_paths[name].items():
                 sub_config[path_name] = path
+
+            sub_config.update(dataset_specs.config)
+            # AF3 specific
             sub_config.loss = get_loss_config(
                 loss_weight_config, sub_config.loss_weight_mode
             )
             delattr(sub_config, "loss_weight_mode")
+
             dataset_config.config = sub_config
             output_dataset_configs.append(dataset_config)
 

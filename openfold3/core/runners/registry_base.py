@@ -1,7 +1,7 @@
 import dataclasses
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from ml_collections import ConfigDict
 
@@ -16,21 +16,25 @@ class ProjectEntry:
     base_config: ConfigDict
     reference_config_path: Optional[Path]
     # List of available presets available for given model_runner
-    # Populated upon ModelEntry creation
+    # Populated upon ProjectEntry creation
     presets: Optional[list[str]]
 
     def update_config_with_preset(self, config: ConfigDict, preset: str) -> None:
+        """Updates a given configdict with a preset that is part of the ProjectEntry"""
         if preset not in self.presets:
             raise KeyError(
                 f"{preset} preset is not supported for {self.name}"
                 f"Allowed presets are {self.presets}"
             )
-        reference_configs = dict(config_utils.load_yaml(self.reference_config_path))
+        reference_configs = ConfigDict(
+            config_utils.load_yaml(self.reference_config_path)
+        )
         preset_model_config = reference_configs[preset]
         config.update(preset_model_config)
         return
 
     def get_config_with_preset(self, preset: str) -> ConfigDict:
+        """Retrieves a config with specified preset applied"""
         config = self.base_config
         if preset is None or preset == "initial_training":
             logging.info(f"Using default training configs for {self.name}")
@@ -40,7 +44,7 @@ class ProjectEntry:
 
 
 def _register_project_base(
-    cls: ProjectEntry, project_registry: Optional[dict[str, Any]] = None
+    cls: ProjectEntry, project_registry: dict[str, ProjectEntry]
 ):
     name = cls.name
     if name in project_registry:
@@ -54,8 +58,8 @@ def make_project_entry(
     name: str,
     model_runner: ModelRunner,
     base_config: ConfigDict,
+    project_registry: dict[str, ProjectEntry],
     reference_config_path: Optional[Path] = None,
-    project_registry: Optional[dict[str, Any]] = None,
 ):
     """Basic ProjectEntry creation using default ProjectEntry class
 

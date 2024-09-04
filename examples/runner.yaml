@@ -2,8 +2,8 @@
 # model_implementations/registry.py 
 # We will read the model preset from a separate field.
 mode: train
-model_name: af3_all_atom
-preset: train 
+project_type: af3_all_atom
+presets: train 
 
 mpi_plugin: false
 seed: 42
@@ -22,19 +22,20 @@ pl_trainer:
   num_sanity_val_steps: 0 
   reload_dataloaders_every_n_epochs: 1 
 
-model_update:
+config_update:
   model:
-    input_embedder:
-      linear_init_params:
-        linear_s:
-          init: relu
-    pairformer:
-      no_blocks: 4
-
-loss_weight_update:
-  loss_weight_modes:
-    default:
-      bond: 1.0
+    architecture:
+      input_embedder:
+        linear_init_params:
+          linear_s:
+            init: relu
+      pairformer:
+        no_blocks: 4
+  extra_configs:
+    loss_weight_update:
+      loss_weight_modes:
+        default:
+          bond: 1.0
 
 
 dataset_paths:
