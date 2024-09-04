@@ -30,6 +30,7 @@ import enum
 import random
 import warnings
 from functools import partial
+from ml_collections import ConfigDict
 from typing import Any, Optional, Union
 
 import pytorch_lightning as pl
@@ -102,6 +103,16 @@ class MultiDatasetConfig:
         )
 
 
+@dataclasses.dataclass
+class DataModuleConfig:
+    batch_size: int
+    num_workers: int
+    data_seed: int
+    epoch_len: int
+    num_epochs: int
+    datasets: list[ConfigDict]
+
+
 class DatasetType(enum.Enum):
     """Enum for dataset types."""
 
@@ -114,18 +125,18 @@ class DatasetType(enum.Enum):
 class DataModule(pl.LightningDataModule):
     """A LightningDataModule class for organizing Datasets and DataLoaders."""
 
-    def __init__(self, data_config: list[dict]) -> None:
+    def __init__(self, data_config: DataModuleConfig) -> None:
         super().__init__()
 
-        # Input argument self-assignment
-        self.batch_size = data_config["batch_size"]
-        self.num_workers = data_config["num_workers"]
-        self.data_seed = data_config["data_seed"]
-        self.epoch_len = data_config["epoch_len"]
-        self.num_epochs = data_config["num_epochs"]
+        # Possibly remove this block in favor of initializing directly from DataModuleConfig
+        self.batch_size = data_config.batch_size
+        self.num_workers = data_config.num_workers
+        self.data_seed = data_config.data_seed
+        self.epoch_len = data_config.epoch_len
+        self.num_epochs = data_config.num_epochs
 
         # Parse datasets
-        multi_dataset_config = self.parse_data_config(data_config["datasets"])
+        multi_dataset_config = self.parse_data_config(data_config.datasets)
 
         # Custom worker init function with manual data seed
         def worker_init_function_with_data_seed(
@@ -206,7 +217,7 @@ class DataModule(pl.LightningDataModule):
                 multi_dataset_config_prediction, DatasetType.prediction
             )[0]
 
-    def parse_data_config(self, data_config: list[dict]) -> MultiDatasetConfig:
+    def parse_data_config(self, data_config: list[ConfigDict]) -> MultiDatasetConfig:
         """Parses input data_config into separate lists.
 
         Args:

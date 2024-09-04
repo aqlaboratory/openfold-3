@@ -1,22 +1,28 @@
 # TODO add license
-from typing import Optional
+import ml_collections as mlc
 
-from ml_collections import ConfigDict
-
-from openfold3.core.runners import registry_base
+from openfold3.core.config import registry_base
+from openfold3.core.config.dataset_config_builder import DefaultDatasetConfigBuilder
+from openfold3.core.data.framework import data_module
 
 # Record of ModelEntries
 PROJECT_REGISTRY = {}
 
 
-def register_project(name, base_config, reference_config_path):
+def register_project(
+    name: str,
+    dataset_config_builder: DefaultDatasetConfigBuilder,
+    base_config: mlc.ConfigDict,
+    reference_config_path: str,
+):
     """Creates decorator function for registering projects."""
 
     def _decorator(runner_cls):
         registry_base.make_project_entry(
             name=name,
             model_runner=runner_cls,
-            base_config=base_config,
+            dataset_config_builder=dataset_config_builder,
+            base_project_config=base_config,
             project_registry=PROJECT_REGISTRY,
             reference_config_path=reference_config_path,
         )
@@ -25,163 +31,55 @@ def register_project(name, base_config, reference_config_path):
     return _decorator
 
 
-def get_project_entry(project_name):
-    return PROJECT_REGISTRY.get(project_name)
+def get_project_entry(project_name: str):
+    return PROJECT_REGISTRY[project_name]
 
 
-def make_model_config_with_preset(project_name: str, preset: str):
-    """Retrieves config matching preset for one of the models."""
-    project_entry = PROJECT_REGISTRY[project_name]
-    return project_entry.get_config_with_preset(preset)
+def make_config_with_presets(
+    project_entry: registry_base.ProjectEntry, presets: list[str]
+):
+    """Initializes project config using provided presets.
 
-
-def get_loss_config(loss_config: ConfigDict, loss_mode: str) -> ConfigDict:
-    """Constructs a loss configuration based on loss mode.
-
-    Arguments:
-        loss_config:
-            Loss section from main config of model. Expected to have a
-            `loss_weight_modes` key with `default` and optionally `custom` modes. If a
-            custom mode is selected, it will be applied as an update to the loss config.
-        loss_mode:
-            One of the modes specfied by the loss config.
-    Returns:
-        A loss configuration with the weighting scheme indicated by the loss mode.
-    """
-
-    # TODO: Change this to only copy non-nested arguments to loss config.
-    loss_dict = ConfigDict(
-        {
-            "min_resolution": loss_config.min_resolution,
-            "max_resolution": loss_config.max_resolution,
-            "confidence_loss_names": loss_config.confidence_loss_names,
-        }
-    )
-    loss_modes_config = loss_config.loss_weight_modes
-    loss_weight_config = loss_modes_config.default.copy_and_resolve_references()
-
-    allowed_modes = list(loss_modes_config.custom.keys()) + ["default"]
-    if loss_mode not in allowed_modes:
-        raise KeyError(
-            f"{loss_mode} is not supported, allowed loss modes are: {allowed_modes}"
-        )
-    elif loss_mode != "default":
-        loss_weight_config.update(loss_modes_config.custom[loss_mode])
-
-    loss_dict.loss_weight = ConfigDict(loss_weight_config)
-    return loss_dict
-
-
-def make_dataset_configs(
-    base_data_template: ConfigDict,
-    loss_weight_config: ConfigDict,
-    runner_args: ConfigDict,
-) -> list[ConfigDict]:
-    """Constructs dataset configuration based on run script arguments.
-
-    The following sections are expected in the runscript arguments.
-    See `openfold3/examples/example_runner.yml` for a full config example.
-
-    ```
-    dataset_configs:
-        train:
-            dataset_1_name:
-                class: <dataset1_class_name>
-                weight: 0.5
-                config:
-                    loss_weight_mode: <loss_mweight_mode>
-                    ...
-            dataset_2_name:
-                ...
-        val:
-            val_dataset_1_name:
-                ...
-        test:
-            test_dataset_1_name:
-                ...
-
-    dataset_paths:
-        dataset_1_name:
-            alignments: /<dataset_1_path>/alignments
-            mmcif: /<dataset_1_path>/mmcif
-            template_mmcif_structures: /<dataset_1_path>/template_mmcif
-        dataset_2_name:
-            ...
-        val_dataset_1_name:
-            ...
-        test_dataset_1_name:
-            ...
-    ```
     Args:
-        base_data_config:
-            Default dataset settings
-        loss_weight_config:
-            Loss weight settings
-        runner_args:
-            ConfigDict with `dataset_configs` and `dataset_paths` heading. See
-            full docstring for an example or `openfold3/examples/example_runner.yml`
+        project_entry: ProjectEntry class for given project
+        presets: List of preset settings available for the given project
     Returns:
-        A list of config dicts, one for each dataset used for training the model.
+        A new projct config where preset updates are applied in the order they are
+        provided in `presets`.
     """
+    initial_preset = presets[0]
+    project_config = project_entry.get_config_with_preset(initial_preset)
+
+    if len(presets) > 1:
+        for preset in presets[1:]:
+            project_entry.update_config_with_preset(project_config, preset)
+
+    return project_config
+
+
+def make_dataset_module_config(
+    runner_args: mlc.ConfigDict, dataset_config_builder: DefaultDatasetConfigBuilder
+):
+    """Constructs dataset config module for all datasets in runner configuration."""
+    dataset_configs = []
     input_dataset_configs = runner_args.dataset_configs
-    output_dataset_configs = []
-    # loop through datasets for a given type
-    for dataset_type, _datasets_configs in input_dataset_configs.items():
-        # loop through datasets in a given mode
-        for name, dataset_specs in _datasets_configs.items():
-            dataset_config = ConfigDict(
-                {
-                    "name": name,
-                    "type": dataset_type,
-                    "weight": dataset_specs.weight,
-                    "class": dataset_specs["class"],
-                }
+
+    # loop over modes
+    for dataset_type, _dataset_configs in input_dataset_configs.items():
+        # loop over datasets in modes
+        for name, dataset_specs in _dataset_configs.items():
+            dataset_paths = runner_args.dataset_paths.get(name)
+            config = dataset_config_builder.get_custom_config(
+                name, dataset_type, dataset_specs, dataset_paths
             )
-            sub_config = base_data_template.copy_and_resolve_references()
-            for path_name, path in runner_args.dataset_paths[name].items():
-                sub_config[path_name] = path
+            dataset_configs.append(config)
 
-            sub_config.update(dataset_specs.config)
-            # AF3 specific
-            sub_config.loss = get_loss_config(
-                loss_weight_config, sub_config.loss_weight_mode
-            )
-            delattr(sub_config, "loss_weight_mode")
-
-            dataset_config.config = sub_config
-            output_dataset_configs.append(dataset_config)
-
-    return output_dataset_configs
-
-
-def get_lightning_module(config: ConfigDict, model_name: Optional[str] = None):
-    """Makes a lightning module for a ModelRunner class given a model config dict.
-
-    A module can be called using the config alone, assuming that the config contains
-    the model_name. E.g.
-
-    ```
-    model_config = make_model_config("af2_monomer", model_update_yaml)
-    lightning_module = get_lightning_module(model_config)
-    ```
-
-    If model_name is not a key in config, then the model_name needs to be specified
-    separately
-
-    Args:
-        config: ConfigDict with settings for model construction
-        model_name:
-            If provided, creates a ModelRunner matching the key in the
-            MODEL_REGISTRY
-    Returns:
-        `core.runners.model_runner.ModelRunner` for specified model_name
-        with the given config settings.
-    """
-    if not model_name:
-        try:
-            model_name = config.model_name
-        except KeyError as exc:
-            raise ValueError(
-                "Model_name must be specified either in config or" " as an argument."
-            ) from exc
-    return PROJECT_REGISTRY[model_name].model_runner(config)
+    datamodule_config = data_module.DataModuleConfig(
+        batch_size=runner_args.batch_size,
+        num_workers=runner_args.get("num_workers", 2),
+        data_seed=runner_args.get("data_seed", 17),
+        epoch_len=runner_args.get("epoch_len", 1),
+        num_epochs=runner_args.pl_trainer.get("max_epochs"),
+        datasets=dataset_configs,
+    )
+    return datamodule_config
