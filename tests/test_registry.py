@@ -1,70 +1,72 @@
 import textwrap
 
+import ml_collections as mlc
 import pytest  # noqa: F401  - used for pytest tmp fixture
-import torch
 
 from openfold3.core.config import config_utils
-from openfold3.core.runners.model_runner import (
-    ModelRunner,
-    ModelRunnerNotRegisteredError,
-)
-from openfold3.projects.registry import (
-    PROJECT_REGISTRY,
-    get_lightning_module,
-    make_config_with_preset,
-    make_model_config,
-)
+from openfold3.projects import registry
+from tests import compare_utils
 
 
-@pytest.mark.skip("update registry tests later")
 class TestLoadPresets:
     def test_model_registry_loads_models(self):
         # TODO: Convert other models to new config format
         # expected_model_entries = {"af2_monomer", "af2_multimer", "af3_all_atom"}
         expected_model_entries = {"af3_all_atom"}
-        assert set(PROJECT_REGISTRY.keys()) == expected_model_entries
+        assert set(registry.PROJECT_REGISTRY.keys()) == expected_model_entries
 
-    def test_model_preset_loading(self):
-        model_config = make_config_with_preset("af3_all_atom", "model_1_ptm")
-        assert model_config.loss.tm.weight == 0.1
+    def test_config_preset_loading(self):
+        project_entry = registry.get_project_entry("af3_all_atom")
+        project_config = registry.make_config_with_presets(
+            project_entry, ["finetune1", "train"]
+        )
+        # From base preset
+        assert project_config.model.settings.ema.decay == 0.999
+        # From finetune1 preset
+        assert project_config.extra_configs.loss_weight_modes.default.bond == 1.0
+        # From train preset
+        assert project_config.model.settings.use_block_sparse_attn
 
     def test_yaml_overwrite_preset(self, tmp_path):
-        # yaml which would change weight for monomer model_1_ptm tm loss
         test_yaml_str = textwrap.dedent("""\
-        model_preset: "model_1_ptm"
+        project_type: af3_all_atom
+        presets: 
+          - finetune1
 
-        model_update:
-            loss:
-                tm:
-                    weight: 7""")
-        test_yaml_file = tmp_path / "test.yml"
+        config_update:
+            model:
+                architecture:
+                    shared:
+                        c_s: 47
+
+            extra_configs:
+                loss_weight_modes:
+                    default:
+                        mse: 7.0
+        """)
+        test_yaml_file = tmp_path / "runner.yml"
         with open(test_yaml_file, "w") as f:
             f.write(test_yaml_str)
-        loaded_yaml_dict = config_utils.load_yaml(test_yaml_file)
-        print(loaded_yaml_dict)
-        assert "model_update" in loaded_yaml_dict
+        runner_args = mlc.ConfigDict(config_utils.load_yaml(test_yaml_file))
 
-        overwritten_config = make_model_config("af2_monomer", test_yaml_file)
-        assert overwritten_config.loss.tm.weight == 7
-
-    def test_registry_model_loads(self):
-        # TODO: Change loaded preset to load a smaller test preset
-        test_multimer_config = make_config_with_preset(
-            "af2_multimer", "model_1_multimer_v3"
+        project_entry = registry.get_project_entry(runner_args.project_type)
+        project_config = registry.make_config_with_presets(
+            project_entry, runner_args.presets
         )
-        multimer_runner = get_lightning_module(test_multimer_config)
-        assert multimer_runner.model.get_submodule("input_embedder")
+        project_config.update(runner_args.config_update)
 
+        # Test update to shared architecture passes to layer
+        assert project_config.model.architecture.input_embedder.c_s == 47
+        assert project_config.model.architecture.input_embedder.c_z == 128
+        assert project_config.extra_configs.loss_weight_modes.default.bond == 1.0
+        assert project_config.extra_configs.loss_weight_modes.default.mse == 7.0
 
-@pytest.mark.skip("update registry tests later")
-class TestModelRegistry:
-    def test_unregistered_model_runner_raises_error(self):
-        dummy_model = torch.nn.Linear(5, 7)
-        config = {"model_name": "unregistered"}
-
-        class UnregisteredModelRunner(ModelRunner):
-            def __init__(self, model_config):
-                super().__init__(dummy_model, model_config)
-
-        with pytest.raises(ModelRunnerNotRegisteredError):
-            _ = UnregisteredModelRunner(config)
+    @compare_utils.skip_unless_cuda_available()
+    def test_registry_model_loads(self):
+        project_entry = registry.get_project_entry("af3_all_atom")
+        project_config = registry.make_config_with_presets(
+            project_entry,
+            ["initial_training"],
+        )
+        model_runner = project_entry.model_runner(project_config.model)
+        assert model_runner.model.get_submodule("input_embedder")

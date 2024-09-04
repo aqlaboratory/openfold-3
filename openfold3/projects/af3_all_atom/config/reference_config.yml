@@ -1,10 +1,9 @@
 finetune1:
   extra_configs:
-    loss_weights_config:
-      loss_weight_mode:
-        default:
-          bond: 1.0
-          smooth_lddt: 0.0
+    loss_weight_modes:
+      default:
+        bond: 1.0
+        smooth_lddt: 0.0
 
 finetune2:
   model:
@@ -16,10 +15,9 @@ finetune2:
     config:
       token_budget: 768
   extra_configs: # updates base loss config
-    loss_weights_config:
-      loss_weight_mode:
-        default:
-          bond: 1.0
+    loss_weight_modes:
+      default:
+        bond: 1.0
 
 finetune3:
   model:
@@ -32,14 +30,13 @@ finetune3:
         distogram:
           enabled: False
   extra_configs:
-    loss_weights_config:
-      loss_weight_mode:
-        default:
-          diffusion_weight: 0.0
-          distogram_weight: 0.0
-          confidence:
-            pae:
-              weight: 1.0
+    loss_weight_modes:
+      default:
+        mse: 0.0
+        smooth_lddt: 0.0
+        distogram: 0.0
+        confidence:
+          pae: 1.0
 
 eval:
   model:

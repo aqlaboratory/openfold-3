@@ -56,37 +56,40 @@ class AlphaFold3(nn.Module):
         super().__init__()
         self.config = config
         self.settings = self.config.settings
-        self.shared = self.config.model.shared
+        self.shared = self.config.architecture.shared
 
-        self.input_embedder = InputEmbedderAllAtom(**self.config.model.input_embedder)
+        self.input_embedder = InputEmbedderAllAtom(
+            **self.config.architecture.input_embedder
+        )
 
         self.layer_norm_z = LayerNorm(self.shared.c_z)
         self.linear_z = Linear(self.shared.c_z, self.shared.c_z, bias=False)
 
         self.template_embedder = TemplateEmbedderAllAtom(
-            config=self.config.model.template
+            config=self.config.architecture.template
         )
 
         self.msa_module_embedder = MSAModuleEmbedder(
-            **self.config.model.msa.msa_module_embedder
+            **self.config.architecture.msa.msa_module_embedder
         )
-        self.msa_module = MSAModuleStack(**self.config.model.msa.msa_module)
+        self.msa_module = MSAModuleStack(**self.config.architecture.msa.msa_module)
 
         self.layer_norm_s = LayerNorm(self.shared.c_s)
         self.linear_s = Linear(self.shared.c_s, self.shared.c_s, bias=False)
 
-        self.pairformer_stack = PairFormerStack(**self.config.model.pairformer)
+        self.pairformer_stack = PairFormerStack(**self.config.architecture.pairformer)
 
         self.diffusion_module = DiffusionModule(
-            config=self.config.model.diffusion_module
+            config=self.config.architecture.diffusion_module
         )
 
         self.sample_diffusion = SampleDiffusion(
-            **self.config.model.sample_diffusion, diffusion_module=self.diffusion_module
+            **self.config.architecture.sample_diffusion,
+            diffusion_module=self.diffusion_module,
         )
 
         # Confidence and Distogram Heads
-        self.aux_heads = AuxiliaryHeadsAllAtom(config=self.config.model.heads)
+        self.aux_heads = AuxiliaryHeadsAllAtom(config=self.config.architecture.heads)
 
     def _disable_activation_checkpointing(self):
         """
@@ -103,10 +106,14 @@ class AlphaFold3(nn.Module):
         and Pairformer.
         """
         self.template_embedder.template_pair_stack.blocks_per_ckpt = (
-            self.config.template.template_pair_stack.blocks_per_ckpt
+            self.config.architecture.template.template_pair_stack.blocks_per_ckpt
         )
-        self.msa_module.blocks_per_ckpt = self.config.msa.msa_module.blocks_per_ckpt
-        self.pairformer_stack.blocks_per_ckpt = self.config.pairformer.blocks_per_ckpt
+        self.msa_module.blocks_per_ckpt = (
+            self.config.architecture.msa.msa_module.blocks_per_ckpt
+        )
+        self.pairformer_stack.blocks_per_ckpt = (
+            self.config.architecture.pairformer.blocks_per_ckpt
+        )
 
     def run_trunk(
         self, batch: Dict, inplace_safe: bool = False

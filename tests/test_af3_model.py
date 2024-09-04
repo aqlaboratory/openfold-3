@@ -4,7 +4,8 @@ import torch
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.projects import registry
+from openfold3.projects.af3_all_atom.config.base_config import project_config
+from openfold3.projects.af3_all_atom.runner import AlphaFold3AllAtom
 from tests import compare_utils
 from tests.config import consts
 from tests.data_utils import random_af3_features
@@ -25,9 +26,7 @@ class TestAF3Model(unittest.TestCase):
     ):
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        config = registry.make_model_config_with_preset(
-            "af3_all_atom", "initial_training"
-        )
+        config = project_config.model
 
         if train:
             config.settings.chunk_size = None
@@ -38,23 +37,15 @@ class TestAF3Model(unittest.TestCase):
 
         if reduce_model_size:
             # To avoid memory issues in CI
-            config.model.pairformer.no_blocks = 4
-            config.model.diffusion_module.diffusion_transformer.no_blocks = 4
+            config.architecture.pairformer.no_blocks = 4
+            config.architecture.diffusion_module.diffusion_transformer.no_blocks = 4
 
         config.settings.use_deepspeed_evo_attention = use_deepspeed_evo_attention
-        config.model.input_embedder.atom_attn_enc.use_block_sparse_attn = (
-            use_block_sparse
-        )
-        config.model.diffusion_module.atom_attn_enc.use_block_sparse_attn = (
-            use_block_sparse
-        )
-        config.model.diffusion_module.atom_attn_dec.use_block_sparse_attn = (
-            use_block_sparse
-        )
+        config.settings.use_block_sparse_attn = use_block_sparse
 
-        config.model.heads.pae.enabled = True
+        config.architecture.heads.pae.enabled = True
 
-        af3 = registry.get_lightning_module(config).to(device=device, dtype=dtype)
+        af3 = AlphaFold3AllAtom(config).to(device=device, dtype=dtype)
 
         batch = random_af3_features(
             batch_size=batch_size,
@@ -71,7 +62,7 @@ class TestAF3Model(unittest.TestCase):
         batch = tensor_tree_map(to_device, batch)
 
         if train:
-            af3_loss = AlphaFold3Loss(config=config.loss_module)
+            af3_loss = AlphaFold3Loss(config=config.architecture.loss_module)
 
             batch, outputs = af3(batch=batch)
 
@@ -85,11 +76,11 @@ class TestAF3Model(unittest.TestCase):
             atom_positions_predicted = outputs["atom_positions_predicted"]
             atom_positions_diffusion = outputs["atom_positions_diffusion"]
 
-            self.assertTrue(
-                atom_positions_diffusion.shape
-                == (batch_size, config.model.shared.diffusion.no_samples, n_atom, 3)
-            )
-            self.assertTrue(loss.shape == ())
+            num_diffusion_samples = config.architecture.shared.diffusion.no_samples
+            expected_diffusion_shape = (batch_size, num_diffusion_samples, n_atom, 3)
+            assert atom_positions_diffusion.shape == expected_diffusion_shape
+
+            assert loss.shape == ()
 
         else:
             af3.eval()
@@ -99,7 +90,7 @@ class TestAF3Model(unittest.TestCase):
 
             atom_positions_predicted = outputs["atom_positions_predicted"]
 
-        self.assertTrue(atom_positions_predicted.shape == (batch_size, n_atom, 3))
+        assert atom_positions_predicted.shape == (batch_size, n_atom, 3)
 
     def test_shape_small_fp32(self):
         batch_size = consts.batch_size

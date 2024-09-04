@@ -352,52 +352,52 @@ project_config = mlc.ConfigDict(
                         },
                     },
                 },
-            },
-            "loss_module": {
-                "confidence_loss_names": [
-                    "plddt",
-                    "pde",
-                    "experimentally_resolved",
-                    "pae",
-                ],
-                "diffusion_loss_names": ["bond", "smooth_lddt", "mse"],
-                # TODO: Factor out the number bins from each of these
-                "confidence": {
-                    "plddt": {
-                        "no_bins": 50,
-                        "bin_min": 0.0,
-                        "bin_max": 1.0,
+                "loss_module": {
+                    "confidence_loss_names": [
+                        "plddt",
+                        "pde",
+                        "experimentally_resolved",
+                        "pae",
+                    ],
+                    "diffusion_loss_names": ["bond", "smooth_lddt", "mse"],
+                    # TODO: Factor out the number bins from each of these
+                    "confidence": {
+                        "plddt": {
+                            "no_bins": 50,
+                            "bin_min": 0.0,
+                            "bin_max": 1.0,
+                        },
+                        "pde": {
+                            "no_bins": 64,
+                            "bin_min": 0.0,
+                            "bin_max": 32.0,
+                        },
+                        "experimentally_resolved": {
+                            "no_bins": 2,
+                        },
+                        "pae": {
+                            "angle_threshold": 25.0,
+                            "no_bins": 64,
+                            "bin_min": 0.0,
+                            "bin_max": 32.0,
+                            "weight": 0.0,
+                        },
+                        "eps": eps,
+                        "inf": 1e9,
                     },
-                    "pde": {
+                    "diffusion": {
+                        "sigma_data": sigma_data,
+                        "dna_weight": 5.0,
+                        "rna_weight": 5.0,
+                        "ligand_weight": 10.0,
+                        "eps": eps,
+                    },
+                    "distogram": {
                         "no_bins": 64,
-                        "bin_min": 0.0,
-                        "bin_max": 32.0,
+                        "bin_min": 2.0,
+                        "bin_max": 22.0,
+                        "eps": eps,
                     },
-                    "experimentally_resolved": {
-                        "no_bins": 2,
-                    },
-                    "pae": {
-                        "angle_threshold": 25.0,
-                        "no_bins": 64,
-                        "bin_min": 0.0,
-                        "bin_max": 32.0,
-                        "weight": 0.0,
-                    },
-                    "eps": eps,
-                    "inf": 1e9,
-                },
-                "diffusion": {
-                    "sigma_data": sigma_data,
-                    "dna_weight": 5.0,
-                    "rna_weight": 5.0,
-                    "ligand_weight": 10.0,
-                    "eps": eps,
-                },
-                "distogram": {
-                    "no_bins": 64,
-                    "bin_min": 2.0,
-                    "bin_max": 22.0,
-                    "eps": eps,
                 },
             },
         },
