@@ -5,7 +5,7 @@ from typing import Optional
 
 from ml_collections import ConfigDict
 
-from openfold3.core.config import config_utils
+from openfold3.core.config import config_utils, dataset_config_builder
 from openfold3.core.runners.model_runner import ModelRunner
 
 
@@ -13,6 +13,7 @@ from openfold3.core.runners.model_runner import ModelRunner
 class ProjectEntry:
     name: str
     model_runner: ModelRunner
+    dataset_config_builder: dataset_config_builder.DefaultDatasetConfigBuilder
     base_config: ConfigDict
     reference_config_path: Optional[Path]
     # List of available presets available for given model_runner
@@ -57,7 +58,8 @@ def _register_project_base(
 def make_project_entry(
     name: str,
     model_runner: ModelRunner,
-    base_config: ConfigDict,
+    dataset_config_builder: dataset_config_builder.DefaultDatasetConfigBuilder,
+    base_project_config: ConfigDict,
     project_registry: dict[str, ProjectEntry],
     reference_config_path: Optional[Path] = None,
 ):
@@ -66,7 +68,8 @@ def make_project_entry(
     Args:
         name: Name to use for model entry
         model_runner: Lightning Module wrapper to use for running the model
-        base_config: Base configuration class for model entry
+        dataset_config_builder: Builder class for creating dataset configs
+        base_project_config: Base configuration class for model entry
         reference_config_path: Path to yaml with configuration presets.
         project_registry: Map of ProjectEntries and configs by name
 
@@ -83,7 +86,12 @@ def make_project_entry(
     # Automatically add/update model name to base config
     # Makes it easy to refer to this ModelEntry later from a config
     entry = ProjectEntry(
-        name, model_runner, base_config, reference_config_path, presets
+        name,
+        model_runner,
+        dataset_config_builder,
+        base_project_config,
+        reference_config_path,
+        presets,
     )
     _register_project_base(entry, project_registry)
     return

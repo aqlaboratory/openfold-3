@@ -450,27 +450,25 @@ project_config = mlc.ConfigDict(
             },
         },
         "extra_configs": {
-            "loss_weights_config": {
-                "loss_weight_modes": {
-                    # TODO: double check these settings
-                    "default": {
-                        "bond": 0.0,  # varies based on training and finetuning
-                        "smooth_lddt": 4.0,  # varies based on finetuning stage
-                        "mse": 4.0,
-                        "distogram": 3e-2,
-                        "experimentally_resolved": 0.0,
-                        "plddt": 1e-4,
-                        "pae": 1e-4,
+            "loss_weight_modes": {
+                # TODO: double check these settings
+                "default": {
+                    "bond": 0.0,  # varies based on training and finetuning
+                    "smooth_lddt": 4.0,  # varies based on finetuning stage
+                    "mse": 4.0,
+                    "distogram": 3e-2,
+                    "experimentally_resolved": 0.0,
+                    "plddt": 1e-4,
+                    "pae": 1e-4,
+                    "pde": 0.0,
+                    "ptm": 0.0,
+                },
+                # Custom losses will be applied as updates to the default loss
+                "custom": {
+                    "self_distillation": {
+                        "pae": 0.0,
+                        "plddt": 0.0,
                         "pde": 0.0,
-                        "ptm": 0.0,
-                    },
-                    # Custom losses will be applied as updates to the default loss
-                    "custom": {
-                        "self_distillation": {
-                            "pae": 0.0,
-                            "plddt": 0.0,
-                            "pde": 0.0,
-                        },
                     },
                 },
             },

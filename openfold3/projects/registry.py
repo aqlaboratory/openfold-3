@@ -14,7 +14,11 @@ def register_project(name, base_config, reference_config_path):
 
     def _decorator(runner_cls):
         registry_base.make_project_entry(
-            name, runner_cls, base_config, reference_config_path, PROJECT_REGISTRY
+            name=name,
+            model_runner=runner_cls,
+            base_config=base_config,
+            project_registry=PROJECT_REGISTRY,
+            reference_config_path=reference_config_path,
         )
         return runner_cls
 
