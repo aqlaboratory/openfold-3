@@ -6,7 +6,6 @@ import sys
 
 import pytorch_lightning as pl
 import torch
-import wandb
 from deepspeed.utils import zero_to_fp32
 from pytorch_lightning import seed_everything
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
@@ -15,6 +14,7 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
+import wandb
 from openfold3.core.data.legacy.data_modules import (
     OpenFoldDataModule,
     OpenFoldMultimerDataModule,

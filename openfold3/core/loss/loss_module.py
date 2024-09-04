@@ -169,12 +169,13 @@ class AlphaFold3Loss(nn.Module):
         cum_loss = 0.0
         losses = {}
         if confidence_weights_sum > 0:
-            _, l_confidence_breakdown = confidence_loss(
+            _, l_conf_breakdown = confidence_loss(
                 batch=batch, output=output, **self.config.confidence
             )
-            losses.update(l_confidence_breakdown)
+            losses.update(l_conf_breakdown)
             conf_loss = sum(
-                loss * loss_weights[name].item() for name, loss in l_confidence_breakdown.items()
+                loss * loss_weights[name].item()
+                for name, loss in l_conf_breakdown.items()
             )
             losses["confidence_loss"] = conf_loss
             cum_loss = cum_loss + conf_loss
@@ -185,8 +186,8 @@ class AlphaFold3Loss(nn.Module):
                 batch=batch,
                 x=output["atom_positions_diffusion"],
                 t=output["noise_level"],
-                bond_weight = loss_weights["bond"],
-                smooth_lddt_weight = loss_weights["smooth_lddt"],
+                bond_weight=loss_weights["bond"],
+                smooth_lddt_weight=loss_weights["smooth_lddt"],
                 **self.config.diffusion,
             )
             losses.update(l_diffusion_breakdown)

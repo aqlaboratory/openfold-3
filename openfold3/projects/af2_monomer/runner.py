@@ -1,4 +1,3 @@
-from atexit import register
 from pathlib import Path
 
 import torch

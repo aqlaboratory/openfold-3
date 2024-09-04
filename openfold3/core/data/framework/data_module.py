@@ -30,7 +30,6 @@ import enum
 import random
 import warnings
 from functools import partial
-from ml_collections import ConfigDict
 from typing import Any, Optional, Union
 
 import pytorch_lightning as pl
@@ -41,6 +40,7 @@ from lightning_fabric.utilities.rank_zero import (
     rank_zero_only,
 )
 from lightning_utilities.core.imports import RequirementCache
+from ml_collections import ConfigDict
 from torch.utils.data import DataLoader
 
 from openfold3.core.data.framework.lightning_utils import _generate_seed_sequence
@@ -128,7 +128,7 @@ class DataModule(pl.LightningDataModule):
     def __init__(self, data_config: DataModuleConfig) -> None:
         super().__init__()
 
-        # Possibly remove this block in favor of initializing directly from DataModuleConfig
+        # Possibly initialize directly from DataModuleConfig
         self.batch_size = data_config.batch_size
         self.num_workers = data_config.num_workers
         self.data_seed = data_config.data_seed

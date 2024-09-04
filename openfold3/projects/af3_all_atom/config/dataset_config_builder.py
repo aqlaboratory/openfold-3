@@ -15,7 +15,8 @@ class AF3DatasetConfigBuilder(DefaultDatasetConfigBuilder):
         allowed_modes = list(self.project_loss_config.custom.keys()) + ["default"]
         if loss_weight_mode not in allowed_modes:
             raise KeyError(
-                f"{loss_weight_mode} is not supported, allowed loss modes are: {allowed_modes}"
+                f"{loss_weight_mode} is not supported,"
+                f" allowed loss modes are: {allowed_modes}"
             )
         elif loss_weight_mode != "default":
             custom_update = self.project_loss_config.custom.get(loss_weight_mode)
