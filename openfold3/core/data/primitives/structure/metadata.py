@@ -295,3 +295,12 @@ def get_ccd_atom_id_to_element_dict(ccd_entry: CIFBlock) -> dict[str, str]:
     }
 
     return atom_id_to_element
+
+
+def get_first_bioassembly_polymer_count(cif_data: CIFBlock) -> int:
+    """Returns the number of polymer chains in the first bioassembly."""
+    return (
+        cif_data["pdbx_struct_assembly"]["oligomeric_count"]
+        .as_array(dtype=int)[0]
+        .item()
+    )

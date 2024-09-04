@@ -13,13 +13,22 @@ from openfold3.core.data.primitives.structure.labels import (
     assign_renumbered_chain_ids,
     update_author_to_pdb_labels,
 )
+from openfold3.core.data.primitives.structure.metadata import (
+    get_cif_block,
+    get_first_bioassembly_polymer_count,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class ParsedStructure(NamedTuple):
     cif_file: pdbx.CIFFile
-    atom_array: AtomArray
+    atom_array: AtomArray | None
+
+
+class SkippedStructure(NamedTuple):
+    cif_file: pdbx.CIFFile
+    n_polymer_chains: int
 
 
 # TODO: update docstring with new residue ID handling and preset fields
@@ -28,7 +37,8 @@ def parse_mmcif(
     expand_bioassembly: bool = False,
     include_bonds: bool = True,
     extra_fields: list | None = None,
-) -> ParsedStructure:
+    max_polymer_chains: int | None = None,
+) -> ParsedStructure | SkippedStructure:
     """Convenience wrapper around biotite's CIF parsing
 
     Parses the mmCIF file and creates an AtomArray from it while optionally expanding
@@ -56,9 +66,14 @@ def parse_mmcif(
         extra_fields:
             Extra fields to include in the AtomArray. Defaults to None. Fields
             "entity_id" and "occupancy" are always included.
+        max_polymer_chains:
+            Maximum number of polymer chains in the first bioassembly after which a
+            structure is skipped by the get_structure() parser. Defaults to None.
 
     Returns:
-        A NamedTuple containing the parsed CIF file and the AtomArray.
+        A ParsedStructure NamedTuple containing the parsed CIF file and the AtomArray,
+        or a SkippedStructure NamedTuple containing the CIF file and the number of
+        polymer chains in the first bioassembly.
     """
     file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
 
@@ -70,6 +85,15 @@ def parse_mmcif(
         raise ValueError("File must be in mmCIF or binary mmCIF format")
 
     cif_file = cif_class.read(file_path)
+
+    if max_polymer_chains is not None:
+        cif_data = get_cif_block(cif_file)
+
+        # Polymers in first bioassembly
+        n_polymers = get_first_bioassembly_polymer_count(cif_data)
+
+        if n_polymers > max_polymer_chains:
+            return SkippedStructure(cif_file, n_polymers)
 
     (pdb_id,) = cif_file.keys()  # Single-element unpacking
 

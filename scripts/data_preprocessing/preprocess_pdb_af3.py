@@ -27,6 +27,15 @@ from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif
     help="Path to top-level directory that output files should be written to.",
 )
 @click.option(
+    "--max_polymer_chains",
+    type=int,
+    default=None,
+    help=(
+        "The maximum number of polymer chains in the first bioassembly after which a "
+        "structure is skipped by the parser."
+    ),
+)
+@click.option(
     "--num-workers",
     type=int,
     default=None,
@@ -65,6 +74,7 @@ def main(
     cif_dir: Path,
     ccd_path: Path,
     out_dir: Path,
+    max_polymer_chains: int = 300,
     num_workers: int | None = None,
     chunksize: int = 50,
     write_additional_cifs: bool = False,
@@ -76,13 +86,14 @@ def main(
     logger.addHandler(logging.StreamHandler())
 
     preprocess_cif_dir_af3(
-        cif_dir,
-        ccd_path,
-        out_dir,
-        num_workers,
-        chunksize,
-        write_additional_cifs,
-        early_stop,
+        cif_dir=cif_dir,
+        ccd_path=ccd_path,
+        out_dir=out_dir,
+        max_polymer_chains=max_polymer_chains,
+        num_workers=num_workers,
+        chunksize=chunksize,
+        write_additional_cifs=write_additional_cifs,
+        early_stop=early_stop,
     )
 
 

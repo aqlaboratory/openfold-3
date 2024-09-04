@@ -11,14 +11,17 @@ from functools import wraps
 from pathlib import Path
 from typing import Literal
 
-import biotite.structure as struc
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from rdkit import Chem
 from tqdm import tqdm
 
 from openfold3.core.data.io.sequence.fasta import write_multichain_fasta
-from openfold3.core.data.io.structure.cif import parse_mmcif, write_minimal_cif
+from openfold3.core.data.io.structure.cif import (
+    SkippedStructure,
+    parse_mmcif,
+    write_minimal_cif,
+)
 from openfold3.core.data.io.structure.mol import write_annotated_sdf
 from openfold3.core.data.io.utils import encode_numpy_types
 from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
@@ -270,34 +273,40 @@ def extract_component_data_af3(
     return chain_to_component_id, reference_mol_metadata
 
 
+# TODO: write docstring and more comments
 def preprocess_structure_and_write_outputs_af3(
     input_cif: Path,
     ccd: CIFFile,
     out_dir: Path,
     reference_mol_out_dir: Path,
-    max_assembly_size: int = 300,
+    max_polymer_chains: int | None = None,
     skip_components: set | None = None,
     write_additional_cifs: bool = False,
 ) -> tuple[dict, dict]:
-    cif_file, atom_array = parse_mmcif(input_cif, expand_bioassembly=True)
+    parsed_mmcif = parse_mmcif(
+        input_cif, expand_bioassembly=True, max_polymer_chains=max_polymer_chains
+    )
 
-    pdb_id = get_pdb_id(cif_file)
+    cif_file = parsed_mmcif.cif_file
+
     cif_data = get_cif_block(cif_file)
-
+    pdb_id = get_pdb_id(cif_file)
     release_date = get_release_date(cif_data).strftime("%Y-%m-%d")
 
-    if struc.get_chain_count(atom_array) > max_assembly_size:
-        logger.info("Skipping structure with more than 300 chains.")
-        n_chains = struc.get_chain_count(atom_array)
+    if isinstance(parsed_mmcif, SkippedStructure):
+        logger.info(
+            f"Skipping structure with more than {max_polymer_chains} polymer chains."
+        )
+        n_polymer_chains = parsed_mmcif.n_polymer_chains
 
-        # When skipping a structure due to assembly size additionally log the number of
-        # chains for informational purposes
         return {
             pdb_id: {
                 "release_date": release_date,
-                "status": f"skipped: (n_chains: {n_chains})",
+                "status": f"skipped: (n_chains: {n_polymer_chains})",
             }
         }, {}
+    else:
+        atom_array = parsed_mmcif.atom_array
 
     atom_array = cleanup_structure_af3(atom_array, cif_data, ccd)
     chain_int_metadata_dict = extract_chain_and_interface_metadata_af3(
@@ -360,6 +369,9 @@ class _AF3PreprocessingWrapper:
             The CIFFile object.
         reference_mol_out_dir:
             The directory where reference molecules are stored.
+        max_polymer_chains:
+            The maximum number of polymer chains in the first bioassembly after which a
+            structure is skipped by the parser.
         skip_components:
             A set of components to skip, if any.
         write_additional_cifs:
@@ -370,11 +382,13 @@ class _AF3PreprocessingWrapper:
         self,
         ccd,
         reference_mol_out_dir,
+        max_polymer_chains,
         skip_components,
         write_additional_cifs=False,
     ):
         self.ccd = ccd
         self.reference_mol_out_dir = reference_mol_out_dir
+        self.max_polymer_chains = max_polymer_chains
         self.skip_components = skip_components
         self.write_additional_cifs = write_additional_cifs
 
@@ -390,6 +404,7 @@ class _AF3PreprocessingWrapper:
                     out_dir=out_dir,
                     ccd=self.ccd,
                     reference_mol_out_dir=self.reference_mol_out_dir,
+                    max_polymer_chains=self.max_polymer_chains,
                     skip_components=self.skip_components,
                     write_additional_cifs=self.write_additional_cifs,
                 )
@@ -418,6 +433,7 @@ def preprocess_cif_dir_af3(
     cif_dir: Path,
     ccd_path: Path,
     out_dir: Path,
+    max_polymer_chains: int | None = None,
     num_workers: int | None = None,
     chunksize: int = 20,
     write_additional_cifs: bool = False,
@@ -437,6 +453,9 @@ def preprocess_cif_dir_af3(
             Path to the CCD file.
         out_dir:
             Path to the output directory.
+        max_polymer_chains:
+            The maximum number of polymer chains in the first bioassembly after which a
+            structure is skipped by the parser.
         num_workers:
             Number of workers to use for parallel processing. Use None for all available
             CPUs, and 0 for a single process (not using the multiprocessing module).
@@ -483,6 +502,7 @@ def preprocess_cif_dir_af3(
     wrapped_preprocessing_func = _AF3PreprocessingWrapper(
         ccd=ccd,
         reference_mol_out_dir=reference_mol_out_dir,
+        max_polymer_chains=max_polymer_chains,
         skip_components=processed_mol_ids,
         write_additional_cifs=write_additional_cifs,
     )
