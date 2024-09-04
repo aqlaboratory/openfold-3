@@ -3,7 +3,8 @@ model_name: af3_all_atom
 # Can be found in
 # of3/model_implementations/<model_name>/configs/reference_config.yml 
 # only one preset allowed for now
-preset: initial_training 
+presets: 
+- initial_training 
 
 # General run settings
 mpi_plugin: false
@@ -37,29 +38,27 @@ wandb:
   group: GROUP_NAME
   experiment_name: EXPERIMENT_NAME
 
-# This section makes updates to training the model
-model_update:
-  settings:
-    use_deepspeed_evo_attention: True
-    blocks_per_checkpoint: 1
+# This section makes updates to the entire config 
+config_updates:
   model:
-    pairformer:
-      no_blocks: 4
-    diffusion_module:
-      diffusion_transformer:
+    settings:
+      use_deepspeed_evo_attention: True
+      blocks_per_checkpoint: 1
+    model:
+      pairformer:
         no_blocks: 4
-  
-# Make updates to the losses
-loss_weight_update:
-  min_resolution: 0.05
-  loss_weight_modes: 
-    default:
-      bond: 0.1
-
-# Make updates to default dataset settings 
-base_dataset_update:
-  cropping:
-    crop_size: 384
+      diffusion_module:
+        diffusion_transformer:
+          no_blocks: 4
+  dataset_config_template:
+    config:
+      token_budget: 197
+      loss:
+        min_resolution: 0.05
+  extra_configs:
+    loss_weight_modes: 
+      default:
+        bond: 0.1
 
 dataset_paths:
   PDB-weighted:

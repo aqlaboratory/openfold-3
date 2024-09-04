@@ -21,51 +21,6 @@ from openfold3.core.utils.callbacks import (
     PerformanceLoggingCallback,
 )
 from openfold3.projects import registry
-from openfold3.projects.af3_all_atom.config import (
-    base_config as af3_base_config,
-)
-
-
-def get_configs(runner_args):
-    # TODO: Find a different way to handle presets since presets possibly contain
-    #   dataset, loss_weight, and model updates.
-    # Either merge all 3 configs into one giant config
-    # Or else remove the reference_config.yaml from the ModelRunner and handle
-    # the parsing somewhere else
-
-    def _maybe_update_config(config: ConfigDict, update_field: str):
-        if update_field in runner_args:
-            config.update(runner_args.get(update_field))
-        return
-
-    # NB: Any settings specified preset will only be applied to the model config
-    # Make needed dataset / loss weight updates directly in the runner.yaml for now
-    model_config = registry.make_model_config_with_preset(
-        runner_args.model_name, runner_args.preset
-    )
-    _maybe_update_config(model_config, "model_update")
-
-    loss_weight_config = (
-        af3_base_config.loss_weight_config.copy_and_resolve_references()
-    )
-    _maybe_update_config(loss_weight_config, "loss_weight_update")
-
-    dataset_config_template = af3_base_config.data_config_template
-    _maybe_update_config(dataset_config_template, "base_dataset_update")
-    dataset_configs = registry.make_dataset_configs(
-        dataset_config_template, loss_weight_config, runner_args
-    )
-
-    dataset_config = {
-        "batch_size": runner_args.batch_size,
-        "num_workers": runner_args.get("num_workers", 2),
-        "data_seed": runner_args.get("data_seed", 17),
-        "epoch_len": runner_args.get("epoch_len", 1),
-        "num_epochs": runner_args.pl_trainer.get("max_epochs"),
-        "datasets": dataset_configs,
-    }
-
-    return model_config, dataset_config
 
 
 def _configure_wandb_logger(
@@ -109,16 +64,24 @@ def main(args):
 
     # Set seed
     if runner_args.get("seed"):
-        pl.seed_everything(args.seed, workers=True)
+        pl.seed_everything(runner_args.seed, workers=True)
 
-    # Update model config with section from yaml with model update
-    model_config, dataset_config = get_configs(runner_args)
-    # Initialize lightning module with desired config
-    lightning_module = registry.get_lightning_module(model_config)
-    # TODO <checkpoint resume logic goes here>
+    project_entry = registry.get_project_entry(runner_args.project_type)
 
-    # Initialize data wrapper
-    lightning_data_module = DataModule(dataset_config)
+    project_config = registry.make_config_with_presets(
+        project_entry, runner_args.presets
+    )
+    if runner_args.get("config_update"):
+        project_config.update(runner_args.config_update)
+
+    model_config = project_config.model
+    lightning_module = project_entry.model_runner(model_config)
+
+    dataset_config_builder = project_entry.dataset_config_builder(project_config)
+    data_module_config = registry.make_dataset_module_config(
+        runner_args, dataset_config_builder
+    )
+    lightning_data_module = DataModule(data_module_config)
 
     # Set up trainer arguments and callbacks
     callbacks = []
@@ -237,7 +200,14 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    # TODO add necessary arguments
+    parser.add_argument(
+        "--runner_yaml",
+        type=str,
+        help=(
+            "Yaml that specifies mdoel and dataset parameters,"
+            "see examples/runner.yml"
+        ),
+    )
 
     args = parser.parse_args()
 

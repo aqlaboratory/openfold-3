@@ -3,7 +3,8 @@
 # We will read the model preset from a separate field.
 mode: train
 project_type: af3_all_atom
-presets: train 
+presets: 
+  - train 
 
 mpi_plugin: false
 seed: 42
