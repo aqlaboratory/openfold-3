@@ -1,5 +1,6 @@
 # TODO add license
 from typing import Optional
+
 import ml_collections as mlc
 
 from openfold3.core.config import registry_base

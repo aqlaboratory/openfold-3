@@ -27,14 +27,6 @@ from openfold3.projects import registry
 from tests.config import monomer_consts
 
 
-# def _get_monomer_config(preset=None):
-#     project_entry = registry.get_project_entry("af2_monomer")
-#     c = project_entry.base_config.copy_and_resolve_references()
-#     if preset:
-#         project_entry.update_config_with_preset(c, preset)
-#     return c
-
-
 class TestImportWeights(unittest.TestCase):
     def test_import_jax_weights_(self):
         npz_path = (
