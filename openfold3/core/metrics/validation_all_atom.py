@@ -44,15 +44,15 @@ def lddt(
         (all_atom_mask[..., None] * all_atom_mask[..., None, :] * 
         (1.0 - torch.eye(n_atom, device=all_atom_mask.device))
         )
-        )
+        ) #[*, n_atom, n_atom]
     
     #distinguish intra- and inter- pair indices based on asym_id
     intra_mask = torch.where(asym_id[..., None] == asym_id[..., None, :], 1, 0)
-    inter_mask = 1 - intra_mask
+    inter_mask = 1 - intra_mask #[*, n_atom, n_atom]
 
     #get lddt scores
-    dist_l1 = torch.abs(pair_dist_gt_pos - pair_dist_pred_pos)
-        
+    dist_l1 = torch.abs(pair_dist_gt_pos - pair_dist_pred_pos) #[*, n_atom, n_atom]
+
     score = torch.zeros_like(dist_l1)
     for distance_threshold in threshold:
         score += (dist_l1 < distance_threshold).type(dist_l1.dtype)
@@ -68,7 +68,6 @@ def lddt(
     #different asym_id (inter_mask) and distance threshold (dists_to_score)
     inter_score = torch.full(intra_score.shape, torch.nan)
     inter_mask = dists_to_score * inter_mask
-
     if torch.any(inter_mask):
         inter_norm = 1.0 / (eps + torch.sum(inter_mask, dim= (-1, -2)))
         inter_score = inter_norm * (eps + torch.sum(inter_mask * score,
@@ -104,15 +103,15 @@ def interface_lddt(
         scores: ilddt scores [*]
     """ 
     #get pairwise distance
-    pair_dist_true = torch.cdist(all_atom_gt_pos_1, all_atom_gt_pos_2)
-    pair_dist_pred = torch.cdist(all_atom_pred_pos_1, all_atom_pred_pos_2)
+    pair_dist_true = torch.cdist(all_atom_gt_pos_1, all_atom_gt_pos_2)#[*, n_atom1, n_atom2]
+    pair_dist_pred = torch.cdist(all_atom_pred_pos_1, all_atom_pred_pos_2)#[*, n_atom1, n_atom2]
 
     #create a mask
     dists_to_score = (
         (pair_dist_true < cutoff) * 
         (all_atom_mask1[..., None] * all_atom_mask2[..., None, :]
          )
-         )
+         )#[*, n_atom1, n_atom2]
     
     #get score
     dist_l1 = torch.abs(pair_dist_true - pair_dist_pred)
@@ -127,7 +126,6 @@ def interface_lddt(
     #normalize
     norm = 1.0 / (eps + torch.sum(dists_to_score, dim= (-1, -2)))
     score = norm * (eps + torch.sum(dists_to_score * score, dim= (-1, -2)))
-
     return score
 
 def drmsd(
@@ -149,10 +147,9 @@ def drmsd(
         inter_drmsd: drmsd across chains 
 
     Note: 
-        returns nan if inter_drmsd invalid
+        returns nan if inter_drmsd is invalid
         (ie. single chain, no atom pair within threshold)
     """
-
     drmsd = pair_dist_pred_pos - pair_dist_gt_pos 
     drmsd = drmsd ** 2 
     
@@ -189,10 +186,10 @@ def get_validation_metrics(
         is_nucleic_acid: Optional[bool] = False,
         ) -> Dict[str, torch.Tensor]:
     """ 
-    Compute validation metrics with a given ligand (rna, dna)
+    Compute validation metrics with a given substrate (protein, ligand, rna, dna)
 
     Args: 
-        is_substrate_atomized: broadcasted is_ligand/rna/dna feature [*, n_atom]
+        is_substrate_atomized: broadcasted ligand/rna/dna/is_protein feature [*, n_atom]
         asym_id: atomized asym_id feature [*, n_atom] 
         pred_coords: predicted coordinates [*, n_atom, 3]
         gt_coords: gt coordinates [*, n_atom, 3]
@@ -209,11 +206,14 @@ def get_validation_metrics(
                         
     Notes: 
         if no appropriate substrate: returns an empty dict {}
-        if substrate is ligand: a few extra scores are calculated
-            'lddt_intra_ligand_uha': intra ligand lddt with tighter threshold
-            'lddt_inter_ligand_ligand_uha': inter ligand lddt with tighter threshold
-        
-    """
+        for ligand: a few extra scores are calculated
+            'lddt_intra_ligand_uha': intra ligand lddt with [0.25, 0.5, 0.75, 1.] 
+            'lddt_inter_ligand_ligand_uha': inter ligand lddt with above threshold
+        for dna/rna: lddts with 15 A inclusion radius added
+            'lddt_intra_{dna/rna}_15': intra ligand lddt with 15 A radius
+            'lddt_inter_{dna/rna}_{dna/rna}_15': inter lddt with 15 A radius
+            'lddt_inter_protein_{dna/rna}_15': inter protein-dna/rna lddt 
+     """
     out = {}
 
     if torch.any(is_substrate_atomized):
@@ -235,32 +235,16 @@ def get_validation_metrics(
         gt_ligand_pair = torch.cdist(gt_ligand, gt_ligand)
         pred_ligand_pair = torch.cdist(pred_ligand, pred_ligand)
 
-        #nucleic acids (rna/dna) have higher cutoffs
-        cutoff = 30. if is_nucleic_acid else 15.
-
-        #get lddt metrics
+        cutoff = 30. if substrate == 'rna' or substrate == 'dna' else 15.
         intra_lddt, inter_lddt = lddt(pred_ligand_pair,
-                                      gt_ligand_pair,
-                                      all_atom_mask_ligand,
-                                      asym_id_ligand,
-                                      cutoff = cutoff
-                                      )
+                                          gt_ligand_pair,
+                                          all_atom_mask_ligand,
+                                          asym_id_ligand,
+                                          cutoff = cutoff
+                                          )
         out['lddt_intra_' + substrate] = intra_lddt
         out['lddt_inter_' + substrate + '_' + substrate] = inter_lddt
 
-        #for ligands, have extra lddt scores with tighter distance threshold
-        if substrate == 'ligand':
-            intra_lddt_uha, inter_lddt_uha = lddt(pred_ligand_pair,
-                                                  gt_ligand_pair,
-                                                  all_atom_mask_ligand,
-                                                  asym_id_ligand,
-                                                  threshold = [0.25, 0.5, 0.75, 1.],
-                                                  cutoff = cutoff
-                                                  )
-            out['lddt_intra_' + substrate + '_uha'] = intra_lddt_uha
-            out['lddt_inter_' + substrate + '_' + substrate + '_uha'] = inter_lddt_uha
-
-        #get drmsd metrics
         intra_drmsd, inter_drmsd = drmsd(pred_ligand_pair,
                                          gt_ligand_pair,
                                          all_atom_mask_ligand,
@@ -268,18 +252,61 @@ def get_validation_metrics(
                                          )
         out['drmsd_intra_' + substrate] = intra_drmsd
 
-        #get interface lddt metrics
-        if substrate != 'protein':
+        #additional metrics
+        #nucleic acid
+        if substrate == 'rna' or substrate == 'dna':
+            #get lddt with 15 A inclusion radius
+            intra_lddt, inter_lddt = lddt(pred_ligand_pair,
+                                          gt_ligand_pair,
+                                          all_atom_mask_ligand,
+                                          asym_id_ligand,
+                                          cutoff = 15.
+                                          )
+            out['lddt_intra_' + substrate + '_15'] = intra_lddt
+            out['lddt_inter_' + substrate + '_' + substrate + '_15'] = inter_lddt
+            #ilddt with protein
             inter_lddt_protein_ligand = interface_lddt(pred_protein,
                                                        pred_ligand,
                                                        gt_protein,
                                                        gt_ligand,
                                                        all_atom_mask_protein,
                                                        all_atom_mask_ligand,
-                                                       cutoff = cutoff,
+                                                       cutoff = 30.,
                                                        )
             out['lddt_inter_protein_' + substrate] = inter_lddt_protein_ligand
-    
+
+            inter_lddt_protein_ligand = interface_lddt(pred_protein,
+                                                       pred_ligand,
+                                                       gt_protein,
+                                                       gt_ligand,
+                                                       all_atom_mask_protein,
+                                                       all_atom_mask_ligand,
+                                                       cutoff = 15.,
+                                                       )
+            out['lddt_inter_protein_' + substrate + '_15'] = inter_lddt_protein_ligand
+
+        elif substrate == 'ligand':
+            #get tighter threshold lddts
+            intra_lddt_uha, inter_lddt_uha = lddt(pred_ligand_pair,
+                                                  gt_ligand_pair,
+                                                  all_atom_mask_ligand,
+                                                  asym_id_ligand,
+                                                  threshold = [0.25, 0.5, 0.75, 1.],
+                                                  cutoff = 15.
+                                                  )
+            out['lddt_intra_' + substrate + '_uha'] = intra_lddt_uha
+            out['lddt_inter_' + substrate + '_' + substrate + '_uha'] = inter_lddt_uha
+            
+            #ilddt with protein
+            inter_lddt_protein_ligand = interface_lddt(pred_protein,
+                                                       pred_ligand,
+                                                       gt_protein,
+                                                       gt_ligand,
+                                                       all_atom_mask_protein,
+                                                       all_atom_mask_ligand,
+                                                       cutoff = 15.,
+                                                       )
+            out['lddt_inter_protein_' + substrate] = inter_lddt_protein_ligand
     return out
 
 def gdt(

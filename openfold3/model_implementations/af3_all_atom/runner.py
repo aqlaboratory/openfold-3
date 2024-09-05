@@ -66,7 +66,6 @@ class AlphaFold3AllAtom(ModelRunner):
                                                             all_atom_mask,
                                                             is_protein_atomized,
                                                             substrate = 'protein',
-                                                            is_nucleic_acid = False,
                                                             )
         metrics = metrics | protein_validation_metrics
 
@@ -77,7 +76,6 @@ class AlphaFold3AllAtom(ModelRunner):
                                                            all_atom_mask,
                                                            is_protein_atomized,
                                                            substrate = 'ligand',
-                                                           is_nucleic_acid = False,
                                                            )
         metrics = metrics | ligand_validation_metrics 
 
@@ -88,7 +86,6 @@ class AlphaFold3AllAtom(ModelRunner):
                                                         all_atom_mask,
                                                         is_protein_atomized,
                                                         substrate = 'rna',
-                                                        is_nucleic_acid = True,
                                                         )
         metrics = metrics | rna_validation_metrics
 
@@ -99,7 +96,6 @@ class AlphaFold3AllAtom(ModelRunner):
                                                         all_atom_mask,
                                                         is_protein_atomized,
                                                         substrate = 'dna',
-                                                        is_nucleic_acid = True,
                                                         )
         metrics = metrics | dna_validation_metrics
 

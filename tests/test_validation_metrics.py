@@ -20,9 +20,10 @@ from tests.config import consts
 def random_rotation_translation(structure, factor = 100.):
     """ 
     Applies random rotations and translations to a given structure
-
     Args: 
-        Factor: a multiplier to translation [*, n_atom, 1, 3] 
+        Factor: a multiplier to translation
+    Returns: 
+        new_structure: randomly rotated and translated conformer [*, n_atom, 3]
     """ 
     # rotation: Rx, Ry, Rz
     x_angle, y_angle, z_angle = torch.randn(3) * 2 * math.pi
@@ -51,14 +52,14 @@ class TestLDDT(unittest.TestCase):
         batch_size = consts.batch_size 
         n_atom = consts.n_res
 
-        gt_structure = torch.randn(batch_size, n_atom, 3)
-        predicted_structure = torch.randn(batch_size, n_atom, 3)
-        atom_mask = torch.ones(batch_size, n_atom)
+        gt_structure = torch.randn(batch_size, n_atom, 3) #[batch_size, n_atom, 3]
+        predicted_structure = torch.randn(batch_size, n_atom, 3) #[batch_size, n_atom, 3]
+        atom_mask = torch.ones(batch_size, n_atom) #[batch_size, n_atom]
 
-        pair_gt = torch.cdist(gt_structure, gt_structure)
+        pair_gt = torch.cdist(gt_structure, gt_structure) #[batch_size, n_atom, n_atom]
         pair_pred = torch.cdist(predicted_structure, predicted_structure)
-
-        asym_id = torch.randint(low = 0, high = 21, size = (n_atom,))
+        asym_id = torch.randint(low = 0, high = 21, size = (n_atom,)) #[n_atom]
+        asym_id = asym_id.unsqueeze(0).expand(batch_size, -1) #[batch_size, n_atom]
 
         #shape test
         intra_lddt, inter_lddt = lddt(pair_pred,
@@ -70,10 +71,12 @@ class TestLDDT(unittest.TestCase):
         np.testing.assert_equal(intra_lddt.shape, exp_shape)
         np.testing.assert_equal(inter_lddt.shape, exp_shape)
 
-        #rototranslation. lddt should give 1.0s 
+        #rototranslation. 
+        #lddt between gt_structure and gt_structure_rototranslated should give 1.0s 
+        #note: in the test case with small variance (randn), inter_lddt should be valid
+        #but when all inter atom pairs > 15. or 30. (dna/rna), returns nan
         gt_structure_rototranslated = random_rotation_translation(gt_structure)
         exp_outputs = torch.ones(batch_size)
-
         pair_rototranslated = torch.cdist(gt_structure_rototranslated, 
                                           gt_structure_rototranslated,
                                           )
@@ -96,12 +99,12 @@ class TestInterfaceLDDT(unittest.TestCase):
         batch_size = consts.batch_size 
         n_atom = consts.n_res
         n_atom2 = 5
-        gt_structure_1 = torch.randn(batch_size, n_atom, 3)
-        gt_structure_2 = torch.randn(batch_size, n_atom2, 3)
-        predicted_structure_1 = torch.randn(batch_size, n_atom, 3)
-        predicted_structure_2 = torch.randn(batch_size, n_atom2, 3)
-        mask1 = torch.ones(batch_size, n_atom)
-        mask2 = torch.ones(batch_size, n_atom2)
+        gt_structure_1 = torch.randn(batch_size, n_atom, 3)#[batch_size, n_atom, 3]
+        gt_structure_2 = torch.randn(batch_size, n_atom2, 3)#[batch_size, n_atom, 3]
+        predicted_structure_1 = torch.randn(batch_size, n_atom, 3)#[batch_size, n_atom, 3]
+        predicted_structure_2 = torch.randn(batch_size, n_atom2, 3)#[batch_size, n_atom, 3]
+        mask1 = torch.ones(batch_size, n_atom)#[batch_size, n_atom,]
+        mask2 = torch.ones(batch_size, n_atom2)#[batch_size, n_atom,]
 
         #shape test
         out_interface_lddt = interface_lddt(predicted_structure_1, 
@@ -115,11 +118,11 @@ class TestInterfaceLDDT(unittest.TestCase):
         np.testing.assert_equal(out_interface_lddt.shape, exp_shape)
 
         #rototranslation test. should give 1.s 
-        #combine coordinates and rototranslate them
-        predicted_coordinates = torch.cat((gt_structure_1, gt_structure_2), dim = 1)
-        combined_coordinates = random_rotation_translation(predicted_coordinates)
-        #split two molecules
-        p1, p2 = torch.split(combined_coordinates, 
+        #rototranslate two structures together together
+        combined_coordinates = torch.cat((gt_structure_1, gt_structure_2), dim = 1)
+        combined_coordinates_rt = random_rotation_translation(combined_coordinates)
+        #split two molecules back
+        p1, p2 = torch.split(combined_coordinates_rt, 
                              [n_atom, n_atom2], 
                              dim = 1
                              )
@@ -139,17 +142,18 @@ class TestDRMSD(unittest.TestCase):
         batch_size = consts.batch_size 
         n_atom = consts.n_res
 
-        gt_structure = torch.randn(batch_size, n_atom, 3)
-        predicted_structure = torch.randn(batch_size, n_atom, 3)
-        mask = torch.ones(batch_size, n_atom)
+        gt_structure = torch.randn(batch_size, n_atom, 3) #[batch_size, n_atom, 3]
+        predicted_structure = torch.randn(batch_size, n_atom, 3) #[batch_size, n_atom, 3]
+        mask = torch.ones(batch_size, n_atom) #[batch_size, n_atom]
 
         pair_gt = torch.cdist(gt_structure,
                               gt_structure,
-                              )
+                              ) #[batch_size, n_atom, n_atom]]
         pair_pred = torch.cdist(predicted_structure,
                                 predicted_structure,
-                                )
-        asym_id = torch.randint(low = 0, high = 21, size = (n_atom,))
+                                ) #[batch_size, n_atom, n_atom]]
+        asym_id = torch.randint(low = 0, high = 21, size = (n_atom,)) #[n_atom]
+        asym_id = asym_id.unsqueeze(0).expand(batch_size, -1) #batch_size, n_atom
 
         #shape test
         intra_drmsd, inter_drmsd = drmsd(pair_pred, 
@@ -161,7 +165,8 @@ class TestDRMSD(unittest.TestCase):
         np.testing.assert_equal(intra_drmsd.shape, exp_shape)
         np.testing.assert_equal(inter_drmsd.shape, exp_shape)
 
-        #rototranslation. should give 0.s 
+        #rototranslation. compuate gt_structure and gt_structure_rototranslated drmsd
+        #should give 0.s 
         gt_structure_rototranslated = random_rotation_translation(gt_structure)
         pair_gt_rt = torch.cdist(gt_structure_rototranslated, gt_structure_rototranslated)
         exp_outputs = torch.zeros(batch_size)
@@ -178,13 +183,17 @@ class TestGetValidationMetrics(unittest.TestCase):
         batch_size = consts.batch_size 
         n_atom = 50
 
-        coords_pred = torch.randn(batch_size, n_atom, 3)
-        coords_gt = torch.randn(batch_size, n_atom, 3)
+        coords_pred = torch.randn(batch_size, n_atom, 3)#[batch_size, n_atom, 3]
+        coords_gt = torch.randn(batch_size, n_atom, 3)#[batch_size, n_atom, 3]
 
-        is_ligand_atomized = torch.randint(low = 0, high = 2, size = (batch_size, n_atom,))
-        protein_idx_atomized = 1 - is_ligand_atomized
-        asym_id_atomized = torch.randint(low = 0, high = 21, size = (batch_size, n_atom,))
-        all_atom_mask = torch.ones((batch_size, n_atom,))
+        #features of (bs, n_atom) only supported for samples (same values across bs)
+        is_ligand_atomized = torch.randint(low = 0, high = 2, size = (n_atom,))
+        is_ligand_atomized = is_ligand_atomized.unsqueeze(0).expand(batch_size, -1)
+        protein_idx_atomized = 1 - is_ligand_atomized#[batch_size, n_atom]
+
+        asym_id_atomized = torch.randint(low = 0, high = 20, size = (n_atom,))
+        asym_id_atomized = asym_id_atomized.unsqueeze(0).expand(batch_size, -1)#[batch_size, n_atom]
+        all_atom_mask = torch.ones((batch_size, n_atom,))#[batch_size, n_atom]
 
         out = get_validation_metrics(is_ligand_atomized,
                                      asym_id_atomized,
@@ -193,20 +202,18 @@ class TestGetValidationMetrics(unittest.TestCase):
                                      all_atom_mask,
                                      protein_idx_atomized,
                                      substrate = 'ligand',
-                                     is_nucleic_acid = False
                                      )
-        exp_shape = (batch_size,)
-        
-        for k, v in out.items():
+        exp_shape = (batch_size,)        
+        for _, v in out.items():
             np.testing.assert_equal(v.shape, exp_shape)
-        
+
 class TestBatchedKabsch(unittest.TestCase):
     def test_batched_kabsch(self):
         batch_size = consts.batch_size 
         n_atom = consts.n_res
 
-        gt_structure = torch.randn(batch_size, n_atom, 3)
-        pred_structure = torch.randn(batch_size, n_atom, 3)
+        gt_structure = torch.randn(batch_size, n_atom, 3)#[batch_size, n_atom, 3]
+        pred_structure = torch.randn(batch_size, n_atom, 3)#[batch_size, n_atom, 3]
         mask = torch.ones(batch_size, n_atom)
 
         #shape test
