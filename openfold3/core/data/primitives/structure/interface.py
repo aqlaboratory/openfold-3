@@ -269,8 +269,8 @@ def get_interface_chain_id_pairs(
             Distance threshold in Angstrom. Defaults to 5.0.
 
     Returns:
-        Nx2 array with unique chain pairings that have interface atoms, sorted so that
-        chain_id_1 < chain_id_2 for a pair (chain_id_1, chain_id_2).
+        Nx2 array with unique chain pairings that have interface atoms, with the two
+        chain IDs in each pair being sorted lexicographically.
     """
     _, chain_pairs = get_interface_atom_pair_idxs(
         atom_array,
@@ -305,7 +305,7 @@ def chain_paired_interface_atom_iter(
 
     Yields:
         chain_ids:
-            Tuple of chain IDs of the pair (sorted so that chain_id_1 < chain_id_2)
+            Tuple of chain IDs of the pair (lexicographically sorted)
         atom_pair_idxs:
             Array of atom pair indices corresponding to the chain pairing with the first
             chain's atom in the first column and the second chain's atom in the second
