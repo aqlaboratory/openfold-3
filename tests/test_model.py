@@ -61,12 +61,13 @@ class TestModel(unittest.TestCase):
         n_extra_seq = consts.n_extra
 
         # TODO: Refactor using parametrization
-        c = registry.make_config_with_preset(consts.model_name, consts.model_preset)
+        pe = registry.get_project_entry(consts.model_name)
+        c = registry.make_config_with_presets(pe, [consts.model_preset])
         c.model.evoformer_stack.no_blocks = 4  # no need to go overboard here
         c.model.evoformer_stack.blocks_per_ckpt = None  # don't want to set up
         # deepspeed for this test
 
-        model = registry.get_lightning_module(c).model.cuda()
+        model = pe.model_runner(c).model.cuda()
         model.eval()
 
         batch = {}

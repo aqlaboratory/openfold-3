@@ -3,7 +3,9 @@ import unittest
 import torch
 
 from openfold3.core.model.layers.diffusion_conditioning import DiffusionConditioning
-from openfold3.projects.registry import make_config_with_preset
+from openfold3.projects.af3_all_atom.config.base_config import (
+    project_config as af3_project_config,
+)
 from tests.config import consts
 
 
@@ -15,9 +17,9 @@ class TestDiffusionConditioning(unittest.TestCase):
         c_s = consts.c_s
         c_z = consts.c_z
 
-        config = make_config_with_preset("af3_all_atom")
+        config = af3_project_config.model
 
-        diff_cond_config = config.model.diffusion_module.diffusion_conditioning
+        diff_cond_config = config.architecture.diffusion_module.diffusion_conditioning
         diff_cond_config.update({"c_s": c_s, "c_s_input": c_s_input, "c_z": c_z})
 
         dc = DiffusionConditioning(**diff_cond_config)
@@ -58,9 +60,9 @@ class TestDiffusionConditioning(unittest.TestCase):
         c_z = consts.c_z
         n_sample = 3
 
-        config = make_config_with_preset("af3_all_atom")
+        config = af3_project_config.model
 
-        diff_cond_config = config.model.diffusion_module.diffusion_conditioning
+        diff_cond_config = config.architecture.diffusion_module.diffusion_conditioning
         diff_cond_config.update({"c_s": c_s, "c_s_input": c_s_input, "c_z": c_z})
 
         dc = DiffusionConditioning(**diff_cond_config)
@@ -104,9 +106,9 @@ class TestDiffusionConditioning(unittest.TestCase):
         c_s = consts.c_s
         c_z = consts.c_z
 
-        config = make_config_with_preset("af3_all_atom")
+        config = af3_project_config.model
 
-        diff_cond_config = config.model.diffusion_module.diffusion_conditioning
+        diff_cond_config = config.architecture.diffusion_module.diffusion_conditioning
         diff_cond_config.update({"c_s": c_s, "c_s_input": c_s_input, "c_z": c_z})
 
         dc = DiffusionConditioning(**diff_cond_config)

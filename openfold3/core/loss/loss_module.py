@@ -161,7 +161,7 @@ class AlphaFold3Loss(nn.Module):
         self.config = config
 
     def loss(self, batch, output, _return_breakdown=False):
-        loss_weights = batch["loss_weight"]
+        loss_weights = batch["loss_weights"]
         confidence_weights_sum = sum(
             loss_weights[k] for k in self.config.confidence_loss_names
         )

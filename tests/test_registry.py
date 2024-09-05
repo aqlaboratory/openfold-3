@@ -11,8 +11,7 @@ from tests import compare_utils
 class TestLoadPresets:
     def test_model_registry_loads_models(self):
         # TODO: Convert other models to new config format
-        # expected_model_entries = {"af2_monomer", "af2_multimer", "af3_all_atom"}
-        expected_model_entries = {"af3_all_atom"}
+        expected_model_entries = {"af2_monomer", "af2_multimer", "af3_all_atom"}
         assert set(registry.PROJECT_REGISTRY.keys()) == expected_model_entries
 
     def test_config_preset_loading(self):

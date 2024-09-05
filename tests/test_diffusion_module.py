@@ -20,7 +20,9 @@ from openfold3.core.model.structure.diffusion_module import (
     DiffusionModule,
     SampleDiffusion,
 )
-from openfold3.projects.registry import make_config_with_preset
+from openfold3.projects.af3_all_atom.config.base_config import (
+    project_config as af3_project_config,
+)
 from tests.config import consts
 
 
@@ -30,13 +32,13 @@ class TestDiffusionModule(unittest.TestCase):
         n_token = consts.n_res
         n_atom = 4 * consts.n_res
 
-        config = make_config_with_preset("af3_all_atom")
+        config = af3_project_config.model
 
-        c_s_input = config.model.shared.c_s_input
-        c_s = config.model.shared.c_s
-        c_z = config.model.shared.c_z
+        c_s_input = config.architecture.shared.c_s_input
+        c_s = config.architecture.shared.c_s
+        c_z = config.architecture.shared.c_z
 
-        dm = DiffusionModule(config=config.model.diffusion_module)
+        dm = DiffusionModule(config=config.architecture.diffusion_module)
 
         xl_noisy = torch.randn((batch_size, n_atom, 3))
         t = torch.ones(1)
@@ -83,13 +85,13 @@ class TestDiffusionModule(unittest.TestCase):
         n_atom = 4 * consts.n_res
         n_sample = 3
 
-        config = make_config_with_preset("af3_all_atom")
+        config = af3_project_config.model
 
-        c_s_input = config.model.shared.c_s_input
-        c_s = config.model.shared.c_s
-        c_z = config.model.shared.c_z
+        c_s_input = config.architecture.shared.c_s_input
+        c_s = config.architecture.shared.c_s
+        c_z = config.architecture.shared.c_z
 
-        dm = DiffusionModule(config=config.model.diffusion_module)
+        dm = DiffusionModule(config=config.architecture.diffusion_module)
 
         xl_noisy = torch.randn((batch_size, n_sample, n_atom, 3))
         t = torch.ones((batch_size, n_sample))
@@ -137,16 +139,16 @@ class TestSampleDiffusion(unittest.TestCase):
         n_token = consts.n_res
         n_atom = 4 * consts.n_res
 
-        config = make_config_with_preset("af3_all_atom")
+        config = af3_project_config.model
 
-        c_s_input = config.model.shared.c_s_input
-        c_s = config.model.shared.c_s
-        c_z = config.model.shared.c_z
+        c_s_input = config.architecture.shared.c_s_input
+        c_s = config.architecture.shared.c_s
+        c_z = config.architecture.shared.c_z
 
-        sample_config = config.model.sample_diffusion
+        sample_config = config.architecture.sample_diffusion
         sample_config.no_rollout_steps = 2
 
-        dm = DiffusionModule(config=config.model.diffusion_module)
+        dm = DiffusionModule(config=config.architecture.diffusion_module)
         sd = SampleDiffusion(**sample_config, diffusion_module=dm)
 
         batch = {

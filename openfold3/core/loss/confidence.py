@@ -700,7 +700,7 @@ def confidence_loss(
 
     l = l_plddt + l_pde + l_resolved
 
-    pae_weight = batch["loss_weight"]["pae"]
+    pae_weight = batch["loss_weights"]["pae"]
     if pae_weight > 0:
         l_pae = pae_loss(
             batch=batch,

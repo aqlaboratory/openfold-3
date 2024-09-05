@@ -245,7 +245,7 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ):
             "atom_positions": torch.randn((batch_size, n_atom, 3)).float(),
             "atom_resolved_mask": torch.ones((batch_size, n_atom)).float(),
         },
-        "loss_weight": {
+        "loss_weights": {
             "bond": torch.Tensor([1.0]),
             "smooth_lddt": torch.Tensor([4.0]),
             "mse": torch.Tensor([4.0]),

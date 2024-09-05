@@ -42,8 +42,9 @@ class TestInputEmbedder(unittest.TestCase):
         n_res = 17
         n_clust = 19
 
-        config = registry.make_config_with_preset(
-            monomer_consts.model_name, monomer_consts.model_preset
+        monomer_project_entry = registry.get_project_entry(monomer_consts.model_name)
+        config = registry.make_config_with_presets(
+            monomer_project_entry, [monomer_consts.model_preset]
         )
         input_emb_config = config.model.input_embedder
         input_emb_config.update({"c_z": c_z, "c_m": c_m})
@@ -62,8 +63,9 @@ class TestInputEmbedder(unittest.TestCase):
         self.assertTrue(msa_emb.shape == (b, n_clust, n_res, c_m))
         self.assertTrue(pair_emb.shape == (b, n_res, n_res, c_z))
 
-        config = registry.make_config_with_preset(
-            multimer_consts.model_name, multimer_consts.model_preset
+        multimer_project_entry = registry.get_project_entry(multimer_consts.model_name)
+        config = registry.make_config_with_presets(
+            multimer_project_entry, [multimer_consts.model_preset]
         )
         input_emb_config = config.model.input_embedder
         input_emb_config.update({"c_z": c_z, "c_m": c_m})
@@ -91,10 +93,14 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
         n_atom = 4 * consts.n_res
         one_hot_dim = 32
 
-        af3_config = registry.make_config_with_preset("af3_all_atom")
-        c_s_input = af3_config.model.input_embedder.c_s_input
-        c_s = af3_config.model.input_embedder.c_s
-        c_z = af3_config.model.input_embedder.c_z
+        af3_project_entry = registry.get_project_entry("af3_all_atom")
+        af3_project_config = registry.make_config_with_presets(
+            af3_project_entry, ["initial_training"]
+        )
+        af3_config = af3_project_config.model
+        c_s_input = af3_config.architecture.input_embedder.c_s_input
+        c_s = af3_config.architecture.input_embedder.c_s
+        c_z = af3_config.architecture.input_embedder.c_z
 
         batch = {
             "token_index": torch.arange(0, n_token)
@@ -120,7 +126,7 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
             "token_bonds": torch.rand((batch_size, n_token, n_token)),
         }
 
-        ie = InputEmbedderAllAtom(**af3_config.model.input_embedder)
+        ie = InputEmbedderAllAtom(**af3_config.architecture.input_embedder)
 
         s_input, s, z = ie(batch=batch)
 
@@ -139,9 +145,13 @@ class TestMSAModuleEmbedder(unittest.TestCase):
         c_s_input = c_token + 65
         one_hot_dim = 32
 
-        af3_config = registry.make_config_with_preset("af3_all_atom")
+        af3_project_entry = registry.get_project_entry("af3_all_atom")
+        af3_project_config = registry.make_config_with_presets(
+            af3_project_entry, ["initial_training"]
+        )
+        af3_config = af3_project_config.model
 
-        msa_emb_config = af3_config.model.msa.msa_module_embedder
+        msa_emb_config = af3_config.architecture.msa.msa_module_embedder
         msa_emb_config.update({"c_s_input": c_s_input})
 
         batch = {
@@ -232,8 +242,9 @@ class TestTemplateSingleEmbedders(unittest.TestCase):
         n_templ = 4
         n_res = 256
 
-        c = registry.make_config_with_preset(
-            monomer_consts.model_name, monomer_consts.model_preset
+        monomer_project_entry = registry.get_project_entry(monomer_consts.model_name)
+        c = registry.make_config_with_presets(
+            monomer_project_entry, [monomer_consts.model_preset]
         )
         c_m = c.model.template.template_single_embedder.c_out
 
@@ -249,8 +260,9 @@ class TestTemplateSingleEmbedders(unittest.TestCase):
 
         self.assertTrue(x.shape == (batch_size, n_templ, n_res, c_m))
 
-        c = registry.make_config_with_preset(
-            multimer_consts.model_name, multimer_consts.model_preset
+        multimer_project_entry = registry.get_project_entry(multimer_consts.model_name)
+        c = registry.make_config_with_presets(
+            multimer_project_entry, [multimer_consts.model_preset]
         )
         c_m = c.model.template.template_single_embedder.c_out
 
@@ -271,8 +283,9 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         n_templ = 4
         n_res = 5
 
-        c = registry.make_config_with_preset(
-            monomer_consts.model_name, monomer_consts.model_preset
+        monomer_project_entry = registry.get_project_entry(monomer_consts.model_name)
+        c = registry.make_config_with_presets(
+            monomer_project_entry, [monomer_consts.model_preset]
         )
         c_t = c.model.template.template_pair_embedder.c_out
 
@@ -291,8 +304,9 @@ class TestTemplatePairEmbedders(unittest.TestCase):
 
         self.assertTrue(x.shape == (batch_size, n_templ, n_res, n_res, c_t))
 
-        c = registry.make_config_with_preset(
-            multimer_consts.model_name, multimer_consts.model_preset
+        multimer_project_entry = registry.get_project_entry(multimer_consts.model_name)
+        c = registry.make_config_with_presets(
+            multimer_project_entry, [multimer_consts.model_preset]
         )
         c_z = c.model.template.template_pair_embedder.c_in
         c_t = c.model.template.template_pair_embedder.c_out
@@ -321,13 +335,17 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         n_templ = 3
         n_token = 10
 
-        af3_config = registry.make_config_with_preset("af3_all_atom")
+        af3_project_entry = registry.get_project_entry("af3_all_atom")
+        af3_project_config = registry.make_config_with_presets(
+            af3_project_entry, ["initial_training"]
+        )
+        af3_config = af3_project_config.model
 
-        c_z = af3_config.model.template.template_pair_embedder.c_z
-        c_t = af3_config.model.template.template_pair_embedder.c_out
+        c_z = af3_config.architecture.template.template_pair_embedder.c_z
+        c_t = af3_config.architecture.template.template_pair_embedder.c_out
 
         tpe = TemplatePairEmbedderAllAtom(
-            **af3_config.model.template.template_pair_embedder
+            **af3_config.architecture.template.template_pair_embedder
         )
 
         batch = {

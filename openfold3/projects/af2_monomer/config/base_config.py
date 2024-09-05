@@ -70,6 +70,10 @@ config = mlc.ConfigDict(
                 ],
             },
         },
+        # TODO: Regroup the AF2 monomer configs to match new format.
+        "settings": {
+            "ema": {"decay": 0.999},
+        },
         # Recurring FieldReferences that can be changed globally here
         "globals": {
             "blocks_per_ckpt": blocks_per_ckpt,
@@ -93,7 +97,6 @@ config = mlc.ConfigDict(
             "eps": eps,
         },
         "model": {
-            "ema": {"decay": 0.999},
             "_mask_trans": False,
             "input_embedder": {
                 "tf_dim": 22,
