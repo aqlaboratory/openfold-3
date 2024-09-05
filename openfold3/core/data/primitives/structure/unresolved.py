@@ -16,6 +16,7 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_chain_to_three_letter_codes_dict,
     get_entity_to_three_letter_codes_dict,
 )
+from openfold3.core.data.resources.patches import construct_atom_array
 from openfold3.core.data.resources.tables import (
     STANDARD_NUCLEIC_ACID_RESIDUES,
     STANDARD_PROTEIN_RESIDUES,
@@ -145,7 +146,7 @@ def build_unresolved_polymer_segment(
 
             added_atoms += 1
 
-    segment_atom_array = struc.array(atom_list)
+    segment_atom_array = construct_atom_array(atom_list)
 
     # build standard connectivities
     if add_bonds:
@@ -538,7 +539,7 @@ def add_unresolved_atoms_within_residue(
         return extended_atom_array
 
     # Add atoms to end of the atom array
-    missing_atom_array = struc.array(missing_atom_list)
+    missing_atom_array = construct_atom_array(missing_atom_list)
     extended_atom_array += missing_atom_array
 
     # Reorder appropriately

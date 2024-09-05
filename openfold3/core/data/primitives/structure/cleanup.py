@@ -18,6 +18,7 @@ from openfold3.core.data.primitives.structure.labels import (
 from openfold3.core.data.primitives.structure.metadata import (
     get_chain_to_canonical_seq_dict,
 )
+from openfold3.core.data.resources.patches import construct_atom_array
 from openfold3.core.data.resources.tables import (
     CRYSTALLIZATION_AIDS,
     STANDARD_NUCLEIC_ACID_RESIDUES,
@@ -452,7 +453,7 @@ def remove_chains_with_CA_gaps(
 
     # Match C-alpha atoms with their next C-alpha atom
     ca_without_last = protein_chain_ca[:-1]
-    ca_shifted_left = struc.array(np.roll(protein_chain_ca, -1, axis=0)[:-1])
+    ca_shifted_left = construct_atom_array(np.roll(protein_chain_ca, -1, axis=0)[:-1])
 
     # Distances of every C-alpha atom to the next C-alpha atom
     ca_dists = struc.distance(ca_without_last, ca_shifted_left)
