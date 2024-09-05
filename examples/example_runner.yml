@@ -62,17 +62,23 @@ config_updates:
 
 dataset_paths:
   PDB-weighted:
-    alignments: /<PDB_PATH>/alignments/
-    mmcif_structures: /<PDB_PATH>/mmcif/
-    template_mmcif_structures: /<PDB_PATH>/template_mmcif/
+    alignments_directory: /<PDB_PATH>/alignments/
+    alignment_db_directory: /<PDB_PATH>/alignments_db/
+    target_structures_directory: /<PDB_PATH>/mmcif/
     reference_molecule_directory: /<REFERENCE_PATH>/molecules 
-    data_cache: <PDB_PATH>/data_cache 
+    dataset_cache_file: <PDB_PATH>/data_cache 
+    template_cache_directory: <PDB_PATH>/template_cache 
+    template_structures_directory: /<PDB_PATH>/template_mmcif/
+    ccd_file: /<PDB_PATH>/ccd_file
   short-monomer-distillation:
-    alignments: /<SHORT_MONOMER_PATH>/alignments/
-    mmcif_structures: /<SHORT_MONOMER_PATH>/mmcif/
-    template_mmcif_structures: /<SHORT_MONOMER_PATH>/template_mmcif/
+    alignments_directory: /<MONOMER_PATH>/alignments/
+    alignment_db_directory: /<MONOMER_PATH>/alignments_db/
+    target_structures_directory: /<MONOMER_PATH>/mmcif/
     reference_molecule_directory: /<REFERENCE_PATH>/molecules 
-    data_cache: <PDB_PATH>/data_cache 
+    dataset_cache_file: <MONOMER_PATH>/data_cache 
+    template_cache_directory: <MONOMER_PATH>/template_cache 
+    template_structures_directory: /<MONOMER_PATH>/template_mmcif/
+    ccd_file: /<MONOMER_PATH>/ccd_file
 
 dataset_configs:
   train:
