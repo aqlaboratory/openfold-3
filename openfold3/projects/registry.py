@@ -1,4 +1,5 @@
 # TODO add license
+from typing import Optional
 import ml_collections as mlc
 
 from openfold3.core.config import registry_base
@@ -36,7 +37,7 @@ def get_project_entry(project_name: str):
 
 
 def make_config_with_presets(
-    project_entry: registry_base.ProjectEntry, presets: list[str]
+    project_entry: registry_base.ProjectEntry, presets: Optional[list[str]] = None
 ):
     """Initializes project config using provided presets.
 
@@ -47,6 +48,9 @@ def make_config_with_presets(
         A new projct config where preset updates are applied in the order they are
         provided in `presets`.
     """
+    if presets is None:
+        return project_entry.get_config_with_preset()
+
     initial_preset = presets[0]
     project_config = project_entry.get_config_with_preset(initial_preset)
 

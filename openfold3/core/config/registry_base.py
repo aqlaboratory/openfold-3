@@ -1,3 +1,4 @@
+import copy
 import dataclasses
 import logging
 from pathlib import Path
@@ -34,9 +35,9 @@ class ProjectEntry:
         config.update(preset_model_config)
         return
 
-    def get_config_with_preset(self, preset: str) -> ConfigDict:
+    def get_config_with_preset(self, preset: Optional[str] = None) -> ConfigDict:
         """Retrieves a config with specified preset applied"""
-        config = self.base_config
+        config = copy.deepcopy(self.base_config)
         if preset is None or preset == "initial_training":
             logging.info(f"Using default training configs for {self.name}")
         else:
