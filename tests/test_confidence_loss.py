@@ -10,7 +10,7 @@ from openfold3.core.loss.confidence import (
     pae_loss,
     pde_loss,
 )
-from openfold3.model_implementations.af3_all_atom.config.base_config import config
+from openfold3.model_implementations.registry import make_config_with_preset
 
 
 class TestConfidenceLoss(unittest.TestCase):
@@ -43,8 +43,10 @@ class TestConfidenceLoss(unittest.TestCase):
             "is_rna": is_rna,
             "is_dna": is_dna,
             "is_atomized": is_atomized,
-            "gt_atom_mask": gt_atom_mask,
-            "gt_atom_positions": gt_atom_positions,
+            "ground_truth": {
+                "atom_resolved_mask": gt_atom_mask,
+                "atom_positions": gt_atom_positions,
+            },
         }
 
     def test_plddt_loss(self):
@@ -54,9 +56,9 @@ class TestConfidenceLoss(unittest.TestCase):
         bin_max = 1
 
         batch = self.setup_features()
-        batch_size, n_atom = batch["gt_atom_mask"].shape
+        batch_size, n_atom = batch["ground_truth"]["atom_resolved_mask"].shape
 
-        x = torch.randn_like(batch["gt_atom_positions"])
+        x = torch.randn_like(batch["ground_truth"]["atom_positions"])
 
         logits = torch.randn((batch_size, n_atom, no_bins))
 
@@ -83,7 +85,7 @@ class TestConfidenceLoss(unittest.TestCase):
         batch = self.setup_features()
         batch_size, n_token = batch["token_mask"].shape
 
-        x = torch.randn_like(batch["gt_atom_positions"])
+        x = torch.randn_like(batch["ground_truth"]["atom_positions"])
 
         logits = torch.randn((batch_size, n_token, n_token, no_bins))
 
@@ -110,7 +112,7 @@ class TestConfidenceLoss(unittest.TestCase):
         batch = self.setup_features()
         batch_size, n_token = batch["token_mask"].shape
 
-        x = torch.randn_like(batch["gt_atom_positions"])
+        x = torch.randn_like(batch["ground_truth"]["atom_positions"])
 
         logits = torch.randn((batch_size, n_token, n_token, no_bins))
 
@@ -131,7 +133,7 @@ class TestConfidenceLoss(unittest.TestCase):
         eps = 1e-8
 
         batch = self.setup_features()
-        batch_size, n_atom = batch["gt_atom_mask"].shape
+        batch_size, n_atom = batch["ground_truth"]["atom_resolved_mask"].shape
 
         logits = torch.randn((batch_size, n_atom, no_bins))
 
@@ -144,7 +146,9 @@ class TestConfidenceLoss(unittest.TestCase):
     def test_confidence_loss(self):
         batch = self.setup_features()
         batch_size, n_token = batch["token_mask"].shape
-        n_atom = batch["gt_atom_mask"].shape[1]
+        n_atom = batch["ground_truth"]["atom_resolved_mask"].shape[1]
+
+        config = make_config_with_preset("af3_all_atom")
 
         no_bins_plddt = config.loss.confidence.plddt.no_bins
         no_bins_pae = config.loss.confidence.pae.no_bins
@@ -152,7 +156,9 @@ class TestConfidenceLoss(unittest.TestCase):
         no_bins_resolved = config.loss.confidence.experimentally_resolved.no_bins
 
         output = {
-            "x_pred": torch.randn_like(batch["gt_atom_positions"]),
+            "atom_positions_predicted": torch.randn_like(
+                batch["ground_truth"]["atom_positions"]
+            ),
             "plddt_logits": torch.randn((batch_size, n_atom, no_bins_plddt)),
             "pae_logits": torch.randn((batch_size, n_token, n_token, no_bins_pae)),
             "pde_logits": torch.randn((batch_size, n_token, n_token, no_bins_pde)),

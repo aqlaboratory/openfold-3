@@ -226,6 +226,7 @@ class PairFormerStack(nn.Module):
         blocks_per_ckpt: Optional[int],
         inf: float,
         linear_init_params: ConfigDict = lin_init.pairformer_init,
+        use_reentrant: Optional[bool] = None,
         clear_cache_between_blocks: bool = False,
         tune_chunk_size: bool = False,
         **kwargs,
@@ -266,6 +267,10 @@ class PairFormerStack(nn.Module):
                 Large constant used for masking
             linear_init_params:
                 Parameters for initializing linear layers
+            use_reentrant:
+                Whether to use reentrant variant of checkpointing. If set,
+                torch checkpointing will be used (DeepSpeed does not support
+                this feature)
             clear_cache_between_blocks:
                 Whether to clear CUDA's GPU memory cache between blocks of the
                 stack. Slows down each block but can reduce fragmentation
@@ -275,6 +280,7 @@ class PairFormerStack(nn.Module):
         super().__init__()
 
         self.blocks_per_ckpt = blocks_per_ckpt
+        self.use_reentrant = use_reentrant
         self.clear_cache_between_blocks = clear_cache_between_blocks
 
         self.blocks = nn.ModuleList()
@@ -429,6 +435,7 @@ class PairFormerStack(nn.Module):
             blocks,
             args=(s, z),
             blocks_per_ckpt=blocks_per_ckpt,
+            use_reentrant=self.use_reentrant,
         )
 
         return s, z

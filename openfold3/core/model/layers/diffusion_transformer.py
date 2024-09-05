@@ -23,6 +23,7 @@ import torch.nn as nn
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
+from openfold3.core.utils.checkpointing import checkpoint_blocks
 
 from .attention_pair_bias import AttentionPairBias
 from .transition import ConditionedTransitionBlock
@@ -177,7 +178,9 @@ class DiffusionTransformer(nn.Module):
         use_block_sparse_attn: bool,
         block_size: Optional[int],
         inf: float,
+        blocks_per_ckpt: Optional[int] = None,
         linear_init_params: ConfigDict = lin_init.diffusion_transformer_init,
+        use_reentrant: Optional[bool] = None,
     ):
         """
         Args:
@@ -199,12 +202,22 @@ class DiffusionTransformer(nn.Module):
                 Whether to use Triton block sparse attention kernels
             block_size:
                 Block size to use in block sparse attention
+            blocks_per_ckpt:
+                Number of blocks per checkpoint. If set, checkpointing will
+                be used to save memory.
             inf:
                 Large constant used to create mask for attention logits
             linear_init_params:
                 Linear layer initialization parameters
+            use_reentrant:
+                Whether to use reentrant variant of checkpointing. If set,
+                torch checkpointing will be used (DeepSpeed does not support
+                this feature)
         """
         super().__init__()
+
+        self.blocks_per_ckpt = blocks_per_ckpt
+        self.use_reentrant = use_reentrant
 
         self.blocks = nn.ModuleList(
             [
@@ -285,7 +298,15 @@ class DiffusionTransformer(nn.Module):
             for b in self.blocks
         ]
 
-        for b in blocks:
-            a = b(a)
+        blocks_per_ckpt = self.blocks_per_ckpt
+        if not torch.is_grad_enabled():
+            blocks_per_ckpt = None
+
+        (a,) = checkpoint_blocks(
+            blocks,
+            args=(a,),
+            blocks_per_ckpt=blocks_per_ckpt,
+            use_reentrant=self.use_reentrant,
+        )
 
         return a

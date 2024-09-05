@@ -5,6 +5,8 @@ from openfold3.model_implementations.af3_all_atom.config import (
 )
 from openfold3.model_implementations.af3_all_atom.config.features import feature_dict
 
+MODEL_NAME = "af3_all_atom"
+
 # Hidden dimensions
 c_s = mlc.FieldReference(384, field_type=int)
 c_z = mlc.FieldReference(128, field_type=int)
@@ -23,6 +25,7 @@ max_relative_idx = mlc.FieldReference(32, field_type=int)
 max_relative_chain = mlc.FieldReference(2, field_type=int)
 no_samples = mlc.FieldReference(48, field_type=int)
 no_rollout_steps = mlc.FieldReference(20, field_type=int)
+diffusion_training_enabled = mlc.FieldReference(True, field_type=bool)
 n_query = mlc.FieldReference(32, field_type=int)
 n_key = mlc.FieldReference(128, field_type=int)
 use_block_sparse_attn = mlc.FieldReference(False, field_type=bool)
@@ -51,6 +54,7 @@ config = mlc.ConfigDict(
             "no_cycles": 4,
             "no_samples": no_samples,
             "no_rollout_steps": no_rollout_steps,
+            "diffusion_training_enabled": diffusion_training_enabled,
             "blocks_per_ckpt": blocks_per_ckpt,
             "chunk_size": chunk_size,
             # Use DeepSpeed memory-efficient attention kernel. Mutually
@@ -60,6 +64,7 @@ config = mlc.ConfigDict(
             # exclusive with use_deepspeed_evo_attention and use_flash.
             "use_lma": False,
             "offload_inference": False,
+            "last_recycle_grad_only": True,
         },
         "model": {
             "input_embedder": {
@@ -86,8 +91,10 @@ config = mlc.ConfigDict(
                     "use_ada_layer_norm": True,
                     "use_block_sparse_attn": use_block_sparse_attn,
                     "block_size": block_size,
+                    "blocks_per_ckpt": blocks_per_ckpt,
                     "inf": 1e10,  # global parameter?
                     "linear_init_params": lin_init.atom_att_enc_init,
+                    "use_reentrant": False,
                 },
                 "linear_init_params": lin_init.input_emb_init,
             },
@@ -118,6 +125,7 @@ config = mlc.ConfigDict(
                     "blocks_per_ckpt": blocks_per_ckpt,
                     "inf": 1e9,
                     "linear_init_params": lin_init.pair_block_init,
+                    "use_reentrant": False,
                     "tune_chunk_size": tune_chunk_size,
                 },
             },
@@ -131,7 +139,7 @@ config = mlc.ConfigDict(
                 "msa_module": {
                     "c_m": c_m,
                     "c_z": c_z,
-                    "c_hidden_msa_att": 32,
+                    "c_hidden_msa_att": 8,  # 8 or 32, possible typo in SI
                     "c_hidden_opm": 32,
                     "c_hidden_mul": 128,
                     "c_hidden_pair_att": 32,
@@ -148,6 +156,7 @@ config = mlc.ConfigDict(
                     "inf": 1e9,
                     "eps": eps,
                     "linear_init_params": lin_init.msa_module_init,
+                    "use_reentrant": False,
                     "clear_cache_between_blocks": False,
                     "tune_chunk_size": tune_chunk_size,
                 },
@@ -168,6 +177,7 @@ config = mlc.ConfigDict(
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "inf": 1e9,
                 "linear_init_params": lin_init.pairformer_init,
+                "use_reentrant": False,
                 "clear_cache_between_blocks": False,
                 "tune_chunk_size": tune_chunk_size,
             },
@@ -206,8 +216,10 @@ config = mlc.ConfigDict(
                     "use_ada_layer_norm": True,
                     "use_block_sparse_attn": use_block_sparse_attn,
                     "block_size": block_size,
+                    "blocks_per_ckpt": blocks_per_ckpt,
                     "inf": 1e9,  # global parameter?
                     "linear_init_params": lin_init.atom_att_enc_init,
+                    "use_reentrant": False,
                 },
                 "diffusion_transformer": {
                     "c_a": c_token_diffusion,
@@ -221,7 +233,9 @@ config = mlc.ConfigDict(
                     "use_block_sparse_attn": False,
                     "block_size": None,
                     "inf": 1e9,  # global parameter?
+                    "blocks_per_ckpt": blocks_per_ckpt,
                     "linear_init_params": lin_init.diffusion_transformer_init,
+                    "use_reentrant": False,
                 },
                 "atom_attn_dec": {
                     "c_atom": c_atom,
@@ -236,8 +250,10 @@ config = mlc.ConfigDict(
                     "use_ada_layer_norm": True,
                     "use_block_sparse_attn": use_block_sparse_attn,
                     "block_size": block_size,
+                    "blocks_per_ckpt": blocks_per_ckpt,
                     "inf": 1e9,  # global parameter?
                     "linear_init_params": lin_init.atom_att_dec_init,
+                    "use_reentrant": False,
                 },
             },
             "sample_diffusion": {
@@ -270,6 +286,7 @@ config = mlc.ConfigDict(
                         "blocks_per_ckpt": blocks_per_ckpt,
                         "inf": 1e9,
                         "linear_init_params": lin_init.pairformer_init,
+                        "use_reentrant": False,
                         "clear_cache_between_blocks": False,
                         "tune_chunk_size": tune_chunk_size,
                     },
@@ -315,13 +332,31 @@ config = mlc.ConfigDict(
                         "max_bin": 31,
                         "no_bins": 64,
                     },
+                    "pae": {
+                        "max_bin": 31,
+                        "no_bins": 64,
+                    },
+                    "ptm": {
+                        "max_bin": 31,
+                        "no_bins": 64,
+                        "ptm_weight": 0.2,
+                        "iptm_weight": 0.8,
+                    },
+                    "clash": {
+                        "min_distance": 1.1,
+                        "clash_cutoff_num": 100,
+                        "clash_cutoff_ratio": 0.5,
+                    },
+                    "rasa": {
+                        "cutoff": 0.581,
+                    },
                 },
             },
         },
         "loss": {
-            "alpha_confidence": 1e-4,
-            "alpha_diffusion": 4.0,
-            "alpha_distogram": 3e-2,
+            "confidence_weight": 1e-4,
+            "diffusion_weight": 4.0,
+            "distogram_weight": 3e-2,
             "min_resolution": 0.1,
             "max_resolution": 4.0,
             "confidence": {
@@ -343,19 +378,19 @@ config = mlc.ConfigDict(
                     "no_bins": 64,
                     "bin_min": 0.0,
                     "bin_max": 32.0,
-                    "alpha_pae": 0.0,
+                    "weight": 0.0,
                 },
                 "eps": eps,
                 "inf": 1e9,  # global parameter?
             },
             "diffusion": {
                 "sigma_data": sigma_data,
-                "alpha_bond": 0.0,  # 0 for training, 1 for finetuning
-                "alpha_dna": 5.0,
-                "alpha_rna": 5.0,
-                "alpha_ligand": 10.0,
+                "bond_weight": 0.0,  # varies based on training and finetuning
+                "smooth_lddt_weight": 1.0,  # varies based on finetuning stage
+                "dna_weight": 5.0,
+                "rna_weight": 5.0,
+                "ligand_weight": 10.0,
                 "eps": eps,
-                "enabled": True,
             },
             "distogram": {
                 "no_bins": 64,

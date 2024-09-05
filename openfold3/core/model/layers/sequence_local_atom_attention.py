@@ -30,7 +30,6 @@ from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
     broadcast_token_feat_to_atoms,
-    get_atom_to_onehot_token_index,
 )
 
 TensorDict = Dict[str, torch.Tensor]
@@ -146,8 +145,10 @@ class AtomTransformer(nn.Module):
         use_ada_layer_norm: bool = True,
         use_block_sparse_attn: bool = False,
         block_size: Optional[int] = 16,
+        blocks_per_ckpt: Optional[int] = None,
         inf: float = 1e9,
         linear_init_params: ConfigDict = lin_init.atom_transformer_init,
+        use_reentrant: Optional[bool] = None,
     ):
         """
         Args:
@@ -173,10 +174,17 @@ class AtomTransformer(nn.Module):
                 Whether to use Triton block sparse attention kernels
             block_size:
                 Block size to use in block sparse attention
+            blocks_per_ckpt:
+                Number of blocks per checkpoint. If set, checkpointing will
+                be used to save memory.
             inf:
                 Large number used for attention masking
             linear_init_params:
                 Linear layer initialization parameters
+            use_reentrant:
+                Whether to use reentrant variant of checkpointing. If set,
+                torch checkpointing will be used (DeepSpeed does not support
+                this feature)
         """
         super().__init__()
         self.n_query = n_query
@@ -196,8 +204,10 @@ class AtomTransformer(nn.Module):
             use_ada_layer_norm=use_ada_layer_norm,
             use_block_sparse_attn=self.use_block_sparse_attn,
             block_size=self.block_size,
+            blocks_per_ckpt=blocks_per_ckpt,
             inf=self.inf,
             linear_init_params=linear_init_params.diffusion_transformer,
+            use_reentrant=use_reentrant,
         )
 
     def forward(
@@ -224,7 +234,18 @@ class AtomTransformer(nn.Module):
             ql:
                 [*, N_atom, c_atom] Updated atom single representation
         """
-        # TODO: Add/remove padding from n_atom to make it divisible by block size
+        pad_len = 0
+        if self.use_block_sparse_attn:
+            pad_len = (
+                self.block_size - cl.shape[-2] % self.block_size
+            ) % self.block_size
+            if pad_len > 0:
+                ql = torch.nn.functional.pad(ql, (0, 0, 0, pad_len), value=0.0)
+                cl = torch.nn.functional.pad(cl, (0, 0, 0, pad_len), value=0.0)
+                plm = torch.nn.functional.pad(
+                    plm, (0, 0, 0, pad_len, 0, pad_len), value=0.0
+                )
+                atom_mask = torch.nn.functional.pad(atom_mask, (0, pad_len), value=0.0)
 
         n_atom = ql.shape[-2]
 
@@ -254,6 +275,9 @@ class AtomTransformer(nn.Module):
             layout=layout,
             chunk_size=chunk_size,
         )
+
+        if pad_len > 0:
+            ql = ql[..., :-pad_len, :]
 
         return ql
 
@@ -426,28 +450,34 @@ class NoisyPositionEmbedder(nn.Module):
                 [*, N_atom, c_atom] Atom single representation with noisy coordinate
                     projection
         """
-        # Create an one-hot mapping from atom to token index
-        atom_to_onehot_token_index = get_atom_to_onehot_token_index(
-            token_mask=batch["token_mask"],
-            num_atoms_per_token=batch["num_atoms_per_token"],
-        )
 
         # Broadcast trunk single representation into atom single conditioning
         # [*, N_atom, c_atom]
-        sl_trunk = torch.einsum(
-            "...ic,...li->...lc", si_trunk, atom_to_onehot_token_index
+        sl_trunk = broadcast_token_feat_to_atoms(
+            token_mask=batch["token_mask"],
+            num_atoms_per_token=batch["num_atoms_per_token"],
+            token_feat=si_trunk,
+            token_dim=-2,
         )
         cl = cl + self.linear_s(self.layer_norm_s(sl_trunk))
 
         # Broadcast trunk pair representation into atom pair conditioning
         # [*, N_atom, N_atom, c_atom_pair]
         zij_trunk = self.linear_z(self.layer_norm_z(zij_trunk))
-        zlj_trunk = torch.einsum(
-            "...ijc,...li->...ljc", zij_trunk, atom_to_onehot_token_index
+        zlj_trunk = broadcast_token_feat_to_atoms(
+            token_mask=batch["token_mask"],
+            num_atoms_per_token=batch["num_atoms_per_token"],
+            token_feat=zij_trunk,
+            token_dim=-3,
         )
-        zlm_trunk = torch.einsum(
-            "...ljc,...mj->...lmc", zlj_trunk, atom_to_onehot_token_index
+        zlm_trunk = broadcast_token_feat_to_atoms(
+            token_mask=batch["token_mask"],
+            num_atoms_per_token=batch["num_atoms_per_token"],
+            token_feat=zlj_trunk.transpose(-2, -3),
+            token_dim=-3,
         )
+        zlm_trunk = zlm_trunk.transpose(-2, -3)
+
         plm = plm + zlm_trunk
 
         # Add noisy coordinate projection
@@ -478,10 +508,12 @@ class AtomAttentionEncoder(nn.Module):
         use_ada_layer_norm: bool,
         use_block_sparse_attn: bool,
         block_size: Optional[int] = 16,
-        inf: float = 1e9,
         c_s: Optional[int] = None,
         c_z: Optional[int] = None,
+        blocks_per_ckpt: Optional[int] = None,
+        inf: float = 1e9,
         linear_init_params: ConfigDict = lin_init.atom_att_enc_init,
+        use_reentrant: Optional[bool] = None,
     ):
         """
         Args:
@@ -513,14 +545,21 @@ class AtomAttentionEncoder(nn.Module):
                 Whether to use Triton block sparse attention kernels
             block_size:
                 Block size to use in block sparse attention
-            inf:
-                Large number used for attention masking
             c_s:
                 Single representation channel dimension (optional)
             c_z:
                 Pair representation channel dimension (optional)
+            blocks_per_ckpt:
+                Number of blocks per checkpoint. If set, checkpointing will
+                be used to save memory.
+            inf:
+                Large number used for attention masking
             linear_init_params:
                 Linear layer initialization parameters
+            use_reentrant:
+                Whether to use reentrant variant of checkpointing. If set,
+                torch checkpointing will be used (DeepSpeed does not support
+                this feature)
         """
         super().__init__()
         self.ref_atom_feature_embedder = RefAtomFeatureEmbedder(
@@ -566,8 +605,10 @@ class AtomAttentionEncoder(nn.Module):
             use_ada_layer_norm=use_ada_layer_norm,
             use_block_sparse_attn=use_block_sparse_attn,
             block_size=block_size,
+            blocks_per_ckpt=blocks_per_ckpt,
             inf=inf,
             linear_init_params=linear_init_params.atom_transformer,
+            use_reentrant=use_reentrant,
         )
 
         self.c_token = c_token
@@ -690,8 +731,10 @@ class AtomAttentionDecoder(nn.Module):
         use_ada_layer_norm: bool,
         use_block_sparse_attn: bool,
         block_size: Optional[int] = 16,
+        blocks_per_ckpt: Optional[int] = None,
         inf: float = 1e9,
         linear_init_params: ConfigDict = lin_init.atom_att_dec_init,
+        use_reentrant: Optional[bool] = None,
     ):
         """
         Args:
@@ -719,10 +762,17 @@ class AtomAttentionDecoder(nn.Module):
                 Whether to use Triton block sparse attention kernels
             block_size:
                 Block size to use in block sparse attention
+            blocks_per_ckpt:
+                Number of blocks per checkpoint. If set, checkpointing will
+                be used to save memory.
             inf:
                 Large number used for attention masking
             linear_init_params:
                 Linear layer initialization parameters
+            use_reentrant:
+                Whether to use reentrant variant of checkpointing. If set,
+                torch checkpointing will be used (DeepSpeed does not support
+                this feature)
         """
         super().__init__()
 
@@ -740,8 +790,10 @@ class AtomAttentionDecoder(nn.Module):
             use_ada_layer_norm=use_ada_layer_norm,
             use_block_sparse_attn=use_block_sparse_attn,
             block_size=block_size,
+            blocks_per_ckpt=blocks_per_ckpt,
             inf=inf,
             linear_init_params=linear_init_params.atom_transformer,
+            use_reentrant=use_reentrant,
         )
 
         self.layer_norm = LayerNorm(c_in=c_atom)

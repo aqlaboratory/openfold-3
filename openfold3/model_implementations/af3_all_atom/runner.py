@@ -7,6 +7,8 @@ from openfold3.core.metrics.validation_all_atom import (
     get_validation_metrics,
 )
 from openfold3.core.runners.model_runner import ModelRunner
+from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
+from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.model_implementations.af3_all_atom.config.base_config import config
 from openfold3.model_implementations.af3_all_atom.model import AlphaFold3
