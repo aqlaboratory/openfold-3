@@ -4,9 +4,7 @@ import torch
 import torch.nn.functional as F
 
 from openfold3.core.loss.distogram import all_atom_distogram_loss
-from openfold3.projects.af3_all_atom.config.base_config import (
-    project_config as af3_project_config,
-)
+from openfold3.projects import registry
 
 
 class TestDistogramLoss(unittest.TestCase):
@@ -49,7 +47,9 @@ class TestDistogramLoss(unittest.TestCase):
         batch = self.setup_features()
         batch_size, n_token = batch["token_mask"].shape
 
-        config = af3_project_config.model
+        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_config = proj_entry.get_config_with_preset()
+        config = proj_config.model
 
         no_bins = config.architecture.loss_module.distogram.no_bins
 

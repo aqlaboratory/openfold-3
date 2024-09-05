@@ -12,9 +12,7 @@ from openfold3.core.model.heads.prediction_heads import (
     PredictedDistanceErrorHead,
 )
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
-from openfold3.projects.af3_all_atom.config.base_config import (
-    project_config as af3_project_config,
-)
+from openfold3.projects import registry
 from openfold3.projects.af3_all_atom.config.base_config import (
     max_atoms_per_token,
 )
@@ -121,7 +119,9 @@ class TestPairformerEmbedding(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
-        config = af3_project_config.model
+        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_config = proj_entry.get_config_with_preset()
+        config = proj_config.model
 
         c_s_input = config.architecture.shared.c_s_input
         c_s = config.architecture.shared.c_s
@@ -169,7 +169,10 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         n_msa = 10
         n_templ = 3
 
-        config = af3_project_config.model
+        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_config = proj_entry.get_config_with_preset()
+        config = proj_config.model
+
         c_s_input = config.architecture.shared.c_s_input
         c_s = config.architecture.shared.c_s
         c_z = config.architecture.shared.c_z

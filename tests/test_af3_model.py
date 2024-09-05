@@ -4,8 +4,8 @@ import torch
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.projects.af3_all_atom.config.base_config import project_config
 from openfold3.projects.af3_all_atom.runner import AlphaFold3AllAtom
+from openfold3.projects import registry
 from tests import compare_utils
 from tests.config import consts
 from tests.data_utils import random_af3_features
@@ -26,7 +26,9 @@ class TestAF3Model(unittest.TestCase):
     ):
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        config = project_config.model
+        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_config = proj_entry.get_config_with_preset()
+        config = proj_config.model
 
         if train:
             config.settings.chunk_size = None

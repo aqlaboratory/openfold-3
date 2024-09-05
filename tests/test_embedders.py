@@ -93,11 +93,10 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
         n_atom = 4 * consts.n_res
         one_hot_dim = 32
 
-        af3_project_entry = registry.get_project_entry("af3_all_atom")
-        af3_project_config = registry.make_config_with_presets(
-            af3_project_entry, ["initial_training"]
-        )
-        af3_config = af3_project_config.model
+        af3_proj = registry.get_project_entry("af3_all_atom")
+        af3_proj_config = af3_proj.get_config_with_preset()
+        af3_config = af3_proj_config.model
+
         c_s_input = af3_config.architecture.input_embedder.c_s_input
         c_s = af3_config.architecture.input_embedder.c_s
         c_z = af3_config.architecture.input_embedder.c_z
@@ -145,11 +144,9 @@ class TestMSAModuleEmbedder(unittest.TestCase):
         c_s_input = c_token + 65
         one_hot_dim = 32
 
-        af3_project_entry = registry.get_project_entry("af3_all_atom")
-        af3_project_config = registry.make_config_with_presets(
-            af3_project_entry, ["initial_training"]
-        )
-        af3_config = af3_project_config.model
+        proj_entry = registry.get_project_entry("af3_all_atom")
+        af3_proj_config = proj_entry.get_config_with_preset()
+        af3_config = af3_proj_config.model
 
         msa_emb_config = af3_config.architecture.msa.msa_module_embedder
         msa_emb_config.update({"c_s_input": c_s_input})
@@ -335,11 +332,9 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         n_templ = 3
         n_token = 10
 
-        af3_project_entry = registry.get_project_entry("af3_all_atom")
-        af3_project_config = registry.make_config_with_presets(
-            af3_project_entry, ["initial_training"]
-        )
-        af3_config = af3_project_config.model
+        proj_entry = registry.get_project_entry("af3_all_atom")
+        af3_proj_config = proj_entry.get_config_with_preset()
+        af3_config = af3_proj_config.model
 
         c_z = af3_config.architecture.template.template_pair_embedder.c_z
         c_t = af3_config.architecture.template.template_pair_embedder.c_out
