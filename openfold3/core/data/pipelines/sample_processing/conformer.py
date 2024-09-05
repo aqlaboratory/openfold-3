@@ -1,7 +1,7 @@
 import contextlib
 from functools import lru_cache
 from pathlib import Path
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 import biotite.structure as struc
 import numpy as np
@@ -49,12 +49,16 @@ def get_processed_reference_conformer(
     mol_id: Mol,
     mol: Mol,
     mol_atom_array: AtomArray,
-    preferred_confgen_strategy: str,
+    preferred_confgen_strategy: Literal["default", "random_init", "fallback"],
     set_fallback_to_nan: bool = False,
 ) -> ProcessedReferenceMolecule:
     """Creates a ProcessedReferenceMolecule instance.
 
-    [DOCSTRING HERE]
+    This function takes in a reference molecule and its corresponding AtomArray, sets
+    the conformer to use during featurization (either a newly generated one or the
+    stored fallback conformer if generation is not possible), and determines which atoms
+    of the conformer are not NaN. The latter is relevant for the CCD-derived fallback
+    conformers which may contain NaN values.
 
     Args:
         mol_id (str):
@@ -64,11 +68,22 @@ def get_processed_reference_conformer(
         mol_atom_array (AtomArray):
             AtomArray of the target conformer instance to determine which atoms of the
             reference conformer are present in the structure.
+        preferred_confgen_strategy (str):
+            Preferred strategy for conformer generation. If the strategy is "fallback"
+            or the conformer generation fails, the fallback conformer is used.
+        set_fallback_to_nan (bool, optional):
+            If True, the fallback conformer is set to NaN. This is mostly relevant for
+            the special case where the fallback conformer was derived from CCD model
+            coordinates but the corresponding PDB ID is in the test set. Defaults to
+            False.
 
     Returns:
         ProcessedReferenceMolecule:
             Processed reference molecule instance.
     """
+    # Copy mol
+    mol = Mol(mol)
+
     # Ensure mol has only one fallback conformer
     assert mol.GetNumConformers() == 1
 
@@ -89,7 +104,7 @@ def get_processed_reference_conformer(
         conf = get_allnan_conformer(mol)
         mol = set_single_conformer(mol, conf)
 
-        # Adjust the NaN mask
+        # Adjust the non-NaN mask (to all-False)
         mol = add_conformer_atom_mask(mol)
 
     ## Overwrite the fallback conformer with a new conformer if possible
@@ -113,24 +128,31 @@ def get_processed_reference_conformer(
             # Set the single conformer
             mol = set_single_conformer(mol, conf)
 
-            # Adjust the NaN mask
+            # Adjust the non-NaN mask (will be all-True because conformer generation
+            # worked)
             mol = add_conformer_atom_mask(mol)
 
     return ProcessedReferenceMolecule(mol_id, mol, in_array_mask)
 
 
-# TODO: Expand docstring
 def get_reference_conformer_data_af3(
     atom_array: AtomArray,
     per_chain_metadata: dict,
-    ref_mol_metadata: dict,
+    reference_mol_metadata: dict,
     reference_mol_dir: Path,
 ) -> list[ProcessedReferenceMolecule]:
     """Extracts reference conformer data from AtomArray.
 
     Args:
         atom_array (AtomArray):
-            AtomArray of the reference conformer instances.
+            Atom array of the whole crop.
+        per_chain_metadata (dict):
+            The "chains" subdictionary of the particular target's dataset cache entry.
+        reference_mol_metadata (dict):
+            The "reference_molecule_data" subdictionary of the dataset cache.
+        reference_mol_dir (Path):
+            Path to the directory containing the reference molecule .sdf files generated
+            in preprocessing.
 
     Returns:
         list[ProcessedReferenceConformer]:
@@ -158,7 +180,7 @@ def get_reference_conformer_data_af3(
                     ref_mol_id,
                     mol,
                     chain_array,
-                    ref_mol_metadata[ref_mol_id]["conformer_gen_strategy"],
+                    reference_mol_metadata[ref_mol_id]["conformer_gen_strategy"],
                 )
             )
         # Decompose the chain into individual residues and their reference molecules
@@ -173,7 +195,7 @@ def get_reference_conformer_data_af3(
                         ref_mol_id,
                         mol,
                         residue_array,
-                        ref_mol_metadata[ref_mol_id]["conformer_gen_strategy"],
+                        reference_mol_metadata[ref_mol_id]["conformer_gen_strategy"],
                     )
                 )
 

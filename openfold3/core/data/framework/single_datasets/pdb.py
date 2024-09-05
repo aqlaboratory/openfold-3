@@ -291,7 +291,7 @@ class WeightedPDBDataset(SingleDataset):
         processed_reference_molecules = get_reference_conformer_data_af3(
             atom_array=atom_array_cropped,
             per_chain_metadata=self.dataset_cache[pdb_id]["chains"],
-            ref_mol_metadata=self.dataset_cache["reference_molecule_data"],
+            reference_mol_metadata=self.dataset_cache["reference_molecule_data"],
             reference_mol_dir=self.reference_molecule_directory,
         )
         features.update(featurize_ref_conformers_af3(processed_reference_molecules))
