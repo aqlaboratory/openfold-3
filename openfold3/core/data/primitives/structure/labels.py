@@ -144,8 +144,7 @@ def assign_renumbered_chain_ids(
     if store_original_as is not None:
         atom_array.set_annotation(store_original_as, atom_array.chain_id)
 
-    # Have to set via _annot to override the <U4 chain_id default dtype
-    atom_array._annot["chain_id"] = chain_ids_per_atom
+    atom_array.chain_id = chain_ids_per_atom
 
 
 def assign_atom_indices(atom_array: AtomArray) -> None:

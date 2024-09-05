@@ -13,13 +13,22 @@ from openfold3.core.data.primitives.structure.labels import (
     assign_renumbered_chain_ids,
     update_author_to_pdb_labels,
 )
+from openfold3.core.data.primitives.structure.metadata import (
+    get_cif_block,
+    get_first_bioassembly_polymer_count,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class ParsedStructure(NamedTuple):
     cif_file: pdbx.CIFFile
-    atom_array: AtomArray
+    atom_array: AtomArray | None
+
+
+class SkippedStructure(NamedTuple):
+    cif_file: pdbx.CIFFile
+    n_polymer_chains: int
 
 
 # TODO: update docstring with new residue ID handling and preset fields
@@ -27,24 +36,32 @@ def parse_mmcif(
     file_path: Path | str,
     expand_bioassembly: bool = False,
     include_bonds: bool = True,
+    renumber_chain_ids: bool = False,
     extra_fields: list | None = None,
-) -> ParsedStructure:
+    max_polymer_chains: int | None = None,
+) -> ParsedStructure | SkippedStructure:
     """Convenience wrapper around biotite's CIF parsing
 
     Parses the mmCIF file and creates an AtomArray from it while optionally expanding
     the first bioassembly. This includes only the first model, resolves alternative
     locations by taking the one with the highest occupancy, defaults to inferring bond
     information, and defaults to using the PDB-automated chain/residue annotation
-    instead of author annotations.
+    instead of author annotations, except for ligand residue IDs which are kept as
+    author-assigned IDs because they would otherwise be None.
 
     This function also creates the following additional annotations in the AtomArray:
         - occupancy: inferred from atom_site.occupancy
+        - charge: charge of the atom
         - entity_id: inferred from atom_site.label_entity_id
         - molecule_type_id: numerical code for the molecule type (see tables.py)
-        TODO: update this docstring with new chain ID handling
-        - chain_id_renumbered: numerical chain IDs starting from 0 to circumvent
-          duplicate chain IDs after bioassembly expansion. This is used in place of the
-          original chain ID in all of the cleanup and preprocessing functions.
+        - label_asym_id: original PDB-assigned chain ID
+        - label_seq_id: original PDB-assigned residue ID
+        - label_comp_id: original PDB-assigned residue name
+        - label_atom_id: original PDB-assigned atom name
+        - auth_asym_id: author-assigned chain ID
+        - auth_seq_id: author-assigned residue ID
+        - auth_comp_id: author-assigned residue name
+        - auth_atom_id: author-assigned atom name
 
     Args:
         file_path:
@@ -53,12 +70,20 @@ def parse_mmcif(
             Whether to expand the first bioassembly. Defaults to False.
         include_bonds:
             Whether to infer bond information. Defaults to True.
+        renumber_chain_ids:
+            Whether to renumber chain IDs from 1 to avoid duplicate chain labels after
+            bioassembly expansion. Defaults to False.
         extra_fields:
             Extra fields to include in the AtomArray. Defaults to None. Fields
             "entity_id" and "occupancy" are always included.
+        max_polymer_chains:
+            Maximum number of polymer chains in the first bioassembly after which a
+            structure is skipped by the get_structure() parser. Defaults to None.
 
     Returns:
-        A NamedTuple containing the parsed CIF file and the AtomArray.
+        A ParsedStructure NamedTuple containing the parsed CIF file and the AtomArray,
+        or a SkippedStructure NamedTuple containing the CIF file and the number of
+        polymer chains in the first bioassembly.
     """
     file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
 
@@ -70,8 +95,16 @@ def parse_mmcif(
         raise ValueError("File must be in mmCIF or binary mmCIF format")
 
     cif_file = cif_class.read(file_path)
+    cif_data = get_cif_block(cif_file)
 
-    (pdb_id,) = cif_file.keys()  # Single-element unpacking
+    if max_polymer_chains is not None:
+        # Polymers in first bioassembly
+        n_polymers = get_first_bioassembly_polymer_count(cif_data)
+
+        if n_polymers > max_polymer_chains:
+            return SkippedStructure(cif_file, n_polymers)
+
+    cif_data = get_cif_block(cif_file)
 
     # Always include these fields
     label_fields = [
@@ -102,7 +135,7 @@ def parse_mmcif(
     }
 
     # Check if the CIF file contains bioassembly information
-    if expand_bioassembly & ("pdbx_struct_assembly_gen" not in cif_file[pdb_id]):
+    if expand_bioassembly & ("pdbx_struct_assembly_gen" not in cif_data):
         logger.warning(
             "No bioassembly information found in the CIF file, "
             "falling back to parsing the asymmetric unit."
@@ -130,7 +163,8 @@ def parse_mmcif(
 
     # Renumber chain IDs from 1 to avoid duplicate chain labels after bioassembly
     # expansion
-    assign_renumbered_chain_ids(atom_array)
+    if renumber_chain_ids:
+        assign_renumbered_chain_ids(atom_array)
 
     return ParsedStructure(cif_file, atom_array)
 

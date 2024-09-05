@@ -1,6 +1,5 @@
 # TODO: note in module level docstrings that nothing here supports hydrogens
 import logging
-import re
 from collections import defaultdict
 from typing import Iterable, NamedTuple, TypeAlias
 
@@ -14,6 +13,7 @@ from pdbeccdutils.core.ccd_reader import Component
 from rdkit import Chem
 from rdkit.Chem import AllChem, Mol
 
+from openfold3.core.data.resources.patches import correct_cif_string
 from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
@@ -166,30 +166,6 @@ def get_components(atom_array: AtomArray) -> PDBComponents:
         standard_ligands=dict(standard_ligands_to_chain),
         non_standard_ligands=dict(non_standard_ligands_to_chain),
     )
-
-
-def correct_cif_string(cif_str: str, ccd_id: str):
-    """Temporary fix for a current bug in Biotite CIFBlock.serialize()
-
-    Essentially adds back erroneously missing line-breaks between comments and data
-    blocks. Also adds the data block name as a header.
-
-    Args:
-        cif_str:
-            CIF string to fix.
-        ccd_id:
-            CCD ID of the component to extract.
-
-    Returns:
-        Fixed CIF string.
-    """
-    # Matches `#` or `#  #` followed by a character
-    pattern = r"(^#\s*#?\s*)(\S)"
-
-    # Puts a newline between the two matched groups
-    fixed_str = re.sub(pattern, r"\1\n\2", cif_str, flags=re.MULTILINE)
-
-    return f"data_{ccd_id}\n{fixed_str}"
 
 
 def pdbeccdutils_component_from_ccd(ccd_id: str, ccd: CIFFile) -> Component:

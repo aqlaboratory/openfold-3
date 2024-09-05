@@ -21,6 +21,7 @@ from openfold3.core.data.primitives.structure.metadata import (
 from openfold3.core.data.resources.lists import (
     CRYSTALLIZATION_AIDS,
 )
+from openfold3.core.data.resources.patches import construct_atom_array
 from openfold3.core.data.resources.residues import (
     STANDARD_NUCLEIC_ACID_RESIDUES,
     STANDARD_PROTEIN_RESIDUES,
@@ -229,7 +230,7 @@ def remove_fully_unknown_polymers(atom_array: AtomArray) -> AtomArray:
 
 @return_on_empty_atom_array
 def remove_chain_and_attached_ligands(
-    atom_array: AtomArray, chain_id: int
+    atom_array: AtomArray, chain_id: str
 ) -> AtomArray:
     """Removes a chain from an AtomArray including all attached covalent ligands
 
@@ -324,9 +325,9 @@ def remove_clashing_chains(
     Returns:
         AtomArray with clashing chains removed.
     """
-    # Get atom counts of each chain in the total atom array (index of the resulting
-    # array corresponds to chain_id, value to atom count)
-    chain_atom_counts = np.bincount(atom_array.chain_id)
+    # Get atom counts of each chain in the total atom array
+    unique_chains, counts = np.unique(atom_array.chain_id, return_counts=True)
+    chain_to_atom_count = dict(zip(unique_chains, counts))
 
     ## Get the clashing chains to remove
     chain_ids_to_remove = set()
@@ -345,8 +346,8 @@ def remove_clashing_chains(
         chain2_n_clashing_atoms = np.unique(chain2_clashing_atom_idxs).size
 
         # Get fractions of clashing atoms respective to each chain's total atom count
-        chain1_n_atoms = chain_atom_counts[chain1_id]
-        chain2_n_atoms = chain_atom_counts[chain2_id]
+        chain1_n_atoms = chain_to_atom_count[chain1_id]
+        chain2_n_atoms = chain_to_atom_count[chain2_id]
         chain1_clash_fraction = chain1_n_clashing_atoms / chain1_n_atoms
         chain2_clash_fraction = chain2_n_clashing_atoms / chain2_n_atoms
 
@@ -367,7 +368,6 @@ def remove_clashing_chains(
                     chain_ids_to_remove.add(chain2_id)
 
     for chain_id in chain_ids_to_remove:
-        # breakpoint()
         atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
 
     return atom_array
@@ -455,7 +455,7 @@ def remove_chains_with_CA_gaps(
 
     # Match C-alpha atoms with their next C-alpha atom
     ca_without_last = protein_chain_ca[:-1]
-    ca_shifted_left = struc.array(np.roll(protein_chain_ca, -1, axis=0)[:-1])
+    ca_shifted_left = construct_atom_array(np.roll(protein_chain_ca, -1, axis=0)[:-1])
 
     # Distances of every C-alpha atom to the next C-alpha atom
     ca_dists = struc.distance(ca_without_last, ca_shifted_left)
