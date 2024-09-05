@@ -79,7 +79,7 @@ def tokenize_atom_array(atom_array: AtomArray):
     is_one_heteroatom = is_heteoratom[bondlist[:, 0]] ^ is_heteoratom[bondlist[:, 1]]
     # - two non-heteroatoms in different chains
     #   (standard residues covalently linking different chains)
-    chain_ids = atom_array.chain_id_renumbered
+    chain_ids = atom_array.chain_id
     is_different_chain = chain_ids[bondlist[:, 0]] != chain_ids[bondlist[:, 1]]
     # - two non-heteroatoms in the same chain but side chains of different residues
     #   (standard residues covalently linking non-consecutive residues in the same
