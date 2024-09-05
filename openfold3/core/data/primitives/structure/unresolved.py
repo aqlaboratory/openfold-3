@@ -17,7 +17,6 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_entity_to_three_letter_codes_dict,
 )
 from openfold3.core.data.resources.residues import (
-    NUCLEIC_ACID_PHOSPHATE_OXYGENS,
     STANDARD_NUCLEIC_ACID_RESIDUES,
     STANDARD_PROTEIN_RESIDUES,
     MoleculeType,

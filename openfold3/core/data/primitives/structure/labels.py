@@ -1,4 +1,5 @@
 from collections import defaultdict
+
 import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
@@ -300,10 +301,10 @@ def uniquify_ids(ids: list[str]) -> list[str]:
             A list of uniquified IDs, where each ID is appended with its occurrence
             count (e.g., "id_1", "id_2").
     """
-    
+
     id_counter = defaultdict(lambda: 0)
     uniquified_ids = []
-    
+
     for id in ids:
         id_counter[id] += 1
         uniquified_ids.append(f"{id}_{id_counter[id]}")
