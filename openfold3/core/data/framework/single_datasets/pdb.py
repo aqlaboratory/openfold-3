@@ -266,14 +266,21 @@ class WeightedPDBDataset(SingleDataset):
             preferred_chain_or_interface=preferred_chain_or_interface,
             ciftype=".bcif",
         )
+        # NOTE that for now we avoid the need for permutation alignment by providing the
+        # cropped atom array as the ground truth atom array
+        # features.update(
+        #     featurize_target_gt_structure_af3(
+        #         atom_array_cropped, atom_array_gt, self.token_budget
+        #     )
+        # )
         features.update(
             featurize_target_gt_structure_af3(
-                atom_array_cropped, atom_array_gt, self.token_budget
+                atom_array_cropped, atom_array_cropped, self.token_budget
             )
         )
 
         # MSA features
-        msa_processed, _ = process_msas_cropped_af3(
+        msa_processed = process_msas_cropped_af3(
             alignments_directory=self.alignments_directory,
             alignment_db_directory=self.alignment_db_directory,
             alignment_index=self.alignment_index,
