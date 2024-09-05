@@ -147,7 +147,7 @@ def add_conformer_atom_mask(mol: Mol) -> AnnotatedMol:
     conf = mol.GetConformer()
     all_coords = conf.GetPositions()
 
-    mask = np.any(np.isnan(all_coords), axis=1)
+    mask = (~np.any(np.isnan(all_coords), axis=1)).tolist()
 
     mol = set_atomwise_annotation(mol, "used_atom_mask", mask)
 
