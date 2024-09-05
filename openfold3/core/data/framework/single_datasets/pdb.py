@@ -13,7 +13,7 @@ from openfold3.core.data.framework.single_datasets.abstract_single_dataset impor
     register_dataset,
 )
 from openfold3.core.data.pipelines.featurization.conformer import (
-    featurize_conformers_dummy_af3,
+    featurize_ref_conformers_af3,
 )
 from openfold3.core.data.pipelines.featurization.loss_weights import set_loss_weights
 from openfold3.core.data.pipelines.featurization.msa import featurize_msa_af3
@@ -22,6 +22,9 @@ from openfold3.core.data.pipelines.featurization.structure import (
 )
 from openfold3.core.data.pipelines.featurization.template import (
     featurize_templates_dummy_af3,
+)
+from openfold3.core.data.pipelines.sample_processing.conformer import (
+    get_reference_conformer_data_af3,
 )
 from openfold3.core.data.pipelines.sample_processing.msa import process_msas_cropped_af3
 from openfold3.core.data.pipelines.sample_processing.structure import (
@@ -179,6 +182,9 @@ class WeightedPDBDataset(SingleDataset):
             self.alignment_index = None
         self.template_cache_path = dataset_config["template_cache_path"]
         self.template_structures_path = dataset_config["template_structures_path"]
+        self.reference_molecule_directory = dataset_config[
+            "reference_molecule_directory"
+        ]
 
         # Dataset/datapoint cache
         with open(dataset_config["dataset_cache_path"]) as f:
@@ -281,8 +287,14 @@ class WeightedPDBDataset(SingleDataset):
             featurize_templates_dummy_af3(1, self.n_templates, self.token_budget)
         )
 
-        # Dummy reference conformer features
-        features.update(featurize_conformers_dummy_af3(1, len(atom_array_cropped)))
+        # Reference conformer features
+        processed_reference_molecules = get_reference_conformer_data_af3(
+            atom_array=atom_array_cropped,
+            per_chain_metadata=self.dataset_cache[pdb_id]["chains"],
+            ref_mol_metadata=self.dataset_cache["reference_molecule_data"],
+            reference_mol_dir=self.reference_molecule_directory,
+        )
+        features.update(featurize_ref_conformers_af3(processed_reference_molecules))
 
         # Loss switches
         features["loss_weight"] = set_loss_weights(

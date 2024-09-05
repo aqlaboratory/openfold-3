@@ -14,7 +14,7 @@ from pdbeccdutils.core.ccd_reader import Component
 from rdkit import Chem
 from rdkit.Chem import AllChem, Mol
 
-from openfold3.core.data.resources.tables import MoleculeType
+from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
 
