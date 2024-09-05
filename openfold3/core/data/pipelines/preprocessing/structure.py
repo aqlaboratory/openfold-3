@@ -156,7 +156,7 @@ def extract_chain_and_interface_metadata_af3(
     all_chains = set(chain_to_pdb_chain.keys())
 
     metadata_dict["chains"] = {}
-    for chain_id in all_chains:
+    for chain_id in sorted(all_chains):
         metadata_dict["chains"][chain_id] = {
             "label_asym_id": chain_to_pdb_chain[chain_id],
             "auth_asym_id": chain_to_author_chain[chain_id],
