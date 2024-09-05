@@ -79,7 +79,13 @@ def centre_random_augmentation(
 
 # Move this somewhere else?
 def create_noise_schedule(
-    no_rollout_steps: float, sigma_data: float, s_max: float, s_min: float, p: int
+    no_rollout_steps: float,
+    sigma_data: float,
+    s_max: float,
+    s_min: float,
+    p: int,
+    dtype: torch.dtype,
+    device: torch.device,
 ):
     """
     Implements AF3 noise schedule (Page 24).
@@ -96,10 +102,17 @@ def create_noise_schedule(
         p:
             Constant controlling the extent steps near s_min are shortened
             at the cost of longer steps near s_max
+        dtype:
+            Dtype of noise schedule
+        device:
+            Device of noise schedule
     Returns:
         Noise schedule
     """
-    t = torch.arange(0, 1 + no_rollout_steps) / no_rollout_steps
+    t = (
+        torch.arange(0, 1 + no_rollout_steps, dtype=dtype, device=device)
+        / no_rollout_steps
+    )
     return (
         sigma_data * (s_max ** (1 / p) + t * (s_min ** (1 / p) - s_max ** (1 / p))) ** p
     )
@@ -237,11 +250,6 @@ class SampleDiffusion(nn.Module):
         gamma_min: float,
         noise_scale: float,
         step_scale: float,
-        no_rollout_steps: int,
-        sigma_data: float,
-        s_max: float,
-        s_min: float,
-        p: int,
         diffusion_module: DiffusionModule,
     ):
         """
@@ -254,17 +262,6 @@ class SampleDiffusion(nn.Module):
                 Noise scaling factor
             step_scale:
                 Step scaling factor
-            no_rollout_steps:
-                Number of diffusion rollout steps
-            sigma_data:
-                Constant determined by data variance
-            s_max:
-                Maximum standard deviation of noise
-            s_min:
-                Minimum standard deviation of noise
-            p:
-                Constant controlling the extent steps near s_min are shortened
-                at the cost of longer steps near s_max
             diffusion_module:
                 An instantiated DiffusionModule
         """
@@ -275,23 +272,13 @@ class SampleDiffusion(nn.Module):
         self.step_scale = step_scale
         self.diffusion_module = diffusion_module
 
-        noise_schedule = create_noise_schedule(
-            no_rollout_steps=no_rollout_steps,
-            sigma_data=sigma_data,
-            s_max=s_max,
-            s_min=s_min,
-            p=p,
-        )
-
-        # TODO: Maybe refactor, this was needed to easily change the dtype
-        self.register_buffer("noise_schedule", noise_schedule)
-
     def forward(
         self,
         batch: Dict,
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
+        noise_schedule: torch.Tensor,
         chunk_size: Optional[int] = None,
     ) -> torch.Tensor:
         """
@@ -304,6 +291,8 @@ class SampleDiffusion(nn.Module):
                 [*, N_token, c_s] Single representation
             zij_trunk:
                 [*, N_token, N_token, c_z] Pair representation
+            noise_schedule:
+                [no_rollout_steps] Noise schedule
             chunk_size:
                 Inference-time subbatch size
         Returns:
@@ -315,20 +304,20 @@ class SampleDiffusion(nn.Module):
             token_feat=batch["token_mask"],
         )
 
-        xl = self.noise_schedule[0] * torch.randn(
+        xl = noise_schedule[0] * torch.randn(
             (*atom_mask.shape, 3), device=atom_mask.device, dtype=atom_mask.dtype
         )
 
-        for tau, c_tau in enumerate(self.noise_schedule[1:]):
+        for tau, c_tau in enumerate(noise_schedule[1:]):
             xl = centre_random_augmentation(xl=xl, atom_mask=atom_mask)
 
             gamma = self.gamma_0 if c_tau > self.gamma_min else 0
 
-            t = self.noise_schedule[tau] * (gamma + 1)
+            t = noise_schedule[tau] * (gamma + 1)
 
             noise = (
                 self.noise_scale
-                * torch.sqrt(t**2 - self.noise_schedule[tau] ** 2)
+                * torch.sqrt(t**2 - noise_schedule[tau] ** 2)
                 * torch.randn_like(xl)
             )
 

@@ -49,7 +49,7 @@ class TestLoadPresets:
         test_multimer_config = make_config_with_preset(
             "af2_multimer", "model_1_multimer_v3"
         )
-        multimer_runner = get_lightning_module(test_multimer_config)
+        multimer_runner = get_lightning_module(test_multimer_config, _compile=False)
         assert multimer_runner.model.get_submodule("input_embedder")
 
 

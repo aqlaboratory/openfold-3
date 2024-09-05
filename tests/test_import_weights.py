@@ -37,7 +37,7 @@ class TestImportWeights(unittest.TestCase):
         c = registry.make_config_with_preset(consts.model_name, consts.model_preset)
         c.globals.blocks_per_ckpt = None
 
-        model = registry.get_lightning_module(c).model
+        model = registry.get_lightning_module(c, _compile=False).model
         model.eval()
 
         import_jax_weights_(model, npz_path, version=consts.model_preset)
@@ -88,7 +88,7 @@ class TestImportWeights(unittest.TestCase):
         if os.path.exists(pt_path):
             c = registry.make_config_with_preset("af2_monomer")
             c.globals.blocks_per_ckpt = None
-            model = registry.get_lightning_module(c).model
+            model = registry.get_lightning_module(c, _compile=False).model
             model.eval()
 
             d = torch.load(pt_path, weights_only=True)
