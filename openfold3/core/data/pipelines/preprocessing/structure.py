@@ -284,7 +284,11 @@ def preprocess_structure_and_write_outputs_af3(
     write_additional_cifs: bool = False,
 ) -> tuple[dict, dict]:
     parsed_mmcif = parse_mmcif(
-        input_cif, expand_bioassembly=True, max_polymer_chains=max_polymer_chains
+        input_cif,
+        expand_bioassembly=True,
+        include_bonds=True,
+        renumber_chain_ids=True,
+        max_polymer_chains=max_polymer_chains,
     )
 
     cif_file = parsed_mmcif.cif_file

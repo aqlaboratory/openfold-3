@@ -36,6 +36,7 @@ def parse_mmcif(
     file_path: Path | str,
     expand_bioassembly: bool = False,
     include_bonds: bool = True,
+    renumber_chain_ids: bool = False,
     extra_fields: list | None = None,
     max_polymer_chains: int | None = None,
 ) -> ParsedStructure | SkippedStructure:
@@ -45,16 +46,22 @@ def parse_mmcif(
     the first bioassembly. This includes only the first model, resolves alternative
     locations by taking the one with the highest occupancy, defaults to inferring bond
     information, and defaults to using the PDB-automated chain/residue annotation
-    instead of author annotations.
+    instead of author annotations, except for ligand residue IDs which are kept as
+    author-assigned IDs because they would otherwise be None.
 
     This function also creates the following additional annotations in the AtomArray:
         - occupancy: inferred from atom_site.occupancy
+        - charge: charge of the atom
         - entity_id: inferred from atom_site.label_entity_id
         - molecule_type_id: numerical code for the molecule type (see tables.py)
-        TODO: update this docstring with new chain ID handling
-        - chain_id_renumbered: numerical chain IDs starting from 0 to circumvent
-          duplicate chain IDs after bioassembly expansion. This is used in place of the
-          original chain ID in all of the cleanup and preprocessing functions.
+        - label_asym_id: original PDB-assigned chain ID
+        - label_seq_id: original PDB-assigned residue ID
+        - label_comp_id: original PDB-assigned residue name
+        - label_atom_id: original PDB-assigned atom name
+        - auth_asym_id: author-assigned chain ID
+        - auth_seq_id: author-assigned residue ID
+        - auth_comp_id: author-assigned residue name
+        - auth_atom_id: author-assigned atom name
 
     Args:
         file_path:
@@ -63,6 +70,9 @@ def parse_mmcif(
             Whether to expand the first bioassembly. Defaults to False.
         include_bonds:
             Whether to infer bond information. Defaults to True.
+        renumber_chain_ids:
+            Whether to renumber chain IDs from 1 to avoid duplicate chain labels after
+            bioassembly expansion. Defaults to False.
         extra_fields:
             Extra fields to include in the AtomArray. Defaults to None. Fields
             "entity_id" and "occupancy" are always included.
@@ -85,17 +95,16 @@ def parse_mmcif(
         raise ValueError("File must be in mmCIF or binary mmCIF format")
 
     cif_file = cif_class.read(file_path)
+    cif_data = get_cif_block(cif_file)
 
     if max_polymer_chains is not None:
-        cif_data = get_cif_block(cif_file)
-
         # Polymers in first bioassembly
         n_polymers = get_first_bioassembly_polymer_count(cif_data)
 
         if n_polymers > max_polymer_chains:
             return SkippedStructure(cif_file, n_polymers)
 
-    (pdb_id,) = cif_file.keys()  # Single-element unpacking
+    cif_data = get_cif_block(cif_file)
 
     # Always include these fields
     label_fields = [
@@ -126,7 +135,7 @@ def parse_mmcif(
     }
 
     # Check if the CIF file contains bioassembly information
-    if expand_bioassembly & ("pdbx_struct_assembly_gen" not in cif_file[pdb_id]):
+    if expand_bioassembly & ("pdbx_struct_assembly_gen" not in cif_data):
         logger.warning(
             "No bioassembly information found in the CIF file, "
             "falling back to parsing the asymmetric unit."
@@ -154,7 +163,8 @@ def parse_mmcif(
 
     # Renumber chain IDs from 1 to avoid duplicate chain labels after bioassembly
     # expansion
-    assign_renumbered_chain_ids(atom_array)
+    if renumber_chain_ids:
+        assign_renumbered_chain_ids(atom_array)
 
     return ParsedStructure(cif_file, atom_array)
 
