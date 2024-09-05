@@ -3,6 +3,7 @@ import json
 import math
 from collections import Counter
 from enum import IntEnum
+from pathlib import Path
 from typing import Union
 
 import pandas as pd
@@ -172,22 +173,32 @@ class WeightedPDBDataset(SingleDataset):
         super().__init__()
 
         # Paths/IO
-        self.target_path = dataset_config["target_path"]
-        self.alignments_path = dataset_config["alignments_path"]
-        self.use_alignment_database = dataset_config["use_alignment_database"]
-        if self.use_alignment_database:
-            with open(dataset_config["alignment_index_path"]) as f:
+        self.target_structures_directory = dataset_config["dataset_paths"][
+            "target_structures_directory"
+        ]
+        self.alignments_directory = dataset_config["dataset_paths"][
+            "alignments_directory"
+        ]
+        self.alignment_db_directory = dataset_config["dataset_paths"][
+            "alignment_db_directory"
+        ]
+        if self.alignment_db_directory is not None:
+            with open(self.alignment_db_directory / Path("alignment_db.index")) as f:
                 self.alignment_index = json.load(f)
         else:
             self.alignment_index = None
-        self.template_cache_path = dataset_config["template_cache_path"]
-        self.template_structures_path = dataset_config["template_structures_path"]
-        self.reference_molecule_directory = dataset_config[
+        self.template_cache_directory = dataset_config["dataset_paths"][
+            "template_cache_directory"
+        ]
+        self.template_structures_directory = dataset_config["dataset_paths"][
+            "template_structures_directory"
+        ]
+        self.reference_molecule_directory = dataset_config["dataset_paths"][
             "reference_molecule_directory"
         ]
 
         # Dataset/datapoint cache
-        with open(dataset_config["dataset_cache_path"]) as f:
+        with open(dataset_config["dataset_paths"]["dataset_cache_file"]) as f:
             self.dataset_cache = json.load(f)
         self.create_datapoint_cache()
         self.datapoint_probabilities = self.datapoint_cache["weight"].to_numpy()
@@ -241,13 +252,14 @@ class WeightedPDBDataset(SingleDataset):
         """Returns a single datapoint from the dataset."""
 
         # Get PDB ID from the datapoint cache and the preferred chain/interface
-        pdb_id = self.datapoint_cache[index]["pdb_id"]
-        preferred_chain_or_interface = self.datapoint_cache[index]["datapoint"]
+        datapoint = self.datapoint_cache[index]
+        pdb_id = datapoint["pdb_id"]
+        preferred_chain_or_interface = datapoint["datapoint"]
         features = {}
 
         # Target structure and duplicate-expanded GT structure features
         atom_array_cropped, atom_array_gt = process_target_structure_af3(
-            target_path=self.target_path,
+            target_structures_directory=self.target_structures_directory,
             pdb_id=pdb_id,
             crop_weights=self.crop_weights,
             token_budget=self.token_budget,
@@ -262,9 +274,11 @@ class WeightedPDBDataset(SingleDataset):
 
         # MSA features
         msa_processed, _ = process_msas_cropped_af3(
-            atom_array_cropped,
-            self.dataset_cache[pdb_id]["chains"],
-            self.alignments_path,
+            alignments_directory=self.alignments_directory,
+            alignment_db_directory=self.alignment_db_directory,
+            alignment_index=self.alignment_index,
+            atom_array=atom_array_cropped,
+            data_cache_entry_chains=self.dataset_cache[pdb_id]["chains"],
             max_seq_counts={
                 "uniref90_hits": 10000,
                 "uniprot_hits": 50000,
@@ -275,10 +289,8 @@ class WeightedPDBDataset(SingleDataset):
                 "rnacentral_hits": 10000,
                 "nucleotide_collection_hits": 10000,
             },
-            use_alignment_database=self.use_alignment_database,
             token_budget=self.token_budget,
             max_rows_paired=8191,
-            alignment_index=self.alignment_index,
         )
         features.update(featurize_msa_af3(msa_processed))
 

@@ -1,6 +1,6 @@
 """This module contains SampleProcessingPipelines for MSA features."""
 
-from typing import Optional, Union
+from pathlib import Path
 
 from biotite.structure import AtomArray
 
@@ -21,11 +21,11 @@ from openfold3.core.data.primitives.sequence.msa import (
 
 
 def process_msas_af3(
-    chain_rep_map: dict[int, str],
-    alignments_path: str,
-    max_seq_counts: dict[str, Union[int, float]],
-    use_alignment_database: bool,
-    alignment_index: Optional[dict] = None,
+    alignments_directory: Path | None,
+    alignment_db_directory: Path | None,
+    alignment_index: dict | None,
+    chain_rep_map: dict[str, str],
+    max_seq_counts: dict[str, int | float],
 ) -> tuple[MsaParsed, MsaParsed, dict[str, MsaParsed]]:
     """Prepares the arrays needed to create MSA feature tensors.
 
@@ -37,19 +37,24 @@ def process_msas_af3(
     3. Main MSAs for each chain with unpaired sequences from non-UniProt databases
 
     Args:
-        chain_rep_map (dict[int, str]):
+        alignments_directory (Path | None):
+            The path to the directory containing directories containing the alignment
+            files per chain. Only used if alignment_db_directory is None.
+        alignment_db_directory (Path | None):
+            The path to the directory containing the alignment database or its shards
+            AND the alignment database superindex file. If provided, it is used over
+            alignments_directory.
+        alignment_index (dict | None):
+            Dictionary containing the alignment index for each chain ID. Only used if
+            alignment_db_directory is provided.
+        chain_rep_map (dict[str, str]):
             Dict mapping chain IDs to representative chain IDs to parse for a sample.
             The representative chain IDs are used to find the directory from which to
-            parse the MSAs or is used to index the alignment database, so they need to
-            match the corresponding directory names.
-        alignments_path (str):
-            The path to the directories containing the alignment files per chain.
-        max_seq_counts (int):
-            Max number of sequences to keep from each pared
-        use_alignment_database (bool):
-            Whether to use the alignment database.
-        alignment_index (dict):
-            Dictionary containing the alignment index for each chain ID.
+            parse the MSAs or are used to index the alignment database, so they need to
+            match the corresponding directory/alignment index names.
+        max_seq_counts (int | float):
+            Max number of sequences to keep from each parsed MSA. Also used to determine
+            which MSAs to parse from each chain directory.
 
     Returns:
         tuple[Msa, Msa, dict[int, Msa]]:
@@ -59,17 +64,17 @@ def process_msas_af3(
                 - dict mapping chain IDs to main Msa objects.
     """
 
-    if use_alignment_database and alignment_index is None:
+    if (alignment_db_directory is not None) and (alignment_index is None):
         raise ValueError(
-            "Alignment index must be provided if use_alignment_database is True."
+            "Alignment index must be provided if alignment_db_directory is not None."
         )
 
     # Parse MSAs for the cropped sample
     msa_collection = parse_msas_sample(
-        chain_rep_map=chain_rep_map,
-        alignments_path=alignments_path,
-        use_alignment_database=use_alignment_database,
+        alignments_directory=alignments_directory,
+        alignment_db_directory=alignment_db_directory,
         alignment_index=alignment_index,
+        chain_rep_map=chain_rep_map,
         max_seq_counts=max_seq_counts,
     )
 
@@ -112,25 +117,42 @@ def process_msas_af3(
 
 
 def process_msas_cropped_af3(
+    alignments_directory: Path | None,
+    alignment_db_directory: Path | None,
+    alignment_index: dict | None,
     atom_array: AtomArray,
-    data_cache_entry_chains: dict[int, Union[int, str]],
-    alignments_path: str,
-    max_seq_counts: dict[str, Union[int, float]],
-    use_alignment_database: bool,
+    data_cache_entry_chains: dict[str, int | str],
+    max_seq_counts: dict[str, int | float],
     token_budget: int,
     max_rows_paired: int,
-    alignment_index: Optional[dict] = None,
 ) -> tuple[MsaProcessed, MsaSlice]:
     """Wraps the process_msas_af3 function with the crop-to-sequence logic.
 
     Args:
+        alignments_directory (Path | None):
+            The path to the directory containing directories containing the alignment
+            files per chain. Only used if alignment_db_directory is None.
+        alignment_db_directory (Path | None):
+            The path to the directory containing the alignment database or its shards
+            AND the alignment database superindex file. If provided, it is used over
+            alignments_directory.
+        alignment_index (dict | None):
+            Dictionary containing the alignment index for each chain ID. Only used if
+            alignment_db_directory is provided.
+        atom_array (AtomArray):
+            Cropped atom array.
+        data_cache_entry_chains (dict[int, Union[int, str]]):
+            Dictionary of chains to chain features from the data cache for a PDB
+            assembly.
+        max_seq_counts (int | float):
+            Max number of sequences to keep from each parsed MSA. Also used to determine
+            which MSAs to parse from each chain directory.
         atom_array (AtomArray):
             Cropped atom array.
         token_budget (int):
             Crop size.
         max_rows_paired (int):
             Max number of paired rows.
-        See process_msas_af3 for the rest of the arguments.
 
     Returns:
         tuple[MsaProcessed, MsaSlice]:
@@ -145,11 +167,11 @@ def process_msas_cropped_af3(
 
     # Parse and process MSAs
     msa_processed_collection = process_msas_af3(
-        chain_rep_map=msa_slice.chain_rep_map,
-        alignments_path=alignments_path,
-        max_seq_counts=max_seq_counts,
-        use_alignment_database=use_alignment_database,
+        alignments_directory=alignments_directory,
+        alignment_db_directory=alignment_db_directory,
         alignment_index=alignment_index,
+        chain_rep_map=msa_slice.chain_rep_map,
+        max_seq_counts=max_seq_counts,
     )
 
     # Apply slices to MSAs
@@ -160,4 +182,4 @@ def process_msas_cropped_af3(
         token_budget=token_budget,
         max_rows_paired=max_rows_paired,
     )
-    return msa_processed, msa_slice
+    return msa_processed
