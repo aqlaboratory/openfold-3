@@ -63,8 +63,8 @@ class MultiDatasetConfig:
     Attributes:
         classes: list[str]
             List of dataset class names used as keys into the dataset registry.
-        types: list[str]
-            List of dataset types, elements can be train, validation, test, prediction.
+        modes: list[str]
+            List of dataset modes, elements can be train, validation, test, prediction.
         configs: list[Union[dict[str, Any], None]]
             List of dictionaries containing SingleDataset init input paths (!!!) and
             other config arguments if needed/available.
@@ -73,7 +73,7 @@ class MultiDatasetConfig:
     """
 
     classes: list[str]
-    types: list[str]
+    modes: list[str]
     configs: list[Union[dict[str, Any], None]]
     weights: list[float]
 
@@ -97,7 +97,7 @@ class MultiDatasetConfig:
 
         return MultiDatasetConfig(
             classes=apply_bool(self.classes, index),
-            types=apply_bool(self.types, index),
+            modes=apply_bool(self.modes, index),
             configs=apply_bool(self.configs, index),
             weights=apply_bool(self.weights, index),
         )
@@ -113,8 +113,8 @@ class DataModuleConfig:
     datasets: list[ConfigDict]
 
 
-class DatasetType(enum.Enum):
-    """Enum for dataset types."""
+class DatasetMode(enum.Enum):
+    """Enum for dataset modes."""
 
     train = enum.auto()
     validation = enum.auto()
@@ -176,11 +176,11 @@ class DataModule(pl.LightningDataModule):
         self.worker_init_function_with_data_seed = worker_init_function_with_data_seed
 
         # Initialize datasets
-        if DatasetType.train in multi_dataset_config.types:
+        if DatasetMode.train in multi_dataset_config.modes:
             # Initialize train datasets
-            train_datasets = self.init_datasets(multi_dataset_config, DatasetType.train)
+            train_datasets = self.init_datasets(multi_dataset_config, DatasetMode.train)
             multi_dataset_config_train = multi_dataset_config.get_subset(
-                [type == DatasetType.train for type in multi_dataset_config.types]
+                [mode == DatasetMode.train for mode in multi_dataset_config.modes]
             )
             self.generator = torch.Generator(device="cpu").manual_seed(self.data_seed)
 
@@ -193,28 +193,28 @@ class DataModule(pl.LightningDataModule):
                 generator=self.generator,
             )
 
-        if DatasetType.validation in multi_dataset_config.types:
+        if DatasetMode.validation in multi_dataset_config.modes:
             multi_dataset_config_validation = multi_dataset_config.get_subset(
-                [type == DatasetType.validation for type in multi_dataset_config.types]
+                [mode == DatasetMode.validation for mode in multi_dataset_config.modes]
             )
             self.validation_dataset = self.init_datasets(
-                multi_dataset_config_validation, DatasetType.validation
+                multi_dataset_config_validation, DatasetMode.validation
             )[0]
 
-        if DatasetType.test in multi_dataset_config.types:
+        if DatasetMode.test in multi_dataset_config.modes:
             multi_dataset_config_test = multi_dataset_config.get_subset(
-                [type == DatasetType.test for type in multi_dataset_config.types]
+                [mode == DatasetMode.test for mode in multi_dataset_config.modes]
             )
             self.test_dataset = self.init_datasets(
-                multi_dataset_config_test, DatasetType.test
+                multi_dataset_config_test, DatasetMode.test
             )[0]
 
-        if DatasetType.prediction in multi_dataset_config.types:
+        if DatasetMode.prediction in multi_dataset_config.modes:
             multi_dataset_config_prediction = multi_dataset_config.get_subset(
-                [type == DatasetType.prediction for type in multi_dataset_config.types]
+                [mode == DatasetMode.prediction for mode in multi_dataset_config.modes]
             )
             self.prediction_dataset = self.init_datasets(
-                multi_dataset_config_prediction, DatasetType.prediction
+                multi_dataset_config_prediction, DatasetMode.prediction
             )[0]
 
     def parse_data_config(self, data_config: list[ConfigDict]) -> MultiDatasetConfig:
@@ -227,7 +227,7 @@ class DataModule(pl.LightningDataModule):
         Returns:
             MultiDatasetConfig:
                 Lists of dataset classes, weights, configurations and unique set of
-                types.
+                modes.
         """
 
         def get_cast(
@@ -259,12 +259,12 @@ class DataModule(pl.LightningDataModule):
             except ValueError as exc:
                 raise ValueError(f"Could not cast {key} to {cast_type}.") from exc
 
-        classes, types, configs, weights = list(
+        classes, modes, configs, weights = list(
             zip(
                 *[
                     (
                         get_cast(dataset_entry, "class", str),
-                        DatasetType[get_cast(dataset_entry, "type", str)],
+                        DatasetMode[get_cast(dataset_entry, "mode", str)],
                         dataset_entry.get("config", None),
                         get_cast(dataset_entry, "weight", float),
                     )
@@ -274,7 +274,7 @@ class DataModule(pl.LightningDataModule):
         )
         multi_dataset_config = MultiDatasetConfig(
             classes=classes,
-            types=types,
+            modes=modes,
             configs=configs,
             weights=weights,
         )
@@ -285,9 +285,9 @@ class DataModule(pl.LightningDataModule):
         return multi_dataset_config
 
     def run_checks(self, multi_dataset_config: MultiDatasetConfig) -> None:
-        """Runs checks on the provided crop weights and types.
+        """Runs checks on the provided crop weights and modes.
 
-        Checks for valid combinations of SingleDataset types and normalizes weights and
+        Checks for valid combinations of SingleDataset modes and normalizes weights and
         cropping weights if available and they do not sum to 1. Updates
         multi_dataset_config in place.
 
@@ -301,7 +301,7 @@ class DataModule(pl.LightningDataModule):
 
         # Check if provided weights sum to 1
         train_dataset_config = multi_dataset_config.get_subset(
-            [type == DatasetType.train for type in multi_dataset_config.types]
+            [mode == DatasetMode.train for mode in multi_dataset_config.modes]
         )
         if sum(train_dataset_config.weights) != 1:
             warnings.warn(
@@ -326,59 +326,59 @@ class DataModule(pl.LightningDataModule):
                     for key, value in config_i["crop_weights"].items()
                 }
 
-        # Check if provided dataset type combination is valid
-        types = multi_dataset_config.types
-        types_unique = set(types)
+        # Check if provided dataset mode combination is valid
+        modes = multi_dataset_config.modes
+        modes_unique = set(modes)
         supported_types = {
-            DatasetType.train,
-            DatasetType.validation,
-            DatasetType.test,
-            DatasetType.prediction,
+            DatasetMode.train,
+            DatasetMode.validation,
+            DatasetMode.test,
+            DatasetMode.prediction,
         }
         supported_combinations = [
-            {DatasetType.train},
-            {DatasetType.train, DatasetType.validation},
-            {DatasetType.test},
-            {DatasetType.prediction},
+            {DatasetMode.train},
+            {DatasetMode.train, DatasetMode.validation},
+            {DatasetMode.test},
+            {DatasetMode.prediction},
         ]
 
-        if types_unique not in supported_combinations:
+        if modes_unique not in supported_combinations:
             raise ValueError(
-                "An unsupported combination of dataset types was found in"
-                f"data_config: {types_unique}. The supported dataset"
+                "An unsupported combination of dataset modes was found in"
+                f"data_config: {modes_unique}. The supported dataset"
                 f"combinations are: {supported_combinations}."
             )
-        if types_unique == {DatasetType.validation}:
+        if modes_unique == {DatasetMode.validation}:
             raise ValueError(
                 "Validation dataset(s) were provided without any training datasets."
                 f"The supported dataset combinations are: {supported_combinations}."
             )
-        elif any([type_ not in supported_types for type_ in types_unique]):
+        elif any([type_ not in supported_types for type_ in modes_unique]):
             raise ValueError(
-                f"An unsupported dataset type was found in data_config: {types_unique}."
-                " Supported types are: train, validation, test, prediction."
+                f"An unsupported dataset mode was found in data_config: {modes_unique}."
+                " Supported modes are: train, validation, test, prediction."
             )
         # REMOVE THIS WITH ENUM
-        elif (len(types_unique) == 1) & (
+        elif (len(modes_unique) == 1) & (
             all(
                 [
-                    DatasetType.train not in types,
-                    DatasetType.validation not in types,
-                    DatasetType.test not in types,
-                    DatasetType.prediction not in types,
+                    DatasetMode.train not in modes,
+                    DatasetMode.validation not in modes,
+                    DatasetMode.test not in modes,
+                    DatasetMode.prediction not in modes,
                 ]
             )
         ):
             raise ValueError(
-                "An unsupported combination of dataset types was found in"
-                f"data_config: {types_unique}. The supported dataset"
+                "An unsupported combination of dataset modes was found in"
+                f"data_config: {modes_unique}. The supported dataset"
                 f"combinations are: {supported_combinations}."
             )
 
     def init_datasets(
         self,
         multi_dataset_config: MultiDatasetConfig,
-        type_to_init: DatasetType,
+        type_to_init: DatasetMode,
     ) -> list[SingleDataset]:
         """Initializes datasets.
 
@@ -397,14 +397,14 @@ class DataModule(pl.LightningDataModule):
             for dataset_class, dataset_config, dataset_type in zip(
                 multi_dataset_config.classes,
                 multi_dataset_config.configs,
-                multi_dataset_config.types,
+                multi_dataset_config.modes,
             )
             if dataset_type == type_to_init
         ]
 
         if (
             type_to_init
-            in [DatasetType.validation, DatasetType.test, DatasetType.prediction]
+            in [DatasetMode.validation, DatasetMode.test, DatasetMode.prediction]
         ) & (len(datasets) > 1):
             datasets = datasets[:1]
             warnings.warn(
@@ -420,18 +420,18 @@ class DataModule(pl.LightningDataModule):
 
         Args:
             stage (str):
-                Type of DataLoader to return, one of train, valid, test, predict.
+                Mode of DataLoader to return, one of train, valid, test, predict.
 
         Returns:
             DataLoader: DataLoader object.
         """
         dataset = (
             self.train_dataset
-            if stage == DatasetType.train
+            if stage == DatasetMode.train
             else self.validation_dataset
-            if stage == DatasetType.validation
+            if stage == DatasetMode.validation
             else self.test_dataset
-            if stage == DatasetType.test
+            if stage == DatasetMode.test
             else self.prediction_dataset
         )
 
@@ -450,7 +450,7 @@ class DataModule(pl.LightningDataModule):
         Returns:
             DataLoader: training dataloader.
         """
-        return self.generate_dataloader(DatasetType.train)
+        return self.generate_dataloader(DatasetMode.train)
 
     def val_dataloader(self) -> DataLoader:
         """Creates validation dataloader.
@@ -458,7 +458,7 @@ class DataModule(pl.LightningDataModule):
         Returns:
             DataLoader: validation dataloader.
         """
-        return self.generate_dataloader(DatasetType.validation)
+        return self.generate_dataloader(DatasetMode.validation)
 
     def test_dataloader(self) -> DataLoader:
         """Creates test dataloader.
@@ -466,7 +466,7 @@ class DataModule(pl.LightningDataModule):
         Returns:
             DataLoader: test dataloader.
         """
-        return self.generate_dataloader(DatasetType.test)
+        return self.generate_dataloader(DatasetMode.test)
 
     def predict_dataloader(self) -> DataLoader:
         """Creates prediction dataloader.
@@ -474,7 +474,7 @@ class DataModule(pl.LightningDataModule):
         Returns:
             DataLoader: prediction dataloader.
         """
-        return self.generate_dataloader(DatasetType.prediction)
+        return self.generate_dataloader(DatasetMode.prediction)
 
 
 def openfold_batch_collator(prots):

@@ -28,6 +28,9 @@ dependencies:
   - aria2
   - git
   - ruff>=0.5.0
+  - biotite
+  - rdkit
+  - gemmi
   - bioconda::hmmer
   - bioconda::hhsuite
   - bioconda::kalign2
@@ -39,3 +42,4 @@ dependencies:
       - dm-tree==0.1.6
       - git+https://github.com/NVIDIA/dllogger.git
       - flash-attn==2.6.0.post1
+      - pdbeccdutils

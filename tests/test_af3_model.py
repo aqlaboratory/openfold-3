@@ -47,7 +47,7 @@ class TestAF3Model(unittest.TestCase):
 
         config.architecture.heads.pae.enabled = True
 
-        af3 = AlphaFold3AllAtom(config).to(device=device, dtype=dtype)
+        af3 = AlphaFold3AllAtom(config, _compile=False).to(device=device, dtype=dtype)
 
         batch = random_af3_features(
             batch_size=batch_size,

@@ -67,5 +67,5 @@ class TestLoadPresets:
             project_entry,
             ["initial_training"],
         )
-        model_runner = project_entry.model_runner(project_config.model)
+        model_runner = project_entry.model_runner(project_config.model, _compile=False)
         assert model_runner.model.get_submodule("input_embedder")

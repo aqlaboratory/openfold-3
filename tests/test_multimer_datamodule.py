@@ -71,7 +71,7 @@ class TestMultimerDataModule(unittest.TestCase):
         self.c.model.evoformer_stack.no_blocks = 4  # no need to go overboard here
         self.c.model.evoformer_stack.blocks_per_ckpt = None  # don't want to set up
         # deepspeed for this test
-        self.model = registry.get_lightning_module(self.c)
+        self.model = registry.get_lightning_module(self.c, _compile=False)
         self.loss = AlphaFoldLoss(self.c.loss)
 
     def testPrepareData(self):

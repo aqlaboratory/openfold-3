@@ -67,7 +67,7 @@ class TestModel(unittest.TestCase):
         c.model.evoformer_stack.blocks_per_ckpt = None  # don't want to set up
         # deepspeed for this test
 
-        model = pe.model_runner(c).model.cuda()
+        model = pe.model_runner(c, _compile=False).model.cuda()
         model.eval()
 
         batch = {}

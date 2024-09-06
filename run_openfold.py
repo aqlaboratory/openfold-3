@@ -75,7 +75,8 @@ def main(args):
         project_config.update(runner_args.config_update)
 
     model_config = project_config.model
-    lightning_module = project_entry.model_runner(model_config)
+    # TODO Make a config setting for compile later.
+    lightning_module = project_entry.model_runner(model_config, _compile=True)
 
     dataset_config_builder = project_entry.dataset_config_builder(project_config)
     data_module_config = registry.make_dataset_module_config(

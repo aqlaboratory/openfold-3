@@ -19,6 +19,7 @@ import torch
 from openfold3.core.model.structure.diffusion_module import (
     DiffusionModule,
     SampleDiffusion,
+    create_noise_schedule,
 )
 from openfold3.projects import registry
 from tests.config import consts
@@ -148,9 +149,9 @@ class TestSampleDiffusion(unittest.TestCase):
         c_s_input = config.architecture.shared.c_s_input
         c_s = config.architecture.shared.c_s
         c_z = config.architecture.shared.c_z
+        config.architecture.shared.no_rollout_steps = 2
 
         sample_config = config.architecture.sample_diffusion
-        sample_config.no_rollout_steps = 2
 
         dm = DiffusionModule(config=config.architecture.diffusion_module)
         sd = SampleDiffusion(**sample_config, diffusion_module=dm)
@@ -180,8 +181,18 @@ class TestSampleDiffusion(unittest.TestCase):
         zij_trunk = torch.rand((batch_size, n_token, n_token, c_z))
 
         with torch.no_grad():
+            noise_sched_config = config.architecture.noise_schedule
+            noise_sched_config.no_rollout_steps = 2
+            noise_schedule = create_noise_schedule(
+                **noise_sched_config, dtype=si_input.dtype, device=si_input.device
+            )
+
             xl = sd(
-                batch=batch, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
+                batch=batch,
+                si_input=si_input,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                noise_schedule=noise_schedule,
             )
 
         self.assertTrue(xl.shape == (batch_size, n_atom, 3))

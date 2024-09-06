@@ -32,7 +32,7 @@ DUMMY_AF3_PROJECT_CONFIG = mlc.ConfigDict(
         "dataset_config_template": {
             "name": "placeholder name",
             "class": "placeholder class",
-            "type": "placeholder mode",
+            "mode": "placeholder mode",
             "config": {
                 "token_budget": 17,
                 "dataset_paths": {
@@ -113,14 +113,14 @@ class TestDefaultDatasetConfigConstruction:
         assert dataset_1_cfg.config.dataset_paths.alignments == "/dataset1/alignments"
         assert dataset_1_cfg.config.dataset_paths.targets == "/dataset1/mmcifs"
         assert dataset_1_cfg["class"] == "TrainDataset"
-        assert dataset_1_cfg.type == "train"
+        assert dataset_1_cfg.mode == "train"
         assert dataset_1_cfg.weight == 1.0
         assert dataset_1_cfg.config.token_budget == 17
 
         assert dataset_2_cfg.config.dataset_paths.alignments == "/dataset2/alignments"
         assert dataset_2_cfg.config.dataset_paths.targets == "/dataset2/mmcifs"
         assert dataset_2_cfg["class"] == "ValidationDataset"
-        assert dataset_2_cfg.type == "validation"
+        assert dataset_2_cfg.mode == "validation"
         assert dataset_2_cfg.get("weight") is None
         assert dataset_2_cfg.config.token_budget == 13, "Fails token budget overwrite"
 

@@ -40,7 +40,7 @@ class TestImportWeights(unittest.TestCase):
         )
         c.globals.blocks_per_ckpt = None
 
-        model = project_entry.model_runner(c).model
+        model = project_entry.model_runner(c, _compile=False).model
         model.eval()
 
         import_jax_weights_(model, npz_path, version=monomer_consts.model_preset)
@@ -92,7 +92,7 @@ class TestImportWeights(unittest.TestCase):
             project_entry = registry.get_project_entry("af2_monomer")
             c = registry.make_config_with_presets(project_entry, [model_name])
             c.globals.blocks_per_ckpt = None
-            model = project_entry.model_runner(c).model
+            model = project_entry.model_runner(c, _compile=False).model
             model.eval()
 
             d = torch.load(pt_path, weights_only=True)

@@ -89,7 +89,7 @@ def get_global_pretrained_openfold():
         project_config = registry.make_config_with_presets(
             project_entry, [consts.model_preset]
         )
-        _lightning_module = project_entry.model_runner(project_config)
+        _lightning_module = project_entry.model_runner(project_config, _compile=False)
         _model = _lightning_module.model
         _model = _model.eval()
         if not os.path.exists(_param_path):

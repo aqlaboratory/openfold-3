@@ -12,7 +12,7 @@ class DefaultDatasetConfigBuilder:
         class SingleDatasetConfig:
         name: str
         dataset_class: str
-        mode: DatasetType
+        mode: DatasetMode
         weight: float
         config: mlc.ConfigDict
     ```
@@ -86,7 +86,7 @@ class DefaultDatasetConfigBuilder:
     ):
         self.config.name = name
         self.config["class"] = dataset_specs.get("class")
-        self.config.type = mode
+        self.config.mode = mode
         self.config.weight = dataset_specs.get("weight")
         self._add_paths(dataset_paths)
         if dataset_specs.get("config"):
