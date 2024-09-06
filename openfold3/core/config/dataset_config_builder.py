@@ -1,3 +1,4 @@
+from pathlib import Path
 import ml_collections as mlc
 
 
@@ -71,11 +72,22 @@ class DefaultDatasetConfigBuilder:
         config_template = project_config.dataset_config_template
         self.config = config_template.copy_and_resolve_references()
 
+    def _get_sanitized_paths(self, dataset_paths: mlc.ConfigDict):
+        input_paths = {}
+        for name, path in dataset_paths.iteritems():
+            if path == "none" or path == "None":
+                input_paths[name] = None
+            else:
+                input_paths[name] = Path(path)
+        return input_paths
+
     def _add_paths(self, dataset_paths: mlc.ConfigDict):
-        self.config.config.dataset_paths.update(dataset_paths)
+        paths = self._get_sanitized_paths(dataset_paths)
+        self.config.config.dataset_paths.update(paths)
 
     def _update_config(self, config_update: mlc.ConfigDict):
-        self.config.config.update(config_update)
+        if config_update:
+            self.config.config.update(config_update)
 
     def get_custom_config(
         self,
@@ -89,6 +101,5 @@ class DefaultDatasetConfigBuilder:
         self.config.mode = mode
         self.config.weight = dataset_specs.get("weight")
         self._add_paths(dataset_paths)
-        if dataset_specs.get("config"):
-            self._update_config(dataset_specs.config)
-        return mlc.FrozenConfigDict(self.config)
+        self._update_config(dataset_specs.get("config"))
+        return self.config

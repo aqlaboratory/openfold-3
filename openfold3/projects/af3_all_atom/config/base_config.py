@@ -1,10 +1,12 @@
+from pathlib import Path
+
 import ml_collections as mlc
 
 from openfold3.projects.af3_all_atom.config import (
     linear_init_config as lin_init,
 )
 
-PLACEHOLDER_PATH = "placeholder/path"
+PLACEHOLDER_PATH = Path("placeholder/path")
 
 # Hidden dimensions
 c_s = mlc.FieldReference(384, field_type=int)

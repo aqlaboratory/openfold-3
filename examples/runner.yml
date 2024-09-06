@@ -14,6 +14,7 @@ num_gpus: 4
 output_dir: ../test_train_output 
 deepspeed_config_path: ./deepspeed_config.json
 log_lr : false 
+compile : false 
 
 pl_trainer:
   num_nodes: 1
@@ -22,15 +23,15 @@ pl_trainer:
   log_every_n_steps: 25
 
 dataset_paths:
-  PDB-weighted:
-    alignments_directory:/eagle/MLProtein/gnikolenyi/data/openfold3_test_data/protein_dna_ligand/alignments
-    target_structures_directory: /eagle/MLProtein/gnikolenyi/data/openfold3_test_data/protein_dna_ligand/cif_file
+  weighted-pdb:
+    alignments_directory: /eagle/projects/MLProtein/gnikolenyi/data/openfold3_test_data/protein_dna_ligand/alignments
+    target_structures_directory: /eagle/projects/MLProtein/gnikolenyi/data/openfold3_test_data/protein_dna_ligand/cif_files
     alignment_db_directory: none
-    dataset_cache_file: /eagle/MLProtein/gnikolenyi/data/openfold3_test_data/protein_dna_ligand/training_cache_small.json
-    reference_molecule_directory: /eagle/MLProtein/gnikolenyi/data/openfold3_test_data/reference_mols
+    dataset_cache_file: /eagle/projects/MLProtein/gnikolenyi/data/openfold3_test_data/protein_dna_ligand/training_cache_small.json
+    reference_molecule_directory: /eagle/projects/MLProtein/gnikolenyi/data/openfold3_test_data/reference_mols
     template_cache_directory: none
     template_structures_directory: none
-    ccd_file: /eagle/MLProtein/gnikolenyi/data/openfold3_test_data/components.cif
+    ccd_file: /eagle/projects/MLProtein/gnikolenyi/data/openfold3_test_data/components.cif
 
 dataset_configs:
   train:

@@ -35,8 +35,7 @@ finetune3:
         mse: 0.0
         smooth_lddt: 0.0
         distogram: 0.0
-        confidence:
-          pae: 1.0
+        pae: 1.0
 
 eval:
   model:

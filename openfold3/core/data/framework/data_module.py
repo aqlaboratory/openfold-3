@@ -200,6 +200,9 @@ class DataModule(pl.LightningDataModule):
             self.validation_dataset = self.init_datasets(
                 multi_dataset_config_validation, DatasetMode.validation
             )[0]
+        # Dummy is needed as PLightning will still try to access the validation dataset.
+        else:
+            self.validation_dataset = []
 
         if DatasetMode.test in multi_dataset_config.modes:
             multi_dataset_config_test = multi_dataset_config.get_subset(

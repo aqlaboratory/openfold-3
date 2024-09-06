@@ -76,7 +76,9 @@ def main(args):
 
     model_config = project_config.model
     # TODO Make a config setting for compile later.
-    lightning_module = project_entry.model_runner(model_config, _compile=True)
+    lightning_module = project_entry.model_runner(
+        model_config, _compile=runner_args.compile
+    )
 
     dataset_config_builder = project_entry.dataset_config_builder(project_config)
     data_module_config = registry.make_dataset_module_config(
@@ -129,7 +131,7 @@ def main(args):
         callbacks.append(LearningRateMonitor(logging_interval="step"))
 
     loggers = []
-    if runner_args.get(wandb):
+    if runner_args.get("wandb"):
         wandb_logger = _configure_wandb_logger(
             runner_args.wandb, IS_RANK_ZERO, runner_args.output_dir
         )
@@ -153,7 +155,7 @@ def main(args):
             config=runner_args.deepspeed_config_path,
             cluster_environment=cluster_environment,
         )
-        if runner_args.get("wandb") & IS_RANK_ZERO:
+        if runner_args.get("wandb", 0) & IS_RANK_ZERO:
             wandb_logger.experiment.save(runner_args.deepspeed_config_path)
             wandb_logger.experiment.save("openfold/config.py")
     elif IS_MULTIGPU or IS_MULTINODE:
@@ -172,29 +174,28 @@ def main(args):
             "logger": loggers,
         }
     )
-    print(trainer_args)
 
     trainer = pl.Trainer(**trainer_args)
 
     # Run process appropriate process
-    logging.info(f"Running {args.mode} mode.")
+    logging.info(f"Running {runner_args.mode} mode.")
     # Training + validation / profiling
-    if (args.mode == "train") | (args.mode == "profile"):
-        ckpt_path = None if args.resume_model_weights_only else args.resume_from_ckpt
-        if args.mode == "profile":  # TODO can remove when profiling is implemented
+    if (runner_args.mode == "train") | (runner_args.mode == "profile"):
+        ckpt_path = None
+        if runner_args.mode == "profile":  # TODO Implement profiling
             raise NotImplementedError("Profiling mode not yet implemented.")
         else:
             trainer.fit(lightning_module, lightning_data_module, ckpt_path)
     # Testing
-    elif args.mode == "test":
+    elif runner_args.mode == "test":
         trainer.test(lightning_module, lightning_data_module)
     # Prediction == inference
-    elif args.mode == "predict":
+    elif runner_args.mode == "predict":
         trainer.predict(lightning_module, lightning_data_module)
     else:
         raise ValueError(
-            f"""Invalid mode argument: {args.mode}. Choose one of 'train', 'test', \
-             'predict', 'profile'."""
+            f"""Invalid mode argument: {runner_args.mode}. Choose one of "
+            "'train', 'test', 'predict', 'profile'."""
         )
 
 
