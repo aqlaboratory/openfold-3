@@ -183,7 +183,6 @@ def remove_small_polymers(
     ]
 
     for chain_id in small_polymer_chains:
-        breakpoint()
         atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
         logger.debug(f"Removed small polymer chain {chain_id}")
 
@@ -218,7 +217,6 @@ def remove_fully_unknown_polymers(atom_array: AtomArray) -> AtomArray:
         # Remove the chain from the AtomArray if all residues are unknown
         if np.all(chain.res_name == "UNK"):
             logger.debug("Removed fully unknown polymer chain")
-            breakpoint()
             atom_array_filtered = remove_chain_and_attached_ligands(
                 atom_array_filtered, chain_id
             )
@@ -285,9 +283,6 @@ def remove_chain_and_attached_ligands(
     atom_retained_indices = np.setdiff1d(
         atom_array._atom_idx, atom_deletion_indices, assume_unique=True
     )
-
-    if np.any(connected_ligand_atoms_mask_subset):
-        breakpoint()
 
     # Remove chain and connected ligands
     atom_array = atom_array[atom_retained_indices]
@@ -421,9 +416,6 @@ def remove_non_CCD_atoms(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
     # Inclusion mask over all atoms
     atom_mask = np.concatenate(atom_masks_per_res)
 
-    if not atom_mask.all():
-        breakpoint()
-
     return atom_array[atom_mask]
 
 
@@ -473,7 +465,6 @@ def remove_chains_with_CA_gaps(
     )
 
     for chain_id in chain_ids_to_remove:
-        breakpoint()
         atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
 
     return atom_array
@@ -535,7 +526,6 @@ def subset_large_structure(
     # Subset atom array to the closest n chains
     selected_chain_mask = np.isin(atom_array.chain_id, closest_n_chain_ids)
 
-    breakpoint()
     return atom_array[selected_chain_mask]
 
 
