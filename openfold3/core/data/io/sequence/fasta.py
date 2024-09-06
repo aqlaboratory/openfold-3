@@ -1,6 +1,7 @@
 """This module contains IO functions for reading and writing fasta files."""
 
 import contextlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from tqdm import tqdm
@@ -26,8 +27,12 @@ def read_multichain_fasta(input_path: Path) -> dict[str, str]:
     chain_to_sequence = {}
     with open(input_path) as file, contextlib.suppress(StopIteration):
         while True:
-            chain = next(file).replace(">", "").strip()
+            chain = next(file)
+            assert chain.startswith(">"), "Invalid FASTA format"
+            chain = chain.replace(">", "").strip()
+
             seq = next(file).strip()
+            assert not seq.startswith(">"), "Invalid FASTA format"
 
             chain_to_sequence[chain] = seq
 
@@ -37,26 +42,20 @@ def read_multichain_fasta(input_path: Path) -> dict[str, str]:
 def consolidate_preprocessed_fastas(preprocessed_dir: Path) -> dict[str, str]:
     """Reads all FASTA files in a preprocessed directory into a single dictionary.
 
-    This is meant to be used on the output directory of the preprocessing metadata
-    extraction script, which is formatted like this:
-
-    pdb_id:
-        pdb_id.fasta
-        ...
-    pdb_id:
-        pdb_id.fasta
-        ...
-
-    Where individual fasta files are formatted like this:
-    >{chain_id}
-    {sequence}
-    >{chain_id}
-    {sequence}
-    ...
+    Note that this uses threading to speed up the process.
 
     Args:
         preprocessed_dir:
-            Path to the directory containing preprocessed FASTA files.
+            Path to the directory of preprocessed files created during the preprocessing
+            scripts. The directory is expected to be structured like this:
+            4h1w/
+                4h1w.fasta
+                [...]
+            1nag/
+                1nag.fasta
+                [...]
+            [...]
+
 
     Returns:
         A dictionary mapping IDs to sequences. IDs follow the format
@@ -64,13 +63,29 @@ def consolidate_preprocessed_fastas(preprocessed_dir: Path) -> dict[str, str]:
     """
     ids_to_seq = {}
 
-    for pdb_dir in tqdm(preprocessed_dir.iterdir()):
+    # Function to read FASTA for a single directory
+    def process_pdb_dir(pdb_dir: Path):
         pdb_id = pdb_dir.name
-
         chain_id_to_seq = read_multichain_fasta(pdb_dir / f"{pdb_id}.fasta")
+        return {
+            f"{pdb_id}_{chain_id}": seq for chain_id, seq in chain_id_to_seq.items()
+        }
 
-        for chain_id, seq in chain_id_to_seq.items():
-            ids_to_seq[f"{pdb_id}_{chain_id}"] = seq
+    # Collect all directories
+    pdb_dirs = list(preprocessed_dir.iterdir())
+
+    # Use ThreadPoolExecutor for threading
+    with ThreadPoolExecutor() as executor:
+        futures = {
+            executor.submit(process_pdb_dir, pdb_dir): pdb_dir for pdb_dir in pdb_dirs
+        }
+
+        # Use tqdm to track progress
+        for future in tqdm(
+            as_completed(futures), total=len(futures), desc="Consolidating FASTAs"
+        ):
+            result = future.result()
+            ids_to_seq.update(result)
 
     return ids_to_seq
 
