@@ -8,6 +8,7 @@ from typing import Union
 
 import pandas as pd
 import torch
+from biotite.structure.io import pdbx
 
 from openfold3.core.data.framework.single_datasets.abstract_single_dataset import (
     SingleDataset,
@@ -198,10 +199,14 @@ class WeightedPDBDataset(SingleDataset):
         ]
 
         # Dataset/datapoint cache
+        self.datapoint_cache = {}
         with open(dataset_config["dataset_paths"]["dataset_cache_file"]) as f:
             self.dataset_cache = json.load(f)
         self.create_datapoint_cache()
         self.datapoint_probabilities = self.datapoint_cache["weight"].to_numpy()
+
+        # CCD
+        self.ccd = pdbx.CIFFile.read(dataset_config["dataset_paths"]["ccd_file"])
 
         # Dataset configuration
         self.crop_weights = dataset_config["crop_weights"]
@@ -216,13 +221,13 @@ class WeightedPDBDataset(SingleDataset):
         correspoinding datapoint probabilities. Used for mapping FROM the dataset_cache
         in the StochasticSamplerDataset and TO the dataset_cache in the getitem."""
         datapoint_collection = DatapointCollection.create_empty()
-        for entry, entry_data in self.dataset_cache["entries"].items():
+        for entry, entry_data in self.dataset_cache["structure_data"].items():
             # Append chains
             _ = [
                 datapoint_collection.append(
                     entry,
                     int(chain),
-                    chain_data["type"],
+                    chain_data["molecule_type"],
                     DatapointType.CHAIN,
                     int(chain_data["cluster_size"]),
                 )
@@ -234,25 +239,27 @@ class WeightedPDBDataset(SingleDataset):
                     entry,
                     [int(chain) for chain in interface.split("_")],
                     [
-                        entry_data["chains"][chain]["type"]
+                        entry_data["chains"][chain]["molecule_type"]
                         for chain in interface.split("_")
                     ],
                     DatapointType.INTERFACE,
                     int(cluster_size),
                 )
-                for interface, cluster_size in entry_data["interfaces"].items()
+                for interface, cluster_size in entry_data[
+                    "interface_cluster_sizes"
+                ].items()
             ]
 
         datapoint_collection.convert_to_dataframe()
         self.datapoint_cache = datapoint_collection.create_datapoint_cache()
 
     def __getitem__(
-        self, index
+        self, index: int
     ) -> dict[str : Union[torch.Tensor, dict[str, torch.Tensor]]]:
         """Returns a single datapoint from the dataset."""
 
         # Get PDB ID from the datapoint cache and the preferred chain/interface
-        datapoint = self.datapoint_cache[index]
+        datapoint = self.datapoint_cache.iloc[index]
         pdb_id = datapoint["pdb_id"]
         preferred_chain_or_interface = datapoint["datapoint"]
         features = {}
@@ -285,10 +292,12 @@ class WeightedPDBDataset(SingleDataset):
             alignment_db_directory=self.alignment_db_directory,
             alignment_index=self.alignment_index,
             atom_array=atom_array_cropped,
-            data_cache_entry_chains=self.dataset_cache[pdb_id]["chains"],
+            data_cache_entry_chains=self.dataset_cache["structure_data"][pdb_id][
+                "chains"
+            ],
             max_seq_counts={
                 "uniref90_hits": 10000,
-                "uniprot_hits": 50000,
+                "uniprot": 50000,
                 "bfd_uniclust_hits": math.inf,
                 "bfd_uniref_hits": math.inf,
                 "mgnify_hits": 5000,
@@ -309,7 +318,7 @@ class WeightedPDBDataset(SingleDataset):
         # Reference conformer features
         processed_reference_molecules = get_reference_conformer_data_af3(
             atom_array=atom_array_cropped,
-            per_chain_metadata=self.dataset_cache[pdb_id]["chains"],
+            per_chain_metadata=self.dataset_cache["structure_data"][pdb_id]["chains"],
             reference_mol_metadata=self.dataset_cache["reference_molecule_data"],
             reference_mol_dir=self.reference_molecule_directory,
         )
@@ -317,7 +326,8 @@ class WeightedPDBDataset(SingleDataset):
 
         # Loss switches
         features["loss_weight"] = set_loss_weights(
-            self.loss_settings, self.dataset_cache[pdb_id]["resolution"]
+            self.loss_settings,
+            self.dataset_cache["structure_data"][pdb_id]["resolution"],
         )
         return features
 

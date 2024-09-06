@@ -59,7 +59,7 @@ def featurize_structure_af3(
         atom_array.token_id[token_starts], dtype=torch.int32
     )
     features["asym_id"] = torch.tensor(
-        atom_array.chain_id[token_starts].astype(np.int), dtype=torch.int32
+        atom_array.chain_id[token_starts].astype(int), dtype=torch.int32
     )
     features["entity_id"] = torch.tensor(
         atom_array.entity_id[token_starts], dtype=torch.int32

@@ -101,7 +101,7 @@ def process_msas_af3(
         paired_msa_per_chain=paired_msa_per_chain,
         aln_order=[
             "uniref90_hits",
-            "uniprot_hits",
+            "uniprot",
             "bfd_uniclust_hits",
             "bfd_uniref_hits",
             "mgnify_hits",

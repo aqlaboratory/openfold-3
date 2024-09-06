@@ -180,7 +180,7 @@ def parse_msas_direct(
     else:
         for aln_file in file_list:
             # Split extensions from the filenames
-            basename, ext = aln_file.stem, aln_file.file_names[0].suffix
+            basename, ext = aln_file.stem, aln_file.suffix
             if ext not in [".sto", ".a3m"]:
                 raise NotImplementedError(
                     "Currently only .sto and .a3m file parsing is supported for"
