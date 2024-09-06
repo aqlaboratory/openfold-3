@@ -1,1 +1,201 @@
 """This module contains IO functions for reading and writing mmCIF files."""
+
+import logging
+from pathlib import Path
+from typing import Literal, NamedTuple
+
+from biotite.structure import AtomArray
+from biotite.structure.io import pdbx
+
+from openfold3.core.data.primitives.structure.labels import (
+    assign_entity_ids,
+    assign_molecule_type_ids,
+    assign_renumbered_chain_ids,
+    update_author_to_pdb_labels,
+)
+from openfold3.core.data.primitives.structure.metadata import (
+    get_cif_block,
+    get_first_bioassembly_polymer_count,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class ParsedStructure(NamedTuple):
+    cif_file: pdbx.CIFFile
+    atom_array: AtomArray | None
+
+
+class SkippedStructure(NamedTuple):
+    cif_file: pdbx.CIFFile
+    n_polymer_chains: int
+
+
+# TODO: update docstring with new residue ID handling and preset fields
+def parse_mmcif(
+    file_path: Path | str,
+    expand_bioassembly: bool = False,
+    include_bonds: bool = True,
+    renumber_chain_ids: bool = False,
+    extra_fields: list | None = None,
+    max_polymer_chains: int | None = None,
+) -> ParsedStructure | SkippedStructure:
+    """Convenience wrapper around biotite's CIF parsing
+
+    Parses the mmCIF file and creates an AtomArray from it while optionally expanding
+    the first bioassembly. This includes only the first model, resolves alternative
+    locations by taking the one with the highest occupancy, defaults to inferring bond
+    information, and defaults to using the PDB-automated chain/residue annotation
+    instead of author annotations, except for ligand residue IDs which are kept as
+    author-assigned IDs because they would otherwise be None.
+
+    This function also creates the following additional annotations in the AtomArray:
+        - occupancy: inferred from atom_site.occupancy
+        - charge: charge of the atom
+        - entity_id: inferred from atom_site.label_entity_id
+        - molecule_type_id: numerical code for the molecule type (see tables.py)
+        - label_asym_id: original PDB-assigned chain ID
+        - label_seq_id: original PDB-assigned residue ID
+        - label_comp_id: original PDB-assigned residue name
+        - label_atom_id: original PDB-assigned atom name
+        - auth_asym_id: author-assigned chain ID
+        - auth_seq_id: author-assigned residue ID
+        - auth_comp_id: author-assigned residue name
+        - auth_atom_id: author-assigned atom name
+
+    Args:
+        file_path:
+            Path to the mmCIF (or binary mmCIF) file.
+        expand_bioassembly:
+            Whether to expand the first bioassembly. Defaults to False.
+        include_bonds:
+            Whether to infer bond information. Defaults to True.
+        renumber_chain_ids:
+            Whether to renumber chain IDs from 1 to avoid duplicate chain labels after
+            bioassembly expansion. Defaults to False.
+        extra_fields:
+            Extra fields to include in the AtomArray. Defaults to None. Fields
+            "entity_id" and "occupancy" are always included.
+        max_polymer_chains:
+            Maximum number of polymer chains in the first bioassembly after which a
+            structure is skipped by the get_structure() parser. Defaults to None.
+
+    Returns:
+        A ParsedStructure NamedTuple containing the parsed CIF file and the AtomArray,
+        or a SkippedStructure NamedTuple containing the CIF file and the number of
+        polymer chains in the first bioassembly.
+    """
+    file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
+
+    if file_path.suffix == ".cif":
+        cif_class = pdbx.CIFFile
+    elif file_path.suffix == ".bcif":
+        cif_class = pdbx.BinaryCIFFile
+    else:
+        raise ValueError("File must be in mmCIF or binary mmCIF format")
+
+    cif_file = cif_class.read(file_path)
+    cif_data = get_cif_block(cif_file)
+
+    if max_polymer_chains is not None:
+        # Polymers in first bioassembly
+        n_polymers = get_first_bioassembly_polymer_count(cif_data)
+
+        if n_polymers > max_polymer_chains:
+            return SkippedStructure(cif_file, n_polymers)
+
+    cif_data = get_cif_block(cif_file)
+
+    # Always include these fields
+    label_fields = [
+        "label_entity_id",
+        "label_atom_id",
+        "label_comp_id",
+        "label_asym_id",
+        "label_seq_id",
+    ]
+    extra_fields_preset = [
+        "occupancy",
+        "charge",
+    ] + label_fields
+
+    if extra_fields:
+        extra_fields = extra_fields_preset + extra_fields
+    else:
+        extra_fields = extra_fields_preset
+
+    # Shared args between get_assembly and get_structure
+    parser_args = {
+        "pdbx_file": cif_file,
+        "model": 1,
+        "altloc": "occupancy",
+        "use_author_fields": True,
+        "include_bonds": include_bonds,
+        "extra_fields": extra_fields,
+    }
+
+    # Check if the CIF file contains bioassembly information
+    if expand_bioassembly & ("pdbx_struct_assembly_gen" not in cif_data):
+        logger.warning(
+            "No bioassembly information found in the CIF file, "
+            "falling back to parsing the asymmetric unit."
+        )
+        expand_bioassembly = False
+
+    if expand_bioassembly:
+        atom_array = pdbx.get_assembly(
+            **parser_args,
+            assembly_id="1",
+        )
+    else:
+        atom_array = pdbx.get_structure(
+            **parser_args,
+        )
+
+    # Replace author-assigned IDs with PDB-assigned IDs
+    update_author_to_pdb_labels(atom_array)
+
+    # Add entity IDs
+    assign_entity_ids(atom_array)
+
+    # Add molecule types for convenience
+    assign_molecule_type_ids(atom_array)
+
+    # Renumber chain IDs from 1 to avoid duplicate chain labels after bioassembly
+    # expansion
+    if renumber_chain_ids:
+        assign_renumbered_chain_ids(atom_array)
+
+    return ParsedStructure(cif_file, atom_array)
+
+
+def write_minimal_cif(
+    atom_array: AtomArray,
+    output_path: Path,
+    format: Literal["cif", "bcif"] = "cif",
+    data_block: str = None,
+    include_bonds: bool = True,
+) -> None:
+    """Write a minimal CIF file
+
+    The resulting CIF file will only contain the atom_site records and bond information
+    by default, not any other mmCIF metadata.
+
+    Args:
+        atom_array:
+            AtomArray to write to the CIF file.
+        output_path:
+            Path to write the CIF file to.
+        format:
+            Format of the CIF file. Defaults to "cif".
+        data_block:
+            Name of the data block in the CIF file. Defaults to None.
+        include_bonds:
+            Whether to include bond information in the CIF file. Defaults to True.
+    """
+    cif_file = pdbx.CIFFile() if format == "cif" else pdbx.BinaryCIFFile()
+    pdbx.set_structure(
+        cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
+    )
+
+    cif_file.write(output_path)
