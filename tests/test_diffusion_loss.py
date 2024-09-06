@@ -106,8 +106,8 @@ class TestDiffusionLoss(unittest.TestCase):
         )
 
         mse = mse_loss(
-            batch=batch,
             x=x,
+            batch=batch,
             dna_weight=dna_weight,
             rna_weight=rna_weight,
             ligand_weight=ligand_weight,
@@ -128,7 +128,7 @@ class TestDiffusionLoss(unittest.TestCase):
             atom_mask=batch["ground_truth"]["atom_resolved_mask"],
         )
 
-        loss = bond_loss(batch, x, eps=consts.eps)
+        loss = bond_loss(x=x, batch=batch, eps=consts.eps)
 
         self.assertTrue(loss.shape == (batch_size, n_sample))
         self.assertTrue((loss < 1e-5).all())
@@ -144,7 +144,7 @@ class TestDiffusionLoss(unittest.TestCase):
             atom_mask=batch["ground_truth"]["atom_resolved_mask"],
         )
 
-        loss = smooth_lddt_loss(batch, x, eps=consts.eps)
+        loss = smooth_lddt_loss(x=x, batch=batch, eps=consts.eps)
 
         gt_loss = 1 - 0.25 * (
             torch.sigmoid(torch.Tensor([0.5]))
