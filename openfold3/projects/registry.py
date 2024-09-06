@@ -63,7 +63,9 @@ def make_config_with_presets(
 
 
 def make_dataset_module_config(
-    runner_args: mlc.ConfigDict, dataset_config_builder: DefaultDatasetConfigBuilder
+    runner_args: mlc.ConfigDict,
+    dataset_config_builder: DefaultDatasetConfigBuilder,
+    project_config: mlc.ConfigDict,
 ):
     """Constructs dataset config module for all datasets in runner configuration."""
     dataset_configs = []
@@ -73,8 +75,9 @@ def make_dataset_module_config(
     for dataset_type, _dataset_configs in input_dataset_configs.items():
         # loop over datasets in modes
         for name, dataset_specs in _dataset_configs.items():
+            builder = dataset_config_builder(project_config)
             dataset_paths = runner_args.dataset_paths.get(name)
-            config = dataset_config_builder.get_custom_config(
+            config = builder.get_custom_config(
                 name, dataset_type, dataset_specs, dataset_paths
             )
             dataset_configs.append(config)

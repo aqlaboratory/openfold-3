@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 import ml_collections as mlc
 
 
@@ -85,7 +86,7 @@ class DefaultDatasetConfigBuilder:
         paths = self._get_sanitized_paths(dataset_paths)
         self.config.config.dataset_paths.update(paths)
 
-    def _update_config(self, config_update: mlc.ConfigDict):
+    def _update_config(self, config_update: Optional[mlc.ConfigDict]):
         if config_update:
             self.config.config.update(config_update)
 

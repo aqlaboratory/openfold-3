@@ -1,3 +1,4 @@
+from pathlib import Path
 import textwrap
 
 import ml_collections as mlc
@@ -7,6 +8,8 @@ from openfold3.core.config import config_utils, dataset_config_builder
 from openfold3.projects.af3_all_atom.config import (
     dataset_config_builder as af3_dataset_config_builder,
 )
+
+PLACEHOLDER_PATH = Path("/path/placeholder")
 
 DUMMY_PROJECT_CONFIG = mlc.ConfigDict(
     {
@@ -18,8 +21,8 @@ DUMMY_PROJECT_CONFIG = mlc.ConfigDict(
             "config": {
                 "token_budget": 17,
                 "dataset_paths": {
-                    "alignments": "placeholder path",
-                    "targets": "placeholder path",
+                    "alignments": PLACEHOLDER_PATH,
+                    "targets": PLACEHOLDER_PATH,
                 },
             },
         },
@@ -36,8 +39,8 @@ DUMMY_AF3_PROJECT_CONFIG = mlc.ConfigDict(
             "config": {
                 "token_budget": 17,
                 "dataset_paths": {
-                    "alignments": "placeholder path",
-                    "targets": "placeholder path",
+                    "alignments": PLACEHOLDER_PATH,
+                    "targets": PLACEHOLDER_PATH,
                 },
                 "loss_weight_mode": "default",
                 "loss": {
@@ -92,13 +95,13 @@ class TestDefaultDatasetConfigConstruction:
             f.write(test_yaml_str)
 
         runner_args = mlc.ConfigDict(config_utils.load_yaml(test_yaml_file))
-        builder = dataset_config_builder.DefaultDatasetConfigBuilder(
-            DUMMY_PROJECT_CONFIG
-        )
 
         dataset_configs = []
         for mode, input_dataset_configs in runner_args.dataset_configs.items():
             for name, dataset_specs in input_dataset_configs.items():
+                builder = dataset_config_builder.DefaultDatasetConfigBuilder(
+                    DUMMY_PROJECT_CONFIG
+                )
                 dataset_specific_paths = runner_args.dataset_paths[name]
                 dataset_config = builder.get_custom_config(
                     name, mode, dataset_specs, dataset_specific_paths
@@ -110,15 +113,19 @@ class TestDefaultDatasetConfigConstruction:
         dataset_1_cfg = dataset_configs[0]
         dataset_2_cfg = dataset_configs[1]
 
-        assert dataset_1_cfg.config.dataset_paths.alignments == "/dataset1/alignments"
-        assert dataset_1_cfg.config.dataset_paths.targets == "/dataset1/mmcifs"
+        assert dataset_1_cfg.config.dataset_paths.alignments == Path(
+            "/dataset1/alignments"
+        )
+        assert dataset_1_cfg.config.dataset_paths.targets == Path("/dataset1/mmcifs")
         assert dataset_1_cfg["class"] == "TrainDataset"
         assert dataset_1_cfg.mode == "train"
         assert dataset_1_cfg.weight == 1.0
         assert dataset_1_cfg.config.token_budget == 17
 
-        assert dataset_2_cfg.config.dataset_paths.alignments == "/dataset2/alignments"
-        assert dataset_2_cfg.config.dataset_paths.targets == "/dataset2/mmcifs"
+        assert dataset_2_cfg.config.dataset_paths.alignments == Path(
+            "/dataset2/alignments"
+        )
+        assert dataset_2_cfg.config.dataset_paths.targets == Path("/dataset2/mmcifs")
         assert dataset_2_cfg["class"] == "ValidationDataset"
         assert dataset_2_cfg.mode == "validation"
         assert dataset_2_cfg.get("weight") is None
@@ -152,13 +159,13 @@ class TestDefaultDatasetConfigConstruction:
             f.write(test_yaml_str)
 
         runner_args = mlc.ConfigDict(config_utils.load_yaml(test_yaml_file))
-        builder = af3_dataset_config_builder.AF3DatasetConfigBuilder(
-            DUMMY_AF3_PROJECT_CONFIG
-        )
 
         dataset_configs = []
         for mode, input_dataset_configs in runner_args.dataset_configs.items():
             for name, dataset_specs in input_dataset_configs.items():
+                builder = af3_dataset_config_builder.AF3DatasetConfigBuilder(
+                    DUMMY_AF3_PROJECT_CONFIG
+                )
                 dataset_specific_paths = runner_args.dataset_paths[name]
                 dataset_config = builder.get_custom_config(
                     name, mode, dataset_specs, dataset_specific_paths
@@ -170,15 +177,22 @@ class TestDefaultDatasetConfigConstruction:
         dataset_1_cfg = dataset_configs[0]
         dataset_2_cfg = dataset_configs[1]
 
-        assert dataset_1_cfg.config.dataset_paths.alignments == "/dataset1/alignments"
-        assert dataset_1_cfg.config.dataset_paths.targets == "/dataset1/mmcifs"
+        print(dataset_2_cfg)
+        print(dataset_1_cfg)
+
+        assert dataset_1_cfg.config.dataset_paths.alignments == Path(
+            "/dataset1/alignments"
+        )
+        assert dataset_1_cfg.config.dataset_paths.targets == Path("/dataset1/mmcifs")
         assert dataset_1_cfg["class"] == "TrainDataset"
         assert dataset_1_cfg.weight == 1.0
         assert dataset_1_cfg.config.loss.loss_weights.distogram == 3e-2
         assert dataset_1_cfg.config.loss.loss_weights.mse == 4.0
 
-        assert dataset_2_cfg.config.dataset_paths.alignments == "/dataset2/alignments"
-        assert dataset_2_cfg.config.dataset_paths.targets == "/dataset2/mmcifs"
+        assert dataset_2_cfg.config.dataset_paths.alignments == Path(
+            "/dataset2/alignments"
+        )
+        assert dataset_2_cfg.config.dataset_paths.targets == Path("/dataset2/mmcifs")
         assert dataset_2_cfg["class"] == "ValidationDataset"
         assert dataset_2_cfg.get("weight") is None
         assert dataset_2_cfg.config.loss.loss_weights.distogram == 3e-2

@@ -80,9 +80,11 @@ def main(args):
         model_config, _compile=runner_args.compile
     )
 
-    dataset_config_builder = project_entry.dataset_config_builder(project_config)
+    dataset_config_builder = project_entry.dataset_config_builder
     data_module_config = registry.make_dataset_module_config(
-        runner_args, dataset_config_builder
+        runner_args,
+        dataset_config_builder,
+        project_config,
     )
     lightning_data_module = DataModule(data_module_config)
 
