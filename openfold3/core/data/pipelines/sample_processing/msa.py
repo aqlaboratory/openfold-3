@@ -6,7 +6,6 @@ from biotite.structure import AtomArray
 
 from openfold3.core.data.io.sequence.msa import parse_msas_sample
 from openfold3.core.data.primitives.sequence.msa import (
-    MsaParsed,
     MsaProcessed,
     MsaProcessedCollection,
     MsaSlice,
@@ -26,7 +25,7 @@ def process_msas_af3(
     alignment_index: dict | None,
     chain_rep_map: dict[str, str],
     max_seq_counts: dict[str, int | float],
-) -> tuple[MsaParsed, MsaParsed, dict[str, MsaParsed]]:
+) -> MsaProcessedCollection:
     """Prepares the arrays needed to create MSA feature tensors.
 
     Follows the logic of the AF3 SI in sections 2.2 and 2.3.
@@ -35,6 +34,9 @@ def process_msas_af3(
         - only if n unique protein chains > 1
         - exclude block-diagonal unpaired sequences
     3. Main MSAs for each chain with unpaired sequences from non-UniProt databases
+
+    Note: The returned MsaProcessedCollection contains None for the query_sequences
+    if there are no protein or RNA chains in the crop.
 
     Args:
         alignments_directory (Path | None):
@@ -70,47 +72,52 @@ def process_msas_af3(
         )
 
     # Parse MSAs for the cropped sample
-    msa_collection = parse_msas_sample(
-        alignments_directory=alignments_directory,
-        alignment_db_directory=alignment_db_directory,
-        alignment_index=alignment_index,
-        chain_rep_map=chain_rep_map,
-        max_seq_counts=max_seq_counts,
-    )
+    if len(chain_rep_map) > 0:
+        msa_collection = parse_msas_sample(
+            alignments_directory=alignments_directory,
+            alignment_db_directory=alignment_db_directory,
+            alignment_index=alignment_index,
+            chain_rep_map=chain_rep_map,
+            max_seq_counts=max_seq_counts,
+        )
 
-    # Create query
-    query_seqs = create_query_seqs(msa_collection)
+        # Create query
+        query_seqs = create_query_seqs(msa_collection)
 
-    # Determine whether to do pairing
-    is_monomer_homomer = find_monomer_homomer(msa_collection)
+        # Determine whether to do pairing
+        is_monomer_homomer = find_monomer_homomer(msa_collection)
 
-    if not is_monomer_homomer:
-        # Create paired UniProt MSA arrays and Rfam
-        paired_msa_per_chain = create_paired(msa_collection, paired_row_cutoff=8191)
+        if not is_monomer_homomer:
+            # Create paired UniProt MSA arrays and Rfam
+            paired_msa_per_chain = create_paired(msa_collection, paired_row_cutoff=8191)
 
-        # Expand across duplicate chains and concatenate
-        paired_msas = expand_paired_msas(msa_collection, paired_msa_per_chain)
+            # Expand across duplicate chains and concatenate
+            paired_msas = expand_paired_msas(msa_collection, paired_msa_per_chain)
 
+        else:
+            paired_msa_per_chain = None
+            paired_msas = None
+
+        # Create main MSA arrays
+        main_msas = create_main(
+            msa_collection=msa_collection,
+            paired_msa_per_chain=paired_msa_per_chain,
+            aln_order=[
+                "uniref90_hits",
+                "uniprot",
+                "bfd_uniclust_hits",
+                "bfd_uniref_hits",
+                "mgnify_hits",
+                "rfam_hits",
+                "rnacentral_hits",
+                "nucleotide_collection_hits",
+            ],
+        )
+    # Skip MSA processing if there are no protein or RNA chains
     else:
-        paired_msa_per_chain = None
+        query_seqs = None
         paired_msas = None
-
-    # Create main MSA arrays
-    main_msas = create_main(
-        msa_collection=msa_collection,
-        paired_msa_per_chain=paired_msa_per_chain,
-        aln_order=[
-            "uniref90_hits",
-            "uniprot",
-            "bfd_uniclust_hits",
-            "bfd_uniref_hits",
-            "mgnify_hits",
-            "rfam_hits",
-            "rnacentral_hits",
-            "nucleotide_collection_hits",
-        ],
-    )
-
+        main_msas = None
     return MsaProcessedCollection(
         query_sequences=query_seqs, paired_msas=paired_msas, main_msas=main_msas
     )

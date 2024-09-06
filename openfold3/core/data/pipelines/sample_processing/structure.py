@@ -44,13 +44,12 @@ def process_target_structure_af3(
             - Ground truth atoms expanded for chain permutation alignment.
     """
     # Parse target structure
-    structure = parse_mmcif(
-        file_path=target_structures_directory / Path(pdb_id + "/" + pdb_id + ciftype),
-        expand_bioassembly=True,
+    _, atom_array = parse_mmcif(
+        file_path=target_structures_directory / pdb_id / f"{pdb_id}{ciftype}",
+        expand_bioassembly=False,
         include_bonds=True,
+        renumber_chain_ids=False,
     )
-    atom_array = structure.atom_array
-    # atom_array = atom_array[atom_array.res_name != "HOH"]
 
     # Tokenize
     tokenize_atom_array(atom_array=atom_array)
