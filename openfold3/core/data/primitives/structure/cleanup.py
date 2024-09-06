@@ -18,9 +18,11 @@ from openfold3.core.data.primitives.structure.labels import (
 from openfold3.core.data.primitives.structure.metadata import (
     get_chain_to_canonical_seq_dict,
 )
-from openfold3.core.data.resources.patches import construct_atom_array
-from openfold3.core.data.resources.tables import (
+from openfold3.core.data.resources.lists import (
     CRYSTALLIZATION_AIDS,
+)
+from openfold3.core.data.resources.patches import construct_atom_array
+from openfold3.core.data.resources.residues import (
     STANDARD_NUCLEIC_ACID_RESIDUES,
     STANDARD_PROTEIN_RESIDUES,
     MoleculeType,

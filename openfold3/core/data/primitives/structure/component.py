@@ -14,7 +14,7 @@ from rdkit import Chem
 from rdkit.Chem import AllChem, Mol
 
 from openfold3.core.data.resources.patches import correct_cif_string
-from openfold3.core.data.resources.tables import MoleculeType
+from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
 

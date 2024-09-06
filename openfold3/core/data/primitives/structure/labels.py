@@ -1,10 +1,12 @@
+from collections import defaultdict
+
 import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
 
-from openfold3.core.data.resources.tables import (
+from openfold3.core.data.resources.residues import (
     STANDARD_DNA_RESIDUES,
-    STANDARD_PROTEIN_RESIDUES,
+    STANDARD_PROTEIN_RESIDUES_3,
     STANDARD_RNA_RESIDUES,
     MoleculeType,
 )
@@ -248,7 +250,7 @@ def assign_molecule_type_ids(atom_array: AtomArray) -> None:
     """
     chain_start_idxs = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
 
-    std_protein_residues = set(STANDARD_PROTEIN_RESIDUES)
+    std_protein_residues = set(STANDARD_PROTEIN_RESIDUES_3)
     std_dna_residues = set(STANDARD_DNA_RESIDUES)
     std_rna_residues = set(STANDARD_RNA_RESIDUES)
 
@@ -280,3 +282,30 @@ def assign_molecule_type_ids(atom_array: AtomArray) -> None:
             molecule_type_ids[chain_start:next_chain_start] = MoleculeType.LIGAND
 
     atom_array.set_annotation("molecule_type_id", molecule_type_ids)
+
+
+def uniquify_ids(ids: list[str]) -> list[str]:
+    """
+    Uniquify a list of string IDs by appending occurrence count.
+
+    This function takes a list of string IDs and returns a new list where each ID is
+    made unique by appending an underscore followed by its occurrence count.
+
+    Args:
+        ids (list[str]):
+            A list of string IDs, which may contain duplicates.
+
+    Returns:
+        list[str]:
+            A list of uniquified IDs, where each ID is appended with its occurrence
+            count (e.g., "id_1", "id_2").
+    """
+
+    id_counter = defaultdict(lambda: 0)
+    uniquified_ids = []
+
+    for id in ids:
+        id_counter[id] += 1
+        uniquified_ids.append(f"{id}_{id_counter[id]}")
+
+    return uniquified_ids
