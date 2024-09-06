@@ -226,7 +226,7 @@ class WeightedPDBDataset(SingleDataset):
             _ = [
                 datapoint_collection.append(
                     entry,
-                    int(chain),
+                    str(chain),
                     chain_data["molecule_type"],
                     DatapointType.CHAIN,
                     int(chain_data["cluster_size"]),
@@ -237,7 +237,7 @@ class WeightedPDBDataset(SingleDataset):
             _ = [
                 datapoint_collection.append(
                     entry,
-                    [int(chain) for chain in interface.split("_")],
+                    [str(chain) for chain in interface.split("_")],
                     [
                         entry_data["chains"][chain]["molecule_type"]
                         for chain in interface.split("_")

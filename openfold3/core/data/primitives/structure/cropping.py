@@ -46,7 +46,7 @@ def crop_contiguous(
     assign_atom_indices(atom_array)
 
     # Get chain ids and permute
-    chains = np.array(list(set(atom_array.chain_id)), dtype=int)
+    chains = np.array(list(set(atom_array.chain_id)))
     chains = generator.permutation(chains)
 
     # Create cropping mask annotation
@@ -66,8 +66,10 @@ def crop_contiguous(
         # Sample length of crop for current chain
         crop_size_max = min(token_budget, chain_length)
         crop_size_min = min(chain_length, max(0, token_budget - tokens_remaining))
-        crop_size = generator.integers(crop_size_min, crop_size_max + 1, 1).item()
-
+        if crop_size_min < crop_size_max + 1:
+            crop_size = generator.integers(crop_size_min, crop_size_max + 1, 1).item()
+        else:
+            crop_size = crop_size_max
         token_budget -= crop_size
 
         crop_start = generator.integers(0, chain_length - crop_size, 1).item()
@@ -76,7 +78,7 @@ def crop_contiguous(
         # Edit corresponding segment in crop mask
         atom_array.crop_mask[crop_start_global : crop_start_global + crop_size] = True
 
-        if token_budget == 0:
+        if token_budget <= 0:
             break
 
     # Remove atom index
@@ -205,19 +207,19 @@ def subset_preferred(
     token_center_atoms = atom_array[atom_array.token_center_atom]
     if preferred_chain_or_interface is not None:
         # If chain provided
-        if isinstance(preferred_chain_or_interface, int):
+        if isinstance(preferred_chain_or_interface, str):
             preferred_token_center_atoms = token_center_atoms[
                 token_center_atoms.chain_id == preferred_chain_or_interface
             ]
         # If interface provided
-        elif isinstance(preferred_chain_or_interface, tuple):
+        elif isinstance(preferred_chain_or_interface, list):
             preferred_token_center_atoms = token_center_atoms[
                 np.isin(token_center_atoms.chain_id, preferred_chain_or_interface)
             ]
         else:
             raise ValueError(
                 f"""Invalid preferred_chain_or_interface: \
-                 {preferred_chain_or_interface}, has to be int or tuple."""
+                 {preferred_chain_or_interface}, has to be str or 2-list."""
             )
     else:
         preferred_token_center_atoms = token_center_atoms
