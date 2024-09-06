@@ -312,7 +312,7 @@ class WeightedPDBDataset(SingleDataset):
 
         # Dummy template features
         features.update(
-            featurize_templates_dummy_af3(1, self.n_templates, self.token_budget)
+            featurize_templates_dummy_af3(self.n_templates, self.token_budget)
         )
 
         # Reference conformer features
