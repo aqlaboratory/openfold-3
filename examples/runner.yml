@@ -23,25 +23,6 @@ pl_trainer:
   num_sanity_val_steps: 0 
   reload_dataloaders_every_n_epochs: 1 
 
-config_update:
-  model:
-    architecture:
-      input_embedder:
-        linear_init_params:
-          linear_s:
-            init: relu
-      pairformer:
-        no_blocks: 4
-  dataset_config_template:
-    config:
-      token_budget: 800
-  extra_configs:
-    loss_weight_update:
-      loss_weight_modes:
-        default:
-          bond: 1.0
-
-
 dataset_paths:
   PDB-weighted:
     alignments_directory: /<PDB_PATH>/alignments/

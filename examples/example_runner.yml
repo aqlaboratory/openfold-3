@@ -22,12 +22,6 @@ pl_trainer:
   precision: bf16
   max_epochs: 1
   log_every_n_steps: 25
-  num_sanity_val_steps: 0 
-  reload_dataloaders_every_n_epochs: 1 
-
-early_stopping: 
-  min_delta: 0
-  patience: 3
 
 # Include to use wand checkpointing / logging 
 wandb:
@@ -44,12 +38,6 @@ config_updates:
     settings:
       use_deepspeed_evo_attention: True
       blocks_per_checkpoint: 1
-    model:
-      pairformer:
-        no_blocks: 4
-      diffusion_module:
-        diffusion_transformer:
-          no_blocks: 4
   dataset_config_template:
     config:
       token_budget: 197
