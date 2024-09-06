@@ -430,7 +430,12 @@ class _AF3PreprocessingWrapper:
                 + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
                 + "-" * 40
             )
-            return {"pdb_id": cif_file.stem, "status": "failed"}, {}
+            pdb_id = cif_file.stem
+
+            output_dict = {pdb_id: {"status": "failed"}}
+            empty_conformer_dict = {}
+
+            return output_dict, empty_conformer_dict
 
 
 def preprocess_cif_dir_af3(
