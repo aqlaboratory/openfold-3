@@ -22,6 +22,13 @@ pl_trainer:
   max_epochs: 1
   log_every_n_steps: 25
 
+config_update:
+  architecture:
+    loss_module: 
+      confidence:
+        diffusion:
+          chunk_size: 24
+
 dataset_paths:
   weighted-pdb:
     alignments_directory: /eagle/projects/MLProtein/gnikolenyi/data/openfold3_test_data/protein_dna_ligand/alignments
