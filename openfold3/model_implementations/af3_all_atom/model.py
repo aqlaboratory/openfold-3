@@ -265,6 +265,9 @@ class AlphaFold3(nn.Module):
                 zij_trunk=zij_trunk,
                 noise_schedule=noise_schedule,
                 chunk_size=self.globals.chunk_size,
+                use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
+                use_lma=self.globals.use_lma,
+                _mask_trans=True,
             )
 
         output = {
@@ -340,16 +343,26 @@ class AlphaFold3(nn.Module):
         # Sample atom positions
         xl_noisy = xl_gt + noise
 
+        token_mask = batch["token_mask"]
+
+        # Mask needs to be tiled for shape checks in DeepSpeed EvoAttention
+        if self.globals.use_deepspeed_evo_attention:
+            token_mask = token_mask.tile((1, no_samples, 1))
+
         # Run diffusion module
         xl = self.diffusion_module(
             batch=batch,
             xl_noisy=xl_noisy,
+            token_mask=token_mask,
             atom_mask=atom_mask_gt,
             t=t,
             si_input=si_input,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
             chunk_size=self.globals.chunk_size,
+            use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
+            use_lma=self.globals.use_lma,
+            _mask_trans=True,
         )
 
         output = {

@@ -255,15 +255,15 @@ class DiffusionTransformer(nn.Module):
         """
         Args:
             a:
-                [*, N_res, C_token] Token-level embedding
+                [*, N, C_token] Token-level embedding
             s:
-                [*, N_res, C_s] Single embedding
+                [*, N, C_s] Single embedding
             z:
-                [*, N_res, N_res, C_z] Pair embedding
+                [*, N, N, C_z] Pair embedding
             mask:
-                [*, N_res] Mask for token-level embedding
+                [*, N] Mask for token-level embedding
             beta:
-                [*, N_res, N_res] Neighborhood mask. Used in Sequence-local
+                [*, N, N] Neighborhood mask. Used in Sequence-local
                 atom attention for rectangular blocks along the diagonal.
             layout:
                 [N / block_size, N / block_size] Layout config for block sparse
