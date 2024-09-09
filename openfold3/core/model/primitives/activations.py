@@ -55,7 +55,7 @@ class SwiGLU(nn.Module):
         self.swish = nn.SiLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if fa_is_installed:
+        if fa_is_installed and x.is_cuda:
             return swiglu(self.linear_a(x), self.linear_b(x))
 
         return self.swish(self.linear_a(x)) * self.linear_b(x)
