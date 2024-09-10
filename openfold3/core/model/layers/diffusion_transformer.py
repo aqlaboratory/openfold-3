@@ -139,7 +139,8 @@ class DiffusionTransformerBlock(nn.Module):
             _mask_trans:
                 Whether to mask the output of the transition layer
         """
-        b = self.attention_pair_bias(
+        # Note: Differs from SI, residual connection added.
+        a = a + self.attention_pair_bias(
             a=a,
             z=z,
             s=s,
@@ -152,7 +153,10 @@ class DiffusionTransformerBlock(nn.Module):
         )
 
         trans_mask = mask if _mask_trans else None
-        a = b + self.conditioned_transition(
+
+        # Note: Differs from SI, updated a_i from AttentionPairBias is used
+        # instead of previous a_i.
+        a = a + self.conditioned_transition(
             a=a, s=s, mask=trans_mask, chunk_size=chunk_size
         )
 
