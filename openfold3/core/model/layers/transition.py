@@ -71,12 +71,12 @@ class ReLUTransitionLayer(nn.Module):
         """
         Args:
             x:
-                [*, N_res, C_in] Input tensor
+                [*, N, C_in] Input tensor
             mask:
-                [*, N_res] Tensor mask
+                [*, N] Tensor mask
         Returns:
             x:
-                [*, N_res, C_in] Tensor update
+                [*, N, C_in] Tensor update
         """
         for l in self.layers:
             x = l(x)
@@ -144,14 +144,14 @@ class ReLUTransition(nn.Module):
         """
         Args:
             x:
-                [*, N_res, C_in] Input activation
+                [*, N, C_in] Input activation
             mask:
-                [*, N_res] Input mask
+                [*, N] Input mask
             chunk_size
                 Chunk size for chunking the input tensor
         Returns:
             x:
-                [*, N_res, C_in] Activation update
+                [*, N, C_in] Activation update
         """
         # DISCREPANCY: DeepMind forgets to apply the mask here.
         if mask is None:
@@ -345,13 +345,17 @@ class ConditionedTransitionBlock(nn.Module):
     ) -> torch.Tensor:
         """
         Args:
-            a: [*, N_res, C_in] Input activation
-            s: [*, N_res, C_in] Input tensor to compute shift/scale
+            a:
+                [*, N, C_in] Input activation
+            s:
+                [*, N, C_in] Input tensor to compute shift/scale
             mask:
-                [*, N_res] Input mask
+                [*, N] Input mask
+            chunk_size:
+                Inference-time subbatch size
 
         Returns:
-            a [*, N_res, C_in] Activation update
+            a [*, N, C_in] Activation update
         """
         if mask is None:
             mask = a.new_ones(a.shape[:-1])

@@ -72,6 +72,7 @@ class TestDiffusionModule(unittest.TestCase):
             batch=batch,
             xl_noisy=xl_noisy,
             t=t,
+            token_mask=batch["token_mask"],
             atom_mask=atom_mask,
             si_input=si_input,
             si_trunk=si_trunk,
@@ -126,6 +127,7 @@ class TestDiffusionModule(unittest.TestCase):
         xl = dm(
             batch=batch,
             xl_noisy=xl_noisy,
+            token_mask=batch["token_mask"],
             atom_mask=atom_mask,
             t=t,
             si_input=si_input,

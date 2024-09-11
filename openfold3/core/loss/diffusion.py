@@ -407,7 +407,9 @@ def diffusion_loss(
         k: torch.mean(v).detach().clone() for k, v in loss_breakdown.items()
     }
 
-    w = (t**2 + sigma_data**2) / (t + sigma_data) ** 2
+    # TODO: Changed from SI, denominator (t + sigma_data) ** 2 changed
+    #  to (t * sigma_data) ** 2. Test whether this is works as expected.
+    w = (t**2 + sigma_data**2) / (t * sigma_data) ** 2
     l = w * (l_mse + l_bond) + l_smooth_lddt
 
     mean_loss = torch.mean(l)

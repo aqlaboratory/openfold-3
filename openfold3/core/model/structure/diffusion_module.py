@@ -165,12 +165,16 @@ class DiffusionModule(nn.Module):
         self,
         batch: Dict,
         xl_noisy: torch.Tensor,
+        token_mask: torch.Tensor,
         atom_mask: torch.Tensor,
         t: torch.Tensor,
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
         chunk_size: Optional[int] = None,
+        use_deepspeed_evo_attention: bool = False,
+        use_lma: bool = False,
+        _mask_trans: bool = True,
     ) -> torch.Tensor:
         """
         Args:
@@ -178,6 +182,8 @@ class DiffusionModule(nn.Module):
                 Feature dictionary
             xl_noisy:
                 [*, N_atom, 3] Noisy atom positions
+            token_mask:
+                [*, N_token] Token mask
             atom_mask:
                 [*, N_atom] Atom mask
             t:
@@ -190,6 +196,12 @@ class DiffusionModule(nn.Module):
                 [*, N_token, c_s] Pair representation
             chunk_size:
                 Inference-time subbatch size
+            use_deepspeed_evo_attention:
+                Whether to use DeepSpeed Evo Attention kernel
+            use_lma:
+                Whether to use LMA
+            _mask_trans:
+                Whether to mask the output of the transition layer
         Returns:
             [*, N_atom, 3] Denoised atom positions
         """
@@ -211,7 +223,14 @@ class DiffusionModule(nn.Module):
         ai = ai + self.linear_s(self.layer_norm_s(si))
 
         ai = self.diffusion_transformer(
-            a=ai, s=si, z=zij, mask=batch["token_mask"], chunk_size=chunk_size
+            a=ai,
+            s=si,
+            z=zij,
+            mask=token_mask,
+            chunk_size=chunk_size,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_lma=use_lma,
+            _mask_trans=_mask_trans,
         )
 
         ai = self.layer_norm_a(ai)
@@ -280,6 +299,9 @@ class SampleDiffusion(nn.Module):
         zij_trunk: torch.Tensor,
         noise_schedule: torch.Tensor,
         chunk_size: Optional[int] = None,
+        use_deepspeed_evo_attention: bool = False,
+        use_lma: bool = False,
+        _mask_trans: bool = True,
     ) -> torch.Tensor:
         """
         Args:
@@ -295,6 +317,12 @@ class SampleDiffusion(nn.Module):
                 [no_rollout_steps] Noise schedule
             chunk_size:
                 Inference-time subbatch size
+            use_deepspeed_evo_attention:
+                Whether to use DeepSpeed Evo Attention kernel
+            use_lma:
+                Whether to use LMA
+            _mask_trans:
+                Whether to mask the output of the transition layer
         Returns:
             [*, N_atom, 3] Sampled atom positions
         """
@@ -326,12 +354,16 @@ class SampleDiffusion(nn.Module):
             xl_denoised = self.diffusion_module(
                 batch=batch,
                 xl_noisy=xl_noisy,
+                token_mask=batch["token_mask"],
                 atom_mask=atom_mask,
                 t=t.to(xl_noisy.device),
                 si_input=si_input,
                 si_trunk=si_trunk,
                 zij_trunk=zij_trunk,
                 chunk_size=chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_lma=use_lma,
+                _mask_trans=_mask_trans,
             )
 
             delta = (xl - xl_denoised) / t
