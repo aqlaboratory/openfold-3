@@ -392,6 +392,7 @@ config = mlc.ConfigDict(
                 "rna_weight": 5.0,
                 "ligand_weight": 10.0,
                 "eps": eps,
+                "chunk_size": None,  # 16 for 40GB GPUs
             },
             "distogram": {
                 "no_bins": 64,

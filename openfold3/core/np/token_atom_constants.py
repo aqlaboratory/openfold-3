@@ -87,10 +87,10 @@ AA_NAME_TO_ATOM_NAMES = {
     ],
     "TYR": ["N", "CA", "C", "O", "CB", "CG", "CD1", "CD2", "CE1", "CE2", "CZ", "OH"],
     "VAL": ["N", "CA", "C", "O", "CB", "CG1", "CG2"],
-    "UNK": ["N", "CA", "C", "O", "CB", "CG", "OXT"],
+    "UNK": ["N", "CA", "C", "O", "CB", "CG"],
 }
 
-NUCLEOTIDE_BACKBONE_ATOMS = [
+RNA_BACKBONE_ATOMS = [
     "P",
     "OP1",
     "OP2",
@@ -102,6 +102,20 @@ NUCLEOTIDE_BACKBONE_ATOMS = [
     "O3'",
     "C2'",
     "O2'",
+    "C1'",
+]
+
+DNA_BACKBONE_ATOMS = [
+    "P",
+    "OP1",
+    "OP2",
+    "O5'",
+    "C5'",
+    "C4'",
+    "O4'",
+    "C3'",
+    "O3'",
+    "C2'",
     "C1'",
 ]
 
@@ -119,8 +133,10 @@ NUCLEOTIDE_ATOMS = {
 }
 
 NUCLEOTIDE_NAME_TO_ATOM_NAMES = {
-    n: NUCLEOTIDE_BACKBONE_ATOMS + a for n, a in NUCLEOTIDE_ATOMS.items()
+    n: (RNA_BACKBONE_ATOMS + a if n in RNA_NUCLEOTIDE_TYPES else DNA_BACKBONE_ATOMS + a)
+    for n, a in NUCLEOTIDE_ATOMS.items()
 }
+
 
 TOKEN_NAME_TO_ATOM_NAMES = {
     **AA_NAME_TO_ATOM_NAMES,

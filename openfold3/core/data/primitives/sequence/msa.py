@@ -862,7 +862,7 @@ def apply_crop_to_msa(
     else:
         # When there are no protein or RNA chains
         n_rows = 1
-        n_rows_paired_cropped = 1
+        n_rows_paired_cropped = 0
         msa_processed = np.full([n_rows, token_budget], "-")
         deletion_matrix_processed = np.zeros([n_rows, token_budget])
         msa_mask = np.zeros([n_rows, token_budget])
@@ -873,7 +873,7 @@ def apply_crop_to_msa(
         msa=msa_processed,
         deletion_matrix=deletion_matrix_processed,
         metadata=pd.DataFrame(),
-        n_rows_paired=n_rows_paired_cropped,
+        n_rows_paired=n_rows_paired_cropped + 1,
         msa_mask=msa_mask,
         msa_profile=msa_profile,
         deletion_mean=deletion_mean,
