@@ -613,21 +613,29 @@ class MSAModuleEmbedder(nn.Module):
         # All uniprot seqs are in the final MSA representation.
         num_paired_seqs = int(batch["num_paired_seqs"].item())
         num_main_msa_seqs = total_msa_seq - num_paired_seqs
-        split_sections = [num_paired_seqs, num_main_msa_seqs]
-        uniprot_msa, main_msa = torch.split(msa_feat, split_sections, dim=-3)
-        uniprot_msa_mask, main_msa_mask = torch.split(msa_mask, split_sections, dim=-2)
 
-        # Sample Uniform[1, num_main_msa_seqs] sequences from the main MSA
-        n_seq_sample = torch.randint(low=1, high=num_main_msa_seqs, size=(1,)).item()
-        index_order = torch.randperm(num_main_msa_seqs, device=msa_feat.device)
-        index_order = index_order[:n_seq_sample]
+        if num_main_msa_seqs > 0:
+            split_sections = [num_paired_seqs, num_main_msa_seqs]
+            uniprot_msa, main_msa = torch.split(msa_feat, split_sections, dim=-3)
+            uniprot_msa_mask, main_msa_mask = torch.split(
+                msa_mask, split_sections, dim=-2
+            )
 
-        main_msa = torch.index_select(main_msa, dim=-3, index=index_order)
-        main_msa_mask = torch.index_select(main_msa_mask, dim=-2, index=index_order)
+            # Sample Uniform[1, num_main_msa_seqs] sequences from the main MSA
+            n_seq_sample = torch.randint(
+                low=1, high=num_main_msa_seqs, size=(1,)
+            ).item()
+            index_order = torch.randperm(num_main_msa_seqs, device=msa_feat.device)
+            index_order = index_order[:n_seq_sample]
 
-        # Combine uniprot and sampled main MSA sequences
-        sampled_msa = torch.cat([uniprot_msa, main_msa], dim=-3)
-        msa_mask = torch.cat([uniprot_msa_mask, main_msa_mask], dim=-2)
+            main_msa = torch.index_select(main_msa, dim=-3, index=index_order)
+            main_msa_mask = torch.index_select(main_msa_mask, dim=-2, index=index_order)
+
+            # Combine uniprot and sampled main MSA sequences
+            sampled_msa = torch.cat([uniprot_msa, main_msa], dim=-3)
+            msa_mask = torch.cat([uniprot_msa_mask, main_msa_mask], dim=-2)
+        else:
+            sampled_msa = msa_feat
 
         m = self.linear_m(sampled_msa)
         m = m + self.linear_s_input(s_input).unsqueeze(-3)
