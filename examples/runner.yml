@@ -23,11 +23,11 @@ pl_trainer:
   log_every_n_steps: 25
 
 config_update:
-  architecture:
-    loss_module: 
-      confidence:
+  model:
+    architecture:
+      loss_module: 
         diffusion:
-          chunk_size: 24
+          chunk_size: 16 
 
 dataset_paths:
   weighted-pdb:

@@ -44,6 +44,7 @@ class TestAF3Model(unittest.TestCase):
 
         config.settings.use_deepspeed_evo_attention = use_deepspeed_evo_attention
         config.settings.use_block_sparse_attn = use_block_sparse
+        config.architecture.loss_module.diffusion.chunk_size = 16
 
         config.architecture.heads.pae.enabled = True
 
@@ -185,9 +186,9 @@ class TestAF3Model(unittest.TestCase):
                 use_block_sparse=True,
             )
 
-    @unittest.skip(
-        "Manually enable this for now, will add flag to run slow tests later."
-    )
+    # @unittest.skip(
+    # "Manually enable this for now, will add flag to run slow tests later."
+    # )
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
     def test_shape_large_bf16_train(self):
