@@ -53,7 +53,6 @@ config = mlc.ConfigDict(
             "sigma_data": sigma_data,
             "no_cycles": 4,
             "no_samples": no_samples,
-            "no_rollout_steps": no_rollout_steps,
             "diffusion_training_enabled": diffusion_training_enabled,
             "blocks_per_ckpt": blocks_per_ckpt,
             "chunk_size": chunk_size,
@@ -256,16 +255,18 @@ config = mlc.ConfigDict(
                     "use_reentrant": False,
                 },
             },
-            "sample_diffusion": {
-                "gamma_0": 0.8,
-                "gamma_min": 1.0,
-                "noise_scale": 1.003,
-                "step_scale": 1.5,
+            "noise_schedule": {
                 "no_rollout_steps": no_rollout_steps,
                 "sigma_data": sigma_data,
                 "s_max": 160.0,
                 "s_min": 4e-4,
                 "p": 7,
+            },
+            "sample_diffusion": {
+                "gamma_0": 0.8,
+                "gamma_min": 1.0,
+                "noise_scale": 1.003,
+                "step_scale": 1.5,
             },
             "heads": {
                 "max_atoms_per_token": max_atoms_per_token,
@@ -391,6 +392,7 @@ config = mlc.ConfigDict(
                 "rna_weight": 5.0,
                 "ligand_weight": 10.0,
                 "eps": eps,
+                "chunk_size": None,  # 16 for 40GB GPUs
             },
             "distogram": {
                 "no_bins": 64,

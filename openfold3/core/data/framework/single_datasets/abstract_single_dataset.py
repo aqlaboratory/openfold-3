@@ -70,28 +70,26 @@ class SingleDataset(ABC, Dataset):
     A child class of SingleDataset
         - must be decorated with the register_dataset decorator
         - must implement the __getitem__ method
+        - must implement the dataset_cache property
         - must implement the datapoint_cache property
-        - may overwrite the calculate_datapoint_probabilities method.
     """
 
     def __init__(self) -> None:
         if not self.__class__._registered:
             raise DatasetNotRegisteredError(self.__class__.__name__)
 
-    @property
-    @abstractmethod
-    def datapoint_cache(self):
-        """Attribute storing the data cache for the Dataset."""
-        pass
+    def __post_init__(self) -> None:
+        if self.dataset_cache is None:
+            raise ValueError(
+                f"No dataset_cache was created for {self.get_class_name()}. "
+                "Assign this attribute in the __init__ of this class."
+            )
 
-    def calculate_datapoint_probabilities(self) -> float:
-        """Calculates datapoint probabilities for stochastic sampling.
-
-        Datapoint probabilities are calculated from the self.data_cache attribute and
-        are used in the StochasticSamplerDataset class. By default datapoints are
-        sampled uniformly."""
-
-        self.datapoint_probabilities = 1 / len(self.data_cache)
+        if self.datapoint_cache is None:
+            raise ValueError(
+                f"No datapoint_cache was created for {self.get_class_name()}. "
+                "Assign this attribute in the __init__ of this class."
+            )
 
     def get_class_name(self) -> str:
         """Returns the name of the class."""

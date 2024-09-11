@@ -1,1 +1,61 @@
-"""This module contains SampleProcessingPipelines for structural features."""
+"""This module contains pipelines for processing structural features on-the-fly."""
+
+from pathlib import Path
+from typing import Optional
+
+from biotite.structure import AtomArray
+
+from openfold3.core.data.io.structure.cif import parse_mmcif
+from openfold3.core.data.primitives.structure.cropping import apply_crop
+from openfold3.core.data.primitives.structure.duplicate_expansion import (
+    expand_duplicate_chains,
+)
+from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
+
+
+def process_target_structure_af3(
+    target_structures_directory: Path,
+    pdb_id: str,
+    crop_weights: dict[str, float],
+    token_budget: int,
+    preferred_chain_or_interface: str,
+    ciftype: Optional[str] = ".bcif",
+) -> tuple[AtomArray, AtomArray]:
+    """AF3 pipeline for processing target structure into AtomArrays.
+
+    Args:
+        target_structures_directory (Path):
+            Path to the directory containing the directories of target structure files.
+        pdb_id (str):
+            PDB ID of the target structure.
+        crop_weights (dict[str, float]):
+            Dataset-specific weights for each cropping strategy.
+        token_budget (int):
+            Crop size.
+        preferred_chain_or_interface (str):
+            Sampled preferred chain or interface to sample the crop around.
+        ciftype (Optional[str], optional):
+            File extension of the target structure. One of .cif, .bcif.
+
+    Returns:
+        tuple[AtomArray, AtomArray]:
+            Tuple of two atom arrays:
+            - Atoms inside the crop.
+            - Ground truth atoms expanded for chain permutation alignment.
+    """
+    # Parse target structure
+    _, atom_array = parse_mmcif(
+        file_path=target_structures_directory / pdb_id / f"{pdb_id}{ciftype}",
+        expand_bioassembly=False,
+        include_bonds=True,
+        renumber_chain_ids=False,
+    )
+
+    # Tokenize
+    tokenize_atom_array(atom_array=atom_array)
+
+    # Crop and pad
+    apply_crop(atom_array, token_budget, preferred_chain_or_interface, crop_weights)
+
+    # Expand duplicate chains
+    return expand_duplicate_chains(atom_array)

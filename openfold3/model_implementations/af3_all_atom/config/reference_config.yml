@@ -28,4 +28,6 @@ finetune3:
 eval:
   globals:
     diffusion_training_enabled: False
-    no_rollout_steps: 200
+  model:
+    noise_schedule:
+      no_rollout_steps: 200
