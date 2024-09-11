@@ -39,7 +39,7 @@ from openfold3.core.utils.trace_utils import (
     pad_feature_dict_seq,
     trace_model_,
 )
-from openfold3.model_implementations.af2_monomer.config import model_config
+from openfold3.model_implementations import registry
 from scripts.precompute_embeddings import EmbeddingGenerator
 from scripts.utils import add_data_args
 
@@ -175,11 +175,16 @@ def main(args):
     if args.config_preset.startswith("seq"):
         args.use_single_seq_mode = True
 
-    config = model_config(
-        args.config_preset,
-        long_sequence_inference=args.long_sequence_inference,
-        use_deepspeed_evoformer_attention=args.use_deepspeed_evoformer_attention,
-    )
+    # TODO: In new configs, add eval preset for monomer/multimer
+    is_multimer = "multimer" in args.config_preset
+    model_name = "af2_monomer" if not is_multimer else "af2_multimer"
+    config = registry.make_config_with_preset(model_name, args.config_preset)
+
+    # config = model_config(
+    #     args.config_preset,
+    #     long_sequence_inference=args.long_sequence_inference,
+    #     use_deepspeed_evoformer_attention=args.use_deepspeed_evoformer_attention,
+    # )
 
     if args.experiment_config_json:
         with open(args.experiment_config_json) as f:
@@ -195,8 +200,6 @@ def main(args):
         raise ValueError(
             "Tracing requires that fixed_size mode be enabled in the config"
         )
-
-    is_multimer = "multimer" in args.config_preset
 
     if is_multimer:
         template_featurizer = templates.HmmsearchHitFeaturizer(

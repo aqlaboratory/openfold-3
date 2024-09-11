@@ -15,14 +15,18 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
-from openfold3.core.data.data_modules import (
+from openfold3.core.data.legacy.data_modules import (
     OpenFoldDataModule,
     OpenFoldMultimerDataModule,
 )
-from openfold3.core.loss.loss import AlphaFoldLoss, lddt_ca
-from openfold3.core.metrics.validaiton_all_atom import get_validation_metrics #delete
+from openfold3.core.loss.loss_module import AlphaFoldLoss
+from openfold3.core.metrics.validation import (
+    drmsd,
+    gdt_ha,
+    gdt_ts,
+    lddt_ca,
+)
 from openfold3.core.np import residue_constants
-from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms #delete
 from openfold3.core.utils.callbacks import (
     EarlyStoppingVerbose,
     PerformanceLoggingCallback,
@@ -37,7 +41,7 @@ from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation
 from openfold3.core.utils.superimposition import superimpose
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.core.utils.torchscript import script_preset_
-from openfold3.model_implementations.af2_monomer.config import model_config
+from openfold3.model_implementations import registry
 from openfold3.model_implementations.af2_monomer.model import AlphaFold
 
 
@@ -164,77 +168,54 @@ class OpenFoldWrapper(pl.LightningModule):
     def _compute_validation_metrics(
         self, batch, outputs, superimposition_metrics=False
     ):
-        ### DELETE: now at a new place. 
         metrics = {}
 
-        gt_coords = batch["ref_pos"]
-        pred_coords = outputs["x_pred"]
-        all_atom_mask = batch["ref_mask"]
-        token_mask = batch["token_mask"]
-        num_atoms_per_token = batch["num_atoms_per_token"]
+        gt_coords = batch["all_atom_positions"]
+        pred_coords = outputs["final_atom_positions"]
+        all_atom_mask = batch["all_atom_mask"]
 
-        #broadcast token level features to atom level
-        is_protein_atomized = broadcast_token_feat_to_atoms(token_mask, 
-                                                            num_atoms_per_token, 
-                                                            batch['is_protein'])
-        is_ligand_atomized = broadcast_token_feat_to_atoms(token_mask, 
-                                                           num_atoms_per_token, 
-                                                           batch['is_ligand'])
-        is_rna_atomized = broadcast_token_feat_to_atoms(token_mask, 
-                                                        num_atoms_per_token, 
-                                                        batch['is_rna'])
-        is_dna_atomized = broadcast_token_feat_to_atoms(token_mask, 
-                                                        num_atoms_per_token, 
-                                                        batch['is_dna'])
-        entity_id_atomized = broadcast_token_feat_to_atoms(token_mask, 
-                                                           num_atoms_per_token, 
-                                                           batch['entity_id'])
-        protein_idx = torch.nonzero(is_protein_atomized).squeeze(-1)
+        # This is super janky for superimposition. Fix later
+        gt_coords_masked = gt_coords * all_atom_mask[..., None]
+        pred_coords_masked = pred_coords * all_atom_mask[..., None]
+        ca_pos = residue_constants.atom_order["CA"]
+        gt_coords_masked_ca = gt_coords_masked[..., ca_pos, :]
+        pred_coords_masked_ca = pred_coords_masked[..., ca_pos, :]
+        all_atom_mask_ca = all_atom_mask[..., ca_pos]
 
-        #get metrics
-        protein_validation_metrics = get_validation_metrics(is_protein_atomized, 
-                                                            entity_id_atomized,
-                                                            pred_coords, 
-                                                            gt_coords, 
-                                                            all_atom_mask,
-                                                            protein_idx,
-                                                            ligand_type = 'protein',
-                                                            is_nucleic_acid = False,
-                                                            )
-        metrics = metrics | protein_validation_metrics
+        lddt_ca_score = lddt_ca(
+            pred_coords,
+            gt_coords,
+            all_atom_mask,
+            eps=self.config.globals.eps,
+            per_residue=False,
+        )
 
-        ligand_validation_metrics = get_validation_metrics(is_ligand_atomized, 
-                                                           entity_id_atomized,
-                                                           pred_coords, 
-                                                           gt_coords, 
-                                                           all_atom_mask,
-                                                           protein_idx,
-                                                           ligand_type = 'ligand',
-                                                           is_nucleic_acid = False,
-                                                           )
-        metrics = metrics | ligand_validation_metrics 
+        metrics["lddt_ca"] = lddt_ca_score
 
-        rna_validation_metrics = get_validation_metrics(is_rna_atomized, 
-                                                        entity_id_atomized,
-                                                        pred_coords, 
-                                                        gt_coords, 
-                                                        all_atom_mask,
-                                                        protein_idx,
-                                                        ligand_type = 'rna',
-                                                        is_nucleic_acid = True,
-                                                        )
-        metrics = metrics | rna_validation_metrics
+        drmsd_ca_score = drmsd(
+            pred_coords_masked_ca,
+            gt_coords_masked_ca,
+            mask=all_atom_mask_ca,  # still required here to compute n
+        )
 
-        dna_validation_metrics = get_validation_metrics(is_dna_atomized, 
-                                                        entity_id_atomized,
-                                                        pred_coords, 
-                                                        gt_coords, 
-                                                        all_atom_mask,
-                                                        protein_idx,
-                                                        ligand_type = 'dna',
-                                                        is_nucleic_acid = True,
-                                                        )
-        metrics = metrics | dna_validation_metrics
+        metrics["drmsd_ca"] = drmsd_ca_score
+
+        if superimposition_metrics:
+            superimposed_pred, alignment_rmsd = superimpose(
+                gt_coords_masked_ca,
+                pred_coords_masked_ca,
+                all_atom_mask_ca,
+            )
+            gdt_ts_score = gdt_ts(
+                superimposed_pred, gt_coords_masked_ca, all_atom_mask_ca
+            )
+            gdt_ha_score = gdt_ha(
+                superimposed_pred, gt_coords_masked_ca, all_atom_mask_ca
+            )
+
+            metrics["alignment_rmsd"] = alignment_rmsd
+            metrics["gdt_ts"] = gdt_ts_score
+            metrics["gdt_ha"] = gdt_ha_score
 
         return metrics
 
@@ -284,11 +265,6 @@ class OpenFoldWrapper(pl.LightningModule):
         model_version = "_".join(model_basename.split("_")[1:])
         import_jax_weights_(self.model, jax_path, version=model_version)
 
-    def on_train_epoch_start(self) -> None:
-        """Resample epoch_len number of samples for the training datasets at the start
-        of each epoch."""
-        self.trainer.train_dataloader.dataset.resample_epoch()
-
 
 def get_model_state_dict_from_ds_checkpoint(checkpoint_dir):
     latest_path = os.path.join(checkpoint_dir, "latest")
@@ -310,20 +286,26 @@ def main(args):
     if args.seed is not None:
         seed_everything(args.seed, workers=True)
 
-    is_low_precision = args.precision in [
-        "bf16-mixed",
-        "16",
-        "bf16",
-        "16-true",
-        "16-mixed",
-        "bf16-mixed",
-    ]
+    # TODO: In new configs, add training preset for monomer/multimer
+    is_multimer = "multimer" in args.config_preset
+    model_name = "af2_monomer" if not is_multimer else "af2_multimer"
+    config = registry.make_config_with_preset(model_name, args.config_preset)
 
-    config = model_config(
-        args.config_preset,
-        train=True,
-        low_prec=is_low_precision,
-    )
+    # is_low_precision = args.precision in [
+    #     "bf16-mixed",
+    #     "16",
+    #     "bf16",
+    #     "16-true",
+    #     "16-mixed",
+    #     "bf16-mixed",
+    # ]
+    #
+    # config = model_config(
+    #     args.config_preset,
+    #     train=True,
+    #     low_prec=is_low_precision,
+    # )
+
     if args.experiment_config_json:
         with open(args.experiment_config_json) as f:
             custom_config_dict = json.load(f)
