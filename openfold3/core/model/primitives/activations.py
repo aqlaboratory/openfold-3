@@ -30,7 +30,6 @@ if fa_is_installed:
     from flash_attn.ops.activations import swiglu
 
 
-# TODO: Add optimized version, maybe use the op in flash attention
 class SwiGLU(nn.Module):
     """SwiGLU activation function."""
 
