@@ -24,7 +24,7 @@ from openfold3.core.data.resources.lists import (
 from openfold3.core.data.resources.patches import construct_atom_array
 from openfold3.core.data.resources.residues import (
     STANDARD_NUCLEIC_ACID_RESIDUES,
-    STANDARD_PROTEIN_RESIDUES,
+    STANDARD_PROTEIN_RESIDUES_3,
     MoleculeType,
 )
 
@@ -553,7 +553,7 @@ def remove_std_residue_terminal_atoms(atom_array: AtomArray) -> AtomArray:
 
     terminal_atom_mask = np.zeros(len(atom_array), dtype=bool)
 
-    std_protein_residues = set(STANDARD_PROTEIN_RESIDUES)
+    std_protein_residues = set(STANDARD_PROTEIN_RESIDUES_3)
     std_nucleic_acid_residues = set(STANDARD_NUCLEIC_ACID_RESIDUES)
 
     # Iterate through all chains
