@@ -120,7 +120,8 @@ def cleanup_structure_af3(
     # Add unresolved atoms explicitly with NaN coordinates
     atom_array = add_unresolved_atoms(atom_array, cif_data, ccd)
 
-    # Remove terminal atoms to ensure consistent atom count for standard tokens
+    # Remove terminal atoms to ensure consistent atom count for standard tokens in the
+    # model
     atom_array = remove_std_residue_terminal_atoms(atom_array)
 
     return atom_array
@@ -130,10 +131,21 @@ def cleanup_structure_af3(
 def extract_chain_and_interface_metadata_af3(
     atom_array: AtomArray, cif_data: CIFBlock
 ) -> dict:
-    """Extracts chain and interface metadata from a structure.
+    """Extracts basic, chain and interface metadata from a structure.
 
-    This extracts all individual chains and interfaces from a structure and annotates
-    the chains with their different IDs in the structure, as well as the molecule type
+    This extracts general metadata from the structure, as well as chain-level metadata
+    and interface-level metadata.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to extract metadata from
+        cif_data:
+            Parsed mmCIF data of the structure. Note that this expects a CIFBlock which
+            requires one prior level of indexing into the CIFFile, (see
+            `metadata_extraction.get_cif_block`)
+
+    Returns:
+        dict containing the extracted metadata
     """
 
     metadata_dict = {}
@@ -164,7 +176,7 @@ def extract_chain_and_interface_metadata_af3(
             "molecule_type": chain_to_molecule_type[chain_id],
         }
 
-    metadata_dict["interface_cluster_sizes"] = get_interface_chain_id_pairs(
+    metadata_dict["interfaces"] = get_interface_chain_id_pairs(
         atom_array, distance_threshold=5.0
     )
 
@@ -176,9 +188,40 @@ def extract_component_data_af3(
     ccd: CIFFile,
     pdb_id: str,
     sdf_out_dir: Path,
-    skip_components: set | None = None,
+    skip_components: set | SharedSet | None = None,
 ) -> tuple[dict, dict]:
-    """Extracts component data from a structure."""
+    """Extracts component data from a structure.
+
+    This extraxts all "components" from a structure, which are standard residues,
+    standard ligands, and non-standard (multi-residue or any ligand that can not be
+    represented by a single CCD code) ligands. For each unique component, an RDKit
+    reference molecule is created alongside a fallback conformer that is either computed
+    using RDKit's reference conformer generation (see AF3 SI 2.8), or taken from the
+    "ideal" or "model" CCD coordinates.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to extract components from
+        ccd:
+            CIFFile containing the parsed CCD (components.cif)
+        pdb_id:
+            PDB ID of the structure
+        sdf_out_dir:
+            Directory to write the reference molecule SDF files to
+        skip_components:
+            Set of components to skip, if any (useful to avoid repeated processing of
+            components e.g. by using a SharedSet)
+
+    Returns:
+        Tuple containing:
+            - A dictionary mapping chain IDs to the corresponding component IDs.
+                Component IDs are either CCD codes or formatted as
+                "{pdb_id}_{entity_id}" for non-standard ligands.
+            - A dictionary containing metadata for each component:
+                - "conformer_gen_strategy": The strategy used to generate the conformer
+                - "fallback_conformer_pdb_id": The PDB ID of the fallback conformer
+                - "canonical_smiles": The canonical SMILES of the component
+    """
 
     def get_reference_molecule_metadata(
         mol: AnnotatedMol,
@@ -273,16 +316,66 @@ def extract_component_data_af3(
     return chain_to_component_id, reference_mol_metadata
 
 
-# TODO: write docstring and more comments
 def preprocess_structure_and_write_outputs_af3(
     input_cif: Path,
     ccd: CIFFile,
     out_dir: Path,
     reference_mol_out_dir: Path,
     max_polymer_chains: int | None = None,
-    skip_components: set | None = None,
+    skip_components: set | SharedSet | None = None,
     write_additional_cifs: bool = False,
 ) -> tuple[dict, dict]:
+    """Wrapper function to preprocess a single structure for the AF3 data pipeline.
+
+    This will parse the input CIF file, clean up the structure, extract metadata, and
+    write out the cleaned-up structure to a binary CIF file, as well as all the sequence
+    information to a FASTA file.
+
+    Args:
+        input_cif:
+            Path to the input CIF file.
+        ccd:
+            CIFFile containing the parsed CCD (components.cif)
+        out_dir:
+            Path to the output directory.
+        reference_mol_out_dir:
+            Path to the output directory that reference molecule SDF files (specifying
+            the molecular graph for each ligand as well as a fallback conformer for use
+            in featurization) are written to.
+        max_polymer_chains:
+            The maximum number of polymer chains in the first bioassembly after which a
+            structure is skipped by the parser.
+        skip_components:
+            A set of components to skip, if any. Useful to avoid repeated processing of
+            components e.g. by using a SharedSet.
+        write_additional_cifs:
+            Whether to additionally write normal .cif files on top of the binary .bcif
+            files, which can be helpful for manual inspection.
+
+    Returns:
+        Tuple containing:
+            - A dictionary containing the structure metadata, including chain-level
+                metadata and interface metadata:
+                pdb_id: {
+                    "release_date": str,
+                    "resolution": float,
+                    "token_count": int,
+                    "chains": {
+                        chain_id: {
+                            "label_asym_id": str,
+                            "auth_asym_id": str,
+                            "entity_id": int,
+                            "molecule_type": str,
+                            "reference_mol_id": str
+                        },
+                    "interfaces": [(chain_id1, chain_id2), ...]
+                }
+            - A dictionary containing metadata for each component:
+                - "conformer_gen_strategy": The strategy used to generate the conformer
+                - "fallback_conformer_pdb_id": The PDB ID of the fallback conformer
+                - "canonical_smiles": The canonical SMILES of the component
+    """
+    # Parse the input CIF file
     parsed_mmcif = parse_mmcif(
         input_cif,
         expand_bioassembly=True,
@@ -290,13 +383,14 @@ def preprocess_structure_and_write_outputs_af3(
         renumber_chain_ids=True,
         max_polymer_chains=max_polymer_chains,
     )
-
     cif_file = parsed_mmcif.cif_file
 
+    # Basic structure-level metadata
     cif_data = get_cif_block(cif_file)
     pdb_id = get_pdb_id(cif_file)
     release_date = get_release_date(cif_data).strftime("%Y-%m-%d")
 
+    # Handle structures that got skipped due to max_polymer_chains
     if isinstance(parsed_mmcif, SkippedStructure):
         logger.info(
             f"Skipping structure with more than {max_polymer_chains} polymer chains."
@@ -312,6 +406,7 @@ def preprocess_structure_and_write_outputs_af3(
     else:
         atom_array = parsed_mmcif.atom_array
 
+    # Cleanup structure and extract metadata
     atom_array = cleanup_structure_af3(atom_array, cif_data, ccd)
     chain_int_metadata_dict = extract_chain_and_interface_metadata_af3(
         atom_array, cif_data
@@ -325,7 +420,7 @@ def preprocess_structure_and_write_outputs_af3(
         skip_components=skip_components,
     )
 
-    # Add chain to ligand ID mapping to metadata
+    # Add chain-to-ligand-ID mapping to metadata
     for chain_id, ligand_id in chain_to_ligand_ids.items():
         chain_int_metadata_dict["chains"][chain_id]["reference_mol_id"] = ligand_id
 
@@ -337,6 +432,7 @@ def preprocess_structure_and_write_outputs_af3(
         }
     }
 
+    # Get canonicalized sequence for each chain (should match PDB SeqRes)
     chain_to_canonical_seq = get_chain_to_canonical_seq_dict(atom_array, cif_data)
 
     # Write CIF and FASTA outputs
@@ -490,6 +586,7 @@ def preprocess_cif_dir_af3(
         "reference_molecule_data": {},
     }
 
+    # Set up output directories
     reference_mol_out_dir = out_dir / "reference_mols"
     reference_mol_out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -498,8 +595,6 @@ def preprocess_cif_dir_af3(
 
     cif_output_dirs = []
 
-    # Pre-resolve CIF-output dirs
-    logger.debug("Finding cif output directories")
     for cif_file in tqdm(cif_files):
         pdb_id = cif_file.stem
         out_subdir = cif_out_dir / pdb_id
