@@ -22,12 +22,11 @@ def tokenize_atom_array(atom_array: AtomArray):
     biotite atom_array.
 
     Tokenizes the input atom array according to section 2.6. in the AF3 SI. The
-    tokenization is added to the input atom array as 'token_id' annotation alongside
-    'token_center_atom' and '_atom_idx' annotations.
+    tokenization is added to the input atom array as a 'token_id' annotation alongside
+    'token_center_atom' and 'is_atomized' annotations.
 
     Args:
-        atom_array (AtomArray): biotite atom array of the first bioassembly of a PDB
-        entry
+        atom_array (AtomArray): AtomArray to be tokenized.
 
     Returns:
         None
