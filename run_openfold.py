@@ -16,10 +16,6 @@ from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 import wandb
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModule
-from openfold3.core.utils.callbacks import (
-    EarlyStoppingVerbose,
-    PerformanceLoggingCallback,
-)
 from openfold3.projects import registry
 
 
@@ -101,35 +97,6 @@ def main(args):
                 every_n_epochs=1,
                 auto_insert_metric_name=False,
                 save_top_k=-1,
-            )
-        )
-
-    if runner_args.get("early_stopping"):
-        # TODO check if works/necessary
-        callbacks.append(
-            EarlyStoppingVerbose(
-                monitor="val/lddt_ca",
-                min_delta=args.min_delta,
-                patience=args.patience,
-                verbose=False,
-                mode="max",
-                check_finite=True,
-                strict=True,
-            )
-        )
-
-    if runner_args.get("log_performance"):
-        global_batch_size = (
-            args.batch_size
-            * args.gpus
-            * args.num_nodes
-            * args.gradient_accumulation_steps
-        )
-        # TODO check if works/necessary
-        callbacks.append(
-            PerformanceLoggingCallback(
-                log_file=os.path.join(args.output_dir, "performance_log.json"),
-                global_batch_size=global_batch_size,
             )
         )
 
