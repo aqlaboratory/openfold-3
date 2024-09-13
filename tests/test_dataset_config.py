@@ -110,8 +110,11 @@ class TestDefaultDatasetConfigConstruction:
 
         assert len(dataset_configs) == 2
 
-        dataset_1_cfg = dataset_configs[0]
-        dataset_2_cfg = dataset_configs[1]
+        # TODO: Implement a full comparison of the expected configdicts
+        if dataset_configs[0].name == "dataset1":
+            dataset_1_cfg, dataset_2_cfg = dataset_configs[0], dataset_configs[1]
+        elif dataset_configs[1].name == "dataset1":
+            dataset_1_cfg, dataset_2_cfg = dataset_configs[1], dataset_configs[0]
 
         assert dataset_1_cfg.config.dataset_paths.alignments == Path(
             "/dataset1/alignments"
