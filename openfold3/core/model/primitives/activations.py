@@ -15,6 +15,8 @@
 
 """Activation functions."""
 
+import importlib
+
 import torch
 from ml_collections import ConfigDict
 from torch import nn
@@ -23,8 +25,11 @@ import openfold3.core.config.default_linear_init_config as lin_init
 
 from .linear import Linear
 
+fa_is_installed = importlib.util.find_spec("flash_attn") is not None
+if fa_is_installed:
+    from flash_attn.ops.activations import swiglu
 
-# TODO: Add optimized version, maybe use the op in flash attention
+
 class SwiGLU(nn.Module):
     """SwiGLU activation function."""
 
@@ -50,4 +55,7 @@ class SwiGLU(nn.Module):
         self.swish = nn.SiLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if fa_is_installed and x.is_cuda:
+            return swiglu(self.linear_a(x), self.linear_b(x))
+
         return self.swish(self.linear_a(x)) * self.linear_b(x)

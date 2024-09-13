@@ -62,6 +62,11 @@ class AlphaFold3AllAtom(ModelRunner):
 
         self._log(loss_breakdown, batch, outputs, train=False)
 
+    def on_train_epoch_start(self):
+        # At the start of each virtual epoch we want to resample the set of
+        # datapoints to train on
+        self.trainer.train_dataloader.dataset.resample_epoch()
+
     def configure_optimizers(
         self,
         learning_rate: float = 1.8e-3,
