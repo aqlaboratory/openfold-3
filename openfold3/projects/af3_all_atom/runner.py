@@ -75,11 +75,14 @@ class AlphaFold3AllAtom(ModelRunner):
     def configure_optimizers(
         self,
         learning_rate: float = 1.8e-3,
-        eps: float = 1e-8,
     ) -> torch.optim.Adam:
         # Ignored as long as a DeepSpeed optimizer is configured
+        optimizer_config = self.config.settings.optimizer
         optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=learning_rate, betas=(0.9, 0.95), eps=eps
+            self.model.parameters(),
+            lr=learning_rate,
+            betas=(optimizer_config.beta1, optimizer_config.beta2),
+            eps=optimizer_config.eps,
         )
 
         if self.last_lr_step != -1:

@@ -56,11 +56,13 @@ project_config = mlc.ConfigDict(
                 "use_lma": False,
                 "offload_inference": False,
                 "optimizer": {
-                    "learning_rate": 1e-3,
-                    "eps": 1e-5,
+                    "learning_rate": 1.8e-3,
+                    "beta1": 0.9,
+                    "beta2": 0.95,
+                    "eps": 1e-8,
                 },
                 "ema": {"decay": 0.999},
-                "gradient_clipping": 0.1,
+                "gradient_clipping": 10.0,
             },
             "architecture": {
                 "shared": {

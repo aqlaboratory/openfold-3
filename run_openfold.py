@@ -74,8 +74,12 @@ def main(args):
     if runner_args.get("config_update"):
         project_config.update(runner_args.config_update)
 
+    # TODO: Implement checkpoint reloading logic
+    # Be sure to call runner.resume_last_lr_step to set the lr_step
+    if runner_args.get("restart_checkpoint_path"):
+        raise ValueError("Restarting from checkpoints is currently not supported")
+
     model_config = project_config.model
-    # TODO Make a config setting for compile later.
     lightning_module = project_entry.model_runner(
         model_config, _compile=runner_args.compile
     )
@@ -153,12 +157,15 @@ def main(args):
     IS_MULTIGPU = runner_args.get("num_gpus", 0) > 1
     IS_MULTINODE = runner_args.get("num_nodes", 1) > 1
     if runner_args.get("deepspeed_config_path"):
+        deepspeed_config = config_utils.load_json(runner_args.deepspeed_config_path)
+        # Set gradient clipping to what is specified by model_config
+        deepspeed_config["gradient_clipping"] = model_config.settings.gradient_clipping
         strategy = DeepSpeedStrategy(
             config=runner_args.deepspeed_config_path,
             cluster_environment=cluster_environment,
         )
-        if runner_args.get("wandb", 0) & IS_RANK_ZERO:
-            wandb_logger.experiment.save(runner_args.deepspeed_config_path)
+        if (runner_args.get("wandb") is not None) & IS_RANK_ZERO:
+            wandb_logger.experiment.save(deepspeed_config)
             wandb_logger.experiment.save("openfold/config.py")
     elif IS_MULTIGPU or IS_MULTINODE:
         strategy = DDPStrategy(

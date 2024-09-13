@@ -145,6 +145,21 @@ class ModelRunner(pl.LightningModule):
     def configure_optimizers(self):
         pass
 
+    def on_load_checkpoint(self, checkpoint):
+        ema = checkpoint["ema"]
+        if not self.model.template_config.enabled:
+            ema["params"] = {
+                k: v for k, v in ema["params"].items() if "template" not in k
+            }
+        self.ema.load_state_dict(ema)
+
+    def on_save_checkpoint(self, checkpoint):
+        checkpoint["ema"] = self.ema.state_dict()
+
+    def resume_last_lr_step(self, lr_step):
+        """A helper method to manually specify the lr_step."""
+        self.last_lr_step = lr_step
+
     def _compute_validation_metrics(
         self, batch, outputs, superimposition_metrics=False
     ):
