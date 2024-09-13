@@ -173,10 +173,12 @@ class AlphaFold3Loss(nn.Module):
                 batch=batch, output=output, **self.config.confidence
             )
             losses.update(l_conf_breakdown)
-            conf_loss = sum(
-                loss * loss_weights[name].item()
-                for name, loss in l_conf_breakdown.items()
-            )
+
+            conf_loss = 0.0
+            for loss_name, loss in l_conf_breakdown.items():
+                weight_name = loss_name[:-5]
+                conf_loss = conf_loss + loss * loss_weights[weight_name].item()
+
             losses["confidence_loss"] = conf_loss
             cum_loss = cum_loss + conf_loss
 

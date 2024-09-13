@@ -693,9 +693,9 @@ def confidence_loss(
     )
 
     loss_breakdown = {
-        "plddt": l_plddt,
-        "pde": l_pde,
-        "experimentally_resolved": l_resolved,
+        "plddt_loss": l_plddt,
+        "pde_loss": l_pde,
+        "experimentally_resolved_loss": l_resolved,
     }
 
     l = l_plddt + l_pde + l_resolved
@@ -714,7 +714,7 @@ def confidence_loss(
             inf=inf,
         )
 
-        loss_breakdown["pae"] = l_pae
+        loss_breakdown["pae_loss"] = l_pae
 
     loss_breakdown = {
         k: torch.mean(v).detach().clone() for k, v in loss_breakdown.items()
