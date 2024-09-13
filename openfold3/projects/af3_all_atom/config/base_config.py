@@ -474,6 +474,7 @@ project_config = mlc.ConfigDict(
                 # Custom losses will be applied as updates to the default loss
                 "custom": {
                     "self_distillation": {
+                        "experimentally_resolved": 0.0,
                         "pae": 0.0,
                         "plddt": 0.0,
                         "pde": 0.0,

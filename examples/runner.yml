@@ -47,8 +47,6 @@ dataset_configs:
       weight: 1 
       config:
         loss_weight_mode: default 
-        token_budget: 384
-        n_templates: 4
         crop_weights:
           contiguous: 0.0
           spatial: 0.6

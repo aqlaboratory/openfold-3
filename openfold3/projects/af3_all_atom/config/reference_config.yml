@@ -1,4 +1,12 @@
 finetune1:
+  model:
+    architecture:
+      shared:
+        diffusion:
+          no_samples: 32
+  dataset_config_template: 
+    config:
+      token_budget: 640
   extra_configs:
     loss_weight_modes:
       default:
@@ -8,9 +16,9 @@ finetune1:
 finetune2:
   model:
     architecture:
-      loss_module:
-        confidence:
-          pde: 64
+      shared:
+        diffusion:
+          no_samples: 32
   dataset_config_template: 
     config:
       token_budget: 768
@@ -24,6 +32,9 @@ finetune3:
     settings:
       diffusion_training_enabled: False
     architecture:
+      shared:
+        diffusion:
+          no_samples: 32
       heads:
         pae:
           enabled: True

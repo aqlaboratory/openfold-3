@@ -40,6 +40,7 @@ def _configure_wandb_logger(
         group=wandb_args.group,
         name=wandb_args.experiment_name,
         dir=output_dir,
+        save_dir=output_dir,
         resume="allow",
         reinit=True,
         id=wandb_id,
@@ -56,7 +57,6 @@ def _configure_wandb_logger(
 
 def main(args):
     runner_args = ConfigDict(config_utils.load_yaml(args.runner_yaml))
-    IS_RANK_ZERO = runner_args.mpi_plugin and (int(os.environ.get("PMI_RANK")) == 0)
 
     # Set seed
     if runner_args.get("seed"):
@@ -104,6 +104,14 @@ def main(args):
         callbacks.append(LearningRateMonitor(logging_interval="step"))
 
     loggers = []
+    if runner_args.get("mpi_plugin") and os.environ.get("PMI_RANK") is None:
+        raise ValueError(
+            "PMI_RANK is not set as an environment variable, find another way to specify rank."
+        )
+    IS_RANK_ZERO = runner_args.get("mpi_plugin") and (
+        int(os.environ.get("PMI_RANK")) == 0
+    )
+
     if runner_args.get("wandb"):
         wandb_logger = _configure_wandb_logger(
             runner_args.wandb, IS_RANK_ZERO, runner_args.output_dir
@@ -115,7 +123,10 @@ def main(args):
             os.system(f"{sys.executable} -m pip freeze > {freeze_path}")
             wandb_logger.experiment.save(f"{freeze_path}")
 
-    if runner_args.mpi_plugin:
+        # Save data module config:
+        wandb_logger.experiment.save(data_module_config)
+
+    if runner_args.get("mpi_plugin"):
         cluster_environment = MPIEnvironment()
     else:
         cluster_environment = None
@@ -148,6 +159,7 @@ def main(args):
             "strategy": strategy,
             "callbacks": callbacks,
             "logger": loggers,
+            "devices": runner_args.num_gpus,
         }
     )
 
@@ -157,7 +169,6 @@ def main(args):
     logging.info(f"Running {runner_args.mode} mode.")
     # Training + validation / profiling
     if (runner_args.mode == "train") | (runner_args.mode == "profile"):
-        ckpt_path = None
         if runner_args.mode == "profile":  # TODO Implement profiling
             raise NotImplementedError("Profiling mode not yet implemented.")
         else:
