@@ -72,8 +72,10 @@ def main(args):
 
     # TODO: Implement checkpoint reloading logic
     # Be sure to call runner.resume_last_lr_step to set the lr_step
+    # before creating the lightnign module
     if runner_args.get("restart_checkpoint_path"):
         raise ValueError("Restarting from checkpoints is currently not supported")
+    ckpt_path = None
 
     model_config = project_config.model
     lightning_module = project_entry.model_runner(
@@ -106,7 +108,8 @@ def main(args):
     loggers = []
     if runner_args.get("mpi_plugin") and os.environ.get("PMI_RANK") is None:
         raise ValueError(
-            "PMI_RANK is not set as an environment variable, find another way to specify rank."
+            "PMI_RANK is not set as an environment variable,"
+            " find another way to specify rank."
         )
     IS_RANK_ZERO = runner_args.get("mpi_plugin") and (
         int(os.environ.get("PMI_RANK")) == 0

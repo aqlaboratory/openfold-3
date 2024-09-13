@@ -2,10 +2,10 @@
 Helper functions for converting between yaml, dicts, and config dicts.
 """
 
+import json
 from pathlib import Path
 from typing import Any, Union
 
-import json
 import yaml
 
 

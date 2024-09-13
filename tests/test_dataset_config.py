@@ -1,5 +1,5 @@
-from pathlib import Path
 import textwrap
+from pathlib import Path
 
 import ml_collections as mlc
 import pytest  # noqa: F401  - used for pytest tmp fixture
