@@ -6,6 +6,7 @@ import os
 import sys
 
 import pytorch_lightning as pl
+import wandb
 from ml_collections import ConfigDict
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
@@ -13,7 +14,6 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
-import wandb
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModule
 from openfold3.projects import registry

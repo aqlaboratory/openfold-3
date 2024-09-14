@@ -169,18 +169,13 @@ class AlphaFold3Loss(nn.Module):
         cum_loss = 0.0
         losses = {}
         if confidence_weights_sum > 0:
-            _, l_conf_breakdown = confidence_loss(
+            l_confidence, l_confidence_breakdown = confidence_loss(
                 batch=batch, output=output, **self.config.confidence
             )
-            losses.update(l_conf_breakdown)
+            losses.update(l_confidence_breakdown)
 
-            conf_loss = 0.0
-            for loss_name, loss in l_conf_breakdown.items():
-                weight_name = loss_name[:-5]
-                conf_loss = conf_loss + loss * loss_weights[weight_name].item()
-
-            losses["confidence_loss"] = conf_loss
-            cum_loss = cum_loss + conf_loss
+            losses["confidence_loss"] = l_confidence.detach().clone()
+            cum_loss = cum_loss + l_confidence
 
         diffusion_weight = loss_weights["mse"]
         if diffusion_weight > 0:
@@ -194,6 +189,7 @@ class AlphaFold3Loss(nn.Module):
             )
             losses.update(l_diffusion_breakdown)
 
+            losses["diffusion_loss"] = l_diffusion.detach().clone()
             cum_loss = cum_loss + diffusion_weight.item() * l_diffusion
 
         if loss_weights["distogram"] > 0:
