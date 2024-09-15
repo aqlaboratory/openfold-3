@@ -417,7 +417,7 @@ project_config = mlc.ConfigDict(
             "mode": "Placeholder mode",
             "weight": 0.0,
             "config": {
-                "n_templates": 0,
+                "n_templates": 4,
                 "use_alignment_database": True,
                 "loss_weight_mode": "default",
                 "token_budget": 384,

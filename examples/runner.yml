@@ -46,7 +46,7 @@ dataset_configs:
       class: WeightedPDBDataset 
       weight: 1 
       config:
-        n_templates: 1
+        n_templates: 4
         loss_weight_mode: default 
         crop_weights:
           contiguous: 0.0
