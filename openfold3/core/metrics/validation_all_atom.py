@@ -2,6 +2,8 @@ from typing import Dict, List, Optional, Sequence
 
 import torch
 
+from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
+
 
 def lddt(
     pair_dist_pred_pos: torch.Tensor,
@@ -178,7 +180,7 @@ def drmsd(
     return intra_drmsd, inter_drmsd
 
 
-def get_validation_metrics(
+def get_substrate_metrics(
     is_substrate_atomized: torch.Tensor,
     asym_id: torch.Tensor,
     pred_coords: torch.Tensor,
@@ -186,10 +188,9 @@ def get_validation_metrics(
     all_atom_mask: torch.Tensor,
     is_protein_atomized: torch.Tensor,
     substrate: str,
-    is_nucleic_acid: Optional[bool] = False,
 ) -> Dict[str, torch.Tensor]:
     """
-    Compute validation metrics with a given substrate (protein, ligand, rna, dna)
+    Compute validation metrics of a given substrate (protein, ligand, rna, dna)
 
     Args:
         is_substrate_atomized: broadcasted ligand/rna/dna/is_protein feature [*, n_atom]
@@ -199,7 +200,6 @@ def get_validation_metrics(
         all_atom_mask: atom mask [*, n_atom]
         is_protein_atomized: broadcasted is_protein feature [*, n_atom]
         substrate: 'protein', ligand', 'rna', 'dna'
-        is_nucleic_acid: boolean indicating if ligand type is nucleic acid
     Returns:
         out: dictionary containing validation metrics
             'lddt_intra_f'{substrate}': intra ligand lddt
@@ -208,7 +208,9 @@ def get_validation_metrics(
             'lddt_inter_protein_f'{substrate}': inter protein-ligand lddt
 
     Notes:
-        if no appropriate substrate: returns an empty dict {}
+        if there exists no appropriate substrate: returns an empty dict {}
+        function is compatible with multiple samples, 
+            not compatible with batch with different number of atoms/substrates
         for ligand: a few extra scores are calculated
             'lddt_intra_ligand_uha': intra ligand lddt with [0.25, 0.5, 0.75, 1.]
             'lddt_inter_ligand_ligand_uha': inter ligand lddt with above threshold
@@ -249,7 +251,7 @@ def get_validation_metrics(
         out["lddt_intra_" + substrate] = intra_lddt
         out["lddt_inter_" + substrate + "_" + substrate] = inter_lddt
 
-        intra_drmsd, inter_drmsd = drmsd(
+        intra_drmsd, _ = drmsd(
             pred_ligand_pair,
             gt_ligand_pair,
             all_atom_mask_ligand,
@@ -327,7 +329,7 @@ def gdt(
     cutoffs: List,
 ) -> torch.Tensor:
     """
-    Calculates gdt
+    Calculates gdt scores
 
     Args:
         all_atom_pred_pos: predicted structures [*, n_atom, 3]
@@ -365,7 +367,7 @@ def batched_kabsch(
     all_atom_mask: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
-    computes optimal rotation and translation via Kabsch algorithm
+    Computes optimal rotation and translation via Kabsch algorithm
 
     Args:
         all_atom_pred_pos: [*, n_atom, 3]
@@ -440,7 +442,7 @@ def get_superimpose_metrics(
     """
     out = {}
 
-    translation, rotation, rmsd = batched_kabsch(
+    _, rotation, rmsd = batched_kabsch(
         all_atom_pred_pos,
         all_atom_gt_pos,
         all_atom_mask,
@@ -470,3 +472,122 @@ def get_superimpose_metrics(
     out["gdt_ts"] = gdt_ts_score
     out["gdt_ha"] = gdt_ha_score
     return out
+
+def get_validation_metrics(
+    batch, 
+    outputs, 
+    superimposition_metrics=False,
+    ) -> Dict[str, torch.Tensor]:
+    """ 
+    Compute validation metrics on all substrates
+    
+    Args: 
+        batch: ground truth and permutation applied features 
+        outputs: model outputs
+        superimposition_metrics: computes superimposition metrics
+    Returns: 
+        metrics: dict containing validation metrics across all substrates
+            'lddt_intra_protein': intra protein lddt
+            'lddt_intra_ligand': intra ligand lddt
+            'lddt_intra_dna': intra dna lddt
+            'lddt_intra_rna': intra rna lddt
+            'lddt_inter_protein_protein': inter protein protein lddt
+            'lddt_inter_protein_ligand': inter protein ligand lddt
+            'lddt_inter_protein_dna;: inter protein dna lddt
+            'lddt_inter_protein_rna': inter protein rna lddt
+            'drmsd_intra_protein': intra protein drmsd
+            'drmsd_intra_ligand': intra ligand drmsd
+            'drmsd_intra_dna': intra dna drmsd
+            'drmsd_intra_rna': intra rna drmsd
+    
+    Note: 
+        if no appropriate substrates, no corresponding metrics will be included
+    """
+    metrics = {}
+
+    gt_coords = batch["ground_truth"]["atom_positions"].float()
+    pred_coords = outputs["x_pred"].float()
+    all_atom_mask = batch["ref_mask"]
+    token_mask = batch["token_mask"]
+    num_atoms_per_token = batch["num_atoms_per_token"]
+
+    # getting rid of modified residues
+    is_protein = batch["is_protein"]
+    is_rna = batch["is_rna"]
+    is_dna = batch["is_dna"]
+    not_modified_res = 1 - batch["is_atomized"]
+    is_protein = is_protein * not_modified_res
+    is_rna = is_rna * not_modified_res
+    is_dna = is_dna * not_modified_res
+
+    # broadcast token level features to atom level features
+    is_protein_atomized = broadcast_token_feat_to_atoms(
+        token_mask, num_atoms_per_token, is_protein
+    )
+    is_ligand_atomized = broadcast_token_feat_to_atoms(
+        token_mask, num_atoms_per_token, batch["is_ligand"]
+    )
+    is_rna_atomized = broadcast_token_feat_to_atoms(
+        token_mask, num_atoms_per_token, is_rna
+    )
+    is_dna_atomized = broadcast_token_feat_to_atoms(
+        token_mask, num_atoms_per_token, is_dna
+    )
+    asym_id_atomized = broadcast_token_feat_to_atoms(
+        token_mask, num_atoms_per_token, batch["asym_id"]
+    )
+
+    #get all substrate metrics
+    protein_validation_metrics = get_substrate_metrics(
+        is_protein_atomized,
+        asym_id_atomized,
+        pred_coords,
+        gt_coords,
+        all_atom_mask,
+        is_protein_atomized,
+        substrate="protein",
+    )
+    metrics = metrics | protein_validation_metrics
+
+    ligand_validation_metrics = get_substrate_metrics(
+        is_ligand_atomized,
+        asym_id_atomized,
+        pred_coords,
+        gt_coords,
+        all_atom_mask,
+        is_protein_atomized,
+        substrate="ligand",
+    )
+    metrics = metrics | ligand_validation_metrics
+
+    rna_validation_metrics = get_substrate_metrics(
+        is_rna_atomized,
+        asym_id_atomized,
+        pred_coords,
+        gt_coords,
+        all_atom_mask,
+        is_protein_atomized,
+        substrate="rna",
+    )
+    metrics = metrics | rna_validation_metrics
+
+    dna_validation_metrics = get_validation_metrics(
+        is_dna_atomized,
+        asym_id_atomized,
+        pred_coords,
+        gt_coords,
+        all_atom_mask,
+        is_protein_atomized,
+        substrate="dna",
+    )
+    metrics = metrics | dna_validation_metrics
+
+    if superimposition_metrics:
+        superimpose_metrics = get_superimpose_metrics(
+            pred_coords,
+            gt_coords,
+            all_atom_mask,
+        )
+        metrics = metrics | superimpose_metrics
+    
+    return metrics

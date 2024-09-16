@@ -9,8 +9,8 @@ from openfold3.core.metrics.validation_all_atom import (
     drmsd,
     gdt_ha,
     gdt_ts,
+    get_substrate_metrics,
     get_superimpose_metrics,
-    get_validation_metrics,
     interface_lddt,
     lddt,
 )
@@ -215,8 +215,8 @@ class TestDRMSD(unittest.TestCase):
         np.testing.assert_allclose(inter_drmsd_rt, exp_outputs, atol=1e-5)
 
 
-class TestGetValidationMetrics(unittest.TestCase):
-    def test_get_validation_metrics(self):
+class TestGetSubstrateMetrics(unittest.TestCase):
+    def test_get_substrate_metrics(self):
         batch_size = consts.batch_size
         n_atom = 50
 
@@ -239,7 +239,7 @@ class TestGetValidationMetrics(unittest.TestCase):
             )
         )  # [batch_size, n_atom]
 
-        out = get_validation_metrics(
+        out = get_substrate_metrics(
             is_ligand_atomized,
             asym_id_atomized,
             coords_pred,
