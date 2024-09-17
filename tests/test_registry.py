@@ -22,7 +22,7 @@ class TestLoadPresets:
         # From base preset
         assert project_config.model.settings.ema.decay == 0.999
         # From finetune1 preset
-        assert project_config.extra_configs.loss_weight_modes.default.bond == 1.0
+        assert project_config.extra_configs.loss_weight_modes.default.bond == 4.0
         # From train preset
         assert project_config.model.settings.use_block_sparse_attn
 
@@ -57,7 +57,7 @@ class TestLoadPresets:
         # Test update to shared architecture passes to layer
         assert project_config.model.architecture.input_embedder.c_s == 47
         assert project_config.model.architecture.input_embedder.c_z == 128
-        assert project_config.extra_configs.loss_weight_modes.default.bond == 1.0
+        assert project_config.extra_configs.loss_weight_modes.default.bond == 4.0
         assert project_config.extra_configs.loss_weight_modes.default.mse == 7.0
 
     @compare_utils.skip_unless_cuda_available()

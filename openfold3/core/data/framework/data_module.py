@@ -30,6 +30,7 @@ import enum
 import random
 import warnings
 from functools import partial
+from pathlib import Path
 from typing import Any, Optional, Union
 
 import pytorch_lightning as pl
@@ -111,6 +112,18 @@ class DataModuleConfig:
     epoch_len: int
     num_epochs: int
     datasets: list[ConfigDict]
+
+    def to_dict(self):
+        _dict = self.__dict__.copy()
+        datasets = []
+        for d in _dict["datasets"]:
+            d.config.dataset_paths = {
+                k: (str(v) if isinstance(v, Path) else v)
+                for k, v in d.config.dataset_paths.items()
+            }
+            datasets.append(d.to_dict())
+        _dict["datasets"] = datasets
+        return _dict
 
 
 class DatasetMode(enum.Enum):

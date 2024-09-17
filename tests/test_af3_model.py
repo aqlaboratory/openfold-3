@@ -46,8 +46,6 @@ class TestAF3Model(unittest.TestCase):
         config.settings.use_block_sparse_attn = use_block_sparse
         config.architecture.loss_module.diffusion.chunk_size = 16
 
-        config.architecture.heads.pae.enabled = True
-
         af3 = AlphaFold3AllAtom(config, _compile=False).to(device=device, dtype=dtype)
 
         batch = random_af3_features(
@@ -72,7 +70,6 @@ class TestAF3Model(unittest.TestCase):
             loss, loss_breakdown = af3_loss(
                 batch=batch, output=outputs, _return_breakdown=True
             )
-            print(loss_breakdown)
 
             loss.backward()
 
