@@ -47,11 +47,10 @@ def tokenize_atom_array(atom_array: AtomArray):
 
     # Get standard residues
     n_atoms = len(atom_array)
-    residue_ids, residue_names = struc.get_residues(atom_array)
-    standard_residue_ids = residue_ids[np.isin(residue_names, STANDARD_RESIDUES_3)]
 
     # Get ids where residue-tokens start
-    is_standard_residue_atom = np.isin(atom_array.res_id, standard_residue_ids)
+    is_standard_residue_atom = np.isin(atom_array.res_name, STANDARD_RESIDUES_3)
+
     standard_residue_atom_ids = atom_array._atom_idx[is_standard_residue_atom]
     residue_token_start_ids = np.unique(
         struc.get_residue_starts_for(atom_array, standard_residue_atom_ids)
