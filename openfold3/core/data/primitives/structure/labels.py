@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
@@ -110,7 +112,7 @@ def get_chain_to_molecule_type_dict(atom_array: struc.AtomArray) -> dict[int, st
     chain_to_molecule_type_id = get_chain_to_molecule_type_id_dict(atom_array)
 
     return {
-        chain: MoleculeType(molecule_type_id).name.lower()
+        chain: MoleculeType(molecule_type_id).name
         for chain, molecule_type_id in chain_to_molecule_type_id.items()
     }
 
@@ -118,7 +120,7 @@ def get_chain_to_molecule_type_dict(atom_array: struc.AtomArray) -> dict[int, st
 def assign_renumbered_chain_ids(
     atom_array: AtomArray, store_original_as: str | None = None
 ) -> None:
-    """Renumbers the chain IDs in the AtomArray starting from 0
+    """Renumbers the chain IDs in the AtomArray starting from 1
 
     Iterates through all chains in the atom array and assigns unique numerical chain IDs
     starting with 0 to each chain. This is useful for bioassembly parsing where chain
@@ -136,14 +138,13 @@ def assign_renumbered_chain_ids(
     # Assign numerical chain IDs
     chain_id_n_repeats = np.diff(chain_start_idxs)
     chain_ids_per_atom = np.repeat(
-        np.arange(len(chain_id_n_repeats)), chain_id_n_repeats
+        np.arange(1, len(chain_id_n_repeats) + 1), chain_id_n_repeats
     )
 
     if store_original_as is not None:
         atom_array.set_annotation(store_original_as, atom_array.chain_id)
 
-    # Have to set via _annot to override the <U4 chain_id default dtype
-    atom_array._annot["chain_id"] = chain_ids_per_atom
+    atom_array.chain_id = chain_ids_per_atom
 
 
 def assign_atom_indices(atom_array: AtomArray) -> None:
@@ -281,3 +282,30 @@ def assign_molecule_type_ids(atom_array: AtomArray) -> None:
             molecule_type_ids[chain_start:next_chain_start] = MoleculeType.LIGAND
 
     atom_array.set_annotation("molecule_type_id", molecule_type_ids)
+
+
+def uniquify_ids(ids: list[str]) -> list[str]:
+    """
+    Uniquify a list of string IDs by appending occurrence count.
+
+    This function takes a list of string IDs and returns a new list where each ID is
+    made unique by appending an underscore followed by its occurrence count.
+
+    Args:
+        ids (list[str]):
+            A list of string IDs, which may contain duplicates.
+
+    Returns:
+        list[str]:
+            A list of uniquified IDs, where each ID is appended with its occurrence
+            count (e.g., "id_1", "id_2").
+    """
+
+    id_counter = defaultdict(lambda: 0)
+    uniquified_ids = []
+
+    for id in ids:
+        id_counter[id] += 1
+        uniquified_ids.append(f"{id}_{id_counter[id]}")
+
+    return uniquified_ids

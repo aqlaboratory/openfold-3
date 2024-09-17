@@ -1,4 +1,5 @@
 import logging
+from functools import wraps
 
 import biotite.structure as struc
 import numpy as np
@@ -20,15 +21,30 @@ from openfold3.core.data.primitives.structure.metadata import (
 from openfold3.core.data.resources.lists import (
     CRYSTALLIZATION_AIDS,
 )
+from openfold3.core.data.resources.patches import construct_atom_array
 from openfold3.core.data.resources.residues import (
     STANDARD_NUCLEIC_ACID_RESIDUES,
-    STANDARD_PROTEIN_RESIDUES,
+    STANDARD_PROTEIN_RESIDUES_3,
     MoleculeType,
 )
 
 logger = logging.getLogger(__name__)
 
 
+def return_on_empty_atom_array(func):
+    """Decorator to make the cleanup functions immediately return on empty inputs."""
+
+    @wraps(func)
+    def wrapper(atom_array: AtomArray, *args, **kwargs):
+        if atom_array.array_length() == 0:
+            return atom_array
+
+        return func(atom_array, *args, **kwargs)
+
+    return wrapper
+
+
+@return_on_empty_atom_array
 def convert_MSE_to_MET(atom_array: AtomArray) -> None:
     """Converts selenomethionine (MSE) residues to methionine (MET) in-place
 
@@ -49,6 +65,7 @@ def convert_MSE_to_MET(atom_array: AtomArray) -> None:
     atom_array.atom_name[mse_selenium_atoms] = "SD"
 
 
+@return_on_empty_atom_array
 def fix_single_arginine_naming(arg_atom_array: AtomArray) -> None:
     """Resolves naming ambiguities for a single arginine residue
 
@@ -68,6 +85,7 @@ def fix_single_arginine_naming(arg_atom_array: AtomArray) -> None:
         nh2.atom_name = ["NH1"]
 
 
+@return_on_empty_atom_array
 def fix_arginine_naming(atom_array: AtomArray) -> None:
     """Resolves naming ambiguities for all arginine residues in the AtomArray
 
@@ -84,6 +102,7 @@ def fix_arginine_naming(atom_array: AtomArray) -> None:
     logger.debug("Fixed arginine naming")
 
 
+@return_on_empty_atom_array
 def remove_waters(atom_array: AtomArray) -> AtomArray:
     """Removes water molecules from the AtomArray
 
@@ -103,6 +122,7 @@ def remove_waters(atom_array: AtomArray) -> AtomArray:
     return atom_array
 
 
+@return_on_empty_atom_array
 def remove_crystallization_aids(
     atom_array: AtomArray, ccd_codes=CRYSTALLIZATION_AIDS
 ) -> AtomArray:
@@ -126,6 +146,7 @@ def remove_crystallization_aids(
     return atom_array
 
 
+@return_on_empty_atom_array
 def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
     """Removes all hydrogen (and deuterium) atoms from the AtomArray
 
@@ -140,6 +161,7 @@ def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
     return atom_array
 
 
+@return_on_empty_atom_array
 def remove_small_polymers(
     atom_array: AtomArray, cif_data: CIFBlock, max_residues: int = 3
 ) -> AtomArray:
@@ -163,13 +185,13 @@ def remove_small_polymers(
     ]
 
     for chain_id in small_polymer_chains:
-        breakpoint()
         atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
         logger.debug(f"Removed small polymer chain {chain_id}")
 
     return atom_array
 
 
+@return_on_empty_atom_array
 def remove_fully_unknown_polymers(atom_array: AtomArray) -> AtomArray:
     """Removes polymer chains with all unknown residues from the AtomArray
 
@@ -197,7 +219,6 @@ def remove_fully_unknown_polymers(atom_array: AtomArray) -> AtomArray:
         # Remove the chain from the AtomArray if all residues are unknown
         if np.all(chain.res_name == "UNK"):
             logger.debug("Removed fully unknown polymer chain")
-            breakpoint()
             atom_array_filtered = remove_chain_and_attached_ligands(
                 atom_array_filtered, chain_id
             )
@@ -205,8 +226,9 @@ def remove_fully_unknown_polymers(atom_array: AtomArray) -> AtomArray:
     return atom_array_filtered
 
 
+@return_on_empty_atom_array
 def remove_chain_and_attached_ligands(
-    atom_array: AtomArray, chain_id: int
+    atom_array: AtomArray, chain_id: str
 ) -> AtomArray:
     """Removes a chain from an AtomArray including all attached covalent ligands
 
@@ -264,9 +286,6 @@ def remove_chain_and_attached_ligands(
         atom_array._atom_idx, atom_deletion_indices, assume_unique=True
     )
 
-    if np.any(connected_ligand_atoms_mask_subset):
-        breakpoint()
-
     # Remove chain and connected ligands
     atom_array = atom_array[atom_retained_indices]
 
@@ -276,6 +295,7 @@ def remove_chain_and_attached_ligands(
     return atom_array
 
 
+@return_on_empty_atom_array
 def remove_clashing_chains(
     atom_array: AtomArray,
     clash_distance: float = 1.7,
@@ -300,9 +320,9 @@ def remove_clashing_chains(
     Returns:
         AtomArray with clashing chains removed.
     """
-    # Get atom counts of each chain in the total atom array (index of the resulting
-    # array corresponds to chain_id, value to atom count)
-    chain_atom_counts = np.bincount(atom_array.chain_id)
+    # Get atom counts of each chain in the total atom array
+    unique_chains, counts = np.unique(atom_array.chain_id, return_counts=True)
+    chain_to_atom_count = dict(zip(unique_chains, counts))
 
     ## Get the clashing chains to remove
     chain_ids_to_remove = set()
@@ -321,8 +341,8 @@ def remove_clashing_chains(
         chain2_n_clashing_atoms = np.unique(chain2_clashing_atom_idxs).size
 
         # Get fractions of clashing atoms respective to each chain's total atom count
-        chain1_n_atoms = chain_atom_counts[chain1_id]
-        chain2_n_atoms = chain_atom_counts[chain2_id]
+        chain1_n_atoms = chain_to_atom_count[chain1_id]
+        chain2_n_atoms = chain_to_atom_count[chain2_id]
         chain1_clash_fraction = chain1_n_clashing_atoms / chain1_n_atoms
         chain2_clash_fraction = chain2_n_clashing_atoms / chain2_n_atoms
 
@@ -343,7 +363,6 @@ def remove_clashing_chains(
                     chain_ids_to_remove.add(chain2_id)
 
     for chain_id in chain_ids_to_remove:
-        # breakpoint()
         atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
 
     return atom_array
@@ -375,6 +394,7 @@ def get_res_atoms_in_ccd_mask(res_atom_array: AtomArray, ccd: CIFFile) -> np.nda
     return mask
 
 
+@return_on_empty_atom_array
 def remove_non_CCD_atoms(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
     """Removes atoms that are not present in the CCD residue definition
 
@@ -398,12 +418,10 @@ def remove_non_CCD_atoms(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
     # Inclusion mask over all atoms
     atom_mask = np.concatenate(atom_masks_per_res)
 
-    if not atom_mask.all():
-        breakpoint()
-
     return atom_array[atom_mask]
 
 
+@return_on_empty_atom_array
 def remove_chains_with_CA_gaps(
     atom_array: AtomArray, distance_threshold: float = 10.0
 ) -> AtomArray:
@@ -429,7 +447,7 @@ def remove_chains_with_CA_gaps(
 
     # Match C-alpha atoms with their next C-alpha atom
     ca_without_last = protein_chain_ca[:-1]
-    ca_shifted_left = struc.array(np.roll(protein_chain_ca, -1, axis=0)[:-1])
+    ca_shifted_left = construct_atom_array(np.roll(protein_chain_ca, -1, axis=0)[:-1])
 
     # Distances of every C-alpha atom to the next C-alpha atom
     ca_dists = struc.distance(ca_without_last, ca_shifted_left)
@@ -449,12 +467,12 @@ def remove_chains_with_CA_gaps(
     )
 
     for chain_id in chain_ids_to_remove:
-        breakpoint()
         atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
 
     return atom_array
 
 
+@return_on_empty_atom_array
 def subset_large_structure(
     atom_array: AtomArray,
     n_chains: int = 20,
@@ -510,10 +528,10 @@ def subset_large_structure(
     # Subset atom array to the closest n chains
     selected_chain_mask = np.isin(atom_array.chain_id, closest_n_chain_ids)
 
-    breakpoint()
     return atom_array[selected_chain_mask]
 
 
+@return_on_empty_atom_array
 def remove_std_residue_terminal_atoms(atom_array: AtomArray) -> AtomArray:
     """Removes terminal atoms like OXT and OP3 from standard residues.
 
@@ -535,7 +553,7 @@ def remove_std_residue_terminal_atoms(atom_array: AtomArray) -> AtomArray:
 
     terminal_atom_mask = np.zeros(len(atom_array), dtype=bool)
 
-    std_protein_residues = set(STANDARD_PROTEIN_RESIDUES)
+    std_protein_residues = set(STANDARD_PROTEIN_RESIDUES_3)
     std_nucleic_acid_residues = set(STANDARD_NUCLEIC_ACID_RESIDUES)
 
     # Iterate through all chains

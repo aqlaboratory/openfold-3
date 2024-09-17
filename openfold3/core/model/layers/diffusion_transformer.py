@@ -139,7 +139,8 @@ class DiffusionTransformerBlock(nn.Module):
             _mask_trans:
                 Whether to mask the output of the transition layer
         """
-        b = self.attention_pair_bias(
+        # Note: Differs from SI, residual connection added.
+        a = a + self.attention_pair_bias(
             a=a,
             z=z,
             s=s,
@@ -152,7 +153,10 @@ class DiffusionTransformerBlock(nn.Module):
         )
 
         trans_mask = mask if _mask_trans else None
-        a = b + self.conditioned_transition(
+
+        # Note: Differs from SI, updated a_i from AttentionPairBias is used
+        # instead of previous a_i.
+        a = a + self.conditioned_transition(
             a=a, s=s, mask=trans_mask, chunk_size=chunk_size
         )
 
@@ -202,6 +206,9 @@ class DiffusionTransformer(nn.Module):
                 Whether to use Triton block sparse attention kernels
             block_size:
                 Block size to use in block sparse attention
+            blocks_per_ckpt:
+                Number of blocks per checkpoint. If set, checkpointing will
+                be used to save memory.
             inf:
                 Large constant used to create mask for attention logits
             linear_init_params:
@@ -252,15 +259,15 @@ class DiffusionTransformer(nn.Module):
         """
         Args:
             a:
-                [*, N_res, C_token] Token-level embedding
+                [*, N, C_token] Token-level embedding
             s:
-                [*, N_res, C_s] Single embedding
+                [*, N, C_s] Single embedding
             z:
-                [*, N_res, N_res, C_z] Pair embedding
+                [*, N, N, C_z] Pair embedding
             mask:
-                [*, N_res] Mask for token-level embedding
+                [*, N] Mask for token-level embedding
             beta:
-                [*, N_res, N_res] Neighborhood mask. Used in Sequence-local
+                [*, N, N] Neighborhood mask. Used in Sequence-local
                 atom attention for rectangular blocks along the diagonal.
             layout:
                 [N / block_size, N / block_size] Layout config for block sparse

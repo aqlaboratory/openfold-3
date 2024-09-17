@@ -24,9 +24,6 @@ def read_single_sdf(path: PathLike) -> Mol:
     Returns:
         The RDKit Mol object.
     """
-    if not isinstance(path, Path):
-        path = Path
-
     reader = Chem.SDMolSupplier(str(path))
     mol = next(reader)
 
@@ -70,7 +67,6 @@ def write_annotated_sdf(mol: AnnotatedMol, out: PathLike | str) -> Path:
         writer.write(mol)
 
 
-# TODO: improve docstring (explain what used_mask is)
 def read_single_annotated_sdf(path: PathLike) -> AnnotatedMol:
     """Reads an SDF file with special atom annotations and returns an RDKit Mol.
 
@@ -93,12 +89,17 @@ def read_single_annotated_sdf(path: PathLike) -> AnnotatedMol:
 
     for key, value in mol_annotations.items():
         if key.startswith("atom_annot_"):
+            # Remove atom_ prefix
+            key = key[5:]
+
             # Set to atom-wise annotations with proper type
             for atom, annot in zip(mol.GetAtoms(), value.split()):
-                if all(value.lower() in ("true", "false") for value in annot.split()):
-                    atom.SetBoolProp(key, annot)
-                elif all(utils.is_intlike_string(value) for value in annot.split()):
-                    atom.SetIntProp(key, annot)
+                if annot.lower() == "true":
+                    atom.SetBoolProp(key, True)
+                elif annot.lower() == "false":
+                    atom.SetBoolProp(key, False)
+                elif utils.is_intlike_string(annot):
+                    atom.SetIntProp(key, int(annot))
                 else:
                     atom.SetProp(key, annot)
 

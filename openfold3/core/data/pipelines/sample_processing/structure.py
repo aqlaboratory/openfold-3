@@ -14,7 +14,7 @@ from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_
 
 
 def process_target_structure_af3(
-    target_path: Path,
+    target_structures_directory: Path,
     pdb_id: str,
     crop_weights: dict[str, float],
     token_budget: int,
@@ -24,7 +24,7 @@ def process_target_structure_af3(
     """AF3 pipeline for processing target structure into AtomArrays.
 
     Args:
-        target_path (Path):
+        target_structures_directory (Path):
             Path to the directory containing the directories of target structure files.
         pdb_id (str):
             PDB ID of the target structure.
@@ -44,13 +44,12 @@ def process_target_structure_af3(
             - Ground truth atoms expanded for chain permutation alignment.
     """
     # Parse target structure
-    structure = parse_mmcif(
-        file_path=target_path / Path(pdb_id + "/" + pdb_id + ciftype),
-        expand_bioassembly=True,
+    _, atom_array = parse_mmcif(
+        file_path=target_structures_directory / pdb_id / f"{pdb_id}{ciftype}",
+        expand_bioassembly=False,
         include_bonds=True,
+        renumber_chain_ids=False,
     )
-    atom_array = structure.atom_array
-    # atom_array = atom_array[atom_array.res_name != "HOH"]
 
     # Tokenize
     tokenize_atom_array(atom_array=atom_array)

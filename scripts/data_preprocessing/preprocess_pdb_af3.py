@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+from typing import Literal
 
 import click
 
@@ -26,6 +27,15 @@ from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif
     help="Path to top-level directory that output files should be written to.",
 )
 @click.option(
+    "--max_polymer_chains",
+    type=int,
+    default=None,
+    help=(
+        "The maximum number of polymer chains in the first bioassembly after which a "
+        "structure is skipped by the parser."
+    ),
+)
+@click.option(
     "--num-workers",
     type=int,
     default=None,
@@ -35,6 +45,12 @@ from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif
     ),
 )
 @click.option(
+    "--chunksize",
+    type=int,
+    default=50,
+    help="Number of CIF files to process in each worker task.",
+)
+@click.option(
     "--write-additional-cifs",
     is_flag=False,
     help=(
@@ -42,19 +58,42 @@ from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif
         "inspecting results)."
     ),
 )
+@click.option(
+    "--log-level",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
+    default="WARNING",
+    help="Set the logging level.",
+)
+@click.option(
+    "--early-stop",
+    type=int,
+    default=None,
+    help="Stop after processing this many CIFs. Only used for debugging.",
+)
 def main(
     cif_dir: Path,
     ccd_path: Path,
     out_dir: Path,
+    max_polymer_chains: int = 300,
     num_workers: int | None = None,
+    chunksize: int = 50,
     write_additional_cifs: bool = False,
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
+    early_stop: int | None = None,
 ) -> None:
     logger = logging.getLogger("openfold3")
-    logger.setLevel(logging.WARNING)
+    logger.setLevel(getattr(logging, log_level.upper()))
     logger.addHandler(logging.StreamHandler())
 
     preprocess_cif_dir_af3(
-        cif_dir, ccd_path, out_dir, num_workers, write_additional_cifs
+        cif_dir=cif_dir,
+        ccd_path=ccd_path,
+        out_dir=out_dir,
+        max_polymer_chains=max_polymer_chains,
+        num_workers=num_workers,
+        chunksize=chunksize,
+        write_additional_cifs=write_additional_cifs,
+        early_stop=early_stop,
     )
 
 

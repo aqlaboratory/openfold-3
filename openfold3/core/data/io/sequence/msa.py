@@ -2,9 +2,9 @@
 
 import os
 import string
-import textwrap
 from collections import OrderedDict
-from typing import Optional, Sequence
+from pathlib import Path
+from typing import Sequence
 
 import numpy as np
 
@@ -30,16 +30,16 @@ def _msa_list_to_np(msa: Sequence[str]) -> np.array:
     return msa_array
 
 
-def parse_a3m(msa_string: str, max_seq_count: Optional[int] = None) -> MsaParsed:
+def parse_a3m(msa_string: str, max_seq_count: int | None = None) -> MsaParsed:
     """Parses sequences and deletion matrix from a3m format alignment.
 
     This function needs to be wrapped in a with open call to read the file.
 
     Args:
-        msa_string:
+        msa_string (str):
             The string contents of a a3m file. The first sequence in the file
             should be the query sequence.
-        max_seq_count:
+        max_seq_count (int | None):
             The maximum number of sequences to parse from the file.
 
     Returns:
@@ -76,16 +76,16 @@ def parse_a3m(msa_string: str, max_seq_count: Optional[int] = None) -> MsaParsed
     return parsed_msa
 
 
-def parse_stockholm(msa_string: str, max_seq_count: Optional[int] = None) -> MsaParsed:
+def parse_stockholm(msa_string: str, max_seq_count: int | None = None) -> MsaParsed:
     """Parses sequences and deletion matrix from stockholm format alignment.
 
     This function needs to be wrapped in a with open call to read the file.
 
     Args:
-        msa_string:
+        msa_string (str):
             The string contents of a stockholm file. The first sequence in the file
             should be the query sequence.
-        max_seq_count:
+        max_seq_count (int | None):
             The maximum number of sequences to parse from the file.
 
     Returns:
@@ -150,16 +150,16 @@ MSA_PARSER_REGISTRY = {".a3m": parse_a3m, ".sto": parse_stockholm}
 
 
 def parse_msas_direct(
-    folder_path: Sequence[str], max_seq_counts: Optional[dict[str, int]] = None
+    folder_path: Path, max_seq_counts: dict[str, int] | None = None
 ) -> dict[str, MsaParsed]:
     """Parses a set of MSA files into a dictionary of Msa objects.
 
     This function is used to parse MSAs for a single chain.
 
     Args:
-        folder_path:
+        folder_path (Path):
             Path to folder containing the MSA files to parse.
-        max_seq_count:
+        max_seq_count (dict[str, int] | None):
             A map from file names to maximum sequences to keep from the corresponding
             MSA file. The set of keys in this dict is also used to parse only a subset
             of the files in the folder with the corresponding names.
@@ -168,21 +168,19 @@ def parse_msas_direct(
         dict[str: Msa]: A dict containing the parsed MSAs.
     """
     # Get all msa filepaths, filenames and extensions for a specific chain
-    file_names = os.listdir(folder_path)
+    file_list = list(folder_path.iterdir())
     msas = {}
 
-    if len(file_names) == 0:
+    if len(file_list) == 0:
         raise RuntimeError(
-            textwrap.dedent(
-                "No alignments found in {folder_path}. Folders for chains"
-                "without any aligned sequences need to contain at least one"
-                ".sto file with only the query sequence."
-            )
+            f"No alignments found in {folder_path}. Folders for chains"
+            "without any aligned sequences need to contain at least one"
+            ".sto file with only the query sequence."
         )
     else:
-        for file_name in file_names:
+        for aln_file in file_list:
             # Split extensions from the filenames
-            basename, ext = os.path.splitext(file_name)
+            basename, ext = aln_file.stem, aln_file.suffix
             if ext not in [".sto", ".a3m"]:
                 raise NotImplementedError(
                     "Currently only .sto and .a3m file parsing is supported for"
@@ -194,7 +192,7 @@ def parse_msas_direct(
                 continue
 
             # Parse the MSAs with the appropriate parser
-            with open(os.path.join(folder_path, file_name)) as f:
+            with open(aln_file.absolute()) as f:
                 msas[basename] = MSA_PARSER_REGISTRY[ext](
                     f.read(), max_seq_counts[basename]
                 )
@@ -204,20 +202,20 @@ def parse_msas_direct(
 
 def parse_msas_alignment_database(
     alignment_index_entry: dict,
-    alignment_database_path: str,
-    max_seq_counts: Optional[dict[str, int]] = None,
+    alignment_database_path: Path,
+    max_seq_counts: dict[str, int] | None = None,
 ) -> dict[str, MsaParsed]:
     """Parses an entry from an alignment database into a dictionary of Msa objects.
 
     This function is used to parse MSAs for a single chain.
 
     Args:
-        alignment_index_entry:
+        alignment_index_entry (dict):
             A subdictionary of the alignment index dictionary, indexing a specific
             chain.
-        alignment_database_path:
+        alignment_database_path (Path):
             Path to the lowest-level directory containing the alignment databases.
-        max_seq_count:
+        max_seq_count (dict[str, int] | None):
             A map from file names to maximum sequences to keep from the corresponding
             MSA file. The set of keys in this dict is also used to parse only a subset
             of the files in the folder with the corresponding names.
@@ -228,7 +226,7 @@ def parse_msas_alignment_database(
     msas = {}
 
     with open(
-        os.path.join(alignment_database_path, alignment_index_entry["db"]), "rb"
+        (alignment_database_path.absolute() / Path(alignment_index_entry["db"])), "rb"
     ) as f:
 
         def read_msa(start, size):
@@ -258,11 +256,11 @@ def parse_msas_alignment_database(
 
 
 def parse_msas_sample(
-    chain_rep_map: dict[int, str],
-    alignments_path: str,
-    use_alignment_database: bool,
-    alignment_index: Optional[dict] = None,
-    max_seq_counts: Optional[dict[str, int]] = None,
+    alignments_directory: Path | None,
+    alignment_db_directory: Path | None,
+    alignment_index: dict | None,
+    chain_rep_map: dict[str, str],
+    max_seq_counts: dict[str, int | float] | None = None,
 ) -> MsaCollection:
     """Parses MSA(s) for a training sample.
 
@@ -270,24 +268,25 @@ def parse_msas_sample(
     number of chains in the parsed PDB file and crop during training.
 
     Args:
-        chain_rep_map (dict[int, str]):
+        alignments_directory (Path | None):
+            Path to the lowest-level directory containing the directories of MSAs
+            per chain ID.
+        alignment_db_directory (Path | None):
+            Path to the directory containing the alignment database or its shards AND
+            the alignment database superindex file. If provided, it is used over
+            alignments_directory.
+        alignment_index (Optional[dict], optional):
+            Dictionary containing the alignment index.
+        chain_rep_map (dict[str, str]):
             Dict mapping chain IDs to representative chain IDs to parse for a sample.
             The representative chain IDs are used to find the directory from which to
             parse the MSAs or is used to index the alignment database, so they need to
             match the corresponding directory names.
-        alignments_path (str):
-            Path to the lowest-level directory containing either the directories of MSAs
-            per chain ID or the alignment databases.
-        use_alignment_database (bool):
-            Whether to use the alignment database instead of directly parsing the
-            alignment files.
-        alignment_index (Optional[dict], optional):
-            Dictionary containing the alignment index.
         max_seq_counts (Optional[dict[str, int]], optional):
             Dictionary mapping the sequence database from which sequence hits were
             returned to the max number of sequences to parse from all the hits. See
             Section 2.2, Tables 1 and 2 in the AlphaFold3 SI for more details. This
-            dict, when provided, is used to specific a) which alignment files to parse
+            dict, when provided, is used to specify a) which alignment files to parse
             and b) the maximum number of sequences to parse.
 
     Returns:
@@ -299,15 +298,15 @@ def parse_msas_sample(
     representative_chain_ids = list(set(chain_rep_map.values()))
     representative_msas = {}
     for rep_id in representative_chain_ids:
-        if use_alignment_database:
+        if alignment_db_directory is not None:
             representative_msas[rep_id] = parse_msas_alignment_database(
                 alignment_index_entry=alignment_index[rep_id],
-                alignment_database_path=alignments_path,
+                alignment_database_path=alignment_db_directory,
                 max_seq_counts=max_seq_counts,
             )
         else:
             representative_msas[rep_id] = parse_msas_direct(
-                folder_path=os.path.join(alignments_path, rep_id),
+                folder_path=(alignments_directory / Path(rep_id)),
                 max_seq_counts=max_seq_counts,
             )
 

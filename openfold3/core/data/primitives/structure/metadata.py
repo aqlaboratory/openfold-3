@@ -1,8 +1,11 @@
+from collections import defaultdict
 from datetime import datetime
 from typing import Literal
 
 import biotite.structure as struc
 import numpy as np
+from biotite.structure import BondType
+from biotite.structure.info.bonds import BOND_TYPES
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 
 from openfold3.core.data.primitives.structure.labels import (
@@ -112,7 +115,7 @@ def get_experimental_method(cif_data: CIFBlock) -> str:
     Returns:
         The experimental method used to determine the structure.
     """
-    method = cif_data["exptl"]["method"].as_item()
+    method = cif_data["exptl"]["method"].as_array()[0].item()
 
     return method
 
@@ -178,6 +181,10 @@ def get_chain_to_canonical_seq_dict(
 def get_entity_to_three_letter_codes_dict(cif_data: CIFBlock) -> dict[int, list[str]]:
     """Get a dictionary mapping entity IDs to their three-letter-code sequences.
 
+    Note that in the special case of multiple amino acids being set to the same residue
+    ID, this will currently default to taking the first one and make no special attempt
+    to take occupancy into account.
+
     Args:
         cif_data:
             Parsed mmCIF data of the structure. Note that this expects a CIFBlock which
@@ -189,16 +196,26 @@ def get_entity_to_three_letter_codes_dict(cif_data: CIFBlock) -> dict[int, list[
     # Flat list of residue-wise entity IDs for all polymeric sequences
     entity_ids_flat = cif_data["entity_poly_seq"]["entity_id"].as_array(dtype=int)
 
-    # Get sequence lenfths and entity starts for each polymeric entity
-    entity_ids, new_entity_starts, seq_lengths = np.unique(
-        entity_ids_flat, return_index=True, return_counts=True
-    )
+    # Deduplicated entity IDs
+    entity_ids = np.unique(entity_ids_flat)
 
     # Get full (3-letter code) residue sequence for every polymeric entity
     entity_monomers = cif_data["entity_poly_seq"]["mon_id"].as_array()
+
+    entity_residue_ids = cif_data["entity_poly_seq"]["num"].as_array()
+
+    # Get map of residue IDs to monomers sharing that residue ID for every entity
+    res_id_to_monomers = defaultdict(lambda: defaultdict(list))
+    for entity_id, res_id, ccd_id in zip(
+        entity_ids_flat.tolist(), entity_residue_ids.tolist(), entity_monomers.tolist()
+    ):
+        res_id_to_monomers[entity_id][res_id].append(ccd_id)
+
+    # In case where multiple monomers are set to the same residue ID, take the first one
+    # (TODO: this should ideally take occupancy into account)
     entity_id_to_3l_codes = {
-        entity_id.item(): entity_monomers[start : start + length].tolist()
-        for entity_id, start, length in zip(entity_ids, new_entity_starts, seq_lengths)
+        entity_id: [monomers[0] for monomers in res_id_to_monomers[entity_id].values()]
+        for entity_id in entity_ids
     }
 
     return entity_id_to_3l_codes
@@ -229,3 +246,61 @@ def get_chain_to_three_letter_codes_dict(
     }
 
     return chain_to_3l_codes_dict
+
+
+def get_ccd_atom_pair_to_bond_dict(ccd_entry: CIFBlock) -> dict[(str, str), BondType]:
+    """Gets the list of bonds from a CCD entry.
+
+    Args:
+        ccd_entry:
+            CIFBlock containing the CCD entry.
+
+    Returns:
+        Dictionary mapping each pair of atom names to the respective Biotite bond type.
+    """
+
+    chem_comp_bonds = ccd_entry["chem_comp_bond"]
+
+    atom_pair_to_bond = {}
+
+    for atom_1, atom_2, ccd_bond_type, aromatic_flag in zip(
+        chem_comp_bonds["atom_id_1"].as_array(),
+        chem_comp_bonds["atom_id_2"].as_array(),
+        chem_comp_bonds["value_order"].as_array(),
+        chem_comp_bonds["pdbx_aromatic_flag"].as_array(),
+    ):
+        bond_type = BOND_TYPES[ccd_bond_type, aromatic_flag]
+        atom_pair_to_bond[(atom_1.item(), atom_2.item())] = bond_type
+
+    return atom_pair_to_bond
+
+
+def get_ccd_atom_id_to_element_dict(ccd_entry: CIFBlock) -> dict[str, str]:
+    """Gets the dictionary mapping atom IDs to element symbols from a CCD entry.
+
+    Args:
+        ccd_entry:
+            CIFBlock containing the CCD entry.
+
+    Returns:
+        Dictionary mapping atom IDs to element symbols.
+    """
+
+    atom_id_to_element = {
+        atom_id.item(): element.item()
+        for atom_id, element in zip(
+            ccd_entry["chem_comp_atom"]["atom_id"].as_array(),
+            ccd_entry["chem_comp_atom"]["type_symbol"].as_array(),
+        )
+    }
+
+    return atom_id_to_element
+
+
+def get_first_bioassembly_polymer_count(cif_data: CIFBlock) -> int:
+    """Returns the number of polymer chains in the first bioassembly."""
+    return (
+        cif_data["pdbx_struct_assembly"]["oligomeric_count"]
+        .as_array(dtype=int)[0]
+        .item()
+    )

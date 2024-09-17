@@ -15,9 +15,14 @@ REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_conf
 
 @register_model("af3_all_atom", config, REFERENCE_CONFIG_PATH)
 class AlphaFold3AllAtom(ModelRunner):
-    def __init__(self, model_config):
-        super().__init__(AlphaFold3, model_config)
-        self.loss = AlphaFold3Loss(config=model_config.loss)
+    def __init__(self, model_config, _compile=True):
+        super().__init__(AlphaFold3, model_config, _compile=_compile)
+
+        self.loss = (
+            torch.compile(AlphaFold3Loss(config=model_config.loss))
+            if _compile
+            else AlphaFold3Loss(config=model_config.loss)
+        )
 
     def training_step(self, batch, batch_idx):
         example_feat = next(
@@ -56,6 +61,11 @@ class AlphaFold3AllAtom(ModelRunner):
         _, loss_breakdown = self.loss(outputs, batch, _return_breakdown=True)
 
         self._log(loss_breakdown, batch, outputs, train=False)
+
+    def on_train_epoch_start(self):
+        # At the start of each virtual epoch we want to resample the set of
+        # datapoints to train on
+        self.trainer.train_dataloader.dataset.resample_epoch()
 
     def configure_optimizers(
         self,

@@ -22,7 +22,7 @@ def set_loss_weights(loss_settings: dict, resolution: float) -> dict[str, float]
     Returns:
         dict[str, float]: _description_
     """
-    loss_weight = loss_settings["loss_weight"]
+    loss_weight = loss_settings["loss_weights"]
     if (resolution < loss_settings["min_resolution"]) | (
         resolution > loss_settings["max_resolution"]
     ):

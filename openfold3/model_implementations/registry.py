@@ -53,7 +53,9 @@ def make_model_config(model_name: str, model_update_yaml_path: str):
     return config
 
 
-def get_lightning_module(config: ConfigDict, model_name: Optional[str] = None):
+def get_lightning_module(
+    config: ConfigDict, model_name: Optional[str] = None, _compile: bool = True
+):
     """Makes a lightning module for a ModelRunner class given a model config dict.
 
     A module can be called using the config alone, assuming that the config contains
@@ -72,6 +74,8 @@ def get_lightning_module(config: ConfigDict, model_name: Optional[str] = None):
         model_name:
             If provided, creates a ModelRunner matching the key in the
             MODEL_REGISTRY
+        _compile:
+            Whether to compile the model using torch.compile. Defaults to True.
     Returns:
         `core.runners.model_runner.ModelRunner` for specified model_name
         with the given config settings.
@@ -83,4 +87,4 @@ def get_lightning_module(config: ConfigDict, model_name: Optional[str] = None):
             raise ValueError(
                 "Model_name must be specified either in config or" " as an argument."
             ) from exc
-    return MODEL_REGISTRY[model_name].model_runner(config)
+    return MODEL_REGISTRY[model_name].model_runner(config, _compile=_compile)

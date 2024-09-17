@@ -145,8 +145,10 @@ class AtomTransformer(nn.Module):
         use_ada_layer_norm: bool = True,
         use_block_sparse_attn: bool = False,
         block_size: Optional[int] = 16,
+        blocks_per_ckpt: Optional[int] = None,
         inf: float = 1e9,
         linear_init_params: ConfigDict = lin_init.atom_transformer_init,
+        use_reentrant: Optional[bool] = None,
     ):
         """
         Args:
@@ -172,10 +174,17 @@ class AtomTransformer(nn.Module):
                 Whether to use Triton block sparse attention kernels
             block_size:
                 Block size to use in block sparse attention
+            blocks_per_ckpt:
+                Number of blocks per checkpoint. If set, checkpointing will
+                be used to save memory.
             inf:
                 Large number used for attention masking
             linear_init_params:
                 Linear layer initialization parameters
+            use_reentrant:
+                Whether to use reentrant variant of checkpointing. If set,
+                torch checkpointing will be used (DeepSpeed does not support
+                this feature)
         """
         super().__init__()
         self.n_query = n_query
@@ -195,8 +204,10 @@ class AtomTransformer(nn.Module):
             use_ada_layer_norm=use_ada_layer_norm,
             use_block_sparse_attn=self.use_block_sparse_attn,
             block_size=self.block_size,
+            blocks_per_ckpt=blocks_per_ckpt,
             inf=self.inf,
             linear_init_params=linear_init_params.diffusion_transformer,
+            use_reentrant=use_reentrant,
         )
 
     def forward(
@@ -497,10 +508,12 @@ class AtomAttentionEncoder(nn.Module):
         use_ada_layer_norm: bool,
         use_block_sparse_attn: bool,
         block_size: Optional[int] = 16,
-        inf: float = 1e9,
         c_s: Optional[int] = None,
         c_z: Optional[int] = None,
+        blocks_per_ckpt: Optional[int] = None,
+        inf: float = 1e9,
         linear_init_params: ConfigDict = lin_init.atom_att_enc_init,
+        use_reentrant: Optional[bool] = None,
     ):
         """
         Args:
@@ -532,14 +545,21 @@ class AtomAttentionEncoder(nn.Module):
                 Whether to use Triton block sparse attention kernels
             block_size:
                 Block size to use in block sparse attention
-            inf:
-                Large number used for attention masking
             c_s:
                 Single representation channel dimension (optional)
             c_z:
                 Pair representation channel dimension (optional)
+            blocks_per_ckpt:
+                Number of blocks per checkpoint. If set, checkpointing will
+                be used to save memory.
+            inf:
+                Large number used for attention masking
             linear_init_params:
                 Linear layer initialization parameters
+            use_reentrant:
+                Whether to use reentrant variant of checkpointing. If set,
+                torch checkpointing will be used (DeepSpeed does not support
+                this feature)
         """
         super().__init__()
         self.ref_atom_feature_embedder = RefAtomFeatureEmbedder(
@@ -585,8 +605,10 @@ class AtomAttentionEncoder(nn.Module):
             use_ada_layer_norm=use_ada_layer_norm,
             use_block_sparse_attn=use_block_sparse_attn,
             block_size=block_size,
+            blocks_per_ckpt=blocks_per_ckpt,
             inf=inf,
             linear_init_params=linear_init_params.atom_transformer,
+            use_reentrant=use_reentrant,
         )
 
         self.c_token = c_token
@@ -709,8 +731,10 @@ class AtomAttentionDecoder(nn.Module):
         use_ada_layer_norm: bool,
         use_block_sparse_attn: bool,
         block_size: Optional[int] = 16,
+        blocks_per_ckpt: Optional[int] = None,
         inf: float = 1e9,
         linear_init_params: ConfigDict = lin_init.atom_att_dec_init,
+        use_reentrant: Optional[bool] = None,
     ):
         """
         Args:
@@ -738,10 +762,17 @@ class AtomAttentionDecoder(nn.Module):
                 Whether to use Triton block sparse attention kernels
             block_size:
                 Block size to use in block sparse attention
+            blocks_per_ckpt:
+                Number of blocks per checkpoint. If set, checkpointing will
+                be used to save memory.
             inf:
                 Large number used for attention masking
             linear_init_params:
                 Linear layer initialization parameters
+            use_reentrant:
+                Whether to use reentrant variant of checkpointing. If set,
+                torch checkpointing will be used (DeepSpeed does not support
+                this feature)
         """
         super().__init__()
 
@@ -759,8 +790,10 @@ class AtomAttentionDecoder(nn.Module):
             use_ada_layer_norm=use_ada_layer_norm,
             use_block_sparse_attn=use_block_sparse_attn,
             block_size=block_size,
+            blocks_per_ckpt=blocks_per_ckpt,
             inf=inf,
             linear_init_params=linear_init_params.atom_transformer,
+            use_reentrant=use_reentrant,
         )
 
         self.layer_norm = LayerNorm(c_in=c_atom)

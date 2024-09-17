@@ -64,7 +64,7 @@ def example3():
     # Protein 1: A U
     # Protein 2: DG DC
     # NumAtoms 1: 22 20
-    # NumAtoms 2: 23 20
+    # NumAtoms 2: 22 19
     restype = F.one_hot(
         torch.Tensor([[21, 24], [27, 28]]).long(), num_classes=32
     ).float()
@@ -77,13 +77,13 @@ def example3():
         "is_dna": torch.Tensor([[0, 0], [1, 1]]),
         "is_rna": torch.Tensor([[1, 1], [0, 0]]),
         "is_atomized": torch.zeros((2, 2)),
-        "start_atom_index": torch.Tensor([[0, 22], [0, 23]]),
-        "num_atoms_per_token": torch.Tensor([[22, 20], [23, 20]]),
+        "start_atom_index": torch.Tensor([[0, 22], [0, 22]]),
+        "num_atoms_per_token": torch.Tensor([[22, 20], [22, 19]]),
     }
 
-    x = torch.randn((2, 43, 3))
-    atom_mask = torch.ones((2, 43))
-    atom_mask[0, -1] = 0
+    x = torch.randn((2, 42, 3))
+    atom_mask = torch.ones((2, 42))
+    atom_mask[1, -1] = 0
 
     return batch, x, atom_mask
 
@@ -93,11 +93,11 @@ def example4():
     # Protein 1: A U/A
     # Protein 2: DG/A DC
     # NumAtoms 1: 22 20
-    # NumAtoms 2: 23 20
-    token_mask = torch.Tensor([[1] * 21 + [0] * 3, [1] * 24])
+    # NumAtoms 2: 22 19
+    token_mask = torch.Tensor([[1] * 21 + [0] * 2, [1] * 23])
     restype = (
         F.one_hot(
-            torch.Tensor([[21] + [24] * 20 + [31] * 3, [27] * 23 + [28]]).long(),
+            torch.Tensor([[21] + [24] * 20 + [31] * 2, [27] * 22 + [28]]).long(),
             num_classes=32,
         ).float()
         * token_mask[..., None]
@@ -106,18 +106,18 @@ def example4():
     batch = {
         "restype": restype,
         "token_mask": token_mask,
-        "is_protein": torch.zeros((2, 24)),
-        "is_rna": torch.Tensor([[1] * 21 + [0] * 3, [0] * 24]),
-        "is_dna": torch.Tensor([[0] * 24, [1] * 24]),
-        "is_atomized": torch.Tensor([[0] + [1] * 20 + [0] * 3, [1] * 23 + [0]]),
+        "is_protein": torch.zeros((2, 23)),
+        "is_rna": torch.Tensor([[1] * 21 + [0] * 2, [0] * 23]),
+        "is_dna": torch.Tensor([[0] * 23, [1] * 23]),
+        "is_atomized": torch.Tensor([[0] + [1] * 20 + [0] * 2, [1] * 22 + [0]]),
         "start_atom_index": torch.Tensor(
-            [[0] + [i for i in range(22, 42)] + [0] * 3, [i for i in range(24)]]
+            [[0] + [i for i in range(22, 42)] + [0] * 2, [i for i in range(23)]]
         ),
     }
 
-    x = torch.randn((2, 43, 3))
-    atom_mask = torch.ones((2, 43))
-    atom_mask[0, -1] = 0
+    x = torch.randn((2, 42, 3))
+    atom_mask = torch.ones((2, 42))
+    atom_mask[1, -1] = 0
 
     return batch, x, atom_mask
 
@@ -126,7 +126,7 @@ def example5():
     # Ligands
     # Ligand 1 + GLY (4 atoms)
     # Ligand 2 + A (22 atoms)
-    # Ligand 3 + DG (23 atoms)
+    # Ligand 3 + DG (22 atoms)
     # Ligand 4
     token_mask = torch.ones((4, 4))
     token_mask[-1, -1] = 0
@@ -166,7 +166,7 @@ def example5():
         "is_atomized": is_atomized,
         "start_atom_index": start_atom_index,
         "num_atoms_per_token": torch.Tensor(
-            [[1, 1, 1, 4], [1, 1, 1, 22], [1, 1, 1, 23], [1, 1, 1, 0]]
+            [[1, 1, 1, 4], [1, 1, 1, 22], [1, 1, 1, 22], [1, 1, 1, 0]]
         ),
         "asym_id": torch.Tensor(
             [[0, 0, 0, 1], [0, 0, 0, 1], [0, 0, 0, 1], [0, 0, 1, 0]]
@@ -186,10 +186,10 @@ def example5():
     ligand4 = torch.Tensor([[0, 0, 0], [1, 0, 0], [0, 2, 0]])
 
     ligands = torch.stack([ligand1, ligand2, ligand3, ligand4], dim=0)
-    x = torch.concat([ligands, torch.randn((4, 23, 3))], dim=1)
+    x = torch.concat([ligands, torch.randn((4, 22, 3))], dim=1)
 
     atom_mask = torch.Tensor(
-        [[1] * 7 + [0] * 19, [1] * 25 + [0], [1] * 26, [1] * 3 + [0] * 23]
+        [[1] * 7 + [0] * 18, [1] * 25, [1] * 25, [1] * 3 + [0] * 22]
     )
 
     return batch, x, atom_mask
@@ -198,7 +198,7 @@ def example5():
 def example6():
     # Unknown residues
     # Protein: UNK N DN
-    # NumAtoms: 7 12 12
+    # NumAtoms: 7 12 11
     token_mask = torch.Tensor([[1, 1, 1, 0]])
     restype = (
         F.one_hot(
@@ -217,11 +217,11 @@ def example6():
         "is_dna": torch.Tensor([[0, 0, 1, 0]]),
         "is_atomized": torch.Tensor([[0, 0, 0, 0]]),
         "start_atom_index": torch.Tensor([[0, 7, 19, 0]]),
-        "num_atoms_per_token": torch.Tensor([[7, 12, 12, 0]]),
+        "num_atoms_per_token": torch.Tensor([[7, 12, 11, 0]]),
     }
 
-    x = torch.randn((1, 31, 3))
-    atom_mask = torch.ones((1, 31))
+    x = torch.randn((1, 30, 3))
+    atom_mask = torch.ones((1, 30))
 
     return batch, x, atom_mask
 
@@ -433,7 +433,7 @@ class TestGetTokenAtomIndex(unittest.TestCase):
         token_atom_index_offset, token_atom_mask = get_token_atom_index_offset(
             atom_name="C4", restype=restype
         )
-        gt_token_atom_index_offset = torch.Tensor([[-1, -1, -1, -1], [21, -1, 21, -1]])
+        gt_token_atom_index_offset = torch.Tensor([[-1, -1, -1, -1], [21, -1, 20, -1]])
         gt_token_atom_mask = torch.Tensor([[0, 0, 0, 0], [1, 0, 1, 0]])
         self.assertTrue((token_atom_index_offset == gt_token_atom_index_offset).all())
         self.assertTrue((token_atom_mask == gt_token_atom_mask).all())
@@ -493,7 +493,7 @@ class TestGetTokenCenterAtom(unittest.TestCase):
             batch=batch, x=x, atom_mask=atom_mask
         )
 
-        gt_center_x = torch.stack([x[0, [11, 33], :], x[1, [11, 34], :]], dim=0)
+        gt_center_x = torch.stack([x[0, [11, 33], :], x[1, [10, 32], :]], dim=0)
 
         gt_center_atom_mask = torch.Tensor([[1, 1], [1, 1]])
         self.assertTrue((torch.abs(center_x - gt_center_x) < 1e-5).all())
@@ -518,23 +518,23 @@ class TestGetTokenCenterAtom(unittest.TestCase):
 
         gt_center_x = torch.stack(
             [
-                x[0, [11] + [i for i in range(22, 42)] + [0] * 3, :],
-                x[1, [i for i in range(23)] + [34], :],
+                x[0, [11] + [i for i in range(22, 42)] + [0] * 2, :],
+                x[1, [i for i in range(22)] + [32], :],
             ],
             dim=0,
         )
 
-        gt_center_atom_mask = torch.Tensor([[1] * 21 + [0] * 3, [1] * 24])
+        gt_center_atom_mask = torch.Tensor([[1] * 21 + [0] * 2, [1] * 23])
         self.assertTrue((torch.abs(center_x - gt_center_x) < 1e-5).all())
         self.assertTrue((center_atom_mask == gt_center_atom_mask).all())
 
-        atom_mask[1, 11] = 0
+        atom_mask[1, 10] = 0
 
         center_x, center_atom_mask = get_token_center_atoms(
             batch=batch, x=x, atom_mask=atom_mask
         )
 
-        gt_center_atom_mask[1, 11] = 0
+        gt_center_atom_mask[1, 10] = 0
         self.assertTrue((torch.abs(center_x - gt_center_x) < 1e-5).all())
         self.assertTrue((center_atom_mask == gt_center_atom_mask).all())
 
@@ -549,7 +549,7 @@ class TestGetTokenCenterAtom(unittest.TestCase):
             [
                 x[0, [0, 1, 2, 4], :],
                 x[1, [0, 1, 2, 14], :],
-                x[2, [0, 1, 2, 14], :],
+                x[2, [0, 1, 2, 13], :],
                 x[3, [0, 1, 2, 0], :],
             ],
             dim=0,
@@ -577,7 +577,7 @@ class TestGetTokenCenterAtom(unittest.TestCase):
             batch=batch, x=x, atom_mask=atom_mask
         )
 
-        gt_center_x = x[:, [1, 18, 30, 0], :]
+        gt_center_x = x[:, [1, 18, 29, 0], :]
 
         gt_center_atom_mask = torch.Tensor([[1, 1, 1, 0]])
 
@@ -647,13 +647,13 @@ class TestGetTokenRepresentativeAtom(unittest.TestCase):
             batch=batch, x=x, atom_mask=atom_mask
         )
 
-        gt_rep_x = torch.stack([x[0, [21, 35], :], x[1, [22, 36], :]], dim=0)
+        gt_rep_x = torch.stack([x[0, [21, 35], :], x[1, [21, 34], :]], dim=0)
         gt_rep_atom_mask = torch.ones((2, 2))
 
         self.assertTrue((torch.abs(rep_x - gt_rep_x) < 1e-5).all())
         self.assertTrue((rep_atom_mask == gt_rep_atom_mask).all())
 
-        atom_mask[1, 35] = 0
+        atom_mask[1, 33] = 0
 
         rep_x, rep_atom_mask = get_token_representative_atoms(
             batch=batch, x=x, atom_mask=atom_mask
@@ -671,12 +671,12 @@ class TestGetTokenRepresentativeAtom(unittest.TestCase):
 
         gt_rep_x = torch.stack(
             [
-                x[0, [21] + [i for i in range(22, 42)] + [0] * 3, :],
-                x[1, [i for i in range(23)] + [36], :],
+                x[0, [21] + [i for i in range(22, 42)] + [0] * 2, :],
+                x[1, [i for i in range(22)] + [34], :],
             ],
             dim=0,
         )
-        gt_rep_atom_mask = torch.Tensor([[1] * 21 + [0] * 3, [1] * 24])
+        gt_rep_atom_mask = torch.Tensor([[1] * 21 + [0] * 2, [1] * 23])
 
         self.assertTrue((torch.abs(rep_x - gt_rep_x) < 1e-5).all())
         self.assertTrue((rep_atom_mask == gt_rep_atom_mask).all())
@@ -702,7 +702,7 @@ class TestGetTokenRepresentativeAtom(unittest.TestCase):
             [
                 x[0, [0, 1, 2, 4], :],
                 x[1, [0, 1, 2, 24], :],
-                x[2, [0, 1, 2, 25], :],
+                x[2, [0, 1, 2, 24], :],
                 x[3, [0, 1, 2, 0], :],
             ],
             dim=0,
@@ -809,15 +809,15 @@ class TestGetTokenFrameAtom(unittest.TestCase):
         gt_a = torch.stack(
             [
                 x[0, [7, 29], :],
-                x[1, [7, 30], :],
+                x[1, [7, 29], :],
             ],
             dim=0,
         )
-        gt_b = torch.stack([x[0, [11, 33], :], x[1, [11, 34], :]], dim=0)
+        gt_b = torch.stack([x[0, [11, 33], :], x[1, [10, 32], :]], dim=0)
         gt_c = torch.stack(
             [
                 x[0, [5, 27], :],
-                x[1, [5, 28], :],
+                x[1, [5, 27], :],
             ],
             dim=0,
         )
@@ -874,7 +874,7 @@ class TestGetTokenFrameAtom(unittest.TestCase):
             [
                 x[0, [0, 1, 2, 4], :],
                 x[1, [0, 1, 2, 14], :],
-                x[2, [0, 1, 2, 14], :],
+                x[2, [0, 1, 2, 13], :],
                 x[3, [0, 1, 2, 0], :],
             ],
             dim=0,
@@ -969,7 +969,7 @@ class TestGetTokenFrameAtom(unittest.TestCase):
         )
 
         gt_a = x[:, [0, 14, 26, 0], :]
-        gt_b = x[:, [1, 18, 30, 0], :]
+        gt_b = x[:, [1, 18, 29, 0], :]
         gt_c = x[:, [2, 12, 24, 0], :]
         gt_valid_frame_mask = torch.Tensor([[1, 1, 1, 0]])
 

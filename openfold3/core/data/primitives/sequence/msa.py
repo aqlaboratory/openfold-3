@@ -136,9 +136,8 @@ class MsaProcessed(MsaParsed):
     """
 
     n_rows_paired: int
-    n_rows_main_per_chain: dict[int, int]
     msa_mask: np.ndarray
-    msa_profile: torch.tensor
+    msa_profile: np.ndarray
     deletion_mean: np.ndarray
 
 
@@ -719,7 +718,7 @@ def create_crop_to_seq_map(
         ]
         # # Get chain and representative chain ID
         chain_rep_map[chain_id_in_crop] = data_cache_entry_chains[chain_id_in_crop][
-            "representative_id"
+            "alignment_representative_id"
         ]
 
         # Create token -> residue map
@@ -743,117 +742,138 @@ def apply_crop_to_msa(
     token_budget: int,
     max_rows_paired: int,
 ) -> MsaProcessed:
-    """_summary_
+    """Applies crop to the MSA arrays or creates empty MSA arrays.
+
+    Note: this is a temporary connector function between MSA sample processing and
+    featurization and will be updated in a future version.
 
     Args:
-        atom_array (AtomArray): _description_
-        msa_processed_collection (MsaProcessedCollection): _description_
-        msa_slice (MsaSlice): _description_
-        token_budget (int): _description_
-        max_rows_paired (int): _description_
+        atom_array (AtomArray):
+            AtomArray of the cropped structure.
+        msa_processed_collection (MsaProcessedCollection):
+            Collection of processed MSA data per chain.
+        msa_slice (MsaSlice):
+            Object containing the mappings from the crop to the MSA sequences.
+        token_budget (int):
+            The number of tokens in the crop.
+        max_rows_paired (int):
+            The maximum number of rows to pair.
 
     Returns:
-        MsaProcessed: _description_
+        MsaProcessed:
+            Processed MSA arrays for the crop to featurize.
     """
-    # Paired MSA rows
-    if msa_processed_collection.paired_msas is not None:
-        n_rows_paired = msa_processed_collection.paired_msas[
-            next(iter(msa_processed_collection.paired_msas))
-        ].msa.shape[0]
-        n_rows_paired_cropped = min(max_rows_paired, n_rows_paired)
-    else:
-        n_rows_paired_cropped = 0
-
-    # Main MSA rows
-    n_rows_main_per_chain = {
-        k: v.msa.shape[0] for k, v in msa_processed_collection.main_msas.items()
-    }
-    n_rows_main = np.max(list(n_rows_main_per_chain.values()))
-    # n_rows_main_cropped = np.min(
-    #     [max_rows - (n_rows_paired_cropped + 1), n_rows_main]
-    # )
-    # n_rows_main_cropped_per_chain = [np.min([n_rows_main_cropped, i])
-    # for i in n_rows_main_per_chain.values()]
-
-    # Processed MSA rows
-    n_rows = 1 + n_rows_paired_cropped + n_rows_main  # instead of n_rows_main_cropped
-    msa_processed = np.full([n_rows, token_budget], "-")
-    deletion_matrix_processed = np.zeros([n_rows, token_budget])
-    msa_mask = np.zeros([n_rows, token_budget])
-    msa_profile = np.zeros([token_budget, len(STANDARD_RESIDUES_WITH_GAP_1)])
-    deletion_mean = np.zeros(token_budget)
-
-    # Token ID -> token position map
-    token_starts = get_token_starts(atom_array)
-    token_positions = {
-        token: position
-        for position, token in enumerate(atom_array[token_starts].token_id)
-    }
-
-    # Assign sequence data to corresponding processed MSA slices
-    for chain_id, token_res_map in msa_slice.tokens_in_chain.items():
-        q = msa_processed_collection.query_sequences[chain_id]
+    # TODO clean up this function
+    if msa_processed_collection.query_sequences is not None:
+        # Paired MSA rows
         if msa_processed_collection.paired_msas is not None:
-            p = msa_processed_collection.paired_msas[chain_id]
-        m = msa_processed_collection.main_msas[chain_id]
-        n_rows_main_i = n_rows_main_per_chain[chain_id]
+            n_rows_paired = msa_processed_collection.paired_msas[
+                next(iter(msa_processed_collection.paired_msas))
+            ].msa.shape[0]
+            n_rows_paired_cropped = min(max_rows_paired, n_rows_paired)
+        else:
+            n_rows_paired_cropped = 0
 
-        # Iterate over protein/RNA tokens in the crop
-        for token_id, res_id in token_res_map.items():
-            # Get token column index in the processed MSA
-            token_position = token_positions[token_id]
-            # Assign row/col slice to the processed MSA slice
-            # Query sequence
-            msa_processed[0, token_position] = q.msa[res_id]
-            deletion_matrix_processed[0, token_position] = q.deletion_matrix[res_id]
-            msa_mask[0, token_position] = 1
+        # Main MSA rows
+        n_rows_main_per_chain = {
+            k: v.msa.shape[0] for k, v in msa_processed_collection.main_msas.items()
+        }
+        n_rows_main = np.max(list(n_rows_main_per_chain.values()))
+        # n_rows_main_cropped = np.min(
+        #     [max_rows - (n_rows_paired_cropped + 1), n_rows_main]
+        # )
+        # n_rows_main_cropped_per_chain = [np.min([n_rows_main_cropped, i])
+        # for i in n_rows_main_per_chain.values()]
 
-            # Paired MSA
-            if (msa_processed_collection.paired_msas is not None) | (
-                n_rows_paired_cropped != 0
-            ):
-                msa_processed[1 : 1 + n_rows_paired_cropped, token_position] = p.msa[
-                    :n_rows_paired_cropped, res_id
-                ]
+        # Processed MSA rows
+        n_rows = (
+            1 + n_rows_paired_cropped + n_rows_main
+        )  # instead of n_rows_main_cropped
+        msa_processed = np.full([n_rows, token_budget], "-")
+        deletion_matrix_processed = np.zeros([n_rows, token_budget])
+        msa_mask = np.zeros([n_rows, token_budget])
+        msa_profile = np.zeros([token_budget, len(STANDARD_RESIDUES_WITH_GAP_1)])
+        deletion_mean = np.zeros(token_budget)
+
+        # Token ID -> token position map
+        token_starts = get_token_starts(atom_array)
+        token_positions = {
+            token: position
+            for position, token in enumerate(atom_array[token_starts].token_id)
+        }
+
+        # Assign sequence data to corresponding processed MSA slices
+        for chain_id, token_res_map in msa_slice.tokens_in_chain.items():
+            q = msa_processed_collection.query_sequences[chain_id]
+            if msa_processed_collection.paired_msas is not None:
+                p = msa_processed_collection.paired_msas[chain_id]
+            m = msa_processed_collection.main_msas[chain_id]
+            n_rows_main_i = n_rows_main_per_chain[chain_id]
+
+            # Iterate over protein/RNA tokens in the crop
+            for token_id, res_id in token_res_map.items():
+                # Get token column index in the processed MSA
+                token_position = token_positions[token_id]
+                # Assign row/col slice to the processed MSA slice
+                # Query sequence
+                msa_processed[0, token_position] = q.msa[res_id]
+                deletion_matrix_processed[0, token_position] = q.deletion_matrix[res_id]
+                msa_mask[0, token_position] = 1
+
+                # Paired MSA
+                if (msa_processed_collection.paired_msas is not None) | (
+                    n_rows_paired_cropped != 0
+                ):
+                    msa_processed[1 : 1 + n_rows_paired_cropped, token_position] = (
+                        p.msa[:n_rows_paired_cropped, res_id]
+                    )
+                    deletion_matrix_processed[
+                        1 : 1 + n_rows_paired_cropped, token_position
+                    ] = p.deletion_matrix[:n_rows_paired_cropped, res_id]
+                    msa_mask[1 : 1 + n_rows_paired_cropped, token_position] = 1
+
+                # Main MSA
+                row_offset_main = 1 + n_rows_paired_cropped
+                msa_processed[
+                    row_offset_main : row_offset_main + n_rows_main_i,
+                    token_position,
+                ] = m.msa[:, res_id]
                 deletion_matrix_processed[
-                    1 : 1 + n_rows_paired_cropped, token_position
-                ] = p.deletion_matrix[:n_rows_paired_cropped, res_id]
-                msa_mask[1 : 1 + n_rows_paired_cropped, token_position] = 1
+                    row_offset_main : row_offset_main + n_rows_main_i,
+                    token_position,
+                ] = m.deletion_matrix[:, res_id]
+                msa_mask[
+                    row_offset_main : row_offset_main + n_rows_main_i,
+                    token_position,
+                ] = 1
 
-            # Main MSA
-            row_offset_main = 1 + n_rows_paired_cropped
-            msa_processed[
-                row_offset_main : row_offset_main + n_rows_main_i,
-                token_position,
-            ] = m.msa[:, res_id]
-            deletion_matrix_processed[
-                row_offset_main : row_offset_main + n_rows_main_i,
-                token_position,
-            ] = m.deletion_matrix[:, res_id]
-            msa_mask[
-                row_offset_main : row_offset_main + n_rows_main_i,
-                token_position,
-            ] = 1
-
-            msa_profile[token_position, :] = (
-                torch.tensor(
-                    [
-                        np.sum(m.msa[:, res_id] == val).item()
-                        for val in STANDARD_RESIDUES_WITH_GAP_1
-                    ],
-                    dtype=torch.float32,
+                msa_profile[token_position, :] = (
+                    torch.tensor(
+                        [
+                            np.sum(m.msa[:, res_id] == val).item()
+                            for val in STANDARD_RESIDUES_WITH_GAP_1
+                        ],
+                        dtype=torch.float32,
+                    )
+                    / m.msa[:, res_id].shape[0]
                 )
-                / m.msa[:, res_id].shape[0]
-            )
 
-            deletion_mean[token_position] = np.mean(m.deletion_matrix[:, res_id])
+                deletion_mean[token_position] = np.mean(m.deletion_matrix[:, res_id])
+    else:
+        # When there are no protein or RNA chains
+        n_rows = 1
+        n_rows_paired_cropped = 0
+        msa_processed = np.full([n_rows, token_budget], "-")
+        deletion_matrix_processed = np.zeros([n_rows, token_budget])
+        msa_mask = np.zeros([n_rows, token_budget])
+        msa_profile = np.zeros([token_budget, len(STANDARD_RESIDUES_WITH_GAP_1)])
+        deletion_mean = np.zeros(token_budget)
 
     return MsaProcessed(
         msa=msa_processed,
         deletion_matrix=deletion_matrix_processed,
         metadata=pd.DataFrame(),
-        n_rows_paired=n_rows_paired_cropped,
-        n_rows_main_per_chain=n_rows_main_per_chain,
+        n_rows_paired=n_rows_paired_cropped + 1,
         msa_mask=msa_mask,
         msa_profile=msa_profile,
         deletion_mean=deletion_mean,

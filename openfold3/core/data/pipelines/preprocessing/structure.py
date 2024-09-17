@@ -6,18 +6,22 @@ procedures of different models.
 import json
 import logging
 import multiprocessing as mp
+import traceback
 from functools import wraps
 from pathlib import Path
 from typing import Literal
 
-import biotite.structure as struc
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from rdkit import Chem
 from tqdm import tqdm
 
 from openfold3.core.data.io.sequence.fasta import write_multichain_fasta
-from openfold3.core.data.io.structure.cif import parse_mmcif, write_minimal_cif
+from openfold3.core.data.io.structure.cif import (
+    SkippedStructure,
+    parse_mmcif,
+    write_minimal_cif,
+)
 from openfold3.core.data.io.structure.mol import write_annotated_sdf
 from openfold3.core.data.io.utils import encode_numpy_types
 from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
@@ -152,7 +156,7 @@ def extract_chain_and_interface_metadata_af3(
     all_chains = set(chain_to_pdb_chain.keys())
 
     metadata_dict["chains"] = {}
-    for chain_id in all_chains:
+    for chain_id in sorted(all_chains):
         metadata_dict["chains"][chain_id] = {
             "label_asym_id": chain_to_pdb_chain[chain_id],
             "auth_asym_id": chain_to_author_chain[chain_id],
@@ -160,7 +164,9 @@ def extract_chain_and_interface_metadata_af3(
             "molecule_type": chain_to_molecule_type[chain_id],
         }
 
-    metadata_dict["interfaces"] = get_interface_chain_id_pairs(atom_array)
+    metadata_dict["interface_cluster_sizes"] = get_interface_chain_id_pairs(
+        atom_array, distance_threshold=5.0
+    )
 
     return metadata_dict
 
@@ -174,13 +180,12 @@ def extract_component_data_af3(
 ) -> tuple[dict, dict]:
     """Extracts component data from a structure."""
 
-    def get_conformer_metadata(
+    def get_reference_molecule_metadata(
         mol: AnnotatedMol,
-        conformer_strategy: Literal["default", "random_init", "failed"],
+        conformer_strategy: Literal["default", "random_init", "use_fallback"],
     ) -> dict:
-        """Convenience function to return the conformer metadata for a molecule."""
+        """Convenience function to return the metadata for a reference molecule."""
         conf_metadata = {
-            "force_fallback_conformer": conformer_strategy == "failed",
             "conformer_gen_strategy": conformer_strategy,
         }
 
@@ -201,7 +206,7 @@ def extract_component_data_af3(
 
     # Instantiate output dicts
     chain_to_component_id = {}
-    all_conformer_metadata = {}
+    reference_mol_metadata = {}
 
     # Get all different types of components
     residue_components, std_ligands_to_chains, non_std_ligands_to_chains = (
@@ -257,44 +262,62 @@ def extract_component_data_af3(
     # conformer coordinates
     for mol_id, mol in all_component_mols.items():
         mol, conformer_strategy = resolve_and_format_fallback_conformer(mol)
-        all_conformer_metadata[mol_id] = get_conformer_metadata(mol, conformer_strategy)
-
-        # TODO: make more elegant
-        skip_components.add(mol_id)
+        reference_mol_metadata[mol_id] = get_reference_molecule_metadata(
+            mol, conformer_strategy
+        )
 
         # Write SDF file
         sdf_out_path = sdf_out_dir / f"{mol_id}.sdf"
         write_annotated_sdf(mol, sdf_out_path)
 
-    return chain_to_component_id, all_conformer_metadata
+    return chain_to_component_id, reference_mol_metadata
 
 
+# TODO: write docstring and more comments
 def preprocess_structure_and_write_outputs_af3(
     input_cif: Path,
     ccd: CIFFile,
     out_dir: Path,
     reference_mol_out_dir: Path,
-    max_assembly_size: int = 300,
+    max_polymer_chains: int | None = None,
     skip_components: set | None = None,
     write_additional_cifs: bool = False,
 ) -> tuple[dict, dict]:
-    cif_file, atom_array = parse_mmcif(input_cif, expand_bioassembly=True)
+    parsed_mmcif = parse_mmcif(
+        input_cif,
+        expand_bioassembly=True,
+        include_bonds=True,
+        renumber_chain_ids=True,
+        max_polymer_chains=max_polymer_chains,
+    )
 
-    pdb_id = get_pdb_id(cif_file)
+    cif_file = parsed_mmcif.cif_file
+
     cif_data = get_cif_block(cif_file)
-
+    pdb_id = get_pdb_id(cif_file)
     release_date = get_release_date(cif_data).strftime("%Y-%m-%d")
 
-    if struc.get_chain_count(atom_array) > max_assembly_size:
-        logging.info("Skipping structure with more than 300 chains.")
-        return {"pdb_id": pdb_id, "release_date": release_date, "status": "skipped"}, {}
+    if isinstance(parsed_mmcif, SkippedStructure):
+        logger.info(
+            f"Skipping structure with more than {max_polymer_chains} polymer chains."
+        )
+        n_polymer_chains = parsed_mmcif.n_polymer_chains
+
+        return {
+            pdb_id: {
+                "release_date": release_date,
+                "status": f"skipped: (n_chains: {n_polymer_chains})",
+            }
+        }, {}
+    else:
+        atom_array = parsed_mmcif.atom_array
 
     atom_array = cleanup_structure_af3(atom_array, cif_data, ccd)
     chain_int_metadata_dict = extract_chain_and_interface_metadata_af3(
         atom_array, cif_data
     )
 
-    chain_to_ligand_ids, conformer_metadata_dict = extract_component_data_af3(
+    chain_to_ligand_ids, ref_mol_metadata_dict = extract_component_data_af3(
         atom_array,
         ccd,
         pdb_id,
@@ -304,29 +327,32 @@ def preprocess_structure_and_write_outputs_af3(
 
     # Add chain to ligand ID mapping to metadata
     for chain_id, ligand_id in chain_to_ligand_ids.items():
-        chain_int_metadata_dict["chains"][chain_id]["ligand_id"] = ligand_id
+        chain_int_metadata_dict["chains"][chain_id]["reference_mol_id"] = ligand_id
 
     structure_metadata_dict = {
-        "pdb_id": pdb_id,
-        "release_date": release_date,
-        "status": "success",
-        **chain_int_metadata_dict,
+        pdb_id: {
+            "release_date": release_date,
+            "status": "success",
+            **chain_int_metadata_dict,
+        }
     }
 
     chain_to_canonical_seq = get_chain_to_canonical_seq_dict(atom_array, cif_data)
 
     # Write CIF and FASTA outputs
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_cif_path = out_dir / f"{pdb_id}.cif"
+    out_cif_path = out_dir / f"{pdb_id}.bcif"
 
-    write_minimal_cif(atom_array, out_cif_path, format="bcif")
+    write_minimal_cif(atom_array, out_cif_path, format="bcif", data_block=pdb_id)
     if write_additional_cifs:
-        write_minimal_cif(atom_array, out_dir / f"{pdb_id}_full.cif", format="cif")
+        write_minimal_cif(
+            atom_array, out_dir / f"{pdb_id}.cif", format="cif", data_block=pdb_id
+        )
 
     out_fasta_path = out_dir / f"{pdb_id}.fasta"
     write_multichain_fasta(out_fasta_path, chain_to_canonical_seq)
 
-    return structure_metadata_dict, conformer_metadata_dict
+    return structure_metadata_dict, ref_mol_metadata_dict
 
 
 class _AF3PreprocessingWrapper:
@@ -335,7 +361,9 @@ class _AF3PreprocessingWrapper:
     This wrapper around `preprocess_structure_and_write_outputs_af3` is needed for
     multiprocessing, so that we can pass the constant arguments in a convenient way
     catch any errors that would crash the workers, and change the function call to
-    accept a single Iterable.
+    accept a single Iterable. In addition, the wrapper updates the set passed to
+    skip_components in-place after the function completion, so that this information is
+    immediately available to other workers when passing a SharedSet.
 
     The wrapper is written as a class object because multiprocessing doesn't support
     decorator-like nested functions.
@@ -345,6 +373,9 @@ class _AF3PreprocessingWrapper:
             The CIFFile object.
         reference_mol_out_dir:
             The directory where reference molecules are stored.
+        max_polymer_chains:
+            The maximum number of polymer chains in the first bioassembly after which a
+            structure is skipped by the parser.
         skip_components:
             A set of components to skip, if any.
         write_additional_cifs:
@@ -355,11 +386,13 @@ class _AF3PreprocessingWrapper:
         self,
         ccd,
         reference_mol_out_dir,
-        skip_components=None,
+        max_polymer_chains,
+        skip_components,
         write_additional_cifs=False,
     ):
         self.ccd = ccd
         self.reference_mol_out_dir = reference_mol_out_dir
+        self.max_polymer_chains = max_polymer_chains
         self.skip_components = skip_components
         self.write_additional_cifs = write_additional_cifs
 
@@ -369,38 +402,58 @@ class _AF3PreprocessingWrapper:
 
         logger.debug(f"Processing {cif_file.stem}")
         try:
-            structure_metadata_dict, conformer_metadata_dict = (
+            structure_metadata_dict, ref_mol_metadata_dict = (
                 preprocess_structure_and_write_outputs_af3(
                     input_cif=cif_file,
                     out_dir=out_dir,
                     ccd=self.ccd,
                     reference_mol_out_dir=self.reference_mol_out_dir,
+                    max_polymer_chains=self.max_polymer_chains,
                     skip_components=self.skip_components,
                     write_additional_cifs=self.write_additional_cifs,
                 )
             )
 
+            # Update the set of processed components in-place
+            processed_mols = set(ref_mol_metadata_dict.keys())
+            self.skip_components.update(processed_mols)
+
             logger.debug(f"Finished processing {cif_file.stem}")
-            return structure_metadata_dict, conformer_metadata_dict
+            return structure_metadata_dict, ref_mol_metadata_dict
 
         except Exception as e:
-            logger.warning(f"Failed to process {cif_file.stem}: {e}")
-            return {"pdb_id": cif_file.stem, "status": "failed"}, {}
+            tb = traceback.format_exc()  # Get the full traceback
+            logger.warning(
+                "-" * 40
+                + "\n"
+                + f"Failed to process {cif_file.stem}: {str(e)}\n"
+                + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
+                + "-" * 40
+            )
+            pdb_id = cif_file.stem
+
+            output_dict = {pdb_id: {"status": "failed"}}
+            empty_conformer_dict = {}
+
+            return output_dict, empty_conformer_dict
 
 
 def preprocess_cif_dir_af3(
     cif_dir: Path,
     ccd_path: Path,
     out_dir: Path,
+    max_polymer_chains: int | None = None,
     num_workers: int | None = None,
+    chunksize: int = 20,
     write_additional_cifs: bool = False,
+    early_stop: int | None = None,
 ) -> None:
     """Preprocesses a directory of PDB files following the AlphaFold3 SI.
 
     This function applies the full AlphaFold3 structure cleanup pipeline to a directory
     of PDB files. The output is a set of cleaned-up structure files in the output
     directory, as well as a set of metadata files containing chain-level metadata and
-    conformer metadata for all components.
+    reference molecule metadata for all components.
 
     Args:
         cif_dir:
@@ -409,6 +462,19 @@ def preprocess_cif_dir_af3(
             Path to the CCD file.
         out_dir:
             Path to the output directory.
+        max_polymer_chains:
+            The maximum number of polymer chains in the first bioassembly after which a
+            structure is skipped by the parser.
+        num_workers:
+            Number of workers to use for parallel processing. Use None for all available
+            CPUs, and 0 for a single process (not using the multiprocessing module).
+        chunksize:
+            Number of CIF files to process in each worker task.
+        write_additional_cifs:
+            Whether to additionally write normal .cif files on top of the binary .bcif
+            files
+        early_stop:
+            Stop after processing this many CIFs. Only used for debugging.
     """
     logger.debug("Reading CCD file")
     ccd = CIFFile.read(ccd_path)
@@ -416,86 +482,77 @@ def preprocess_cif_dir_af3(
     logger.debug("Reading CIF files")
     cif_files = [file for file in tqdm(cif_dir.glob("*.cif"))]
 
+    if early_stop is not None:
+        cif_files = cif_files[:early_stop]
+
     output_dict = {
         "structure_data": {},
-        "conformer_data": {},
+        "reference_molecule_data": {},
     }
 
     reference_mol_out_dir = out_dir / "reference_mols"
     reference_mol_out_dir.mkdir(parents=True, exist_ok=True)
 
+    cif_out_dir = out_dir / "cif_files"
+    cif_out_dir.mkdir(parents=True, exist_ok=True)
+
     cif_output_dirs = []
 
+    # Pre-resolve CIF-output dirs
     logger.debug("Finding cif output directories")
     for cif_file in tqdm(cif_files):
         pdb_id = cif_file.stem
-        out_subdir = out_dir / pdb_id
+        out_subdir = cif_out_dir / pdb_id
         cif_output_dirs.append(out_subdir)
 
     processed_mol_ids = SharedSet() if num_workers != 0 else set()
-
-    # Debugging only
-    problem_structures = {
-        "1em0",
-        "1qm8",
-        "1xqm",
-        "3puv",
-        "4hag",
-        "4x14",
-        "5kaf",
-        "6d4e",
-        "6gmi",
-        "6o5i",
-        "6p2l",
-        "6roi",
-        "6rqa",
-        "6smq",
-        "6vgf",
-        "6yxg",
-        "7bl0",
-        "7rf6",
-        "7s89",
-        "7t1x",
-        "7v33",
-        "8dix",
-        "8v88",
-    }
-
-    cif_files = [f for f in cif_files if f.stem in problem_structures]
 
     # Load the preprocessing function with the constant arguments
     wrapped_preprocessing_func = _AF3PreprocessingWrapper(
         ccd=ccd,
         reference_mol_out_dir=reference_mol_out_dir,
+        max_polymer_chains=max_polymer_chains,
         skip_components=processed_mol_ids,
         write_additional_cifs=write_additional_cifs,
     )
 
+    def update_output_dicts(structure_metadata_dict: dict, ref_mol_metadata_dict: dict):
+        """Convenience function to update the output dicts with the metadata."""
+        output_dict["structure_data"].update(structure_metadata_dict)
+        output_dict["reference_molecule_data"].update(ref_mol_metadata_dict)
+
+        processed_mol_ids.update(ref_mol_metadata_dict.keys())
+
+    ## Preprocess all CIF files, cleaning up structures and writing out metadata
+
     # Use a single process if num_workers is 0 (for debugging)
     logger.debug("Starting processing.")
     if num_workers == 0:
-        for structure_metadata_dict, conformer_metadata_dict in tqdm(
+        for structure_metadata_dict, ref_mol_metadata_dict in tqdm(
             map(wrapped_preprocessing_func, zip(cif_files, cif_output_dirs)),
             total=len(cif_files),
         ):
-            output_dict["structure_data"][pdb_id] = structure_metadata_dict
-            output_dict["conformer_data"].update(conformer_metadata_dict)
+            update_output_dicts(structure_metadata_dict, ref_mol_metadata_dict)
 
-            processed_mol_ids.update(conformer_metadata_dict.keys())
     else:
         with mp.Pool(num_workers) as pool:
-            for structure_metadata_dict, conformer_metadata_dict in tqdm(
-                pool.imap_unordered(
-                    wrapped_preprocessing_func,
-                    zip(cif_files, cif_output_dirs),
-                    chunksize=30,
-                ),
-                total=len(cif_files),
+            for i, (structure_metadata_dict, ref_mol_metadata_dict) in enumerate(
+                tqdm(
+                    pool.imap_unordered(
+                        wrapped_preprocessing_func,
+                        zip(cif_files, cif_output_dirs),
+                        chunksize=chunksize,
+                    ),
+                    total=len(cif_files),
+                )
             ):
-                output_dict["structure_data"][pdb_id] = structure_metadata_dict
-                output_dict["conformer_data"].update(conformer_metadata_dict)
+                update_output_dicts(structure_metadata_dict, ref_mol_metadata_dict)
 
-                processed_mol_ids.update(conformer_metadata_dict.keys())
+                # Periodically save the output dict to avoid losing data in case of a
+                # crash
+                if i % 1000 == 0:
+                    with open(out_dir / "metadata.json", "w") as f:
+                        json.dump(output_dict, f, indent=4, default=encode_numpy_types)
 
     with open(out_dir / "metadata.json", "w") as f:
         json.dump(output_dict, f, indent=4, default=encode_numpy_types)

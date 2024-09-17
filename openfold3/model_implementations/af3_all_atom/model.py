@@ -34,6 +34,7 @@ from openfold3.core.model.structure.diffusion_module import (
     DiffusionModule,
     SampleDiffusion,
     centre_random_augmentation,
+    create_noise_schedule,
 )
 
 # from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation_align
@@ -251,12 +252,22 @@ class AlphaFold3(nn.Module):
         """
         # Compute atom positions
         with torch.no_grad():
+            noise_schedule = create_noise_schedule(
+                **self.config.model.noise_schedule,
+                dtype=si_input.dtype,
+                device=si_input.device,
+            )
+
             atom_positions_predicted = self.sample_diffusion(
                 batch=batch,
                 si_input=si_input,
                 si_trunk=si_trunk,
                 zij_trunk=zij_trunk,
+                noise_schedule=noise_schedule,
                 chunk_size=self.globals.chunk_size,
+                use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
+                use_lma=self.globals.use_lma,
+                _mask_trans=True,
             )
 
         output = {
@@ -332,16 +343,26 @@ class AlphaFold3(nn.Module):
         # Sample atom positions
         xl_noisy = xl_gt + noise
 
+        token_mask = batch["token_mask"]
+
+        # Mask needs to be tiled for shape checks in DeepSpeed EvoAttention
+        if self.globals.use_deepspeed_evo_attention:
+            token_mask = token_mask.tile((1, no_samples, 1))
+
         # Run diffusion module
         xl = self.diffusion_module(
             batch=batch,
             xl_noisy=xl_noisy,
+            token_mask=token_mask,
             atom_mask=atom_mask_gt,
             t=t,
             si_input=si_input,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
             chunk_size=self.globals.chunk_size,
+            use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
+            use_lma=self.globals.use_lma,
+            _mask_trans=True,
         )
 
         output = {
