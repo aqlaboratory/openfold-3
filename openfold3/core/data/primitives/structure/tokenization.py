@@ -50,7 +50,6 @@ def tokenize_atom_array(atom_array: AtomArray):
 
     # Get ids where residue-tokens start
     is_standard_residue_atom = np.isin(atom_array.res_name, STANDARD_RESIDUES_3)
-
     standard_residue_atom_ids = atom_array._atom_idx[is_standard_residue_atom]
     residue_token_start_ids = np.unique(
         struc.get_residue_starts_for(atom_array, standard_residue_atom_ids)
@@ -74,8 +73,8 @@ def tokenize_atom_array(atom_array: AtomArray):
     # Find bonds which contain
     # - exactly one heteroatom
     #   (standard residues with covalent ligands)
-    is_heteoratom = atom_array.hetero
-    is_one_heteroatom = is_heteoratom[bondlist[:, 0]] ^ is_heteoratom[bondlist[:, 1]]
+    is_heteroatom = atom_array.hetero
+    is_one_heteroatom = is_heteroatom[bondlist[:, 0]] ^ is_heteroatom[bondlist[:, 1]]
     # - two non-heteroatoms in different chains
     #   (standard residues covalently linking different chains)
     chain_ids = atom_array.chain_id
