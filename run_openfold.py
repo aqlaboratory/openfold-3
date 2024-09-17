@@ -7,6 +7,7 @@ import os
 import sys
 
 import pytorch_lightning as pl
+import torch
 import wandb
 from ml_collections import ConfigDict
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
@@ -19,6 +20,13 @@ from wandb.wandb_run import Run
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModule
 from openfold3.projects import registry
+
+torch_versions = torch.__version__.split(".")
+torch_major_version = int(torch_versions[0])
+torch_minor_version = int(torch_versions[1])
+if torch_major_version > 1 or (torch_major_version == 1 and torch_minor_version >= 12):
+    # Gives a large speedup on Ampere-class GPUs
+    torch.set_float32_matmul_precision("high")
 
 
 def _configure_wandb_logger(
