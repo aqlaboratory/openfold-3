@@ -30,7 +30,6 @@ dependencies:
   - ruff>=0.5.0
   - biotite
   - rdkit
-  - gemmi
   - bioconda::hmmer
   - bioconda::hhsuite
   - bioconda::kalign2
