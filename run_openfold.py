@@ -159,8 +159,6 @@ def main(args):
                 json.dump(data_module_config.to_dict(), fp, indent=4)
             wandb_experiment.save(data_config_path)
 
-            # Save the model config
-            # TODO: Remove this after fixing weird formatting in save_hyperparameters()
             model_config_path = os.path.join(wandb_experiment.dir, "model_config.json")
             with open(model_config_path, "w") as fp:
                 json.dump(model_config.to_dict(), fp, indent=4)
@@ -219,7 +217,5 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-
-    # Argument compatibility checks
 
     main(args)
