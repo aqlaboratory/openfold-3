@@ -103,6 +103,10 @@ class AlphaFold3AllAtom(ModelRunner):
             },
         }
 
+    def on_load_checkpoint(self, checkpoint):
+        ema = checkpoint["ema"]
+        self.ema.load_state_dict(ema)
+
     def _compute_validation_metrics(
         self, batch, outputs, superimposition_metrics=False
     ):

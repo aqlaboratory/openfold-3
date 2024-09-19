@@ -297,6 +297,7 @@ class WeightedPDBDataset(SingleDataset):
             ],
             max_seq_counts={
                 "uniref90_hits": 10000,
+                "uniprot_hits": 50000,
                 "uniprot": 50000,
                 "bfd_uniclust_hits": math.inf,
                 "bfd_uniref_hits": math.inf,

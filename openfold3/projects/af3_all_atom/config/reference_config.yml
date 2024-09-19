@@ -10,7 +10,7 @@ finetune1:
   extra_configs:
     loss_weight_modes:
       default:
-        bond: 1.0
+        bond: 4.0
         smooth_lddt: 0.0
 
 finetune2:
@@ -25,7 +25,7 @@ finetune2:
   extra_configs: # updates base loss config
     loss_weight_modes:
       default:
-        bond: 1.0
+        bond: 4.0
 
 finetune3:
   model:
@@ -46,7 +46,7 @@ finetune3:
         mse: 0.0
         smooth_lddt: 0.0
         distogram: 0.0
-        pae: 1.0
+        pae: 1e-4
 
 eval:
   model:

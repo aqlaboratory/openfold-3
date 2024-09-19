@@ -163,7 +163,7 @@ class AlphaFold3Loss(nn.Module):
     def loss(self, batch, output, _return_breakdown=False):
         loss_weights = batch["loss_weights"]
         confidence_weights_sum = sum(
-            loss_weights[k] for k in self.config.confidence_loss_names
+            loss_weights[k].float() for k in self.config.confidence_loss_names
         )
 
         cum_loss = 0.0
@@ -175,22 +175,26 @@ class AlphaFold3Loss(nn.Module):
             losses.update(l_confidence_breakdown)
 
             losses["confidence_loss"] = l_confidence.detach().clone()
+
+            # Weighted in confidence_loss()
             cum_loss = cum_loss + l_confidence
 
-        diffusion_weight = loss_weights["mse"]
-        if diffusion_weight > 0:
+        diffusion_weights_sum = sum(
+            loss_weights[k].float() for k in self.config.diffusion_loss_names
+        )
+        if diffusion_weights_sum > 0:
             l_diffusion, l_diffusion_breakdown = diffusion_loss(
                 batch=batch,
                 x=output["atom_positions_diffusion"],
                 t=output["noise_level"],
-                bond_weight=loss_weights["bond"],
-                smooth_lddt_weight=loss_weights["smooth_lddt"],
                 **self.config.diffusion,
             )
             losses.update(l_diffusion_breakdown)
 
             losses["diffusion_loss"] = l_diffusion.detach().clone()
-            cum_loss = cum_loss + diffusion_weight.item() * l_diffusion
+
+            # Weighted in diffusion_loss()
+            cum_loss = cum_loss + l_diffusion
 
         if loss_weights["distogram"] > 0:
             l_distogram = all_atom_distogram_loss(

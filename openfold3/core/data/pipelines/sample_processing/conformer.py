@@ -122,7 +122,7 @@ def get_processed_reference_conformer(
                 # not fail). We do not use the default strategy here as a fallback
                 # because this was already tried previously in preprocessing if
                 # random_init was chosen.
-                mol, conf_id = compute_conformer(mol, strategy="random_init")
+                mol, conf_id = compute_conformer(mol, use_random_coord_init=True)
                 conf = mol.GetConformer(conf_id)
 
             # Set the single conformer

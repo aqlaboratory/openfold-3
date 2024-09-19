@@ -1,11 +1,13 @@
 # args TODO add license
 
 import argparse
+import json
 import logging
 import os
 import sys
 
 import pytorch_lightning as pl
+import torch
 import wandb
 from ml_collections import ConfigDict
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
@@ -13,26 +15,26 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
+from wandb.wandb_run import Run
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModule
 from openfold3.projects import registry
 
+torch_versions = torch.__version__.split(".")
+torch_major_version = int(torch_versions[0])
+torch_minor_version = int(torch_versions[1])
+if torch_major_version > 1 or (torch_major_version == 1 and torch_minor_version >= 12):
+    # Gives a large speedup on Ampere-class GPUs
+    torch.set_float32_matmul_precision("high")
+
 
 def _configure_wandb_logger(
-    wandb_args: ConfigDict, is_rank_zero: bool, output_dir: str
+    wandb_args: ConfigDict, is_mpi_rank_zero: bool, output_dir: str
 ) -> WandbLogger:
     """Configures wandb and wandb logger."""
 
-    def _maybe_get_wandb_id():
-        if is_rank_zero:
-            if hasattr(wandb_args, "id"):
-                return wandb_args.id
-            else:
-                return wandb.util.generate_id()
-        return None
-
-    wandb_id = _maybe_get_wandb_id()
+    wandb_id = wandb_args.id if hasattr(wandb_args, "id") else None
 
     wandb_init_dict = dict(
         project=wandb_args.project,
@@ -46,10 +48,10 @@ def _configure_wandb_logger(
         id=wandb_id,
     )
 
-    # Only initialize wandb for rank zero worker, or else
+    # Only initialize wandb for rank zero worker (MPI env), or else
     # each worker will generate a different id
-    if is_rank_zero:
-        wandb.init(**wandb_init_dict)
+    if is_mpi_rank_zero:
+        wandb.run = wandb.init(**wandb_init_dict)
 
     wandb_logger = WandbLogger(**wandb_init_dict, log_model=False)
     return wandb_logger
@@ -106,30 +108,15 @@ def main(args):
         callbacks.append(LearningRateMonitor(logging_interval="step"))
 
     loggers = []
-    if runner_args.get("mpi_plugin") and os.environ.get("PMI_RANK") is None:
+
+    is_mpi = runner_args.get("mpi_plugin")
+    if is_mpi and os.environ.get("PMI_RANK") is None:
         raise ValueError(
             "PMI_RANK is not set as an environment variable,"
             " find another way to specify rank."
         )
-    IS_RANK_ZERO = runner_args.get("mpi_plugin") and (
-        int(os.environ.get("PMI_RANK")) == 0
-    )
 
-    if runner_args.get("wandb"):
-        wandb_logger = _configure_wandb_logger(
-            runner_args.wandb, IS_RANK_ZERO, runner_args.output_dir
-        )
-        loggers.append(wandb_logger)
-        if IS_RANK_ZERO:
-            # Save pip environment to wandb
-            freeze_path = f"{wandb_logger.experiment.dir}/package_versions.txt"
-            os.system(f"{sys.executable} -m pip freeze > {freeze_path}")
-            wandb_logger.experiment.save(f"{freeze_path}")
-
-        # Save data module config:
-        wandb_logger.experiment.save(data_module_config)
-
-    if runner_args.get("mpi_plugin"):
+    if is_mpi:
         cluster_environment = MPIEnvironment()
     else:
         cluster_environment = None
@@ -138,22 +125,49 @@ def main(args):
     IS_MULTIGPU = runner_args.get("num_gpus", 0) > 1
     IS_MULTINODE = runner_args.get("num_nodes", 1) > 1
     if runner_args.get("deepspeed_config_path"):
-        deepspeed_config = config_utils.load_json(runner_args.deepspeed_config_path)
-        # Set gradient clipping to what is specified by model_config
-        deepspeed_config["gradient_clipping"] = model_config.settings.gradient_clipping
         strategy = DeepSpeedStrategy(
             config=runner_args.deepspeed_config_path,
             cluster_environment=cluster_environment,
         )
-        if (runner_args.get("wandb") is not None) & IS_RANK_ZERO:
-            wandb_logger.experiment.save(deepspeed_config)
-            wandb_logger.experiment.save("openfold/config.py")
     elif IS_MULTIGPU or IS_MULTINODE:
         strategy = DDPStrategy(
             find_unused_parameters=False, cluster_environment=cluster_environment
         )
     else:
         strategy = None
+
+    if runner_args.get("wandb"):
+        is_mpi_rank_zero = is_mpi and (int(os.environ.get("PMI_RANK")) == 0)
+
+        wandb_logger = _configure_wandb_logger(
+            runner_args.wandb, is_mpi_rank_zero, runner_args.output_dir
+        )
+        loggers.append(wandb_logger)
+
+        # Determine if running on rank zero process
+        # Non-rank zero processes will be type RunDisabled
+        wandb_experiment = wandb_logger.experiment
+        if (isinstance(wandb_experiment, Run) and not is_mpi) or is_mpi_rank_zero:
+            # Save pip environment to wandb
+            freeze_path = os.path.join(wandb_experiment.dir, "package_versions.txt")
+            os.system(f"{sys.executable} -m pip freeze > {freeze_path}")
+            wandb_experiment.save(f"{freeze_path}")
+
+            # Save data module config
+            data_config_path = os.path.join(wandb_experiment.dir, "data_config.json")
+            with open(data_config_path, "w") as fp:
+                json.dump(data_module_config.to_dict(), fp, indent=4)
+            wandb_experiment.save(data_config_path)
+
+            # Save the model config
+            # TODO: Remove this after fixing weird formatting in save_hyperparameters()
+            model_config_path = os.path.join(wandb_experiment.dir, "model_config.json")
+            with open(model_config_path, "w") as fp:
+                json.dump(model_config.to_dict(), fp, indent=4)
+            wandb_experiment.save(model_config_path)
+
+            if runner_args.get("deepspeed_config_path"):
+                wandb_experiment.save(runner_args.deepspeed_config_path)
 
     trainer_args = runner_args.pl_trainer.to_dict()
     trainer_args.update(
@@ -163,6 +177,9 @@ def main(args):
             "callbacks": callbacks,
             "logger": loggers,
             "devices": runner_args.num_gpus,
+            # If DeepSpeed is enabled, these values will be passed to the DS config
+            "gradient_clip_val": model_config.settings.gradient_clipping,
+            "gradient_clip_algorithm": "norm",
         }
     )
 
@@ -196,7 +213,7 @@ if __name__ == "__main__":
         "--runner_yaml",
         type=str,
         help=(
-            "Yaml that specifies mdoel and dataset parameters,"
+            "Yaml that specifies model and dataset parameters,"
             "see examples/runner.yml"
         ),
     )
