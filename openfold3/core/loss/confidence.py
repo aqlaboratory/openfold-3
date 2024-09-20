@@ -655,7 +655,6 @@ def confidence_loss(
                 "no_bins": Number of bins
                 "bin_min": Minimum bin value
                 "bin_max": Maximum bin value
-                "weight": Weight on PAE loss
         eps:
             Small float for numerical stability
         inf:
@@ -666,6 +665,8 @@ def confidence_loss(
         loss_breakdown:
             Dict of individual component losses
     """
+    loss_weights = batch["loss_weights"]
+
     l_plddt = all_atom_plddt_loss(
         batch=batch,
         x=output["atom_positions_predicted"],
@@ -694,14 +695,12 @@ def confidence_loss(
     )
 
     loss_breakdown = {
-        "plddt_loss": l_plddt,
-        "pde_loss": l_pde,
-        "experimentally_resolved_loss": l_resolved,
+        "plddt": l_plddt.mean(),
+        "pde": l_pde.mean(),
+        "experimentally_resolved": l_resolved.mean(),
     }
 
-    l = l_plddt + l_pde + l_resolved
-
-    pae_weight = pae["weight"]
+    pae_weight = loss_weights["pae"]
     if pae_weight > 0:
         l_pae = pae_loss(
             batch=batch,
@@ -715,14 +714,14 @@ def confidence_loss(
             inf=inf,
         )
 
-        loss_breakdown["pae_loss"] = l_pae
+        loss_breakdown["pae"] = l_pae.mean()
 
-        l = l + pae_weight * l_pae
+    conf_loss = sum(
+        [loss * loss_weights[name].item() for name, loss in loss_breakdown.items()]
+    )
 
     loss_breakdown = {
-        k: torch.mean(v).detach().clone() for k, v in loss_breakdown.items()
+        f"{k}_loss": v.detach().clone() for k, v in loss_breakdown.items()
     }
 
-    mean_loss = torch.mean(l)
-
-    return mean_loss, loss_breakdown
+    return conf_loss, loss_breakdown

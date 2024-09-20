@@ -26,8 +26,8 @@ from openfold3.core.utils.import_weights import (
     process_translation_dict,
 )
 from openfold3.core.utils.tensor_utils import tree_map
-from openfold3.model_implementations.af2_monomer.config import model_config
-from openfold3.model_implementations.af2_monomer.model import AlphaFold
+from openfold3.projects.af2_monomer.config import model_config
+from openfold3.projects.af2_monomer.model import AlphaFold
 
 
 def reshape_fn(of_param, af_weight):

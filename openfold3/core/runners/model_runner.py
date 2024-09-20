@@ -8,19 +8,6 @@ from openfold3.core.utils.exponential_moving_average import ExponentialMovingAve
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 
 
-class ModelRunnerNotRegisteredError(Exception):
-    """A custom error for for unregistered ModelRunners."""
-
-    def __init__(self, model_runner_name: str) -> None:
-        super().__init__()
-        self.model_runner_name = model_runner_name
-
-    def __str__(self):
-        return f"""ModelRunner {self.model_runner_name} missing from model runner \
-                registry. Wrap you model runner definition using the \
-                model_implementations.registry.register_model decorator."""
-
-
 # TODO implement shared hooks and methods for OpenFold models
 class ModelRunner(pl.LightningModule):
     """High-level LightningModule class implementing hooks shared by OpenFold models.
@@ -44,8 +31,6 @@ class ModelRunner(pl.LightningModule):
                 Whether to compile the model using torch.compile. Defaults to True.
         """
         super().__init__()
-        if not hasattr(self, "_registered"):
-            raise ModelRunnerNotRegisteredError(self.__class__.__name__)
         # Save hyperparameters before defining model as recommended here:
         # https://github.com/Lightning-AI/pytorch-lightning/discussions/13615
         self.save_hyperparameters()
@@ -55,7 +40,9 @@ class ModelRunner(pl.LightningModule):
             torch.compile(model_class(config)) if _compile else model_class(config)
         )
 
-        self.ema = ExponentialMovingAverage(model=self.model, decay=config.ema.decay)
+        self.ema = ExponentialMovingAverage(
+            model=self.model, decay=config.settings.ema.decay
+        )
         self.cached_weights = None
         self.last_lr_step = -1
 
@@ -157,6 +144,21 @@ class ModelRunner(pl.LightningModule):
 
     def configure_optimizers(self):
         pass
+
+    def on_load_checkpoint(self, checkpoint):
+        ema = checkpoint["ema"]
+        if not self.model.template_config.enabled:
+            ema["params"] = {
+                k: v for k, v in ema["params"].items() if "template" not in k
+            }
+        self.ema.load_state_dict(ema)
+
+    def on_save_checkpoint(self, checkpoint):
+        checkpoint["ema"] = self.ema.state_dict()
+
+    def resume_last_lr_step(self, lr_step):
+        """A helper method to manually specify the lr_step."""
+        self.last_lr_step = lr_step
 
     def _compute_validation_metrics(
         self, batch, outputs, superimposition_metrics=False

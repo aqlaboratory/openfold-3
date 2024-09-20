@@ -10,7 +10,7 @@ from openfold3.core.loss.confidence import (
     pae_loss,
     pde_loss,
 )
-from openfold3.model_implementations.registry import make_config_with_preset
+from openfold3.projects import registry
 
 
 class TestConfidenceLoss(unittest.TestCase):
@@ -46,6 +46,16 @@ class TestConfidenceLoss(unittest.TestCase):
             "ground_truth": {
                 "atom_resolved_mask": gt_atom_mask,
                 "atom_positions": gt_atom_positions,
+            },
+            "loss_weights": {
+                "bond": torch.Tensor([1.0]),
+                "smooth_lddt": torch.Tensor([4.0]),
+                "mse": torch.Tensor([4.0]),
+                "plddt": torch.Tensor([1e-4]),
+                "pde": torch.Tensor([0.0]),
+                "experimentally_resolved": torch.Tensor([0.2]),
+                "pae": torch.Tensor([1.0]),
+                "distogram": torch.Tensor([3e-2]),
             },
         }
 
@@ -148,12 +158,16 @@ class TestConfidenceLoss(unittest.TestCase):
         batch_size, n_token = batch["token_mask"].shape
         n_atom = batch["ground_truth"]["atom_resolved_mask"].shape[1]
 
-        config = make_config_with_preset("af3_all_atom")
+        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_config = proj_entry.get_config_with_preset()
+        config = proj_config.model
 
-        no_bins_plddt = config.loss.confidence.plddt.no_bins
-        no_bins_pae = config.loss.confidence.pae.no_bins
-        no_bins_pde = config.loss.confidence.pde.no_bins
-        no_bins_resolved = config.loss.confidence.experimentally_resolved.no_bins
+        no_bins_plddt = config.architecture.loss_module.confidence.plddt.no_bins
+        no_bins_pae = config.architecture.loss_module.confidence.pae.no_bins
+        no_bins_pde = config.architecture.loss_module.confidence.pde.no_bins
+        no_bins_resolved = (
+            config.architecture.loss_module.confidence.experimentally_resolved.no_bins
+        )
 
         output = {
             "atom_positions_predicted": torch.randn_like(
@@ -168,7 +182,7 @@ class TestConfidenceLoss(unittest.TestCase):
         }
 
         l_confidence, _ = confidence_loss(
-            batch=batch, output=output, **config.loss.confidence
+            batch=batch, output=output, **config.architecture.loss_module.confidence
         )
 
         self.assertTrue(l_confidence.shape == ())

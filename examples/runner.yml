@@ -1,0 +1,54 @@
+# To demonstrate expected fields for runner yaml, as expected by
+# model_implementations/registry.py 
+# We will read the model preset from a separate field.
+mode: train
+project_type: af3_all_atom
+presets: 
+  - train 
+
+mpi_plugin: false
+seed: 42
+checkpoint_every_epoch: false
+batch_size: 1
+num_gpus: 4
+output_dir: ../test_train_output 
+deepspeed_config_path: ./deepspeed_config.json
+log_lr : false 
+compile : false 
+
+pl_trainer:
+  num_nodes: 1
+  precision: bf16-mixed
+  max_epochs: 1
+  log_every_n_steps: 25
+
+config_update:
+  model:
+    architecture:
+      loss_module: 
+        diffusion:
+          chunk_size: 16 
+
+dataset_paths:
+  weighted-pdb:
+    alignments_directory: /eagle/projects/MLProtein/gnikolenyi/data/openfold3_test_data/protein_dna_ligand/alignments
+    target_structures_directory: /eagle/projects/MLProtein/gnikolenyi/data/openfold3_test_data/protein_dna_ligand/cif_files
+    alignment_db_directory: none
+    dataset_cache_file: /eagle/projects/MLProtein/gnikolenyi/data/openfold3_test_data/protein_dna_ligand/training_cache_small.json
+    reference_molecule_directory: /eagle/projects/MLProtein/gnikolenyi/data/openfold3_test_data/reference_mols
+    template_cache_directory: none
+    template_structures_directory: none
+    ccd_file: /eagle/projects/MLProtein/gnikolenyi/data/openfold3_test_data/components.cif
+
+dataset_configs:
+  train:
+    weighted-pdb:
+      class: WeightedPDBDataset 
+      weight: 1 
+      config:
+        n_templates: 4
+        loss_weight_mode: default 
+        crop_weights:
+          contiguous: 0.0
+          spatial: 0.6
+          spatial_interface: 0.0

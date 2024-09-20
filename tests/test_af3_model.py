@@ -4,7 +4,8 @@ import torch
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations import registry
+from openfold3.projects import registry
+from openfold3.projects.af3_all_atom.runner import AlphaFold3AllAtom
 from tests import compare_utils
 from tests.config import consts
 from tests.data_utils import random_af3_features
@@ -25,38 +26,27 @@ class TestAF3Model(unittest.TestCase):
     ):
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        config = registry.make_config_with_preset("af3_all_atom")
+        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_config = proj_entry.get_config_with_preset()
+        config = proj_config.model
 
         if train:
-            config.globals.chunk_size = None
+            config.settings.chunk_size = None
 
             # Needed to run large model
             if not reduce_model_size:
-                config.globals.blocks_per_ckpt = 1
+                config.settings.blocks_per_ckpt = 1
 
         if reduce_model_size:
             # To avoid memory issues in CI
-            config.model.pairformer.no_blocks = 4
-            config.model.diffusion_module.diffusion_transformer.no_blocks = 4
+            config.architecture.pairformer.no_blocks = 4
+            config.architecture.diffusion_module.diffusion_transformer.no_blocks = 4
 
-        config.globals.use_deepspeed_evo_attention = use_deepspeed_evo_attention
-        config.model.input_embedder.atom_attn_enc.use_block_sparse_attn = (
-            use_block_sparse
-        )
-        config.model.diffusion_module.atom_attn_enc.use_block_sparse_attn = (
-            use_block_sparse
-        )
-        config.model.diffusion_module.atom_attn_dec.use_block_sparse_attn = (
-            use_block_sparse
-        )
+        config.settings.use_deepspeed_evo_attention = use_deepspeed_evo_attention
+        config.settings.use_block_sparse_attn = use_block_sparse
+        config.architecture.loss_module.diffusion.chunk_size = 16
 
-        config.model.heads.pae.enabled = True
-        config.loss.confidence.pae.weight = 1.0
-        config.loss.diffusion.bond_weight = 1.0
-
-        af3 = registry.get_lightning_module(config, _compile=False).to(
-            device=device, dtype=dtype
-        )
+        af3 = AlphaFold3AllAtom(config, _compile=False).to(device=device, dtype=dtype)
 
         batch = random_af3_features(
             batch_size=batch_size,
@@ -73,7 +63,7 @@ class TestAF3Model(unittest.TestCase):
         batch = tensor_tree_map(to_device, batch)
 
         if train:
-            af3_loss = AlphaFold3Loss(config=config.loss)
+            af3_loss = AlphaFold3Loss(config=config.architecture.loss_module)
 
             batch, outputs = af3(batch=batch)
 
@@ -86,11 +76,11 @@ class TestAF3Model(unittest.TestCase):
             atom_positions_predicted = outputs["atom_positions_predicted"]
             atom_positions_diffusion = outputs["atom_positions_diffusion"]
 
-            self.assertTrue(
-                atom_positions_diffusion.shape
-                == (batch_size, config.globals.no_samples, n_atom, 3)
-            )
-            self.assertTrue(loss.shape == ())
+            num_diffusion_samples = config.architecture.shared.diffusion.no_samples
+            expected_diffusion_shape = (batch_size, num_diffusion_samples, n_atom, 3)
+            assert atom_positions_diffusion.shape == expected_diffusion_shape
+
+            assert loss.shape == ()
 
         else:
             af3.eval()
@@ -100,7 +90,7 @@ class TestAF3Model(unittest.TestCase):
 
             atom_positions_predicted = outputs["atom_positions_predicted"]
 
-        self.assertTrue(atom_positions_predicted.shape == (batch_size, n_atom, 3))
+        assert atom_positions_predicted.shape == (batch_size, n_atom, 3)
 
     def test_shape_small_fp32(self):
         batch_size = consts.batch_size
@@ -193,9 +183,9 @@ class TestAF3Model(unittest.TestCase):
                 use_block_sparse=True,
             )
 
-    @unittest.skip(
-        "Manually enable this for now, will add flag to run slow tests later."
-    )
+    # @unittest.skip(
+    # "Manually enable this for now, will add flag to run slow tests later."
+    # )
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
     def test_shape_large_bf16_train(self):

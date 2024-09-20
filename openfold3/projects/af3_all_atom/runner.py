@@ -6,22 +6,27 @@ from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations.af3_all_atom.config.base_config import config
-from openfold3.model_implementations.af3_all_atom.model import AlphaFold3
-from openfold3.model_implementations.registry import register_model
+from openfold3.projects.af3_all_atom.config.base_config import project_config
+from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
+    AF3DatasetConfigBuilder,
+)
+from openfold3.projects.af3_all_atom.model import AlphaFold3
+from openfold3.projects.registry import register_project
 
 REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_config.yml"
 
 
-@register_model("af3_all_atom", config, REFERENCE_CONFIG_PATH)
+@register_project(
+    "af3_all_atom", AF3DatasetConfigBuilder, project_config, REFERENCE_CONFIG_PATH
+)
 class AlphaFold3AllAtom(ModelRunner):
     def __init__(self, model_config, _compile=True):
         super().__init__(AlphaFold3, model_config, _compile=_compile)
 
         self.loss = (
-            torch.compile(AlphaFold3Loss(config=model_config.loss))
+            torch.compile(AlphaFold3Loss(config=model_config.architecture.loss_module))
             if _compile
-            else AlphaFold3Loss(config=model_config.loss)
+            else AlphaFold3Loss(config=model_config.architecture.loss_module)
         )
 
     def training_step(self, batch, batch_idx):
@@ -70,11 +75,14 @@ class AlphaFold3AllAtom(ModelRunner):
     def configure_optimizers(
         self,
         learning_rate: float = 1.8e-3,
-        eps: float = 1e-8,
     ) -> torch.optim.Adam:
         # Ignored as long as a DeepSpeed optimizer is configured
+        optimizer_config = self.config.settings.optimizer
         optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=learning_rate, betas=(0.9, 0.95), eps=eps
+            self.model.parameters(),
+            lr=learning_rate,
+            betas=(optimizer_config.beta1, optimizer_config.beta2),
+            eps=optimizer_config.eps,
         )
 
         if self.last_lr_step != -1:
@@ -94,6 +102,10 @@ class AlphaFold3AllAtom(ModelRunner):
                 "name": "AlphaFoldLRScheduler",
             },
         }
+
+    def on_load_checkpoint(self, checkpoint):
+        ema = checkpoint["ema"]
+        self.ema.load_state_dict(ema)
 
     def _compute_validation_metrics(
         self, batch, outputs, superimposition_metrics=False

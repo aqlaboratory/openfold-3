@@ -56,37 +56,41 @@ class AlphaFold3(nn.Module):
         """
         super().__init__()
         self.config = config
-        self.globals = self.config.globals
+        self.settings = self.config.settings
+        self.shared = self.config.architecture.shared
 
-        self.input_embedder = InputEmbedderAllAtom(**self.config.model.input_embedder)
+        self.input_embedder = InputEmbedderAllAtom(
+            **self.config.architecture.input_embedder
+        )
 
-        self.layer_norm_z = LayerNorm(self.globals.c_z)
-        self.linear_z = Linear(self.globals.c_z, self.globals.c_z, bias=False)
+        self.layer_norm_z = LayerNorm(self.shared.c_z)
+        self.linear_z = Linear(self.shared.c_z, self.shared.c_z, bias=False)
 
         self.template_embedder = TemplateEmbedderAllAtom(
-            config=self.config.model.template
+            config=self.config.architecture.template
         )
 
         self.msa_module_embedder = MSAModuleEmbedder(
-            **self.config.model.msa.msa_module_embedder
+            **self.config.architecture.msa.msa_module_embedder
         )
-        self.msa_module = MSAModuleStack(**self.config.model.msa.msa_module)
+        self.msa_module = MSAModuleStack(**self.config.architecture.msa.msa_module)
 
-        self.layer_norm_s = LayerNorm(self.globals.c_s)
-        self.linear_s = Linear(self.globals.c_s, self.globals.c_s, bias=False)
+        self.layer_norm_s = LayerNorm(self.shared.c_s)
+        self.linear_s = Linear(self.shared.c_s, self.shared.c_s, bias=False)
 
-        self.pairformer_stack = PairFormerStack(**self.config.model.pairformer)
+        self.pairformer_stack = PairFormerStack(**self.config.architecture.pairformer)
 
         self.diffusion_module = DiffusionModule(
-            config=self.config.model.diffusion_module
+            config=self.config.architecture.diffusion_module
         )
 
         self.sample_diffusion = SampleDiffusion(
-            **self.config.model.sample_diffusion, diffusion_module=self.diffusion_module
+            **self.config.architecture.sample_diffusion,
+            diffusion_module=self.diffusion_module,
         )
 
         # Confidence and Distogram Heads
-        self.aux_heads = AuxiliaryHeadsAllAtom(config=self.config.model.heads)
+        self.aux_heads = AuxiliaryHeadsAllAtom(config=self.config.architecture.heads)
 
     def _disable_activation_checkpointing(self):
         """
@@ -103,10 +107,14 @@ class AlphaFold3(nn.Module):
         and Pairformer.
         """
         self.template_embedder.template_pair_stack.blocks_per_ckpt = (
-            self.config.template.template_pair_stack.blocks_per_ckpt
+            self.config.architecture.template.template_pair_stack.blocks_per_ckpt
         )
-        self.msa_module.blocks_per_ckpt = self.config.msa.msa_module.blocks_per_ckpt
-        self.pairformer_stack.blocks_per_ckpt = self.config.pairformer.blocks_per_ckpt
+        self.msa_module.blocks_per_ckpt = (
+            self.config.architecture.msa.msa_module.blocks_per_ckpt
+        )
+        self.pairformer_stack.blocks_per_ckpt = (
+            self.config.architecture.pairformer.blocks_per_ckpt
+        )
 
     def run_trunk(
         self, batch: Dict, inplace_safe: bool = False
@@ -141,14 +149,14 @@ class AlphaFold3(nn.Module):
 
         is_grad_enabled = torch.is_grad_enabled()
 
-        for cycle_no in range(self.globals.no_cycles):
-            is_final_iter = cycle_no == (self.globals.no_cycles - 1)
+        for cycle_no in range(self.shared.no_cycles):
+            is_final_iter = cycle_no == (self.shared.no_cycles - 1)
 
             # Enable grad when we're training
             # If last_recycle_grad_only is set, only enable grad on the last cycle
             enable_grad = (
                 is_grad_enabled and is_final_iter
-                if self.globals.last_recycle_grad_only
+                if self.shared.last_recycle_grad_only
                 else is_grad_enabled
             )
             with torch.set_grad_enabled(enable_grad):
@@ -165,10 +173,10 @@ class AlphaFold3(nn.Module):
                         batch=batch,
                         z=z,
                         pair_mask=pair_mask,
-                        chunk_size=self.globals.chunk_size,
+                        chunk_size=self.settings.chunk_size,
                         _mask_trans=True,
-                        use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
-                        use_lma=self.globals.use_lma,
+                        use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+                        use_lma=self.settings.use_lma,
                         inplace_safe=inplace_safe,
                     ),
                     inplace=inplace_safe,
@@ -179,16 +187,16 @@ class AlphaFold3(nn.Module):
                 # Run MSA + pair embeddings through the MsaModule
                 # m: [*, N_seq, N_token, C_m]
                 # z: [*, N_token, N_token, C_z]
-                if self.globals.offload_inference:
+                if self.settings.offload_inference:
                     input_tensors = [m, z]
                     del m, z
                     z = self.msa_module.forward_offload(
                         input_tensors,
                         msa_mask=msa_mask.to(dtype=input_tensors[0].dtype),
                         pair_mask=pair_mask.to(dtype=input_tensors[1].dtype),
-                        chunk_size=self.globals.chunk_size,
-                        use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
-                        use_lma=self.globals.use_lma,
+                        chunk_size=self.settings.chunk_size,
+                        use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+                        use_lma=self.settings.use_lma,
                         _mask_trans=True,
                     )
 
@@ -199,9 +207,9 @@ class AlphaFold3(nn.Module):
                         z,
                         msa_mask=msa_mask.to(dtype=m.dtype),
                         pair_mask=pair_mask.to(dtype=z.dtype),
-                        chunk_size=self.globals.chunk_size,
-                        use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
-                        use_lma=self.globals.use_lma,
+                        chunk_size=self.settings.chunk_size,
+                        use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+                        use_lma=self.settings.use_lma,
                         inplace_safe=inplace_safe,
                         _mask_trans=True,
                     )
@@ -214,9 +222,9 @@ class AlphaFold3(nn.Module):
                     z=z,
                     single_mask=token_mask.to(dtype=z.dtype),
                     pair_mask=pair_mask.to(dtype=s.dtype),
-                    chunk_size=self.globals.chunk_size,
-                    use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
-                    use_lma=self.globals.use_lma,
+                    chunk_size=self.settings.chunk_size,
+                    use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+                    use_lma=self.settings.use_lma,
                     inplace_safe=inplace_safe,
                     _mask_trans=True,
                 )
@@ -253,7 +261,7 @@ class AlphaFold3(nn.Module):
         # Compute atom positions
         with torch.no_grad():
             noise_schedule = create_noise_schedule(
-                **self.config.model.noise_schedule,
+                **self.config.architecture.noise_schedule,
                 dtype=si_input.dtype,
                 device=si_input.device,
             )
@@ -264,9 +272,9 @@ class AlphaFold3(nn.Module):
                 si_trunk=si_trunk,
                 zij_trunk=zij_trunk,
                 noise_schedule=noise_schedule,
-                chunk_size=self.globals.chunk_size,
-                use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
-                use_lma=self.globals.use_lma,
+                chunk_size=self.settings.chunk_size,
+                use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+                use_lma=self.settings.use_lma,
                 _mask_trans=True,
             )
 
@@ -282,7 +290,7 @@ class AlphaFold3(nn.Module):
                 batch=batch,
                 si_input=si_input,
                 output=output,
-                chunk_size=self.globals.chunk_size,
+                chunk_size=self.settings.chunk_size,
             )
         )
 
@@ -326,14 +334,14 @@ class AlphaFold3(nn.Module):
         atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
 
         # Sample noise schedule for training
-        no_samples = self.globals.no_samples
+        no_samples = self.shared.diffusion.no_samples
         batch_size, n_atom = xl_gt.shape[0], xl_gt.shape[-2]
         device, dtype = xl_gt.device, xl_gt.dtype
 
         xl_gt = xl_gt.tile((1, no_samples, 1, 1))
         xl_gt = centre_random_augmentation(xl=xl_gt, atom_mask=atom_mask_gt)
         n = torch.randn((batch_size, no_samples), device=device, dtype=dtype)
-        t = self.globals.sigma_data * torch.exp(-1.2 + 1.5 * n)
+        t = self.shared.diffusion.sigma_data * torch.exp(-1.2 + 1.5 * n)
 
         # Sample noise
         noise = t[..., None, None] * torch.randn(
@@ -346,7 +354,7 @@ class AlphaFold3(nn.Module):
         token_mask = batch["token_mask"]
 
         # Mask needs to be tiled for shape checks in DeepSpeed EvoAttention
-        if self.globals.use_deepspeed_evo_attention:
+        if self.settings.use_deepspeed_evo_attention:
             token_mask = token_mask.tile((1, no_samples, 1))
 
         # Run diffusion module
@@ -359,10 +367,7 @@ class AlphaFold3(nn.Module):
             si_input=si_input,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
-            chunk_size=self.globals.chunk_size,
-            use_deepspeed_evo_attention=self.globals.use_deepspeed_evo_attention,
-            use_lma=self.globals.use_lma,
-            _mask_trans=True,
+            chunk_size=self.settings.chunk_size,
         )
 
         output = {
@@ -542,7 +547,7 @@ class AlphaFold3(nn.Module):
             # )
 
             # Run training step (if necessary)
-            if self.globals.diffusion_training_enabled:
+            if self.settings.diffusion_training_enabled:
                 diffusion_output = self._train_diffusion(
                     batch=batch,
                     si_input=si_input,
