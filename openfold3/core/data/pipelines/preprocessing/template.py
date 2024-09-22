@@ -12,15 +12,18 @@ from typing import Optional
 from tqdm import tqdm
 
 from openfold3.core.data.io.sequence.template import parse_hmmsearch_sto
+from openfold3.core.data.io.utils import encode_numpy_types
 from openfold3.core.data.primitives.sequence.template import (
-    check_release_date,
+    TemplateHitCollection,
+    _TemplateQueryEntry,
+    check_release_date_diff,
+    check_release_date_max,
     check_sequence,
     create_residue_idx_map,
-    fetch_representatives_dc,
-    fetch_representatives_mc,
     match_query_chain_and_sequence,
     match_template_chain_and_sequence,
     parse_release_date,
+    parse_representatives,
     parse_structure,
 )
 
@@ -30,10 +33,10 @@ logger = logging.getLogger(__name__)
 # Metadata cache creation
 def create_template_cache_for_query(
     query_pdb_chain_id: str,
-    template_alignment_path: Path,
-    template_structures_path: Path,
-    template_cache_path: Path,
-    query_structures_path: Path,
+    template_alignment_file: Path,
+    template_structures_directory: Path,
+    template_cache_directory: Path,
+    query_structures_directory: Path,
 ) -> None:
     """Creates a json cache of filtered template hits for a query.
 
@@ -64,16 +67,16 @@ def create_template_cache_for_query(
     Args:
         query_pdb_chain_id (str):
             The PDB ID and chain ID of the query chain.
-        template_alignment_path (Path):
+        template_alignment_file (Path):
             Path to the template alignment stockholm file. Currently only the output of
             hmmsearch is accepted.
-        template_structures_path (Path):
+        template_structures_directory (Path):
             Path to the directory containing template structures in mmCIF format. The
             PDB IDs of the template CIF files need to match the PDB IDs in the alignment
             file for a template to be used.
-        template_cache_path (Path):
+        template_cache_directory (Path):
             Path to directory where the template cache will be saved for the query.
-        query_structures_path (Path):
+        query_structures_directory (Path):
             Path to the directory containing query structures in mmCIF format. The
             PDB IDs of the query CIF files need to match the PDB IDs for the query (1st
             row) in the alignment file for it to have any templates.
@@ -82,7 +85,7 @@ def create_template_cache_for_query(
 
     # Parse alignment
     try:
-        with open(template_alignment_path) as f:
+        with open(template_alignment_file) as f:
             hits = parse_hmmsearch_sto(f.read())
     except Exception as e:
         logger.info(
@@ -91,32 +94,33 @@ def create_template_cache_for_query(
         )
         return
 
-    # PARSE QUERY DATA
+    # Filter queries
     query = hits[0]
     query_pdb_id, query_chain_id = query_pdb_chain_id.split("_")
     query_pdb_id_t, query_chain_id_t = query.name.split("_")
-    # 1. Parse structure
+    # 1. Parse fasta of the structure
     # the query and all its templates are skipped if the structure identified by the PDB
     # ID of the first hit in the alignments file is not provided in
-    # target_structures_path
-    cif_file, atom_array = parse_structure(query_structures_path, query_pdb_id)
-    if cif_file is None:
+    # query_structures_directory
+    if not (query_structures_directory / Path(f"{query_pdb_id}.bcif")).exists():
         logger.info(
-            f"{pid} - Query structure {query_pdb_id} not found in "
-            f"{query_structures_path}. Skipping templates for this structure."
+            f"{pid} - Query .bcif structure {query_pdb_id} not found in "
+            f"{query_structures_directory}. Skipping templates for this structure."
         )
         return
     # 2. Parse query chain and sequence
     # the query and all its templates are skipped if its HMM sequence cannot be mapped
     # exactly to a subsequence of the MATCHING chain in the CIF file provided in
-    # target_structures_path (no chain/sequence remapping is done)
+    # query_structures_directory (no chain/sequence remapping is done)
+    # !!! Note that the chain ID-sequence map for this step is derived from the
+    # preprocessed fasta file, not from the CIF file
     if match_query_chain_and_sequence(
-        cif_file, atom_array, query, query_pdb_id, query_chain_id
+        query_structures_directory, query, query_pdb_id, query_chain_id
     ):
         logger.info(
-            f"{pid} - Invalid query structure (query {query_pdb_id} chain "
-            f"{query_chain_id}) - template alignment (query {query_pdb_id_t} chain "
-            f"{query_chain_id_t}) pair. Skipping  templates for this structure."
+            f"{pid} - The query sequences in the structure (query {query_pdb_id} chain "
+            f"{query_chain_id}) and template alignment (query {query_pdb_id_t} chain "
+            f"{query_chain_id_t}) don't match. Skipping templates for this structure."
         )
         return
 
@@ -132,7 +136,7 @@ def create_template_cache_for_query(
         if check_sequence(query_seq=query.hit_sequence.replace("-", ""), hit=hit):
             logger.info(
                 f"{pid} - Template {hit_pdb_id} sequence does not pass sequence"
-                " filters."
+                " filters. Skipping this template."
             )
             continue
 
@@ -140,11 +144,13 @@ def create_template_cache_for_query(
         # The template is skipped if the structure identified by the PDB ID of the
         # corresponding hit in the alignment file is not provided in
         # template_structures_path
-        cif_file, atom_array = parse_structure(template_structures_path, hit_pdb_id)
+        cif_file, atom_array = parse_structure(
+            template_structures_directory, hit_pdb_id
+        )
         if cif_file is None:
             logger.info(
                 f"{pid} - Template structure {hit_pdb_id} not found in "
-                f"{template_structures_path}. Skipping."
+                f"{template_structures_directory}. Skipping this template."
             )
             continue
         # 3. Parse template chain and sequence
@@ -152,13 +158,15 @@ def create_template_cache_for_query(
         # exactly to a subsequence of ANY chain in the CIF file provided in
         # template_structures_path with a PDB ID matching the the hit's PDB ID
         # in the alignment file
+        # !!! Note that the chain ID-sequence map for this step is derived from the
+        # unprocessed CIF file provided in the template_structures_directory
         hit_chain_id_matched = match_template_chain_and_sequence(
             cif_file, atom_array, hit
         )
         if hit_chain_id_matched is None:
             logger.info(
                 f"{pid} - Could not match template {hit_pdb_id} chain {hit_chain_id} "
-                f"sequence in {cif_file}. Skipping."
+                f"sequence in {cif_file}. Skipping this template."
             )
             continue
 
@@ -169,28 +177,29 @@ def create_template_cache_for_query(
         idx_map = create_residue_idx_map(query, hit)
 
         # Store as filtered hit
-        # TODO: Add e-value to filtered hits, currently just None
+        # Note: since hmmer outputs hits in ascending order of e-value, the index of the
+        # hit in the hits dict is used as the e-value
         template_hits_filtered[f"{hit_pdb_id}_{hit_chain_id_matched}"] = {
-            "e_value": hit.e_value,
+            "e_value": hit.index,
             "release_date": release_date.strftime("%Y-%m-%d"),
             "idx_map": idx_map,
         }
 
     # Save filtered hits to json using the representative ID
-    template_cache_path_rep = template_cache_path / Path(f"{query.name}.json")
+    template_cache_path_rep = template_cache_directory / Path(f"{query.name}.json")
     if not os.path.exists(template_cache_path_rep):
         with open(template_cache_path_rep, "w") as f:  # TODO check mp safe
-            json.dump(template_hits_filtered, f)
+            json.dump(template_hits_filtered, f, indent=4)
 
 
 class _AF3TemplateCacheConstructor:
     def __init__(
         self,
-        template_alignment_base_path: Path,
+        template_alignment_directory: Path,
         template_alignment_filename: str,
-        template_structures_path: Path,
-        template_cache_path: Path,
-        query_structures_path: Path,
+        template_structures_directory: Path,
+        template_cache_directory: Path,
+        query_structures_directory: Path,
     ) -> None:
         """Wrapper class for creating the template cache.
 
@@ -203,41 +212,45 @@ class _AF3TemplateCacheConstructor:
         decorator-like nested functions.
 
         Attributes:
-            template_alignment_base_path (Path):
+            template_alignment_directory (Path):
                 Directory containing directories per query chain, with each subdirectory
                   containing hhsearch alignments per chain.
             template_alignment_filename (str):
                 Name of the hhsearch aligment file within each query chain subdirectory.
                 Needs to be identical for all query chains.
-            template_structures_path (Path):
+            template_structures_directory (Path):
                 Directory containing the template CIF files.
-            template_cache_path (Path):
+            template_cache_directory (Path):
                 Directory where template cache jsons per chain will be saved.
-            query_structures_path (Path):
+            query_structures_directory (Path):
                 Directory containing the query CIF files.
 
         """
-        self.template_alignment_base_path = template_alignment_base_path
+        self.template_alignment_directory = template_alignment_directory
         self.template_alignment_filename = template_alignment_filename
-        self.template_structures_path = template_structures_path
-        self.template_cache_path = template_cache_path
-        self.query_structures_path = query_structures_path
+        self.template_structures_directory = template_structures_directory
+        self.template_cache_directory = template_cache_directory
+        self.query_structures_directory = query_structures_directory
 
     @wraps(create_template_cache_for_query)
-    def __call__(self, query_rep: tuple[str, str]) -> None:
-        query_pdb_chain_id, rep_id = query_rep
-        template_alignment_path = (
-            self.template_alignment_base_path
-            / Path(rep_id)
-            / self.template_alignment_filename
-        )
+    def __call__(self, input: _TemplateQueryEntry) -> None:
         try:
+            query_pdb_chain_id, rep_pdb_chain_id = (
+                input.dated_query.query_pdb_chain_id,
+                input.rep_pdb_chain_id,
+            )
+            query_pdb_id = query_pdb_chain_id.split("_")[0]
             create_template_cache_for_query(
-                query_pdb_chain_id,
-                template_alignment_path,
-                self.template_structures_path,
-                self.template_cache_path,
-                self.query_structures_path,
+                query_pdb_chain_id=query_pdb_chain_id,
+                template_alignment_file=(
+                    self.template_alignment_directory
+                    / Path(rep_pdb_chain_id)
+                    / self.template_alignment_filename
+                ),
+                template_structures_directory=self.template_structures_directory,
+                template_cache_directory=self.template_cache_directory,
+                query_structures_directory=self.query_structures_directory
+                / Path(query_pdb_id),
             )
         except Exception as e:
             logger.warning(
@@ -246,46 +259,57 @@ class _AF3TemplateCacheConstructor:
 
 
 def create_template_cache_af3(
-    metadata_cache_path: Path,
-    template_alignment_base_path: Path,
+    dataset_cache_file: Path,
+    template_alignment_directory: Path,
     template_alignment_filename: str,
-    template_structures_path: Path,
-    template_cache_path: Path,
-    query_structures_path: Path,
+    template_structures_directory: Path,
+    template_cache_directory: Path,
+    query_structures_directory: Path,
     num_workers: int,
 ) -> None:
-    """_summary_
+    """Creates the full template cache for all query chains.
+
+    Uses
 
     Args:
-        metadata_cache_path (Path): _description_
-        template_alignment_base_path (Path): _description_
-        template_alignment_filename (str): _description_
-        template_structures_path (Path): _description_
-        template_cache_path (Path): _description_
-        query_structures_path (Path): _description_
-        num_workers (int): _description_
+        dataset_cache_file (Path):
+            Path to the metadata cache json file.
+        template_alignment_directory (Path):
+            Directory containing directories per query chain, with each subdirectory
+            containing template alignments per chain.
+        template_alignment_filename (str):
+            Name of the template alignment file within each query chain subdirectory.
+            Needs to be identical for all query chains.
+        template_structures_directory (Path):
+            Directory containing the template structures in mmCIF format.
+        template_cache_directory (Path):
+            Directory where the template cache jsons per chain will be saved.
+        query_structures_directory (Path):
+            Directory containing the query structures in mmCIF format.
+        num_workers (int):
+            Number of workers to use for multiprocessing.
     """
     # Parse list of chains from metadata cache
-    with open(metadata_cache_path) as f:
-        metadata_cache = json.load(f)
-    query_pdb_chain_ids = fetch_representatives_mc(metadata_cache)
+    with open(dataset_cache_file) as f:
+        dataset_cache = json.load(f)
+    template_query_iterator = parse_representatives(dataset_cache, True).entries
 
     # Create template cache for each query chain
     wrapped_template_cache_constructor = _AF3TemplateCacheConstructor(
-        template_alignment_base_path,
+        template_alignment_directory,
         template_alignment_filename,
-        template_structures_path,
-        template_cache_path,
-        query_structures_path,
+        template_structures_directory,
+        template_cache_directory,
+        query_structures_directory,
     )
     with mp.Pool(num_workers) as pool:
         for _ in tqdm(
             pool.imap_unordered(
                 wrapped_template_cache_constructor,
-                query_pdb_chain_ids,
+                template_query_iterator,
                 chunksize=30,
             ),
-            total=len(query_pdb_chain_ids),
+            total=len(template_query_iterator),
             desc="Creating template cache",
         ):
             pass
@@ -294,20 +318,24 @@ def create_template_cache_af3(
 
 # Dataset cache update
 def filter_template_cache_for_query(
-    input_data: tuple[tuple[str, str], str] | tuple[str, list[tuple[str, str]]],
-    template_cache_path: Path,
+    input_data: _TemplateQueryEntry,
+    template_cache_directory: Path,
     max_templates: int,
     is_core_train: bool,
-    max_release_date: Optional[datetime] = None,
-    min_release_date_diff_core_train: Optional[int] = None,
-) -> dict[tuple[str, str], list[str]]:
+    max_release_date: Optional[datetime | str] = None,
+    min_release_date_diff: Optional[int] = None,
+) -> TemplateHitCollection:
     """Filters the template cache for a query chain.
 
+    Note: returns an empty dict if template_cache_directory does not contain a json file
+    for the alignment representative of a query chain.
+
     Args:
-        input_data (tuple[tuple[str, str], str] | tuple[str, list[tuple[str, str]]]):
-            Tuple containing the query PDB - chain ID pair and the representative ID or
-            the representative ID and a list of query PDB - chain ID pairs.
-        template_cache_path (Path):
+        input_data (_TemplateQueryEntry):
+            Tuple containing the representative ID - query PDB - chain ID pair with
+            query release dates or the representative ID and a list of query PDB -
+            chain ID release date pairs.
+        template_cache_directory (Path):
             Directory containing template cache jsons per chain.
         max_templates (int):
             Maximum number of templates to keep per query chain.
@@ -315,24 +343,53 @@ def filter_template_cache_for_query(
             Whether the dataset is core train or not.
         max_release_date (Optional[datetime], optional):
             Maximum release date for templates. Defaults to None.
-        min_release_date_diff_core_train (Optional[int], optional):
+        min_release_date_diff (Optional[int], optional):
             Minimum release date difference for core train templates. Defaults to None.
 
     Returns:
-        dict[tuple[str, str], list[str]]:
+        TemplateHitCollection:
             Dict mapping a query PDB - chain ID pair to a list of valid template
             representative IDs.
     """
 
-    # Unpack input
+    # Unpack input and format release dates
     if is_core_train:
-        (query_pdb_chain_id, query_release_date), rep_id = input_data
+        rep_id, (query_pdb_chain_id, query_release_date) = (
+            input_data.rep_pdb_chain_id,
+            (
+                input_data.dated_query.query_pdb_chain_id,
+                datetime.strptime(
+                    input_data.dated_query.query_release_date, "%Y-%m-%d"
+                ),
+            ),
+        )
     else:
-        rep_id, query_pdb_chain_ids_release_dates = input_data
+        rep_id, query_pdb_chain_ids_release_dates = (
+            input_data.rep_pdb_chain_id,
+            input_data.dated_query,
+        )
+        if isinstance(max_release_date, str):
+            max_release_date = datetime.strptime(max_release_date, "%Y-%m-%d")
 
-    # Parse template cache of the representative
-    with open(template_cache_path / Path(f"{rep_id}.json")) as f:
-        template_cache = json.load(f)
+    # Parse template cache of the representative if available
+    template_cache_file = template_cache_directory / Path(f"{rep_id}.json")
+    if template_cache_file.exists():
+        with open(template_cache_directory / Path(f"{rep_id}.json")) as f:
+            template_cache = json.load(f)
+    else:
+        logger.info(
+            f"Template cache for representative {rep_id} not found. Returning no valid "
+            "templates."
+        )
+        if is_core_train:
+            return TemplateHitCollection({tuple(query_pdb_chain_id.split("_")): []})
+        else:
+            return TemplateHitCollection(
+                {
+                    tuple(query_pdb_chain_id[0].split("_")): []
+                    for query_pdb_chain_id in query_pdb_chain_ids_release_dates
+                }
+            )
 
     # Sort by e-value
     sorted_templates = sorted(template_cache.items(), key=lambda x: x[1]["e_value"])
@@ -344,37 +401,47 @@ def filter_template_cache_for_query(
     # Filter templates
     filtered_templates = []
     for template_id, template_date in ids_dates:
-        if check_release_date(
-            query_release_date=query_release_date,
-            template_release_date=template_date,
-            is_core_train=is_core_train,
-            max_release_date=max_release_date,
-            min_release_date_diff_core_train=min_release_date_diff_core_train,
-        ):
-            continue
+        # Apply release date filters
+        if is_core_train:
+            if check_release_date_diff(
+                query_release_date=query_release_date,
+                template_release_date=template_date,
+                min_release_date_diff=min_release_date_diff,
+            ):
+                continue
         else:
-            filtered_templates.append(template_id)
+            if check_release_date_max(
+                template_release_date=template_date, max_release_date=max_release_date
+            ):
+                continue
+        # Add to list of filtered templates if pass
+        filtered_templates.append(template_id)
 
+        # Break if max templates reached
         if len(filtered_templates) == max_templates:
             break
 
     if is_core_train:
-        return {tuple(query_pdb_chain_id.split("_")): filtered_templates}
+        return TemplateHitCollection(
+            {tuple(query_pdb_chain_id.split("_")): filtered_templates}
+        )
     else:
-        return {
-            tuple(query_pdb_chain_id[0].split("_")): filtered_templates
-            for query_pdb_chain_id in query_pdb_chain_ids_release_dates
-        }
+        return TemplateHitCollection(
+            {
+                tuple(query_pdb_chain_id[0].split("_")): filtered_templates
+                for query_pdb_chain_id in query_pdb_chain_ids_release_dates
+            }
+        )
 
 
 class _AF3TemplateCacheFilter:
     def __init__(
         self,
-        template_cache_path,
+        template_cache_directory,
         max_templates,
         is_core_train,
         max_release_date,
-        min_release_date_diff_core_train,
+        min_release_date_diff,
     ) -> None:
         """Wrapper class for filtering the template cache and updating the dataset cache
 
@@ -387,28 +454,26 @@ class _AF3TemplateCacheFilter:
         decorator-like nested functions.
 
         Attributes:
-            template_cache_path (Path):
+            template_cache_directory (Path):
                 Directory containing template cache jsons per chain.
             max_templates (int):
                 Maximum number of templates to keep per query chain.
             is_core_train (bool):
                 Whether the dataset is core train or not.
-            max_release_date (Optional[datetime]):
+            max_release_date (datetime | None):
                 Maximum release date for templates.
-            min_release_date_diff_core_train (Optional[int]):
+            min_release_date_diff (int | None):
                 Minimum release date difference for core train templates.
 
         """
-        self.template_cache_path = template_cache_path
+        self.template_cache_path = template_cache_directory
         self.max_templates = max_templates
         self.is_core_train = is_core_train
         self.max_release_date = max_release_date
-        self.min_release_date_diff_core_train = min_release_date_diff_core_train
+        self.min_release_date_diff = min_release_date_diff
 
     @wraps(filter_template_cache_for_query)
-    def __call__(
-        self, input: tuple[tuple[str, str], str]
-    ) -> dict[tuple[str, str], list[str]]:
+    def __call__(self, input: _TemplateQueryEntry) -> TemplateHitCollection:
         try:
             valid_templates = filter_template_cache_for_query(
                 input,
@@ -416,36 +481,50 @@ class _AF3TemplateCacheFilter:
                 self.max_templates,
                 self.is_core_train,
                 self.max_release_date,
-                self.min_release_date_diff_core_train,
+                self.min_release_date_diff,
             )
             return valid_templates
         except Exception as e:
-            logger.warning(
-                "Failed to filter templates for query " f"{input[0][0]}: {e}"
-            )
-            return {input[0][0]: []}
+            if self.is_core_train:
+                logger.warning(
+                    "Failed to filter templates for query " f"{input[0][0]}: {e}"
+                )
+                return {input[0][0]: []}
+            else:
+                query_pdb_chain_ids = [
+                    query_pdb_chain_id.query_pdb_chain_id
+                    for query_pdb_chain_id in input.dated_query
+                ]
+                logger.warning(
+                    "Failed to filter templates for queries "
+                    f"{query_pdb_chain_ids}: "
+                    f"{e}."
+                )
+                return {
+                    query_pdb_chain_id: [] for query_pdb_chain_id in query_pdb_chain_ids
+                }
 
 
 def filter_template_cache_af3(
-    dataset_cache_path: Path,
-    updated_dataset_cache_path: Path,
-    template_cache_path: Path,
+    dataset_cache_file: Path,
+    updated_dataset_cache_file: Path,
+    template_cache_directory: Path,
     max_templates: int,
     is_core_train: bool,
     num_workers: int,
     save_frequency: int,
-    max_release_date: Optional[datetime] = None,
-    min_release_date_diff_core_train: Optional[int] = None,
+    max_release_date: datetime | None = None,
+    min_release_date_diff: int | None = None,
 ) -> None:
     """Filters the template cache and updates the dataset cache with valid template IDs.
 
     Args:
-        dataset_cache_path (Path):
+        dataset_cache_file (Path):
             Path to the dataset cache json file.
-        updated_dataset_cache_path (Path):
+        updated_dataset_cache_file (Path):
             Path to the updated dataset cache json file containing valid template
             representative IDs.
-        template_cache_path (Path):
+        template_cache_directory (Path):
             Path to the directory containing template cache jsons per chain.
         max_templates (int):
             Maximum number of templates to keep per query chain.
@@ -455,36 +534,33 @@ def filter_template_cache_af3(
             Number of workers to use for multiprocessing.
         save_frequency (int):
             Frequency at which to save the updated dataset cache.
-        max_release_date (Optional[datetime], optional):
+        max_release_date (datetime | None):
             Maximum release date for templates. Defaults to None.
-        min_release_date_diff_core_train (Optional[int], optional):
+        min_release_date_diff (int | None):
             Minimum release date difference for core train templates. Defaults to None.
     """
     # Parse list of chains from metadata cache
-    with open(dataset_cache_path) as f:
+    with open(dataset_cache_file) as f:
         dataset_cache = json.load(f)
-    template_data_iterator = fetch_representatives_dc(dataset_cache, is_core_train)
-    template_data_iterator = (
-        template_data_iterator.query_rep
-        if is_core_train
-        else list(template_data_iterator.rep_query_map.items())
-    )
-    data_iterator_len = len(template_data_iterator)
+    template_query_iterator = parse_representatives(
+        dataset_cache, is_core_train
+    ).entries
+    data_iterator_len = len(template_query_iterator)
 
     # Filter template cache for each query chain
     wrapped_template_cache_filter = _AF3TemplateCacheFilter(
-        template_cache_path,
+        template_cache_directory,
         max_templates,
         is_core_train,
         max_release_date,
-        min_release_date_diff_core_train,
+        min_release_date_diff,
     )
     with mp.Pool(num_workers) as pool:
         for idx, valid_templates in tqdm(
             enumerate(
                 pool.imap_unordered(
                     wrapped_template_cache_filter,
-                    template_data_iterator,
+                    template_query_iterator,
                     chunksize=30,
                 )
             ),
@@ -493,10 +569,14 @@ def filter_template_cache_af3(
         ):
             # Update dataset cache with list of valid template representative IDs
             for (pdb_id, chain_id), valid_template_list in valid_templates.items():
-                dataset_cache["entries"][pdb_id]["chains"][chain_id]["template_ids"] = (
-                    valid_template_list
-                )
+                dataset_cache["structure_data"][pdb_id]["chains"][chain_id][
+                    "template_ids"
+                ] = valid_template_list
 
             if (idx + 1) % save_frequency == 0:
-                with open(updated_dataset_cache_path, "w") as f:
-                    json.dump(dataset_cache, f)
+                with open(updated_dataset_cache_file, "w") as f:
+                    json.dump(dataset_cache, f, indent=4)
+
+    # Save final complete dataset cache
+    with open(updated_dataset_cache_file, "w") as f:
+        json.dump(dataset_cache, f, indent=4)

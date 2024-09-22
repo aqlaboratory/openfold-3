@@ -5,11 +5,12 @@ import logging
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import NamedTuple, Optional
 
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFFile
 
+from openfold3.core.data.io.sequence.fasta import read_multichain_fasta
 from openfold3.core.data.io.sequence.template import TemplateHit
 from openfold3.core.data.io.structure.cif import parse_mmcif
 from openfold3.core.data.primitives.structure.labels import (
@@ -24,30 +25,87 @@ from openfold3.core.data.primitives.structure.metadata import (
 logger = logging.getLogger(__name__)
 
 
-# Template cache creation
-def fetch_representatives_mc(metadata_cache: dict) -> list[tuple[str, str]]:
-    """Extracts the representative chain IDs for the metadata cache.
+# Shared
+class _DatedQueryEntry(NamedTuple):
+    """Query PDB+chain ID, release date tuple."""
+    query_pdb_chain_id: str
+    query_release_date: str
+
+class _TemplateQueryEntry(NamedTuple):
+    """Representative PDB+chain ID, _DatedQueryEntry tuple."""
+    rep_pdb_chain_id: str
+    dated_query: _DatedQueryEntry | list[_DatedQueryEntry]
+
+
+@dataclasses.dataclass(frozen=False)
+class _TemplateQueryIterator:
+    """Dataclass for iterating over queries to filter templates for and add to the dataset cache
+
+    Attributes:
+        entries (list[_TemplateQueryEntry]):
+            List of tuples of chain - representative ID pairs for template cache
+            construction and core training filtering OR a list of tuples of representative
+            chain IDs to the list of corresponding PDB IDs for distillation training sets
+            and inference sets.
+    """
+
+    entries: list[_TemplateQueryEntry]
+
+
+def parse_representatives(
+    dataset_cache: dict,
+    is_core_train: bool,
+) -> _TemplateQueryIterator:
+    """Extracts the chain ID mappings and release dates from the dataset cache.
+
+    Note: behaves differently for core training sets and distillation/inference sets
+    to reduce the runtimes for the latter.
 
     Args:
-        metadata_cache (dict):
-            The precomputed metadata cache.
+        dataset_cache (dict):
+            The precomputed dataset cache.
+        is_core_train (bool):
+            Parser mode. One of "construct", "filter_core_train", "filter_distillation".
 
     Returns:
-        list[tuple[str, str]]:
-            The list of tuples of chain - representative ID pairs.
+        _TemplateDataIterator:
+            The list of tuples of chain - representative ID pairs for core training or
+            a dict mapping representative chain IDs to the list of corresponding PDB IDs
+            for distillation training sets and inference sets
     """
-    return [
-        (
-            f"{pdb_id}_{chain_id}",
-            chain_data["representative_id"],
+    if is_core_train:
+        return _TemplateQueryIterator(
+            entries=[
+                _TemplateQueryEntry(
+                    chain_data["alignment_representative_id"],
+                    _DatedQueryEntry(f"{pdb_id}_{chain_id}", entry_data["release_date"]),
+                )
+                for pdb_id, entry_data in dataset_cache["structure_data"].items()
+                for chain_id, chain_data in entry_data["chains"].items()
+                if (chain_data["molecule_type"] == "PROTEIN")
+            ],
         )
-        for pdb_id, entry_data in metadata_cache["structure_data"].items()
-        for chain_id, chain_data in entry_data["chains"].items()
-        if (chain_data["molecule_type"] == "PROTEIN")
-        & (entry_data["status"] == "success")
-    ]
+    else:
+        entries = {}
+        for pdb_id, entry_data in dataset_cache["structure_data"].items():
+            for chain_id, chain_data in entry_data["chains"].items():
+                if chain_data["molecule_type"] == "PROTEIN":
+                    rep_id = chain_data["alignment_representative_id"]
+                    if rep_id not in entries:
+                        entries[rep_id] = []
+                        entries[rep_id].append(
+                            _DatedQueryEntry(f"{pdb_id}_{chain_id}", entry_data["release_date"])
+                        )
+                    else:
+                        entries[rep_id].append(
+                            _DatedQueryEntry(f"{pdb_id}_{chain_id}", entry_data["release_date"])
+                        )
+        return _TemplateQueryIterator(
+            entries=[_TemplateQueryEntry(rep, dated_query) for rep, dated_query in entries.items()]
+        )
 
 
+# Template cache construction
 def check_sequence(
     query_seq: str,
     hit: TemplateHit,
@@ -99,7 +157,7 @@ def parse_release_date(cif_file: CIFFile) -> datetime:
 
 
 def parse_structure(
-    structures_path: Path, query_pdb_id: str
+    structures_path: Path, query_pdb_id: str, file_format: str = "bcif"
 ) -> tuple[CIFFile | None, AtomArray | None]:
     """Attempts to parse the structure of a given PDB ID from a target directory.
 
@@ -108,6 +166,8 @@ def parse_structure(
             Path to the directory containing structures in mmCIF format.
         query_pdb_id (str):
             The PDB ID of the structure to parse.
+        file_format (str, optional):
+            The file format of the structure. Defaults to "bcif".
 
     Returns:
         tuple[CIFFile | None, AtomArray | None]:
@@ -116,7 +176,7 @@ def parse_structure(
     """
     try:
         cif_file, atom_array = parse_mmcif(
-            structures_path / Path(f"{query_pdb_id}.bcif")
+            structures_path / Path(f"{query_pdb_id}.{file_format}")
         )
     except FileNotFoundError:
         cif_file, atom_array = None, None
@@ -124,19 +184,21 @@ def parse_structure(
 
 
 def match_query_chain_and_sequence(
-    cif_file: CIFFile,
-    atom_array: AtomArray,
+    query_structures_directory: Path,
     query: TemplateHit,
     query_pdb_id: str,
     query_chain_id: str,
 ) -> bool:
     """Checks if the query sequences in the CIF and template alignment file match.
 
+    Note: The chain-ID to sequence mapping is extracted from the preprocessed fasta file
+    for the sanitized assembly and NOT directly from the CIF file.
+
     Args:
-        cif_file (CIFFile):
-            Parsed mmCIF file.
-        atom_array (AtomArray):
-            Atom array of the structure.
+        query_structures_directory (Path):
+            Path to the directory containing query structures in mmCIF format. The
+            PDB IDs of the query CIF files need to match the PDB IDs for the query (1st
+            row) in the alignment file for it to have any templates.
         query (TemplateHit):
             The query TemplateHit from the alignment.
         query_pdb_id (str):
@@ -150,9 +212,9 @@ def match_query_chain_and_sequence(
     """
     is_query_invalid = True
     # Attempt to locate template first template hit i.e. query in its CIF file
-    # atom_array._annot["chain_id"] = atom_array.chain_id.astype(str)
-    cif_data = get_cif_block(cif_file)
-    chain_id_seq_map = get_chain_to_canonical_seq_dict(atom_array, cif_data)
+    chain_id_seq_map = read_multichain_fasta(
+        query_structures_directory / Path(f"{query_pdb_id}.fasta")
+    )
     query_seq_cif = chain_id_seq_map.get(query_chain_id)
     query_seq_hmm = query.hit_sequence.replace("-", "")
 
@@ -278,113 +340,85 @@ def create_residue_idx_map(query: TemplateHit, hit: TemplateHit) -> dict[int, in
     }
 
 
-class _TDIType(Enum):
-    """Enum for the type of data in the template data iterator."""
-
-    core_train = "core_train"
-    dist_inf = "dist_inf"
-
-
-@dataclasses.dataclass(frozen=False)
-class _TemplateDataIterator:
-    """Dataclass for iterating over template data to filter and add to the dataset cache
-
-    Note: takes in either query_rep or rep_query_map depending on pipeline type.
-
-    """
-
-    type: _TDIType
-    query_rep: Optional[list[tuple[str, str]]] = None
-    rep_query_map: Optional[dict[str, list[tuple[str, str]]]] = None
-
-    def __post_init__(self):
-        if (self.type == _TDIType.core_train) & (self.query_rep is None) or (
-            self.type == _TDIType.dist_inf
-        ) & (self.rep_query_map is None):
-            raise ValueError(
-                f"{_TDIType.core_train} requires query_rep attribute, "
-                f"{_TDIType.dist_inf} requires rep_query_map."
-            )
-
-
 # Template cache filtering
-def fetch_representatives_dc(
-    dataset_cache: dict,
-    is_core_train: bool,
-) -> _TemplateDataIterator:
-    """Extracts the chain ID mappings and release dates from the dataset cache.
+@dataclasses.dataclass(frozen=False)
+class TemplateHitCollection:
+    """A dict-wrapper dataclass for storing filtered template hits."""
+    data: dict[tuple[str, str], list[str]] = dataclasses.field(default_factory=dict)
 
-    Note: behaves differently for core training sets and distillation/inference sets.
+    def __getitem__(self, key: tuple[str, str]) -> list[str]:
+        return self.data[key]
 
-    Args:
-        dataset_cache (dict):
-            The precomputed dataset cache.
-        is_core_train (bool):
-            Whether the pipeline is for core training.
+    def __setitem__(self, key: tuple[str, str], value: list[str]) -> None:
+        self.data[key] = value
 
-    Returns:
-        _TemplateDataIterator:
-            The list of tuples of chain - representative ID pairs for core training or
-            a dict mapping representative chain IDs to the list of corresponding PDB IDs
-            for distillation training sets and inference sets
-    """
-    if is_core_train:
-        return _TemplateDataIterator(
-            type=_TDIType.core_train,
-            query_rep=[
-                (
-                    (f"{pdb_id}_{chain_id}", entry_data["release_date"]),
-                    chain_data["representative_id"],
-                )
-                for pdb_id, entry_data in dataset_cache["entries"].items()
-                for chain_id, chain_data in entry_data["chains"].items()
-                if (chain_data["type"] == "PROTEIN")
-            ],
-        )
-    else:
-        rep_query_map = {}
-        for pdb_id, entry_data in dataset_cache["entries"].items():
-            for chain_id, chain_data in entry_data["chains"].items():
-                if chain_data["type"] == "PROTEIN":
-                    rep_id = chain_data["representative_id"]
-                    if rep_id not in rep_query_map:
-                        rep_query_map[rep_id] = []
-                        rep_query_map[rep_id].append(
-                            (f"{pdb_id}_{chain_id}", entry_data["release_date"])
-                        )
-                    else:
-                        rep_query_map[rep_id].append(
-                            (f"{pdb_id}_{chain_id}", entry_data["release_date"])
-                        )
-        return _TemplateDataIterator(
-            type=_TDIType.dist_inf, rep_query_map=rep_query_map
-        )
+    def __delitem__(self, key: tuple[str, str]) -> None:
+        del self.data[key]
 
+    def get(self, key: tuple[str, str], default=None) -> list[str]:
+        return self.data.get(key, default)
 
-def check_release_date(
-    query_release_date: datetime,
-    template_release_date: datetime,
-    is_core_train: bool,
-    max_release_date: datetime,
-    min_release_date_diff_core_train: int,
-) -> bool:
-    """_summary_
+    def __iter__(self):
+        return iter(self.data)
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def keys(self):
+        return self.data.keys()
+
+    def values(self):
+        return self.data.values()
+
+    def items(self):
+        return self.data.items()
+
+    def __repr__(self):
+        return f"{self.data}"
+
+def check_release_date_diff(
+        query_release_date: datetime,
+        template_release_date: datetime,
+        min_release_date_diff: int,
+        ) -> bool:
+    """Calc if the release date difference is at least as much as the minimum required.
+
+    As per AF3 SI Section 2.4. Used for the core training set.
 
     Args:
-        query_release_date (datetime): _description_
-        template_release_date (datetime): _description_
-        is_core_train (bool): _description_
-        max_release_date (datetime): _description_
-        min_release_date_diff_core_train (int): _description_
+        query_release_date (datetime):
+            The release date of the query structure.
+        template_release_date (datetime):
+            The release date of the template structure.
+        min_release_date_diff (int):
+            The minimum number of days required for the template to be released before a
+            query structure.
 
     Returns:
-        bool: _description_
+        bool:
+            Whether the release date difference is at least as much as the minimum
+            required.
     """
-    if is_core_train:
-        # Core training filter
-        return (
+    return (
             query_release_date - template_release_date
-        ).days < min_release_date_diff_core_train
-    else:
-        # Distillation set/inference filter
-        return template_release_date < max_release_date
+        ).days < min_release_date_diff
+
+def check_release_date_max(
+        template_release_date: datetime,
+        max_release_date: datetime,
+        ) -> bool:
+    """Calc if the release date is before the maximum allowed release date.
+
+    As per AF3 SI Section 2.4. Used for distillation and inference sets.
+
+    Args:
+        template_release_date (datetime):
+            The release date of the template structure.
+        max_release_date (datetime):
+            The maximum allowed release date.
+
+    Returns:
+        bool:
+            Whether the release date is before the maximum allowed release date.
+    """
+    return template_release_date < max_release_date

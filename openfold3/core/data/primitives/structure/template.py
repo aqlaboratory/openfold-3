@@ -47,7 +47,7 @@ class TemplateSliceCollection:
         template_slices (dict[int, list[TemplateSlice]]):
             Dict mapping query chain ID to a list of TemplateSlice objects."""
 
-    template_slices: dict[int, list[TemplateSlice]]
+    template_slices: dict[str, list[TemplateSlice]]
 
 
 def get_query_structure_res_ids(

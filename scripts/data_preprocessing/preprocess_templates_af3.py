@@ -13,16 +13,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
 
 @click.command()
 @click.option(
-    "--metadata-cache-path",
-    required=True,
-    help="Filepath to the metadata cache.",
-    exists=True,
-    file_okay=True,
-    dir_okay=False,
-    path_type=Path,
-)
-@click.option(
-    "--template-alignment-base-path",
+    "--template-alignment-directory",
     required=True,
     help="Directory containing per-chain folders with template alignments.",
     exists=True,
@@ -37,7 +28,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     type=str,
 )
 @click.option(
-    "--template-structures-path",
+    "--template-structures-directory",
     required=True,
     help="Directory containing the template structures.",
     exists=True,
@@ -46,7 +37,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     path_type=Path,
 )
 @click.option(
-    "--template-cache-path",
+    "--template-cache-directory",
     required=True,
     multiple=True,
     help="Filepath to where the template cache should be saved.",
@@ -56,7 +47,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     path_type=Path,
 )
 @click.option(
-    "--query-structures-path",
+    "--query-structures-directory",
     required=True,
     help="Directory containing query structures used for training or inference.",
     exists=True,
@@ -74,7 +65,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     ),
 )
 @click.option(
-    "--dataset-cache-path",
+    "--dataset-cache-file",
     required=True,
     help="Filepath to the dataset cache.",
     exists=True,
@@ -83,7 +74,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     path_type=Path,
 )
 @click.option(
-    "--updated-dataset-cache-path",
+    "--updated-dataset-cache-file",
     required=True,
     help="Filepath to where the updated dataset cache should be saved.",
     exists=False,
@@ -126,7 +117,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     default=None,
 )
 @click.option(
-    "--min-release-date-diff-core-train",
+    "--min-release-date-diff",
     required=False,
     help=(
         "Minimum number of days required for the template to be released before a"
@@ -136,26 +127,25 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     default=None,
 )
 def main(
-    metadata_cache_path,
-    template_alignment_base_path,
+    template_alignment_directory,
     template_alignment_filename,
-    template_structures_path,
-    template_cache_path,
-    query_structures_path,
+    template_structures_directory,
+    template_cache_directory,
+    query_structures_directory,
     num_workers,
-    dataset_cache_path,
-    updated_dataset_cache_path,
+    dataset_cache_file,
+    updated_dataset_cache_file,
     max_templates,
     is_core_train,
     save_frequency,
     max_release_date,
-    min_release_date_diff_core_train,
+    min_release_date_diff,
 ) -> None:
     logger = logging.getLogger("openfold3")
     logger.setLevel(logging.WARNING)
     logger.addHandler(logging.StreamHandler())
 
-    if is_core_train & (min_release_date_diff_core_train is None):
+    if is_core_train & (min_release_date_diff is None):
         raise ValueError(
             "Minimum release date difference for core training must be specified."
         )
@@ -167,25 +157,25 @@ def main(
         )
 
     create_template_cache_af3(
-        metadata_cache_path,
-        template_alignment_base_path,
-        template_alignment_filename,
-        template_structures_path,
-        template_cache_path,
-        query_structures_path,
-        num_workers,
+        dataset_cache_file=dataset_cache_file,
+        template_alignment_directory=template_alignment_directory,
+        template_alignment_filename=template_alignment_filename,
+        template_structures_directory=template_structures_directory,
+        template_cache_directory=template_cache_directory,
+        query_structures_directory=query_structures_directory,
+        num_workers=num_workers,
     )
 
     filter_template_cache_af3(
-        dataset_cache_path,
-        updated_dataset_cache_path,
-        template_cache_path,
-        max_templates,
-        is_core_train,
-        num_workers,
-        save_frequency,
-        max_release_date,
-        min_release_date_diff_core_train,
+        dataset_cache_file=dataset_cache_file,
+        updated_dataset_cache_file=updated_dataset_cache_file,
+        template_cache_directory=template_cache_directory,
+        max_templates=max_templates,
+        is_core_train=is_core_train,
+        num_workers=num_workers,
+        save_frequency=save_frequency,
+        max_release_date=max_release_date,
+        min_release_date_diff=min_release_date_diff,
     )
 
 
