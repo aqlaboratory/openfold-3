@@ -318,10 +318,10 @@ class WeightedPDBDataset(SingleDataset):
             atom_array_cropped=atom_array_cropped,
             n_templates=self.n_templates,
             is_train=True,
-            template_cache_path=self.template_cache_path,
+            template_cache_directory=self.template_cache_path,
             dataset_cache=self.dataset_cache,
             pdb_id=pdb_id,
-            template_structures_path=self.template_structures_path,
+            template_structures_directory=self.template_structures_path,
             ccd=self.ccd,
         )
         print(template_slice_collection)
