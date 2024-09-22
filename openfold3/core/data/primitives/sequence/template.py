@@ -3,9 +3,8 @@
 import dataclasses
 import logging
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFFile
@@ -28,25 +27,28 @@ logger = logging.getLogger(__name__)
 # Shared
 class _DatedQueryEntry(NamedTuple):
     """Query PDB+chain ID, release date tuple."""
+
     query_pdb_chain_id: str
     query_release_date: str
 
+
 class _TemplateQueryEntry(NamedTuple):
     """Representative PDB+chain ID, _DatedQueryEntry tuple."""
+
     rep_pdb_chain_id: str
     dated_query: _DatedQueryEntry | list[_DatedQueryEntry]
 
 
 @dataclasses.dataclass(frozen=False)
 class _TemplateQueryIterator:
-    """Dataclass for iterating over queries to filter templates for and add to the dataset cache
+    """Dataclass for iterating over queries to filter templates for
 
     Attributes:
         entries (list[_TemplateQueryEntry]):
             List of tuples of chain - representative ID pairs for template cache
-            construction and core training filtering OR a list of tuples of representative
-            chain IDs to the list of corresponding PDB IDs for distillation training sets
-            and inference sets.
+            construction and core training filtering OR a list of tuples of
+            representative chain IDs to the list of corresponding PDB IDs for
+            distillation training sets and inference sets.
     """
 
     entries: list[_TemplateQueryEntry]
@@ -78,7 +80,9 @@ def parse_representatives(
             entries=[
                 _TemplateQueryEntry(
                     chain_data["alignment_representative_id"],
-                    _DatedQueryEntry(f"{pdb_id}_{chain_id}", entry_data["release_date"]),
+                    _DatedQueryEntry(
+                        f"{pdb_id}_{chain_id}", entry_data["release_date"]
+                    ),
                 )
                 for pdb_id, entry_data in dataset_cache["structure_data"].items()
                 for chain_id, chain_data in entry_data["chains"].items()
@@ -94,14 +98,21 @@ def parse_representatives(
                     if rep_id not in entries:
                         entries[rep_id] = []
                         entries[rep_id].append(
-                            _DatedQueryEntry(f"{pdb_id}_{chain_id}", entry_data["release_date"])
+                            _DatedQueryEntry(
+                                f"{pdb_id}_{chain_id}", entry_data["release_date"]
+                            )
                         )
                     else:
                         entries[rep_id].append(
-                            _DatedQueryEntry(f"{pdb_id}_{chain_id}", entry_data["release_date"])
+                            _DatedQueryEntry(
+                                f"{pdb_id}_{chain_id}", entry_data["release_date"]
+                            )
                         )
         return _TemplateQueryIterator(
-            entries=[_TemplateQueryEntry(rep, dated_query) for rep, dated_query in entries.items()]
+            entries=[
+                _TemplateQueryEntry(rep, dated_query)
+                for rep, dated_query in entries.items()
+            ]
         )
 
 
@@ -344,6 +355,7 @@ def create_residue_idx_map(query: TemplateHit, hit: TemplateHit) -> dict[int, in
 @dataclasses.dataclass(frozen=False)
 class TemplateHitCollection:
     """A dict-wrapper dataclass for storing filtered template hits."""
+
     data: dict[tuple[str, str], list[str]] = dataclasses.field(default_factory=dict)
 
     def __getitem__(self, key: tuple[str, str]) -> list[str]:
@@ -376,11 +388,12 @@ class TemplateHitCollection:
     def __repr__(self):
         return f"{self.data}"
 
+
 def check_release_date_diff(
-        query_release_date: datetime,
-        template_release_date: datetime,
-        min_release_date_diff: int,
-        ) -> bool:
+    query_release_date: datetime,
+    template_release_date: datetime,
+    min_release_date_diff: int,
+) -> bool:
     """Calc if the release date difference is at least as much as the minimum required.
 
     As per AF3 SI Section 2.4. Used for the core training set.
@@ -399,14 +412,13 @@ def check_release_date_diff(
             Whether the release date difference is at least as much as the minimum
             required.
     """
-    return (
-            query_release_date - template_release_date
-        ).days < min_release_date_diff
+    return (query_release_date - template_release_date).days < min_release_date_diff
+
 
 def check_release_date_max(
-        template_release_date: datetime,
-        max_release_date: datetime,
-        ) -> bool:
+    template_release_date: datetime,
+    max_release_date: datetime,
+) -> bool:
     """Calc if the release date is before the maximum allowed release date.
 
     As per AF3 SI Section 2.4. Used for distillation and inference sets.

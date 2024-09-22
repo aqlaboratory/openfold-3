@@ -12,7 +12,6 @@ from typing import Optional
 from tqdm import tqdm
 
 from openfold3.core.data.io.sequence.template import parse_hmmsearch_sto
-from openfold3.core.data.io.utils import encode_numpy_types
 from openfold3.core.data.primitives.sequence.template import (
     TemplateHitCollection,
     _TemplateQueryEntry,
