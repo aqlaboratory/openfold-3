@@ -452,12 +452,12 @@ def find_pairing_indices(
                 [rows.shape[0] for rows in paired_species_rows[:-1]]
             )
             paired_species_rows[-1] = paired_species_rows[-1][: n_rows_final + 1, :]
-            missing_species_mask[-1] = missing_species_mask[-1][: n_rows_final + 1, :]
+            missing_species_rows[-1] = missing_species_rows[-1][: n_rows_final + 1, :]
             break
 
-        # Concatenate all paired arrays into a single paired array
-        paired_rows_index = np.concatenate(paired_species_rows, axis=0)
-        missing_rows_index = np.concatenate(missing_species_rows, axis=0)
+    # Concatenate all paired arrays into a single paired array
+    paired_rows_index = np.concatenate(paired_species_rows, axis=0)
+    missing_rows_index = np.concatenate(missing_species_rows, axis=0)
 
     return paired_rows_index, missing_rows_index
 
@@ -573,7 +573,7 @@ def create_paired(
         for chain_id in uniprot_hits
     ]
 
-    # Count species occurences per chain
+    # Count species occurrences per chain
     count_array, species = count_species_per_chain(uniprot_hits)
 
     # Get pairing masks

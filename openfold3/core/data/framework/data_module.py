@@ -81,7 +81,7 @@ class MultiDatasetConfig:
     def __len__(self):
         return len(self.classes)
 
-    def get_subset(self, index: bool) -> "MultiDatasetConfig":
+    def get_subset(self, index: list[bool]) -> "MultiDatasetConfig":
         """Returns a subset of the MultiDatasetConfig.
 
         Args:
@@ -93,8 +93,8 @@ class MultiDatasetConfig:
                 Subset of the MultiDatasetConfig.
         """
 
-        def apply_bool(value, index):
-            return [v for v, i in zip(value, index) if i]
+        def apply_bool(value, idx):
+            return [v for v, i in zip(value, idx) if i]
 
         return MultiDatasetConfig(
             classes=apply_bool(self.classes, index),
@@ -247,9 +247,12 @@ class DataModule(pl.LightningDataModule):
         """
 
         def get_cast(
-            dictionary: dict, key: Union[str, int], cast_type: type, default: Any = None
+            dictionary: Union[dict, ConfigDict],
+            key: Union[str, int],
+            cast_type: type,
+            default: Any = None,
         ) -> Any:
-            """Simultanously try to get and try to cast a value from a dictionary.
+            """Simultaneously try to get and try to cast a value from a dictionary.
 
             Args:
                 dictionary (dict):
@@ -300,11 +303,12 @@ class DataModule(pl.LightningDataModule):
 
         return multi_dataset_config
 
-    def run_checks(self, multi_dataset_config: MultiDatasetConfig) -> None:
+    @staticmethod
+    def run_checks(multi_dataset_config: MultiDatasetConfig) -> None:
         """Runs checks on the provided crop weights and modes.
 
         Checks for valid combinations of SingleDataset modes and normalizes weights and
-        cropping weights if available and they do not sum to 1. Updates
+        cropping weights if available, and they do not sum to 1. Updates
         multi_dataset_config in place.
 
         Args:
@@ -391,8 +395,8 @@ class DataModule(pl.LightningDataModule):
                 f"combinations are: {supported_combinations}."
             )
 
+    @staticmethod
     def init_datasets(
-        self,
         multi_dataset_config: MultiDatasetConfig,
         type_to_init: DatasetMode,
     ) -> list[SingleDataset]:
@@ -431,7 +435,7 @@ class DataModule(pl.LightningDataModule):
             )
         return datasets
 
-    def generate_dataloader(self, stage: str):
+    def generate_dataloader(self, stage: DatasetMode):
         """Wrap the appropriate dataset in a DataLoader and return it.
 
         Args:
