@@ -8,6 +8,7 @@ from biotite.structure import Atom, AtomArray
 from numpy.random import Generator, default_rng
 from scipy.spatial.distance import cdist
 
+from openfold3.core.data.primitives.featurization.structure import get_token_starts
 from openfold3.core.data.primitives.structure.interface import (
     get_query_interface_token_center_atoms,
 )
@@ -304,6 +305,37 @@ def sample_crop_fuction(crop_weights: dict[str, float]) -> tuple[Callable, tuple
     ]
 
 
+def add_token_positions(atom_array: AtomArray) -> None:
+    """Adds token_position annotation to the input atom array.
+
+    Args:
+        atom_array (AtomArray):
+            AtomArray of the input assembly.
+    """
+    # TODO rework by using a more generic spread_per_token function
+    # Get token starts wrt the full atom array that fall into the crop
+    token_starts = get_token_starts(atom_array)
+    token_in_crop = np.isin(
+        atom_array.token_id[token_starts],
+        np.unique(atom_array[atom_array.crop_mask].token_id),
+    )
+    token_starts_in_crop = token_starts[token_in_crop]
+
+    # Create mapping from token_id to position in the crop
+    token_positions_map = {
+        token: position
+        for position, token in enumerate(atom_array[token_starts_in_crop].token_id)
+    }
+
+    @np.vectorize
+    def get_token_position(token_id):
+        return token_positions_map.get(token_id, -1)
+
+    token_positions = get_token_position(atom_array.token_id)
+
+    atom_array.set_annotation("token_position", token_positions)
+
+
 def apply_crop(
     atom_array: AtomArray,
     token_budget: int,
@@ -311,6 +343,10 @@ def apply_crop(
     crop_weights: dict[str, float],
 ) -> None:
     """Wraps functions sampling cropping strategy and applying it to the input array.
+
+    Note: also adds a token_position annotation to the input atom array, which indexes
+    the position of each token in the crop, which is needed for mapping the crop to the
+    alignments and templates.
 
     Args:
         atom_array (AtomArray):
@@ -340,3 +376,6 @@ def apply_crop(
         crop_function(
             **{k: v for k, v in crop_input.items() if k in crop_function_argnames}
         )
+
+    # Add token_position annotation
+    add_token_positions(atom_array)

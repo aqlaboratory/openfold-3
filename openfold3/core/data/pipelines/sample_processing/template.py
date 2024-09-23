@@ -9,8 +9,7 @@ from biotite.structure.io.pdbx import CIFFile
 from openfold3.core.data.primitives.structure.template import (
     TemplateSliceCollection,
     fetch_template_ids,
-    get_query_structure_res_ids,
-    parse_template_cache_entry,
+    parse_template_cache_entries,
     sample_template_count,
     slice_templates_for_chain,
 )
@@ -66,10 +65,10 @@ def process_template_structures_af3(
     # Iterate over protein chains in the crop
     template_slice_collection = TemplateSliceCollection(template_slices={})
     for chain_id in protein_chain_ids:
-        # Fetch residue ids for the current query chain
-        cropped_query_res_ids = get_query_structure_res_ids(
-            atom_array_cropped, chain_id
-        )
+        # Subset the atom array to the current chain
+        atom_array_cropped_chain = atom_array_cropped[
+            atom_array_cropped.chain_id == chain_id
+        ]
 
         # Get the preprocessed list of filtered templates
         template_pdb_chain_ids = fetch_template_ids(dataset_cache, pdb_id, chain_id)
@@ -81,17 +80,17 @@ def process_template_structures_af3(
         # current chain
         if k > 0:
             # Get template cache
-            template_cache_entry = parse_template_cache_entry(
+            template_cache = parse_template_cache_entries(
                 template_cache_directory, dataset_cache, pdb_id, chain_id
             )
 
             # Slice templates for the current chain
             cropped_templates = slice_templates_for_chain(
-                template_cache_entry,
+                template_cache,
                 k,
                 template_structures_directory,
                 ccd,
-                cropped_query_res_ids,
+                atom_array_cropped_chain,
                 template_pdb_chain_ids,
                 is_train,
             )
