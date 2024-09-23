@@ -207,7 +207,7 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ):
         # Reference conformation features
         "ref_pos": torch.randn((batch_size, n_atom, 3)).float(),
         "ref_mask": torch.ones((batch_size, n_atom)).int(),
-        "ref_element": torch.ones((batch_size, n_atom, 118)).int(),
+        "ref_element": torch.ones((batch_size, n_atom, 119)).int(),
         "ref_charge": torch.ones((batch_size, n_atom)).float(),
         "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)).int(),
         "ref_space_uid": torch.zeros((batch_size, n_atom)).int(),
