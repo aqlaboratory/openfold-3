@@ -84,16 +84,15 @@ def process_msas_af3(
         # Determine whether to do pairing
         is_monomer_homomer = find_monomer_homomer(msa_collection)
 
+        paired_msa_per_chain = None
+        paired_msas = None
         if not is_monomer_homomer:
             # Create paired UniProt MSA arrays and Rfam
             paired_msa_per_chain = create_paired(msa_collection, paired_row_cutoff=8191)
 
-            # Expand across duplicate chains and concatenate
-            paired_msas = expand_paired_msas(msa_collection, paired_msa_per_chain)
-
-        else:
-            paired_msa_per_chain = None
-            paired_msas = None
+            if paired_msa_per_chain is not None:
+                # Expand across duplicate chains and concatenate
+                paired_msas = expand_paired_msas(msa_collection, paired_msa_per_chain)
 
         # Create main MSA arrays
         main_msas = create_main(

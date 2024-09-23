@@ -1,5 +1,7 @@
 """Conformer featurization pipeline."""
 
+import logging
+
 import torch
 import torch.nn.functional as F
 
@@ -8,6 +10,8 @@ from openfold3.core.data.pipelines.sample_processing.conformer import (
 )
 from openfold3.core.data.primitives.structure.component import PERIODIC_TABLE
 from openfold3.core.model.structure.diffusion_module import centre_random_augmentation
+
+logger = logging.getLogger(__name__)
 
 
 def featurize_ref_conformers_af3(
@@ -76,7 +80,17 @@ def featurize_ref_conformers_af3(
 
             # Atom elements (0-indexed)
             element_symbol = atom.GetSymbol()
-            ref_element.append(PERIODIC_TABLE.GetAtomicNumber(element_symbol) - 1)
+
+            try:
+                ref_element.append(PERIODIC_TABLE.GetAtomicNumber(element_symbol) - 1)
+            except RuntimeError:
+                logger.warning(
+                    "%s: Element %s not found in periodic table",
+                    processed_mol.mol_id,
+                    element_symbol,
+                )
+                # If the element is not found in the periodic table, we set it to 118
+                ref_element.append(118)
 
             # Charges
             ref_charge.append(atom.GetFormalCharge())
@@ -110,7 +124,8 @@ def featurize_ref_conformers_af3(
 
     # DISCREPANCY TO SI: We set the maximum atomic number to 118, not 128, which is the
     # largest known atomic number
-    ref_element = F.one_hot(torch.tensor(ref_element), 118).to(torch.int32)
+    # The last bin is for unknown elements
+    ref_element = F.one_hot(torch.tensor(ref_element), 119).to(torch.int32)
 
     ref_charge = torch.tensor(ref_charge, dtype=torch.float32)
     ref_atom_name_chars = F.one_hot(torch.tensor(ref_atom_name_chars), 64).to(

@@ -1,6 +1,7 @@
 """This module contains building blocks for MSA processing."""
 
 import dataclasses
+import logging
 import math
 from typing import Optional, Sequence, Union
 
@@ -14,6 +15,8 @@ from openfold3.core.data.resources.residues import (
     STANDARD_RESIDUES_WITH_GAP_1,
     MoleculeType,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(frozen=False)
@@ -546,7 +549,7 @@ def map_to_paired_msa_per_chain(
 
 def create_paired(
     msa_collection: MsaCollection, paired_row_cutoff: int
-) -> dict[str, MsaParsed]:
+) -> Optional[dict[str, MsaParsed]]:
     """Creates paired MSA arrays from UniProt MSAs.
 
     Follows the AF2-Multimer strategy for pairing rows of UniProt MSAs based on species
@@ -566,6 +569,17 @@ def create_paired(
     # Get parsed uniprot hits
     uniprot_hits = extract_uniprot_hits(msa_collection)
 
+    # Ensure there are at least two chains with UniProt hits after filtering
+    if len(uniprot_hits) <= 1:
+        no_uniprot_hits = set(msa_collection.chain_rep_map.values()).difference(
+            uniprot_hits.keys()
+        )
+        logger.info(
+            "Only one chain present, skipping MSA pairing. No uniprot hits for %s.",
+            ", ".join(list(no_uniprot_hits)),
+        )
+        return None
+
     # Process uniprot headers and calculate distance to query
     _ = [process_uniprot_metadata(uniprot_hits[chain_id]) for chain_id in uniprot_hits]
     _ = [
@@ -578,6 +592,14 @@ def create_paired(
 
     # Get pairing masks
     pairing_masks = get_pairing_masks(count_array, ["shared_by_two", "less_than_600"])
+
+    # No valid pairs, skip MSA pairing
+    if not np.any(pairing_masks):
+        logger.info(
+            "No valid pairs for %s, skipping MSA pairing.",
+            ", ".join(list(uniprot_hits.keys())),
+        )
+        return None
 
     # Find species indices that pair rows
     paired_rows_index, missing_rows_index = find_pairing_indices(
