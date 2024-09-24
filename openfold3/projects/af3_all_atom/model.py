@@ -368,6 +368,9 @@ class AlphaFold3(nn.Module):
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
             chunk_size=self.settings.chunk_size,
+            use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+            use_lma=self.settings.use_lma,
+            _mask_trans=True,
         )
 
         output = {

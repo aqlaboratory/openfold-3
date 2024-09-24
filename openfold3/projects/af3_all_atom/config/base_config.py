@@ -101,8 +101,10 @@ project_config = mlc.ConfigDict(
                         "use_ada_layer_norm": True,
                         "use_block_sparse_attn": use_block_sparse_attn,
                         "block_size": block_size,
+                        "blocks_per_ckpt": blocks_per_ckpt,
                         "inf": 1e10,  # global parameter?
                         "linear_init_params": lin_init.atom_att_enc_init,
+                        "use_reentrant": False,
                     },
                     "linear_init_params": lin_init.input_emb_init,
                 },
@@ -224,8 +226,10 @@ project_config = mlc.ConfigDict(
                         "use_ada_layer_norm": True,
                         "use_block_sparse_attn": use_block_sparse_attn,
                         "block_size": block_size,
+                        "blocks_per_ckpt": blocks_per_ckpt,
                         "inf": 1e9,  # global parameter?
                         "linear_init_params": lin_init.atom_att_enc_init,
+                        "use_reentrant": False,
                     },
                     "diffusion_transformer": {
                         "c_a": c_token_diffusion,
