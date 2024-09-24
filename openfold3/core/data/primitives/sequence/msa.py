@@ -579,7 +579,8 @@ def create_paired(
             uniprot_hits.keys()
         )
         logger.info(
-            "Only one chain present, skipping MSA pairing. No uniprot hits for %s.",
+            "Skipping MSA pairing: %d chain(s) present. No uniprot hits for %s.",
+            len(uniprot_hits),
             ", ".join(list(no_uniprot_hits)),
         )
         return None
@@ -600,7 +601,7 @@ def create_paired(
     # No valid pairs, skip MSA pairing
     if not np.any(pairing_masks):
         logger.info(
-            "No valid pairs for %s, skipping MSA pairing.",
+            "Skipping MSA pairing: No valid pairs for %s.",
             ", ".join(list(uniprot_hits.keys())),
         )
         return None
