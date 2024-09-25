@@ -174,8 +174,13 @@ def crop_spatial_interface(
             preferred_token_center_atoms, token_center_atoms
         )
 
-    # Get reference atom
-    reference_atom = generator.choice(preferred_interface_token_center_atoms, size=1)[0]
+        # Get reference atom
+        reference_atom = generator.choice(
+            preferred_interface_token_center_atoms, size=1
+        )[0]
+    else:
+        # Get reference atom
+        reference_atom = generator.choice(preferred_token_center_atoms, size=1)[0]
 
     # Find spatial crop
     find_spatial_crop(reference_atom, token_center_atoms, token_budget, atom_array)
