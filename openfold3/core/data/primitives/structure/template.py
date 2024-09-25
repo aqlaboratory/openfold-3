@@ -69,10 +69,11 @@ class TemplateSliceCollection:
     for chains that have no templates are empty.
 
     Attributes:
-        template_slices (dict[int, list[TemplateSlice]]):
-            Dict mapping query chain ID to a list of TemplateSlice objects."""
+        template_slices (dict[int, list[AtomArray]]):
+            Dict mapping query chain ID to a list of cropped template AtomArray objects.
+    """
 
-    template_slices: dict[str, list[TemplateSlice]]
+    template_slices: dict[str, list[AtomArray]]
 
 
 def get_query_structure_res_ids(atom_array_cropped_chain: AtomArray) -> np.ndarray[int]:
@@ -228,7 +229,7 @@ def slice_templates_for_chain(
     atom_array_cropped_chain: AtomArray,
     template_pdb_chain_ids: list[str],
     is_train: bool,
-) -> list[TemplateSlice]:
+) -> list[AtomArray]:
     """Identifies the subset of atoms in the template that align to the query crop.
 
     Args:
@@ -248,8 +249,8 @@ def slice_templates_for_chain(
             Whether the current processing is for training or not.
 
     Returns:
-        list[TemplateSlice]:
-            List of TemplateSlice objects for the current chain.
+        list[AtomArray]:
+            List of cropped template AtomArray objects for the current chain.
     """
     cropped_templates = []
 
@@ -294,9 +295,11 @@ def slice_templates_for_chain(
         cropped_template_res_ids = np.vectorize(res_id_res_id_map.get)(
             cropped_query_res_ids
         )
-        cropped_template_res_ids = expand_alignment_to_cropped_query(
-            cropped_query_res_ids, map_dict=idx_map
-        )
+        cropped_template_res_ids = cropped_template_res_ids[
+            np.vectorize(lambda x: x is not None, otypes=[bool])(
+                cropped_template_res_ids
+            )
+        ].astype(int)
 
         # Subset the template atom array
         atom_array_cropped_template = atom_array_template_chain[
@@ -306,15 +309,16 @@ def slice_templates_for_chain(
             )
         ]
 
-        # Add to list of cropped template atom arrays for this chain
-        # TODO rework to add res_id_res_id_map and res_id_token_position_map as
-        # AtomArray annotations
-        cropped_templates.append(
-            TemplateSlice(
-                atom_array=atom_array_cropped_template,
-                res_id_res_id_map=res_id_res_id_map,
-                res_id_token_position_map=res_id_token_position_map,
-            )
+        # Add query residue ids and res_id_token_position_map to the template atom array
+        token_positions = np.vectorize(res_id_token_position_map.get)(
+            cropped_template_res_ids
         )
+        atom_array_cropped_template.set_annotation(
+            "token_positions",
+            struc.spread_residue_wise(atom_array_cropped_template, token_positions),
+        )
+
+        # Add to list of cropped template atom arrays for this chain
+        cropped_templates.append(atom_array_cropped_template)
 
     return cropped_templates

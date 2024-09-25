@@ -23,7 +23,7 @@ from openfold3.core.data.pipelines.featurization.structure import (
     featurize_target_gt_structure_af3,
 )
 from openfold3.core.data.pipelines.featurization.template import (
-    featurize_templates_dummy_af3,
+    featurize_templates_af3,
 )
 from openfold3.core.data.pipelines.sample_processing.conformer import (
     get_reference_conformer_data_af3,
@@ -327,7 +327,14 @@ class WeightedPDBDataset(SingleDataset):
         print(template_slice_collection)
 
         features.update(
-            featurize_templates_dummy_af3(1, self.n_templates, self.token_budget)
+            featurize_templates_af3(
+                template_slice_collection=template_slice_collection,
+                n_templates=self.n_templates,
+                token_budget=self.token_budget,
+                min_bin=3.25,
+                max_bin=50.75,
+                n_bins=39,
+            )
         )
 
         # Reference conformer features

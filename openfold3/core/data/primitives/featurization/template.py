@@ -2,9 +2,18 @@
 
 import dataclasses
 
+import biotite.structure as struc
 import numpy as np
+import torch
 
+from openfold3.core.data.primitives.featurization.structure import encode_one_hot
 from openfold3.core.data.primitives.structure.template import TemplateSliceCollection
+from openfold3.core.data.resources.residues import (
+    STANDARD_RESIDUES_WITH_GAP_1,
+    get_with_unknown_1,
+)
+from openfold3.core.utils.all_atom_multimer import make_transform_from_reference
+from openfold3.core.utils.geometry.vector import Vec3Array
 
 
 @dataclasses.dataclass(frozen=False)
@@ -12,21 +21,217 @@ class AF3TemplateFeaturePrecursor:
     """Dataclass for storing information for AF3 template feature generation.
 
     Attributes:
-        query_res_names (np.ndarray[str]):
+        res_names (np.ndarray[str]):
             The names of the residues in the template structures. Has shape
             [n_templates, n_tokens].
         pseudo_beta_atom_coords (np.ndarray[float]):
             The coordinates of the pseudo beta atoms. Has shape
             [n_templates, n_tokens, 3].
-        n_ca_c_atom_coords (np.ndarray[float]):
-            The coordinates of the N, CA, and C atoms in this order. Has shape
-            [n_templates, n_tokens, 3, 3].
+        frame_atom_coords (np.ndarray[float]):
+            The coordinates of the N, CA, and C atoms in this order along dim -2. Has
+            shape [n_templates, n_tokens, 3, 3].
     """
 
     res_names: np.ndarray[str]
     pseudo_beta_atom_coords: np.ndarray[float]
-    n_ca_c_atom_coords: np.ndarray[float]
+    frame_atom_coords: np.ndarray[float]
 
 
-def create_feature_precursor_af3(template_slice_collection: TemplateSliceCollection):
-    return
+def create_feature_precursor_af3(
+    template_slice_collection: TemplateSliceCollection,
+    n_templates: int,
+    token_budget: int,
+) -> AF3TemplateFeaturePrecursor:
+    """Generates set of precursor features for AF3 template feature generation.
+
+    Args:
+        template_slice_collection (TemplateSliceCollection):
+            The collection of cropped template atom arrays per chain, per template.
+        n_templates (int):
+            Number of templates.
+        token_budget (int):
+            Crop size.
+
+    Returns:
+        AF3TemplateFeaturePrecursor:
+            The precursor features for AF3 template feature generation. Includes
+            residue names, pseudo beta atom coordinates, and N, CA, C atom coordinates.
+    """
+    res_names = np.full((n_templates, token_budget), "-", dtype=str)
+    pseudo_beta_atom_coords = np.full(
+        (n_templates, token_budget, 3), np.nan, dtype=float
+    )
+    frame_atom_coords = np.full((n_templates, token_budget, 3, 3), np.nan, dtype=float)
+
+    # Iterate over chains then templates per chain
+    for _, template_slices in template_slice_collection.template_slices.items():
+        for template_idx, template_slice in enumerate(template_slices):
+            residue_starts = struc.get_residue_starts(template_slice)
+
+            # Residue names and unmask corresponding tokens/template positions
+            res_names[template_idx, template_slice[residue_starts].token_positions] = (
+                template_slice[residue_starts].res_name
+            )
+
+            # Psuedo beta atom coordinates
+            is_gly = template_slice.res_name == "GLY"
+            is_ca = template_slice.atom_name == "CA"
+            is_cb = template_slice.atom_name == "CB"
+            is_pseudo_beta_atom = (is_gly & is_ca) | (~is_gly & is_cb)
+            pseudo_beta_atom_coords[
+                template_idx, template_slice[is_pseudo_beta_atom].token_positions, :
+            ] = template_slice[is_pseudo_beta_atom].coord
+
+            # Frame (N, CA, C) atom coordinates
+            is_n = template_slice.atom_name == "N"
+            is_ca = template_slice.atom_name == "CA"
+            is_c = template_slice.atom_name == "C"
+            frame_atom_coords[
+                template_idx, template_slice[is_n].token_positions, 0, :
+            ] = template_slice[is_n].coord
+            frame_atom_coords[
+                template_idx, template_slice[is_ca].token_positions, 1, :
+            ] = template_slice[is_ca].coord
+            frame_atom_coords[
+                template_idx, template_slice[is_c].token_positions, 2, :
+            ] = template_slice[is_c].coord
+
+    return AF3TemplateFeaturePrecursor(
+        res_names=res_names,
+        pseudo_beta_atom_coords=pseudo_beta_atom_coords,
+        frame_atom_coords=frame_atom_coords,
+    )
+
+
+def create_template_restype(
+    res_names: np.ndarray[str],
+    template_pseudo_beta_mask: np.ndarray[float],
+) -> torch.Tensor:
+    """Creates the restype template feature for AF3.
+
+    Args:
+        res_names (np.ndarray[str]):
+            The precursor features for AF3 template feature generation.
+        template_pseudo_beta_mask (np.ndarray[float]):
+            The mask for pseudo beta atoms. Has shape [n_templates, n_tokens].
+
+    Returns:
+        torch.Tensor:
+            The restype template feature.
+    """
+    restype_index = torch.tensor(get_with_unknown_1(res_names), dtype=torch.int64)
+    template_restype = encode_one_hot(
+        restype_index, len(STANDARD_RESIDUES_WITH_GAP_1)
+    ).to(torch.int32)
+    return template_restype * template_pseudo_beta_mask.unsqueeze(-1)
+
+
+def create_template_distogram(
+    pseudo_beta_atom_coords: np.ndarray[float],
+    pseudo_beta_mask: np.ndarray[float],
+    min_bin: float = 3.25,
+    max_bin: float = 50.75,
+    n_bins: int = 39,
+    inf_value: float = 1e8,
+) -> torch.Tensor:
+    """Creates the distogram template feature for AF3.
+
+    Note: the pseudo_beta_mask is applied to the distogram to zero out masked
+    tokens.
+
+    Args:
+        pseudo_beta_atom_coords (np.ndarray[float]):
+            The coordinates of the pseudo beta atoms. Has shape
+            [n_templates, n_tokens, 3].
+        min_bin (float, optional):
+            Bin lower bound. Defaults to 3.25.
+        max_bin (float, optional):
+            Bin upper bound. Defaults to 50.75.
+        n_bins (int, optional):
+            Number of bins between lower and upper bounds. Defaults to 39.
+        inf_value (float, optional):
+            Value to set last bin entries to. Defaults to 1e8.
+
+    Returns:
+        torch.Tensor:
+            The distogram template feature.
+    """
+    distogram = np.sum(
+        (
+            pseudo_beta_atom_coords[..., None, :]
+            - pseudo_beta_atom_coords[..., None, :, :]
+        )
+        ** 2,
+        axis=-1,
+        keepdims=True,
+    )
+
+    # Generate squared bin edges
+    lower = np.linspace(min_bin, max_bin, n_bins) ** 2
+    upper = np.concatenate(
+        [lower[1:], np.array([inf_value], dtype=lower.dtype)], axis=-1
+    )
+
+    # Bin the distogram
+    template_distogram = torch.tensor(
+        ((distogram > lower) * (distogram < upper)).astype(distogram.dtype),
+        dtype=torch.float,
+    )
+
+    return (
+        template_distogram
+        * (pseudo_beta_mask[..., None] * pseudo_beta_mask[..., None, :])[..., None]
+    )
+
+
+def create_template_unit_vector(
+    frame_atom_coords: np.ndarray[float],
+    backbone_frame_mask: np.ndarray[float],
+) -> torch.Tensor:
+    """Creates the unit vector template feature for AF3.
+
+    Args:
+        frame_atom_coords (np.ndarray[float]):
+            The coordinates of the N, CA, and C atoms in this order along dim -2. Has
+            shape [n_templates, n_tokens, 3, 3].
+        backbone_frame_mask (np.ndarray[float]):
+            The mask indicating for each token in each template if all backbone frame
+            atoms are available. Has shape [n_templates, n_tokens].
+
+    Returns:
+        torch.Tensor:
+            The unit vector template feature.
+    """
+
+    # Convert nans to 0s and tensors to Vec3Arrays
+    frame_atom_coords = torch.nan_to_num(
+        torch.tensor(frame_atom_coords, dtype=torch.float32), nan=0.0
+    )
+    n_vec3array = Vec3Array.from_array(frame_atom_coords[:, :, 0, :])
+    ca_vec3array = Vec3Array.from_array(frame_atom_coords[:, :, 1, :])
+    c_vec3array = Vec3Array.from_array(frame_atom_coords[:, :, 2, :])
+
+    # Create rigid frame and unit vector
+    rigid = make_transform_from_reference(
+        a_xyz=n_vec3array,
+        b_xyz=ca_vec3array,
+        c_xyz=c_vec3array,
+    )
+    unit_vector = (
+        rigid[..., None]
+        .inverse()
+        .apply_to_point(rigid.translation[..., None, :])
+        .normalized()
+    )
+
+    # Cast back to tensor and apply backbone frame mask
+    return torch.cat(
+        [
+            (
+                coord
+                * (backbone_frame_mask[..., None] * backbone_frame_mask[..., None, :])
+            )[..., None]
+            for coord in unit_vector
+        ],
+        dim=-1,
+    )
