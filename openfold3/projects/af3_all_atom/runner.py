@@ -1,3 +1,4 @@
+import importlib
 from pathlib import Path
 
 import torch
@@ -12,6 +13,10 @@ from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
 )
 from openfold3.projects.af3_all_atom.model import AlphaFold3
 from openfold3.projects.registry import register_project
+
+deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
+if deepspeed_is_installed:
+    from deepspeed.ops.adam import DeepSpeedCPUAdam
 
 REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_config.yml"
 
@@ -75,15 +80,25 @@ class AlphaFold3AllAtom(ModelRunner):
     def configure_optimizers(
         self,
         learning_rate: float = 1.8e-3,
-    ) -> torch.optim.Adam:
+    ) -> dict:
         # Ignored as long as a DeepSpeed optimizer is configured
         optimizer_config = self.config.settings.optimizer
-        optimizer = torch.optim.Adam(
-            self.model.parameters(),
-            lr=learning_rate,
-            betas=(optimizer_config.beta1, optimizer_config.beta2),
-            eps=optimizer_config.eps,
-        )
+
+        if deepspeed_is_installed and optimizer_config.use_deepspeed_adam:
+            optimizer = DeepSpeedCPUAdam(
+                self.parameters(),
+                lr=learning_rate,
+                betas=(optimizer_config.beta1, optimizer_config.beta2),
+                eps=optimizer_config.eps,
+                adamw_mode=False,
+            )
+        else:
+            optimizer = torch.optim.Adam(
+                self.model.parameters(),
+                lr=learning_rate,
+                betas=(optimizer_config.beta1, optimizer_config.beta2),
+                eps=optimizer_config.eps,
+            )
 
         if self.last_lr_step != -1:
             for group in optimizer.param_groups:

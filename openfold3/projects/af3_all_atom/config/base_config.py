@@ -34,6 +34,7 @@ block_size = mlc.FieldReference(16, field_type=int)
 
 # templates_enabled = mlc.FieldReference(True, field_type=bool)
 eps = mlc.FieldReference(1e-8, field_type=float)
+inf = mlc.FieldReference(1e9, field_type=float)
 blocks_per_ckpt = mlc.FieldReference(None, field_type=int)
 chunk_size = mlc.FieldReference(None, field_type=int)
 tune_chunk_size = mlc.FieldReference(True, field_type=bool)
@@ -56,6 +57,7 @@ project_config = mlc.ConfigDict(
                 "use_lma": False,
                 "offload_inference": False,
                 "optimizer": {
+                    "use_deepspeed_adam": True,
                     "learning_rate": 1.8e-3,
                     "beta1": 0.9,
                     "beta2": 0.95,
@@ -102,7 +104,7 @@ project_config = mlc.ConfigDict(
                         "use_block_sparse_attn": use_block_sparse_attn,
                         "block_size": block_size,
                         "blocks_per_ckpt": blocks_per_ckpt,
-                        "inf": 1e10,  # global parameter?
+                        "inf": inf,
                         "linear_init_params": lin_init.atom_att_enc_init,
                         "use_reentrant": False,
                     },
@@ -133,7 +135,7 @@ project_config = mlc.ConfigDict(
                         "tri_mul_first": True,
                         "fuse_projection_weights": False,
                         "blocks_per_ckpt": blocks_per_ckpt,
-                        "inf": 1e9,
+                        "inf": inf,
                         "linear_init_params": lin_init.pair_block_init,
                         "use_reentrant": False,
                         "tune_chunk_size": tune_chunk_size,
@@ -163,7 +165,7 @@ project_config = mlc.ConfigDict(
                         "opm_first": True,
                         "fuse_projection_weights": False,
                         "blocks_per_ckpt": blocks_per_ckpt,
-                        "inf": 1e9,
+                        "inf": inf,
                         "eps": eps,
                         "linear_init_params": lin_init.msa_module_init,
                         "use_reentrant": False,
@@ -185,7 +187,7 @@ project_config = mlc.ConfigDict(
                     "pair_dropout": 0.25,
                     "fuse_projection_weights": False,
                     "blocks_per_ckpt": blocks_per_ckpt,
-                    "inf": 1e9,
+                    "inf": inf,
                     "linear_init_params": lin_init.pairformer_init,
                     "use_reentrant": False,
                     "clear_cache_between_blocks": False,
@@ -227,7 +229,7 @@ project_config = mlc.ConfigDict(
                         "use_block_sparse_attn": use_block_sparse_attn,
                         "block_size": block_size,
                         "blocks_per_ckpt": blocks_per_ckpt,
-                        "inf": 1e9,  # global parameter?
+                        "inf": inf,
                         "linear_init_params": lin_init.atom_att_enc_init,
                         "use_reentrant": False,
                     },
@@ -242,7 +244,7 @@ project_config = mlc.ConfigDict(
                         "use_ada_layer_norm": True,
                         "use_block_sparse_attn": False,
                         "block_size": None,
-                        "inf": 1e9,  # global parameter?
+                        "inf": inf,
                         "blocks_per_ckpt": blocks_per_ckpt,
                         "linear_init_params": lin_init.diffusion_transformer_init,
                         "use_reentrant": False,
@@ -261,7 +263,7 @@ project_config = mlc.ConfigDict(
                         "use_block_sparse_attn": use_block_sparse_attn,
                         "block_size": block_size,
                         "blocks_per_ckpt": blocks_per_ckpt,
-                        "inf": 1e9,  # global parameter?
+                        "inf": inf,
                         "linear_init_params": lin_init.atom_att_dec_init,
                         "use_reentrant": False,
                     },
@@ -296,7 +298,7 @@ project_config = mlc.ConfigDict(
                             "pair_dropout": 0.25,
                             "fuse_projection_weights": False,
                             "blocks_per_ckpt": blocks_per_ckpt,
-                            "inf": 1e9,
+                            "inf": inf,
                             "linear_init_params": lin_init.pairformer_init,
                             "use_reentrant": False,
                             "clear_cache_between_blocks": False,
@@ -307,7 +309,7 @@ project_config = mlc.ConfigDict(
                         "min_bin": 3.25,
                         "max_bin": 20.75,
                         "no_bin": 15,
-                        "inf": 1e8,
+                        "inf": inf,
                         "linear_init_params": lin_init.pairformer_head_init,
                     },
                     "pae": {
@@ -395,7 +397,7 @@ project_config = mlc.ConfigDict(
                             "weight": 0.0,
                         },
                         "eps": eps,
-                        "inf": 1e9,
+                        "inf": inf,
                     },
                     "diffusion": {
                         "sigma_data": sigma_data,

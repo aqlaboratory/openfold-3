@@ -276,7 +276,7 @@ def compute_alignment_error(
     """
     xij = express_coords_in_frames(x=x, phi=phi, eps=eps)
     xij_gt = express_coords_in_frames(x=x_gt, phi=phi_gt, eps=eps)
-    return torch.sqrt(eps**2 + torch.sum((xij - xij_gt) ** 2, dim=-1))
+    return torch.sqrt(eps + torch.sum((xij - xij_gt) ** 2, dim=-1))
 
 
 def all_atom_plddt_loss(
@@ -313,10 +313,10 @@ def all_atom_plddt_loss(
     # [*, N_atom, N_atom]
     x_gt = batch["ground_truth"]["atom_positions"]
     dx = torch.sqrt(
-        eps**2 + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
+        eps + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
     )
     dx_gt = torch.sqrt(
-        eps**2 + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
+        eps + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
     )
     d = torch.abs(dx_gt - dx)
 
@@ -556,10 +556,10 @@ def pde_loss(
 
     # Compute prediction target
     d = torch.sqrt(
-        eps**2 + torch.sum((rep_x[..., None, :] - rep_x[..., None, :, :]) ** 2, dim=-1)
+        eps + torch.sum((rep_x[..., None, :] - rep_x[..., None, :, :]) ** 2, dim=-1)
     )
     d_gt = torch.sqrt(
-        eps**2
+        eps
         + torch.sum((rep_x_gt[..., None, :] - rep_x_gt[..., None, :, :]) ** 2, dim=-1)
     )
     e = torch.abs(d - d_gt)
