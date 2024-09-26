@@ -37,6 +37,7 @@ from openfold3.core.data.primitives.structure.cleanup import (
     remove_small_polymers,
     remove_std_residue_terminal_atoms,
     remove_waters,
+    subset_large_structure,
 )
 from openfold3.core.data.primitives.structure.component import (
     AnnotatedMol,
@@ -115,6 +116,9 @@ def cleanup_structure_af3(
     )
     atom_array = remove_non_CCD_atoms(atom_array, ccd)
     atom_array = remove_chains_with_CA_gaps(atom_array, distance_threshold=10.0)
+    atom_array = subset_large_structure(
+        atom_array=atom_array, n_chains=20, interface_distance_threshold=15.0
+    )
 
     ## Structure formatting
     # Add unresolved atoms explicitly with NaN coordinates
