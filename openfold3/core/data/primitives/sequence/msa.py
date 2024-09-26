@@ -76,6 +76,8 @@ class MsaCollection:
             corresponding query sequences.
         chain_rep_map (dict[str, str]):
             Dictionary mapping chain IDs to representative chain IDs.
+        chain_to_molecule_type (dict[str, str]):
+            Dictionary mapping chain IDs to the molecule type.
         num_cols (dict[str, int]):
             Dict mapping representative chain ID to the number of columns in the MSA.
     """
@@ -83,6 +85,7 @@ class MsaCollection:
     rep_msa_map: dict[str, dict[str, MsaParsed]]
     rep_seq_map: dict[str, np.ndarray[np.str_]]
     chain_rep_map: dict[str, str]
+    chain_to_molecule_type: dict[str, str]
     num_cols: dict[str, int]
 
 
@@ -115,10 +118,14 @@ class MsaSlice:
             directory containing the alignments for the corresponding chains.
         tokens_in_chain (dict[int, dict[int, int]]):
             Dictionary mapping tokens that fall into the crop to corresponding residue
-            indices in the matching alignment."""
+            indices in the matching alignment.
+        chain_to_molecule_type (dict[str, str]):
+            Dictionary mapping chain IDs to the molecule type.
+    """
 
     chain_rep_map: dict[int, str]
     tokens_in_chain: dict[int, dict[int, int]]
+    chain_to_molecule_type: dict[str, str]
 
 
 @dataclasses.dataclass(frozen=False)
@@ -152,11 +159,16 @@ def find_monomer_homomer(msa_collection: MsaCollection) -> bool:
         bool: Whether the sample is a monomer or a full homomer.
     """
     # Extract chain IDs and representative chain IDs
-    chain_rep_map = msa_collection.chain_rep_map
+    chain_rep_map = {
+        chain_id: rep_id
+        for chain_id, rep_id in msa_collection.chain_rep_map.items()
+        if msa_collection.chain_to_molecule_type[chain_id] == "PROTEIN"
+    }
     chain_ids, representative_chain_ids = (
         list(chain_rep_map.keys()),
         list(set(chain_rep_map.values())),
     )
+
     return (len(chain_ids) == 1) | (
         (len(representative_chain_ids) == 1) & (len(chain_ids) > 1)
     )
@@ -198,13 +210,29 @@ def extract_uniprot_hits(msa_collection: MsaCollection) -> dict[str, MsaParsed]:
         dict[str, Msa]:
             Dict mapping chain IDs to Msa objects containing UniProt MSAs.
     """
-    chain_ids = msa_collection.rep_msa_map.keys()
+    protein_rep_ids = set(
+        rep_id
+        for chain_id, rep_id in msa_collection.chain_rep_map.items()
+        if msa_collection.chain_to_molecule_type[chain_id] == "PROTEIN"
+    )
+    rep_ids = msa_collection.rep_msa_map.keys()
+
     # Get uniprot hits, exclude MSAs only with query
-    return {
-        chain_id: msa_collection.rep_msa_map[chain_id]["uniprot_hits"]
-        for chain_id in chain_ids
-        if len(msa_collection.rep_msa_map[chain_id]["uniprot_hits"]) > 1
-    }
+    uniprot_hits = {}
+    for rep_id in rep_ids:
+        if rep_id not in protein_rep_ids:
+            continue
+
+        rep_msa_map_per_chain = msa_collection.rep_msa_map[rep_id]
+        uniprot_msa = (
+            rep_msa_map_per_chain.get("uniprot_hits")
+            if "uniprot_hits" in rep_msa_map_per_chain
+            else rep_msa_map_per_chain.get("uniprot")
+        )
+        if uniprot_msa is not None and len(uniprot_msa) > 1:
+            uniprot_hits[rep_id] = uniprot_msa
+
+    return uniprot_hits
 
 
 def process_uniprot_metadata(msa: MsaParsed) -> None:
@@ -711,6 +739,7 @@ def create_crop_to_seq_map(
 
     chain_rep_map = {}
     tokens_in_chain = {}
+    chain_to_molecule_type = {}
     for chain_id_in_crop in chain_ids_in_crop:
         # Get atom array for chain
         atom_array_with_aln_in_crop_chain = atom_array_with_aln_in_crop[
@@ -732,7 +761,14 @@ def create_crop_to_seq_map(
                 atom_array_with_aln_in_crop_chain[token_starts].res_id - 1,
             )
         }
-    return MsaSlice(chain_rep_map=chain_rep_map, tokens_in_chain=tokens_in_chain)
+        chain_to_molecule_type[chain_id_in_crop] = data_cache_entry_chains[
+            chain_id_in_crop
+        ]["molecule_type"]
+    return MsaSlice(
+        chain_rep_map=chain_rep_map,
+        tokens_in_chain=tokens_in_chain,
+        chain_to_molecule_type=chain_to_molecule_type,
+    )
 
 
 def apply_crop_to_msa(

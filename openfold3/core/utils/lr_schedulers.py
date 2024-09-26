@@ -15,7 +15,6 @@ class AlphaFoldLRScheduler(torch.optim.lr_scheduler._LRScheduler):
         self,
         optimizer,
         last_epoch: int = -1,
-        verbose: bool = False,
         base_lr: float = 0.0,
         max_lr: float = 0.001,
         warmup_no_steps: int = 1000,
@@ -39,7 +38,6 @@ class AlphaFoldLRScheduler(torch.optim.lr_scheduler._LRScheduler):
 
         self.optimizer = optimizer
         self.last_epoch = last_epoch
-        self.verbose = verbose
         self.base_lr = base_lr
         self.max_lr = max_lr
         self.warmup_no_steps = warmup_no_steps
@@ -50,7 +48,6 @@ class AlphaFoldLRScheduler(torch.optim.lr_scheduler._LRScheduler):
         super().__init__(
             optimizer,
             last_epoch=last_epoch,
-            verbose=verbose,
         )
 
     def state_dict(self):

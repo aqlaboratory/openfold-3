@@ -18,7 +18,7 @@ import torch
 
 from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
 from openfold3.core.model.layers.transition import ConditionedTransitionBlock
-from openfold3.model_implementations.registry import make_config_with_preset
+from openfold3.projects import registry
 from tests.config import consts
 
 
@@ -33,9 +33,13 @@ class TestDiffusionTransformer(unittest.TestCase):
         no_heads = 3
         no_blocks = 2
 
-        config = make_config_with_preset("af3_all_atom")
+        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_config = proj_entry.get_config_with_preset()
+        config = proj_config.model
 
-        diff_transformer_config = config.model.diffusion_module.diffusion_transformer
+        diff_transformer_config = (
+            config.architecture.diffusion_module.diffusion_transformer
+        )
         diff_transformer_config.update(
             {
                 "c_a": c_a,

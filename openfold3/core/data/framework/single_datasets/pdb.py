@@ -336,7 +336,7 @@ class WeightedPDBDataset(SingleDataset):
         features.update(featurize_ref_conformers_af3(processed_reference_molecules))
 
         # Loss switches
-        features["loss_weight"] = set_loss_weights(
+        features["loss_weights"] = set_loss_weights(
             self.loss_settings,
             self.dataset_cache["structure_data"][pdb_id]["resolution"],
         )

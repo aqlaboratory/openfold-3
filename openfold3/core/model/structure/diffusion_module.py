@@ -366,7 +366,9 @@ class SampleDiffusion(nn.Module):
                 _mask_trans=_mask_trans,
             )
 
-            delta = (xl - xl_denoised) / t
+            # TODO: Changed from SI, xl_noisy used instead of xl as in EDM paper
+            #  Verify that this is working correctly
+            delta = (xl_noisy - xl_denoised) / t
             dt = c_tau - t
             xl = xl_noisy + self.step_scale * dt * delta
 

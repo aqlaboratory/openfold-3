@@ -23,7 +23,7 @@ from openfold3.core.model.latent import TemplateEmbedderAllAtom, TemplatePairSta
 from openfold3.core.model.layers.template_pointwise_attention import (
     TemplatePointwiseAttention,
 )
-from openfold3.model_implementations.registry import make_config_with_preset
+from openfold3.projects import registry
 from tests.config import consts
 from tests.data_utils import random_asym_ids, random_template_feats
 
@@ -213,11 +213,13 @@ class TestTemplateEmbedderAllAtom(unittest.TestCase):
         n_templ = 3
         n_token = 10
 
-        af3_config = make_config_with_preset("af3_all_atom")
+        af3_proj_entry = registry.get_project_entry("af3_all_atom")
+        af3_proj_config = af3_proj_entry.get_config_with_preset()
+        af3_config = af3_proj_config.model
 
-        c_z = af3_config.model.template.template_pair_embedder.c_z
+        c_z = af3_config.architecture.template.template_pair_embedder.c_z
 
-        embedder = TemplateEmbedderAllAtom(af3_config.model.template)
+        embedder = TemplateEmbedderAllAtom(af3_config.architecture.template)
 
         batch = {
             "token_mask": torch.ones((batch_size, n_token)),

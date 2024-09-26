@@ -1,11 +1,10 @@
 import ml_collections as mlc
 
-import openfold3.model_implementations.af2_monomer.config.base_config as af2_monomer_config  # noqa: E501
-from openfold3.core.config.config_utils import update_config_dict
-from openfold3.model_implementations.af2_multimer.config import (
+import openfold3.projects.af2_monomer.config.base_config as af2_monomer_config  # noqa: E501
+from openfold3.projects.af2_multimer.config import (
     linear_init_config as lin_init_mult,
 )
-from openfold3.model_implementations.af2_multimer.config.features import (
+from openfold3.projects.af2_multimer.config.features import (
     feature_dict as multimer_feature_dict,
 )
 
@@ -23,7 +22,7 @@ NUM_EXTRA_SEQ = "extra msa placeholder"
 NUM_TEMPLATES = "num templates placeholder"
 
 # TODO(Jennifer): Make single multimer config, rather than updating from monomer
-monomer_config = af2_monomer_config.config
+config = af2_monomer_config.config.copy_and_resolve_references()
 
 multimer_config_update = mlc.ConfigDict(
     {
@@ -147,4 +146,4 @@ multimer_config_update = mlc.ConfigDict(
     }
 )
 
-config = update_config_dict(monomer_config, multimer_config_update)
+config.update(multimer_config_update)
