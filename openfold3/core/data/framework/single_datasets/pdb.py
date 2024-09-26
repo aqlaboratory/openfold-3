@@ -1,6 +1,5 @@
 import dataclasses
 import json
-import math
 from collections import Counter
 from enum import IntEnum
 from pathlib import Path
