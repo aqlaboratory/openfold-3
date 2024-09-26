@@ -214,8 +214,9 @@ class WeightedPDBDataset(SingleDataset):
         # Dataset configuration
         self.crop_weights = dataset_config["crop_weights"]
         self.token_budget = dataset_config["token_budget"]
-        self.n_templates = dataset_config["n_templates"]
         self.loss_settings = dataset_config["loss"]
+        self.msa = dataset_config["msa"]
+        self.template = dataset_config["template"]
 
     def create_datapoint_cache(self) -> None:
         """Creates the datapoint_cache with chain/interface probabilities.
@@ -298,22 +299,13 @@ class WeightedPDBDataset(SingleDataset):
             data_cache_entry_chains=self.dataset_cache["structure_data"][pdb_id][
                 "chains"
             ],
-            max_seq_counts={
-                "uniref90_hits": 10000,
-                "uniprot": 50000,
-                "bfd_uniclust_hits": math.inf,
-                "bfd_uniref_hits": math.inf,
-                "mgnify_hits": 5000,
-                "rfam_hits": 10000,
-                "rnacentral_hits": 10000,
-                "nucleotide_collection_hits": 10000,
-            },
+            max_seq_counts=self.msa.max_seq_counts,
             token_budget=self.token_budget,
-            max_rows_paired=8191,
+            max_rows_paired=self.msa.max_rows_paired,
         )
         features.update(featurize_msa_af3(msa_processed))
 
-        # Dummy template features
+        # Template features
         template_slice_collection = process_template_structures_af3(
             atom_array_cropped=atom_array_cropped,
             n_templates=self.n_templates,
@@ -324,16 +316,14 @@ class WeightedPDBDataset(SingleDataset):
             template_structures_directory=self.template_structures_path,
             ccd=self.ccd,
         )
-        print(template_slice_collection)
-
         features.update(
             featurize_templates_af3(
                 template_slice_collection=template_slice_collection,
-                n_templates=self.n_templates,
+                n_templates=self.template["n_templates"],
                 token_budget=self.token_budget,
-                min_bin=3.25,
-                max_bin=50.75,
-                n_bins=39,
+                min_bin=self.template["min_bin"],
+                max_bin=self.template["max_bin"],
+                n_bins=self.template["n_bins"],
             )
         )
 
