@@ -1,7 +1,8 @@
 """This module contains pipelines for processing structural features on-the-fly."""
 
+import pickle
 from pathlib import Path
-from typing import Optional
+from typing import Literal
 
 from biotite.structure import AtomArray
 
@@ -19,7 +20,7 @@ def process_target_structure_af3(
     crop_weights: dict[str, float],
     token_budget: int,
     preferred_chain_or_interface: str,
-    ciftype: Optional[str] = ".bcif",
+    structure_format: Literal["cif", "bcif", "pkl"],
 ) -> tuple[AtomArray, AtomArray]:
     """AF3 pipeline for processing target structure into AtomArrays.
 
@@ -34,8 +35,8 @@ def process_target_structure_af3(
             Crop size.
         preferred_chain_or_interface (str):
             Sampled preferred chain or interface to sample the crop around.
-        ciftype (Optional[str], optional):
-            File extension of the target structure. One of .cif, .bcif.
+        structure_format (Literal["cif", "bcif", "pkl"]):
+            File extension of the target structure. One of "cif", "bcif", or "pkl".
 
     Returns:
         tuple[AtomArray, AtomArray]:
@@ -44,12 +45,20 @@ def process_target_structure_af3(
             - Ground truth atoms expanded for chain permutation alignment.
     """
     # Parse target structure
-    _, atom_array = parse_mmcif(
-        file_path=target_structures_directory / pdb_id / f"{pdb_id}{ciftype}",
-        expand_bioassembly=False,
-        include_bonds=True,
-        renumber_chain_ids=False,
-    )
+    if structure_format == "pkl":
+        with open("path/to/pkl", "rb") as f:
+            atom_array = pickle.load(f)
+    elif structure_format in ["cif", "bcif"]:
+        _, atom_array = parse_mmcif(
+            file_path=target_structures_directory
+            / pdb_id
+            / f"{pdb_id}.{structure_format}",
+            expand_bioassembly=False,
+            include_bonds=True,
+            renumber_chain_ids=False,
+        )
+    else:
+        raise ValueError(f"Invalid structure format: {structure_format}")
 
     # Tokenize
     tokenize_atom_array(atom_array=atom_array)
