@@ -1,5 +1,6 @@
 """This module contains building blocks for cropping."""
 
+import random
 from typing import Callable, Optional, Union
 
 import numpy as np
@@ -40,7 +41,8 @@ def crop_contiguous(
     """
 
     if generator is None:
-        generator = default_rng()
+        seed = random.randint(0, torch.iinfo(torch.int32).max)
+        generator = default_rng(seed=seed)
 
     # Assign atom index
     assign_atom_indices(atom_array)
@@ -115,7 +117,8 @@ def crop_spatial(
     """
 
     if generator is None:
-        generator = default_rng()
+        seed = random.randint(0, torch.iinfo(torch.int32).max)
+        generator = default_rng(seed=seed)
 
     # Subset token center atoms to those in the preferred chain/interface if provided
     token_center_atoms, preferred_token_center_atoms = subset_preferred(
@@ -159,7 +162,8 @@ def crop_spatial_interface(
     """
 
     if generator is None:
-        generator = default_rng()
+        seed = random.randint(0, torch.iinfo(torch.int32).max)
+        generator = default_rng(seed=seed)
 
     # Subset token center atoms to those in the preferred chain/interface if provided
     token_center_atoms, preferred_token_center_atoms = subset_preferred(
