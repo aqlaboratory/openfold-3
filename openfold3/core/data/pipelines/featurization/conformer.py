@@ -81,16 +81,11 @@ def featurize_ref_conformers_af3(
             # Atom elements (0-indexed)
             element_symbol = atom.GetSymbol()
 
-            try:
-                ref_element.append(PERIODIC_TABLE.GetAtomicNumber(element_symbol) - 1)
-            except RuntimeError:
-                logger.warning(
-                    "%s: Element %s not found in periodic table",
-                    processed_mol.mol_id,
-                    element_symbol,
-                )
-                # If the element is not found in the periodic table, we set it to 118
+            # Unknown atom type, assign to last bin (118)
+            if element_symbol == "R":
                 ref_element.append(118)
+            else:
+                ref_element.append(PERIODIC_TABLE.GetAtomicNumber(element_symbol) - 1)
 
             # Charges
             ref_charge.append(atom.GetFormalCharge())
