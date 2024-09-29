@@ -721,12 +721,12 @@ def confidence_loss(
 
         loss_breakdown["pae"] = l_pae.mean()
 
-    loss_breakdown = {
-        f"{k}_loss": v.detach().clone() for k, v in loss_breakdown.items()
-    }
-
     conf_loss = sum(
         [loss * loss_weights[name].item() for name, loss in loss_breakdown.items()]
     )
+
+    loss_breakdown = {
+        f"{k}_loss": v.detach().clone() for k, v in loss_breakdown.items()
+    }
 
     return conf_loss, loss_breakdown
