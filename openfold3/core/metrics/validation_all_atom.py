@@ -52,12 +52,12 @@ def lddt(
     inter_mask = 1 - intra_mask  # [*, n_atom, n_atom]
 
     # get lddt scores
-    dist_l1 = torch.abs(pair_dist_gt_pos - pair_dist_pred_pos)  # [*, n_atom, n_atom]
 
+    dist_l1 = torch.abs(pair_dist_gt_pos - pair_dist_pred_pos)  # [*, n_atom, n_atom]
     score = torch.zeros_like(dist_l1)
     for distance_threshold in threshold:
         score += (dist_l1 < distance_threshold).type(dist_l1.dtype)
-    score /= len(threshold)
+    score = score / len(threshold)
 
     # normalize to get intra_lddt scores
     intra_norm = 1.0 / (eps + torch.sum(dists_to_score * intra_mask, dim=(-1, -2)))
@@ -139,11 +139,11 @@ def drmsd(
     asym_id: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Computes drmsds
+    Computes drmsds from pair distances
 
     Args:
-        pair_dist_pred_pos: predicted coordinates [*, n_atom, 3]
-        pair_dist_gt_pos: gt coordinates [*, n_atom, 3]
+        pair_dist_pred_pos: predicted coordinates [*, n_atom, n_atom]
+        pair_dist_gt_pos: gt coordinates [*, n_atom, n_atom]
         all_atom_mask: atom mask [*, n_atom]
         asym_id: atomized asym_id feature [*, n_atom]
     Returns:
@@ -151,8 +151,7 @@ def drmsd(
         inter_drmsd: drmsd across chains
 
     Note:
-        returns nan if inter_drmsd is invalid
-        (ie. single chain, no atom pair within threshold)
+        returns nan if inter_drmsd is invalid (ie. single chain)
     """
     drmsd = pair_dist_pred_pos - pair_dist_gt_pos
     drmsd = drmsd**2
@@ -282,7 +281,7 @@ def get_substrate_metrics(
                 all_atom_mask_ligand,
                 cutoff=30.0,
             )
-            out["lddt_inter_protein_" + substrate] = inter_lddt_protein_ligand
+            out["lddt_inter_protein_" + substrate] = inter_lddt_protein_ligand 
 
             inter_lddt_protein_ligand = interface_lddt(
                 pred_protein,
@@ -396,10 +395,10 @@ def batched_kabsch(
     # fp16 not supported
     with torch.cuda.amp.autocast(enabled=False):
         U, S, Vt = torch.linalg.svd(H.float())
-        Ut, V = U.transpose(-1, -2), Vt.transpose(-1, -2)
+        Ut, V = U.transpose(-1, -2), Vt.transpose(-1, -2) #
 
-    # determine handedness
-    dets = torch.det(V @ Ut)
+    # determine handedness 
+    dets = torch.det(V @ Ut) #just do U @ Vt
     batch_dims = H.shape[:-2]
     D = torch.eye(3).tile(*batch_dims, 1, 1)
     D[..., -1, -1] = torch.sign(dets).to(torch.float64)
@@ -537,7 +536,8 @@ def get_validation_metrics(
         token_mask, num_atoms_per_token, batch["asym_id"]
     )
 
-    #get all substrate metrics
+    # Get all substrate metrics
+    # lddt_intra_protein, lddt_inter_protein_protein, drmsd_intra_protein
     protein_validation_metrics = get_substrate_metrics(
         is_protein_atomized,
         asym_id_atomized,
@@ -549,6 +549,9 @@ def get_validation_metrics(
     )
     metrics = metrics | protein_validation_metrics
 
+    # lddt_intra_ligand, lddt_inter_protein_ligand
+    # auxiliary metrics: lddt_inter_ligand_ligand, drmsd_intra_ligand 
+    # lddt_uha: smaller thresholds 
     ligand_validation_metrics = get_substrate_metrics(
         is_ligand_atomized,
         asym_id_atomized,
@@ -560,6 +563,9 @@ def get_validation_metrics(
     )
     metrics = metrics | ligand_validation_metrics
 
+    # lddt_intra_rna, lddt_inter_protein_rna
+    # auxiliary metrics: lddt_inter_rna_rna, drmsd_intra_rna
+    # lddt_15: with 15 A threshold lddt scores
     rna_validation_metrics = get_substrate_metrics(
         is_rna_atomized,
         asym_id_atomized,
@@ -571,7 +577,10 @@ def get_validation_metrics(
     )
     metrics = metrics | rna_validation_metrics
 
-    dna_validation_metrics = get_validation_metrics(
+    # lddt_intra_dna, lddt_inter_protein_dna
+    # auxiliary metrics: lddt_inter_dna_dna, drmsd_intra_dna
+    # lddt_15: with 15 A threshold lddt scores
+    dna_validation_metrics = get_substrate_metrics(
         is_dna_atomized,
         asym_id_atomized,
         pred_coords,
