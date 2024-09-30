@@ -2,20 +2,23 @@ from pathlib import Path
 
 import torch
 
+from openfold3.core.config.dataset_config_builder import DefaultDatasetConfigBuilder
 from openfold3.core.loss.loss_module import AlphaFoldLoss
 from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
-from openfold3.model_implementations.af2_monomer.config.base_config import config
-from openfold3.model_implementations.af2_monomer.model import AlphaFold
-from openfold3.model_implementations.registry import register_model
+from openfold3.projects.af2_multimer.config.base_config import config
+from openfold3.projects.af2_multimer.model import AlphaFold as AFMultimer
+from openfold3.projects.registry import register_project
 
 REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_config.yml"
 
 
-@register_model("af2_monomer", config, REFERENCE_CONFIG_PATH)
-class AlphaFoldMonomer(ModelRunner):
+@register_project(
+    "af2_multimer", DefaultDatasetConfigBuilder, config, REFERENCE_CONFIG_PATH
+)
+class AlphaFoldMultimer(ModelRunner):
     def __init__(self, model_config, _compile=True):
-        super().__init__(AlphaFold, model_config, _compile=_compile)
+        super().__init__(AFMultimer, model_config, _compile=_compile)
 
         self.loss = (
             torch.compile(AlphaFoldLoss(config=model_config.loss))

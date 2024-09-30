@@ -31,7 +31,7 @@ def compute_conformer(
     Args:
         mol:
             The molecule for which the 3D coordinates should be computed.
-        use_random_coords:
+        use_random_coord_init:
             Whether to initialize the conformer generation with random coordinates
             (recommended for failure cases or large molecules)
         remove_hs:

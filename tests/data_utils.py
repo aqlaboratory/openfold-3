@@ -207,7 +207,7 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ):
         # Reference conformation features
         "ref_pos": torch.randn((batch_size, n_atom, 3)).float(),
         "ref_mask": torch.ones((batch_size, n_atom)).int(),
-        "ref_element": torch.ones((batch_size, n_atom, 128)).int(),
+        "ref_element": torch.ones((batch_size, n_atom, 118)).int(),
         "ref_charge": torch.ones((batch_size, n_atom)).float(),
         "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)).int(),
         "ref_space_uid": torch.zeros((batch_size, n_atom)).int(),
@@ -244,5 +244,15 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ):
         "ground_truth": {
             "atom_positions": torch.randn((batch_size, n_atom, 3)).float(),
             "atom_resolved_mask": torch.ones((batch_size, n_atom)).float(),
+        },
+        "loss_weights": {
+            "bond": torch.Tensor([0.0]),
+            "smooth_lddt": torch.Tensor([4.0]),
+            "mse": torch.Tensor([4.0]),
+            "plddt": torch.Tensor([1e-4]),
+            "pde": torch.Tensor([1e-4]),
+            "experimentally_resolved": torch.Tensor([1e-4]),
+            "pae": torch.Tensor([0.0]),
+            "distogram": torch.Tensor([3e-2]),
         },
     }

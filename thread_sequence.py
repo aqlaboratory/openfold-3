@@ -21,7 +21,7 @@ from openfold3.core.utils.script_utils import (
 from openfold3.core.utils.tensor_utils import (
     tensor_tree_map,
 )
-from openfold3.model_implementations.af2_monomer.config import model_config
+from openfold3.projects.af2_monomer.config import model_config
 from scripts.utils import add_data_args
 
 logging.basicConfig()

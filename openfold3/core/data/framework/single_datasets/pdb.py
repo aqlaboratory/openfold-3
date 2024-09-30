@@ -297,6 +297,7 @@ class WeightedPDBDataset(SingleDataset):
             ],
             max_seq_counts={
                 "uniref90_hits": 10000,
+                "uniprot_hits": 50000,
                 "uniprot": 50000,
                 "bfd_uniclust_hits": math.inf,
                 "bfd_uniref_hits": math.inf,
@@ -312,7 +313,7 @@ class WeightedPDBDataset(SingleDataset):
 
         # Dummy template features
         features.update(
-            featurize_templates_dummy_af3(1, self.n_templates, self.token_budget)
+            featurize_templates_dummy_af3(self.n_templates, self.token_budget)
         )
 
         # Reference conformer features
@@ -325,7 +326,7 @@ class WeightedPDBDataset(SingleDataset):
         features.update(featurize_ref_conformers_af3(processed_reference_molecules))
 
         # Loss switches
-        features["loss_weight"] = set_loss_weights(
+        features["loss_weights"] = set_loss_weights(
             self.loss_settings,
             self.dataset_cache["structure_data"][pdb_id]["resolution"],
         )

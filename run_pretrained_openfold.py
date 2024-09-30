@@ -39,7 +39,7 @@ from openfold3.core.utils.trace_utils import (
     pad_feature_dict_seq,
     trace_model_,
 )
-from openfold3.model_implementations import registry
+from openfold3.projects.af2_monomer.config import model_config
 from scripts.precompute_embeddings import EmbeddingGenerator
 from scripts.utils import add_data_args
 

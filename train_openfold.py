@@ -41,8 +41,8 @@ from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation
 from openfold3.core.utils.superimposition import superimpose
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.core.utils.torchscript import script_preset_
-from openfold3.model_implementations import registry
-from openfold3.model_implementations.af2_monomer.model import AlphaFold
+from openfold3.projects.af2_monomer.config import model_config
+from openfold3.projects.af2_monomer.model import AlphaFold
 
 
 class OpenFoldWrapper(pl.LightningModule):

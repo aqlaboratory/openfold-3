@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 from openfold3.core.utils.import_weights import import_jax_weights_
-from openfold3.model_implementations import registry
+from openfold3.projects import registry
 from tests.config import consts
 
 # Give JAX some GPU memory discipline
@@ -85,10 +85,11 @@ _model = None
 def get_global_pretrained_openfold():
     global _model
     if _model is None:
-        model_config = registry.make_config_with_preset(
-            consts.model_name, consts.model_preset
+        project_entry = registry.get_project_entry(consts.model_name)
+        project_config = registry.make_config_with_presets(
+            project_entry, [consts.model_preset]
         )
-        _lightning_module = registry.get_lightning_module(model_config, _compile=False)
+        _lightning_module = project_entry.model_runner(project_config, _compile=False)
         _model = _lightning_module.model
         _model = _model.eval()
         if not os.path.exists(_param_path):
