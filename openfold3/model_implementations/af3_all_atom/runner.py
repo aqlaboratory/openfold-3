@@ -102,8 +102,7 @@ class AlphaFold3AllAtom(ModelRunner):
     def _compute_validation_metrics(
         self, batch, outputs, superimposition_metrics=False
     ) -> Dict[str, torch.Tensor]:
-        
         # Computes validation metrics
         metrics = get_validation_metrics(batch, outputs, superimposition_metrics)
-        
+
         return metrics

@@ -208,7 +208,7 @@ def get_substrate_metrics(
 
     Notes:
         if there exists no appropriate substrate: returns an empty dict {}
-        function is compatible with multiple samples, 
+        function is compatible with multiple samples,
             not compatible with batch with different number of atoms/substrates
         for ligand: a few extra scores are calculated
             'lddt_intra_ligand_uha': intra ligand lddt with [0.25, 0.5, 0.75, 1.]
@@ -281,7 +281,7 @@ def get_substrate_metrics(
                 all_atom_mask_ligand,
                 cutoff=30.0,
             )
-            out["lddt_inter_protein_" + substrate] = inter_lddt_protein_ligand 
+            out["lddt_inter_protein_" + substrate] = inter_lddt_protein_ligand
 
             inter_lddt_protein_ligand = interface_lddt(
                 pred_protein,
@@ -395,10 +395,10 @@ def batched_kabsch(
     # fp16 not supported
     with torch.cuda.amp.autocast(enabled=False):
         U, S, Vt = torch.linalg.svd(H.float())
-        Ut, V = U.transpose(-1, -2), Vt.transpose(-1, -2) #
+        Ut, V = U.transpose(-1, -2), Vt.transpose(-1, -2)  #
 
-    # determine handedness 
-    dets = torch.det(V @ Ut) #just do U @ Vt
+    # determine handedness
+    dets = torch.det(V @ Ut)  # just do U @ Vt
     batch_dims = H.shape[:-2]
     D = torch.eye(3).tile(*batch_dims, 1, 1)
     D[..., -1, -1] = torch.sign(dets).to(torch.float64)
@@ -472,19 +472,20 @@ def get_superimpose_metrics(
     out["gdt_ha"] = gdt_ha_score
     return out
 
+
 def get_validation_metrics(
-    batch, 
-    outputs, 
+    batch,
+    outputs,
     superimposition_metrics=False,
-    ) -> Dict[str, torch.Tensor]:
-    """ 
+) -> Dict[str, torch.Tensor]:
+    """
     Compute validation metrics on all substrates
-    
-    Args: 
-        batch: ground truth and permutation applied features 
+
+    Args:
+        batch: ground truth and permutation applied features
         outputs: model outputs
         superimposition_metrics: computes superimposition metrics
-    Returns: 
+    Returns:
         metrics: dict containing validation metrics across all substrates
             'lddt_intra_protein': intra protein lddt
             'lddt_intra_ligand': intra ligand lddt
@@ -498,8 +499,8 @@ def get_validation_metrics(
             'drmsd_intra_ligand': intra ligand drmsd
             'drmsd_intra_dna': intra dna drmsd
             'drmsd_intra_rna': intra rna drmsd
-    
-    Note: 
+
+    Note:
         if no appropriate substrates, no corresponding metrics will be included
     """
     metrics = {}
@@ -550,8 +551,8 @@ def get_validation_metrics(
     metrics = metrics | protein_validation_metrics
 
     # lddt_intra_ligand, lddt_inter_protein_ligand
-    # auxiliary metrics: lddt_inter_ligand_ligand, drmsd_intra_ligand 
-    # lddt_uha: smaller thresholds 
+    # auxiliary metrics: lddt_inter_ligand_ligand, drmsd_intra_ligand
+    # lddt_uha: smaller thresholds
     ligand_validation_metrics = get_substrate_metrics(
         is_ligand_atomized,
         asym_id_atomized,
@@ -598,5 +599,5 @@ def get_validation_metrics(
             all_atom_mask,
         )
         metrics = metrics | superimpose_metrics
-    
+
     return metrics
