@@ -48,8 +48,12 @@ def tokenize_atom_array(atom_array: AtomArray):
     # Get standard residues
     n_atoms = len(atom_array)
 
-    # Get ids where residue-tokens start
-    is_standard_residue_atom = np.isin(atom_array.res_name, STANDARD_RESIDUES_3)
+    # Find standard residues, excluding amino acid and nucleotide ligands
+    ligand_mask = atom_array.molecule_type_id == MoleculeType.LIGAND
+    std_residue_name_mask = np.isin(atom_array.res_name, STANDARD_RESIDUES_3)
+    is_standard_residue_atom = ~ligand_mask & std_residue_name_mask
+
+    # Get standard residue atom IDs & token starts
     standard_residue_atom_ids = atom_array._atom_idx[is_standard_residue_atom]
     residue_token_start_ids = np.unique(
         struc.get_residue_starts_for(atom_array, standard_residue_atom_ids)
