@@ -39,7 +39,7 @@ from openfold3.core.utils.trace_utils import (
     pad_feature_dict_seq,
     trace_model_,
 )
-from openfold3.projects.af2_monomer.config import model_config
+from openfold3.projects import registry
 from scripts.precompute_embeddings import EmbeddingGenerator
 from scripts.utils import add_data_args
 
@@ -178,7 +178,8 @@ def main(args):
     # TODO: In new configs, add eval preset for monomer/multimer
     is_multimer = "multimer" in args.config_preset
     model_name = "af2_monomer" if not is_multimer else "af2_multimer"
-    config = registry.make_config_with_preset(model_name, args.config_preset)
+    project_entry = registry.get_project_entry(model_name)
+    config = registry.make_config_with_presets(project_entry, [args.config_preset])
 
     # config = model_config(
     #     args.config_preset,

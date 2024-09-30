@@ -41,7 +41,7 @@ from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation
 from openfold3.core.utils.superimposition import superimpose
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.core.utils.torchscript import script_preset_
-from openfold3.projects.af2_monomer.config import model_config
+from openfold3.projects import registry
 from openfold3.projects.af2_monomer.model import AlphaFold
 
 
@@ -289,7 +289,8 @@ def main(args):
     # TODO: In new configs, add training preset for monomer/multimer
     is_multimer = "multimer" in args.config_preset
     model_name = "af2_monomer" if not is_multimer else "af2_multimer"
-    config = registry.make_config_with_preset(model_name, args.config_preset)
+    project_entry = registry.get_project_entry(model_name)
+    config = registry.make_config_with_presets(project_entry, [args.config_preset])
 
     # is_low_precision = args.precision in [
     #     "bf16-mixed",
