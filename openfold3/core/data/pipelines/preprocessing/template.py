@@ -92,6 +92,7 @@ def create_template_cache_for_query(
             f" an hhsearch output stockholm was provided. Error: {e}"
         )
         return
+    logger.debug(f"{pid} - Alignment file {template_alignment_file} parsed.")
 
     # Filter queries
     query = hits[0]
@@ -102,8 +103,8 @@ def create_template_cache_for_query(
     # ID of the first hit in the alignments file is not provided in
     # query_structures_directory
     if not (query_structures_directory / Path(f"{query_pdb_id}.bcif")).exists():
-        logger.info(
-            f"{pid} - Query .bcif structure {query_pdb_id} not found in "
+        logger.debug(
+            f"{pid} - Query .cif structure {query_pdb_id} not found in "
             f"{query_structures_directory}. Skipping templates for this structure."
         )
         return
@@ -116,12 +117,17 @@ def create_template_cache_for_query(
     if match_query_chain_and_sequence(
         query_structures_directory, query, query_pdb_id, query_chain_id
     ):
-        logger.info(
+        logger.debug(
             f"{pid} - The query sequences in the structure (query {query_pdb_id} chain "
             f"{query_chain_id}) and template alignment (query {query_pdb_id_t} chain "
             f"{query_chain_id_t}) don't match. Skipping templates for this structure."
         )
         return
+    else:
+        logger.debug(
+            f"{pid} - Query {query_pdb_id} chain {query_chain_id} sequence matches "
+            "alignment sequence."
+        )
 
     # Filter template hits
     template_hits_filtered = {}
@@ -133,25 +139,31 @@ def create_template_cache_for_query(
 
         # 1. Apply sequence filters: AF3 SI Section 2.4
         if check_sequence(query_seq=query.hit_sequence.replace("-", ""), hit=hit):
-            logger.info(
+            logger.debug(
                 f"{pid} - Template {hit_pdb_id} sequence does not pass sequence"
                 " filters. Skipping this template."
             )
             continue
+        else:
+            logger.debug(
+                f"{pid} - Template {hit_pdb_id} sequence passes sequence " "filters."
+            )
 
         # 2. Parse structure
         # The template is skipped if the structure identified by the PDB ID of the
         # corresponding hit in the alignment file is not provided in
         # template_structures_path
         cif_file, atom_array = parse_structure(
-            template_structures_directory, hit_pdb_id
+            template_structures_directory, hit_pdb_id, file_format="cif"
         )
         if cif_file is None:
-            logger.info(
+            logger.debug(
                 f"{pid} - Template structure {hit_pdb_id} not found in "
                 f"{template_structures_directory}. Skipping this template."
             )
             continue
+        else:
+            logger.debug(f"{pid} - Template structure {hit_pdb_id} parsed.")
         # 3. Parse template chain and sequence
         # the template is skipped if its HMM sequence cannot be mapped
         # exactly to a subsequence of ANY chain in the CIF file provided in
@@ -163,7 +175,7 @@ def create_template_cache_for_query(
             cif_file, atom_array, hit
         )
         if hit_chain_id_matched is None:
-            logger.info(
+            logger.debug(
                 f"{pid} - Could not match template {hit_pdb_id} chain {hit_chain_id} "
                 f"sequence in {cif_file}. Skipping this template."
             )
@@ -185,10 +197,17 @@ def create_template_cache_for_query(
         }
 
     # Save filtered hits to json using the representative ID
-    template_cache_path_rep = template_cache_directory / Path(f"{query.name}.json")
-    if not os.path.exists(template_cache_path_rep):
-        with open(template_cache_path_rep, "w") as f:  # TODO check mp safe
-            json.dump(template_hits_filtered, f, indent=4)
+    if len(template_hits_filtered) > 0:
+        template_cache_path_rep = template_cache_directory / Path(f"{query.name}.json")
+        if not os.path.exists(template_cache_path_rep):
+            with open(template_cache_path_rep, "w") as f:  # TODO check mp safe
+                json.dump(template_hits_filtered, f, indent=4)
+        logging.info(
+            f"{pid} - Template cache for {query.name} saved with "
+            f"{len(template_hits_filtered)} valid hits."
+        )
+    else:
+        logging.info(f"{pid} - 0 valid templates found for {query.name}.")
 
 
 class _AF3TemplateCacheConstructor:
@@ -252,7 +271,7 @@ class _AF3TemplateCacheConstructor:
                 / Path(query_pdb_id),
             )
         except Exception as e:
-            logger.warning(
+            logger.info(
                 "Failed to process templates for query " f"{query_pdb_chain_id}: {e}"
             )
 
@@ -420,6 +439,10 @@ def filter_template_cache_for_query(
         if len(filtered_templates) == max_templates:
             break
 
+    logging.info(
+        f"Successfully filtered {len(filtered_templates)} templates for "
+        f"{query_pdb_chain_id}."
+    )
     if is_core_train:
         return TemplateHitCollection(
             {tuple(query_pdb_chain_id.split("_")): filtered_templates}
@@ -485,7 +508,7 @@ class _AF3TemplateCacheFilter:
             return valid_templates
         except Exception as e:
             if self.is_core_train:
-                logger.warning(
+                logger.info(
                     "Failed to filter templates for query " f"{input[0][0]}: {e}"
                 )
                 return {input[0][0]: []}
@@ -494,7 +517,7 @@ class _AF3TemplateCacheFilter:
                     query_pdb_chain_id.query_pdb_chain_id
                     for query_pdb_chain_id in input.dated_query
                 ]
-                logger.warning(
+                logger.info(
                     "Failed to filter templates for queries "
                     f"{query_pdb_chain_ids}: "
                     f"{e}."

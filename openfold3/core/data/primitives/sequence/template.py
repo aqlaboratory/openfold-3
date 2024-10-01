@@ -222,7 +222,7 @@ def match_query_chain_and_sequence(
             Whether the query sequence-structure pair is invalid.
     """
     is_query_invalid = True
-    # Attempt to locate template first template hit i.e. query in its CIF file
+    # Attempt to locate first template hit i.e. query in its CIF file
     chain_id_seq_map = read_multichain_fasta(
         query_structures_directory / Path(f"{query_pdb_id}.fasta")
     )
@@ -230,11 +230,11 @@ def match_query_chain_and_sequence(
     query_seq_hmm = query.hit_sequence.replace("-", "")
 
     if query_seq_cif is None:
-        logging.info(
+        logging.debug(
             f"Query {query_pdb_id} chain {query_chain_id} not found in CIF file."
         )
     elif (query_seq_cif is not None) & (query_seq_hmm not in query_seq_cif):
-        logging.info(
+        logging.debug(
             f"Query {query_pdb_id} chain {query_chain_id} sequence does not match CIF"
             " sequence."
         )
@@ -274,7 +274,7 @@ def remap_chain_id(
         # Remap hit chain ID if found in another chain
         if hit_seq_hmm in v:
             hit_chain_id_matched = k
-            logging.info(
+            logging.debug(
                 f"Found HMM sequence of template {hit_pdb_id} chain {hit_chain_id}"
                 f" in new chain {k}. Remapping."
             )
@@ -317,18 +317,30 @@ def match_template_chain_and_sequence(
 
     # A) If chain ID not in CIF file, attempt to find sequence in other chains
     if hit_seq_cif is None:
+        logger.debug(
+            f"Template {hit_pdb_id} chain {hit_chain_id} not found in CIF file."
+            " Attempting to remap to other chains."
+        )
         hit_chain_id_matched = remap_chain_id(
             hit_pdb_id, None, hit_seq_hmm, chain_id_seq_map
         )
     # B) If chain ID is in CIF file but HMM sequence does not match CIF sequence,
     # attempt to find in other chains
     elif (hit_seq_cif is not None) & (hit_seq_hmm not in hit_seq_cif):
+        logger.debug(
+            f"Template {hit_pdb_id} chain {hit_chain_id} found but mismatches "
+            "sequence in CIF file. Attempting to remap to other chains."
+        )
         hit_chain_id_matched = remap_chain_id(
             hit_pdb_id, hit_chain_id, hit_seq_hmm, chain_id_seq_map
         )
     # C) If HMM sequence matches CIF sequence, use original chain ID
     else:
         hit_chain_id_matched = hit_chain_id
+        logger.debug(
+            f"Template {hit_pdb_id} chain {hit_chain_id} HMM sequence matches "
+            "CIF sequence."
+        )
 
     return hit_chain_id_matched
 
