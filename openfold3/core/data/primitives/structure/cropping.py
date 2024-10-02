@@ -211,7 +211,8 @@ def subset_preferred(
 
     Returns:
         tuple[AtomArray, AtomArray]:
-            Tuple of all and preferred token center atoms.
+            Tuple of all and preferred token center atoms. Note that the preferred token
+            center atoms are subset to only resolved atoms.
     """
     token_center_atoms = atom_array[atom_array.token_center_atom]
     if preferred_chain_or_interface is not None:
@@ -234,7 +235,7 @@ def subset_preferred(
         preferred_token_center_atoms = token_center_atoms
 
     # Only return resolved atoms as preferred token center atoms
-    # TODO: we need exception handling for when there are no resolved atoms (if that
+    # TODO: we may need exception handling for when there are no resolved atoms (if that
     # could ever happen)
     is_resolved = preferred_token_center_atoms.occupancy > 0
     preferred_token_center_atoms = preferred_token_center_atoms[is_resolved]
