@@ -232,6 +232,13 @@ def subset_preferred(
             )
     else:
         preferred_token_center_atoms = token_center_atoms
+
+    # Only return resolved atoms as preferred token center atoms
+    # TODO: we need exception handling for when there are no resolved atoms (if that
+    # could ever happen)
+    is_resolved = preferred_token_center_atoms.occupancy > 0
+    preferred_token_center_atoms = preferred_token_center_atoms[is_resolved]
+
     return token_center_atoms, preferred_token_center_atoms
 
 
