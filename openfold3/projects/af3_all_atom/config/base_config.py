@@ -25,7 +25,8 @@ sigma_data = mlc.FieldReference(16, field_type=int)
 max_relative_idx = mlc.FieldReference(32, field_type=int)
 max_relative_chain = mlc.FieldReference(2, field_type=int)
 no_samples = mlc.FieldReference(48, field_type=int)
-no_rollout_steps = mlc.FieldReference(20, field_type=int)
+no_mini_rollout_steps = mlc.FieldReference(20, field_type=int)
+no_full_rollout_steps = mlc.FieldReference(200, field_type=int)
 diffusion_training_enabled = mlc.FieldReference(True, field_type=bool)
 n_query = mlc.FieldReference(32, field_type=int)
 n_key = mlc.FieldReference(128, field_type=int)
@@ -48,7 +49,6 @@ project_config = mlc.ConfigDict(
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "chunk_size": chunk_size,
                 "use_block_sparse_attn": use_block_sparse_attn,
-                "diffusion_training_enabled": diffusion_training_enabled,
                 # Use DeepSpeed memory-efficient attention kernel. Mutually
                 # exclusive with use_lma and use_flash.
                 "use_deepspeed_evo_attention": False,
@@ -56,6 +56,7 @@ project_config = mlc.ConfigDict(
                 # exclusive with use_deepspeed_evo_attention and use_flash.
                 "use_lma": False,
                 "offload_inference": False,
+                "diffusion_training_enabled": diffusion_training_enabled,
                 "optimizer": {
                     "use_deepspeed_adam": True,
                     "learning_rate": 1.8e-3,
@@ -76,7 +77,8 @@ project_config = mlc.ConfigDict(
                     "diffusion": {
                         "sigma_data": sigma_data,
                         "no_samples": no_samples,
-                        "no_rollout_steps": no_rollout_steps,
+                        "no_mini_rollout_steps": no_mini_rollout_steps,
+                        "no_full_rollout_steps": no_full_rollout_steps,
                     },
                 },
                 "input_embedder": {
@@ -269,7 +271,6 @@ project_config = mlc.ConfigDict(
                     },
                 },
                 "noise_schedule": {
-                    "no_rollout_steps": no_rollout_steps,
                     "sigma_data": sigma_data,
                     "s_max": 160.0,
                     "s_min": 4e-4,

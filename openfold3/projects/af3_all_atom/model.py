@@ -259,8 +259,14 @@ class AlphaFold3(nn.Module):
             all-atom positions, and confidence/distogram head logits
         """
         # Compute atom positions
+        no_rollout_steps = (
+            self.shared.diffusion.no_mini_rollout_steps
+            if self.training
+            else self.shared.diffusion.no_full_rollout_steps
+        )
         with torch.no_grad():
             noise_schedule = create_noise_schedule(
+                no_rollout_steps=no_rollout_steps,
                 **self.config.architecture.noise_schedule,
                 dtype=si_input.dtype,
                 device=si_input.device,

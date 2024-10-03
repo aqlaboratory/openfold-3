@@ -151,7 +151,8 @@ class TestSampleDiffusion(unittest.TestCase):
         c_s_input = config.architecture.shared.c_s_input
         c_s = config.architecture.shared.c_s
         c_z = config.architecture.shared.c_z
-        config.architecture.shared.no_rollout_steps = 2
+        config.architecture.shared.no_mini_rollout_steps = 2
+        config.architecture.shared.no_full_rollout_steps = 2
 
         sample_config = config.architecture.sample_diffusion
 
