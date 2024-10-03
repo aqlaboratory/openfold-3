@@ -289,7 +289,7 @@ CROP_REGISTRY = {
 }
 
 
-def sample_crop_fuction(crop_weights: dict[str, float]) -> tuple[Callable, tuple[str]]:
+def sample_crop_strategy(crop_weights: dict[str, float]) -> tuple[Callable, tuple[str]]:
     """Samples cropping strategy with dataset-specific weights.
 
     Args:
@@ -340,7 +340,7 @@ def apply_crop(
 
     # Otherwise crop
     else:
-        crop_function, crop_function_argnames = sample_crop_fuction(crop_weights)
+        crop_function, crop_function_argnames = sample_crop_strategy(crop_weights)
         crop_input = {
             "atom_array": atom_array,
             "token_budget": token_budget,

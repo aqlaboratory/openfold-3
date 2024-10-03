@@ -284,7 +284,7 @@ class AlphaFold3(nn.Module):
             "atom_positions_predicted": atom_positions_predicted,
         }
 
-        # Compute confidences
+        # Compute confidence logits
         output.update(
             self.aux_heads(
                 batch=batch,
@@ -506,9 +506,6 @@ class AlphaFold3(nn.Module):
                     Predicted binned experimentally resolved logits
                 "distogram_logits" ([*, N_token, N_token, 64]):
                     Predicted binned distogram logits
-                "confidence_scores":
-                    Dict containing the following confidence measures:
-                    pLDDT, PDE, PAE, pTM, iPTM, weighted pTM
                 "noise_level" ([*])
                     Training only, noise level at a diffusion step
                 "atom_positions_diffusion" ([*, N_samples, N_atom, 3]):

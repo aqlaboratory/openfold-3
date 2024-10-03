@@ -341,30 +341,6 @@ project_config = mlc.ConfigDict(
                         "max_atoms_per_token": max_atoms_per_token,
                         "linear_init_params": lin_init.exp_res_all_atom_init,
                     },
-                    "confidence": {
-                        "pde": {
-                            "max_bin": 31,
-                            "no_bins": 64,
-                        },
-                        "pae": {
-                            "max_bin": 31,
-                            "no_bins": 64,
-                        },
-                        "ptm": {
-                            "max_bin": 31,
-                            "no_bins": 64,
-                            "ptm_weight": 0.2,
-                            "iptm_weight": 0.8,
-                        },
-                        "clash": {
-                            "min_distance": 1.1,
-                            "clash_cutoff_num": 100,
-                            "clash_cutoff_ratio": 0.5,
-                        },
-                        "rasa": {
-                            "cutoff": 0.581,
-                        },
-                    },
                 },
                 "loss_module": {
                     "confidence_loss_names": [
@@ -413,6 +389,30 @@ project_config = mlc.ConfigDict(
                         "bin_max": 22.0,
                         "eps": eps,
                     },
+                },
+            },
+            "confidence": {
+                "pde": {
+                    "max_bin": 31,
+                    "no_bins": 64,
+                },
+                "pae": {
+                    "max_bin": 31,
+                    "no_bins": 64,
+                },
+                "ptm": {
+                    "max_bin": 31,
+                    "no_bins": 64,
+                    "ptm_weight": 0.2,
+                    "iptm_weight": 0.8,
+                },
+                "clash": {
+                    "min_distance": 1.1,
+                    "clash_cutoff_num": 100,
+                    "clash_cutoff_ratio": 0.5,
+                },
+                "rasa": {
+                    "cutoff": 0.581,
                 },
             },
         },
