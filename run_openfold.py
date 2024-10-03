@@ -104,6 +104,8 @@ def main(args):
             config=runner_args.deepspeed_config_path,
             cluster_environment=cluster_environment,
         )
+        if not model_config.settings.optimizer.use_deepspeed_adam:
+            strategy.config["zero_force_ds_cpu_optimizer"] = False
     elif is_distributed:
         strategy = DDPStrategy(
             find_unused_parameters=False, cluster_environment=cluster_environment
