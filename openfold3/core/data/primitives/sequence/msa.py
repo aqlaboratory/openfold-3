@@ -7,7 +7,6 @@ from typing import Optional, Sequence, Union
 
 import numpy as np
 import pandas as pd
-import torch
 from biotite.structure import AtomArray
 
 from openfold3.core.data.primitives.featurization.structure import get_token_starts
@@ -912,18 +911,26 @@ def apply_crop_to_msa(
                     token_position,
                 ] = 1
 
-                msa_profile[token_position, :] = (
-                    torch.tensor(
-                        [
-                            np.sum(m.msa[:, res_id] == val).item()
-                            for val in STANDARD_RESIDUES_WITH_GAP_1
-                        ],
-                        dtype=torch.float32,
+                # If main MSA is empty, leave profile as all-zeros
+                if n_rows_main_i != 0:
+                    # TODO BUG: STANDARD_RESIDUES_WITH_GAP_1 currently contains two
+                    # entries of "N" and will therefore double-count Asparagine.
+                    msa_profile[token_position, :] = (
+                        np.array(
+                            [
+                                np.sum(m.msa[:, res_id] == val).item()
+                                for val in STANDARD_RESIDUES_WITH_GAP_1
+                            ],
+                        )
+                        / m.msa.shape[0]
                     )
-                    / m.msa[:, res_id].shape[0]
-                )
 
-                deletion_mean[token_position] = np.mean(m.deletion_matrix[:, res_id])
+                # If main MSA is empty, leave deletion mean as all-zeros
+                if n_rows_main_i != 0:
+                    deletion_mean[token_position] = np.mean(
+                        m.deletion_matrix[:, res_id]
+                    )
+
     else:
         # When there are no protein or RNA chains
         n_rows = 1
