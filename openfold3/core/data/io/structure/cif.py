@@ -1,8 +1,9 @@
 """This module contains IO functions for reading and writing mmCIF files."""
 
 import logging
+import pickle
 from pathlib import Path
-from typing import Literal, NamedTuple
+from typing import NamedTuple
 
 from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
@@ -169,31 +170,42 @@ def parse_mmcif(
     return ParsedStructure(cif_file, atom_array)
 
 
-def write_minimal_cif(
+def write_structure(
     atom_array: AtomArray,
     output_path: Path,
-    format: Literal["cif", "bcif"] = "cif",
     data_block: str = None,
     include_bonds: bool = True,
 ) -> None:
-    """Write a minimal CIF file
+    """Write a structure file from an AtomArray
 
     The resulting CIF file will only contain the atom_site records and bond information
     by default, not any other mmCIF metadata.
 
     Args:
         atom_array:
-            AtomArray to write to the CIF file.
+            AtomArray to write to an output file.
         output_path:
-            Path to write the CIF file to.
-        format:
-            Format of the CIF file. Defaults to "cif".
+            Path to write the output file to. The output format is inferred from the
+            file suffix. Allowed values are .cif, .bcif, and .pkl.
         data_block:
-            Name of the data block in the CIF file. Defaults to None.
+            Name of the data block in the CIF/BCIF file. Defaults to None. Ignored if
+            the format is pkl.
         include_bonds:
-            Whether to include bond information in the CIF file. Defaults to True.
+            Whether to include bond information. Defaults to True. Ignored if the format
+            is pkl in which the entire BondList is written to the file.
     """
-    cif_file = pdbx.CIFFile() if format == "cif" else pdbx.BinaryCIFFile()
+    suffix = output_path.suffix
+    if suffix == ".pkl":
+        with open(output_path, "wb") as f:
+            pickle.dump(atom_array, f)
+        return
+    elif suffix == ".cif":
+        cif_file = pdbx.CIFFile()
+    elif suffix == ".bcif":
+        cif_file = pdbx.BinaryCIFFile()
+    else:
+        raise NotImplementedError("Only .cif, .bcif, and .pkl formats are supported")
+
     pdbx.set_structure(
         cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
     )
