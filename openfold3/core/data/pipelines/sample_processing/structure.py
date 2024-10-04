@@ -45,14 +45,14 @@ def process_target_structure_af3(
             - Ground truth atoms expanded for chain permutation alignment.
     """
     # Parse target structure
+    target_file = target_structures_directory / pdb_id / f"{pdb_id}.{structure_format}"
+
     if structure_format == "pkl":
-        with open("path/to/pkl", "rb") as f:
+        with open(target_file, "rb") as f:
             atom_array = pickle.load(f)
     elif structure_format in ["cif", "bcif"]:
         _, atom_array = parse_mmcif(
-            file_path=target_structures_directory
-            / pdb_id
-            / f"{pdb_id}.{structure_format}",
+            file_path=target_file,
             expand_bioassembly=False,
             include_bonds=True,
             renumber_chain_ids=False,
