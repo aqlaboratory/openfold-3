@@ -11,6 +11,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from rdkit import Chem
@@ -65,6 +66,7 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_release_date,
     get_resolution,
 )
+from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
 from openfold3.core.data.primitives.structure.unresolved import add_unresolved_atoms
 
 logger = logging.getLogger(__name__)
@@ -116,9 +118,14 @@ def cleanup_structure_af3(
     )
     atom_array = remove_non_CCD_atoms(atom_array, ccd)
     atom_array = remove_chains_with_CA_gaps(atom_array, distance_threshold=10.0)
-    atom_array = subset_large_structure(
-        atom_array=atom_array, n_chains=20, interface_distance_threshold=15.0
-    )
+
+    # Subset bioassemblies larger than 20 chains
+    if len(np.unique(atom_array.chain_id)) > 20:
+        # Tokenization is required for large-structure subsetting
+        tokenize_atom_array(atom_array)
+        atom_array = subset_large_structure(
+            atom_array=atom_array, n_chains=20, interface_distance_threshold=15.0
+        )
 
     ## Structure formatting
     # Add unresolved atoms explicitly with NaN coordinates
