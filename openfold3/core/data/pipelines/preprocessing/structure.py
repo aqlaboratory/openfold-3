@@ -11,6 +11,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from rdkit import Chem
@@ -20,7 +21,7 @@ from openfold3.core.data.io.sequence.fasta import write_multichain_fasta
 from openfold3.core.data.io.structure.cif import (
     SkippedStructure,
     parse_mmcif,
-    write_minimal_cif,
+    write_structure,
 )
 from openfold3.core.data.io.structure.mol import write_annotated_sdf
 from openfold3.core.data.io.utils import encode_numpy_types
@@ -37,6 +38,7 @@ from openfold3.core.data.primitives.structure.cleanup import (
     remove_small_polymers,
     remove_std_residue_terminal_atoms,
     remove_waters,
+    subset_large_structure,
 )
 from openfold3.core.data.primitives.structure.component import (
     AnnotatedMol,
@@ -64,6 +66,7 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_release_date,
     get_resolution,
 )
+from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
 from openfold3.core.data.primitives.structure.unresolved import add_unresolved_atoms
 
 logger = logging.getLogger(__name__)
@@ -116,6 +119,14 @@ def cleanup_structure_af3(
     atom_array = remove_non_CCD_atoms(atom_array, ccd)
     atom_array = remove_chains_with_CA_gaps(atom_array, distance_threshold=10.0)
 
+    # Subset bioassemblies larger than 20 chains
+    if len(np.unique(atom_array.chain_id)) > 20:
+        # Tokenization is required for large-structure subsetting
+        tokenize_atom_array(atom_array)
+        atom_array = subset_large_structure(
+            atom_array=atom_array, n_chains=20, interface_distance_threshold=15.0
+        )
+
     ## Structure formatting
     # Add unresolved atoms explicitly with NaN coordinates
     atom_array = add_unresolved_atoms(atom_array, cif_data, ccd)
@@ -164,7 +175,7 @@ def extract_chain_and_interface_metadata_af3(
             "molecule_type": chain_to_molecule_type[chain_id],
         }
 
-    metadata_dict["interface_cluster_sizes"] = get_interface_chain_id_pairs(
+    metadata_dict["interfaces"] = get_interface_chain_id_pairs(
         atom_array, distance_threshold=5.0
     )
 
@@ -279,9 +290,9 @@ def preprocess_structure_and_write_outputs_af3(
     ccd: CIFFile,
     out_dir: Path,
     reference_mol_out_dir: Path,
+    output_formats: list[Literal["cif", "bcif", "pkl"]],
     max_polymer_chains: int | None = None,
     skip_components: set | None = None,
-    write_additional_cifs: bool = False,
 ) -> tuple[dict, dict]:
     parsed_mmcif = parse_mmcif(
         input_cif,
@@ -341,13 +352,10 @@ def preprocess_structure_and_write_outputs_af3(
 
     # Write CIF and FASTA outputs
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_cif_path = out_dir / f"{pdb_id}.bcif"
 
-    write_minimal_cif(atom_array, out_cif_path, format="bcif", data_block=pdb_id)
-    if write_additional_cifs:
-        write_minimal_cif(
-            atom_array, out_dir / f"{pdb_id}.cif", format="cif", data_block=pdb_id
-        )
+    for output_format in output_formats:
+        out_path = out_dir / f"{pdb_id}.{output_format}"
+        write_structure(atom_array, out_path, data_block=pdb_id)
 
     out_fasta_path = out_dir / f"{pdb_id}.fasta"
     write_multichain_fasta(out_fasta_path, chain_to_canonical_seq)
@@ -378,23 +386,24 @@ class _AF3PreprocessingWrapper:
             structure is skipped by the parser.
         skip_components:
             A set of components to skip, if any.
-        write_additional_cifs:
-            Boolean flag to write additional CIFs.
+        output_formats:
+            What formats to write the output files to. Allowed values are "cif", "bcif",
+            and "pkl".
     """
 
     def __init__(
         self,
-        ccd,
-        reference_mol_out_dir,
-        max_polymer_chains,
-        skip_components,
-        write_additional_cifs=False,
+        ccd: CIFFile,
+        reference_mol_out_dir: Path,
+        max_polymer_chains: int | None,
+        skip_components: set | SharedSet | None,
+        output_formats: list[Literal["cif", "bcif", "pkl"]],
     ):
         self.ccd = ccd
         self.reference_mol_out_dir = reference_mol_out_dir
         self.max_polymer_chains = max_polymer_chains
         self.skip_components = skip_components
-        self.write_additional_cifs = write_additional_cifs
+        self.output_formats = output_formats
 
     @wraps(preprocess_structure_and_write_outputs_af3)
     def __call__(self, paths: tuple[Path, Path]) -> tuple[dict, dict]:
@@ -410,7 +419,7 @@ class _AF3PreprocessingWrapper:
                     reference_mol_out_dir=self.reference_mol_out_dir,
                     max_polymer_chains=self.max_polymer_chains,
                     skip_components=self.skip_components,
-                    write_additional_cifs=self.write_additional_cifs,
+                    output_formats=self.output_formats,
                 )
             )
 
@@ -445,7 +454,7 @@ def preprocess_cif_dir_af3(
     max_polymer_chains: int | None = None,
     num_workers: int | None = None,
     chunksize: int = 20,
-    write_additional_cifs: bool = False,
+    output_formats: list[Literal["cif", "bcif", "pkl"]] = False,
     early_stop: int | None = None,
 ) -> None:
     """Preprocesses a directory of PDB files following the AlphaFold3 SI.
@@ -470,9 +479,9 @@ def preprocess_cif_dir_af3(
             CPUs, and 0 for a single process (not using the multiprocessing module).
         chunksize:
             Number of CIF files to process in each worker task.
-        write_additional_cifs:
-            Whether to additionally write normal .cif files on top of the binary .bcif
-            files
+        output_formats:
+            What formats to write the output files to. Allowed values are "cif", "bcif",
+            and "pkl".
         early_stop:
             Stop after processing this many CIFs. Only used for debugging.
     """
@@ -513,7 +522,7 @@ def preprocess_cif_dir_af3(
         reference_mol_out_dir=reference_mol_out_dir,
         max_polymer_chains=max_polymer_chains,
         skip_components=processed_mol_ids,
-        write_additional_cifs=write_additional_cifs,
+        output_formats=output_formats,
     )
 
     def update_output_dicts(structure_metadata_dict: dict, ref_mol_metadata_dict: dict):
