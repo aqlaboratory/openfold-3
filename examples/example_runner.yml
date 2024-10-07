@@ -7,14 +7,27 @@ presets:
 - initial_training 
 
 # General run settings
-mpi_plugin: false
 seed: 42
-checkpoint_every_epoch: false
-batch_size: 1
+data_seed: 1234
+
 num_gpus: 1
-output_dir: ../test_train_output 
+batch_size: 1
+num_workers: 16
+epoch_len: 100
+max_epochs: -1
+output_dir: ../test_train_output
 deepspeed_config_path: ./deepspeed_config.json
-log_lr : True
+mpi_plugin: false
+log_lr : true
+compile : true
+
+# Checkpoint settings
+restart_checkpoint_path: last
+checkpoint:
+  every_n_epochs: 1
+  auto_insert_metric_name: false
+  save_last: true
+  save_top_k: -1
 
 # All fields here must match pl.Trainer kwargs
 pl_trainer:

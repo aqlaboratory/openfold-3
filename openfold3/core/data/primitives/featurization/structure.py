@@ -129,22 +129,23 @@ def create_token_bonds(atom_array: AtomArray, token_index: np.ndarray) -> torch.
             < 2.4
         ]
 
-        # Map atom indices to token indices to token-in-crop index
-        token_to_token_in_crop = {t: tic for tic, t in enumerate(token_index)}
-        bonds_atomized_token_ids = np.stack(
-            [
-                np.vectorize(token_to_token_in_crop.get)(
-                    atom_array.token_id[bonds_atomized_tokens[:, i]]
-                )
-                for i in [0, 1]
-            ]
-        )
+        if bonds_atomized_tokens.size > 0:
+            # Map atom indices to token indices to token-in-crop index
+            token_to_token_in_crop = {t: tic for tic, t in enumerate(token_index)}
+            bonds_atomized_token_ids = np.stack(
+                [
+                    np.vectorize(token_to_token_in_crop.get)(
+                        atom_array.token_id[bonds_atomized_tokens[:, i]]
+                    )
+                    for i in [0, 1]
+                ]
+            )
 
-        # Unmask corresponding bonds
-        token_bonds[
-            bonds_atomized_token_ids[0],
-            bonds_atomized_token_ids[1],
-        ] = True
+            # Unmask corresponding bonds
+            token_bonds[
+                bonds_atomized_token_ids[0],
+                bonds_atomized_token_ids[1],
+            ] = True
 
     return torch.tensor(token_bonds, dtype=torch.int32)
 

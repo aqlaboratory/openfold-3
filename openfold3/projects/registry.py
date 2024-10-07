@@ -1,7 +1,10 @@
 # TODO add license
+import logging
+import random
 from typing import Optional
 
 import ml_collections as mlc
+import torch
 
 from openfold3.core.config import registry_base
 from openfold3.core.config.dataset_config_builder import DefaultDatasetConfigBuilder
@@ -82,12 +85,22 @@ def make_dataset_module_config(
             )
             dataset_configs.append(config)
 
+    # Seed must be set for distributed training, which is enforced in the run script
+    # If not distributed, use a random seed
+    data_seed = runner_args.get("data_seed")
+    if data_seed is None:
+        data_seed = runner_args.get(
+            "seed", random.randint(0, torch.iinfo(torch.int32).max)
+        )
+
+    logging.info(f"Running with data seed: {data_seed}")
+
     datamodule_config = data_module.DataModuleConfig(
         batch_size=runner_args.batch_size,
-        num_workers=runner_args.get("num_workers", 2),
-        data_seed=runner_args.get("data_seed", 17),
+        num_workers=runner_args.get("num_workers", 0),
+        data_seed=data_seed,
         epoch_len=runner_args.get("epoch_len", 1),
-        num_epochs=runner_args.pl_trainer.get("max_epochs"),
+        num_epochs=runner_args.pl_trainer.get("max_epochs", 1000),  # PL default
         datasets=dataset_configs,
     )
     return datamodule_config

@@ -6,15 +6,19 @@ project_type: af3_all_atom
 presets: 
   - train 
 
-mpi_plugin: false
 seed: 42
-checkpoint_every_epoch: false
-batch_size: 1
+data_seed: 1234
+
 num_gpus: 4
-output_dir: ../test_train_output 
+batch_size: 1
+num_workers: 16
+epoch_len: 200
+max_epochs: -1
+output_dir: ../test_train_output
 deepspeed_config_path: ./deepspeed_config.json
-log_lr : false 
-compile : false 
+mpi_plugin: false
+log_lr : false
+compile : false
 
 pl_trainer:
   num_nodes: 1

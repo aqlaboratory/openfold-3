@@ -117,7 +117,7 @@ multimer_config_update = mlc.ConfigDict(
                 "linear_init_params": lin_init_mult.structure_module_init,
             },
             "heads": {
-                "tm": {"ptm_weight": 0.2, "iptm_weight": 0.8, "enabled": True},
+                "tm": {"enabled": True},
                 "masked_msa": {"c_out": 22},
             },
             "recycle_early_stop_tolerance": 0.5,  # For training, value is -1.
@@ -143,6 +143,7 @@ multimer_config_update = mlc.ConfigDict(
             "tm": {"weight": 0.1, "enabled": True},
             "chain_center_of_mass": {"weight": 0.05, "enabled": True},
         },
+        "confidence": {"ptm_weight": 0.2, "iptm_weight": 0.8},
     }
 )
 

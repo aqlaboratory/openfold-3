@@ -259,8 +259,14 @@ class AlphaFold3(nn.Module):
             all-atom positions, and confidence/distogram head logits
         """
         # Compute atom positions
+        no_rollout_steps = (
+            self.shared.diffusion.no_mini_rollout_steps
+            if self.training
+            else self.shared.diffusion.no_full_rollout_steps
+        )
         with torch.no_grad():
             noise_schedule = create_noise_schedule(
+                no_rollout_steps=no_rollout_steps,
                 **self.config.architecture.noise_schedule,
                 dtype=si_input.dtype,
                 device=si_input.device,
@@ -284,7 +290,7 @@ class AlphaFold3(nn.Module):
             "atom_positions_predicted": atom_positions_predicted,
         }
 
-        # Compute confidences
+        # Compute confidence logits
         output.update(
             self.aux_heads(
                 batch=batch,
@@ -368,6 +374,9 @@ class AlphaFold3(nn.Module):
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
             chunk_size=self.settings.chunk_size,
+            use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+            use_lma=self.settings.use_lma,
+            _mask_trans=True,
         )
 
         output = {
@@ -503,9 +512,6 @@ class AlphaFold3(nn.Module):
                     Predicted binned experimentally resolved logits
                 "distogram_logits" ([*, N_token, N_token, 64]):
                     Predicted binned distogram logits
-                "confidence_scores":
-                    Dict containing the following confidence measures:
-                    pLDDT, PDE, PAE, pTM, iPTM, weighted pTM
                 "noise_level" ([*])
                     Training only, noise level at a diffusion step
                 "atom_positions_diffusion" ([*, N_samples, N_atom, 3]):

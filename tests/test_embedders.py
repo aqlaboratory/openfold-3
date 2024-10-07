@@ -114,7 +114,7 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
             "entity_id": torch.zeros((batch_size, n_token)),
             "ref_pos": torch.randn((batch_size, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, n_atom)),
-            "ref_element": torch.ones((batch_size, n_atom, 118)),
+            "ref_element": torch.ones((batch_size, n_atom, 119)),
             "ref_charge": torch.ones((batch_size, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, n_atom)),

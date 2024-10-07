@@ -48,19 +48,18 @@ finetune3:
         distogram: 0.0
         pae: 1e-4
 
-eval:
-  model:
-    settings:
-      diffusion_training_enabled: False
-    architecture:
-      shared:
-        diffusion:
-          no_rollout_steps: 200
-
 train:
   model:
     settings:
-      use_deepspeed_evo_attention: True
       blocks_per_ckpt: 1
       chunk_size: null
       use_block_sparse_attn: True
+      use_deepspeed_evo_attention: True
+
+predict:
+  model:
+    settings:
+      chunk_size: null
+      use_block_sparse_attn: True
+      use_deepspeed_evo_attention: True
+      diffusion_training_enabled: False
