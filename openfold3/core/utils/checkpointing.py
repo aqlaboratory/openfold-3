@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import importlib
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, List, Optional, Sequence
 
 import torch
 import torch.utils.checkpoint
@@ -23,7 +23,7 @@ if deepspeed_is_installed:
 
 
 BLOCK_ARG = Any
-BLOCK_ARGS = List[BLOCK_ARG]
+BLOCK_ARGS = Sequence[BLOCK_ARG]
 
 
 def get_checkpoint_fn(use_reentrant: Optional[bool] = None):
@@ -101,5 +101,52 @@ def checkpoint_blocks(
             args = checkpoint(chunker(s, e), *args)
 
         args = wrap(args)
+
+    return args
+
+
+@torch.jit.ignore
+def checkpoint_section(
+    fn: Callable,
+    args: BLOCK_ARGS,
+    apply_ckpt: Optional[bool] = True,
+    use_reentrant: Optional[bool] = None,
+):
+    """
+    Apply checkpointing to a single function.
+
+    Args:
+        fn:
+            Function to checkpoint
+        args:
+            Tuple of arguments for the first block.
+        apply_ckpt:
+            Whether to apply checkpointing. If None, no checkpointing
+            is performed.
+        use_reentrant:
+            Whether to use reentrant checkpointing. If set, torch checkpointing
+            will be used.
+    Returns:
+        The output of the final block
+    """
+
+    def wrap(a):
+        return (a,) if type(a) is not tuple else a
+
+    def exec(fn, a):
+        return fn(*a)
+
+    # Avoids mishaps when the function takes just one argument
+    args = wrap(args)
+
+    if not apply_ckpt or not torch.is_grad_enabled():
+        return exec(fn, args)
+
+    checkpoint = get_checkpoint_fn(use_reentrant=use_reentrant)
+
+    if use_reentrant is not None:
+        args = checkpoint(fn, *args, use_reentrant=use_reentrant)
+    else:
+        args = checkpoint(fn, *args)
 
     return args

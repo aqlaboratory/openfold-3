@@ -31,6 +31,7 @@ from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
     broadcast_token_feat_to_atoms,
 )
+from openfold3.core.utils.checkpointing import checkpoint_section
 
 TensorDict = Dict[str, torch.Tensor]
 
@@ -511,6 +512,7 @@ class AtomAttentionEncoder(nn.Module):
         c_s: Optional[int] = None,
         c_z: Optional[int] = None,
         blocks_per_ckpt: Optional[int] = None,
+        ckpt_intermediate_steps: bool = False,
         inf: float = 1e9,
         linear_init_params: ConfigDict = lin_init.atom_att_enc_init,
         use_reentrant: Optional[bool] = None,
@@ -552,6 +554,9 @@ class AtomAttentionEncoder(nn.Module):
             blocks_per_ckpt:
                 Number of blocks per checkpoint. If set, checkpointing will
                 be used to save memory.
+            ckpt_intermediate_steps:
+                Whether to checkpoint intermediate steps in the module, including
+                RefAtomFeatureEmbedder, NoisyPositionEmbedder, and feature aggregation
             inf:
                 Large number used for attention masking
             linear_init_params:
@@ -562,6 +567,9 @@ class AtomAttentionEncoder(nn.Module):
                 this feature)
         """
         super().__init__()
+        self.ckpt_intermediate_steps = ckpt_intermediate_steps
+        self.use_reentrant = use_reentrant
+
         self.ref_atom_feature_embedder = RefAtomFeatureEmbedder(
             c_atom_ref=c_atom_ref,
             c_atom=c_atom,
@@ -616,6 +624,66 @@ class AtomAttentionEncoder(nn.Module):
             Linear(c_atom, c_token, **linear_init_params.linear_q), nn.ReLU()
         )
 
+    def get_atom_reps(
+        self,
+        batch: TensorDict,
+        rl: Optional[torch.Tensor] = None,
+        si_trunk: Optional[torch.Tensor] = None,
+        zij_trunk: Optional[torch.Tensor] = None,
+    ):
+        """
+        Args:
+            batch:
+                Input feature dictionary
+            rl:
+                [*, N_atom, 3] Noisy atom positions (optional)
+            si_trunk:
+                [*, N_atom, c_s] Trunk single representation (optional)
+            zij_trunk:
+                [*, N_atom, N_atom, c_z] Trunk pair representation (optional)
+        Returns:
+            ql:
+                [*, N_atom, c_atom] Atom single representation
+            cl:
+                [*, N_atom, c_atom] Atom single conditioning
+            plm:
+                [*, N_atom, N_atom, c_atom_pair] Atom pair representation
+        """
+        # Embed reference atom features
+        # cl: [*, N_atom, c_atom]
+        # plm: [*, N_atom, N_atom, c_atom_pair]
+        cl, plm = self.ref_atom_feature_embedder(batch)
+
+        # Initialize atom single representation
+        # [*, N_atom, c_atom]
+        ql = cl.clone()
+
+        # Embed noisy atom positions and trunk embeddings
+        # cl: [*, N_atom, c_atom]
+        # plm: [*, N_atom, N_atom, c_atom_pair]
+        # ql: [*, N_atom, c_atom]
+        if rl is not None:
+            cl, plm, ql = self.noisy_position_embedder(
+                batch=batch,
+                cl=cl,
+                plm=plm,
+                ql=ql,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                rl=rl,
+            )
+
+        # Add the combined single conditioning to the pair rep (line 13 - 14)
+        # [*, N_atom, N_atom, c_atom_pair]
+        plm = (
+            plm
+            + self.linear_l(self.relu(cl.unsqueeze(-3)))
+            + self.linear_m(self.relu(cl.unsqueeze(-2)))
+        )
+        plm = plm + self.pair_mlp(plm)
+
+        return ql, cl, plm
+
     def forward(
         self,
         batch: TensorDict,
@@ -662,38 +730,18 @@ class AtomAttentionEncoder(nn.Module):
             plm:
                 [*, N_atom, N_atom, c_atom_pair] Atom pair representation
         """
-        # Embed reference atom features
-        # cl: [*, N_atom, c_atom]
-        # plm: [*, N_atom, N_atom, c_atom_pair]
-        cl, plm = self.ref_atom_feature_embedder(batch)
-
-        # Initialize atom single representation
-        # [*, N_atom, c_atom]
-        ql = cl.clone()
-
-        # Embed noisy atom positions and trunk embeddings
-        # cl: [*, N_atom, c_atom]
-        # plm: [*, N_atom, N_atom, c_atom_pair]
-        # ql: [*, N_atom, c_atom]
-        if rl is not None:
-            cl, plm, ql = self.noisy_position_embedder(
-                batch=batch,
-                cl=cl,
-                plm=plm,
-                ql=ql,
-                si_trunk=si_trunk,
-                zij_trunk=zij_trunk,
-                rl=rl,
-            )
-
-        # Add the combined single conditioning to the pair rep (line 13 - 14)
-        # [*, N_atom, N_atom, c_atom_pair]
-        plm = (
-            plm
-            + self.linear_l(self.relu(cl.unsqueeze(-3)))
-            + self.linear_m(self.relu(cl.unsqueeze(-2)))
+        atom_feat_args = (
+            batch,
+            rl,
+            si_trunk,
+            zij_trunk,
         )
-        plm = plm + self.pair_mlp(plm)
+        ql, cl, plm = checkpoint_section(
+            fn=self.get_atom_reps,
+            args=atom_feat_args,
+            apply_ckpt=self.ckpt_intermediate_steps,
+            use_reentrant=self.use_reentrant,
+        )
 
         # Cross attention transformer (line 15)
         # [*, N_atom, c_atom]
@@ -701,12 +749,18 @@ class AtomAttentionEncoder(nn.Module):
             ql=ql, cl=cl, plm=plm, atom_mask=atom_mask, chunk_size=chunk_size
         )
 
-        ai = aggregate_atom_feat_to_tokens(
-            token_mask=batch["token_mask"],
-            num_atoms_per_token=batch["num_atoms_per_token"],
-            atom_mask=atom_mask,
-            atom_feat=self.linear_q(ql),
-            atom_dim=-2,
+        agg_args = (
+            batch["token_mask"],
+            batch["num_atoms_per_token"],
+            atom_mask,
+            self.linear_q(ql),
+            -2,
+        )
+        ai = checkpoint_section(
+            fn=aggregate_atom_feat_to_tokens,
+            args=agg_args,
+            apply_ckpt=self.ckpt_intermediate_steps,
+            use_reentrant=self.use_reentrant,
         )
 
         return ai, ql, cl, plm
