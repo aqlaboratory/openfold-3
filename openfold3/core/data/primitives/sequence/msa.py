@@ -11,6 +11,10 @@ from biotite.structure import AtomArray
 
 from openfold3.core.data.primitives.featurization.structure import get_token_starts
 from openfold3.core.data.resources.residues import (
+    MOLECULE_TYPE_TO_ARGSORT_RESIDUES_1,
+    MOLECULE_TYPE_TO_RESIDUES_1,
+    MOLECULE_TYPE_TO_RESIDUES_POS,
+    MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_1,
     STANDARD_RESIDUES_WITH_GAP_1,
     MoleculeType,
 )
@@ -131,8 +135,10 @@ class MsaSlice:
 
 
 @dataclasses.dataclass(frozen=False)
-class MsaProcessed(MsaParsed):
+class MsaFeaturePrecursorAF3(MsaParsed):
     """Class representing the fully processed MSA arrays of an assembly.
+
+    Subclass of MsaParsed.
 
     Args:
         MsaParsed (Type[MsaParsed]):
@@ -799,13 +805,62 @@ def create_crop_to_seq_map(
     )
 
 
+def calculate_column_counts(msa_col: np.ndarray, mol_type: MoleculeType) -> np.ndarray:
+    """Calculates the counts of residues in an MSA column.
+
+    Args:
+        msa_col (np.ndarray):
+            Columns slice from an MSA array.
+        mol_type (MoleculeType):
+            The molecule type of the MSA.
+
+    Returns:
+        np.ndarray:
+            The counts of residues in the column indexed by the
+            STANDARD_RESIDUES_WITH_GAP_1 alphabet.
+    """
+    # Get correct sub-alphabet, unknown residuem and sort indices for the molecule type
+    mol_alphabet = MOLECULE_TYPE_TO_RESIDUES_1[mol_type]
+    mol_alphabet_sort_ids = MOLECULE_TYPE_TO_ARGSORT_RESIDUES_1[mol_type]
+    mol_alphabet_sorted = mol_alphabet[mol_alphabet_sort_ids]
+    res_unknown = MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_1[mol_type]
+
+    # Get unique residues and counts
+    res_unique, res_unique_counts = np.unique(msa_col, return_counts=True)
+
+    # Find which residues are in the molecule alphabet and counts for unknown residues
+    res_mol_alphabet_counts = np.zeros(len(mol_alphabet), dtype=int)
+    is_in_alphabet = np.isin(res_unique, mol_alphabet)
+    res_in_alphabet = res_unique[is_in_alphabet]
+    res_unknown_counts = res_unique_counts[~is_in_alphabet]
+
+    # Get indices of residues in and missing from alphabet and "un-sort" them
+    id_res_in_alphabet = mol_alphabet_sort_ids[
+        np.searchsorted(mol_alphabet_sorted, res_in_alphabet)
+    ]
+    id_res_unknown = mol_alphabet_sort_ids[
+        np.searchsorted(mol_alphabet_sorted, res_unknown)
+    ]
+
+    # Assign counts to each character in the un-sorted alphabet
+    res_mol_alphabet_counts[id_res_in_alphabet] = res_unique_counts[is_in_alphabet]
+    res_mol_alphabet_counts[id_res_unknown] += np.sum(res_unknown_counts)
+
+    # Map molecule alphabet counts to the full residue alphabet
+    res_full_alphabet_counts = np.zeros(len(STANDARD_RESIDUES_WITH_GAP_1), dtype=int)
+    molecule_alphabet_indices = MOLECULE_TYPE_TO_RESIDUES_POS[mol_type]
+    res_full_alphabet_counts[molecule_alphabet_indices] = res_mol_alphabet_counts
+
+    return res_full_alphabet_counts
+
+
 def apply_crop_to_msa(
     atom_array: AtomArray,
     msa_processed_collection: MsaProcessedCollection,
     msa_slice: MsaSlice,
     token_budget: int,
     max_rows_paired: int,
-) -> MsaProcessed:
+) -> MsaFeaturePrecursorAF3:
     """Applies crop to the MSA arrays or creates empty MSA arrays.
 
     Note: this is a temporary connector function between MSA sample processing and
@@ -868,11 +923,16 @@ def apply_crop_to_msa(
 
         # Assign sequence data to corresponding processed MSA slices
         for chain_id, token_res_map in msa_slice.tokens_in_chain.items():
+            # Query sequence "MSA"
             q = msa_processed_collection.query_sequences[chain_id]
+            # Paired MSA
             if msa_processed_collection.paired_msas is not None:
                 p = msa_processed_collection.paired_msas[chain_id]
+            # Main MSA
             m = msa_processed_collection.main_msas[chain_id]
             n_rows_main_i = n_rows_main_per_chain[chain_id]
+
+            mol_type = msa_slice.chain_to_molecule_type[chain_id]
 
             # Iterate over protein/RNA tokens in the crop
             for token_id, res_id in token_res_map.items():
@@ -911,22 +971,14 @@ def apply_crop_to_msa(
                     token_position,
                 ] = 1
 
-                # If main MSA is empty, leave profile as all-zeros
+                # If main MSA is empty, leave profile and deletion mean as all-zeros
                 if n_rows_main_i != 0:
-                    # TODO BUG: STANDARD_RESIDUES_WITH_GAP_1 currently contains two
-                    # entries of "N" and will therefore double-count Asparagine.
                     msa_profile[token_position, :] = (
-                        np.array(
-                            [
-                                np.sum(m.msa[:, res_id] == val).item()
-                                for val in STANDARD_RESIDUES_WITH_GAP_1
-                            ],
+                        calculate_column_counts(
+                            m.msa[:, res_id], MoleculeType[mol_type]
                         )
                         / m.msa.shape[0]
                     )
-
-                # If main MSA is empty, leave deletion mean as all-zeros
-                if n_rows_main_i != 0:
                     deletion_mean[token_position] = np.mean(
                         m.deletion_matrix[:, res_id]
                     )
@@ -941,7 +993,7 @@ def apply_crop_to_msa(
         msa_profile = np.zeros([token_budget, len(STANDARD_RESIDUES_WITH_GAP_1)])
         deletion_mean = np.zeros(token_budget)
 
-    return MsaProcessed(
+    return MsaFeaturePrecursorAF3(
         msa=msa_processed,
         deletion_matrix=deletion_matrix_processed,
         metadata=pd.DataFrame(),

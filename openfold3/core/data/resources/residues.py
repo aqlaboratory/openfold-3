@@ -111,6 +111,103 @@ RESTPYE_3TO1 = {v: k for k, v in RESTYPE_1TO3.items()}
 RESTYPE_INDEX_3 = {k: v for v, k in enumerate(STANDARD_RESIDUES_WITH_GAP_3)}
 RESTYPE_INDEX_1 = {k: v for v, k in enumerate(STANDARD_RESIDUES_WITH_GAP_1)}
 
+# Molecule-type to residue mappings
+MOLECULE_TYPE_TO_RESIDUES_3 = {
+    MoleculeType.PROTEIN: np.array(STANDARD_PROTEIN_RESIDUES_3 + ["GAP"]),
+    MoleculeType.RNA: np.array(STANDARD_RNA_RESIDUES + ["GAP"]),
+    MoleculeType.DNA: np.array(STANDARD_DNA_RESIDUES + ["GAP"]),
+    MoleculeType.LIGAND: np.array(["UNK", "GAP"]),
+}
+MOLECULE_TYPE_TO_RESIDUES_1 = {
+    MoleculeType.PROTEIN: np.array(STANDARD_PROTEIN_RESIDUES_1 + ["-"]),
+    MoleculeType.RNA: np.array(STANDARD_RNA_RESIDUES + ["-"]),
+    MoleculeType.DNA: np.array(STANDARD_DNA_RESIDUES + ["-"]),
+    MoleculeType.LIGAND: np.array(["X", "-"]),
+}
+
+
+def get_mol_residue_index_mappings() -> tuple[dict, dict, dict]:
+    """Get mappings from molecule type to residue indices.
+
+    Returns:
+        tuple[dict, dict, dict]:
+            Tuple containing
+                - Mapping for each molecule type from the molecule alphabet to the full
+                  shared alphabet.
+                - Mapping for each molecule type from the 3-letter molecule alphabet the
+                  sorted 3-letter molecule alphabet.
+                - Mapping for each molecule type from the 1-letter molecule alphabet the
+                  sorted 1-letter molecule alphabet.
+    """
+    _prot_a_len = len(STANDARD_PROTEIN_RESIDUES_1)
+    _rna_a_len = len(STANDARD_RNA_RESIDUES)
+    _dna_a_len = len(STANDARD_DNA_RESIDUES)
+    _gap_pos = len(STANDARD_RESIDUES_WITH_GAP_1) - 1
+    molecule_type_to_residues_pos = {
+        MoleculeType.PROTEIN: np.concatenate(
+            [
+                np.arange(0, _prot_a_len),
+                np.array([_gap_pos]),
+            ]
+        ),
+        MoleculeType.RNA: np.concatenate(
+            [
+                np.arange(
+                    _prot_a_len,
+                    _prot_a_len + _rna_a_len,
+                ),
+                np.array([_gap_pos]),
+            ]
+        ),
+        MoleculeType.DNA: np.concatenate(
+            [
+                np.arange(
+                    _prot_a_len + _rna_a_len,
+                    _prot_a_len + _rna_a_len + _dna_a_len,
+                ),
+                np.array([_gap_pos]),
+            ]
+        ),
+        MoleculeType.LIGAND: np.concatenate(
+            [
+                np.where(np.array(STANDARD_PROTEIN_RESIDUES_1) == "X")[0],
+                np.array([_gap_pos]),
+            ]
+        ),
+    }
+
+    molecule_type_to_argsort_residues_3 = {
+        k: np.argsort(v) for k, v in MOLECULE_TYPE_TO_RESIDUES_3.items()
+    }
+    molecule_type_to_argsort_residues_1 = {
+        k: np.argsort(v) for k, v in MOLECULE_TYPE_TO_RESIDUES_1.items()
+    }
+
+    return (
+        molecule_type_to_residues_pos,
+        molecule_type_to_argsort_residues_3,
+        molecule_type_to_argsort_residues_1,
+    )
+
+
+(
+    MOLECULE_TYPE_TO_RESIDUES_POS,
+    MOLECULE_TYPE_TO_ARGSORT_RESIDUES_3,
+    MOLECULE_TYPE_TO_ARGSORT_RESIDUES_1,
+) = get_mol_residue_index_mappings()
+MOLECULE_TYPE_TO_UKNOWN_RESIDUES_3 = {
+    MoleculeType.PROTEIN: "UNK",
+    MoleculeType.RNA: "N",
+    MoleculeType.DNA: "DN",
+    MoleculeType.LIGAND: "UNK",
+}
+MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_1 = {
+    MoleculeType.PROTEIN: "X",
+    MoleculeType.RNA: "N",
+    MoleculeType.DNA: "DN",
+    MoleculeType.LIGAND: "X",
+}
+
 
 @np.vectorize
 def get_with_unknown_3(key: str) -> int:

@@ -6,7 +6,7 @@ from biotite.structure import AtomArray
 
 from openfold3.core.data.io.sequence.msa import parse_msas_sample
 from openfold3.core.data.primitives.sequence.msa import (
-    MsaProcessed,
+    MsaFeaturePrecursorAF3,
     MsaProcessedCollection,
     MsaSlice,
     apply_crop_to_msa,
@@ -127,7 +127,7 @@ def process_msas_cropped_af3(
     max_seq_counts: dict[str, int | float],
     token_budget: int,
     max_rows_paired: int,
-) -> tuple[MsaProcessed, MsaSlice]:
+) -> tuple[MsaFeaturePrecursorAF3, MsaSlice]:
     """Wraps the process_msas_af3 function with the crop-to-sequence logic.
 
     Args:
