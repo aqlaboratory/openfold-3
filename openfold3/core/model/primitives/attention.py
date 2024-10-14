@@ -699,7 +699,7 @@ class GlobalAttention(nn.Module):
         return m
 
 
-@torch.jit.ignore
+@torch.compiler.disable
 def _deepspeed_evo_attn(
     q: torch.Tensor,
     k: torch.Tensor,

@@ -239,6 +239,7 @@ class AlphaFold3(nn.Module):
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
+        inplace_safe: bool = False,
     ) -> Dict:
         """
         Mini diffusion rollout described in section 4.1.
@@ -253,6 +254,8 @@ class AlphaFold3(nn.Module):
                 [*, N_token, C_s] Single representation output from model trunk
             zij_trunk:
                 [*, N_token, N_token, C_z] Pair representation output from model trunk
+            inplace_safe:
+                Whether inplace operations can be performed
 
         Returns:
             Output dictionary containing the predicted trunk embeddings,
@@ -297,6 +300,10 @@ class AlphaFold3(nn.Module):
                 si_input=si_input,
                 output=output,
                 chunk_size=self.settings.chunk_size,
+                use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+                use_lma=self.settings.use_lma,
+                inplace_safe=inplace_safe,
+                _mask_trans=True,
             )
         )
 
@@ -539,7 +546,11 @@ class AlphaFold3(nn.Module):
 
         # Mini rollout
         output = self._rollout(
-            batch=batch, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
+            batch=batch,
+            si_input=si_input,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+            inplace_safe=inplace_safe,
         )
 
         if self.training:  # noqa: SIM102

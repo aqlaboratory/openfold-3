@@ -168,7 +168,7 @@ class AlphaFold3Loss(nn.Module):
 
         cum_loss = 0.0
         losses = {}
-        if confidence_weights_sum > 0:
+        if confidence_weights_sum.any():
             l_confidence, l_confidence_breakdown = confidence_loss(
                 batch=batch, output=output, **self.config.confidence
             )
@@ -179,13 +179,15 @@ class AlphaFold3Loss(nn.Module):
             # Weighted in confidence_loss()
             cum_loss = cum_loss + l_confidence
 
+        # Run diffusion loss only if diffusion training and losses are enabled
+        atom_positions_diffusion = output.get("atom_positions_diffusion")
         diffusion_weights_sum = sum(
             loss_weights[k].float() for k in self.config.diffusion_loss_names
         )
-        if diffusion_weights_sum > 0:
+        if atom_positions_diffusion is not None and diffusion_weights_sum.any():
             l_diffusion, l_diffusion_breakdown = diffusion_loss(
                 batch=batch,
-                x=output["atom_positions_diffusion"],
+                x=atom_positions_diffusion,
                 t=output["noise_level"],
                 **self.config.diffusion,
             )
@@ -196,13 +198,16 @@ class AlphaFold3Loss(nn.Module):
             # Weighted in diffusion_loss()
             cum_loss = cum_loss + l_diffusion
 
-        if loss_weights["distogram"] > 0:
-            l_distogram = all_atom_distogram_loss(
+        if loss_weights["distogram"].any():
+            l_distogram, l_distogram_breakdown = all_atom_distogram_loss(
                 batch=batch, logits=output["distogram_logits"], **self.config.distogram
             )
-            losses["distogram_loss"] = l_distogram.detach().clone()
+            losses.update(l_distogram_breakdown)
 
-            cum_loss = cum_loss + loss_weights["distogram"].item() * l_distogram
+            losses["scaled_distogram_loss"] = l_distogram.detach().clone()
+
+            # Weighted in all_atom_distogram_loss()
+            cum_loss = cum_loss + l_distogram
 
         losses["loss"] = cum_loss.detach().clone()
 
