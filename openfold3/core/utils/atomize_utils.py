@@ -249,7 +249,7 @@ def max_atom_per_token_masked_select(
     """
     batch_dims = atom_feat.shape[:-2]
     c_out = atom_feat.shape[-1]
-    max_atoms_in_batch = torch.max(torch.sum(max_atom_per_token_mask, dim=-1)).int()
+    max_atoms_in_batch = torch.max(torch.sum(max_atom_per_token_mask.int(), dim=-1))
 
     def select_atoms(l: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """

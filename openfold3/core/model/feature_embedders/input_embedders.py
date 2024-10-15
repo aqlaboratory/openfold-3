@@ -580,7 +580,7 @@ class MSAModuleEmbedder(nn.Module):
     def subsample_msa(
         msa_feat: torch.Tensor,
         msa_mask: torch.Tensor,
-        num_main_msa_seqs: torch.Tensor,
+        num_paired_seqs: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Subsample main MSA features for a single element in the batch.
 
@@ -589,8 +589,8 @@ class MSAModuleEmbedder(nn.Module):
                 [N_seq, N_token, c_m_feats] MSA features
             msa_mask:
                 [N_seq, N_token] MSA mask
-            num_main_msa_seqs:
-                Number of main MSA sequences to sample from
+            num_paired_seqs:
+                Number of paired MSA sequences
         Returns:
             sampled_msa:
                 [N_seq_sampled, N_token, c_m_feats] Sampled MSA features
@@ -601,10 +601,9 @@ class MSAModuleEmbedder(nn.Module):
 
         # Split uniprot and main MSA sequences. Only main MSA seqs will be sampled.
         # All uniprot seqs are in the final MSA representation.
-        num_paired_seqs = num_main_msa_seqs.int()
+        num_main_msa_seqs = total_msa_seq - num_paired_seqs
 
         if num_main_msa_seqs.any():
-            num_main_msa_seqs = total_msa_seq - num_paired_seqs
             split_sections = [num_paired_seqs, num_main_msa_seqs]
             uniprot_msa, main_msa = torch.split(msa_feat, split_sections, dim=-3)
             uniprot_msa_mask, main_msa_mask = torch.split(

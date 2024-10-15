@@ -19,10 +19,10 @@ from functools import partial
 from typing import Callable, Dict, Optional
 
 import torch
-from torch.utils.checkpoint import checkpoint
 
 from openfold3.core.loss.loss_utils import loss_masked_batch_mean
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
+from openfold3.core.utils.checkpointing import checkpoint_section
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 
 
@@ -301,7 +301,9 @@ def run_low_mem_loss_fn(
     chunks = []
     for i in range(0, x.shape[-3], chunk_size):
         x_chunk = x[..., i : i + chunk_size, :, :]
-        l_chunk = checkpoint(loss_fn_partial, x_chunk, use_reentrant=False)
+        l_chunk = checkpoint_section(
+            fn=loss_fn_partial, args=(x_chunk,), apply_ckpt=True, use_reentrant=False
+        )
         chunks.append(l_chunk)
 
     return torch.cat(chunks, dim=-1)
