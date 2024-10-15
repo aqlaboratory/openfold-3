@@ -81,6 +81,12 @@ def main(
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
     early_stop: int | None = None,
 ) -> None:
+    """Preprocesses a directory of mmCIF files for use in AlphaFold3.
+
+    Cleans up mmCIF files following the AlphaFold3 filtering procedure and writes out a
+    metadata JSON and individual FASTA files for all structures.
+    """
+    # TODO: Add better docstring
     logger = logging.getLogger("openfold3")
     logger.setLevel(getattr(logging, log_level.upper()))
     logger.addHandler(logging.StreamHandler())

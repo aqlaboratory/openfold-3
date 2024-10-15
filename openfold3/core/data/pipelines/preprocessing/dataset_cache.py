@@ -141,36 +141,3 @@ def create_pdb_training_dataset_cache_af3(
         json.dump(training_cache, f, indent=4)
 
     logger.info("DONE.")
-
-
-# Run test
-logger = logging.getLogger("openfold3")
-logger.setLevel(logging.INFO)
-logger.addHandler(logging.StreamHandler())
-
-metadata_cache_path = Path(
-    "/pscratch/sd/l/ljarosch/af3_dataset_releases/af3_training_data_v2/metadata.json"
-)
-preprocessed_dir = Path(
-    "/pscratch/sd/l/ljarosch/of3_pdb_processing/pdb_data_cleaned_50w_300-poly_old/cif_files"
-)
-alignment_representatives_fasta = Path(
-    "/pscratch/sd/l/ljarosch/af3_dataset_releases/af3_training_data_v2/val_rep.fasta"
-)
-output_path = Path(
-    "/pscratch/sd/l/ljarosch/af3_dataset_releases/af3_training_data_v2/training_cache.json"
-)
-max_release_date = "2021-09-30"
-max_resolution = 9.0
-max_polymer_chains = 300
-
-create_training_cache_af3(
-    metadata_cache_path,
-    preprocessed_dir,
-    alignment_representatives_fasta,
-    output_path,
-    max_release_date,
-    max_resolution,
-    max_polymer_chains,
-    write_unmatched_representatives=False,
-)
