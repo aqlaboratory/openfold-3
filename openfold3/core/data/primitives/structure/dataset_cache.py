@@ -24,7 +24,6 @@ Type alias for the "structure_metadata" part of the preprocessed metadata_cache.
 
 Follows the format:
 {
-    ...,
     pdb_id: {
         ...basic_metadata...
         "chains": {...}
@@ -36,7 +35,7 @@ Follows the format:
 
 
 def filter_by_release_date(
-    cache: StructureMetadataCache, max_date: date | str
+    structure_cache: StructureMetadataCache, max_date: date | str
 ) -> StructureMetadataCache:
     """Filter the cache by removing entries newer than a given date.
 
@@ -52,17 +51,17 @@ def filter_by_release_date(
     if not isinstance(max_date, date):
         max_date = datetime.strptime(max_date, "%Y-%m-%d").date()
 
-    cache = {
+    structure_cache = {
         pdb_id: metadata
-        for pdb_id, metadata in cache.items()
+        for pdb_id, metadata in structure_cache.items()
         if datetime.strptime(metadata["release_date"], "%Y-%m-%d").date() <= max_date
     }
 
-    return cache
+    return structure_cache
 
 
 def filter_by_resolution(
-    cache: StructureMetadataCache, max_resolution: float
+    structure_cache: StructureMetadataCache, max_resolution: float
 ) -> StructureMetadataCache:
     """Filter the cache by removing entries with resolution higher than a given value.
 
@@ -77,13 +76,13 @@ def filter_by_resolution(
     Returns:
         The filtered cache.
     """
-    cache = {
+    structure_cache = {
         pdb_id: metadata
-        for pdb_id, metadata in cache.items()
+        for pdb_id, metadata in structure_cache.items()
         if metadata["resolution"] <= max_resolution
     }
 
-    return cache
+    return structure_cache
 
 
 def chain_cache_entry_is_polymer(entry: dict) -> bool:
@@ -92,7 +91,7 @@ def chain_cache_entry_is_polymer(entry: dict) -> bool:
 
 
 def filter_by_max_polymer_chains(
-    cache: StructureMetadataCache, max_chains: int
+    structure_cache: StructureMetadataCache, max_chains: int
 ) -> StructureMetadataCache:
     """Filter the cache by removing entries with more polymer chains than a given value.
 
@@ -106,20 +105,20 @@ def filter_by_max_polymer_chains(
         The filtered cache.
     """
 
-    cache = {
+    structure_cache = {
         pdb_id: metadata
-        for pdb_id, metadata in cache.items()
+        for pdb_id, metadata in structure_cache.items()
         if sum(
             chain_cache_entry_is_polymer(chain) for chain in metadata["chains"].values()
         )
         <= max_chains
     }
 
-    return cache
+    return structure_cache
 
 
 def filter_by_skipped_structures(
-    cache: StructureMetadataCache,
+    structure_cache: StructureMetadataCache,
 ) -> StructureMetadataCache:
     """Filter the cache by removing entries that were skipped during preprocessing.
 
@@ -130,13 +129,13 @@ def filter_by_skipped_structures(
     Returns:
         The filtered cache.
     """
-    cache = {
+    structure_cache = {
         pdb_id: metadata
-        for pdb_id, metadata in cache.items()
+        for pdb_id, metadata in structure_cache.items()
         if metadata["status"] == "success"
     }
 
-    return cache
+    return structure_cache
 
 
 def map_chains_to_representatives(
@@ -174,7 +173,7 @@ def map_chains_to_representatives(
 
 
 def add_chain_representatives(
-    cache: StructureMetadataCache,
+    structure_cache: StructureMetadataCache,
     query_chain_to_seq: dict[str, str],
     repr_chain_to_seq: dict[str, str],
 ) -> None:
@@ -195,7 +194,7 @@ def add_chain_representatives(
         query_chain_to_seq, repr_chain_to_seq
     )
 
-    for pdb_id, metadata in cache.items():
+    for pdb_id, metadata in structure_cache.items():
         for chain_id, chain_metadata in metadata["chains"].items():
             repr_id = query_chains_to_repr_chains.get(f"{pdb_id}_{chain_id}")
 
