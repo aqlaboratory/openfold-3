@@ -1,7 +1,22 @@
 """All operations for processing and manipulating metadata and training caches."""
 
+import itertools
+import logging
+import subprocess as sp
+import tempfile
+from collections import defaultdict
 from datetime import date, datetime
-from typing import TypeAlias
+from pathlib import Path
+from typing import Literal, TypeAlias
+
+import pandas as pd
+
+from openfold3.core.data.io.sequence.fasta import (
+    read_multichain_fasta,
+    write_multichain_fasta,
+)
+
+logger = logging.getLogger(__name__)
 
 StructureMetadataCache: TypeAlias = dict[str, dict]
 """
@@ -187,7 +202,9 @@ def add_chain_representatives(
             chain_metadata["alignment_representative_id"] = repr_id
 
 
-def filter_no_alignment_representative(cache: StructureMetadataCache):
+def filter_no_alignment_representative(
+    structure_cache: StructureMetadataCache, return_no_repr=False
+) -> StructureMetadataCache:
     """Filter the cache by removing entries with no alignment representative.
 
     If any of the chains in the entry do not have corresponding alignment data, the
@@ -196,13 +213,23 @@ def filter_no_alignment_representative(cache: StructureMetadataCache):
     Args:
         cache:
             The cache to filter.
+        return_no_repr:
+            If True, also return a dictionary of unmatched entries, formatted as:
+            pdb_id: chain_metadata
+
+            Default is False.
 
     Returns:
         The filtered cache.
     """
     filtered_cache = {}
 
-    for pdb_id, metadata in cache.items():
+    if return_no_repr:
+        unmatched_entries = {}
+
+    for pdb_id, metadata in structure_cache.items():
+        all_in_cache_have_repr = True
+
         # Add only entries to filtered cache where all protein or RNA chains have
         # alignment representatives
         for chain in metadata["chains"].values():
@@ -210,8 +237,61 @@ def filter_no_alignment_representative(cache: StructureMetadataCache):
                 continue
 
             if chain["alignment_representative_id"] is None:
-                break
-        else:
+                all_in_cache_have_repr = False
+
+                # If return_removed is True, also try finding remaining chains with no
+                # alignment representative, otherwise break early
+                if return_no_repr:
+                    unmatched_entries[pdb_id] = chain
+                else:
+                    break
+
+        if all_in_cache_have_repr:
             filtered_cache[pdb_id] = metadata
 
-    return filtered_cache
+    if return_no_repr:
+        return filtered_cache, unmatched_entries
+    else:
+        return filtered_cache
+
+
+def add_and_filter_alignment_representatives(
+    structure_cache: StructureMetadataCache,
+    query_chain_to_seq: dict[str, str],
+    alignment_representatives_fasta: Path,
+    return_no_repr=False,
+) -> StructureMetadataCache:
+    """Adds alignment representatives to cache and filters out entries without any.
+
+    Will find the representative chain for each query chain and add it to the cache
+    in-place under a new "alignment_representative_id" key for each chain. Entries
+    without alignment representatives are removed from the cache.
+
+    Args:
+        cache:
+            The structure metadata cache to update.
+        alignment_representatives_fasta:
+            Path to the FASTA file containing alignment representatives.
+        query_chain_to_seq:
+            Dictionary mapping query chain IDs to sequences.
+        return_no_repr:
+            If True, also return a dictionary of unmatched entries, formatted as:
+            pdb_id: chain_metadata
+
+            Default is False.
+
+    Returns:
+        The filtered cache.
+    """
+    repr_chain_to_seq = read_multichain_fasta(alignment_representatives_fasta)
+    add_chain_representatives(structure_cache, query_chain_to_seq, repr_chain_to_seq)
+
+    if return_no_repr:
+        structure_cache, unmatched_entries = filter_no_alignment_representative(
+            structure_cache, return_no_repr=True
+        )
+        return structure_cache, unmatched_entries
+    else:
+        structure_cache = filter_no_alignment_representative(structure_cache)
+        return structure_cache
+

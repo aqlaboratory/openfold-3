@@ -5,11 +5,10 @@ from pathlib import Path
 
 from openfold3.core.data.io.sequence.fasta import (
     consolidate_preprocessed_fastas,
-    read_multichain_fasta,
 )
 from openfold3.core.data.primitives.structure.dataset_cache import (
     StructureMetadataCache,
-    add_chain_representatives,
+    add_and_filter_alignment_representatives,
     filter_by_max_polymer_chains,
     filter_by_release_date,
     filter_by_resolution,
@@ -20,7 +19,7 @@ from openfold3.core.data.primitives.structure.dataset_cache import (
 logger = logging.getLogger(__name__)
 
 
-def filter_structure_metadata_af3(
+def filter_structure_metadata_training_af3(
     cache: StructureMetadataCache,
     max_release_date: datetime.date | str,
     max_resolution: float = 9.0,
@@ -28,8 +27,8 @@ def filter_structure_metadata_af3(
 ) -> StructureMetadataCache:
     """Filter the structure metadata cache to structures suitable for training.
 
-    Applies the following filters from the AF3 SI that have not yet been applied in
-    preprocessing:
+    Applies the following filters from the AF3 SI 2.5.4 that have not yet been applied
+    in preprocessing:
     - release date <= max_release_date
     - number of polymer chains <= 300
     - resolution <= 9.0
@@ -64,7 +63,7 @@ def create_training_cache_af3(
     max_release_date: datetime.date | str,
     max_resolution: float = 9.0,
     max_polymer_chains: int = 300,
-    write_unmatched_representatives: bool = False,
+    write_no_alignment_repr_entries: bool = True,
 ) -> None:
     """Create a training cache from a metadata cache.
 
@@ -76,56 +75,55 @@ def create_training_cache_af3(
     """
     metadata_cache = json.loads(metadata_cache_path.read_text())
 
+    # Read in FASTAs of all sequences in the training set
+    logger.info("Scanning FASTA directories...")
+    id_to_sequence = consolidate_preprocessed_fastas(preprocessed_dir)
+
     training_cache = {}
 
     structure_data = metadata_cache["structure_data"]
+    reference_mol_data = metadata_cache["reference_molecule_data"]
 
-    # Add dataset name TODO: handle this more cleanly
-    training_cache["name"] = "PDB-weighted"
-
-    # TEMPORARY FIX FOR PREPROCESSING BUG
-    del structure_data["pdb_id"]
-    del structure_data["status"]
+    # Add dataset name
+    training_cache["name"] = dataset_name
 
     # Subset the structures in the preprocessed metadata to only the desired ones
-    structure_data = filter_structure_metadata_af3(
+    structure_data = filter_structure_metadata_training_af3(
         structure_data,
         max_release_date=max_release_date,
         max_resolution=max_resolution,
         max_polymer_chains=max_polymer_chains,
     )
 
-    # Delete status
+    # Delete no longer needed status field
     for metadata in structure_data.values():
         del metadata["status"]
 
-    # Map each target chain to an alignment representative
-    logger.info("Scanning FASTA directories...")
-    repr_chain_to_seq = read_multichain_fasta(alignment_representatives_fasta)
-    query_chain_to_seq = consolidate_preprocessed_fastas(preprocessed_dir)
-    add_chain_representatives(structure_data, query_chain_to_seq, repr_chain_to_seq)
+    # Map each target chain to an alignment representative, then filter all structures
+    # without alignment representatives
+    if write_no_alignment_repr_entries:
+        structure_data, unmatched_entries = add_and_filter_alignment_representatives(
+            structure_data,
+            query_chain_to_seq=id_to_sequence,
+            alignment_representatives_fasta=alignment_representatives_fasta,
+            return_no_repr=True,
+        )
 
-    # Filter the cache to only include structures with alignment representatives
-    structure_data = filter_no_alignment_representative(structure_data)
+        with open(
+            output_path.parent / "no_alignment_representative_entries.json", "w"
+        ) as f:
+            json.dump(unmatched_entries, f, indent=4)
+    else:
+        structure_data = add_and_filter_alignment_representatives(
+            structure_data,
+            query_chain_to_seq=id_to_sequence,
+            alignment_representatives_fasta=alignment_representatives_fasta,
+            preprocessed_dir=preprocessed_dir,
+        )
 
-    # Run dummy clustering
-    for metadata in structure_data.values():
-        for chain in metadata["chains"].values():
-            chain["cluster_size"] = 1
-
-        new_interface_dict = {}
-
-        for interface_pair in metadata["interfaces"]:
-            chain_1, chain_2 = interface_pair
-            new_interface_dict[f"{chain_1}_{chain_2}"] = 1
-
-        del metadata["interfaces"]
-        metadata["interface_cluster_sizes"] = new_interface_dict
 
     training_cache["structure_data"] = structure_data
-    training_cache["reference_molecule_data"] = metadata_cache[
-        "reference_molecule_data"
-    ]
+    training_cache["reference_molecule_data"] = reference_mol_data
 
     with open(output_path, "w") as f:
         json.dump(training_cache, f, indent=4)
