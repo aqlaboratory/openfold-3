@@ -400,7 +400,7 @@ def batched_kabsch(
     # determine handedness
     dets = torch.det(V @ Ut)  # just do U @ Vt
     batch_dims = H.shape[:-2]
-    D = torch.eye(3).tile(*batch_dims, 1, 1)
+    D = torch.eye(3).tile(*batch_dims, 1, 1).to(V.device)
     D[..., -1, -1] = torch.sign(dets).to(torch.float64)
 
     rotation = V @ D @ Ut
@@ -506,7 +506,7 @@ def get_validation_metrics(
     metrics = {}
 
     gt_coords = batch["ground_truth"]["atom_positions"].float()
-    pred_coords = outputs["x_pred"].float()
+    pred_coords = outputs["atom_positions_predicted"].float()
     all_atom_mask = batch["ref_mask"]
     token_mask = batch["token_mask"]
     num_atoms_per_token = batch["num_atoms_per_token"]

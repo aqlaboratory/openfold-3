@@ -67,7 +67,7 @@ class AlphaFold3AllAtom(ModelRunner):
         batch, outputs = self(batch)
 
         # Compute loss and other metrics
-        _, loss_breakdown = self.loss(outputs, batch, _return_breakdown=True)
+        _, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
 
         self._log(loss_breakdown, batch, outputs, train=False)
 
