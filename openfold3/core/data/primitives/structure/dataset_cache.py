@@ -489,6 +489,7 @@ def add_cluster_ids_and_sizes(
             elif molecule_type == "LIGAND":
                 reference_mol_id = chain_metadata["reference_mol_id"]
 
+                # TODO: remove this logic after debugging the preprocessing
                 try:
                     smiles = reference_mol_cache[reference_mol_id]["canonical_smiles"]
                 except KeyError:
