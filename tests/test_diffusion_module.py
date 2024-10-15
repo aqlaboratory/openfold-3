@@ -21,7 +21,7 @@ from openfold3.core.model.structure.diffusion_module import (
     SampleDiffusion,
     create_noise_schedule,
 )
-from openfold3.model_implementations.registry import make_config_with_preset
+from openfold3.projects import registry
 from tests.config import consts
 
 
@@ -31,13 +31,15 @@ class TestDiffusionModule(unittest.TestCase):
         n_token = consts.n_res
         n_atom = 4 * consts.n_res
 
-        config = make_config_with_preset("af3_all_atom")
+        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_config = proj_entry.get_config_with_preset()
+        config = proj_config.model
 
-        c_s_input = config.globals.c_s_input
-        c_s = config.globals.c_s
-        c_z = config.globals.c_z
+        c_s_input = config.architecture.shared.c_s_input
+        c_s = config.architecture.shared.c_s
+        c_z = config.architecture.shared.c_z
 
-        dm = DiffusionModule(config=config.model.diffusion_module)
+        dm = DiffusionModule(config=config.architecture.diffusion_module)
 
         xl_noisy = torch.randn((batch_size, n_atom, 3))
         t = torch.ones(1)
@@ -59,7 +61,7 @@ class TestDiffusionModule(unittest.TestCase):
             "entity_id": torch.zeros((batch_size, n_token)),
             "ref_pos": torch.randn((batch_size, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, n_atom)),
-            "ref_element": torch.ones((batch_size, n_atom, 128)),
+            "ref_element": torch.ones((batch_size, n_atom, 119)),
             "ref_charge": torch.ones((batch_size, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, n_atom)),
@@ -85,13 +87,15 @@ class TestDiffusionModule(unittest.TestCase):
         n_atom = 4 * consts.n_res
         n_sample = 3
 
-        config = make_config_with_preset("af3_all_atom")
+        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_config = proj_entry.get_config_with_preset()
+        config = proj_config.model
 
-        c_s_input = config.globals.c_s_input
-        c_s = config.globals.c_s
-        c_z = config.globals.c_z
+        c_s_input = config.architecture.shared.c_s_input
+        c_s = config.architecture.shared.c_s
+        c_z = config.architecture.shared.c_z
 
-        dm = DiffusionModule(config=config.model.diffusion_module)
+        dm = DiffusionModule(config=config.architecture.diffusion_module)
 
         xl_noisy = torch.randn((batch_size, n_sample, n_atom, 3))
         t = torch.ones((batch_size, n_sample))
@@ -113,7 +117,7 @@ class TestDiffusionModule(unittest.TestCase):
             "entity_id": torch.zeros((batch_size, 1, n_token)),
             "ref_pos": torch.randn((batch_size, 1, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, 1, n_atom)),
-            "ref_element": torch.ones((batch_size, 1, n_atom, 128)),
+            "ref_element": torch.ones((batch_size, 1, n_atom, 119)),
             "ref_charge": torch.ones((batch_size, 1, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, 1, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, 1, n_atom)),
@@ -140,14 +144,20 @@ class TestSampleDiffusion(unittest.TestCase):
         n_token = consts.n_res
         n_atom = 4 * consts.n_res
 
-        config = make_config_with_preset("af3_all_atom")
+        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_config = proj_entry.get_config_with_preset()
+        config = proj_config.model
 
-        c_s_input = config.globals.c_s_input
-        c_s = config.globals.c_s
-        c_z = config.globals.c_z
+        c_s_input = config.architecture.shared.c_s_input
+        c_s = config.architecture.shared.c_s
+        c_z = config.architecture.shared.c_z
+        config.architecture.shared.no_mini_rollout_steps = 2
+        config.architecture.shared.no_full_rollout_steps = 2
 
-        dm = DiffusionModule(config=config.model.diffusion_module)
-        sd = SampleDiffusion(**config.model.sample_diffusion, diffusion_module=dm)
+        sample_config = config.architecture.sample_diffusion
+
+        dm = DiffusionModule(config=config.architecture.diffusion_module)
+        sd = SampleDiffusion(**sample_config, diffusion_module=dm)
 
         batch = {
             "token_index": torch.arange(0, n_token)
@@ -162,7 +172,7 @@ class TestSampleDiffusion(unittest.TestCase):
             "entity_id": torch.zeros((batch_size, n_token)),
             "ref_pos": torch.randn((batch_size, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, n_atom)),
-            "ref_element": torch.ones((batch_size, n_atom, 128)),
+            "ref_element": torch.ones((batch_size, n_atom, 119)),
             "ref_charge": torch.ones((batch_size, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, n_atom)),
@@ -174,7 +184,7 @@ class TestSampleDiffusion(unittest.TestCase):
         zij_trunk = torch.rand((batch_size, n_token, n_token, c_z))
 
         with torch.no_grad():
-            noise_sched_config = config.model.noise_schedule
+            noise_sched_config = config.architecture.noise_schedule
             noise_sched_config.no_rollout_steps = 2
             noise_schedule = create_noise_schedule(
                 **noise_sched_config, dtype=si_input.dtype, device=si_input.device

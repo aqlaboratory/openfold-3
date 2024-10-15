@@ -67,6 +67,11 @@ class TestDiffusionLoss(unittest.TestCase):
                 "atom_resolved_mask": gt_atom_mask,
                 "atom_positions": gt_atom_positions,
             },
+            "loss_weights": {
+                "bond": torch.Tensor([1.0]),
+                "smooth_lddt": torch.Tensor([1.0]),
+                "mse": torch.Tensor([1.0]),
+            },
         }
 
     def test_weighted_rigid_align(self):
@@ -160,8 +165,6 @@ class TestDiffusionLoss(unittest.TestCase):
     def test_diffusion_loss(self):
         n_sample = 2
         sigma_data = 16
-        bond_weight = 1.0
-        smooth_lddt_weight = 1.0
 
         batch = self.setup_features()
         batch_size = batch["ground_truth"]["atom_resolved_mask"].shape[0]
@@ -178,8 +181,6 @@ class TestDiffusionLoss(unittest.TestCase):
             x=x,
             t=t,
             sigma_data=sigma_data,
-            bond_weight=bond_weight,
-            smooth_lddt_weight=smooth_lddt_weight,
             eps=consts.eps,
         )
 

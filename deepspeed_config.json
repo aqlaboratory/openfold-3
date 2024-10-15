@@ -21,7 +21,5 @@
     "partition_activations": true,
     "cpu_checkpointing": false,
     "profile": false
-  },
-  "gradient_clipping": 0.1,
-  "zero_force_ds_cpu_optimizer": false
+  }
 }

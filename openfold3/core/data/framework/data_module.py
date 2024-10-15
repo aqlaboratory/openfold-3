@@ -30,6 +30,7 @@ import enum
 import random
 import warnings
 from functools import partial
+from pathlib import Path
 from typing import Any, Optional, Union
 
 import pytorch_lightning as pl
@@ -40,6 +41,7 @@ from lightning_fabric.utilities.rank_zero import (
     rank_zero_only,
 )
 from lightning_utilities.core.imports import RequirementCache
+from ml_collections import ConfigDict
 from torch.utils.data import DataLoader
 
 from openfold3.core.data.framework.lightning_utils import _generate_seed_sequence
@@ -79,7 +81,7 @@ class MultiDatasetConfig:
     def __len__(self):
         return len(self.classes)
 
-    def get_subset(self, index: bool) -> "MultiDatasetConfig":
+    def get_subset(self, index: list[bool]) -> "MultiDatasetConfig":
         """Returns a subset of the MultiDatasetConfig.
 
         Args:
@@ -91,8 +93,8 @@ class MultiDatasetConfig:
                 Subset of the MultiDatasetConfig.
         """
 
-        def apply_bool(value, index):
-            return [v for v, i in zip(value, index) if i]
+        def apply_bool(value, idx):
+            return [v for v, i in zip(value, idx) if i]
 
         return MultiDatasetConfig(
             classes=apply_bool(self.classes, index),
@@ -100,6 +102,28 @@ class MultiDatasetConfig:
             configs=apply_bool(self.configs, index),
             weights=apply_bool(self.weights, index),
         )
+
+
+@dataclasses.dataclass
+class DataModuleConfig:
+    batch_size: int
+    num_workers: int
+    data_seed: int
+    epoch_len: int
+    num_epochs: int
+    datasets: list[ConfigDict]
+
+    def to_dict(self):
+        _dict = self.__dict__.copy()
+        datasets = []
+        for d in _dict["datasets"]:
+            d.config.dataset_paths = {
+                k: (str(v) if isinstance(v, Path) else v)
+                for k, v in d.config.dataset_paths.items()
+            }
+            datasets.append(d.to_dict())
+        _dict["datasets"] = datasets
+        return _dict
 
 
 class DatasetMode(enum.Enum):
@@ -114,18 +138,18 @@ class DatasetMode(enum.Enum):
 class DataModule(pl.LightningDataModule):
     """A LightningDataModule class for organizing Datasets and DataLoaders."""
 
-    def __init__(self, data_config: list[dict]) -> None:
+    def __init__(self, data_config: DataModuleConfig) -> None:
         super().__init__()
 
-        # Input argument self-assignment
-        self.batch_size = data_config["batch_size"]
-        self.num_workers = data_config["num_workers"]
-        self.data_seed = data_config["data_seed"]
-        self.epoch_len = data_config["epoch_len"]
-        self.num_epochs = data_config["num_epochs"]
+        # Possibly initialize directly from DataModuleConfig
+        self.batch_size = data_config.batch_size
+        self.num_workers = data_config.num_workers
+        self.data_seed = data_config.data_seed
+        self.epoch_len = data_config.epoch_len
+        self.num_epochs = data_config.num_epochs
 
         # Parse datasets
-        multi_dataset_config = self.parse_data_config(data_config["datasets"])
+        multi_dataset_config = self.parse_data_config(data_config.datasets)
 
         # Custom worker init function with manual data seed
         def worker_init_function_with_data_seed(
@@ -189,6 +213,9 @@ class DataModule(pl.LightningDataModule):
             self.validation_dataset = self.init_datasets(
                 multi_dataset_config_validation, DatasetMode.validation
             )[0]
+        # Dummy is needed as PLightning will still try to access the validation dataset.
+        else:
+            self.validation_dataset = []
 
         if DatasetMode.test in multi_dataset_config.modes:
             multi_dataset_config_test = multi_dataset_config.get_subset(
@@ -206,7 +233,7 @@ class DataModule(pl.LightningDataModule):
                 multi_dataset_config_prediction, DatasetMode.prediction
             )[0]
 
-    def parse_data_config(self, data_config: list[dict]) -> MultiDatasetConfig:
+    def parse_data_config(self, data_config: list[ConfigDict]) -> MultiDatasetConfig:
         """Parses input data_config into separate lists.
 
         Args:
@@ -220,9 +247,12 @@ class DataModule(pl.LightningDataModule):
         """
 
         def get_cast(
-            dictionary: dict, key: Union[str, int], cast_type: type, default: Any = None
+            dictionary: Union[dict, ConfigDict],
+            key: Union[str, int],
+            cast_type: type,
+            default: Any = None,
         ) -> Any:
-            """Simultanously try to get and try to cast a value from a dictionary.
+            """Simultaneously try to get and try to cast a value from a dictionary.
 
             Args:
                 dictionary (dict):
@@ -273,11 +303,12 @@ class DataModule(pl.LightningDataModule):
 
         return multi_dataset_config
 
-    def run_checks(self, multi_dataset_config: MultiDatasetConfig) -> None:
+    @staticmethod
+    def run_checks(multi_dataset_config: MultiDatasetConfig) -> None:
         """Runs checks on the provided crop weights and modes.
 
         Checks for valid combinations of SingleDataset modes and normalizes weights and
-        cropping weights if available and they do not sum to 1. Updates
+        cropping weights if available, and they do not sum to 1. Updates
         multi_dataset_config in place.
 
         Args:
@@ -364,8 +395,8 @@ class DataModule(pl.LightningDataModule):
                 f"combinations are: {supported_combinations}."
             )
 
+    @staticmethod
     def init_datasets(
-        self,
         multi_dataset_config: MultiDatasetConfig,
         type_to_init: DatasetMode,
     ) -> list[SingleDataset]:
@@ -404,7 +435,7 @@ class DataModule(pl.LightningDataModule):
             )
         return datasets
 
-    def generate_dataloader(self, stage: str):
+    def generate_dataloader(self, stage: DatasetMode):
         """Wrap the appropriate dataset in a DataLoader and return it.
 
         Args:

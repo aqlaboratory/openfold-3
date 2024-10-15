@@ -115,8 +115,10 @@ def featurize_structure_af3(
         features["atom_positions"] = torch.nan_to_num(
             torch.tensor(atom_array.coord, dtype=torch.float32)
         )
-        features["atom_resolved_mask"] = torch.tensor(
-            atom_array.occupancy, dtype=torch.float32
+        features["atom_resolved_mask"] = torch.clamp(
+            torch.ceil(torch.tensor(atom_array.occupancy, dtype=torch.float32)),
+            min=0.0,
+            max=1.0,
         )
 
     # Pad and return

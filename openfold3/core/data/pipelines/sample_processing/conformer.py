@@ -49,7 +49,7 @@ def get_processed_reference_conformer(
     mol_id: Mol,
     mol: Mol,
     mol_atom_array: AtomArray,
-    preferred_confgen_strategy: Literal["default", "random_init", "fallback"],
+    preferred_confgen_strategy: Literal["default", "random_init", "use_fallback"],
     set_fallback_to_nan: bool = False,
 ) -> ProcessedReferenceMolecule:
     """Creates a ProcessedReferenceMolecule instance.
@@ -69,8 +69,9 @@ def get_processed_reference_conformer(
             AtomArray of the target conformer instance to determine which atoms of the
             reference conformer are present in the structure.
         preferred_confgen_strategy (str):
-            Preferred strategy for conformer generation. If the strategy is "fallback"
-            or the conformer generation fails, the fallback conformer is used.
+            Preferred strategy for conformer generation. If the strategy is
+            "use_fallback" or the conformer generation fails, the fallback
+            conformer is used.
         set_fallback_to_nan (bool, optional):
             If True, the fallback conformer is set to NaN. This is mostly relevant for
             the special case where the fallback conformer was derived from CCD model
@@ -108,7 +109,7 @@ def get_processed_reference_conformer(
         mol = add_conformer_atom_mask(mol)
 
     ## Overwrite the fallback conformer with a new conformer if possible
-    if preferred_confgen_strategy != "fallback":
+    if preferred_confgen_strategy != "use_fallback":
         # If the new conformer generation fails, the fallback conformer is used
         with contextlib.suppress(ConformerGenerationError):
             if preferred_confgen_strategy == "default":
@@ -122,8 +123,13 @@ def get_processed_reference_conformer(
                 # not fail). We do not use the default strategy here as a fallback
                 # because this was already tried previously in preprocessing if
                 # random_init was chosen.
-                mol, conf_id = compute_conformer(mol, strategy="random_init")
+                mol, conf_id = compute_conformer(mol, use_random_coord_init=True)
                 conf = mol.GetConformer(conf_id)
+            else:
+                raise ValueError(
+                    f"Conformer generation strategy '{preferred_confgen_strategy}' "
+                    f"is not supported."
+                )
 
             # Set the single conformer
             mol = set_single_conformer(mol, conf)

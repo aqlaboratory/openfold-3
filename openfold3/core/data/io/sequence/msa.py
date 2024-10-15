@@ -9,7 +9,11 @@ from typing import Sequence
 import numpy as np
 
 from openfold3.core.data.io.sequence.fasta import parse_fasta
-from openfold3.core.data.primitives.sequence.msa import MsaCollection, MsaParsed
+from openfold3.core.data.primitives.sequence.msa import (
+    MsaCollection,
+    MsaParsed,
+    MsaSlice,
+)
 
 
 def _msa_list_to_np(msa: Sequence[str]) -> np.array:
@@ -159,7 +163,7 @@ def parse_msas_direct(
     Args:
         folder_path (Path):
             Path to folder containing the MSA files to parse.
-        max_seq_count (dict[str, int] | None):
+        max_seq_counts (dict[str, int] | None):
             A map from file names to maximum sequences to keep from the corresponding
             MSA file. The set of keys in this dict is also used to parse only a subset
             of the files in the folder with the corresponding names.
@@ -259,7 +263,7 @@ def parse_msas_sample(
     alignments_directory: Path | None,
     alignment_db_directory: Path | None,
     alignment_index: dict | None,
-    chain_rep_map: dict[str, str],
+    msa_slice: MsaSlice,
     max_seq_counts: dict[str, int | float] | None = None,
 ) -> MsaCollection:
     """Parses MSA(s) for a training sample.
@@ -277,11 +281,8 @@ def parse_msas_sample(
             alignments_directory.
         alignment_index (Optional[dict], optional):
             Dictionary containing the alignment index.
-        chain_rep_map (dict[str, str]):
-            Dict mapping chain IDs to representative chain IDs to parse for a sample.
-            The representative chain IDs are used to find the directory from which to
-            parse the MSAs or is used to index the alignment database, so they need to
-            match the corresponding directory names.
+        msa_slice (MsaSlice):
+            Object containing the mappings from the crop to the MSA sequences.
         max_seq_counts (Optional[dict[str, int]], optional):
             Dictionary mapping the sequence database from which sequence hits were
             returned to the max number of sequences to parse from all the hits. See
@@ -293,6 +294,8 @@ def parse_msas_sample(
         MsaCollection:
             A collection of Msa objects and chain IDs for a single sample.
     """
+    chain_rep_map = msa_slice.chain_rep_map
+
     # Parse MSAs for each representative ID
     # This requires parsing MSAs for duplicate chains only once
     representative_chain_ids = list(set(chain_rep_map.values()))
@@ -326,5 +329,6 @@ def parse_msas_sample(
         rep_msa_map=rep_msa_map,
         rep_seq_map=rep_seq_map,
         chain_rep_map=chain_rep_map,
+        chain_to_molecule_type=msa_slice.chain_to_molecule_type,
         num_cols=num_cols,
     )

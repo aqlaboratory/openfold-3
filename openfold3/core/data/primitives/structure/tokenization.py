@@ -46,11 +46,13 @@ def tokenize_atom_array(atom_array: AtomArray):
 
     # Get standard residues
     n_atoms = len(atom_array)
-    residue_ids, residue_names = struc.get_residues(atom_array)
-    standard_residue_ids = residue_ids[np.isin(residue_names, STANDARD_RESIDUES_3)]
 
-    # Get ids where residue-tokens start
-    is_standard_residue_atom = np.isin(atom_array.res_id, standard_residue_ids)
+    # Find standard residues, excluding amino acid and nucleotide ligands
+    ligand_mask = atom_array.molecule_type_id == MoleculeType.LIGAND
+    std_residue_name_mask = np.isin(atom_array.res_name, STANDARD_RESIDUES_3)
+    is_standard_residue_atom = ~ligand_mask & std_residue_name_mask
+
+    # Get standard residue atom IDs & token starts
     standard_residue_atom_ids = atom_array._atom_idx[is_standard_residue_atom]
     residue_token_start_ids = np.unique(
         struc.get_residue_starts_for(atom_array, standard_residue_atom_ids)
@@ -61,25 +63,29 @@ def tokenize_atom_array(atom_array: AtomArray):
     bondlist = atom_array.bonds.as_array()
 
     # Find bonds with at least one standard residue atom (i.e. non-heteroatom)
-    bondlist = bondlist[
+    bondlist_1_std = bondlist[
         np.isin(bondlist[:, 0], standard_residue_atom_ids)
         | np.isin(bondlist[:, 1], standard_residue_atom_ids)
     ]
     # Find bonds which contain two standard residue atoms
-    bondlist_standard = bondlist[
-        np.isin(bondlist[:, 0], standard_residue_atom_ids)
-        & np.isin(bondlist[:, 1], standard_residue_atom_ids)
+    bondlist_2_std = bondlist_1_std[
+        np.isin(bondlist_1_std[:, 0], standard_residue_atom_ids)
+        & np.isin(bondlist_1_std[:, 1], standard_residue_atom_ids)
     ]
 
     # Find bonds which contain
     # - exactly one heteroatom
     #   (standard residues with covalent ligands)
-    is_heteoratom = atom_array.hetero
-    is_one_heteroatom = is_heteoratom[bondlist[:, 0]] ^ is_heteoratom[bondlist[:, 1]]
+    is_heteroatom = atom_array.hetero
+    is_one_heteroatom = (
+        is_heteroatom[bondlist_1_std[:, 0]] ^ is_heteroatom[bondlist_1_std[:, 1]]
+    )
     # - two non-heteroatoms in different chains
     #   (standard residues covalently linking different chains)
     chain_ids = atom_array.chain_id
-    is_different_chain = chain_ids[bondlist[:, 0]] != chain_ids[bondlist[:, 1]]
+    is_different_chain = (
+        chain_ids[bondlist_1_std[:, 0]] != chain_ids[bondlist_1_std[:, 1]]
+    )
     # - two non-heteroatoms in the same chain but side chains of different residues
     #   (standard residues covalently linking non-consecutive residues in the same
     #   chain)
@@ -93,15 +99,13 @@ def tokenize_atom_array(atom_array: AtomArray):
         ~np.isin(atom_names, PROTEIN_MAIN_CHAIN_ATOMS)
         & (molecule_types == MoleculeType.PROTEIN)
     )
-    is_same_chain = (
-        chain_ids[bondlist_standard[:, 0]] == chain_ids[bondlist_standard[:, 1]]
-    )
+    is_same_chain = chain_ids[bondlist_2_std[:, 0]] == chain_ids[bondlist_2_std[:, 1]]
     is_both_side_chain = (
-        is_side_chain[bondlist_standard[:, 0]] & is_side_chain[bondlist_standard[:, 1]]
+        is_side_chain[bondlist_2_std[:, 0]] & is_side_chain[bondlist_2_std[:, 1]]
     )
     is_different_residue = (
-        atom_array.aux_residue_id[bondlist_standard[:, 0]]
-        != atom_array.aux_residue_id[bondlist_standard[:, 1]]
+        atom_array.aux_residue_id[bondlist_2_std[:, 0]]
+        != atom_array.aux_residue_id[bondlist_2_std[:, 1]]
     )
     is_same_chain_diff_sidechain = (
         is_same_chain & is_both_side_chain & is_different_residue
@@ -110,8 +114,8 @@ def tokenize_atom_array(atom_array: AtomArray):
     # Combine
     bondlist_covalent_modification = np.concatenate(
         (
-            bondlist[is_one_heteroatom | is_different_chain],
-            bondlist_standard[is_same_chain_diff_sidechain],
+            bondlist_1_std[is_one_heteroatom | is_different_chain],
+            bondlist_2_std[is_same_chain_diff_sidechain],
         ),
         axis=0,
     )

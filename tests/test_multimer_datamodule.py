@@ -23,7 +23,7 @@ from openfold3.core.data.legacy.data_modules import OpenFoldMultimerDataModule
 from openfold3.core.loss.loss_module import AlphaFoldLoss
 from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation_align
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations import registry
+from openfold3.projects import registry
 from tests.config import consts
 
 logger = logging.getLogger(__name__)

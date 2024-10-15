@@ -23,7 +23,7 @@ def process_msas_af3(
     alignments_directory: Path | None,
     alignment_db_directory: Path | None,
     alignment_index: dict | None,
-    chain_rep_map: dict[str, str],
+    msa_slice: MsaSlice,
     max_seq_counts: dict[str, int | float],
 ) -> MsaProcessedCollection:
     """Prepares the arrays needed to create MSA feature tensors.
@@ -49,11 +49,8 @@ def process_msas_af3(
         alignment_index (dict | None):
             Dictionary containing the alignment index for each chain ID. Only used if
             alignment_db_directory is provided.
-        chain_rep_map (dict[str, str]):
-            Dict mapping chain IDs to representative chain IDs to parse for a sample.
-            The representative chain IDs are used to find the directory from which to
-            parse the MSAs or are used to index the alignment database, so they need to
-            match the corresponding directory/alignment index names.
+        msa_slice (MsaSlice):
+            Object containing the mappings from the crop to the MSA sequences.
         max_seq_counts (int | float):
             Max number of sequences to keep from each parsed MSA. Also used to determine
             which MSAs to parse from each chain directory.
@@ -72,12 +69,12 @@ def process_msas_af3(
         )
 
     # Parse MSAs for the cropped sample
-    if len(chain_rep_map) > 0:
+    if len(msa_slice.chain_rep_map) > 0:
         msa_collection = parse_msas_sample(
             alignments_directory=alignments_directory,
             alignment_db_directory=alignment_db_directory,
             alignment_index=alignment_index,
-            chain_rep_map=chain_rep_map,
+            msa_slice=msa_slice,
             max_seq_counts=max_seq_counts,
         )
 
@@ -87,16 +84,15 @@ def process_msas_af3(
         # Determine whether to do pairing
         is_monomer_homomer = find_monomer_homomer(msa_collection)
 
+        paired_msa_per_chain = None
+        paired_msas = None
         if not is_monomer_homomer:
             # Create paired UniProt MSA arrays and Rfam
             paired_msa_per_chain = create_paired(msa_collection, paired_row_cutoff=8191)
 
-            # Expand across duplicate chains and concatenate
-            paired_msas = expand_paired_msas(msa_collection, paired_msa_per_chain)
-
-        else:
-            paired_msa_per_chain = None
-            paired_msas = None
+            if paired_msa_per_chain is not None:
+                # Expand across duplicate chains and concatenate
+                paired_msas = expand_paired_msas(msa_collection, paired_msa_per_chain)
 
         # Create main MSA arrays
         main_msas = create_main(
@@ -104,7 +100,6 @@ def process_msas_af3(
             paired_msa_per_chain=paired_msa_per_chain,
             aln_order=[
                 "uniref90_hits",
-                "uniprot",
                 "bfd_uniclust_hits",
                 "bfd_uniref_hits",
                 "mgnify_hits",
@@ -177,7 +172,7 @@ def process_msas_cropped_af3(
         alignments_directory=alignments_directory,
         alignment_db_directory=alignment_db_directory,
         alignment_index=alignment_index,
-        chain_rep_map=msa_slice.chain_rep_map,
+        msa_slice=msa_slice,
         max_seq_counts=max_seq_counts,
     )
 

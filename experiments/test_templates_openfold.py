@@ -32,7 +32,7 @@ from openfold3.core.data.legacy import data_pipeline, feature_pipeline
 from openfold3.core.np import protein, residue_constants
 from openfold3.core.utils.script_utils import load_models_from_command_line, run_model
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.model_implementations.af2_monomer import config
+from openfold3.projects.af2_monomer import config
 
 parser = argparse.ArgumentParser()
 parser.add_argument("name", help="name to save everything under")

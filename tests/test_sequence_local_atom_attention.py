@@ -12,7 +12,7 @@ from openfold3.core.model.layers import (
     RefAtomFeatureEmbedder,
 )
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
-from openfold3.model_implementations.af3_all_atom.config.base_config import c_atom_ref
+from openfold3.projects.af3_all_atom.config.base_config import c_atom_ref
 from tests.config import consts
 
 
@@ -30,7 +30,7 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
         batch = {
             "ref_pos": torch.randn((batch_size, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, n_atom)),
-            "ref_element": torch.ones((batch_size, n_atom, 128)),
+            "ref_element": torch.ones((batch_size, n_atom, 119)),
             "ref_charge": torch.ones((batch_size, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, n_atom)),
@@ -54,7 +54,7 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
         batch = {
             "ref_pos": torch.randn((batch_size, 1, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, 1, n_atom)),
-            "ref_element": torch.ones((batch_size, 1, n_atom, 128)),
+            "ref_element": torch.ones((batch_size, 1, n_atom, 119)),
             "ref_charge": torch.ones((batch_size, 1, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, 1, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, 1, n_atom)),
@@ -388,7 +388,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
             "num_atoms_per_token": torch.ones((batch_size, n_token)) * 4,
             "ref_pos": torch.randn((batch_size, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, n_atom)),
-            "ref_element": torch.ones((batch_size, n_atom, 128)),
+            "ref_element": torch.ones((batch_size, n_atom, 119)),
             "ref_charge": torch.ones((batch_size, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, n_atom)),
@@ -446,7 +446,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
             "num_atoms_per_token": torch.ones((batch_size, 1, n_token)) * 4,
             "ref_pos": torch.randn((batch_size, 1, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, 1, n_atom)),
-            "ref_element": torch.ones((batch_size, 1, n_atom, 128)),
+            "ref_element": torch.ones((batch_size, 1, n_atom, 119)),
             "ref_charge": torch.ones((batch_size, 1, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, 1, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, 1, n_atom)),

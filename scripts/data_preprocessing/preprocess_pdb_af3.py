@@ -27,7 +27,7 @@ from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif
     help="Path to top-level directory that output files should be written to.",
 )
 @click.option(
-    "--max_polymer_chains",
+    "--max-polymer-chains",
     type=int,
     default=None,
     help=(
@@ -51,11 +51,13 @@ from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif
     help="Number of CIF files to process in each worker task.",
 )
 @click.option(
-    "--write-additional-cifs",
-    is_flag=False,
+    "--output-format",
+    type=click.Choice(["cif", "bcif", "pkl"]),
+    multiple=True,
+    required=True,
     help=(
-        "Write not only binary .cif files but also standard .cif files (useful for "
-        "inspecting results)."
+        "What output formats to write the structures to. "
+        "Can be 'cif', 'bcif', and 'pkl'."
     ),
 )
 @click.option(
@@ -74,10 +76,10 @@ def main(
     cif_dir: Path,
     ccd_path: Path,
     out_dir: Path,
+    output_format: list[Literal["cif", "bcif", "pkl"]],
     max_polymer_chains: int = 300,
     num_workers: int | None = None,
     chunksize: int = 50,
-    write_additional_cifs: bool = False,
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
     early_stop: int | None = None,
 ) -> None:
@@ -98,7 +100,7 @@ def main(
         max_polymer_chains=max_polymer_chains,
         num_workers=num_workers,
         chunksize=chunksize,
-        write_additional_cifs=write_additional_cifs,
+        output_formats=output_format,
         early_stop=early_stop,
     )
 
