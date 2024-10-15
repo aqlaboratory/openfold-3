@@ -55,11 +55,12 @@ def filter_structure_metadata_training_af3(
     return filtered_cache
 
 
-def create_training_cache_af3(
+def create_pdb_training_dataset_cache_af3(
     metadata_cache_path: Path,
     preprocessed_dir: Path,
     alignment_representatives_fasta: Path,
     output_path: Path,
+    dataset_name: str,
     max_release_date: datetime.date | str,
     max_resolution: float = 9.0,
     max_polymer_chains: int = 300,
