@@ -9,11 +9,12 @@ from openfold3.core.data.io.sequence.fasta import (
 from openfold3.core.data.primitives.structure.dataset_cache import (
     StructureMetadataCache,
     add_and_filter_alignment_representatives,
+    add_cluster_ids_and_sizes,
     filter_by_max_polymer_chains,
     filter_by_release_date,
     filter_by_resolution,
     filter_by_skipped_structures,
-    filter_no_alignment_representative,
+    remove_interface_keys,
 )
 
 logger = logging.getLogger(__name__)
@@ -122,6 +123,16 @@ def create_pdb_training_dataset_cache_af3(
             preprocessed_dir=preprocessed_dir,
         )
 
+    # Add cluster IDs and cluster sizes for all chains
+    add_cluster_ids_and_sizes(
+        structure_cache=structure_data,
+        reference_mol_cache=reference_mol_data,
+        id_to_sequence=id_to_sequence,
+    )
+
+    # Remove obsolete "interface" keys whose information is effectively fully contained
+    # in "interface_clusters"
+    remove_interface_keys(structure_data)
 
     training_cache["structure_data"] = structure_data
     training_cache["reference_molecule_data"] = reference_mol_data
