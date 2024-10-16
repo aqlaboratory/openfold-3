@@ -13,6 +13,42 @@ class MoleculeType(IntEnum):
     LIGAND = 3
 
 
+# _chem_comp.type to molecule type mapping
+# see https://mmcif.wwpdb.org/dictionaries/mmcif_std.dic/Items/_chem_comp.type.html
+
+CHEM_COMP_TYPE_TO_MOLECULE_TYPE = {
+    "PEPTIDE LINKING": MoleculeType.PROTEIN,
+    "PEPTIDE-LIKE": MoleculeType.PROTEIN,
+    "D-PEPTIDE LINKING": MoleculeType.PROTEIN,
+    "L-PEPTIDE LINKING": MoleculeType.PROTEIN,
+    "D-BETA-PEPTIDE, C-GAMMA LINKING": MoleculeType.PROTEIN,
+    "D-GAMMA-PEPTIDE, C-DELTA LINKING": MoleculeType.PROTEIN,
+    "L-BETA-PEPTIDE, C-GAMMA LINKING": MoleculeType.PROTEIN,
+    "L-GAMMA-PEPTIDE, C-DELTA LINKING": MoleculeType.PROTEIN,
+    "D-PEPTIDE NH3 AMINO TERMINUS": MoleculeType.PROTEIN,
+    "D-PEPTIDE COOH CARBOXY TERMINUS": MoleculeType.PROTEIN,
+    "L-PEPTIDE NH3 AMINO TERMINUS": MoleculeType.PROTEIN,
+    "L-PEPTIDE COOH CARBOXY TERMINUS": MoleculeType.PROTEIN,
+    "RNA LINKING": MoleculeType.RNA,
+    "L-RNA LINKING": MoleculeType.RNA,
+    "RNA OH 5 PRIME TERMINUS": MoleculeType.RNA,
+    "RNA OH 3 PRIME TERMINUS": MoleculeType.RNA,
+    "DNA LINKING": MoleculeType.DNA,
+    "L-DNA LINKING": MoleculeType.DNA,
+    "DNA OH 5 PRIME TERMINUS": MoleculeType.DNA,
+    "DNA OH 3 PRIME TERMINUS": MoleculeType.DNA,
+    "SACCHARIDE": MoleculeType.LIGAND,
+    "L-SACCHARIDE": MoleculeType.LIGAND,
+    "D-SACCHARIDE": MoleculeType.LIGAND,
+    "L-SACCHARIDE, ALPHA LINKING": MoleculeType.LIGAND,
+    "L-SACCHARIDE, BETA LINKING": MoleculeType.LIGAND,
+    "D-SACCHARIDE, ALPHA LINKING": MoleculeType.LIGAND,
+    "D-SACCHARIDE, BETA LINKING": MoleculeType.LIGAND,
+    "NON-POLYMER": MoleculeType.LIGAND,
+    "OTHER": MoleculeType.LIGAND,
+}
+
+
 # Standard residues as defined in AF3 SI, Table 13
 STANDARD_PROTEIN_RESIDUES_3 = [
     "ALA",
