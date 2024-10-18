@@ -16,13 +16,15 @@ import unittest
 
 import torch
 
-from openfold3.core.model.feature_embedders import (
+from openfold3.core.model.feature_embedders.input_embedders import (
     InputEmbedder,
     InputEmbedderAllAtom,
     InputEmbedderMultimer,
     MSAModuleEmbedder,
     PreembeddingEmbedder,
     RecyclingEmbedder,
+)
+from openfold3.core.model.feature_embedders.template_embedders import (
     TemplatePairEmbedderAllAtom,
     TemplatePairEmbedderMonomer,
     TemplatePairEmbedderMultimer,

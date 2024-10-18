@@ -25,7 +25,9 @@ import torch.nn as nn
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
-from openfold3.core.model.layers import AtomAttentionEncoder
+from openfold3.core.model.layers.sequence_local_atom_attention import (
+    AtomAttentionEncoder,
+)
 from openfold3.core.model.primitives import LayerNorm, Linear, normal_init_
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.tensor_utils import add, binned_one_hot

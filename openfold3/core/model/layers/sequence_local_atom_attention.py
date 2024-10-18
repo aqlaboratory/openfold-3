@@ -25,7 +25,7 @@ import torch.nn as nn
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
-from openfold3.core.model.layers import DiffusionTransformer
+from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,

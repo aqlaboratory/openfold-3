@@ -23,8 +23,10 @@ import torch
 from ml_collections import ConfigDict
 from torch import nn
 
-from openfold3.core.model.feature_embedders import InputEmbedderAllAtom
-from openfold3.core.model.feature_embedders.input_embedders import MSAModuleEmbedder
+from openfold3.core.model.feature_embedders.input_embedders import (
+    InputEmbedderAllAtom,
+    MSAModuleEmbedder,
+)
 from openfold3.core.model.heads.head_modules import AuxiliaryHeadsAllAtom
 from openfold3.core.model.latent.msa_module import MSAModuleStack
 from openfold3.core.model.latent.pairformer import PairFormerStack

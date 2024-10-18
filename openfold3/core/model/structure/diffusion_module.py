@@ -23,12 +23,12 @@ import torch
 import torch.nn as nn
 
 import openfold3.core.config.default_linear_init_config as lin_init
-from openfold3.core.model.layers import (
+from openfold3.core.model.layers.diffusion_conditioning import DiffusionConditioning
+from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
+from openfold3.core.model.layers.sequence_local_atom_attention import (
     AtomAttentionDecoder,
     AtomAttentionEncoder,
-    DiffusionTransformer,
 )
-from openfold3.core.model.layers.diffusion_conditioning import DiffusionConditioning
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.rigid_utils import quat_to_rot

@@ -29,7 +29,7 @@ from ml_collections import ConfigDict
 from torch import nn
 
 import openfold3.core.config.default_linear_init_config as lin_init
-from openfold3.core.model.feature_embedders import (
+from openfold3.core.model.feature_embedders.template_embedders import (
     TemplatePairEmbedderAllAtom,
     TemplatePairEmbedderMonomer,
     TemplatePairEmbedderMultimer,
