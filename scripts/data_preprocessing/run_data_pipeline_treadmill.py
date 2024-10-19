@@ -30,7 +30,7 @@ from lightning_fabric.utilities.rank_zero import (
     rank_zero_only,
 )
 from ml_collections import ConfigDict
-from torch.utils.data import DataLoader, get_worker_info
+from torch.utils.data import DataLoader, Dataset, get_worker_info
 from tqdm import tqdm
 
 from openfold3.core.config import config_utils
@@ -506,6 +506,10 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         features = {}
         atom_array_cropped = None
 
+        # Skip datapoint save_statistics is True and already processed
+        if self.save_statistics and (f"{pdb_id}" in self.processed_datapoint_log):
+            return features
+
         self.logger.info(
             f"Processing datapoint {index}, PDB ID: {pdb_id}, preferred "
             f"chain/interface: {preferred_chain_or_interface}"
@@ -520,7 +524,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                     crop_weights=self.crop_weights,
                     token_budget=self.token_budget,
                     preferred_chain_or_interface=preferred_chain_or_interface,
-                    structure_format="cif",
+                    structure_format="pkl",
                     return_full_atom_array=True,
                 )
             )
@@ -723,7 +727,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         sample_file_handler.setLevel(self.logger.logger.level)
         sample_logger.addHandler(sample_file_handler)
 
-        sample_logger.info(
+        sample_logger.error(
             f"Failed to process entry {pdb_id} chain/interface "
             f"{preferred_chain_or_interface}"
             f"\n\nException:\n{str(e)}"
@@ -760,29 +764,29 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 else preferred_chain_or_interface
             )
 
-            # Init line
+            # Init line:
             line = f"{pdb_id}\t{preferred_chain_or_interface}\t"
 
             # Get per-molecule type atom arrays/residue starts
             atom_array_protein = atom_array[
-                atom_array.molecule_type_id != MoleculeType.PROTEIN
+                atom_array.molecule_type_id == MoleculeType.PROTEIN
             ]
             atom_array_protein_cropped = atom_array_cropped[
-                atom_array_cropped.molecule_type_id != MoleculeType.PROTEIN
+                atom_array_cropped.molecule_type_id == MoleculeType.PROTEIN
             ]
-            atom_array_rna = atom_array[atom_array.molecule_type_id != MoleculeType.RNA]
+            atom_array_rna = atom_array[atom_array.molecule_type_id == MoleculeType.RNA]
             atom_array_rna_cropped = atom_array_cropped[
-                atom_array_cropped.molecule_type_id != MoleculeType.RNA
+                atom_array_cropped.molecule_type_id == MoleculeType.RNA
             ]
-            atom_array_dna = atom_array[atom_array.molecule_type_id != MoleculeType.DNA]
+            atom_array_dna = atom_array[atom_array.molecule_type_id == MoleculeType.DNA]
             atom_array_dna_cropped = atom_array_cropped[
-                atom_array_cropped.molecule_type_id != MoleculeType.DNA
+                atom_array_cropped.molecule_type_id == MoleculeType.DNA
             ]
             atom_array_ligand = atom_array[
-                atom_array.molecule_type_id != MoleculeType.LIGAND
+                atom_array.molecule_type_id == MoleculeType.LIGAND
             ]
             atom_array_ligand_cropped = atom_array_cropped[
-                atom_array_cropped.molecule_type_id != MoleculeType.LIGAND
+                atom_array_cropped.molecule_type_id == MoleculeType.LIGAND
             ]
             residue_starts = struc.get_residue_starts(atom_array)
             residue_starts = (
@@ -836,7 +840,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             # Collect data
             statistics = []
 
-            # Number of atoms
+            # Number of atoms:
             for aa in all_aa:
                 statistics += [len(aa)]
 
@@ -846,12 +850,15 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 statistics += [len(torch.unique_consecutive(resid_tensor))]
 
             # Unresolved data
-            for aa in full_aa:
-                # Number of unresolved atoms
-                statistics += [np.isnan(aa.coord).any(axis=1).sum()]
-                # Number of unresolved residues
-                cumsums = np.cumsum(np.isnan(aa.coord).any(axis=1))
-                statistics += [(np.diff(cumsums[residue_starts]) > 0).sum()]
+            for aa, rs in zip(full_aa, [residue_starts, residue_starts_cropped]):
+                if len(aa) > 0:
+                    # Number of unresolved atoms
+                    statistics += [np.isnan(aa.coord).any(axis=1).sum()]
+                    # Number of unresolved residues
+                    cumsums = np.cumsum(np.isnan(aa.coord).any(axis=1))
+                    statistics += [(np.diff(cumsums[rs]) > 0).sum()]
+                else:
+                    statistics += ["NaN", "NaN"]
 
             # Number of chains
             for aa in full_aa:
@@ -867,7 +874,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             # Number of paired MSA rows
             statistics += [features["num_paired_seqs"].item()]
             # number of tokens with any aligned MSA columns in the crop
-            statistics += [(msa.sum(dim=0)[:, -1] < msa.size(0)).sum()]
+            statistics += [(msa.sum(dim=0)[:, -1] < msa.size(0)).sum().item()]
 
             # number of templates
             tbfm = features["template_backbone_frame_mask"]
@@ -880,26 +887,31 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 statistics += [len(set(aa.token_id))]
 
             # Atomized residue token data
-            for aa in polymer_aa:
-                # number of residue tokens atomized due to special
-                if aa[0].molecule_type_id == MoleculeType.PROTEIN:
-                    vocab = STANDARD_PROTEIN_RESIDUES_3
-                elif aa[0].molecule_type_id == MoleculeType.RNA:
-                    vocab = STANDARD_RNA_RESIDUES
-                else:
-                    vocab = STANDARD_DNA_RESIDUES
-                is_special_aa = ~np.isin(aa.res_name, vocab)
-                rs = struc.get_residue_starts(aa)
-                statistics += [is_special_aa[rs].sum()]
+            for aa, vocab in zip(
+                polymer_aa,
+                [STANDARD_PROTEIN_RESIDUES_3] * 2
+                + [STANDARD_RNA_RESIDUES] * 2
+                + [STANDARD_DNA_RESIDUES] * 2,
+            ):
+                if len(aa) > 0:
+                    # number of residue tokens atomized due to special
+                    is_special_aa = ~np.isin(aa.res_name, vocab)
+                    rs = struc.get_residue_starts(aa)
+                    statistics += [is_special_aa[rs].sum()]
 
-                # number of residue tokens atomized due to covalent modifications
-                is_standard_atomized_aa = (~is_special_aa) & aa.is_atomized
-                statistics += [is_standard_atomized_aa[rs].sum()]
+                    # number of residue tokens atomized due to covalent modifications
+                    is_standard_atomized_aa = (~is_special_aa) & aa.is_atomized
+                    statistics += [is_standard_atomized_aa[rs].sum()]
+                else:
+                    statistics += ["NaN", "NaN"]
 
             # radius of gyration
             for aa in full_aa:
-                aa_resolved = aa[~np.isnan(aa.coord).any(axis=1)]
-                statistics += [struc.gyration_radius(aa_resolved)]
+                if len(aa) > 0:
+                    aa_resolved = aa[~np.isnan(aa.coord).any(axis=1)]
+                    statistics += [struc.gyration_radius(aa_resolved)]
+                else:
+                    statistics += ["NaN"]
 
             # interface statistics
             for aa_a, aa_b in zip(
@@ -910,7 +922,12 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 * 4,
                 per_moltype_aa,
             ):
-                statistics += [self.get_interface_string(aa_a, aa_b)]
+                if (len(aa_a) > 0) & (len(aa_b) > 0):
+                    statistics += [
+                        WeightedPDBDatasetWithLogging.get_interface_string(aa_a, aa_b)
+                    ]
+                else:
+                    statistics += ["NaN"]
 
             # sub-pipeline runtimes - add via extra arguments in sub-pipelines
             # Will need to be logged before this point and parsed here into the line
@@ -920,7 +937,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             line += "\n"
 
             with open(
-                log_output_dir / Path("extra_data.txt"),
+                log_output_dir / Path("datapoint_statistics.tsv"),
                 "a",
             ) as f:
                 f.write(line)
@@ -997,7 +1014,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 
     @staticmethod
     def get_interface_string(
-        self, query_atom_array: AtomArray, target_atom_array: AtomArray
+        query_atom_array: AtomArray, target_atom_array: AtomArray
     ) -> str:
         """Computes the interface string between two structures.
 
@@ -1010,10 +1027,11 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             str:
                 Encoded interface string
         """
-        r, c = self.compute_interface(
-            query_atom_array, target_atom_array, return_res_pairs=True
+        r, c = WeightedPDBDatasetWithLogging.compute_interface(
+            query_atom_array,
+            target_atom_array,
         )
-        return self.encode_interface(r, c)
+        return WeightedPDBDatasetWithLogging.encode_interface(r, c)
 
     @staticmethod
     def decode_interface(interface_string: str) -> tuple[np.ndarray, np.ndarray]:
@@ -1091,26 +1109,27 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 @click.option(
     "--save-features",
     default="on_error",
-    type=click.Choice(["on_error", "per_datapoint", False]),
+    type=click.Choice(["on_error", "per_datapoint", "False"]),
     help=(
-        "Whether to run asserts.  If on_error, saves when an exception occurs, if ."
-        "per_datapoint, saves for each datapoint AND when an exception occurs"
+        "Whether to save the FeatureDict.  If on_error, saves when an exception occurs,"
+        "if per_datapoint, saves for each datapoint AND when an exception occurs"
     ),
 )
 @click.option(
     "--save-atom-array",
     default="on_error",
-    type=click.Choice(["on_error", "per_datapoint", False]),
+    type=click.Choice(["on_error", "per_datapoint", "False"]),
     help=(
-        "Whether to run asserts. If on_error, saves when an exception occurs, if "
-        "per_datapoint, saves for each datapoint AND when an exception occurs."
+        "Whether to save the cropped atom array. If on_error, saves when an exception "
+        "occurs, if per_datapoint, saves for each datapoint AND when an exception "
+        "occurs."
     ),
 )
 @click.option(
     "--save-full-traceback",
     default=True,
     type=bool,
-    help="Whether to save the per-sample full tracebacks.",
+    help="Whether to save the tracebacks upon assert-fail or exception.",
 )
 @click.option(
     "--save-statistics",
@@ -1144,13 +1163,19 @@ def main(
         run_asserts (bool):
             Whether to run asserts.
         save_features (bool):
-            Whether to save features when an exception occurs.
+            Whether to run asserts. If on_error, saves when an exception occurs, if
+            per_datapoint, saves for each datapoint AND when an exception occurs
         save_atom_array (bool):
             Whether to save atom array when an exception occurs.
         save_full_traceback (bool):
             Whether to save the per-sample full traceback when an exception occurs.
         save_statistics (bool):
-            Whether to save additional data to save during data processing.
+            Whether to save additional data to save during data processing. If True and
+            there exists a datapoint_statistics.tsv file in log-output-directory, the
+            treadmill will skip all datapoints whose statistics have already been
+            logged. Otherwise a datapoint_statistics.tsv file will be created for each
+            worker and then collated into a single datapoint_statistics.tsv file in
+            log-output-directory.
 
     Raises:
         ValueError:
@@ -1190,7 +1215,9 @@ def main(
     )
 
     # Configure worker init function logger
-    def configure_worker_init_func_logger(worker_id: int) -> logging.Logger:
+    def configure_worker_init_func_logger(
+        worker_id: int, worker_dataset: Dataset
+    ) -> logging.Logger:
         # Configure logging
         worker_logger = logging.getLogger()
         numeric_level = getattr(logging, log_level)
@@ -1219,87 +1246,92 @@ def main(
         )
 
         # Set the logger to the local copy of the dataset in the current worker
-        worker_info = get_worker_info()
-        worker_dataset = worker_info.dataset
         worker_dataset.logger = worker_logger
         return worker_logger
 
     # Set up extra data file
-    def configure_extra_data_file(worker_id: int) -> None:
+    def configure_extra_data_file(worker_id: int, worker_dataset: Dataset) -> None:
         """Configures the file to save extra data."""
-        if len(save_statistics) > 0:
-            all_headers = ["pdb-id", "chain-or-interface"]
-            for data_i in save_statistics:
-                all_headers.append(data_i)
-            extra_data_file = log_output_directory / Path(
-                f"worker_{worker_id}/extra_data.txt"
+        if save_statistics > 0:
+            all_headers = [
+                "pdb-id",
+                "chain-or-interface",
+                "atoms",
+                "atoms-crop",
+                "atoms-protein",
+                "atoms-protein-crop",
+                "atoms-rna",
+                "atoms-rna-crop",
+                "atoms-dna",
+                "atoms-dna-crop",
+                "atoms-ligand",
+                "atoms-ligand-crop",
+                "res-protein",
+                "res-protein-crop",
+                "res-rna",
+                "res-rna-crop",
+                "res-dna",
+                "res-dna-crop",
+                "atoms-unresolved",
+                "res-unresolved",
+                "atoms-unresolved-crop",
+                "res-unresolved-crop",
+                "chains",
+                "chains-crop",
+                "entities-protein",
+                "entities-protein-crop",
+                "entities-rna",
+                "entities-rna-crop",
+                "entities-dna",
+                "entities-dna-crop",
+                "entities-ligand",
+                "entities-ligand-crop",
+                "msa-depth",
+                "msa-num-paired-seqs",
+                "msa-aligned-cols",
+                "templates",
+                "templates-aligned-cols",
+                "tokens",
+                "tokens-crop",
+                "res-special-protein",
+                "res-covmod-protein",
+                "res-special-protein-crop",
+                "res-covmod-protein-crop",
+                "res-special-rna",
+                "res-covmod-rna",
+                "res-special-rna-crop",
+                "res-covmod-rna-crop",
+                "res-special-dna",
+                "res-covmod-dna",
+                "res-special-dna-crop",
+                "res-covmod-dna-crop",
+                "gyration-radius",
+                "gyration-radius-crop",
+                "interface-protein-protein",
+                "interface-protein-protein-crop",
+                "interface-protein-rna",
+                "interface-protein-rna-crop",
+                "interface-protein-dna",
+                "interface-protein-dna-crop",
+                "interface-protein-ligand",
+                "interface-protein-ligand-crop",
+            ]
+            full_extra_data_file = log_output_directory / Path(
+                "datapoint_statistics.tsv"
             )
-            with open(extra_data_file, "w") as f:
+            if full_extra_data_file.exists():
+                worker_dataset.logger.info(
+                    "Parsing processed datapoints from " f"{full_extra_data_file}."
+                )
+                df = pd.read_csv(full_extra_data_file, sep="\t", na_values=["NaN"])
+                worker_dataset.processed_datapoint_log = list(set(df["pdb-id"]))
+
+            worker_extra_data_file = log_output_directory / Path(
+                f"worker_{worker_id}/datapoint_statistics.tsv"
+            )
+
+            with open(worker_extra_data_file, "w") as f:
                 f.write("\t".join(all_headers) + "\n")
-        all_headers = [
-            "pdb-id",
-            "chain-or-interface",
-            "atoms",
-            "atoms-crop",
-            "atoms-protein",
-            "atoms-protein-crop",
-            "atoms-rna",
-            "atoms-rna-crop",
-            "atoms-dna",
-            "atoms-dna-crop",
-            "atoms-ligand",
-            "atoms-ligand-crop",
-            "res-protein",
-            "res-protein-crop",
-            "res-rna",
-            "res-rna-crop",
-            "res-dna",
-            "res-dna-crop",
-            "atoms-unresolved",
-            "atoms-unresolved-crop",
-            "res-unresolved",
-            "res-unresolved-crop",
-            "chains",
-            "chains-crop",
-            "entities-protein",
-            "entities-protein-crop",
-            "entities-rna",
-            "entities-rna-crop",
-            "entities-dna",
-            "entities-dna-crop",
-            "entities-ligand",
-            "entities-ligand-crop",
-            "msa-depth",
-            "msa-num-paired-seqs",
-            "msa-aligned-cols",
-            "templates",
-            "templates-aligned-cols",
-            "tokens",
-            "tokens-crop",
-            "res-special-protein",
-            "res-special-protein-crop",
-            "res-special-rna",
-            "res-special-rna-crop",
-            "res-special-dna",
-            "res-special-dna-crop",
-            "res-covmod-protein",
-            "res-covmod-protein-crop",
-            "res-covmod-rna",
-            "res-covmod-rna-crop",
-            "res-covmod-dna",
-            "res-covmod-dna-crop",
-            "gyration-radius",
-            "gyration-radius-crop",
-            "interface-protein-protein",
-            "interface-protein-rna",
-            "interface-protein-dna",
-            "interface-protein-ligand",
-        ]
-        extra_data_file = log_output_directory / Path(
-            f"worker_{worker_id}/extra_data.txt"
-        )
-        with open(extra_data_file, "w") as f:
-            f.write("\t".join(all_headers) + "\n")
 
     # Set up custom worker init function with logging
     def worker_init_function_with_logging(
@@ -1336,8 +1368,12 @@ def main(
                 seed_sequence[3] & 0xFFFFFFFF
             )  # numpy takes 32-bit seed only
 
+        # Get worker dataset
+        worker_info = get_worker_info()
+        worker_dataset = worker_info.dataset
+
         # Configure logger and log process & worker IDs
-        worker_logger = configure_worker_init_func_logger(worker_id)
+        worker_logger = configure_worker_init_func_logger(worker_id, worker_dataset)
         worker_logger.info("Worker init function completed.")
         worker_logger.info(
             "logger worker ID: {}".format(worker_logger.extra["worker_id"])
@@ -1345,7 +1381,7 @@ def main(
         worker_logger.info(f"process ID: {os.getpid()}")
 
         # Configure extra data file
-        configure_extra_data_file(worker_id)
+        configure_extra_data_file(worker_id, worker_dataset)
 
     # Configure DataLoader
     data_loader = DataLoader(
@@ -1374,14 +1410,30 @@ def main(
             df_all = pd.DataFrame()
             for worker_id in range(runner_args.num_workers):
                 worker_extra_data_file = log_output_directory / Path(
-                    f"worker_{worker_id}/extra_data.txt"
+                    f"worker_{worker_id}/datapoint_statistics.tsv"
                 )
                 df_all = pd.concat(
-                    [df_all, pd.read_csv(worker_extra_data_file, sep="\t")]
+                    [
+                        df_all,
+                        pd.read_csv(
+                            worker_extra_data_file, sep="\t", na_values=["NaN"]
+                        ),
+                    ]
                 )
                 worker_extra_data_file.unlink()
 
-            df_all.to_csv(log_output_directory / Path("extra_data.txt"), sep="\t")
+            # Save to single file or append to existing file
+            full_extra_data_file = log_output_directory / Path(
+                "datapoint_statistics.tsv"
+            )
+            df_all.to_csv(
+                full_extra_data_file,
+                sep="\t",
+                index=False,
+                na_rep="NaN",
+                header=not full_extra_data_file.exists(),
+                mode="a",
+            )
 
 
 if __name__ == "__main__":
