@@ -6,7 +6,6 @@ from typing import Literal
 
 from biotite.structure import AtomArray
 
-from openfold3.core.data.io.structure.cif import parse_mmcif
 from openfold3.core.data.primitives.structure.cropping import apply_crop
 from openfold3.core.data.primitives.structure.duplicate_expansion import (
     expand_duplicate_chains,
@@ -54,15 +53,11 @@ def process_target_structure_af3(
     if structure_format == "pkl":
         with open(target_file, "rb") as f:
             atom_array = pickle.load(f)
-    elif structure_format in ["cif", "bcif"]:
-        _, atom_array = parse_mmcif(
-            file_path=target_file,
-            expand_bioassembly=False,
-            include_bonds=True,
-            renumber_chain_ids=False,
-        )
     else:
-        raise ValueError(f"Invalid structure format: {structure_format}")
+        raise ValueError(
+            f"Invalid structure format: {structure_format}. Only pickle "
+            "format is supported in a torch dataset __getitem__."
+        )
 
     # Tokenize
     tokenize_atom_array(atom_array=atom_array)

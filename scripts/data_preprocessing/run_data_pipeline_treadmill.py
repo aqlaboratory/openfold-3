@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 import pytorch_lightning as pl
 import torch
+from biotite.structure import AtomArray
 from lightning_fabric.utilities.rank_zero import (
     rank_zero_only,
 )
@@ -54,7 +55,13 @@ from openfold3.core.data.pipelines.sample_processing.msa import process_msas_cro
 from openfold3.core.data.pipelines.sample_processing.structure import (
     process_target_structure_af3,
 )
+from openfold3.core.data.primitives.structure.interface import (
+    get_query_interface_atom_pair_idxs,
+)
 from openfold3.core.data.resources.residues import (
+    STANDARD_DNA_RESIDUES,
+    STANDARD_PROTEIN_RESIDUES_3,
+    STANDARD_RNA_RESIDUES,
     MoleculeType,
 )
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
@@ -486,7 +493,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         self.save_features = save_features
         self.save_atom_array = save_atom_array
         self.save_full_traceback = save_full_traceback
-        self.save_data = save_statistics
+        self.save_statistics = save_statistics
 
     def __getitem__(
         self, index: int
@@ -575,13 +582,14 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             )
 
             # Save extra data
-            self.save_extra_data(
-                pdb_id,
-                preferred_chain_or_interface,
-                features,
-                atom_array_cropped,
-                atom_array,
-            )
+            if self.save_statistics:
+                self.save_data_statistics(
+                    pdb_id,
+                    preferred_chain_or_interface,
+                    features,
+                    atom_array_cropped,
+                    atom_array,
+                )
             # Save features and/or atom array
             if (self.save_features == "per_datapoint") | (
                 self.save_atom_array == "per_datapoint"
@@ -693,11 +701,16 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             "worker_{}/{}".format(self.logger.extra["worker_id"], pdb_id)
         )
         log_output_dir.mkdir(parents=True, exist_ok=True)
+
         preferred_chain_or_interface = (
             "-".join(preferred_chain_or_interface)
             if isinstance(preferred_chain_or_interface, list)
             else preferred_chain_or_interface
         )
+
+        # Create temporary logger to log the traceback
+        # This is necessary because we want to not save the traceback to the main logger
+        # output file but to a pdb-entry specific directory
         sample_logger = logging.getLogger(f"{pdb_id}-{preferred_chain_or_interface}")
         if sample_logger.hasHandlers():
             sample_logger.handlers.clear()
@@ -727,7 +740,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             f"{pdb_id}-{preferred_chain_or_interface}"
         ]
 
-    def save_extra_data(
+    def save_data_statistics(
         self,
         pdb_id,
         preferred_chain_or_interface,
@@ -736,7 +749,8 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         atom_array,
     ):
         """Saves additional data statistics."""
-        if (self.save_data is not None) & (len(self.save_data) > 0):
+        if self.save_statistics:
+            # Set worker output directory
             log_output_dir = self.logger.extra["log_output_directory"] / Path(
                 "worker_{}".format(self.logger.extra["worker_id"])
             )
@@ -745,8 +759,11 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 if isinstance(preferred_chain_or_interface, list)
                 else preferred_chain_or_interface
             )
+
+            # Init line
             line = f"{pdb_id}\t{preferred_chain_or_interface}\t"
 
+            # Get per-molecule type atom arrays/residue starts
             atom_array_protein = atom_array[
                 atom_array.molecule_type_id != MoleculeType.PROTEIN
             ]
@@ -780,92 +797,126 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 else residue_starts_cropped
             )
 
+            # Get atom array lists for easier iteration
+            all_aa = [
+                atom_array,
+                atom_array_cropped,
+                atom_array_protein,
+                atom_array_protein_cropped,
+                atom_array_rna,
+                atom_array_rna_cropped,
+                atom_array_dna,
+                atom_array_dna_cropped,
+                atom_array_ligand,
+                atom_array_ligand_cropped,
+            ]
+            full_aa = [
+                atom_array,
+                atom_array_cropped,
+            ]
+            per_moltype_aa = [
+                atom_array_protein,
+                atom_array_protein_cropped,
+                atom_array_rna,
+                atom_array_rna_cropped,
+                atom_array_dna,
+                atom_array_dna_cropped,
+                atom_array_ligand,
+                atom_array_ligand_cropped,
+            ]
+            polymer_aa = [
+                atom_array_protein,
+                atom_array_protein_cropped,
+                atom_array_rna,
+                atom_array_rna_cropped,
+                atom_array_dna,
+                atom_array_dna_cropped,
+            ]
+
+            # Collect data
+            statistics = []
+
             # Number of atoms
-            line += f"{len(atom_array)}\t"
-            # Number of atoms in the crop
-            line += f"{len(atom_array_cropped)}\t"
-            # Number of protein atoms
-            line += f"{len(atom_array_protein)}\t"
-            # Number of protein atoms in the crop
-            line += f"{len(atom_array_protein_cropped)}\t"
-            # Number of RNA atoms
-            line += f"{len(atom_array_rna)}\t"
-            # Number of RNA atoms in the crop
-            line += f"{len(atom_array_rna_cropped)}\t"
-            # Number of DNA atoms
-            line += f"{len(atom_array_dna)}\t"
-            # Number of DNA atoms in the crop
-            line += f"{len(atom_array_dna_cropped)}\t"
-            # Number of ligand atoms
-            line += f"{len(atom_array_ligand)}\t"
-            # Number of ligand atoms in the crop
-            line += f"{len(atom_array_ligand_cropped)}\t"
+            for aa in all_aa:
+                statistics += [len(aa)]
 
             # Number of residues
-            line += f"{len(torch.unique_consecutive(torch.tensor(
-                atom_array_protein.res_id
-                )))}\t"
-            line += f"{len(torch.unique_consecutive(torch.tensor(
-                atom_array_rna.res_id
-                )))}\t"
-            line += f"{len(torch.unique_consecutive(torch.tensor(
-                atom_array_dna.res_id
-                )))}\t"
-            # Number of residues in the crop
-            line += f"{len(torch.unique_consecutive(torch.tensor(
-                atom_array_protein_cropped.res_id)))}\t"
-            line += f"{len(torch.unique_consecutive(torch.tensor(
-                atom_array_rna_cropped.res_id
-                )))}\t"
-            line += f"{len(torch.unique_consecutive(torch.tensor(
-                atom_array_dna_cropped.res_id
-                )))}\t"
-            # Number of unresolved residues
-            nan_cumsum = np.cumsum(np.isnan(atom_array.coord).any(axis=1))
-            line += f"{(np.diff(nan_cumsum[residue_starts]) > 0).sum()}\t"
-            # Number of unresolved residues in the crop
-            nan_cumsum = np.cumsum(np.isnan(atom_array_cropped.coord).any(axis=1))
-            line += f"{(np.diff(nan_cumsum[residue_starts_cropped]) > 0).sum()}\t"
-            # Number of unresolved atoms
-            line += f"{np.isnan(atom_array.coord).any(axis=1).sum()}\t"
-            # Number of unresolved atoms in the crop
-            line += f"{np.isnan(atom_array_cropped.coord).any(axis=1).sum()}\t"
+            for aa in polymer_aa:
+                resid_tensor = torch.tensor(aa.res_id)
+                statistics += [len(torch.unique_consecutive(resid_tensor))]
+
+            # Unresolved data
+            for aa in full_aa:
+                # Number of unresolved atoms
+                statistics += [np.isnan(aa.coord).any(axis=1).sum()]
+                # Number of unresolved residues
+                cumsums = np.cumsum(np.isnan(aa.coord).any(axis=1))
+                statistics += [(np.diff(cumsums[residue_starts]) > 0).sum()]
 
             # Number of chains
-            line += f"{len(set(atom_array.chain_id))}\t"
-            # Number of chains in the crop
-            line += f"{len(set(atom_array_cropped.chain_id))}\t"
-            # Number of unique entities
-            line += f"{len(set(atom_array_protein.entity_id))}\t"
-            line += f"{len(set(atom_array_rna.entity_id))}\t"
-            line += f"{len(set(atom_array_dna.entity_id))}\t"
-            # Number of unique entities in the crop
-            line += f"{len(set(atom_array_protein_cropped.entity_id))}\t"
-            line += f"{len(set(atom_array_rna_cropped.entity_id))}\t"
-            line += f"{len(set(atom_array_dna_cropped.entity_id))}\t"
+            for aa in full_aa:
+                statistics += [len(set(aa.chain_id))]
 
-            # number of polymer chains per molecule type
-            line += f"{len(set(atom_array_protein.chain_id))}\t"
-            line += f"{len(set(atom_array_rna.chain_id))}\t"
-            line += f"{len(set(atom_array_dna.chain_id))}\t"
-            # number of polymer chains per molecule type in the crop
-            line += f"{len(set(atom_array_protein_cropped.chain_id))}\t"
-            line += f"{len(set(atom_array_rna_cropped.chain_id))}\t"
-            line += f"{len(set(atom_array_dna_cropped.chain_id))}\t"
+            # Number of entities
+            for aa in per_moltype_aa:
+                statistics += [len(set(aa.entity_id))]
+
             # MSA depth
-            line += f"{features['msa'].shape[0]}\t"
+            msa = features["msa"]
+            statistics += [msa.shape[0]]
             # Number of paired MSA rows
-            line += f"{features['num_paired_seqs'].item()}\t"
+            statistics += [features["num_paired_seqs"].item()]
             # number of tokens with any aligned MSA columns in the crop
+            statistics += [(msa.sum(dim=0)[:, -1] < msa.size(0)).sum()]
+
+            # number of templates
+            tbfm = features["template_backbone_frame_mask"]
+            statistics += [(tbfm == 1).any(dim=-1).sum().item()]
             # number of tokens with any aligned template columns in the crop
-            # number of residue tokens atomized due to special
-            # number of residue tokens atomized due to covalent modifications
+            statistics += [(tbfm == 1).any(dim=-2).sum().item()]
+
+            # number of tokens
+            for aa in full_aa:
+                statistics += [len(set(aa.token_id))]
+
+            # Atomized residue token data
+            for aa in polymer_aa:
+                # number of residue tokens atomized due to special
+                if aa[0].molecule_type_id == MoleculeType.PROTEIN:
+                    vocab = STANDARD_PROTEIN_RESIDUES_3
+                elif aa[0].molecule_type_id == MoleculeType.RNA:
+                    vocab = STANDARD_RNA_RESIDUES
+                else:
+                    vocab = STANDARD_DNA_RESIDUES
+                is_special_aa = ~np.isin(aa.res_name, vocab)
+                rs = struc.get_residue_starts(aa)
+                statistics += [is_special_aa[rs].sum()]
+
+                # number of residue tokens atomized due to covalent modifications
+                is_standard_atomized_aa = (~is_special_aa) & aa.is_atomized
+                statistics += [is_standard_atomized_aa[rs].sum()]
 
             # radius of gyration
-            # interface statistics
-            # token length
-            # sub-pipeline runtimes - add via extra arguments
+            for aa in full_aa:
+                aa_resolved = aa[~np.isnan(aa.coord).any(axis=1)]
+                statistics += [struc.gyration_radius(aa_resolved)]
 
+            # interface statistics
+            for aa_a, aa_b in zip(
+                [
+                    atom_array_protein,
+                    atom_array_protein_cropped,
+                ]
+                * 4,
+                per_moltype_aa,
+            ):
+                statistics += [self.get_interface_string(aa_a, aa_b)]
+
+            # sub-pipeline runtimes - add via extra arguments in sub-pipelines
+            # Will need to be logged before this point and parsed here into the line
+
+            # Collate into tab format
+            line += "\t".join(map(str, statistics))
             line += "\n"
 
             with open(
@@ -873,6 +924,121 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 "a",
             ) as f:
                 f.write(line)
+
+    @staticmethod
+    def compute_interface(
+        query_atom_array: AtomArray,
+        target_atom_array: AtomArray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Computes the atom/chain pairs that form the interface between two structures.
+
+        Optionally returns the residue pairs.
+
+        Args:
+            query_atom_array (AtomArray):
+                Query atom array.
+            target_atom_array (AtomArray):
+                Target atom array.
+            return_res_pairs (bool, optional):
+                Whether to return an array of residue pairs. Defaults to False.
+
+        Returns:
+            tuple[np.ndarray, np.ndarray]:
+                tuple of residue pairs and chain pairs
+        """
+        atom_pairs, chain_pairs = get_query_interface_atom_pair_idxs(
+            query_atom_array,
+            target_atom_array,
+            distance_threshold=5.0,
+            return_chain_pairs=True,
+        )
+        res_pairs = np.concatenate(
+            [
+                query_atom_array.res_id[atom_pairs[:, 0]][..., np.newaxis],
+                target_atom_array.res_id[atom_pairs[:, 1]][..., np.newaxis],
+            ],
+            axis=1,
+        )
+        return res_pairs, chain_pairs
+
+    @staticmethod
+    def encode_interface(res_pairs: np.ndarray, chain_pairs: np.ndarray) -> str:
+        """Encodes the interface as a string.
+
+        Args:
+            res_pairs (np.ndarray):
+                Array of residue index pairs.
+            chain_pairs (np.ndarray):
+                Array of chain index pairs.
+
+        Returns:
+            str:
+                Encoded interface string. Has the format:
+                "chain_id.res_id-chain_id.res_id;..."
+        """
+        unique_contacts = np.unique(
+            np.concatenate([res_pairs, chain_pairs], axis=-1), axis=0
+        )
+        return ";".join(
+            np.core.defchararray.add(
+                np.core.defchararray.add(
+                    np.core.defchararray.add(
+                        np.core.defchararray.add(unique_contacts[:, 2], "."),
+                        unique_contacts[:, 0],
+                    ),
+                    "-",
+                ),
+                np.core.defchararray.add(
+                    np.core.defchararray.add(unique_contacts[:, 3], "."),
+                    unique_contacts[:, 1],
+                ),
+            )
+        )
+
+    @staticmethod
+    def get_interface_string(
+        self, query_atom_array: AtomArray, target_atom_array: AtomArray
+    ) -> str:
+        """Computes the interface string between two structures.
+
+        Args:
+            query_atom_array (AtomArray):
+                Query atom array.
+            target_atom_array (AtomArray):
+                Target atom array.
+        Returns:
+            str:
+                Encoded interface string
+        """
+        r, c = self.compute_interface(
+            query_atom_array, target_atom_array, return_res_pairs=True
+        )
+        return self.encode_interface(r, c)
+
+    @staticmethod
+    def decode_interface(interface_string: str) -> tuple[np.ndarray, np.ndarray]:
+        """Decodes the interface string.
+
+        Args:
+            interface (str):
+                Encoded interface string. Has the format:
+                "chain_id.res_id-chain_id.res_id;..."
+
+        Returns:
+            tuple[np.ndarray, np.ndarray]:
+                Array of residue index pairs and chain index pairs.
+        """
+        contacts = interface_string.split(";")
+        contacts = np.array([c.split("-") for c in contacts])
+        contacts = np.char.split(contacts, ".")
+        contacts_flattened = np.concatenate(contacts.ravel())
+
+        chains = contacts_flattened[::2]
+        residues = np.array(contacts_flattened[1::2], dtype=int).reshape(-1, 2)
+
+        chain_residues = np.column_stack((residues, chains.reshape(-1, 2)))
+
+        return chain_residues[:, :2], chain_residues[:, 2:]
 
 
 @click.command()
@@ -948,9 +1114,8 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 )
 @click.option(
     "--save-statistics",
-    type=click.Choice(["n-atoms-in-crop", "msa-depth", "num-paired-rows"]),
-    multiple=True,
-    default=[],
+    type=bool,
+    default=False,
     help="Additional data to save during data processing.",
 )
 def main(
@@ -963,7 +1128,7 @@ def main(
     save_features: bool,
     save_atom_array: bool,
     save_full_traceback: bool,
-    save_statistics: list[str],
+    save_statistics: bool,
 ) -> None:
     """Main function for running the data pipeline treadmill.
 
@@ -984,8 +1149,8 @@ def main(
             Whether to save atom array when an exception occurs.
         save_full_traceback (bool):
             Whether to save the per-sample full traceback when an exception occurs.
-        save_statistics (list[str]):
-            Additional data to save during data processing.
+        save_statistics (bool):
+            Whether to save additional data to save during data processing.
 
     Raises:
         ValueError:
@@ -1071,6 +1236,70 @@ def main(
             )
             with open(extra_data_file, "w") as f:
                 f.write("\t".join(all_headers) + "\n")
+        all_headers = [
+            "pdb-id",
+            "chain-or-interface",
+            "atoms",
+            "atoms-crop",
+            "atoms-protein",
+            "atoms-protein-crop",
+            "atoms-rna",
+            "atoms-rna-crop",
+            "atoms-dna",
+            "atoms-dna-crop",
+            "atoms-ligand",
+            "atoms-ligand-crop",
+            "res-protein",
+            "res-protein-crop",
+            "res-rna",
+            "res-rna-crop",
+            "res-dna",
+            "res-dna-crop",
+            "atoms-unresolved",
+            "atoms-unresolved-crop",
+            "res-unresolved",
+            "res-unresolved-crop",
+            "chains",
+            "chains-crop",
+            "entities-protein",
+            "entities-protein-crop",
+            "entities-rna",
+            "entities-rna-crop",
+            "entities-dna",
+            "entities-dna-crop",
+            "entities-ligand",
+            "entities-ligand-crop",
+            "msa-depth",
+            "msa-num-paired-seqs",
+            "msa-aligned-cols",
+            "templates",
+            "templates-aligned-cols",
+            "tokens",
+            "tokens-crop",
+            "res-special-protein",
+            "res-special-protein-crop",
+            "res-special-rna",
+            "res-special-rna-crop",
+            "res-special-dna",
+            "res-special-dna-crop",
+            "res-covmod-protein",
+            "res-covmod-protein-crop",
+            "res-covmod-rna",
+            "res-covmod-rna-crop",
+            "res-covmod-dna",
+            "res-covmod-dna-crop",
+            "gyration-radius",
+            "gyration-radius-crop",
+            "interface-protein-protein",
+            "interface-protein-rna",
+            "interface-protein-dna",
+            "interface-protein-ligand",
+        ]
+        extra_data_file = log_output_directory / Path(
+            f"worker_{worker_id}/extra_data.txt"
+        )
+        with open(extra_data_file, "w") as f:
+            f.write("\t".join(all_headers) + "\n")
 
     # Set up custom worker init function with logging
     def worker_init_function_with_logging(
@@ -1141,7 +1370,7 @@ def main(
             pass
     finally:
         # Collate the extra data from different workers
-        if len(save_statistics) > 0:
+        if save_statistics:
             df_all = pd.DataFrame()
             for worker_id in range(runner_args.num_workers):
                 worker_extra_data_file = log_output_directory / Path(
