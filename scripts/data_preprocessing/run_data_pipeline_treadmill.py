@@ -17,6 +17,7 @@ import pickle as pkl
 import random
 import sys
 import traceback
+from dataclasses import dataclass
 from pathlib import Path
 
 import biotite.structure as struc
@@ -30,7 +31,7 @@ from lightning_fabric.utilities.rank_zero import (
     rank_zero_only,
 )
 from ml_collections import ConfigDict
-from torch.utils.data import DataLoader, get_worker_info
+from torch.utils.data import DataLoader, Dataset, get_worker_info
 from tqdm import tqdm
 
 from openfold3.core.config import config_utils
@@ -362,6 +363,60 @@ def assert_profile_sum(features):
     ), "Found profile column sums that are not 1 or 0."
 
 
+@dataclass(frozen=False)
+class ComplianceLog:
+    """Dataclass to store compliance logs.
+
+    Attributes:
+        passed_ids:
+            List of PDB IDs that passed all asserts and didn't raise an error in the
+            __getitem__.
+    """
+
+    passed_ids: list[str]
+
+    def save_worker_compliance_file(self, worker_compliance_file: Path):
+        """Saves the compliance log to a file."""
+        pd.DataFrame(
+            {
+                "passed_ids": self.passed_ids,
+            }
+        ).to_csv(
+            worker_compliance_file,
+            mode="a",
+            index=False,
+            header=False,
+            sep="\t",
+        )
+
+    def parse_compliance_file(self, compliance_file: Path):
+        """Parses the compliance file and returns the instantiated class."""
+        df = pd.read_csv(compliance_file, sep="\t", header=None)
+        return ComplianceLog(
+            passed_ids=df[0].tolist(),
+        )
+
+
+ENSEMBLED_ASSERTS = [
+    assert_no_nan_inf,
+    assert_token_atom_sum_match,
+    assert_num_atom_per_token,
+    assert_max_23_atoms_per_token,
+    assert_ligand_atomized,
+    assert_atomized_one_atom,
+    assert_resid_asym_refuid_match,
+    assert_atom_pos_resolved,
+    assert_one_entityid_per_asymid,
+    assert_no_identical_ref_pos,
+    assert_no_all_zero_idxs,
+    assert_gt_crop_slice,
+    assert_shape,
+    assert_dtype,
+    assert_all_unk_atomized,
+    assert_token_bonds_atomized,
+    assert_profile_sum,
+]
+
 FULL_TOKEN_DIM_INDEX_MAP = {
     "residue_index": [-1],
     "token_index": [-1],
@@ -494,6 +549,8 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         self.save_atom_array = save_atom_array
         self.save_full_traceback = save_full_traceback
         self.save_statistics = save_statistics
+        # self.logger and self.compliance_log are set in the
+        # worker_init_function_with_logging so they are done on a per-worker basis
 
     def __getitem__(
         self, index: int
@@ -505,6 +562,12 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         preferred_chain_or_interface = datapoint["datapoint"]
         features = {}
         atom_array_cropped = None
+
+        # Skip datapoint if it's in the compliance log and run_asserts is True
+        if self.run_asserts and (
+            f"{pdb_id}-{preferred_chain_or_interface}" in self.compliance_log.passed_ids
+        ):
+            return features
 
         self.logger.info(
             f"Processing datapoint {index}, PDB ID: {pdb_id}, preferred "
@@ -593,37 +656,16 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 
             # Asserts
             if self.run_asserts:
-                assert_no_nan_inf(features)
-                assert_token_atom_sum_match(features)
-                assert_num_atom_per_token(features, self.token_budget)
-                assert_max_23_atoms_per_token(features)
-                assert_ligand_atomized(features)
-                assert_atomized_one_atom(features)
-                assert_resid_asym_refuid_match(features)
-                assert_atom_pos_resolved(features)
-                assert_one_entityid_per_asymid(features)
-                assert_no_identical_ref_pos(features)
-                assert_no_all_zero_idxs(features)
-                assert_gt_crop_slice(features)
-                assert_shape(features, self.token_budget, self.n_templates)
-                assert_dtype(features)
-                assert_all_unk_atomized(features)
-                assert_token_bonds_atomized(features)
-                assert_profile_sum(features)
+                self.assert_full_compliance(
+                    index,
+                    atom_array_cropped,
+                    pdb_id,
+                    preferred_chain_or_interface,
+                    features,
+                    self.token_budget,
+                    self.n_templates,
+                )
 
-            return features
-        except AssertionError as e:
-            # Catch assertion errors
-            self.logger.error(
-                f"ASSERTION ERROR processing datapoint {index}, PDB ID: {pdb_id}"
-            )
-            self.logger.error(f"Error message: {e}")
-
-            # Save features, atom array and per sample traceback
-            self.save_features_atom_array(
-                features, atom_array_cropped, pdb_id, preferred_chain_or_interface
-            )
-            self.save_full_traceback_for_sample(e, pdb_id, preferred_chain_or_interface)
             return features
 
         except Exception as e:
@@ -640,6 +682,55 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             self.save_full_traceback_for_sample(e, pdb_id, preferred_chain_or_interface)
 
             return features
+
+    def assert_full_compliance(
+        self,
+        index,
+        atom_array_cropped,
+        pdb_id,
+        preferred_chain_or_interface,
+        features,
+        token_budget,
+        n_templates,
+    ):
+        """Asserts that the getitem runs and all asserts pass."""
+        # Get list of argument for the full list of asserts
+        ensembled_args = [(features,)] * 17
+        ensembled_args[2] = (features, token_budget)
+        ensembled_args[12] = (features, token_budget, n_templates)
+        # Get compliance array
+        compliance = np.zeros(len(ENSEMBLED_ASSERTS))
+        # Iterate over asserts and update compliance array
+        try:
+            for i, (assert_i, args_i) in enumerate(
+                zip(ENSEMBLED_ASSERTS, ensembled_args)
+            ):
+                assert_i(*args_i)
+                compliance[i] = 1
+        except AssertionError as e:
+            # Catch assertion errors
+            self.logger.error(
+                f"ASSERTION ERROR processing datapoint {index}, PDB ID: {pdb_id}"
+            )
+            self.logger.error(f"Error message: {e}")
+
+            # Save features, atom array and per sample traceback
+            self.save_features_atom_array(
+                features, atom_array_cropped, pdb_id, preferred_chain_or_interface
+            )
+            self.save_full_traceback_for_sample(e, pdb_id, preferred_chain_or_interface)
+
+        # Add IDs to compliance log if all asserts pass
+        if compliance.all():
+            self.compliance_log.passed_ids.append(
+                f"{pdb_id}-{preferred_chain_or_interface}"
+            )
+            log_output_dir = self.logger.extra["log_output_directory"] / Path(
+                "worker_{}".format(self.logger.extra["worker_id"])
+            )
+            self.compliance_log.save_worker_compliance_file(
+                log_output_dir / Path("passed_ids.tsv")
+            )
 
     def save_features_atom_array(
         self, features, atom_array_cropped, pdb_id, preferred_chain_or_interface
@@ -1055,7 +1146,9 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
     "--run-asserts",
     default=True,
     type=bool,
-    help="Whether to run asserts.",
+    help="Whether to run asserts. If True and there exists a passed_ids.tsv file in "
+    "log-output-directory, the treadmill will skip all fully compliant datapoints."
+    " Otherwise a new passed_ids.tsv file will be created.",
 )
 @click.option(
     "--save-features",
@@ -1105,7 +1198,9 @@ def main(
         log_level (str):
             Logging level.
         run_asserts (bool):
-            Whether to run asserts.
+            Whether to run asserts. If True and there exists a passed_ids.tsv file in
+            log-output-directory, the treadmill will skip all fully compliant
+            datapoints. Otherwise a new passed_ids.tsv file will be created.
         save_features (bool):
             Whether to save features when an exception occurs.
         save_atom_array (bool):
@@ -1152,8 +1247,27 @@ def main(
         dataset_config=data_module_config.datasets[0].config,
     )
 
+    # These functions need to be defined here to form a closure
+    # around log_output_directory
     # Configure worker init function logger
-    def configure_worker_init_func_logger(worker_id: int) -> logging.Logger:
+    def configure_worker_init_func_logger(
+        worker_id: int, worker_dataset: Dataset
+    ) -> logging.Logger:
+        """Configures the logger for the worker.
+
+        Also assigns the worker-specific logger to the worker-specific copy of the
+        dataset.
+
+        Args:
+            worker_id (int):
+                Worker id.
+            worker_dataset (Dataset):
+                Worker-specific copy of the dataset.
+
+        Returns:
+            logging.Logger:
+                Worker logger.
+        """
         # Configure logging
         worker_logger = logging.getLogger()
         numeric_level = getattr(logging, log_level)
@@ -1182,8 +1296,6 @@ def main(
         )
 
         # Set the logger to the local copy of the dataset in the current worker
-        worker_info = get_worker_info()
-        worker_dataset = worker_info.dataset
         worker_dataset.logger = worker_logger
         return worker_logger
 
@@ -1255,11 +1367,34 @@ def main(
         with open(extra_data_file, "w") as f:
             f.write("\t".join(all_headers) + "\n")
 
+    # Set up compliance file
+    def configure_compliance_log(worker_dataset: Dataset) -> None:
+        """Assigns a compliance log to the dataset of a given worker.
+
+        Either creates worker-specific compliance log objects or loads an existing
+        compliance file into a compliance log object for the worker.
+
+        Args:
+            worker_dataset (Dataset):
+                Worker-specific copy of the dataset.
+        """
+        compliance_file_path = log_output_directory / Path("passed_ids.tsv")
+
+        if compliance_file_path.exists():
+            worker_dataset.compliance_log = ComplianceLog.parse_compliance_file(
+                compliance_file_path
+            )
+
+        else:
+            worker_dataset.compliance_log = ComplianceLog(
+                passed_ids=[],
+            )
+
     # Set up custom worker init function with logging
     def worker_init_function_with_logging(
         worker_id: int, rank: int | None = None
     ) -> None:
-        """Modified default Lightning worker_init_fn with manual data seed.
+        """Modified default Lightning worker_init_fn with logging.
 
         This worker_init_fn enables decoupling stochastic processes in the data
         pipeline from those in the model. Taken from Pytorch Lightning 2.4.1 source
@@ -1290,8 +1425,12 @@ def main(
                 seed_sequence[3] & 0xFFFFFFFF
             )  # numpy takes 32-bit seed only
 
+        # Get worker dataset
+        worker_info = get_worker_info()
+        worker_dataset = worker_info.dataset
+
         # Configure logger and log process & worker IDs
-        worker_logger = configure_worker_init_func_logger(worker_id)
+        worker_logger = configure_worker_init_func_logger(worker_id, worker_dataset)
         worker_logger.info("Worker init function completed.")
         worker_logger.info(
             "logger worker ID: {}".format(worker_logger.extra["worker_id"])
@@ -1300,6 +1439,9 @@ def main(
 
         # Configure extra data file
         configure_extra_data_file(worker_id)
+
+        # Configure compliance file
+        configure_compliance_log(worker_dataset)
 
     # Configure DataLoader
     data_loader = DataLoader(
@@ -1316,13 +1458,26 @@ def main(
             " is not yet implemented."
         )
 
-    # Iterate over dataset
+    # Iterate over dataset - catch interruptions
     try:
         for _ in tqdm(
             data_loader, desc="Iterating over WeightedPDBDataset", total=len(dataset)
         ):
             pass
     finally:
+        # Collate passed IDs from all workers
+        if run_asserts:
+            df_all = pd.DataFrame()
+            for worker_id in range(runner_args.num_workers):
+                worker_compliance_file = log_output_directory / Path(
+                    f"worker_{worker_id}/passed_ids.tsv"
+                )
+                df_all = pd.concat(
+                    [df_all, pd.read_csv(worker_compliance_file, sep="\t")]
+                )
+                worker_compliance_file.unlink()
+
+            df_all.to_csv(log_output_directory / Path("extra_data.txt"), sep="\t")
         # Collate the extra data from different workers
         if save_statistics:
             df_all = pd.DataFrame()
