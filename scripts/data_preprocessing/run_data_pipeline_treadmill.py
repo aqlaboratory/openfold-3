@@ -19,6 +19,7 @@ import sys
 import traceback
 from pathlib import Path
 
+import biotite.structure as struc
 import click
 import numpy as np
 import pandas as pd
@@ -477,7 +478,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         save_features=None,
         save_atom_array=None,
         save_full_traceback=None,
-        save_data=None,
+        save_statistics=None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -485,7 +486,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         self.save_features = save_features
         self.save_atom_array = save_atom_array
         self.save_full_traceback = save_full_traceback
-        self.save_data = save_data
+        self.save_data = save_statistics
 
     def __getitem__(
         self, index: int
@@ -512,7 +513,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                     crop_weights=self.crop_weights,
                     token_budget=self.token_budget,
                     preferred_chain_or_interface=preferred_chain_or_interface,
-                    structure_format="bcif",
+                    structure_format="cif",
                     return_full_atom_array=True,
                 )
             )
@@ -581,6 +582,13 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 atom_array_cropped,
                 atom_array,
             )
+            # Save features and/or atom array
+            if (self.save_features == "per_datapoint") | (
+                self.save_atom_array == "per_datapoint"
+            ):
+                self.save_features_atom_array(
+                    features, atom_array_cropped, pdb_id, preferred_chain_or_interface
+                )
 
             # Asserts
             if self.run_asserts:
@@ -611,10 +619,19 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             self.logger.error(f"Error message: {e}")
 
             # Save features, atom array and per sample traceback
-            self.save_features_atom_array(
-                features, atom_array_cropped, pdb_id, preferred_chain_or_interface
-            )
-            self.save_full_traceback_for_sample(e, pdb_id, preferred_chain_or_interface)
+            if (
+                (self.save_features == "on_error")
+                | (self.save_atom_array == "on_error")
+                | (self.save_features == "per_datapoint")
+                | (self.save_atom_array == "per_datapoint")
+            ):
+                self.save_features_atom_array(
+                    features, atom_array_cropped, pdb_id, preferred_chain_or_interface
+                )
+            if self.save_full_traceback:
+                self.save_full_traceback_for_sample(
+                    e, pdb_id, preferred_chain_or_interface
+                )
             return features
 
         except Exception as e:
@@ -625,89 +642,90 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             self.logger.error(f"Error message: {e}")
 
             # Save features and atom array
-            self.save_features_atom_array(
-                features, atom_array_cropped, pdb_id, preferred_chain_or_interface
-            )
-            self.save_full_traceback_for_sample(e, pdb_id, preferred_chain_or_interface)
+            if (
+                (self.save_features == "on_error")
+                | (self.save_atom_array == "on_error")
+                | (self.save_features == "per_datapoint")
+                | (self.save_atom_array == "per_datapoint")
+            ):
+                self.save_features_atom_array(
+                    features, atom_array_cropped, pdb_id, preferred_chain_or_interface
+                )
+            if self.save_full_traceback:
+                self.save_full_traceback_for_sample(
+                    e, pdb_id, preferred_chain_or_interface
+                )
 
             return features
 
     def save_features_atom_array(
         self, features, atom_array_cropped, pdb_id, preferred_chain_or_interface
     ):
-        """Saves features and atom array from the worker process to disk."""
-        if self.save_features | self.save_atom_array:
-            log_output_dir = self.logger.extra["log_output_directory"] / Path(
-                "worker_{}/{}".format(self.logger.extra["worker_id"], pdb_id)
-            )
-            log_output_dir.mkdir(parents=True, exist_ok=True)
+        """Saves features and/or atom array from the worker process to disk."""
+        log_output_dir = self.logger.extra["log_output_directory"] / Path(
+            "worker_{}/{}".format(self.logger.extra["worker_id"], pdb_id)
+        )
+        log_output_dir.mkdir(parents=True, exist_ok=True)
 
         preferred_chain_or_interface = (
             "-".join(preferred_chain_or_interface)
             if isinstance(preferred_chain_or_interface, list)
             else preferred_chain_or_interface
         )
-        if self.save_features:
+        if self.save_features is not False:
             torch.save(
                 features,
                 log_output_dir
                 / Path(f"{pdb_id}-{preferred_chain_or_interface}_features.pt"),
             )
-        if self.save_atom_array & (atom_array_cropped is not None):
+        if (self.save_atom_array is not False) & (atom_array_cropped is not None):
             with open(
                 log_output_dir
                 / Path(f"{pdb_id}-{preferred_chain_or_interface}_atom_array.pkl"),
                 "wb",
             ) as f:
                 pkl.dump(atom_array_cropped, f)
-            # strucio.save_structure(
-            #     log_output_dir
-            #     / Path(f"{pdb_id}-{preferred_chain_or_interface}_atom_array.cif"),
-            #     atom_array_cropped,
-            # )
 
     def save_full_traceback_for_sample(self, e, pdb_id, preferred_chain_or_interface):
         """Saves the full traceback to for failed samples."""
-        if self.save_full_traceback:
-            log_output_dir = self.logger.extra["log_output_directory"] / Path(
-                "worker_{}/{}".format(self.logger.extra["worker_id"], pdb_id)
-            )
-            preferred_chain_or_interface = (
-                "-".join(preferred_chain_or_interface)
-                if isinstance(preferred_chain_or_interface, list)
-                else preferred_chain_or_interface
-            )
-            sample_logger = logging.getLogger(
-                f"{pdb_id}-{preferred_chain_or_interface}"
-            )
-            if sample_logger.hasHandlers():
-                sample_logger.handlers.clear()
-            sample_logger.setLevel(self.logger.logger.level)
-            sample_logger.propagate = False
-            sample_file_handler = logging.FileHandler(
-                log_output_dir
-                / Path(f"{pdb_id}-{preferred_chain_or_interface}_error.log"),
-                mode="w",
-            )
-            sample_file_handler.setLevel(self.logger.logger.level)
-            sample_logger.addHandler(sample_file_handler)
 
-            sample_logger.info(
-                f"Failed to process entry {pdb_id} chain/interface "
-                f"{preferred_chain_or_interface}"
-                f"\n\nException:\n{str(e)}"
-                f"\n\nType:\n{type(e).__name__}"
-                f"\n\nTraceback:\n{traceback.format_exc()}"
-            )
+        log_output_dir = self.logger.extra["log_output_directory"] / Path(
+            "worker_{}/{}".format(self.logger.extra["worker_id"], pdb_id)
+        )
+        log_output_dir.mkdir(parents=True, exist_ok=True)
+        preferred_chain_or_interface = (
+            "-".join(preferred_chain_or_interface)
+            if isinstance(preferred_chain_or_interface, list)
+            else preferred_chain_or_interface
+        )
+        sample_logger = logging.getLogger(f"{pdb_id}-{preferred_chain_or_interface}")
+        if sample_logger.hasHandlers():
+            sample_logger.handlers.clear()
+        sample_logger.setLevel(self.logger.logger.level)
+        sample_logger.propagate = False
+        sample_file_handler = logging.FileHandler(
+            log_output_dir / Path(f"{pdb_id}-{preferred_chain_or_interface}_error.log"),
+            mode="w",
+        )
+        sample_file_handler.setLevel(self.logger.logger.level)
+        sample_logger.addHandler(sample_file_handler)
 
-            # Remove logger
-            for h in sample_logger.handlers[:]:
-                sample_logger.removeHandler(h)
-                h.close()
-            sample_logger.setLevel(logging.CRITICAL + 1)
-            del logging.Logger.manager.loggerDict[
-                f"{pdb_id}-{preferred_chain_or_interface}"
-            ]
+        sample_logger.info(
+            f"Failed to process entry {pdb_id} chain/interface "
+            f"{preferred_chain_or_interface}"
+            f"\n\nException:\n{str(e)}"
+            f"\n\nType:\n{type(e).__name__}"
+            f"\n\nTraceback:\n{traceback.format_exc()}"
+        )
+
+        # Remove logger
+        for h in sample_logger.handlers[:]:
+            sample_logger.removeHandler(h)
+            h.close()
+        sample_logger.setLevel(logging.CRITICAL + 1)
+        del logging.Logger.manager.loggerDict[
+            f"{pdb_id}-{preferred_chain_or_interface}"
+        ]
 
     def save_extra_data(
         self,
@@ -717,7 +735,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         atom_array_cropped,
         atom_array,
     ):
-        """Saves additional data for failed samples."""
+        """Saves additional data statistics."""
         if (self.save_data is not None) & (len(self.save_data) > 0):
             log_output_dir = self.logger.extra["log_output_directory"] / Path(
                 "worker_{}".format(self.logger.extra["worker_id"])
@@ -728,112 +746,125 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 else preferred_chain_or_interface
             )
             line = f"{pdb_id}\t{preferred_chain_or_interface}\t"
-            if "n-atoms" in self.save_data:
-                line += f"{len(atom_array)}\t"
-            if "n-atoms-in-crop" in self.save_data:
-                line += f"{len(atom_array_cropped)}\t"
-            if "n-atoms-protein" in self.save_data:
-                atom_array_protein = atom_array[
-                    atom_array.molecule_type_id != MoleculeType.PROTEIN
-                ]
-                line += f"{len(atom_array_protein)}\t"
-            if "n-atoms-protein-in-crop" in self.save_data:
-                atom_array_protein = atom_array_cropped[
-                    atom_array_cropped.molecule_type_id != MoleculeType.PROTEIN
-                ]
-                line += f"{len(atom_array_protein)}\t"
-            if "n-atoms-rna" in self.save_data:
-                atom_array_rna = atom_array[
-                    atom_array.molecule_type_id != MoleculeType.RNA
-                ]
-                line += f"{len(atom_array_rna)}\t"
-            if "n-atoms-rna-in-crop" in self.save_data:
-                atom_array_rna = atom_array_cropped[
-                    atom_array_cropped.molecule_type_id != MoleculeType.RNA
-                ]
-                line += f"{len(atom_array_rna)}\t"
-            if "n-atoms-dna" in self.save_data:
-                atom_array_dna = atom_array[
-                    atom_array.molecule_type_id != MoleculeType.DNA
-                ]
-                line += f"{len(atom_array_dna)}\t"
-            if "n-atoms-dna-in-crop" in self.save_data:
-                atom_array_dna = atom_array_cropped[
-                    atom_array_cropped.molecule_type_id != MoleculeType.DNA
-                ]
-                line += f"{len(atom_array_dna)}\t"
-            if "n-atoms-ligand" in self.save_data:
-                atom_array_ligand = atom_array[
-                    atom_array.molecule_type_id != MoleculeType.LIGAND
-                ]
-                line += f"{len(atom_array_ligand)}\t"
-            if "n-atoms-ligand-in-crop" in self.save_data:
-                atom_array_ligand = atom_array_cropped[
-                    atom_array_cropped.molecule_type_id != MoleculeType.LIGAND
-                ]
-                line += f"{len(atom_array_ligand)}\t"
 
-            if "n-protein-res" in self.save_data:
-                atom_array_protein = atom_array[
-                    atom_array.molecule_type_id != MoleculeType.PROTEIN
-                ]
-                line += f"{len(torch.unique_consecutive(
-                    torch.tensor(atom_array_protein.res_id
-                                 )))}\t"
-            if "n-protein-res-in-crop" in self.save_data:
-                atom_array_protein = atom_array_cropped[
-                    atom_array_cropped.molecule_type_id != MoleculeType.PROTEIN
-                ]
-                line += f"{len(torch.unique_consecutive(torch.tensor(
-                    atom_array_protein.res_id
-                    )))}\t"
-            if "n-rna-res" in self.save_data:
-                atom_array_rna = atom_array[
-                    atom_array.molecule_type_id != MoleculeType.RNA
-                ]
-                line += f"{len(torch.unique_consecutive(torch.tensor(
-                    atom_array_rna.res_id
-                    )))}\t"
-            if "n-rna-res-in-crop" in self.save_data:
-                atom_array_rna = atom_array_cropped[
-                    atom_array_cropped.molecule_type_id != MoleculeType.RNA
-                ]
-                line += f"{len(torch.unique_consecutive(torch.tensor(
-                    atom_array_rna.res_id
-                    )))}\t"
-            if "n-dna-res" in self.save_data:
-                atom_array_dna = atom_array[
-                    atom_array.molecule_type_id != MoleculeType.DNA
-                ]
-                line += f"{len(torch.unique_consecutive(torch.tensor(
-                    atom_array_dna.res_id
-                    )))}\t"
-            if "n-dna-res-in-crop" in self.save_data:
-                atom_array_dna = atom_array_cropped[
-                    atom_array_cropped.molecule_type_id != MoleculeType.DNA
-                ]
-                line += f"{len(torch.unique_consecutive(torch.tensor(
-                    atom_array_dna.res_id
-                    )))}\t"
+            atom_array_protein = atom_array[
+                atom_array.molecule_type_id != MoleculeType.PROTEIN
+            ]
+            atom_array_protein_cropped = atom_array_cropped[
+                atom_array_cropped.molecule_type_id != MoleculeType.PROTEIN
+            ]
+            atom_array_rna = atom_array[atom_array.molecule_type_id != MoleculeType.RNA]
+            atom_array_rna_cropped = atom_array_cropped[
+                atom_array_cropped.molecule_type_id != MoleculeType.RNA
+            ]
+            atom_array_dna = atom_array[atom_array.molecule_type_id != MoleculeType.DNA]
+            atom_array_dna_cropped = atom_array_cropped[
+                atom_array_cropped.molecule_type_id != MoleculeType.DNA
+            ]
+            atom_array_ligand = atom_array[
+                atom_array.molecule_type_id != MoleculeType.LIGAND
+            ]
+            atom_array_ligand_cropped = atom_array_cropped[
+                atom_array_cropped.molecule_type_id != MoleculeType.LIGAND
+            ]
+            residue_starts = struc.get_residue_starts(atom_array)
+            residue_starts = (
+                np.append(residue_starts, -1)
+                if residue_starts[-1] != len(atom_array)
+                else residue_starts
+            )
+            residue_starts_cropped = struc.get_residue_starts(atom_array_cropped)
+            residue_starts_cropped = (
+                np.append(residue_starts_cropped, -1)
+                if residue_starts_cropped[-1] != len(atom_array_cropped)
+                else residue_starts_cropped
+            )
 
-            if "n-chains" in self.save_data:
-                line += f"{len(set(atom_array.chain_id))}\t"
-            if "n-chains-in-crop" in self.save_data:
-                line += f"{len(set(atom_array_cropped.chain_id))}\t"
+            # Number of atoms
+            line += f"{len(atom_array)}\t"
+            # Number of atoms in the crop
+            line += f"{len(atom_array_cropped)}\t"
+            # Number of protein atoms
+            line += f"{len(atom_array_protein)}\t"
+            # Number of protein atoms in the crop
+            line += f"{len(atom_array_protein_cropped)}\t"
+            # Number of RNA atoms
+            line += f"{len(atom_array_rna)}\t"
+            # Number of RNA atoms in the crop
+            line += f"{len(atom_array_rna_cropped)}\t"
+            # Number of DNA atoms
+            line += f"{len(atom_array_dna)}\t"
+            # Number of DNA atoms in the crop
+            line += f"{len(atom_array_dna_cropped)}\t"
+            # Number of ligand atoms
+            line += f"{len(atom_array_ligand)}\t"
+            # Number of ligand atoms in the crop
+            line += f"{len(atom_array_ligand_cropped)}\t"
+
+            # Number of residues
+            line += f"{len(torch.unique_consecutive(torch.tensor(
+                atom_array_protein.res_id
+                )))}\t"
+            line += f"{len(torch.unique_consecutive(torch.tensor(
+                atom_array_rna.res_id
+                )))}\t"
+            line += f"{len(torch.unique_consecutive(torch.tensor(
+                atom_array_dna.res_id
+                )))}\t"
+            # Number of residues in the crop
+            line += f"{len(torch.unique_consecutive(torch.tensor(
+                atom_array_protein_cropped.res_id)))}\t"
+            line += f"{len(torch.unique_consecutive(torch.tensor(
+                atom_array_rna_cropped.res_id
+                )))}\t"
+            line += f"{len(torch.unique_consecutive(torch.tensor(
+                atom_array_dna_cropped.res_id
+                )))}\t"
+            # Number of unresolved residues
+            nan_cumsum = np.cumsum(np.isnan(atom_array.coord).any(axis=1))
+            line += f"{(np.diff(nan_cumsum[residue_starts]) > 0).sum()}\t"
+            # Number of unresolved residues in the crop
+            nan_cumsum = np.cumsum(np.isnan(atom_array_cropped.coord).any(axis=1))
+            line += f"{(np.diff(nan_cumsum[residue_starts_cropped]) > 0).sum()}\t"
+            # Number of unresolved atoms
+            line += f"{np.isnan(atom_array.coord).any(axis=1).sum()}\t"
+            # Number of unresolved atoms in the crop
+            line += f"{np.isnan(atom_array_cropped.coord).any(axis=1).sum()}\t"
+
+            # Number of chains
+            line += f"{len(set(atom_array.chain_id))}\t"
+            # Number of chains in the crop
+            line += f"{len(set(atom_array_cropped.chain_id))}\t"
+            # Number of unique entities
+            line += f"{len(set(atom_array_protein.entity_id))}\t"
+            line += f"{len(set(atom_array_rna.entity_id))}\t"
+            line += f"{len(set(atom_array_dna.entity_id))}\t"
+            # Number of unique entities in the crop
+            line += f"{len(set(atom_array_protein_cropped.entity_id))}\t"
+            line += f"{len(set(atom_array_rna_cropped.entity_id))}\t"
+            line += f"{len(set(atom_array_dna_cropped.entity_id))}\t"
+
             # number of polymer chains per molecule type
+            line += f"{len(set(atom_array_protein.chain_id))}\t"
+            line += f"{len(set(atom_array_rna.chain_id))}\t"
+            line += f"{len(set(atom_array_dna.chain_id))}\t"
             # number of polymer chains per molecule type in the crop
-            # number of unique polymer per molecule type chains
-            # number of unique polymer per molecule type chains in the crop
-            if "msa-depth" in self.save_data:
-                line += f"{features['msa'].shape[0]}\t"
-            if "num-paired-rows" in self.save_data:
-                line += f"{features['num_paired_seqs'].item()}\t"
+            line += f"{len(set(atom_array_protein_cropped.chain_id))}\t"
+            line += f"{len(set(atom_array_rna_cropped.chain_id))}\t"
+            line += f"{len(set(atom_array_dna_cropped.chain_id))}\t"
+            # MSA depth
+            line += f"{features['msa'].shape[0]}\t"
+            # Number of paired MSA rows
+            line += f"{features['num_paired_seqs'].item()}\t"
             # number of tokens with any aligned MSA columns in the crop
             # number of tokens with any aligned template columns in the crop
             # number of residue tokens atomized due to special
             # number of residue tokens atomized due to covalent modifications
 
-            # <other data we might want to log goes here>
+            # radius of gyration
+            # interface statistics
+            # token length
+            # sub-pipeline runtimes - add via extra arguments
 
             line += "\n"
 
@@ -893,15 +924,21 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 )
 @click.option(
     "--save-features",
-    default=True,
-    type=bool,
-    help="Whether to run asserts.",
+    default="on_error",
+    type=click.Choice(["on_error", "per_datapoint", False]),
+    help=(
+        "Whether to run asserts.  If on_error, saves when an exception occurs, if ."
+        "per_datapoint, saves for each datapoint AND when an exception occurs"
+    ),
 )
 @click.option(
     "--save-atom-array",
-    default=True,
-    type=bool,
-    help="Whether to run asserts.",
+    default="on_error",
+    type=click.Choice(["on_error", "per_datapoint", False]),
+    help=(
+        "Whether to run asserts. If on_error, saves when an exception occurs, if "
+        "per_datapoint, saves for each datapoint AND when an exception occurs."
+    ),
 )
 @click.option(
     "--save-full-traceback",
@@ -910,8 +947,8 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
     help="Whether to save the per-sample full tracebacks.",
 )
 @click.option(
-    "--save-data",
-    type=click.Choice(["n-atoms-in-crop"]),
+    "--save-statistics",
+    type=click.Choice(["n-atoms-in-crop", "msa-depth", "num-paired-rows"]),
     multiple=True,
     default=[],
     help="Additional data to save during data processing.",
@@ -926,7 +963,7 @@ def main(
     save_features: bool,
     save_atom_array: bool,
     save_full_traceback: bool,
-    save_data: list[str],
+    save_statistics: list[str],
 ) -> None:
     """Main function for running the data pipeline treadmill.
 
@@ -947,7 +984,7 @@ def main(
             Whether to save atom array when an exception occurs.
         save_full_traceback (bool):
             Whether to save the per-sample full traceback when an exception occurs.
-        save_data (list[str]):
+        save_statistics (list[str]):
             Additional data to save during data processing.
 
     Raises:
@@ -983,7 +1020,7 @@ def main(
         save_features=save_features,
         save_atom_array=save_atom_array,
         save_full_traceback=save_full_traceback,
-        save_data=save_data,
+        save_statistics=save_statistics,
         dataset_config=data_module_config.datasets[0].config,
     )
 
@@ -1025,9 +1062,9 @@ def main(
     # Set up extra data file
     def configure_extra_data_file(worker_id: int) -> None:
         """Configures the file to save extra data."""
-        if len(save_data) > 0:
+        if len(save_statistics) > 0:
             all_headers = ["pdb-id", "chain-or-interface"]
-            for data_i in save_data:
+            for data_i in save_statistics:
                 all_headers.append(data_i)
             extra_data_file = log_output_directory / Path(
                 f"worker_{worker_id}/extra_data.txt"
@@ -1104,7 +1141,7 @@ def main(
             pass
     finally:
         # Collate the extra data from different workers
-        if len(save_data) > 0:
+        if len(save_statistics) > 0:
             df_all = pd.DataFrame()
             for worker_id in range(runner_args.num_workers):
                 worker_extra_data_file = log_output_directory / Path(
