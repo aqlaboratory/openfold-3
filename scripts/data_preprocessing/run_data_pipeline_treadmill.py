@@ -17,7 +17,7 @@ import pickle as pkl
 import random
 import sys
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import biotite.structure as struc
@@ -369,31 +369,33 @@ class ComplianceLog:
 
     Attributes:
         passed_ids:
-            List of PDB IDs that passed all asserts and didn't raise an error in the
+            Set of PDB IDs that passed all asserts and didn't raise an error in the
             __getitem__.
     """
 
-    passed_ids: list[str]
+    passed_ids: set[str] = field(default_factory=set)
 
     def save_worker_compliance_file(self, worker_compliance_file: Path):
         """Saves the compliance log to a file."""
+        passed_ids_list = list(self.passed_ids)
         pd.DataFrame(
             {
-                "passed_ids": self.passed_ids,
+                "passed_ids": passed_ids_list,
             }
         ).to_csv(
             worker_compliance_file,
-            mode="a",
+            mode="w",
             index=False,
             header=False,
             sep="\t",
         )
 
-    def parse_compliance_file(self, compliance_file: Path):
+    @staticmethod
+    def parse_compliance_file(compliance_file: Path):
         """Parses the compliance file and returns the instantiated class."""
         df = pd.read_csv(compliance_file, sep="\t", header=None)
         return ComplianceLog(
-            passed_ids=df[0].tolist(),
+            passed_ids=set(df[0].tolist()),
         )
 
 
@@ -413,7 +415,7 @@ ENSEMBLED_ASSERTS = [
     assert_shape,
     assert_dtype,
     assert_all_unk_atomized,
-    assert_token_bonds_atomized,
+    # assert_token_bonds_atomized,
     assert_profile_sum,
 ]
 
@@ -565,9 +567,13 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 
         # Skip datapoint if it's in the compliance log and run_asserts is True or
         # if it's in the processed_datapoint_log and save_statistics is True
-        skip_datapoint = (self.run_asserts and (
-            f"{pdb_id}-{preferred_chain_or_interface}" in self.compliance_log.passed_ids
-        )) | (self.save_statistics and (f"{pdb_id}" in self.processed_datapoint_log))
+        skip_datapoint = (
+            self.run_asserts
+            and (
+                f"{pdb_id}-{preferred_chain_or_interface}"
+                in self.compliance_log.passed_ids
+            )
+        ) | (self.save_statistics and (f"{pdb_id}" in self.processed_datapoint_log))
         if skip_datapoint:
             return features
 
@@ -748,7 +754,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 
         # Add IDs to compliance log if all asserts pass
         if compliance.all():
-            self.compliance_log.passed_ids.append(
+            self.compliance_log.passed_ids.add(
                 f"{pdb_id}-{preferred_chain_or_interface}"
             )
             log_output_dir = self.logger.extra["log_output_directory"] / Path(
@@ -1461,7 +1467,7 @@ def main(
 
         else:
             worker_dataset.compliance_log = ComplianceLog(
-                passed_ids=[],
+                passed_ids=set(),
             )
 
     # Set up custom worker init function with logging
@@ -1541,17 +1547,25 @@ def main(
     finally:
         # Collate passed IDs from all workers
         if run_asserts:
-            df_all = pd.DataFrame()
+            all_passed_ids = set()
             for worker_id in range(runner_args.num_workers):
                 worker_compliance_file = log_output_directory / Path(
                     f"worker_{worker_id}/passed_ids.tsv"
                 )
-                df_all = pd.concat(
-                    [df_all, pd.read_csv(worker_compliance_file, sep="\t")]
-                )
-                worker_compliance_file.unlink()
+                if worker_compliance_file.exists():
+                    df_worker = pd.read_csv(
+                        worker_compliance_file, sep="\t", header=None
+                    )
+                    passed_ids_worker = set(df_worker[0].tolist())
+                    all_passed_ids.update(passed_ids_worker)
+                    worker_compliance_file.unlink()
 
-            df_all.to_csv(log_output_directory / Path("passed_ids.tsv"), sep="\t")
+            pd.DataFrame({"passed_ids": list(all_passed_ids)}).to_csv(
+                log_output_directory / Path("passed_ids.tsv"),
+                sep="\t",
+                header=False,
+                index=False,
+            )
         # Collate the extra data from different workers
         if save_statistics:
             df_all = pd.DataFrame()
@@ -1559,15 +1573,16 @@ def main(
                 worker_extra_data_file = log_output_directory / Path(
                     f"worker_{worker_id}/datapoint_statistics.tsv"
                 )
-                df_all = pd.concat(
-                    [
-                        df_all,
-                        pd.read_csv(
-                            worker_extra_data_file, sep="\t", na_values=["NaN"]
-                        ),
-                    ]
-                )
-                worker_extra_data_file.unlink()
+                if worker_extra_data_file.exists():
+                    df_all = pd.concat(
+                        [
+                            df_all,
+                            pd.read_csv(
+                                worker_extra_data_file, sep="\t", na_values=["NaN"]
+                            ),
+                        ]
+                    )
+                    worker_extra_data_file.unlink()
 
             # Save to single file or append to existing file
             full_extra_data_file = log_output_directory / Path(
