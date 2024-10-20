@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def filter_structure_metadata_training_af3(
-    cache: StructureMetadataCache,
+    structure_cache: StructureMetadataCache,
     max_release_date: datetime.date | str,
     max_resolution: float = 9.0,
     max_polymer_chains: int = 300,
@@ -47,7 +47,7 @@ def filter_structure_metadata_training_af3(
         ).date()
 
     # Removes structures that were skipped in preprocessing
-    filtered_cache = filter_by_skipped_structures(cache)
+    filtered_cache = filter_by_skipped_structures(structure_cache)
 
     filtered_cache = filter_by_resolution(filtered_cache, max_resolution)
     filtered_cache = filter_by_release_date(filtered_cache, max_release_date)
