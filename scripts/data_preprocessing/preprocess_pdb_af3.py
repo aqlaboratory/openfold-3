@@ -90,7 +90,7 @@ def main(
     """
     # TODO: Add better docstring
     logger = logging.getLogger("openfold3")
-    logger.setLevel(getattr(logging, log_level.upper()))
+    logger.setLevel(getattr(logging, log_level))
     logger.addHandler(logging.StreamHandler())
 
     preprocess_cif_dir_af3(
