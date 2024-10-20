@@ -15,6 +15,7 @@ from openfold3.core.data.primitives.structure.dataset_cache import (
     filter_by_resolution,
     filter_by_skipped_structures,
     remove_interface_keys,
+    set_nan_fallback_conformer_flag,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,17 @@ def create_pdb_training_dataset_cache_af3(
 
     # Add dataset name
     training_cache["name"] = dataset_name
+
+    # Block usage of reference conformer coordinates from PDB-IDs that are outside the
+    # training split. Needs to be run before the filtering to use the full release date
+    # information in structure_data.
+    logger.debug("Setting NaN fallback conformer flag...")
+    set_nan_fallback_conformer_flag(
+        structure_cache=structure_data,
+        reference_mol_cache=reference_mol_data,
+        max_pdb_date=max_release_date,
+    )
+    logger.debug("Done.")
 
     # Subset the structures in the preprocessed metadata to only the desired ones
     structure_data = filter_structure_metadata_training_af3(

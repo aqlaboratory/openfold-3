@@ -110,7 +110,8 @@ def get_processed_reference_conformer(
 
     ## Overwrite the fallback conformer with a new conformer if possible
     if preferred_confgen_strategy != "use_fallback":
-        # If the new conformer generation fails, the fallback conformer is used
+        # If the new conformer generation fails, the below code is skipped and the
+        # fallback conformer is used
         with contextlib.suppress(ConformerGenerationError):
             if preferred_confgen_strategy == "default":
                 # Try with default, then use random init, then use fallback (technically
@@ -187,6 +188,9 @@ def get_reference_conformer_data_af3(
                     mol,
                     chain_array,
                     reference_mol_metadata[ref_mol_id]["conformer_gen_strategy"],
+                    set_fallback_to_nan=reference_mol_metadata[ref_mol_id][
+                        "set_fallback_to_nan"
+                    ],
                 )
             )
         # Decompose the chain into individual residues and their reference molecules
@@ -202,6 +206,9 @@ def get_reference_conformer_data_af3(
                         mol,
                         residue_array,
                         reference_mol_metadata[ref_mol_id]["conformer_gen_strategy"],
+                        set_fallback_to_nan=reference_mol_metadata[ref_mol_id][
+                            "set_fallback_to_nan"
+                        ],
                     )
                 )
 

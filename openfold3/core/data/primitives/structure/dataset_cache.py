@@ -569,3 +569,64 @@ def remove_interface_keys(structure_cache: StructureMetadataCache) -> None:
         del metadata["interfaces"]
 
     return None
+
+
+def set_nan_fallback_conformer_flag(
+    structure_cache: StructureMetadataCache,
+    reference_mol_cache: ReferenceMoleculeCache,
+    max_pdb_date: date | str,
+) -> None:
+    """Set the fallback conformer to NaN for ref-coordinates from PDB IDs after a cutoff
+
+    Based on AF3 SI 2.8, fallback conformers derived from PDB coordinates cannot be used
+    if the corresponding PDB model was released after the training cutoff. This function
+    introduces a new key "set_fallback_to_nan" in the reference molecule cache, which is
+    set to True for these cases and will be read in the model dataloading pipeline.
+
+    Args:
+        structure_cache:
+            The structure metadata cache.
+        reference_mol_cache:
+            The reference molecule metadata cache.
+        max_pdb_date:
+            The maximum PDB release date for structures in the training set. PDB IDs
+            released after this date will have their fallback conformer set to NaN.
+
+    """
+    if not isinstance(max_pdb_date, date):
+        max_pdb_date = datetime.strptime(max_pdb_date, "%Y-%m-%d").date()
+
+    # Get release dates of all PDB IDs in the cache
+    # NOTE: Technically we could make this more accurate by taking obsolete entries into
+    # account
+    pdb_dates = {}
+
+    for pdb_id, metadata in structure_cache.items():
+        date_str = metadata.get("release_date")
+
+        if date_str is None:
+            logger.warning(f"Release date not found for {pdb_id}, skipping.")
+            continue
+
+        pdb_dates[pdb_id] = datetime.strptime(date_str, "%Y-%m-%d").date()
+
+    for ref_mol_id, metadata in reference_mol_cache.items():
+        # Check if the fallback conformer should be NaN
+        model_pdb_id = metadata["fallback_conformer_pdb_id"]
+
+        if model_pdb_id is None:
+            continue
+
+        elif model_pdb_id not in pdb_dates:
+            logger.warning(
+                f"Fallback fonformer PDB ID {model_pdb_id} not found in cache, for "
+                f"molecule {ref_mol_id}, forcing NaN fallback conformer."
+            )
+        # Check if the PDB ID's release date is after the cutoff
+        elif pdb_dates[model_pdb_id] > max_pdb_date:
+            logger.debug(f"Setting fallback conformer to NaN for {ref_mol_id}.")
+            metadata["set_fallback_to_nan"] = True
+        else:
+            metadata["set_fallback_to_nan"] = False
+
+    return None
