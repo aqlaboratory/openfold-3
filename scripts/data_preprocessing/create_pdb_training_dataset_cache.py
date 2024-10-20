@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+from typing import Literal
 
 import click
 
@@ -67,6 +68,12 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
         "a no_alignment_representative_entries.json."
     ),
 )
+@click.option(
+    "--log-level",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
+    default="WARNING",
+    help="Set the logging level.",
+)
 def main(
     metadata_cache_path: Path,
     preprocessed_dir: Path,
@@ -77,13 +84,14 @@ def main(
     max_resolution: float,
     max_polymer_chains: int,
     write_no_alignment_repr_entries: bool,
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
 ) -> None:
     """Create a training dataset cache using PDB-weighted-like filtering procedures."""
     # TODO: Improve docstring
 
     # Set up logger
     logger = logging.getLogger("openfold3")
-    logger.setLevel(logging.INFO)
+    logger.setLevel(getattr(logging, log_level))
     logger.addHandler(logging.StreamHandler())
 
     create_pdb_training_dataset_cache_af3(
