@@ -116,7 +116,7 @@ def create_token_bonds(atom_array: AtomArray, token_index: np.ndarray) -> torch.
     if atom_ids_atomized_tokens.size > 0:
         bonds_atomized_tokens = bonds[
             (np.isin(bonds[:, 0], atom_ids_atomized_tokens))
-            | np.isin(bonds[:, 1], atom_ids_atomized_tokens),
+            & np.isin(bonds[:, 1], atom_ids_atomized_tokens),
             :,
         ]
 
