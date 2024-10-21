@@ -415,7 +415,7 @@ ENSEMBLED_ASSERTS = [
     assert_shape,
     assert_dtype,
     assert_all_unk_atomized,
-    # assert_token_bonds_atomized,
+    assert_token_bonds_atomized,
     assert_profile_sum,
 ]
 
