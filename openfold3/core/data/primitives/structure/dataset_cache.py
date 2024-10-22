@@ -1,13 +1,15 @@
 """All operations for processing and manipulating metadata and training caches."""
 
+import functools
 import itertools
 import logging
 import subprocess as sp
 import tempfile
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Literal, TypeAlias
+from typing import Literal, TypedDict
 
 import pandas as pd
 
@@ -15,46 +17,168 @@ from openfold3.core.data.io.sequence.fasta import (
     read_multichain_fasta,
     write_multichain_fasta,
 )
+from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
 
-StructureMetadataCache: TypeAlias = dict[str, dict]
-"""
-Type alias for the "structure_metadata" part of the preprocessed metadata_cache.json.
 
-Follows the format:
-{
-    pdb_id: {
-        ...basic_metadata...
-        "chains": {...}
-        "interfaces": [...]
-    }
-    pdb_id: {...},
-    ...,
-}
-"""
+@dataclass
+class PreprocessingChainData:
+    label_asym_id: str
+    auth_asym_id: str
+    entity_id: int
+    molecule_type: MoleculeType
+    reference_mol_id: str | None  # only set for ligands
 
-ReferenceMoleculeCache: TypeAlias = dict[str, dict]
-"""
-Type alias for the "reference_molecule_data" part of the preprocessed
-metadata_cache.json.
 
-Follows the format:
-{
-    ref_mol_id: {
-        "conformer_gen_strategy": str,
-        "fallback_conformer_pdb_id": str | None,
-        "canonical_smiles": str,
-    },
-    ref_mol_id: {...},
-    ...,
-}
-"""
+@dataclass
+class PreprocessingStructureData:
+    release_date: datetime.date
+    status: str
+    resolution: float | None
+    chains: dict[str, PreprocessingChainData] | None
+    interfaces: list[tuple[str, str]] | None
+
+
+class PreprocessingStructureDataCache(TypedDict):
+    pdb_id: PreprocessingStructureData
+
+
+@dataclass
+class PreprocessingReferenceMoleculeData:
+    conformer_gen_strategy: str
+    fallback_conformer_pdb_id: str | None
+    canonical_smiles: str
+
+
+class PreprocessingReferenceMoleculeCache(TypedDict):
+    ref_mol_id: PreprocessingReferenceMoleculeData
+
+
+@dataclass
+class PreprocessingDataCache:
+    structure_data: PreprocessingStructureDataCache
+    reference_molecule_data: PreprocessingReferenceMoleculeCache
+
+
+# TODO: This may need to be updated in the future to support new datasets with different
+# cache formats
+@dataclass
+class ClusteredDatasetChainData(PreprocessingChainData):
+    # Adds the following fields:
+    cluster_id: str
+    cluster_size: int
+    alignment_representative_id: str | None
+
+
+@dataclass
+class ClusteredDatasetInterfaceData:
+    cluster_id: str
+    cluster_size: int
+
+
+@dataclass
+class ClusteredDatasetStructureData:
+    release_date: datetime.date
+    resolution: float
+    chains: dict[str, ClusteredDatasetChainData]
+    interface_clusters: dict[str, ClusteredDatasetInterfaceData]
+
+
+class ClusteredDatasetStructureDataCache(TypedDict):
+    pdb_id: ClusteredDatasetStructureData
+
+
+@dataclass
+class DatasetReferenceMoleculeData(PreprocessingReferenceMoleculeData):
+    # Adds the following field:
+    set_fallback_to_nan: bool
+
+
+class DatasetReferenceMoleculeCache(TypedDict):
+    ref_mol_id: DatasetReferenceMoleculeData
+
+
+@dataclass
+class ClusteredDatasetCache:
+    name: str
+    structure_data: ClusteredDatasetStructureDataCache
+    reference_molecule_data: DatasetReferenceMoleculeCache
+
+
+# Grouped type-aliases for more convenient type-hinting of general-purpose functions
+ChainData = PreprocessingChainData | ClusteredDatasetChainData
+StructureDataCache = (
+    PreprocessingStructureDataCache | ClusteredDatasetStructureDataCache
+)
+ReferenceMoleculeCache = (
+    PreprocessingReferenceMoleculeCache | DatasetReferenceMoleculeCache
+)
+DataCache = PreprocessingDataCache | ClusteredDatasetCache
+
+
+def func_with_n_filtered_chain_log(
+    structure_cache_filter_func: callable, logger: logging.Logger
+) -> None:
+    """Decorator to log the number of chains removed by a structure cache filter func.
+
+    Args:
+        structure_cache_filter_func:
+            The filter function to apply to a structure data cache.
+
+    Returns:
+        The decorated function that logs the number of chains removed.
+    """
+
+    @functools.wraps(structure_cache_filter_func)
+    def wrapper(
+        structure_cache: StructureDataCache, *args, **kwargs
+    ) -> StructureDataCache:
+        # Note that this doesn't count skipped/failed structures for which we have no
+        # number of chain information
+        num_chains_before = sum(
+            len(metadata.chains) if metadata.chains else 0
+            for metadata in structure_cache.values()
+        )
+
+        output = structure_cache_filter_func(structure_cache, *args, **kwargs)
+
+        if isinstance(output, tuple):
+            structure_cache = output[0]
+
+            if not isinstance(structure_cache, dict):
+                raise ValueError(
+                    "The first element of the output tuple must be a "
+                    + "StructureDataCache."
+                )
+        else:
+            structure_cache = output
+
+            if not isinstance(structure_cache, dict):
+                raise ValueError("The output must be a StructureDataCache.")
+
+        num_chains_after = sum(
+            len(metadata.chains) if metadata.chains else 0
+            for metadata in structure_cache.values()
+        )
+
+        num_chains_removed = num_chains_before - num_chains_after
+        percentage_removed = (num_chains_removed / num_chains_before) * 100
+
+        logger.info(
+            f"Function {structure_cache_filter_func.__name__} removed "
+            + f"{num_chains_removed} chains ({percentage_removed:.2f}%)."
+        )
+
+        return output
+
+    return wrapper
 
 
 def filter_by_release_date(
-    structure_cache: StructureMetadataCache, max_date: date | str
-) -> StructureMetadataCache:
+    structure_cache: StructureDataCache,
+    max_date: date | str,
+) -> StructureDataCache:
     """Filter the cache by removing entries newer than a given date.
 
     Args:
@@ -72,15 +196,16 @@ def filter_by_release_date(
     structure_cache = {
         pdb_id: metadata
         for pdb_id, metadata in structure_cache.items()
-        if datetime.strptime(metadata["release_date"], "%Y-%m-%d").date() <= max_date
+        if metadata.release_date <= max_date
     }
 
     return structure_cache
 
 
 def filter_by_resolution(
-    structure_cache: StructureMetadataCache, max_resolution: float
-) -> StructureMetadataCache:
+    structure_cache: StructureDataCache,
+    max_resolution: float,
+) -> StructureDataCache:
     """Filter the cache by removing entries with resolution higher than a given value.
 
     Args:
@@ -97,20 +222,27 @@ def filter_by_resolution(
     structure_cache = {
         pdb_id: metadata
         for pdb_id, metadata in structure_cache.items()
-        if metadata["resolution"] <= max_resolution
+        if metadata.resolution <= max_resolution
     }
 
     return structure_cache
 
 
-def chain_cache_entry_is_polymer(entry: dict) -> bool:
+def chain_cache_entry_is_polymer(
+    chain_data: ChainData,
+) -> bool:
     """Check if the entry of a particular chain in the metadata cache is a polymer."""
-    return entry["molecule_type"] in ("PROTEIN", "DNA", "RNA")
+    return chain_data.molecule_type in (
+        MoleculeType.PROTEIN,
+        MoleculeType.DNA,
+        MoleculeType.RNA,
+    )
 
 
 def filter_by_max_polymer_chains(
-    structure_cache: StructureMetadataCache, max_chains: int
-) -> StructureMetadataCache:
+    structure_cache: StructureDataCache,
+    max_chains: int,
+) -> StructureDataCache:
     """Filter the cache by removing entries with more polymer chains than a given value.
 
     Args:
@@ -122,12 +254,13 @@ def filter_by_max_polymer_chains(
     Returns:
         The filtered cache.
     """
-
+    # Refactor accounting for previously defined dataclass
     structure_cache = {
-        pdb_id: metadata
-        for pdb_id, metadata in structure_cache.items()
+        pdb_id: structure_data
+        for pdb_id, structure_data in structure_cache.items()
         if sum(
-            chain_cache_entry_is_polymer(chain) for chain in metadata["chains"].values()
+            chain_cache_entry_is_polymer(chain)
+            for chain in structure_data.chains.values()
         )
         <= max_chains
     }
@@ -136,8 +269,8 @@ def filter_by_max_polymer_chains(
 
 
 def filter_by_skipped_structures(
-    structure_cache: StructureMetadataCache,
-) -> StructureMetadataCache:
+    structure_cache: PreprocessingStructureDataCache,
+) -> PreprocessingStructureDataCache:
     """Filter the cache by removing entries that were skipped during preprocessing.
 
     Args:
@@ -150,10 +283,85 @@ def filter_by_skipped_structures(
     structure_cache = {
         pdb_id: metadata
         for pdb_id, metadata in structure_cache.items()
-        if metadata["status"] == "success"
+        if metadata.status == "success"
     }
 
     return structure_cache
+
+
+def build_provisional_clustered_dataset_cache(
+    preprocessing_cache: PreprocessingDataCache, dataset_name: str
+) -> ClusteredDatasetCache:
+    """Build a preliminary clustered-dataset cache with empty new values.
+
+    Reformats the PreprocessingDataCache to the ClusteredDatasetCache format, with empty
+    values for the new fields that will be filled in later.
+
+    Args:
+        preprocessing_cache:
+            The cache to convert.
+        dataset_name:
+            The name that the dataset should be referred to as.
+
+    Returns:
+        The new cache with a mixture of previous fields and new fields with empty
+        placeholder values.
+    """
+    structure_data = {}
+    reference_molecule_data = {}
+
+    prepr_structure_data = preprocessing_cache.structure_data
+
+    # First create structure data
+    for pdb_id, preprocessed_structure_data in prepr_structure_data.items():
+        structure_data[pdb_id] = ClusteredDatasetStructureData(
+            release_date=preprocessed_structure_data.release_date,
+            resolution=preprocessed_structure_data.resolution,
+            chains={},
+            interface_clusters={},
+        )
+
+        # Add all the chain metadata with dummy cluster values
+        new_chain_data = structure_data[pdb_id].chains
+        for chain_id, chain_data in preprocessed_structure_data.chains.items():
+            new_chain_data[chain_id] = ClusteredDatasetChainData(
+                label_asym_id=chain_data.label_asym_id,
+                auth_asym_id=chain_data.auth_asym_id,
+                entity_id=chain_data.entity_id,
+                molecule_type=chain_data.molecule_type,
+                reference_mol_id=chain_data.reference_mol_id,
+                cluster_id="",
+                cluster_size=0,
+                alignment_representative_id=None,
+            )
+
+        # Add interface cluster data with dummy values
+        new_interface_clusters = structure_data[pdb_id].interface_clusters
+        for interface in preprocessed_structure_data.interfaces:
+            chain_1, chain_2 = interface
+            interface_id = f"{chain_1}_{chain_2}"
+            new_interface_clusters[interface_id] = ClusteredDatasetInterfaceData(
+                cluster_id="",
+                cluster_size=0,
+            )
+
+    # Create reference molecule data with set_fallback_to_nan=False everywhere (for now)
+    prepr_ref_mol_data = preprocessing_cache.reference_molecule_data
+
+    for ref_mol_id, ref_mol_data in prepr_ref_mol_data.items():
+        reference_molecule_data[ref_mol_id] = DatasetReferenceMoleculeData(
+            conformer_gen_strategy=ref_mol_data.conformer_gen_strategy,
+            fallback_conformer_pdb_id=ref_mol_data.fallback_conformer_pdb_id,
+            canonical_smiles=ref_mol_data.canonical_smiles,
+            set_fallback_to_nan=False,
+        )
+
+    new_dataset_cache = ClusteredDatasetCache(
+        name=dataset_name,
+        structure_data=structure_data,
+        reference_molecule_data=reference_molecule_data,
+    )
+    return new_dataset_cache
 
 
 def map_chains_to_representatives(
@@ -191,7 +399,7 @@ def map_chains_to_representatives(
 
 
 def add_chain_representatives(
-    structure_cache: StructureMetadataCache,
+    structure_cache: ClusteredDatasetStructureDataCache,
     query_chain_to_seq: dict[str, str],
     repr_chain_to_seq: dict[str, str],
 ) -> None:
@@ -213,15 +421,18 @@ def add_chain_representatives(
     )
 
     for pdb_id, metadata in structure_cache.items():
-        for chain_id, chain_metadata in metadata["chains"].items():
+        for chain_id, chain_metadata in metadata.chains.items():
             repr_id = query_chains_to_repr_chains.get(f"{pdb_id}_{chain_id}")
 
-            chain_metadata["alignment_representative_id"] = repr_id
+            chain_metadata.alignment_representative_id = repr_id
 
 
 def filter_no_alignment_representative(
-    structure_cache: StructureMetadataCache, return_no_repr=False
-) -> StructureMetadataCache:
+    structure_cache: ClusteredDatasetStructureDataCache, return_no_repr=False
+) -> (
+    ClusteredDatasetStructureDataCache
+    | tuple[ClusteredDatasetStructureDataCache, dict[str, ClusteredDatasetChainData]]
+):
     """Filter the cache by removing entries with no alignment representative.
 
     If any of the chains in the entry do not have corresponding alignment data, the
@@ -234,32 +445,35 @@ def filter_no_alignment_representative(
             If True, also return a dictionary of unmatched entries, formatted as:
             pdb_id: chain_metadata
 
+            Note that this is a subset of all effectively removed chains, as even a
+            single unmatched chain will result in exclusion of the entire PDB structure.
             Default is False.
 
     Returns:
-        The filtered cache.
+        The filtered cache, or the filtered cache and the unmatched entries if
+        return_no_repr is True.
     """
     filtered_cache = {}
 
     if return_no_repr:
-        unmatched_entries = {}
+        unmatched_entries = defaultdict(dict)
 
     for pdb_id, metadata in structure_cache.items():
         all_in_cache_have_repr = True
 
         # Add only entries to filtered cache where all protein or RNA chains have
         # alignment representatives
-        for chain in metadata["chains"].values():
-            if chain["molecule_type"] not in ("PROTEIN", "RNA"):
+        for chain_id, chain_data in metadata.chains.items():
+            if chain_data.molecule_type not in (MoleculeType.PROTEIN, MoleculeType.RNA):
                 continue
 
-            if chain["alignment_representative_id"] is None:
+            if chain_data.alignment_representative_id is None:
                 all_in_cache_have_repr = False
 
                 # If return_removed is True, also try finding remaining chains with no
                 # alignment representative, otherwise break early
                 if return_no_repr:
-                    unmatched_entries[pdb_id] = chain
+                    unmatched_entries[pdb_id][chain_id] = chain_data
                 else:
                     break
 
@@ -273,11 +487,14 @@ def filter_no_alignment_representative(
 
 
 def add_and_filter_alignment_representatives(
-    structure_cache: StructureMetadataCache,
+    structure_cache: ClusteredDatasetStructureDataCache,
     query_chain_to_seq: dict[str, str],
     alignment_representatives_fasta: Path,
     return_no_repr=False,
-) -> StructureMetadataCache:
+) -> (
+    ClusteredDatasetStructureDataCache
+    | tuple[ClusteredDatasetStructureDataCache, dict[str, ClusteredDatasetChainData]]
+):
     """Adds alignment representatives to cache and filters out entries without any.
 
     Will find the representative chain for each query chain and add it to the cache
@@ -298,7 +515,8 @@ def add_and_filter_alignment_representatives(
             Default is False.
 
     Returns:
-        The filtered cache.
+        The filtered cache, or the filtered cache and the unmatched entries if
+        return_no_repr is True.
     """
     repr_chain_to_seq = read_multichain_fasta(alignment_representatives_fasta)
     add_chain_representatives(structure_cache, query_chain_to_seq, repr_chain_to_seq)
@@ -313,7 +531,35 @@ def add_and_filter_alignment_representatives(
         return structure_cache
 
 
-def get_all_cache_chains(structure_cache: StructureMetadataCache) -> set[str]:
+def subset_reference_molecule_data(
+    dataset_cache: DataCache,
+) -> None:
+    """Subset the reference molecule cache to only include referenced reference mols.
+
+    Args:
+        dataset_cache:
+            The dataset cache to update.
+    """
+    all_used_ref_mols = set()
+
+    for metadata in dataset_cache.structure_data.values():
+        for chain_data in metadata.chains.values():
+            ref_mol_id = chain_data.reference_mol_id
+            if ref_mol_id is not None:
+                all_used_ref_mols.add(ref_mol_id)
+
+    dataset_cache.reference_molecule_data = {
+        ref_mol_id: ref_mol_data
+        for ref_mol_id, ref_mol_data in dataset_cache.reference_molecule_data.items()
+        if ref_mol_id in all_used_ref_mols
+    }
+
+    return None
+
+
+def get_all_cache_chains(
+    structure_cache: StructureDataCache,
+) -> set[str]:
     """Get all chain IDs in the cache.
 
     Args:
@@ -326,7 +572,7 @@ def get_all_cache_chains(structure_cache: StructureMetadataCache) -> set[str]:
     all_chains = set()
 
     for pdb_id, metadata in structure_cache.items():
-        for chain_id in metadata["chains"]:
+        for chain_id in metadata.chains:
             all_chains.add(f"{pdb_id}_{chain_id}")
 
     return all_chains
@@ -340,6 +586,7 @@ def get_sequence_to_cluster_id(
     sensitivity: float = 8,
     max_seqs: int = 1000,
     cluster_mode: Literal[0, 1, 2, 3] = 0,
+    verbosity_level: int = 2,
     mmseq_binary: str = "mmseqs",
 ) -> dict[str, int]:
     """Runs MMseqs2 clustering and returns a mapping of sequence id to cluster id.
@@ -384,15 +631,18 @@ def get_sequence_to_cluster_id(
         cmd = (
             f"{mmseq_binary} easy-cluster {temp_fasta} {output_prefix} {temp_dir} "
             f"--min-seq-id {min_seq_identity} -c {coverage} --cov-mode {coverage_mode} "
-            f"-s {sensitivity} --max-seqs {max_seqs} --cluster-mode {cluster_mode}"
+            f"-s {sensitivity} --max-seqs {max_seqs} --cluster-mode {cluster_mode} "
+            f"-v {verbosity_level}"
         )
 
         # Run and read required cluster information, then delete tmp_dir
+        logger.info("Clustering protein sequences with MMSeqs2.")
         try:
             sp.run(cmd, shell=True, check=True)
         except sp.CalledProcessError as e:
             print(f"mmseqs failed with exit code {e.returncode}")
             raise e
+        logger.info("Done clustering protein sequences.")
 
         cluster_data = pd.read_csv(
             f"{temp_dir}/clusterRes_cluster.tsv",
@@ -408,7 +658,7 @@ def get_sequence_to_cluster_id(
     return id_to_cluster_id
 
 
-def get_interface_cluster_id(chain_1_cluster_id: str, chain_2_cluster_id: str) -> str:
+def make_interface_cluster_id(chain_1_cluster_id: str, chain_2_cluster_id: str) -> str:
     """Get the cluster ID for an interface from the cluster IDs of its chains.
 
     Following AF3 SI 2.5.3, the interface cluster ID is the sorted concatenation of the
@@ -427,8 +677,7 @@ def get_interface_cluster_id(chain_1_cluster_id: str, chain_2_cluster_id: str) -
 
 
 def add_cluster_ids_and_sizes(
-    structure_cache: StructureMetadataCache,
-    reference_mol_cache: ReferenceMoleculeCache,
+    dataset_cache: ClusteredDatasetCache,
     id_to_sequence: dict[str, str],
 ) -> None:
     """Add cluster IDs to the structure metadata cache.
@@ -439,17 +688,19 @@ def add_cluster_ids_and_sizes(
     such as glycans.
 
     Args:
-        cache:
-            The structure metadata cache to update.
+        dataset_cache:
+            The dataset cache to update.
         id_to_sequence:
             Dictionary mapping sequence IDs to sequences.
     """
+    structure_cache = dataset_cache.structure_data
+    reference_mol_cache = dataset_cache.reference_molecule_data
+
     # Subset sequences to only the ones explicitly in cache for correct clustering
     all_cache_chains = get_all_cache_chains(structure_cache)
     id_to_sequence = {k: v for k, v in id_to_sequence.items() if k in all_cache_chains}
 
     # Get sequences to cluster IDs with MMSeqs2-based clustering
-    logger.info("Clustering sequences with MMSeqs2...")
     id_to_cluster_id = get_sequence_to_cluster_id(id_to_sequence)
 
     # Make a generator for new cluster IDs
@@ -465,20 +716,22 @@ def add_cluster_ids_and_sizes(
 
     # Get all cluster IDs and track sizes
     for pdb_id, metadata in structure_cache.items():
-        metadata["interface_clusters"] = defaultdict(dict)
-
         # Get cluster IDs for each chain
-        for chain_id, chain_metadata in metadata["chains"].items():
-            molecule_type = chain_metadata["molecule_type"]
+        for chain_id, chain_metadata in metadata.chains.items():
+            molecule_type = chain_metadata.molecule_type
 
             # Standard polymers
-            if molecule_type in ("PROTEIN", "DNA", "RNA"):
+            if molecule_type in (
+                MoleculeType.PROTEIN,
+                MoleculeType.DNA,
+                MoleculeType.RNA,
+            ):
                 pdb_chain_id = f"{pdb_id}_{chain_id}"
 
                 sequence = id_to_sequence[pdb_chain_id]
 
                 # Get cluster IDs for standard proteins
-                if molecule_type == "PROTEIN" and len(sequence) >= 10:
+                if molecule_type == MoleculeType.PROTEIN and len(sequence) >= 10:
                     cluster_id = str(id_to_cluster_id[pdb_chain_id])
 
                 # Cluster based on 100% sequence identity for peptides and NAs
@@ -486,12 +739,12 @@ def add_cluster_ids_and_sizes(
                     cluster_id = non_protein_ident_to_cluster_id[sequence]
 
             # Ligands
-            elif molecule_type == "LIGAND":
-                reference_mol_id = chain_metadata["reference_mol_id"]
+            elif molecule_type == MoleculeType.LIGAND:
+                reference_mol_id = chain_metadata.reference_mol_id
 
                 # TODO: remove this logic after debugging the preprocessing
                 try:
-                    smiles = reference_mol_cache[reference_mol_id]["canonical_smiles"]
+                    smiles = reference_mol_cache[reference_mol_id].canonical_smiles
                 except KeyError:
                     logger.warning(
                         f"No reference molecule found for {reference_mol_id}"
@@ -503,78 +756,55 @@ def add_cluster_ids_and_sizes(
                 raise ValueError(f"Unexpected molecule type: {molecule_type}")
 
             # Add cluster_id and increment size tracker
-            chain_metadata["cluster_id"] = cluster_id
+            chain_metadata.cluster_id = cluster_id
             cluster_id_to_size[cluster_id] += 1
 
         # Get cluster IDs for each interface by joining the cluster IDs of individual
         # chains
-        for chain_1, chain_2 in metadata["interfaces"]:
-            chain_1_cluster_id = structure_cache[pdb_id]["chains"][chain_1][
-                "cluster_id"
-            ]
-            chain_2_cluster_id = structure_cache[pdb_id]["chains"][chain_2][
-                "cluster_id"
-            ]
+        for interface_id in metadata.interface_clusters:
+            chain_1, chain_2 = interface_id.split("_")
 
-            interface_id = f"{chain_1}_{chain_2}"
-            interface_cluster_id = get_interface_cluster_id(
+            chain_1_cluster_id = structure_cache[pdb_id].chains[chain_1].cluster_id
+            chain_2_cluster_id = structure_cache[pdb_id].chains[chain_2].cluster_id
+
+            interface_cluster_id = make_interface_cluster_id(
                 chain_1_cluster_id=chain_1_cluster_id,
                 chain_2_cluster_id=chain_2_cluster_id,
             )
 
-            metadata["interface_clusters"][interface_id]["cluster_id"] = (
-                interface_cluster_id
-            )
+            metadata.interface_clusters[interface_id].cluster_id = interface_cluster_id
 
             # Increment cluster size
             cluster_id_to_size[interface_cluster_id] += 1
 
     # Add cluster sizes
     for metadata in structure_cache.values():
-        for chain_data in metadata["chains"].values():
-            cluster_id = chain_data["cluster_id"]
+        for chain_data in metadata.chains.values():
+            cluster_id = chain_data.cluster_id
 
             # TODO: remove this after debugging preprocessing
             if cluster_id == "UNKNOWN":
-                chain_data["cluster_size"] = 1
+                chain_data.cluster_size = 1
             else:
-                chain_data["cluster_size"] = cluster_id_to_size[cluster_id]
+                chain_data.cluster_size = cluster_id_to_size[cluster_id]
 
-        for interface_data in metadata["interface_clusters"].values():
-            cluster_id = interface_data["cluster_id"]
+        for interface_data in metadata.interface_clusters.values():
+            cluster_id = interface_data.cluster_id
 
             # TODO: remove this after debugging preprocessing
             if "UNKNOWN" in cluster_id:
-                interface_data["cluster_size"] = 1
+                interface_data.cluster_size = 1
             else:
-                interface_data["cluster_size"] = cluster_id_to_size[cluster_id]
+                interface_data.cluster_size = cluster_id_to_size[cluster_id]
 
     return None
 
 
-def remove_interface_keys(structure_cache: StructureMetadataCache) -> None:
-    """Remove the "interfaces" keys from the cache.
-
-    Useful after the interfaces have been processed to the required cluster information,
-    and the original interface data is no longer needed.
-
-    Args:
-        cache:
-            The cache to update.
-
-    Returns:
-        The updated cache.
-    """
-    for metadata in structure_cache.values():
-        del metadata["interfaces"]
-
-    return None
-
-
+# TODO: refactor this with PDB-to-release-date argument
 def set_nan_fallback_conformer_flag(
-    structure_cache: StructureMetadataCache,
-    reference_mol_cache: ReferenceMoleculeCache,
-    max_pdb_date: date | str,
+    pdb_id_to_release_date: dict[str, date | str],
+    reference_mol_cache: DatasetReferenceMoleculeCache,
+    max_model_pdb_release_date: date | str,
 ) -> None:
     """Set the fallback conformer to NaN for ref-coordinates from PDB IDs after a cutoff
 
@@ -593,40 +823,28 @@ def set_nan_fallback_conformer_flag(
             released after this date will have their fallback conformer set to NaN.
 
     """
-    if not isinstance(max_pdb_date, date):
-        max_pdb_date = datetime.strptime(max_pdb_date, "%Y-%m-%d").date()
-
-    # Get release dates of all PDB IDs in the cache
-    # NOTE: Technically we could make this more accurate by taking obsolete entries into
-    # account
-    pdb_dates = {}
-
-    for pdb_id, metadata in structure_cache.items():
-        date_str = metadata.get("release_date")
-
-        if date_str is None:
-            logger.warning(f"Release date not found for {pdb_id}, skipping.")
-            continue
-
-        pdb_dates[pdb_id] = datetime.strptime(date_str, "%Y-%m-%d").date()
+    if not isinstance(max_model_pdb_release_date, date):
+        max_model_pdb_release_date = datetime.strptime(
+            max_model_pdb_release_date, "%Y-%m-%d"
+        ).date()
 
     for ref_mol_id, metadata in reference_mol_cache.items():
         # Check if the fallback conformer should be NaN
-        model_pdb_id = metadata["fallback_conformer_pdb_id"]
+        model_pdb_id = metadata.fallback_conformer_pdb_id
 
         if model_pdb_id is None:
             continue
 
-        elif model_pdb_id not in pdb_dates:
+        elif model_pdb_id not in pdb_id_to_release_date:
             logger.warning(
                 f"Fallback fonformer PDB ID {model_pdb_id} not found in cache, for "
                 f"molecule {ref_mol_id}, forcing NaN fallback conformer."
             )
         # Check if the PDB ID's release date is after the cutoff
-        elif pdb_dates[model_pdb_id] > max_pdb_date:
+        elif pdb_id_to_release_date[model_pdb_id] > max_model_pdb_release_date:
             logger.debug(f"Setting fallback conformer to NaN for {ref_mol_id}.")
-            metadata["set_fallback_to_nan"] = True
+            metadata.set_fallback_to_nan = True
         else:
-            metadata["set_fallback_to_nan"] = False
+            metadata.set_fallback_to_nan = False
 
     return None
