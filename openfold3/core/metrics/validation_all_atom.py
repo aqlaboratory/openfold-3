@@ -52,7 +52,6 @@ def lddt(
     inter_mask = 1 - intra_mask  # [*, n_atom, n_atom]
 
     # get lddt scores
-
     dist_l1 = torch.abs(pair_dist_gt_pos - pair_dist_pred_pos)  # [*, n_atom, n_atom]
     score = torch.zeros_like(dist_l1)
     for distance_threshold in threshold:
@@ -71,7 +70,9 @@ def lddt(
     inter_mask = dists_to_score * inter_mask
     if torch.any(inter_mask):
         inter_norm = 1.0 / (eps + torch.sum(inter_mask, dim=(-1, -2)))
-        inter_score = inter_norm * (eps + torch.sum(inter_mask * score, dim=(-1, -2)))
+        inter_score = inter_norm * (
+            eps + torch.sum(inter_mask * score, dim=(-1, -2))
+    )
     return intra_score, inter_score
 
 
@@ -104,12 +105,12 @@ def interface_lddt(
         scores: ilddt scores [*]
     """
     # get pairwise distance
-    pair_dist_true = torch.cdist(
-        all_atom_gt_pos_1, all_atom_gt_pos_2
-    )  # [*, n_atom1, n_atom2]
-    pair_dist_pred = torch.cdist(
-        all_atom_pred_pos_1, all_atom_pred_pos_2
-    )  # [*, n_atom1, n_atom2]
+    pair_dist_true = torch.sqrt(torch.sum((all_atom_gt_pos_1.unsqueeze(-2) - 
+                                      all_atom_gt_pos_2.unsqueeze(-3)) ** 2, 
+                                      dim = -1)) # [*, n_atom1, n_atom2]
+    pair_dist_pred = torch.sqrt(torch.sum((all_atom_pred_pos_1.unsqueeze(-2) - 
+                                      all_atom_pred_pos_2.unsqueeze(-3)) ** 2, 
+                                      dim = -1)) # [*, n_atom1, n_atom2]
 
     # create a mask
     dists_to_score = (pair_dist_true < cutoff) * (
@@ -178,9 +179,77 @@ def drmsd(
     inter_drmsd = torch.sqrt(inter_drmsd)
     return intra_drmsd, inter_drmsd
 
+def get_protein_metrics(
+    is_protein_atomized: torch.Tensor,
+    asym_id: torch.Tensor,
+    pred_coords: torch.Tensor,
+    gt_coords: torch.Tensor,
+    all_atom_mask: torch.Tensor,
+) -> Dict[str, torch.Tensor]:
+    """
+    Compute validation metrics of protein 
 
-def get_substrate_metrics(
-    is_substrate_atomized: torch.Tensor,
+    Args:
+        is_protein_atomized: broadcasted is_protein feature [*, n_atom]
+        asym_id: atomized asym_id feature [*, n_atom]
+        pred_coords: predicted coordinates [*, n_atom, 3]
+        gt_coords: gt coordinates [*, n_atom, 3]
+        all_atom_mask: atom mask [*, n_atom]
+    Returns:
+        out: dictionary containing validation metrics
+            'lddt_intra_protein': intra protein lddt
+            'lddt_inter_protein_protein: inter protein-protein lddt
+            'drmsd_intra_protein: intra protein drmsd
+    """
+    out = {}
+
+    if torch.any(is_protein_atomized):
+        is_protein_atomized = is_protein_atomized.bool()
+        bs = is_protein_atomized.shape[:-1]  # (bs, (n_sample),)
+
+        gt_protein = gt_coords[is_protein_atomized].view((bs) + (-1, 3))
+        pred_protein = pred_coords[is_protein_atomized].view((bs) + (-1, 3))
+        asym_id_protein = asym_id[is_protein_atomized].view((bs) + (-1,))
+        all_atom_mask_protein = all_atom_mask[is_protein_atomized].view((bs) + (-1,))
+
+        # (bs,(n_sample), n_prot, n_prot)
+        gt_protein_pair = torch.sqrt(torch.sum((gt_protein.unsqueeze(-2) - 
+                                      gt_protein.unsqueeze(-3)) ** 2, 
+                                      dim = -1))
+        pred_protein_pair = torch.sqrt(torch.sum((pred_protein.unsqueeze(-2) - 
+                                      pred_protein.unsqueeze(-3)) ** 2, 
+                                      dim = -1))
+
+        intra_lddt, inter_lddt = lddt(
+            pred_protein_pair,
+            gt_protein_pair,
+            all_atom_mask_protein,
+            asym_id_protein,
+            cutoff=15.0,
+        )
+        out["lddt_intra_protein"] = intra_lddt
+        out["lddt_inter_protein_protein"] = inter_lddt
+
+        intra_drmsd, _ = drmsd(
+            gt_protein_pair,
+            pred_protein_pair,
+            all_atom_mask_protein,
+            asym_id_protein,
+        )
+        out["drmsd_intra_protein"] = intra_drmsd
+
+        intra_clash, inter_clash = steric_clash(
+            pred_protein_pair, 
+            all_atom_mask_protein, 
+            asym_id_protein, 
+            threshold = 1.1
+        )
+        out["clash_intra_protein"] = intra_clash
+        out["clash_inter_protein_protein"] = inter_clash
+    return out
+
+def get_nucleic_acid_metrics(
+    is_nucleic_acid_atomized: torch.Tensor,
     asym_id: torch.Tensor,
     pred_coords: torch.Tensor,
     gt_coords: torch.Tensor,
@@ -189,114 +258,197 @@ def get_substrate_metrics(
     substrate: str,
 ) -> Dict[str, torch.Tensor]:
     """
-    Compute validation metrics of a given substrate (protein, ligand, rna, dna)
+    Compute validation metrics of nucleic acids (dna/rna)
 
     Args:
-        is_substrate_atomized: broadcasted ligand/rna/dna/is_protein feature [*, n_atom]
+        is_nucleic_acid_atomized: broadcasted is_dna/rna feature [*, n_atom]
         asym_id: atomized asym_id feature [*, n_atom]
         pred_coords: predicted coordinates [*, n_atom, 3]
         gt_coords: gt coordinates [*, n_atom, 3]
         all_atom_mask: atom mask [*, n_atom]
         is_protein_atomized: broadcasted is_protein feature [*, n_atom]
-        substrate: 'protein', ligand', 'rna', 'dna'
+        substrate: 'rna', 'dna'
     Returns:
         out: dictionary containing validation metrics
-            'lddt_intra_f'{substrate}': intra ligand lddt
-            'lddt_inter_f'{substrate}'_f'{substrate}': inter ligand-ligand lddt
-            'drmsd_intra_f'{substrate}': intra ligand drmsd
-            'lddt_inter_protein_f'{substrate}': inter protein-ligand lddt
+            'lddt_intra_f'{dna/rna}': intra dna/rna lddt
+            'lddt_inter_f'{dna/rna}'_f'{dna/rna}': inter dna/rna lddt
+            'drmsd_intra_f'{dna/rna}': intra dna/rna drmsd
+            'lddt_inter_protein_f'{dna/rna}': inter protein-dna/rna lddt
 
+            'lddt_intra_{dna/rna}_15': intra dna/rna lddt with 15 A radius
+            'lddt_inter_{dna/rna}_{dna/rna}_15': inter lddt with 15 A radius
+            'lddt_inter_protein_{dna/rna}_15': inter protein-dna/rna lddt
+            
     Notes:
         if there exists no appropriate substrate: returns an empty dict {}
         function is compatible with multiple samples,
             not compatible with batch with different number of atoms/substrates
-        for ligand: a few extra scores are calculated
-            'lddt_intra_ligand_uha': intra ligand lddt with [0.25, 0.5, 0.75, 1.]
-            'lddt_inter_ligand_ligand_uha': inter ligand lddt with above threshold
-        for dna/rna: lddts with 15 A inclusion radius added
-            'lddt_intra_{dna/rna}_15': intra ligand lddt with 15 A radius
-            'lddt_inter_{dna/rna}_{dna/rna}_15': inter lddt with 15 A radius
-            'lddt_inter_protein_{dna/rna}_15': inter protein-dna/rna lddt
     """
     out = {}
 
-    if torch.any(is_substrate_atomized):
-        is_substrate_atomized = is_substrate_atomized.bool()
+    if torch.any(is_nucleic_acid_atomized):
+        is_nucleic_acid_atomized = is_nucleic_acid_atomized.bool()
         is_protein_atomized = is_protein_atomized.bool()
 
-        bs = is_substrate_atomized.shape[:-1]  # (bs, (n_sample),)
+        bs = is_nucleic_acid_atomized.shape[:-1]  # (bs, (n_sample),)
 
-        # getting appropriate atoms of shape (bs, (n_sample), n_protein/ligand, (3)),
+        # getting appropriate atoms of shape (bs, (n_sample), n_na, (3)),
         gt_protein = gt_coords[is_protein_atomized].view((bs) + (-1, 3))
-        gt_ligand = gt_coords[is_substrate_atomized].view((bs) + (-1, 3))
+        gt_na = gt_coords[is_nucleic_acid_atomized].view((bs) + (-1, 3))
         pred_protein = pred_coords[is_protein_atomized].view((bs) + (-1, 3))
-        pred_ligand = pred_coords[is_substrate_atomized].view((bs) + (-1, 3))
-        asym_id_ligand = asym_id[is_substrate_atomized].view((bs) + (-1,))
+        pred_na = pred_coords[is_nucleic_acid_atomized].view((bs) + (-1, 3))
+        asym_id_na = asym_id[is_nucleic_acid_atomized].view((bs) + (-1,))
         all_atom_mask_protein = all_atom_mask[is_protein_atomized].view((bs) + (-1,))
-        all_atom_mask_ligand = all_atom_mask[is_substrate_atomized].view((bs) + (-1,))
+        all_atom_mask_na = all_atom_mask[is_nucleic_acid_atomized].view((bs) + (-1,))
 
-        # (bs,(n_sample), n_lig, n_lig)
-        gt_ligand_pair = torch.cdist(gt_ligand, gt_ligand)
-        pred_ligand_pair = torch.cdist(pred_ligand, pred_ligand)
+        # (bs,(n_sample), n_na, n_na)
+        gt_na_pair = torch.sqrt(torch.sum((gt_na.unsqueeze(-2) - 
+                                           gt_na.unsqueeze(-3)) ** 2, 
+                                           dim = -1))
+        pred_na_pair = torch.sqrt(torch.sum((pred_na.unsqueeze(-2) - 
+                                           pred_na.unsqueeze(-3)) ** 2, 
+                                           dim = -1))
 
-        cutoff = 30.0 if substrate == "rna" or substrate == "dna" else 15.0
         intra_lddt, inter_lddt = lddt(
-            pred_ligand_pair,
-            gt_ligand_pair,
-            all_atom_mask_ligand,
-            asym_id_ligand,
-            cutoff=cutoff,
+            pred_na_pair,
+            gt_na_pair,
+            all_atom_mask_na,
+            asym_id_na,
+            cutoff=30.0,
         )
         out["lddt_intra_" + substrate] = intra_lddt
         out["lddt_inter_" + substrate + "_" + substrate] = inter_lddt
 
         intra_drmsd, _ = drmsd(
+            pred_na_pair,
+            gt_na_pair,
+            all_atom_mask_na,
+            asym_id_na,
+        )
+        out["drmsd_intra_" + substrate] = intra_drmsd
+
+        intra_lddt_15, inter_lddt_15 = lddt(
+            pred_na_pair,
+            gt_na_pair,
+            all_atom_mask_na,
+            asym_id_na,
+            cutoff=15.0,
+        )
+        out["lddt_intra_" + substrate + "_15"] = intra_lddt_15
+        out["lddt_inter_" + substrate + "_" + substrate + "_15"] = inter_lddt_15
+        
+        # ilddt with protein
+        inter_lddt_protein_na = interface_lddt(
+            pred_protein,
+            pred_na,
+            gt_protein,
+            gt_na,
+            all_atom_mask_protein,
+            all_atom_mask_na,
+            cutoff=30.0,
+        )
+        out["lddt_inter_protein_" + substrate] = inter_lddt_protein_na
+
+        inter_lddt_protein_na_15 = interface_lddt(
+            pred_protein,
+            pred_na,
+            gt_protein,
+            gt_na,
+            all_atom_mask_protein,
+            all_atom_mask_na,
+            cutoff=15.0,
+        )
+        out["lddt_inter_protein_" + substrate + "_15"] = inter_lddt_protein_na_15
+
+        intra_clash, inter_clash = steric_clash(
+            pred_na_pair, 
+            all_atom_mask_na, 
+            asym_id_na, 
+            threshold = 1.1
+        )
+        out["clash_intra_" + substrate] = intra_clash
+        out["clash_inter_" + substrate + "_" + substrate] = inter_clash
+
+        interface_clash = interface_steric_clash(
+            pred_protein,
+            pred_na, 
+            all_atom_mask_protein,
+            all_atom_mask_na, 
+            threshold = 1.1
+        )
+        out['clash_inter_protein_' + substrate] = interface_clash
+    return out
+
+def get_ligand_metrics(
+    is_ligand_atomized: torch.Tensor,
+    asym_id: torch.Tensor,
+    pred_coords: torch.Tensor,
+    gt_coords: torch.Tensor,
+    all_atom_mask: torch.Tensor,
+    is_protein_atomized: torch.Tensor,
+) -> Dict[str, torch.Tensor]:
+    """
+    Compute validation metrics of a ligand
+
+    Args:
+        is_ligand_atomized: broadcasted is_ligand feature [*, n_atom]
+        asym_id: atomized asym_id feature [*, n_atom]
+        pred_coords: predicted coordinates [*, n_atom, 3]
+        gt_coords: gt coordinates [*, n_atom, 3]
+        all_atom_mask: atom mask [*, n_atom]
+        is_protein_atomized: broadcasted is_protein feature [*, n_atom]
+    Returns:
+        out: dictionary containing validation metrics
+            'lddt_intra_ligand: intra ligand lddt
+            'lddt_inter_ligand_ligand: inter ligand-ligand lddt
+            'lddt_inter_protein_ligand': inter protein-ligand lddt
+            'drmsd_intra_ligand': intra ligand drmsd
+            
+            'lddt_intra_ligand_uha': intra ligand lddt with [0.25, 0.5, 0.75, 1.]
+            'lddt_inter_ligand_ligand_uha': inter ligand lddt with above threshold
+
+    Notes:
+        if there exists no appropriate substrate: returns an empty dict {}
+        function is compatible with multiple samples,
+            not compatible with batch with different number of atoms/substrates
+    """
+    out = {}
+
+    if torch.any(is_ligand_atomized):
+        is_ligand_atomized = is_ligand_atomized.bool()
+        is_protein_atomized = is_protein_atomized.bool()
+
+        bs = is_ligand_atomized.shape[:-1]  # (bs, (n_sample),)
+
+        # getting appropriate atoms of shape (bs, (n_sample), n_protein/ligand, (3)),
+        gt_protein = gt_coords[is_protein_atomized].view((bs) + (-1, 3))
+        gt_ligand = gt_coords[is_ligand_atomized].view((bs) + (-1, 3))
+        pred_protein = pred_coords[is_protein_atomized].view((bs) + (-1, 3))
+        pred_ligand = pred_coords[is_ligand_atomized].view((bs) + (-1, 3))
+        asym_id_ligand = asym_id[is_ligand_atomized].view((bs) + (-1,))
+        all_atom_mask_protein = all_atom_mask[is_protein_atomized].view((bs) + (-1,))
+        all_atom_mask_ligand = all_atom_mask[is_ligand_atomized].view((bs) + (-1,))
+
+        # (bs,(n_sample), n_lig, n_lig)
+        gt_ligand_pair = torch.sqrt(torch.sum((gt_ligand.unsqueeze(-2) - 
+                                           gt_ligand.unsqueeze(-3)) ** 2, 
+                                           dim = -1))
+        pred_ligand_pair = torch.sqrt(torch.sum((pred_ligand.unsqueeze(-2) - 
+                                           pred_ligand.unsqueeze(-3)) ** 2, 
+                                           dim = -1))
+
+        intra_lddt, inter_lddt = lddt(
             pred_ligand_pair,
             gt_ligand_pair,
             all_atom_mask_ligand,
             asym_id_ligand,
+            cutoff=15.0,
         )
-        out["drmsd_intra_" + substrate] = intra_drmsd
+        out["lddt_intra_ligand"] = intra_lddt
+        out["lddt_inter_ligand_ligand"] = inter_lddt
 
-        # additional metrics
-        # nucleic acid
-        if substrate == "rna" or substrate == "dna":
-            # get lddt with 15 A inclusion radius
-            intra_lddt, inter_lddt = lddt(
-                pred_ligand_pair,
-                gt_ligand_pair,
-                all_atom_mask_ligand,
-                asym_id_ligand,
-                cutoff=15.0,
-            )
-            out["lddt_intra_" + substrate + "_15"] = intra_lddt
-            out["lddt_inter_" + substrate + "_" + substrate + "_15"] = inter_lddt
-            # ilddt with protein
-            inter_lddt_protein_ligand = interface_lddt(
-                pred_protein,
-                pred_ligand,
-                gt_protein,
-                gt_ligand,
-                all_atom_mask_protein,
-                all_atom_mask_ligand,
-                cutoff=30.0,
-            )
-            out["lddt_inter_protein_" + substrate] = inter_lddt_protein_ligand
-
-            inter_lddt_protein_ligand = interface_lddt(
-                pred_protein,
-                pred_ligand,
-                gt_protein,
-                gt_ligand,
-                all_atom_mask_protein,
-                all_atom_mask_ligand,
-                cutoff=15.0,
-            )
-            out["lddt_inter_protein_" + substrate + "_15"] = inter_lddt_protein_ligand
-
-        elif substrate == "ligand":
-            # get tighter threshold lddts
-            intra_lddt_uha, inter_lddt_uha = lddt(
+        # get tighter threshold lddts
+        intra_lddt_uha, inter_lddt_uha = lddt(
                 pred_ligand_pair,
                 gt_ligand_pair,
                 all_atom_mask_ligand,
@@ -304,22 +456,138 @@ def get_substrate_metrics(
                 threshold=[0.25, 0.5, 0.75, 1.0],
                 cutoff=15.0,
             )
-            out["lddt_intra_" + substrate + "_uha"] = intra_lddt_uha
-            out["lddt_inter_" + substrate + "_" + substrate + "_uha"] = inter_lddt_uha
+        out["lddt_intra_ligand_uha"] = intra_lddt_uha
+        out["lddt_inter_ligand_ligand_uha"] = inter_lddt_uha
 
-            # ilddt with protein
-            inter_lddt_protein_ligand = interface_lddt(
-                pred_protein,
-                pred_ligand,
-                gt_protein,
-                gt_ligand,
-                all_atom_mask_protein,
-                all_atom_mask_ligand,
-                cutoff=15.0,
-            )
-            out["lddt_inter_protein_" + substrate] = inter_lddt_protein_ligand
+        # ilddt with protein
+        inter_lddt_protein_ligand = interface_lddt(
+            pred_protein,
+            pred_ligand,
+            gt_protein,
+            gt_ligand,
+            all_atom_mask_protein,
+            all_atom_mask_ligand,
+            cutoff=15.0,
+        )
+        out["lddt_inter_protein_ligand"] = inter_lddt_protein_ligand
+
+        intra_drmsd, _ = drmsd(
+            pred_ligand_pair,
+            gt_ligand_pair,
+            all_atom_mask_ligand,
+            asym_id_ligand,
+        )
+        out["drmsd_intra_ligand"] = intra_drmsd
+
+        intra_clash, inter_clash = steric_clash(
+            pred_ligand_pair, 
+            all_atom_mask_ligand, 
+            asym_id_ligand, 
+            threshold = 1.1
+        )
+        out["clash_intra_ligand"] = intra_clash
+        out["clash_inter_ligand_ligand"] = inter_clash
+
+        interface_clash = interface_steric_clash(
+            pred_protein,
+            pred_ligand, 
+            all_atom_mask_protein,
+            all_atom_mask_ligand, 
+            threshold = 1.1
+        )
+        out['clash_inter_protein_ligand'] = interface_clash
     return out
 
+def steric_clash(
+        pred_pair: torch.Tensor, 
+        all_atom_mask: torch.Tensor, 
+        asym_id: torch.Tensor, 
+        threshold: Optional[float] = 1.1, 
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """ 
+    Computes steric clash score 
+
+    Args: 
+        pred_pair: pairwise distance of predicted positions [*, n_atom, n_atom]
+        all_atom_mask: atom mask [*, n_atom]
+        asym_id: asym id [*, n_atom]
+        threshold: threshold to define if there is steric clash 
+            Based on AF3 (SI 5.9.), define threshold as 1.1 Angstrom
+            By no means perfect, a good threshold to capture any heavy atoms clashes
+    Returns:
+        intra_clash_score: steric clash for atoms with same asym_id (intra-chain)
+        inter_clash_score: steric clash for atoms with different asym_id (inter-chain)
+
+    Note: 
+        clash_scores in range (0, 1) s.t. 
+            0 (no atom pair having distance less than threshold) to 
+            1 (all atoms having same coordinate)
+    """
+    # Create mask 
+    n_atom = pred_pair.shape[-2]
+    mask = (1 - torch.eye(n_atom).to(all_atom_mask.device)) * (
+        all_atom_mask.unsqueeze(-1) * all_atom_mask.unsqueeze(-2))
+    
+    intra = torch.where(asym_id.unsqueeze(-1) == asym_id.unsqueeze(-2), 1, 0).float()
+    inter = 1 - intra
+
+    # Compute the clash
+    clash = torch.relu(threshold - pred_pair)
+
+    intra_clash = torch.full(pred_pair.shape[: -2], torch.nan)
+    intra_mask = mask * intra
+    if torch.any(intra_mask):
+        intra_clash = torch.sum(clash * intra_mask, dim = (-1, -2)
+                                ) / torch.sum(intra_mask, dim = (-1, -2))
+        intra_clash = intra_clash / threshold
+
+    inter_clash = torch.full(pred_pair.shape[: -2], torch.nan)
+    inter_mask = mask * inter
+    if torch.any(intra_mask):
+        inter_clash = torch.sum(clash * inter_mask, dim = (-1, -2)
+                                ) / torch.sum(inter_mask, dim = (-1, -2))
+        inter_clash = inter_clash / threshold
+
+    return intra_clash, inter_clash
+
+def interface_steric_clash(
+        pred_protein: torch.Tensor, 
+        pred_substrate: torch.Tensor, 
+        all_atom_mask_protein: torch.Tensor, 
+        all_atom_mask_substrate: torch.Tensor, 
+        threshold: Optional[float] = 1.1,
+) -> torch.Tensor: 
+    """ 
+    Computes steric clash score across protein and substrate
+
+    Args:
+        pred_protein: predicted protein coordinates [*, n_protein, 3]
+        pred_substrate: predicted substrate coordinates [*, n_substrate, 3]
+        all_atom_mask_protein: protein atom mask
+        all_atom_mask_substrate: substrate atom mask
+        threshold: threshold definiing if two atoms have any steric clash 
+    Returns: 
+        interface_clash: clash between protein and substrate interface
+    
+    Note: 
+        interface_clash score in range (0, 1) s.t. 
+            0 (no atom pair having distance less than threshold) to 
+            1 (all atoms having same coordinate)
+    """ 
+    # pair distance 
+    pair_dist = torch.sqrt(torch.sum((pred_protein.unsqueeze(-2) - 
+                                      pred_substrate.unsqueeze(-3)) ** 2, 
+                                      dim = -1))
+    mask = all_atom_mask_protein.unsqueeze(-1) * all_atom_mask_substrate.unsqueeze(-2)
+    clash = torch.relu(threshold - pair_dist)
+
+    interface_clash = torch.full(pair_dist.shape[: -2], torch.nan)
+    if torch.any(mask):
+        interface_clash = torch.sum(clash * mask, dim = (-1, -2)
+                                    ) / torch.sum(mask, dim = (-1, -2))
+        interface_clash = interface_clash / threshold 
+
+    return interface_clash
 
 def gdt(
     all_atom_pred_pos: torch.Tensor,
@@ -414,8 +682,8 @@ def batched_kabsch(
                 ** 2,
                 dim=(-1, -2),
             )
-        )
         / n_atom
+        )
     )
 
     return translation, rotation, rmsd
@@ -537,37 +805,26 @@ def get_validation_metrics(
         token_mask, num_atoms_per_token, batch["asym_id"]
     )
 
-    # Get all substrate metrics
-    # lddt_intra_protein, lddt_inter_protein_protein, drmsd_intra_protein
-    protein_validation_metrics = get_substrate_metrics(
+    protein_validation_metrics = get_protein_metrics(
         is_protein_atomized,
         asym_id_atomized,
         pred_coords,
         gt_coords,
         all_atom_mask,
-        is_protein_atomized,
-        substrate="protein",
     )
     metrics = metrics | protein_validation_metrics
 
-    # lddt_intra_ligand, lddt_inter_protein_ligand
-    # auxiliary metrics: lddt_inter_ligand_ligand, drmsd_intra_ligand
-    # lddt_uha: smaller thresholds
-    ligand_validation_metrics = get_substrate_metrics(
+    ligand_validation_metrics = get_ligand_metrics(
         is_ligand_atomized,
         asym_id_atomized,
         pred_coords,
         gt_coords,
         all_atom_mask,
         is_protein_atomized,
-        substrate="ligand",
     )
     metrics = metrics | ligand_validation_metrics
 
-    # lddt_intra_rna, lddt_inter_protein_rna
-    # auxiliary metrics: lddt_inter_rna_rna, drmsd_intra_rna
-    # lddt_15: with 15 A threshold lddt scores
-    rna_validation_metrics = get_substrate_metrics(
+    rna_validation_metrics = get_nucleic_acid_metrics(
         is_rna_atomized,
         asym_id_atomized,
         pred_coords,
@@ -578,10 +835,7 @@ def get_validation_metrics(
     )
     metrics = metrics | rna_validation_metrics
 
-    # lddt_intra_dna, lddt_inter_protein_dna
-    # auxiliary metrics: lddt_inter_dna_dna, drmsd_intra_dna
-    # lddt_15: with 15 A threshold lddt scores
-    dna_validation_metrics = get_substrate_metrics(
+    dna_validation_metrics = get_nucleic_acid_metrics(
         is_dna_atomized,
         asym_id_atomized,
         pred_coords,
