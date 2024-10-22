@@ -70,9 +70,7 @@ def lddt(
     inter_mask = dists_to_score * inter_mask
     if torch.any(inter_mask):
         inter_norm = 1.0 / (eps + torch.sum(inter_mask, dim=(-1, -2)))
-        inter_score = inter_norm * (
-            eps + torch.sum(inter_mask * score, dim=(-1, -2))
-    )
+        inter_score = inter_norm * (eps + torch.sum(inter_mask * score, dim=(-1, -2)))
     return intra_score, inter_score
 
 
@@ -105,12 +103,19 @@ def interface_lddt(
         scores: ilddt scores [*]
     """
     # get pairwise distance
-    pair_dist_true = torch.sqrt(torch.sum((all_atom_gt_pos_1.unsqueeze(-2) - 
-                                      all_atom_gt_pos_2.unsqueeze(-3)) ** 2, 
-                                      dim = -1)) # [*, n_atom1, n_atom2]
-    pair_dist_pred = torch.sqrt(torch.sum((all_atom_pred_pos_1.unsqueeze(-2) - 
-                                      all_atom_pred_pos_2.unsqueeze(-3)) ** 2, 
-                                      dim = -1)) # [*, n_atom1, n_atom2]
+    pair_dist_true = torch.sqrt(
+        torch.sum(
+            (all_atom_gt_pos_1.unsqueeze(-2) - all_atom_gt_pos_2.unsqueeze(-3)) ** 2,
+            dim=-1,
+        )
+    )  # [*, n_atom1, n_atom2]
+    pair_dist_pred = torch.sqrt(
+        torch.sum(
+            (all_atom_pred_pos_1.unsqueeze(-2) - all_atom_pred_pos_2.unsqueeze(-3))
+            ** 2,
+            dim=-1,
+        )
+    )  # [*, n_atom1, n_atom2]
 
     # create a mask
     dists_to_score = (pair_dist_true < cutoff) * (
@@ -179,6 +184,7 @@ def drmsd(
     inter_drmsd = torch.sqrt(inter_drmsd)
     return intra_drmsd, inter_drmsd
 
+
 def get_protein_metrics(
     is_protein_atomized: torch.Tensor,
     asym_id: torch.Tensor,
@@ -187,7 +193,7 @@ def get_protein_metrics(
     all_atom_mask: torch.Tensor,
 ) -> Dict[str, torch.Tensor]:
     """
-    Compute validation metrics of protein 
+    Compute validation metrics of protein
 
     Args:
         is_protein_atomized: broadcasted is_protein feature [*, n_atom]
@@ -213,12 +219,16 @@ def get_protein_metrics(
         all_atom_mask_protein = all_atom_mask[is_protein_atomized].view((bs) + (-1,))
 
         # (bs,(n_sample), n_prot, n_prot)
-        gt_protein_pair = torch.sqrt(torch.sum((gt_protein.unsqueeze(-2) - 
-                                      gt_protein.unsqueeze(-3)) ** 2, 
-                                      dim = -1))
-        pred_protein_pair = torch.sqrt(torch.sum((pred_protein.unsqueeze(-2) - 
-                                      pred_protein.unsqueeze(-3)) ** 2, 
-                                      dim = -1))
+        gt_protein_pair = torch.sqrt(
+            torch.sum(
+                (gt_protein.unsqueeze(-2) - gt_protein.unsqueeze(-3)) ** 2, dim=-1
+            )
+        )
+        pred_protein_pair = torch.sqrt(
+            torch.sum(
+                (pred_protein.unsqueeze(-2) - pred_protein.unsqueeze(-3)) ** 2, dim=-1
+            )
+        )
 
         intra_lddt, inter_lddt = lddt(
             pred_protein_pair,
@@ -239,14 +249,12 @@ def get_protein_metrics(
         out["drmsd_intra_protein"] = intra_drmsd
 
         intra_clash, inter_clash = steric_clash(
-            pred_protein_pair, 
-            all_atom_mask_protein, 
-            asym_id_protein, 
-            threshold = 1.1
+            pred_protein_pair, all_atom_mask_protein, asym_id_protein, threshold=1.1
         )
         out["clash_intra_protein"] = intra_clash
         out["clash_inter_protein_protein"] = inter_clash
     return out
+
 
 def get_nucleic_acid_metrics(
     is_nucleic_acid_atomized: torch.Tensor,
@@ -278,7 +286,7 @@ def get_nucleic_acid_metrics(
             'lddt_intra_{dna/rna}_15': intra dna/rna lddt with 15 A radius
             'lddt_inter_{dna/rna}_{dna/rna}_15': inter lddt with 15 A radius
             'lddt_inter_protein_{dna/rna}_15': inter protein-dna/rna lddt
-            
+
     Notes:
         if there exists no appropriate substrate: returns an empty dict {}
         function is compatible with multiple samples,
@@ -302,12 +310,12 @@ def get_nucleic_acid_metrics(
         all_atom_mask_na = all_atom_mask[is_nucleic_acid_atomized].view((bs) + (-1,))
 
         # (bs,(n_sample), n_na, n_na)
-        gt_na_pair = torch.sqrt(torch.sum((gt_na.unsqueeze(-2) - 
-                                           gt_na.unsqueeze(-3)) ** 2, 
-                                           dim = -1))
-        pred_na_pair = torch.sqrt(torch.sum((pred_na.unsqueeze(-2) - 
-                                           pred_na.unsqueeze(-3)) ** 2, 
-                                           dim = -1))
+        gt_na_pair = torch.sqrt(
+            torch.sum((gt_na.unsqueeze(-2) - gt_na.unsqueeze(-3)) ** 2, dim=-1)
+        )
+        pred_na_pair = torch.sqrt(
+            torch.sum((pred_na.unsqueeze(-2) - pred_na.unsqueeze(-3)) ** 2, dim=-1)
+        )
 
         intra_lddt, inter_lddt = lddt(
             pred_na_pair,
@@ -336,7 +344,7 @@ def get_nucleic_acid_metrics(
         )
         out["lddt_intra_" + substrate + "_15"] = intra_lddt_15
         out["lddt_inter_" + substrate + "_" + substrate + "_15"] = inter_lddt_15
-        
+
         # ilddt with protein
         inter_lddt_protein_na = interface_lddt(
             pred_protein,
@@ -361,23 +369,21 @@ def get_nucleic_acid_metrics(
         out["lddt_inter_protein_" + substrate + "_15"] = inter_lddt_protein_na_15
 
         intra_clash, inter_clash = steric_clash(
-            pred_na_pair, 
-            all_atom_mask_na, 
-            asym_id_na, 
-            threshold = 1.1
+            pred_na_pair, all_atom_mask_na, asym_id_na, threshold=1.1
         )
         out["clash_intra_" + substrate] = intra_clash
         out["clash_inter_" + substrate + "_" + substrate] = inter_clash
 
         interface_clash = interface_steric_clash(
             pred_protein,
-            pred_na, 
+            pred_na,
             all_atom_mask_protein,
-            all_atom_mask_na, 
-            threshold = 1.1
+            all_atom_mask_na,
+            threshold=1.1,
         )
-        out['clash_inter_protein_' + substrate] = interface_clash
+        out["clash_inter_protein_" + substrate] = interface_clash
     return out
+
 
 def get_ligand_metrics(
     is_ligand_atomized: torch.Tensor,
@@ -403,7 +409,7 @@ def get_ligand_metrics(
             'lddt_inter_ligand_ligand: inter ligand-ligand lddt
             'lddt_inter_protein_ligand': inter protein-ligand lddt
             'drmsd_intra_ligand': intra ligand drmsd
-            
+
             'lddt_intra_ligand_uha': intra ligand lddt with [0.25, 0.5, 0.75, 1.]
             'lddt_inter_ligand_ligand_uha': inter ligand lddt with above threshold
 
@@ -430,12 +436,14 @@ def get_ligand_metrics(
         all_atom_mask_ligand = all_atom_mask[is_ligand_atomized].view((bs) + (-1,))
 
         # (bs,(n_sample), n_lig, n_lig)
-        gt_ligand_pair = torch.sqrt(torch.sum((gt_ligand.unsqueeze(-2) - 
-                                           gt_ligand.unsqueeze(-3)) ** 2, 
-                                           dim = -1))
-        pred_ligand_pair = torch.sqrt(torch.sum((pred_ligand.unsqueeze(-2) - 
-                                           pred_ligand.unsqueeze(-3)) ** 2, 
-                                           dim = -1))
+        gt_ligand_pair = torch.sqrt(
+            torch.sum((gt_ligand.unsqueeze(-2) - gt_ligand.unsqueeze(-3)) ** 2, dim=-1)
+        )
+        pred_ligand_pair = torch.sqrt(
+            torch.sum(
+                (pred_ligand.unsqueeze(-2) - pred_ligand.unsqueeze(-3)) ** 2, dim=-1
+            )
+        )
 
         intra_lddt, inter_lddt = lddt(
             pred_ligand_pair,
@@ -449,13 +457,13 @@ def get_ligand_metrics(
 
         # get tighter threshold lddts
         intra_lddt_uha, inter_lddt_uha = lddt(
-                pred_ligand_pair,
-                gt_ligand_pair,
-                all_atom_mask_ligand,
-                asym_id_ligand,
-                threshold=[0.25, 0.5, 0.75, 1.0],
-                cutoff=15.0,
-            )
+            pred_ligand_pair,
+            gt_ligand_pair,
+            all_atom_mask_ligand,
+            asym_id_ligand,
+            threshold=[0.25, 0.5, 0.75, 1.0],
+            cutoff=15.0,
+        )
         out["lddt_intra_ligand_uha"] = intra_lddt_uha
         out["lddt_inter_ligand_ligand_uha"] = inter_lddt_uha
 
@@ -480,84 +488,86 @@ def get_ligand_metrics(
         out["drmsd_intra_ligand"] = intra_drmsd
 
         intra_clash, inter_clash = steric_clash(
-            pred_ligand_pair, 
-            all_atom_mask_ligand, 
-            asym_id_ligand, 
-            threshold = 1.1
+            pred_ligand_pair, all_atom_mask_ligand, asym_id_ligand, threshold=1.1
         )
         out["clash_intra_ligand"] = intra_clash
         out["clash_inter_ligand_ligand"] = inter_clash
 
         interface_clash = interface_steric_clash(
             pred_protein,
-            pred_ligand, 
+            pred_ligand,
             all_atom_mask_protein,
-            all_atom_mask_ligand, 
-            threshold = 1.1
+            all_atom_mask_ligand,
+            threshold=1.1,
         )
-        out['clash_inter_protein_ligand'] = interface_clash
+        out["clash_inter_protein_ligand"] = interface_clash
     return out
 
-def steric_clash(
-        pred_pair: torch.Tensor, 
-        all_atom_mask: torch.Tensor, 
-        asym_id: torch.Tensor, 
-        threshold: Optional[float] = 1.1, 
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """ 
-    Computes steric clash score 
 
-    Args: 
+def steric_clash(
+    pred_pair: torch.Tensor,
+    all_atom_mask: torch.Tensor,
+    asym_id: torch.Tensor,
+    threshold: Optional[float] = 1.1,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Computes steric clash score
+
+    Args:
         pred_pair: pairwise distance of predicted positions [*, n_atom, n_atom]
         all_atom_mask: atom mask [*, n_atom]
         asym_id: asym id [*, n_atom]
-        threshold: threshold to define if there is steric clash 
+        threshold: threshold to define if there is steric clash
             Based on AF3 (SI 5.9.), define threshold as 1.1 Angstrom
             By no means perfect, a good threshold to capture any heavy atoms clashes
     Returns:
         intra_clash_score: steric clash for atoms with same asym_id (intra-chain)
         inter_clash_score: steric clash for atoms with different asym_id (inter-chain)
 
-    Note: 
-        clash_scores in range (0, 1) s.t. 
-            0 (no atom pair having distance less than threshold) to 
+    Note:
+        clash_scores in range (0, 1) s.t.
+            0 (no atom pair having distance less than threshold) to
             1 (all atoms having same coordinate)
     """
-    # Create mask 
+    # Create mask
     n_atom = pred_pair.shape[-2]
     mask = (1 - torch.eye(n_atom).to(all_atom_mask.device)) * (
-        all_atom_mask.unsqueeze(-1) * all_atom_mask.unsqueeze(-2))
-    
+        all_atom_mask.unsqueeze(-1) * all_atom_mask.unsqueeze(-2)
+    )
+
     intra = torch.where(asym_id.unsqueeze(-1) == asym_id.unsqueeze(-2), 1, 0).float()
     inter = 1 - intra
 
     # Compute the clash
     clash = torch.relu(threshold - pred_pair)
 
-    intra_clash = torch.full(pred_pair.shape[: -2], torch.nan)
+    intra_clash = torch.full(pred_pair.shape[:-2], torch.nan)
     intra_mask = mask * intra
     if torch.any(intra_mask):
-        intra_clash = torch.sum(clash * intra_mask, dim = (-1, -2)
-                                ) / torch.sum(intra_mask, dim = (-1, -2))
+        intra_clash = torch.sum(clash * intra_mask, dim=(-1, -2)) / torch.sum(
+            intra_mask, dim=(-1, -2)
+        )
         intra_clash = intra_clash / threshold
 
-    inter_clash = torch.full(pred_pair.shape[: -2], torch.nan)
+    inter_clash = torch.full(pred_pair.shape[:-2], torch.nan)
     inter_mask = mask * inter
     if torch.any(intra_mask):
-        inter_clash = torch.sum(clash * inter_mask, dim = (-1, -2)
-                                ) / torch.sum(inter_mask, dim = (-1, -2))
+        inter_clash = torch.sum(clash * inter_mask, dim=(-1, -2)) / torch.sum(
+            inter_mask, dim=(-1, -2)
+        )
         inter_clash = inter_clash / threshold
 
     return intra_clash, inter_clash
 
+
 def interface_steric_clash(
-        pred_protein: torch.Tensor, 
-        pred_substrate: torch.Tensor, 
-        all_atom_mask_protein: torch.Tensor, 
-        all_atom_mask_substrate: torch.Tensor, 
-        threshold: Optional[float] = 1.1,
-) -> torch.Tensor: 
-    """ 
+    pred_protein: torch.Tensor,
+    pred_substrate: torch.Tensor,
+    all_atom_mask_protein: torch.Tensor,
+    all_atom_mask_substrate: torch.Tensor,
+    threshold: Optional[float] = 1.1,
+) -> torch.Tensor:
+    """
     Computes steric clash score across protein and substrate
 
     Args:
@@ -565,29 +575,33 @@ def interface_steric_clash(
         pred_substrate: predicted substrate coordinates [*, n_substrate, 3]
         all_atom_mask_protein: protein atom mask
         all_atom_mask_substrate: substrate atom mask
-        threshold: threshold definiing if two atoms have any steric clash 
-    Returns: 
+        threshold: threshold definiing if two atoms have any steric clash
+    Returns:
         interface_clash: clash between protein and substrate interface
-    
-    Note: 
-        interface_clash score in range (0, 1) s.t. 
-            0 (no atom pair having distance less than threshold) to 
+
+    Note:
+        interface_clash score in range (0, 1) s.t.
+            0 (no atom pair having distance less than threshold) to
             1 (all atoms having same coordinate)
-    """ 
-    # pair distance 
-    pair_dist = torch.sqrt(torch.sum((pred_protein.unsqueeze(-2) - 
-                                      pred_substrate.unsqueeze(-3)) ** 2, 
-                                      dim = -1))
+    """
+    # pair distance
+    pair_dist = torch.sqrt(
+        torch.sum(
+            (pred_protein.unsqueeze(-2) - pred_substrate.unsqueeze(-3)) ** 2, dim=-1
+        )
+    )
     mask = all_atom_mask_protein.unsqueeze(-1) * all_atom_mask_substrate.unsqueeze(-2)
     clash = torch.relu(threshold - pair_dist)
 
-    interface_clash = torch.full(pair_dist.shape[: -2], torch.nan)
+    interface_clash = torch.full(pair_dist.shape[:-2], torch.nan)
     if torch.any(mask):
-        interface_clash = torch.sum(clash * mask, dim = (-1, -2)
-                                    ) / torch.sum(mask, dim = (-1, -2))
-        interface_clash = interface_clash / threshold 
+        interface_clash = torch.sum(clash * mask, dim=(-1, -2)) / torch.sum(
+            mask, dim=(-1, -2)
+        )
+        interface_clash = interface_clash / threshold
 
     return interface_clash
+
 
 def gdt(
     all_atom_pred_pos: torch.Tensor,
@@ -672,18 +686,16 @@ def batched_kabsch(
     D[..., -1, -1] = torch.sign(dets).to(torch.float64)
 
     rotation = V @ D @ Ut
-    rmsd = (
-        torch.sqrt(
-            torch.sum(
-                (
-                    predicted_coordinates_centered @ rotation.transpose(-2, -1)
-                    - gt_coordinates_centered
-                )
-                ** 2,
-                dim=(-1, -2),
+    rmsd = torch.sqrt(
+        torch.sum(
+            (
+                predicted_coordinates_centered @ rotation.transpose(-2, -1)
+                - gt_coordinates_centered
             )
-        / n_atom
+            ** 2,
+            dim=(-1, -2),
         )
+        / n_atom
     )
 
     return translation, rotation, rmsd
