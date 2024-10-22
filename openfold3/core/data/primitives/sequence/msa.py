@@ -580,14 +580,14 @@ def create_paired(
 
     # Ensure there are at least two chains with UniProt hits after filtering
     if len(uniprot_hits) <= 1:
-        no_uniprot_hits = set(msa_collection.chain_rep_map.values()).difference(
-            uniprot_hits.keys()
-        )
-        logger.info(
-            "Skipping MSA pairing: %d chain(s) present. No uniprot hits for %s.",
-            len(uniprot_hits),
-            ", ".join(list(no_uniprot_hits)),
-        )
+        # no_uniprot_hits = set(msa_collection.chain_rep_map.values()).difference(
+        #     uniprot_hits.keys()
+        # )
+        # logger.info(
+        #     "Skipping MSA pairing: %d chain(s) present. No uniprot hits for %s.",
+        #     len(uniprot_hits),
+        #     ", ".join(list(no_uniprot_hits)),
+        # )
         return None
 
     # Process uniprot headers and calculate distance to query
@@ -605,10 +605,10 @@ def create_paired(
 
     # No valid pairs, skip MSA pairing
     if not np.any(pairing_masks):
-        logger.info(
-            "Skipping MSA pairing: No valid pairs for %s.",
-            ", ".join(list(uniprot_hits.keys())),
-        )
+        # logger.info(
+        #     "Skipping MSA pairing: No valid pairs for %s.",
+        #     ", ".join(list(uniprot_hits.keys())),
+        # )
         return None
 
     # Find species indices that pair rows

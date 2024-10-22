@@ -28,22 +28,21 @@ def tokenize_atom_array(atom_array: AtomArray):
     High-level logic of the tokenizer:
         1. Get set of standard polymer residues
         2. Create list of token start indices for all standard residues
-        3. Find bonds (atom pair) where
-            a. at least one atom is coming a standard residue (st-(n)st)
-            b. both atons are coming from a standard residue (st-st)
+        3. Find bonds (atom pair) where at least one atom is coming a standard residue
+           (st-(n)st)
         4. Subset bonds
-            a. from 3.a. st-(n)st -> covalent bonds with at least one heteroatom
-            b. from 3.a. st-(n)st -> covalent bonds between residues in different chains
-            c. from 3.b. st-(n)st -> covalent bonds between side chains of residues in
-               the same chain
+            a. from 3. -> covalent bonds with at least one heteroatom
+            b. from 3. -> covalent bonds between residues in different chains
+            c. from 3. -> covalent bonds between side chains of residues in the same
+               chain
         5. Get list of non-heteroatoms in any bond from step 4.a.-4.c.
         6. Get the start indices of residues containing any non-heteroatom from step 5
         7. Remove start indices of step 6 from the list of start indices of step 2
         8. Get the set of atoms that are not part of standard residues (includes both
             "ligands" and non-standard residues) 9. Combine indices for the following:
             a. residue start indices of standard residues that are not atomized (step 7)
-            b. atom indices that are not part of standard residues (step 8)
-            c. atom indices of standard residues that are atomized (step 6)
+            b. atom indices that are not part of standard residues (step 8) c. atom
+            indices of standard residues that are atomized (step 6)
         10. Create is_atomized annotation from steps 9.b. and 9.c.
         11. Create token_id annotation per-residue from step 9.a. and per atom from
             steps 9.b. and 9.c. 12. Create token_center_atom annotation per-residue from
