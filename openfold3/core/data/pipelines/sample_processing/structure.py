@@ -68,7 +68,6 @@ def process_target_structure_af3(
         token_budget,
         preferred_chain_or_interface,
         crop_weights,
-        return_full=True,
     )
 
     # Expand duplicate chains
