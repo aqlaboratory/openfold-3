@@ -326,8 +326,10 @@ def apply_crop(
     token_budget: int,
     preferred_chain_or_interface: Optional[Union[int, tuple[int, int]]],
     crop_weights: dict[str, float],
-) -> None:
-    """Wraps functions sampling cropping strategy and applying it to the input array.
+) -> tuple[AtomArray, AtomArray] | AtomArray:
+    """Samples and applies cropping strategy to the input assembly.
+
+    Running this function on an AtomArray will also add the 'crop_mask' annotation.
 
     Args:
         atom_array (AtomArray):
@@ -340,6 +342,11 @@ def apply_crop(
             AF3 SI for the weighted PDB dataset.
         crop_weights (dict[str, float]):
             Dictionary of crop weights.
+
+    Returns:
+        tuple[AtomArray, AtomArray] | AtomArray:
+            Tuple of cropped and full atom arrays if return_full is True, otherwise just
+            the cropped atom array.
     """
 
     # Take whole assembly if it fits in the budget
@@ -357,3 +364,5 @@ def apply_crop(
         crop_function(
             **{k: v for k, v in crop_input.items() if k in crop_function_argnames}
         )
+
+    return atom_array[atom_array.crop_mask]

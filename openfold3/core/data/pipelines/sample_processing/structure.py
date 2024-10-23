@@ -62,11 +62,17 @@ def process_target_structure_af3(
     # Tokenize
     tokenize_atom_array(atom_array=atom_array)
 
-    # Crop and pad
-    apply_crop(atom_array, token_budget, preferred_chain_or_interface, crop_weights)
+    # Create crop mask
+    atom_array_cropped = apply_crop(
+        atom_array,
+        token_budget,
+        preferred_chain_or_interface,
+        crop_weights,
+        return_full=True,
+    )
 
     # Expand duplicate chains
-    atom_array_cropped, atom_array_gt = expand_duplicate_chains(atom_array)
+    atom_array_gt = expand_duplicate_chains(atom_array)
 
     if return_full_atom_array:
         return atom_array_cropped, atom_array_gt, atom_array
