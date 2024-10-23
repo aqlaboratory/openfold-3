@@ -235,10 +235,13 @@ def subset_preferred(
         preferred_token_center_atoms = token_center_atoms
 
     # Only return resolved atoms as preferred token center atoms
-    # TODO: we may need exception handling for when there are no resolved atoms (if that
-    # could ever happen)
-    is_resolved = preferred_token_center_atoms.occupancy > 0
-    preferred_token_center_atoms = preferred_token_center_atoms[is_resolved]
+    # use nan coordinates to find unresolved atoms as the occupancy
+    # annotation can be all 0s for some assemblies
+    is_resolved = np.all(~np.isnan(preferred_token_center_atoms.coord), axis=1)
+    # Only apply if there are resolved atoms in the preferred chain or interface
+    # otherwise don't subset to preferred chain or interface
+    if sum(is_resolved) > 0:
+        preferred_token_center_atoms = preferred_token_center_atoms[is_resolved]
 
     return token_center_atoms, preferred_token_center_atoms
 
