@@ -5,6 +5,7 @@ from pathlib import Path
 from biotite.structure import AtomArray
 
 from openfold3.core.data.io.sequence.msa import parse_msas_sample
+from openfold3.core.data.primitives.quality_control.logging_utils import log_runtime
 from openfold3.core.data.primitives.sequence.msa import (
     MsaFeaturePrecursorAF3,
     MsaProcessedCollection,
@@ -118,6 +119,7 @@ def process_msas_af3(
     )
 
 
+@log_runtime()
 def process_msas_cropped_af3(
     alignments_directory: Path | None,
     alignment_db_directory: Path | None,

@@ -1,5 +1,6 @@
 """Treadmill logging utilities."""
 
+import contextvars
 import time
 from dataclasses import dataclass, field
 from functools import wraps
@@ -50,7 +51,12 @@ class ComplianceLog:
         )
 
 
-def log_runtime(enabled=True):
+# Specify the context variable for logging runtimes
+# This should be imported and set in the dataset class' module
+LOG_RUNTIMES = contextvars.ContextVar("LOG_RUNTIME", default=False)
+
+
+def log_runtime(enabled=LOG_RUNTIMES):
     """Decorator factory to log the runtime of a function."""
 
     def decorator(func):
@@ -59,7 +65,8 @@ def log_runtime(enabled=True):
         @wraps(func)
         def wrapper(*args, **kwargs):
             """Wrapper function to allow for conditionally logging the runtime."""
-            if enabled:
+            # Here, fetch the context variable to determine if logging is enabled
+            if enabled.get():
                 start_time = time.time()
                 result = func(*args, **kwargs)
                 runtime = time.time() - start_time

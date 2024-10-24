@@ -14,6 +14,7 @@ from openfold3.core.data.primitives.featurization.structure import (
     encode_one_hot,
     extract_starts_entities,
 )
+from openfold3.core.data.primitives.quality_control.logging_utils import log_runtime
 from openfold3.core.data.resources.residues import (
     STANDARD_RESIDUES_WITH_GAP_3,
     MoleculeType,
@@ -127,6 +128,7 @@ def featurize_structure_af3(
     )
 
 
+@log_runtime()
 def featurize_target_gt_structure_af3(
     atom_array_cropped: AtomArray,
     atom_array_gt: AtomArray,

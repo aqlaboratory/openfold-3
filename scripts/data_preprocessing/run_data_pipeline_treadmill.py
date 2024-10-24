@@ -136,7 +136,12 @@ np.set_printoptions(threshold=sys.maxsize)
     "--log-runtimes",
     type=bool,
     default=False,
-    help="Whether to log runtimes of subpipelines during data processing.",
+    help=(
+        "Whether to log runtimes of subpipelines during data processing. By default, "
+        "runtimes are logged in the worker log files. If True and save_statistics "
+        "is True, the runtime of each subpipeline will be logged in the "
+        "datapoint_statistics.tsv file instead."
+    ),
 )
 @click.option(
     "--log-memory",
@@ -188,7 +193,10 @@ def main(
             worker and then collated into a single datapoint_statistics.tsv file in
             log-output-directory.
         log_runtimes (bool):
-            Whether to log runtimes of subpipelines during data processing.
+            Whether to log runtimes of subpipelines during data processing. By default,
+            runtimes are logged in the worker log files. If True and save_statistics is
+            True, the runtime of each subpipeline will be logged in the
+            datapoint_statistics.tsv file instead.
         log_memory (bool):
             Whether to log memory use of subpipelines during data processing.
 
@@ -283,7 +291,11 @@ def main(
 
         # Configure data file
         configure_extra_data_file(
-            worker_id, worker_dataset, save_statistics, log_output_directory
+            worker_id,
+            worker_dataset,
+            save_statistics,
+            log_runtimes,
+            log_output_directory,
         )
 
         # Configure compliance file

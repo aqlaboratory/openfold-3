@@ -67,6 +67,7 @@ def configure_extra_data_file(
     worker_id: int,
     worker_dataset: Dataset,
     save_statistics: bool,
+    log_runtimes: bool,
     log_output_directory: Path,
 ) -> None:
     """Configures the extra data file for the worker.
@@ -78,6 +79,8 @@ def configure_extra_data_file(
             Worker-specific copy of the dataset.
         save_statistics (bool):
             Whether to save statistics.
+        log_runtimes (bool):
+            Whether to log runtimes.
         log_output_directory (Path):
             Treadmill output directory.
     """
@@ -145,6 +148,18 @@ def configure_extra_data_file(
             "interface-protein-ligand",
             "interface-protein-ligand-crop",
         ]
+
+        if log_runtimes:
+            all_headers += [
+                "runtime-target-structure-proc",
+                "runtime-target-structure-feat",
+                "runtime-msa-proc",
+                "runtime-msa-feat",
+                "runtime-templates-feat",
+                "runtime-ref-conf-proc",
+                "runtime-ref-conf-feat",
+            ]
+
         full_extra_data_file = log_output_directory / Path("datapoint_statistics.tsv")
         if full_extra_data_file.exists():
             worker_dataset.logger.info(

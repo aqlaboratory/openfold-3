@@ -9,6 +9,7 @@ from biotite.structure import AtomArray
 from rdkit.Chem import Mol
 
 from openfold3.core.data.io.structure.mol import read_single_annotated_sdf
+from openfold3.core.data.primitives.quality_control.logging_utils import log_runtime
 from openfold3.core.data.primitives.structure.conformer import (
     ConformerGenerationError,
     add_conformer_atom_mask,
@@ -141,6 +142,7 @@ def get_processed_reference_conformer(
     return ProcessedReferenceMolecule(mol_id, mol, in_array_mask)
 
 
+@log_runtime()
 def get_reference_conformer_data_af3(
     atom_array: AtomArray,
     per_chain_metadata: dict,

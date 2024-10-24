@@ -37,6 +37,7 @@ from openfold3.core.data.pipelines.sample_processing.structure import (
 )
 from openfold3.core.data.primitives.quality_control.asserts import ENSEMBLED_ASSERTS
 from openfold3.core.data.primitives.quality_control.logging_utils import (
+    LOG_RUNTIMES,
     get_interface_string,
 )
 from openfold3.core.data.resources.residues import (
@@ -89,6 +90,10 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         features = {}
         atom_array_cropped = None
 
+        # Set runtime logging context - should be thread-safe
+        runtime_context_token = LOG_RUNTIMES.set(self.log_runtimes)
+
+        # Check if datapoint needs to be skipped
         if self.skip_datapoint(pdb_id, preferred_chain_or_interface):
             return features
 
@@ -167,6 +172,22 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 self.dataset_cache["structure_data"][pdb_id]["resolution"],
             )
 
+            # Fetch recorded runtimes
+            if self.log_runtimes:
+                runtimes = self.fetch_runtimes(
+                    ensembled_pipelines=[
+                        process_target_structure_af3,
+                        featurize_target_gt_structure_af3,
+                        process_msas_cropped_af3,
+                        featurize_msa_af3,
+                        featurize_templates_dummy_af3,
+                        get_reference_conformer_data_af3,
+                        featurize_ref_conformers_af3,
+                    ],
+                )
+            else:
+                runtimes = np.array([])
+
             # Save extra data
             if self.save_statistics:
                 self.save_data_statistics(
@@ -175,7 +196,9 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                     features,
                     atom_array_cropped,
                     atom_array,
+                    runtimes,
                 )
+
             # Save features and/or atom array
             if (self.save_features == "per_datapoint") | (
                 self.save_atom_array == "per_datapoint"
@@ -220,6 +243,10 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                     e, pdb_id, preferred_chain_or_interface
                 )
             return features
+
+        finally:
+            # Reset context variable
+            LOG_RUNTIMES.reset(runtime_context_token)
 
     def skip_datapoint(self, pdb_id, preferred_chain_or_interface):
         """Determines whether to skip a datapoint."""
@@ -373,6 +400,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         features,
         atom_array_cropped,
         atom_array,
+        runtimes,
     ):
         """Saves additional data statistics."""
         if self.save_statistics:
@@ -549,8 +577,8 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 else:
                     statistics += ["NaN"]
 
-            # sub-pipeline runtimes - add via extra arguments in sub-pipelines
-            # Will need to be logged before this point and parsed here into the line
+            # sub-pipeline runtimes
+            statistics += list(runtimes)
 
             # Collate into tab format
             line += "\t".join(map(str, statistics))
@@ -561,3 +589,42 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 "a",
             ) as f:
                 f.write(line)
+
+    def fetch_runtimes(
+        self,
+        ensembled_pipelines: list[callable],
+    ) -> np.ndarray[float]:
+        """Fetches sub-pipeline runtimes.
+
+        Each sub-pipeline variable is decorated with a wrapper which stores the
+        runtime.
+
+
+        Args:
+            ensembled_pipelines (list[callable]):
+                List of sub-pipelines to fetch runtimes for.
+
+        Returns:
+            np.ndarray[float]:
+                Float of runtimes for each sub-pipeline.
+        """
+        pipeline_names = [
+            "runtime-target-structure-proc",
+            "runtime-target-structure-feat",
+            "runtime-msa-proc",
+            "runtime-msa-feat",
+            "runtime-templates-feat",
+            "runtime-ref-conf-proc",
+            "runtime-ref-conf-feat",
+        ]
+        runtimes = np.array([f.runtime for f in ensembled_pipelines])
+
+        if not self.save_statistics:
+            self.logger.info(
+                "Rutimes:\n"
+                + "\t".join([pipeline_names])
+                + "\n"
+                + "\t".join(map(str, runtimes))
+            )
+
+        return runtimes
