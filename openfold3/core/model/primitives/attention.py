@@ -493,21 +493,6 @@ class BlockSparseAttention(Attention):
             )
         return BlockSparseAttention.sparse_op_cache[seq_len]
 
-    @staticmethod
-    def sparsify_tensor(
-        x: torch.Tensor, mask: torch.Tensor, block: int, batch_dims: Tuple[int]
-    ) -> torch.Tensor:
-        """Convert a regular tensor to sparse format"""
-        block_bias = (
-            x.to_sparse_bsr((block, block))
-            .values()
-            .reshape(*batch_dims, -1, block, block)
-        )
-        ret = torch.index_select(
-            block_bias, dim=-3, index=torch.nonzero(mask.flatten()).squeeze()
-        )
-        return ret
-
     def attention(
         self,
         q: torch.Tensor,
@@ -554,9 +539,6 @@ class BlockSparseAttention(Attention):
             # Sum all bias terms together and sparsify the tensor
             # [*, H, Q, K]
             biases = sum(biases)
-            biases = self.sparsify_tensor(
-                biases, layout, self.block_size, batch_dims=biases.shape[:-3]
-            )
 
             # This is ugly and should be refactored
             # The batch dim of w must be flat: batch_size * no_samples

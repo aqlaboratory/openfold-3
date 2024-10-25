@@ -12,6 +12,7 @@
   },
   "zero_optimization": {
     "stage": 2,
+    "overlap_comm": true,
     "offload_optimizer": {
       "device": "cpu"
     },

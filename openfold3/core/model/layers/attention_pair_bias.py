@@ -29,7 +29,7 @@ from openfold3.core.model.primitives import (
     LayerNorm,
     Linear,
 )
-from openfold3.core.utils.tensor_utils import permute_final_dims
+from openfold3.core.utils.tensor_utils import permute_final_dims, sparsify_tensor
 
 
 class AttentionPairBias(nn.Module):
@@ -87,6 +87,7 @@ class AttentionPairBias(nn.Module):
 
         self.use_ada_layer_norm = use_ada_layer_norm
         self.use_block_sparse_attn = use_block_sparse_attn
+        self.block_size = block_size
         self.c_q = c_q
         self.c_s = c_s
         self.c_z = c_z
@@ -128,6 +129,63 @@ class AttentionPairBias(nn.Module):
             )
 
         self.sigmoid = nn.Sigmoid()
+
+    def _prep_sparse_bias(
+        self,
+        a: torch.Tensor,
+        z: torch.Tensor,
+        layout: torch.Tensor,
+        mask: Optional[torch.Tensor],
+    ) -> List[torch.Tensor]:
+        """
+        Args:
+            a:
+                [*, N, C_token] Token or atom-level embedding
+            z:
+                [*, N, N, C_z] Pair embedding
+            layout:
+                [N / block_size, N / block_size] Layout config for block sparse
+                attention. Dictates which sections of the attention matrix
+                to compute.
+            mask:
+                [*, N] Mask for token or atom-level embedding
+
+        Returns:
+            List of bias terms. Includes the pair bias and attention mask.
+        """
+        if mask is None:
+            # [*, N]
+            mask = a.new_ones(
+                a.shape[:-1],
+            )
+
+        # [*, 1, 1, N]
+        mask_bias = (self.inf * (mask - 1))[..., None, None, :]
+
+        batch_dims = z.shape[:-3]
+        feat_dim = z.shape[-1]
+
+        # [*, no_heads, N, N]
+        z = permute_final_dims(z, [2, 0, 1])
+
+        z = z + mask_bias
+        layout = layout[None].tile((feat_dim, 1, 1)).long()
+
+        z = sparsify_tensor(z, layout, self.block_size, batch_dims=batch_dims).reshape(
+            *batch_dims, -1, feat_dim, self.block_size, self.block_size
+        )
+
+        # [*, N, N, C_z]
+        z = self.layer_norm_z(permute_final_dims(z, [1, 2, 0]))
+
+        # [*, N, N, no_heads]
+        z = self.linear_z(z)
+
+        z = permute_final_dims(z, [2, 0, 1]).reshape(
+            *batch_dims, -1, self.block_size, self.block_size
+        )
+
+        return [z]
 
     def _prep_bias(
         self,
@@ -217,11 +275,13 @@ class AttentionPairBias(nn.Module):
         """
         a = self.layer_norm_a(a, s) if self.use_ada_layer_norm else self.layer_norm_a(a)
 
-        biases = self._prep_bias(a, z, beta, mask)
 
         if self.use_block_sparse_attn:
+            biases = self._prep_sparse_bias(a=a, z=z, layout=layout, mask=mask)
             a = self.mha(q_x=a, kv_x=a, biases=biases, layout=layout)
         else:
+            biases = self._prep_bias(a=a, z=z, beta=beta, mask=mask)
+
             # TODO: Make this less awkward, DS kernel has strict shape asserts
             #  and expects batch and seq dims to exist
             #  Current reshape function only expects missing batch dim
