@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -46,6 +47,7 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
     "--max-release-date",
     type=str,
     required=True,
+    default="2021-09-30",
     help="Maximum release date for included structures, formatted as 'YYYY-MM-DD'.",
 )
 @click.option(
@@ -74,25 +76,60 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
     default="WARNING",
     help="Set the logging level.",
 )
+@click.option(
+    "--log-file",
+    type=click.Path(exists=False, file_okay=True, dir_okay=False, path_type=Path),
+    help="Path to write the log file to.",
+    default=None,
+)
 def main(
     metadata_cache_path: Path,
     preprocessed_dir: Path,
     alignment_representatives_fasta: Path,
     output_path: Path,
     dataset_name: str,
-    max_release_date: str,
-    max_resolution: float,
-    max_polymer_chains: int,
-    write_no_alignment_repr_entries: bool,
+    max_release_date: str = "2021-09-30",
+    max_resolution: float = 9.0,
+    max_polymer_chains: int = 300,
+    write_no_alignment_repr_entries: bool = False,
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
+    log_file: Path | None = None,
 ) -> None:
-    """Create a training dataset cache using PDB-weighted-like filtering procedures."""
-    # TODO: Improve docstring
+    """Create a training dataset cache using PDB-weighted filtering procedures.
+
+    This applies basic filtering procedures to create a training dataset cache that can
+    be used by the DataLoader from the more general metadata cache created in
+    preprocessing. Following AF3, the filters applied are:
+        - release date can be no later than max_release_date
+        - resolution can be no higher than max_resolution
+        - number of polymer chains can be no higher than max_polymer_chains
+
+    This also adds the following additional information:
+        Name of the dataset (for use with the DataSet registry) Structure data:
+            - alignment_representative_id:
+                The ID of the alignment of this chain
+            - cluster_id:
+                The ID of the cluster this chain/interface belongs to
+            - cluster_size:
+                The size of the cluster this chain/interface belongs to
+        Reference molecule data:
+            - set_fallback_to_nan:
+                Whether to set the fallback conformer of this molecule to NaN. This
+                applies to the very special case where the fallback conformer was
+                derived from CCD model coordinates coming from a PDB-ID that was
+                released outside of the time cutoff (see AF3 SI 2.8)
+    """
+    max_release_date = datetime.strptime(max_release_date, "%Y-%m-%d").date()
 
     # Set up logger
     logger = logging.getLogger("openfold3")
     logger.setLevel(getattr(logging, log_level))
     logger.addHandler(logging.StreamHandler())
+
+    # Add file handler if log file is specified
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        logger.addHandler(file_handler)
 
     create_pdb_training_dataset_cache_af3(
         metadata_cache_path=metadata_cache_path,
