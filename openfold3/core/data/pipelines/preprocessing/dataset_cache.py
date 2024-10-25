@@ -6,16 +6,17 @@ from functools import partial
 from pathlib import Path
 
 from openfold3.core.data.io.dataset_cache import (
-    read_metadata_cache,
+    format_nested_dict_for_json,
     write_datacache_to_json,
 )
 from openfold3.core.data.io.sequence.fasta import (
     consolidate_preprocessed_fastas,
 )
-from openfold3.core.data.primitives.structure.dataset_cache import (
-    PreprocessingStructureDataCache,
-    add_and_filter_alignment_representatives,
+from openfold3.core.data.primitives.dataset_cache.clustering import (
     add_cluster_ids_and_sizes,
+)
+from openfold3.core.data.primitives.dataset_cache.metadata import (
+    add_and_filter_alignment_representatives,
     build_provisional_clustered_dataset_cache,
     filter_by_max_polymer_chains,
     filter_by_release_date,
@@ -23,7 +24,10 @@ from openfold3.core.data.primitives.structure.dataset_cache import (
     filter_by_skipped_structures,
     func_with_n_filtered_chain_log,
     set_nan_fallback_conformer_flag,
-    subset_reference_molecule_data,
+)
+from openfold3.core.data.primitives.dataset_cache.types import (
+    PreprocessingDataCache,
+    PreprocessingStructureDataCache,
 )
 
 logger = logging.getLogger(__name__)
@@ -62,6 +66,8 @@ def filter_structure_metadata_training_af3(
     # it does not work with skipped/failed structures)
     filtered_cache = filter_by_skipped_structures(structure_cache)
 
+    # TODO: we need to catch NMR etc. here which don't have a defined resolution and
+    # probably set resolution for them to zero
     filtered_cache = with_log(filter_by_resolution)(filtered_cache, max_resolution)
     filtered_cache = with_log(filter_by_release_date)(filtered_cache, max_release_date)
     filtered_cache = with_log(filter_by_max_polymer_chains)(
@@ -90,7 +96,7 @@ def create_pdb_training_dataset_cache_af3(
         output_path:
             Path to write the training cache to.
     """
-    metadata_cache = read_metadata_cache(metadata_cache_path)
+    metadata_cache = PreprocessingDataCache.from_json(metadata_cache_path)
 
     # Read in FASTAs of all sequences in the training set
     logger.info("Scanning FASTA directories...")
@@ -143,6 +149,9 @@ def create_pdb_training_dataset_cache_af3(
                 for chain_id, chain_data in chain_data.items()
             }
 
+            # Format datacache-types appropriately
+            unmatched_entries = format_nested_dict_for_json(unmatched_entries)
+
             json.dump(unmatched_entries, f, indent=4)
     else:
         structure_data = with_log(add_and_filter_alignment_representatives)(
@@ -170,9 +179,6 @@ def create_pdb_training_dataset_cache_af3(
         reference_mol_cache=dataset_cache.reference_molecule_data,
         max_model_pdb_release_date=max_release_date,
     )
-
-    # Subset reference molecule data to only the structures in the training set
-    subset_reference_molecule_data(dataset_cache)
 
     # Write the final dataset cache to disk
     write_datacache_to_json(dataset_cache, output_path)
