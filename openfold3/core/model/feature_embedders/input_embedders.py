@@ -576,6 +576,114 @@ class MSAModuleEmbedder(nn.Module):
             c_s_input, c_m, **linear_init_params.linear_s_input
         )
 
+    @staticmethod
+    def subsample_msa(
+        msa_feat: torch.Tensor,
+        msa_mask: torch.Tensor,
+        num_paired_seqs: torch.Tensor,
+        asym_id: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Subsample main MSA features for a single sample in the batch.
+        The subsampling is independent per each chain.
+
+        Args:
+            msa_feat:
+                [N_seq, N_token, 32] MSA features
+            msa_mask:
+                [N_seq, N_token] MSA mask
+            num_paired_seqs:
+                Number of paired MSA sequences
+        Returns:
+            sampled_msa:
+                [N_seq_sampled, N_token, c_m_feats] Sampled MSA features
+            msa_mask:
+                [N_seq_sampled, N_token] Sampled MSA mask
+        """
+        # Set the sequence dimension for the two tensors, the chain dimension is this +1
+        feat_seq_dim = -3
+        mask_seq_dim = -2
+
+        # Separate UniProt paired sequences and main MSA (only the latter is subsampled)
+        total_msa_seq = msa_feat.shape[feat_seq_dim]
+        num_main_msa_seqs = total_msa_seq - num_paired_seqs.item()
+
+        split_sections = [num_paired_seqs, num_main_msa_seqs]
+
+        uniprot_msa_feat, main_msa_feat = torch.split(
+            msa_feat, split_sections, dim=feat_seq_dim
+        )
+        uniprot_msa_mask, main_msa_mask = torch.split(
+            msa_mask, split_sections, dim=mask_seq_dim
+        )
+
+        # Get the length of each chain using consecutive unique asym_id
+        _, chain_splits = torch.unique_consecutive(asym_id, return_counts=True)
+
+        # Split the tensor obtaining separate tensors for each chain
+        per_chain_msa_feat = torch.split(
+            main_msa_feat, chain_splits.tolist(), dim=feat_seq_dim + 1
+        )
+        per_chain_msa_mask = torch.split(
+            main_msa_mask, chain_splits.tolist(), dim=mask_seq_dim + 1
+        )
+
+        # Get the number of main msa seqs per chain
+        # summing the ones in the seq dimension in the mask
+        # Use float32 as bf16 precision is not enough to distinguish all 16384 integers
+        per_chain_main_msa_dim = [
+            int(torch.sum(mask, dim=-2, dtype=torch.float32)[0])
+            for mask in per_chain_msa_mask
+        ]
+
+        # Max number of sequences across chains
+        max_msa_seqs_across_chains = max(per_chain_main_msa_dim)
+
+        # Dimension to subsample all chains to
+        seq_subsample_dim = torch.randint(
+            low=1,
+            high=int(max_msa_seqs_across_chains + 1),
+            size=(1,),
+            device=msa_feat.device,
+        )
+
+        # Get a random permutation of the sequence indexes for each chain
+        # Pad it with padding row indexes until max_msa_seqs_across_chains
+        chain_index_permutations = [
+            torch.cat(
+                [
+                    torch.randperm(num_seqs, device=msa_feat.device),
+                    torch.arange(
+                        num_seqs, max_msa_seqs_across_chains, device=msa_feat.device
+                    ),
+                ]
+            )[:seq_subsample_dim]
+            for num_seqs in per_chain_main_msa_dim
+        ]
+
+        # Apply the permutation and keep seq_subsample_dim sequences
+        sampled_chain_feats = [
+            feat[..., perm, :, :]
+            for feat, perm in zip(per_chain_msa_feat, chain_index_permutations)
+        ]
+        sampled_chain_masks = [
+            mask[..., perm, :]
+            for mask, perm in zip(per_chain_msa_mask, chain_index_permutations)
+        ]
+
+        # Concatenate the chains back together
+        sampled_main_msa_feat = torch.cat(sampled_chain_feats, dim=feat_seq_dim + 1)
+        sampled_main_msa_mask = torch.cat(sampled_chain_masks, dim=mask_seq_dim + 1)
+
+        # Stack with the uniprot features and mask
+        sampled_msa_feat = torch.cat(
+            [uniprot_msa_feat, sampled_main_msa_feat], dim=feat_seq_dim
+        )
+        sampled_msa_mask = torch.cat(
+            [uniprot_msa_mask, sampled_main_msa_mask], dim=mask_seq_dim
+        )
+
+        return sampled_msa_feat, sampled_msa_mask
+
     def forward(
         self, batch: Dict, s_input: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -597,6 +705,9 @@ class MSAModuleEmbedder(nn.Module):
             msa_mask:
                 [*, N_seq, N_token] MSA mask
         """
+        batch_dims = batch["msa"].shape[:-3]
+
+        # [*, N_seq, N_token, 34]
         msa_feat = torch.cat(
             [
                 batch["msa"],
@@ -605,41 +716,77 @@ class MSAModuleEmbedder(nn.Module):
             ],
             dim=-1,
         )
+
+        # [*, N_seq, N_token]
         msa_mask = batch["msa_mask"]
 
-        total_msa_seq = batch["msa"].shape[-3]
+        # [*, N_tok]
+        asym_id = batch["asym_id"]
 
-        # Split uniprot and main MSA sequences. Only main MSA seqs will be sampled.
-        # All uniprot seqs are in the final MSA representation.
-        num_paired_seqs = int(batch["num_paired_seqs"].item())
-        num_main_msa_seqs = total_msa_seq - num_paired_seqs
+        # [*]
+        num_paired_seqs = batch["num_paired_seqs"]
 
-        if num_main_msa_seqs > 0:
-            split_sections = [num_paired_seqs, num_main_msa_seqs]
-            uniprot_msa, main_msa = torch.split(msa_feat, split_sections, dim=-3)
-            uniprot_msa_mask, main_msa_mask = torch.split(
-                msa_mask, split_sections, dim=-2
+        if len(batch_dims) > 0:
+            # Unbind the batch dimension to get lists of samples
+            per_sample_msa_feat = torch.unbind(msa_feat, dim=0)
+            per_sample_mask = torch.unbind(msa_mask, dim=0)
+            per_sample_num_paired_seq = torch.unbind(num_paired_seqs, dim=0)
+            per_sample_asym_id = torch.unbind(asym_id, dim=0)
+
+            # Subsample the MSA for each sample in the batch
+            per_sample_subsampled_msa, per_sample_subsampled_msa_mask = zip(
+                *(
+                    self.subsample_msa(*args)
+                    for args in zip(
+                        per_sample_msa_feat,
+                        per_sample_mask,
+                        per_sample_num_paired_seq,
+                        per_sample_asym_id,
+                    )
+                )
             )
 
-            # Sample Uniform[1, num_main_msa_seqs] sequences from the main MSA
-            n_seq_sample = torch.randint(
-                low=1, high=num_main_msa_seqs + 1, size=(1,)
-            ).item()
-            index_order = torch.randperm(num_main_msa_seqs, device=msa_feat.device)
-            index_order = index_order[:n_seq_sample]
+            # Number of sequences to pad to for all the batch
+            max_msa_seqs_batch = max([m.shape[-3] for m in per_sample_subsampled_msa])
 
-            main_msa = torch.index_select(main_msa, dim=-3, index=index_order)
-            main_msa_mask = torch.index_select(main_msa_mask, dim=-2, index=index_order)
+            def pad_sequences_dim(m, max_seqs, seq_dim):
+                """Pad the msa to max_seqs along seq_dim to stack them in a batch"""
 
-            # Combine uniprot and sampled main MSA sequences
-            sampled_msa = torch.cat([uniprot_msa, main_msa], dim=-3)
-            msa_mask = torch.cat([uniprot_msa_mask, main_msa_mask], dim=-2)
+                # Add zero padding at start and end for all dimensions after seq_dim
+                non_pad_dims = (0, 0) * (abs(seq_dim) - 1)
+
+                # Pad the seq_dim to max_msa_seqs length
+                pad = non_pad_dims + (0, max_seqs - m.shape[seq_dim])
+
+                return torch.nn.functional.pad(m, pad)
+
+            # Pad the sequences to same seq length and stack them in a batch
+            sampled_msa = torch.stack(
+                [
+                    pad_sequences_dim(m, max_msa_seqs_batch, seq_dim=-3)
+                    for m in per_sample_subsampled_msa
+                ],
+                dim=0,
+            )
+            sampled_msa_mask = torch.stack(
+                [
+                    pad_sequences_dim(m, max_msa_seqs_batch, seq_dim=-2)
+                    for m in per_sample_subsampled_msa_mask
+                ],
+                dim=0,
+            )
+
         else:
-            sampled_msa = msa_feat
+            # If no batch dimension, just subsample the MSA
+            sampled_msa, sampled_msa_mask = self.subsample_msa(
+                msa_feat, msa_mask, num_paired_seqs, asym_id
+            )
 
+        # [*, N_seq, N_token, C_m]
         m = self.linear_m(sampled_msa)
         m = m + self.linear_s_input(s_input).unsqueeze(-3)
-        return m, msa_mask
+
+        return m, sampled_msa_mask
 
 
 class PreembeddingEmbedder(nn.Module):
