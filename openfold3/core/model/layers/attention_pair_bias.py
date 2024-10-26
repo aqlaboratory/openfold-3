@@ -275,7 +275,6 @@ class AttentionPairBias(nn.Module):
         """
         a = self.layer_norm_a(a, s) if self.use_ada_layer_norm else self.layer_norm_a(a)
 
-
         if self.use_block_sparse_attn:
             biases = self._prep_sparse_bias(a=a, z=z, layout=layout, mask=mask)
             a = self.mha(q_x=a, kv_x=a, biases=biases, layout=layout)
