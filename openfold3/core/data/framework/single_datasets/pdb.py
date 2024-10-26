@@ -32,6 +32,7 @@ from openfold3.core.data.pipelines.sample_processing.msa import process_msas_cro
 from openfold3.core.data.pipelines.sample_processing.structure import (
     process_target_structure_af3,
 )
+from openfold3.core.data.primitives.dataset_cache.types import ClusteredDatasetCache
 from openfold3.core.data.resources.residues import MoleculeType
 
 
@@ -200,8 +201,9 @@ class WeightedPDBDataset(SingleDataset):
 
         # Dataset/datapoint cache
         self.datapoint_cache = {}
-        with open(dataset_config["dataset_paths"]["dataset_cache_file"]) as f:
-            self.dataset_cache = json.load(f)
+        self.dataset_cache = ClusteredDatasetCache.from_json(
+            dataset_config["dataset_paths"]["dataset_cache_file"]
+        )
         self.create_datapoint_cache()
         self.datapoint_probabilities = self.datapoint_cache["weight"].to_numpy()
 
@@ -221,7 +223,7 @@ class WeightedPDBDataset(SingleDataset):
         correspoinding datapoint probabilities. Used for mapping FROM the dataset_cache
         in the StochasticSamplerDataset and TO the dataset_cache in the getitem."""
         datapoint_collection = DatapointCollection.create_empty()
-        for entry, entry_data in self.dataset_cache["structure_data"].items():
+        for entry, entry_data in self.dataset_cache.structure_data.items():
             # Append chains
             for chain, chain_data in entry_data["chains"].items():
                 datapoint_collection.append(
@@ -291,9 +293,7 @@ class WeightedPDBDataset(SingleDataset):
             alignment_db_directory=self.alignment_db_directory,
             alignment_index=self.alignment_index,
             atom_array=atom_array_cropped,
-            data_cache_entry_chains=self.dataset_cache["structure_data"][pdb_id][
-                "chains"
-            ],
+            data_cache_entry_chains=self.dataset_cache.structure_data[pdb_id]["chains"],
             max_seq_counts={
                 "uniref90_hits": 10000,
                 "uniprot_hits": 50000,
@@ -318,8 +318,8 @@ class WeightedPDBDataset(SingleDataset):
         # Reference conformer features
         processed_reference_molecules = get_reference_conformer_data_af3(
             atom_array=atom_array_cropped,
-            per_chain_metadata=self.dataset_cache["structure_data"][pdb_id]["chains"],
-            reference_mol_metadata=self.dataset_cache["reference_molecule_data"],
+            per_chain_metadata=self.dataset_cache.structure_data[pdb_id].chains,
+            reference_mol_metadata=self.dataset_cache.reference_molecule_data,
             reference_mol_dir=self.reference_molecule_directory,
         )
         features.update(featurize_ref_conformers_af3(processed_reference_molecules))
@@ -327,7 +327,7 @@ class WeightedPDBDataset(SingleDataset):
         # Loss switches
         features["loss_weights"] = set_loss_weights(
             self.loss_settings,
-            self.dataset_cache["structure_data"][pdb_id]["resolution"],
+            self.dataset_cache.structure_data[pdb_id].resolution,
         )
         return features
 
