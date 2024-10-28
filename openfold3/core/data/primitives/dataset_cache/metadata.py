@@ -228,7 +228,7 @@ def build_provisional_clustered_dataset_cache(
             release_date=preprocessed_structure_data.release_date,
             resolution=preprocessed_structure_data.resolution,
             chains={},
-            interface_clusters={},
+            interfaces={},
         )
 
         # Add all the chain metadata with dummy cluster values

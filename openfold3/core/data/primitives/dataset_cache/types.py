@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import TypedDict
 from openfold3.core.data.resources.residues import MoleculeType
 
 
+# PREPROCESSING FORMAT
 @dataclass
 class PreprocessingChainData:
     """Chain-wise data from preprocessing metadata_cache."""
@@ -147,16 +149,74 @@ class PreprocessingDataCache:
         )
 
 
-# TODO: This may need to be updated in the future to support new datasets with different
-# cache formats
+# GENERAL DATASET FORMAT LAYOUT
 @dataclass
-class ClusteredDatasetChainData(PreprocessingChainData):
+class DatasetChainData:
+    """Fields that every Dataset format's chain data should have."""
+
+    # TODO: could make some of these not mandatory
+    label_asym_id: str
+    auth_asym_id: str
+    entity_id: int
+    molecule_type: MoleculeType
+    reference_mol_id: str | None  # only set for ligands
+    alignment_representative_id: str | None
+
+
+@dataclass
+class DatasetStructureData:
+    """Fields that every Dataset format's structure data should have."""
+
+    chains: dict[str, DatasetChainData]
+
+    # Should contain data per interface or just a list of the interfaces
+    interfaces: dict[str, dataclass] | list[str]
+
+
+@dataclass
+class DatasetReferenceMoleculeData:
+    """Fields that every Dataset format's reference molecule data should have."""
+
+    conformer_gen_strategy: str
+    fallback_conformer_pdb_id: str | None
+    canonical_smiles: str
+    set_fallback_to_nan: bool
+
+
+class DatasetReferenceMoleculeCache(TypedDict):
+    """Format that every Dataset format's reference molecule cache should have."""
+
+    ref_mol_id: DatasetReferenceMoleculeData
+
+
+class DatasetStructureDataCache(TypedDict):
+    """Format that every Dataset format's structure data cache should have."""
+
+    pdb_id: DatasetStructureData
+
+
+@dataclass
+class DatasetCache(ABC):
+    """Format that every Dataset Cache should have."""
+
+    name: str
+    structure_data: DatasetStructureDataCache
+    reference_molecule_data: DatasetReferenceMoleculeCache
+
+    @classmethod
+    @abstractmethod
+    def from_json(cls, file: Path) -> DatasetCache:
+        raise NotImplementedError("This method should be implemented in subclasses.")
+
+
+# CLUSTERED DATASET FORMAT (e.g. PDB-weighted)
+@dataclass
+class ClusteredDatasetChainData(DatasetChainData):
     """Chain-wise data with cluster and alignment information."""
 
     # Adds the following fields:
     cluster_id: str
     cluster_size: int
-    alignment_representative_id: str | None
 
 
 @dataclass
@@ -168,36 +228,23 @@ class ClusteredDatasetInterfaceData:
 
 
 @dataclass
-class ClusteredDatasetStructureData:
-    """Structure data with cluster information."""
+class ClusteredDatasetStructureData(DatasetStructureData):
+    """Structure data with cluster and addded metadata information."""
 
     release_date: datetime.date
     resolution: float
     chains: dict[str, ClusteredDatasetChainData]
-    interface_clusters: dict[str, ClusteredDatasetInterfaceData]
+    interfaces: dict[str, ClusteredDatasetInterfaceData]
 
 
-class ClusteredDatasetStructureDataCache(TypedDict):
+class ClusteredDatasetStructureDataCache(DatasetStructureDataCache):
     """Structure data cache with cluster information."""
 
     pdb_id: ClusteredDatasetStructureData
 
 
 @dataclass
-class DatasetReferenceMoleculeData(PreprocessingReferenceMoleculeData):
-    """Reference molecule data with additional field for data leakage prevention."""
-
-    set_fallback_to_nan: bool
-
-
-class DatasetReferenceMoleculeCache(TypedDict):
-    """Reference molecule data cache."""
-
-    ref_mol_id: DatasetReferenceMoleculeData
-
-
-@dataclass
-class ClusteredDatasetCache:
+class ClusteredDatasetCache(DatasetCache):
     """Full data cache for clustered dataset with conformer leakage prevention."""
 
     name: str
@@ -231,7 +278,7 @@ class ClusteredDatasetCache:
             }
 
             structure_data[pdb_id] = ClusteredDatasetStructureData(
-                chains=chains, interface_clusters=interfaces, **per_structure_data
+                chains=chains, interfaces=interfaces, **per_structure_data
             )
 
         # Format reference molecule data
@@ -248,11 +295,9 @@ class ClusteredDatasetCache:
 
 
 # Grouped type-aliases for more convenient type-hinting of general-purpose functions
-ChainData = PreprocessingChainData | ClusteredDatasetChainData
-StructureDataCache = (
-    PreprocessingStructureDataCache | ClusteredDatasetStructureDataCache
-)
+ChainData = PreprocessingChainData | DatasetChainData
+StructureDataCache = PreprocessingStructureDataCache | DatasetStructureDataCache
 ReferenceMoleculeCache = (
     PreprocessingReferenceMoleculeCache | DatasetReferenceMoleculeCache
 )
-DataCache = PreprocessingDataCache | ClusteredDatasetCache
+DataCache = PreprocessingDataCache | DatasetCache
