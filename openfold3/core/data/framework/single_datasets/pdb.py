@@ -239,8 +239,7 @@ class WeightedPDBDataset(SingleDataset):
                 interface_chains = interface_id.split("_")
                 cluster_size = int(cluster_data.cluster_size)
                 chain_moltypes = [
-                    entry_data.chains[chain].molecule_type
-                    for chain in interface_chains
+                    entry_data.chains[chain].molecule_type for chain in interface_chains
                 ]
 
                 datapoint_collection.append(
