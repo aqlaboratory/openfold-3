@@ -5,6 +5,7 @@ from pathlib import Path
 from biotite.structure import AtomArray
 
 from openfold3.core.data.io.sequence.msa import parse_msas_sample
+from openfold3.core.data.primitives.dataset_cache.types import DatasetChainData
 from openfold3.core.data.primitives.sequence.msa import (
     MsaProcessed,
     MsaProcessedCollection,
@@ -123,7 +124,7 @@ def process_msas_cropped_af3(
     alignment_db_directory: Path | None,
     alignment_index: dict | None,
     atom_array: AtomArray,
-    data_cache_entry_chains: dict[str, int | str],
+    data_cache_entry_chains: DatasetChainData,
     max_seq_counts: dict[str, int | float],
     token_budget: int,
     max_rows_paired: int,
@@ -143,7 +144,7 @@ def process_msas_cropped_af3(
             alignment_db_directory is provided.
         atom_array (AtomArray):
             Cropped atom array.
-        data_cache_entry_chains (dict[int, Union[int, str]]):
+        data_cache_entry_chains (DatasetChainData):
             Dictionary of chains to chain features from the data cache for a PDB
             assembly.
         max_seq_counts (int | float):

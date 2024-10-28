@@ -293,7 +293,7 @@ class WeightedPDBDataset(SingleDataset):
             alignment_db_directory=self.alignment_db_directory,
             alignment_index=self.alignment_index,
             atom_array=atom_array_cropped,
-            data_cache_entry_chains=self.dataset_cache.structure_data[pdb_id]["chains"],
+            data_cache_entry_chains=self.dataset_cache.structure_data[pdb_id].chains,
             max_seq_counts={
                 "uniref90_hits": 10000,
                 "uniprot_hits": 50000,

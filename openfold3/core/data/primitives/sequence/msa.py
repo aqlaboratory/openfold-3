@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from biotite.structure import AtomArray
 
+from openfold3.core.data.primitives.dataset_cache.types import DatasetChainData
 from openfold3.core.data.primitives.featurization.structure import get_token_starts
 from openfold3.core.data.resources.residues import (
     STANDARD_RESIDUES_WITH_GAP_1,
@@ -736,7 +737,7 @@ def create_main(
 
 
 def create_crop_to_seq_map(
-    atom_array: AtomArray, data_cache_entry_chains: dict[int, Union[int, str]]
+    atom_array: AtomArray, data_cache_entry_chains: DatasetChainData
 ) -> MsaSlice:
     """Creates a mapping from the crop to the sequences in the MSA.
 
@@ -748,7 +749,7 @@ def create_crop_to_seq_map(
     Args:
         atom_array (AtomArray):
             AtomArray of the cropped structure.
-        data_cache_entry_chains (dict[int, Union[int, str]]):
+        data_cache_entry_chains (DatasetChainData):
             Dictionary of chains to chain features from the data cache.
 
     Returns:
@@ -774,9 +775,9 @@ def create_crop_to_seq_map(
             atom_array_with_aln_in_crop.chain_id == chain_id_in_crop
         ]
         # # Get chain and representative chain ID
-        chain_rep_map[chain_id_in_crop] = data_cache_entry_chains[chain_id_in_crop][
-            "alignment_representative_id"
-        ]
+        chain_rep_map[chain_id_in_crop] = data_cache_entry_chains[
+            chain_id_in_crop
+        ].alignment_representative_id
 
         # Create token -> residue map
         # Note: some atomized residues get duplicate columns from the alignment
@@ -791,7 +792,7 @@ def create_crop_to_seq_map(
         }
         chain_to_molecule_type[chain_id_in_crop] = data_cache_entry_chains[
             chain_id_in_crop
-        ]["molecule_type"]
+        ].molecule_type
     return MsaSlice(
         chain_rep_map=chain_rep_map,
         tokens_in_chain=tokens_in_chain,
