@@ -6,7 +6,10 @@ from pathlib import Path
 import pandas as pd
 from torch.utils.data import Dataset
 
-from openfold3.core.data.primitives.quality_control.logging_utils import ComplianceLog
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    F_NAME_ORDER,
+    ComplianceLog,
+)
 
 
 def configure_worker_init_func_logger(
@@ -150,15 +153,7 @@ def configure_extra_data_file(
         ]
 
         if log_runtimes:
-            all_headers += [
-                "runtime-target-structure-proc",
-                "runtime-target-structure-feat",
-                "runtime-msa-proc",
-                "runtime-msa-feat",
-                "runtime-templates-feat",
-                "runtime-ref-conf-proc",
-                "runtime-ref-conf-feat",
-            ]
+            all_headers += F_NAME_ORDER
 
         full_extra_data_file = log_output_directory / Path("datapoint_statistics.tsv")
         if full_extra_data_file.exists():

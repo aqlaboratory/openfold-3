@@ -9,6 +9,7 @@ from biotite.structure import Atom, AtomArray
 from numpy.random import Generator, default_rng
 from scipy.spatial.distance import cdist
 
+from openfold3.core.data.primitives.quality_control.logging_utils import log_runtime
 from openfold3.core.data.primitives.structure.interface import (
     get_query_interface_token_center_atoms,
 )
@@ -324,6 +325,7 @@ def sample_crop_strategy(crop_weights: dict[str, float]) -> tuple[Callable, tupl
     ]
 
 
+@log_runtime(name="runtime-target-structure-proc-crop")
 def apply_crop(
     atom_array: AtomArray,
     token_budget: int,

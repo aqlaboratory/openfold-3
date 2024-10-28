@@ -12,7 +12,7 @@ from openfold3.core.data.resources.residues import (
 )
 
 
-@log_runtime()
+@log_runtime(name="runtime-msa-feat")
 def featurize_msa_af3(msa_processed):
     max_rows = 16384
 

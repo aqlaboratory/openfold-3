@@ -15,7 +15,7 @@ from openfold3.core.model.structure.diffusion_module import centre_random_augmen
 logger = logging.getLogger(__name__)
 
 
-@log_runtime()
+@log_runtime(name="runtime-ref-conf-feat")
 def featurize_ref_conformers_af3(
     processed_ref_mol_list: list[ProcessedReferenceMolecule],
 ) -> dict[str, torch.Tensor]:

@@ -37,6 +37,7 @@ from openfold3.core.data.pipelines.sample_processing.structure import (
 )
 from openfold3.core.data.primitives.quality_control.asserts import ENSEMBLED_ASSERTS
 from openfold3.core.data.primitives.quality_control.logging_utils import (
+    F_NAME_ORDER,
     LOG_RUNTIMES,
     get_interface_string,
 )
@@ -71,6 +72,16 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         self.save_statistics = save_statistics
         self.log_runtimes = log_runtimes
         self.log_memory = log_memory
+        # top-level pipelines for collecting runtimes
+        self.top_f = [
+            process_target_structure_af3,
+            featurize_target_gt_structure_af3,
+            process_msas_cropped_af3,
+            featurize_msa_af3,
+            featurize_templates_dummy_af3,
+            get_reference_conformer_data_af3,
+            featurize_ref_conformers_af3,
+        ]
         """
         The following attributes are set in the worker_init_function_with_logging
         on a per-worker basis:
@@ -174,17 +185,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 
             # Fetch recorded runtimes
             if self.log_runtimes:
-                runtimes = self.fetch_runtimes(
-                    ensembled_pipelines=[
-                        process_target_structure_af3,
-                        featurize_target_gt_structure_af3,
-                        process_msas_cropped_af3,
-                        featurize_msa_af3,
-                        featurize_templates_dummy_af3,
-                        get_reference_conformer_data_af3,
-                        featurize_ref_conformers_af3,
-                    ],
-                )
+                runtimes = self.fetch_runtimes()
             else:
                 runtimes = np.array([])
 
@@ -592,37 +593,35 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 
     def fetch_runtimes(
         self,
-        ensembled_pipelines: list[callable],
     ) -> np.ndarray[float]:
         """Fetches sub-pipeline runtimes.
 
-        Each sub-pipeline variable is decorated with a wrapper which stores the
-        runtime.
-
+        Each sub-pipeline variable is decorated with a wrapper which stores its
+        runtime and that of any child functions.
 
         Args:
-            ensembled_pipelines (list[callable]):
-                List of sub-pipelines to fetch runtimes for.
+            top_f (list[callable]):
+                A list of top-level sub-pipeline functions called in the getitem.
 
         Returns:
             np.ndarray[float]:
                 Float of runtimes for each sub-pipeline.
         """
-        pipeline_names = [
-            "runtime-target-structure-proc",
-            "runtime-target-structure-feat",
-            "runtime-msa-proc",
-            "runtime-msa-feat",
-            "runtime-templates-feat",
-            "runtime-ref-conf-proc",
-            "runtime-ref-conf-feat",
-        ]
-        runtimes = np.array([f.runtime for f in ensembled_pipelines])
+        # Create flat runtime dictionary
+        # Sub-function runtimes are collected in the runtime attribute of the top-level
+        # function wrapper directly
+        runtime_dict = {}
+        for f in self.top_f:
+            runtime_dict.update(f.runtime)
 
+        # Get runtimes in order - 0 for any non-called function
+        runtimes = np.array([runtime_dict.get(n, 0.0) for n in F_NAME_ORDER])
+
+        # Log runtimes
         if not self.save_statistics:
             self.logger.info(
                 "Rutimes:\n"
-                + "\t".join([pipeline_names])
+                + "\t".join(F_NAME_ORDER)
                 + "\n"
                 + "\t".join(map(str, runtimes))
             )

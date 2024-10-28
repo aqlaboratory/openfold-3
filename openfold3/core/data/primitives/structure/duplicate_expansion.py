@@ -6,6 +6,7 @@ alignment.
 import numpy as np
 from biotite.structure import AtomArray
 
+from openfold3.core.data.primitives.quality_control.logging_utils import log_runtime
 from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
     remove_atom_indices,
@@ -13,6 +14,7 @@ from openfold3.core.data.primitives.structure.labels import (
 from openfold3.core.data.resources.residues import MoleculeType
 
 
+@log_runtime(name="runtime-target-structure-proc-expand")
 def expand_duplicate_chains(
     atom_array: AtomArray,
 ) -> AtomArray:

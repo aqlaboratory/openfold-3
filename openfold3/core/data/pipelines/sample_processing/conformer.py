@@ -142,7 +142,7 @@ def get_processed_reference_conformer(
     return ProcessedReferenceMolecule(mol_id, mol, in_array_mask)
 
 
-@log_runtime()
+@log_runtime(name="runtime-ref-conf-proc")
 def get_reference_conformer_data_af3(
     atom_array: AtomArray,
     per_chain_metadata: dict,

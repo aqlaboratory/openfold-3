@@ -55,22 +55,72 @@ class ComplianceLog:
 # This should be imported and set in the dataset class' module
 LOG_RUNTIMES = contextvars.ContextVar("LOG_RUNTIME", default=False)
 
+# Context variable to hold the shared runtime dictionary
+RUNTIME_DICT = contextvars.ContextVar("RUNTIME_DICT", default=None)
 
-def log_runtime(enabled=LOG_RUNTIMES):
+# Mapping of function names to their respective runtime logging functions
+F_NAME_ORDER = [
+    "runtime-target-structure-proc",
+    "runtime-target-structure-feat",
+    "runtime-msa-proc",
+    "runtime-msa-feat",
+    "runtime-templates-feat",
+    "runtime-ref-conf-proc",
+    "runtime-ref-conf-feat",
+    "runtime-target-structure-proc-parse",
+    "runtime-target-structure-proc-token",
+    "runtime-target-structure-proc-crop",
+    "runtime-target-structure-proc-expand",
+    "runtime-msa-proc-crop-to-seq",
+    #    "runtime-msa-proc-proc", # not logged
+    "runtime-msa-proc-parse",
+    "runtime-msa-proc-create-query",
+    "runtime-msa-proc-homo-mono",
+    "runtime-msa-proc-create-paired",
+    "runtime-msa-proc-expand-paired",
+    "runtime-msa-proc-create-main",
+    "runtime-msa-proc-apply-crop",
+]
+
+
+def log_runtime(name=None, enabled=LOG_RUNTIMES):
     """Decorator factory to log the runtime of a function."""
 
     def decorator(func):
         """Actual runtime logging decorator."""
+        function_name = (
+            name if name is not None else f"{func.__module__}.{func.__qualname__}"
+        )
 
         @wraps(func)
         def wrapper(*args, **kwargs):
             """Wrapper function to allow for conditionally logging the runtime."""
             # Here, fetch the context variable to determine if logging is enabled
             if enabled.get():
+                # Fetch the shared runtime dictionary
+                runtimes = RUNTIME_DICT.get()
+                # The first time a decorated function is called within a context where
+                # LOG_RUNTIMES is True, it initializes the RUNTIME_DICT
+                if runtimes is None:
+                    runtimes = {}
+                    runtimes_token = RUNTIME_DICT.set(runtimes)
+                # Subsequent decorated functions in the same context will use the
+                # existing RUNTIME_DICT
+                else:
+                    runtimes_token = None
+
+                # Measure the runtime
                 start_time = time.time()
                 result = func(*args, **kwargs)
                 runtime = time.time() - start_time
-                wrapper.runtime = runtime
+
+                # Log the runtime to the context variable and the wrapper attribute
+                runtimes[function_name] = runtime
+                wrapper.runtime = runtimes
+
+                # Reset the context variable to the original value
+                if runtimes_token is not None:
+                    RUNTIME_DICT.reset(runtimes_token)
             else:
                 result = func(*args, **kwargs)
                 wrapper.runtime = None

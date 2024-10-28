@@ -128,7 +128,7 @@ def featurize_structure_af3(
     )
 
 
-@log_runtime()
+@log_runtime(name="runtime-target-structure-feat")
 def featurize_target_gt_structure_af3(
     atom_array_cropped: AtomArray,
     atom_array_gt: AtomArray,

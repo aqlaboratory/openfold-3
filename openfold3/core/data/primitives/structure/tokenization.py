@@ -4,6 +4,7 @@ import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
 
+from openfold3.core.data.primitives.quality_control.logging_utils import log_runtime
 from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
     remove_atom_indices,
@@ -17,6 +18,7 @@ from openfold3.core.data.resources.residues import (
 )
 
 
+@log_runtime(name="runtime-target-structure-proc-token")
 def tokenize_atom_array(atom_array: AtomArray):
     """Generates token ids, token center atom annotations and atom id annotations for a
     biotite atom_array.

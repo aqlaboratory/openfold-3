@@ -20,6 +20,7 @@ from openfold3.core.data.primitives.sequence.msa import (
 )
 
 
+@log_runtime(name="runtime-msa-proc-proc")
 def process_msas_af3(
     alignments_directory: Path | None,
     alignment_db_directory: Path | None,
@@ -119,7 +120,7 @@ def process_msas_af3(
     )
 
 
-@log_runtime()
+@log_runtime(name="runtime-msa-proc")
 def process_msas_cropped_af3(
     alignments_directory: Path | None,
     alignment_db_directory: Path | None,

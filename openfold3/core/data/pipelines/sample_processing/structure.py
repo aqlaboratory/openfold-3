@@ -1,11 +1,11 @@
 """This module contains pipelines for processing structural features on-the-fly."""
 
-import pickle
 from pathlib import Path
 from typing import Literal
 
 from biotite.structure import AtomArray
 
+from openfold3.core.data.io.structure.cif import parse_target_structure
 from openfold3.core.data.primitives.quality_control.logging_utils import log_runtime
 from openfold3.core.data.primitives.structure.cropping import apply_crop
 from openfold3.core.data.primitives.structure.duplicate_expansion import (
@@ -14,7 +14,7 @@ from openfold3.core.data.primitives.structure.duplicate_expansion import (
 from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
 
 
-@log_runtime()
+@log_runtime(name="runtime-target-structure-proc")
 def process_target_structure_af3(
     target_structures_directory: Path,
     pdb_id: str,
@@ -50,16 +50,9 @@ def process_target_structure_af3(
             (- Full atom array - optional.)
     """
     # Parse target structure
-    target_file = target_structures_directory / pdb_id / f"{pdb_id}.{structure_format}"
-
-    if structure_format == "pkl":
-        with open(target_file, "rb") as f:
-            atom_array = pickle.load(f)
-    else:
-        raise ValueError(
-            f"Invalid structure format: {structure_format}. Only pickle "
-            "format is supported in a torch dataset __getitem__."
-        )
+    atom_array = parse_target_structure(
+        target_structures_directory, pdb_id, structure_format
+    )
 
     # Tokenize
     tokenize_atom_array(atom_array=atom_array)
