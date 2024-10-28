@@ -113,7 +113,7 @@ class PreprocessingDataCache:
 
                     # This is only set for ligand chains
                     # TODO: this should be explicitly None after preprocessing refactor,
-                    # so if condition should be removed
+                    # so if-condition should be removed
                     if "reference_mol_id" in per_chain_data:
                         reference_mol_id = per_chain_data.pop("reference_mol_id")
                     else:
@@ -263,7 +263,7 @@ class ClusteredDatasetCache(DatasetCache):
         structure_data = {}
         for pdb_id, per_structure_data in data["structure_data"].items():
             chain_data = per_structure_data.pop("chains")
-            interface_data = per_structure_data.pop("interface_clusters")
+            interface_data = per_structure_data.pop("interfaces")
 
             chains = {
                 chain_id: ClusteredDatasetChainData(**chain_data[chain_id])
@@ -283,9 +283,9 @@ class ClusteredDatasetCache(DatasetCache):
 
         # Format reference molecule data
         ref_mol_data = {}
-        for ref_mol_id, ref_mol_data in data["reference_molecule_data"].items():
-            ref_mol_data = DatasetReferenceMoleculeData(**ref_mol_data)
-            ref_mol_data[ref_mol_id] = ref_mol_data
+        for ref_mol_id, per_ref_mol_data in data["reference_molecule_data"].items():
+            per_ref_mol_data_fmt = DatasetReferenceMoleculeData(**per_ref_mol_data)
+            ref_mol_data[ref_mol_id] = per_ref_mol_data_fmt
 
         return cls(
             name=name,
