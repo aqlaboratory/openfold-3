@@ -225,21 +225,21 @@ class WeightedPDBDataset(SingleDataset):
         datapoint_collection = DatapointCollection.create_empty()
         for entry, entry_data in self.dataset_cache.structure_data.items():
             # Append chains
-            for chain, chain_data in entry_data["chains"].items():
+            for chain, chain_data in entry_data.chains.items():
                 datapoint_collection.append(
                     entry,
                     str(chain),
-                    chain_data["molecule_type"],
+                    chain_data.molecule_type,
                     DatapointType.CHAIN,
-                    int(chain_data["cluster_size"]),
+                    int(chain_data.cluster_size),
                 )
 
             # Append interfaces
-            for interface_id, cluster_data in entry_data["interfaces"].items():
+            for interface_id, cluster_data in entry_data.interfaces.items():
                 interface_chains = interface_id.split("_")
-                cluster_size = int(cluster_data["cluster_size"])
+                cluster_size = int(cluster_data.cluster_size)
                 chain_moltypes = [
-                    entry_data["chains"][chain]["molecule_type"]
+                    entry_data.chains[chain].molecule_type
                     for chain in interface_chains
                 ]
 
