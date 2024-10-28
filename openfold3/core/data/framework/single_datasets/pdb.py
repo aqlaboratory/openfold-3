@@ -235,7 +235,7 @@ class WeightedPDBDataset(SingleDataset):
                 )
 
             # Append interfaces
-            for interface_id, cluster_data in entry_data["interface_clusters"].items():
+            for interface_id, cluster_data in entry_data["interfaces"].items():
                 interface_chains = interface_id.split("_")
                 cluster_size = int(cluster_data["cluster_size"])
                 chain_moltypes = [

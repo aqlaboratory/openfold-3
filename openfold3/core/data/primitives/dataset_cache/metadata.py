@@ -199,6 +199,7 @@ def filter_by_skipped_structures(
     return structure_cache
 
 
+# NIT: Make this class-method of ClusteredDataset instead?
 def build_provisional_clustered_dataset_cache(
     preprocessing_cache: PreprocessingDataCache, dataset_name: str
 ) -> ClusteredDatasetCache:
@@ -246,11 +247,11 @@ def build_provisional_clustered_dataset_cache(
             )
 
         # Add interface cluster data with dummy values
-        new_interface_clusters = structure_data[pdb_id].interface_clusters
+        new_interface_data = structure_data[pdb_id].interfaces
         for interface in preprocessed_structure_data.interfaces:
             chain_1, chain_2 = interface
             interface_id = f"{chain_1}_{chain_2}"
-            new_interface_clusters[interface_id] = ClusteredDatasetInterfaceData(
+            new_interface_data[interface_id] = ClusteredDatasetInterfaceData(
                 cluster_id="",
                 cluster_size=0,
             )

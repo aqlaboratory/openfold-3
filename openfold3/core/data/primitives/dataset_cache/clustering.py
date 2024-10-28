@@ -199,7 +199,7 @@ def add_cluster_ids_and_sizes(
 
         # Get cluster IDs for each interface by joining the cluster IDs of individual
         # chains
-        for interface_id in metadata.interface_clusters:
+        for interface_id in metadata.interfaces:
             chain_1, chain_2 = interface_id.split("_")
 
             chain_1_cluster_id = structure_cache[pdb_id].chains[chain_1].cluster_id
@@ -210,7 +210,7 @@ def add_cluster_ids_and_sizes(
                 chain_2_cluster_id=chain_2_cluster_id,
             )
 
-            metadata.interface_clusters[interface_id].cluster_id = interface_cluster_id
+            metadata.interfaces[interface_id].cluster_id = interface_cluster_id
 
             # Increment cluster size
             cluster_id_to_size[interface_cluster_id] += 1
@@ -226,7 +226,7 @@ def add_cluster_ids_and_sizes(
             else:
                 chain_data.cluster_size = cluster_id_to_size[cluster_id]
 
-        for interface_data in metadata.interface_clusters.values():
+        for interface_data in metadata.interfaces.values():
             cluster_id = interface_data.cluster_id
 
             # TODO: remove this after debugging preprocessing
