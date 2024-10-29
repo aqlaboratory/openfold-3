@@ -43,14 +43,6 @@ from openfold3.projects import registry
 
 np.set_printoptions(threshold=sys.maxsize)
 
-# if importlib.util.find_spec("deepspeed") is not None:
-#     import deepspeed
-
-#     # TODO: Resolve this
-#     # This is a hack to prevent deepspeed from doing the triton matmul autotuning
-#     # I'm not sure why it's doing this by default, but it's causing the tests to hang
-#     deepspeed.HAS_TRITON = False
-
 
 @click.command()
 @click.option(
@@ -202,7 +194,8 @@ def main(
 
     Raises:
         ValueError:
-            If num_workers < 1.
+            If num_workers < 1 or if more than one of run_asserts, log_runtimes, and
+            log_memory are set to True.
         NotImplementedError:
             If with_model_fwd is True.
 
@@ -217,6 +210,10 @@ def main(
 
     if runner_args.num_workers < 1:
         raise ValueError("This script only works with num_workers >= 1.")
+    if sum([run_asserts, log_runtimes, log_memory]) > 1:
+        raise ValueError(
+            "Only one of run_asserts, log_runtimes, and log_memory can be set to True."
+        )
 
     project_entry = registry.get_project_entry(runner_args.project_type)
     project_config = registry.make_config_with_presets(

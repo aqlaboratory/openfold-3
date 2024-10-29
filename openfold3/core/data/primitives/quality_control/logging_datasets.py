@@ -39,6 +39,7 @@ from openfold3.core.data.primitives.quality_control.asserts import ENSEMBLED_ASS
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     F_NAME_ORDER,
     LOG_RUNTIMES,
+    WORKER_MEM_LOG_PATH,
     get_interface_string,
 )
 from openfold3.core.data.resources.residues import (
@@ -101,8 +102,13 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         features = {}
         atom_array_cropped = None
 
-        # Set runtime logging context - should be thread-safe
+        # Set runtime logging context
         runtime_context_token = LOG_RUNTIMES.set(self.log_runtimes)
+        # Set path to memory log file
+        if self.log_memory:
+            WORKER_MEM_LOG_PATH.set(
+                self.get_worker_path(subdirs=None, fname="memory_profile.log")
+            )
 
         # Check if datapoint needs to be skipped
         if self.skip_datapoint(pdb_id, preferred_chain_or_interface):
@@ -313,53 +319,46 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             self.compliance_log.passed_ids.add(
                 f"{pdb_id}-{preferred_chain_or_interface}"
             )
-            log_output_dir = self.logger.extra["log_output_directory"] / Path(
-                "worker_{}".format(self.logger.extra["worker_id"])
-            )
-            self.compliance_log.save_worker_compliance_file(
-                log_output_dir / Path("passed_ids.tsv")
-            )
+            compliance_file = self.get_worker_path(subdirs=None, fname="passed_ids.tsv")
+            self.compliance_log.save_worker_compliance_file(compliance_file)
 
     def save_features_atom_array(
         self, features, atom_array_cropped, pdb_id, preferred_chain_or_interface
     ):
         """Saves features and/or atom array from the worker process to disk."""
-        log_output_dir = self.logger.extra["log_output_directory"] / Path(
-            "worker_{}/{}".format(self.logger.extra["worker_id"], pdb_id)
-        )
-        log_output_dir.mkdir(parents=True, exist_ok=True)
-
         preferred_chain_or_interface = (
             "-".join(preferred_chain_or_interface)
             if isinstance(preferred_chain_or_interface, list)
             else preferred_chain_or_interface
         )
+        log_output_feat = self.get_worker_path(
+            subdirs=[pdb_id], fname=f"{preferred_chain_or_interface}_features.pkl"
+        )
+        log_output_aa = self.get_worker_path(
+            subdirs=[pdb_id], fname=f"{preferred_chain_or_interface}_atom_array.pkl"
+        )
+
         if self.save_features is not False:
             torch.save(
                 features,
-                log_output_dir
-                / Path(f"{pdb_id}-{preferred_chain_or_interface}_features.pt"),
+                log_output_feat,
             )
         if (self.save_atom_array is not False) & (atom_array_cropped is not None):
             with open(
-                log_output_dir
-                / Path(f"{pdb_id}-{preferred_chain_or_interface}_atom_array.pkl"),
+                log_output_aa,
                 "wb",
             ) as f:
                 pkl.dump(atom_array_cropped, f)
 
     def save_full_traceback_for_sample(self, e, pdb_id, preferred_chain_or_interface):
         """Saves the full traceback to for failed samples."""
-
-        log_output_dir = self.logger.extra["log_output_directory"] / Path(
-            "worker_{}/{}".format(self.logger.extra["worker_id"], pdb_id)
-        )
-        log_output_dir.mkdir(parents=True, exist_ok=True)
-
         preferred_chain_or_interface = (
             "-".join(preferred_chain_or_interface)
             if isinstance(preferred_chain_or_interface, list)
             else preferred_chain_or_interface
+        )
+        log_output_errfile = self.get_worker_path(
+            subdirs=[pdb_id], fname=f"{pdb_id}-{preferred_chain_or_interface}_error.log"
         )
 
         # Create temporary logger to log the traceback
@@ -371,7 +370,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         sample_logger.setLevel(self.logger.logger.level)
         sample_logger.propagate = False
         sample_file_handler = logging.FileHandler(
-            log_output_dir / Path(f"{pdb_id}-{preferred_chain_or_interface}_error.log"),
+            log_output_errfile,
             mode="w",
         )
         sample_file_handler.setLevel(self.logger.logger.level)
@@ -406,13 +405,13 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         """Saves additional data statistics."""
         if self.save_statistics:
             # Set worker output directory
-            log_output_dir = self.logger.extra["log_output_directory"] / Path(
-                "worker_{}".format(self.logger.extra["worker_id"])
-            )
             preferred_chain_or_interface = (
                 "-".join(preferred_chain_or_interface)
                 if isinstance(preferred_chain_or_interface, list)
                 else preferred_chain_or_interface
+            )
+            log_output_datafile = self.get_worker_path(
+                subdirs=None, fname="datapoint_statistics.tsv"
             )
 
             # Init line:
@@ -585,11 +584,32 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             line += "\t".join(map(str, statistics))
             line += "\n"
 
-            with open(
-                log_output_dir / Path("datapoint_statistics.tsv"),
-                "a",
-            ) as f:
+            with open(log_output_datafile, "a") as f:
                 f.write(line)
+
+    def get_worker_path(self, subdirs: list[str] | None, fname: str | None) -> Path:
+        """Returns the path to the worker output directory or file.
+
+        Args:
+            subdirs (list[str] | None):
+                List of subdirectories to append to the worker output directory.
+            fname (str | None):
+                Filename to append to the worker output directory.
+
+        Returns:
+            Path:
+                Path to the worker output directory or file. Without subdirs and fname
+                this is log_output_directory/worker_{worker_id}.
+        """
+        log_output_path = self.logger.extra["log_output_directory"] / Path(
+            "worker_{}".format(self.logger.extra["worker_id"])
+        )
+        if subdirs is not None:
+            log_output_path = log_output_path / Path(*subdirs)
+        log_output_path.mkdir(parents=True, exist_ok=True)
+        if fname is not None:
+            log_output_path = log_output_path / Path(fname)
+        return log_output_path
 
     def fetch_runtimes(
         self,

@@ -1,6 +1,7 @@
 """Treadmill logging utilities."""
 
 import contextvars
+import re
 import time
 from dataclasses import dataclass, field
 from functools import wraps
@@ -54,9 +55,10 @@ class ComplianceLog:
 # Specify the context variable for logging runtimes
 # This should be imported and set in the dataset class' module
 LOG_RUNTIMES = contextvars.ContextVar("LOG_RUNTIME", default=False)
-
 # Context variable to hold the shared runtime dictionary
 RUNTIME_DICT = contextvars.ContextVar("RUNTIME_DICT", default=None)
+# Context variable to hold the path to the memory profiler log file for each worker
+WORKER_MEM_LOG_PATH = contextvars.ContextVar("WORKER_MEM_LOG_PATH", default=None)
 
 # Mapping of function names to their respective runtime logging functions
 F_NAME_ORDER = [
@@ -247,3 +249,59 @@ def decode_interface(interface_string: str) -> tuple[np.ndarray, np.ndarray]:
     chain_residues = np.column_stack((residues, chains.reshape(-1, 2)))
 
     return chain_residues[:, :2], chain_residues[:, 2:]
+
+
+def parse_memory_profiler_log(log_file_path):
+    data = []
+    current_function = None
+
+    # Regular expressions to match lines
+    func_def_regex = re.compile(r"^\s*(\d+)\s+.*def\s+(\w+)\s*\(.*\):")
+    mem_line_regex = re.compile(
+        r"^\s*(\d+)\s+([\d\.]+)\s+MiB\s+([\d\.\-\+]+)\s+MiB\s+(\d+)\s+(.*)"
+    )
+
+    with open(log_file_path) as f:
+        for line in f:
+            line = line.rstrip("\n")
+            # Skip empty lines and headers
+            if not line.strip() or line.startswith(("Filename:", "Line #", "====")):
+                continue
+
+            # Check for function definition
+            func_match = func_def_regex.match(line)
+            if func_match:
+                current_function = func_match.group(2)
+                continue
+
+            # Check for memory data lines
+            mem_match = mem_line_regex.match(line)
+            if mem_match:
+                line_number = int(mem_match.group(1))
+                mem_usage_mib = float(mem_match.group(2))
+                increment_mib = float(mem_match.group(3))
+                occurrences = int(mem_match.group(4))
+                code_line = mem_match.group(5).strip()
+
+                # Skip lines that contain the @profile decorator
+                if "@profile" in code_line:
+                    continue
+
+                # Convert MiB to MB
+                mem_usage_mb = mem_usage_mib * 1.048576
+                increment_mb = increment_mib * 1.048576
+
+                data.append(
+                    {
+                        "function": current_function,
+                        "line_number": line_number,
+                        "mem_usage_MB": mem_usage_mb,
+                        "increment_MB": increment_mb,
+                        "occurrences": occurrences,
+                        "code_line": code_line,
+                    }
+                )
+
+    # Create DataFrame
+    df = pd.DataFrame(data)
+    return df
