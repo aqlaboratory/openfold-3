@@ -105,10 +105,9 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         # Set runtime logging context
         runtime_context_token = LOG_RUNTIMES.set(self.log_runtimes)
         # Set path to memory log file
-        if self.log_memory:
-            WORKER_MEM_LOG_PATH.set(
-                self.get_worker_path(subdirs=None, fname="memory_profile.log")
-            )
+        mem_log_token = WORKER_MEM_LOG_PATH.set(
+            self.get_worker_path(subdirs=None, fname="memory_profile.log")
+        )
 
         # Check if datapoint needs to be skipped
         if self.skip_datapoint(pdb_id, preferred_chain_or_interface):
@@ -252,8 +251,9 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             return features
 
         finally:
-            # Reset context variable
+            # Reset context variables
             LOG_RUNTIMES.reset(runtime_context_token)
+            WORKER_MEM_LOG_PATH.reset(mem_log_token)
 
     def skip_datapoint(self, pdb_id, preferred_chain_or_interface):
         """Determines whether to skip a datapoint."""

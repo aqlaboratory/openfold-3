@@ -56,7 +56,10 @@ def crop_contiguous(
     atom_array.set_annotation("crop_mask", np.repeat(False, len(atom_array)))
 
     # Cropping loop
-    tokens_remaining = max(atom_array.token_id)
+    # "number of tokens selected so far"
+    n_added = 0
+    # combined length of yet to be cropped chains excluding current"
+    n_remaining = len(set(atom_array.token_id))
 
     for chain_id in chains:
         # Get chain atom array
@@ -64,25 +67,29 @@ def crop_contiguous(
 
         # Get chain length
         chain_length = atom_array_chain.token_id[-1] - atom_array_chain.token_id[0] + 1
-        tokens_remaining -= chain_length
+        n_remaining -= chain_length
 
         # Sample length of crop for current chain
-        crop_size_max = min(token_budget, chain_length)
-        crop_size_min = min(chain_length, max(0, token_budget - tokens_remaining))
-        if crop_size_min < crop_size_max + 1:
-            crop_size = generator.integers(crop_size_min, crop_size_max + 1, 1).item()
-        else:
-            crop_size = crop_size_max
-        token_budget -= crop_size
+        crop_size_max = min(token_budget - n_added, chain_length)
+        crop_size_min = min(chain_length, max(0, token_budget - n_added - n_remaining))
+        crop_size = generator.integers(crop_size_min, crop_size_max + 1, 1).item()
 
-        crop_start = generator.integers(0, chain_length - crop_size, 1).item()
-        crop_start_global = atom_array_chain[crop_start]._atom_idx
+        n_added += crop_size
+
+        # Sample start of crop for current chain
+        crop_start = generator.integers(0, chain_length - crop_size + 1, 1).item()
+
+        # Get token indices in the crop
+        chain_token_ids = np.array(sorted(list(set(atom_array_chain.token_id))))
+        # Slice using the sampled crop start and length for this chain
+        crop_token_index_chain = chain_token_ids[crop_start : crop_start + crop_size]
+        # Map to atom indices in the full assembly
+        crop_atom_index_chain = atom_array_chain[
+            np.isin(atom_array_chain.token_id, crop_token_index_chain)
+        ]._atom_idx
 
         # Edit corresponding segment in crop mask
-        atom_array.crop_mask[crop_start_global : crop_start_global + crop_size] = True
-
-        if token_budget <= 0:
-            break
+        atom_array.crop_mask[crop_atom_index_chain] = True
 
     # Remove atom index
     remove_atom_indices(atom_array)
