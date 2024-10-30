@@ -129,7 +129,7 @@ def crop_spatial(
         generator = default_rng(seed=seed)
 
     # Subset token center atoms to those in the preferred chain/interface if provided
-    token_center_atoms, preferred_token_center_atoms = subset_preferred(
+    token_center_atoms, preferred_token_center_atoms = fetch_token_center_atoms(
         atom_array, preferred_chain_or_interface
     )
 
@@ -174,7 +174,7 @@ def crop_spatial_interface(
         generator = default_rng(seed=seed)
 
     # Subset token center atoms to those in the preferred chain/interface if provided
-    token_center_atoms, preferred_token_center_atoms = subset_preferred(
+    token_center_atoms, preferred_token_center_atoms = fetch_token_center_atoms(
         atom_array, preferred_chain_or_interface
     )
 
@@ -198,11 +198,14 @@ def crop_spatial_interface(
     find_spatial_crop(reference_atom, token_center_atoms, token_budget, atom_array)
 
 
-def subset_preferred(
+def fetch_token_center_atoms(
     atom_array: AtomArray,
     preferred_chain_or_interface: Optional[Union[int, tuple[int, int]]],
 ) -> tuple[AtomArray, AtomArray]:
-    """Subsets token center atoms to those in the preferred chain or interface.
+    """Returns the token center atoms in an atom array.
+
+    Also returns a subset of token center atoms which are in the preferred chain or
+    interface.
 
     Args:
         atom_array (AtomArray):
@@ -223,6 +226,15 @@ def subset_preferred(
             center atoms are subset to only resolved atoms.
     """
     token_center_atoms = atom_array[atom_array.token_center_atom]
+
+    # Subset to resolved token center atoms
+    token_center_atoms = token_center_atoms[token_center_atoms.occupancy > 0]
+
+    if len(token_center_atoms) == 0:
+        raise RuntimeError(
+            "Cannot crop a structure with no resolved token center " "atoms."
+        )
+
     if preferred_chain_or_interface is not None:
         # If chain provided
         if isinstance(preferred_chain_or_interface, str):
@@ -242,14 +254,12 @@ def subset_preferred(
     else:
         preferred_token_center_atoms = token_center_atoms
 
-    # Only return resolved atoms as preferred token center atoms
-    # use nan coordinates to find unresolved atoms as the occupancy
-    # annotation can be all 0s for some assemblies
-    is_resolved = np.all(~np.isnan(preferred_token_center_atoms.coord), axis=1)
-    # Only apply if there are resolved atoms in the preferred chain or interface
-    # otherwise don't subset to preferred chain or interface
-    if sum(is_resolved) > 0:
-        preferred_token_center_atoms = preferred_token_center_atoms[is_resolved]
+    # If the preferred chain/interface has no resolved atoms, use all resolved token
+    # center atoms
+    # Note: this will also be the case if a chain or interface is provided that is not
+    # in the structure
+    if len(preferred_token_center_atoms) == 0:
+        preferred_token_center_atoms = token_center_atoms
 
     return token_center_atoms, preferred_token_center_atoms
 

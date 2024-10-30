@@ -210,10 +210,12 @@ def main(
 
     if runner_args.num_workers < 1:
         raise ValueError("This script only works with num_workers >= 1.")
-    if sum([run_asserts, log_runtimes, log_memory]) > 1:
+    if sum([run_asserts, save_statistics]) > 1:
         raise ValueError(
-            "Only one of run_asserts, log_runtimes, and log_memory can be set to True."
+            "Only one of run_asserts and save_statistics can be set to True."
         )
+    if sum([log_runtimes, log_memory]) > 1:
+        raise ValueError("Only one of log_runtimes, and log_memory can be set to True.")
 
     project_entry = registry.get_project_entry(runner_args.project_type)
     project_config = registry.make_config_with_presets(
