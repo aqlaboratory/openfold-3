@@ -176,10 +176,10 @@ def bond_loss(x: torch.Tensor, batch: Dict, eps: float) -> torch.Tensor:
 
     # Compute pairwise distances
     dx = torch.sqrt(
-        eps**2 + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
+        eps + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
     )
     dx_gt = torch.sqrt(
-        eps**2 + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
+        eps + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1)
     )
 
     # Construct polymer-ligand per-token bond mask
@@ -235,10 +235,10 @@ def smooth_lddt_loss(x: torch.Tensor, batch: Dict, eps: float) -> torch.Tensor:
 
     # [*, N_atom, N_atom]
     dx = torch.sqrt(
-        eps**2 + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
+        eps + torch.sum((x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
     )
     dx_gt = torch.sqrt(
-        eps**2 + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1),
+        eps + torch.sum((x_gt[..., None, :] - x_gt[..., None, :, :]) ** 2, dim=-1),
     )
 
     # [*, N_atom, N_atom]
@@ -361,7 +361,6 @@ def diffusion_loss(
         eps=eps,
     )
     loss_breakdown = {"mse_loss": l_mse}
-    l_mse *= loss_weights["mse"]
 
     l_bond = 0.0
     l_smooth_lddt = 0.0
@@ -394,8 +393,13 @@ def diffusion_loss(
             )
             loss_breakdown["smooth_lddt_loss"] = l_smooth_lddt
 
-    l_bond *= bond_weight
-    l_smooth_lddt *= smooth_lddt_weight
+    loss_breakdown = {
+        k: torch.mean(v).detach().clone() for k, v in loss_breakdown.items()
+    }
+
+    l_mse = l_mse * loss_weights["mse"]
+    l_bond = l_bond * bond_weight
+    l_smooth_lddt = l_smooth_lddt * smooth_lddt_weight
 
     # TODO: Changed from SI, denominator (t + sigma_data) ** 2 changed
     #  to (t * sigma_data) ** 2. Test whether this is works as expected.
@@ -403,10 +407,6 @@ def diffusion_loss(
     l = w * (l_mse + l_bond) + l_smooth_lddt
 
     mean_loss = torch.mean(l)
-
-    loss_breakdown = {
-        k: torch.mean(v).detach().clone() for k, v in loss_breakdown.items()
-    }
 
     # Return to original batch size
     tensor_tree_map(lambda t: t.squeeze(1), batch)

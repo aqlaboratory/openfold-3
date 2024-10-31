@@ -3,6 +3,7 @@
 
 import pytorch_lightning as pl
 import torch
+from ml_collections import ConfigDict
 
 from openfold3.core.utils.exponential_moving_average import ExponentialMovingAverage
 from openfold3.core.utils.tensor_utils import tensor_tree_map
@@ -17,14 +18,14 @@ class ModelRunner(pl.LightningModule):
     https://lightning.ai/docs/pytorch/stable/common/lightning_module.html#hooks"""
 
     def __init__(
-        self, model_class: torch.nn.Module, config: dict, _compile: bool = True
+        self, model_class: torch.nn.Module, config: ConfigDict, _compile: bool = True
     ) -> None:
         """Assign general attributes and initialize the model.
 
         Args:
             model_class (nn.Module):
                 The model class to be used.
-            config (dict):
+            config (ConfigDict):
                 <Here, need a description of general config structure and
                 arguments.>
             _compile (bool):
@@ -163,4 +164,7 @@ class ModelRunner(pl.LightningModule):
     def _compute_validation_metrics(
         self, batch, outputs, superimposition_metrics=False
     ):
+        pass
+
+    def _compute_confidence_scores(self, batch: dict, outputs: dict):
         pass

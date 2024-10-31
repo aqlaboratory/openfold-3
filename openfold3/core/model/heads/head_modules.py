@@ -18,13 +18,6 @@ from typing import Dict
 import torch
 import torch.nn as nn
 
-from openfold3.core.metrics.confidence import (
-    compute_plddt,
-    compute_predicted_aligned_error,
-    compute_predicted_distance_error,
-    compute_ptm,
-    compute_weighted_ptm,
-)
 from openfold3.core.model.heads.prediction_heads import (
     DistogramHead,
     ExperimentallyResolvedHead,
@@ -39,7 +32,6 @@ from openfold3.core.model.heads.prediction_heads import (
 )
 from openfold3.core.utils.atomize_utils import (
     broadcast_token_feat_to_atoms,
-    get_token_frame_atoms,
     get_token_representative_atoms,
 )
 
@@ -90,8 +82,6 @@ class AuxiliaryHeadsAF2(nn.Module):
             aux_out: Dict containing:
                 "lddt_logits" ([*, N_res, bins_plddt]):
                     pLDDT head out
-                "plddt" ([*, N_res]):
-                    Computed plddt
                 "distogram_logits" ([*, N_res, N_res, bins_distogram]):
                     Distogram head out
                 "masked_msa_logits" ([*, N_seq, N_res, bins_masked_msa]):
@@ -100,19 +90,10 @@ class AuxiliaryHeadsAF2(nn.Module):
                     Resolved head out
                 "tm_logits" ([*, N_res, N_res, bins_pae]):
                     Values identical to pae_logits
-                "ptm_score":
-                    Predicted TM score
-                "iptm_score":
-                    Interface predicted TM score
-                "weighted_ptm_score":
-                    Weighted pTM + iPTM score
         """
         aux_out = {}
         lddt_logits = self.plddt(outputs["sm"]["single"])
         aux_out["lddt_logits"] = lddt_logits
-
-        # Required for relaxation later on
-        aux_out["plddt"] = compute_plddt(lddt_logits)
 
         distogram_logits = self.distogram(outputs["pair"])
         aux_out["distogram_logits"] = distogram_logits
@@ -126,24 +107,6 @@ class AuxiliaryHeadsAF2(nn.Module):
         if self.config.tm.enabled:
             tm_logits = self.tm(outputs["pair"])
             aux_out["tm_logits"] = tm_logits
-
-            asym_id = outputs.get("asym_id")
-            if asym_id is not None:
-                ptm_scores = compute_weighted_ptm(
-                    logits=tm_logits, asym_id=asym_id, **self.config.confidence.ptm
-                )
-                aux_out.update(ptm_scores)
-            else:
-                aux_out["ptm_score"] = compute_ptm(
-                    tm_logits, **self.config.confidence.ptm
-                )
-
-            aux_out.update(
-                compute_predicted_aligned_error(
-                    tm_logits,
-                    **self.config.confidence.pae,
-                )
-            )
 
         return aux_out
 
@@ -230,9 +193,6 @@ class AuxiliaryHeadsAllAtom(nn.Module):
                         Predicted binned experimentally resolved logits
                     "distogram_logits" ([*, N_token, N_token, 64]):
                         Predicted binned distogram logits
-                    "confidence_scores":
-                        Dict containing the following confidence measures:
-                        pLDDT, PDE, PAE, pTM, iPTM, weighted pTM
         Note:
             Previous implementations of losses include softmax so all
             heads return logits.
@@ -291,50 +251,18 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             max_num_atoms_per_token=self.max_atoms_per_token,
         )
 
-        lddt_logits = self.plddt(s=si, max_atom_per_token_mask=max_atom_per_token_mask)
-        aux_out["plddt_logits"] = lddt_logits
-
-        # Used in modified residue ranking
-        aux_out["confidence_scores"] = {}
-        aux_out["confidence_scores"]["plddt"] = compute_plddt(lddt_logits)
+        aux_out["plddt_logits"] = self.plddt(
+            s=si, max_atom_per_token_mask=max_atom_per_token_mask
+        )
 
         experimentally_resolved_logits = self.experimentally_resolved(
             si, max_atom_per_token_mask
         )
         aux_out["experimentally_resolved_logits"] = experimentally_resolved_logits
 
-        pde_logits = self.pde(zij)
-        aux_out["pde_logits"] = pde_logits
-        aux_out["confidence_scores"].update(
-            compute_predicted_distance_error(
-                pde_logits,
-                **self.config.confidence.pde,
-            )
-        )
+        aux_out["pde_logits"] = self.pde(zij)
 
-        if self.config["pae"]["enabled"]:
-            pae_logits = self.pae(zij)
-            aux_out["pae_logits"] = pae_logits
-            aux_out["confidence_scores"].update(
-                compute_predicted_aligned_error(
-                    pae_logits,
-                    **self.config.confidence.pae,
-                )
-            )
-
-            _, valid_frame_mask = get_token_frame_atoms(
-                batch=batch, x=atom_positions_predicted, atom_mask=atom_mask
-            )
-
-            # TODO: Move this and other confidence logic out of the heads module
-            # Compute weighted pTM score
-            # Uses pae_logits (SI pg. 27)
-            ptm_scores = compute_weighted_ptm(
-                logits=pae_logits,
-                asym_id=batch["asym_id"],
-                mask=valid_frame_mask,
-                **self.config.confidence.ptm,
-            )
-            aux_out["confidence_scores"].update(ptm_scores)
+        if self.config.pae.enabled:
+            aux_out["pae_logits"] = self.pae(zij)
 
         return aux_out

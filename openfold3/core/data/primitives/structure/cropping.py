@@ -1,5 +1,6 @@
 """This module contains building blocks for cropping."""
 
+import random
 from typing import Callable, Optional, Union
 
 import numpy as np
@@ -40,7 +41,8 @@ def crop_contiguous(
     """
 
     if generator is None:
-        generator = default_rng()
+        seed = random.randint(0, torch.iinfo(torch.int32).max)
+        generator = default_rng(seed=seed)
 
     # Assign atom index
     assign_atom_indices(atom_array)
@@ -115,7 +117,8 @@ def crop_spatial(
     """
 
     if generator is None:
-        generator = default_rng()
+        seed = random.randint(0, torch.iinfo(torch.int32).max)
+        generator = default_rng(seed=seed)
 
     # Subset token center atoms to those in the preferred chain/interface if provided
     token_center_atoms, preferred_token_center_atoms = subset_preferred(
@@ -159,7 +162,8 @@ def crop_spatial_interface(
     """
 
     if generator is None:
-        generator = default_rng()
+        seed = random.randint(0, torch.iinfo(torch.int32).max)
+        generator = default_rng(seed=seed)
 
     # Subset token center atoms to those in the preferred chain/interface if provided
     token_center_atoms, preferred_token_center_atoms = subset_preferred(
@@ -174,8 +178,13 @@ def crop_spatial_interface(
             preferred_token_center_atoms, token_center_atoms
         )
 
-    # Get reference atom
-    reference_atom = generator.choice(preferred_interface_token_center_atoms, size=1)[0]
+        # Get reference atom
+        reference_atom = generator.choice(
+            preferred_interface_token_center_atoms, size=1
+        )[0]
+    else:
+        # Get reference atom
+        reference_atom = generator.choice(preferred_token_center_atoms, size=1)[0]
 
     # Find spatial crop
     find_spatial_crop(reference_atom, token_center_atoms, token_budget, atom_array)
@@ -202,7 +211,8 @@ def subset_preferred(
 
     Returns:
         tuple[AtomArray, AtomArray]:
-            Tuple of all and preferred token center atoms.
+            Tuple of all and preferred token center atoms. Note that the preferred token
+            center atoms are subset to only resolved atoms.
     """
     token_center_atoms = atom_array[atom_array.token_center_atom]
     if preferred_chain_or_interface is not None:
@@ -223,6 +233,13 @@ def subset_preferred(
             )
     else:
         preferred_token_center_atoms = token_center_atoms
+
+    # Only return resolved atoms as preferred token center atoms
+    # TODO: we may need exception handling for when there are no resolved atoms (if that
+    # could ever happen)
+    is_resolved = preferred_token_center_atoms.occupancy > 0
+    preferred_token_center_atoms = preferred_token_center_atoms[is_resolved]
+
     return token_center_atoms, preferred_token_center_atoms
 
 
@@ -280,7 +297,7 @@ CROP_REGISTRY = {
 }
 
 
-def sample_crop_fuction(crop_weights: dict[str, float]) -> tuple[Callable, tuple[str]]:
+def sample_crop_strategy(crop_weights: dict[str, float]) -> tuple[Callable, tuple[str]]:
     """Samples cropping strategy with dataset-specific weights.
 
     Args:
@@ -331,7 +348,7 @@ def apply_crop(
 
     # Otherwise crop
     else:
-        crop_function, crop_function_argnames = sample_crop_fuction(crop_weights)
+        crop_function, crop_function_argnames = sample_crop_strategy(crop_weights)
         crop_input = {
             "atom_array": atom_array,
             "token_budget": token_budget,

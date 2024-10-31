@@ -271,7 +271,7 @@ class WeightedPDBDataset(SingleDataset):
             crop_weights=self.crop_weights,
             token_budget=self.token_budget,
             preferred_chain_or_interface=preferred_chain_or_interface,
-            ciftype=".bcif",
+            structure_format="pkl",
         )
         # NOTE that for now we avoid the need for permutation alignment by providing the
         # cropped atom array as the ground truth atom array

@@ -1,13 +1,24 @@
+import importlib
 from pathlib import Path
 from typing import Dict
 
 import torch
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
+from openfold3.core.metrics.confidence import (
+    compute_plddt,
+    compute_predicted_aligned_error,
+    compute_predicted_distance_error,
+    compute_weighted_ptm,
+)
 from openfold3.core.metrics.validation_all_atom import (
     get_validation_metrics,
 )
 from openfold3.core.runners.model_runner import ModelRunner
+from openfold3.core.utils.atomize_utils import (
+    broadcast_token_feat_to_atoms,
+    get_token_frame_atoms,
+)
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects.af3_all_atom.config.base_config import project_config
@@ -17,6 +28,10 @@ from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
 from openfold3.projects.af3_all_atom.model import AlphaFold3
 from openfold3.projects.registry import register_project
 
+deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
+if deepspeed_is_installed:
+    from deepspeed.ops.adam import DeepSpeedCPUAdam
+
 REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_config.yml"
 
 
@@ -25,7 +40,7 @@ REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_conf
 )
 class AlphaFold3AllAtom(ModelRunner):
     def __init__(self, model_config, _compile=True):
-        super().__init__(AlphaFold3, model_config, _compile=_compile)
+        super().__init__(model_class=AlphaFold3, config=model_config, _compile=_compile)
 
         self.loss = (
             torch.compile(AlphaFold3Loss(config=model_config.architecture.loss_module))
@@ -79,15 +94,25 @@ class AlphaFold3AllAtom(ModelRunner):
     def configure_optimizers(
         self,
         learning_rate: float = 1.8e-3,
-    ) -> torch.optim.Adam:
+    ) -> dict:
         # Ignored as long as a DeepSpeed optimizer is configured
         optimizer_config = self.config.settings.optimizer
-        optimizer = torch.optim.Adam(
-            self.model.parameters(),
-            lr=learning_rate,
-            betas=(optimizer_config.beta1, optimizer_config.beta2),
-            eps=optimizer_config.eps,
-        )
+
+        if deepspeed_is_installed and optimizer_config.use_deepspeed_adam:
+            optimizer = DeepSpeedCPUAdam(
+                self.parameters(),
+                lr=learning_rate,
+                betas=(optimizer_config.beta1, optimizer_config.beta2),
+                eps=optimizer_config.eps,
+                adamw_mode=False,
+            )
+        else:
+            optimizer = torch.optim.Adam(
+                self.model.parameters(),
+                lr=learning_rate,
+                betas=(optimizer_config.beta1, optimizer_config.beta2),
+                eps=optimizer_config.eps,
+            )
 
         if self.last_lr_step != -1:
             for group in optimizer.param_groups:

@@ -53,7 +53,7 @@ def write_annotated_sdf(mol: AnnotatedMol, out: PathLike | str) -> Path:
 
     # Convert atom-wise annotations to global annotation which .sdf can handle
     for atom in mol.GetAtoms():
-        atom_annotations = atom.GetPropsAsDict()
+        atom_annotations = atom.GetPropsAsDict(autoConvertStrings=False)
 
         for key, value in atom_annotations.items():
             if key.startswith("annot_"):
@@ -85,7 +85,7 @@ def read_single_annotated_sdf(path: PathLike) -> AnnotatedMol:
 
     mol = read_single_sdf(path)
 
-    mol_annotations = mol.GetPropsAsDict()
+    mol_annotations = mol.GetPropsAsDict(autoConvertStrings=False)
 
     for key, value in mol_annotations.items():
         if key.startswith("atom_annot_"):

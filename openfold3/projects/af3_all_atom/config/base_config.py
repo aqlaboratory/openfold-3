@@ -13,7 +13,7 @@ c_s = mlc.FieldReference(384, field_type=int)
 c_z = mlc.FieldReference(128, field_type=int)
 c_m = mlc.FieldReference(64, field_type=int)
 c_t = mlc.FieldReference(64, field_type=int)
-c_atom_ref = mlc.FieldReference(379, field_type=int)
+c_atom_ref = mlc.FieldReference(380, field_type=int)
 c_atom = mlc.FieldReference(128, field_type=int)
 c_atom_pair = mlc.FieldReference(16, field_type=int)
 c_token_embedder = mlc.FieldReference(384, field_type=int)
@@ -25,7 +25,8 @@ sigma_data = mlc.FieldReference(16, field_type=int)
 max_relative_idx = mlc.FieldReference(32, field_type=int)
 max_relative_chain = mlc.FieldReference(2, field_type=int)
 no_samples = mlc.FieldReference(48, field_type=int)
-no_rollout_steps = mlc.FieldReference(20, field_type=int)
+no_mini_rollout_steps = mlc.FieldReference(20, field_type=int)
+no_full_rollout_steps = mlc.FieldReference(200, field_type=int)
 diffusion_training_enabled = mlc.FieldReference(True, field_type=bool)
 n_query = mlc.FieldReference(32, field_type=int)
 n_key = mlc.FieldReference(128, field_type=int)
@@ -34,6 +35,7 @@ block_size = mlc.FieldReference(16, field_type=int)
 
 # templates_enabled = mlc.FieldReference(True, field_type=bool)
 eps = mlc.FieldReference(1e-8, field_type=float)
+inf = mlc.FieldReference(1e9, field_type=float)
 blocks_per_ckpt = mlc.FieldReference(None, field_type=int)
 chunk_size = mlc.FieldReference(None, field_type=int)
 tune_chunk_size = mlc.FieldReference(True, field_type=bool)
@@ -47,7 +49,6 @@ project_config = mlc.ConfigDict(
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "chunk_size": chunk_size,
                 "use_block_sparse_attn": use_block_sparse_attn,
-                "diffusion_training_enabled": diffusion_training_enabled,
                 # Use DeepSpeed memory-efficient attention kernel. Mutually
                 # exclusive with use_lma and use_flash.
                 "use_deepspeed_evo_attention": False,
@@ -55,7 +56,9 @@ project_config = mlc.ConfigDict(
                 # exclusive with use_deepspeed_evo_attention and use_flash.
                 "use_lma": False,
                 "offload_inference": False,
+                "diffusion_training_enabled": diffusion_training_enabled,
                 "optimizer": {
+                    "use_deepspeed_adam": True,
                     "learning_rate": 1.8e-3,
                     "beta1": 0.9,
                     "beta2": 0.95,
@@ -74,7 +77,8 @@ project_config = mlc.ConfigDict(
                     "diffusion": {
                         "sigma_data": sigma_data,
                         "no_samples": no_samples,
-                        "no_rollout_steps": no_rollout_steps,
+                        "no_mini_rollout_steps": no_mini_rollout_steps,
+                        "no_full_rollout_steps": no_full_rollout_steps,
                     },
                 },
                 "input_embedder": {
@@ -101,8 +105,10 @@ project_config = mlc.ConfigDict(
                         "use_ada_layer_norm": True,
                         "use_block_sparse_attn": use_block_sparse_attn,
                         "block_size": block_size,
-                        "inf": 1e10,  # global parameter?
+                        "blocks_per_ckpt": blocks_per_ckpt,
+                        "inf": inf,
                         "linear_init_params": lin_init.atom_att_enc_init,
+                        "use_reentrant": False,
                     },
                     "linear_init_params": lin_init.input_emb_init,
                 },
@@ -131,7 +137,7 @@ project_config = mlc.ConfigDict(
                         "tri_mul_first": True,
                         "fuse_projection_weights": False,
                         "blocks_per_ckpt": blocks_per_ckpt,
-                        "inf": 1e9,
+                        "inf": inf,
                         "linear_init_params": lin_init.pair_block_init,
                         "use_reentrant": False,
                         "tune_chunk_size": tune_chunk_size,
@@ -161,7 +167,7 @@ project_config = mlc.ConfigDict(
                         "opm_first": True,
                         "fuse_projection_weights": False,
                         "blocks_per_ckpt": blocks_per_ckpt,
-                        "inf": 1e9,
+                        "inf": inf,
                         "eps": eps,
                         "linear_init_params": lin_init.msa_module_init,
                         "use_reentrant": False,
@@ -183,7 +189,7 @@ project_config = mlc.ConfigDict(
                     "pair_dropout": 0.25,
                     "fuse_projection_weights": False,
                     "blocks_per_ckpt": blocks_per_ckpt,
-                    "inf": 1e9,
+                    "inf": inf,
                     "linear_init_params": lin_init.pairformer_init,
                     "use_reentrant": False,
                     "clear_cache_between_blocks": False,
@@ -224,8 +230,10 @@ project_config = mlc.ConfigDict(
                         "use_ada_layer_norm": True,
                         "use_block_sparse_attn": use_block_sparse_attn,
                         "block_size": block_size,
-                        "inf": 1e9,  # global parameter?
+                        "blocks_per_ckpt": blocks_per_ckpt,
+                        "inf": inf,
                         "linear_init_params": lin_init.atom_att_enc_init,
+                        "use_reentrant": False,
                     },
                     "diffusion_transformer": {
                         "c_a": c_token_diffusion,
@@ -238,7 +246,7 @@ project_config = mlc.ConfigDict(
                         "use_ada_layer_norm": True,
                         "use_block_sparse_attn": False,
                         "block_size": None,
-                        "inf": 1e9,  # global parameter?
+                        "inf": inf,
                         "blocks_per_ckpt": blocks_per_ckpt,
                         "linear_init_params": lin_init.diffusion_transformer_init,
                         "use_reentrant": False,
@@ -257,13 +265,12 @@ project_config = mlc.ConfigDict(
                         "use_block_sparse_attn": use_block_sparse_attn,
                         "block_size": block_size,
                         "blocks_per_ckpt": blocks_per_ckpt,
-                        "inf": 1e9,  # global parameter?
+                        "inf": inf,
                         "linear_init_params": lin_init.atom_att_dec_init,
                         "use_reentrant": False,
                     },
                 },
                 "noise_schedule": {
-                    "no_rollout_steps": no_rollout_steps,
                     "sigma_data": sigma_data,
                     "s_max": 160.0,
                     "s_min": 4e-4,
@@ -292,7 +299,7 @@ project_config = mlc.ConfigDict(
                             "pair_dropout": 0.25,
                             "fuse_projection_weights": False,
                             "blocks_per_ckpt": blocks_per_ckpt,
-                            "inf": 1e9,
+                            "inf": inf,
                             "linear_init_params": lin_init.pairformer_init,
                             "use_reentrant": False,
                             "clear_cache_between_blocks": False,
@@ -303,7 +310,7 @@ project_config = mlc.ConfigDict(
                         "min_bin": 3.25,
                         "max_bin": 20.75,
                         "no_bin": 15,
-                        "inf": 1e8,
+                        "inf": inf,
                         "linear_init_params": lin_init.pairformer_head_init,
                     },
                     "pae": {
@@ -334,30 +341,6 @@ project_config = mlc.ConfigDict(
                         "c_out": 2,
                         "max_atoms_per_token": max_atoms_per_token,
                         "linear_init_params": lin_init.exp_res_all_atom_init,
-                    },
-                    "confidence": {
-                        "pde": {
-                            "max_bin": 31,
-                            "no_bins": 64,
-                        },
-                        "pae": {
-                            "max_bin": 31,
-                            "no_bins": 64,
-                        },
-                        "ptm": {
-                            "max_bin": 31,
-                            "no_bins": 64,
-                            "ptm_weight": 0.2,
-                            "iptm_weight": 0.8,
-                        },
-                        "clash": {
-                            "min_distance": 1.1,
-                            "clash_cutoff_num": 100,
-                            "clash_cutoff_ratio": 0.5,
-                        },
-                        "rasa": {
-                            "cutoff": 0.581,
-                        },
                     },
                 },
                 "loss_module": {
@@ -391,7 +374,7 @@ project_config = mlc.ConfigDict(
                             "weight": 0.0,
                         },
                         "eps": eps,
-                        "inf": 1e9,
+                        "inf": inf,
                     },
                     "diffusion": {
                         "sigma_data": sigma_data,
@@ -407,6 +390,30 @@ project_config = mlc.ConfigDict(
                         "bin_max": 22.0,
                         "eps": eps,
                     },
+                },
+            },
+            "confidence": {
+                "pde": {
+                    "max_bin": 31,
+                    "no_bins": 64,
+                },
+                "pae": {
+                    "max_bin": 31,
+                    "no_bins": 64,
+                },
+                "ptm": {
+                    "max_bin": 31,
+                    "no_bins": 64,
+                    "ptm_weight": 0.2,
+                    "iptm_weight": 0.8,
+                },
+                "clash": {
+                    "min_distance": 1.1,
+                    "clash_cutoff_num": 100,
+                    "clash_cutoff_ratio": 0.5,
+                },
+                "rasa": {
+                    "cutoff": 0.581,
                 },
             },
         },

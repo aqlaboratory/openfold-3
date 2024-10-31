@@ -1,12 +1,12 @@
 """This module contains building blocks for MSA processing."""
 
 import dataclasses
+import logging
 import math
 from typing import Optional, Sequence, Union
 
 import numpy as np
 import pandas as pd
-import torch
 from biotite.structure import AtomArray
 
 from openfold3.core.data.primitives.featurization.structure import get_token_starts
@@ -15,12 +15,14 @@ from openfold3.core.data.resources.residues import (
     MoleculeType,
 )
 
+logger = logging.getLogger(__name__)
+
 
 @dataclasses.dataclass(frozen=False)
 class MsaParsed:
     """Class representing a parsed MSA file.
 
-    The metadata attrubute gets updated in certain functions of the MSA preparation.
+    The metadata attribute gets updated in certain functions of the MSA preparation.
 
     Attributes:
         msa (np.array):
@@ -29,7 +31,7 @@ class MsaParsed:
             A 2D numpy array containing the cumulative deletion counts up to each
             position for each row in the MSA.
         metadata (Optional[Sequence[str]]):
-            A list of metadata persed from sequence headers of the MSA."""
+            A list of metadata parsed from sequence headers of the MSA."""
 
     msa: np.array
     deletion_matrix: np.array
@@ -183,7 +185,7 @@ def create_query_seqs(msa_collection: MsaCollection) -> dict[int, MsaParsed]:
 
     Returns:
         dict[int, Msa]:
-            Dict of Msa objects containing the query sequence and deletion matrix for
+            Dict of Msa objects containing the query sequence and deletion matrix
             for each chain, indexed by chain id.
     """
     return {
@@ -248,7 +250,7 @@ def process_uniprot_metadata(msa: MsaParsed) -> None:
 
     The list of headers are converted into a DataFrame containing the uniprot_id,
     species_id, chain_start and chain_end columns. If the Msa only contains the
-    query sequence, an empty DataFrame is assigned to the metatadata attribute.
+    query sequence, an empty DataFrame is assigned to the metadata attribute.
 
     Args:
         msa (Msa): parsed Msa object
@@ -429,12 +431,15 @@ def find_pairing_indices(
         # Find which species are shared by exactly n chains
         is_in_n_chains = sum(count_array_filtered != 0) == n
 
-        # Find lowest number of sequences across chains from shared species
+        # Find the lowest number of sequences across chains from shared species
         min_in_n_chains = np.min(count_array_filtered[:, is_in_n_chains], axis=0)
+
+        # Subset species indices to those shared by n chains
+        species_in_n_chains = species_index_filtered[is_in_n_chains]
 
         # Expand filtered species index across occurrences and chains
         cols = np.tile(
-            np.repeat(species_index_filtered, min_in_n_chains), (n_unique_chains, 1)
+            np.repeat(species_in_n_chains, min_in_n_chains), (n_unique_chains, 1)
         )
         n_rows += cols.shape[1]
         paired_species_rows.append(cols.T)
@@ -443,8 +448,8 @@ def find_pairing_indices(
         missing_species_mask = is_in_chain_per_species[:, cols[0, :]]
         missing_species_rows.append(missing_species_mask.T)
 
-        # Subtract min per row
-        count_array_filtered -= min_in_n_chains
+        # Subtract min per row for shared species
+        count_array_filtered[:, is_in_n_chains] -= min_in_n_chains
 
         # If row cutoff reached, crop final arrays to the row cutoff and break
         if n_rows >= paired_row_cutoff:
@@ -452,17 +457,18 @@ def find_pairing_indices(
                 [rows.shape[0] for rows in paired_species_rows[:-1]]
             )
             paired_species_rows[-1] = paired_species_rows[-1][: n_rows_final + 1, :]
-            missing_species_mask[-1] = missing_species_mask[-1][: n_rows_final + 1, :]
+            missing_species_rows[-1] = missing_species_rows[-1][: n_rows_final + 1, :]
             break
 
-        # Concatenate all paired arrays into a single paired array
-        paired_rows_index = np.concatenate(paired_species_rows, axis=0)
-        missing_rows_index = np.concatenate(missing_species_rows, axis=0)
+    # Concatenate all paired arrays into a single paired array
+    paired_rows_index = np.concatenate(paired_species_rows, axis=0)
+    missing_rows_index = np.concatenate(missing_species_rows, axis=0)
 
     return paired_rows_index, missing_rows_index
 
 
 def map_to_paired_msa_per_chain(
+    msa_collection: MsaCollection,
     uniprot_hits: dict[str, MsaParsed],
     paired_rows_index: np.ndarray[np.int32],
     missing_rows_index: np.ndarray[np.int32],
@@ -471,6 +477,8 @@ def map_to_paired_msa_per_chain(
     """Maps paired species indices to MSA row indices.
 
     Args:
+        msa_collection (MsaCollection):
+            A collection of Msa objects and chain IDs for a single sample.
         uniprot_hits (dict[str, Msa]):
             Dict mapping chain IDs to Msa objects containing UniProt MSAs.
         paired_rows_index (np.ndarray[np.int32]):
@@ -489,19 +497,17 @@ def map_to_paired_msa_per_chain(
     """
 
     # Map species indices back to MSA row indices
-    # Pre-allocate MSA objects
+    # Pre-allocate MSA objects, including those without UniProt hits
     paired_msa_per_chain = {
-        chain_id: MsaParsed(
-            msa=np.full(
-                (paired_rows_index.shape[0], uniprot_hits[chain_id].msa.shape[-1]), "-"
-            ),
+        rep_id: MsaParsed(
+            msa=np.full((paired_rows_index.shape[0], seq.shape[-1]), "-"),
             deletion_matrix=np.zeros(
-                (paired_rows_index.shape[0], uniprot_hits[chain_id].msa.shape[-1]),
+                (paired_rows_index.shape[0], seq.shape[-1]),
                 dtype=int,
             ),
             metadata=pd.DataFrame(),
         )
-        for chain_id in uniprot_hits
+        for rep_id, seq in msa_collection.rep_seq_map.items()
     }
 
     # For each chain, sort MSA rows by the paired species indices
@@ -546,7 +552,7 @@ def map_to_paired_msa_per_chain(
 
 def create_paired(
     msa_collection: MsaCollection, paired_row_cutoff: int
-) -> dict[str, MsaParsed]:
+) -> Optional[dict[str, MsaParsed]]:
     """Creates paired MSA arrays from UniProt MSAs.
 
     Follows the AF2-Multimer strategy for pairing rows of UniProt MSAs based on species
@@ -566,6 +572,18 @@ def create_paired(
     # Get parsed uniprot hits
     uniprot_hits = extract_uniprot_hits(msa_collection)
 
+    # Ensure there are at least two chains with UniProt hits after filtering
+    if len(uniprot_hits) <= 1:
+        no_uniprot_hits = set(msa_collection.chain_rep_map.values()).difference(
+            uniprot_hits.keys()
+        )
+        logger.info(
+            "Skipping MSA pairing: %d chain(s) present. No uniprot hits for %s.",
+            len(uniprot_hits),
+            ", ".join(list(no_uniprot_hits)),
+        )
+        return None
+
     # Process uniprot headers and calculate distance to query
     _ = [process_uniprot_metadata(uniprot_hits[chain_id]) for chain_id in uniprot_hits]
     _ = [
@@ -573,11 +591,19 @@ def create_paired(
         for chain_id in uniprot_hits
     ]
 
-    # Count species occurences per chain
+    # Count species occurrences per chain
     count_array, species = count_species_per_chain(uniprot_hits)
 
     # Get pairing masks
     pairing_masks = get_pairing_masks(count_array, ["shared_by_two", "less_than_600"])
+
+    # No valid pairs, skip MSA pairing
+    if not np.any(pairing_masks):
+        logger.info(
+            "Skipping MSA pairing: No valid pairs for %s.",
+            ", ".join(list(uniprot_hits.keys())),
+        )
+        return None
 
     # Find species indices that pair rows
     paired_rows_index, missing_rows_index = find_pairing_indices(
@@ -588,7 +614,7 @@ def create_paired(
 
     # Map species indices back to MSA row indices
     paired_msa_per_chain = map_to_paired_msa_per_chain(
-        uniprot_hits, paired_rows_index, missing_rows_index, species
+        msa_collection, uniprot_hits, paired_rows_index, missing_rows_index, species
     )
 
     return paired_msa_per_chain
@@ -596,7 +622,7 @@ def create_paired(
 
 def expand_paired_msas(
     msa_collection: MsaCollection, paired_msa_per_chain: dict[str, MsaParsed]
-) -> dict[int, MsaParsed]:
+) -> dict[str, MsaParsed]:
     """Creates a dict of MSA objects from paired MSA arrays.
 
     Args:
@@ -607,7 +633,7 @@ def expand_paired_msas(
             deletion matrices. Metadata fields are empty.
 
     Returns:
-        dict[int, Msa]:
+        dict[str, Msa]:
             A dict of Msa objects containing paired sequences and deletion matrices for
             each unique chain instantiation.
     """
@@ -626,9 +652,9 @@ def expand_paired_msas(
     # Update paired MSA with paired data for each chain using the representatives
     # col_offset = 0
     paired_msas = {}
-    for chain_id in msa_collection.chain_rep_map:
-        rep_id = msa_collection.chain_rep_map[chain_id]
+    for chain_id, rep_id in msa_collection.chain_rep_map.items():
         rep_paired_msa = paired_msa_per_chain[rep_id]
+
         # n_col_paired_i = rep_paired_msa.msa.shape[1]
 
         # # Replace slices in msa and deletion matrix
@@ -640,11 +666,13 @@ def expand_paired_msas(
         # )
 
         # col_offset += n_col_paired_i
+
         paired_msas[chain_id] = MsaParsed(
             msa=rep_paired_msa.msa,
             deletion_matrix=rep_paired_msa.deletion_matrix,
             metadata=pd.DataFrame(),
         )
+
     return paired_msas
 
 
@@ -652,7 +680,7 @@ def create_main(
     msa_collection: MsaCollection,
     paired_msa_per_chain: Union[dict[str, MsaParsed], None],
     aln_order: list[str],
-) -> dict[int, MsaParsed]:
+) -> dict[str, MsaParsed]:
     """Creates main MSA arrays from non-UniProt MSAs.
 
     Args:
@@ -664,7 +692,7 @@ def create_main(
             The order in which to concatenate the MSA arrays vertically.
 
     Returns:
-        dict[int, Msa]:
+        dict[str, Msa]:
             List of Msa objects containing the main MSA arrays and deletion matrices
             for each chain.
     """
@@ -883,18 +911,26 @@ def apply_crop_to_msa(
                     token_position,
                 ] = 1
 
-                msa_profile[token_position, :] = (
-                    torch.tensor(
-                        [
-                            np.sum(m.msa[:, res_id] == val).item()
-                            for val in STANDARD_RESIDUES_WITH_GAP_1
-                        ],
-                        dtype=torch.float32,
+                # If main MSA is empty, leave profile as all-zeros
+                if n_rows_main_i != 0:
+                    # TODO BUG: STANDARD_RESIDUES_WITH_GAP_1 currently contains two
+                    # entries of "N" and will therefore double-count Asparagine.
+                    msa_profile[token_position, :] = (
+                        np.array(
+                            [
+                                np.sum(m.msa[:, res_id] == val).item()
+                                for val in STANDARD_RESIDUES_WITH_GAP_1
+                            ],
+                        )
+                        / m.msa.shape[0]
                     )
-                    / m.msa[:, res_id].shape[0]
-                )
 
-                deletion_mean[token_position] = np.mean(m.deletion_matrix[:, res_id])
+                # If main MSA is empty, leave deletion mean as all-zeros
+                if n_rows_main_i != 0:
+                    deletion_mean[token_position] = np.mean(
+                        m.deletion_matrix[:, res_id]
+                    )
+
     else:
         # When there are no protein or RNA chains
         n_rows = 1

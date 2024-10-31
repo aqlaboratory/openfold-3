@@ -623,7 +623,7 @@ class MSAModuleEmbedder(nn.Module):
 
             # Sample Uniform[1, num_main_msa_seqs] sequences from the main MSA
             n_seq_sample = torch.randint(
-                low=1, high=num_main_msa_seqs, size=(1,)
+                low=1, high=num_main_msa_seqs + 1, size=(1,)
             ).item()
             index_order = torch.randperm(num_main_msa_seqs, device=msa_feat.device)
             index_order = index_order[:n_seq_sample]

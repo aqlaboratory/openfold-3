@@ -139,7 +139,7 @@ setup(
     package_data={
         "openfold3": [
             "core/kernels/cuda/csrc/*",
-            "model_implementations/*/config/*.yml",
+            "projects/*/config/*.yml",
         ],
         "": ["resources/stereo_chemical_props.txt"],
     },
