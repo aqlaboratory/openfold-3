@@ -1,5 +1,6 @@
 import importlib
 from pathlib import Path
+from typing import Dict
 
 import torch
 
@@ -9,6 +10,9 @@ from openfold3.core.metrics.confidence import (
     compute_predicted_aligned_error,
     compute_predicted_distance_error,
     compute_weighted_ptm,
+)
+from openfold3.core.metrics.validation_all_atom import (
+    get_validation_metrics,
 )
 from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.atomize_utils import (
@@ -78,7 +82,7 @@ class AlphaFold3AllAtom(ModelRunner):
         batch, outputs = self(batch)
 
         # Compute loss and other metrics
-        _, loss_breakdown = self.loss(outputs, batch, _return_breakdown=True)
+        _, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
 
         self._log(loss_breakdown, batch, outputs, train=False)
 
@@ -134,8 +138,11 @@ class AlphaFold3AllAtom(ModelRunner):
 
     def _compute_validation_metrics(
         self, batch, outputs, superimposition_metrics=False
-    ):
-        return {}
+    ) -> Dict[str, torch.Tensor]:
+        # Computes validation metrics
+        metrics = get_validation_metrics(batch, outputs, superimposition_metrics)
+
+        return metrics
 
     # TODO: Integrate with prediction step
     def _compute_confidence_scores(self, batch: dict, outputs: dict) -> dict:
