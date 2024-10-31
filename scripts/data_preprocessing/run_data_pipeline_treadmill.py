@@ -1,5 +1,5 @@
 """
-Script to iterate over datapoints with the datapipeline.
+Script to iterate over datapoints with the data pipeline.
 
 Components:
 - WeightedPDBDatasetWithLogging:
@@ -9,11 +9,47 @@ Components:
     in a worker process.
 - worker_init_function_with_logging:
     Custom worker init function with per-worker logging and feature/atom array saving.
+
+The treadmill requires at least one worker to run.
+
+Ways to run the treadmill:
+1. Quality control mode
+    > runs asserts and optionally saves features, atom array and the full exception
+    traceback when an exception occurs
+    - run_asserts=True
+    - save_features=on_error/False
+    - save_atom_array=on_error/False
+    - save_full_traceback=True/False
+2. Cropped atom array/feature precomputation mode
+    > saves features and atom array for each datapoint
+    - run_asserts=True/False
+    - save_features=per_datapoint
+    - save_atom_array=per_datapoint
+    - save_full_traceback=True/False
+3. Statistics logging mode
+    > saves additional data to save during data processing
+    - save_statistics=True
+4. Runtime logging mode
+    > logs runtimes of subpipelines during data processing to worker log files
+    - log_runtimes=True
+5. Runtime logging mode with statistics logging
+    > logs runtimes of subpipelines into a  statistics file alongside the other
+    collected statistics
+    - save_statistics=True
+    - log_runtimes=True
+6. Memory logging mode
+    > logs memory use of subpipelines during data processing to memory log files
+    - log_memory=True
+
+Mutually exclusive options:
+ - run_asserts v. save_statistics
+ - log_runtimes v. log_memory
 """
 
 import os
 import random
 import sys
+import warnings
 from pathlib import Path
 
 import click
@@ -34,8 +70,12 @@ from openfold3.core.data.framework.lightning_utils import _generate_seed_sequenc
 from openfold3.core.data.primitives.quality_control.logging_datasets import (
     WeightedPDBDatasetWithLogging,
 )
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    parse_memory_profiler_log,
+)
 from openfold3.core.data.primitives.quality_control.worker_config import (
     configure_compliance_log,
+    configure_context_variables,
     configure_extra_data_file,
     configure_worker_init_func_logger,
 )
@@ -64,7 +104,7 @@ np.set_printoptions(threshold=sys.maxsize)
 )
 @click.option(
     "--with-model-fwd",
-    required=True,
+    default=False,
     help="Whether to run the model forward pass with the produced features",
     type=bool,
 )
@@ -87,7 +127,7 @@ np.set_printoptions(threshold=sys.maxsize)
 )
 @click.option(
     "--run-asserts",
-    default=True,
+    default=False,
     type=bool,
     help="Whether to run asserts. If True and there exists a passed_ids.tsv file in "
     "log-output-directory, the treadmill will skip all fully compliant datapoints."
@@ -95,7 +135,7 @@ np.set_printoptions(threshold=sys.maxsize)
 )
 @click.option(
     "--save-features",
-    default="on_error",
+    default="False",
     type=click.Choice(["on_error", "per_datapoint", "False"]),
     help=(
         "Whether to save the FeatureDict.  If on_error, saves when an exception occurs,"
@@ -104,7 +144,7 @@ np.set_printoptions(threshold=sys.maxsize)
 )
 @click.option(
     "--save-atom-array",
-    default="on_error",
+    default="False",
     type=click.Choice(["on_error", "per_datapoint", "False"]),
     help=(
         "Whether to save the cropped atom array. If on_error, saves when an exception "
@@ -114,7 +154,7 @@ np.set_printoptions(threshold=sys.maxsize)
 )
 @click.option(
     "--save-full-traceback",
-    default=True,
+    default=False,
     type=bool,
     help="Whether to save the tracebacks upon assert-fail or exception.",
 )
@@ -141,6 +181,15 @@ np.set_printoptions(threshold=sys.maxsize)
     default=False,
     help="Whether to log memory use of subpipelines during data processing.",
 )
+@click.option(
+    "--mem-profiled-func-keys",
+    default=None,
+    help=(
+        "String of comma-separated function keys for which to profile memory. If not "
+        "provided with log-memory=True, all functions specified in "
+        "logging_utils.F_NAME_ORDER will be profiled."
+    ),
+)
 def main(
     runner_yml_file: Path,
     seed: int,
@@ -154,6 +203,7 @@ def main(
     save_statistics: bool,
     log_runtimes: bool,
     log_memory: bool,
+    mem_profiled_func_keys: str | None,
 ) -> None:
     """Main function for running the data pipeline treadmill.
 
@@ -190,7 +240,11 @@ def main(
             True, the runtime of each subpipeline will be logged in the
             datapoint_statistics.tsv file instead.
         log_memory (bool):
-            Whether to log memory use of subpipelines during data processing.
+            Whether to log memory use of subpipelines during data processing. Memory use
+            is logged per-line for each function in the getitem into a
+            memory_profile.log file in log-output-directory.
+        mem_profiled_func_keys (list[str] | None):
+            List of function keys for which to profile memory.
 
     Raises:
         ValueError:
@@ -208,14 +262,14 @@ def main(
     # Parse runner yml file and init Dataset
     runner_args = ConfigDict(config_utils.load_yaml(runner_yml_file))
 
-    if runner_args.num_workers < 1:
-        raise ValueError("This script only works with num_workers >= 1.")
-    if sum([run_asserts, save_statistics]) > 1:
-        raise ValueError(
-            "Only one of run_asserts and save_statistics can be set to True."
-        )
-    if sum([log_runtimes, log_memory]) > 1:
-        raise ValueError("Only one of log_runtimes, and log_memory can be set to True.")
+    # Run checks on the input args
+    run_arg_checks(
+        runner_args,
+        run_asserts,
+        save_statistics,
+        log_runtimes,
+        log_memory,
+    )
 
     project_entry = registry.get_project_entry(runner_args.project_type)
     project_config = registry.make_config_with_presets(
@@ -300,6 +354,11 @@ def main(
         # Configure compliance file
         configure_compliance_log(worker_dataset, log_output_directory)
 
+        # Configure context variables
+        configure_context_variables(
+            log_runtimes, log_memory, worker_dataset, mem_profiled_func_keys
+        )
+
     # Configure DataLoader
     data_loader = DataLoader(
         dataset=dataset,
@@ -373,6 +432,54 @@ def main(
                 header=not full_extra_data_file.exists(),
                 mode="a",
             )
+        if log_memory:
+            # Convert memory profile logs to dataframes and collate from different
+            # workers
+            df_all = pd.DataFrame()
+            for worker_id in range(runner_args.num_workers):
+                worker_memory_file = log_output_directory / Path(
+                    f"worker_{worker_id}/memory_profile.log"
+                )
+                if worker_memory_file.exists():
+                    df_all = pd.concat(
+                        [df_all, parse_memory_profiler_log(worker_memory_file)]
+                    )
+                    worker_memory_file.unlink()
+
+            full_worker_memory_file = log_output_directory / Path("memory_profile.tsv")
+            df_all.to_csv(
+                full_worker_memory_file,
+                sep="\t",
+                index=False,
+                header=not full_worker_memory_file.exists(),
+                mode="a",
+            )
+
+
+def run_arg_checks(
+    runner_args: ConfigDict,
+    run_asserts: bool,
+    save_statistics: bool,
+    log_runtimes: bool,
+    log_memory: bool,
+) -> None:
+    if runner_args.num_workers < 1:
+        raise ValueError("This script only works with num_workers >= 1.")
+    if sum([run_asserts, save_statistics]) > 1:
+        raise ValueError(
+            "Only one of run_asserts and save_statistics can be set to True."
+        )
+    if sum([log_runtimes, log_memory]) > 1:
+        raise ValueError("Only one of log_runtimes, and log_memory can be set to True.")
+    if log_memory & (runner_args.num_workers > 1):
+        warnings.warn(
+            (
+                "Memory logging with more than one worker (currently using "
+                f"{runner_args.num_workers}) may significantly slow down the treadmill "
+                "iteration time."
+            ),
+            stacklevel=2,
+        )
 
 
 if __name__ == "__main__":

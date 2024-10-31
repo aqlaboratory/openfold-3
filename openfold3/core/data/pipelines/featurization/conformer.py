@@ -8,14 +8,16 @@ import torch.nn.functional as F
 from openfold3.core.data.pipelines.sample_processing.conformer import (
     ProcessedReferenceMolecule,
 )
-from openfold3.core.data.primitives.quality_control.logging_utils import log_runtime
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 from openfold3.core.data.primitives.structure.component import PERIODIC_TABLE
 from openfold3.core.model.structure.diffusion_module import centre_random_augmentation
 
 logger = logging.getLogger(__name__)
 
 
-@log_runtime(name="runtime-ref-conf-feat")
+@log_runtime_memory(runtime_dict_key="runtime-ref-conf-feat")
 def featurize_ref_conformers_af3(
     processed_ref_mol_list: list[ProcessedReferenceMolecule],
 ) -> dict[str, torch.Tensor]:

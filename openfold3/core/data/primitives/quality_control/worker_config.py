@@ -8,8 +8,65 @@ from torch.utils.data import Dataset
 
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     F_NAME_ORDER,
+    LOG_MEMORY,
+    LOG_RUNTIMES,
+    MEM_PROFILED_FUNC_KEYS,
+    WORKER_MEM_LOG_PATH,
     ComplianceLog,
 )
+
+
+def configure_context_variables(
+    log_runtimes: bool,
+    log_memory: bool,
+    worker_dataset: Dataset,
+    mem_profiled_func_keys: str | None,
+) -> tuple[int, int, int, int]:
+    """Configures the context variables for the worker.
+
+    Also assigns the context variable state tokens to the worker-specific copy
+    of the dataset.
+
+    Args:
+        log_runtimes (bool):
+            Whether to log runtimes.
+        log_memory (bool):
+            Whether to log memory.
+        worker_dataset (Dataset):
+            Worker-specific copy of the dataset.
+        mem_profiled_func_keys (str | None):
+            List of function keys for which to profile memory.
+
+    Returns:
+        tuple[int, int, int, int]:
+            Context variable state tokens for runtime logging, memory logging, and
+            memory log path.
+    """
+
+    # Convert the comma separated string of function keys to a list
+    if mem_profiled_func_keys is not None:
+        mem_profiled_func_keys = [s.strip() for s in mem_profiled_func_keys.split(",")]
+
+        if len(set(mem_profiled_func_keys) - set(F_NAME_ORDER)) != 0:
+            raise RuntimeError(
+                "Invalid function keys were provided for memory profiling. "
+                f"The set of valid function keys: {F_NAME_ORDER}."
+            )
+
+    # Set context variables
+    runtime_token = LOG_RUNTIMES.set(log_runtimes)
+    mem_token = LOG_MEMORY.set(log_memory)
+    mem_log_token = WORKER_MEM_LOG_PATH.set(
+        worker_dataset.get_worker_path(subdirs=None, fname="memory_profile.log")
+    )
+    mem_func_token = MEM_PROFILED_FUNC_KEYS.set(
+        F_NAME_ORDER if mem_profiled_func_keys is None else mem_profiled_func_keys
+    )
+    # Assign context variable state tokens to the worker-specific copy of the dataset
+    worker_dataset.runtime_token = runtime_token
+    worker_dataset.mem_token = mem_token
+    worker_dataset.mem_log_token = mem_log_token
+    worker_dataset.mem_func_token = mem_func_token
 
 
 def configure_worker_init_func_logger(

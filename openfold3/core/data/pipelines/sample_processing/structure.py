@@ -6,7 +6,9 @@ from typing import Literal
 from biotite.structure import AtomArray
 
 from openfold3.core.data.io.structure.cif import parse_target_structure
-from openfold3.core.data.primitives.quality_control.logging_utils import log_runtime
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 from openfold3.core.data.primitives.structure.cropping import apply_crop
 from openfold3.core.data.primitives.structure.duplicate_expansion import (
     expand_duplicate_chains,
@@ -14,7 +16,7 @@ from openfold3.core.data.primitives.structure.duplicate_expansion import (
 from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
 
 
-@log_runtime(name="runtime-target-structure-proc")
+@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc")
 def process_target_structure_af3(
     target_structures_directory: Path,
     pdb_id: str,

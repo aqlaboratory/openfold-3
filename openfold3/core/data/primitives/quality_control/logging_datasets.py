@@ -38,8 +38,6 @@ from openfold3.core.data.pipelines.sample_processing.structure import (
 from openfold3.core.data.primitives.quality_control.asserts import ENSEMBLED_ASSERTS
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     F_NAME_ORDER,
-    LOG_RUNTIMES,
-    WORKER_MEM_LOG_PATH,
     get_interface_string,
 )
 from openfold3.core.data.resources.residues import (
@@ -86,9 +84,13 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         """
         The following attributes are set in the worker_init_function_with_logging
         on a per-worker basis:
-         - self.logger
-         - self.compliance_log
-         - self.processed_datapoint_log
+         - logger
+         - compliance_log
+         - processed_datapoint_log
+         - runtime_token
+         - mem_token
+         - mem_log_token
+         - mem_func_token
         """
 
     def __getitem__(
@@ -101,13 +103,6 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         preferred_chain_or_interface = datapoint["datapoint"]
         features = {}
         atom_array_cropped = None
-
-        # Set runtime logging context
-        runtime_context_token = LOG_RUNTIMES.set(self.log_runtimes)
-        # Set path to memory log file
-        mem_log_token = WORKER_MEM_LOG_PATH.set(
-            self.get_worker_path(subdirs=None, fname="memory_profile.log")
-        )
 
         # Check if datapoint needs to be skipped
         if self.skip_datapoint(pdb_id, preferred_chain_or_interface):
@@ -205,6 +200,19 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                     runtimes,
                 )
 
+            # Add PDB and chain/interface IDs to the memory log
+            if self.log_memory:
+                with open(
+                    self.get_worker_path(subdirs=None, fname="memory_profile.log"), "a"
+                ) as f:
+                    chain_interface_str = self.stringify_chain_interface(
+                        preferred_chain_or_interface
+                    )
+                    f.write(
+                        f"pdb_id: {pdb_id}\npreferred_chain_or_interface: "
+                        f"{chain_interface_str}\n\n\n"
+                    )
+
             # Save features and/or atom array
             if (self.save_features == "per_datapoint") | (
                 self.save_atom_array == "per_datapoint"
@@ -251,9 +259,15 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             return features
 
         finally:
-            # Reset context variables
-            LOG_RUNTIMES.reset(runtime_context_token)
-            WORKER_MEM_LOG_PATH.reset(mem_log_token)
+            pass
+            # Cannot actually do the following because it might happen that the final
+            # datapoint finished being processed before previous datapoints finish being
+            # processed do to the asynchronous nature of the workers ---
+            # # Reset context variables before the worker shuts down
+            # if index == len(self.__len__()) - 1:
+            #     LOG_RUNTIMES.reset(self.runtime_token)
+            #     LOG_MEMORY.reset(self.mem_token)
+            #     WORKER_MEM_LOG_PATH.reset(self.mem_log_token)
 
     def skip_datapoint(self, pdb_id, preferred_chain_or_interface):
         """Determines whether to skip a datapoint."""
@@ -322,20 +336,26 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             compliance_file = self.get_worker_path(subdirs=None, fname="passed_ids.tsv")
             self.compliance_log.save_worker_compliance_file(compliance_file)
 
-    def save_features_atom_array(
-        self, features, atom_array_cropped, pdb_id, preferred_chain_or_interface
-    ):
-        """Saves features and/or atom array from the worker process to disk."""
-        preferred_chain_or_interface = (
+    @staticmethod
+    def stringify_chain_interface(preferred_chain_or_interface: str | list[str]) -> str:
+        return (
             "-".join(preferred_chain_or_interface)
             if isinstance(preferred_chain_or_interface, list)
             else preferred_chain_or_interface
         )
+
+    def save_features_atom_array(
+        self, features, atom_array_cropped, pdb_id, preferred_chain_or_interface
+    ):
+        """Saves features and/or atom array from the worker process to disk."""
+        chain_interface_str = self.stringify_chain_interface(
+            preferred_chain_or_interface
+        )
         log_output_feat = self.get_worker_path(
-            subdirs=[pdb_id], fname=f"{preferred_chain_or_interface}_features.pkl"
+            subdirs=[pdb_id], fname=f"{chain_interface_str}_features.pkl"
         )
         log_output_aa = self.get_worker_path(
-            subdirs=[pdb_id], fname=f"{preferred_chain_or_interface}_atom_array.pkl"
+            subdirs=[pdb_id], fname=f"{chain_interface_str}_atom_array.pkl"
         )
 
         if self.save_features is not False:
@@ -352,19 +372,17 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 
     def save_full_traceback_for_sample(self, e, pdb_id, preferred_chain_or_interface):
         """Saves the full traceback to for failed samples."""
-        preferred_chain_or_interface = (
-            "-".join(preferred_chain_or_interface)
-            if isinstance(preferred_chain_or_interface, list)
-            else preferred_chain_or_interface
+        chain_interface_str = self.stringify_chain_interface(
+            preferred_chain_or_interface
         )
         log_output_errfile = self.get_worker_path(
-            subdirs=[pdb_id], fname=f"{pdb_id}-{preferred_chain_or_interface}_error.log"
+            subdirs=[pdb_id], fname=f"{pdb_id}-{chain_interface_str}_error.log"
         )
 
         # Create temporary logger to log the traceback
         # This is necessary because we want to not save the traceback to the main logger
         # output file but to a pdb-entry specific directory
-        sample_logger = logging.getLogger(f"{pdb_id}-{preferred_chain_or_interface}")
+        sample_logger = logging.getLogger(f"{pdb_id}-{chain_interface_str}")
         if sample_logger.hasHandlers():
             sample_logger.handlers.clear()
         sample_logger.setLevel(self.logger.logger.level)
@@ -378,7 +396,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 
         sample_logger.error(
             f"Failed to process entry {pdb_id} chain/interface "
-            f"{preferred_chain_or_interface}"
+            f"{chain_interface_str}"
             f"\n\nException:\n{str(e)}"
             f"\n\nType:\n{type(e).__name__}"
             f"\n\nTraceback:\n{traceback.format_exc()}"
@@ -389,9 +407,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             sample_logger.removeHandler(h)
             h.close()
         sample_logger.setLevel(logging.CRITICAL + 1)
-        del logging.Logger.manager.loggerDict[
-            f"{pdb_id}-{preferred_chain_or_interface}"
-        ]
+        del logging.Logger.manager.loggerDict[f"{pdb_id}-{chain_interface_str}"]
 
     def save_data_statistics(
         self,
@@ -405,17 +421,15 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         """Saves additional data statistics."""
         if self.save_statistics:
             # Set worker output directory
-            preferred_chain_or_interface = (
-                "-".join(preferred_chain_or_interface)
-                if isinstance(preferred_chain_or_interface, list)
-                else preferred_chain_or_interface
+            chain_interface_str = self.stringify_chain_interface(
+                preferred_chain_or_interface
             )
             log_output_datafile = self.get_worker_path(
                 subdirs=None, fname="datapoint_statistics.tsv"
             )
 
             # Init line:
-            line = f"{pdb_id}\t{preferred_chain_or_interface}\t"
+            line = f"{pdb_id}\t{chain_interface_str}\t"
 
             # Get per-molecule type atom arrays/residue starts
             atom_array_protein = atom_array[

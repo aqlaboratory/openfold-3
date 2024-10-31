@@ -10,7 +10,9 @@ import pandas as pd
 from biotite.structure import AtomArray
 
 from openfold3.core.data.primitives.featurization.structure import get_token_starts
-from openfold3.core.data.primitives.quality_control.logging_utils import log_runtime
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 from openfold3.core.data.resources.residues import (
     MOLECULE_TYPE_TO_ARGSORT_RESIDUES_1,
     MOLECULE_TYPE_TO_RESIDUES_1,
@@ -157,7 +159,7 @@ class MsaFeaturePrecursorAF3(MsaParsed):
     deletion_mean: np.ndarray
 
 
-@log_runtime(name="runtime-msa-proc-homo-mono")
+@log_runtime_memory(runtime_dict_key="runtime-msa-proc-homo-mono")
 def find_monomer_homomer(msa_collection: MsaCollection) -> bool:
     """Determines if the sample is a monomer or homomer.
 
@@ -184,7 +186,7 @@ def find_monomer_homomer(msa_collection: MsaCollection) -> bool:
     )
 
 
-@log_runtime(name="runtime-msa-proc-create-query")
+@log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-query")
 def create_query_seqs(msa_collection: MsaCollection) -> dict[int, MsaParsed]:
     """Extracts and expands the query sequences and deletion matrices.
 
@@ -559,7 +561,7 @@ def map_to_paired_msa_per_chain(
     return paired_msa_per_chain
 
 
-@log_runtime(name="runtime-msa-proc-create-paired")
+@log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-paired")
 def create_paired(
     msa_collection: MsaCollection, paired_row_cutoff: int
 ) -> Optional[dict[str, MsaParsed]]:
@@ -630,7 +632,7 @@ def create_paired(
     return paired_msa_per_chain
 
 
-@log_runtime(name="runtime-msa-proc-expand-paired")
+@log_runtime_memory(runtime_dict_key="runtime-msa-proc-expand-paired")
 def expand_paired_msas(
     msa_collection: MsaCollection, paired_msa_per_chain: dict[str, MsaParsed]
 ) -> dict[str, MsaParsed]:
@@ -687,7 +689,7 @@ def expand_paired_msas(
     return paired_msas
 
 
-@log_runtime(name="runtime-msa-proc-create-main")
+@log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-main")
 def create_main(
     msa_collection: MsaCollection,
     paired_msa_per_chain: Union[dict[str, MsaParsed], None],
@@ -747,7 +749,7 @@ def create_main(
     return main_msas
 
 
-@log_runtime(name="runtime-msa-proc-crop-to-seq")
+@log_runtime_memory(runtime_dict_key="runtime-msa-proc-crop-to-seq")
 def create_crop_to_seq_map(
     atom_array: AtomArray, data_cache_entry_chains: dict[int, Union[int, str]]
 ) -> MsaSlice:
@@ -861,7 +863,7 @@ def calculate_column_counts(msa_col: np.ndarray, mol_type: MoleculeType) -> np.n
     return res_full_alphabet_counts
 
 
-@log_runtime(name="runtime-msa-proc-apply-crop")
+@log_runtime_memory(runtime_dict_key="runtime-msa-proc-apply-crop")
 def apply_crop_to_msa(
     atom_array: AtomArray,
     msa_processed_collection: MsaProcessedCollection,

@@ -8,7 +8,9 @@ from typing import NamedTuple
 from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 
-from openfold3.core.data.primitives.quality_control.logging_utils import log_runtime
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 from openfold3.core.data.primitives.structure.labels import (
     assign_entity_ids,
     assign_molecule_type_ids,
@@ -214,7 +216,7 @@ def write_structure(
     cif_file.write(output_path)
 
 
-@log_runtime(name="runtime-target-structure-proc-parse")
+@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-parse")
 def parse_target_structure(
     target_structures_directory: Path, pdb_id: str, structure_format: str
 ) -> AtomArray:

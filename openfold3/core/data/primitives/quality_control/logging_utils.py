@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from biotite.structure import AtomArray
+from memory_profiler import profile
 
 from openfold3.core.data.primitives.structure.interface import (
     get_query_interface_atom_pair_idxs,
@@ -52,13 +53,13 @@ class ComplianceLog:
         )
 
 
-# Specify the context variable for logging runtimes
-# This should be imported and set in the dataset class' module
+# Runtime context variables
 LOG_RUNTIMES = contextvars.ContextVar("LOG_RUNTIME", default=False)
-# Context variable to hold the shared runtime dictionary
 RUNTIME_DICT = contextvars.ContextVar("RUNTIME_DICT", default=None)
-# Context variable to hold the path to the memory profiler log file for each worker
+# Memory context variables
+LOG_MEMORY = contextvars.ContextVar("LOG_MEMORY", default=False)
 WORKER_MEM_LOG_PATH = contextvars.ContextVar("WORKER_MEM_LOG_PATH", default=None)
+MEM_PROFILED_FUNC_KEYS = contextvars.ContextVar("MEM_PROFILED_FUNC_KEYS", default=None)
 
 # Mapping of function names to their respective runtime logging functions
 F_NAME_ORDER = [
@@ -85,20 +86,64 @@ F_NAME_ORDER = [
 ]
 
 
-def log_runtime(name=None, enabled=LOG_RUNTIMES):
-    """Decorator factory to log the runtime of a function."""
+def log_runtime_memory(
+    runtime_enabled: bool = LOG_RUNTIMES,
+    mem_enabled: bool = LOG_MEMORY,
+    mem_stream: Path = WORKER_MEM_LOG_PATH,
+    runtime_dict_key: str | None = None,
+) -> callable:
+    """Decorator factory to log the runtime or memory use of a function.
+
+    Memory profiling is only ran for functions whose provided runtime_dict_key
+    is listed in the MEM_PROFILED_FUNC_KEYS context variable. When no function
+    names are provided for memory profiling and it is turned on, all functions
+    in F_NAME_ORDER are profiled.
+
+    Args:
+        runtime_enabled (bool, optional):
+            Whether to profile runtimes. Defaults to LOG_RUNTIMES context variable.
+        mem_enabled (bool, optional):
+            Whether to profile memory. Defaults to LOG_MEMORY context variable.
+        mem_stream (Path, optional):
+            Path to a log file into which the memory profiling log should be streamed.
+            Defaults to WORKER_MEM_LOG_PATH context variable.
+        runtime_dict_key (str | None, optional):
+            String to use as key in the runtime dict collecting the runtimes in a
+            hierarchy of decorated functions.
+
+    Raises:
+        RuntimeError:
+            If both runtime and memory profiling are enabled.
+
+    Returns:
+        callable:
+            Decorator function.
+    """
 
     def decorator(func):
-        """Actual runtime logging decorator."""
+        """Actual runtime/memory profiler decorator."""
+
         function_name = (
-            name if name is not None else f"{func.__module__}.{func.__qualname__}"
+            runtime_dict_key
+            if runtime_dict_key is not None
+            else f"{func.__module__}.{func.__qualname__}"
         )
 
         @wraps(func)
         def wrapper(*args, **kwargs):
-            """Wrapper function to allow for conditionally logging the runtime."""
-            # Here, fetch the context variable to determine if logging is enabled
-            if enabled.get():
+            """Wrapper function to allow for conditional profiling."""
+
+            profile_runtime = runtime_enabled.get()
+            profile_memory = mem_enabled.get()
+
+            if profile_runtime & profile_memory:
+                raise RuntimeError(
+                    "The log_runtime_memory decorator can only be use with "
+                    "EITHER runtime OR memory profiling but both were enabled."
+                )
+
+            # Runtime profiling
+            if profile_runtime:
                 # Fetch the shared runtime dictionary
                 runtimes = RUNTIME_DICT.get()
                 # The first time a decorated function is called within a context where
@@ -123,6 +168,18 @@ def log_runtime(name=None, enabled=LOG_RUNTIMES):
                 # Reset the context variable to the original value
                 if runtimes_token is not None:
                     RUNTIME_DICT.reset(runtimes_token)
+
+            # Memory profiling
+            elif profile_memory & (function_name in MEM_PROFILED_FUNC_KEYS.get()):
+                # Use the context handler to set the memory log file path
+                with open(mem_stream.get(), "a") as fp:
+                    # Decorate the function with the memory profiler
+                    profiled_func = profile(stream=fp)(func)
+                    # Execute the function to profile memory
+                    result = profiled_func(*args, **kwargs)
+                wrapper.runtime = None
+
+            # No profiling
             else:
                 result = func(*args, **kwargs)
                 wrapper.runtime = None
@@ -132,6 +189,113 @@ def log_runtime(name=None, enabled=LOG_RUNTIMES):
         return wrapper
 
     return decorator
+
+
+def parse_memory_profiler_log(log_file_path):
+    data = []
+    code_block_data = []
+    current_function = None
+    current_pdb_id = None
+    current_preferred_chain_or_interface = None
+
+    # Regular expressions to match lines
+    func_def_regex = re.compile(r"^\s*(\d+)\s+.*def\s+([^\s\(]+)")
+    mem_line_regex = re.compile(
+        r"^\s*(\d+)\s+([\d\.]+)\s+MiB\s+([\d\.\-\+]+)\s+MiB\s+(\d+)\s+(.*)"
+    )
+    pdb_id_regex = re.compile(r"^pdb_id:\s*(\S+)")
+    chain_regex = re.compile(r"^preferred_chain_or_interface:\s*(\S+)")
+
+    with open(log_file_path) as f:
+        for line in f:
+            line = line.rstrip("\n")
+            # Skip empty lines and headers
+            if not line.strip() or line.startswith(("Line #", "====")):
+                continue
+
+            # Check for pdb_id
+            pdb_match = pdb_id_regex.match(line)
+            if pdb_match:
+                current_pdb_id = pdb_match.group(1)
+                continue
+
+            # Check for preferred_chain_or_interface
+            chain_match = chain_regex.match(line)
+            if chain_match:
+                current_preferred_chain_or_interface = chain_match.group(1)
+                # Now that we have both, process code_block_data
+                if code_block_data:
+                    for item in code_block_data:
+                        item["pdb_id"] = current_pdb_id
+                        item["preferred_chain_or_interface"] = (
+                            current_preferred_chain_or_interface
+                        )
+                    data.extend(code_block_data)
+                    code_block_data = []
+                else:
+                    # No data collected before pdb_id and preferred_chain_or_interface
+                    pass
+                # Reset pdb_id and chain
+                current_pdb_id = None
+                current_preferred_chain_or_interface = None
+                continue
+
+            # Check for function definition
+            func_match = func_def_regex.match(line)
+            if func_match:
+                current_function = func_match.group(2)
+                continue
+
+            # Check for memory data lines
+            mem_match = mem_line_regex.match(line)
+            if mem_match:
+                line_number = int(mem_match.group(1))
+                mem_usage_mib = float(mem_match.group(2))
+                increment_mib = float(mem_match.group(3))
+                occurrences = int(mem_match.group(4))
+                code_line = mem_match.group(5).strip()
+                # # Skip lines that contain the @profile decorator
+                # if '@profile' in code_line or '@log_runtime_memory' in code_line:
+                #     continue
+                # Convert MiB to MB
+                mem_usage_mb = mem_usage_mib * 1.048576
+                increment_mb = increment_mib * 1.048576
+                code_block_data.append(
+                    {
+                        "function": current_function,
+                        "line_number": line_number,
+                        "mem_usage_MB": mem_usage_mb,
+                        "increment_MB": increment_mb,
+                        "occurrences": occurrences,
+                        "code_line": code_line,
+                    }
+                )
+    # At the end, if there is any remaining code_block_data
+    if code_block_data:
+        # We may not have pdb_id and preferred_chain_or_interface
+        # For consistency, we can set them to None or empty string
+        for item in code_block_data:
+            item["pdb_id"] = current_pdb_id
+            item["preferred_chain_or_interface"] = current_preferred_chain_or_interface
+        data.extend(code_block_data)
+
+    # Create DataFrame
+    df = pd.DataFrame(data)
+
+    # Reorder columns
+    df = df[
+        [
+            "pdb_id",
+            "preferred_chain_or_interface",
+            "function",
+            "line_number",
+            "mem_usage_MB",
+            "increment_MB",
+            "occurrences",
+            "code_line",
+        ]
+    ]
+    return df
 
 
 def compute_interface(
@@ -225,7 +389,6 @@ def get_interface_string(
     return encode_interface(r, c)
 
 
-@staticmethod
 def decode_interface(interface_string: str) -> tuple[np.ndarray, np.ndarray]:
     """Decodes the interface string.
 
@@ -249,59 +412,3 @@ def decode_interface(interface_string: str) -> tuple[np.ndarray, np.ndarray]:
     chain_residues = np.column_stack((residues, chains.reshape(-1, 2)))
 
     return chain_residues[:, :2], chain_residues[:, 2:]
-
-
-def parse_memory_profiler_log(log_file_path):
-    data = []
-    current_function = None
-
-    # Regular expressions to match lines
-    func_def_regex = re.compile(r"^\s*(\d+)\s+.*def\s+(\w+)\s*\(.*\):")
-    mem_line_regex = re.compile(
-        r"^\s*(\d+)\s+([\d\.]+)\s+MiB\s+([\d\.\-\+]+)\s+MiB\s+(\d+)\s+(.*)"
-    )
-
-    with open(log_file_path) as f:
-        for line in f:
-            line = line.rstrip("\n")
-            # Skip empty lines and headers
-            if not line.strip() or line.startswith(("Filename:", "Line #", "====")):
-                continue
-
-            # Check for function definition
-            func_match = func_def_regex.match(line)
-            if func_match:
-                current_function = func_match.group(2)
-                continue
-
-            # Check for memory data lines
-            mem_match = mem_line_regex.match(line)
-            if mem_match:
-                line_number = int(mem_match.group(1))
-                mem_usage_mib = float(mem_match.group(2))
-                increment_mib = float(mem_match.group(3))
-                occurrences = int(mem_match.group(4))
-                code_line = mem_match.group(5).strip()
-
-                # Skip lines that contain the @profile decorator
-                if "@profile" in code_line:
-                    continue
-
-                # Convert MiB to MB
-                mem_usage_mb = mem_usage_mib * 1.048576
-                increment_mb = increment_mib * 1.048576
-
-                data.append(
-                    {
-                        "function": current_function,
-                        "line_number": line_number,
-                        "mem_usage_MB": mem_usage_mb,
-                        "increment_MB": increment_mb,
-                        "occurrences": occurrences,
-                        "code_line": code_line,
-                    }
-                )
-
-    # Create DataFrame
-    df = pd.DataFrame(data)
-    return df

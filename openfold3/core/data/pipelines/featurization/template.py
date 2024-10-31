@@ -2,10 +2,12 @@
 
 import torch
 
-from openfold3.core.data.primitives.quality_control.logging_utils import log_runtime
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 
 
-@log_runtime(name="runtime-templates-feat")
+@log_runtime_memory(runtime_dict_key="runtime-templates-feat")
 def featurize_templates_dummy_af3(n_templ, n_token):
     """Temporary function to generate dummy template features."""
     return {
