@@ -113,12 +113,12 @@ class TestLDDT(unittest.TestCase):
         np.testing.assert_allclose(
             intra_lddt_rt,
             exp_outputs,
-            atol=1e-5,
+            atol=consts.eps,
         )
         np.testing.assert_allclose(
             inter_lddt_rt,
             exp_outputs,
-            atol=1e-5,
+            atol=consts.eps,
         )
 
 
@@ -161,7 +161,7 @@ class TestInterfaceLDDT(unittest.TestCase):
             p1, p2, gt_structure_1, gt_structure_2, mask1, mask2
         )
         exp_outputs = torch.ones(batch_size)
-        np.testing.assert_allclose(out_interface_lddt, exp_outputs, atol=1e-5)
+        np.testing.assert_allclose(out_interface_lddt, exp_outputs, atol=consts.eps)
 
 
 class TestDRMSD(unittest.TestCase):
@@ -210,8 +210,8 @@ class TestDRMSD(unittest.TestCase):
             mask,
             asym_id,
         )
-        np.testing.assert_allclose(intra_drmsd_rt, exp_outputs, atol=1e-5)
-        np.testing.assert_allclose(inter_drmsd_rt, exp_outputs, atol=1e-5)
+        np.testing.assert_allclose(intra_drmsd_rt, exp_outputs, atol=consts.eps)
+        np.testing.assert_allclose(inter_drmsd_rt, exp_outputs, atol=consts.eps)
 
 
 class TestBatchedKabsch(unittest.TestCase):
@@ -240,7 +240,7 @@ class TestBatchedKabsch(unittest.TestCase):
         gt_structure_rototranslated = random_rotation_translation(gt_structure)
         exp_outputs = torch.zeros(batch_size)
         out_kabsch = batched_kabsch(gt_structure_rototranslated, gt_structure, mask)[-1]
-        np.testing.assert_allclose(out_kabsch, exp_outputs, atol=1e-5)
+        np.testing.assert_allclose(out_kabsch, exp_outputs, atol=consts.eps)
 
 
 class TestGDT(unittest.TestCase):
@@ -297,8 +297,8 @@ class TestGDT(unittest.TestCase):
         exp_gdt_ts_outs = torch.ones(batch_size)
         exp_gdt_ha_outs = torch.ones(batch_size)
 
-        np.testing.assert_allclose(out_gdt_ts, exp_gdt_ts_outs, atol=1e-5)
-        np.testing.assert_allclose(out_gdt_ha, exp_gdt_ha_outs, atol=1e-5)
+        np.testing.assert_allclose(out_gdt_ts, exp_gdt_ts_outs, atol=consts.eps)
+        np.testing.assert_allclose(out_gdt_ha, exp_gdt_ha_outs, atol=consts.eps)
 
 
 class TestGetSuperimposeMetrics(unittest.TestCase):
