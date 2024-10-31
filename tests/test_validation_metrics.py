@@ -9,7 +9,6 @@ from openfold3.core.metrics.validation_all_atom import (
     drmsd,
     gdt_ha,
     gdt_ts,
-    get_substrate_metrics,
     get_superimpose_metrics,
     interface_lddt,
     lddt,
@@ -213,44 +212,6 @@ class TestDRMSD(unittest.TestCase):
         )
         np.testing.assert_allclose(intra_drmsd_rt, exp_outputs, atol=1e-5)
         np.testing.assert_allclose(inter_drmsd_rt, exp_outputs, atol=1e-5)
-
-
-class TestGetSubstrateMetrics(unittest.TestCase):
-    def test_get_substrate_metrics(self):
-        batch_size = consts.batch_size
-        n_atom = 50
-
-        coords_pred = torch.randn(batch_size, n_atom, 3)  # [batch_size, n_atom, 3]
-        coords_gt = torch.randn(batch_size, n_atom, 3)  # [batch_size, n_atom, 3]
-
-        # features of (bs, n_atom) only supported for samples (same values across bs)
-        is_ligand_atomized = torch.randint(low=0, high=2, size=(n_atom,))
-        is_ligand_atomized = is_ligand_atomized.unsqueeze(0).expand(batch_size, -1)
-        protein_idx_atomized = 1 - is_ligand_atomized  # [batch_size, n_atom]
-
-        asym_id_atomized = torch.randint(low=0, high=20, size=(n_atom,))
-        asym_id_atomized = asym_id_atomized.unsqueeze(0).expand(
-            batch_size, -1
-        )  # [batch_size, n_atom]
-        all_atom_mask = torch.ones(
-            (
-                batch_size,
-                n_atom,
-            )
-        )  # [batch_size, n_atom]
-
-        out = get_substrate_metrics(
-            is_ligand_atomized,
-            asym_id_atomized,
-            coords_pred,
-            coords_gt,
-            all_atom_mask,
-            protein_idx_atomized,
-            substrate="ligand",
-        )
-        exp_shape = (batch_size,)
-        for _, v in out.items():
-            np.testing.assert_equal(v.shape, exp_shape)
 
 
 class TestBatchedKabsch(unittest.TestCase):
