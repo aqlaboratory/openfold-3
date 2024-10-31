@@ -143,3 +143,60 @@ class AlphaFold3AllAtom(ModelRunner):
         metrics = get_validation_metrics(batch, outputs, superimposition_metrics)
 
         return metrics
+
+    # TODO: Integrate with prediction step
+    def _compute_confidence_scores(self, batch: dict, outputs: dict) -> dict:
+        """Compute confidence metrics. This function is called during inference.
+
+        Args:
+            batch (dict):
+                Input feature dictionary
+            outputs (dict:
+                Output dictionary containing the predicted trunk embeddings,
+                all-atom positions, and distogram head logits
+
+        Returns:
+            confidence_scores (dict):
+                Dict containing the following confidence measures:
+                pLDDT, PDE, PAE, pTM, iPTM, weighted pTM
+        """
+        # Used in modified residue ranking
+        confidence_scores = {}
+        confidence_scores["plddt"] = compute_plddt(outputs["plddt_logits"])
+        confidence_scores.update(
+            compute_predicted_distance_error(
+                outputs["pde_logits"],
+                **self.config.confidence.pde,
+            )
+        )
+
+        if self.config.architecture.heads.pae.enabled:
+            confidence_scores.update(
+                compute_predicted_aligned_error(
+                    outputs["pae_logits"],
+                    **self.config.confidence.pae,
+                )
+            )
+
+            # Expand token mask to atom mask
+            atom_mask = broadcast_token_feat_to_atoms(
+                token_mask=batch["token_mask"],
+                num_atoms_per_token=batch["num_atoms_per_token"],
+                token_feat=batch["token_mask"],
+            )
+
+            _, valid_frame_mask = get_token_frame_atoms(
+                batch=batch, x=outputs["atom_positions_predicted"], atom_mask=atom_mask
+            )
+
+            # Compute weighted pTM score
+            # Uses pae_logits (SI pg. 27)
+            ptm_scores = compute_weighted_ptm(
+                logits=outputs["pae_logits"],
+                asym_id=batch["asym_id"],
+                mask=valid_frame_mask,
+                **self.config.confidence.ptm,
+            )
+            confidence_scores.update(ptm_scores)
+
+        return confidence_scores
