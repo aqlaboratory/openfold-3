@@ -154,7 +154,7 @@ def create_template_distogram(
 
     Returns:
         torch.Tensor:
-            The distogram template feature.
+            The distogram template feature [N_templates, N_token, N_token, N_bins].
     """
     distogram = np.sum(
         (
@@ -200,7 +200,7 @@ def create_template_unit_vector(
 
     Returns:
         torch.Tensor:
-            The unit vector template feature.
+            The unit vector template feature [N_templates, N_token, N_token, 3].
     """
 
     # Convert nans to 0s and tensors to Vec3Arrays
@@ -225,13 +225,14 @@ def create_template_unit_vector(
     )
 
     # Cast back to tensor and apply backbone frame mask
-    return torch.cat(
-        [
-            (
-                coord
-                * (backbone_frame_mask[..., None] * backbone_frame_mask[..., None, :])
-            )[..., None]
-            for coord in unit_vector
-        ],
-        dim=-1,
-    )
+    masked_unit_vector = []
+    for coord in unit_vector:
+        # Create a 2D backbone frame mask
+        backbone_frame_2d = (
+            backbone_frame_mask[..., None] * backbone_frame_mask[..., None, :]
+        )
+        # Apply mask
+        masked_coord = (coord * backbone_frame_2d)[..., None]
+        masked_unit_vector.append(masked_coord)
+
+    return torch.cat(masked_unit_vector, dim=-1)

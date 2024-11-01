@@ -33,6 +33,20 @@ def featurize_templates_af3(
 ) -> dict[str, torch.Tensor]:
     """Featurizes template data for AF3.
 
+    Returned features:
+        - template_pseudo_beta_mask:
+            Mask indicating if pseudo beta atoms (C-alpha atom for GLY, C-beta
+            otherwise) are present in the corresponding token.
+        - template_backbone_frame_mask:
+            Mask indicating if backbone frame atoms (N, CA, C) are present in the
+            corresponding token.
+        - template_restype:
+            One-hot encoded residue types.
+        - template_distogram:
+            Distogram constructed from pseudo beta atoms distances.
+        - template_unit_vector:
+            Unit vector constructed from backbone frames.
+
     Args:
         template_slice_collection (TemplateSliceCollection):
             The collection of cropped template atom arrays per chain, per template.

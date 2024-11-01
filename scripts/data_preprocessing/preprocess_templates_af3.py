@@ -13,7 +13,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
 
 @click.command()
 @click.option(
-    "--template-alignment-directory",
+    "--template_alignment_directory",
     required=True,
     help="Directory containing per-chain folders with template alignments.",
     type=click.Path(
@@ -24,13 +24,13 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     ),
 )
 @click.option(
-    "--template-alignment-filename",
+    "--template_alignment_filename",
     required=True,
     help="Filename for the template alignments.",
     type=str,
 )
 @click.option(
-    "--template-structures-directory",
+    "--template_structures_directory",
     required=True,
     help="Directory containing the template structures.",
     type=click.Path(
@@ -41,7 +41,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     ),
 )
 @click.option(
-    "--template-cache-directory",
+    "--template_cache_directory",
     required=True,
     help="Filepath to where the template cache should be saved.",
     type=click.Path(
@@ -52,7 +52,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     ),
 )
 @click.option(
-    "--query-structures-directory",
+    "--query_structures_directory",
     required=True,
     help="Directory containing query structures used for training or inference.",
     type=click.Path(
@@ -63,7 +63,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     ),
 )
 @click.option(
-    "--num-workers",
+    "--num_workers",
     required=True,
     type=int,
     help=(
@@ -72,7 +72,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     ),
 )
 @click.option(
-    "--dataset-cache-file",
+    "--dataset_cache_file",
     required=True,
     help="Filepath to the dataset cache.",
     type=click.Path(
@@ -83,7 +83,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     ),
 )
 @click.option(
-    "--updated-dataset-cache-file",
+    "--updated_dataset_cache_file",
     required=True,
     help="Filepath to where the updated dataset cache should be saved.",
     type=click.Path(
@@ -94,13 +94,13 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     ),
 )
 @click.option(
-    "--max-templates",
+    "--max_templates",
     required=True,
     type=int,
     help="Maximum number of templates to keep per query chain.",
 )
 @click.option(
-    "--is-core-train",
+    "--is_core_train",
     type=bool,
     help=(
         "Flag to specify the dataset cache is for the core training set. False for"
@@ -108,7 +108,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     ),
 )
 @click.option(
-    "--save-frequency",
+    "--save_frequency",
     required=True,
     type=int,
     help=(
@@ -118,7 +118,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     default=1000,
 )
 @click.option(
-    "--max-release-date",
+    "--max_release_date",
     required=False,
     help=(
         "Maximum release date for templates in format YYYY-MM-DD. Used for"
@@ -128,7 +128,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     default=None,
 )
 @click.option(
-    "--min-release-date-diff",
+    "--min_release_date_diff",
     required=False,
     help=(
         "Minimum number of days required for the template to be released before a"
@@ -138,13 +138,13 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     default=None,
 )
 @click.option(
-    "--log-level",
+    "--log_level",
     default="WARNING",
     type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False),
     help="Set the logging level",
 )
 @click.option(
-    "--filter-only",
+    "--filter_only",
     default=False,
     type=bool,
     help=(

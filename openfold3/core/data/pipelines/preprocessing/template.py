@@ -200,7 +200,7 @@ def create_template_cache_for_query(
     if len(template_hits_filtered) > 0:
         template_cache_path_rep = template_cache_directory / Path(f"{query.name}.json")
         if not os.path.exists(template_cache_path_rep):
-            with open(template_cache_path_rep, "w") as f:  # TODO check mp safe
+            with open(template_cache_path_rep, "w") as f:
                 json.dump(template_hits_filtered, f, indent=4)
         logging.info(
             f"{pid} - Template cache for {query.name} saved with "

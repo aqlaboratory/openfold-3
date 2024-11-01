@@ -21,10 +21,15 @@ Changes from old version:
 
 
 class HitMetadata(NamedTuple):
-    """_summary_
+    """Tuple containing metadata for a hit in an HMM search.
 
-    Args:
-        NamedTuple (_type_): _description_
+    Attributes:
+        pdb_id (str): The PDB ID of the hit.
+        chain (str): The chain ID of the hit.
+        start (int): The start index of the hit in the PDB sequence.
+        end (int): The end index of the hit in the PDB sequence.
+        length (int): The length of the hit.
+        text (str): The free text description of the hit.
     """
 
     pdb_id: str
@@ -61,35 +66,39 @@ def _get_indices(sequence: str, start: int) -> list[int]:
         list[int]: _description_
     """
     indices = []
-    counter = start
+    index_runner = start
     for symbol in sequence:
         # Skip gaps but add a placeholder so that the alignment is preserved.
         if symbol == "-":
             indices.append(-1)
         # Skip deleted residues, but increase the counter.
         elif symbol.islower():
-            counter += 1
+            index_runner += 1
         # Normal aligned residue. Increase the counter and append to indices.
         else:
-            indices.append(counter)
-            counter += 1
+            indices.append(index_runner)
+            index_runner += 1
     return indices
 
 
 def _parse_hmmsearch_description(description: str) -> HitMetadata:
     """Parses the hmmsearch A3M sequence description line.
 
+    Example 1: >4pqx_A/2-217 [subseq from] mol:protein length:217  Free text
+    Example 2: >5g3r_A/1-55 [subseq from] mol:protein length:352
+
     Args:
-        description (str): _description_
+        description (str):
+            A3M sequence description line.
 
     Raises:
-        ValueError: _description_
+        ValueError:
+            If the description cannot be parsed.
 
     Returns:
-        HitMetadata: _description_
+        HitMetadata:
+            Metadata for the hit.
     """
-    # Example 1: >4pqx_A/2-217 [subseq from] mol:protein length:217  Free text
-    # Example 2: >5g3r_A/1-55 [subseq from] mol:protein length:352
     match = re.match(
         r"^>?([a-z0-9]+)_(\w+)/([0-9]+)-([0-9]+).*protein length:([0-9]+) *(.*)$",
         description.strip(),
@@ -136,6 +145,8 @@ def convert_stockholm_to_a3m(
     remove_first_row_gaps: bool = True,
 ) -> str:
     """Converts MSA in Stockholm format to the A3M format.
+
+    Only works for stockholm format produced by HHblits.
 
     Args:
         stockholm_format (str): _description_
