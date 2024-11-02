@@ -24,6 +24,7 @@ def process_template_structures_af3(
     dataset_cache: dict,
     pdb_id: str,
     template_structures_directory: Path,
+    template_file_format: str,
     ccd: CIFFile,
 ) -> TemplateSliceCollection:
     """Processes template structures for all chains of a given target structure.
@@ -48,6 +49,8 @@ def process_template_structures_af3(
             The PDB ID of the target structure.
         template_structures_directory (Path):
             The directory where the template structures are stored.
+        template_file_format (str):
+            The format of the template files.
         ccd (CIFFile):
             The parsed CCD file.
 
@@ -89,6 +92,7 @@ def process_template_structures_af3(
                 template_cache,
                 k,
                 template_structures_directory,
+                template_file_format,
                 ccd,
                 atom_array_cropped_chain,
                 template_pdb_chain_ids,

@@ -129,6 +129,9 @@ def sample_template_count(
         int:
             The actual number of templates to sample for this chain.
     """
+    if len(template_pdb_chain_ids) == 0:
+        return 0
+
     if is_train:
         return np.min([np.random.randint(0, len(template_pdb_chain_ids)), n_templates])
     else:
@@ -225,6 +228,7 @@ def slice_templates_for_chain(
     template_cache: dict,
     k: int,
     template_structures_directory: Path,
+    template_file_format: str,
     ccd: CIFFile,
     atom_array_cropped_chain: AtomArray,
     template_pdb_chain_ids: list[str],
@@ -239,6 +243,8 @@ def slice_templates_for_chain(
             The number of templates to use.
         template_structures_directory (Path):
             The directory where the template structures are stored.
+        template_file_format (str):
+            The format of the template structures.
         ccd (CIFFile):
             Parsed CCD file.
         atom_array_cropped_chain (AtomArray):
@@ -268,7 +274,8 @@ def slice_templates_for_chain(
         template_pdb_id, template_chain_id = template_pdb_chain_id.split("_")
         # Parse cif file into an atom array
         cif_file, atom_array_template_assembly = parse_mmcif(
-            template_structures_directory / Path(f"{template_pdb_id}.bcif")
+            template_structures_directory
+            / Path(f"{template_pdb_id}.{template_file_format}")
         )
         # Add unresolved residues
         atom_array_template_assembly = add_unresolved_polymer_residues(

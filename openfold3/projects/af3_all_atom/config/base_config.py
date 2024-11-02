@@ -433,6 +433,27 @@ project_config = mlc.ConfigDict(
                     "spatial": 0.4,
                     "spatial_interface": 0.4,
                 },
+                "msa": {
+                    "max_rows_paired": 8191,
+                    "max_seq_counts": {
+                        "uniref90_hits": 10000,
+                        "uniprot": 50000,
+                        "bfd_uniclust_hits": 100000,
+                        "bfd_uniref_hits": 100000,
+                        "mgnify_hits": 5000,
+                        "rfam_hits": 10000,
+                        "rnacentral_hits": 10000,
+                        "nucleotide_collection_hits": 10000,
+                    },
+                },
+                "template": {
+                    "n_templates": 4,
+                    "distogram": {
+                        "min_bin": 3.25,
+                        "max_bin": 50.75,
+                        "n_bins": 39,
+                    },
+                },
                 "loss": {
                     "min_resolution": 0.1,
                     "max_resolution": 4.0,
@@ -462,6 +483,7 @@ project_config = mlc.ConfigDict(
                     "reference_molecule_directory": PLACEHOLDER_PATH,
                     "template_cache_directory": PLACEHOLDER_PATH,
                     "template_structures_directory": PLACEHOLDER_PATH,
+                    "template_file_format": PLACEHOLDER_PATH,
                     "ccd_file": PLACEHOLDER_PATH,
                 },
             },

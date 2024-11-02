@@ -196,6 +196,9 @@ class WeightedPDBDataset(SingleDataset):
         self.template_structures_directory = dataset_config["dataset_paths"][
             "template_structures_directory"
         ]
+        self.template_file_format = dataset_config["dataset_paths"][
+            "template_file_format"
+        ]
         self.reference_molecule_directory = dataset_config["dataset_paths"][
             "reference_molecule_directory"
         ]
@@ -226,7 +229,7 @@ class WeightedPDBDataset(SingleDataset):
         datapoint_collection = DatapointCollection.create_empty()
         for entry, entry_data in self.dataset_cache["structure_data"].items():
             # Append chains
-            _ = [
+            for chain, chain_data in entry_data["chains"].items():
                 datapoint_collection.append(
                     entry,
                     str(chain),
@@ -234,24 +237,21 @@ class WeightedPDBDataset(SingleDataset):
                     DatapointType.CHAIN,
                     int(chain_data["cluster_size"]),
                 )
-                for chain, chain_data in entry_data["chains"].items()
-            ]
             # Append interfaces
-            _ = [
+            for interface_id, cluster_data in entry_data["interfaces"].items():
+                interface_chains = interface_id.split("_")
+                cluster_size = int(cluster_data["cluster_size"])
+                chain_moltypes = [
+                    entry_data["chains"][chain]["molecule_type"]
+                    for chain in interface_chains
+                ]
                 datapoint_collection.append(
                     entry,
-                    [str(chain) for chain in interface.split("_")],
-                    [
-                        entry_data["chains"][chain]["molecule_type"]
-                        for chain in interface.split("_")
-                    ],
+                    interface_chains,
+                    chain_moltypes,
                     DatapointType.INTERFACE,
-                    int(cluster_size),
+                    cluster_size,
                 )
-                for interface, cluster_size in entry_data[
-                    "interface_cluster_sizes"
-                ].items()
-            ]
 
         datapoint_collection.convert_to_dataframe()
         self.datapoint_cache = datapoint_collection.create_datapoint_cache()
@@ -307,22 +307,23 @@ class WeightedPDBDataset(SingleDataset):
         # Template features
         template_slice_collection = process_template_structures_af3(
             atom_array_cropped=atom_array_cropped,
-            n_templates=self.n_templates,
+            n_templates=self.template.n_templates,
             is_train=True,
-            template_cache_directory=self.template_cache_path,
+            template_cache_directory=self.template_cache_directory,
             dataset_cache=self.dataset_cache,
             pdb_id=pdb_id,
-            template_structures_directory=self.template_structures_path,
+            template_structures_directory=self.template_structures_directory,
+            template_file_format=self.template_file_format,
             ccd=self.ccd,
         )
         features.update(
             featurize_templates_af3(
                 template_slice_collection=template_slice_collection,
-                n_templates=self.template["n_templates"],
+                n_templates=self.template.n_templates,
                 token_budget=self.token_budget,
-                min_bin=self.template["min_bin"],
-                max_bin=self.template["max_bin"],
-                n_bins=self.template["n_bins"],
+                min_bin=self.template.distogram.min_bin,
+                max_bin=self.template.distogram.max_bin,
+                n_bins=self.template.distogram.n_bins,
             )
         )
 
