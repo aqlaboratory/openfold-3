@@ -182,7 +182,7 @@ class AlphaFold3Loss(nn.Module):
         diffusion_weights_sum = sum(
             loss_weights[k].float() for k in self.config.diffusion_loss_names
         )
-        if diffusion_weights_sum > 0:
+        if "atom_positions_diffusion" in output and diffusion_weights_sum > 0:
             l_diffusion, l_diffusion_breakdown = diffusion_loss(
                 batch=batch,
                 x=output["atom_positions_diffusion"],
