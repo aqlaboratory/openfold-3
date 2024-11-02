@@ -63,6 +63,18 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     ),
 )
 @click.option(
+    "--query_file_format",
+    required=True,
+    help="File format for the query structures.",
+    type=str,
+)
+@click.option(
+    "--template_file_format",
+    required=True,
+    help="File format for the query structures.",
+    type=str,
+)
+@click.option(
     "--num_workers",
     required=True,
     type=int,
@@ -132,7 +144,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     required=False,
     help=(
         "Minimum number of days required for the template to be released before a"
-        " query structure. Used for core trianing sets."
+        " query structure. Used for core training sets."
     ),
     type=int,
     default=None,
@@ -152,12 +164,20 @@ from openfold3.core.data.pipelines.preprocessing.template import (
         "cache has already been created."
     ),
 )
+@click.option(
+    "--log_to_file", default=True, type=bool, help="Enable logging to a file."
+)
+@click.option(
+    "--log_to_console", default=False, type=bool, help="Enable logging to the console."
+)
 def main(
     template_alignment_directory: Path,
     template_alignment_filename: str,
     template_structures_directory: Path,
     template_cache_directory: Path,
     query_structures_directory: Path,
+    query_file_format: str,
+    template_file_format: str,
     num_workers: int,
     dataset_cache_file: Path,
     updated_dataset_cache_file: Path,
@@ -168,6 +188,8 @@ def main(
     min_release_date_diff: int,
     log_level: str,
     filter_only: bool,
+    log_to_file: bool,
+    log_to_console: bool,
 ) -> None:
     """Preprocesses templates for AF3 datasets.
 
@@ -209,6 +231,10 @@ def main(
         filter_only (bool):
             Whether to only filter the template cache. True if the full template cache
             has already been created.
+        log_to_file (bool):
+            Enable logging to a file.
+        log_to_console (bool):
+            Enable logging to the console.
 
     Raises:
         ValueError:
@@ -217,35 +243,13 @@ def main(
             If is_core_train is False and max_release_date is None.
     """
 
-    # Configure the logger
-    logger = logging.getLogger("openfold3")
-    numeric_level = getattr(logging, log_level.upper())
-    logger.setLevel(numeric_level)
-
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(numeric_level)
-    file_handler = logging.FileHandler(
-        updated_dataset_cache_file.parent / Path("preprocess_templates_af3.log")
-    )
-    file_handler.setLevel(numeric_level)
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    console_handler.setFormatter(formatter)
-    file_handler.setFormatter(formatter)
-
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
-
-    logger.propagate = False
-
     # Error handling
     if is_core_train & (min_release_date_diff is None):
         raise ValueError(
             "Minimum release date difference for core training must be specified."
         )
 
-    if not is_core_train & (max_release_date is None):
+    if (not is_core_train) & (max_release_date is None):
         raise ValueError(
             "Max release date difference for distillation and inference sets must be"
             " specified."
@@ -261,7 +265,13 @@ def main(
             template_structures_directory=template_structures_directory,
             template_cache_directory=template_cache_directory,
             query_structures_directory=query_structures_directory,
+            query_file_format=query_file_format,
+            template_file_format=template_file_format,
             num_workers=num_workers,
+            log_level=log_level,
+            log_to_file=log_to_file,
+            log_to_console=log_to_console,
+            log_dir=template_cache_directory.parent / Path("template_construct_logs"),
         )
     else:
         logging.info(
@@ -278,6 +288,10 @@ def main(
         is_core_train=is_core_train,
         num_workers=num_workers,
         save_frequency=save_frequency,
+        log_level=log_level,
+        log_to_file=log_to_file,
+        log_to_console=log_to_console,
+        log_dir=template_cache_directory.parent / Path("template_filter_logs"),
         max_release_date=max_release_date,
         min_release_date_diff=min_release_date_diff,
     )

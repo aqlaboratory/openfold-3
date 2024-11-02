@@ -1,7 +1,6 @@
 """Primitives for processing templates alignments."""
 
 import dataclasses
-import logging
 from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
@@ -12,6 +11,9 @@ from biotite.structure.io.pdbx import CIFFile
 from openfold3.core.data.io.sequence.fasta import read_multichain_fasta
 from openfold3.core.data.io.sequence.template import TemplateHit
 from openfold3.core.data.io.structure.cif import parse_mmcif
+from openfold3.core.data.primitives.quality_control.logging_config import (
+    TEMPLATE_PROCESS_LOGGER,
+)
 from openfold3.core.data.primitives.structure.labels import (
     get_chain_to_pdb_chain_dict,
 )
@@ -20,8 +22,6 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_cif_block,
     get_release_date,
 )
-
-logger = logging.getLogger(__name__)
 
 
 # Shared
@@ -230,11 +230,11 @@ def match_query_chain_and_sequence(
     query_seq_hmm = query.hit_sequence.replace("-", "")
 
     if query_seq_cif is None:
-        logging.debug(
+        TEMPLATE_PROCESS_LOGGER.get().info(
             f"Query {query_pdb_id} chain {query_chain_id} not found in CIF file."
         )
     elif (query_seq_cif is not None) & (query_seq_hmm not in query_seq_cif):
-        logging.debug(
+        TEMPLATE_PROCESS_LOGGER.get().info(
             f"Query {query_pdb_id} chain {query_chain_id} sequence does not match CIF"
             " sequence."
         )
@@ -274,7 +274,7 @@ def remap_chain_id(
         # Remap hit chain ID if found in another chain
         if hit_seq_hmm in v:
             hit_chain_id_matched = k
-            logging.debug(
+            TEMPLATE_PROCESS_LOGGER.get().info(
                 f"Found HMM sequence of template {hit_pdb_id} chain {hit_chain_id}"
                 f" in new chain {k}. Remapping."
             )
@@ -317,7 +317,7 @@ def match_template_chain_and_sequence(
 
     # A) If chain ID not in CIF file, attempt to find sequence in other chains
     if hit_seq_cif is None:
-        logger.debug(
+        TEMPLATE_PROCESS_LOGGER.get().info(
             f"Template {hit_pdb_id} chain {hit_chain_id} not found in CIF file."
             " Attempting to remap to other chains."
         )
@@ -327,7 +327,7 @@ def match_template_chain_and_sequence(
     # B) If chain ID is in CIF file but HMM sequence does not match CIF sequence,
     # attempt to find in other chains
     elif (hit_seq_cif is not None) & (hit_seq_hmm not in hit_seq_cif):
-        logger.debug(
+        TEMPLATE_PROCESS_LOGGER.get().info(
             f"Template {hit_pdb_id} chain {hit_chain_id} found but mismatches "
             "sequence in CIF file. Attempting to remap to other chains."
         )
@@ -337,7 +337,7 @@ def match_template_chain_and_sequence(
     # C) If HMM sequence matches CIF sequence, use original chain ID
     else:
         hit_chain_id_matched = hit_chain_id
-        logger.debug(
+        TEMPLATE_PROCESS_LOGGER.get().info(
             f"Template {hit_pdb_id} chain {hit_chain_id} HMM sequence matches "
             "CIF sequence."
         )

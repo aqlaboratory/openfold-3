@@ -1,7 +1,6 @@
 """Preprocessing pipelines for template data ran before training/evaluation."""
 
 import json
-import logging
 import multiprocessing as mp
 import os
 from datetime import datetime
@@ -12,6 +11,10 @@ from typing import Optional
 from tqdm import tqdm
 
 from openfold3.core.data.io.sequence.template import parse_hmmsearch_sto
+from openfold3.core.data.primitives.quality_control.logging_config import (
+    TEMPLATE_PROCESS_LOGGER,
+    configure_template_logger,
+)
 from openfold3.core.data.primitives.sequence.template import (
     TemplateHitCollection,
     _TemplateQueryEntry,
@@ -26,8 +29,6 @@ from openfold3.core.data.primitives.sequence.template import (
     parse_structure,
 )
 
-logger = logging.getLogger(__name__)
-
 
 # Metadata cache creation
 def create_template_cache_for_query(
@@ -36,6 +37,8 @@ def create_template_cache_for_query(
     template_structures_directory: Path,
     template_cache_directory: Path,
     query_structures_directory: Path,
+    query_file_format: str,
+    template_file_format: str,
 ) -> None:
     """Creates a json cache of filtered template hits for a query.
 
@@ -79,20 +82,24 @@ def create_template_cache_for_query(
             Path to the directory containing query structures in mmCIF format. The
             PDB IDs of the query CIF files need to match the PDB IDs for the query (1st
             row) in the alignment file for it to have any templates.
+        query_file_format (str):
+            File format of the query structures.
+        template_file_format (str):
+            File format of the template structures.
     """
-    pid = os.getpid()
+    template_process_logger = TEMPLATE_PROCESS_LOGGER.get()
 
     # Parse alignment
     try:
         with open(template_alignment_file) as f:
             hits = parse_hmmsearch_sto(f.read())
     except Exception as e:
-        logger.info(
-            f"{pid} - Failed to parse alignment file, skipping. Make sure that"
-            f" an hhsearch output stockholm was provided. Error: {e}"
+        template_process_logger.info(
+            f"Failed to parse alignment file, skipping. Make sure that"
+            f" an hhsearch output stockholm was provided. Error: \n{e}\n"
         )
         return
-    logger.debug(f"{pid} - Alignment file {template_alignment_file} parsed.")
+    template_process_logger.info(f"Alignment file {template_alignment_file} parsed.")
 
     # Filter queries
     query = hits[0]
@@ -102,9 +109,10 @@ def create_template_cache_for_query(
     # the query and all its templates are skipped if the structure identified by the PDB
     # ID of the first hit in the alignments file is not provided in
     # query_structures_directory
-    if not (query_structures_directory / Path(f"{query_pdb_id}.bcif")).exists():
-        logger.debug(
-            f"{pid} - Query .cif structure {query_pdb_id} not found in "
+    qp = query_structures_directory / Path(f"{query_pdb_id}.{query_file_format}")
+    if not (qp).exists():
+        template_process_logger.info(
+            f"Query .cif structure {query_pdb_id} not found in "
             f"{query_structures_directory}. Skipping templates for this structure."
         )
         return
@@ -117,15 +125,15 @@ def create_template_cache_for_query(
     if match_query_chain_and_sequence(
         query_structures_directory, query, query_pdb_id, query_chain_id
     ):
-        logger.debug(
-            f"{pid} - The query sequences in the structure (query {query_pdb_id} chain "
+        template_process_logger.info(
+            f"The query sequences in the structure (query {query_pdb_id} chain "
             f"{query_chain_id}) and template alignment (query {query_pdb_id_t} chain "
             f"{query_chain_id_t}) don't match. Skipping templates for this structure."
         )
         return
     else:
-        logger.debug(
-            f"{pid} - Query {query_pdb_id} chain {query_chain_id} sequence matches "
+        template_process_logger.info(
+            f"Query {query_pdb_id} chain {query_chain_id} sequence matches "
             "alignment sequence."
         )
 
@@ -139,14 +147,14 @@ def create_template_cache_for_query(
 
         # 1. Apply sequence filters: AF3 SI Section 2.4
         if check_sequence(query_seq=query.hit_sequence.replace("-", ""), hit=hit):
-            logger.debug(
-                f"{pid} - Template {hit_pdb_id} sequence does not pass sequence"
+            template_process_logger.info(
+                f"Template {hit_pdb_id} sequence does not pass sequence"
                 " filters. Skipping this template."
             )
             continue
         else:
-            logger.debug(
-                f"{pid} - Template {hit_pdb_id} sequence passes sequence " "filters."
+            template_process_logger.info(
+                f"Template {hit_pdb_id} sequence passes sequence " "filters."
             )
 
         # 2. Parse structure
@@ -154,16 +162,18 @@ def create_template_cache_for_query(
         # corresponding hit in the alignment file is not provided in
         # template_structures_path
         cif_file, atom_array = parse_structure(
-            template_structures_directory, hit_pdb_id, file_format="cif"
+            template_structures_directory,
+            hit_pdb_id,
+            file_format=f"{template_file_format}",
         )
         if cif_file is None:
-            logger.debug(
-                f"{pid} - Template structure {hit_pdb_id} not found in "
+            template_process_logger.info(
+                f"Template structure {hit_pdb_id} not found in "
                 f"{template_structures_directory}. Skipping this template."
             )
             continue
         else:
-            logger.debug(f"{pid} - Template structure {hit_pdb_id} parsed.")
+            template_process_logger.info(f"Template structure {hit_pdb_id} parsed.")
         # 3. Parse template chain and sequence
         # the template is skipped if its HMM sequence cannot be mapped
         # exactly to a subsequence of ANY chain in the CIF file provided in
@@ -175,8 +185,8 @@ def create_template_cache_for_query(
             cif_file, atom_array, hit
         )
         if hit_chain_id_matched is None:
-            logger.debug(
-                f"{pid} - Could not match template {hit_pdb_id} chain {hit_chain_id} "
+            template_process_logger.info(
+                f"Could not match template {hit_pdb_id} chain {hit_chain_id} "
                 f"sequence in {cif_file}. Skipping this template."
             )
             continue
@@ -202,12 +212,12 @@ def create_template_cache_for_query(
         if not os.path.exists(template_cache_path_rep):
             with open(template_cache_path_rep, "w") as f:
                 json.dump(template_hits_filtered, f, indent=4)
-        logging.info(
-            f"{pid} - Template cache for {query.name} saved with "
+        template_process_logger.info(
+            f"Template cache for {query.name} saved with "
             f"{len(template_hits_filtered)} valid hits."
         )
     else:
-        logging.info(f"{pid} - 0 valid templates found for {query.name}.")
+        template_process_logger.info(f"0 valid templates found for {query.name}.")
 
 
 class _AF3TemplateCacheConstructor:
@@ -218,6 +228,12 @@ class _AF3TemplateCacheConstructor:
         template_structures_directory: Path,
         template_cache_directory: Path,
         query_structures_directory: Path,
+        query_file_format: str,
+        template_file_format: str,
+        log_level: str,
+        log_to_file: bool,
+        log_to_console: bool,
+        log_dir: Path,
     ) -> None:
         """Wrapper class for creating the template cache.
 
@@ -242,6 +258,16 @@ class _AF3TemplateCacheConstructor:
                 Directory where template cache jsons per chain will be saved.
             query_structures_directory (Path):
                 Directory containing the query CIF files.
+            query_file_format (str):
+                File format of the query structures.
+            template_file_format (str):
+                File format of the template structures.
+            log_level (str):
+                Log level for the logger.
+            log_to_file (bool):
+                Whether to log to file.
+            log_dir (Path):
+                Directory where the log file will be saved.
 
         """
         self.template_alignment_directory = template_alignment_directory
@@ -249,15 +275,34 @@ class _AF3TemplateCacheConstructor:
         self.template_structures_directory = template_structures_directory
         self.template_cache_directory = template_cache_directory
         self.query_structures_directory = query_structures_directory
+        self.query_file_format = query_file_format
+        self.template_file_format = template_file_format
+        self.log_level = log_level
+        self.log_to_file = log_to_file
+        self.log_to_console = log_to_console
+        self.log_dir = log_dir
 
     @wraps(create_template_cache_for_query)
     def __call__(self, input: _TemplateQueryEntry) -> None:
         try:
+            # Create logger and set it as the context logger for the process
+            TEMPLATE_PROCESS_LOGGER.set(
+                configure_template_logger(
+                    log_level=self.log_level,
+                    log_to_file=self.log_to_file,
+                    log_to_console=self.log_to_console,
+                    log_dir=self.log_dir,
+                )
+            )
+
+            # Parse query and representative IDs
             query_pdb_chain_id, rep_pdb_chain_id = (
                 input.dated_query.query_pdb_chain_id,
                 input.rep_pdb_chain_id,
             )
             query_pdb_id = query_pdb_chain_id.split("_")[0]
+
+            # Create template cache for query
             create_template_cache_for_query(
                 query_pdb_chain_id=query_pdb_chain_id,
                 template_alignment_file=(
@@ -269,10 +314,12 @@ class _AF3TemplateCacheConstructor:
                 template_cache_directory=self.template_cache_directory,
                 query_structures_directory=self.query_structures_directory
                 / Path(query_pdb_id),
+                query_file_format=self.query_file_format,
+                template_file_format=self.template_file_format,
             )
         except Exception as e:
-            logger.info(
-                "Failed to process templates for query " f"{query_pdb_chain_id}: {e}"
+            TEMPLATE_PROCESS_LOGGER.get().info(
+                "Failed to process templates for query " f"{query_pdb_chain_id}:\n{e}\n"
             )
 
 
@@ -283,7 +330,13 @@ def create_template_cache_af3(
     template_structures_directory: Path,
     template_cache_directory: Path,
     query_structures_directory: Path,
+    query_file_format: str,
+    template_file_format: str,
     num_workers: int,
+    log_level: str,
+    log_to_file: bool,
+    log_to_console: bool,
+    log_dir: Path,
 ) -> None:
     """Creates the full template cache for all query chains.
 
@@ -304,9 +357,24 @@ def create_template_cache_af3(
             Directory where the template cache jsons per chain will be saved.
         query_structures_directory (Path):
             Directory containing the query structures in mmCIF format.
+        query_file_format (str):
+            File format of the query structures.
+        template_file_format (str):
+            File format of the template structures.
         num_workers (int):
             Number of workers to use for multiprocessing.
+        log_level (str):
+            Log level for the logger.
+        log_to_file (bool):
+            Whether to log to file.
+        log_to_console (bool):
+            Whether to log to console.
+        log_dir (Path):
+            Directory where the log file will be saved.
     """
+    if not log_dir.exists():
+        log_dir.mkdir(parents=True, exist_ok=True)
+
     # Parse list of chains from metadata cache
     with open(dataset_cache_file) as f:
         dataset_cache = json.load(f)
@@ -319,6 +387,12 @@ def create_template_cache_af3(
         template_structures_directory,
         template_cache_directory,
         query_structures_directory,
+        query_file_format,
+        template_file_format,
+        log_level,
+        log_to_file,
+        log_to_console,
+        log_dir,
     )
     with mp.Pool(num_workers) as pool:
         for _ in tqdm(
@@ -369,6 +443,7 @@ def filter_template_cache_for_query(
             Dict mapping a query PDB - chain ID pair to a list of valid template
             representative IDs.
     """
+    template_process_logger = TEMPLATE_PROCESS_LOGGER.get()
 
     # Unpack input and format release dates
     if is_core_train:
@@ -395,7 +470,7 @@ def filter_template_cache_for_query(
         with open(template_cache_directory / Path(f"{rep_id}.json")) as f:
             template_cache = json.load(f)
     else:
-        logger.info(
+        template_process_logger.info(
             f"Template cache for representative {rep_id} not found. Returning no valid "
             "templates."
         )
@@ -439,7 +514,7 @@ def filter_template_cache_for_query(
         if len(filtered_templates) == max_templates:
             break
 
-    logging.info(
+    template_process_logger.info(
         f"Successfully filtered {len(filtered_templates)} templates for "
         f"{query_pdb_chain_id}."
     )
@@ -459,11 +534,15 @@ def filter_template_cache_for_query(
 class _AF3TemplateCacheFilter:
     def __init__(
         self,
-        template_cache_directory,
-        max_templates,
-        is_core_train,
-        max_release_date,
-        min_release_date_diff,
+        template_cache_directory: Path,
+        max_templates: int,
+        is_core_train: bool,
+        max_release_date: datetime | None,
+        min_release_date_diff: int | None,
+        log_level: str,
+        log_to_file: bool,
+        log_to_console: bool,
+        log_dir: Path,
     ) -> None:
         """Wrapper class for filtering the template cache and updating the dataset cache
 
@@ -486,6 +565,14 @@ class _AF3TemplateCacheFilter:
                 Maximum release date for templates.
             min_release_date_diff (int | None):
                 Minimum release date difference for core train templates.
+            log_level (str):
+                Log level for the logger.
+            log_to_file (bool):
+                Whether to log to file.
+            log_to_console (bool):
+                Whether to log to console.
+            log_dir (Path):
+                Directory where the log file will be saved.
 
         """
         self.template_cache_path = template_cache_directory
@@ -493,10 +580,25 @@ class _AF3TemplateCacheFilter:
         self.is_core_train = is_core_train
         self.max_release_date = max_release_date
         self.min_release_date_diff = min_release_date_diff
+        self.log_level = log_level
+        self.log_to_file = log_to_file
+        self.log_to_console = log_to_console
+        self.log_dir = log_dir
 
     @wraps(filter_template_cache_for_query)
     def __call__(self, input: _TemplateQueryEntry) -> TemplateHitCollection:
         try:
+            # Create logger and set it as the context logger for the process
+            TEMPLATE_PROCESS_LOGGER.set(
+                configure_template_logger(
+                    log_level=self.log_level,
+                    log_to_file=self.log_to_file,
+                    log_to_console=self.log_to_console,
+                    log_dir=self.log_dir,
+                )
+            )
+
+            # Filter templates for query
             valid_templates = filter_template_cache_for_query(
                 input,
                 self.template_cache_path,
@@ -508,8 +610,8 @@ class _AF3TemplateCacheFilter:
             return valid_templates
         except Exception as e:
             if self.is_core_train:
-                logger.info(
-                    "Failed to filter templates for query " f"{input[0][0]}: {e}"
+                TEMPLATE_PROCESS_LOGGER.get().info(
+                    "Failed to filter templates for query " f"{input[0][0]}: \n{e}\n"
                 )
                 return {input[0][0]: []}
             else:
@@ -517,10 +619,10 @@ class _AF3TemplateCacheFilter:
                     query_pdb_chain_id.query_pdb_chain_id
                     for query_pdb_chain_id in input.dated_query
                 ]
-                logger.info(
+                TEMPLATE_PROCESS_LOGGER.get().info(
                     "Failed to filter templates for queries "
                     f"{query_pdb_chain_ids}: "
-                    f"{e}."
+                    f"\n{e}\n"
                 )
                 return {
                     query_pdb_chain_id: [] for query_pdb_chain_id in query_pdb_chain_ids
@@ -535,6 +637,10 @@ def filter_template_cache_af3(
     is_core_train: bool,
     num_workers: int,
     save_frequency: int,
+    log_level: str,
+    log_to_file: bool,
+    log_to_console: bool,
+    log_dir: Path,
     max_release_date: datetime | None = None,
     min_release_date_diff: int | None = None,
 ) -> None:
@@ -556,11 +662,22 @@ def filter_template_cache_af3(
             Number of workers to use for multiprocessing.
         save_frequency (int):
             Frequency at which to save the updated dataset cache.
+        log_level (str):
+            Log level for the logger.
+        log_to_file (bool):
+            Whether to log to file.
+        log_to_console (bool):
+            Whether to log to console.
+        log_dir (Path):
+            Directory where the log file will be saved.
         max_release_date (datetime | None):
             Maximum release date for templates. Defaults to None.
         min_release_date_diff (int | None):
             Minimum release date difference for core train templates. Defaults to None.
     """
+    if not log_dir.exists():
+        log_dir.mkdir(parents=True, exist_ok=True)
+
     # Parse list of chains from metadata cache
     with open(dataset_cache_file) as f:
         dataset_cache = json.load(f)
@@ -576,6 +693,10 @@ def filter_template_cache_af3(
         is_core_train,
         max_release_date,
         min_release_date_diff,
+        log_level,
+        log_to_file,
+        log_to_console,
+        log_dir,
     )
     with mp.Pool(num_workers) as pool:
         for idx, valid_templates in tqdm(
