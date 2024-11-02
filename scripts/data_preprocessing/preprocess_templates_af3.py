@@ -106,7 +106,13 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     ),
 )
 @click.option(
-    "--max_templates",
+    "--max_templates_construct",
+    required=True,
+    type=int,
+    help="Maximum number of templates to keep per query chain.",
+)
+@click.option(
+    "--max_templates_filter",
     required=True,
     type=int,
     help="Maximum number of templates to keep per query chain.",
@@ -181,7 +187,8 @@ def main(
     num_workers: int,
     dataset_cache_file: Path,
     updated_dataset_cache_file: Path,
-    max_templates: int,
+    max_templates_construct: int,
+    max_templates_filter: int,
     is_core_train: bool,
     save_frequency: int,
     max_release_date: str,
@@ -212,8 +219,12 @@ def main(
             Filepath to the dataset cache.
         updated_dataset_cache_file (Path):
             Filepath to where the updated dataset cache should be saved.
-        max_templates (int):
-            Maximum number of templates to keep per query chain.
+        max_templates_construct (int):
+            Max number of template to keep per query chain during template cache
+            construction. This includes all valid templates not filtered for release
+            dates.
+        max_templates_filter (int):
+            Maximum number of templates to keep per query chain after filtering.
         is_core_train (bool):
             Flag to specify the dataset cache is for the core training set. False for
             distillation and inference sets.
@@ -265,6 +276,7 @@ def main(
             template_structures_directory=template_structures_directory,
             template_cache_directory=template_cache_directory,
             query_structures_directory=query_structures_directory,
+            max_templates_construct=max_templates_construct,
             query_file_format=query_file_format,
             template_file_format=template_file_format,
             num_workers=num_workers,
@@ -284,7 +296,7 @@ def main(
         dataset_cache_file=dataset_cache_file,
         updated_dataset_cache_file=updated_dataset_cache_file,
         template_cache_directory=template_cache_directory,
-        max_templates=max_templates,
+        max_templates_filter=max_templates_filter,
         is_core_train=is_core_train,
         num_workers=num_workers,
         save_frequency=save_frequency,

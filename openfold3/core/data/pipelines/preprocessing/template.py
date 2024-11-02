@@ -37,6 +37,7 @@ def create_template_cache_for_query(
     template_structures_directory: Path,
     template_cache_directory: Path,
     query_structures_directory: Path,
+    max_templates_construct: int,
     query_file_format: str,
     template_file_format: str,
 ) -> None:
@@ -82,6 +83,9 @@ def create_template_cache_for_query(
             Path to the directory containing query structures in mmCIF format. The
             PDB IDs of the query CIF files need to match the PDB IDs for the query (1st
             row) in the alignment file for it to have any templates.
+        max_templates_construct (int):
+            Maximum number of templates to keep per query chain during template cache
+            construction.
         query_file_format (str):
             File format of the query structures.
         template_file_format (str):
@@ -138,11 +142,21 @@ def create_template_cache_for_query(
         )
 
     # Filter template hits
+    filtered_seq = set()
     template_hits_filtered = {}
     for idx, hit in hits.items():
         # Skip query
         if idx == 0:
             continue
+
+        # Skip hits if sequence alignment already used
+        if hit.hit_sequence in filtered_seq:
+            template_process_logger.info(
+                f"Template {hit.name} sequence alignment is a duplicate. "
+                "Skipping this template."
+            )
+            continue
+
         hit_pdb_id, hit_chain_id = hit.name.split("_")
 
         # 1. Apply sequence filters: AF3 SI Section 2.4
@@ -206,6 +220,16 @@ def create_template_cache_for_query(
             "idx_map": idx_map,
         }
 
+        # Store sequence alignment for hit as already used
+        filtered_seq.add(hit.hit_sequence)
+
+        # Break if max templates reached
+        if len(template_hits_filtered) == max_templates_construct:
+            template_process_logger.info(
+                f"Max number of templates ({max_templates_construct}) reached."
+            )
+            break
+
     # Save filtered hits to json using the representative ID
     if len(template_hits_filtered) > 0:
         template_cache_path_rep = template_cache_directory / Path(f"{query.name}.json")
@@ -228,6 +252,7 @@ class _AF3TemplateCacheConstructor:
         template_structures_directory: Path,
         template_cache_directory: Path,
         query_structures_directory: Path,
+        max_templates_construct: int,
         query_file_format: str,
         template_file_format: str,
         log_level: str,
@@ -258,6 +283,9 @@ class _AF3TemplateCacheConstructor:
                 Directory where template cache jsons per chain will be saved.
             query_structures_directory (Path):
                 Directory containing the query CIF files.
+            max_templates_construct (int):
+                Maximum number of templates to keep per query chain during template
+                cache construction.
             query_file_format (str):
                 File format of the query structures.
             template_file_format (str):
@@ -275,6 +303,7 @@ class _AF3TemplateCacheConstructor:
         self.template_structures_directory = template_structures_directory
         self.template_cache_directory = template_cache_directory
         self.query_structures_directory = query_structures_directory
+        self.max_templates_construct = max_templates_construct
         self.query_file_format = query_file_format
         self.template_file_format = template_file_format
         self.log_level = log_level
@@ -314,6 +343,7 @@ class _AF3TemplateCacheConstructor:
                 template_cache_directory=self.template_cache_directory,
                 query_structures_directory=self.query_structures_directory
                 / Path(query_pdb_id),
+                max_templates_construct=self.max_templates_construct,
                 query_file_format=self.query_file_format,
                 template_file_format=self.template_file_format,
             )
@@ -330,6 +360,7 @@ def create_template_cache_af3(
     template_structures_directory: Path,
     template_cache_directory: Path,
     query_structures_directory: Path,
+    max_templates_construct: int,
     query_file_format: str,
     template_file_format: str,
     num_workers: int,
@@ -357,6 +388,9 @@ def create_template_cache_af3(
             Directory where the template cache jsons per chain will be saved.
         query_structures_directory (Path):
             Directory containing the query structures in mmCIF format.
+        max_templates_construct (int):
+            Maximum number of templates to keep per query chain during template cache
+            construction.
         query_file_format (str):
             File format of the query structures.
         template_file_format (str):
@@ -387,6 +421,7 @@ def create_template_cache_af3(
         template_structures_directory,
         template_cache_directory,
         query_structures_directory,
+        max_templates_construct,
         query_file_format,
         template_file_format,
         log_level,
@@ -399,7 +434,7 @@ def create_template_cache_af3(
             pool.imap_unordered(
                 wrapped_template_cache_constructor,
                 template_query_iterator,
-                chunksize=30,
+                chunksize=1,
             ),
             total=len(template_query_iterator),
             desc="Creating template cache",
@@ -535,7 +570,7 @@ class _AF3TemplateCacheFilter:
     def __init__(
         self,
         template_cache_directory: Path,
-        max_templates: int,
+        max_templates_filter: int,
         is_core_train: bool,
         max_release_date: datetime | None,
         min_release_date_diff: int | None,
@@ -557,7 +592,7 @@ class _AF3TemplateCacheFilter:
         Attributes:
             template_cache_directory (Path):
                 Directory containing template cache jsons per chain.
-            max_templates (int):
+            max_templates_filter (int):
                 Maximum number of templates to keep per query chain.
             is_core_train (bool):
                 Whether the dataset is core train or not.
@@ -576,7 +611,7 @@ class _AF3TemplateCacheFilter:
 
         """
         self.template_cache_path = template_cache_directory
-        self.max_templates = max_templates
+        self.max_templates_filter = max_templates_filter
         self.is_core_train = is_core_train
         self.max_release_date = max_release_date
         self.min_release_date_diff = min_release_date_diff
@@ -602,7 +637,7 @@ class _AF3TemplateCacheFilter:
             valid_templates = filter_template_cache_for_query(
                 input,
                 self.template_cache_path,
-                self.max_templates,
+                self.max_templates_filter,
                 self.is_core_train,
                 self.max_release_date,
                 self.min_release_date_diff,
@@ -633,7 +668,7 @@ def filter_template_cache_af3(
     dataset_cache_file: Path,
     updated_dataset_cache_file: Path,
     template_cache_directory: Path,
-    max_templates: int,
+    max_templates_filter: int,
     is_core_train: bool,
     num_workers: int,
     save_frequency: int,
@@ -654,7 +689,7 @@ def filter_template_cache_af3(
             representative IDs.
         template_cache_directory (Path):
             Path to the directory containing template cache jsons per chain.
-        max_templates (int):
+        max_templates_filter (int):
             Maximum number of templates to keep per query chain.
         is_core_train (bool):
             Whether the dataset is core train or not.
@@ -689,7 +724,7 @@ def filter_template_cache_af3(
     # Filter template cache for each query chain
     wrapped_template_cache_filter = _AF3TemplateCacheFilter(
         template_cache_directory,
-        max_templates,
+        max_templates_filter,
         is_core_train,
         max_release_date,
         min_release_date_diff,
