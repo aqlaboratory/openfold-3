@@ -61,7 +61,7 @@ class TestDiffusionModule(unittest.TestCase):
             "entity_id": torch.zeros((batch_size, n_token)),
             "ref_pos": torch.randn((batch_size, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, n_atom)),
-            "ref_element": torch.ones((batch_size, n_atom, 118)),
+            "ref_element": torch.ones((batch_size, n_atom, 119)),
             "ref_charge": torch.ones((batch_size, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, n_atom)),
@@ -117,7 +117,7 @@ class TestDiffusionModule(unittest.TestCase):
             "entity_id": torch.zeros((batch_size, 1, n_token)),
             "ref_pos": torch.randn((batch_size, 1, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, 1, n_atom)),
-            "ref_element": torch.ones((batch_size, 1, n_atom, 118)),
+            "ref_element": torch.ones((batch_size, 1, n_atom, 119)),
             "ref_charge": torch.ones((batch_size, 1, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, 1, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, 1, n_atom)),
@@ -151,7 +151,8 @@ class TestSampleDiffusion(unittest.TestCase):
         c_s_input = config.architecture.shared.c_s_input
         c_s = config.architecture.shared.c_s
         c_z = config.architecture.shared.c_z
-        config.architecture.shared.no_rollout_steps = 2
+        config.architecture.shared.no_mini_rollout_steps = 2
+        config.architecture.shared.no_full_rollout_steps = 2
 
         sample_config = config.architecture.sample_diffusion
 
@@ -171,7 +172,7 @@ class TestSampleDiffusion(unittest.TestCase):
             "entity_id": torch.zeros((batch_size, n_token)),
             "ref_pos": torch.randn((batch_size, n_atom, 3)),
             "ref_mask": torch.ones((batch_size, n_atom)),
-            "ref_element": torch.ones((batch_size, n_atom, 118)),
+            "ref_element": torch.ones((batch_size, n_atom, 119)),
             "ref_charge": torch.ones((batch_size, n_atom)),
             "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
             "ref_space_uid": torch.zeros((batch_size, n_atom)),

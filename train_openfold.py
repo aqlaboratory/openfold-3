@@ -41,7 +41,7 @@ from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation
 from openfold3.core.utils.superimposition import superimpose
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.core.utils.torchscript import script_preset_
-from openfold3.projects.af2_monomer.config import model_config
+from openfold3.projects import registry
 from openfold3.projects.af2_monomer.model import AlphaFold
 
 
@@ -286,20 +286,27 @@ def main(args):
     if args.seed is not None:
         seed_everything(args.seed, workers=True)
 
-    is_low_precision = args.precision in [
-        "bf16-mixed",
-        "16",
-        "bf16",
-        "16-true",
-        "16-mixed",
-        "bf16-mixed",
-    ]
+    # TODO: In new configs, add training preset for monomer/multimer
+    is_multimer = "multimer" in args.config_preset
+    model_name = "af2_monomer" if not is_multimer else "af2_multimer"
+    project_entry = registry.get_project_entry(model_name)
+    config = registry.make_config_with_presets(project_entry, [args.config_preset])
 
-    config = model_config(
-        args.config_preset,
-        train=True,
-        low_prec=is_low_precision,
-    )
+    # is_low_precision = args.precision in [
+    #     "bf16-mixed",
+    #     "16",
+    #     "bf16",
+    #     "16-true",
+    #     "16-mixed",
+    #     "bf16-mixed",
+    # ]
+    #
+    # config = model_config(
+    #     args.config_preset,
+    #     train=True,
+    #     low_prec=is_low_precision,
+    # )
+
     if args.experiment_config_json:
         with open(args.experiment_config_json) as f:
             custom_config_dict = json.load(f)

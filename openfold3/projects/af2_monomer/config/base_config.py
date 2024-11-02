@@ -279,16 +279,6 @@ config = mlc.ConfigDict(
                     "c_out": 37,
                     "linear_init_params": lin_init.exp_res_init,
                 },
-                "confidence": {
-                    "pae": {
-                        "max_bin": 31,
-                        "no_bins": 64,
-                    },
-                    "ptm": {
-                        "max_bin": 31,
-                        "no_bins": 64,
-                    },
-                },
             },
             # A negative value indicates that no early stopping will occur, i.e.
             # the model will always run `max_recycling_iters` number of recycling
@@ -375,6 +365,16 @@ config = mlc.ConfigDict(
                 "enabled": False,
             },
             "eps": eps,
+        },
+        "confidence": {
+            "pae": {
+                "max_bin": 31,
+                "no_bins": 64,
+            },
+            "ptm": {
+                "max_bin": 31,
+                "no_bins": 64,
+            },
         },
     }
 )

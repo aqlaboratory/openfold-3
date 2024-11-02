@@ -15,7 +15,6 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
-from wandb.wandb_run import Run
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModule
@@ -42,7 +41,6 @@ def _configure_wandb_logger(
         group=wandb_args.group,
         name=wandb_args.experiment_name,
         dir=output_dir,
-        save_dir=output_dir,
         resume="allow",
         reinit=True,
         id=wandb_id,
@@ -53,16 +51,24 @@ def _configure_wandb_logger(
     if is_mpi_rank_zero:
         wandb.run = wandb.init(**wandb_init_dict)
 
-    wandb_logger = WandbLogger(**wandb_init_dict, log_model=False)
+    wandb_logger = WandbLogger(**wandb_init_dict, save_dir=output_dir, log_model=False)
     return wandb_logger
 
 
 def main(args):
     runner_args = ConfigDict(config_utils.load_yaml(args.runner_yaml))
 
+    is_distributed = (
+        runner_args.get("num_gpus", 0) > 1 or runner_args.get("num_nodes", 1) > 1
+    )
+
     # Set seed
-    if runner_args.get("seed"):
-        pl.seed_everything(runner_args.seed, workers=True)
+    seed = runner_args.get("seed")
+    if seed is None and is_distributed:
+        raise ValueError("For distributed training, seed must be specified")
+
+    logging.info(f"Running with seed: {seed}")
+    pl.seed_everything(seed, workers=True)
 
     project_entry = registry.get_project_entry(runner_args.project_type)
 
@@ -72,12 +78,7 @@ def main(args):
     if runner_args.get("config_update"):
         project_config.update(runner_args.config_update)
 
-    # TODO: Implement checkpoint reloading logic
-    # Be sure to call runner.resume_last_lr_step to set the lr_step
-    # before creating the lightnign module
-    if runner_args.get("restart_checkpoint_path"):
-        raise ValueError("Restarting from checkpoints is currently not supported")
-    ckpt_path = None
+    ckpt_path = runner_args.get("restart_checkpoint_path")
 
     model_config = project_config.model
     lightning_module = project_entry.model_runner(
@@ -92,80 +93,42 @@ def main(args):
     )
     lightning_data_module = DataModule(data_module_config)
 
-    # Set up trainer arguments and callbacks
-    callbacks = []
-
-    if runner_args.get("checkpoint_every_epoch"):
-        callbacks.append(
-            ModelCheckpoint(
-                every_n_epochs=1,
-                auto_insert_metric_name=False,
-                save_top_k=-1,
-            )
-        )
-
-    if runner_args.get("log_lr"):
-        callbacks.append(LearningRateMonitor(logging_interval="step"))
-
     loggers = []
 
     is_mpi = runner_args.get("mpi_plugin")
-    if is_mpi and os.environ.get("PMI_RANK") is None:
-        raise ValueError(
-            "PMI_RANK is not set as an environment variable,"
-            " find another way to specify rank."
-        )
+    cluster_environment = MPIEnvironment() if is_mpi else None
 
-    if is_mpi:
-        cluster_environment = MPIEnvironment()
-    else:
-        cluster_environment = None
-
-    # Select optimziation strategy
-    IS_MULTIGPU = runner_args.get("num_gpus", 0) > 1
-    IS_MULTINODE = runner_args.get("num_nodes", 1) > 1
+    # Select optimization strategy
     if runner_args.get("deepspeed_config_path"):
         strategy = DeepSpeedStrategy(
             config=runner_args.deepspeed_config_path,
             cluster_environment=cluster_environment,
         )
-    elif IS_MULTIGPU or IS_MULTINODE:
+        if not model_config.settings.optimizer.use_deepspeed_adam:
+            strategy.config["zero_force_ds_cpu_optimizer"] = False
+    elif is_distributed:
         strategy = DDPStrategy(
             find_unused_parameters=False, cluster_environment=cluster_environment
         )
     else:
         strategy = None
 
-    if runner_args.get("wandb"):
-        is_mpi_rank_zero = is_mpi and (int(os.environ.get("PMI_RANK")) == 0)
-
+    is_mpi_rank_zero = is_mpi and cluster_environment.global_rank() == 0
+    wandb_logger = None
+    if runner_args.get("wandb") and (not is_mpi or is_mpi_rank_zero):
         wandb_logger = _configure_wandb_logger(
             runner_args.wandb, is_mpi_rank_zero, runner_args.output_dir
         )
         loggers.append(wandb_logger)
 
-        # Determine if running on rank zero process
-        # Non-rank zero processes will be type RunDisabled
-        wandb_experiment = wandb_logger.experiment
-        if (isinstance(wandb_experiment, Run) and not is_mpi) or is_mpi_rank_zero:
-            # Save pip environment to wandb
-            freeze_path = os.path.join(wandb_experiment.dir, "package_versions.txt")
-            os.system(f"{sys.executable} -m pip freeze > {freeze_path}")
-            wandb_experiment.save(f"{freeze_path}")
+    # Set up trainer arguments and callbacks
+    callbacks = []
 
-            # Save data module config
-            data_config_path = os.path.join(wandb_experiment.dir, "data_config.json")
-            with open(data_config_path, "w") as fp:
-                json.dump(data_module_config.to_dict(), fp, indent=4)
-            wandb_experiment.save(data_config_path)
+    if runner_args.get("checkpoint"):
+        callbacks.append(ModelCheckpoint(**runner_args.checkpoint.to_dict()))
 
-            model_config_path = os.path.join(wandb_experiment.dir, "model_config.json")
-            with open(model_config_path, "w") as fp:
-                json.dump(model_config.to_dict(), fp, indent=4)
-            wandb_experiment.save(model_config_path)
-
-            if runner_args.get("deepspeed_config_path"):
-                wandb_experiment.save(runner_args.deepspeed_config_path)
+    if runner_args.get("log_lr") and wandb_logger is not None:
+        callbacks.append(LearningRateMonitor(logging_interval="step"))
 
     trainer_args = runner_args.pl_trainer.to_dict()
     trainer_args.update(
@@ -183,6 +146,29 @@ def main(args):
 
     trainer = pl.Trainer(**trainer_args)
 
+    # Determine if running on rank zero process
+    if wandb_logger is not None and trainer.global_rank == 0:
+        wandb_experiment = wandb_logger.experiment
+
+        # Save pip environment to wandb
+        freeze_path = os.path.join(wandb_experiment.dir, "package_versions.txt")
+        os.system(f"{sys.executable} -m pip freeze > {freeze_path}")
+        wandb_experiment.save(f"{freeze_path}")
+
+        # Save data module config
+        data_config_path = os.path.join(wandb_experiment.dir, "data_config.json")
+        with open(data_config_path, "w") as fp:
+            json.dump(data_module_config.to_dict(), fp, indent=4)
+        wandb_experiment.save(data_config_path)
+
+        model_config_path = os.path.join(wandb_experiment.dir, "model_config.json")
+        with open(model_config_path, "w") as fp:
+            json.dump(model_config.to_dict(), fp, indent=4)
+        wandb_experiment.save(model_config_path)
+
+        if runner_args.get("deepspeed_config_path"):
+            wandb_experiment.save(runner_args.deepspeed_config_path)
+
     # Run process appropriate process
     logging.info(f"Running {runner_args.mode} mode.")
     # Training + validation / profiling
@@ -190,13 +176,25 @@ def main(args):
         if runner_args.mode == "profile":  # TODO Implement profiling
             raise NotImplementedError("Profiling mode not yet implemented.")
         else:
-            trainer.fit(lightning_module, lightning_data_module, ckpt_path)
+            trainer.fit(
+                model=lightning_module,
+                datamodule=lightning_data_module,
+                ckpt_path=ckpt_path,
+            )
     # Testing
     elif runner_args.mode == "test":
-        trainer.test(lightning_module, lightning_data_module)
+        trainer.test(
+            model=lightning_module,
+            datamodule=lightning_data_module,
+            ckpt_path=ckpt_path,
+        )
     # Prediction == inference
     elif runner_args.mode == "predict":
-        trainer.predict(lightning_module, lightning_data_module)
+        trainer.predict(
+            model=lightning_module,
+            datamodule=lightning_data_module,
+            ckpt_path=ckpt_path,
+        )
     else:
         raise ValueError(
             f"""Invalid mode argument: {runner_args.mode}. Choose one of "
