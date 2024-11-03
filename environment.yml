@@ -35,6 +35,7 @@ dependencies:
   - bioconda::kalign2
   - pytorch::pytorch=2.4
   - pytorch::pytorch-cuda=12.1
+  - memory_profiler==0.61.0
   - pip:
       - mpi4py==3.1.5
       - deepspeed==0.14.5

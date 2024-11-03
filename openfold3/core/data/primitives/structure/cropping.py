@@ -10,6 +10,9 @@ from numpy.random import Generator, default_rng
 from scipy.spatial.distance import cdist
 
 from openfold3.core.data.primitives.featurization.structure import get_token_starts
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 from openfold3.core.data.primitives.structure.interface import (
     get_query_interface_token_center_atoms,
 )
@@ -56,7 +59,10 @@ def crop_contiguous(
     atom_array.set_annotation("crop_mask", np.repeat(False, len(atom_array)))
 
     # Cropping loop
-    tokens_remaining = max(atom_array.token_id)
+    # "number of tokens selected so far"
+    n_added = 0
+    # combined length of yet to be cropped chains excluding current"
+    n_remaining = len(set(atom_array.token_id))
 
     for chain_id in chains:
         # Get chain atom array
@@ -64,25 +70,29 @@ def crop_contiguous(
 
         # Get chain length
         chain_length = atom_array_chain.token_id[-1] - atom_array_chain.token_id[0] + 1
-        tokens_remaining -= chain_length
+        n_remaining -= chain_length
 
         # Sample length of crop for current chain
-        crop_size_max = min(token_budget, chain_length)
-        crop_size_min = min(chain_length, max(0, token_budget - tokens_remaining))
-        if crop_size_min < crop_size_max + 1:
-            crop_size = generator.integers(crop_size_min, crop_size_max + 1, 1).item()
-        else:
-            crop_size = crop_size_max
-        token_budget -= crop_size
+        crop_size_max = min(token_budget - n_added, chain_length)
+        crop_size_min = min(chain_length, max(0, token_budget - n_added - n_remaining))
+        crop_size = generator.integers(crop_size_min, crop_size_max + 1, 1).item()
 
-        crop_start = generator.integers(0, chain_length - crop_size, 1).item()
-        crop_start_global = atom_array_chain[crop_start]._atom_idx
+        n_added += crop_size
+
+        # Sample start of crop for current chain
+        crop_start = generator.integers(0, chain_length - crop_size + 1, 1).item()
+
+        # Get token indices in the crop
+        chain_token_ids = np.array(sorted(list(set(atom_array_chain.token_id))))
+        # Slice using the sampled crop start and length for this chain
+        crop_token_index_chain = chain_token_ids[crop_start : crop_start + crop_size]
+        # Map to atom indices in the full assembly
+        crop_atom_index_chain = atom_array_chain[
+            np.isin(atom_array_chain.token_id, crop_token_index_chain)
+        ]._atom_idx
 
         # Edit corresponding segment in crop mask
-        atom_array.crop_mask[crop_start_global : crop_start_global + crop_size] = True
-
-        if token_budget <= 0:
-            break
+        atom_array.crop_mask[crop_atom_index_chain] = True
 
     # Remove atom index
     remove_atom_indices(atom_array)
@@ -122,7 +132,7 @@ def crop_spatial(
         generator = default_rng(seed=seed)
 
     # Subset token center atoms to those in the preferred chain/interface if provided
-    token_center_atoms, preferred_token_center_atoms = subset_preferred(
+    token_center_atoms, preferred_token_center_atoms = fetch_token_center_atoms(
         atom_array, preferred_chain_or_interface
     )
 
@@ -167,7 +177,7 @@ def crop_spatial_interface(
         generator = default_rng(seed=seed)
 
     # Subset token center atoms to those in the preferred chain/interface if provided
-    token_center_atoms, preferred_token_center_atoms = subset_preferred(
+    token_center_atoms, preferred_token_center_atoms = fetch_token_center_atoms(
         atom_array, preferred_chain_or_interface
     )
 
@@ -191,11 +201,14 @@ def crop_spatial_interface(
     find_spatial_crop(reference_atom, token_center_atoms, token_budget, atom_array)
 
 
-def subset_preferred(
+def fetch_token_center_atoms(
     atom_array: AtomArray,
     preferred_chain_or_interface: Optional[Union[int, tuple[int, int]]],
 ) -> tuple[AtomArray, AtomArray]:
-    """Subsets token center atoms to those in the preferred chain or interface.
+    """Returns the token center atoms in an atom array.
+
+    Also returns a subset of token center atoms which are in the preferred chain or
+    interface.
 
     Args:
         atom_array (AtomArray):
@@ -216,6 +229,15 @@ def subset_preferred(
             center atoms are subset to only resolved atoms.
     """
     token_center_atoms = atom_array[atom_array.token_center_atom]
+
+    # Subset to resolved token center atoms
+    token_center_atoms = token_center_atoms[token_center_atoms.occupancy > 0]
+
+    if len(token_center_atoms) == 0:
+        raise RuntimeError(
+            "Cannot crop a structure with no resolved token center " "atoms."
+        )
+
     if preferred_chain_or_interface is not None:
         # If chain provided
         if isinstance(preferred_chain_or_interface, str):
@@ -235,11 +257,12 @@ def subset_preferred(
     else:
         preferred_token_center_atoms = token_center_atoms
 
-    # Only return resolved atoms as preferred token center atoms
-    # TODO: we may need exception handling for when there are no resolved atoms (if that
-    # could ever happen)
-    is_resolved = preferred_token_center_atoms.occupancy > 0
-    preferred_token_center_atoms = preferred_token_center_atoms[is_resolved]
+    # If the preferred chain/interface has no resolved atoms, use all resolved token
+    # center atoms
+    # Note: this will also be the case if a chain or interface is provided that is not
+    # in the structure
+    if len(preferred_token_center_atoms) == 0:
+        preferred_token_center_atoms = token_center_atoms
 
     return token_center_atoms, preferred_token_center_atoms
 
@@ -353,6 +376,38 @@ def add_token_positions(atom_array: AtomArray) -> None:
     atom_array.set_annotation("token_position", token_positions)
 
 
+def add_token_positions(atom_array: AtomArray) -> None:
+    """Adds token_position annotation to the input atom array.
+
+    Args:
+        atom_array (AtomArray):
+            AtomArray of the input assembly.
+    """
+    # TODO rework by using a more generic spread_per_token function
+    # Get token starts wrt the full atom array that fall into the crop
+    token_starts = get_token_starts(atom_array)
+    token_in_crop = np.isin(
+        atom_array.token_id[token_starts],
+        np.unique(atom_array[atom_array.crop_mask].token_id),
+    )
+    token_starts_in_crop = token_starts[token_in_crop]
+
+    # Create mapping from token_id to position in the crop
+    token_positions_map = {
+        token: position
+        for position, token in enumerate(atom_array[token_starts_in_crop].token_id)
+    }
+
+    @np.vectorize
+    def get_token_position(token_id):
+        return token_positions_map.get(token_id, -1)
+
+    token_positions = get_token_position(atom_array.token_id)
+
+    atom_array.set_annotation("token_position", token_positions)
+
+
+@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-crop")
 def apply_crop(
     atom_array: AtomArray,
     token_budget: int,
@@ -361,9 +416,9 @@ def apply_crop(
 ) -> None:
     """Wraps functions sampling cropping strategy and applying it to the input array.
 
-    Note: also adds a token_position annotation to the input atom array, which indexes
-    the position of each token in the crop, which is needed for mapping the crop to the
-    alignments and templates.
+    Note: also adds a crop_mask and token_position annotation to the input atom array.
+    Here, token_position indexes the position of each token in the crop, which is needed
+    for mapping the crop to the alignments and templates.
 
     Args:
         atom_array (AtomArray):
@@ -376,6 +431,11 @@ def apply_crop(
             AF3 SI for the weighted PDB dataset.
         crop_weights (dict[str, float]):
             Dictionary of crop weights.
+
+    Returns:
+        tuple[AtomArray, AtomArray] | AtomArray:
+            Tuple of cropped and full atom arrays if return_full is True, otherwise just
+            the cropped atom array.
     """
 
     # Take whole assembly if it fits in the budget
@@ -396,3 +456,5 @@ def apply_crop(
 
     # Add token_position annotation
     add_token_positions(atom_array)
+
+    return atom_array[atom_array.crop_mask]
