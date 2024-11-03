@@ -55,11 +55,11 @@ class ComplianceLog:
 
 # Runtime context variables
 LOG_RUNTIMES = contextvars.ContextVar("LOG_RUNTIME", default=False)
-RUNTIME_DICT = contextvars.ContextVar("RUNTIME_DICT", default=None)
+RUNTIME_DICT = contextvars.ContextVar("RUNTIME_DICT", default={})
 # Memory context variables
 LOG_MEMORY = contextvars.ContextVar("LOG_MEMORY", default=False)
 WORKER_MEM_LOG_PATH = contextvars.ContextVar("WORKER_MEM_LOG_PATH", default=None)
-MEM_PROFILED_FUNC_KEYS = contextvars.ContextVar("MEM_PROFILED_FUNC_KEYS", default=None)
+MEM_PROFILED_FUNC_KEYS = contextvars.ContextVar("MEM_PROFILED_FUNC_KEYS", default=[])
 
 # Mapping of function names to their respective runtime logging functions
 F_NAME_ORDER = [

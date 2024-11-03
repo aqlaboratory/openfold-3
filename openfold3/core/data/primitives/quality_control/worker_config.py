@@ -52,6 +52,8 @@ def configure_context_variables(
                 "Invalid function keys were provided for memory profiling. "
                 f"The set of valid function keys: {F_NAME_ORDER}."
             )
+    else:
+        mem_profiled_func_keys = []
 
     # Set context variables
     runtime_token = LOG_RUNTIMES.set(log_runtimes)
@@ -60,7 +62,7 @@ def configure_context_variables(
         worker_dataset.get_worker_path(subdirs=None, fname="memory_profile.log")
     )
     mem_func_token = MEM_PROFILED_FUNC_KEYS.set(
-        F_NAME_ORDER if mem_profiled_func_keys is None else mem_profiled_func_keys
+        F_NAME_ORDER if (len(mem_profiled_func_keys) == 0) else mem_profiled_func_keys
     )
     # Assign context variable state tokens to the worker-specific copy of the dataset
     worker_dataset.runtime_token = runtime_token
