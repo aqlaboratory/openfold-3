@@ -67,7 +67,9 @@ def featurize_structure_af3(
     features["entity_id"] = torch.tensor(
         atom_array.entity_id[token_starts], dtype=torch.int32
     )
-    features["sym_id"] = torch.tensor(create_sym_id(entity_ids), dtype=torch.int32)
+    features["sym_id"] = torch.tensor(
+        create_sym_id(entity_ids, atom_array, token_starts), dtype=torch.int32
+    )
     restype_index = torch.tensor(
         get_with_unknown_3(atom_array.res_name[token_starts]), dtype=torch.int64
     )
