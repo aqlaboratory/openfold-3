@@ -14,6 +14,9 @@ from openfold3.core.data.primitives.featurization.structure import (
     encode_one_hot,
     extract_starts_entities,
 )
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 from openfold3.core.data.resources.residues import (
     STANDARD_RESIDUES_WITH_GAP_3,
     MoleculeType,
@@ -64,7 +67,9 @@ def featurize_structure_af3(
     features["entity_id"] = torch.tensor(
         atom_array.entity_id[token_starts], dtype=torch.int32
     )
-    features["sym_id"] = torch.tensor(create_sym_id(entity_ids), dtype=torch.int32)
+    features["sym_id"] = torch.tensor(
+        create_sym_id(entity_ids, atom_array, token_starts), dtype=torch.int32
+    )
     restype_index = torch.tensor(
         get_with_unknown_3(atom_array.res_name[token_starts]), dtype=torch.int64
     )
@@ -127,6 +132,7 @@ def featurize_structure_af3(
     )
 
 
+@log_runtime_memory(runtime_dict_key="runtime-target-structure-feat")
 def featurize_target_gt_structure_af3(
     atom_array_cropped: AtomArray,
     atom_array_gt: AtomArray,
