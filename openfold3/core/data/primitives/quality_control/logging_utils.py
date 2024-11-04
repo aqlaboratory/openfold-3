@@ -67,6 +67,7 @@ F_NAME_ORDER = [
     "runtime-target-structure-feat",
     "runtime-msa-proc",
     "runtime-msa-feat",
+    "runtime-templates-proc",
     "runtime-templates-feat",
     "runtime-ref-conf-proc",
     "runtime-ref-conf-feat",

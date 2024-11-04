@@ -25,7 +25,7 @@ def process_target_structure_af3(
     preferred_chain_or_interface: str,
     structure_format: Literal["cif", "bcif", "pkl"],
     return_full_atom_array=False,
-) -> tuple[AtomArray, AtomArray]:
+) -> tuple[AtomArray, AtomArray] | tuple[AtomArray, AtomArray, AtomArray]:
     """AF3 pipeline for processing target structure into AtomArrays.
 
     Args:
@@ -45,7 +45,7 @@ def process_target_structure_af3(
             Whether to return the full, uncropped atom array.
 
     Returns:
-        tuple[AtomArray, AtomArray]:
+        tuple[AtomArray, AtomArray] | tuple[AtomArray, AtomArray, AtomArray]:
             Tuple of two or three atom arrays:
             - Atoms inside the crop.
             - Ground truth atoms expanded for chain permutation alignment.

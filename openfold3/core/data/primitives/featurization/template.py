@@ -120,10 +120,8 @@ def create_template_restype(
             The restype template feature.
     """
     restype_index = torch.tensor(get_with_unknown_1(res_names), dtype=torch.int64)
-    template_restype = encode_one_hot(
-        restype_index, len(STANDARD_RESIDUES_WITH_GAP_1)
-    ).to(torch.int32)
-    return template_restype * template_pseudo_beta_mask.unsqueeze(-1)
+    template_restype = encode_one_hot(restype_index, len(STANDARD_RESIDUES_WITH_GAP_1))
+    return (template_restype * template_pseudo_beta_mask.unsqueeze(-1)).to(torch.int32)
 
 
 def create_template_distogram(

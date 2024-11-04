@@ -142,22 +142,22 @@ def create_template_cache_for_query(
         )
 
     # Filter template hits
-    filtered_seq = set()
+    filtered_id_seq = set()
     template_hits_filtered = {}
     for idx, hit in hits.items():
         # Skip query
         if idx == 0:
             continue
 
+        hit_pdb_id, hit_chain_id = hit.name.split("_")
+
         # Skip hits if sequence alignment already used
-        if hit.hit_sequence in filtered_seq:
+        if (hit_pdb_id, hit.hit_sequence) in filtered_id_seq:
             template_process_logger.info(
                 f"Template {hit.name} sequence alignment is a duplicate. "
                 "Skipping this template."
             )
             continue
-
-        hit_pdb_id, hit_chain_id = hit.name.split("_")
 
         # 1. Apply sequence filters: AF3 SI Section 2.4
         if check_sequence(query_seq=query.hit_sequence.replace("-", ""), hit=hit):
@@ -221,7 +221,7 @@ def create_template_cache_for_query(
         }
 
         # Store sequence alignment for hit as already used
-        filtered_seq.add(hit.hit_sequence)
+        filtered_id_seq.add((hit_pdb_id, hit.hit_sequence))
 
         # Break if max templates reached
         if len(template_hits_filtered) == max_templates_construct:

@@ -6,6 +6,9 @@ import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFFile
 
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 from openfold3.core.data.primitives.structure.template import (
     TemplateSliceCollection,
     fetch_template_ids,
@@ -16,6 +19,7 @@ from openfold3.core.data.primitives.structure.template import (
 from openfold3.core.data.resources.residues import MoleculeType
 
 
+@log_runtime_memory(runtime_dict_key="runtime-template-proc")
 def process_template_structures_af3(
     atom_array_cropped: AtomArray,
     n_templates: int,

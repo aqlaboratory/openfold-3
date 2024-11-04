@@ -26,6 +26,7 @@ from openfold3.core.data.pipelines.featurization.structure import (
     featurize_target_gt_structure_af3,
 )
 from openfold3.core.data.pipelines.featurization.template import (
+    featurize_templates_af3,
     featurize_templates_dummy_af3,
 )
 from openfold3.core.data.pipelines.sample_processing.conformer import (
@@ -34,6 +35,9 @@ from openfold3.core.data.pipelines.sample_processing.conformer import (
 from openfold3.core.data.pipelines.sample_processing.msa import process_msas_cropped_af3
 from openfold3.core.data.pipelines.sample_processing.structure import (
     process_target_structure_af3,
+)
+from openfold3.core.data.pipelines.sample_processing.template import (
+    process_template_structures_af3,
 )
 from openfold3.core.data.primitives.quality_control.asserts import ENSEMBLED_ASSERTS
 from openfold3.core.data.primitives.quality_control.logging_utils import (
@@ -145,25 +149,33 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 data_cache_entry_chains=self.dataset_cache["structure_data"][pdb_id][
                     "chains"
                 ],
-                max_seq_counts={
-                    "uniref90_hits": 10000,
-                    "uniprot_hits": 50000,
-                    "uniprot": 50000,
-                    "bfd_uniclust_hits": 1000000,
-                    "bfd_uniref_hits": 1000000,
-                    "mgnify_hits": 5000,
-                    "rfam_hits": 10000,
-                    "rnacentral_hits": 10000,
-                    "nucleotide_collection_hits": 10000,
-                },
+                max_seq_counts=self.msa.max_seq_counts,
                 token_budget=self.token_budget,
-                max_rows_paired=8191,
+                max_rows_paired=self.msa.max_rows_paired,
             )
             features.update(featurize_msa_af3(msa_processed))
 
-            # Dummy template features
+            # Template features
+            template_slice_collection = process_template_structures_af3(
+                atom_array_cropped=atom_array_cropped,
+                n_templates=self.template.n_templates,
+                is_train=True,
+                template_cache_directory=self.template_cache_directory,
+                dataset_cache=self.dataset_cache,
+                pdb_id=pdb_id,
+                template_structures_directory=self.template_structures_directory,
+                template_file_format=self.template_file_format,
+                ccd=self.ccd,
+            )
             features.update(
-                featurize_templates_dummy_af3(self.n_templates, self.token_budget)
+                featurize_templates_af3(
+                    template_slice_collection=template_slice_collection,
+                    n_templates=self.template.n_templates,
+                    token_budget=self.token_budget,
+                    min_bin=self.template.distogram.min_bin,
+                    max_bin=self.template.distogram.max_bin,
+                    n_bins=self.template.distogram.n_bins,
+                )
             )
 
             # Reference conformer features
@@ -230,7 +242,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                     preferred_chain_or_interface,
                     features,
                     self.token_budget,
-                    self.n_templates,
+                    self.template.n_templates,
                 )
 
             return features

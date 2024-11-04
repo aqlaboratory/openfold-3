@@ -9,14 +9,13 @@ from openfold3.core.data.primitives.featurization.template import (
     create_template_restype,
     create_template_unit_vector,
 )
-from openfold3.core.data.primitives.structure.template import TemplateSliceCollection
-
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
+from openfold3.core.data.primitives.structure.template import TemplateSliceCollection
 
 
-@log_runtime_memory(runtime_dict_key="runtime-templates-feat")
+@log_runtime_memory(runtime_dict_key="runtime-templates-dummy-feat")
 def featurize_templates_dummy_af3(n_templ, n_token):
     """Temporary function to generate dummy template features."""
     return {
@@ -28,6 +27,7 @@ def featurize_templates_dummy_af3(n_templ, n_token):
     }
 
 
+@log_runtime_memory(runtime_dict_key="runtime-template-feat")
 def featurize_templates_af3(
     template_slice_collection: TemplateSliceCollection,
     n_templates: int,
