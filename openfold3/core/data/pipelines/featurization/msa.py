@@ -18,6 +18,8 @@ from openfold3.core.data.resources.residues import (
 def featurize_msa_af3(msa_processed):
     max_rows = 16384
 
+    # <subsampling logic goes here>
+
     features = {}
     msa_restype_index = torch.tensor(
         get_with_unknown_1(msa_processed.msa[:max_rows, :]), dtype=torch.int64
