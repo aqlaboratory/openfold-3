@@ -11,7 +11,7 @@ from biotite.structure.io.pdbx import CIFFile
 from openfold3.core.data.io.sequence.fasta import read_multichain_fasta
 from openfold3.core.data.io.sequence.template import TemplateHit
 from openfold3.core.data.io.structure.cif import parse_mmcif
-from openfold3.core.data.primitives.quality_control.logging_config import (
+from openfold3.core.data.primitives.quality_control.logging_utils import (
     TEMPLATE_PROCESS_LOGGER,
 )
 from openfold3.core.data.primitives.structure.labels import (

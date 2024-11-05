@@ -8,7 +8,14 @@ from typing import Iterable, NamedTuple, Optional, Sequence
 from openfold3.core.data.io.sequence.fasta import parse_fasta
 
 """
-Changes from old version:
+Updates compared to the old OpenFold version:
+
+The new template parsers expect the input template alignment to contain the query 
+sequence as the first sequence in the alignment, globally aligned to the template hit
+sequences. We achieve this by re-aligning the output sequences from hmmsearch to the 
+query using hmmalign.
+
+Other minor changes from old version:
     - dataclass -> NamedTuple
     - Removed skip_first argument from parse_hmmsearch_sto and parse_hmmsearch_a3m
     - Removed query_sequence and query_indices from parse_hmmsearch_sto, 
@@ -217,7 +224,7 @@ def parse_hmmsearch_a3m(a3m_string: str) -> dict[int, TemplateHit]:
     Returns:
         dict[int, TemplateHit]: _description_
     """
-    # Zip the descriptions and MSAs together, skip the first query sequence.
+    # Zip the descriptions and MSAs together
     parsed_a3m = list(zip(*parse_fasta(a3m_string)))
 
     hits = {}

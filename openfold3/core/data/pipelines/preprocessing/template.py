@@ -11,7 +11,7 @@ from typing import Optional
 from tqdm import tqdm
 
 from openfold3.core.data.io.sequence.template import parse_hmmsearch_sto
-from openfold3.core.data.primitives.quality_control.logging_config import (
+from openfold3.core.data.primitives.quality_control.logging_utils import (
     TEMPLATE_PROCESS_LOGGER,
     configure_template_logger,
 )
@@ -142,7 +142,7 @@ def create_template_cache_for_query(
         )
 
     # Filter template hits
-    filtered_id_seq = set()
+    filtered_seq = set()
     template_hits_filtered = {}
     for idx, hit in hits.items():
         # Skip query
@@ -152,7 +152,7 @@ def create_template_cache_for_query(
         hit_pdb_id, hit_chain_id = hit.name.split("_")
 
         # Skip hits if sequence alignment already used
-        if (hit_pdb_id, hit.hit_sequence) in filtered_id_seq:
+        if hit.hit_sequence in filtered_seq:
             template_process_logger.info(
                 f"Template {hit.name} sequence alignment is a duplicate. "
                 "Skipping this template."
@@ -221,7 +221,7 @@ def create_template_cache_for_query(
         }
 
         # Store sequence alignment for hit as already used
-        filtered_id_seq.add((hit_pdb_id, hit.hit_sequence))
+        filtered_seq.add(hit.hit_sequence)
 
         # Break if max templates reached
         if len(template_hits_filtered) == max_templates_construct:
