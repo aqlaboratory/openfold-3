@@ -3,11 +3,14 @@
 import json
 import multiprocessing as mp
 import os
+import traceback
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
+import pandas as pd
 from tqdm import tqdm
 
 from openfold3.core.data.io.sequence.template import parse_hmmsearch_sto
@@ -93,22 +96,55 @@ def create_template_cache_for_query(
     """
     template_process_logger = TEMPLATE_PROCESS_LOGGER.get()
 
+    data_log = {
+        "query_pdb_id": query_pdb_chain_id.split("_")[0],
+        "query_chain_id": query_pdb_chain_id.split("_")[1],
+        "can_load_aln_file": False,
+        "template_cache_already_computed": False,
+        "query_cif_exists": False,
+        "query_seq_match": False,
+        "n_total_templates_in_aln": 0,
+        "n_unique_templates_in_aln": 0,
+        "n_templates_pass_seq_filters": 0,
+        "n_templates_has_cif": 0,
+        "n_template_chain_match": 0,
+        "n_valid_templates_prefilter": 0,
+    }
+
     # Parse alignment
     try:
         with open(template_alignment_file) as f:
             hits = parse_hmmsearch_sto(f.read())
     except Exception as e:
         template_process_logger.info(
-            f"Failed to parse alignment file, skipping. Make sure that"
-            f" an hhsearch output stockholm was provided. Error: \n{e}\n"
+            "Failed to parse alignment file, skipping. Make sure that"
+            " an hmmsearch output globally aligned with hmmalign was provided. "
+            f"\nError: \n{e}\nTraceback: \n{traceback.format_exc()}"
+        )
+        data_log_to_tsv(
+            data_log,
+            template_cache_directory.parent / Path(f"data_log_{os.getpid()}.tsv"),
         )
         return
     template_process_logger.info(f"Alignment file {template_alignment_file} parsed.")
+    data_log["can_load_aln_file"] = True
 
     # Filter queries
     query = hits[0]
     query_pdb_id, query_chain_id = query_pdb_chain_id.split("_")
     query_pdb_id_t, query_chain_id_t = query.name.split("_")
+    template_cache_path_rep = template_cache_directory / Path(f"{query.name}.npz")
+    if template_cache_path_rep.exists():
+        template_process_logger.info(
+            f"Template cache for {query.name} already exists. Skipping templates for "
+            "this structure."
+        )
+        data_log["template_cache_already_computed"] = True
+        data_log_to_tsv(
+            data_log,
+            template_cache_directory.parent / Path(f"data_log_{os.getpid()}.tsv"),
+        )
+        return
     # 1. Parse fasta of the structure
     # the query and all its templates are skipped if the structure identified by the PDB
     # ID of the first hit in the alignments file is not provided in
@@ -119,7 +155,12 @@ def create_template_cache_for_query(
             f"Query .cif structure {query_pdb_id} not found in "
             f"{query_structures_directory}. Skipping templates for this structure."
         )
+        data_log_to_tsv(
+            data_log,
+            template_cache_directory.parent / Path(f"data_log_{os.getpid()}.tsv"),
+        )
         return
+    data_log["query_cif_exists"] = True
     # 2. Parse query chain and sequence
     # the query and all its templates are skipped if its HMM sequence cannot be mapped
     # exactly to a subsequence of the MATCHING chain in the CIF file provided in
@@ -134,14 +175,23 @@ def create_template_cache_for_query(
             f"{query_chain_id}) and template alignment (query {query_pdb_id_t} chain "
             f"{query_chain_id_t}) don't match. Skipping templates for this structure."
         )
+        data_log_to_tsv(
+            data_log,
+            template_cache_directory.parent / Path(f"data_log_{os.getpid()}.tsv"),
+        )
         return
     else:
         template_process_logger.info(
             f"Query {query_pdb_id} chain {query_chain_id} sequence matches "
             "alignment sequence."
         )
+        data_log["query_seq_match"] = True
 
     # Filter template hits
+    data_log["n_total_templates_in_aln"] = len(hits)
+    data_log["n_unique_templates_in_aln"] = len(
+        set(hit.hit_sequence for hit in hits.values())
+    )
     filtered_seq = set()
     template_hits_filtered = {}
     for idx, hit in hits.items():
@@ -170,6 +220,7 @@ def create_template_cache_for_query(
             template_process_logger.info(
                 f"Template {hit_pdb_id} sequence passes sequence " "filters."
             )
+            data_log["n_templates_pass_seq_filters"] += 1
 
         # 2. Parse structure
         # The template is skipped if the structure identified by the PDB ID of the
@@ -188,6 +239,7 @@ def create_template_cache_for_query(
             continue
         else:
             template_process_logger.info(f"Template structure {hit_pdb_id} parsed.")
+            data_log["n_templates_has_cif"] += 1
         # 3. Parse template chain and sequence
         # the template is skipped if its HMM sequence cannot be mapped
         # exactly to a subsequence of ANY chain in the CIF file provided in
@@ -204,6 +256,8 @@ def create_template_cache_for_query(
                 f"sequence in {cif_file}. Skipping this template."
             )
             continue
+        else:
+            data_log["n_template_chain_match"] += 1
 
         # Parse release date
         release_date = parse_release_date(cif_file)
@@ -212,10 +266,9 @@ def create_template_cache_for_query(
         idx_map = create_residue_idx_map(query, hit)
 
         # Store as filtered hit
-        # Note: since hmmer outputs hits in ascending order of e-value, the index of the
-        # hit in the hits dict is used as the e-value
+        # hmmsearch is sorted in descending e-value order so index is enough to sort
         template_hits_filtered[f"{hit_pdb_id}_{hit_chain_id_matched}"] = {
-            "e_value": hit.index,
+            "index": hit.index,
             "release_date": release_date.strftime("%Y-%m-%d"),
             "idx_map": idx_map,
         }
@@ -230,17 +283,21 @@ def create_template_cache_for_query(
             )
             break
 
+    # Save data log
+    data_log["n_valid_templates_prefilter"] = len(template_hits_filtered)
+    data_log_to_tsv(
+        data_log, template_cache_directory.parent / Path(f"data_log_{os.getpid()}.tsv")
+    )
+
     # Save filtered hits to json using the representative ID
     if len(template_hits_filtered) > 0:
-        template_cache_path_rep = template_cache_directory / Path(f"{query.name}.json")
-        if not os.path.exists(template_cache_path_rep):
-            with open(template_cache_path_rep, "w") as f:
-                json.dump(template_hits_filtered, f, indent=4)
+        np.savez(template_cache_path_rep, **template_hits_filtered)
         template_process_logger.info(
             f"Template cache for {query.name} saved with "
             f"{len(template_hits_filtered)} valid hits."
         )
     else:
+        # TODO optimize to not recompute template empty template caches multiple times
         template_process_logger.info(f"0 valid templates found for {query.name}.")
 
 
@@ -440,7 +497,8 @@ def create_template_cache_af3(
             desc="Creating template cache",
         ):
             pass
-    return
+    # Collate data logs
+    collate_data_logs(template_cache_directory, "full_data_log_constructed_cache.tsv")
 
 
 # Dataset cache update
@@ -491,6 +549,14 @@ def filter_template_cache_for_query(
                 ),
             ),
         )
+        data_log = {
+            "query_pdb_id": query_pdb_chain_id.split("_")[0],
+            "query_chain_id": query_pdb_chain_id.split("_")[1],
+            "can_load_template_cache": False,
+            "n_valid_templates_prefilter": 0,
+            "n_dropped_due_to_release_date": 0,
+            "n_valid_templates_postfilter": 0,
+        }
     else:
         rep_id, query_pdb_chain_ids_release_dates = (
             input_data.rep_pdb_chain_id,
@@ -500,14 +566,17 @@ def filter_template_cache_for_query(
             max_release_date = datetime.strptime(max_release_date, "%Y-%m-%d")
 
     # Parse template cache of the representative if available
-    template_cache_file = template_cache_directory / Path(f"{rep_id}.json")
+    template_cache_file = template_cache_directory / Path(f"{rep_id}.npz")
     if template_cache_file.exists():
-        with open(template_cache_directory / Path(f"{rep_id}.json")) as f:
-            template_cache = json.load(f)
+        template_cache = np.load(template_cache_file, allow_pickle=True)
     else:
         template_process_logger.info(
             f"Template cache for representative {rep_id} not found. Returning no valid "
             "templates."
+        )
+        data_log_to_tsv(
+            data_log,
+            template_cache_directory.parent / Path(f"data_log_{os.getpid()}.tsv"),
         )
         if is_core_train:
             return TemplateHitCollection({tuple(query_pdb_chain_id.split("_")): []})
@@ -519,12 +588,18 @@ def filter_template_cache_for_query(
                 }
             )
 
-    # Sort by e-value
-    sorted_templates = sorted(template_cache.items(), key=lambda x: x[1]["e_value"])
+    # Sort by index/e-value
+    unpacked_template_cache = {
+        key: value.item() for key, value in template_cache.items()
+    }
+    sorted_template_cache = sorted(
+        unpacked_template_cache.items(), key=lambda x: x[1]["index"]
+    )
     ids_dates = [
         (template_id, datetime.strptime(template_data["release_date"], "%Y-%m-%d"))
-        for template_id, template_data in sorted_templates
+        for template_id, template_data in sorted_template_cache
     ]
+    data_log["n_valid_templates_prefilter"] = len(ids_dates)
 
     # Filter templates
     filtered_templates = []
@@ -536,19 +611,25 @@ def filter_template_cache_for_query(
                 template_release_date=template_date,
                 min_release_date_diff=min_release_date_diff,
             ):
+                data_log["n_dropped_due_to_release_date"] += 1
                 continue
         else:
             if check_release_date_max(
                 template_release_date=template_date, max_release_date=max_release_date
             ):
+                data_log["n_dropped_due_to_release_date"] += 1
                 continue
         # Add to list of filtered templates if pass
         filtered_templates.append(template_id)
+        data_log["n_valid_templates_postfilter"] += 1
 
         # Break if max templates reached
         if len(filtered_templates) == max_templates:
             break
 
+    data_log_to_tsv(
+        data_log, template_cache_directory.parent / Path(f"data_log_{os.getpid()}.tsv")
+    )
     template_process_logger.info(
         f"Successfully filtered {len(filtered_templates)} templates for "
         f"{query_pdb_chain_id}."
@@ -758,3 +839,51 @@ def filter_template_cache_af3(
     # Save final complete dataset cache
     with open(updated_dataset_cache_file, "w") as f:
         json.dump(dataset_cache, f, indent=4)
+
+    # Collate data logs
+    collate_data_logs(template_cache_directory, "full_data_log_filtered_cache.tsv")
+
+
+def data_log_to_tsv(data_log: dict, tsv_file: Path) -> None:
+    """Writes the data log to a tsv file.
+
+    Args:
+        data_log (dict):
+            Dictionary containing the data log.
+        tsv_file (Path):
+            Path to the tsv file where the data log will be saved.
+    """
+    file_exists = tsv_file.exists()
+    with open(tsv_file, "a") as f:
+        data_string = ""
+        header_string = ""
+        for key, value in data_log.items():
+            header_string += f"{key}\t"
+            data_string += f"{value}\t"
+        # Remove final tab
+        header_string = header_string[:-1] + "\n"
+        data_string = data_string[:-1] + "\n"
+        if not file_exists:
+            f.write(header_string)
+        f.write(data_string)
+    return
+
+
+def collate_data_logs(template_cache_directory, fname):
+    files = [
+        f
+        for f in list(template_cache_directory.parent.glob("data_log_*"))
+        if f.is_file()
+    ]
+    df_all = pd.DataFrame()
+    for f in files:
+        df_all = pd.concat(
+            [
+                df_all,
+                pd.read_csv(f, sep="\t", na_values=["NaN"]),
+            ]
+        )
+        f.unlink()
+    df_all.to_csv(
+        template_cache_directory.parent / Path(f"{fname}.tsv"), sep="\t", index=False
+    )

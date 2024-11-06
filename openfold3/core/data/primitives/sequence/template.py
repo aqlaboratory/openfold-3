@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
+import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFFile
 
@@ -345,7 +346,7 @@ def match_template_chain_and_sequence(
     return hit_chain_id_matched
 
 
-def create_residue_idx_map(query: TemplateHit, hit: TemplateHit) -> dict[int, int]:
+def create_residue_idx_map(query: TemplateHit, hit: TemplateHit) -> np.ndarray[int]:
     """Create a mapping from the query to the hit residue indices.
 
     Args:
@@ -355,12 +356,19 @@ def create_residue_idx_map(query: TemplateHit, hit: TemplateHit) -> dict[int, in
             The filtered template TemplateHit from the alignment.
 
     Returns:
-        dict[int, int]:
-            A mapping from the query to the hit residue indices.
+        np.ndarray[int]:
+            A n_aligned_column-by-2 numpy array containing >global< residue indices of
+            the query (1st col) and aligned hit (2nd col) for columns where the template
+            sequence is not a gap.
     """
-    return {
-        q_i: h_i for q_i, h_i in zip(query.indices_hit, hit.indices_hit) if h_i != -1
-    }
+    return np.asarray(
+        [
+            (q_i, h_i)
+            for q_i, h_i in zip(query.indices_hit, hit.indices_hit)
+            if h_i != -1
+        ],
+        dtype=int,
+    )
 
 
 # Template cache filtering
@@ -406,7 +414,7 @@ def check_release_date_diff(
     template_release_date: datetime,
     min_release_date_diff: int,
 ) -> bool:
-    """Calc if the release date difference is at least as much as the minimum required.
+    """Calculates if the release date difference is less than the minimum required.
 
     As per AF3 SI Section 2.4. Used for the core training set.
 
@@ -421,7 +429,7 @@ def check_release_date_diff(
 
     Returns:
         bool:
-            Whether the release date difference is at least as much as the minimum
+            Whether the release date difference is less than the minimum
             required.
     """
     return (query_release_date - template_release_date).days < min_release_date_diff

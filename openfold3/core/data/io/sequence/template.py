@@ -2,8 +2,7 @@
 Parsers for template alignments.
 """
 
-import re
-from typing import Iterable, NamedTuple, Optional, Sequence
+from typing import Iterable, NamedTuple, Sequence
 
 from openfold3.core.data.io.sequence.fasta import parse_fasta
 
@@ -20,7 +19,6 @@ Other minor changes from old version:
     - Removed skip_first argument from parse_hmmsearch_sto and parse_hmmsearch_a3m
     - Removed query_sequence and query_indices from parse_hmmsearch_sto, 
     parse_hmmsearch_a3m and TemplateHit
-    - set remove_first_row_gaps argument in parse_hmmsearch_sto to True
     - parse_hmmsearch_a3m and parse_hmmsearch_sto now return a dict[int, TemplateHit]
     - index in TemplateHit dict starts from 0 instead of 1
     - replaced e_value None with 0
@@ -31,27 +29,36 @@ class HitMetadata(NamedTuple):
     """Tuple containing metadata for a hit in an HMM search.
 
     Attributes:
-        pdb_id (str): The PDB ID of the hit.
-        chain (str): The chain ID of the hit.
-        start (int): The start index of the hit in the PDB sequence.
-        end (int): The end index of the hit in the PDB sequence.
-        length (int): The length of the hit.
-        text (str): The free text description of the hit.
+        pdb_id (str):
+            The PDB ID of the hit.
+        chain (str):
+            The chain ID of the hit.
+        start (int):
+            The index of the first residue of the aligned hit substring in the full
+            hit sequence.
     """
 
     pdb_id: str
     chain: str
     start: int
-    end: int
-    length: int
-    text: str
 
 
 class TemplateHit(NamedTuple):
-    """_summary_
+    """Tuple containing template hit information.
 
-    Args:
-        NamedTuple (_type_): _description_
+    Attributes:
+        index (str):
+            Row index of the hit in the alignment.
+        name (str):
+            PDB-chain ID of the hit.
+        aligned_cols (int):
+            Number of
+        hit_sequence (str):
+            The PDB ID of the hit.
+        indices_hit (str):
+            The PDB ID of the hit.
+        e_value (str):
+            The PDB ID of the hit.
     """
 
     index: int
@@ -59,15 +66,21 @@ class TemplateHit(NamedTuple):
     aligned_cols: int
     hit_sequence: str
     indices_hit: list[int]
-    e_value: Optional[float]
+    e_value: float | None
 
 
 def _get_indices(sequence: str, start: int) -> list[int]:
-    """Returns indices for non-gap/insert residues starting at the given index.
+    """Returns an index encoding of the aligned sequence starting at the given index.
+
+    Indices for non-gap/insert residues are given a positive index 1 larger that the
+    previous non-gap/insert residue, whereas gaps and deleted residues are given a
+    -1 index.
 
     Args:
-        sequence (str): _description_
-        start (int): _description_
+        sequence (str):
+            Hit subsequence spanned by the global alignment to the query sequence.
+        start (int):
+            Starting index of the hit
 
     Returns:
         list[int]: _description_
@@ -88,16 +101,15 @@ def _get_indices(sequence: str, start: int) -> list[int]:
     return indices
 
 
-def _parse_hmmsearch_description(description: str) -> HitMetadata:
-    """Parses the hmmsearch A3M sequence description line.
+def _parse_hmmsearch_description(description: str, index: int) -> HitMetadata:
+    """Parses the hmmsearch + hmmalign A3M sequence description line.
 
     Example 1: >4pqx_A/2-217 [subseq from] mol:protein length:217  Free text
     Example 2: >5g3r_A/1-55 [subseq from] mol:protein length:352
 
     Args:
         description (str):
-            A3M sequence description line.
-
+            STO sequence description line.
     Raises:
         ValueError:
             If the description cannot be parsed.
@@ -106,21 +118,26 @@ def _parse_hmmsearch_description(description: str) -> HitMetadata:
         HitMetadata:
             Metadata for the hit.
     """
-    match = re.match(
-        r"^>?([a-z0-9]+)_(\w+)/([0-9]+)-([0-9]+).*protein length:([0-9]+) *(.*)$",
-        description.strip(),
-    )
+    # Check if the description line contains a subsequence range
+    desc_split = description.split("/")
+    if len(desc_split) == 1:
+        pdb_chain_id = desc_split[0]
+        desc = None
+    else:
+        pdb_chain_id = desc_split[0]
+        desc = " ".join(desc_split[1:])
 
-    if not match:
-        raise ValueError(f'Could not parse description: "{description}".')
+    # Parse the PDB ID, chain ID and start index
+    pdb_id, chain_id = pdb_chain_id.split("_")
+    if index == 0:
+        start_index = 1
+    else:
+        start_index = int(desc.split(" ")[0].split("-")[0])
 
     return HitMetadata(
-        pdb_id=match[1],
-        chain=match[2],
-        start=int(match[3]),
-        end=int(match[4]),
-        length=int(match[5]),
-        text=match[6],
+        pdb_id=pdb_id,
+        chain=chain_id,
+        start=start_index,
     )
 
 
@@ -147,27 +164,29 @@ def _convert_sto_seq_to_a3m(
 
 
 def convert_stockholm_to_a3m(
-    stockholm_format: str,
-    max_sequences: Optional[int] = None,
-    remove_first_row_gaps: bool = True,
+    stockholm_string: str,
+    remove_first_row_gaps: bool = False,
+    max_sequences: int | None = None,
 ) -> str:
     """Converts MSA in Stockholm format to the A3M format.
 
-    Only works for stockholm format produced by HHblits.
-
     Args:
-        stockholm_format (str): _description_
-        max_sequences (Optional[int], optional): _description_. Defaults to None.
-        remove_first_row_gaps (bool, optional): _description_. Defaults to True.
+        stockholm_string (str):
+            Stockholm formatted alignment string produced by hmmsearch + hmmalign.
+        remove_first_row_gaps (bool, optional):
+            Whether to remove gaps in the first row of the alignment. Defaults to False.
+        max_sequences (Optional[int], optional):
+            Maximum number of sequences to include in the output. Defaults to None.
 
     Returns:
-        str: _description_
+        str:
+            A3M formatted alignment string.
     """
     descriptions = {}
     sequences = {}
     reached_max_sequences = False
 
-    for line in stockholm_format.splitlines():
+    for line in stockholm_string.splitlines():
         reached_max_sequences = max_sequences and len(sequences) >= max_sequences
         if line.strip() and not line.startswith(("#", "//")):
             # Ignore blank lines, markup and end symbols - remainder are alignment
@@ -179,7 +198,7 @@ def convert_stockholm_to_a3m(
                 sequences[seqname] = ""
             sequences[seqname] += aligned_seq
 
-    for line in stockholm_format.splitlines():
+    for line in stockholm_string.splitlines():
         if line[:4] == "#=GS":
             # Description row - example format is:
             # #=GS UniRef90_Q9H5Z4/4-78            DE [subseq from] cDNA: FLJ22755 ...
@@ -216,27 +235,38 @@ def convert_stockholm_to_a3m(
 
 
 def parse_hmmsearch_a3m(a3m_string: str) -> dict[int, TemplateHit]:
-    """Parses an a3m string produced by hmmsearch.
+    """Parses an a3m string produced by hmmsearch + hhalign.
+
+    Expects the query sequence to be the first sequence in the alignment
+    and all other sequences to be globally aligned to it.
 
     Args:
-        a3m_string (str): _description_
+        a3m_string (str):
+            A3M formatted alignment string produced by hmmsearch + hhalign.
 
     Returns:
-        dict[int, TemplateHit]: _description_
+        dict[int, TemplateHit]:
+            Dictionary mapping the index of the hit in the alignment to the parsed
+            template hit.
     """
     # Zip the descriptions and MSAs together
     parsed_a3m = list(zip(*parse_fasta(a3m_string)))
 
     hits = {}
     for i, (hit_sequence, hit_description) in enumerate(parsed_a3m):
-        if "mol:protein" not in hit_description:
-            continue  # Skip non-protein chains.
-        metadata = _parse_hmmsearch_description(hit_description)
-        # Aligned columns are only the match states.
+        # Never skip first entry (query) but skip non-protein chains
+        if (i != 0) & ("mol:protein" not in hit_description):
+            continue
+
+        # Parse the hit description line
+        metadata = _parse_hmmsearch_description(hit_description, i)
+
+        # Aligned columns are only the match states
         aligned_cols = sum([r.isupper() and r != "-" for r in hit_sequence])
         indices_hit = _get_indices(hit_sequence, start=metadata.start - 1)
 
-        hit = TemplateHit(
+        # Embed in TempateHit dataclass
+        hits[i] = TemplateHit(
             index=i,
             name=f"{metadata.pdb_id}_{metadata.chain}",
             aligned_cols=aligned_cols,
@@ -244,20 +274,25 @@ def parse_hmmsearch_a3m(a3m_string: str) -> dict[int, TemplateHit]:
             hit_sequence=hit_sequence.upper(),
             indices_hit=indices_hit,
         )
-        hits[i] = hit
 
     return hits
 
 
-def parse_hmmsearch_sto(output_string: str) -> dict[int, TemplateHit]:
-    """Gets parsed template hits from the raw string output by the tool.
+def parse_hmmsearch_sto(stockholm_string: str) -> dict[int, TemplateHit]:
+    """Parses an stockholm string produced by hmmsearch + hmmalign.
+
+    The returned dictionary maps the index of the hit in the alignment to the parsed
+    template hit.
 
     Args:
-        output_string (str): _description_
+        stockholm_string (str):
+            Stockholm formatted alignment string produced by hmmsearch + hmmalign.
 
     Returns:
-        dict[int, TemplateHit]: _description_
+        dict[int, TemplateHit]:
+            Dictionary mapping the index of the hit in the alignment to the parsed
+            template hit.
     """
-    a3m_string = convert_stockholm_to_a3m(output_string)
+    a3m_string = convert_stockholm_to_a3m(stockholm_string)
     template_hits = parse_hmmsearch_a3m(a3m_string=a3m_string)
     return template_hits
