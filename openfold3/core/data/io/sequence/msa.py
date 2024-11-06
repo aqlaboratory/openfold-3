@@ -9,6 +9,9 @@ from typing import Sequence
 import numpy as np
 
 from openfold3.core.data.io.sequence.fasta import parse_fasta
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 from openfold3.core.data.primitives.sequence.msa import (
     MsaCollection,
     MsaParsed,
@@ -259,6 +262,7 @@ def parse_msas_alignment_database(
     return msas
 
 
+@log_runtime_memory(runtime_dict_key="runtime-msa-proc-parse")
 def parse_msas_sample(
     alignments_directory: Path | None,
     alignment_db_directory: Path | None,
