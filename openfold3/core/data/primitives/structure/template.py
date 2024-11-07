@@ -1,7 +1,6 @@
 """Primitives for processing templates structures."""
 
 import dataclasses
-import json
 from pathlib import Path
 
 import biotite.structure as struc
@@ -24,18 +23,17 @@ class TemplateCacheEntry:
     Attributes:
         template_pdb_chain_id (str):
             The PDB+chain ID of the template structure.
-        e_value (int):
-            The e-value of the template structure.
+        index (int):
+            The row index of the template hit in the hmmsearch+hmmalign alignment.
         release_date (str):
             The release date of the template structure.
-        idx_map (dict[str, int]):
+        idx_map (np.ndarray[int]):
             Dictionary mapping tokens that fall into the crop to corresponding residue
             indices in the matching alignment."""
 
-    template_pdb_chain_id: str
-    e_value: int
+    index: int
     release_date: str
-    idx_map: dict[str, int]
+    idx_map: np.ndarray[int]
 
 
 @dataclasses.dataclass(frozen=False)
@@ -91,188 +89,172 @@ def get_query_structure_res_ids(atom_array_cropped_chain: AtomArray) -> np.ndarr
     return atom_array_cropped_chain[cropped_query_res_starts].res_id.astype(int)
 
 
-def fetch_template_ids(dataset_cache: dict, pdb_id: str, chain_id: int) -> list[str]:
-    """Parses the template IDs for a given chain from the dataset cache.
-
-    Args:
-        dataset_cache (dict):
-            The dataset cache.
-        pdb_id (str):
-            The PDB ID of the query structure.
-        chain_id (int):
-            The chain ID for which to retrieve the template IDs.
-
-    Returns:
-        list[str]:
-            List of template PDB+chain IDs for the given chain.
-    """
-
-    return dataset_cache["structure_data"][pdb_id]["chains"][chain_id]["template_ids"]
-
-
-def sample_template_count(
-    template_pdb_chain_ids: list[str], n_templates: int, is_train: bool
-) -> int:
-    """Samples the actual number of templates to use for a given chain.
+def sample_templates(
+    dataset_cache: dict,
+    template_cache_directory: Path,
+    n_templates: int,
+    take_top_k: bool,
+    pdb_id: str,
+    chain_id: str,
+) -> dict[str, TemplateCacheEntry] | dict[None]:
+    """Samples templates to featurize for a given chain.
 
     Follows the logic in section 2.4 of the AF3 SI.
 
     Args:
-        template_pdb_chain_ids (list[str]):
-            List of valid template PDB+chain IDs.
-        n_templates (int):
-            The max number of templates to sample for each chain.
-        is_train (bool):
-            Whether the current processing is for training or not.
-
-    Returns:
-        int:
-            The actual number of templates to sample for this chain.
-    """
-    if len(template_pdb_chain_ids) == 0:
-        return 0
-
-    if is_train:
-        return np.min([np.random.randint(0, len(template_pdb_chain_ids)), n_templates])
-    else:
-        return np.min(len(template_pdb_chain_ids), n_templates)
-
-
-def parse_template_cache_entries(
-    template_cache_directory: Path, dataset_cache: dict, pdb_id: str, chain_id: str
-) -> dict[str, TemplateCacheEntry]:
-    """Parses the template cache for a given chain.
-
-    Args:
-        template_cache_directory (Path):
-            The directory where the template cache is stored.
         dataset_cache (dict):
             The dataset cache.
+        template_cache_directory (Path):
+            The directory where the template cache is stored.
+        n_templates (int):
+            The max number of templates to sample for each chain.
+        take_top_k (bool):
+            Whether to take the top K templates (True) or sample randomly (False).
         pdb_id (str):
             The PDB ID of the query structure.
         chain_id (str):
-            The chain ID for which to retrieve the template cache.
+            The chain ID for which to sample the templates.
 
     Returns:
-        dict: _description_
+        dict[str, TemplateCacheEntry] | dict[None]:
+            The sampled template data per chain given chain.
     """
-    with open(
-        template_cache_directory
-        / Path(
-            "{}.json".format(
-                dataset_cache["structure_data"][pdb_id]["chains"][chain_id][
-                    "alignment_representative_id"
-                ]
+    chain_data = dataset_cache["structure_data"][pdb_id]["chains"][chain_id]
+    template_ids = chain_data["template_ids"]
+    l = len(template_ids)
+    if l == 0:
+        return {}
+
+    # Sample actual number of templates to use
+    if take_top_k:
+        k = np.min([l, n_templates])
+    else:
+        k = np.min([np.random.randint(0, l), n_templates])
+
+    if k > 0:
+        # Load template cache numpy file
+        template_file_name = chain_data["alignment_representative_id"] + ".npz"
+        template_cache = np.load(
+            template_cache_directory / Path(template_file_name), allow_pickle=True
+        )
+
+        # Unpack into dict
+        template_cache = {key: value.item() for key, value in template_cache.items()}
+
+        # Randomly sample k templates or take top k templates
+        if take_top_k:
+            sampled_template_ids = template_ids[:k]
+        else:
+            sampled_template_ids = np.random.choice(template_ids, k, replace=False)
+
+        # Wrap each subdict in a TemplateCacheEntry
+        return {
+            template_id: TemplateCacheEntry(
+                index=template_cache[template_id]["index"],
+                release_date=template_cache[template_id]["release_date"],
+                idx_map=template_cache[template_id]["idx_map"],
             )
-        )
-    ) as f:
-        template_cache = json.load(f)
-    return {
-        template_pdb_chain_id: TemplateCacheEntry(
-            template_pdb_chain_id=template_pdb_chain_id,
-            e_value=template_data["e_value"],
-            release_date=template_data["release_date"],
-            idx_map=template_data["idx_map"],
-        )
-        for template_pdb_chain_id, template_data in template_cache.items()
-    }
+            for template_id in sampled_template_ids
+        }
+
+    else:
+        return {}
 
 
-@np.vectorize(excluded=["map_dict"])
-def expand_alignment_to_cropped_query(k, map_dict):
-    "Expands the residue index map to the cropped query sequence."
-    return map_dict.get(k, -1)
-
-
-def create_index_maps(
-    idx_map: dict[int, int], atom_array_cropped_chain: AtomArray
-) -> tuple[dict[int, int], dict[int, int]]:
+def map_template_residues_to_tokens(
+    idx_map: np.ndarray[int],
+    atom_array_cropped_chain: AtomArray,
+    atom_array_template_chain: AtomArray,
+) -> AtomArray:
     """Creates index maps for the template residues that align to the query crop.
 
     Args:
-        idx_map (dict[int, int]):
-            Dict mapping all query residue indices to template residue indices
-            according to the hhsearch alignment.
+        idx_map (np.ndarray[int]):
+            An n-by-2 numpy array, 1st col: query residue index, 2nd col: template
+            residue index, only containing positions that are non-gapped in the aligned
+            template sequence.
         atom_array_cropped_chain (AtomArray):
-            The cropped atom array for the current chain.
+            The cropped atom array for the current query chain.
+        atom_array_template_chain (AtomArray):
+            The template atom array for the current template chain.
 
     Returns:
-        tuple[dict[int, int], dict[int, int]]:
-            Tuple containing:
-            - Dictionary mapping query residue IDs that are in the crop to template
-            residue IDs.
-            - Dictionary mapping template residue IDs to token
+        AtomArray:
+            The atom array of a template containing only residues that align to query
+            residues in the crop and the corresponding token positions.
     """
+    # Remove gapped query positions
+    idx_map = idx_map[idx_map[:, 0] != -1, :]
+
     # Subset idx map to template residues that are in the cropped query chain
-    res_id_res_id_map = {
-        k: v
-        for k, v in idx_map.items()
-        if k in atom_array_cropped_chain.res_id.astype(int)
-    }
+    res_in_query = np.unique(atom_array_cropped_chain.res_id.astype(int))
+    idx_map_in_crop = idx_map[np.where(np.isin(idx_map[:, 0], res_in_query))[0]]
 
-    # Create a map from template residue index to token position
-    token_starts = get_token_starts(atom_array_cropped_chain)
-    token_atoms = atom_array_cropped_chain[token_starts]
-    res_id_token_position_map = {
-        res_id_res_id_map[query_res_id]: token_position
-        for query_res_id, token_position in zip(
-            token_atoms.res_id, token_atoms.token_position
+    # Map query token positions to template residues
+    query_token_atoms = atom_array_cropped_chain[
+        get_token_starts(atom_array_cropped_chain)
+    ]
+
+    # Get token positions of template residues aligning to query residues in the crop
+    template_token_positions = query_token_atoms[
+        np.isin(query_token_atoms.res_id, idx_map_in_crop[:, 0])
+    ].token_position
+
+    # Get template atom array with residues aligning to query residues in the crop
+    atom_array_cropped_template = atom_array_template_chain[
+        np.isin(
+            atom_array_template_chain.res_id.astype(int),
+            idx_map_in_crop[:, 1],
         )
-        if query_res_id in res_id_res_id_map
-    }
+    ]
 
-    return res_id_res_id_map, res_id_token_position_map
+    # Add token position annotation to template atom array mapping to the crop
+    atom_array_cropped_template.set_annotation(
+        "token_positions",
+        struc.spread_residue_wise(
+            atom_array_cropped_template, template_token_positions
+        ),
+    )
+
+    return atom_array_cropped_template
 
 
-def slice_templates_for_chain(
-    template_cache: dict,
-    k: int,
+def map_token_pos_to_templates(
+    sampled_template_data: dict[str, TemplateCacheEntry] | dict[None],
     template_structures_directory: Path,
     template_file_format: str,
     ccd: CIFFile,
-    atom_array_cropped_chain: AtomArray,
-    template_pdb_chain_ids: list[str],
-    is_train: bool,
+    atom_array_query_chain: AtomArray,
 ) -> list[AtomArray]:
     """Identifies the subset of atoms in the template that align to the query crop.
 
     Args:
-        template_cache (dict):
-            The template cache for the current chain.
-        k (int):
-            The number of templates to use.
+        sampled_template_data (dict[str, TemplateCacheEntry] | dict[None]):
+            The sampled template data per chain given chain.
         template_structures_directory (Path):
             The directory where the template structures are stored.
         template_file_format (str):
             The format of the template structures.
         ccd (CIFFile):
             Parsed CCD file.
-        atom_array_cropped_chain (AtomArray):
-            The cropped atom array containing atoms of the current protein chain.
-        template_pdb_chain_ids (list[str]):
-            List of valid template PDB+chain IDs.
-        is_train (bool):
-            Whether the current processing is for training or not.
+        atom_array_query_chain (AtomArray):
+            The cropped atom array containing atoms of the current protein chain.).
 
     Returns:
         list[AtomArray]:
-            List of cropped template AtomArray objects for the current chain.
+            List of template AtomArrays subset to residues that align to any residue in
+            the query atom array and with added token ids in the query structure.
     """
+    if len(sampled_template_data) == 0:
+        return []
+
     cropped_templates = []
-
-    # Fetch residue ids and token starts for the current query chain
-    cropped_query_res_ids = get_query_structure_res_ids(atom_array_cropped_chain)
-    # Randomly sample k templates or take top k templates
-    if is_train:
-        sampled_templates = np.random.choice(template_pdb_chain_ids, k, replace=False)
-    else:
-        sampled_templates = template_pdb_chain_ids[:k]
-
     # Iterate over the k templates
-    for template_pdb_chain_id in sampled_templates:
-        # Parse IDs
+    for template_pdb_chain_id, template_cache_entry in sampled_template_data.items():
+        # Parse template IDs
         template_pdb_id, template_chain_id = template_pdb_chain_id.split("_")
-        # Parse cif file into an atom array
+
+        # Parse the full template assembly
         cif_file, atom_array_template_assembly = parse_mmcif(
             template_structures_directory
             / Path(f"{template_pdb_id}.{template_file_format}")
@@ -287,42 +269,11 @@ def slice_templates_for_chain(
             atom_array_template_assembly.label_asym_id == template_chain_id
         ]
 
-        # Fetch the residue index map
-        idx_map = {
-            int(k): v for k, v in template_cache[template_pdb_chain_id].idx_map.items()
-        }
-
-        # Subset idx map and create template residue idx to token position map
-        res_id_res_id_map, res_id_token_position_map = create_index_maps(
-            idx_map, atom_array_cropped_chain
-        )
-
-        # Get the set of residues in the template that align to any query residue in the
-        # crop
-        cropped_template_res_ids = np.vectorize(res_id_res_id_map.get)(
-            cropped_query_res_ids
-        )
-        cropped_template_res_ids = cropped_template_res_ids[
-            np.vectorize(lambda x: x is not None, otypes=[bool])(
-                cropped_template_res_ids
-            )
-        ].astype(int)
-
-        # Subset the template atom array
-        atom_array_cropped_template = atom_array_template_chain[
-            np.isin(
-                atom_array_template_chain.res_id.astype(int),
-                cropped_template_res_ids,
-            )
-        ]
-
-        # Add query residue ids and res_id_token_position_map to the template atom array
-        token_positions = np.vectorize(res_id_token_position_map.get)(
-            cropped_template_res_ids
-        )
-        atom_array_cropped_template.set_annotation(
-            "token_positions",
-            struc.spread_residue_wise(atom_array_cropped_template, token_positions),
+        # Create query residue ID to template residue ID to token position map
+        atom_array_cropped_template = map_template_residues_to_tokens(
+            template_cache_entry.idx_map,
+            atom_array_query_chain,
+            atom_array_template_chain,
         )
 
         # Add to list of cropped template atom arrays for this chain

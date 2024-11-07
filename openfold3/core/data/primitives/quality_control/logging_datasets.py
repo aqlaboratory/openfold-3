@@ -157,9 +157,9 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 
             # Template features
             template_slice_collection = process_template_structures_af3(
-                atom_array_cropped=atom_array_cropped,
+                atom_array=atom_array_cropped,
                 n_templates=self.template.n_templates,
-                is_train=True,
+                take_top_k=True,
                 template_cache_directory=self.template_cache_directory,
                 dataset_cache=self.dataset_cache,
                 pdb_id=pdb_id,

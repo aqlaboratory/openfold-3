@@ -11,19 +11,17 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
 )
 from openfold3.core.data.primitives.structure.template import (
     TemplateSliceCollection,
-    fetch_template_ids,
-    parse_template_cache_entries,
-    sample_template_count,
-    slice_templates_for_chain,
+    map_token_pos_to_templates,
+    sample_templates,
 )
 from openfold3.core.data.resources.residues import MoleculeType
 
 
 @log_runtime_memory(runtime_dict_key="runtime-template-proc")
 def process_template_structures_af3(
-    atom_array_cropped: AtomArray,
+    atom_array: AtomArray,
     n_templates: int,
-    is_train: bool,
+    take_top_k: bool,
     template_cache_directory: Path,
     dataset_cache: dict,
     pdb_id: str,
@@ -36,15 +34,15 @@ def process_template_structures_af3(
     Note: Only looks for templates for chains that have at least one atom in the crop.
 
     Args:
-        atom_array_cropped (AtomArray):
-            The cropped atom array.
+        atom_array (AtomArray):
+            The cropped (training) or full (inference) atom array.
         n_templates (int):
             The number of templates to sample for each chain. As per section 2.4 of the
             AF3 SI, during training at most n_templates are taken randomly from the list
             of available templates for each chain. During inference, the top (sorted by
             e-value) n_templates are taken.
-        is_train (bool):
-            Whether the current processing is for training or not.
+        take_top_k (bool):
+            Whether to take the top K templates (True) or sample randomly (False).
         template_cache_directory (Path):
             The directory where the template cache is stored.
         dataset_cache (dict):
@@ -60,53 +58,35 @@ def process_template_structures_af3(
 
     Returns:
         TemplateSliceCollection:
-            The sliced templates for each chain in the crop.
+            The sliced template atomarrays for each chain in the crop.
     """
     # Get protein chain IDs from the cropped atom array
     protein_chain_ids = np.unique(
-        atom_array_cropped[
-            atom_array_cropped.molecule_type_id == MoleculeType.PROTEIN
-        ].chain_id
+        atom_array[atom_array.molecule_type_id == MoleculeType.PROTEIN].chain_id
     )
+    if len(protein_chain_ids) == 0:
+        return TemplateSliceCollection(template_slices={})
 
-    # Iterate over protein chains in the crop
-    template_slice_collection = TemplateSliceCollection(template_slices={})
+    # Iterate over protein chains in the atom array
+    template_slices = {}
     for chain_id in protein_chain_ids:
-        # Subset the atom array to the current chain
-        atom_array_cropped_chain = atom_array_cropped[
-            atom_array_cropped.chain_id == chain_id
-        ]
+        # Sample templates and fetch their data from the cache
+        sampled_template_data = sample_templates(
+            dataset_cache,
+            template_cache_directory,
+            n_templates,
+            take_top_k,
+            pdb_id,
+            chain_id,
+        )
 
-        # Get the preprocessed list of filtered templates
-        template_pdb_chain_ids = fetch_template_ids(dataset_cache, pdb_id, chain_id)
+        # Map token positions to template atom arrays
+        template_slices[chain_id] = map_token_pos_to_templates(
+            sampled_template_data,
+            template_structures_directory,
+            template_file_format,
+            ccd,
+            atom_array[atom_array.chain_id == chain_id],
+        )
 
-        # Get actual number of templates to sample for this chain
-        k = sample_template_count(template_pdb_chain_ids, n_templates, is_train)
-
-        # Get the template slices (cropped atom arrays and residue maps) for the
-        # current chain
-        if k > 0:
-            # Get template cache
-            template_cache = parse_template_cache_entries(
-                template_cache_directory, dataset_cache, pdb_id, chain_id
-            )
-
-            # Slice templates for the current chain
-            cropped_templates = slice_templates_for_chain(
-                template_cache,
-                k,
-                template_structures_directory,
-                template_file_format,
-                ccd,
-                atom_array_cropped_chain,
-                template_pdb_chain_ids,
-                is_train,
-            )
-
-        else:
-            cropped_templates = []
-
-        # Add the sliced templates to the template slice collection
-        template_slice_collection.template_slices[chain_id] = cropped_templates
-
-    return template_slice_collection
+    return TemplateSliceCollection(template_slices=template_slices)
