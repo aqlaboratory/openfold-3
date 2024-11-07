@@ -1,4 +1,4 @@
-""" "Treadmill helper functions for configuring the worker init function."""
+"""Preprocessing helper functions for configuring the worker init function."""
 
 import logging
 from pathlib import Path

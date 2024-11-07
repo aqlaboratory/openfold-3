@@ -1,6 +1,8 @@
 """Treadmill logging utilities."""
 
 import contextvars
+import logging
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -60,14 +62,18 @@ RUNTIME_DICT = contextvars.ContextVar("RUNTIME_DICT", default={})
 LOG_MEMORY = contextvars.ContextVar("LOG_MEMORY", default=False)
 WORKER_MEM_LOG_PATH = contextvars.ContextVar("WORKER_MEM_LOG_PATH", default=None)
 MEM_PROFILED_FUNC_KEYS = contextvars.ContextVar("MEM_PROFILED_FUNC_KEYS", default=[])
-
+# Template preprocessing context variables
+TEMPLATE_PROCESS_LOGGER = contextvars.ContextVar(
+    "TEMPLATE_PROCESS_LOGGER", default=None
+)
 # Mapping of function names to their respective runtime logging functions
 F_NAME_ORDER = [
     "runtime-target-structure-proc",
     "runtime-target-structure-feat",
     "runtime-msa-proc",
     "runtime-msa-feat",
-    "runtime-templates-feat",
+    "runtime-template-proc",
+    "runtime-template-feat",
     "runtime-ref-conf-proc",
     "runtime-ref-conf-feat",
     "runtime-target-structure-proc-parse",
@@ -412,3 +418,33 @@ def decode_interface(interface_string: str) -> tuple[np.ndarray, np.ndarray]:
     chain_residues = np.column_stack((residues, chains.reshape(-1, 2)))
 
     return chain_residues[:, :2], chain_residues[:, 2:]
+
+
+def configure_template_logger(
+    log_level: str, log_to_file: bool, log_to_console: bool, log_dir: Path
+) -> logging.Logger:
+    logger = logging.getLogger()
+    numeric_level = getattr(logging, log_level.upper())
+    logger.setLevel(numeric_level)
+
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+
+    # Clear any existing handlers
+    if logger.hasHandlers():
+        logger.handlers.clear()
+
+    if log_to_console:
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+    if log_to_file:
+        pid = os.getpid()
+        file_handler = logging.FileHandler(log_dir / Path(f"process_{pid}.log"))
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+    logger.propagate = False
+
+    return logger

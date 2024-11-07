@@ -925,6 +925,7 @@ def apply_crop_to_msa(
         deletion_mean = np.zeros(token_budget)
 
         # Token ID -> token position map
+        # TODO rework with token_position annotation
         token_starts = get_token_starts(atom_array)
         token_positions = {
             token: position

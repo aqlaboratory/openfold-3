@@ -1,6 +1,5 @@
 import dataclasses
 import json
-import math
 from collections import Counter
 from enum import IntEnum
 from pathlib import Path
@@ -8,6 +7,7 @@ from typing import Union
 
 import pandas as pd
 import torch
+from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 
 from openfold3.core.data.framework.single_datasets.abstract_single_dataset import (
@@ -23,7 +23,7 @@ from openfold3.core.data.pipelines.featurization.structure import (
     featurize_target_gt_structure_af3,
 )
 from openfold3.core.data.pipelines.featurization.template import (
-    featurize_templates_dummy_af3,
+    featurize_templates_af3,
 )
 from openfold3.core.data.pipelines.sample_processing.conformer import (
     get_reference_conformer_data_af3,
@@ -31,6 +31,9 @@ from openfold3.core.data.pipelines.sample_processing.conformer import (
 from openfold3.core.data.pipelines.sample_processing.msa import process_msas_cropped_af3
 from openfold3.core.data.pipelines.sample_processing.structure import (
     process_target_structure_af3,
+)
+from openfold3.core.data.pipelines.sample_processing.template import (
+    process_template_structures_af3,
 )
 from openfold3.core.data.resources.residues import MoleculeType
 
@@ -194,6 +197,9 @@ class WeightedPDBDataset(SingleDataset):
         self.template_structures_directory = dataset_config["dataset_paths"][
             "template_structures_directory"
         ]
+        self.template_file_format = dataset_config["dataset_paths"][
+            "template_file_format"
+        ]
         self.reference_molecule_directory = dataset_config["dataset_paths"][
             "reference_molecule_directory"
         ]
@@ -211,8 +217,9 @@ class WeightedPDBDataset(SingleDataset):
         # Dataset configuration
         self.crop_weights = dataset_config["crop_weights"]
         self.token_budget = dataset_config["token_budget"]
-        self.n_templates = dataset_config["n_templates"]
         self.loss_settings = dataset_config["loss"]
+        self.msa = dataset_config["msa"]
+        self.template = dataset_config["template"]
 
     def create_datapoint_cache(self) -> None:
         """Creates the datapoint_cache with chain/interface probabilities.
@@ -261,6 +268,40 @@ class WeightedPDBDataset(SingleDataset):
         preferred_chain_or_interface = datapoint["datapoint"]
         features = {}
 
+        # Target structure features
+        target_structure_features, atom_array_cropped = (
+            self.create_target_structure_features(pdb_id, preferred_chain_or_interface)
+        )
+        features.update(target_structure_features)
+
+        # MSA features
+        msa_features = self.create_msa_features(
+            pdb_id,
+            atom_array_cropped,
+        )
+        features.update(msa_features)
+
+        # Template features
+        template_features = self.create_template_features(pdb_id, atom_array_cropped)
+        features.update(template_features)
+
+        # Reference conformer features
+        reference_conformer_features = self.create_reference_conformer_features(
+            pdb_id, atom_array_cropped
+        )
+        features.update(reference_conformer_features)
+
+        # Loss switches
+        loss_features = self.create_loss_features(pdb_id)
+        features.update(loss_features)
+
+        return features
+
+    def create_target_structure_features(
+        self, pdb_id: str, preferred_chain_or_interface: str
+    ) -> tuple[dict, AtomArray]:
+        """Creates the target structure features."""
+
         # Target structure and duplicate-expanded GT structure features
         atom_array_cropped, atom_array_gt = process_target_structure_af3(
             target_structures_directory=self.target_structures_directory,
@@ -272,18 +313,19 @@ class WeightedPDBDataset(SingleDataset):
         )
         # NOTE that for now we avoid the need for permutation alignment by providing the
         # cropped atom array as the ground truth atom array
-        # features.update(
+        # target_structure_features.update(
         #     featurize_target_gt_structure_af3(
         #         atom_array_cropped, atom_array_gt, self.token_budget
         #     )
         # )
-        features.update(
-            featurize_target_gt_structure_af3(
-                atom_array_cropped, atom_array_cropped, self.token_budget
-            )
+        target_structure_features = featurize_target_gt_structure_af3(
+            atom_array_cropped, atom_array_cropped, self.token_budget
         )
+        return target_structure_features, atom_array_cropped
 
-        # MSA features
+    def create_msa_features(self, pdb_id: str, atom_array_cropped: AtomArray) -> dict:
+        """Creates the MSA features."""
+
         msa_processed = process_msas_cropped_af3(
             alignments_directory=self.alignments_directory,
             alignment_db_directory=self.alignment_db_directory,
@@ -292,42 +334,68 @@ class WeightedPDBDataset(SingleDataset):
             data_cache_entry_chains=self.dataset_cache["structure_data"][pdb_id][
                 "chains"
             ],
-            max_seq_counts={
-                "uniref90_hits": 10000,
-                "uniprot_hits": 50000,
-                "uniprot": 50000,
-                "bfd_uniclust_hits": math.inf,
-                "bfd_uniref_hits": math.inf,
-                "mgnify_hits": 5000,
-                "rfam_hits": 10000,
-                "rnacentral_hits": 10000,
-                "nucleotide_collection_hits": 10000,
-            },
+            max_seq_counts=self.msa.max_seq_counts,
             token_budget=self.token_budget,
-            max_rows_paired=8191,
+            max_rows_paired=self.msa.max_rows_paired,
         )
-        features.update(featurize_msa_af3(msa_processed))
+        msa_features = featurize_msa_af3(msa_processed)
 
-        # Dummy template features
-        features.update(
-            featurize_templates_dummy_af3(self.n_templates, self.token_budget)
+        return msa_features
+
+    def create_template_features(
+        self, pdb_id: str, atom_array_cropped: AtomArray
+    ) -> dict:
+        """Creates the template features."""
+
+        template_slice_collection = process_template_structures_af3(
+            atom_array=atom_array_cropped,
+            n_templates=self.template.n_templates,
+            take_top_k=False,
+            template_cache_directory=self.template_cache_directory,
+            dataset_cache=self.dataset_cache,
+            pdb_id=pdb_id,
+            template_structures_directory=self.template_structures_directory,
+            template_file_format=self.template_file_format,
+            ccd=self.ccd,
         )
 
-        # Reference conformer features
+        template_features = featurize_templates_af3(
+            template_slice_collection=template_slice_collection,
+            n_templates=self.template.n_templates,
+            token_budget=self.token_budget,
+            min_bin=self.template.distogram.min_bin,
+            max_bin=self.template.distogram.max_bin,
+            n_bins=self.template.distogram.n_bins,
+        )
+
+        return template_features
+
+    def create_reference_conformer_features(
+        self, pdb_id: str, atom_array_cropped: AtomArray
+    ) -> dict:
+        """Creates the reference conformer features."""
+
         processed_reference_molecules = get_reference_conformer_data_af3(
             atom_array=atom_array_cropped,
             per_chain_metadata=self.dataset_cache["structure_data"][pdb_id]["chains"],
             reference_mol_metadata=self.dataset_cache["reference_molecule_data"],
             reference_mol_dir=self.reference_molecule_directory,
         )
-        features.update(featurize_ref_conformers_af3(processed_reference_molecules))
+        reference_conformer_features = featurize_ref_conformers_af3(
+            processed_reference_molecules
+        )
 
-        # Loss switches
-        features["loss_weights"] = set_loss_weights(
+        return reference_conformer_features
+
+    def create_loss_features(self, pdb_id: str) -> dict:
+        """Creates the loss features."""
+
+        loss_features = {}
+        loss_features["loss_weights"] = set_loss_weights(
             self.loss_settings,
             self.dataset_cache["structure_data"][pdb_id]["resolution"],
         )
-        return features
+        return loss_features
 
     def __len__(self):
         return len(self.datapoint_cache)
