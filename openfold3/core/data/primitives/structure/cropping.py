@@ -345,15 +345,16 @@ def sample_crop_strategy(crop_weights: dict[str, float]) -> tuple[Callable, tupl
 
 
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-crop")
-def apply_crop(
+def set_crop_mask(
     atom_array: AtomArray,
     token_budget: int,
     preferred_chain_or_interface: Optional[Union[int, tuple[int, int]]],
     crop_weights: dict[str, float],
-) -> tuple[AtomArray, AtomArray] | AtomArray:
-    """Samples and applies cropping strategy to the input assembly.
+):
+    """Samples and applies cropping strategy to the input assembly and sets mask.
 
-    Running this function on an AtomArray will also add the 'crop_mask' annotation.
+    Running this function on an AtomArray will add the 'crop_mask' annotation which is
+    True for atoms inside the crop and False for atoms outside the crop.
 
     Args:
         atom_array (AtomArray):
@@ -368,16 +369,14 @@ def apply_crop(
             Dictionary of crop weights.
 
     Returns:
-        tuple[AtomArray, AtomArray] | AtomArray:
-            Tuple of cropped and full atom arrays if return_full is True, otherwise just
-            the cropped atom array.
+        None. The 'crop_mask' annotation is added to the input AtomArray in-place.
     """
 
     # Take whole assembly if it fits in the budget
     if len(set(atom_array.token_id)) <= token_budget:
         atom_array.set_annotation("crop_mask", np.repeat(True, len(atom_array)))
 
-    # Otherwise crop
+    # Otherwise run cropping function
     else:
         crop_function, crop_function_argnames = sample_crop_strategy(crop_weights)
         crop_input = {
@@ -388,5 +387,3 @@ def apply_crop(
         crop_function(
             **{k: v for k, v in crop_input.items() if k in crop_function_argnames}
         )
-
-    return atom_array[atom_array.crop_mask]

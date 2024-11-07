@@ -3,7 +3,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, NamedTuple
 
-import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
 from rdkit.Chem import Mol
@@ -12,6 +11,7 @@ from openfold3.core.data.io.structure.mol import read_single_annotated_sdf
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
+from openfold3.core.data.primitives.structure.component import component_iter
 from openfold3.core.data.primitives.structure.conformer import (
     ConformerGenerationError,
     add_conformer_atom_mask,
@@ -96,6 +96,10 @@ def get_processed_reference_conformer(
     array_atom_names = mol_atom_array.atom_name
 
     # Necessary because multi-residue ligands like glycans may have repeated atom names
+    # TODO: this is probably brittle, imagine a case where the spatial crop skips an
+    # intermediate monomer and then what should be C1 C3 becomes C1 C2
+    # FIX: run uniquification before cropping OR make use of original indices kept after
+    # cropping
     mol_atom_names = np.array(uniquify_ids(mol_atom_names))
     array_atom_names = np.array(uniquify_ids(array_atom_names))
 
@@ -175,38 +179,25 @@ def get_reference_conformer_data_af3(
     processed_conformers = []
 
     # Fill the list of processed reference conformers with all relevant information
-    for chain_array in struc.chain_iter(atom_array):
-        chain_id = chain_array.chain_id[0]
+    for component_array in component_iter(atom_array, per_chain_metadata):
+        chain_id = component_array.chain_id[0]
 
-        ref_mol_id = per_chain_metadata[chain_id].get("reference_mol_id", None)
+        # Either get the reference molecule ID from the chain metadata (in case of a
+        # ligand chain) or use the residue name (in case of a single component of a
+        # biopolymer)
+        ref_mol_id = per_chain_metadata[chain_id].get(
+            "reference_mol_id", component_array.res_name[0]
+        )
 
-        # Entire chain corresponds to a single reference molecule (e.g. a ligand chain)
-        if ref_mol_id is not None:
-            mol = read_single_annotated_sdf_cached(
-                reference_mol_dir / f"{ref_mol_id}.sdf"
+        mol = read_single_annotated_sdf_cached(reference_mol_dir / f"{ref_mol_id}.sdf")
+
+        processed_conformers.append(
+            get_processed_reference_conformer(
+                ref_mol_id,
+                mol,
+                component_array,
+                reference_mol_metadata[ref_mol_id]["conformer_gen_strategy"],
             )
-            processed_conformers.append(
-                get_processed_reference_conformer(
-                    ref_mol_id,
-                    mol,
-                    chain_array,
-                    reference_mol_metadata[ref_mol_id]["conformer_gen_strategy"],
-                )
-            )
-        # Decompose the chain into individual residues and their reference molecules
-        else:
-            for residue_array in struc.residue_iter(chain_array):
-                ref_mol_id = residue_array.res_name[0]
-                mol = read_single_annotated_sdf_cached(
-                    reference_mol_dir / f"{ref_mol_id}.sdf"
-                )
-                processed_conformers.append(
-                    get_processed_reference_conformer(
-                        ref_mol_id,
-                        mol,
-                        residue_array,
-                        reference_mol_metadata[ref_mol_id]["conformer_gen_strategy"],
-                    )
-                )
+        )
 
     return processed_conformers

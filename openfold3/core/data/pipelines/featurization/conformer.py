@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 @log_runtime_memory(runtime_dict_key="runtime-ref-conf-feat")
 def featurize_ref_conformers_af3(
     processed_ref_mol_list: list[ProcessedReferenceMolecule],
+    max_permutations: int = 1_000,
 ) -> dict[str, torch.Tensor]:
     """AF3 pipeline for creating reference conformer features.
 
@@ -61,6 +62,7 @@ def featurize_ref_conformers_af3(
     ref_charge = []
     ref_atom_name_chars = []
     ref_space_uid = []  # deviation from SI! see docstring
+    ref_space_uid_to_perm = {}
 
     for mol_idx, processed_mol in enumerate(processed_ref_mol_list):
         mol_id, mol, in_array_mask = processed_mol
@@ -118,6 +120,19 @@ def featurize_ref_conformers_af3(
             ref_pos.append(mol_ref_pos)
             ref_mask.append(mol_ref_mask)
 
+        # Get symmetry-equivalent atom permutations for this conformer following AF3 SI
+        # 4.2 (uses useChirality=False because that's also what RDKit's
+        # symmetry-corrected RMSD uses)
+        all_permutations = mol.GetSubstructMatches(
+            mol, uniquify=False, maxMatches=max_permutations, useChirality=False
+        )
+        all_permutations = torch.tensor(all_permutations, dtype=torch.int32)
+
+        # Subset the permutations to only include mappings to atoms that are in the
+        # cropped prediction
+        permutations_cropped = all_permutations[:, in_array_mask]
+        ref_space_uid_to_perm[mol_idx] = permutations_cropped
+
     ref_pos = torch.concat(ref_pos)
     ref_mask = torch.concat(ref_mask)
 
@@ -132,6 +147,9 @@ def featurize_ref_conformers_af3(
     )
     ref_space_uid = torch.tensor(ref_space_uid, dtype=torch.int32)
 
+    # This will get padded with 0s in the batch collator
+    atom_pad_mask = torch.ones_like(ref_mask, dtype=torch.bool)
+
     return {
         "ref_pos": ref_pos,
         "ref_mask": ref_mask,
@@ -139,4 +157,6 @@ def featurize_ref_conformers_af3(
         "ref_charge": ref_charge,
         "ref_atom_name_chars": ref_atom_name_chars,
         "ref_space_uid": ref_space_uid,
+        "ref_space_uid_to_perm": ref_space_uid_to_perm,
+        "atom_pad_mask": atom_pad_mask,
     }

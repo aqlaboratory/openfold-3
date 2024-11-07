@@ -125,6 +125,11 @@ def featurize_structure_af3(
             min=0.0,
             max=1.0,
         )
+        # This will get padded with False later on in the batch collator
+        # TODO: make dtype float? will never be used as float though
+        features["atom_pad_mask"] = torch.ones_like(
+            features["atom_resolved_mask"], dtype=torch.bool
+        )
 
     # Pad and return
     return pad_token_dim(

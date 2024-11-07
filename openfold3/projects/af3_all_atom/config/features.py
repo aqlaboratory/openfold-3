@@ -5,6 +5,8 @@ NUM_ATOMS = "num atoms placeholder"
 NUM_MSA_SEQ = "msa placeholder"
 NUM_TEMPLATES = "num templates placeholder"
 
+
+# TODO: Add new permutation features
 feature_dict = mlc.ConfigDict(
     {
         "feat": {
