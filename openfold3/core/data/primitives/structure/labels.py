@@ -149,7 +149,9 @@ def assign_renumbered_chain_ids(
     atom_array.chain_id = chain_ids_per_atom
 
 
-def assign_atom_indices(atom_array: AtomArray) -> None:
+def assign_atom_indices(
+    atom_array: AtomArray, label: str = "_atom_idx", overwrite: bool = False
+) -> None:
     """Assigns atom indices to the AtomArray
 
     Atom indices are a simple range from 0 to the number of atoms in the AtomArray which
@@ -160,8 +162,17 @@ def assign_atom_indices(atom_array: AtomArray) -> None:
     Args:
         atom_array:
             AtomArray containing the structure to assign atom indices to.
+        label:
+            Name of the annotation field to store the atom indices in. Defaults to
+            "_atom_idx".
+        overwrite:
+            Whether to overwrite an existing annotation field with the same name.
+            Defaults to False.
     """
-    atom_array.set_annotation("_atom_idx", range(len(atom_array)))
+    if label in atom_array.get_annotation_categories() and not overwrite:
+        raise ValueError(f"Annotation field '{label}' already exists in AtomArray.")
+    else:
+        atom_array.set_annotation(label, range(len(atom_array)))
 
 
 def remove_atom_indices(atom_array: AtomArray) -> None:
