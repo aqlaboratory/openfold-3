@@ -15,7 +15,6 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
 from openfold3.core.data.primitives.structure.template import TemplateSliceCollection
 
 
-@log_runtime_memory(runtime_dict_key="runtime-templates-dummy-feat")
 def featurize_templates_dummy_af3(n_templ, n_token):
     """Temporary function to generate dummy template features."""
     return {

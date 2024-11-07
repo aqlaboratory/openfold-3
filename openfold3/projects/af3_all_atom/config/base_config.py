@@ -448,6 +448,7 @@ project_config = mlc.ConfigDict(
                 },
                 "template": {
                     "n_templates": 4,
+                    "take_top_k": False,
                     "distogram": {
                         "min_bin": 3.25,
                         "max_bin": 50.75,
