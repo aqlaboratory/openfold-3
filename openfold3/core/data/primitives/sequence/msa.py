@@ -33,7 +33,7 @@ class MsaArray:
 
     msa: np.ndarray[str]
     deletion_matrix: np.ndarray[int]
-    metadata: pd.DataFrame = pd.DataFrame()
+    metadata: pd.DataFrame = dataclasses.field(default_factory=pd.DataFrame)
 
     def __len__(self):
         return self.msa.shape[0]
@@ -105,12 +105,18 @@ class MsaArrayCollection:
     chain_id_to_mol_type: dict[str, str]
     num_cols: dict[str, int]
 
-    rep_id_to_msa: dict[str, dict[str, MsaArray]] = {}
-    rep_id_to_query_seq: dict[str, np.ndarray[str]] = {}
+    rep_id_to_msa: dict[str, dict[str, MsaArray]] = dataclasses.field(
+        default_factory=dict
+    )
+    rep_id_to_query_seq: dict[str, np.ndarray[str]] = dataclasses.field(
+        default_factory=dict
+    )
 
-    chain_id_to_query_seq: dict[str, MsaArray] = {}
-    chain_id_to_paired_msa: dict[str, MsaArray] = {}
-    chain_id_to_main_msa: dict[str, MsaArray] = {}
+    chain_id_to_query_seq: dict[str, MsaArray] = dataclasses.field(default_factory=dict)
+    chain_id_to_paired_msa: dict[str, MsaArray] = dataclasses.field(
+        default_factory=dict
+    )
+    chain_id_to_main_msa: dict[str, MsaArray] = dataclasses.field(default_factory=dict)
 
     def set_state_parsed(self, rep_id_to_msa, rep_id_to_query_seq):
         """Set the state to parsed."""

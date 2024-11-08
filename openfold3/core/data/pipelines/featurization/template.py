@@ -27,7 +27,7 @@ def featurize_templates_dummy_af3(n_templ, n_token):
 
 
 @log_runtime_memory(runtime_dict_key="runtime-template-feat")
-def featurize_templates_af3(
+def featurize_template_structures_af3(
     template_slice_collection: TemplateSliceCollection,
     n_templates: int,
     token_budget: int,
