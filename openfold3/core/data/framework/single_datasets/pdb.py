@@ -328,7 +328,7 @@ class WeightedPDBDataset(SingleDataset):
     def create_msa_features(self, pdb_id: str, atom_array_cropped: AtomArray) -> dict:
         """Creates the MSA features."""
 
-        msa_processed = process_msas_af3(
+        msa_array_collection = process_msas_af3(
             alignments_directory=self.alignments_directory,
             alignment_db_directory=self.alignment_db_directory,
             alignment_index=self.alignment_index,
@@ -340,7 +340,11 @@ class WeightedPDBDataset(SingleDataset):
             token_budget=self.token_budget,
             max_rows_paired=self.msa.max_rows_paired,
         )
-        msa_features = featurize_msa_af3(msa_processed)
+        msa_features = featurize_msa_af3(
+            msa_array_collection=msa_array_collection,
+            max_rows=self.msa.max_rows,
+            subsample_with_bands=self.msa.subsample_with_bands,
+        )
 
         return msa_features
 

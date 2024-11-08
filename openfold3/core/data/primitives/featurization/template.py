@@ -37,7 +37,7 @@ class AF3TemplateFeaturePrecursor:
     frame_atom_coords: np.ndarray[float]
 
 
-def create_feature_precursor_af3(
+def create_template_feature_precursor_af3(
     template_slice_collection: TemplateSliceCollection,
     n_templates: int,
     token_budget: int,

@@ -4,8 +4,8 @@ import numpy as np
 import torch
 
 from openfold3.core.data.primitives.featurization.template import (
-    create_feature_precursor_af3,
     create_template_distogram,
+    create_template_feature_precursor_af3,
     create_template_restype,
     create_template_unit_vector,
 )
@@ -69,7 +69,7 @@ def featurize_templates_af3(
         dict[str, torch.Tensor]:
             The featurized template data.
     """
-    template_feature_precursor = create_feature_precursor_af3(
+    template_feature_precursor = create_template_feature_precursor_af3(
         template_slice_collection,
         n_templates,
         token_budget,
