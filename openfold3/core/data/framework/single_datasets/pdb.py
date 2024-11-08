@@ -28,7 +28,9 @@ from openfold3.core.data.pipelines.featurization.template import (
 from openfold3.core.data.pipelines.sample_processing.conformer import (
     get_reference_conformer_data_af3,
 )
-from openfold3.core.data.pipelines.sample_processing.msa import process_msas_cropped_af3
+from openfold3.core.data.pipelines.sample_processing.msa import (
+    process_msas_af3,
+)
 from openfold3.core.data.pipelines.sample_processing.structure import (
     process_target_structure_af3,
 )
@@ -326,7 +328,7 @@ class WeightedPDBDataset(SingleDataset):
     def create_msa_features(self, pdb_id: str, atom_array_cropped: AtomArray) -> dict:
         """Creates the MSA features."""
 
-        msa_processed = process_msas_cropped_af3(
+        msa_processed = process_msas_af3(
             alignments_directory=self.alignments_directory,
             alignment_db_directory=self.alignment_db_directory,
             alignment_index=self.alignment_index,

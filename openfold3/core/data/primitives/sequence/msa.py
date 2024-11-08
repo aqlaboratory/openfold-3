@@ -3,13 +3,11 @@
 import dataclasses
 import logging
 import math
-from typing import Optional, Sequence, Union
+from typing import Sequence, Union
 
 import numpy as np
 import pandas as pd
-from biotite.structure import AtomArray
 
-from openfold3.core.data.primitives.featurization.structure import get_token_starts
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
@@ -26,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(frozen=False)
-class MsaParsed:
+class MsaArray:
     """Class representing a parsed MSA file.
 
     The metadata attribute gets updated in certain functions of the MSA preparation.
@@ -37,12 +35,13 @@ class MsaParsed:
         deletion_matrix (np.array):
             A 2D numpy array containing the cumulative deletion counts up to each
             position for each row in the MSA.
-        metadata (Optional[Sequence[str]]):
-            A list of metadata parsed from sequence headers of the MSA."""
+        metadata (pd.DataFrame):
+            A list of metadata parsed from sequence headers of the MSA. If not provided,
+            an empty DataFrame is assigned."""
 
     msa: np.array
     deletion_matrix: np.array
-    metadata: Optional[Sequence[str]]
+    metadata: pd.DataFrame = pd.DataFrame()
 
     def __len__(self):
         return self.msa.shape[0]
@@ -74,71 +73,74 @@ class MsaParsed:
 
 
 @dataclasses.dataclass(frozen=False)
-class MsaCollection:
+class MsaArrayCollection:
     """Class representing a collection MSAs for a single sample.
 
+    This class can be in one of two states:
+        1.) parsed state:
+            attributes rep_id_to_msa and rep_id_to_query_seq populated after parsing and
+            chain_id_to_query_seq, chain_id_to_paired_msa, chain_id_to_main_msa
+            unpopulated.
+        2.) processed state:
+            attributes rep_id_to_msa and rep_id_to_query_seq unpopulated and
+            chain_id_to_query_seq, chain_id_to_paired_msa, chain_id_to_main_msa
+            populated after processing.
+
+    Attributes chain_id_to_rep_id, chain_id_to_mol_type, and num_cols are populated in
+    both states.
+
     Attributes:
-        rep_msa_map (dict[str, dict[str, Msa]]):
+        rep_id_to_msa (dict[str, dict[str, MsaArray]]):
             Dictionary mapping representative chain IDs to dictionaries of Msa objects.
-        rep_seq_map (dict[str, np.ndarray[np.str_]]):
+        rep_id_to_query_seq (dict[str, np.ndarray[str]]):
             Dictionary mapping representative chain IDs to numpy arrays of their
             corresponding query sequences.
-        chain_rep_map (dict[str, str]):
+        chain_id_to_query_seq (dict[str, MsaArray]):
+            Dictionary mapping chain IDs to Msa objects containing query sequence data.
+        chain_id_to_paired_msa (dict[str, MsaArray]):
+            Dictionary mapping chain IDs to Msa objects containing paired MSA data.
+        chain_id_to_main_msa (dict[str, MsaArray]):
+            Dictionary mapping chain IDs to Msa objects containing main MSA data.
+        chain_id_to_rep_id (dict[str, str]):
             Dictionary mapping chain IDs to representative chain IDs.
-        chain_to_molecule_type (dict[str, str]):
+        chain_id_to_mol_type (dict[str, str]):
             Dictionary mapping chain IDs to the molecule type.
         num_cols (dict[str, int]):
             Dict mapping representative chain ID to the number of columns in the MSA.
     """
 
-    rep_msa_map: dict[str, dict[str, MsaParsed]]
-    rep_seq_map: dict[str, np.ndarray[np.str_]]
-    chain_rep_map: dict[str, str]
-    chain_to_molecule_type: dict[str, str]
+    chain_id_to_rep_id: dict[str, str]
+    chain_id_to_mol_type: dict[str, str]
     num_cols: dict[str, int]
 
+    rep_id_to_msa: dict[str, dict[str, MsaArray]] = {}
+    rep_id_to_query_seq: dict[str, np.ndarray[str]] = {}
 
-@dataclasses.dataclass(frozen=False)
-class MsaProcessedCollection:
-    """Class storing processed Msa data per chain.
+    chain_id_to_query_seq: dict[str, MsaArray] = {}
+    chain_id_to_paired_msa: dict[str, MsaArray] = {}
+    chain_id_to_main_msa: dict[str, MsaArray] = {}
 
-    The stored MSAs are expanded across all redundant chains.
+    def set_state_parsed(self, rep_id_to_msa, rep_id_to_query_seq):
+        """Set the state to parsed."""
+        self.rep_id_to_msa = rep_id_to_msa
+        self.rep_id_to_query_seq = rep_id_to_query_seq
+        self.chain_id_to_query_seq = {}
+        self.chain_id_to_paired_msa = {}
+        self.chain_id_to_main_msa = {}
 
-    Attributes:
-        query_sequences (dict[int, Msa]):
-            Dictionary mapping chain IDs to Msa objects containing query sequence data.
-        main_msas (dict[int, Msa]):
-            Dictionary mapping chain IDs to Msa objects containing main MSA data.
-        paired_msas (Optional[dict[int, Msa]]):
-            Dictionary mapping chain IDs to Msa objects containing paired MSA data."""
-
-    query_sequences: dict[int, MsaParsed]
-    main_msas: dict[int, MsaParsed]
-    paired_msas: Optional[dict[int, MsaParsed]] = None
-
-
-@dataclasses.dataclass(frozen=False)
-class MsaSlice:
-    """Class storing crop-to-alignment maps.
-
-    Attributes:
-        chain_rep_map (dict[int, str]):
-            Dictionary mapping chain IDs to representative IDs used for finding the
-            directory containing the alignments for the corresponding chains.
-        tokens_in_chain (dict[int, dict[int, int]]):
-            Dictionary mapping tokens that fall into the crop to corresponding residue
-            indices in the matching alignment.
-        chain_to_molecule_type (dict[str, str]):
-            Dictionary mapping chain IDs to the molecule type.
-    """
-
-    chain_rep_map: dict[int, str]
-    tokens_in_chain: dict[int, dict[int, int]]
-    chain_to_molecule_type: dict[str, str]
+    def set_state_processed(
+        self, chain_id_to_query_seq, chain_id_to_paired_msa, chain_id_to_main_msa
+    ):
+        """Set the state to processed."""
+        self.chain_id_to_query_seq = chain_id_to_query_seq
+        self.chain_id_to_paired_msa = chain_id_to_paired_msa
+        self.chain_id_to_main_msa = chain_id_to_main_msa
+        self.rep_id_to_msa = {}
+        self.rep_id_to_query_seq = {}
 
 
 @dataclasses.dataclass(frozen=False)
-class MsaFeaturePrecursorAF3(MsaParsed):
+class MsaFeaturePrecursorAF3(MsaArray):
     """Class representing the fully processed MSA arrays of an assembly.
 
     Subclass of MsaParsed.
@@ -160,7 +162,7 @@ class MsaFeaturePrecursorAF3(MsaParsed):
 
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-homo-mono")
-def find_monomer_homomer(msa_collection: MsaCollection) -> bool:
+def find_monomer_homomer(msa_array_collection: MsaArrayCollection) -> bool:
     """Determines if the sample is a monomer or homomer.
 
     Args:
@@ -171,14 +173,14 @@ def find_monomer_homomer(msa_collection: MsaCollection) -> bool:
         bool: Whether the sample is a monomer or a full homomer.
     """
     # Extract chain IDs and representative chain IDs
-    chain_rep_map = {
+    chain_id_to_rep_id = {
         chain_id: rep_id
-        for chain_id, rep_id in msa_collection.chain_rep_map.items()
-        if msa_collection.chain_to_molecule_type[chain_id] == "PROTEIN"
+        for chain_id, rep_id in msa_array_collection.chain_id_to_rep_id.items()
+        if msa_array_collection.chain_id_to_mol_type[chain_id] == "PROTEIN"
     }
     chain_ids, representative_chain_ids = (
-        list(chain_rep_map.keys()),
-        list(set(chain_rep_map.values())),
+        list(chain_id_to_rep_id.keys()),
+        list(set(chain_id_to_rep_id.values())),
     )
 
     return (len(chain_ids) == 1) | (
@@ -187,7 +189,7 @@ def find_monomer_homomer(msa_collection: MsaCollection) -> bool:
 
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-query")
-def create_query_seqs(msa_collection: MsaCollection) -> dict[int, MsaParsed]:
+def create_query_seqs(msa_collection: MsaArrayCollection) -> dict[int, MsaArray]:
     """Extracts and expands the query sequences and deletion matrices.
 
     Args:
@@ -200,23 +202,27 @@ def create_query_seqs(msa_collection: MsaCollection) -> dict[int, MsaParsed]:
             for each chain, indexed by chain id.
     """
     return {
-        k: MsaParsed(
-            msa=msa_collection.rep_seq_map[v],
-            deletion_matrix=np.zeros(msa_collection.rep_seq_map[v].shape, dtype=int),
+        k: MsaArray(
+            msa=msa_collection.rep_id_to_query_seq[v],
+            deletion_matrix=np.zeros(
+                msa_collection.rep_id_to_query_seq[v].shape, dtype=int
+            ),
             metadata=pd.DataFrame(),
         )
-        for (k, v) in msa_collection.chain_rep_map.items()
+        for (k, v) in msa_collection.chain_id_to_rep_id.items()
     }
 
 
-def extract_uniprot_hits(msa_collection: MsaCollection) -> dict[str, MsaParsed]:
+def extract_uniprot_hits(
+    msa_array_collection: MsaArrayCollection,
+) -> dict[str, MsaArray]:
     """Parses out UniProt Msa objects for unique protein chains from the MsaCollection.
 
     This function does not return UniProt MSAs for chains that only contain the query
     i.e. single sequence MSAs.
 
     Args:
-        msa_collection (MsaCollection):
+        msa_array_collection (MsaCollection):
             A collection of Msa objects and chain IDs for a single sample.
 
     Returns:
@@ -225,10 +231,10 @@ def extract_uniprot_hits(msa_collection: MsaCollection) -> dict[str, MsaParsed]:
     """
     protein_rep_ids = set(
         rep_id
-        for chain_id, rep_id in msa_collection.chain_rep_map.items()
-        if msa_collection.chain_to_molecule_type[chain_id] == "PROTEIN"
+        for chain_id, rep_id in msa_array_collection.chain_id_to_rep_id.items()
+        if msa_array_collection.chain_id_to_mol_type[chain_id] == "PROTEIN"
     )
-    rep_ids = msa_collection.rep_msa_map.keys()
+    rep_ids = msa_array_collection.rep_id_to_msa.keys()
 
     # Get uniprot hits, exclude MSAs only with query
     uniprot_hits = {}
@@ -236,7 +242,7 @@ def extract_uniprot_hits(msa_collection: MsaCollection) -> dict[str, MsaParsed]:
         if rep_id not in protein_rep_ids:
             continue
 
-        rep_msa_map_per_chain = msa_collection.rep_msa_map[rep_id]
+        rep_msa_map_per_chain = msa_array_collection.rep_id_to_msa[rep_id]
         uniprot_msa = (
             rep_msa_map_per_chain.get("uniprot_hits")
             if "uniprot_hits" in rep_msa_map_per_chain
@@ -248,7 +254,7 @@ def extract_uniprot_hits(msa_collection: MsaCollection) -> dict[str, MsaParsed]:
     return uniprot_hits
 
 
-def process_uniprot_metadata(msa: MsaParsed) -> None:
+def process_uniprot_metadata(msa: MsaArray) -> None:
     """Reformats the metadata of an Msa object parsed from a UniProt MSA.
 
     This function expects
@@ -291,7 +297,7 @@ def process_uniprot_metadata(msa: MsaParsed) -> None:
     msa.metadata = metadata
 
 
-def sort_msa_by_distance_to_query(msa: MsaParsed) -> None:
+def sort_msa_by_distance_to_query(msa: MsaArray) -> None:
     """Reorders the MSA array based on the distance to the query sequence.
 
     Reorders all class attributes of the MSA object.
@@ -313,7 +319,7 @@ def sort_msa_by_distance_to_query(msa: MsaParsed) -> None:
 
 
 def count_species_per_chain(
-    uniprot_hits: dict[str, MsaParsed],
+    uniprot_hits: dict[str, MsaArray],
 ) -> tuple[np.ndarray[np.int32], list[str]]:
     """Counts the occurrences of sequences from species in each chain's UniProt MSA.
 
@@ -479,12 +485,12 @@ def find_pairing_indices(
 
 
 def map_to_paired_msa_per_chain(
-    msa_collection: MsaCollection,
-    uniprot_hits: dict[str, MsaParsed],
-    paired_rows_index: np.ndarray[np.int32],
-    missing_rows_index: np.ndarray[np.int32],
+    msa_array_collection: MsaArrayCollection,
+    uniprot_hits: dict[str, MsaArray],
+    paired_rows_index: np.ndarray[int],
+    missing_rows_index: np.ndarray[int],
     species: list,
-) -> dict[str, MsaParsed]:
+) -> dict[str, MsaArray]:
     """Maps paired species indices to MSA row indices.
 
     Args:
@@ -510,7 +516,7 @@ def map_to_paired_msa_per_chain(
     # Map species indices back to MSA row indices
     # Pre-allocate MSA objects, including those without UniProt hits
     paired_msa_per_chain = {
-        rep_id: MsaParsed(
+        rep_id: MsaArray(
             msa=np.full((paired_rows_index.shape[0], seq.shape[-1]), "-"),
             deletion_matrix=np.zeros(
                 (paired_rows_index.shape[0], seq.shape[-1]),
@@ -518,7 +524,7 @@ def map_to_paired_msa_per_chain(
             ),
             metadata=pd.DataFrame(),
         )
-        for rep_id, seq in msa_collection.rep_seq_map.items()
+        for rep_id, seq in msa_array_collection.rep_id_to_query_seq.items()
     }
 
     # For each chain, sort MSA rows by the paired species indices
@@ -563,8 +569,8 @@ def map_to_paired_msa_per_chain(
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-paired")
 def create_paired(
-    msa_collection: MsaCollection, paired_row_cutoff: int
-) -> Optional[dict[str, MsaParsed]]:
+    msa_array_collection: MsaArrayCollection, paired_row_cutoff: int
+) -> tuple[dict[str, MsaArray], dict[str, MsaArray]]:
     """Creates paired MSA arrays from UniProt MSAs.
 
     Follows the AF2-Multimer strategy for pairing rows of UniProt MSAs based on species
@@ -582,19 +588,11 @@ def create_paired(
             Paired MSAs and deletion matrices for each chain.
     """
     # Get parsed uniprot hits
-    uniprot_hits = extract_uniprot_hits(msa_collection)
+    uniprot_hits = extract_uniprot_hits(msa_array_collection)
 
     # Ensure there are at least two chains with UniProt hits after filtering
     if len(uniprot_hits) <= 1:
-        # no_uniprot_hits = set(msa_collection.chain_rep_map.values()).difference(
-        #     uniprot_hits.keys()
-        # )
-        # logger.info(
-        #     "Skipping MSA pairing: %d chain(s) present. No uniprot hits for %s.",
-        #     len(uniprot_hits),
-        #     ", ".join(list(no_uniprot_hits)),
-        # )
-        return None
+        return None, None
 
     # Process uniprot headers and calculate distance to query
     _ = [process_uniprot_metadata(uniprot_hits[chain_id]) for chain_id in uniprot_hits]
@@ -611,11 +609,7 @@ def create_paired(
 
     # No valid pairs, skip MSA pairing
     if not np.any(pairing_masks):
-        # logger.info(
-        #     "Skipping MSA pairing: No valid pairs for %s.",
-        #     ", ".join(list(uniprot_hits.keys())),
-        # )
-        return None
+        return None, None
 
     # Find species indices that pair rows
     paired_rows_index, missing_rows_index = find_pairing_indices(
@@ -626,75 +620,32 @@ def create_paired(
 
     # Map species indices back to MSA row indices
     paired_msa_per_chain = map_to_paired_msa_per_chain(
-        msa_collection, uniprot_hits, paired_rows_index, missing_rows_index, species
+        msa_array_collection,
+        uniprot_hits,
+        paired_rows_index,
+        missing_rows_index,
+        species,
     )
 
-    return paired_msa_per_chain
-
-
-@log_runtime_memory(runtime_dict_key="runtime-msa-proc-expand-paired")
-def expand_paired_msas(
-    msa_collection: MsaCollection, paired_msa_per_chain: dict[str, MsaParsed]
-) -> dict[str, MsaParsed]:
-    """Creates a dict of MSA objects from paired MSA arrays.
-
-    Args:
-        msa_collection (MsaCollection):
-            A collection of Msa objects and chain IDs for a single sample.
-        dict[str, Msa]:
-            Dict mapping chain IDs to Msa objects containing the paired MSAs and paired
-            deletion matrices. Metadata fields are empty.
-
-    Returns:
-        dict[str, Msa]:
-            A dict of Msa objects containing paired sequences and deletion matrices for
-            each unique chain instantiation.
-    """
-    # # Initialize paired MSA object
-    # num_rows = paired_msa_per_chain[next(iter(paired_msa_per_chain))].msa.shape[0]
-    # num_cols = sum(
-    #     [msa_collection.num_cols[v]
-    # for (_, v) in msa_collection.chain_rep_map.items()]
-    # )
-    # paired_msa = Msa(
-    #     msa=np.full((num_rows, num_cols), "-"),
-    #     deletion_matrix=np.zeros((num_rows, num_cols), dtype=int),
-    #     metadata=pd.DataFrame(),
-    # )
-
-    # Update paired MSA with paired data for each chain using the representatives
-    # col_offset = 0
+    # Expand paired MSAs across all chains
     paired_msas = {}
-    for chain_id, rep_id in msa_collection.chain_rep_map.items():
+    for chain_id, rep_id in msa_array_collection.chain_id_to_rep_id.items():
         rep_paired_msa = paired_msa_per_chain[rep_id]
-
-        # n_col_paired_i = rep_paired_msa.msa.shape[1]
-
-        # # Replace slices in msa and deletion matrix
-        # paired_msa.msa[:, col_offset : (col_offset + n_col_paired_i)] = (
-        #     rep_paired_msa.msa
-        # )
-        # paired_msa.deletion_matrix[:, col_offset : (col_offset + n_col_paired_i)] = (
-        #     rep_paired_msa.deletion_matrix
-        # )
-
-        # col_offset += n_col_paired_i
-
-        paired_msas[chain_id] = MsaParsed(
+        paired_msas[chain_id] = MsaArray(
             msa=rep_paired_msa.msa,
             deletion_matrix=rep_paired_msa.deletion_matrix,
             metadata=pd.DataFrame(),
         )
 
-    return paired_msas
+    return paired_msa_per_chain, paired_msas
 
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-main")
 def create_main(
-    msa_collection: MsaCollection,
-    paired_msa_per_chain: Union[dict[str, MsaParsed], None],
+    msa_array_collection: MsaArrayCollection,
+    paired_msa_per_chain: Union[dict[str, MsaArray], None],
     aln_order: list[str],
-) -> dict[str, MsaParsed]:
+) -> dict[str, MsaArray]:
     """Creates main MSA arrays from non-UniProt MSAs.
 
     Args:
@@ -712,8 +663,8 @@ def create_main(
     """
     # Iterate over representatives
     rep_main_msas = {}
-    for rep_id, chain_data in msa_collection.rep_msa_map.items():
-        chain_data = msa_collection.rep_msa_map[rep_id]
+    for rep_id, chain_data in msa_array_collection.rep_id_to_msa.items():
+        chain_data = msa_array_collection.rep_id_to_msa[rep_id]
 
         # Get MSAs forming the main MSA and deletion matrices from all non-UniProt MSAs
         main_msa_redundant = np.concatenate(
@@ -735,7 +686,7 @@ def create_main(
         else:
             is_unique = np.ones(main_msa_redundant.shape[0], dtype=bool)
 
-        rep_main_msas[rep_id] = MsaParsed(
+        rep_main_msas[rep_id] = MsaArray(
             msa=main_msa_redundant[is_unique, :],
             deletion_matrix=main_deletion_matrix_redundant[is_unique, :],
             metadata=pd.DataFrame(),
@@ -743,75 +694,10 @@ def create_main(
 
     # Reindex dict from representatives to chain IDs
     main_msas = {}
-    for chain_id, rep_id in msa_collection.chain_rep_map.items():
+    for chain_id, rep_id in msa_array_collection.chain_id_to_rep_id.items():
         main_msas[chain_id] = rep_main_msas[rep_id]
 
     return main_msas
-
-
-@log_runtime_memory(runtime_dict_key="runtime-msa-proc-crop-to-seq")
-def create_crop_to_seq_map(
-    atom_array: AtomArray, data_cache_entry_chains: dict[int, Union[int, str]]
-) -> MsaSlice:
-    """Creates a mapping from the crop to the sequences in the MSA.
-
-    This function connects structure sample processing to MSA sample processing. It
-    finds the subset of chains in the crop and creates two mappings, one from the
-    chain IDs to representative IDs and another from token IDs to residue IDs for
-    tokens in the crop.
-
-    Args:
-        atom_array (AtomArray):
-            AtomArray of the cropped structure.
-        data_cache_entry_chains (dict[int, Union[int, str]]):
-            Dictionary of chains to chain features from the data cache.
-
-    Returns:
-        MsaSlice:
-            Object containing the mappings from the crop to the MSA sequences.
-    """
-    # Get set of chain IDs in the crop and map to pdb ID + chain ID
-    # Subset to protein and RNA chains
-    atom_array_with_aln_in_crop = atom_array[
-        np.isin(
-            atom_array.molecule_type_id,
-            [MoleculeType.PROTEIN, MoleculeType.RNA],
-        )
-    ]
-    chain_ids_in_crop = list(set(atom_array_with_aln_in_crop.chain_id))
-
-    chain_rep_map = {}
-    tokens_in_chain = {}
-    chain_to_molecule_type = {}
-    for chain_id_in_crop in chain_ids_in_crop:
-        # Get atom array for chain
-        atom_array_with_aln_in_crop_chain = atom_array_with_aln_in_crop[
-            atom_array_with_aln_in_crop.chain_id == chain_id_in_crop
-        ]
-        # # Get chain and representative chain ID
-        chain_rep_map[chain_id_in_crop] = data_cache_entry_chains[chain_id_in_crop][
-            "alignment_representative_id"
-        ]
-
-        # Create token -> residue map
-        # Note: some atomized residues get duplicate columns from the alignment
-        # as they are coming from the same residue
-        token_starts = get_token_starts(atom_array_with_aln_in_crop_chain)
-        tokens_in_chain[chain_id_in_crop] = {
-            token: residue
-            for token, residue in zip(
-                atom_array_with_aln_in_crop_chain[token_starts].token_id,
-                atom_array_with_aln_in_crop_chain[token_starts].res_id - 1,
-            )
-        }
-        chain_to_molecule_type[chain_id_in_crop] = data_cache_entry_chains[
-            chain_id_in_crop
-        ]["molecule_type"]
-    return MsaSlice(
-        chain_rep_map=chain_rep_map,
-        tokens_in_chain=tokens_in_chain,
-        chain_to_molecule_type=chain_to_molecule_type,
-    )
 
 
 def calculate_column_counts(msa_col: np.ndarray, mol_type: MoleculeType) -> np.ndarray:
@@ -863,153 +749,154 @@ def calculate_column_counts(msa_col: np.ndarray, mol_type: MoleculeType) -> np.n
     return res_full_alphabet_counts
 
 
-@log_runtime_memory(runtime_dict_key="runtime-msa-proc-apply-crop")
-def apply_crop_to_msa(
-    atom_array: AtomArray,
-    msa_processed_collection: MsaProcessedCollection,
-    msa_slice: MsaSlice,
-    token_budget: int,
-    max_rows_paired: int,
-) -> MsaFeaturePrecursorAF3:
-    """Applies crop to the MSA arrays or creates empty MSA arrays.
+# @log_runtime_memory(runtime_dict_key="runtime-msa-proc-apply-crop")
+# def apply_crop_to_msa(
+#     atom_array: AtomArray,
+#     msa_processed_collection: MsaProcessedCollection,
+#     msa_slice: MsaChainData,
+#     token_budget: int,
+#     max_rows_paired: int,
+# ) -> MsaFeaturePrecursorAF3:
+#     """Applies crop to the MSA arrays or creates empty MSA arrays.
 
-    Note: this is a temporary connector function between MSA sample processing and
-    featurization and will be updated in a future version.
+#     Note: this is a temporary connector function between MSA sample processing and
+#     featurization and will be updated in a future version.
 
-    Args:
-        atom_array (AtomArray):
-            AtomArray of the cropped structure.
-        msa_processed_collection (MsaProcessedCollection):
-            Collection of processed MSA data per chain.
-        msa_slice (MsaSlice):
-            Object containing the mappings from the crop to the MSA sequences.
-        token_budget (int):
-            The number of tokens in the crop.
-        max_rows_paired (int):
-            The maximum number of rows to pair.
+#     Args:
+#         atom_array (AtomArray):
+#             AtomArray of the cropped structure.
+#         msa_processed_collection (MsaProcessedCollection):
+#             Collection of processed MSA data per chain.
+#         msa_slice (MsaSlice):
+#             Object containing the mappings from the crop to the MSA sequences.
+#         token_budget (int):
+#             The number of tokens in the crop.
+#         max_rows_paired (int):
+#             The maximum number of rows to pair.
 
-    Returns:
-        MsaProcessed:
-            Processed MSA arrays for the crop to featurize.
-    """
-    # TODO clean up this function
-    if msa_processed_collection.query_sequences is not None:
-        # Paired MSA rows
-        if msa_processed_collection.paired_msas is not None:
-            n_rows_paired = msa_processed_collection.paired_msas[
-                next(iter(msa_processed_collection.paired_msas))
-            ].msa.shape[0]
-            n_rows_paired_cropped = min(max_rows_paired, n_rows_paired)
-        else:
-            n_rows_paired_cropped = 0
+#     Returns:
+#         MsaProcessed:
+#             Processed MSA arrays for the crop to featurize.
+#     """
+#     # TODO clean up this function
+#     if msa_processed_collection.query_sequences is not None:
+#         # Paired MSA rows
+#         if msa_processed_collection.paired_msas is not None:
+#             n_rows_paired = msa_processed_collection.paired_msas[
+#                 next(iter(msa_processed_collection.paired_msas))
+#             ].msa.shape[0]
+#             n_rows_paired_cropped = min(max_rows_paired, n_rows_paired)
+#         else:
+#             n_rows_paired_cropped = 0
 
-        # Main MSA rows
-        n_rows_main_per_chain = {
-            k: v.msa.shape[0] for k, v in msa_processed_collection.main_msas.items()
-        }
-        n_rows_main = np.max(list(n_rows_main_per_chain.values()))
-        # n_rows_main_cropped = np.min(
-        #     [max_rows - (n_rows_paired_cropped + 1), n_rows_main]
-        # )
-        # n_rows_main_cropped_per_chain = [np.min([n_rows_main_cropped, i])
-        # for i in n_rows_main_per_chain.values()]
+#         # Main MSA rows
+#         n_rows_main_per_chain = {
+#             k: v.msa.shape[0] for k, v in msa_processed_collection.main_msas.items()
+#         }
+#         n_rows_main = np.max(list(n_rows_main_per_chain.values()))
+#         # n_rows_main_cropped = np.min(
+#         #     [max_rows - (n_rows_paired_cropped + 1), n_rows_main]
+#         # )
+#         # n_rows_main_cropped_per_chain = [np.min([n_rows_main_cropped, i])
+#         # for i in n_rows_main_per_chain.values()]
 
-        # Processed MSA rows
-        n_rows = (
-            1 + n_rows_paired_cropped + n_rows_main
-        )  # instead of n_rows_main_cropped
-        msa_processed = np.full([n_rows, token_budget], "-")
-        deletion_matrix_processed = np.zeros([n_rows, token_budget])
-        msa_mask = np.zeros([n_rows, token_budget])
-        msa_profile = np.zeros([token_budget, len(STANDARD_RESIDUES_WITH_GAP_1)])
-        deletion_mean = np.zeros(token_budget)
+#         # Processed MSA rows
+#         n_rows = (
+#             1 + n_rows_paired_cropped + n_rows_main
+#         )  # instead of n_rows_main_cropped
+#         msa_processed = np.full([n_rows, token_budget], "-")
+#         deletion_matrix_processed = np.zeros([n_rows, token_budget])
+#         msa_mask = np.zeros([n_rows, token_budget])
+#         msa_profile = np.zeros([token_budget, len(STANDARD_RESIDUES_WITH_GAP_1)])
+#         deletion_mean = np.zeros(token_budget)
 
-        # Token ID -> token position map
-        # TODO rework with token_position annotation
-        token_starts = get_token_starts(atom_array)
-        token_positions = {
-            token: position
-            for position, token in enumerate(atom_array[token_starts].token_id)
-        }
+#         # Token ID -> token position map
+#         # TODO rework with token_position annotation
+#         token_starts = get_token_starts(atom_array)
+#         token_positions = {
+#             token: position
+#             for position, token in enumerate(atom_array[token_starts].token_id)
+#         }
 
-        # Assign sequence data to corresponding processed MSA slices
-        for chain_id, token_res_map in msa_slice.tokens_in_chain.items():
-            # Query sequence "MSA"
-            q = msa_processed_collection.query_sequences[chain_id]
-            # Paired MSA
-            if msa_processed_collection.paired_msas is not None:
-                p = msa_processed_collection.paired_msas[chain_id]
-            # Main MSA
-            m = msa_processed_collection.main_msas[chain_id]
-            n_rows_main_i = n_rows_main_per_chain[chain_id]
+#         # Assign sequence data to corresponding processed MSA slices
+#         for chain_id, token_res_map in msa_slice.tokens_in_chain.items():
+#             # Query sequence "MSA"
+#             q = msa_processed_collection.query_sequences[chain_id]
+#             # Paired MSA
+#             if msa_processed_collection.paired_msas is not None:
+#                 p = msa_processed_collection.paired_msas[chain_id]
+#             # Main MSA
+#             m = msa_processed_collection.main_msas[chain_id]
+#             n_rows_main_i = n_rows_main_per_chain[chain_id]
 
-            mol_type = msa_slice.chain_to_molecule_type[chain_id]
+#             mol_type = msa_slice.chain_to_mol_type[chain_id]
 
-            # Iterate over protein/RNA tokens in the crop
-            for token_id, res_id in token_res_map.items():
-                # Get token column index in the processed MSA
-                token_position = token_positions[token_id]
-                # Assign row/col slice to the processed MSA slice
-                # Query sequence
-                msa_processed[0, token_position] = q.msa[res_id]
-                deletion_matrix_processed[0, token_position] = q.deletion_matrix[res_id]
-                msa_mask[0, token_position] = 1
+#             # Iterate over protein/RNA tokens in the crop
+#             for token_id, res_id in token_res_map.items():
+#                 # Get token column index in the processed MSA
+#                 token_position = token_positions[token_id]
+#                 # Assign row/col slice to the processed MSA slice
+#                 # Query sequence
+#                 msa_processed[0, token_position] = q.msa[res_id]
+#                 deletion_matrix_processed[0, token_position] = q.deletion_matrix
+# [res_id]
+#                 msa_mask[0, token_position] = 1
 
-                # Paired MSA
-                if (msa_processed_collection.paired_msas is not None) | (
-                    n_rows_paired_cropped != 0
-                ):
-                    msa_processed[1 : 1 + n_rows_paired_cropped, token_position] = (
-                        p.msa[:n_rows_paired_cropped, res_id]
-                    )
-                    deletion_matrix_processed[
-                        1 : 1 + n_rows_paired_cropped, token_position
-                    ] = p.deletion_matrix[:n_rows_paired_cropped, res_id]
-                    msa_mask[1 : 1 + n_rows_paired_cropped, token_position] = 1
+#                 # Paired MSA
+#                 if (msa_processed_collection.paired_msas is not None) | (
+#                     n_rows_paired_cropped != 0
+#                 ):
+#                     msa_processed[1 : 1 + n_rows_paired_cropped, token_position] = (
+#                         p.msa[:n_rows_paired_cropped, res_id]
+#                     )
+#                     deletion_matrix_processed[
+#                         1 : 1 + n_rows_paired_cropped, token_position
+#                     ] = p.deletion_matrix[:n_rows_paired_cropped, res_id]
+#                     msa_mask[1 : 1 + n_rows_paired_cropped, token_position] = 1
 
-                # Main MSA
-                row_offset_main = 1 + n_rows_paired_cropped
-                msa_processed[
-                    row_offset_main : row_offset_main + n_rows_main_i,
-                    token_position,
-                ] = m.msa[:, res_id]
-                deletion_matrix_processed[
-                    row_offset_main : row_offset_main + n_rows_main_i,
-                    token_position,
-                ] = m.deletion_matrix[:, res_id]
-                msa_mask[
-                    row_offset_main : row_offset_main + n_rows_main_i,
-                    token_position,
-                ] = 1
+#                 # Main MSA
+#                 row_offset_main = 1 + n_rows_paired_cropped
+#                 msa_processed[
+#                     row_offset_main : row_offset_main + n_rows_main_i,
+#                     token_position,
+#                 ] = m.msa[:, res_id]
+#                 deletion_matrix_processed[
+#                     row_offset_main : row_offset_main + n_rows_main_i,
+#                     token_position,
+#                 ] = m.deletion_matrix[:, res_id]
+#                 msa_mask[
+#                     row_offset_main : row_offset_main + n_rows_main_i,
+#                     token_position,
+#                 ] = 1
 
-                # If main MSA is empty, leave profile and deletion mean as all-zeros
-                if n_rows_main_i != 0:
-                    msa_profile[token_position, :] = (
-                        calculate_column_counts(
-                            m.msa[:, res_id], MoleculeType[mol_type]
-                        )
-                        / m.msa.shape[0]
-                    )
-                    deletion_mean[token_position] = np.mean(
-                        m.deletion_matrix[:, res_id]
-                    )
+#                 # If main MSA is empty, leave profile and deletion mean as all-zeros
+#                 if n_rows_main_i != 0:
+#                     msa_profile[token_position, :] = (
+#                         calculate_column_counts(
+#                             m.msa[:, res_id], MoleculeType[mol_type]
+#                         )
+#                         / m.msa.shape[0]
+#                     )
+#                     deletion_mean[token_position] = np.mean(
+#                         m.deletion_matrix[:, res_id]
+#                     )
 
-    else:
-        # When there are no protein or RNA chains
-        n_rows = 1
-        n_rows_paired_cropped = 0
-        msa_processed = np.full([n_rows, token_budget], "-")
-        deletion_matrix_processed = np.zeros([n_rows, token_budget])
-        msa_mask = np.zeros([n_rows, token_budget])
-        msa_profile = np.zeros([token_budget, len(STANDARD_RESIDUES_WITH_GAP_1)])
-        deletion_mean = np.zeros(token_budget)
+#     else:
+#         # When there are no protein or RNA chains
+#         n_rows = 1
+#         n_rows_paired_cropped = 0
+#         msa_processed = np.full([n_rows, token_budget], "-")
+#         deletion_matrix_processed = np.zeros([n_rows, token_budget])
+#         msa_mask = np.zeros([n_rows, token_budget])
+#         msa_profile = np.zeros([token_budget, len(STANDARD_RESIDUES_WITH_GAP_1)])
+#         deletion_mean = np.zeros(token_budget)
 
-    return MsaFeaturePrecursorAF3(
-        msa=msa_processed,
-        deletion_matrix=deletion_matrix_processed,
-        metadata=pd.DataFrame(),
-        n_rows_paired=n_rows_paired_cropped + 1,
-        msa_mask=msa_mask,
-        msa_profile=msa_profile,
-        deletion_mean=deletion_mean,
-    )
+#     return MsaFeaturePrecursorAF3(
+#         msa=msa_processed,
+#         deletion_matrix=deletion_matrix_processed,
+#         metadata=pd.DataFrame(),
+#         n_rows_paired=n_rows_paired_cropped + 1,
+#         msa_mask=msa_mask,
+#         msa_profile=msa_profile,
+#         deletion_mean=deletion_mean,
+#     )
