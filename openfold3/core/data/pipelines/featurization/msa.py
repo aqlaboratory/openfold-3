@@ -1,6 +1,7 @@
 """This module contains featurization pipelines for MSAs."""
 
 import torch
+from biotite.structure import AtomArray
 
 from openfold3.core.data.primitives.featurization.msa import (
     create_msa_feature_precursor_af3,
@@ -20,11 +21,24 @@ from openfold3.core.data.resources.residues import (
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-feat")
 def featurize_msa_af3(
-    msa_array_collection: MsaArrayCollection, max_rows: int, subsample_with_bands: bool
+    atom_array: AtomArray,
+    msa_array_collection: MsaArrayCollection,
+    max_rows: int,
+    max_rows_paired: int,
+    token_budget: int,
+    subsample_with_bands: bool,
 ) -> dict[str, torch.Tensor]:
     # Create MsaFeaturePrecursorAF3 <- MSA-to-token mapping and subsampling logic goes
     # here, so [:max_rows, :] should be removed from below
-    msa_feature_precursor = create_msa_feature_precursor_af3()
+    msa_feature_precursor = create_msa_feature_precursor_af3(
+        atom_array=atom_array,
+        msa_array_collection=msa_array_collection,
+        max_rows_paired=max_rows_paired,
+        token_budget=token_budget,
+    )
+
+    if subsample_with_bands:
+        raise NotImplementedError("Subsampling with bands is not implemented yet.")
 
     # Create features
     features = {}

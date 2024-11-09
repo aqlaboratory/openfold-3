@@ -276,7 +276,9 @@ class WeightedPDBDataset(SingleDataset):
         pdb_id = datapoint["pdb_id"]
         preferred_chain_or_interface = datapoint["datapoint"]
         sample_data = self.create_all_features(
-            pdb_id, preferred_chain_or_interface, return_atom_arrays=False
+            pdb_id=pdb_id,
+            preferred_chain_or_interface=preferred_chain_or_interface,
+            return_atom_arrays=False,
         )
         return sample_data["features"]
 
@@ -318,20 +320,22 @@ class WeightedPDBDataset(SingleDataset):
         """Creates the MSA features."""
 
         msa_array_collection = process_msas_af3(
+            pdb_id=pdb_id,
+            atom_array=atom_array_cropped,
+            dataset_cache=self.dataset_cache,
             alignments_directory=self.alignments_directory,
             alignment_db_directory=self.alignment_db_directory,
             alignment_index=self.alignment_index,
-            atom_array=atom_array_cropped,
-            data_cache_entry_chains=self.dataset_cache["structure_data"][pdb_id][
-                "chains"
-            ],
             max_seq_counts=self.msa.max_seq_counts,
-            token_budget=self.token_budget,
+            aln_order=self.msa.aln_order,
             max_rows_paired=self.msa.max_rows_paired,
         )
         msa_features = featurize_msa_af3(
+            atom_array=atom_array_cropped,
             msa_array_collection=msa_array_collection,
             max_rows=self.msa.max_rows,
+            max_rows_paired=self.msa.max_rows_paired,
+            token_budget=self.token_budget,
             subsample_with_bands=self.msa.subsample_with_bands,
         )
 

@@ -74,13 +74,10 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         datapoint = self.datapoint_cache.iloc[index]
         pdb_id = datapoint["pdb_id"]
         preferred_chain_or_interface = datapoint["datapoint"]
-        sample_data = self.create_all_features(
-            index, pdb_id, preferred_chain_or_interface, return_atom_arrays=False
-        )
 
         # Check if datapoint needs to be skipped
         if self.skip_datapoint(pdb_id, preferred_chain_or_interface):
-            return sample_data["features"]
+            return {}
 
         self.logger.info(
             f"Processing datapoint {index}, PDB ID: {pdb_id}, preferred "
@@ -89,7 +86,9 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 
         try:
             sample_data = self.create_all_features(
-                index, pdb_id, preferred_chain_or_interface, return_atom_arrays=True
+                pdb_id=pdb_id,
+                preferred_chain_or_interface=preferred_chain_or_interface,
+                return_atom_arrays=True,
             )
 
             # Fetch recorded runtimes

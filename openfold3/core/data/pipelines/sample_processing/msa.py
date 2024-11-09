@@ -92,21 +92,19 @@ def process_msas_af3(
     # Create dicts with the processed query, paired and main MSA data per chain
     if len(msa_array_collection.rep_id_to_query_seq) > 0:
         # Create query
-        query_seqs = create_query_seqs(msa_array_collection)
+        chain_id_to_query_seq = create_query_seqs(msa_array_collection)
 
         # Determine whether to do pairing
-        is_monomer_homomer = find_monomer_homomer(msa_array_collection)
-
-        if not is_monomer_homomer:
+        if not find_monomer_homomer(msa_array_collection):
             # Create paired UniProt MSA arrays
-            paired_msa_per_chain, paired_msas = create_paired(
+            paired_msa_per_chain, chain_id_to_paired_msa = create_paired(
                 msa_array_collection, max_rows_paired=max_rows_paired
             )
         else:
-            paired_msa_per_chain, paired_msas = None, None
+            paired_msa_per_chain, chain_id_to_paired_msa = None, None
 
         # Create main MSA arrays
-        main_msas = create_main(
+        chain_id_to_main_msa = create_main(
             msa_array_collection=msa_array_collection,
             paired_msa_per_chain=paired_msa_per_chain,
             aln_order=aln_order,
@@ -114,11 +112,13 @@ def process_msas_af3(
 
     # Skip MSA processing if there are no protein or RNA chains
     else:
-        query_seqs, paired_msas, main_msas = {}, {}, {}
+        chain_id_to_query_seq, chain_id_to_paired_msa, chain_id_to_main_msa = {}, {}, {}
 
     # Update MsaArrayCollection with processed MSA data
     msa_array_collection.set_state_processed(
-        query_seqs=query_seqs, paired_msas=paired_msas, main_msas=main_msas
+        chain_id_to_query_seq=chain_id_to_query_seq,
+        chain_id_to_paired_msa=chain_id_to_paired_msa,
+        chain_id_to_main_msa=chain_id_to_main_msa,
     )
 
     return msa_array_collection

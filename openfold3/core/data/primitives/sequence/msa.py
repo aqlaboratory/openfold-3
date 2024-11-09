@@ -101,10 +101,12 @@ class MsaArrayCollection:
             Dict mapping representative chain ID to the number of columns in the MSA.
     """
 
+    # Core attributes
     chain_id_to_rep_id: dict[str, str]
     chain_id_to_mol_type: dict[str, str]
-    num_cols: dict[str, int]
+    num_cols: dict[str, int]  # maybe not needed?
 
+    # State parsed attributes
     rep_id_to_msa: dict[str, dict[str, MsaArray]] = dataclasses.field(
         default_factory=dict
     )
@@ -112,6 +114,7 @@ class MsaArrayCollection:
         default_factory=dict
     )
 
+    # State processed attributes
     chain_id_to_query_seq: dict[str, MsaArray] = dataclasses.field(default_factory=dict)
     chain_id_to_paired_msa: dict[str, MsaArray] = dataclasses.field(
         default_factory=dict
@@ -384,7 +387,7 @@ def get_pairing_masks(
 def find_pairing_indices(
     count_array: np.ndarray[np.int32],
     pairing_masks: np.ndarray[np.bool_],
-    paired_row_cutoff: int,
+    max_rows_paired: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """The main function for finding indices that pair rows in the MSA arrays.
 
@@ -396,7 +399,7 @@ def find_pairing_indices(
             The array of species occurrence counts per chain
         pairing_masks (np.ndarray[np.bool_]):
             The union of all masks to apply during pairing.
-        paired_row_cutoff (int):
+        max_rows_paired (int):
             The maximum number of rows to pair.
 
     Returns:
@@ -445,8 +448,8 @@ def find_pairing_indices(
         count_array_filtered[:, is_in_n_chains] -= min_in_n_chains
 
         # If row cutoff reached, crop final arrays to the row cutoff and break
-        if n_rows >= paired_row_cutoff:
-            n_rows_final = paired_row_cutoff - sum(
+        if n_rows >= max_rows_paired:
+            n_rows_final = max_rows_paired - sum(
                 [rows.shape[0] for rows in paired_species_rows[:-1]]
             )
             paired_species_rows[-1] = paired_species_rows[-1][: n_rows_final + 1, :]

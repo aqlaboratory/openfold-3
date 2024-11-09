@@ -128,11 +128,11 @@ def create_msa_feature_precursor_af3(
             Processed MSA arrays for the crop to featurize.
     """
     # TODO clean up this function
-    if msa_array_collection.query_sequences is not None:
+    if msa_array_collection.chain_id_to_query_seq is not None:
         # Paired MSA rows
-        if msa_array_collection.paired_msas is not None:
-            n_rows_paired = msa_array_collection.paired_msas[
-                next(iter(msa_array_collection.paired_msas))
+        if msa_array_collection.chain_id_to_paired_msa is not None:
+            n_rows_paired = msa_array_collection.chain_id_to_paired_msa[
+                next(iter(msa_array_collection.chain_id_to_paired_msa))
             ].msa.shape[0]
             n_rows_paired_cropped = min(max_rows_paired, n_rows_paired)
         else:
@@ -140,7 +140,8 @@ def create_msa_feature_precursor_af3(
 
         # Main MSA rows
         n_rows_main_per_chain = {
-            k: v.msa.shape[0] for k, v in msa_array_collection.main_msas.items()
+            k: v.msa.shape[0]
+            for k, v in msa_array_collection.chain_id_to_main_msa.items()
         }
         n_rows_main = np.max(list(n_rows_main_per_chain.values()))
         # n_rows_main_cropped = np.min(
@@ -172,12 +173,12 @@ def create_msa_feature_precursor_af3(
         # actually, work, need a way to get token position map
         for chain_id, token_res_map in msa_array_collection.tokens_in_chain.items():
             # Query sequence "MSA"
-            q = msa_array_collection.query_sequences[chain_id]
+            q = msa_array_collection.chain_id_to_query_seq[chain_id]
             # Paired MSA
-            if msa_array_collection.paired_msas is not None:
-                p = msa_array_collection.paired_msas[chain_id]
+            if msa_array_collection.chain_id_to_paired_msa is not None:
+                p = msa_array_collection.chain_id_to_paired_msa[chain_id]
             # Main MSA
-            m = msa_array_collection.main_msas[chain_id]
+            m = msa_array_collection.chain_id_to_main_msa[chain_id]
             n_rows_main_i = n_rows_main_per_chain[chain_id]
 
             mol_type = msa_array_collection.chain_to_mol_type[chain_id]
@@ -193,7 +194,7 @@ def create_msa_feature_precursor_af3(
                 msa_mask[0, token_position] = 1
 
                 # Paired MSA
-                if (msa_array_collection.paired_msas is not None) | (
+                if (msa_array_collection.chain_id_to_paired_msa is not None) | (
                     n_rows_paired_cropped != 0
                 ):
                     msa_processed[1 : 1 + n_rows_paired_cropped, token_position] = (
