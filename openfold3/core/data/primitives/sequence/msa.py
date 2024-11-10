@@ -1,9 +1,11 @@
 """This module contains building blocks for MSA processing."""
 
+from __future__ import annotations
+
 import dataclasses
 import logging
-import math
-from typing import Sequence, Union
+from copy import deepcopy
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -33,35 +35,233 @@ class MsaArray:
 
     msa: np.ndarray[str]
     deletion_matrix: np.ndarray[int]
-    metadata: pd.DataFrame = dataclasses.field(default_factory=pd.DataFrame)
+    metadata: pd.DataFrame | list = dataclasses.field(default_factory=pd.DataFrame)
 
     def __len__(self):
         return self.msa.shape[0]
 
-    def truncate(self, max_seq_count: int) -> None:
+    def truncate(
+        self, row_slice: int | slice, inplace: bool = False
+    ) -> None | MsaArray:
         """Truncate the MSA to a maximum number of sequences.
 
         Args:
-            max_seq_count (int): Number of sequences to keep in the MSA.
+            row_slice (int | slice):
+                Number of sequences to keep in the MSA or a slice object applied along
+                the first axis of the MSA numpy array/metadata DataFrame.
 
         Returns:
             None
         """
-
-        if not isinstance(max_seq_count, int) | (max_seq_count == math.inf):
-            raise ValueError("max_seq_count should be an integer or math.inf.")
-
-        if self.__len__() > max_seq_count:
-            if max_seq_count == math.inf:
-                max_seq_count = self.__len__()
-
-            self.msa = self.msa[:max_seq_count, :]
-            self.deletion_matrix = self.deletion_matrix[:max_seq_count, :]
-            self.metadata = (
-                self.metadata[:max_seq_count]
-                if isinstance(self.metadata, list)
-                else self.metadata.iloc[: (max_seq_count - 1)]
+        # Convert to slice
+        if isinstance(row_slice, int):
+            row_slice = slice(row_slice)
+        elif not isinstance(row_slice, slice):
+            ValueError(
+                "Argument max_seq_count should be an integer or a slice."
+                f"but got {type(row_slice)}."
             )
+
+        # Make sure the slice is within the bounds
+        row_slice = slice(min(row_slice.stop, self.__len__()))
+
+        # Truncate
+        if inplace:
+            self.msa = self.msa[row_slice, :]
+            self.deletion_matrix = self.deletion_matrix[row_slice, :]
+            if isinstance(self.metadata, pd.DataFrame):
+                self.metadata = self.metadata.iloc[row_slice]
+            else:
+                self.metadata = self.metadata[row_slice]
+            return None
+        else:
+            return MsaArray(
+                msa=self.msa[row_slice, :],
+                deletion_matrix=self.deletion_matrix[row_slice, :],
+                metadata=self.metadata.iloc[row_slice]
+                if isinstance(self.metadata, pd.DataFrame)
+                else self.metadata[row_slice],
+            )
+
+    def concatenate(
+        self, msa_array: MsaArray, axis: int, inplace: bool = False
+    ) -> MsaArray:
+        """Concatenate the MsaArray with other MsaArrays.
+
+        Note: concatenation does not keep metadata and replaces it with
+        an empty DataFrame.
+
+        Args:
+            msa_array (MsaArray):
+                The MsaArray object to concatenate with the current MsaArray.
+            axis (int):
+                The axis along which to concatenate the MSA arrays.
+            inplace (bool, optional):
+                Whether to perform the operation in place. Defaults to False.
+
+        Returns:
+            MsaArray:
+                A new MsaArray object containing the concatenated MSA arrays.
+        """
+        if axis not in (0, 1):
+            raise ValueError("Axis must be 0 (rows) or 1 (columns).")
+
+        if axis == 0:
+            if self.msa.shape[1] != msa_array.msa.shape[1]:
+                raise ValueError(
+                    "Cannot concatenate along axis 0: number of columns in msa do "
+                    "not match."
+                    f"({self.msa.shape[1]} != {msa_array.msa.shape[1]})"
+                )
+            concat_fn = np.vstack
+        else:
+            if self.msa.shape[0] != msa_array.msa.shape[0]:
+                raise ValueError(
+                    "Cannot concatenate along axis 0: number of columns in msa do "
+                    "not match."
+                    f"({self.msa.shape[0]} != {msa_array.msa.shape[0]})"
+                )
+            concat_fn = np.hstack
+
+        if inplace:
+            self.msa = concat_fn([self.msa, msa_array.msa])
+            self.deletion_matrix = concat_fn(
+                [self.deletion_matrix, msa_array.deletion_matrix]
+            )
+            self.metadata = pd.DataFrame()
+        else:
+            return MsaArray(
+                msa=concat_fn([self.msa, msa_array.msa]),
+                deletion_matrix=concat_fn(
+                    [self.deletion_matrix, msa_array.deletion_matrix]
+                ),
+                metadata=pd.DataFrame(),
+            )
+
+    def pad(
+        self,
+        target_length: int,
+        axis: int,
+        pad_value: str = "-",
+        return_mask: bool = True,
+        inplace: bool = False,
+    ) -> MsaArray | None | tuple[MsaArray | None, np.ndarray]:
+        """Pad the MsaArray.
+
+        Note: Only the msa and deletion matrix is padded, not the metadata. Padding when
+        target_length is less than the array size is not supported. If the array
+        dimension changes after padding, metadata is replaced with an empty DataFrame.
+
+        Args:
+            target_length (int):
+                The target length of the MSA array along the specified axis.
+            axis (int):
+                The axis along which to pad the MSA array.
+            pad_value (str, optional):
+                The value to use for padding the msa. Defaults to "-". The deletion
+                matrix is always padded with 0s.
+            return_mask (bool, optional):
+                Whether to return a mask indicating the padded regions. Defaults to
+                True.
+            inplace (bool, optional):
+                Whether to perform the operation in place. Defaults to False.
+
+        Returns:
+            "MsaArray" | None | tuple["MsaArray" | None, np.ndarray]:
+                If inplace is True, returns None. Otherwise, returns a new MsaArray
+                object with the padded MSA arrays. If return_mask is True, also returns
+                a mask indicating the padded regions.
+        """
+        current_size = self.msa.shape[axis]
+        pad_width = target_length - current_size
+
+        # Error if padding is negative
+        if pad_width < 0:
+            raise ValueError(
+                f"MsaArray of shape {self.msa.shape} cannot be padded to "
+                f"a smaller size {target_length} along axis {axis}."
+            )
+
+        # Return unmodified array if no padding is needed
+        elif pad_width == 0:
+            if inplace:
+                if return_mask:
+                    return None, np.ones(self.msa.shape, dtype=int)
+                else:
+                    return None
+            else:
+                msa_array_padded = MsaArray(
+                    msa=self.msa.copy(),
+                    deletion_matrix=self.deletion_matrix.copy(),
+                    metadata=deepcopy(self.metadata),
+                )
+                if return_mask:
+                    mask = np.ones(self.msa.shape, dtype=int)
+                    return msa_array_padded, mask
+                else:
+                    return msa_array_padded
+
+        # Actually pad
+        else:
+            pad_widths = [(0, 0)] * self.msa.ndim
+            pad_widths[axis] = (0, pad_width)
+            if inplace:
+                self.msa = np.pad(
+                    self.msa,
+                    pad_widths,
+                    mode="constant",
+                    constant_values=pad_value,
+                )
+                self.deletion_matrix = np.pad(
+                    self.deletion_matrix,
+                    pad_widths,
+                    mode="constant",
+                    constant_values=0,
+                )
+                self.metadata = pd.DataFrame()
+                if return_mask:
+                    mask = self._make_padding_mask(self.msa, axis, current_size)
+                    return None, mask
+                else:
+                    return None
+
+            else:
+                padded_msa = np.pad(
+                    self.msa,
+                    pad_widths,
+                    mode="constant",
+                    constant_values=pad_value,
+                )
+                padded_deletion_matrix = np.pad(
+                    self.deletion_matrix,
+                    pad_widths,
+                    mode="constant",
+                    constant_values=0,
+                )
+                msa_array_padded = MsaArray(
+                    msa=padded_msa,
+                    deletion_matrix=padded_deletion_matrix,
+                    metadata=pd.DataFrame(),
+                )
+                if return_mask:
+                    mask = self._make_padding_mask(padded_msa, axis, current_size)
+                    return msa_array_padded, mask
+                else:
+                    return msa_array_padded
+
+    def _make_padding_mask(
+        self, padded_msa: np.ndarray, axis: int, current_size: int
+    ) -> np.ndarray:
+        """Makes mask for the padded MSA."""
+        # Init mask
+        mask = np.ones(padded_msa.shape, dtype=int)
+        # Create slice that selects full array
+        indexer = [slice(None)] * padded_msa.ndim
+        # Replace with slice for padded region from the unpadded size to the end of the
+        # padding and replace with 0s
+        indexer[axis] = slice(current_size, None)
+        mask[tuple(indexer)] = 0
+        return mask
 
 
 @dataclasses.dataclass(frozen=False)
@@ -172,7 +372,7 @@ def create_query_seqs(msa_collection: MsaArrayCollection) -> dict[int, MsaArray]
     """Extracts and expands the query sequences and deletion matrices.
 
     Args:
-        msa_collection (MsaCollection):
+        msa_collection (MsaArrayCollection):
             A collection of Msa objects and chain IDs for a single sample.
 
     Returns:
@@ -622,7 +822,7 @@ def create_paired(
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-main")
 def create_main(
     msa_array_collection: MsaArrayCollection,
-    paired_msa_per_chain: Union[dict[str, MsaArray], None],
+    paired_msa_per_chain: dict[str, MsaArray] | None,
     aln_order: list[str],
 ) -> dict[str, MsaArray]:
     """Creates main MSA arrays from non-UniProt MSAs.

@@ -101,7 +101,7 @@ def process_msas_af3(
                 msa_array_collection, max_rows_paired=max_rows_paired
             )
         else:
-            paired_msa_per_chain, chain_id_to_paired_msa = None, None
+            paired_msa_per_chain, chain_id_to_paired_msa = None, {}
 
         # Create main MSA arrays
         chain_id_to_main_msa = create_main(

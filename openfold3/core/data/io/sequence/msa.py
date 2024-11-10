@@ -311,7 +311,7 @@ def parse_msas_sample(
 
     # Map chain IDs to representative IDs and molecule types
     chain_id_to_rep_id = {}
-    chain_to_mol_type = {}
+    chain_id_to_mol_type = {}
     for chain_id_in_atom_array in list(set(atom_array_with_alignments.chain_id)):
         chain_data = dataset_cache["structure_data"][pdb_id]["chains"][
             chain_id_in_atom_array
@@ -319,7 +319,7 @@ def parse_msas_sample(
         chain_id_to_rep_id[chain_id_in_atom_array] = chain_data[
             "alignment_representative_id"
         ]
-        chain_to_mol_type[chain_id_in_atom_array] = chain_data["molecule_type"]
+        chain_id_to_mol_type[chain_id_in_atom_array] = chain_data["molecule_type"]
 
     # Parse MSAs for each representative ID
     rep_id_to_msa, rep_id_to_query_seq, num_cols = {}, {}, {}
@@ -348,13 +348,13 @@ def parse_msas_sample(
             example_msa = all_msas_per_chain[next(iter(all_msas_per_chain))].msa
             if rep_id not in rep_id_to_msa:
                 rep_id_to_msa[rep_id] = all_msas_per_chain
-                rep_id_to_query_seq[rep_id] = example_msa[0, :]
+                rep_id_to_query_seq[rep_id] = example_msa[0, :][np.newaxis, :]
                 num_cols[rep_id] = example_msa.shape[1]
 
     # Set msa collection to parsed, will be empty if no protein or RNA chains
     msa_array_collection = MsaArrayCollection(
         chain_id_to_rep_id=chain_id_to_rep_id,
-        chain_id_to_mol_type=chain_to_mol_type,
+        chain_id_to_mol_type=chain_id_to_mol_type,
         num_cols=num_cols,
     )
     msa_array_collection.set_state_parsed(

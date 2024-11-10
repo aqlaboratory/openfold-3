@@ -3,14 +3,13 @@
 import dataclasses
 
 import numpy as np
-import pandas as pd
 from biotite.structure import AtomArray
 
 from openfold3.core.data.primitives.featurization.structure import get_token_starts
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
-from openfold3.core.data.primitives.sequence.msa import MsaArrayCollection
+from openfold3.core.data.primitives.sequence.msa import MsaArray, MsaArrayCollection
 from openfold3.core.data.resources.residues import (
     MOLECULE_TYPE_TO_ARGSORT_RESIDUES_1,
     MOLECULE_TYPE_TO_RESIDUES_1,
@@ -50,7 +49,37 @@ class MsaFeaturePrecursorAF3:
     deletion_mean: np.ndarray
 
 
-def calculate_column_counts(msa_col: np.ndarray, mol_type: MoleculeType) -> np.ndarray:
+def calculate_row_counts(
+    msa_array_collection: MsaArrayCollection, max_rows: int, max_rows_paired: int
+) -> tuple[int, int, bool, bool]:
+    if len(msa_array_collection.chain_id_to_query_seq) != 0:
+        # Paired MSA rows
+        if len(msa_array_collection.chain_id_to_paired_msa) != 0:
+            n_rows_paired = next(
+                iter(msa_array_collection.chain_id_to_paired_msa.values())
+            ).msa.shape[0]
+            n_rows_paired_cropped = min(max_rows_paired, n_rows_paired)
+        else:
+            n_rows_paired = 0
+            n_rows_paired_cropped = 0
+
+        # Main MSA rows
+        n_rows_main = max(
+            [v.msa.shape[0] for v in msa_array_collection.chain_id_to_main_msa.values()]
+        )
+
+        # Combine
+        n_rows = min([1 + n_rows_paired_cropped + n_rows_main, max_rows])
+
+    paired_exists = len(msa_array_collection.chain_id_to_paired_msa) != 0
+    main_exists = len(msa_array_collection.chain_id_to_main_msa) != 0
+
+    return n_rows, n_rows_paired_cropped, paired_exists, main_exists
+
+
+def calculate_profile_per_column(
+    msa_array: np.ndarray, mol_type: MoleculeType
+) -> np.ndarray:
     """Calculates the counts of residues in an MSA column.
 
     Args:
@@ -64,6 +93,8 @@ def calculate_column_counts(msa_col: np.ndarray, mol_type: MoleculeType) -> np.n
             The counts of residues in the column indexed by the
             STANDARD_RESIDUES_WITH_GAP_1 alphabet.
     """
+    n_col = msa_array.shape[1]
+
     # Get correct sub-alphabet, unknown residuem and sort indices for the molecule type
     mol_alphabet = MOLECULE_TYPE_TO_RESIDUES_1[mol_type]
     mol_alphabet_sort_ids = MOLECULE_TYPE_TO_ARGSORT_RESIDUES_1[mol_type]
@@ -71,38 +102,138 @@ def calculate_column_counts(msa_col: np.ndarray, mol_type: MoleculeType) -> np.n
     res_unknown = MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_1[mol_type]
 
     # Get unique residues and counts
-    res_unique, res_unique_counts = np.unique(msa_col, return_counts=True)
+    res_full_alphabet_counts = np.zeros(
+        [n_col, len(STANDARD_RESIDUES_WITH_GAP_1)], dtype=int
+    )
+    for col_idx in range(n_col):
+        col = msa_array[:, col_idx]
+        res_unique, res_unique_counts = np.unique(col, return_counts=True, axis=0)
 
-    # Find which residues are in the molecule alphabet and counts for unknown residues
-    res_mol_alphabet_counts = np.zeros(len(mol_alphabet), dtype=int)
-    is_in_alphabet = np.isin(res_unique, mol_alphabet)
-    res_in_alphabet = res_unique[is_in_alphabet]
-    res_unknown_counts = res_unique_counts[~is_in_alphabet]
+        # Find which residues are in the molecule alphabet and counts for unknown
+        # residues
+        res_mol_alphabet_counts = np.zeros(len(mol_alphabet), dtype=int)
+        is_in_alphabet = np.isin(res_unique, mol_alphabet)
+        res_in_alphabet = res_unique[is_in_alphabet]
+        res_unknown_counts = res_unique_counts[~is_in_alphabet]
 
-    # Get indices of residues in and missing from alphabet and "un-sort" them
-    id_res_in_alphabet = mol_alphabet_sort_ids[
-        np.searchsorted(mol_alphabet_sorted, res_in_alphabet)
-    ]
-    id_res_unknown = mol_alphabet_sort_ids[
-        np.searchsorted(mol_alphabet_sorted, res_unknown)
-    ]
+        # Get indices of residues in and missing from alphabet and "un-sort" them
+        id_res_in_alphabet = mol_alphabet_sort_ids[
+            np.searchsorted(mol_alphabet_sorted, res_in_alphabet)
+        ]
+        id_res_unknown = mol_alphabet_sort_ids[
+            np.searchsorted(mol_alphabet_sorted, res_unknown)
+        ]
 
-    # Assign counts to each character in the un-sorted alphabet
-    res_mol_alphabet_counts[id_res_in_alphabet] = res_unique_counts[is_in_alphabet]
-    res_mol_alphabet_counts[id_res_unknown] += np.sum(res_unknown_counts)
+        # Assign counts to each character in the un-sorted alphabet
+        res_mol_alphabet_counts[id_res_in_alphabet] = res_unique_counts[is_in_alphabet]
+        res_mol_alphabet_counts[id_res_unknown] += np.sum(res_unknown_counts)
 
-    # Map molecule alphabet counts to the full residue alphabet
-    res_full_alphabet_counts = np.zeros(len(STANDARD_RESIDUES_WITH_GAP_1), dtype=int)
-    molecule_alphabet_indices = MOLECULE_TYPE_TO_RESIDUES_POS[mol_type]
-    res_full_alphabet_counts[molecule_alphabet_indices] = res_mol_alphabet_counts
+        # Map molecule alphabet counts to the full residue alphabet
+        molecule_alphabet_indices = MOLECULE_TYPE_TO_RESIDUES_POS[mol_type]
+        res_full_alphabet_counts[col_idx, molecule_alphabet_indices] = (
+            res_mol_alphabet_counts
+        )
 
-    return res_full_alphabet_counts
+    return res_full_alphabet_counts / msa_array.shape[0]
+
+
+def calculate_profile(
+    msa_array_collection: MsaArrayCollection,
+    chain_id: str,
+    main_exists: bool,
+    profile_all: np.ndarray,
+    del_mean_all: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    if main_exists:
+        profile = calculate_profile_per_column(
+            msa_array_collection.chain_id_to_main_msa[chain_id].msa,
+            MoleculeType[msa_array_collection.chain_id_to_mol_type[chain_id]],
+        )
+        del_mean = np.mean(
+            msa_array_collection.chain_id_to_main_msa[chain_id].deletion_matrix, axis=0
+        )
+    else:
+        profile = np.zeros(
+            msa_array_collection.chain_id_to_main_msa[chain_id].msa.shape[1],
+            len(STANDARD_RESIDUES_WITH_GAP_1),
+        )
+        del_mean = np.zeros(
+            msa_array_collection.chain_id_to_main_msa[chain_id].msa.shape[1]
+        )
+
+    return np.concatenate([profile_all, profile]), np.concatenate(
+        [del_mean_all, del_mean]
+    )
+
+
+def crop_vstack_msa_arrays(
+    msa_array_collection: MsaArrayCollection,
+    chain_id: str,
+    n_rows: int,
+    n_rows_paired_cropped: int,
+    paired_exists: bool,
+    main_exists: bool,
+) -> MsaArray:
+    msa_array_vstack = msa_array_collection.chain_id_to_query_seq[chain_id]
+    if paired_exists:
+        msa_array_paired_cropped = msa_array_collection.chain_id_to_paired_msa[
+            chain_id
+        ].truncate(n_rows_paired_cropped)
+        msa_array_vstack = msa_array_vstack.concatenate(
+            msa_array_paired_cropped, axis=0
+        )
+
+    # This is where the BANDED subsampling logic will go optionally
+    if main_exists:
+        msa_array_vstack = msa_array_vstack.concatenate(
+            msa_array_collection.chain_id_to_main_msa[chain_id].truncate(
+                n_rows - (n_rows_paired_cropped + 1)
+            ),
+            axis=0,
+        )
+
+    return msa_array_vstack
+
+
+def map_msas_to_tokens(
+    msa_array_all: MsaArray,
+    msa_masks_all: np.ndarray[int],
+    profile_all: np.ndarray[float],
+    del_mean_all: np.ndarray[float],
+    token_positions_all: np.ndarray[int],
+    n_rows: int,
+    n_rows_paired_cropped: int,
+    token_budget: int,
+) -> MsaFeaturePrecursorAF3:
+    # Pre-allocate containers
+    msa_tokenized = np.full([n_rows, token_budget], "-")
+    deletion_matrix_tokenized = np.zeros([n_rows, token_budget])
+    msa_mask_tokenized = np.zeros([n_rows, token_budget])
+    profile_tokenized = np.zeros([token_budget, len(STANDARD_RESIDUES_WITH_GAP_1)])
+    del_mean_tokenized = np.zeros(token_budget)
+
+    # Map MSA arrays to tokens
+    msa_tokenized[:, token_positions_all] = msa_array_all.msa
+    deletion_matrix_tokenized[:, token_positions_all] = msa_array_all.deletion_matrix
+    msa_mask_tokenized[:, token_positions_all] = msa_masks_all
+    profile_tokenized[token_positions_all] = profile_all
+    del_mean_tokenized[token_positions_all] = del_mean_all
+
+    return MsaFeaturePrecursorAF3(
+        msa=msa_tokenized,
+        deletion_matrix=deletion_matrix_tokenized,
+        n_rows_paired=n_rows_paired_cropped,
+        msa_mask=msa_mask_tokenized,
+        msa_profile=profile_tokenized,
+        deletion_mean=del_mean_tokenized,
+    )
 
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-apply-crop")
 def create_msa_feature_precursor_af3(
     atom_array: AtomArray,
     msa_array_collection: MsaArrayCollection,
+    max_rows: int,
     max_rows_paired: int,
     token_budget: int,
 ) -> MsaFeaturePrecursorAF3:
@@ -127,127 +258,88 @@ def create_msa_feature_precursor_af3(
         MsaProcessed:
             Processed MSA arrays for the crop to featurize.
     """
-    # TODO clean up this function
-    if msa_array_collection.chain_id_to_query_seq is not None:
-        # Paired MSA rows
-        if msa_array_collection.chain_id_to_paired_msa is not None:
-            n_rows_paired = msa_array_collection.chain_id_to_paired_msa[
-                next(iter(msa_array_collection.chain_id_to_paired_msa))
-            ].msa.shape[0]
-            n_rows_paired_cropped = min(max_rows_paired, n_rows_paired)
-        else:
-            n_rows_paired_cropped = 0
 
-        # Main MSA rows
-        n_rows_main_per_chain = {
-            k: v.msa.shape[0]
-            for k, v in msa_array_collection.chain_id_to_main_msa.items()
-        }
-        n_rows_main = np.max(list(n_rows_main_per_chain.values()))
-        # n_rows_main_cropped = np.min(
-        #     [max_rows - (n_rows_paired_cropped + 1), n_rows_main]
-        # )
-        # n_rows_main_cropped_per_chain = [np.min([n_rows_main_cropped, i])
-        # for i in n_rows_main_per_chain.values()]
+    # fetch rowcounts
+    if len(msa_array_collection.chain_id_to_query_seq) != 0:
+        n_rows, n_rows_paired_cropped, paired_exists, main_exists = (
+            calculate_row_counts(msa_array_collection, max_rows, max_rows_paired)
+        )
 
-        # Processed MSA rows
-        n_rows = (
-            1 + n_rows_paired_cropped + n_rows_main
-        )  # instead of n_rows_main_cropped
-        msa_processed = np.full([n_rows, token_budget], "-")
-        deletion_matrix_processed = np.zeros([n_rows, token_budget])
-        msa_mask = np.zeros([n_rows, token_budget])
-        msa_profile = np.zeros([token_budget, len(STANDARD_RESIDUES_WITH_GAP_1)])
-        deletion_mean = np.zeros(token_budget)
+        # Pre-allocate containers
+        msa_array_all = MsaArray(
+            msa=np.empty((n_rows, 0), dtype=str),
+            deletion_matrix=np.empty((n_rows, 0), dtype=str),
+        )
+        msa_masks_all = np.empty((n_rows, 0), dtype=int)
+        token_positions_all = np.empty((0,), dtype=int)
+        profile_all = np.empty((0, len(STANDARD_RESIDUES_WITH_GAP_1)), dtype=int)
+        del_mean_all = np.empty((0,), dtype=int)
 
-        # Token ID -> token position map
-        # TODO rework with token_position annotation
-        token_starts = get_token_starts(atom_array)
-        token_positions = {
-            token: position
-            for position, token in enumerate(atom_array[token_starts].token_id)
-        }
+        # Process each chain
+        for chain_id in msa_array_collection.chain_id_to_rep_id:
+            # Calculate profile and del mean for chain across all main columns
+            profile_all, del_mean_all = calculate_profile(
+                msa_array_collection, chain_id, main_exists, profile_all, del_mean_all
+            )
 
-        # Assign sequence data to corresponding processed MSA slices
-        # !!! msa_array_collection.tokens_in_chain.items() doesn't
-        # actually, work, need a way to get token position map
-        for chain_id, token_res_map in msa_array_collection.tokens_in_chain.items():
-            # Query sequence "MSA"
-            q = msa_array_collection.chain_id_to_query_seq[chain_id]
-            # Paired MSA
-            if msa_array_collection.chain_id_to_paired_msa is not None:
-                p = msa_array_collection.chain_id_to_paired_msa[chain_id]
-            # Main MSA
-            m = msa_array_collection.chain_id_to_main_msa[chain_id]
-            n_rows_main_i = n_rows_main_per_chain[chain_id]
+            # Crop and vertically stack query, paired MSA and main MSA arrays
+            msa_array_vstack = crop_vstack_msa_arrays(
+                msa_array_collection,
+                chain_id,
+                n_rows,
+                n_rows_paired_cropped,
+                paired_exists,
+                main_exists,
+            )
 
-            mol_type = msa_array_collection.chain_to_mol_type[chain_id]
+            # Pad bottom of stacked MSA to max(1 + n paired + n main) across all chains
+            # and use padding to also create MSA mask for the chain
+            msa_array_vstack, msa_array_vstack_mask = msa_array_vstack.pad(
+                target_length=n_rows, axis=0
+            )
 
-            # Iterate over protein/RNA tokens in the crop
-            for token_id, res_id in token_res_map.items():
-                # Get token column index in the processed MSA
-                token_position = token_positions[token_id]
-                # Assign row/col slice to the processed MSA slice
-                # Query sequence
-                msa_processed[0, token_position] = q.msa[res_id]
-                deletion_matrix_processed[0, token_position] = q.deletion_matrix[res_id]
-                msa_mask[0, token_position] = 1
+            # Get token positions from the atomarray of the chain
+            atom_array_chain = atom_array[atom_array.chain_id == chain_id]
+            chain_token_starts = get_token_starts(atom_array_chain)
+            chain_token_positions = atom_array_chain[chain_token_starts].token_position
 
-                # Paired MSA
-                if (msa_array_collection.chain_id_to_paired_msa is not None) | (
-                    n_rows_paired_cropped != 0
-                ):
-                    msa_processed[1 : 1 + n_rows_paired_cropped, token_position] = (
-                        p.msa[:n_rows_paired_cropped, res_id]
-                    )
-                    deletion_matrix_processed[
-                        1 : 1 + n_rows_paired_cropped, token_position
-                    ] = p.deletion_matrix[:n_rows_paired_cropped, res_id]
-                    msa_mask[1 : 1 + n_rows_paired_cropped, token_position] = 1
+            # Horizontally stack along all chains
+            msa_array_all = msa_array_all.concatenate(msa_array_vstack, axis=1)
+            msa_masks_all = np.concatenate(
+                [msa_masks_all, msa_array_vstack_mask], axis=1
+            )
+            token_positions_all = np.concatenate(
+                [token_positions_all, chain_token_positions]
+            )
 
-                # Main MSA
-                row_offset_main = 1 + n_rows_paired_cropped
-                msa_processed[
-                    row_offset_main : row_offset_main + n_rows_main_i,
-                    token_position,
-                ] = m.msa[:, res_id]
-                deletion_matrix_processed[
-                    row_offset_main : row_offset_main + n_rows_main_i,
-                    token_position,
-                ] = m.deletion_matrix[:, res_id]
-                msa_mask[
-                    row_offset_main : row_offset_main + n_rows_main_i,
-                    token_position,
-                ] = 1
+            del [
+                msa_array_vstack,
+                msa_array_vstack_mask,
+                chain_token_positions,
+                atom_array_chain,
+            ]
 
-                # If main MSA is empty, leave profile and deletion mean as all-zeros
-                if n_rows_main_i != 0:
-                    msa_profile[token_position, :] = (
-                        calculate_column_counts(
-                            m.msa[:, res_id], MoleculeType[mol_type]
-                        )
-                        / m.msa.shape[0]
-                    )
-                    deletion_mean[token_position] = np.mean(
-                        m.deletion_matrix[:, res_id]
-                    )
+        # Map all arrays from horizontal stack to tokens
+        msa_feature_precursor = map_msas_to_tokens(
+            msa_array_all,
+            msa_masks_all,
+            profile_all,
+            del_mean_all,
+            token_positions_all,
+            n_rows,
+            n_rows_paired_cropped,
+            token_budget,
+        )
 
     else:
         # When there are no protein or RNA chains
-        n_rows = 1
-        n_rows_paired_cropped = 0
-        msa_processed = np.full([n_rows, token_budget], "-")
-        deletion_matrix_processed = np.zeros([n_rows, token_budget])
-        msa_mask = np.zeros([n_rows, token_budget])
-        msa_profile = np.zeros([token_budget, len(STANDARD_RESIDUES_WITH_GAP_1)])
-        deletion_mean = np.zeros(token_budget)
+        msa_feature_precursor = MsaFeaturePrecursorAF3(
+            msa=np.full([n_rows, token_budget], "-"),
+            deletion_matrix=np.zeros([n_rows, token_budget]),
+            n_rows_paired=0,
+            msa_mask=np.zeros([n_rows, token_budget]),
+            msa_profile=np.zeros([token_budget, len(STANDARD_RESIDUES_WITH_GAP_1)]),
+            deletion_mean=np.zeros(token_budget),
+        )
 
-    return MsaFeaturePrecursorAF3(
-        msa=msa_processed,
-        deletion_matrix=deletion_matrix_processed,
-        metadata=pd.DataFrame(),
-        n_rows_paired=n_rows_paired_cropped + 1,
-        msa_mask=msa_mask,
-        msa_profile=msa_profile,
-        deletion_mean=deletion_mean,
-    )
+    return msa_feature_precursor
