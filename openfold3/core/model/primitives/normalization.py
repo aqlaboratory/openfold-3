@@ -65,7 +65,7 @@ class LayerNorm(nn.Module):
         deepspeed_is_initialized = (
             deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
         )
-        use_fast_layer_norm = fa_is_installed and x.is_cuda
+        use_fast_layer_norm = all([fa_is_installed, x.is_cuda, self.weight is not None])
 
         if d is torch.bfloat16 and not deepspeed_is_initialized:
             with torch.amp.autocast("cuda", enabled=False):
