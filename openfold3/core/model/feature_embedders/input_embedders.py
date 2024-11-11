@@ -18,7 +18,7 @@ Embedders for input features. Includes InputEmbedders for monomer, multimer, sol
 and all-atom models. Also includes the RecyclingEmbedder and ExtraMSAEmbedder.
 """
 
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -494,7 +494,10 @@ class InputEmbedderAllAtom(nn.Module):
         )
 
     def forward(
-        self, batch: Dict, inplace_safe: bool = False
+        self,
+        batch: Dict,
+        inplace_safe: bool = False,
+        use_deepspeed_evo_attention: Optional[bool] = False,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -509,6 +512,8 @@ class InputEmbedderAllAtom(nn.Module):
                 [*, N_token, C_s] Single representation
             z:
                 [*, N_token, N_token, C_z] Pair representation
+            use_deepspeed_evo_attention:
+                Whether to use DeepSpeed Evo Attention kernel
         """
         atom_mask = broadcast_token_feat_to_atoms(
             token_mask=batch["token_mask"],
@@ -516,7 +521,11 @@ class InputEmbedderAllAtom(nn.Module):
             token_feat=batch["token_mask"],
         )
 
-        a, _, _, _ = self.atom_attn_enc(batch=batch, atom_mask=atom_mask)
+        a, _, _, _ = self.atom_attn_enc(
+            batch=batch,
+            atom_mask=atom_mask,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+        )
 
         # [*, N_token, C_s_input]
         s_input = torch.cat(

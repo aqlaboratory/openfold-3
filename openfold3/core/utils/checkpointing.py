@@ -20,18 +20,23 @@ import torch.utils.checkpoint
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
     import deepspeed
+    from deepspeed.runtime.activation_checkpointing.checkpointing import (
+        non_reentrant_checkpoint as ds_non_reentrant_checkpoint,
+    )
 
 
 BLOCK_ARG = Any
 BLOCK_ARGS = Sequence[BLOCK_ARG]
 
 
-def get_checkpoint_fn(use_reentrant: Optional[bool] = None):
-    deepspeed_is_configured = (
-        deepspeed_is_installed and deepspeed.checkpointing.is_configured()
-    )
-    if deepspeed_is_configured and use_reentrant is None:
-        checkpoint = deepspeed.checkpointing.checkpoint
+def get_checkpoint_fn(
+    deepspeed_is_configured: bool, use_reentrant: Optional[bool] = None
+):
+    if deepspeed_is_configured:
+        if use_reentrant is False:
+            checkpoint = ds_non_reentrant_checkpoint
+        else:
+            checkpoint = deepspeed.checkpointing.checkpoint
     else:
         checkpoint = torch.utils.checkpoint.checkpoint
 
@@ -90,15 +95,21 @@ def checkpoint_blocks(
     elif blocks_per_ckpt < 1 or blocks_per_ckpt > len(blocks):
         raise ValueError("blocks_per_ckpt must be between 1 and len(blocks)")
 
-    checkpoint = get_checkpoint_fn(use_reentrant=use_reentrant)
+    deepspeed_is_configured = (
+        deepspeed_is_installed and deepspeed.checkpointing.is_configured()
+    )
+
+    checkpoint = get_checkpoint_fn(
+        deepspeed_is_configured=deepspeed_is_configured, use_reentrant=use_reentrant
+    )
 
     for s in range(0, len(blocks), blocks_per_ckpt):
         e = s + blocks_per_ckpt
 
-        if use_reentrant is not None:
-            args = checkpoint(chunker(s, e), *args, use_reentrant=use_reentrant)
-        else:
+        if deepspeed_is_configured:
             args = checkpoint(chunker(s, e), *args)
+        else:
+            args = checkpoint(chunker(s, e), *args, use_reentrant=use_reentrant)
 
         args = wrap(args)
 
@@ -142,11 +153,17 @@ def checkpoint_section(
     if not apply_ckpt or not torch.is_grad_enabled():
         return exec(fn, args)
 
-    checkpoint = get_checkpoint_fn(use_reentrant=use_reentrant)
+    deepspeed_is_configured = (
+        deepspeed_is_installed and deepspeed.checkpointing.is_configured()
+    )
 
-    if use_reentrant is not None:
-        args = checkpoint(fn, *args, use_reentrant=use_reentrant)
-    else:
+    checkpoint = get_checkpoint_fn(
+        deepspeed_is_configured=deepspeed_is_configured, use_reentrant=use_reentrant
+    )
+
+    if deepspeed_is_configured:
         args = checkpoint(fn, *args)
+    else:
+        args = checkpoint(fn, *args, use_reentrant=use_reentrant)
 
     return args

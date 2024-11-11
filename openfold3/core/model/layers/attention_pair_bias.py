@@ -165,22 +165,24 @@ class AttentionPairBias(nn.Module):
         batch_dims = z.shape[:-3]
         feat_dim = z.shape[-1]
 
-        # [*, no_heads, N, N]
+        # [*, C_z, N, N]
         z = permute_final_dims(z, [2, 0, 1])
 
         z = z + mask_bias
         layout = layout[None].tile((feat_dim, 1, 1)).long()
 
+        # [*, num_blocks, C_z, block_size, block_size]
         z = sparsify_tensor(z, layout, self.block_size, batch_dims=batch_dims).reshape(
             *batch_dims, -1, feat_dim, self.block_size, self.block_size
         )
 
-        # [*, N, N, C_z]
+        # [*, num_blocks, block_size, block_size, C_z]
         z = self.layer_norm_z(permute_final_dims(z, [1, 2, 0]))
 
-        # [*, N, N, no_heads]
+        # [*, num_blocks, block_size, block_size, no_heads]
         z = self.linear_z(z)
 
+        # [*, num_blocks *  no_heads, block_size, block_size]
         z = permute_final_dims(z, [2, 0, 1]).reshape(
             *batch_dims, -1, self.block_size, self.block_size
         )
@@ -274,6 +276,18 @@ class AttentionPairBias(nn.Module):
             [*, N, C_q] attention updated token or atom-level embedding
         """
         a = self.layer_norm_a(a, s) if self.use_ada_layer_norm else self.layer_norm_a(a)
+
+        # TODO: Make this less awkward, DS kernel has strict shape asserts
+        #  and expects the mask to be tiled to the correct shape
+        reshape_mask = all(
+            [
+                not self.use_block_sparse_attn,
+                use_deepspeed_evo_attention,
+                a.shape[1] != mask.shape[1],
+            ]
+        )
+        if reshape_mask:
+            mask = mask.tile((1, a.shape[1], 1))
 
         if self.use_block_sparse_attn:
             biases = self._prep_sparse_bias(a=a, z=z, layout=layout, mask=mask)

@@ -218,6 +218,7 @@ class AtomTransformer(nn.Module):
         plm: torch.Tensor,
         atom_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
+        use_deepspeed_evo_attention: Optional[bool] = False,
     ):
         """
         Args:
@@ -231,6 +232,8 @@ class AtomTransformer(nn.Module):
                 [*, N_atom] Atom mask
             chunk_size:
                 Inference-time subbatch size
+            use_deepspeed_evo_attention:
+                Whether to use DeepSpeed Evo Attention kernel
         Returns:
             ql:
                 [*, N_atom, c_atom] Updated atom single representation
@@ -275,6 +278,7 @@ class AtomTransformer(nn.Module):
             beta=beta,
             layout=layout,
             chunk_size=chunk_size,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
         )
 
         if pad_len > 0:
@@ -692,6 +696,7 @@ class AtomAttentionEncoder(nn.Module):
         si_trunk: Optional[torch.Tensor] = None,
         zij_trunk: Optional[torch.Tensor] = None,
         chunk_size: Optional[int] = None,
+        use_deepspeed_evo_attention: Optional[bool] = False,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -720,6 +725,8 @@ class AtomAttentionEncoder(nn.Module):
                 [*, N_atom, N_atom, c_z] Trunk pair representation (optional)
             chunk_size:
                 Inference-time subbatch size
+            use_deepspeed_evo_attention:
+                Whether to use DeepSpeed Evo Attention kernel
         Returns:
             ai:
                 [*, N_token, c_token] Token representation
@@ -746,7 +753,12 @@ class AtomAttentionEncoder(nn.Module):
         # Cross attention transformer (line 15)
         # [*, N_atom, c_atom]
         ql = self.atom_transformer(
-            ql=ql, cl=cl, plm=plm, atom_mask=atom_mask, chunk_size=chunk_size
+            ql=ql,
+            cl=cl,
+            plm=plm,
+            atom_mask=atom_mask,
+            chunk_size=chunk_size,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
         )
 
         agg_args = (
@@ -862,6 +874,7 @@ class AtomAttentionDecoder(nn.Module):
         cl: torch.Tensor,
         plm: torch.Tensor,
         chunk_size: Optional[int] = None,
+        use_deepspeed_evo_attention: Optional[bool] = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -881,6 +894,8 @@ class AtomAttentionDecoder(nn.Module):
                 [*, N_atom, N_atom, c_atom_pair] Atom pair representation
             chunk_size:
                 Inference-time subbatch size
+            use_deepspeed_evo_attention:
+                Whether to use DeepSpeed Evo Attention kernel
         Returns:
             rl_update:
                 [*, N_atom, 3] Atom position updates
@@ -897,7 +912,12 @@ class AtomAttentionDecoder(nn.Module):
         # Atom transformer
         # [*, N_atom, c_atom]
         ql = self.atom_transformer(
-            ql=ql, cl=cl, plm=plm, atom_mask=atom_mask, chunk_size=chunk_size
+            ql=ql,
+            cl=cl,
+            plm=plm,
+            atom_mask=atom_mask,
+            chunk_size=chunk_size,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
         )
 
         # Compute updates for atom positions

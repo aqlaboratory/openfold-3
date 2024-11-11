@@ -137,7 +137,11 @@ class AlphaFold3(nn.Module):
             z:
                 [*, N_token, N_token, C_z] Pair representation
         """
-        s_input, s_init, z_init = self.input_embedder(batch=batch)
+        s_input, s_init, z_init = self.input_embedder(
+            batch=batch,
+            inplace_safe=inplace_safe,
+            use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+        )
 
         # s: [*, N_token, C_s]
         # z: [*, N_token, N_token, C_z]
@@ -367,10 +371,6 @@ class AlphaFold3(nn.Module):
         xl_noisy = xl_gt + noise
 
         token_mask = batch["token_mask"]
-
-        # Mask needs to be tiled for shape checks in DeepSpeed EvoAttention
-        if self.settings.use_deepspeed_evo_attention:
-            token_mask = token_mask.tile((1, no_samples, 1))
 
         # Run diffusion module
         xl = self.diffusion_module(
