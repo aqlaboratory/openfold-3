@@ -70,16 +70,9 @@ def weighted_rigid_align(
     H = H * w[..., None, None] * atom_mask_gt[..., None, None]
     H = torch.sum(H, dim=-3)
 
-    dtype = H.dtype
-
-    # TODO: Check why autocast did not work in test
-    # Find optimal rotation from single value decomposition
-    # SVD (cast to float because doesn't work with bf16/fp16)
-    U, _, V = torch.linalg.svd(H.float())
-
-    dets = torch.linalg.det(U @ V).to(dtype=dtype)
-    U = U.to(dtype=dtype)
-    V = V.to(dtype=dtype)
+    with torch.amp.autocast("cuda", dtype=torch.float32):
+        U, _, V = torch.linalg.svd(H)
+        dets = torch.linalg.det(U @ V)
 
     # Remove reflection
     F = torch.eye(3, device=x.device, dtype=x.dtype).tile((*H.shape[:-2], 1, 1))

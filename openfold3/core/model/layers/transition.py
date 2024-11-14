@@ -26,6 +26,7 @@ from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import AdaLN, LayerNorm, Linear, SwiGLU
+from openfold3.core.utils.checkpointing import checkpoint_section
 from openfold3.core.utils.chunk_utils import chunk_layer
 
 
@@ -229,11 +230,51 @@ class SwiGLUTransition(nn.Module):
             no_batch_dims=len(x.shape[:-2]),
         )
 
+    # TODO: Make this a more general function
+    def _low_mem_ckpt_chunk(
+        self,
+        x: torch.Tensor,
+        mask: torch.Tensor,
+        chunk_size: int,
+        chunk_dim: int = -3,
+    ) -> torch.Tensor:
+        """
+        Chunk and checkpoint the transition layer during training. Necessary for
+        extreme cases where the backward pass of this module is too memory intensive.
+
+        Args:
+            x:
+                [*, N, C_in] Input activation
+            mask:
+                [*, N] Input mask
+            chunk_size:
+                Chunk size over chunk dim
+            chunk_dim:
+                Dimension to chunk over
+
+        Returns:
+            [*, N, C_in] Loss for each sample
+        """
+        chunks = []
+        for i in range(0, x.shape[chunk_dim], chunk_size):
+            l_chunk = checkpoint_section(
+                fn=self._transition,
+                args=(
+                    x[..., i : i + chunk_size, :, :],
+                    mask[..., i : i + chunk_size, :, :],
+                ),
+                apply_ckpt=True,
+                use_reentrant=False,
+            )
+            chunks.append(l_chunk)
+        return torch.cat(chunks, dim=chunk_dim)
+
     def forward(
         self,
         x: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         chunk_size: Optional[int] = None,
+        ckpt_chunk_size: Optional[bool] = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -241,8 +282,10 @@ class SwiGLUTransition(nn.Module):
                 [*, N, C_in] Input activation
             mask:
                 [*, N] Input mask
-            chunk_size
+            chunk_size:
                 Chunk size for chunking the input tensor
+            ckpt_chunk_size:
+                Whether to use chunking and checkpointing to reduce memory usage
         Returns:
             x:
                 [*, N, C_in] Activation update
@@ -253,8 +296,14 @@ class SwiGLUTransition(nn.Module):
         # [*, N, 1]
         mask = mask.unsqueeze(-1)
 
-        if chunk_size is not None:
-            x = self._chunk(x, mask, chunk_size)
+        if ckpt_chunk_size is not None and torch.is_grad_enabled():
+            x = self._low_mem_ckpt_chunk(
+                x=x,
+                mask=mask,
+                chunk_size=ckpt_chunk_size,
+            )
+        elif chunk_size is not None:
+            x = self._chunk(x=x, mask=mask, chunk_size=chunk_size)
         else:
             x = self._transition(x=x, mask=mask)
 

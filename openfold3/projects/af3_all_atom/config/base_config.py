@@ -156,7 +156,7 @@ project_config = mlc.ConfigDict(
                     "msa_module": {
                         "c_m": c_m,
                         "c_z": c_z,
-                        "c_hidden_msa_att": 32,  # 8 or 32, possible typo in SI
+                        "c_hidden_msa_att": 8,  # 8 or 32, possible typo in SI
                         "c_hidden_opm": 32,
                         "c_hidden_mul": 128,
                         "c_hidden_pair_att": 32,
@@ -172,6 +172,7 @@ project_config = mlc.ConfigDict(
                         "blocks_per_ckpt": blocks_per_ckpt,
                         "inf": inf,
                         "eps": eps,
+                        "transition_ckpt_chunk_size": None,
                         "linear_init_params": lin_init.msa_module_init,
                         "use_reentrant": False,
                         "clear_cache_between_blocks": False,

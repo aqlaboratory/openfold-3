@@ -129,33 +129,33 @@ class AuxiliaryHeadsAllAtom(nn.Module):
                 "experimentally_resolved": Experimentally_resolved config
         """
         super().__init__()
+        self.config = config
         self.max_atoms_per_token = config.max_atoms_per_token
 
         self.pairformer_embedding = PairformerEmbedding(
-            **config["pairformer_embedding"],
-        )
-
-        self.pae = PredictedAlignedErrorHead(
-            **config["pae"],
+            **self.config["pairformer_embedding"],
         )
 
         self.pde = PredictedDistanceErrorHead(
-            **config["pde"],
+            **self.config["pde"],
         )
 
         self.plddt = PerResidueLDDAllAtom(
-            **config["lddt"],
+            **self.config["lddt"],
         )
 
         self.distogram = DistogramHead(
-            **config["distogram"],
+            **self.config["distogram"],
         )
 
         self.experimentally_resolved = ExperimentallyResolvedHeadAllAtom(
-            **config["experimentally_resolved"],
+            **self.config["experimentally_resolved"],
         )
 
-        self.config = config
+        if self.config.pae.enabled:
+            self.pae = PredictedAlignedErrorHead(
+                **self.config["pae"],
+            )
 
     def forward(
         self,
@@ -225,9 +225,10 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             aux_out["distogram_logits"] = distogram_logits
 
         # Stop grad
-        si_trunk = si_trunk.detach()
-        zij_trunk = zij_trunk.detach()
-        atom_positions_predicted = atom_positions_predicted.detach()
+        si_input = si_input.detach().clone()
+        si_trunk = si_trunk.detach().clone()
+        zij_trunk = zij_trunk.detach().clone()
+        atom_positions_predicted = atom_positions_predicted.detach().clone()
 
         token_mask = batch["token_mask"]
         pair_mask = token_mask[..., None] * token_mask[..., None, :]

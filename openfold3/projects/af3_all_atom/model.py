@@ -527,8 +527,12 @@ class AlphaFold3(nn.Module):
                     Training only, predicted atom positions
 
         """
-        # This needs to be done manually for DeepSpeed's sake
-        dtype = next(self.parameters()).dtype
+        # This needs to be done manually for DDP/DeepSpeed's sake
+        dtype = (
+            torch.get_autocast_dtype("cuda")
+            if torch.is_autocast_enabled()
+            else next(self.parameters()).dtype
+        )
 
         def to_dtype(t: torch.Tensor):
             if t.dtype == torch.float32:
@@ -567,6 +571,11 @@ class AlphaFold3(nn.Module):
 
             # Run training step (if necessary)
             if self.settings.diffusion_training_enabled:
+                if torch.is_autocast_enabled():
+                    # Sidestep AMP bug (PyTorch issue #65766)
+                    # Needed due to no_grad in _rollout
+                    torch.clear_autocast_cache()
+
                 diffusion_output = self._train_diffusion(
                     batch=batch,
                     si_input=si_input,
