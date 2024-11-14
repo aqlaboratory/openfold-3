@@ -274,7 +274,7 @@ class SwiGLUTransition(nn.Module):
         x: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         chunk_size: Optional[int] = None,
-        ckpt_chunk_size: Optional[bool] = False,
+        ckpt_chunk_size: Optional[int] = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -285,7 +285,8 @@ class SwiGLUTransition(nn.Module):
             chunk_size:
                 Chunk size for chunking the input tensor
             ckpt_chunk_size:
-                Whether to use chunking and checkpointing to reduce memory usage
+                Chunk size for activation checkpointing in the transition layer
+                (currently SwiGLU transition only)
         Returns:
             x:
                 [*, N, C_in] Activation update
