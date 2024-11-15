@@ -162,7 +162,7 @@ class TestMSAModuleEmbedder(unittest.TestCase):
             "deletion_value": torch.rand((batch_size, n_total_msa_seq, n_token)),
             "msa_mask": torch.ones((batch_size, n_total_msa_seq, n_token)),
             "num_paired_seqs": torch.Tensor([n_paired_seq]),
-            "asym_ids": batch_asym_ids,
+            "asym_id": batch_asym_ids,
         }
 
         s_input = torch.rand(batch_size, n_token, c_s_input)
