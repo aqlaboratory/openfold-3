@@ -588,16 +588,18 @@ class MSAModuleEmbedder(nn.Module):
 
         Args:
             msa_feat:
-                [N_seq, N_token, 32] MSA features
+                [N_msa, N_token, 32] MSA features
             msa_mask:
-                [N_seq, N_token] MSA mask
+                [N_msa, N_token] MSA mask
             num_paired_seqs:
                 Number of paired MSA sequences
+            asym_id:
+                [N_token] Id of the chain each token belongs to
         Returns:
             sampled_msa:
-                [N_seq_sampled, N_token, c_m_feats] Sampled MSA features
+                [N_seq, N_token, c_m_feats] Sampled MSA features
             msa_mask:
-                [N_seq_sampled, N_token] Sampled MSA mask
+                [N_seq, N_token] Sampled MSA mask
         """
         # Set the sequence dimension for the two tensors, the chain dimension is this +1
         feat_seq_dim = -3
@@ -696,6 +698,7 @@ class MSAModuleEmbedder(nn.Module):
                     - "deletion_value": [*, N_msa, N_token]
                     - "msa_mask": [*, N_msa, N_token]
                     - "num_paired_seqs": []
+                    - "asym_id": [*, N_token]
             s_input:
                 [*, N_token, C_s_input] single embedding
 
@@ -707,7 +710,7 @@ class MSAModuleEmbedder(nn.Module):
         """
         batch_dims = batch["msa"].shape[:-3]
 
-        # [*, N_seq, N_token, 34]
+        # [*, N_msa, N_token, 34]
         msa_feat = torch.cat(
             [
                 batch["msa"],
@@ -717,7 +720,7 @@ class MSAModuleEmbedder(nn.Module):
             dim=-1,
         )
 
-        # [*, N_seq, N_token]
+        # [*, N_msa, N_token]
         msa_mask = batch["msa_mask"]
 
         # [*, N_tok]
