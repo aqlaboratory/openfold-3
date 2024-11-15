@@ -151,12 +151,16 @@ class TestMSAModuleEmbedder(unittest.TestCase):
         msa_emb_config = af3_config.architecture.msa.msa_module_embedder
         msa_emb_config.update({"c_s_input": c_s_input})
 
+        batch_asym_ids = [torch.as_tensor(random_asym_ids(n_token)) for _ in range(batch_size)]
+        batch_asym_ids = torch.stack(batch_asym_ids)
+
         batch = {
             "msa": torch.rand((batch_size, n_total_msa_seq, n_token, one_hot_dim)),
             "has_deletion": torch.ones((batch_size, n_total_msa_seq, n_token)),
             "deletion_value": torch.rand((batch_size, n_total_msa_seq, n_token)),
             "msa_mask": torch.ones((batch_size, n_total_msa_seq, n_token)),
             "num_paired_seqs": torch.Tensor([n_paired_seq]),
+            "asym_ids": batch_asym_ids, 
         }
 
         s_input = torch.rand(batch_size, n_token, c_s_input)
