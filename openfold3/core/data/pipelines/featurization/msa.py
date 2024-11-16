@@ -33,6 +33,7 @@ def featurize_msa_af3(
     msa_feature_precursor = create_msa_feature_precursor_af3(
         atom_array=atom_array,
         msa_array_collection=msa_array_collection,
+        max_rows=max_rows,
         max_rows_paired=max_rows_paired,
         token_budget=token_budget,
     )

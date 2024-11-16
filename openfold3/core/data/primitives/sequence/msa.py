@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+from collections import defaultdict, deque
 from copy import deepcopy
 from typing import Sequence
 
@@ -512,11 +513,9 @@ def count_species_per_chain(
             and the list species with at least one sequence among MSAs of all chains.
     """
     species = []
-    _ = [
+    for chain_id in uniprot_hits:
         species.extend(set(uniprot_hits[chain_id].metadata["species_id"]))
-        for chain_id in uniprot_hits
-    ]
-    species = list(set(species))
+    species = np.array(list(set(species)))
     species_index = np.arange(len(species))
     species_index_map = {species[i]: i for i in species_index}
 
@@ -609,9 +608,8 @@ def find_pairing_indices(
             that cannot be fully paired.
     """
     # Apply filters
-    species_index = np.arange(count_array.shape[-1])
     count_array_filtered = count_array[:, pairing_masks]
-    species_index_filtered = species_index[pairing_masks]
+    species_index_filtered = np.arange(count_array.shape[-1])[pairing_masks]
     is_in_chain_per_species = count_array != 0
 
     # Iterative row-subtraction
@@ -619,33 +617,37 @@ def find_pairing_indices(
     paired_species_rows = []  # species indices in the MSA feature format
     missing_species_rows = []  # mask for missing species per chain
     n_rows = 0  # number of paired rows
-    for n in np.arange(1, n_unique_chains + 1)[::-1]:
-        # Break if n is 1 since we are excluding block-diagonal elements
-        if n == 1:
-            break
 
+    # Iterate over number of chains from max to 2
+    for n in np.arange(2, n_unique_chains + 1)[::-1]:
         # Find which species are shared by exactly n chains
-        is_in_n_chains = sum(count_array_filtered != 0) == n
+        is_in_n_chains = np.sum(count_array_filtered != 0, axis=0) == n
+        # skip if no species are shared by exactly n chains in the filtered array
+        if sum(is_in_n_chains) == 0:
+            continue
 
-        # Find the lowest number of sequences across chains from shared species
-        min_in_n_chains = np.min(count_array_filtered[:, is_in_n_chains], axis=0)
+        # Find the lowest nonzero number of sequences across chains from shared species
+        k_in_n_chains = count_array_filtered[:, is_in_n_chains]
+        k_in_n_chains = np.where(k_in_n_chains > 0, k_in_n_chains, np.nan)
+        min_in_n_chains = np.nanmin(k_in_n_chains, axis=0).astype(int)
 
         # Subset species indices to those shared by n chains
         species_in_n_chains = species_index_filtered[is_in_n_chains]
 
         # Expand filtered species index across occurrences and chains
-        cols = np.tile(
-            np.repeat(species_in_n_chains, min_in_n_chains), (n_unique_chains, 1)
-        )
-        n_rows += cols.shape[1]
-        paired_species_rows.append(cols.T)
+        col_expand = np.repeat(species_in_n_chains, min_in_n_chains)
+        chain_col_expand = np.tile(col_expand, (n_unique_chains, 1))
+        n_rows += chain_col_expand.shape[1]
+        paired_species_rows.append(chain_col_expand.T)
 
         # Create mask for elements where species is missing from chain
-        missing_species_mask = is_in_chain_per_species[:, cols[0, :]]
-        missing_species_rows.append(missing_species_mask.T)
+        missing_species_rows.append(is_in_chain_per_species[:, col_expand].T)
 
-        # Subtract min per row for shared species
-        count_array_filtered[:, is_in_n_chains] -= min_in_n_chains
+        # Subtract min per row for shared species at non-zero values
+        paired_cols = count_array_filtered[:, is_in_n_chains].copy()
+        count_array_filtered[:, is_in_n_chains] = np.where(
+            paired_cols != 0, paired_cols - min_in_n_chains, paired_cols
+        )
 
         # If row cutoff reached, crop final arrays to the row cutoff and break
         if n_rows >= max_rows_paired:
@@ -663,12 +665,50 @@ def find_pairing_indices(
     return paired_rows_index, missing_rows_index
 
 
+def _num_encode_species(
+    species: np.ndarray[str], species_array: np.ndarray[str]
+) -> np.ndarray[int]:
+    """Creates a numerical encoding of species names.
+
+    Args:
+        species (np.ndarray[str]):
+            The order based on which to create the numerical encoding.
+        species_array (np.ndarray[str]):
+            The array of species names to encode.
+
+    Returns:
+        np.ndarray[int]:
+            The numerical encoding of the species names, containing positional indices
+            of the species names in the species array.
+    """
+
+    # Sort the species names and get the sorted indices
+    species_sort_order = np.argsort(species)
+    sorted_species = species[species_sort_order]
+
+    # Assume species_array is your NumPy array of species names (strings)
+    # Use searchsorted to find indices in the sorted array
+    indices_in_sorted = np.searchsorted(sorted_species, species_array)
+
+    # Verify matches to handle any possible mismatches
+    matches = sorted_species[indices_in_sorted] == species_array
+
+    # Initialize an array to hold the indices, defaulting to -1 for non-matches
+    row_to_species = np.full(species_array.shape, -1, dtype=int)
+
+    # Map the indices back to the original order
+    row_to_species[matches] = species_sort_order[indices_in_sorted[matches]]
+
+    return row_to_species
+
+
 def map_to_paired_msa_per_chain(
     msa_array_collection: MsaArrayCollection,
     uniprot_hits: dict[str, MsaArray],
     paired_rows_index: np.ndarray[int],
     missing_rows_index: np.ndarray[int],
-    species: list,
+    species: np.ndarray[str],
+    mode: str = "deque",
 ) -> dict[str, MsaArray]:
     """Maps paired species indices to MSA row indices.
 
@@ -707,41 +747,64 @@ def map_to_paired_msa_per_chain(
     }
 
     # For each chain, sort MSA rows by the paired species indices
-    species_index = {v: i for i, v in enumerate(species)}
-    for chain_idx, chain_id in enumerate(uniprot_hits):
+    for chain_idx, (chain_id, msa_array) in enumerate(uniprot_hits.items()):
         # Get the array of species for each aligned sequences to the query chain
-        species_array = np.array(
-            uniprot_hits[chain_id].metadata["species_id"].to_numpy()
-        )
+        species_array = np.array(msa_array.metadata["species_id"].to_numpy())
 
         # Map to numerical using the species index
-        row_to_species = np.vectorize(species_index.get)(species_array)
+        row_to_species = _num_encode_species(species, species_array)
 
         # Get paired species ids for chain
         paired_row_index_of_chain = paired_rows_index[:, chain_idx]
+        missing_row_index_in_chain = missing_rows_index[:, chain_idx]
 
-        # For each paired species row for the chain, find the position of
-        # msa rows with the same species
-        species_matches = row_to_species == paired_row_index_of_chain[:, np.newaxis]
+        if mode == "deque":
+            # Build a mapping from species index to deque of MSA row indices
+            species_to_msa_rows = defaultdict(deque)
+            for msa_row_idx, species_idx in enumerate(row_to_species):
+                species_to_msa_rows[species_idx].append(msa_row_idx)
 
-        # Find MSA row indices for each paired species row
-        used_rows = set()
-        msa_rows = np.zeros(paired_row_index_of_chain.shape[0], dtype=int)
-        for row_idx, row in enumerate(species_matches):
-            species_matches_row = np.where(row)[0]
-            first_true_row = species_matches_row[
-                np.argmax(~np.isin(species_matches_row, list(used_rows)))
-            ]
-            msa_rows[row_idx] = first_true_row
-            used_rows.add(first_true_row)
+            msa_rows = np.full(paired_row_index_of_chain.shape[0], -1, dtype=int)
+            for i, (species_idx, is_in_chain) in enumerate(
+                zip(paired_row_index_of_chain, missing_row_index_in_chain)
+            ):
+                if is_in_chain:
+                    msa_row_deque = species_to_msa_rows.get(species_idx)
+                    if msa_row_deque and len(msa_row_deque) > 0:
+                        msa_rows[i] = msa_row_deque.popleft()
 
+        elif mode == "outer_product":
+            # For each paired species row for the chain, find the position of
+            # msa rows with the same species
+            species_matches = row_to_species == paired_row_index_of_chain[:, np.newaxis]
+
+            # Find MSA row indices for each paired species row
+            used_rows = set()
+            msa_rows = np.full(paired_row_index_of_chain.shape[0], -1, dtype=int)
+            for row_idx, (row, is_in_chain) in enumerate(
+                zip(species_matches, missing_row_index_in_chain)
+            ):
+                if is_in_chain:
+                    species_matches_row = np.where(row)[0]
+                    first_true_row = species_matches_row[
+                        np.argmax(~np.isin(species_matches_row, list(used_rows)))
+                    ]
+                    msa_rows[row_idx] = first_true_row
+                    used_rows.add(first_true_row)
+
+        else:
+            raise ValueError(
+                f"Invalid mode: {mode}. Must be 'deque' or 'outer_product'."
+            )
+
+        valid_rows = msa_rows != -1
         # Update MSA and deletion matrix with paired data
-        paired_msa_per_chain[chain_id].msa[missing_rows_index[:, chain_idx], :] = (
-            uniprot_hits[chain_id].msa[msa_rows, :]
-        )
+        paired_msa_per_chain[chain_id].msa[
+            missing_rows_index[valid_rows, chain_idx], :
+        ] = msa_array.msa[msa_rows[valid_rows], :]
         paired_msa_per_chain[chain_id].deletion_matrix[
-            missing_rows_index[:, chain_idx], :
-        ] = uniprot_hits[chain_id].deletion_matrix[msa_rows, :]
+            missing_rows_index[valid_rows, chain_idx], :
+        ] = msa_array.deletion_matrix[msa_rows[valid_rows], :]
 
     return paired_msa_per_chain
 
@@ -774,11 +837,9 @@ def create_paired(
         return None, None
 
     # Process uniprot headers and calculate distance to query
-    _ = [process_uniprot_metadata(uniprot_hits[chain_id]) for chain_id in uniprot_hits]
-    _ = [
+    for chain_id in uniprot_hits:
+        process_uniprot_metadata(uniprot_hits[chain_id])
         sort_msa_by_distance_to_query(uniprot_hits[chain_id])
-        for chain_id in uniprot_hits
-    ]
 
     # Count species occurrences per chain
     count_array, species = count_species_per_chain(uniprot_hits)
