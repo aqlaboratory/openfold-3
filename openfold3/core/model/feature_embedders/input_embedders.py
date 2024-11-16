@@ -592,7 +592,7 @@ class MSAModuleEmbedder(nn.Module):
             msa_mask:
                 [N_msa, N_token] MSA mask
             num_paired_seqs:
-                Number of paired MSA sequences
+                [] Number of paired MSA sequences
             asym_id:
                 [N_token] Id of the chain each token belongs to
         Returns:
@@ -605,9 +605,11 @@ class MSAModuleEmbedder(nn.Module):
         feat_seq_dim = -3
         mask_seq_dim = -2
 
+        num_paired_seqs = int(num_paired_seqs.item())
+
         # Separate UniProt paired sequences and main MSA (only the latter is subsampled)
         total_msa_seq = msa_feat.shape[feat_seq_dim]
-        num_main_msa_seqs = total_msa_seq - num_paired_seqs.item()
+        num_main_msa_seqs = total_msa_seq - num_paired_seqs
 
         split_sections = [num_paired_seqs, num_main_msa_seqs]
 
@@ -737,17 +739,19 @@ class MSAModuleEmbedder(nn.Module):
             per_sample_asym_id = torch.unbind(asym_id, dim=0)
 
             # Subsample the MSA for each sample in the batch
-            per_sample_subsampled_msa, per_sample_subsampled_msa_mask = zip(
-                *(
-                    self.subsample_msa(*args)
-                    for args in zip(
-                        per_sample_msa_feat,
-                        per_sample_mask,
-                        per_sample_num_paired_seq,
-                        per_sample_asym_id,
-                    )
+            per_sample_subsampled_msa = []
+            per_sample_subsampled_msa_mask = []
+            for msa_feat, mask, num_paired, asym_id in zip(
+                per_sample_msa_feat,
+                per_sample_mask,
+                per_sample_num_paired_seq,
+                per_sample_asym_id,
+            ):
+                subsampled_msa, subsampled_mask = self.subsample_msa(
+                    msa_feat, mask, num_paired, asym_id
                 )
-            )
+                per_sample_subsampled_msa.append(subsampled_msa)
+                per_sample_subsampled_msa_mask.append(subsampled_mask)
 
             # Number of sequences to pad to for all the batch
             max_msa_seqs_batch = max([m.shape[-3] for m in per_sample_subsampled_msa])
