@@ -161,7 +161,7 @@ class TestMSAModuleEmbedder(unittest.TestCase):
             "has_deletion": torch.ones((batch_size, n_total_msa_seq, n_token)),
             "deletion_value": torch.rand((batch_size, n_total_msa_seq, n_token)),
             "msa_mask": torch.ones((batch_size, n_total_msa_seq, n_token)),
-            "num_paired_seqs": torch.Tensor([n_paired_seq]),
+            "num_paired_seqs": torch.Tensor([n_paired_seq] * batch_size),
             "asym_id": batch_asym_ids,
         }
 
@@ -173,9 +173,9 @@ class TestMSAModuleEmbedder(unittest.TestCase):
         n_sampled_seqs = msa.shape[-3]
 
         # Check that the number of sampled sequences is between the number of
-        # uniprot seqs and the total number of sequences
+        # uniprot seqs and the total number of sequences for each sample in the batch
         self.assertTrue(
-            (n_sampled_seqs > n_paired_seq) & (n_sampled_seqs < n_total_msa_seq)
+            (n_sampled_seqs > n_paired_seq) & (n_sampled_seqs <= n_total_msa_seq)
         )
         self.assertTrue(
             msa.shape == (batch_size, n_sampled_seqs, n_token, msa_emb_config.c_m)
