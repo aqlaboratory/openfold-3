@@ -312,7 +312,7 @@ def parse_msas_sample(
     # Map chain IDs to representative IDs and molecule types
     chain_id_to_rep_id = {}
     chain_id_to_mol_type = {}
-    for chain_id_in_atom_array in list(set(atom_array_with_alignments.chain_id)):
+    for chain_id_in_atom_array in sorted(set(atom_array_with_alignments.chain_id)):
         chain_data = dataset_cache["structure_data"][pdb_id]["chains"][
             chain_id_in_atom_array
         ]
@@ -326,7 +326,7 @@ def parse_msas_sample(
     if len(chain_id_to_rep_id) > 0:
         # Parse MSAs for each representative ID
         # This requires parsing MSAs for duplicate chains only once
-        representative_chain_ids = list(set(chain_id_to_rep_id.values()))
+        representative_chain_ids = sorted(set(chain_id_to_rep_id.values()))
         representative_msas = {}
         for rep_id in representative_chain_ids:
             if alignment_db_directory is not None:
@@ -343,9 +343,9 @@ def parse_msas_sample(
 
         # Reindex the parsed MSAs to the original chain IDs and calculate Msa length and
         # pull out the query sequence
-        for _, rep_id in chain_id_to_rep_id.items():
+        for _, rep_id in sorted(chain_id_to_rep_id.items()):
             all_msas_per_chain = representative_msas[rep_id]
-            example_msa = all_msas_per_chain[next(iter(all_msas_per_chain))].msa
+            example_msa = all_msas_per_chain[sorted(all_msas_per_chain.keys())[0]].msa
             if rep_id not in rep_id_to_msa:
                 rep_id_to_msa[rep_id] = all_msas_per_chain
                 rep_id_to_query_seq[rep_id] = example_msa[0, :][np.newaxis, :]
