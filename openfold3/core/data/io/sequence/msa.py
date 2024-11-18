@@ -322,7 +322,7 @@ def parse_msas_sample(
         chain_id_to_mol_type[chain_id_in_atom_array] = chain_data["molecule_type"]
 
     # Parse MSAs for each representative ID
-    rep_id_to_msa, rep_id_to_query_seq, num_cols = {}, {}, {}
+    rep_id_to_msa, rep_id_to_query_seq = {}, {}
     if len(chain_id_to_rep_id) > 0:
         # Parse MSAs for each representative ID
         # This requires parsing MSAs for duplicate chains only once
@@ -349,13 +349,11 @@ def parse_msas_sample(
             if rep_id not in rep_id_to_msa:
                 rep_id_to_msa[rep_id] = all_msas_per_chain
                 rep_id_to_query_seq[rep_id] = example_msa[0, :][np.newaxis, :]
-                num_cols[rep_id] = example_msa.shape[1]
 
     # Set msa collection to parsed, will be empty if no protein or RNA chains
     msa_array_collection = MsaArrayCollection(
         chain_id_to_rep_id=chain_id_to_rep_id,
         chain_id_to_mol_type=chain_id_to_mol_type,
-        num_cols=num_cols,
     )
     msa_array_collection.set_state_parsed(
         rep_id_to_msa=rep_id_to_msa, rep_id_to_query_seq=rep_id_to_query_seq

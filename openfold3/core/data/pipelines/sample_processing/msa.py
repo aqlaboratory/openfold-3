@@ -97,16 +97,16 @@ def process_msas_af3(
         # Determine whether to do pairing
         if not find_monomer_homomer(msa_array_collection):
             # Create paired UniProt MSA arrays
-            paired_msa_per_chain, chain_id_to_paired_msa = create_paired(
+            chain_id_to_paired_msa = create_paired(
                 msa_array_collection, max_rows_paired=max_rows_paired
             )
         else:
-            paired_msa_per_chain, chain_id_to_paired_msa = None, {}
+            chain_id_to_paired_msa = {}
 
         # Create main MSA arrays
         chain_id_to_main_msa = create_main(
             msa_array_collection=msa_array_collection,
-            paired_msa_per_chain=paired_msa_per_chain,
+            chain_id_to_paired_msa=chain_id_to_paired_msa,
             aln_order=aln_order,
         )
 

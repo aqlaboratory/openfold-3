@@ -277,10 +277,10 @@ class MsaArrayCollection:
         2.) processed state:
             attributes rep_id_to_msa and rep_id_to_query_seq unpopulated and
             chain_id_to_query_seq, chain_id_to_paired_msa, chain_id_to_main_msa
-            populated after processing.
+            populated after processing. Attribute chain_id_to_row_count is populated in
+            the processed state, separately from the other processed attributes.
 
-    Attributes chain_id_to_rep_id, chain_id_to_mol_type, and num_cols are populated in
-    both states.
+    Attributes chain_id_to_rep_id, chain_id_to_mol_type are populated in both states.
 
     Attributes:
         rep_id_to_msa (dict[str, dict[str, MsaArray]]):
@@ -298,14 +298,15 @@ class MsaArrayCollection:
             Dictionary mapping chain IDs to representative chain IDs.
         chain_id_to_mol_type (dict[str, str]):
             Dictionary mapping chain IDs to the molecule type.
-        num_cols (dict[str, int]):
-            Dict mapping representative chain ID to the number of columns in the MSA.
+        chain_id_to_row_count (dict[str, int]):
+            Dict mapping representative chain ID to the number of rows in the
+            unprocessed main MSA.
     """
 
     # Core attributes
     chain_id_to_rep_id: dict[str, str]
     chain_id_to_mol_type: dict[str, str]
-    num_cols: dict[str, int]  # maybe not needed?
+    chain_id_to_row_count: dict[str, int] = dataclasses.field(default_factory=dict)
 
     # State parsed attributes
     rep_id_to_msa: dict[str, dict[str, MsaArray]] = dataclasses.field(
@@ -824,7 +825,7 @@ def map_to_paired_msa_per_chain(
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-paired")
 def create_paired(
     msa_array_collection: MsaArrayCollection, max_rows_paired: int
-) -> tuple[dict[str, MsaArray], dict[str, MsaArray]]:
+) -> dict[str, MsaArray]:
     """Creates paired MSA arrays from UniProt MSAs.
 
     Follows the AF2-Multimer strategy for pairing rows of UniProt MSAs based on species
@@ -846,7 +847,7 @@ def create_paired(
 
     # Ensure there are at least two chains with UniProt hits after filtering
     if len(uniprot_hits) <= 1:
-        return None, None
+        return {}
 
     # Process uniprot headers and calculate distance to query
     for chain_id in uniprot_hits:
@@ -861,7 +862,7 @@ def create_paired(
 
     # No valid pairs, skip MSA pairing
     if not np.any(pairing_masks):
-        return None, None
+        return {}
 
     # Find species indices that pair rows
     paired_rows_index = find_pairing_indices(
@@ -879,22 +880,22 @@ def create_paired(
     )
 
     # Expand paired MSAs across all chains
-    paired_msas = {}
+    chain_id_to_paired_msa = {}
     for chain_id, rep_id in msa_array_collection.chain_id_to_rep_id.items():
         rep_paired_msa = paired_msa_per_chain[rep_id]
-        paired_msas[chain_id] = MsaArray(
+        chain_id_to_paired_msa[chain_id] = MsaArray(
             msa=rep_paired_msa.msa,
             deletion_matrix=rep_paired_msa.deletion_matrix,
             metadata=pd.DataFrame(),
         )
 
-    return paired_msa_per_chain, paired_msas
+    return chain_id_to_paired_msa
 
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-main")
 def create_main(
     msa_array_collection: MsaArrayCollection,
-    paired_msa_per_chain: dict[str, MsaArray] | None,
+    chain_id_to_paired_msa: dict[str, MsaArray],
     aln_order: list[str],
 ) -> dict[str, MsaArray]:
     """Creates main MSA arrays from non-UniProt MSAs.
@@ -902,7 +903,7 @@ def create_main(
     Args:
         msa_collection (MsaCollection):
             A collection of Msa objects and chain IDs for a single sample.
-        paired_msa_per_chain (Union[dict[str, Msa], None]):
+        chain_id_to_paired_msa (Union[dict[str, Msa], None]):
             Dict of paired Msa objects per chain.
         aln_order (list[str]):
             The order in which to concatenate the MSA arrays vertically.
@@ -928,9 +929,18 @@ def create_main(
         )
 
         # Get paired MSAs if any and deduplicate
-        if paired_msa_per_chain is not None:
+        if len(chain_id_to_paired_msa) > 0:
+            # Create reprepsentative to chain ID mapping
+            seen = set()
+            rep_id_to_chain_id = {
+                value: key
+                for key, value in msa_array_collection.chain_id_to_rep_id.items()
+                if value not in seen and not seen.add(value)
+            }
             # Get set of paired rows and find unpaired rows not in this set
-            paired_row_set = {tuple(i) for i in paired_msa_per_chain[rep_id].msa}
+            paired_row_set = {
+                tuple(i) for i in chain_id_to_paired_msa[rep_id_to_chain_id[rep_id]].msa
+            }
             is_unique = ~np.array(
                 [tuple(row) in paired_row_set for row in main_msa_redundant]
             )
@@ -943,7 +953,7 @@ def create_main(
             metadata=pd.DataFrame(),
         )
 
-    # Reindex dict from representatives to chain IDs
+    # Reindex dicts from representatives to chain IDs
     main_msas = {}
     for chain_id, rep_id in msa_array_collection.chain_id_to_rep_id.items():
         main_msas[chain_id] = rep_main_msas[rep_id]
