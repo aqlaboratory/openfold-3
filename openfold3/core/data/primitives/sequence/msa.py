@@ -264,6 +264,13 @@ class MsaArray:
         mask[tuple(indexer)] = 0
         return mask
 
+    def to_dict(self):
+        return {
+            "msa": self.msa,
+            "deletion_matrix": self.deletion_matrix,
+            "metadata": np.array(self.metadata),
+        }
+
 
 @dataclasses.dataclass(frozen=False)
 class MsaArrayCollection:

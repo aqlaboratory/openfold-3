@@ -489,6 +489,7 @@ project_config = mlc.ConfigDict(
                     "alignments_directory": PLACEHOLDER_PATH,
                     "target_structures_directory": PLACEHOLDER_PATH,
                     "alignment_db_directory": PLACEHOLDER_PATH,
+                    "alignment_array_directory": PLACEHOLDER_PATH,
                     "dataset_cache_file": PLACEHOLDER_PATH,
                     "reference_molecule_directory": PLACEHOLDER_PATH,
                     "template_cache_directory": PLACEHOLDER_PATH,

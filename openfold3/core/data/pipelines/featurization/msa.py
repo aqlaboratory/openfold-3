@@ -44,13 +44,13 @@ def featurize_msa_af3(
     # Create features
     features = {}
     msa_restype_index = torch.tensor(
-        get_with_unknown_1(msa_feature_precursor.msa[:max_rows, :]), dtype=torch.int64
+        get_with_unknown_1(msa_feature_precursor.msa), dtype=torch.int64
     )
     features["msa"] = encode_one_hot(
         msa_restype_index, len(STANDARD_RESIDUES_WITH_GAP_1)
     ).to(torch.int32)
     deletion_matrix = torch.tensor(
-        msa_feature_precursor.deletion_matrix[:max_rows, :], dtype=torch.int64
+        msa_feature_precursor.deletion_matrix, dtype=torch.int64
     )
     features["has_deletion"] = (deletion_matrix != 0).to(torch.float32)
     features["deletion_value"] = torch.atan(deletion_matrix / 3.0) * (
@@ -68,7 +68,7 @@ def featurize_msa_af3(
     )
 
     features["msa_mask"] = torch.tensor(
-        msa_feature_precursor.msa_mask[:max_rows, :], dtype=torch.float32
+        msa_feature_precursor.msa_mask, dtype=torch.float32
     )
 
     return features

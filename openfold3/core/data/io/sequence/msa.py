@@ -263,6 +263,42 @@ def parse_msas_alignment_database(
     return msas
 
 
+def parse_msas_preparsed(
+    folder_path: Path,
+    rep_id: str,
+) -> dict[str, MsaArray]:
+    """Parses a pre-parsed .npz file into a dictionary of Msa objects.
+
+    This function is used to parse MSAs for a single chain.
+
+    Args:
+        folder_path (Path):
+            Path to the folder containing the pre-parsed npz files.
+        rep_id (str):
+            The representative ID of the chain.
+
+    Returns:
+        dict[str, MsaArray]:
+            A dict containing the parsed MSAs.
+    """
+    # Parse npz file of the representative
+    pre_parsed_msas = np.load(
+        folder_path / Path(f"{rep_id}.npz"),
+        allow_pickle=True,
+    )
+
+    # Unpack the pre-parsed MSA arrays into a dict of MsaArrays
+    msas = {}
+    for k in list(pre_parsed_msas.keys()):
+        unpacked_msas = pre_parsed_msas[k].item()
+        msas[k] = MsaArray(
+            msa=unpacked_msas["msa"],
+            deletion_matrix=unpacked_msas["deletion_matrix"],
+            metadata=unpacked_msas["metadata"],
+        )
+    return msas
+
+
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-parse")
 def parse_msas_sample(
     pdb_id: str,
@@ -271,6 +307,7 @@ def parse_msas_sample(
     alignments_directory: Path | None,
     alignment_db_directory: Path | None,
     alignment_index: dict | None,
+    alignment_array_directory: Path | None,
     max_seq_counts: dict[str, int | float] | None = None,
 ) -> MsaArrayCollection:
     """Parses MSA(s) for a training sample.
@@ -278,10 +315,16 @@ def parse_msas_sample(
     This function is used to parse MSAs for a one or multiple chains, depending on the
     number of chains in the parsed PDB file and crop during training.
 
+    If multiple paths are provided (not set to None), the following is the priority
+    order:
+        1. alignment_array_directory (pre-parsed npz)
+        2. alignment_db_directory + alignment_index (alignment database files)
+        3. alignments_directory (raw a3m or sto files)
+
     Args:
         alignments_directory (Path | None):
-            Path to the lowest-level directory containing the directories of MSAs
-            per chain ID.
+            Path to the lowest-level directory containing the directories of MSAs per
+            chain ID.
         alignment_db_directory (Path | None):
             Path to the directory containing the alignment database or its shards AND
             the alignment database superindex file. If provided, it is used over
@@ -329,7 +372,12 @@ def parse_msas_sample(
         representative_chain_ids = sorted(set(chain_id_to_rep_id.values()))
         representative_msas = {}
         for rep_id in representative_chain_ids:
-            if alignment_db_directory is not None:
+            if alignment_array_directory is not None:
+                representative_msas[rep_id] = parse_msas_preparsed(
+                    folder_path=alignment_array_directory,
+                    rep_id=rep_id,
+                )
+            elif alignment_db_directory is not None:
                 representative_msas[rep_id] = parse_msas_alignment_database(
                     alignment_index_entry=alignment_index[rep_id],
                     alignment_database_path=alignment_db_directory,

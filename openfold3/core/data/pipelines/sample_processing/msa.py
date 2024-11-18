@@ -27,6 +27,7 @@ def process_msas_af3(
     alignments_directory: Path | None,
     alignment_db_directory: Path | None,
     alignment_index: dict | None,
+    alignment_array_directory: Path | None,
     max_seq_counts: dict[str, int | float],
     aln_order: list[str],
     max_rows_paired: int,
@@ -54,6 +55,8 @@ def process_msas_af3(
         alignment_index (dict | None):
             Dictionary containing the alignment index for each chain ID. Only used if
             alignment_db_directory is provided.
+        alignment_array_directory (Path | None):
+            The path to the directory containing the preprocessed alignment arrays.
         msa_slice (MsaSlice):
             Object containing the mappings from the crop to the MSA sequences.
         max_seq_counts (int | float):
@@ -86,6 +89,7 @@ def process_msas_af3(
         alignments_directory=alignments_directory,
         alignment_db_directory=alignment_db_directory,
         alignment_index=alignment_index,
+        alignment_array_directory=alignment_array_directory,
         max_seq_counts=max_seq_counts,
     )
 

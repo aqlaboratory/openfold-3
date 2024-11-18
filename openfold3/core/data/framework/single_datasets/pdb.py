@@ -196,6 +196,9 @@ class WeightedPDBDataset(SingleDataset):
                 self.alignment_index = json.load(f)
         else:
             self.alignment_index = None
+        self.alignment_array_directory = dataset_config["dataset_paths"][
+            "alignment_array_directory"
+        ]
         self.template_cache_directory = dataset_config["dataset_paths"][
             "template_cache_directory"
         ]
@@ -326,6 +329,7 @@ class WeightedPDBDataset(SingleDataset):
             alignments_directory=self.alignments_directory,
             alignment_db_directory=self.alignment_db_directory,
             alignment_index=self.alignment_index,
+            alignment_array_directory=self.alignment_array_directory,
             max_seq_counts=self.msa.max_seq_counts,
             aln_order=self.msa.aln_order,
             max_rows_paired=self.msa.max_rows_paired,
