@@ -54,7 +54,7 @@ class TestPredictedDistanceErrorHead(unittest.TestCase):
 
 class TestPLDDTHead(unittest.TestCase):
     def test_plddt_head_shape(self):
-        batch_size = 1
+        batch_size = consts.batch_size
         n_token = consts.n_res
         c_s = consts.c_s
         c_out = 50
@@ -68,7 +68,7 @@ class TestPLDDTHead(unittest.TestCase):
         num_atoms_per_token = torch.randint(
             0, max_atoms_per_token.get(), (batch_size, n_token)
         )
-        n_atom = torch.sum(num_atoms_per_token, dim=-1).int().item()
+        n_atom = torch.max(torch.sum(num_atoms_per_token, dim=-1)).int().item()
 
         max_atom_per_token_mask = broadcast_token_feat_to_atoms(
             token_mask=token_mask,
@@ -85,7 +85,7 @@ class TestPLDDTHead(unittest.TestCase):
 
 class TestExperimentallyResolvedHeadAllAtom(unittest.TestCase):
     def test_experimentally_resolved_head_all_atom_shape(self):
-        batch_size = 1
+        batch_size = consts.batch_size
         n_token = consts.n_res
         c_s = consts.c_s
         c_out = 50
@@ -99,7 +99,7 @@ class TestExperimentallyResolvedHeadAllAtom(unittest.TestCase):
         num_atoms_per_token = torch.randint(
             0, max_atoms_per_token.get(), (batch_size, n_token)
         )
-        n_atom = torch.sum(num_atoms_per_token, dim=-1).int().item()
+        n_atom = torch.max(torch.sum(num_atoms_per_token, dim=-1)).int().item()
 
         max_atom_per_token_mask = broadcast_token_feat_to_atoms(
             token_mask=token_mask,
@@ -164,7 +164,7 @@ class TestPairformerEmbedding(unittest.TestCase):
 
 class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
     def test_auxiliary_heads_all_atom_shape(self):
-        batch_size = 1
+        batch_size = consts.batch_size
         n_token = consts.n_res
         n_msa = 10
         n_templ = 3

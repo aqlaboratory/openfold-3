@@ -18,7 +18,7 @@ import numpy as np
 import torch
 
 import tests.compare_utils as compare_utils
-from openfold3.core.model.layers import ReLUTransition
+from openfold3.core.model.layers.transition import ReLUTransition
 from openfold3.core.utils.tensor_utils import tree_map
 from tests.config import consts
 

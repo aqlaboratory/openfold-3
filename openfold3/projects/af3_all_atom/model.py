@@ -23,8 +23,10 @@ import torch
 from ml_collections import ConfigDict
 from torch import nn
 
-from openfold3.core.model.feature_embedders import InputEmbedderAllAtom
-from openfold3.core.model.feature_embedders.input_embedders import MSAModuleEmbedder
+from openfold3.core.model.feature_embedders.input_embedders import (
+    InputEmbedderAllAtom,
+    MSAModuleEmbedder,
+)
 from openfold3.core.model.heads.head_modules import AuxiliaryHeadsAllAtom
 from openfold3.core.model.latent.msa_module import MSAModuleStack
 from openfold3.core.model.latent.pairformer import PairFormerStack
@@ -135,7 +137,11 @@ class AlphaFold3(nn.Module):
             z:
                 [*, N_token, N_token, C_z] Pair representation
         """
-        s_input, s_init, z_init = self.input_embedder(batch=batch)
+        s_input, s_init, z_init = self.input_embedder(
+            batch=batch,
+            inplace_safe=inplace_safe,
+            use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+        )
 
         # s: [*, N_token, C_s]
         # z: [*, N_token, N_token, C_z]
@@ -239,6 +245,7 @@ class AlphaFold3(nn.Module):
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
+        inplace_safe: bool = False,
     ) -> Dict:
         """
         Mini diffusion rollout described in section 4.1.
@@ -253,6 +260,8 @@ class AlphaFold3(nn.Module):
                 [*, N_token, C_s] Single representation output from model trunk
             zij_trunk:
                 [*, N_token, N_token, C_z] Pair representation output from model trunk
+            inplace_safe:
+                Whether inplace operations can be performed
 
         Returns:
             Output dictionary containing the predicted trunk embeddings,
@@ -297,6 +306,10 @@ class AlphaFold3(nn.Module):
                 si_input=si_input,
                 output=output,
                 chunk_size=self.settings.chunk_size,
+                use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+                use_lma=self.settings.use_lma,
+                inplace_safe=inplace_safe,
+                _mask_trans=True,
             )
         )
 
@@ -358,10 +371,6 @@ class AlphaFold3(nn.Module):
         xl_noisy = xl_gt + noise
 
         token_mask = batch["token_mask"]
-
-        # Mask needs to be tiled for shape checks in DeepSpeed EvoAttention
-        if self.settings.use_deepspeed_evo_attention:
-            token_mask = token_mask.tile((1, no_samples, 1))
 
         # Run diffusion module
         xl = self.diffusion_module(
@@ -518,8 +527,12 @@ class AlphaFold3(nn.Module):
                     Training only, predicted atom positions
 
         """
-        # This needs to be done manually for DeepSpeed's sake
-        dtype = next(self.parameters()).dtype
+        # This needs to be done manually for DDP/DeepSpeed's sake
+        dtype = (
+            torch.get_autocast_dtype("cuda")
+            if torch.is_autocast_enabled()
+            else next(self.parameters()).dtype
+        )
 
         def to_dtype(t: torch.Tensor):
             if t.dtype == torch.float32:
@@ -539,7 +552,11 @@ class AlphaFold3(nn.Module):
 
         # Mini rollout
         output = self._rollout(
-            batch=batch, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
+            batch=batch,
+            si_input=si_input,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+            inplace_safe=inplace_safe,
         )
 
         if self.training:  # noqa: SIM102
@@ -554,6 +571,11 @@ class AlphaFold3(nn.Module):
 
             # Run training step (if necessary)
             if self.settings.diffusion_training_enabled:
+                if torch.is_autocast_enabled():
+                    # Sidestep AMP bug (PyTorch issue #65766)
+                    # Needed due to no_grad in _rollout
+                    torch.clear_autocast_cache()
+
                 diffusion_output = self._train_diffusion(
                     batch=batch,
                     si_input=si_input,

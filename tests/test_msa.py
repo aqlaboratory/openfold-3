@@ -18,7 +18,7 @@ import numpy as np
 import torch
 
 import tests.compare_utils as compare_utils
-from openfold3.core.model.layers import (
+from openfold3.core.model.layers.msa import (
     MSAColumnAttention,
     MSAColumnGlobalAttention,
     MSAPairWeightedAveraging,

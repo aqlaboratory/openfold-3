@@ -25,12 +25,13 @@ import torch.nn as nn
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
-from openfold3.core.model.layers import DiffusionTransformer
+from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
     broadcast_token_feat_to_atoms,
 )
+from openfold3.core.utils.checkpointing import checkpoint_section
 
 TensorDict = Dict[str, torch.Tensor]
 
@@ -217,6 +218,7 @@ class AtomTransformer(nn.Module):
         plm: torch.Tensor,
         atom_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
+        use_deepspeed_evo_attention: Optional[bool] = False,
     ):
         """
         Args:
@@ -230,6 +232,8 @@ class AtomTransformer(nn.Module):
                 [*, N_atom] Atom mask
             chunk_size:
                 Inference-time subbatch size
+            use_deepspeed_evo_attention:
+                Whether to use DeepSpeed Evo Attention kernel
         Returns:
             ql:
                 [*, N_atom, c_atom] Updated atom single representation
@@ -274,6 +278,7 @@ class AtomTransformer(nn.Module):
             beta=beta,
             layout=layout,
             chunk_size=chunk_size,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
         )
 
         if pad_len > 0:
@@ -511,6 +516,7 @@ class AtomAttentionEncoder(nn.Module):
         c_s: Optional[int] = None,
         c_z: Optional[int] = None,
         blocks_per_ckpt: Optional[int] = None,
+        ckpt_intermediate_steps: bool = False,
         inf: float = 1e9,
         linear_init_params: ConfigDict = lin_init.atom_att_enc_init,
         use_reentrant: Optional[bool] = None,
@@ -552,6 +558,9 @@ class AtomAttentionEncoder(nn.Module):
             blocks_per_ckpt:
                 Number of blocks per checkpoint. If set, checkpointing will
                 be used to save memory.
+            ckpt_intermediate_steps:
+                Whether to checkpoint intermediate steps in the module, including
+                RefAtomFeatureEmbedder, NoisyPositionEmbedder, and feature aggregation
             inf:
                 Large number used for attention masking
             linear_init_params:
@@ -562,6 +571,9 @@ class AtomAttentionEncoder(nn.Module):
                 this feature)
         """
         super().__init__()
+        self.ckpt_intermediate_steps = ckpt_intermediate_steps
+        self.use_reentrant = use_reentrant
+
         self.ref_atom_feature_embedder = RefAtomFeatureEmbedder(
             c_atom_ref=c_atom_ref,
             c_atom=c_atom,
@@ -616,45 +628,24 @@ class AtomAttentionEncoder(nn.Module):
             Linear(c_atom, c_token, **linear_init_params.linear_q), nn.ReLU()
         )
 
-    def forward(
+    def get_atom_reps(
         self,
         batch: TensorDict,
-        atom_mask: torch.Tensor,
         rl: Optional[torch.Tensor] = None,
         si_trunk: Optional[torch.Tensor] = None,
         zij_trunk: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ):
         """
         Args:
             batch:
-                Input feature dictionary. Features used in this function:
-                    - "ref_pos": [*, N_atom, 3] atom positions in the
-                        reference conformer
-                    - "ref_mask": [*, N_atom] atom mask for the reference conformer
-                    - "ref_element": [*, N_atom, 128] one-hot encoding of atomic number
-                        in the reference conformer
-                    - "ref_charge": [*, N_atom] atom charge in the reference conformer
-                    - "ref_atom_name_chars": [*, N_atom, 4, 64] one-hot encoding of
-                        unicode integers representing unique atom names in the
-                        reference conformer
-                    - "ref_space_uid": [*, n_atom,] numerical encoding of the chain id
-                        and residue index in the reference conformer
-                    - "token_mask": [*, N_token] token mask
-                    - "num_atoms_per_token": [*, N_token] Number of atoms per token
-            atom_mask:
-                [*, N_atom] Atom mask
+                Input feature dictionary
             rl:
                 [*, N_atom, 3] Noisy atom positions (optional)
             si_trunk:
                 [*, N_atom, c_s] Trunk single representation (optional)
             zij_trunk:
                 [*, N_atom, N_atom, c_z] Trunk pair representation (optional)
-            chunk_size:
-                Inference-time subbatch size
         Returns:
-            ai:
-                [*, N_token, c_token] Token representation
             ql:
                 [*, N_atom, c_atom] Atom single representation
             cl:
@@ -695,18 +686,93 @@ class AtomAttentionEncoder(nn.Module):
         )
         plm = plm + self.pair_mlp(plm)
 
+        return ql, cl, plm
+
+    def forward(
+        self,
+        batch: TensorDict,
+        atom_mask: torch.Tensor,
+        rl: Optional[torch.Tensor] = None,
+        si_trunk: Optional[torch.Tensor] = None,
+        zij_trunk: Optional[torch.Tensor] = None,
+        chunk_size: Optional[int] = None,
+        use_deepspeed_evo_attention: Optional[bool] = False,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            batch:
+                Input feature dictionary. Features used in this function:
+                    - "ref_pos": [*, N_atom, 3] atom positions in the
+                        reference conformer
+                    - "ref_mask": [*, N_atom] atom mask for the reference conformer
+                    - "ref_element": [*, N_atom, 128] one-hot encoding of atomic number
+                        in the reference conformer
+                    - "ref_charge": [*, N_atom] atom charge in the reference conformer
+                    - "ref_atom_name_chars": [*, N_atom, 4, 64] one-hot encoding of
+                        unicode integers representing unique atom names in the
+                        reference conformer
+                    - "ref_space_uid": [*, n_atom,] numerical encoding of the chain id
+                        and residue index in the reference conformer
+                    - "token_mask": [*, N_token] token mask
+                    - "num_atoms_per_token": [*, N_token] Number of atoms per token
+            atom_mask:
+                [*, N_atom] Atom mask
+            rl:
+                [*, N_atom, 3] Noisy atom positions (optional)
+            si_trunk:
+                [*, N_atom, c_s] Trunk single representation (optional)
+            zij_trunk:
+                [*, N_atom, N_atom, c_z] Trunk pair representation (optional)
+            chunk_size:
+                Inference-time subbatch size
+            use_deepspeed_evo_attention:
+                Whether to use DeepSpeed Evo Attention kernel
+        Returns:
+            ai:
+                [*, N_token, c_token] Token representation
+            ql:
+                [*, N_atom, c_atom] Atom single representation
+            cl:
+                [*, N_atom, c_atom] Atom single conditioning
+            plm:
+                [*, N_atom, N_atom, c_atom_pair] Atom pair representation
+        """
+        atom_feat_args = (
+            batch,
+            rl,
+            si_trunk,
+            zij_trunk,
+        )
+        ql, cl, plm = checkpoint_section(
+            fn=self.get_atom_reps,
+            args=atom_feat_args,
+            apply_ckpt=self.ckpt_intermediate_steps,
+            use_reentrant=self.use_reentrant,
+        )
+
         # Cross attention transformer (line 15)
         # [*, N_atom, c_atom]
         ql = self.atom_transformer(
-            ql=ql, cl=cl, plm=plm, atom_mask=atom_mask, chunk_size=chunk_size
+            ql=ql,
+            cl=cl,
+            plm=plm,
+            atom_mask=atom_mask,
+            chunk_size=chunk_size,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
         )
 
-        ai = aggregate_atom_feat_to_tokens(
-            token_mask=batch["token_mask"],
-            num_atoms_per_token=batch["num_atoms_per_token"],
-            atom_mask=atom_mask,
-            atom_feat=self.linear_q(ql),
-            atom_dim=-2,
+        agg_args = (
+            batch["token_mask"],
+            batch["num_atoms_per_token"],
+            atom_mask,
+            self.linear_q(ql),
+            -2,
+        )
+        ai = checkpoint_section(
+            fn=aggregate_atom_feat_to_tokens,
+            args=agg_args,
+            apply_ckpt=self.ckpt_intermediate_steps,
+            use_reentrant=self.use_reentrant,
         )
 
         return ai, ql, cl, plm
@@ -808,6 +874,7 @@ class AtomAttentionDecoder(nn.Module):
         cl: torch.Tensor,
         plm: torch.Tensor,
         chunk_size: Optional[int] = None,
+        use_deepspeed_evo_attention: Optional[bool] = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -827,6 +894,8 @@ class AtomAttentionDecoder(nn.Module):
                 [*, N_atom, N_atom, c_atom_pair] Atom pair representation
             chunk_size:
                 Inference-time subbatch size
+            use_deepspeed_evo_attention:
+                Whether to use DeepSpeed Evo Attention kernel
         Returns:
             rl_update:
                 [*, N_atom, 3] Atom position updates
@@ -843,7 +912,12 @@ class AtomAttentionDecoder(nn.Module):
         # Atom transformer
         # [*, N_atom, c_atom]
         ql = self.atom_transformer(
-            ql=ql, cl=cl, plm=plm, atom_mask=atom_mask, chunk_size=chunk_size
+            ql=ql,
+            cl=cl,
+            plm=plm,
+            atom_mask=atom_mask,
+            chunk_size=chunk_size,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
         )
 
         # Compute updates for atom positions

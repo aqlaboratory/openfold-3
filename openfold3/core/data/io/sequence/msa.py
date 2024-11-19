@@ -180,8 +180,8 @@ def parse_msas_direct(
 
     if len(file_list) == 0:
         raise RuntimeError(
-            f"No alignments found in {folder_path}. Folders for chains"
-            "without any aligned sequences need to contain at least one"
+            f"No alignments found in {folder_path}. Folders for chains "
+            "without any aligned sequences need to contain at least one "
             ".sto file with only the query sequence."
         )
     else:
@@ -190,7 +190,7 @@ def parse_msas_direct(
             basename, ext = aln_file.stem, aln_file.suffix
             if ext not in [".sto", ".a3m"]:
                 raise NotImplementedError(
-                    "Currently only .sto and .a3m file parsing is supported for"
+                    "Currently only .sto and .a3m file parsing is supported for "
                     f"alignment parsing, not {ext}."
                 )
 
@@ -247,7 +247,7 @@ def parse_msas_alignment_database(
             basename, ext = os.path.splitext(file_name)
             if ext not in [".sto", ".a3m"]:
                 raise NotImplementedError(
-                    "Currently only .sto and .a3m file parsing is supported for"
+                    "Currently only .sto and .a3m file parsing is supported for "
                     f"alignment parsing, not {ext}."
                 )
 

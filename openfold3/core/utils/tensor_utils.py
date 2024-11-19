@@ -14,7 +14,7 @@
 # limitations under the License.
 
 from functools import partial
-from typing import List
+from typing import List, Tuple
 
 import torch
 import torch.nn as nn
@@ -111,3 +111,16 @@ def tree_map(fn, tree, leaf_type):
 
 
 tensor_tree_map = partial(tree_map, leaf_type=torch.Tensor)
+
+
+def sparsify_tensor(
+    x: torch.Tensor, mask: torch.Tensor, block: int, batch_dims: Tuple[int]
+) -> torch.Tensor:
+    """Convert a regular tensor to sparse format"""
+    block_bias = (
+        x.to_sparse_bsr((block, block)).values().reshape(*batch_dims, -1, block, block)
+    )
+    ret = torch.index_select(
+        block_bias, dim=-3, index=torch.nonzero(mask.flatten()).squeeze()
+    )
+    return ret

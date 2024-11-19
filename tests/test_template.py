@@ -19,7 +19,10 @@ import numpy as np
 import torch
 
 import tests.compare_utils as compare_utils
-from openfold3.core.model.latent import TemplateEmbedderAllAtom, TemplatePairStack
+from openfold3.core.model.latent.template_module import (
+    TemplateEmbedderAllAtom,
+    TemplatePairStack,
+)
 from openfold3.core.model.layers.template_pointwise_attention import (
     TemplatePointwiseAttention,
 )

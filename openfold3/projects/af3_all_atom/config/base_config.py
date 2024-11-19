@@ -37,6 +37,7 @@ block_size = mlc.FieldReference(16, field_type=int)
 eps = mlc.FieldReference(1e-8, field_type=float)
 inf = mlc.FieldReference(1e9, field_type=float)
 blocks_per_ckpt = mlc.FieldReference(None, field_type=int)
+ckpt_intermediate_steps = mlc.FieldReference(False, field_type=bool)
 chunk_size = mlc.FieldReference(None, field_type=int)
 tune_chunk_size = mlc.FieldReference(True, field_type=bool)
 max_atoms_per_token = mlc.FieldReference(23, field_type=int)
@@ -47,6 +48,7 @@ project_config = mlc.ConfigDict(
         "model": {
             "settings": {
                 "blocks_per_ckpt": blocks_per_ckpt,
+                "ckpt_intermediate_steps": ckpt_intermediate_steps,
                 "chunk_size": chunk_size,
                 "use_block_sparse_attn": use_block_sparse_attn,
                 # Use DeepSpeed memory-efficient attention kernel. Mutually
@@ -106,6 +108,7 @@ project_config = mlc.ConfigDict(
                         "use_block_sparse_attn": use_block_sparse_attn,
                         "block_size": block_size,
                         "blocks_per_ckpt": blocks_per_ckpt,
+                        "ckpt_intermediate_steps": ckpt_intermediate_steps,
                         "inf": inf,
                         "linear_init_params": lin_init.atom_att_enc_init,
                         "use_reentrant": False,
@@ -169,6 +172,7 @@ project_config = mlc.ConfigDict(
                         "blocks_per_ckpt": blocks_per_ckpt,
                         "inf": inf,
                         "eps": eps,
+                        "transition_ckpt_chunk_size": None,
                         "linear_init_params": lin_init.msa_module_init,
                         "use_reentrant": False,
                         "clear_cache_between_blocks": False,
@@ -231,6 +235,7 @@ project_config = mlc.ConfigDict(
                         "use_block_sparse_attn": use_block_sparse_attn,
                         "block_size": block_size,
                         "blocks_per_ckpt": blocks_per_ckpt,
+                        "ckpt_intermediate_steps": ckpt_intermediate_steps,
                         "inf": inf,
                         "linear_init_params": lin_init.atom_att_enc_init,
                         "use_reentrant": False,
