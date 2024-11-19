@@ -70,6 +70,7 @@ def weighted_rigid_align(
     H = H * w[..., None, None] * atom_mask_gt[..., None, None]
     H = torch.sum(H, dim=-3)
 
+    # SVD (cast to float because doesn't work with bf16/fp16)
     with torch.amp.autocast("cuda", dtype=torch.float32):
         U, _, V = torch.linalg.svd(H)
         dets = torch.linalg.det(U @ V)
@@ -359,18 +360,22 @@ def diffusion_loss(
         ligand_weight=ligand_weight,
         eps=eps,
     )
-    loss_breakdown = {"mse": l_mse.mean(dim=-1)}
+
+    # Mean over diffusion sample dimension
+    loss_breakdown = {"mse": l_mse.detach().clone().mean(dim=-1)}
 
     l_bond = 0.0
     l_smooth_lddt = 0.0
     if chunk_size is None:
         if bond_weight.any():
             l_bond = bond_loss(x=x, batch=batch, eps=eps)
-            loss_breakdown["bond"] = l_bond.mean(dim=-1)
+            loss_breakdown["bond"] = l_bond.detach().clone().mean(dim=-1)
 
         if smooth_lddt_weight.any():
             l_smooth_lddt = smooth_lddt_loss(x=x, batch=batch, eps=eps)
-            loss_breakdown["smooth_lddt"] = l_smooth_lddt.mean(dim=-1)
+
+            # Mean over diffusion sample dimension
+            loss_breakdown["smooth_lddt"] = l_smooth_lddt.detach().clone().mean(dim=-1)
     else:
         if bond_weight.any():
             l_bond = run_low_mem_loss_fn(
@@ -379,7 +384,9 @@ def diffusion_loss(
                 kwargs={"batch": batch, "eps": eps},
                 chunk_size=chunk_size,
             )
-            loss_breakdown["bond"] = l_bond.mean(dim=-1)
+
+            # Mean over diffusion sample dimension
+            loss_breakdown["bond"] = l_bond.detach().clone().mean(dim=-1)
 
         if smooth_lddt_weight.any():
             l_smooth_lddt = run_low_mem_loss_fn(
@@ -388,7 +395,7 @@ def diffusion_loss(
                 kwargs={"batch": batch, "eps": eps},
                 chunk_size=chunk_size,
             )
-            loss_breakdown["smooth_lddt"] = l_smooth_lddt.mean(dim=-1)
+            loss_breakdown["smooth_lddt"] = l_smooth_lddt.detach().clone().mean(dim=-1)
 
     # Mean over batch dimension for individual losses
     # Mask out samples where the loss is disabled
@@ -396,8 +403,6 @@ def diffusion_loss(
         f"{name}_loss": loss_masked_batch_mean(
             loss=loss, weight=loss_weights[name], apply_weight=False, eps=eps
         )
-        .detach()
-        .clone()
         for name, loss in loss_breakdown.items()
     }
 

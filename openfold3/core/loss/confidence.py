@@ -739,10 +739,11 @@ def confidence_loss(
     # Unweighted mean over batch dimension for individual losses
     loss_breakdown = {
         f"{name}_loss": loss_masked_batch_mean(
-            loss=loss, weight=loss_weights[name], apply_weight=False, eps=eps
+            loss=loss.detach().clone(),
+            weight=loss_weights[name],
+            apply_weight=False,
+            eps=eps,
         )
-        .detach()
-        .clone()
         for name, loss in loss_breakdown.items()
     }
 

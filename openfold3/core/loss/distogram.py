@@ -133,10 +133,10 @@ def all_atom_distogram_loss(
 
     # Calculate unweighted batch mean
     # Mask out samples where the loss is disabled
-    mean_loss = loss_masked_batch_mean(
-        loss=loss, weight=distogram_weight, apply_weight=False, eps=eps
+    mean_loss_unweighted = loss_masked_batch_mean(
+        loss=loss.detach().clone(), weight=distogram_weight, apply_weight=False, eps=eps
     )
-    loss_breakdown = {"distogram_loss": mean_loss.detach().clone()}
+    loss_breakdown = {"distogram_loss": mean_loss_unweighted}
 
     # Apply loss weight in batch mean
     mean_loss = loss_masked_batch_mean(
