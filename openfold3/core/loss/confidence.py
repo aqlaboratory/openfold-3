@@ -19,7 +19,11 @@ from typing import Dict, Tuple
 import torch
 import torch.nn.functional as F
 
-from openfold3.core.loss.loss_utils import sigmoid_cross_entropy, softmax_cross_entropy
+from openfold3.core.loss.loss_utils import (
+    loss_masked_batch_mean,
+    sigmoid_cross_entropy,
+    softmax_cross_entropy,
+)
 from openfold3.core.metrics.validation import lddt
 from openfold3.core.np import residue_constants
 from openfold3.core.utils.atomize_utils import (
@@ -668,7 +672,7 @@ def confidence_loss(
         mean_loss:
             Loss on confidence module
         loss_breakdown:
-            Dict of individual component losses
+            Dict of individual component losses (unweighted)
     """
     loss_weights = batch["loss_weights"]
 
@@ -700,13 +704,13 @@ def confidence_loss(
     )
 
     loss_breakdown = {
-        "plddt": l_plddt.mean(),
-        "pde": l_pde.mean(),
-        "experimentally_resolved": l_resolved.mean(),
+        "plddt": l_plddt,
+        "pde": l_pde,
+        "experimentally_resolved": l_resolved,
     }
 
     pae_weight = loss_weights["pae"]
-    if pae_weight > 0:
+    if pae_weight.any():
         l_pae = pae_loss(
             batch=batch,
             x=output["atom_positions_predicted"],
@@ -719,14 +723,28 @@ def confidence_loss(
             inf=inf,
         )
 
-        loss_breakdown["pae"] = l_pae.mean()
+        loss_breakdown["pae"] = l_pae
 
+    # Calculate total confidence loss
+    # Mask out samples where the loss is disabled
     conf_loss = sum(
-        [loss * loss_weights[name].item() for name, loss in loss_breakdown.items()]
+        [
+            loss_masked_batch_mean(
+                loss=loss, weight=loss_weights[name], apply_weight=True, eps=eps
+            )
+            for name, loss in loss_breakdown.items()
+        ]
     )
 
+    # Unweighted mean over batch dimension for individual losses
     loss_breakdown = {
-        f"{k}_loss": v.detach().clone() for k, v in loss_breakdown.items()
+        f"{name}_loss": loss_masked_batch_mean(
+            loss=loss.detach().clone(),
+            weight=loss_weights[name],
+            apply_weight=False,
+            eps=eps,
+        )
+        for name, loss in loss_breakdown.items()
     }
 
     return conf_loss, loss_breakdown

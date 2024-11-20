@@ -16,7 +16,7 @@ import unittest
 
 import torch
 
-from openfold3.core.model.latent import PairFormerStack
+from openfold3.core.model.latent.pairformer import PairFormerStack
 from tests.config import consts
 
 

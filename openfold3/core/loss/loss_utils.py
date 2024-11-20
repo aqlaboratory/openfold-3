@@ -147,3 +147,28 @@ def compute_renamed_ground_truth(
         "renamed_atom14_gt_positions": renamed_atom14_gt_positions,
         "renamed_atom14_gt_exists": renamed_atom14_gt_mask,
     }
+
+
+def loss_masked_batch_mean(
+    loss: torch.tensor, weight: float, apply_weight: bool, eps: float
+) -> torch.Tensor:
+    """
+    Calculate the mean loss over the batch, excluding samples where the
+    loss was disabled.
+
+    Args:
+        loss:
+            [*, 1] Loss values per batch
+        weight:
+            [*, 1] Loss weights per batch to use as mask
+        apply_weight:
+            Whether to apply the weight to the loss
+        eps:
+            Small value to avoid division by ze
+    Returns:
+        [1] Masked mean of loss for a batch
+    """
+    mask = (weight > 0).to(dtype=loss.dtype)
+    if apply_weight:
+        loss = loss * weight
+    return torch.sum(loss * mask) / (torch.sum(mask) + eps)

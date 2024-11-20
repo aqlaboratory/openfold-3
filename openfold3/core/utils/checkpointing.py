@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import importlib
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, List, Optional, Sequence
 
 import torch
 import torch.utils.checkpoint
@@ -20,18 +20,23 @@ import torch.utils.checkpoint
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
     import deepspeed
+    from deepspeed.runtime.activation_checkpointing.checkpointing import (
+        non_reentrant_checkpoint as ds_non_reentrant_checkpoint,
+    )
 
 
 BLOCK_ARG = Any
-BLOCK_ARGS = List[BLOCK_ARG]
+BLOCK_ARGS = Sequence[BLOCK_ARG]
 
 
-def get_checkpoint_fn(use_reentrant: Optional[bool] = None):
-    deepspeed_is_configured = (
-        deepspeed_is_installed and deepspeed.checkpointing.is_configured()
-    )
-    if deepspeed_is_configured and use_reentrant is None:
-        checkpoint = deepspeed.checkpointing.checkpoint
+def get_checkpoint_fn(
+    deepspeed_is_configured: bool, use_reentrant: Optional[bool] = None
+):
+    if deepspeed_is_configured:
+        if use_reentrant is False:
+            checkpoint = ds_non_reentrant_checkpoint
+        else:
+            checkpoint = deepspeed.checkpointing.checkpoint
     else:
         checkpoint = torch.utils.checkpoint.checkpoint
 
@@ -90,16 +95,75 @@ def checkpoint_blocks(
     elif blocks_per_ckpt < 1 or blocks_per_ckpt > len(blocks):
         raise ValueError("blocks_per_ckpt must be between 1 and len(blocks)")
 
-    checkpoint = get_checkpoint_fn(use_reentrant=use_reentrant)
+    deepspeed_is_configured = (
+        deepspeed_is_installed and deepspeed.checkpointing.is_configured()
+    )
+
+    checkpoint = get_checkpoint_fn(
+        deepspeed_is_configured=deepspeed_is_configured, use_reentrant=use_reentrant
+    )
 
     for s in range(0, len(blocks), blocks_per_ckpt):
         e = s + blocks_per_ckpt
 
-        if use_reentrant is not None:
-            args = checkpoint(chunker(s, e), *args, use_reentrant=use_reentrant)
-        else:
+        if deepspeed_is_configured:
             args = checkpoint(chunker(s, e), *args)
+        else:
+            args = checkpoint(chunker(s, e), *args, use_reentrant=use_reentrant)
 
         args = wrap(args)
+
+    return args
+
+
+@torch.jit.ignore
+def checkpoint_section(
+    fn: Callable,
+    args: BLOCK_ARGS,
+    apply_ckpt: Optional[bool] = True,
+    use_reentrant: Optional[bool] = None,
+):
+    """
+    Apply checkpointing to a single function.
+
+    Args:
+        fn:
+            Function to checkpoint
+        args:
+            Tuple of arguments for the first block.
+        apply_ckpt:
+            Whether to apply checkpointing. If None, no checkpointing
+            is performed.
+        use_reentrant:
+            Whether to use reentrant checkpointing. If set, torch checkpointing
+            will be used.
+    Returns:
+        The output of the final block
+    """
+
+    def wrap(a):
+        return (a,) if type(a) is not tuple else a
+
+    def exec(fn, a):
+        return fn(*a)
+
+    # Avoids mishaps when the function takes just one argument
+    args = wrap(args)
+
+    if not apply_ckpt or not torch.is_grad_enabled():
+        return exec(fn, args)
+
+    deepspeed_is_configured = (
+        deepspeed_is_installed and deepspeed.checkpointing.is_configured()
+    )
+
+    checkpoint = get_checkpoint_fn(
+        deepspeed_is_configured=deepspeed_is_configured, use_reentrant=use_reentrant
+    )
+
+    if deepspeed_is_configured:
+        args = checkpoint(fn, *args)
+    else:
+        args = checkpoint(fn, *args, use_reentrant=use_reentrant)
 
     return args

@@ -29,7 +29,7 @@ from ml_collections import ConfigDict
 from torch import nn
 
 import openfold3.core.config.default_linear_init_config as lin_init
-from openfold3.core.model.feature_embedders import (
+from openfold3.core.model.feature_embedders.template_embedders import (
     TemplatePairEmbedderAllAtom,
     TemplatePairEmbedderMonomer,
     TemplatePairEmbedderMultimer,
@@ -291,7 +291,7 @@ class TemplatePairStack(nn.Module):
         self,
         t: torch.tensor,
         mask: torch.tensor,
-        chunk_size: int,
+        chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
@@ -650,7 +650,7 @@ class TemplateEmbedderAllAtom(nn.Module):
         batch: Dict,
         z: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: int,
+        chunk_size: Optional[int] = None,
         _mask_trans: bool = True,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,

@@ -16,13 +16,15 @@ import unittest
 
 import torch
 
-from openfold3.core.model.feature_embedders import (
+from openfold3.core.model.feature_embedders.input_embedders import (
     InputEmbedder,
     InputEmbedderAllAtom,
     InputEmbedderMultimer,
     MSAModuleEmbedder,
     PreembeddingEmbedder,
     RecyclingEmbedder,
+)
+from openfold3.core.model.feature_embedders.template_embedders import (
     TemplatePairEmbedderAllAtom,
     TemplatePairEmbedderMonomer,
     TemplatePairEmbedderMultimer,
@@ -139,7 +141,6 @@ class TestMSAModuleEmbedder(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
         n_total_msa_seq = 200
-        n_paired_seq = 150
         c_token = 768
         c_s_input = c_token + 65
         one_hot_dim = 32
@@ -156,7 +157,9 @@ class TestMSAModuleEmbedder(unittest.TestCase):
             "has_deletion": torch.ones((batch_size, n_total_msa_seq, n_token)),
             "deletion_value": torch.rand((batch_size, n_total_msa_seq, n_token)),
             "msa_mask": torch.ones((batch_size, n_total_msa_seq, n_token)),
-            "num_paired_seqs": torch.Tensor([n_paired_seq]),
+            "num_paired_seqs": torch.randint(
+                low=n_total_msa_seq // 4, high=n_total_msa_seq // 2, size=(batch_size,)
+            ),
         }
 
         s_input = torch.rand(batch_size, n_token, c_s_input)
@@ -168,8 +171,9 @@ class TestMSAModuleEmbedder(unittest.TestCase):
 
         # Check that the number of sampled sequences is between the number of
         # uniprot seqs and the total number of sequences
+        max_paired_seqs = torch.max(batch["num_paired_seqs"])
         self.assertTrue(
-            (n_sampled_seqs > n_paired_seq) & (n_sampled_seqs < n_total_msa_seq)
+            (n_sampled_seqs > max_paired_seqs) & (n_sampled_seqs < n_total_msa_seq)
         )
         self.assertTrue(
             msa.shape == (batch_size, n_sampled_seqs, n_token, msa_emb_config.c_m)

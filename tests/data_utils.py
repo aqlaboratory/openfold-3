@@ -238,21 +238,21 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ):
         .repeat((batch_size, 1))
         .int(),
         "msa_mask": torch.ones((batch_size, n_msa, n_token)).float(),
-        "num_paired_seqs": torch.Tensor([int(n_msa / 2)]).int(),
-        "resolution": torch.Tensor([2.0]).float(),
-        "is_distillation": torch.BoolTensor([False]),
+        "num_paired_seqs": torch.randint(
+            low=n_msa // 4, high=n_msa // 2, size=(batch_size,)
+        ),
         "ground_truth": {
             "atom_positions": torch.randn((batch_size, n_atom, 3)).float(),
             "atom_resolved_mask": torch.ones((batch_size, n_atom)).float(),
         },
         "loss_weights": {
-            "bond": torch.Tensor([0.0]),
-            "smooth_lddt": torch.Tensor([4.0]),
-            "mse": torch.Tensor([4.0]),
-            "plddt": torch.Tensor([1e-4]),
-            "pde": torch.Tensor([1e-4]),
-            "experimentally_resolved": torch.Tensor([1e-4]),
-            "pae": torch.Tensor([0.0]),
-            "distogram": torch.Tensor([3e-2]),
+            "bond": torch.Tensor([0.0]).repeat(batch_size),
+            "smooth_lddt": torch.Tensor([4.0]).repeat(batch_size),
+            "mse": torch.Tensor([4.0]).repeat(batch_size),
+            "plddt": torch.Tensor([1e-4]).repeat(batch_size),
+            "pde": torch.Tensor([1e-4]).repeat(batch_size),
+            "experimentally_resolved": torch.Tensor([1e-4]).repeat(batch_size),
+            "pae": torch.Tensor([0.0]).repeat(batch_size),
+            "distogram": torch.Tensor([3e-2]).repeat(batch_size),
         },
     }
