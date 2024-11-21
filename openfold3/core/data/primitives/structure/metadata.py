@@ -259,7 +259,10 @@ def get_ccd_atom_pair_to_bond_dict(ccd_entry: CIFBlock) -> dict[(str, str), Bond
         Dictionary mapping each pair of atom names to the respective Biotite bond type.
     """
 
-    chem_comp_bonds = ccd_entry["chem_comp_bond"]
+    chem_comp_bonds = ccd_entry.get("chem_comp_bond")
+
+    if chem_comp_bonds is None:
+        return {}
 
     atom_pair_to_bond = {}
 
