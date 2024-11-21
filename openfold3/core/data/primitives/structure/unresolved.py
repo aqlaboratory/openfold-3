@@ -51,8 +51,8 @@ def set_non_inferable_labels_to_dummy_value(
     This function sets labels in an annotation dict to dummy values, if they are not
     considered "inferable" labels (labels that get automatically set in the function
     that this is used in). The dummy values are set based on the dtype of the label,
-    with float-type labels set to NaN, string-type labels set to ".", and integer-type
-    labels set to -1.
+    with float-type labels set to NaN, string-type labels set to ".", integer-type
+    labels set to -1, and boolean-type labels set to False.
 
     Args:
         annotation:
@@ -74,6 +74,8 @@ def set_non_inferable_labels_to_dummy_value(
                 annotation_dict[label] = "."
             elif np.issubdtype(dtype, np.integer):
                 annotation_dict[label] = -1
+            elif np.issubdtype(dtype, np.bool_):
+                annotation_dict[label] = False
             else:
                 raise ValueError(f"Unknown dtype for label {label}: {value.dtype}")
 
@@ -167,9 +169,9 @@ def build_unresolved_polymer_segment(
                       attribute
 
             Other annotations outside of this list will be set to NaN for float-type
-            annotations, "." for string-type annotations, and -1 for integer-type. This
-            type-specific casting is important for compatibility with the original
-            dtypes in the AtomArray.
+            annotations, "." for string-type annotations, -1 for integer-type, and False
+            for bool-type. This type-specific casting is important for compatibility
+            with the original dtypes in the AtomArray.
     """
     if polymer_type == "nucleic_acid":
         logger.info("Building unresolved nucleic acid segment!")  # dev-only: del later
@@ -579,9 +581,9 @@ def add_unresolved_atoms_within_residue(
                 - _atom_idx
 
             Other annotations outside of this list will be set to NaN for float-type
-            annotations, "." for string-type annotations, and -1 for integer-type. This
-            type-specific casting is important for compatibility with the original
-            dtypes in the AtomArray.
+            annotations, "." for string-type annotations, and -1 for integer-type, and
+            False for bool-type. This type-specific casting is important for
+            compatibility with the original dtypes in the AtomArray.
     """
     # Get theoretical lengths of each chain (needed to identify true terminal residues)
     chain_to_monomers = get_chain_to_three_letter_codes_dict(atom_array, cif_data)
