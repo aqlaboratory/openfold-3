@@ -631,7 +631,6 @@ def add_unresolved_atoms_within_residue(
             all_atoms_no_h = all_atoms[all_atom_elements != "H"].tolist()
 
             # General metadata for atoms
-            atom_pairs_to_bonds = get_ccd_atom_pair_to_bond_dict(ccd[res_name])
             atom_ids_to_elements = get_ccd_atom_id_to_element_dict(ccd[res_name])
             atom_ids_to_charges = get_ccd_atom_id_to_charge_dict(ccd[res_name])
 
@@ -655,6 +654,8 @@ def add_unresolved_atoms_within_residue(
                 # during phosphodiester bond formation and should not be considered a
                 # missing atom
                 elif is_nucleic_acid and not is_first_residue:
+                    atom_pairs_to_bonds = get_ccd_atom_pair_to_bond_dict(ccd[res_name])
+
                     if res_name not in std_na_residues:
                         logger.debug(
                             "Adding unresolved atoms within NA chain for non-standard "
