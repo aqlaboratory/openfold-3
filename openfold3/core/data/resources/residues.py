@@ -246,7 +246,7 @@ MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_1 = {
 
 
 @np.vectorize
-def get_with_unknown_3(key: str) -> int:
+def get_with_unknown_3_to_idx(key: str) -> int:
     """Wraps a RESTYPE_INDEX_3 dictionary lookup with a default value of "UNK".
 
     Args:
@@ -261,7 +261,7 @@ def get_with_unknown_3(key: str) -> int:
 
 
 @np.vectorize
-def get_with_unknown_1(key: str) -> int:
+def get_with_unknown_1_to_idx(key: str) -> int:
     """Wraps a RESTYPE_INDEX_1 dictionary lookup with a default value of "UNK".
 
     Args:
@@ -273,3 +273,33 @@ def get_with_unknown_1(key: str) -> int:
             Index of residue type.
     """
     return RESTYPE_INDEX_1.get(key, RESTYPE_INDEX_1["X"])
+
+
+@np.vectorize
+def get_with_unknown_3_to_1(key: str) -> str:
+    """Maps a 3-letter residue array to 1-letter residue array.
+
+    Args:
+        key (np.ndarray):
+            3-letter residue array.
+
+    Returns:
+        np.ndarray:
+            1-letter residue array.
+    """
+    return RESTPYE_3TO1.get(key, RESTPYE_3TO1["UNK"])
+
+
+@np.vectorize
+def get_with_unknown_1_to_3(key: str) -> str:
+    """Maps a 3-letter residue array to 1-letter residue array.
+
+    Args:
+        key (np.ndarray):
+            3-letter residue array.
+
+    Returns:
+        np.ndarray:
+            1-letter residue array.
+    """
+    return RESTYPE_1TO3.get(key, RESTYPE_1TO3["X"])

@@ -177,12 +177,16 @@ def parse_msas_direct(
     """
     # Get all msa filepaths, filenames and extensions for a specific chain
     file_list = list(folder_path.iterdir())
+
+    # Subset to keys in max_seq_counts if provided
+    if max_seq_counts is not None:
+        file_list = [file for file in file_list if file.stem in max_seq_counts]
     msas = {}
 
     if len(file_list) == 0:
         raise RuntimeError(
-            f"No alignments found in {folder_path}. Folders for chains "
-            "without any aligned sequences need to contain at least one "
+            f"No alignments found in {folder_path}. Folders for chains"
+            "without any aligned sequences need to contain at least one"
             ".sto file with only the query sequence."
         )
     else:
@@ -191,13 +195,9 @@ def parse_msas_direct(
             basename, ext = aln_file.stem, aln_file.suffix
             if ext not in [".sto", ".a3m"]:
                 raise NotImplementedError(
-                    "Currently only .sto and .a3m file parsing is supported for "
+                    "Currently only .sto and .a3m file parsing is supported for"
                     f"alignment parsing, not {ext}."
                 )
-
-            # Only include files with specified max values in the max_seq_counts dict
-            if max_seq_counts is not None and basename not in max_seq_counts:
-                continue
 
             # Parse the MSAs with the appropriate parser
             with open(aln_file.absolute()) as f:

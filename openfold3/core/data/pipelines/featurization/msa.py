@@ -15,7 +15,7 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
 from openfold3.core.data.primitives.sequence.msa import MsaArrayCollection
 from openfold3.core.data.resources.residues import (
     STANDARD_RESIDUES_WITH_GAP_1,
-    get_with_unknown_1,
+    get_with_unknown_1_to_idx,
 )
 
 
@@ -44,7 +44,7 @@ def featurize_msa_af3(
     # Create features
     features = {}
     msa_restype_index = torch.tensor(
-        get_with_unknown_1(msa_feature_precursor.msa), dtype=torch.int64
+        get_with_unknown_1_to_idx(msa_feature_precursor.msa), dtype=torch.int64
     )
     features["msa"] = encode_one_hot(
         msa_restype_index, len(STANDARD_RESIDUES_WITH_GAP_1)
