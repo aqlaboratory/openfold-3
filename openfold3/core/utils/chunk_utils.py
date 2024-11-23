@@ -15,7 +15,7 @@ import logging
 import math
 from collections.abc import Sequence
 from functools import partial
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Optional
 
 import torch
 
@@ -45,8 +45,8 @@ def _fetch_dims(tree):
 @torch.jit.ignore
 def _flat_idx_to_idx(
     flat_idx: int,
-    dims: Tuple[int],
-) -> Tuple[int]:
+    dims: tuple[int],
+) -> tuple[int]:
     idx = []
     for d in reversed(dims):
         idx.append(flat_idx % d)
@@ -62,7 +62,7 @@ def _get_minimal_slice_set(
     dims: int,
     start_edges: Optional[Sequence[bool]] = None,
     end_edges: Optional[Sequence[bool]] = None,
-) -> Sequence[Tuple[int]]:
+) -> Sequence[tuple[int]]:
     """
     Produces an ordered sequence of tensor slices that, when used in
     sequence on a tensor with shape dims, yields tensors that contain every
@@ -207,7 +207,7 @@ def _chunk_slice(
 
 def chunk_layer(
     layer: Callable,
-    inputs: Dict[str, Any],
+    inputs: dict[str, Any],
     chunk_size: int,
     no_batch_dims: int,
     low_mem: bool = False,
@@ -404,7 +404,7 @@ class ChunkSizeTuner:
     def tune_chunk_size(
         self,
         representative_fn: Callable,
-        args: Tuple[Any],
+        args: tuple[Any],
         min_chunk_size: int,
     ) -> int:
         consistent = True

@@ -21,7 +21,7 @@ import functools
 import io
 import logging
 from collections.abc import Mapping, Sequence
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
 import numpy as np
 from Bio import PDB
@@ -111,7 +111,7 @@ class ParsingResult:
     """
 
     mmcif_object: Optional[MmcifObject]
-    errors: Mapping[Tuple[str, str], Any]
+    errors: Mapping[tuple[str, str], Any]
 
 
 class ParseError(Exception):
@@ -427,7 +427,7 @@ def _is_set(data: str) -> bool:
 
 def get_atom_coords(
     mmcif_object: MmcifObject, chain_id: str, _zero_center_positions: bool = False
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     # Locate the right chain
     chains = list(mmcif_object.structure.get_chains())
     relevant_chains = [c for c in chains if c.id == chain_id]

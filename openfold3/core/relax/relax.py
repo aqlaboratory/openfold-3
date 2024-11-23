@@ -16,7 +16,7 @@
 """Amber relaxation."""
 
 from collections.abc import Sequence
-from typing import Any, Dict, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -63,7 +63,7 @@ class AmberRelaxation:
 
     def process(
         self, *, prot: protein.Protein, cif_output: bool = False
-    ) -> Tuple[str, Dict[str, Any], np.ndarray]:
+    ) -> tuple[str, dict[str, Any], np.ndarray]:
         """Runs Amber relax on a prediction, adds hydrogens, returns PDB string."""
         out = amber_minimize.run_pipeline(
             prot=prot,

@@ -13,7 +13,7 @@
 # limitations under the License.
 import importlib
 from collections.abc import Sequence
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Optional
 
 import torch
 import torch.utils.checkpoint
@@ -46,7 +46,7 @@ def get_checkpoint_fn(
 
 @torch.jit.ignore
 def checkpoint_blocks(
-    blocks: List[Callable],
+    blocks: list[Callable],
     args: BLOCK_ARGS,
     blocks_per_ckpt: Optional[int],
     use_reentrant: Optional[bool] = None,

@@ -22,7 +22,7 @@ feature embedding functions in openfold3.core.model.feature_embedders.
 import math
 import sys
 from functools import partial
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 from ml_collections import ConfigDict
@@ -647,7 +647,7 @@ class TemplateEmbedderAllAtom(nn.Module):
 
     def forward(
         self,
-        batch: Dict,
+        batch: dict,
         z: torch.Tensor,
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,

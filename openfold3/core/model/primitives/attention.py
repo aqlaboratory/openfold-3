@@ -21,7 +21,7 @@ DeepSpeed EvoformerAttention, and FlashAttention are also included.
 
 import importlib
 import math
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -88,7 +88,7 @@ def _attention(
     query: torch.Tensor,
     key: torch.Tensor,
     value: torch.Tensor,
-    biases: List[torch.Tensor],
+    biases: list[torch.Tensor],
 ) -> torch.Tensor:
     """Attention operation with bias terms.
 
@@ -154,7 +154,7 @@ def attention_chunked_trainable(
         k_chunk = key[idx_tup]
         v_chunk = value[idx_tup]
 
-        def _slice_bias(b: torch.Tensor, i: List, s: int, e: int) -> torch.Tensor:
+        def _slice_bias(b: torch.Tensor, i: list, s: int, e: int) -> torch.Tensor:
             """Slice bias tensor along chunk dimension."""
             i[chunk_dim] = slice(s, e) if b.shape[chunk_dim] != 1 else slice(None)
             return b[tuple(i)]
@@ -253,7 +253,7 @@ class Attention(nn.Module):
 
     def _prep_qkv(
         self, q_x: torch.Tensor, kv_x: torch.Tensor, apply_scale: bool = True
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # [*, Q/K/V, H * C_hidden]
         q = self.linear_q(q_x)
         k = self.linear_k(kv_x)
@@ -294,7 +294,7 @@ class Attention(nn.Module):
         self,
         q_x: torch.Tensor,
         kv_x: torch.Tensor,
-        biases: Optional[List[torch.Tensor]] = None,
+        biases: Optional[list[torch.Tensor]] = None,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
@@ -449,7 +449,7 @@ class BlockSparseAttention(Attention):
         if self.block_size not in [16, 32, 64, 128]:
             raise ValueError("Only block sizes in [16, 32, 64, 128] are supported")
 
-    def get_sparse_ops(self, seq_len: int, layout, device: str) -> Tuple:
+    def get_sparse_ops(self, seq_len: int, layout, device: str) -> tuple:
         """
         Initialize matmul and softmax kernels. The kernels generate look-up tables
         for incrementing pointers based on sequence length and block size.
@@ -498,7 +498,7 @@ class BlockSparseAttention(Attention):
         q: torch.Tensor,
         k: torch.Tensor,
         v: torch.Tensor,
-        biases: Optional[List[torch.Tensor]],
+        biases: Optional[list[torch.Tensor]],
         layout: torch.Tensor,
     ) -> torch.Tensor:
         """Run block-sparse attention.
@@ -562,7 +562,7 @@ class BlockSparseAttention(Attention):
         self,
         q_x: torch.Tensor,
         kv_x: torch.Tensor,
-        biases: Optional[List[torch.Tensor]],
+        biases: Optional[list[torch.Tensor]],
         layout: torch.Tensor,
     ) -> torch.Tensor:
         """
@@ -686,7 +686,7 @@ def _deepspeed_evo_attn(
     q: torch.Tensor,
     k: torch.Tensor,
     v: torch.Tensor,
-    biases: List[torch.Tensor],
+    biases: list[torch.Tensor],
 ):
     """ ""
     Compute attention using the DeepSpeed DS4Sci_EvoformerAttention kernel.
@@ -753,7 +753,7 @@ def _lma(
     q: torch.Tensor,
     k: torch.Tensor,
     v: torch.Tensor,
-    biases: List[torch.Tensor],
+    biases: list[torch.Tensor],
     q_chunk_size: int,
     kv_chunk_size: int,
 ):

@@ -18,7 +18,7 @@ Embedders for input features. Includes InputEmbedders for monomer, multimer, sol
 and all-atom models. Also includes the RecyclingEmbedder and ExtraMSAEmbedder.
 """
 
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -113,7 +113,7 @@ class InputEmbedder(nn.Module):
         ri: torch.Tensor,
         msa: torch.Tensor,
         inplace_safe: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             tf:
@@ -285,7 +285,7 @@ class InputEmbedderMultimer(nn.Module):
 
         return self.linear_relpos(rel_feat)
 
-    def forward(self, batch: Dict) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, batch: dict) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:
@@ -394,7 +394,7 @@ class RelposAllAtom(nn.Module):
 
         return rel_pos
 
-    def forward(self, batch: Dict) -> torch.Tensor:
+    def forward(self, batch: dict) -> torch.Tensor:
         """
         Args:
             batch:
@@ -449,7 +449,7 @@ class InputEmbedderAllAtom(nn.Module):
         c_z: int,
         max_relative_idx: int,
         max_relative_chain: int,
-        atom_attn_enc: Dict,
+        atom_attn_enc: dict,
         linear_init_params: ConfigDict = lin_init.all_atom_input_emb_init,
     ):
         """
@@ -495,10 +495,10 @@ class InputEmbedderAllAtom(nn.Module):
 
     def forward(
         self,
-        batch: Dict,
+        batch: dict,
         inplace_safe: bool = False,
         use_deepspeed_evo_attention: Optional[bool] = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:
@@ -592,7 +592,7 @@ class MSAModuleEmbedder(nn.Module):
         msa_feat: torch.Tensor,
         msa_mask: torch.Tensor,
         num_paired_seqs: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Subsample main MSA features for a single element in the batch.
 
         Args:
@@ -639,8 +639,8 @@ class MSAModuleEmbedder(nn.Module):
         return sampled_msa, msa_mask
 
     def forward(
-        self, batch: Dict, s_input: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        self, batch: dict, s_input: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:
@@ -793,7 +793,7 @@ class PreembeddingEmbedder(nn.Module):
         ri: torch.Tensor,
         preemb: torch.Tensor,
         inplace_safe: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         tf_m = self.linear_tf_m(tf).unsqueeze(-3)
         preemb_emb = self.linear_preemb_m(preemb[..., None, :, :]) + tf_m
         preemb_emb_i = self.linear_preemb_z_i(preemb)
@@ -858,7 +858,7 @@ class RecyclingEmbedder(nn.Module):
         z: torch.Tensor,
         x: torch.Tensor,
         inplace_safe: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             m:

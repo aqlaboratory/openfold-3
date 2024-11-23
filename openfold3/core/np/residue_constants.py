@@ -19,7 +19,6 @@ import collections
 import functools
 from collections.abc import Mapping
 from importlib import resources
-from typing import List, Tuple
 
 import numpy as np
 import tree
@@ -437,10 +436,10 @@ BondAngle = collections.namedtuple(
 
 @functools.cache
 def load_stereo_chemical_props() -> (
-    Tuple[
-        Mapping[str, List[Bond]],
-        Mapping[str, List[Bond]],
-        Mapping[str, List[BondAngle]],
+    tuple[
+        Mapping[str, list[Bond]],
+        Mapping[str, list[Bond]],
+        Mapping[str, list[BondAngle]],
     ]
 ):
     """Load stereo_chemical_props.txt into a nice structure.

@@ -17,8 +17,6 @@
 The main inference and training loops for AlphaFold3.
 """
 
-from typing import Dict, Tuple
-
 import torch
 from ml_collections import ConfigDict
 from torch import nn
@@ -119,8 +117,8 @@ class AlphaFold3(nn.Module):
         )
 
     def run_trunk(
-        self, batch: Dict, inplace_safe: bool = False
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self, batch: dict, inplace_safe: bool = False
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Implements Algorithm 1 lines 1-14.
 
         Args:
@@ -241,12 +239,12 @@ class AlphaFold3(nn.Module):
 
     def _rollout(
         self,
-        batch: Dict,
+        batch: dict,
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
         inplace_safe: bool = False,
-    ) -> Dict:
+    ) -> dict:
         """
         Mini diffusion rollout described in section 4.1.
         Implements Algorithm 1 lines 15-18.
@@ -317,11 +315,11 @@ class AlphaFold3(nn.Module):
 
     def _train_diffusion(
         self,
-        batch: Dict,
+        batch: dict,
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
-    ) -> Dict:
+    ) -> dict:
         """
         Run diffusion training over no_samples noised versions of the input structure.
 
@@ -398,7 +396,7 @@ class AlphaFold3(nn.Module):
 
         return output
 
-    def forward(self, batch: Dict) -> [Dict, Dict]:
+    def forward(self, batch: dict) -> [dict, dict]:
         """
         Args:
             batch:

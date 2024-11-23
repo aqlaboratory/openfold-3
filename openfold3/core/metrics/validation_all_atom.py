@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Dict, List, Optional
+from typing import Optional
 
 import torch
 
@@ -192,7 +192,7 @@ def get_protein_metrics(
     pred_coords: torch.Tensor,
     gt_coords: torch.Tensor,
     all_atom_mask: torch.Tensor,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """
     Compute validation metrics of protein
 
@@ -265,7 +265,7 @@ def get_nucleic_acid_metrics(
     all_atom_mask: torch.Tensor,
     is_protein_atomized: torch.Tensor,
     substrate: str,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """
     Compute validation metrics of nucleic acids (dna/rna)
 
@@ -393,7 +393,7 @@ def get_ligand_metrics(
     gt_coords: torch.Tensor,
     all_atom_mask: torch.Tensor,
     is_protein_atomized: torch.Tensor,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """
     Compute validation metrics of a ligand
 
@@ -608,7 +608,7 @@ def gdt(
     all_atom_pred_pos: torch.Tensor,
     all_atom_gt_pos: torch.Tensor,
     all_atom_mask: torch.Tensor,
-    cutoffs: List,
+    cutoffs: list,
 ) -> torch.Tensor:
     """
     Calculates gdt scores
@@ -706,7 +706,7 @@ def get_superimpose_metrics(
     all_atom_pred_pos: torch.Tensor,
     all_atom_gt_pos: torch.Tensor,
     all_atom_mask: torch.Tensor,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """
     Computes superimposition metrics
 
@@ -758,7 +758,7 @@ def get_validation_metrics(
     batch,
     outputs,
     superimposition_metrics=False,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """
     Compute validation metrics on all substrates
 

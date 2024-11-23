@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from collections.abc import Sequence
-from typing import Optional, Tuple
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -152,7 +152,7 @@ def script_submodules_(
     model: nn.Module,
     types: Optional[Sequence[type]] = None,
     attempt_trace: Optional[bool] = True,
-    batch_dims: Optional[Tuple[int]] = None,
+    batch_dims: Optional[tuple[int]] = None,
 ):
     """
     Convert all submodules whose types match one of those in the input

@@ -20,7 +20,7 @@ import io
 import re
 import string
 from collections.abc import Mapping, Sequence
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 import modelcif
 import modelcif.alignment
@@ -295,7 +295,7 @@ def add_pdb_headers(prot: Protein, pdb_str: str) -> str:
     else:
         parents_per_chain = [["N/A"]]
 
-    def make_parent_line(parents: List) -> str:
+    def make_parent_line(parents: list) -> str:
         """Format PARENT pdb line."""
         return f"PARENT {' '.join(parents)}"
 

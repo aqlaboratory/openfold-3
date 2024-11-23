@@ -56,12 +56,23 @@ class ComplianceLog:
 
 
 # Runtime context variables
+def _default_factory_list():
+    return []
+
+
+def _default_factory_dict():
+    return {}
+
+
 LOG_RUNTIMES = contextvars.ContextVar("LOG_RUNTIME", default=False)
-RUNTIME_DICT = contextvars.ContextVar("RUNTIME_DICT", default={})
+RUNTIME_DICT = contextvars.ContextVar("RUNTIME_DICT", default=_default_factory_dict())  # noqa: B039
 # Memory context variables
 LOG_MEMORY = contextvars.ContextVar("LOG_MEMORY", default=False)
 WORKER_MEM_LOG_PATH = contextvars.ContextVar("WORKER_MEM_LOG_PATH", default=None)
-MEM_PROFILED_FUNC_KEYS = contextvars.ContextVar("MEM_PROFILED_FUNC_KEYS", default=[])
+MEM_PROFILED_FUNC_KEYS = contextvars.ContextVar(
+    "MEM_PROFILED_FUNC_KEYS",
+    default=_default_factory_list(),  # noqa: B039
+)
 # Template preprocessing context variables
 TEMPLATE_PROCESS_LOGGER = contextvars.ContextVar(
     "TEMPLATE_PROCESS_LOGGER", default=None

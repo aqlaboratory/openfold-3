@@ -25,7 +25,7 @@ import logging
 import os
 import re
 from collections.abc import Mapping, Sequence
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional
 
 import numpy as np
 
@@ -108,7 +108,7 @@ def empty_template_feats(n_res):
     }
 
 
-def _get_pdb_id_and_chain(hit: parsers.TemplateHit) -> Tuple[str, str]:
+def _get_pdb_id_and_chain(hit: parsers.TemplateHit) -> tuple[str, str]:
     """Returns PDB id and chain id for an HHSearch Hit."""
     # PDB ID: 4 letters. Chain ID: 1+ alphanumeric letters or "." if unknown.
     id_match = re.match(r"[a-zA-Z\d]{4}_[a-zA-Z0-9.]+", hit.name)
@@ -287,7 +287,7 @@ def _find_template_in_pdb(
     template_chain_id: str,
     template_sequence: str,
     mmcif_object: mmcif_parsing.MmcifObject,
-) -> Tuple[str, str, int]:
+) -> tuple[str, str, int]:
     """Tries to find the template chain in the given pdb file.
 
     This method tries the three following things in order:
@@ -354,7 +354,7 @@ def _realign_pdb_template_to_query(
     mmcif_object: mmcif_parsing.MmcifObject,
     old_mapping: Mapping[int, int],
     kalign_binary_path: str,
-) -> Tuple[str, Mapping[int, int]]:
+) -> tuple[str, Mapping[int, int]]:
     """Aligns template from the mmcif_object to the query.
 
     In case PDB70 contains a different version of the template sequence, we need
@@ -496,8 +496,8 @@ def _check_residue_distances(
                 distance = np.linalg.norm(this_calpha - prev_calpha)
                 if distance > max_ca_ca_distance:
                     raise CaDistanceError(
-                        "The distance between residues %d and %d is %f > limit %f."
-                        % (i, i + 1, distance, max_ca_ca_distance)
+                        f"The distance between residues {i} and {i + 1} is {distance} "
+                        f"> limit {max_ca_ca_distance}."
                     )
             prev_calpha = this_calpha
         prev_is_unmasked = this_is_unmasked
@@ -508,7 +508,7 @@ def _get_atom_positions(
     auth_chain_id: str,
     max_ca_ca_distance: float,
     _zero_center_positions: bool = False,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Gets atom positions and mask from a list of Biopython Residues."""
     coords_with_mask = mmcif_parsing.get_atom_coords(
         mmcif_object=mmcif_object,
@@ -529,7 +529,7 @@ def _extract_template_features(
     template_chain_id: str,
     kalign_binary_path: str,
     _zero_center_positions: bool = True,
-) -> Tuple[Dict[str, Any], Optional[str]]:
+) -> tuple[dict[str, Any], Optional[str]]:
     """Parses atom positions in the target structure and aligns with the query.
 
     Atoms for each residue in the template structure are indexed to coincide
@@ -645,13 +645,9 @@ def _extract_template_features(
     # Alanine (AA with the lowest number of atoms) has 5 atoms (C, CA, CB, N, O).
     if np.sum(templates_all_atom_masks) < 5:
         raise TemplateAtomMaskAllZerosError(
-            "Template all atom mask was all zeros: %s_%s. Residue range: %d-%d"
-            % (
-                pdb_id,
-                chain_id,
-                min(mapping.values()) + mapping_offset,
-                max(mapping.values()) + mapping_offset,
-            )
+            f"Template all atom mask was all zeros: {pdb_id}_{chain_id}. Residue "
+            f"range: {min(mapping.values()) + mapping_offset}-"
+            f"{max(mapping.values()) + mapping_offset}"
         )
 
     output_templates_sequence = "".join(output_templates_sequence)
@@ -875,16 +871,10 @@ def _process_single_hit(
         # These 3 errors indicate missing mmCIF experimental data rather than a
         # problem with the template search, so turn them into warnings.
         warning = (
-            "%s_%s (sum_probs: %.2f, rank: %d): feature extracting errors: "
-            "%s, mmCIF parsing errors: %s"
-            % (
-                hit_pdb_code,
-                hit_chain_id,
-                hit.sum_probs if hit.sum_probs else 0.0,
-                hit.index,
-                str(e),
-                parsing_result.errors,
-            )
+            f"{hit_pdb_code}_{hit_chain_id} (sum_probs: "
+            "{hit.sum_probs if hit.sum_probs else 0.0}, rank: {hit.index}): feature "
+            "extracting errors: "
+            f"{str(e)}, mmCIF parsing errors: {parsing_result.errors}"
         )
         if strict_error_check:
             return SingleHitResult(features=None, error=warning, warning=None)
@@ -892,16 +882,10 @@ def _process_single_hit(
             return SingleHitResult(features=None, error=None, warning=warning)
     except Error as e:
         error = (
-            "%s_%s (sum_probs: %.2f, rank: %d): feature extracting errors: "
-            "%s, mmCIF parsing errors: %s"
-            % (
-                hit_pdb_code,
-                hit_chain_id,
-                hit.sum_probs if hit.sum_probs else 0.0,
-                hit.index,
-                str(e),
-                parsing_result.errors,
-            )
+            f"{hit_pdb_code}_{hit_chain_id} (sum_probs: "
+            "{hit.sum_probs if hit.sum_probs else 0.0}, rank: {hit.index}): feature"
+            " extracting errors: "
+            f"{str(e)}, mmCIF parsing errors: {parsing_result.errors}"
         )
         return SingleHitResult(features=None, error=error, warning=None)
 

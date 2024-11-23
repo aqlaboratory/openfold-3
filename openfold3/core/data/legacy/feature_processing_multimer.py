@@ -16,7 +16,6 @@
 """Feature processing logic for multimer data pipeline."""
 
 from collections.abc import Iterable, Mapping, MutableMapping
-from typing import List
 
 import numpy as np
 
@@ -115,11 +114,11 @@ def pair_and_merge(
 
 
 def crop_chains(
-    chains_list: List[Mapping[str, np.ndarray]],
+    chains_list: list[Mapping[str, np.ndarray]],
     msa_crop_size: int,
     pair_msa_sequences: bool,
     max_templates: int,
-) -> List[Mapping[str, np.ndarray]]:
+) -> list[Mapping[str, np.ndarray]]:
     """Crops the MSAs for a set of chains.
 
     Args:
