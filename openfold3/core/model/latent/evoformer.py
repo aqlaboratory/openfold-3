@@ -16,7 +16,8 @@
 """Evoformer block and stack."""
 
 import sys
-from typing import Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Optional, Tuple
 
 import torch
 from ml_collections import ConfigDict

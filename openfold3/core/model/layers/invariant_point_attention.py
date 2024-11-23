@@ -2,8 +2,9 @@ import importlib
 import math
 import sys
 from _operator import mul
+from collections.abc import Sequence
 from functools import reduce
-from typing import Optional, Sequence, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import torch
 from ml_collections import ConfigDict

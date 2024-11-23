@@ -20,7 +20,8 @@ import dataclasses
 import itertools
 import re
 import string
-from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from collections.abc import Iterable, Sequence
+from typing import Dict, List, Optional, Set, Tuple
 
 DeletionMatrix = Sequence[Sequence[int]]
 

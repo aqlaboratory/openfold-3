@@ -24,7 +24,8 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 

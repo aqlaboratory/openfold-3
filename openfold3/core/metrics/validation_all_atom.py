@@ -1,4 +1,5 @@
-from typing import Dict, List, Optional, Sequence
+from collections.abc import Sequence
+from typing import Dict, List, Optional
 
 import torch
 

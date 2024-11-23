@@ -15,7 +15,8 @@
 
 """Feature processing logic for multimer data pipeline."""
 
-from typing import Iterable, List, Mapping, MutableMapping
+from collections.abc import Iterable, Mapping, MutableMapping
+from typing import List
 
 import numpy as np
 

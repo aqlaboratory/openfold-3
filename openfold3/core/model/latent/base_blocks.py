@@ -21,7 +21,8 @@ the EvoformerStack, ExtraMSAStack, and MSAModule.
 
 import sys
 from abc import ABC, abstractmethod
-from typing import Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn

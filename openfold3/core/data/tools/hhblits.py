@@ -19,7 +19,8 @@ import glob
 import logging
 import os
 import subprocess
-from typing import Any, List, Mapping, Optional, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any, List, Optional
 
 from openfold3.core.data.tools import utils
 

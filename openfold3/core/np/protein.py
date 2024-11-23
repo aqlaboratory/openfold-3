@@ -19,7 +19,8 @@ import dataclasses
 import io
 import re
 import string
-from typing import Any, List, Mapping, Optional, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any, List, Optional
 
 import modelcif
 import modelcif.alignment

@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import importlib
-from typing import Any, Callable, List, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any, Callable, List, Optional
 
 import torch
 import torch.utils.checkpoint

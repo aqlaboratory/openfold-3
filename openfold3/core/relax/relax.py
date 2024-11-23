@@ -15,7 +15,8 @@
 
 """Amber relaxation."""
 
-from typing import Any, Dict, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any, Dict, Tuple
 
 import numpy as np
 

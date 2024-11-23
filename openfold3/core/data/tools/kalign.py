@@ -17,7 +17,7 @@
 
 import os
 import subprocess
-from typing import Sequence
+from collections.abc import Sequence
 
 from absl import logging
 

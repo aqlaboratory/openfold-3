@@ -20,7 +20,8 @@ import dataclasses
 import functools
 import io
 import logging
-from typing import Any, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from typing import Any, Optional, Tuple
 
 import numpy as np
 from Bio import PDB

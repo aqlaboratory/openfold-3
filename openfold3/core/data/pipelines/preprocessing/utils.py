@@ -1,8 +1,8 @@
 """Utility functions for data preprocessing pipelines."""
 
+from collections.abc import Iterable
 from multiprocessing import Manager
 from multiprocessing.managers import SyncManager
-from typing import Iterable
 
 
 class SharedSet:
