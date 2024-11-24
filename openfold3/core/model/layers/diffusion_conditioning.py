@@ -1,5 +1,3 @@
-from typing import Dict, Tuple
-
 import torch
 from ml_collections import ConfigDict
 from torch import nn
@@ -102,12 +100,12 @@ class DiffusionConditioning(nn.Module):
 
     def forward(
         self,
-        batch: Dict,
+        batch: dict,
         t: torch.Tensor,
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:

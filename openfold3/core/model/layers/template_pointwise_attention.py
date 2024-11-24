@@ -16,7 +16,7 @@
 """Template pointwise attention layer."""
 
 from functools import partial
-from typing import List, Optional
+from typing import Optional
 
 import torch
 from torch import nn as nn
@@ -80,7 +80,7 @@ class TemplatePointwiseAttention(nn.Module):
         self,
         z: torch.Tensor,
         t: torch.Tensor,
-        biases: List[torch.Tensor],
+        biases: list[torch.Tensor],
         chunk_size: int,
         use_lma: bool = False,
     ) -> torch.Tensor:

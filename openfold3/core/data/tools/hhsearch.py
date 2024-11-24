@@ -19,7 +19,8 @@ import glob
 import logging
 import os
 import subprocess
-from typing import Optional, Sequence
+from collections.abc import Sequence
+from typing import Optional
 
 from openfold3.core.data.legacy import parsers
 from openfold3.core.data.tools import utils

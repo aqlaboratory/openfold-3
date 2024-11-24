@@ -19,8 +19,9 @@ import copy
 import dataclasses
 import os
 import tempfile
+from collections.abc import Mapping, MutableMapping, Sequence
 from multiprocessing import cpu_count
-from typing import Any, Mapping, MutableMapping, Optional, Sequence, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import torch

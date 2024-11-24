@@ -17,7 +17,7 @@
 
 import os
 import subprocess
-from typing import Sequence
+from collections.abc import Sequence
 
 from absl import logging
 
@@ -26,7 +26,7 @@ from openfold3.core.data.tools import utils
 
 def _to_a3m(sequences: Sequence[str]) -> str:
     """Converts sequences to an a3m file."""
-    names = ["sequence %d" % i for i in range(1, len(sequences) + 1)]
+    names = [f"sequence {i}" for i in range(1, len(sequences) + 1)]
     a3m = []
     for sequence, name in zip(sequences, names):
         a3m.append(">" + name + "\n")
@@ -70,7 +70,7 @@ class Kalign:
             if len(s) < 6:
                 raise ValueError(
                     "Kalign requires all sequences to be at least 6 "
-                    "residues long. Got %s (%d residues)." % (s, len(s))
+                    f"residues long. Got {s} ({len(s)} residues)."
                 )
 
         with utils.tmpdir_manager() as query_tmp_dir:

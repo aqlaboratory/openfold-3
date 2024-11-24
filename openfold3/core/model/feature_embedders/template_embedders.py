@@ -18,8 +18,6 @@ Template feature embedders. Used in the template stack to build the final templa
 embeddings.
 """
 
-from typing import Dict
-
 import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
@@ -65,7 +63,7 @@ class TemplateSingleEmbedderMonomer(nn.Module):
         self.relu = nn.ReLU()
         self.linear_2 = Linear(self.c_out, self.c_out, **linear_init_params.linear_2)
 
-    def forward(self, template_feats: Dict) -> torch.Tensor:
+    def forward(self, template_feats: dict) -> torch.Tensor:
         """
         Args:
             template_feats: Dict with template features
@@ -131,8 +129,8 @@ class TemplatePairEmbedderMonomer(nn.Module):
 
     def forward(
         self,
-        batch: Dict,
-        distogram_config: Dict,
+        batch: dict,
+        distogram_config: dict,
         use_unit_vector: bool,
         inf: float,
         eps: float,
@@ -246,7 +244,7 @@ class TemplateSingleEmbedderMultimer(nn.Module):
             c_out, c_out, **linear_init_params.template_projector
         )
 
-    def forward(self, batch: Dict):
+    def forward(self, batch: dict):
         """
         Args:
             batch:
@@ -353,8 +351,8 @@ class TemplatePairEmbedderMultimer(nn.Module):
 
     def forward(
         self,
-        batch: Dict,
-        distogram_config: Dict,
+        batch: dict,
+        distogram_config: dict,
         query_embedding: torch.Tensor,
         multichain_mask_2d: torch.Tensor,
         inf: float,
