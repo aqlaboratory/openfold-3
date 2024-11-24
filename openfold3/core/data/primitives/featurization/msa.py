@@ -287,7 +287,7 @@ def create_msa_feature_precursor_af3(
         msa_feature_precursor = MsaFeaturePrecursorAF3(
             msa=np.full([n_rows, token_budget], "-"),
             deletion_matrix=np.zeros([n_rows, token_budget]),
-            n_rows_paired=n_rows_paired_cropped,
+            n_rows_paired=n_rows_paired_cropped + 1,
             msa_mask=np.zeros([n_rows, token_budget]),
             msa_profile=np.zeros([token_budget, len(STANDARD_RESIDUES_WITH_GAP_1)]),
             deletion_mean=np.zeros(token_budget),
@@ -331,10 +331,10 @@ def create_msa_feature_precursor_af3(
     else:
         # When there are no protein or RNA chains
         msa_feature_precursor = MsaFeaturePrecursorAF3(
-            msa=np.full([n_rows, token_budget], "-"),
-            deletion_matrix=np.zeros([n_rows, token_budget]),
-            n_rows_paired=0,
-            msa_mask=np.zeros([n_rows, token_budget]),
+            msa=np.full([1, token_budget], "-"),
+            deletion_matrix=np.zeros([1, token_budget]),
+            n_rows_paired=1,
+            msa_mask=np.zeros([1, token_budget]),
             msa_profile=np.zeros([token_budget, len(STANDARD_RESIDUES_WITH_GAP_1)]),
             deletion_mean=np.zeros(token_budget),
         )
