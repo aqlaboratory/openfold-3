@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from collections import defaultdict, deque
-from copy import deepcopy
-from typing import Sequence
+import math
+from collections.abc import Sequence
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd

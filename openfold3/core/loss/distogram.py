@@ -15,8 +15,6 @@
 
 """Distogram losses."""
 
-from typing import Dict
-
 import torch
 
 from openfold3.core.loss.loss_utils import loss_masked_batch_mean, softmax_cross_entropy
@@ -73,7 +71,7 @@ def cbeta_distogram_loss(
 
 
 def all_atom_distogram_loss(
-    batch: Dict,
+    batch: dict,
     logits: torch.Tensor,
     no_bins: int,
     bin_min: float,

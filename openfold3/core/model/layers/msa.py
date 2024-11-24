@@ -20,7 +20,7 @@ MSAColumnGlobalAttention, and MSAPairWeightedAveraging.
 
 import importlib
 from functools import partial
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import torch
 from torch import nn
@@ -106,7 +106,7 @@ class MSAAttention(nn.Module):
     def _chunk(
         self,
         m: torch.Tensor,
-        biases: Optional[List[torch.Tensor]],
+        biases: Optional[list[torch.Tensor]],
         chunk_size: int,
         use_memory_efficient_kernel: bool,
         use_deepspeed_evo_attention: bool,
@@ -147,7 +147,7 @@ class MSAAttention(nn.Module):
         z: Optional[torch.Tensor],
         mask: Optional[torch.Tensor],
         inplace_safe: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         n_seq, n_res = m.shape[-3:-1]
         if mask is None:
             # [*, N_seq, N_res]

@@ -19,8 +19,9 @@ MSAModule.
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from functools import partial
-from typing import Optional, Sequence
+from typing import Optional
 
 import torch
 from torch import nn

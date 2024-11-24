@@ -1,6 +1,5 @@
 import logging
 import random
-from typing import Dict, List, Tuple
 
 import torch
 
@@ -68,7 +67,7 @@ def get_optimal_transform(
     src_atoms: torch.Tensor,
     tgt_atoms: torch.Tensor,
     mask: torch.Tensor = None,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
     A function that obtain the transformation that optimally align
     src_atoms with tgt_atoms
@@ -116,7 +115,7 @@ def get_optimal_transform(
 
 def get_least_asym_entity_or_longest_length(
     batch: dict, input_asym_id: list
-) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+) -> tuple[torch.Tensor, list[torch.Tensor]]:
     """
     First check how many subunit(s) one sequence has. Select the subunit that is less
     common, e.g. if the protein was AABBB then select one of the A as anchor
@@ -196,7 +195,7 @@ def greedy_align(
     pred_ca_mask: torch.Tensor,
     true_ca_poses: list,
     true_ca_masks: list,
-) -> List[Tuple[int, int]]:
+) -> list[tuple[int, int]]:
     """
     Implement Algorithm 4 in the Supplementary Information of AlphaFold-Multimer paper:
     Evans,R et al., 2022 Protein complex prediction with AlphaFold-Multimer, bioRxiv
@@ -293,11 +292,11 @@ def pad_features(
 
 
 def merge_labels(
-    per_asym_residue_index: Dict[int, List[int]],
-    labels: List[Dict],
-    align: List[Tuple[int, int]],
+    per_asym_residue_index: dict[int, list[int]],
+    labels: list[dict],
+    align: list[tuple[int, int]],
     original_nres: int,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """
     Merge ground truth labels according to the permutation results
 
@@ -341,7 +340,7 @@ def merge_labels(
     return outs
 
 
-def split_ground_truth_labels(gt_features: dict) -> List[Dict]:
+def split_ground_truth_labels(gt_features: dict) -> list[dict]:
     """
     Splits ground truth features according to chains
 
@@ -387,7 +386,7 @@ def split_ground_truth_labels(gt_features: dict) -> List[Dict]:
     return labels
 
 
-def get_per_asym_residue_index(features: dict) -> Dict[int, torch.Tensor]:
+def get_per_asym_residue_index(features: dict) -> dict[int, torch.Tensor]:
     """
     A function that retrieve which residues belong to which asym_id
 
@@ -408,7 +407,7 @@ def get_per_asym_residue_index(features: dict) -> Dict[int, torch.Tensor]:
     return per_asym_residue_index
 
 
-def get_entity_2_asym_list(features: dict) -> Dict[int, list]:
+def get_entity_2_asym_list(features: dict) -> dict[int, list]:
     """
     Generates a dictionary mapping unique entity IDs to lists of unique asymmetry IDs
     (asym_id) for each entity.
@@ -432,7 +431,7 @@ def get_entity_2_asym_list(features: dict) -> Dict[int, list]:
 
 
 def calculate_input_mask(
-    true_ca_masks: List[torch.Tensor],
+    true_ca_masks: list[torch.Tensor],
     anchor_gt_idx: torch.Tensor,
     anchor_gt_residue: torch.Tensor,
     asym_mask: torch.Tensor,
@@ -468,14 +467,14 @@ def calculate_input_mask(
 
 
 def calculate_optimal_transform(
-    true_ca_poses: List[torch.Tensor],
+    true_ca_poses: list[torch.Tensor],
     anchor_gt_idx: int,
     anchor_gt_residue: torch.Tensor,
-    true_ca_masks: List[torch.Tensor],
+    true_ca_masks: list[torch.Tensor],
     pred_ca_mask: torch.Tensor,
     asym_mask: torch.Tensor,
     pred_ca_pos: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Takes selected anchor ground truth c-alpha positions and selected predicted anchor
     c-alpha position then calculate the optimal rotation matrix to align ground-truth
@@ -533,10 +532,10 @@ def calculate_optimal_transform(
 
 
 def compute_permutation_alignment(
-    out: Dict[str, torch.Tensor],
-    features: Dict[str, torch.Tensor],
-    ground_truth: List[Dict[str, torch.Tensor]],
-) -> Tuple[List[Tuple[int, int]], Dict[int, List[int]]]:
+    out: dict[str, torch.Tensor],
+    features: dict[str, torch.Tensor],
+    ground_truth: list[dict[str, torch.Tensor]],
+) -> tuple[list[tuple[int, int]], dict[int, list[int]]]:
     """
     A method that permutes chains in ground truth before calculating the loss
     because the mapping between the predicted and ground-truth will become arbitrary.
@@ -644,10 +643,10 @@ def compute_permutation_alignment(
 
 
 def multi_chain_permutation_align(
-    out: Dict[str, torch.Tensor],
-    features: Dict[str, torch.Tensor],
-    ground_truth: List[Dict[str, torch.Tensor]],
-) -> Dict[str, torch.Tensor]:
+    out: dict[str, torch.Tensor],
+    features: dict[str, torch.Tensor],
+    ground_truth: list[dict[str, torch.Tensor]],
+) -> dict[str, torch.Tensor]:
     """
     Compute multi-chain permutation alignment.
 

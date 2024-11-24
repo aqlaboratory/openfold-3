@@ -14,8 +14,6 @@
 
 """Confidence losses from predicted logits in the Confidence Module."""
 
-from typing import Dict, Tuple
-
 import torch
 import torch.nn.functional as F
 
@@ -193,7 +191,7 @@ def tm_loss(
 
 
 def express_coords_in_frames(
-    x: torch.Tensor, phi: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], eps: float
+    x: torch.Tensor, phi: tuple[torch.Tensor, torch.Tensor, torch.Tensor], eps: float
 ):
     """
     Implements AF3 Algorithm 29.
@@ -255,8 +253,8 @@ def express_coords_in_frames(
 def compute_alignment_error(
     x: torch.Tensor,
     x_gt: torch.Tensor,
-    phi: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-    phi_gt: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    phi: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    phi_gt: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
     eps: float,
 ):
     """
@@ -284,7 +282,7 @@ def compute_alignment_error(
 
 
 def all_atom_plddt_loss(
-    batch: Dict,
+    batch: dict,
     x: torch.Tensor,
     logits: torch.Tensor,
     no_bins: int,
@@ -421,7 +419,7 @@ def all_atom_plddt_loss(
 
 
 def pae_loss(
-    batch: Dict,
+    batch: dict,
     x: torch.Tensor,
     logits: torch.Tensor,
     angle_threshold: float,
@@ -516,7 +514,7 @@ def pae_loss(
 
 
 def pde_loss(
-    batch: Dict,
+    batch: dict,
     x: torch.Tensor,
     logits: torch.Tensor,
     no_bins: int,
@@ -586,7 +584,7 @@ def pde_loss(
 
 
 def all_atom_experimentally_resolved_loss(
-    batch: Dict, logits: torch.Tensor, no_bins: int, eps: float
+    batch: dict, logits: torch.Tensor, no_bins: int, eps: float
 ):
     """
     Implements AF3 Equation 14.
@@ -627,16 +625,16 @@ def all_atom_experimentally_resolved_loss(
 
 
 def confidence_loss(
-    batch: Dict,
-    output: Dict,
-    plddt: Dict,
-    pde: Dict,
-    experimentally_resolved: Dict,
-    pae: Dict,
+    batch: dict,
+    output: dict,
+    plddt: dict,
+    pde: dict,
+    experimentally_resolved: dict,
+    pae: dict,
     eps: float,
     inf: float,
     **kwargs,
-) -> [torch.Tensor, Dict]:
+) -> [torch.Tensor, dict]:
     """
     Compute loss on confidence module.
 

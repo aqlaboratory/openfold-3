@@ -16,7 +16,7 @@
 """Diffusion losses."""
 
 from functools import partial
-from typing import Callable, Dict, Optional
+from typing import Callable, Optional
 
 import torch
 
@@ -88,7 +88,7 @@ def weighted_rigid_align(
 
 def mse_loss(
     x: torch.Tensor,
-    batch: Dict,
+    batch: dict,
     dna_weight: float,
     rna_weight: float,
     ligand_weight: float,
@@ -152,7 +152,7 @@ def mse_loss(
     return mse
 
 
-def bond_loss(x: torch.Tensor, batch: Dict, eps: float) -> torch.Tensor:
+def bond_loss(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
     """
     Implements AF3 Equation 5.
 
@@ -211,7 +211,7 @@ def bond_loss(x: torch.Tensor, batch: Dict, eps: float) -> torch.Tensor:
     return loss
 
 
-def smooth_lddt_loss(x: torch.Tensor, batch: Dict, eps: float) -> torch.Tensor:
+def smooth_lddt_loss(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
     """
     Implements AF3 Algorithm 27.
 
@@ -272,7 +272,7 @@ def smooth_lddt_loss(x: torch.Tensor, batch: Dict, eps: float) -> torch.Tensor:
 
 
 def run_low_mem_loss_fn(
-    loss_fn: Callable, x: torch.Tensor, kwargs: Dict, chunk_size: int
+    loss_fn: Callable, x: torch.Tensor, kwargs: dict, chunk_size: int
 ) -> torch.Tensor:
     """
     Run a loss function in low memory mode by chunking over the sample dimension with
@@ -304,7 +304,7 @@ def run_low_mem_loss_fn(
 
 
 def diffusion_loss(
-    batch: Dict,
+    batch: dict,
     x: torch.Tensor,
     t: torch.Tensor,
     sigma_data: float,
@@ -314,7 +314,7 @@ def diffusion_loss(
     eps: float = 1e-8,
     chunk_size: Optional[int] = None,
     **kwargs,
-) -> [torch.Tensor, Dict]:
+) -> [torch.Tensor, dict]:
     """
     Implements AF3 Equation 6.
 

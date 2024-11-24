@@ -3,8 +3,8 @@
 import os
 import string
 from collections import OrderedDict
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 from biotite.structure import AtomArray

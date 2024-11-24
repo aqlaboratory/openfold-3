@@ -15,7 +15,7 @@
 """Pairing logic for multimer data pipeline."""
 
 import collections
-from typing import Dict, Iterable, List, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -69,7 +69,7 @@ CHAIN_FEATURES = ("num_alignments", "seq_length")
 
 def create_paired_features(
     chains: Iterable[Mapping[str, np.ndarray]],
-) -> List[Mapping[str, np.ndarray]]:
+) -> list[Mapping[str, np.ndarray]]:
     """Returns the original chains with paired NUM_SEQ features.
 
     Args:
@@ -155,7 +155,7 @@ def _make_msa_df(chain_features: Mapping[str, np.ndarray]) -> pd.DataFrame:
     return msa_df
 
 
-def _create_species_dict(msa_df: pd.DataFrame) -> Dict[bytes, pd.DataFrame]:
+def _create_species_dict(msa_df: pd.DataFrame) -> dict[bytes, pd.DataFrame]:
     """Creates mapping from species to msa dataframe of that species."""
     species_lookup = {}
     for species, species_df in msa_df.groupby("msa_species_identifiers"):
@@ -164,8 +164,8 @@ def _create_species_dict(msa_df: pd.DataFrame) -> Dict[bytes, pd.DataFrame]:
 
 
 def _match_rows_by_sequence_similarity(
-    this_species_msa_dfs: List[pd.DataFrame],
-) -> List[List[int]]:
+    this_species_msa_dfs: list[pd.DataFrame],
+) -> list[list[int]]:
     """Finds MSA sequence pairings across chains based on sequence similarity.
 
     Each chain's MSA sequences are first sorted by their sequence similarity to
@@ -202,8 +202,8 @@ def _match_rows_by_sequence_similarity(
 
 
 def pair_sequences(
-    examples: List[Mapping[str, np.ndarray]],
-) -> Dict[int, np.ndarray]:
+    examples: list[Mapping[str, np.ndarray]],
+) -> dict[int, np.ndarray]:
     """Returns indices for paired MSA sequences across chains."""
 
     num_examples = len(examples)
@@ -261,7 +261,7 @@ def pair_sequences(
     return all_paired_msa_rows_dict
 
 
-def reorder_paired_rows(all_paired_msa_rows_dict: Dict[int, np.ndarray]) -> np.ndarray:
+def reorder_paired_rows(all_paired_msa_rows_dict: dict[int, np.ndarray]) -> np.ndarray:
     """Creates a list of indices of paired MSA rows across chains.
 
     Args:
@@ -446,7 +446,7 @@ def _concatenate_paired_and_unpaired_features(
 
 
 def merge_chain_features(
-    np_chains_list: List[Mapping[str, np.ndarray]],
+    np_chains_list: list[Mapping[str, np.ndarray]],
     pair_msa_sequences: bool,
     max_templates: int,
 ) -> Mapping[str, np.ndarray]:
@@ -479,8 +479,8 @@ def merge_chain_features(
 
 
 def deduplicate_unpaired_sequences(
-    np_chains: List[Mapping[str, np.ndarray]],
-) -> List[Mapping[str, np.ndarray]]:
+    np_chains: list[Mapping[str, np.ndarray]],
+) -> list[Mapping[str, np.ndarray]]:
     """Removes unpaired sequences which duplicate a paired sequence."""
 
     feature_names = np_chains[0].keys()

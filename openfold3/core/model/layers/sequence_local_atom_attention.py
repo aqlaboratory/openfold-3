@@ -18,7 +18,7 @@ Sequence-local atom attention modules. Includes AtomAttentionEncoder,
 AtomAttentionDecoder, and AtomTransformer.
 """
 
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -33,7 +33,7 @@ from openfold3.core.utils.atomize_utils import (
 )
 from openfold3.core.utils.checkpointing import checkpoint_section
 
-TensorDict = Dict[str, torch.Tensor]
+TensorDict = dict[str, torch.Tensor]
 
 
 def compute_neighborhood_mask(
@@ -46,7 +46,7 @@ def compute_neighborhood_mask(
     device: torch.device,
     dtype: torch.dtype,
     inf: float,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Compute neighborhood mask for Sequence-local atom attention.
 
@@ -327,7 +327,7 @@ class RefAtomFeatureEmbedder(nn.Module):
     def forward(
         self,
         batch: TensorDict,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:
@@ -425,7 +425,7 @@ class NoisyPositionEmbedder(nn.Module):
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
         rl: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:
@@ -697,7 +697,7 @@ class AtomAttentionEncoder(nn.Module):
         zij_trunk: Optional[torch.Tensor] = None,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: Optional[bool] = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:

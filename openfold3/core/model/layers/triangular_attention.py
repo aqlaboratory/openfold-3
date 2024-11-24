@@ -16,7 +16,7 @@
 """Triangle attention layers."""
 
 from functools import partial, partialmethod
-from typing import List, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -73,7 +73,7 @@ class TriangleAttention(nn.Module):
     def _chunk(
         self,
         x: torch.Tensor,
-        biases: List[torch.Tensor],
+        biases: list[torch.Tensor],
         chunk_size: int,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
