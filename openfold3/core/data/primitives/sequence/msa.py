@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import math
+from collections import defaultdict, deque
 from collections.abc import Sequence
-from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -194,7 +193,7 @@ class MsaArray:
                 msa_array_padded = MsaArray(
                     msa=self.msa.copy(),
                     deletion_matrix=self.deletion_matrix.copy(),
-                    metadata=deepcopy(self.metadata),
+                    metadata=self.metadata.copy(),
                 )
                 if return_mask:
                     mask = np.ones(self.msa.shape, dtype=int)
