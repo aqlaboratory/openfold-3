@@ -74,6 +74,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         datapoint = self.datapoint_cache.iloc[index]
         pdb_id = datapoint["pdb_id"]
         preferred_chain_or_interface = datapoint["datapoint"]
+        sample_data = {}
 
         # Check if datapoint needs to be skipped
         if self.skip_datapoint(pdb_id, preferred_chain_or_interface):
@@ -159,7 +160,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 | (self.save_atom_array == "on_error")
                 | (self.save_features == "per_datapoint")
                 | (self.save_atom_array == "per_datapoint")
-            ):
+            ) & all([i in sample_data for i in ["features", "atom_array_cropped"]]):
                 self.save_features_atom_array(
                     sample_data["features"],
                     sample_data["atom_array_cropped"],
@@ -170,7 +171,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 self.save_full_traceback_for_sample(
                     e, pdb_id, preferred_chain_or_interface
                 )
-            return sample_data["features"]
+            return {}
 
         finally:
             pass
