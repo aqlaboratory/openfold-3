@@ -484,13 +484,13 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 else:
                     statistics += ["NaN", "NaN"]
 
-            # radius of gyration
-            for aa in full_aa:
-                if len(aa) > 0:
-                    aa_resolved = aa[~np.isnan(aa.coord).any(axis=1)]
-                    statistics += [struc.gyration_radius(aa_resolved)]
-                else:
-                    statistics += ["NaN"]
+            # # radius of gyration
+            # for aa in full_aa:
+            #     if len(aa) > 0:
+            #         aa_resolved = aa[~np.isnan(aa.coord).any(axis=1)]
+            #         statistics += [struc.gyration_radius(aa_resolved)]
+            #     else:
+            #         statistics += ["NaN"]
 
             # interface statistics
             for aa_a, aa_b in zip(
@@ -502,7 +502,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 per_moltype_aa,
             ):
                 if (len(aa_a) > 0) & (len(aa_b) > 0):
-                    statistics += [get_interface_string(aa_a, aa_b)]
+                    statistics += [get_interface_string(aa_a, aa_b, "NaN")]
                 else:
                     statistics += ["NaN"]
 

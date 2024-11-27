@@ -85,7 +85,7 @@ F_NAME_ORDER = [
     "runtime-create-target-structure-features",
     "runtime-create-msa-features",
     "runtime-create-template-features",
-    "runtime-create-ref-conf-features",
+    "runtime-create-ref-conf-features",  # not yet implemented
     # 3rd-level functions
     "runtime-target-structure-proc",
     "runtime-target-structure-feat",
@@ -102,8 +102,6 @@ F_NAME_ORDER = [
     "runtime-target-structure-proc-crop",
     "runtime-target-structure-proc-expand",
     # MSA
-    "runtime-msa-proc-crop-to-seq",
-    #    "runtime-msa-proc-proc", # not logged
     "runtime-msa-proc-parse",
     "runtime-msa-proc-create-query",
     "runtime-msa-proc-homo-mono",
@@ -352,14 +350,17 @@ def compute_interface(
         distance_threshold=5.0,
         return_chain_pairs=True,
     )
-    res_pairs = np.concatenate(
-        [
-            query_atom_array.res_id[atom_pairs[:, 0]][..., np.newaxis],
-            target_atom_array.res_id[atom_pairs[:, 1]][..., np.newaxis],
-        ],
-        axis=1,
-    )
-    return res_pairs, chain_pairs
+    if atom_pairs is not None:
+        res_pairs = np.concatenate(
+            [
+                query_atom_array.res_id[atom_pairs[:, 0]][..., np.newaxis],
+                target_atom_array.res_id[atom_pairs[:, 1]][..., np.newaxis],
+            ],
+            axis=1,
+        )
+        return res_pairs, chain_pairs
+    else:
+        return None, None
 
 
 def encode_interface(res_pairs: np.ndarray, chain_pairs: np.ndarray) -> str:
@@ -397,7 +398,7 @@ def encode_interface(res_pairs: np.ndarray, chain_pairs: np.ndarray) -> str:
 
 
 def get_interface_string(
-    query_atom_array: AtomArray, target_atom_array: AtomArray
+    query_atom_array: AtomArray, target_atom_array: AtomArray, nanvalue: str = "NaN"
 ) -> str:
     """Computes the interface string between two structures.
 
@@ -414,7 +415,10 @@ def get_interface_string(
         query_atom_array,
         target_atom_array,
     )
-    return encode_interface(r, c)
+    if r is not None:
+        return encode_interface(r, c)
+    else:
+        return nanvalue
 
 
 def decode_interface(interface_string: str) -> tuple[np.ndarray, np.ndarray]:

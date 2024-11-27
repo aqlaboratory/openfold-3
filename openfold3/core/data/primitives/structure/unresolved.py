@@ -85,7 +85,7 @@ def build_unresolved_polymer_segment(
             Whether to add bonds between the residues in the segment. Defaults to True.
     """
     if polymer_type == "nucleic_acid":
-        logger.info("Building unresolved nucleic acid segment!")  # dev-only: del later
+        logger.debug("Building unresolved nucleic acid segment!")  # dev-only: del later
 
     atom_idx_is_present = "_atom_idx" in default_annotations
 

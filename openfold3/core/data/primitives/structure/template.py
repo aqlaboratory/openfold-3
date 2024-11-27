@@ -189,6 +189,9 @@ def map_template_residues_to_tokens(
     idx_map = idx_map[idx_map[:, 0] != -1, :]
 
     # Subset idx map to template residues that are in the query chain
+    # TODO move this
+    # earlier in the pipeline - no reason to parse the atom array if the template aligns
+    # to part of the chain that is outside the crop
     res_in_query = np.unique(atom_array_query_chain.res_id.astype(int))
     idx_map_in_crop = idx_map[np.where(np.isin(idx_map[:, 0], res_in_query))[0]]
 
@@ -200,9 +203,9 @@ def map_template_residues_to_tokens(
             get_token_starts(atom_array_query_chain)
         ]
 
-        # Get token positions of template residues aligning to query residues in the
-        # query chain.
-        template_token_positions = query_token_atoms[
+        # Get token positions in the query chain to where template residues align; this
+        # retrieves separate positions for atoms in atomized residues
+        query_token_positions = query_token_atoms[
             np.isin(query_token_atoms.res_id, idx_map_in_crop[:, 0])
         ].token_position
 
@@ -218,7 +221,7 @@ def map_template_residues_to_tokens(
         atom_array_cropped_template.set_annotation(
             "token_positions",
             struc.spread_residue_wise(
-                atom_array_cropped_template, template_token_positions
+                atom_array_cropped_template, query_token_positions
             ),
         )
 
@@ -285,7 +288,10 @@ def map_token_pos_to_templates(
         )
 
         # Add to list of cropped template atom arrays for this chain
-        if atom_array_cropped_template is not None:
+        # Skip template arrays that do not align to any residues in the query crop
+        if (atom_array_cropped_template is not None) and (
+            len(atom_array_cropped_template) > 0
+        ):
             cropped_templates.append(atom_array_cropped_template)
 
     return cropped_templates
