@@ -53,6 +53,7 @@ class TestDiffusionModule(unittest.TestCase):
             .unsqueeze(0)
             .repeat((batch_size, 1)),
             "token_mask": torch.ones((batch_size, n_token)),
+            "atom_mask": torch.ones((batch_size, n_atom)),
             "residue_index": torch.arange(0, n_token)
             .unsqueeze(0)
             .repeat((batch_size, 1)),
@@ -109,6 +110,7 @@ class TestDiffusionModule(unittest.TestCase):
                 (batch_size, 1, 1)
             ),
             "token_mask": torch.ones((batch_size, 1, n_token)),
+            "atom_mask": torch.ones((batch_size, n_atom)),
             "residue_index": torch.arange(0, n_token)[None, None, :].repeat(
                 (batch_size, 1, 1)
             ),
@@ -164,6 +166,7 @@ class TestSampleDiffusion(unittest.TestCase):
             .unsqueeze(0)
             .repeat((batch_size, 1)),
             "token_mask": torch.ones((batch_size, n_token)),
+            "atom_mask": torch.ones((batch_size, n_atom)),
             "residue_index": torch.arange(0, n_token)
             .unsqueeze(0)
             .repeat((batch_size, 1)),
