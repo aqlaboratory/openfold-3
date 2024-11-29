@@ -15,7 +15,7 @@
 
 """AF2 violation losses."""
 
-from typing import Dict, Optional
+from typing import Optional
 
 import ml_collections
 import numpy as np
@@ -34,7 +34,7 @@ def between_residue_bond_loss(
     tolerance_factor_soft=12.0,
     tolerance_factor_hard=12.0,
     eps=1e-6,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """Flat-bottom loss to penalize structural violations between residues.
 
     This is a loss penalizing any violation of the geometry around the peptide
@@ -185,7 +185,7 @@ def between_residue_clash_loss(
     overlap_tolerance_soft=1.5,
     overlap_tolerance_hard=1.5,
     eps=1e-10,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """Loss to penalize steric clashes between residues.
 
     This is a loss penalizing any steric clashes due to non bonded atoms in
@@ -335,7 +335,7 @@ def within_residue_violations(
     atom14_dists_upper_bound: torch.Tensor,
     tighten_bounds_for_loss=0.0,
     eps=1e-10,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """Loss to penalize steric clashes within residues.
 
     This is a loss penalizing any steric violations or clashes of non-bonded atoms
@@ -419,12 +419,12 @@ def within_residue_violations(
 
 
 def find_structural_violations(
-    batch: Dict[str, torch.Tensor],
+    batch: dict[str, torch.Tensor],
     atom14_pred_positions: torch.Tensor,
     violation_tolerance_factor: float,
     clash_overlap_tolerance: float,
     **kwargs,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """Computes several checks for structural violations."""
 
     # Compute between residue backbone violations of bonds and angles.
@@ -541,10 +541,10 @@ def find_structural_violations(
 
 
 def find_structural_violations_np(
-    batch: Dict[str, np.ndarray],
+    batch: dict[str, np.ndarray],
     atom14_pred_positions: np.ndarray,
     config: ml_collections.ConfigDict,
-) -> Dict[str, np.ndarray]:
+) -> dict[str, np.ndarray]:
     to_tensor = lambda x: torch.tensor(x)  # noqa: E731
     batch = tree_map(to_tensor, batch, np.ndarray)
     atom14_pred_positions = to_tensor(atom14_pred_positions)
@@ -593,10 +593,10 @@ def extreme_ca_ca_distance_violations(
 
 
 def compute_violation_metrics(
-    batch: Dict[str, torch.Tensor],
+    batch: dict[str, torch.Tensor],
     atom14_pred_positions: torch.Tensor,  # (N, 14, 3)
-    violations: Dict[str, torch.Tensor],
-) -> Dict[str, torch.Tensor]:
+    violations: dict[str, torch.Tensor],
+) -> dict[str, torch.Tensor]:
     """Compute several metrics to assess the structural violations."""
     ret = {}
     extreme_ca_ca_violations = extreme_ca_ca_distance_violations(
@@ -634,10 +634,10 @@ def compute_violation_metrics(
 
 
 def compute_violation_metrics_np(
-    batch: Dict[str, np.ndarray],
+    batch: dict[str, np.ndarray],
     atom14_pred_positions: np.ndarray,
-    violations: Dict[str, np.ndarray],
-) -> Dict[str, np.ndarray]:
+    violations: dict[str, np.ndarray],
+) -> dict[str, np.ndarray]:
     to_tensor = lambda x: torch.tensor(x)  # noqa: E731
     batch = tree_map(to_tensor, batch, np.ndarray)
     atom14_pred_positions = to_tensor(atom14_pred_positions)
@@ -650,7 +650,7 @@ def compute_violation_metrics_np(
 
 
 def violation_loss(
-    violations: Dict[str, torch.Tensor],
+    violations: dict[str, torch.Tensor],
     atom14_atom_exists: torch.Tensor,
     average_clashes: bool = False,
     eps=1e-6,

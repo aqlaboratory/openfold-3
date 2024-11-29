@@ -15,8 +15,6 @@
 
 """Utils for loss functions."""
 
-from typing import Dict
-
 import torch
 
 
@@ -42,10 +40,10 @@ def sigmoid_cross_entropy(logits, labels):
 
 
 def compute_renamed_ground_truth(
-    batch: Dict[str, torch.Tensor],
+    batch: dict[str, torch.Tensor],
     atom14_pred_positions: torch.Tensor,
     eps=1e-10,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """
     Find optimal renaming of ground truth based on the predicted positions.
 

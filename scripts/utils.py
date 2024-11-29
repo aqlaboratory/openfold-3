@@ -131,7 +131,7 @@ def get_nvidia_cc():
         if error_str.value:
             return None, error_str.value.decode()
         else:
-            return None, "Unknown error: cuInit returned %d" % result
+            return None, f"Unknown error: cuInit returned {result}"
     result = cuda.cuDeviceGetCount(ctypes.byref(nGpus))
     if result != CUDA_SUCCESS:
         cuda.cuGetErrorString(result, ctypes.byref(error_str))

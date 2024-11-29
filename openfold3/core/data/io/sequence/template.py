@@ -2,7 +2,8 @@
 Parsers for template alignments.
 """
 
-from typing import Iterable, NamedTuple, Sequence
+from collections.abc import Iterable, Sequence
+from typing import NamedTuple
 
 from openfold3.core.data.io.sequence.fasta import parse_fasta
 

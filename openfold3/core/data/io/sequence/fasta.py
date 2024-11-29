@@ -1,9 +1,9 @@
 """This module contains IO functions for reading and writing fasta files."""
 
 import contextlib
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Sequence
 
 from tqdm import tqdm
 

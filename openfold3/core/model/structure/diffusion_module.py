@@ -17,7 +17,7 @@ Diffusion module. Implements the algorithms in section 3.7 of the
 Supplementary Information.
 """
 
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -163,7 +163,7 @@ class DiffusionModule(nn.Module):
 
     def forward(
         self,
-        batch: Dict,
+        batch: dict,
         xl_noisy: torch.Tensor,
         token_mask: torch.Tensor,
         atom_mask: torch.Tensor,
@@ -295,7 +295,7 @@ class SampleDiffusion(nn.Module):
 
     def forward(
         self,
-        batch: Dict,
+        batch: dict,
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,

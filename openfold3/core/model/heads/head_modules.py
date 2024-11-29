@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -159,9 +159,9 @@ class AuxiliaryHeadsAllAtom(nn.Module):
 
     def forward(
         self,
-        batch: Dict,
+        batch: dict,
         si_input: torch.Tensor,
-        output: Dict,
+        output: dict,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,

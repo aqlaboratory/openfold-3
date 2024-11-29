@@ -15,7 +15,7 @@
 
 """AF2 Structure-based losses."""
 
-from typing import Dict, Optional
+from typing import Optional
 
 import ml_collections
 import torch
@@ -251,8 +251,8 @@ def sidechain_loss(
 
 
 def fape_loss(
-    out: Dict[str, torch.Tensor],
-    batch: Dict[str, torch.Tensor],
+    out: dict[str, torch.Tensor],
+    batch: dict[str, torch.Tensor],
     config: ml_collections.ConfigDict,
 ) -> torch.Tensor:
     traj = out["sm"]["frames"]

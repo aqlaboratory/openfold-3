@@ -15,7 +15,7 @@
 
 """Attention layer with pair bias."""
 
-from typing import List, Optional
+from typing import Optional
 
 import torch
 from ml_collections import ConfigDict
@@ -136,7 +136,7 @@ class AttentionPairBias(nn.Module):
         z: torch.Tensor,
         layout: torch.Tensor,
         mask: Optional[torch.Tensor],
-    ) -> List[torch.Tensor]:
+    ) -> list[torch.Tensor]:
         """
         Args:
             a:
@@ -195,7 +195,7 @@ class AttentionPairBias(nn.Module):
         z: Optional[torch.Tensor],
         beta: Optional[torch.Tensor],
         mask: Optional[torch.Tensor],
-    ) -> List[torch.Tensor]:
+    ) -> list[torch.Tensor]:
         """
         Args:
             a:
