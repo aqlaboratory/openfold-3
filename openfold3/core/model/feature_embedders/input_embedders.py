@@ -29,7 +29,6 @@ from openfold3.core.model.layers.sequence_local_atom_attention import (
     AtomAttentionEncoder,
 )
 from openfold3.core.model.primitives import LayerNorm, Linear, normal_init_
-from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.tensor_utils import add, binned_one_hot
 
 
@@ -515,15 +514,9 @@ class InputEmbedderAllAtom(nn.Module):
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
         """
-        atom_mask = broadcast_token_feat_to_atoms(
-            token_mask=batch["token_mask"],
-            num_atoms_per_token=batch["num_atoms_per_token"],
-            token_feat=batch["token_mask"],
-        )
-
         a, _, _, _ = self.atom_attn_enc(
             batch=batch,
-            atom_mask=atom_mask,
+            atom_mask=batch["atom_mask"],
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
         )
 

@@ -328,11 +328,7 @@ class SampleDiffusion(nn.Module):
         Returns:
             [*, N_atom, 3] Sampled atom positions
         """
-        atom_mask = broadcast_token_feat_to_atoms(
-            token_mask=batch["token_mask"],
-            num_atoms_per_token=batch["num_atoms_per_token"],
-            token_feat=batch["token_mask"],
-        )
+        atom_mask = batch["atom_mask"]
 
         xl = noise_schedule[0] * torch.randn(
             (*atom_mask.shape, 3), device=atom_mask.device, dtype=atom_mask.dtype

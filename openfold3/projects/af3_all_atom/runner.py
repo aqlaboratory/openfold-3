@@ -86,6 +86,17 @@ class AlphaFold3AllAtom(ModelRunner):
 
         self._log(loss_breakdown, batch, outputs, train=False)
 
+    def transfer_batch_to_device(self, batch, device, dataloader_idx):
+        # This is to avoid slow loading for nested dicts in PL
+        # Less frequent hanging when non_blocking=True on H200
+        # TODO: Determine if this is really needed given other
+        #  recent hanging fixes
+        def to_device(t):
+            return t.to(device=device, non_blocking=True)
+
+        batch = tensor_tree_map(to_device, batch)
+        return batch
+
     def on_train_epoch_start(self):
         # At the start of each virtual epoch we want to resample the set of
         # datapoints to train on
@@ -178,15 +189,10 @@ class AlphaFold3AllAtom(ModelRunner):
                 )
             )
 
-            # Expand token mask to atom mask
-            atom_mask = broadcast_token_feat_to_atoms(
-                token_mask=batch["token_mask"],
-                num_atoms_per_token=batch["num_atoms_per_token"],
-                token_feat=batch["token_mask"],
-            )
-
             _, valid_frame_mask = get_token_frame_atoms(
-                batch=batch, x=outputs["atom_positions_predicted"], atom_mask=atom_mask
+                batch=batch,
+                x=outputs["atom_positions_predicted"],
+                atom_mask=batch["atom_mask"],
             )
 
             # Compute weighted pTM score

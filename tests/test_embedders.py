@@ -108,6 +108,7 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
             .unsqueeze(0)
             .repeat((batch_size, 1)),
             "token_mask": torch.ones((batch_size, n_token)),
+            "atom_mask": torch.ones((batch_size, n_atom)),
             "residue_index": torch.arange(0, n_token)
             .unsqueeze(0)
             .repeat((batch_size, 1)),

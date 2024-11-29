@@ -22,6 +22,7 @@ from openfold3.core.data.resources.residues import (
     MoleculeType,
     get_with_unknown_3,
 )
+from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 
 
 def featurize_structure_af3(
@@ -98,20 +99,28 @@ def featurize_structure_af3(
         atom_array, features["token_index"].numpy()
     )
 
-    # Masks
-    features["token_mask"] = create_token_mask(len(token_starts), token_budget)
-
     # Atomization
     features["num_atoms_per_token"] = torch.tensor(
         np.diff(token_starts_with_stop),
         dtype=torch.int32,
     )
+
     features["start_atom_index"] = torch.tensor(
         token_starts,
         dtype=torch.int32,
     )
+
     features["is_atomized"] = torch.tensor(
         atom_array.is_atomized[token_starts], dtype=torch.int32
+    )
+
+    # Masks
+    features["token_mask"] = create_token_mask(len(token_starts), token_budget)
+
+    features["atom_mask"] = broadcast_token_feat_to_atoms(
+        token_mask=features["token_mask"],
+        num_atoms_per_token=features["num_atoms_per_token"],
+        token_feat=features["token_mask"],
     )
 
     # Ground-truth-specific features

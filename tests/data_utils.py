@@ -233,6 +233,7 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ):
         "token_bonds": torch.ones((batch_size, n_token, n_token)).int(),
         # Additional features
         "token_mask": torch.ones((batch_size, n_token)).float(),
+        "atom_mask": torch.ones((batch_size, n_atom)).float(),
         "start_atom_index": start_atom_index.unsqueeze(0).repeat((batch_size, 1)).int(),
         "num_atoms_per_token": num_atoms_per_token.unsqueeze(0)
         .repeat((batch_size, 1))
