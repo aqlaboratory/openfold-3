@@ -10,7 +10,6 @@ from openfold3.core.data.primitives.featurization.padding import pad_token_dim
 from openfold3.core.data.primitives.featurization.structure import (
     create_sym_id,
     create_token_bonds,
-    create_token_mask,
     encode_one_hot,
     extract_starts_entities,
 )
@@ -115,7 +114,7 @@ def featurize_structure_af3(
     )
 
     # Masks
-    features["token_mask"] = create_token_mask(len(token_starts), token_budget)
+    features["token_mask"] = torch.ones(len(token_starts), dtype=torch.float32)
 
     features["atom_mask"] = broadcast_token_feat_to_atoms(
         token_mask=features["token_mask"],
@@ -181,6 +180,7 @@ def featurize_target_gt_structure_af3(
         "num_atoms_per_token": [-1],
         "is_atomized": [-1],
         "start_atom_index": [-1],
+        "token_mask": [-1],
     }
     features_target = featurize_structure_af3(
         atom_array_cropped,
