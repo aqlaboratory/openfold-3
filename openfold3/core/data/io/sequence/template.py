@@ -264,7 +264,7 @@ def parse_hmmsearch_a3m(a3m_string: str) -> dict[int, TemplateHit]:
 
         # Aligned columns are only the match states
         aligned_cols = sum([r.isupper() and r != "-" for r in hit_sequence])
-        indices_hit = _get_indices(hit_sequence, start=metadata.start - 1)
+        indices_hit = _get_indices(hit_sequence, start=metadata.start)
 
         # Embed in TempateHit dataclass
         hits[i] = TemplateHit(
