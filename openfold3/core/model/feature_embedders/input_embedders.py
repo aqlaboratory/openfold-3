@@ -407,6 +407,7 @@ class RelposAllAtom(nn.Module):
         entity_id = batch["entity_id"]
         same_chain = asym_id[..., None] == asym_id[..., None, :]
         same_res = res_idx[..., None] == res_idx[..., None, :]
+        same_entity = entity_id[..., None] == entity_id[..., None, :]
 
         rel_pos = self.relpos(
             pos=res_idx, condition=same_chain, rel_clip_idx=self.max_relative_idx
@@ -416,15 +417,13 @@ class RelposAllAtom(nn.Module):
             condition=same_chain & same_res,
             rel_clip_idx=self.max_relative_idx,
         )
-
-        same_entity = entity_id[..., None] == entity_id[..., None, :]
-        same_entity = same_entity[..., None].to(dtype=rel_pos.dtype)
-
         rel_chain = self.relpos(
             pos=batch["sym_id"],
             condition=same_entity,
             rel_clip_idx=self.max_relative_chain,
         )
+
+        same_entity = same_entity[..., None].to(dtype=rel_pos.dtype)
 
         rel_feat = torch.cat([rel_pos, rel_token, same_entity, rel_chain], dim=-1).to(
             self.linear_relpos.weight.dtype
