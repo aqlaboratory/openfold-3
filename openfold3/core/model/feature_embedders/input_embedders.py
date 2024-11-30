@@ -422,7 +422,7 @@ class RelposAllAtom(nn.Module):
 
         rel_chain = self.relpos(
             pos=batch["sym_id"],
-            condition=~same_chain,
+            condition=same_entity,
             rel_clip_idx=self.max_relative_chain,
         )
 
