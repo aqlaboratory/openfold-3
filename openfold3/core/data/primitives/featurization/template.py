@@ -9,8 +9,8 @@ import torch
 from openfold3.core.data.primitives.featurization.structure import encode_one_hot
 from openfold3.core.data.primitives.structure.template import TemplateSliceCollection
 from openfold3.core.data.resources.residues import (
-    STANDARD_RESIDUES_WITH_GAP_1,
-    get_with_unknown_1_to_idx,
+    STANDARD_RESIDUES_WITH_GAP_3,
+    get_with_unknown_3_to_idx,
 )
 from openfold3.core.utils.all_atom_multimer import make_transform_from_reference
 from openfold3.core.utils.geometry.vector import Vec3Array
@@ -126,9 +126,9 @@ def create_template_restype(
             The restype template feature.
     """
     restype_index = torch.tensor(
-        get_with_unknown_1_to_idx(res_names), dtype=torch.int64
+        get_with_unknown_3_to_idx(res_names), dtype=torch.int64
     )
-    template_restype = encode_one_hot(restype_index, len(STANDARD_RESIDUES_WITH_GAP_1))
+    template_restype = encode_one_hot(restype_index, len(STANDARD_RESIDUES_WITH_GAP_3))
     return (template_restype * template_pseudo_beta_mask.unsqueeze(-1)).to(torch.int32)
 
 

@@ -12,7 +12,7 @@ from openfold3.core.data.io.structure.cif import parse_mmcif
 from openfold3.core.data.primitives.featurization.structure import get_token_starts
 from openfold3.core.data.primitives.structure.metadata import get_cif_block
 from openfold3.core.data.primitives.structure.unresolved import (
-    add_unresolved_polymer_residues,
+    add_unresolved_atoms,
 )
 
 
@@ -293,7 +293,7 @@ def align_template_to_query(
             / Path(f"{template_pdb_id}.{template_file_format}")
         )
         # Add unresolved residues
-        atom_array_template_assembly = add_unresolved_polymer_residues(
+        atom_array_template_assembly = add_unresolved_atoms(
             atom_array_template_assembly, get_cif_block(cif_file), ccd
         )
 
