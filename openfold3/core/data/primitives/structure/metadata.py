@@ -259,7 +259,10 @@ def get_ccd_atom_pair_to_bond_dict(ccd_entry: CIFBlock) -> dict[(str, str), Bond
         Dictionary mapping each pair of atom names to the respective Biotite bond type.
     """
 
-    chem_comp_bonds = ccd_entry["chem_comp_bond"]
+    chem_comp_bonds = ccd_entry.get("chem_comp_bond")
+
+    if chem_comp_bonds is None:
+        return {}
 
     atom_pair_to_bond = {}
 
@@ -295,6 +298,28 @@ def get_ccd_atom_id_to_element_dict(ccd_entry: CIFBlock) -> dict[str, str]:
     }
 
     return atom_id_to_element
+
+
+def get_ccd_atom_id_to_charge_dict(ccd_entry: CIFBlock) -> dict[str, float]:
+    """Gets the dictionary mapping atom IDs to charges from a CCD entry.
+
+    Args:
+        ccd_entry:
+            CIFBlock containing the CCD entry.
+
+    Returns:
+        Dictionary mapping atom IDs to charges.
+    """
+
+    atom_id_to_charge = {
+        atom_id.item(): charge.item()
+        for atom_id, charge in zip(
+            ccd_entry["chem_comp_atom"]["atom_id"].as_array(),
+            ccd_entry["chem_comp_atom"]["charge"].as_array().astype(int),
+        )
+    }
+
+    return atom_id_to_charge
 
 
 def get_first_bioassembly_polymer_count(cif_data: CIFBlock) -> int:
