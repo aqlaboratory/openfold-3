@@ -1,5 +1,6 @@
 import logging
-from typing import Iterable, Literal
+from collections.abc import Iterable
+from typing import Literal
 
 import biotite.structure as struc
 import numpy as np
