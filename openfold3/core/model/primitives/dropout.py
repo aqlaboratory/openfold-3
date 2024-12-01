@@ -30,7 +30,7 @@
 """Dropout layers."""
 
 from functools import partialmethod
-from typing import List, Union
+from typing import Union
 
 import torch
 import torch.nn as nn
@@ -44,7 +44,7 @@ class Dropout(nn.Module):
     If not in training mode, this module computes the identity function.
     """
 
-    def __init__(self, r: float, batch_dim: Union[int, List[int]]):
+    def __init__(self, r: float, batch_dim: Union[int, list[int]]):
         """
         Args:
             r:

@@ -1,5 +1,5 @@
 import math
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 
@@ -313,7 +313,7 @@ def get_token_atom_index_offset(atom_name: str, restype: torch.Tensor):
     return token_atom_index_offset, token_atom_mask
 
 
-def get_token_center_atoms(batch: Dict, x: torch.Tensor, atom_mask: torch.Tensor):
+def get_token_center_atoms(batch: dict, x: torch.Tensor, atom_mask: torch.Tensor):
     """
     Extract center atoms per token, which returns
         -   Ca for standard amino acid residue
@@ -381,7 +381,7 @@ def get_token_center_atoms(batch: Dict, x: torch.Tensor, atom_mask: torch.Tensor
 
 
 def get_token_representative_atoms(
-    batch: Dict, x: torch.Tensor, atom_mask: torch.Tensor
+    batch: dict, x: torch.Tensor, atom_mask: torch.Tensor
 ):
     """
     Extract representative atoms per token, which returns
@@ -482,7 +482,7 @@ def get_token_representative_atoms(
 
 
 def get_token_frame_atoms(
-    batch: Dict,
+    batch: dict,
     x: torch.Tensor,
     atom_mask: torch.Tensor,
     angle_threshold: float = 25.0,

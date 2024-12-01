@@ -3,8 +3,9 @@ import json
 import logging
 import os
 import pickle
+from collections.abc import Sequence
 from functools import partial
-from typing import Any, Optional, Sequence, Union
+from typing import Any, Optional, Union
 
 import ml_collections as mlc
 import pytorch_lightning as pl

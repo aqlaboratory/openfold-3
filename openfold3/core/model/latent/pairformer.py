@@ -16,7 +16,7 @@
 """PairFormer block and stack."""
 
 from functools import partial
-from typing import Optional, Tuple
+from typing import Optional
 
 import torch
 from ml_collections import ConfigDict
@@ -131,7 +131,7 @@ class PairFormerBlock(nn.Module):
         inplace_safe: bool = False,
         _mask_trans: bool = True,
         _attn_chunk_size: Optional[int] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             s:
@@ -385,7 +385,7 @@ class PairFormerStack(nn.Module):
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             s:

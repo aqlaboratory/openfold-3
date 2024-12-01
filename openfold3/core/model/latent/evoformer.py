@@ -16,7 +16,8 @@
 """Evoformer block and stack."""
 
 import sys
-from typing import Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Optional
 
 import torch
 from ml_collections import ConfigDict
@@ -98,7 +99,7 @@ class EvoformerBlock(MSABlock):
         _attn_chunk_size: Optional[int] = None,
         _offload_inference: bool = False,
         _offloadable_inputs: Optional[Sequence[torch.Tensor]] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         msa_trans_mask = msa_mask if _mask_trans else None
 
         if _attn_chunk_size is None:

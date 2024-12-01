@@ -19,8 +19,9 @@ import glob
 import logging
 import os
 import subprocess
+from collections.abc import Mapping, Sequence
 from concurrent import futures
-from typing import Any, Callable, Mapping, Optional, Sequence
+from typing import Any, Callable, Optional
 from urllib import request
 
 from openfold3.core.data.legacy import parsers

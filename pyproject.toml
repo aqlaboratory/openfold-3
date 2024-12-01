@@ -24,6 +24,7 @@ ignore = [
     "E741",
     "SIM108",
 ]
+extend-safe-fixes = ["UP006"]
 
 [tool.pytest.ini_options]
 log_cli = true

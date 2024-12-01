@@ -14,7 +14,6 @@
 # limitations under the License.
 
 from functools import partial
-from typing import List, Tuple
 
 import torch
 import torch.nn as nn
@@ -31,7 +30,7 @@ def add(m1, m2, inplace):
     return m1
 
 
-def permute_final_dims(tensor: torch.Tensor, inds: List[int]):
+def permute_final_dims(tensor: torch.Tensor, inds: list[int]):
     zero_index = -1 * len(inds)
     first_inds = list(range(len(tensor.shape[:zero_index])))
     return tensor.permute(first_inds + [zero_index + i for i in inds])
@@ -114,7 +113,7 @@ tensor_tree_map = partial(tree_map, leaf_type=torch.Tensor)
 
 
 def sparsify_tensor(
-    x: torch.Tensor, mask: torch.Tensor, block: int, batch_dims: Tuple[int]
+    x: torch.Tensor, mask: torch.Tensor, block: int, batch_dims: tuple[int]
 ) -> torch.Tensor:
     """Convert a regular tensor to sparse format"""
     block_bias = (

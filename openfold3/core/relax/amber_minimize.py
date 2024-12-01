@@ -17,7 +17,8 @@
 
 import io
 import time
-from typing import Collection, Optional, Sequence
+from collections.abc import Collection, Sequence
+from typing import Optional
 
 import ml_collections
 import numpy as np
