@@ -15,11 +15,9 @@
 
 """Distogram losses."""
 
-from typing import Dict
-
 import torch
 
-from openfold3.core.loss.loss_utils import softmax_cross_entropy
+from openfold3.core.loss.loss_utils import loss_masked_batch_mean, softmax_cross_entropy
 from openfold3.core.utils.atomize_utils import get_token_representative_atoms
 from openfold3.core.utils.tensor_utils import binned_one_hot
 
@@ -73,7 +71,7 @@ def cbeta_distogram_loss(
 
 
 def all_atom_distogram_loss(
-    batch: Dict,
+    batch: dict,
     logits: torch.Tensor,
     no_bins: int,
     bin_min: float,
@@ -98,7 +96,10 @@ def all_atom_distogram_loss(
         eps:
             Small float for numerical stability
     Returns:
-        Loss on distogram prediction
+        mean_loss:
+            Distogram loss
+        loss_breakdown:
+            Dict of individual component losses (unweighted)
     """
     # Extract representative atoms
     rep_x, rep_atom_mask = get_token_representative_atoms(
@@ -126,4 +127,18 @@ def all_atom_distogram_loss(
         torch.sum(pair_mask, dim=(-1, -2)) + eps
     )
 
-    return torch.mean(loss)
+    distogram_weight = batch["loss_weights"]["distogram"]
+
+    # Calculate unweighted batch mean
+    # Mask out samples where the loss is disabled
+    mean_loss_unweighted = loss_masked_batch_mean(
+        loss=loss.detach().clone(), weight=distogram_weight, apply_weight=False, eps=eps
+    )
+    loss_breakdown = {"distogram_loss": mean_loss_unweighted}
+
+    # Apply loss weight in batch mean
+    mean_loss = loss_masked_batch_mean(
+        loss=loss, weight=distogram_weight, apply_weight=True, eps=eps
+    )
+
+    return mean_loss, loss_breakdown

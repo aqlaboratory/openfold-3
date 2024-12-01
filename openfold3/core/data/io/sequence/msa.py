@@ -3,12 +3,15 @@
 import os
 import string
 from collections import OrderedDict
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 
 from openfold3.core.data.io.sequence.fasta import parse_fasta
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 from openfold3.core.data.primitives.sequence.msa import (
     MsaCollection,
     MsaParsed,
@@ -177,8 +180,8 @@ def parse_msas_direct(
 
     if len(file_list) == 0:
         raise RuntimeError(
-            f"No alignments found in {folder_path}. Folders for chains"
-            "without any aligned sequences need to contain at least one"
+            f"No alignments found in {folder_path}. Folders for chains "
+            "without any aligned sequences need to contain at least one "
             ".sto file with only the query sequence."
         )
     else:
@@ -187,7 +190,7 @@ def parse_msas_direct(
             basename, ext = aln_file.stem, aln_file.suffix
             if ext not in [".sto", ".a3m"]:
                 raise NotImplementedError(
-                    "Currently only .sto and .a3m file parsing is supported for"
+                    "Currently only .sto and .a3m file parsing is supported for "
                     f"alignment parsing, not {ext}."
                 )
 
@@ -244,7 +247,7 @@ def parse_msas_alignment_database(
             basename, ext = os.path.splitext(file_name)
             if ext not in [".sto", ".a3m"]:
                 raise NotImplementedError(
-                    "Currently only .sto and .a3m file parsing is supported for"
+                    "Currently only .sto and .a3m file parsing is supported for "
                     f"alignment parsing, not {ext}."
                 )
 
@@ -259,6 +262,7 @@ def parse_msas_alignment_database(
     return msas
 
 
+@log_runtime_memory(runtime_dict_key="runtime-msa-proc-parse")
 def parse_msas_sample(
     alignments_directory: Path | None,
     alignment_db_directory: Path | None,

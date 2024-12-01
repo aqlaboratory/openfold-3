@@ -32,10 +32,8 @@ class TestAF3Model(unittest.TestCase):
 
         if train:
             config.settings.chunk_size = None
-
-            # Needed to run large model
-            if not reduce_model_size:
-                config.settings.blocks_per_ckpt = 1
+            config.settings.blocks_per_ckpt = 1
+            config.settings.ckpt_intermediate_steps = True
 
         if reduce_model_size:
             # To avoid memory issues in CI

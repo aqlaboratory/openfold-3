@@ -16,12 +16,13 @@
 """Diffusion losses."""
 
 from functools import partial
-from typing import Callable, Dict, Optional
+from typing import Callable, Optional
 
 import torch
-from torch.utils.checkpoint import checkpoint
 
+from openfold3.core.loss.loss_utils import loss_masked_batch_mean
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
+from openfold3.core.utils.checkpointing import checkpoint_section
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 
 
@@ -69,16 +70,10 @@ def weighted_rigid_align(
     H = H * w[..., None, None] * atom_mask_gt[..., None, None]
     H = torch.sum(H, dim=-3)
 
-    dtype = H.dtype
-
-    # TODO: Check why autocast did not work in test
-    # Find optimal rotation from single value decomposition
     # SVD (cast to float because doesn't work with bf16/fp16)
-    U, _, V = torch.linalg.svd(H.float())
-
-    dets = torch.linalg.det(U @ V).to(dtype=dtype)
-    U = U.to(dtype=dtype)
-    V = V.to(dtype=dtype)
+    with torch.amp.autocast("cuda", dtype=torch.float32):
+        U, _, V = torch.linalg.svd(H)
+        dets = torch.linalg.det(U @ V)
 
     # Remove reflection
     F = torch.eye(3, device=x.device, dtype=x.dtype).tile((*H.shape[:-2], 1, 1))
@@ -93,7 +88,7 @@ def weighted_rigid_align(
 
 def mse_loss(
     x: torch.Tensor,
-    batch: Dict,
+    batch: dict,
     dna_weight: float,
     rna_weight: float,
     ligand_weight: float,
@@ -157,7 +152,7 @@ def mse_loss(
     return mse
 
 
-def bond_loss(x: torch.Tensor, batch: Dict, eps: float) -> torch.Tensor:
+def bond_loss(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
     """
     Implements AF3 Equation 5.
 
@@ -216,7 +211,7 @@ def bond_loss(x: torch.Tensor, batch: Dict, eps: float) -> torch.Tensor:
     return loss
 
 
-def smooth_lddt_loss(x: torch.Tensor, batch: Dict, eps: float) -> torch.Tensor:
+def smooth_lddt_loss(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
     """
     Implements AF3 Algorithm 27.
 
@@ -277,7 +272,7 @@ def smooth_lddt_loss(x: torch.Tensor, batch: Dict, eps: float) -> torch.Tensor:
 
 
 def run_low_mem_loss_fn(
-    loss_fn: Callable, x: torch.Tensor, kwargs: Dict, chunk_size: int
+    loss_fn: Callable, x: torch.Tensor, kwargs: dict, chunk_size: int
 ) -> torch.Tensor:
     """
     Run a loss function in low memory mode by chunking over the sample dimension with
@@ -300,14 +295,16 @@ def run_low_mem_loss_fn(
     chunks = []
     for i in range(0, x.shape[-3], chunk_size):
         x_chunk = x[..., i : i + chunk_size, :, :]
-        l_chunk = checkpoint(loss_fn_partial, x_chunk, use_reentrant=False)
+        l_chunk = checkpoint_section(
+            fn=loss_fn_partial, args=(x_chunk,), apply_ckpt=True, use_reentrant=False
+        )
         chunks.append(l_chunk)
 
     return torch.cat(chunks, dim=-1)
 
 
 def diffusion_loss(
-    batch: Dict,
+    batch: dict,
     x: torch.Tensor,
     t: torch.Tensor,
     sigma_data: float,
@@ -317,7 +314,7 @@ def diffusion_loss(
     eps: float = 1e-8,
     chunk_size: Optional[int] = None,
     **kwargs,
-) -> [torch.Tensor, Dict]:
+) -> [torch.Tensor, dict]:
     """
     Implements AF3 Equation 6.
 
@@ -345,9 +342,12 @@ def diffusion_loss(
         mean_loss:
             Diffusion loss
         loss_breakdown:
-            Dict of individual component losses
+            Dict of individual component losses (unweighted)
     """
     loss_weights = batch["loss_weights"]
+    mse_weight = loss_weights["mse"]
+    bond_weight = loss_weights["bond"]
+    smooth_lddt_weight = loss_weights["smooth_lddt"]
 
     # Expand to broadcast to number of samples
     batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
@@ -360,53 +360,68 @@ def diffusion_loss(
         ligand_weight=ligand_weight,
         eps=eps,
     )
-    loss_breakdown = {"mse_loss": l_mse}
+
+    # Mean over diffusion sample dimension
+    loss_breakdown = {"mse": l_mse.detach().clone().mean(dim=-1)}
 
     l_bond = 0.0
     l_smooth_lddt = 0.0
-    bond_weight = loss_weights["bond"]
-    smooth_lddt_weight = loss_weights["smooth_lddt"]
     if chunk_size is None:
-        if bond_weight > 0:
+        if bond_weight.any():
             l_bond = bond_loss(x=x, batch=batch, eps=eps)
-            loss_breakdown["bond_loss"] = l_bond
+            loss_breakdown["bond"] = l_bond.detach().clone().mean(dim=-1)
 
-        if smooth_lddt_weight > 0:
+        if smooth_lddt_weight.any():
             l_smooth_lddt = smooth_lddt_loss(x=x, batch=batch, eps=eps)
-            loss_breakdown["smooth_lddt_loss"] = l_smooth_lddt
+
+            # Mean over diffusion sample dimension
+            loss_breakdown["smooth_lddt"] = l_smooth_lddt.detach().clone().mean(dim=-1)
     else:
-        if bond_weight > 0:
+        if bond_weight.any():
             l_bond = run_low_mem_loss_fn(
                 loss_fn=bond_loss,
                 x=x,
                 kwargs={"batch": batch, "eps": eps},
                 chunk_size=chunk_size,
             )
-            loss_breakdown["bond_loss"] = l_bond
 
-        if smooth_lddt_weight > 0:
+            # Mean over diffusion sample dimension
+            loss_breakdown["bond"] = l_bond.detach().clone().mean(dim=-1)
+
+        if smooth_lddt_weight.any():
             l_smooth_lddt = run_low_mem_loss_fn(
                 loss_fn=smooth_lddt_loss,
                 x=x,
                 kwargs={"batch": batch, "eps": eps},
                 chunk_size=chunk_size,
             )
-            loss_breakdown["smooth_lddt_loss"] = l_smooth_lddt
+            loss_breakdown["smooth_lddt"] = l_smooth_lddt.detach().clone().mean(dim=-1)
 
+    # Mean over batch dimension for individual losses
+    # Mask out samples where the loss is disabled
     loss_breakdown = {
-        k: torch.mean(v).detach().clone() for k, v in loss_breakdown.items()
+        f"{name}_loss": loss_masked_batch_mean(
+            loss=loss, weight=loss_weights[name], apply_weight=False, eps=eps
+        )
+        for name, loss in loss_breakdown.items()
     }
 
-    l_mse = l_mse * loss_weights["mse"]
-    l_bond = l_bond * bond_weight
-    l_smooth_lddt = l_smooth_lddt * smooth_lddt_weight
+    l_mse = l_mse * mse_weight.unsqueeze(-1)
+    l_bond = l_bond * bond_weight.unsqueeze(-1)
+    l_smooth_lddt = l_smooth_lddt * smooth_lddt_weight.unsqueeze(-1)
 
-    # TODO: Changed from SI, denominator (t + sigma_data) ** 2 changed
-    #  to (t * sigma_data) ** 2. Test whether this is works as expected.
+    # Note: Changed from SI, denominator (t + sigma_data) ** 2 changed
+    #  to (t * sigma_data) ** 2.
     w = (t**2 + sigma_data**2) / (t * sigma_data) ** 2
     l = w * (l_mse + l_bond) + l_smooth_lddt
 
-    mean_loss = torch.mean(l)
+    # Mean over diffusion sample dimension
+    mean_loss = torch.mean(l, dim=-1)
+
+    # Mean over batch dimension, only for samples with diffusion losses enabled
+    mean_loss = loss_masked_batch_mean(
+        loss=mean_loss, weight=mse_weight, apply_weight=False, eps=eps
+    )
 
     # Return to original batch size
     tensor_tree_map(lambda t: t.squeeze(1), batch)

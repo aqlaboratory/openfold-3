@@ -5,12 +5,16 @@ import torch
 from openfold3.core.data.primitives.featurization.structure import (
     encode_one_hot,
 )
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 from openfold3.core.data.resources.residues import (
     STANDARD_RESIDUES_WITH_GAP_1,
     get_with_unknown_1,
 )
 
 
+@log_runtime_memory(runtime_dict_key="runtime-msa-feat")
 def featurize_msa_af3(msa_processed):
     max_rows = 16384
 

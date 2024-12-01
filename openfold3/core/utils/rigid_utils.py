@@ -15,8 +15,9 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
-from typing import Any, Callable, Sequence
+from collections.abc import Sequence
+from functools import cache
+from typing import Any, Callable
 
 import numpy as np
 import torch
@@ -82,7 +83,7 @@ def rot_vec_mul(r: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
     )
 
 
-@lru_cache(maxsize=None)
+@cache
 def identity_rot_mats(
     batch_dims: tuple[int],
     dtype: torch.dtype | None = None,
@@ -97,7 +98,7 @@ def identity_rot_mats(
     return rots
 
 
-@lru_cache(maxsize=None)
+@cache
 def identity_trans(
     batch_dims: tuple[int],
     dtype: torch.dtype | None = None,
@@ -110,7 +111,7 @@ def identity_trans(
     return trans
 
 
-@lru_cache(maxsize=None)
+@cache
 def identity_quats(
     batch_dims: tuple[int],
     dtype: torch.dtype | None = None,
@@ -237,7 +238,7 @@ _CACHED_QUATS = {
 }
 
 
-@lru_cache(maxsize=None)
+@cache
 def _get_quat(quat_key, dtype, device):
     return torch.tensor(_CACHED_QUATS[quat_key], dtype=dtype, device=device)
 

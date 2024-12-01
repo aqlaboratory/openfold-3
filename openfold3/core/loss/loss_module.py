@@ -161,31 +161,25 @@ class AlphaFold3Loss(nn.Module):
         self.config = config
 
     def loss(self, batch, output, _return_breakdown=False):
-        loss_weights = batch["loss_weights"]
-        confidence_weights_sum = sum(
-            loss_weights[k].float() for k in self.config.confidence_loss_names
-        )
-
         cum_loss = 0.0
         losses = {}
-        if confidence_weights_sum > 0:
-            l_confidence, l_confidence_breakdown = confidence_loss(
-                batch=batch, output=output, **self.config.confidence
-            )
-            losses.update(l_confidence_breakdown)
 
-            losses["confidence_loss"] = l_confidence.detach().clone()
-
-            # Weighted in confidence_loss()
-            cum_loss = cum_loss + l_confidence
-
-        diffusion_weights_sum = sum(
-            loss_weights[k].float() for k in self.config.diffusion_loss_names
+        l_confidence, l_confidence_breakdown = confidence_loss(
+            batch=batch, output=output, **self.config.confidence
         )
-        if diffusion_weights_sum > 0:
+        losses.update(l_confidence_breakdown)
+
+        losses["confidence_loss"] = l_confidence.detach().clone()
+
+        # Weighted in confidence_loss()
+        cum_loss = cum_loss + l_confidence
+
+        # Run diffusion loss only if diffusion training and losses are enabled
+        atom_positions_diffusion = output.get("atom_positions_diffusion")
+        if atom_positions_diffusion is not None:
             l_diffusion, l_diffusion_breakdown = diffusion_loss(
                 batch=batch,
-                x=output["atom_positions_diffusion"],
+                x=atom_positions_diffusion,
                 t=output["noise_level"],
                 **self.config.diffusion,
             )
@@ -196,13 +190,15 @@ class AlphaFold3Loss(nn.Module):
             # Weighted in diffusion_loss()
             cum_loss = cum_loss + l_diffusion
 
-        if loss_weights["distogram"] > 0:
-            l_distogram = all_atom_distogram_loss(
-                batch=batch, logits=output["distogram_logits"], **self.config.distogram
-            )
-            losses["distogram_loss"] = l_distogram.detach().clone()
+        l_distogram, l_distogram_breakdown = all_atom_distogram_loss(
+            batch=batch, logits=output["distogram_logits"], **self.config.distogram
+        )
+        losses.update(l_distogram_breakdown)
 
-            cum_loss = cum_loss + loss_weights["distogram"].item() * l_distogram
+        losses["scaled_distogram_loss"] = l_distogram.detach().clone()
+
+        # Weighted in all_atom_distogram_loss()
+        cum_loss = cum_loss + l_distogram
 
         losses["loss"] = cum_loss.detach().clone()
 

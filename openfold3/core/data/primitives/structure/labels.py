@@ -1,15 +1,19 @@
+import logging
 from collections import defaultdict
 
 import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
+from biotite.structure.io import pdbx
 
 from openfold3.core.data.resources.residues import (
-    STANDARD_DNA_RESIDUES,
+    CHEM_COMP_TYPE_TO_MOLECULE_TYPE,
+    STANDARD_NUCLEIC_ACID_RESIDUES,
     STANDARD_PROTEIN_RESIDUES_3,
-    STANDARD_RNA_RESIDUES,
     MoleculeType,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def get_chain_to_entity_dict(atom_array: struc.AtomArray) -> dict[int, int]:
@@ -237,7 +241,7 @@ def assign_entity_ids(atom_array: AtomArray) -> None:
     atom_array.del_annotation("label_entity_id")
 
 
-def assign_molecule_type_ids(atom_array: AtomArray) -> None:
+def assign_molecule_type_ids(atom_array: AtomArray, cif_file: pdbx.CIFFile) -> None:
     """Assigns molecule types to the AtomArray
 
     Assigns molecule type IDs to each chain based on its residue names. Possible
@@ -248,11 +252,39 @@ def assign_molecule_type_ids(atom_array: AtomArray) -> None:
         atom_array:
             AtomArray containing the structure to assign molecule types to.
     """
-    chain_start_idxs = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
+    # Get chemical component-to-type mapping
+    # All type values are mapped to upper case to ensure case-insensitive matching
+    chem_comp_ids = cif_file.block["chem_comp"]["id"].as_array()
+    chem_comp_types = cif_file.block["chem_comp"]["type"].as_array()
+    try:
+        chem_comp_id_to_type = {
+            k: CHEM_COMP_TYPE_TO_MOLECULE_TYPE[v.upper()]
+            for k, v in zip(chem_comp_ids, chem_comp_types)
+        }
+    except KeyError:
+        missing_types = chem_comp_types[
+            ~np.isin(
+                chem_comp_types, np.array(list(CHEM_COMP_TYPE_TO_MOLECULE_TYPE.keys()))
+            )
+        ]
 
-    std_protein_residues = set(STANDARD_PROTEIN_RESIDUES_3)
-    std_dna_residues = set(STANDARD_DNA_RESIDUES)
-    std_rna_residues = set(STANDARD_RNA_RESIDUES)
+        logger.error(
+            "Found chemical component types that are missing from the "
+            "component type-to-molecule type map. Mapping the following "
+            f'types to "OTHER" i.e. MoleculeType.LIGAND: {missing_types}'
+        )
+        chem_comp_id_to_type = {
+            k: CHEM_COMP_TYPE_TO_MOLECULE_TYPE.get(
+                v.upper(), CHEM_COMP_TYPE_TO_MOLECULE_TYPE["OTHER"]
+            )
+            for k, v in zip(chem_comp_ids, chem_comp_types)
+        }
+
+    @np.vectorize
+    def get_mol_types(key: str) -> MoleculeType:
+        return chem_comp_id_to_type.get(key, MoleculeType.LIGAND)
+
+    chain_start_idxs = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
 
     # Create molecule type annotation
     molecule_type_ids = np.zeros(len(atom_array), dtype=int)
@@ -263,23 +295,17 @@ def assign_molecule_type_ids(atom_array: AtomArray) -> None:
     ):
         chain_array = atom_array[chain_start:next_chain_start]
         is_polymeric = struc.get_residue_count(chain_array) > 1
-        residues_in_chain = set(chain_array.res_name)
+        atom_mol_types = get_mol_types(chain_array.res_name)
 
-        # Assign protein if polymeric and any standard protein residue is present
-        if (residues_in_chain & std_protein_residues) and is_polymeric:
-            molecule_type_ids[chain_start:next_chain_start] = MoleculeType.PROTEIN
-
-        # Assign RNA if polymeric and any standard RNA residue is present
-        elif (residues_in_chain & std_rna_residues) and is_polymeric:
-            molecule_type_ids[chain_start:next_chain_start] = MoleculeType.RNA
-
-        # Assign DNA if polymeric and any standard DNA residue is present
-        elif (residues_in_chain & std_dna_residues) and is_polymeric:
-            molecule_type_ids[chain_start:next_chain_start] = MoleculeType.DNA
-
-        # Assign ligand otherwise
-        else:
+        # Non-polymeric chains are always ligands
+        if not is_polymeric:
             molecule_type_ids[chain_start:next_chain_start] = MoleculeType.LIGAND
+        # Assign a single molecule type to all atoms in the chain based on the majority
+        # vote of molecule types of all atomis in the chain
+        else:
+            molecule_type_ids[chain_start:next_chain_start] = np.argmax(
+                np.bincount(atom_mol_types)
+            )
 
     atom_array.set_annotation("molecule_type_id", molecule_type_ids)
 
@@ -309,3 +335,49 @@ def uniquify_ids(ids: list[str]) -> list[str]:
         uniquified_ids.append(f"{id}_{id_counter[id]}")
 
     return uniquified_ids
+
+
+def set_residue_hetero_values(atom_array: AtomArray) -> None:
+    """Sets the "hetero" annotation in the AtomArray based on the residue names.
+
+    This function sets the "hetero" annotation in the AtomArray based on the residue
+    names. If the residue name is in the list of standard residues for the respective
+    molecule type, the "hetero" annotation is set to False, otherwise it is set to True.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to set the "hetero" annotation for.
+
+    Returns:
+        None, the "hetero" annotation is modified in-place.
+    """
+    protein_mask = atom_array.molecule_type_id == MoleculeType.PROTEIN
+    if protein_mask.any():
+        in_standard_protein_residues = np.isin(
+            atom_array.res_name, STANDARD_PROTEIN_RESIDUES_3
+        )
+    else:
+        in_standard_protein_residues = np.zeros(len(atom_array), dtype=bool)
+
+    rna_mask = atom_array.molecule_type_id == MoleculeType.RNA
+    if rna_mask.any():
+        in_standard_rna_residues = np.isin(
+            atom_array.res_name, STANDARD_NUCLEIC_ACID_RESIDUES
+        )
+    else:
+        in_standard_rna_residues = np.zeros(len(atom_array), dtype=bool)
+
+    dna_mask = atom_array.molecule_type_id == MoleculeType.DNA
+    if dna_mask.any():
+        in_standard_dna_residues = np.isin(
+            atom_array.res_name, STANDARD_NUCLEIC_ACID_RESIDUES
+        )
+    else:
+        in_standard_dna_residues = np.zeros(len(atom_array), dtype=bool)
+
+    atom_array.hetero[:] = True
+    atom_array.hetero[
+        (protein_mask & in_standard_protein_residues)
+        | (rna_mask & in_standard_rna_residues)
+        | (dna_mask & in_standard_dna_residues)
+    ] = False

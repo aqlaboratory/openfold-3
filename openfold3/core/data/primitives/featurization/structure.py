@@ -50,7 +50,9 @@ def encode_one_hot(x: torch.Tensor, num_classes: int) -> torch.Tensor:
     return x_one_hot
 
 
-def create_sym_id(entity_ids: np.ndarray) -> np.ndarray:
+def create_sym_id(
+    entity_ids_per_chain: np.ndarray, atom_array: AtomArray, token_starts: np.ndarray
+) -> np.ndarray:
     """Creates sym_id feature as outlined in AF3 SI Table 5.
 
     Args:
@@ -59,19 +61,20 @@ def create_sym_id(entity_ids: np.ndarray) -> np.ndarray:
 
     Returns:
         np.ndarray:
-            Array of sym_ids.
+            Array of sym_ids mapped to each token.
     """
-    output_array = np.zeros_like(entity_ids)
+    sym_id_per_chain = np.zeros_like(entity_ids_per_chain)
     counter = 0
 
-    for i in range(1, len(entity_ids)):
-        if entity_ids[i] == entity_ids[i - 1]:
+    for i in range(1, len(entity_ids_per_chain)):
+        if entity_ids_per_chain[i] == entity_ids_per_chain[i - 1]:
             counter += 1
         else:
             counter = 0
-        output_array[i] = counter
+        sym_id_per_chain[i] = counter
 
-    return output_array
+    sym_id_per_atom = struc.spread_chain_wise(atom_array, sym_id_per_chain)
+    return sym_id_per_atom[token_starts]
 
 
 def extract_starts_entities(atom_array: AtomArray) -> tuple[np.ndarray, np.ndarray]:
@@ -83,7 +86,7 @@ def extract_starts_entities(atom_array: AtomArray) -> tuple[np.ndarray, np.ndarr
 
     Returns:
         tuple[np.ndarray, np.ndarray]:
-            Residue starts and entity ids.
+            Residue starts and entity ids for each chain.
     """
     token_starts_with_stop = get_token_starts(atom_array, add_exclusive_stop=True)
     chain_starts = struc.get_chain_starts(atom_array)
@@ -116,7 +119,7 @@ def create_token_bonds(atom_array: AtomArray, token_index: np.ndarray) -> torch.
     if atom_ids_atomized_tokens.size > 0:
         bonds_atomized_tokens = bonds[
             (np.isin(bonds[:, 0], atom_ids_atomized_tokens))
-            | np.isin(bonds[:, 1], atom_ids_atomized_tokens),
+            & np.isin(bonds[:, 1], atom_ids_atomized_tokens),
             :,
         ]
 
@@ -143,8 +146,8 @@ def create_token_bonds(atom_array: AtomArray, token_index: np.ndarray) -> torch.
 
             # Unmask corresponding bonds
             token_bonds[
-                bonds_atomized_token_ids[0],
-                bonds_atomized_token_ids[1],
+                (bonds_atomized_token_ids[0], bonds_atomized_token_ids[1]),
+                (bonds_atomized_token_ids[1], bonds_atomized_token_ids[0]),
             ] = True
 
     return torch.tensor(token_bonds, dtype=torch.int32)

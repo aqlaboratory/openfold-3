@@ -18,14 +18,16 @@ Embedders for input features. Includes InputEmbedders for monomer, multimer, sol
 and all-atom models. Also includes the RecyclingEmbedder and ExtraMSAEmbedder.
 """
 
-from typing import Dict, Tuple
+from typing import Optional
 
 import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
-from openfold3.core.model.layers import AtomAttentionEncoder
+from openfold3.core.model.layers.sequence_local_atom_attention import (
+    AtomAttentionEncoder,
+)
 from openfold3.core.model.primitives import LayerNorm, Linear, normal_init_
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.tensor_utils import add, binned_one_hot
@@ -111,7 +113,7 @@ class InputEmbedder(nn.Module):
         ri: torch.Tensor,
         msa: torch.Tensor,
         inplace_safe: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             tf:
@@ -283,7 +285,7 @@ class InputEmbedderMultimer(nn.Module):
 
         return self.linear_relpos(rel_feat)
 
-    def forward(self, batch: Dict) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, batch: dict) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:
@@ -392,7 +394,7 @@ class RelposAllAtom(nn.Module):
 
         return rel_pos
 
-    def forward(self, batch: Dict) -> torch.Tensor:
+    def forward(self, batch: dict) -> torch.Tensor:
         """
         Args:
             batch:
@@ -447,7 +449,7 @@ class InputEmbedderAllAtom(nn.Module):
         c_z: int,
         max_relative_idx: int,
         max_relative_chain: int,
-        atom_attn_enc: Dict,
+        atom_attn_enc: dict,
         linear_init_params: ConfigDict = lin_init.all_atom_input_emb_init,
     ):
         """
@@ -492,8 +494,11 @@ class InputEmbedderAllAtom(nn.Module):
         )
 
     def forward(
-        self, batch: Dict, inplace_safe: bool = False
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self,
+        batch: dict,
+        inplace_safe: bool = False,
+        use_deepspeed_evo_attention: Optional[bool] = False,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:
@@ -507,6 +512,8 @@ class InputEmbedderAllAtom(nn.Module):
                 [*, N_token, C_s] Single representation
             z:
                 [*, N_token, N_token, C_z] Pair representation
+            use_deepspeed_evo_attention:
+                Whether to use DeepSpeed Evo Attention kernel
         """
         atom_mask = broadcast_token_feat_to_atoms(
             token_mask=batch["token_mask"],
@@ -514,7 +521,11 @@ class InputEmbedderAllAtom(nn.Module):
             token_feat=batch["token_mask"],
         )
 
-        a, _, _, _ = self.atom_attn_enc(batch=batch, atom_mask=atom_mask)
+        a, _, _, _ = self.atom_attn_enc(
+            batch=batch,
+            atom_mask=atom_mask,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+        )
 
         # [*, N_token, C_s_input]
         s_input = torch.cat(
@@ -576,9 +587,60 @@ class MSAModuleEmbedder(nn.Module):
             c_s_input, c_m, **linear_init_params.linear_s_input
         )
 
+    @staticmethod
+    def subsample_msa(
+        msa_feat: torch.Tensor,
+        msa_mask: torch.Tensor,
+        num_paired_seqs: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Subsample main MSA features for a single element in the batch.
+
+        Args:
+            msa_feat:
+                [N_seq, N_token, c_m_feats] MSA features
+            msa_mask:
+                [N_seq, N_token] MSA mask
+            num_paired_seqs:
+                Number of paired MSA sequences
+        Returns:
+            sampled_msa:
+                [N_seq_sampled, N_token, c_m_feats] Sampled MSA features
+            msa_mask:
+                [N_seq_sampled, N_token] Sampled MSA mask
+        """
+        total_msa_seq = msa_feat.shape[-3]
+
+        # Split uniprot and main MSA sequences. Only main MSA seqs will be sampled.
+        # All uniprot seqs are in the final MSA representation.
+        num_main_msa_seqs = total_msa_seq - num_paired_seqs
+
+        if num_main_msa_seqs.any():
+            split_sections = [num_paired_seqs, num_main_msa_seqs]
+            uniprot_msa, main_msa = torch.split(msa_feat, split_sections, dim=-3)
+            uniprot_msa_mask, main_msa_mask = torch.split(
+                msa_mask, split_sections, dim=-2
+            )
+
+            # Sample Uniform[1, num_main_msa_seqs] sequences from the main MSA
+            n_seq_sample = torch.randint(low=1, high=num_main_msa_seqs + 1, size=(1,))
+            index_order = torch.randperm(num_main_msa_seqs, device=msa_feat.device)
+            index_order = index_order[:n_seq_sample]
+
+            main_msa = torch.index_select(main_msa, dim=-3, index=index_order)
+            main_msa_mask = torch.index_select(main_msa_mask, dim=-2, index=index_order)
+
+            # Combine uniprot and sampled main MSA sequences
+            sampled_msa = torch.cat([uniprot_msa, main_msa], dim=-3)
+            msa_mask = torch.cat([uniprot_msa_mask, main_msa_mask], dim=-2)
+
+        else:
+            sampled_msa = msa_feat
+
+        return sampled_msa, msa_mask
+
     def forward(
-        self, batch: Dict, s_input: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        self, batch: dict, s_input: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:
@@ -597,6 +659,7 @@ class MSAModuleEmbedder(nn.Module):
             msa_mask:
                 [*, N_seq, N_token] MSA mask
         """
+        batch_dims = batch["msa"].shape[:-3]
         msa_feat = torch.cat(
             [
                 batch["msa"],
@@ -607,35 +670,39 @@ class MSAModuleEmbedder(nn.Module):
         )
         msa_mask = batch["msa_mask"]
 
-        total_msa_seq = batch["msa"].shape[-3]
+        # Unbind batch dim if it exists, and subsample msa seqs per batch
+        if len(batch_dims) > 0:
+            per_batch_msa = torch.unbind(msa_feat, dim=0)
+            per_batch_mask = torch.unbind(msa_mask, dim=0)
+            num_paired_seqs = torch.unbind(batch["num_paired_seqs"], dim=0)
 
-        # Split uniprot and main MSA sequences. Only main MSA seqs will be sampled.
-        # All uniprot seqs are in the final MSA representation.
-        num_paired_seqs = int(batch["num_paired_seqs"].item())
-        num_main_msa_seqs = total_msa_seq - num_paired_seqs
+            per_batch_sampled_msa = [
+                self.subsample_msa(m, mask, n)
+                for m, mask, n in zip(per_batch_msa, per_batch_mask, num_paired_seqs)
+            ]
 
-        if num_main_msa_seqs > 0:
-            split_sections = [num_paired_seqs, num_main_msa_seqs]
-            uniprot_msa, main_msa = torch.split(msa_feat, split_sections, dim=-3)
-            uniprot_msa_mask, main_msa_mask = torch.split(
-                msa_mask, split_sections, dim=-2
+            sampled_msa = [m[0] for m in per_batch_sampled_msa]
+            msa_mask = [m[1] for m in per_batch_sampled_msa]
+            max_msa_seqs = max([m.shape[-3] for m in sampled_msa])
+
+            def pad_batch_msas(m: torch.Tensor, seq_dim: int) -> torch.Tensor:
+                # Pad MSA sequence dimension to max seqs in batch
+                non_pad_dims = (0,) * 2 * (abs(seq_dim) - 1)
+                return torch.nn.functional.pad(
+                    m, (*non_pad_dims, 0, max_msa_seqs - m.shape[seq_dim])
+                )
+
+            sampled_msa = torch.stack(
+                [pad_batch_msas(m, seq_dim=-3) for m in sampled_msa], dim=0
+            )
+            msa_mask = torch.stack(
+                [pad_batch_msas(m, seq_dim=-2) for m in msa_mask], dim=0
             )
 
-            # Sample Uniform[1, num_main_msa_seqs] sequences from the main MSA
-            n_seq_sample = torch.randint(
-                low=1, high=num_main_msa_seqs + 1, size=(1,)
-            ).item()
-            index_order = torch.randperm(num_main_msa_seqs, device=msa_feat.device)
-            index_order = index_order[:n_seq_sample]
-
-            main_msa = torch.index_select(main_msa, dim=-3, index=index_order)
-            main_msa_mask = torch.index_select(main_msa_mask, dim=-2, index=index_order)
-
-            # Combine uniprot and sampled main MSA sequences
-            sampled_msa = torch.cat([uniprot_msa, main_msa], dim=-3)
-            msa_mask = torch.cat([uniprot_msa_mask, main_msa_mask], dim=-2)
         else:
-            sampled_msa = msa_feat
+            sampled_msa, msa_mask = self.subsample_msa(
+                msa_feat, msa_mask, batch["num_paired_seqs"]
+            )
 
         m = self.linear_m(sampled_msa)
         m = m + self.linear_s_input(s_input).unsqueeze(-3)
@@ -726,7 +793,7 @@ class PreembeddingEmbedder(nn.Module):
         ri: torch.Tensor,
         preemb: torch.Tensor,
         inplace_safe: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         tf_m = self.linear_tf_m(tf).unsqueeze(-3)
         preemb_emb = self.linear_preemb_m(preemb[..., None, :, :]) + tf_m
         preemb_emb_i = self.linear_preemb_z_i(preemb)
@@ -791,7 +858,7 @@ class RecyclingEmbedder(nn.Module):
         z: torch.Tensor,
         x: torch.Tensor,
         inplace_safe: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             m:

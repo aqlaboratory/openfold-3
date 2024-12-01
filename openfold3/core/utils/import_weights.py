@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 from functools import partial
-from typing import List, Union
+from typing import Union
 
 import numpy as np
 import torch
@@ -52,7 +52,7 @@ class ParamType(Enum):
 
 @dataclass
 class Param:
-    param: Union[torch.Tensor, List[torch.Tensor]]
+    param: Union[torch.Tensor, list[torch.Tensor]]
     param_type: ParamType = ParamType.Other
     stacked: bool = False
     swap: bool = False

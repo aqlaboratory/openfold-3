@@ -1,7 +1,7 @@
 # TODO: add module docstring
 
 import logging
-from typing import Generator
+from collections.abc import Generator
 
 import numpy as np
 from biotite.structure import AtomArray

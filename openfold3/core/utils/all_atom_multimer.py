@@ -14,7 +14,6 @@
 """Ops for all atom representations."""
 
 from functools import partial
-from typing import Dict, Tuple
 
 import numpy as np
 import torch
@@ -35,7 +34,7 @@ def get_rc_tensor(rc_np, aatype):
 def atom14_to_atom37(
     atom14_data: torch.Tensor,  # (*, N, 14, ...)
     aatype: torch.Tensor,  # (*, N)
-) -> Tuple:  # (*, N, 37, ...)
+) -> tuple:  # (*, N, 37, ...)
     """Convert atom14 to atom37 representation."""
     idx_atom37_to_atom14 = get_rc_tensor(rc.RESTYPE_ATOM37_TO_ATOM14, aatype).long()
     no_batch_dims = len(aatype.shape) - 1
@@ -101,7 +100,7 @@ def atom37_to_frames(
     aatype: torch.Tensor,  # (...)
     all_atom_positions: torch.Tensor,  # (..., 37)
     all_atom_mask: torch.Tensor,  # (..., 37)
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """Computes the frames for the up to 8 rigid groups for each residue."""
     # 0: 'backbone group',
     # 1: 'pre-omega-group', (empty)
@@ -454,7 +453,7 @@ def make_backbone_affine(
     positions: geometry.Vec3Array,
     mask: torch.Tensor,
     aatype: torch.Tensor,
-) -> Tuple[geometry.Rigid3Array, torch.Tensor]:
+) -> tuple[geometry.Rigid3Array, torch.Tensor]:
     a = rc.atom_order["N"]
     b = rc.atom_order["CA"]
     c = rc.atom_order["C"]

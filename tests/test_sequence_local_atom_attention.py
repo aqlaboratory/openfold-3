@@ -4,7 +4,7 @@ from contextlib import nullcontext
 import torch
 
 import tests.compare_utils as compare_utils
-from openfold3.core.model.layers import (
+from openfold3.core.model.layers.sequence_local_atom_attention import (
     AtomAttentionDecoder,
     AtomAttentionEncoder,
     AtomTransformer,
