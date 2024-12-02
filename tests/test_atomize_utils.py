@@ -3,6 +3,9 @@ import unittest
 import torch
 import torch.nn.functional as F
 
+from openfold3.core.data.primitives.featurization.structure import (
+    create_atom_to_token_index,
+)
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
     broadcast_token_feat_to_atoms,
@@ -314,9 +317,14 @@ class TestAggregateAtomFeatToTokens(unittest.TestCase):
         )
         atom_feat = atom_mask.clone()
 
-        token_feat = aggregate_atom_feat_to_tokens(
+        atom_to_token_index = create_atom_to_token_index(
             token_mask=token_mask,
             num_atoms_per_token=num_atoms_per_token,
+        )
+
+        token_feat = aggregate_atom_feat_to_tokens(
+            token_mask=token_mask,
+            atom_to_token_index=atom_to_token_index,
             atom_mask=atom_mask,
             atom_feat=atom_feat,
             eps=1e-9,
@@ -328,7 +336,7 @@ class TestAggregateAtomFeatToTokens(unittest.TestCase):
 
         token_feat = aggregate_atom_feat_to_tokens(
             token_mask=token_mask,
-            num_atoms_per_token=num_atoms_per_token,
+            atom_to_token_index=atom_to_token_index,
             atom_mask=atom_mask,
             atom_feat=atom_feat,
             eps=1e-9,
@@ -352,9 +360,14 @@ class TestAggregateAtomFeatToTokens(unittest.TestCase):
         )
         atom_feat = atom_mask.clone()
 
-        token_feat = aggregate_atom_feat_to_tokens(
+        atom_to_token_index = create_atom_to_token_index(
             token_mask=token_mask,
             num_atoms_per_token=num_atoms_per_token,
+        )
+
+        token_feat = aggregate_atom_feat_to_tokens(
+            token_mask=token_mask,
+            atom_to_token_index=atom_to_token_index,
             atom_mask=atom_mask,
             atom_feat=atom_feat,
             eps=1e-9,
@@ -369,9 +382,14 @@ class TestAggregateAtomFeatToTokens(unittest.TestCase):
         atom_mask = torch.Tensor([[1, 1, 1, 1, 0, 1, 1, 1, 1]])
         atom_feat = torch.randn((1, 9, 5))
 
-        token_feat = aggregate_atom_feat_to_tokens(
+        atom_to_token_index = create_atom_to_token_index(
             token_mask=token_mask,
             num_atoms_per_token=num_atoms_per_token,
+        )
+
+        token_feat = aggregate_atom_feat_to_tokens(
+            token_mask=token_mask,
+            atom_to_token_index=atom_to_token_index,
             atom_mask=atom_mask,
             atom_feat=atom_feat,
             atom_dim=-2,

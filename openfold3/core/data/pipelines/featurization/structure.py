@@ -8,6 +8,7 @@ from biotite.structure import AtomArray
 
 from openfold3.core.data.primitives.featurization.padding import pad_token_dim
 from openfold3.core.data.primitives.featurization.structure import (
+    create_atom_to_token_index,
     create_sym_id,
     create_token_bonds,
     encode_one_hot,
@@ -120,6 +121,11 @@ def featurize_structure_af3(
         token_mask=features["token_mask"],
         num_atoms_per_token=features["num_atoms_per_token"],
         token_feat=features["token_mask"],
+    )
+
+    features["atom_to_token_index"] = create_atom_to_token_index(
+        token_mask=features["token_mask"],
+        num_atoms_per_token=features["num_atoms_per_token"],
     )
 
     # Ground-truth-specific features
