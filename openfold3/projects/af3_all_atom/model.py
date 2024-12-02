@@ -152,9 +152,10 @@ class AlphaFold3(nn.Module):
         pair_mask = token_mask[..., None] * token_mask[..., None, :]
 
         is_grad_enabled = torch.is_grad_enabled()
+        num_cycles = batch["num_cycles"].item()
 
-        for cycle_no in range(self.shared.no_cycles):
-            is_final_iter = cycle_no == (self.shared.no_cycles - 1)
+        for cycle_no in range(num_cycles):
+            is_final_iter = cycle_no == (num_cycles - 1)
 
             # Enable grad when we're training
             # If last_recycle_grad_only is set, only enable grad on the last cycle

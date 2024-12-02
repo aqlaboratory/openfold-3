@@ -41,6 +41,7 @@ feature_dict = mlc.ConfigDict(
             "token_mask": [NUM_TOKENS],
             "atom_mask": [NUM_ATOMS],
             "msa_mask": [NUM_MSA_SEQ, NUM_TOKENS],
+            "num_cycles": [],
             "num_paired_seqs": [],
             "ground_truth": {
                 "residue_index": [NUM_TOKENS],

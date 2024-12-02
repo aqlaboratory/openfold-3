@@ -239,6 +239,7 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ):
         .repeat((batch_size, 1))
         .int(),
         "msa_mask": torch.ones((batch_size, n_msa, n_token)).float(),
+        "num_cycles": torch.randint(1, 5, (1,)).int().repeat(batch_size),
         "num_paired_seqs": torch.randint(
             low=n_msa // 4, high=n_msa // 2, size=(batch_size,)
         ),
