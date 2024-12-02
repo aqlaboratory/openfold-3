@@ -33,7 +33,7 @@ from openfold3.core.model.feature_embedders.template_embedders import (
 )
 from openfold3.projects import registry
 from tests.config import consts, monomer_consts, multimer_consts
-from tests.data_utils import random_asym_ids, random_template_feats
+from tests.data_utils import random_af3_features, random_asym_ids, random_template_feats
 
 
 class TestInputEmbedder(unittest.TestCase):
@@ -92,8 +92,6 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
     def test_shape(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
-        n_atom = 4 * consts.n_res
-        one_hot_dim = 32
 
         af3_proj = registry.get_project_entry("af3_all_atom")
         af3_proj_config = af3_proj.get_config_with_preset()
@@ -103,30 +101,12 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
         c_s = af3_config.architecture.input_embedder.c_s
         c_z = af3_config.architecture.input_embedder.c_z
 
-        batch = {
-            "token_index": torch.arange(0, n_token)
-            .unsqueeze(0)
-            .repeat((batch_size, 1)),
-            "token_mask": torch.ones((batch_size, n_token)),
-            "atom_mask": torch.ones((batch_size, n_atom)),
-            "residue_index": torch.arange(0, n_token)
-            .unsqueeze(0)
-            .repeat((batch_size, 1)),
-            "sym_id": torch.zeros((batch_size, n_token)),
-            "asym_id": torch.zeros((batch_size, n_token)),
-            "entity_id": torch.zeros((batch_size, n_token)),
-            "ref_pos": torch.randn((batch_size, n_atom, 3)),
-            "ref_mask": torch.ones((batch_size, n_atom)),
-            "ref_element": torch.ones((batch_size, n_atom, 119)),
-            "ref_charge": torch.ones((batch_size, n_atom)),
-            "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
-            "ref_space_uid": torch.zeros((batch_size, n_atom)),
-            "num_atoms_per_token": torch.ones((batch_size, n_token)) * 4,
-            "restype": torch.rand((batch_size, n_token, one_hot_dim)),
-            "profile": torch.rand((batch_size, n_token, one_hot_dim)),
-            "deletion_mean": torch.rand((batch_size, n_token)),
-            "token_bonds": torch.rand((batch_size, n_token, n_token)),
-        }
+        batch = random_af3_features(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
+        )
 
         ie = InputEmbedderAllAtom(**af3_config.architecture.input_embedder)
 

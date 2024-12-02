@@ -99,6 +99,9 @@ def featurize_structure_af3(
         atom_array, features["token_index"].numpy()
     )
 
+    # Masks
+    features["token_mask"] = torch.ones(len(token_starts), dtype=torch.float32)
+
     # Atomization
     features["num_atoms_per_token"] = torch.tensor(
         np.diff(token_starts_with_stop),
@@ -113,9 +116,6 @@ def featurize_structure_af3(
     features["is_atomized"] = torch.tensor(
         atom_array.is_atomized[token_starts], dtype=torch.int32
     )
-
-    # Masks
-    features["token_mask"] = torch.ones(len(token_starts), dtype=torch.float32)
 
     features["atom_mask"] = broadcast_token_feat_to_atoms(
         token_mask=features["token_mask"],
