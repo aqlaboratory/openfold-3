@@ -62,7 +62,7 @@ def featurize_msa_af3(
     features["profile"] = torch.tensor(
         msa_feature_precursor.msa_profile, dtype=torch.float32
     )
-    features["num_recycles"] = torch.randint(0, 5, (1,)).to(torch.int32)
+
     features["num_paired_seqs"] = torch.tensor(
         [msa_feature_precursor.n_rows_paired], dtype=torch.int32
     )

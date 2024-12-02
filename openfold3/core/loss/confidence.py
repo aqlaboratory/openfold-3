@@ -455,11 +455,7 @@ def pae_loss(
         [*] Losses on PAE
     """
     # Extract atom coordinates for frame construction
-    atom_mask = broadcast_token_feat_to_atoms(
-        token_mask=batch["token_mask"],
-        num_atoms_per_token=batch["num_atoms_per_token"],
-        token_feat=batch["token_mask"],
-    )
+    atom_mask = batch["atom_mask"]
     phi, valid_frame_mask = get_token_frame_atoms(
         batch=batch,
         x=x,
@@ -544,11 +540,7 @@ def pde_loss(
             [*] Loss on predicted distance error
     """
     # Extract representative atoms
-    atom_mask = broadcast_token_feat_to_atoms(
-        token_mask=batch["token_mask"],
-        num_atoms_per_token=batch["num_atoms_per_token"],
-        token_feat=batch["token_mask"],
-    )
+    atom_mask = batch["atom_mask"]
     rep_x, _ = get_token_representative_atoms(batch=batch, x=x, atom_mask=atom_mask)
     rep_x_gt, rep_atom_mask_gt = get_token_representative_atoms(
         batch=batch,
@@ -608,13 +600,9 @@ def all_atom_experimentally_resolved_loss(
     atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
     y_b = F.one_hot(atom_mask_gt.long(), num_classes=no_bins)
 
-    # Compute loss on experimentally resolved prediction
-    atom_mask = broadcast_token_feat_to_atoms(
-        token_mask=batch["token_mask"],
-        num_atoms_per_token=batch["num_atoms_per_token"],
-        token_feat=batch["token_mask"],
-    )
+    atom_mask = batch["atom_mask"]
 
+    # Compute loss on experimentally resolved prediction
     errors = softmax_cross_entropy(logits, y_b)
 
     l_resolved = torch.sum(errors * atom_mask, dim=-1) / (

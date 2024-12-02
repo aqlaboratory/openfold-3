@@ -8,6 +8,8 @@ import numpy as np
 import torch
 from biotite.structure import AtomArray
 
+from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
+
 
 def get_token_starts(
     atom_array: AtomArray, add_exclusive_stop: bool = False
@@ -153,19 +155,37 @@ def create_token_bonds(atom_array: AtomArray, token_index: np.ndarray) -> torch.
     return torch.tensor(token_bonds, dtype=torch.int32)
 
 
-def create_token_mask(token_allocated: int, token_budget: int) -> torch.Tensor:
-    """Creates token_mask feature.
+def create_atom_to_token_index(
+    token_mask: torch.Tensor, num_atoms_per_token: torch.Tensor
+) -> torch.Tensor:
+    """
+    Creates mapping from atom to its corresponding token. Note that this is the
+    consecutive token index starting from 0 and not the index in the actual structure.
 
     Args:
-        token_allocated (int):
-            Number of tokens allocated.
-        token_budget (int):
-            Crop size.
+        token_mask:
+            [*, N_token] Token mask
+        num_atoms_per_token:
+            [*, N_token] Number of atoms per token
 
     Returns:
-        torch.Tensor:
-            token_mask that can be used as a padding mask along the token dim.
+        atom_to_token_index:
+            [*, N_atom] Mapping from atom to its token index
     """
-    token_mask = torch.zeros(token_budget, dtype=torch.float32)
-    token_mask[:token_allocated] = True
-    return token_mask
+    n_token = token_mask.shape[-1]
+    batch_dims = token_mask.shape[:-1]
+
+    # Construct token index to broadcast to atoms
+    token_index = (
+        torch.arange(n_token, device=token_mask.device, dtype=token_mask.dtype)
+        .reshape((*((1,) * len(batch_dims)), n_token))
+        .repeat((*batch_dims, 1))
+    )
+
+    atom_to_token_index = broadcast_token_feat_to_atoms(
+        token_mask=token_mask,
+        num_atoms_per_token=num_atoms_per_token,
+        token_feat=token_index,
+    ).to(dtype=torch.int32)
+
+    return atom_to_token_index

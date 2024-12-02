@@ -166,7 +166,7 @@ def loss_masked_batch_mean(
     Returns:
         [1] Masked mean of loss for a batch
     """
-    mask = (weight > 0).to(dtype=loss.dtype)
+    mask = weight > 0
     if apply_weight:
         loss = loss * weight
     return torch.sum(loss * mask) / (torch.sum(mask) + eps)

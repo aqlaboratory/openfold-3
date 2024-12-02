@@ -763,7 +763,7 @@ class AtomAttentionEncoder(nn.Module):
 
         agg_args = (
             batch["token_mask"],
-            batch["num_atoms_per_token"],
+            batch["atom_to_token_index"],
             atom_mask,
             self.linear_q(ql),
             -2,
