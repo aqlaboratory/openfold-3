@@ -55,6 +55,7 @@ class ComplianceLog:
         )
 
 
+# Runtime context variables
 PDB_ID = contextvars.ContextVar("PDB_ID", default=None)
 LOG_RUNTIMES = contextvars.ContextVar("LOG_RUNTIME", default=False)
 RUNTIME_DICT = contextvars.ContextVar("RUNTIME_DICT", default={})  # noqa: B039
