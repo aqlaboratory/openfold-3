@@ -20,6 +20,7 @@ from openfold3.core.data.framework.single_datasets.pdb import WeightedPDBDataset
 from openfold3.core.data.primitives.quality_control.asserts import ENSEMBLED_ASSERTS
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     F_NAME_ORDER,
+    PDB_ID,
     get_interface_string,
 )
 from openfold3.core.data.resources.residues import (
@@ -73,6 +74,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         # Get PDB ID from the datapoint cache and the preferred chain/interface
         datapoint = self.datapoint_cache.iloc[index]
         pdb_id = datapoint["pdb_id"]
+        PDB_ID.set(pdb_id)
         preferred_chain_or_interface = datapoint["datapoint"]
         sample_data = {}
 

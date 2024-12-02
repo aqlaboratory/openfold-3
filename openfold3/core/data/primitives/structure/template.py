@@ -10,6 +10,11 @@ from biotite.structure.io.pdbx import CIFFile
 
 from openfold3.core.data.io.structure.cif import parse_mmcif
 from openfold3.core.data.primitives.featurization.structure import get_token_starts
+from openfold3.core.data.primitives.structure.cleanup import (
+    remove_hydrogens,
+    remove_non_CCD_atoms,
+    remove_waters,
+)
 from openfold3.core.data.primitives.structure.metadata import get_cif_block
 from openfold3.core.data.primitives.structure.unresolved import (
     add_unresolved_atoms,
@@ -292,7 +297,12 @@ def align_template_to_query(
             template_structures_directory
             / Path(f"{template_pdb_id}.{template_file_format}")
         )
-        # Add unresolved residues
+        # Clean up template atom array
+        atom_array_template_assembly = remove_waters(atom_array_template_assembly)
+        atom_array_template_assembly = remove_hydrogens(atom_array_template_assembly)
+        atom_array_template_assembly = remove_non_CCD_atoms(
+            atom_array_template_assembly, ccd
+        )
         atom_array_template_assembly = add_unresolved_atoms(
             atom_array_template_assembly, get_cif_block(cif_file), ccd
         )

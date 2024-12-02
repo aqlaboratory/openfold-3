@@ -77,7 +77,7 @@ def create_template_feature_precursor_af3(
                 template_atom_array[residue_starts].res_name, template_residue_repeats
             )
 
-            # Psuedo beta atom coordinates
+            # Pseudo beta atom coordinates
             is_gly = template_atom_array.res_name == "GLY"
             is_ca = template_atom_array.atom_name == "CA"
             is_cb = template_atom_array.atom_name == "CB"

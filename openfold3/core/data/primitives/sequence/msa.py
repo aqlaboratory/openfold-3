@@ -818,15 +818,6 @@ def map_to_paired_msa_per_chain(
 
     return paired_msa_per_chain
 
-    # paired_msa_per_chain[chain_id].msa[
-    #     missing_rows_index[valid_rows, chain_idx], :
-    # ] = msa_array.msa[msa_rows[valid_rows], :]
-    # paired_msa_per_chain[chain_id].deletion_matrix[
-    #     missing_rows_index[valid_rows, chain_idx], :
-    # ] = msa_array.deletion_matrix[msa_rows[valid_rows], :]
-
-    return paired_msa_per_chain
-
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-paired")
 def create_paired(
