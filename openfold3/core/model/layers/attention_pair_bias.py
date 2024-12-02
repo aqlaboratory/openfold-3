@@ -15,6 +15,7 @@
 
 """Attention layer with pair bias."""
 
+import math
 from typing import Optional
 
 import torch
@@ -189,6 +190,130 @@ class AttentionPairBias(nn.Module):
 
         return [z]
 
+    def _prep_all_inputs(
+        self,
+        a: torch.Tensor,
+        z: Optional[torch.Tensor],
+        mask: Optional[torch.Tensor],
+    ) -> tuple:
+        """
+        Args:
+            a:
+                [*, N, C_token] Token or atom-level embedding
+            z:
+                [*, N, N, C_z] Pair embedding
+            beta:
+                [*, N, N] Neighborhood mask
+            mask:
+                [*, N] Mask for token or atom-level embedding
+
+        Returns:
+            List of bias terms. Includes the pair bias and attention mask.
+        """
+        if mask is None:
+            # [*, N]
+            mask = a.new_ones(
+                a.shape[:-1],
+            )
+
+        def convert_to_blocks_1d(x, dim, shift_interval, block_len, num_blocks):
+            blocks = [
+                x.narrow(dim, shift_interval * i, block_len) for i in range(num_blocks)
+            ]
+            return torch.stack(blocks, dim=dim - 1)
+
+        def convert_to_blocks_2d(x, dims, shift_interval, block_lens, num_blocks):
+            blocks = [
+                x.narrow(dims[0], shift_interval * i, block_lens[0]).narrow(
+                    dims[1], shift_interval * i, block_lens[1]
+                )
+                for i in range(num_blocks)
+            ]
+            return torch.stack(blocks, dim=min(dims) - 1)
+
+        n_query = 32
+        n_key = 128
+        n_atom = a.shape[-2]
+
+        offset = n_query // 2 - 0.5
+        n_center = int(n_atom // n_query) + 1
+        subset_centers = offset + torch.arange(n_center, device=a.device) * n_query
+
+        pad_len_right_q = (n_query - n_atom % n_query) % n_query
+        a_query = torch.nn.functional.pad(a, (0, 0, 0, pad_len_right_q), value=0.0)
+        num_blocks = a_query.shape[-2] // n_query
+
+        a_query = convert_to_blocks_1d(
+            x=a_query,
+            dim=-2,
+            shift_interval=n_query,
+            block_len=n_query,
+            num_blocks=num_blocks,
+        )
+
+        pad_len_right_k = math.ceil(subset_centers[-1]) + n_key // 2 - n_atom
+        pad_len_left_k = n_key // 2 - math.ceil(subset_centers[0])
+        a_key = torch.nn.functional.pad(
+            a, (0, 0, pad_len_left_k, pad_len_right_k), value=0.0
+        )
+        a_key = convert_to_blocks_1d(
+            x=a_key,
+            dim=-2,
+            shift_interval=n_query,
+            block_len=n_key,
+            num_blocks=num_blocks,
+        )
+
+        mask_q = torch.nn.functional.pad(mask, (0, pad_len_right_q), value=0.0)
+        mask_q = convert_to_blocks_1d(
+            x=mask_q,
+            dim=-1,
+            shift_interval=n_query,
+            block_len=n_query,
+            num_blocks=num_blocks,
+        )
+
+        mask_k = torch.nn.functional.pad(
+            mask, (pad_len_left_k, pad_len_right_k), value=0.0
+        )
+        mask_k = convert_to_blocks_1d(
+            x=mask_k,
+            dim=-1,
+            shift_interval=n_query,
+            block_len=n_key,
+            num_blocks=num_blocks,
+        )
+
+        mask_bias = mask_q[..., None] * mask_k[..., None, :]
+
+        # [*, 1, 1, N]
+        mask_bias = (self.inf * (mask_bias - 1))[..., None, :, :]
+        biases = [mask_bias]
+
+        z = torch.nn.functional.pad(
+            z, (0, 0, pad_len_left_k, pad_len_right_k, 0, pad_len_right_q), value=0.0
+        )
+        z = convert_to_blocks_2d(
+            z,
+            dims=[-3, -2],
+            shift_interval=n_query,
+            block_lens=[n_query, n_key],
+            num_blocks=num_blocks,
+        )
+
+        # [*, N, N, C_z]
+        z = self.layer_norm_z(z)
+
+        # [*, N, N, no_heads]
+        z = self.linear_z(z)
+
+        # [*, no_heads, N, N]
+        z = permute_final_dims(z, [2, 0, 1])
+
+        biases.append(z)
+
+        return a_query, a_key, biases
+
     def _prep_bias(
         self,
         a: torch.Tensor,
@@ -292,6 +417,19 @@ class AttentionPairBias(nn.Module):
         if self.use_block_sparse_attn:
             biases = self._prep_sparse_bias(a=a, z=z, layout=layout, mask=mask)
             a = self.mha(q_x=a, kv_x=a, biases=biases, layout=layout)
+        elif beta is not None:
+            orig_shape = a.shape
+            a_q, a_k, biases = self._prep_all_inputs(a=a, z=z, mask=mask)
+
+            a = self.mha(
+                q_x=a_q,
+                kv_x=a_k,
+                biases=biases,
+                use_memory_efficient_kernel=use_memory_efficient_kernel,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_lma=use_lma,
+            )
+            a = torch.cat(torch.unbind(a, dim=-3), dim=-2)[..., : orig_shape[-2], :]
         else:
             biases = self._prep_bias(a=a, z=z, beta=beta, mask=mask)
 

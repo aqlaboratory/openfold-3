@@ -218,7 +218,7 @@ class DiffusionModule(nn.Module):
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
             chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_deepspeed_evo_attention=False,
         )
 
         ai = ai + self.linear_s(self.layer_norm_s(si))
@@ -244,7 +244,7 @@ class DiffusionModule(nn.Module):
             cl=cl,
             plm=plm,
             chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_deepspeed_evo_attention=False,
         )
 
         xl_out = (

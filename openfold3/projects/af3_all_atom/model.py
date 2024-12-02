@@ -138,7 +138,7 @@ class AlphaFold3(nn.Module):
         s_input, s_init, z_init = self.input_embedder(
             batch=batch,
             inplace_safe=inplace_safe,
-            use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+            use_deepspeed_evo_attention=False,
         )
 
         # s: [*, N_token, C_s]
