@@ -74,8 +74,7 @@ project_config = mlc.ConfigDict(
                     "c_s_input": c_s_input,
                     "c_s": c_s,
                     "c_z": c_z,
-                    "no_cycles": 4,
-                    "last_recycle_grad_only": True,
+                    "max_cycles": 4,
                     "diffusion": {
                         "sigma_data": sigma_data,
                         "no_samples": no_samples,

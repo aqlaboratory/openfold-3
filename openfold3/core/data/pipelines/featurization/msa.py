@@ -37,9 +37,6 @@ def featurize_msa_af3(msa_processed):
     )
     features["profile"] = torch.tensor(msa_processed.msa_profile, dtype=torch.float32)
 
-    # TODO: Move to location where batch is created and use config to get max cycles
-    features["num_cycles"] = torch.randint(1, 5, (1,)).to(torch.int32)
-
     features["num_paired_seqs"] = torch.tensor(
         [msa_processed.n_rows_paired], dtype=torch.int32
     )

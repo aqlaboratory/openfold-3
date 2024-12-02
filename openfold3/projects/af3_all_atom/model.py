@@ -17,6 +17,8 @@
 The main inference and training loops for AlphaFold3.
 """
 
+import random
+
 import torch
 from ml_collections import ConfigDict
 from torch import nn
@@ -117,13 +119,15 @@ class AlphaFold3(nn.Module):
         )
 
     def run_trunk(
-        self, batch: dict, inplace_safe: bool = False
+        self, batch: dict, num_cycles: int, inplace_safe: bool = False
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Implements Algorithm 1 lines 1-14.
 
         Args:
             batch:
                 Input feature dictionary
+            num_cycles:
+                Number of cycles to run
             inplace_safe:
                 Whether inplace operations can be performed
 
@@ -152,18 +156,12 @@ class AlphaFold3(nn.Module):
         pair_mask = token_mask[..., None] * token_mask[..., None, :]
 
         is_grad_enabled = torch.is_grad_enabled()
-        num_cycles = batch["num_cycles"][0].item()
 
         for cycle_no in range(num_cycles):
             is_final_iter = cycle_no == (num_cycles - 1)
 
-            # Enable grad when we're training
-            # If last_recycle_grad_only is set, only enable grad on the last cycle
-            enable_grad = (
-                is_grad_enabled and is_final_iter
-                if self.shared.last_recycle_grad_only
-                else is_grad_enabled
-            )
+            # Enable grad when we're training, only enable grad on the last cycle
+            enable_grad = is_grad_enabled and is_final_iter
             with torch.set_grad_enabled(enable_grad):
                 if is_final_iter and torch.is_autocast_enabled():
                     # Sidestep AMP bug (PyTorch issue #65766)
@@ -544,19 +542,29 @@ class AlphaFold3(nn.Module):
         # The dual condition accounts for activation checkpoints
         inplace_safe = not (self.training or torch.is_grad_enabled())
 
+        num_cycles = (
+            random.randint(1, self.shared.max_cycles)
+            if self.training
+            else self.shared.max_cycles
+        )
+
+        output = {"recycles": num_cycles}
+
         # Compute representations
         si_input, si_trunk, zij_trunk = self.run_trunk(
-            batch=batch, inplace_safe=inplace_safe
+            batch=batch, num_cycles=num_cycles, inplace_safe=inplace_safe
         )
 
         # Mini rollout
-        output = self._rollout(
+        rollout_output = self._rollout(
             batch=batch,
             si_input=si_input,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
             inplace_safe=inplace_safe,
         )
+
+        output.update(rollout_output)
 
         if self.training:  # noqa: SIM102
             # TODO: Add multi-chain permutation alignment here
