@@ -114,12 +114,19 @@ def get_query_interface_atom_pair_idxs(
     )
 
     # Pair the chain IDs
-    chain_pairs = np.column_stack(
-        (
-            query_atom_array.chain_id[atom_pair_idxs[:, 0]],
-            target_atom_array.chain_id[atom_pair_idxs[:, 1]],
+    if len(atom_pair_idxs) > 0:
+        chain_pairs = np.column_stack(
+            (
+                query_atom_array.chain_id[atom_pair_idxs[:, 0]],
+                target_atom_array.chain_id[atom_pair_idxs[:, 1]],
+            )
         )
-    )
+    # Account for non-matches
+    else:
+        if return_chain_pairs:
+            return None, None
+        else:
+            return None
 
     # Get only cross-chain contacts
     cross_chain_mask = chain_pairs[:, 0] != chain_pairs[:, 1]

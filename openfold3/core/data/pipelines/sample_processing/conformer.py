@@ -145,7 +145,7 @@ def get_processed_reference_conformer(
 
 
 @log_runtime_memory(runtime_dict_key="runtime-ref-conf-proc")
-def get_reference_conformer_data_af3(
+def get_ref_conformer_data_af3(
     atom_array: AtomArray,
     per_chain_metadata: dict,
     reference_mol_metadata: dict,

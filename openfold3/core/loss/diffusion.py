@@ -15,6 +15,7 @@
 
 """Diffusion losses."""
 
+import logging
 from functools import partial
 from typing import Callable, Optional
 
@@ -24,6 +25,8 @@ from openfold3.core.loss.loss_utils import loss_masked_batch_mean
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.checkpointing import checkpoint_section
 from openfold3.core.utils.tensor_utils import tensor_tree_map
+
+logger = logging.getLogger(__name__)
 
 
 def weighted_rigid_align(
@@ -70,15 +73,24 @@ def weighted_rigid_align(
     H = H * w[..., None, None] * atom_mask_gt[..., None, None]
     H = torch.sum(H, dim=-3)
 
-    # SVD (cast to float because doesn't work with bf16/fp16)
-    with torch.amp.autocast("cuda", dtype=torch.float32):
-        U, _, V = torch.linalg.svd(H)
-        dets = torch.linalg.det(U @ V)
+    try:
+        # SVD (cast to float because doesn't work with bf16/fp16)
+        with torch.amp.autocast("cuda", dtype=torch.float32):
+            U, _, V = torch.linalg.svd(H)
+            dets = torch.linalg.det(U @ V)
 
-    # Remove reflection
-    F = torch.eye(3, device=x.device, dtype=x.dtype).tile((*H.shape[:-2], 1, 1))
-    F[..., -1, -1] = torch.sign(dets)
-    R = U @ F @ V
+        # Remove reflection
+        F = torch.eye(3, device=x.device, dtype=x.dtype).tile((*H.shape[:-2], 1, 1))
+        F[..., -1, -1] = torch.sign(dets)
+        R = U @ F @ V
+    except Exception as e:
+        logger.warning(
+            f"Error in computing rotation matrix."
+            f"Matrix:\n{H}\nError: {e}\n"
+            "Returning identity matrix instead."
+        )
+        # Use identity rotation
+        R = torch.eye(3, device=x.device, dtype=x.dtype).tile((*H.shape[:-2], 1, 1))
 
     # Apply alignment
     x_align = x @ R.transpose(-1, -2) + mu_gt[..., None, :]
@@ -266,7 +278,7 @@ def smooth_lddt_loss(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
         mask + eps, dim=(-1, -2)
     )
     c_mean = torch.sum(c * mask, dim=(-1, -2)) / torch.sum(mask + eps, dim=(-1, -2))
-    lddt = ce_mean / c_mean
+    lddt = ce_mean / (c_mean + eps)
 
     return 1 - lddt
 

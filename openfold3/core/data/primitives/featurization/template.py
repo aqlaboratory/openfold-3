@@ -9,8 +9,8 @@ import torch
 from openfold3.core.data.primitives.featurization.structure import encode_one_hot
 from openfold3.core.data.primitives.structure.template import TemplateSliceCollection
 from openfold3.core.data.resources.residues import (
-    STANDARD_RESIDUES_WITH_GAP_1,
-    get_with_unknown_1,
+    STANDARD_RESIDUES_WITH_GAP_3,
+    get_with_unknown_3_to_idx,
 )
 from openfold3.core.utils.all_atom_multimer import make_transform_from_reference
 from openfold3.core.utils.geometry.vector import Vec3Array
@@ -37,7 +37,7 @@ class AF3TemplateFeaturePrecursor:
     frame_atom_coords: np.ndarray[float]
 
 
-def create_feature_precursor_af3(
+def create_template_feature_precursor_af3(
     template_slice_collection: TemplateSliceCollection,
     n_templates: int,
     token_budget: int,
@@ -57,7 +57,7 @@ def create_feature_precursor_af3(
             The precursor features for AF3 template feature generation. Includes
             residue names, pseudo beta atom coordinates, and N, CA, C atom coordinates.
     """
-    res_names = np.full((n_templates, token_budget), "-", dtype=str)
+    res_names = np.full((n_templates, token_budget), "GAP", dtype=np.dtype("U3"))
     pseudo_beta_atom_coords = np.full(
         (n_templates, token_budget, 3), np.nan, dtype=float
     )
@@ -66,35 +66,41 @@ def create_feature_precursor_af3(
     # Iterate over chains then templates per chain
     for _, template_slices in template_slice_collection.template_slices.items():
         for template_idx, template_slice in enumerate(template_slices):
-            residue_starts = struc.get_residue_starts(template_slice)
+            # Unpack template slice
+            template_atom_array = template_slice.atom_array
+            template_residue_repeats = template_slice.template_residue_repeats
+            query_token_positions = template_slice.query_token_positions
+            residue_starts = struc.get_residue_starts(template_atom_array)
 
             # Residue names and unmask corresponding tokens/template positions
-            res_names[template_idx, template_slice[residue_starts].token_positions] = (
-                template_slice[residue_starts].res_name
+            res_names[template_idx, query_token_positions] = np.repeat(
+                template_atom_array[residue_starts].res_name, template_residue_repeats
             )
 
-            # Psuedo beta atom coordinates
-            is_gly = template_slice.res_name == "GLY"
-            is_ca = template_slice.atom_name == "CA"
-            is_cb = template_slice.atom_name == "CB"
+            # Pseudo beta atom coordinates
+            is_gly = template_atom_array.res_name == "GLY"
+            is_ca = template_atom_array.atom_name == "CA"
+            is_cb = template_atom_array.atom_name == "CB"
             is_pseudo_beta_atom = (is_gly & is_ca) | (~is_gly & is_cb)
-            pseudo_beta_atom_coords[
-                template_idx, template_slice[is_pseudo_beta_atom].token_positions, :
-            ] = template_slice[is_pseudo_beta_atom].coord
+            pseudo_beta_atom_coords[template_idx, query_token_positions, :] = np.repeat(
+                template_atom_array[is_pseudo_beta_atom].coord,
+                template_residue_repeats,
+                axis=0,
+            )
 
             # Frame (N, CA, C) atom coordinates
-            is_n = template_slice.atom_name == "N"
-            is_ca = template_slice.atom_name == "CA"
-            is_c = template_slice.atom_name == "C"
-            frame_atom_coords[
-                template_idx, template_slice[is_n].token_positions, 0, :
-            ] = template_slice[is_n].coord
-            frame_atom_coords[
-                template_idx, template_slice[is_ca].token_positions, 1, :
-            ] = template_slice[is_ca].coord
-            frame_atom_coords[
-                template_idx, template_slice[is_c].token_positions, 2, :
-            ] = template_slice[is_c].coord
+            is_n = template_atom_array.atom_name == "N"
+            is_ca = template_atom_array.atom_name == "CA"
+            is_c = template_atom_array.atom_name == "C"
+            frame_atom_coords[template_idx, query_token_positions, 0, :] = np.repeat(
+                template_atom_array[is_n].coord, template_residue_repeats, axis=0
+            )
+            frame_atom_coords[template_idx, query_token_positions, 1, :] = np.repeat(
+                template_atom_array[is_ca].coord, template_residue_repeats, axis=0
+            )
+            frame_atom_coords[template_idx, query_token_positions, 2, :] = np.repeat(
+                template_atom_array[is_c].coord, template_residue_repeats, axis=0
+            )
 
     return AF3TemplateFeaturePrecursor(
         res_names=res_names,
@@ -119,8 +125,10 @@ def create_template_restype(
         torch.Tensor:
             The restype template feature.
     """
-    restype_index = torch.tensor(get_with_unknown_1(res_names), dtype=torch.int64)
-    template_restype = encode_one_hot(restype_index, len(STANDARD_RESIDUES_WITH_GAP_1))
+    restype_index = torch.tensor(
+        get_with_unknown_3_to_idx(res_names), dtype=torch.int64
+    )
+    template_restype = encode_one_hot(restype_index, len(STANDARD_RESIDUES_WITH_GAP_3))
     return (template_restype * template_pseudo_beta_mask.unsqueeze(-1)).to(torch.int32)
 
 

@@ -12,8 +12,10 @@ from openfold3.core.model.layers.sequence_local_atom_attention import (
     RefAtomFeatureEmbedder,
 )
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
+from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects.af3_all_atom.config.base_config import c_atom_ref
 from tests.config import consts
+from tests.data_utils import random_af3_features
 
 
 class TestRefAtomFeatureEmbedder(unittest.TestCase):
@@ -353,7 +355,6 @@ class TestAtomAttentionEncoder(unittest.TestCase):
     def test_without_noisy_positions(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
-        n_atom = 4 * consts.n_res
         c_atom = 128
         c_atom_pair = 16
         c_token = 384
@@ -383,16 +384,14 @@ class TestAtomAttentionEncoder(unittest.TestCase):
             inf=inf,
         )
 
-        batch = {
-            "token_mask": torch.ones((batch_size, n_token)),
-            "num_atoms_per_token": torch.ones((batch_size, n_token)) * 4,
-            "ref_pos": torch.randn((batch_size, n_atom, 3)),
-            "ref_mask": torch.ones((batch_size, n_atom)),
-            "ref_element": torch.ones((batch_size, n_atom, 119)),
-            "ref_charge": torch.ones((batch_size, n_atom)),
-            "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
-            "ref_space_uid": torch.zeros((batch_size, n_atom)),
-        }
+        batch = random_af3_features(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
+        )
+
+        n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
         atom_mask = torch.ones((batch_size, n_atom))
 
@@ -406,7 +405,6 @@ class TestAtomAttentionEncoder(unittest.TestCase):
     def test_with_noisy_positions(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
-        n_atom = 4 * consts.n_res
         c_s = consts.c_s
         c_z = consts.c_z
         c_atom = 128
@@ -441,16 +439,16 @@ class TestAtomAttentionEncoder(unittest.TestCase):
             inf=inf,
         )
 
-        batch = {
-            "token_mask": torch.ones((batch_size, 1, n_token)),
-            "num_atoms_per_token": torch.ones((batch_size, 1, n_token)) * 4,
-            "ref_pos": torch.randn((batch_size, 1, n_atom, 3)),
-            "ref_mask": torch.ones((batch_size, 1, n_atom)),
-            "ref_element": torch.ones((batch_size, 1, n_atom, 119)),
-            "ref_charge": torch.ones((batch_size, 1, n_atom)),
-            "ref_atom_name_chars": torch.ones((batch_size, 1, n_atom, 4, 64)),
-            "ref_space_uid": torch.zeros((batch_size, 1, n_atom)),
-        }
+        batch = random_af3_features(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
+        )
+
+        batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
+
+        n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
         atom_mask = torch.ones((batch_size, 1, n_atom))
         rl = torch.randn((batch_size, n_sample, n_atom, 3))
@@ -475,7 +473,6 @@ class TestAtomAttentionDecoder(unittest.TestCase):
     def test_without_n_sample_channel(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
-        n_atom = 4 * consts.n_res
         c_atom = 128
         c_atom_pair = 16
         c_token = 384
@@ -503,10 +500,14 @@ class TestAtomAttentionDecoder(unittest.TestCase):
             inf=inf,
         )
 
-        batch = {
-            "token_mask": torch.ones((batch_size, n_token)),
-            "num_atoms_per_token": torch.ones((batch_size, n_token)) * 4,
-        }
+        batch = random_af3_features(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
+        )
+
+        n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
         atom_mask = torch.ones((batch_size, n_atom))
         ai = torch.randn((batch_size, n_token, c_token))
@@ -523,7 +524,6 @@ class TestAtomAttentionDecoder(unittest.TestCase):
     def test_with_n_sample_channel(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
-        n_atom = 4 * consts.n_res
         c_atom = 128
         c_atom_pair = 16
         c_token = 384
@@ -552,10 +552,16 @@ class TestAtomAttentionDecoder(unittest.TestCase):
             inf=inf,
         )
 
-        batch = {
-            "token_mask": torch.ones((batch_size, 1, n_token)),
-            "num_atoms_per_token": torch.ones((batch_size, 1, n_token)) * 4,
-        }
+        batch = random_af3_features(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
+        )
+
+        batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
+
+        n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
         atom_mask = torch.ones((batch_size, 1, n_atom))
         ai = torch.randn((batch_size, n_sample, n_token, c_token))

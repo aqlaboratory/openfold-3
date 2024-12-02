@@ -30,11 +30,14 @@ class TestConfidenceLoss(unittest.TestCase):
         is_dna = torch.Tensor([[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]])
         is_atomized = torch.Tensor([[1, 1, 1, 0, 1, 1, 1, 1, 0, 0]])
 
+        atom_mask = torch.ones((1, 55))
+
         gt_atom_mask = torch.ones((1, 55))
         gt_atom_positions = torch.randn((1, 55, 3))
 
         return {
             "token_mask": token_mask,
+            "atom_mask": atom_mask,
             "restype": restype,
             "num_atoms_per_token": num_atoms_per_token,
             "start_atom_index": start_atom_index,

@@ -149,7 +149,7 @@ class TestDiffusionLoss(unittest.TestCase):
             atom_mask=batch["ground_truth"]["atom_resolved_mask"],
         )
 
-        loss = smooth_lddt_loss(x=x, batch=batch, eps=consts.eps)
+        loss = smooth_lddt_loss(x=x, batch=batch, eps=1e-8)
 
         gt_loss = 1 - 0.25 * (
             torch.sigmoid(torch.Tensor([0.5]))
