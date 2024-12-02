@@ -24,8 +24,8 @@ def process_target_structure_af3(
     token_budget: int,
     preferred_chain_or_interface: str,
     structure_format: Literal["cif", "bcif", "pkl"],
-    return_full_atom_array=False,
-) -> tuple[AtomArray, AtomArray] | tuple[AtomArray, AtomArray, AtomArray]:
+    return_full_atom_array: bool,
+) -> dict[str, AtomArray]:
     """AF3 pipeline for processing target structure into AtomArrays.
 
     Args:
@@ -45,12 +45,14 @@ def process_target_structure_af3(
             Whether to return the full, uncropped atom array.
 
     Returns:
-        tuple[AtomArray, AtomArray] | tuple[AtomArray, AtomArray, AtomArray]:
-            Tuple of two or three atom arrays:
+        dict[str, AtomArray]:
+            Dict of two or three atom arrays:
             - Atoms inside the crop.
             - Ground truth atoms expanded for chain permutation alignment.
-            (- Full atom array - optional.)
+            - Full atom array - optional.
     """
+    target_structure_data = {}
+
     # Parse target structure
     atom_array = parse_target_structure(
         target_structures_directory, pdb_id, structure_format
@@ -70,7 +72,10 @@ def process_target_structure_af3(
     # Expand duplicate chains
     atom_array_gt = expand_duplicate_chains(atom_array)
 
+    target_structure_data["atom_array_cropped"] = atom_array_cropped
+    target_structure_data["atom_array_gt"] = atom_array_gt
+
     if return_full_atom_array:
-        return atom_array_cropped, atom_array_gt, atom_array
-    else:
-        return atom_array_cropped, atom_array_gt
+        target_structure_data["atom_array"] = atom_array
+
+    return target_structure_data

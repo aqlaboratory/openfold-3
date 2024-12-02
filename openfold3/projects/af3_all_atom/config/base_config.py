@@ -428,8 +428,6 @@ project_config = mlc.ConfigDict(
             "mode": "Placeholder mode",
             "weight": 0.0,
             "config": {
-                "n_templates": 4,
-                "use_alignment_database": True,
                 "loss_weight_mode": "default",
                 "token_budget": 384,
                 "crop_weights": {
@@ -439,9 +437,11 @@ project_config = mlc.ConfigDict(
                 },
                 "msa": {
                     "max_rows_paired": 8191,
+                    "max_rows": 16384,
+                    "subsample_with_bands": False,
                     "max_seq_counts": {
                         "uniref90_hits": 10000,
-                        "uniprot": 50000,
+                        "uniprot_hits": 50000,
                         "bfd_uniclust_hits": 100000,
                         "bfd_uniref_hits": 100000,
                         "mgnify_hits": 5000,
@@ -449,6 +449,15 @@ project_config = mlc.ConfigDict(
                         "rnacentral_hits": 10000,
                         "nucleotide_collection_hits": 10000,
                     },
+                    "aln_order": [
+                        "uniref90_hits",
+                        "bfd_uniclust_hits",
+                        "bfd_uniref_hits",
+                        "mgnify_hits",
+                        "rfam_hits",
+                        "rnacentral_hits",
+                        "nucleotide_collection_hits",
+                    ],
                 },
                 "template": {
                     "n_templates": 4,
@@ -484,6 +493,7 @@ project_config = mlc.ConfigDict(
                     "alignments_directory": PLACEHOLDER_PATH,
                     "target_structures_directory": PLACEHOLDER_PATH,
                     "alignment_db_directory": PLACEHOLDER_PATH,
+                    "alignment_array_directory": PLACEHOLDER_PATH,
                     "dataset_cache_file": PLACEHOLDER_PATH,
                     "reference_molecule_directory": PLACEHOLDER_PATH,
                     "template_cache_directory": PLACEHOLDER_PATH,
