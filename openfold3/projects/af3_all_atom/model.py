@@ -152,7 +152,7 @@ class AlphaFold3(nn.Module):
         pair_mask = token_mask[..., None] * token_mask[..., None, :]
 
         is_grad_enabled = torch.is_grad_enabled()
-        num_cycles = batch["num_cycles"].item()
+        num_cycles = batch["num_cycles"][0].item()
 
         for cycle_no in range(num_cycles):
             is_final_iter = cycle_no == (num_cycles - 1)
