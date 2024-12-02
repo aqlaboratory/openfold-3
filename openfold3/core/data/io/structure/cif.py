@@ -35,6 +35,29 @@ class SkippedStructure(NamedTuple):
     n_polymer_chains: int
 
 
+def _load_ciffile(file_path: Path | str) -> pdbx.CIFFile:
+    """Load a CIF file from a given path.
+
+    Args:
+        file_path (Path):
+            Path to the CIF file.
+
+    Returns:
+        pdbx.CIFFile:
+            CIF file object.
+    """
+    file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
+
+    if file_path.suffix == ".cif":
+        cif_class = pdbx.CIFFile
+    elif file_path.suffix == ".bcif":
+        cif_class = pdbx.BinaryCIFFile
+    else:
+        raise ValueError("File must be in mmCIF or binary mmCIF format")
+
+    return cif_class.read(file_path)
+
+
 # TODO: update docstring with new residue ID handling and preset fields
 def parse_mmcif(
     file_path: Path | str,
@@ -89,16 +112,8 @@ def parse_mmcif(
         or a SkippedStructure NamedTuple containing the CIF file and the number of
         polymer chains in the first bioassembly.
     """
-    file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
 
-    if file_path.suffix == ".cif":
-        cif_class = pdbx.CIFFile
-    elif file_path.suffix == ".bcif":
-        cif_class = pdbx.BinaryCIFFile
-    else:
-        raise ValueError("File must be in mmCIF or binary mmCIF format")
-
-    cif_file = cif_class.read(file_path)
+    cif_file = _load_ciffile(file_path)
     cif_data = get_cif_block(cif_file)
 
     if max_polymer_chains is not None:

@@ -6,7 +6,7 @@ import biotite.structure as struc
 import numpy as np
 from biotite.structure import BondType
 from biotite.structure.info.bonds import BOND_TYPES
-from biotite.structure.io.pdbx import CIFBlock, CIFFile
+from biotite.structure.io.pdbx import BinaryCIFFile, CIFBlock, CIFFile
 
 from openfold3.core.data.primitives.structure.labels import (
     get_chain_to_entity_dict,
@@ -176,6 +176,46 @@ def get_chain_to_canonical_seq_dict(
     }
 
     return chain_to_seq_dict
+
+
+def get_asym_id_to_canonical_seq_dict(
+    cif_file: CIFFile | BinaryCIFFile,
+) -> dict[str, str]:
+    """Get a dictionary mapping asym IDs to their canonical sequences.
+
+    Args:
+        cif_file (CIFFile | BinaryCIFFile):
+            Parsed mmCIF file containing the structure.
+
+    Returns:
+        dict[str, str]:
+            A dictionary mapping asym IDs to their canonical sequences.
+    """
+    # TODO refactor to reduce redundancy with above code
+    # Create entity_id -> canonical sequence map
+    entity_poly_canoncal_seqs = cif_file.block["entity_poly"][
+        "pdbx_seq_one_letter_code_can"
+    ].as_array()
+    entity_poly_entity_id = cif_file.block["entity_poly"]["entity_id"].as_array()
+    entity_id_to_can_seq = {
+        entity_id: seq.replace("\n", "")
+        for entity_id, seq in zip(entity_poly_entity_id, entity_poly_canoncal_seqs)
+    }
+
+    # Create asym_id -> canonical sequence map
+    asym_ids = cif_file.block["pdbx_poly_seq_scheme"]["asym_id"].as_array()
+    entity_ids = cif_file.block["pdbx_poly_seq_scheme"]["entity_id"].as_array()
+    asym_to_entity_array = np.unique(
+        np.concatenate([asym_ids[:, np.newaxis], entity_ids[:, np.newaxis]], axis=1),
+        axis=0,
+    )
+    asym_to_entity_dict = {row[0]: row[1] for row in asym_to_entity_array}
+
+    # Create asym_id -> canonical sequence map
+    return {
+        asym_id: entity_id_to_can_seq[entity_id]
+        for asym_id, entity_id in asym_to_entity_dict.items()
+    }
 
 
 def get_entity_to_three_letter_codes_dict(cif_data: CIFBlock) -> dict[int, list[str]]:

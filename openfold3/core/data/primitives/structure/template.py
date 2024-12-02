@@ -10,9 +10,14 @@ from biotite.structure.io.pdbx import CIFFile
 
 from openfold3.core.data.io.structure.cif import parse_mmcif
 from openfold3.core.data.primitives.featurization.structure import get_token_starts
+from openfold3.core.data.primitives.structure.cleanup import (
+    remove_hydrogens,
+    remove_non_CCD_atoms,
+    remove_waters,
+)
 from openfold3.core.data.primitives.structure.metadata import get_cif_block
 from openfold3.core.data.primitives.structure.unresolved import (
-    add_unresolved_polymer_residues,
+    add_unresolved_atoms,
 )
 
 
@@ -38,40 +43,41 @@ class TemplateCacheEntry:
 
 @dataclasses.dataclass(frozen=False)
 class TemplateSlice:
-    """Class storing cropped template structure and query-to-template map.
-
-    Note: a TemplateSlice only contains residues of the template that
-        1. are aligned to the query structure in the hhsearch alignment
-        2. fall into the crop of then query structure.
+    """An AtomArray wrapper class for also storing the token positions.
 
     Attributes:
         atom_array (AtomArray):
-            AtomArray of the cropped template structure.
-        res_id_res_id_map (dict[int, int]):
-            Dictionary mapping query residue IDs to template residue IDs
-            determined by the alignment.
-        res_id_token_position_map (dict[int, int]):
-            Dictionary mapping template residue IDs to token positions.
+            The AtomArray of the template. During training, this only contains the
+            residues that align to query residues in the crop. During inference, this
+            contains all residues of the template chain aligned to the query chain.
+        query_token_positions (np.ndarray[int]):
+            The token positions in the query structure.
+        template_residue_repeats (np.ndarray[int]):
+            Number of times to repeat each residue. Used for expanding template residue
+            features for template residues that align to query residues tokenized per
+            atom.
     """
 
     atom_array: AtomArray
-    res_id_res_id_map: dict[int, int]
-    res_id_token_position_map: dict[int, int]
+    query_token_positions: np.ndarray[int]
+    template_residue_repeats: np.ndarray[int]
 
 
 @dataclasses.dataclass(frozen=False)
 class TemplateSliceCollection:
     """Class for all cropped templates of all chains of a query assembly.
 
-    Note: only contains templates for chains that fall into the crop. Lists
-    for chains that have no templates are empty.
+    Note: only contains templates for chains that have at least one residue that aligns
+    to a query residue in the crop. Lists for chains that have no such templates are
+    empty.
 
     Attributes:
-        template_slices (dict[int, list[AtomArray]]):
-            Dict mapping query chain ID to a list of cropped template AtomArray objects.
+        template_slices (dict[int, list[TemplateSlice]]):
+            Dict mapping query chain ID to a list of cropped template AtomArray objects
+            with the query token position to template residue ID map.
     """
 
-    template_slices: dict[str, list[AtomArray]]
+    template_slices: dict[str, list[TemplateSlice]]
 
 
 def get_query_structure_res_ids(atom_array_cropped_chain: AtomArray) -> np.ndarray[int]:
@@ -161,44 +167,71 @@ def sample_templates(
         return {}
 
 
-def map_template_residues_to_tokens(
-    idx_map: np.ndarray[int],
-    atom_array_cropped_chain: AtomArray,
-    atom_array_template_chain: AtomArray,
-) -> AtomArray:
-    """Creates index maps for the template residues that align to the query crop.
+def subset_template_index_map(
+    template_cache_entry: TemplateCacheEntry, atom_array_query_chain: AtomArray
+) -> None:
+    """Subsets the idx map to template residues that align to the query crop.
 
     Args:
-        idx_map (np.ndarray[int]):
-            An n-by-2 numpy array, 1st col: query residue index, 2nd col: template
-            residue index, only containing positions that are non-gapped in the aligned
-            template sequence.
-        atom_array_cropped_chain (AtomArray):
-            The cropped atom array for the current query chain.
+        template_cache_entry (TemplateCacheEntry):
+            An entry from the template cache, containing an n-by-2 numpy array, 1st col:
+            query residue index, 2nd col: template residue index, only containing
+            positions that are non-gapped in the aligned template sequence.
+        atom_array_query_chain (AtomArray):
+            The query atom array for the current query chain. During training, this only
+            contains the residues that are in the crop. During inference, this contains
+            all residues of the query chain.
+    """
+    idx_map = template_cache_entry.idx_map
+    idx_map = idx_map[idx_map[:, 0] != -1, :]
+
+    # Subset idx map to template residues that are in the query chain
+    res_in_query = np.unique(atom_array_query_chain.res_id.astype(int))
+    idx_map_in_crop = idx_map[np.where(np.isin(idx_map[:, 0], res_in_query))[0]]
+
+    # Update template cache entry with idx map in crop
+    template_cache_entry.idx_map = idx_map_in_crop
+
+
+def map_token_pos_to_template_residues(
+    template_cache_entry: TemplateCacheEntry,
+    atom_array_query_chain: AtomArray,
+    atom_array_template_chain: AtomArray,
+) -> TemplateSlice:
+    """Creates index maps for the template residues that align to the query chain.
+
+    Note: during training, also subsets the template atom array to only contain residues
+    that align to query residues in the crop.
+
+    Args:
+        template_cache_entry (TemplateCacheEntry):
+            An entry from the template cache, containing an n-by-2 numpy array, 1st col:
+            query residue index, 2nd col: template residue index, only containing
+            positions that are non-gapped in the aligned template sequence.
+        atom_array_query_chain (AtomArray):
+            The query atom array for the current query chain. During training, this only
+            contains the residues that are in the crop. During inference, this contains
+            all residues of the query chain.
         atom_array_template_chain (AtomArray):
             The template atom array for the current template chain.
 
     Returns:
-        AtomArray:
+        TemplateSlice:
             The atom array of a template containing only residues that align to query
-            residues in the crop and the corresponding token positions.
+            residues in the crop and the corresponding token positions and the mapping
+            from query token positions to template residue IDs.
     """
-    # Remove gapped query positions
-    idx_map = idx_map[idx_map[:, 0] != -1, :]
-
-    # Subset idx map to template residues that are in the cropped query chain
-    res_in_query = np.unique(atom_array_cropped_chain.res_id.astype(int))
-    idx_map_in_crop = idx_map[np.where(np.isin(idx_map[:, 0], res_in_query))[0]]
+    idx_map_in_crop = template_cache_entry.idx_map
 
     # Map query token positions to template residues
-    query_token_atoms = atom_array_cropped_chain[
-        get_token_starts(atom_array_cropped_chain)
-    ]
+    query_token_atoms = atom_array_query_chain[get_token_starts(atom_array_query_chain)]
 
-    # Get token positions of template residues aligning to query residues in the crop
-    template_token_positions = query_token_atoms[
+    # Get query tokens in the crop and to which template residues align
+    query_token_atoms_aligned_cropped = query_token_atoms[
         np.isin(query_token_atoms.res_id, idx_map_in_crop[:, 0])
-    ].token_position
+    ]
+    # Expand residues tokenized per atom
+    _, repeats = np.unique(query_token_atoms_aligned_cropped.res_id, return_counts=True)
 
     # Get template atom array with residues aligning to query residues in the crop
     atom_array_cropped_template = atom_array_template_chain[
@@ -209,17 +242,16 @@ def map_template_residues_to_tokens(
     ]
 
     # Add token position annotation to template atom array mapping to the crop
-    atom_array_cropped_template.set_annotation(
-        "token_positions",
-        struc.spread_residue_wise(
-            atom_array_cropped_template, template_token_positions
-        ),
+    template_slice = TemplateSlice(
+        atom_array=atom_array_cropped_template,
+        query_token_positions=query_token_atoms_aligned_cropped.token_position,
+        template_residue_repeats=repeats,
     )
 
-    return atom_array_cropped_template
+    return template_slice
 
 
-def map_token_pos_to_templates(
+def align_template_to_query(
     sampled_template_data: dict[str, TemplateCacheEntry] | dict[None],
     template_structures_directory: Path,
     template_file_format: str,
@@ -248,9 +280,15 @@ def map_token_pos_to_templates(
     if len(sampled_template_data) == 0:
         return []
 
-    cropped_templates = []
+    template_slices = []
     # Iterate over the k templates
     for template_pdb_chain_id, template_cache_entry in sampled_template_data.items():
+        # Subset the idx map to template residues that align to the query crop for
+        # training and skip if the template is outside the crop
+        subset_template_index_map(template_cache_entry, atom_array_query_chain)
+        if template_cache_entry.idx_map.shape[0] == 0:
+            continue
+
         # Parse template IDs
         template_pdb_id, template_chain_id = template_pdb_chain_id.split("_")
 
@@ -259,8 +297,13 @@ def map_token_pos_to_templates(
             template_structures_directory
             / Path(f"{template_pdb_id}.{template_file_format}")
         )
-        # Add unresolved residues
-        atom_array_template_assembly = add_unresolved_polymer_residues(
+        # Clean up template atom array
+        atom_array_template_assembly = remove_waters(atom_array_template_assembly)
+        atom_array_template_assembly = remove_hydrogens(atom_array_template_assembly)
+        atom_array_template_assembly = remove_non_CCD_atoms(
+            atom_array_template_assembly, ccd
+        )
+        atom_array_template_assembly = add_unresolved_atoms(
             atom_array_template_assembly, get_cif_block(cif_file), ccd
         )
 
@@ -269,14 +312,16 @@ def map_token_pos_to_templates(
             atom_array_template_assembly.label_asym_id == template_chain_id
         ]
 
-        # Create query residue ID to template residue ID to token position map
-        atom_array_cropped_template = map_template_residues_to_tokens(
-            template_cache_entry.idx_map,
+        # Create query token position to template residue ID map
+        template_slice = map_token_pos_to_template_residues(
+            template_cache_entry,
             atom_array_query_chain,
             atom_array_template_chain,
         )
 
-        # Add to list of cropped template atom arrays for this chain
-        cropped_templates.append(atom_array_cropped_template)
+        # Add to list of cropped + aligned template atom arrays for this chain
+        # if might not be needed here?
+        if len(template_slice.atom_array) > 0:
+            template_slices.append(template_slice)
 
-    return cropped_templates
+    return template_slices

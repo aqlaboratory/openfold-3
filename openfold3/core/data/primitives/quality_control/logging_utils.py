@@ -56,6 +56,7 @@ class ComplianceLog:
 
 
 # Runtime context variables
+PDB_ID = contextvars.ContextVar("PDB_ID", default=None)
 LOG_RUNTIMES = contextvars.ContextVar("LOG_RUNTIME", default=False)
 RUNTIME_DICT = contextvars.ContextVar("RUNTIME_DICT", default={})  # noqa: B039
 # Memory context variables
@@ -71,6 +72,14 @@ TEMPLATE_PROCESS_LOGGER = contextvars.ContextVar(
 )
 # Mapping of function names to their respective runtime logging functions
 F_NAME_ORDER = [
+    # top level function in the getitem
+    "runtime-create-all-features",
+    # 2nd-level functions
+    "runtime-create-target-structure-features",
+    "runtime-create-msa-features",
+    "runtime-create-template-features",
+    "runtime-create-ref-conf-features",  # not yet implemented
+    # 3rd-level functions
     "runtime-target-structure-proc",
     "runtime-target-structure-feat",
     "runtime-msa-proc",
@@ -79,19 +88,20 @@ F_NAME_ORDER = [
     "runtime-template-feat",
     "runtime-ref-conf-proc",
     "runtime-ref-conf-feat",
+    # 4th-level functions
+    # target structure
     "runtime-target-structure-proc-parse",
     "runtime-target-structure-proc-token",
     "runtime-target-structure-proc-crop",
     "runtime-target-structure-proc-expand",
-    "runtime-msa-proc-crop-to-seq",
-    #    "runtime-msa-proc-proc", # not logged
+    # MSA
     "runtime-msa-proc-parse",
     "runtime-msa-proc-create-query",
     "runtime-msa-proc-homo-mono",
     "runtime-msa-proc-create-paired",
-    "runtime-msa-proc-expand-paired",
     "runtime-msa-proc-create-main",
-    "runtime-msa-proc-apply-crop",
+    # template
+    # reference conformers
 ]
 
 
@@ -333,14 +343,17 @@ def compute_interface(
         distance_threshold=5.0,
         return_chain_pairs=True,
     )
-    res_pairs = np.concatenate(
-        [
-            query_atom_array.res_id[atom_pairs[:, 0]][..., np.newaxis],
-            target_atom_array.res_id[atom_pairs[:, 1]][..., np.newaxis],
-        ],
-        axis=1,
-    )
-    return res_pairs, chain_pairs
+    if atom_pairs is not None:
+        res_pairs = np.concatenate(
+            [
+                query_atom_array.res_id[atom_pairs[:, 0]][..., np.newaxis],
+                target_atom_array.res_id[atom_pairs[:, 1]][..., np.newaxis],
+            ],
+            axis=1,
+        )
+        return res_pairs, chain_pairs
+    else:
+        return None, None
 
 
 def encode_interface(res_pairs: np.ndarray, chain_pairs: np.ndarray) -> str:
@@ -378,7 +391,7 @@ def encode_interface(res_pairs: np.ndarray, chain_pairs: np.ndarray) -> str:
 
 
 def get_interface_string(
-    query_atom_array: AtomArray, target_atom_array: AtomArray
+    query_atom_array: AtomArray, target_atom_array: AtomArray, nanvalue: str = "NaN"
 ) -> str:
     """Computes the interface string between two structures.
 
@@ -395,7 +408,10 @@ def get_interface_string(
         query_atom_array,
         target_atom_array,
     )
-    return encode_interface(r, c)
+    if r is not None:
+        return encode_interface(r, c)
+    else:
+        return nanvalue
 
 
 def decode_interface(interface_string: str) -> tuple[np.ndarray, np.ndarray]:

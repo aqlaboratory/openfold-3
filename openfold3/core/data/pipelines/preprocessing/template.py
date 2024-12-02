@@ -14,6 +14,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from openfold3.core.data.io.sequence.template import parse_hmmsearch_sto
+from openfold3.core.data.io.structure.cif import _load_ciffile
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     TEMPLATE_PROCESS_LOGGER,
     configure_template_logger,
@@ -27,10 +28,167 @@ from openfold3.core.data.primitives.sequence.template import (
     create_residue_idx_map,
     match_query_chain_and_sequence,
     match_template_chain_and_sequence,
-    parse_release_date,
     parse_representatives,
-    parse_structure,
 )
+from openfold3.core.data.primitives.structure.metadata import (
+    get_asym_id_to_canonical_seq_dict,
+    get_cif_block,
+    get_release_date,
+)
+
+
+def create_seq_cache_for_template(
+    template_pdb_id: str,
+    template_structures_directory: Path,
+    template_cache_directory: Path,
+    template_file_format: str,
+) -> None:
+    """Creates a sequence cache for a template structure.
+
+    Args:
+        template_pdb_id (str):
+            The PDB ID of the template structure.
+        template_structures_directory (Path):
+            Path to the directory containing template structures in mmCIF format.
+        template_cache_directory (Path):
+            Path to directory where the sequence cache will be saved for the template.
+        template_file_format (str):
+            File format of the template structures.
+    """
+
+    template_process_logger = TEMPLATE_PROCESS_LOGGER.get()
+
+    try:
+        cif_file = _load_ciffile(
+            template_structures_directory / f"{template_pdb_id}.{template_file_format}"
+        )
+        chain_id_seq_map = get_asym_id_to_canonical_seq_dict(cif_file)
+        release_date = get_release_date(get_cif_block(cif_file)).strftime("%Y-%m-%d")
+
+        template_precache = {
+            "release_date": release_date,
+            "chain_id_seq_map": chain_id_seq_map,
+        }
+
+        np.savez_compressed(
+            template_cache_directory.parent
+            / Path(f"template_precache/{template_pdb_id}.npz"),
+            **template_precache,
+        )
+        template_process_logger.info(f"Sequence cache for {template_pdb_id} saved.")
+    except FileNotFoundError:
+        template_process_logger.info(
+            f"Template structure {template_pdb_id} not found in "
+            f"{template_structures_directory}. Skipping this template."
+        )
+        return
+
+
+class _AF3TemplateSequenceCacheConstructor:
+    def __init__(
+        self,
+        template_structures_directory,
+        template_cache_directory,
+        template_file_format,
+        log_level,
+        log_to_file,
+        log_to_console,
+        log_dir,
+    ):
+        self.template_structures_directory = template_structures_directory
+        self.template_cache_directory = template_cache_directory
+        self.template_file_format = template_file_format
+        self.log_level = log_level
+        self.log_to_file = log_to_file
+        self.log_to_console = log_to_console
+        self.log_dir = log_dir
+
+    @wraps(create_seq_cache_for_template)
+    def __call__(self, template_pdb_id: str) -> None:
+        try:
+            # Create logger and set it as the context logger for the process
+            TEMPLATE_PROCESS_LOGGER.set(
+                configure_template_logger(
+                    log_level=self.log_level,
+                    log_to_file=self.log_to_file,
+                    log_to_console=self.log_to_console,
+                    log_dir=self.log_dir,
+                )
+            )
+            # Create sequence cache for template
+            create_seq_cache_for_template(
+                template_pdb_id=template_pdb_id,
+                template_structures_directory=self.template_structures_directory,
+                template_cache_directory=self.template_cache_directory,
+                template_file_format=self.template_file_format,
+            )
+        except Exception as e:
+            TEMPLATE_PROCESS_LOGGER.get().info(
+                "Failed to process template " f"{template_pdb_id}:\n{e}\n"
+            )
+
+
+def create_template_seq_cache_af3(
+    template_structures_directory: Path,
+    template_cache_directory: Path,
+    template_file_format: str,
+    num_workers: int,
+    log_level: str,
+    log_to_file: bool,
+    log_to_console: bool,
+    log_dir: Path,
+):
+    """Creates the sequence cache for all template structures.
+
+    Args:
+        template_structures_directory (Path):
+            Path to the directory containing template structures in mmCIF format.
+        template_cache_directory (Path):
+            Path to directory where the sequence cache will be saved for the template.
+        template_file_format (str):
+            File format of the template structures.
+        num_workers (int):
+            Number of workers to use for multiprocessing.
+        log_level (str):
+            Log level for the logger.
+        log_to_file (bool):
+            Whether to log to file.
+        log_to_console (bool):
+            Whether to log to console.
+        log_dir (Path):
+            Directory where the log file will be saved.
+    """
+
+    (template_cache_directory.parent / Path("template_precache")).mkdir(
+        parents=True, exist_ok=True
+    )
+    (template_cache_directory.parent / Path("template_seq_logs")).mkdir(
+        parents=True, exist_ok=True
+    )
+    template_pdb_ids = [
+        f.stem
+        for f in list(template_structures_directory.glob(f"*.{template_file_format}"))
+    ]
+    wrapped_template_seq_cache_constructor = _AF3TemplateSequenceCacheConstructor(
+        template_structures_directory,
+        template_cache_directory,
+        template_file_format,
+        log_level,
+        log_to_file,
+        log_to_console,
+        log_dir,
+    )
+    with mp.Pool(num_workers) as pool:
+        for _ in tqdm(
+            pool.imap_unordered(
+                wrapped_template_seq_cache_constructor,
+                template_pdb_ids,
+                chunksize=1,
+            ),
+            total=len(template_pdb_ids),
+            desc="1/3: Creating template sequence cache",
+        ):
+            pass
 
 
 # Metadata cache creation
@@ -123,7 +281,8 @@ def create_template_cache_for_query(
         )
         data_log_to_tsv(
             data_log,
-            template_cache_directory.parent / Path(f"data_log_{os.getpid()}.tsv"),
+            template_cache_directory.parent
+            / Path(f"data_log/data_log_{os.getpid()}.tsv"),
         )
         return
     template_process_logger.info(f"Alignment file {template_alignment_file} parsed.")
@@ -142,7 +301,8 @@ def create_template_cache_for_query(
         data_log["template_cache_already_computed"] = True
         data_log_to_tsv(
             data_log,
-            template_cache_directory.parent / Path(f"data_log_{os.getpid()}.tsv"),
+            template_cache_directory.parent
+            / Path(f"data_log/data_log_{os.getpid()}.tsv"),
         )
         return
     # 1. Parse fasta of the structure
@@ -157,7 +317,8 @@ def create_template_cache_for_query(
         )
         data_log_to_tsv(
             data_log,
-            template_cache_directory.parent / Path(f"data_log_{os.getpid()}.tsv"),
+            template_cache_directory.parent
+            / Path(f"data_log/data_log_{os.getpid()}.tsv"),
         )
         return
     data_log["query_cif_exists"] = True
@@ -177,7 +338,8 @@ def create_template_cache_for_query(
         )
         data_log_to_tsv(
             data_log,
-            template_cache_directory.parent / Path(f"data_log_{os.getpid()}.tsv"),
+            template_cache_directory.parent
+            / Path(f"data_log/data_log_{os.getpid()}.tsv"),
         )
         return
     else:
@@ -218,7 +380,7 @@ def create_template_cache_for_query(
             continue
         else:
             template_process_logger.info(
-                f"Template {hit_pdb_id} sequence passes sequence " "filters."
+                f"Template {hit_pdb_id} sequence passes sequence filters."
             )
             data_log["n_templates_pass_seq_filters"] += 1
 
@@ -226,12 +388,19 @@ def create_template_cache_for_query(
         # The template is skipped if the structure identified by the PDB ID of the
         # corresponding hit in the alignment file is not provided in
         # template_structures_path
-        cif_file, atom_array = parse_structure(
-            template_structures_directory,
-            hit_pdb_id,
-            file_format=f"{template_file_format}",
-        )
-        if cif_file is None:
+        try:
+            template_precache = np.load(
+                template_cache_directory.parent
+                / Path(f"template_precache/{hit_pdb_id}.npz"),
+                allow_pickle=True,
+            )
+            chain_id_seq_map = template_precache["chain_id_seq_map"].item()
+            release_date = template_precache["release_date"].item()
+        except FileNotFoundError:
+            chain_id_seq_map = None
+            release_date = None
+
+        if chain_id_seq_map is None:
             template_process_logger.info(
                 f"Template structure {hit_pdb_id} not found in "
                 f"{template_structures_directory}. Skipping this template."
@@ -247,20 +416,15 @@ def create_template_cache_for_query(
         # in the alignment file
         # !!! Note that the chain ID-sequence map for this step is derived from the
         # unprocessed CIF file provided in the template_structures_directory
-        hit_chain_id_matched = match_template_chain_and_sequence(
-            cif_file, atom_array, hit
-        )
+        hit_chain_id_matched = match_template_chain_and_sequence(chain_id_seq_map, hit)
         if hit_chain_id_matched is None:
             template_process_logger.info(
                 f"Could not match template {hit_pdb_id} chain {hit_chain_id} "
-                f"sequence in {cif_file}. Skipping this template."
+                f"sequence in {chain_id_seq_map}. Skipping this template."
             )
             continue
         else:
             data_log["n_template_chain_match"] += 1
-
-        # Parse release date
-        release_date = parse_release_date(cif_file)
 
         # Create residue index map
         idx_map = create_residue_idx_map(query, hit)
@@ -269,7 +433,7 @@ def create_template_cache_for_query(
         # hmmsearch is sorted in descending e-value order so index is enough to sort
         template_hits_filtered[f"{hit_pdb_id}_{hit_chain_id_matched}"] = {
             "index": hit.index,
-            "release_date": release_date.strftime("%Y-%m-%d"),
+            "release_date": release_date,
             "idx_map": idx_map,
         }
 
@@ -286,12 +450,13 @@ def create_template_cache_for_query(
     # Save data log
     data_log["n_valid_templates_prefilter"] = len(template_hits_filtered)
     data_log_to_tsv(
-        data_log, template_cache_directory.parent / Path(f"data_log_{os.getpid()}.tsv")
+        data_log,
+        template_cache_directory.parent / Path(f"data_log/data_log_{os.getpid()}.tsv"),
     )
 
     # Save filtered hits to json using the representative ID
     if len(template_hits_filtered) > 0:
-        np.savez(template_cache_path_rep, **template_hits_filtered)
+        np.savez_compressed(template_cache_path_rep, **template_hits_filtered)
         template_process_logger.info(
             f"Template cache for {query.name} saved with "
             f"{len(template_hits_filtered)} valid hits."
@@ -463,8 +628,11 @@ def create_template_cache_af3(
         log_dir (Path):
             Directory where the log file will be saved.
     """
-    if not log_dir.exists():
-        log_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    template_cache_directory.mkdir(parents=True, exist_ok=True)
+    (template_cache_directory.parent / Path("data_log")).mkdir(
+        parents=True, exist_ok=True
+    )
 
     # Parse list of chains from metadata cache
     with open(dataset_cache_file) as f:
@@ -494,7 +662,7 @@ def create_template_cache_af3(
                 chunksize=1,
             ),
             total=len(template_query_iterator),
-            desc="Creating template cache",
+            desc="2/3: Creating template cache",
         ):
             pass
     # Collate data logs
@@ -576,7 +744,8 @@ def filter_template_cache_for_query(
         )
         data_log_to_tsv(
             data_log,
-            template_cache_directory.parent / Path(f"data_log_{os.getpid()}.tsv"),
+            template_cache_directory.parent
+            / Path(f"data_log/data_log_{os.getpid()}.tsv"),
         )
         if is_core_train:
             return TemplateHitCollection({tuple(query_pdb_chain_id.split("_")): []})
@@ -628,7 +797,8 @@ def filter_template_cache_for_query(
             break
 
     data_log_to_tsv(
-        data_log, template_cache_directory.parent / Path(f"data_log_{os.getpid()}.tsv")
+        data_log,
+        template_cache_directory.parent / Path(f"data_log/data_log_{os.getpid()}.tsv"),
     )
     template_process_logger.info(
         f"Successfully filtered {len(filtered_templates)} templates for "
@@ -815,7 +985,7 @@ def filter_template_cache_af3(
         log_dir,
     )
     with mp.Pool(num_workers) as pool:
-        for idx, valid_templates in tqdm(
+        for _, valid_templates in tqdm(
             enumerate(
                 pool.imap_unordered(
                     wrapped_template_cache_filter,
@@ -824,7 +994,7 @@ def filter_template_cache_af3(
                 )
             ),
             total=data_iterator_len,
-            desc="Filtering template cache",
+            desc="3/3: Filtering template cache",
         ):
             # Update dataset cache with list of valid template representative IDs
             for (pdb_id, chain_id), valid_template_list in valid_templates.items():
@@ -832,9 +1002,9 @@ def filter_template_cache_af3(
                     "template_ids"
                 ] = valid_template_list
 
-            if (idx + 1) % save_frequency == 0:
-                with open(updated_dataset_cache_file, "w") as f:
-                    json.dump(dataset_cache, f, indent=4)
+            # if (idx + 1) % save_frequency == 0:
+            #     with open(updated_dataset_cache_file, "w") as f:
+            #         json.dump(dataset_cache, f, indent=4)
 
     # Save final complete dataset cache
     with open(updated_dataset_cache_file, "w") as f:
@@ -872,7 +1042,9 @@ def data_log_to_tsv(data_log: dict, tsv_file: Path) -> None:
 def collate_data_logs(template_cache_directory, fname):
     files = [
         f
-        for f in list(template_cache_directory.parent.glob("data_log_*"))
+        for f in list(
+            (template_cache_directory.parent / Path("data_log")).glob("data_log_*")
+        )
         if f.is_file()
     ]
     df_all = pd.DataFrame()
@@ -885,5 +1057,5 @@ def collate_data_logs(template_cache_directory, fname):
         )
         f.unlink()
     df_all.to_csv(
-        template_cache_directory.parent / Path(f"{fname}.tsv"), sep="\t", index=False
+        template_cache_directory.parent / Path(f"{fname}"), sep="\t", index=False
     )

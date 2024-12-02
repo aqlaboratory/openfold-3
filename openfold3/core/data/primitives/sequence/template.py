@@ -15,11 +15,7 @@ from openfold3.core.data.io.structure.cif import parse_mmcif
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     TEMPLATE_PROCESS_LOGGER,
 )
-from openfold3.core.data.primitives.structure.labels import (
-    get_chain_to_pdb_chain_dict,
-)
 from openfold3.core.data.primitives.structure.metadata import (
-    get_chain_to_canonical_seq_dict,
     get_cif_block,
     get_release_date,
 )
@@ -285,17 +281,14 @@ def remap_chain_id(
 
 
 def match_template_chain_and_sequence(
-    cif_file: CIFFile,
-    atom_array: AtomArray,
+    chain_id_seq_map: dict[str, str],
     hit: TemplateHit,
 ) -> str | None:
     """Attempts to locate the chain of a template hit in its CIF file.
 
     Args:
-        cif_file (CIFFile):
-            Parsed mmCIF file.
-        atom_array (AtomArray):
-            Atom array of the structure.
+        chain_id_seq_map (dict[str, str]):
+            A mapping of chain IDs to their sequences parsed from the CIF file.
         hit (TemplateHit):
             The template hit.
 
@@ -306,13 +299,6 @@ def match_template_chain_and_sequence(
     hit_pdb_id, hit_chain_id = hit.name.split("_")
 
     # Attempt to get the sequence of the hit chain
-    # atom_array._annot["chain_id"] = atom_array.chain_id.astype(str)
-    chain_id_map = get_chain_to_pdb_chain_dict(atom_array)
-    cif_data = get_cif_block(cif_file)
-    chain_id_seq_map_temp = get_chain_to_canonical_seq_dict(atom_array, cif_data)
-    chain_id_seq_map = {
-        chain_id_map[chain_id]: seq for chain_id, seq in chain_id_seq_map_temp.items()
-    }
     hit_seq_cif = chain_id_seq_map.get(hit_chain_id)
     hit_seq_hmm = hit.hit_sequence.replace("-", "")
 
