@@ -29,7 +29,6 @@ import dataclasses
 import enum
 import random
 import warnings
-from functools import partial
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -497,6 +496,17 @@ class DataModule(pl.LightningDataModule):
         return self.generate_dataloader(DatasetMode.prediction)
 
 
-def openfold_batch_collator(prots):
-    stack_fn = partial(torch.stack, dim=0)
-    return dict_multimap(stack_fn, prots)
+def openfold_batch_collator(samples: list[dict[str, torch.Tensor]]):
+    """Collates a list of samples into a batch."""
+
+    def pad_feat_fn(values: list[torch.Tensor]) -> torch.Tensor:
+        """
+        Pad the tensors to the same length. Remove the extra dimension if stacking
+        a 1D tensor (i.e. loss weights).
+        """
+        values = torch.nn.utils.rnn.pad_sequence(
+            values, batch_first=True, padding_value=0
+        )
+        return values.squeeze(-1)
+
+    return dict_multimap(pad_feat_fn, samples)

@@ -1,7 +1,8 @@
 # TODO: note in module level docstrings that nothing here supports hydrogens
 import logging
 from collections import defaultdict
-from typing import Iterable, NamedTuple, TypeAlias
+from collections.abc import Iterable
+from typing import NamedTuple, TypeAlias
 
 import biotite.structure as struc
 import gemmi

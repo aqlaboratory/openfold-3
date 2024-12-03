@@ -8,6 +8,8 @@ from biotite.structure.io import pdbx
 
 from openfold3.core.data.resources.residues import (
     CHEM_COMP_TYPE_TO_MOLECULE_TYPE,
+    STANDARD_NUCLEIC_ACID_RESIDUES,
+    STANDARD_PROTEIN_RESIDUES_3,
     MoleculeType,
 )
 
@@ -344,3 +346,49 @@ def uniquify_ids(ids: list[str]) -> list[str]:
         uniquified_ids.append(f"{id}_{id_counter[id]}")
 
     return uniquified_ids
+
+
+def set_residue_hetero_values(atom_array: AtomArray) -> None:
+    """Sets the "hetero" annotation in the AtomArray based on the residue names.
+
+    This function sets the "hetero" annotation in the AtomArray based on the residue
+    names. If the residue name is in the list of standard residues for the respective
+    molecule type, the "hetero" annotation is set to False, otherwise it is set to True.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to set the "hetero" annotation for.
+
+    Returns:
+        None, the "hetero" annotation is modified in-place.
+    """
+    protein_mask = atom_array.molecule_type_id == MoleculeType.PROTEIN
+    if protein_mask.any():
+        in_standard_protein_residues = np.isin(
+            atom_array.res_name, STANDARD_PROTEIN_RESIDUES_3
+        )
+    else:
+        in_standard_protein_residues = np.zeros(len(atom_array), dtype=bool)
+
+    rna_mask = atom_array.molecule_type_id == MoleculeType.RNA
+    if rna_mask.any():
+        in_standard_rna_residues = np.isin(
+            atom_array.res_name, STANDARD_NUCLEIC_ACID_RESIDUES
+        )
+    else:
+        in_standard_rna_residues = np.zeros(len(atom_array), dtype=bool)
+
+    dna_mask = atom_array.molecule_type_id == MoleculeType.DNA
+    if dna_mask.any():
+        in_standard_dna_residues = np.isin(
+            atom_array.res_name, STANDARD_NUCLEIC_ACID_RESIDUES
+        )
+    else:
+        in_standard_dna_residues = np.zeros(len(atom_array), dtype=bool)
+
+    atom_array.hetero[:] = True
+    atom_array.hetero[
+        (protein_mask & in_standard_protein_residues)
+        | (rna_mask & in_standard_rna_residues)
+        | (dna_mask & in_standard_dna_residues)
+    ] = False

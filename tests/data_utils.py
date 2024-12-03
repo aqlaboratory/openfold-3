@@ -18,6 +18,9 @@ import numpy as np
 import torch
 from scipy.spatial.transform import Rotation
 
+from openfold3.core.data.primitives.featurization.structure import (
+    create_atom_to_token_index,
+)
 from openfold3.core.np.token_atom_constants import (
     DNA_NUCLEOTIDE_TYPES,
     PROTEIN_RESTYPES,
@@ -181,6 +184,14 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ):
         (torch.zeros((1,)), torch.cumsum(num_atoms_per_token, dim=-1)[:-1]), dim=-1
     )
 
+    token_mask = torch.ones(n_token).float()
+    atom_mask = torch.ones(n_atom).float()
+
+    atom_to_token_index = create_atom_to_token_index(
+        token_mask=token_mask,
+        num_atoms_per_token=num_atoms_per_token,
+    ).int()
+
     asym_id = (
         torch.Tensor(random_asym_ids(n_token)).unsqueeze(0).repeat((batch_size, 1))
     )
@@ -232,27 +243,29 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ):
         # Bond features
         "token_bonds": torch.ones((batch_size, n_token, n_token)).int(),
         # Additional features
-        "token_mask": torch.ones((batch_size, n_token)).float(),
+        "token_mask": token_mask.unsqueeze(0).repeat((batch_size, 1)),
+        "atom_mask": atom_mask.unsqueeze(0).repeat((batch_size, 1)),
         "start_atom_index": start_atom_index.unsqueeze(0).repeat((batch_size, 1)).int(),
         "num_atoms_per_token": num_atoms_per_token.unsqueeze(0)
         .repeat((batch_size, 1))
         .int(),
+        "atom_to_token_index": atom_to_token_index.unsqueeze(0).repeat((batch_size, 1)),
         "msa_mask": torch.ones((batch_size, n_msa, n_token)).float(),
-        "num_paired_seqs": torch.Tensor([int(n_msa / 2)]).int(),
-        "resolution": torch.Tensor([2.0]).float(),
-        "is_distillation": torch.BoolTensor([False]),
+        "num_paired_seqs": torch.randint(
+            low=n_msa // 4, high=n_msa // 2, size=(batch_size,)
+        ),
         "ground_truth": {
             "atom_positions": torch.randn((batch_size, n_atom, 3)).float(),
             "atom_resolved_mask": torch.ones((batch_size, n_atom)).float(),
         },
         "loss_weights": {
-            "bond": torch.Tensor([0.0]),
-            "smooth_lddt": torch.Tensor([4.0]),
-            "mse": torch.Tensor([4.0]),
-            "plddt": torch.Tensor([1e-4]),
-            "pde": torch.Tensor([1e-4]),
-            "experimentally_resolved": torch.Tensor([1e-4]),
-            "pae": torch.Tensor([0.0]),
-            "distogram": torch.Tensor([3e-2]),
+            "bond": torch.Tensor([0.0]).repeat(batch_size),
+            "smooth_lddt": torch.Tensor([4.0]).repeat(batch_size),
+            "mse": torch.Tensor([4.0]).repeat(batch_size),
+            "plddt": torch.Tensor([1e-4]).repeat(batch_size),
+            "pde": torch.Tensor([1e-4]).repeat(batch_size),
+            "experimentally_resolved": torch.Tensor([1e-4]).repeat(batch_size),
+            "pae": torch.Tensor([0.0]).repeat(batch_size),
+            "distogram": torch.Tensor([3e-2]).repeat(batch_size),
         },
     }

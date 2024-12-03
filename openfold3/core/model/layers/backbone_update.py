@@ -1,5 +1,3 @@
-from typing import Tuple
-
 import torch
 from torch import nn as nn
 
@@ -27,7 +25,7 @@ class BackboneUpdate(nn.Module):
 
         self.linear = Linear(self.c_s, 6, **linear_init_params.linear)
 
-    def forward(self, s: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, s: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             [*, N_res, C_s] single representation

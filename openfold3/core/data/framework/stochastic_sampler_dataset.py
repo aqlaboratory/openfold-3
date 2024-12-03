@@ -27,7 +27,8 @@ and highlight where you currently are in the process:
     batched data -> model
 """
 
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import torch
 from torch.utils.data import Dataset

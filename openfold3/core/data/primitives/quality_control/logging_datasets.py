@@ -17,27 +17,10 @@ import numpy as np
 import torch
 
 from openfold3.core.data.framework.single_datasets.pdb import WeightedPDBDataset
-from openfold3.core.data.pipelines.featurization.conformer import (
-    featurize_ref_conformers_af3,
-)
-from openfold3.core.data.pipelines.featurization.loss_weights import set_loss_weights
-from openfold3.core.data.pipelines.featurization.msa import featurize_msa_af3
-from openfold3.core.data.pipelines.featurization.structure import (
-    featurize_target_gt_structure_af3,
-)
-from openfold3.core.data.pipelines.featurization.template import (
-    featurize_templates_dummy_af3,
-)
-from openfold3.core.data.pipelines.sample_processing.conformer import (
-    get_reference_conformer_data_af3,
-)
-from openfold3.core.data.pipelines.sample_processing.msa import process_msas_cropped_af3
-from openfold3.core.data.pipelines.sample_processing.structure import (
-    process_target_structure_af3,
-)
 from openfold3.core.data.primitives.quality_control.asserts import ENSEMBLED_ASSERTS
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     F_NAME_ORDER,
+    PDB_ID,
     get_interface_string,
 )
 from openfold3.core.data.resources.residues import (
@@ -71,16 +54,6 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         self.save_statistics = save_statistics
         self.log_runtimes = log_runtimes
         self.log_memory = log_memory
-        # top-level pipelines for collecting runtimes
-        self.top_f = [
-            process_target_structure_af3,
-            featurize_target_gt_structure_af3,
-            process_msas_cropped_af3,
-            featurize_msa_af3,
-            featurize_templates_dummy_af3,
-            get_reference_conformer_data_af3,
-            featurize_ref_conformers_af3,
-        ]
         """
         The following attributes are set in the worker_init_function_with_logging
         on a per-worker basis:
@@ -97,16 +70,17 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         self, index: int
     ) -> dict[str : torch.Tensor | dict[str, torch.Tensor]]:
         """Returns a single datapoint from the dataset."""
+
         # Get PDB ID from the datapoint cache and the preferred chain/interface
         datapoint = self.datapoint_cache.iloc[index]
         pdb_id = datapoint["pdb_id"]
+        PDB_ID.set(pdb_id)
         preferred_chain_or_interface = datapoint["datapoint"]
-        features = {}
-        atom_array_cropped = None
+        sample_data = {}
 
         # Check if datapoint needs to be skipped
         if self.skip_datapoint(pdb_id, preferred_chain_or_interface):
-            return features
+            return {}
 
         self.logger.info(
             f"Processing datapoint {index}, PDB ID: {pdb_id}, preferred "
@@ -114,73 +88,10 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         )
 
         try:
-            # Target structure and duplicate-expanded GT structure features
-            atom_array_cropped, atom_array_gt, atom_array = (
-                process_target_structure_af3(
-                    target_structures_directory=self.target_structures_directory,
-                    pdb_id=pdb_id,
-                    crop_weights=self.crop_weights,
-                    token_budget=self.token_budget,
-                    preferred_chain_or_interface=preferred_chain_or_interface,
-                    structure_format="pkl",
-                    return_full_atom_array=True,
-                )
-            )
-            # NOTE that for now we avoid the need for permutation alignment by providing
-            # the cropped atom array as the ground truth atom array features.update(
-            # featurize_target_gt_structure_af3( atom_array_cropped, atom_array_gt,
-            #     self.token_budget ) )
-            features.update(
-                featurize_target_gt_structure_af3(
-                    atom_array_cropped, atom_array_cropped, self.token_budget
-                )
-            )
-
-            # MSA features
-            msa_processed = process_msas_cropped_af3(
-                alignments_directory=self.alignments_directory,
-                alignment_db_directory=self.alignment_db_directory,
-                alignment_index=self.alignment_index,
-                atom_array=atom_array_cropped,
-                data_cache_entry_chains=self.dataset_cache["structure_data"][pdb_id][
-                    "chains"
-                ],
-                max_seq_counts={
-                    "uniref90_hits": 10000,
-                    "uniprot_hits": 50000,
-                    "uniprot": 50000,
-                    "bfd_uniclust_hits": 1000000,
-                    "bfd_uniref_hits": 1000000,
-                    "mgnify_hits": 5000,
-                    "rfam_hits": 10000,
-                    "rnacentral_hits": 10000,
-                    "nucleotide_collection_hits": 10000,
-                },
-                token_budget=self.token_budget,
-                max_rows_paired=8191,
-            )
-            features.update(featurize_msa_af3(msa_processed))
-
-            # Dummy template features
-            features.update(
-                featurize_templates_dummy_af3(self.n_templates, self.token_budget)
-            )
-
-            # Reference conformer features
-            processed_reference_molecules = get_reference_conformer_data_af3(
-                atom_array=atom_array_cropped,
-                per_chain_metadata=self.dataset_cache["structure_data"][pdb_id][
-                    "chains"
-                ],
-                reference_mol_metadata=self.dataset_cache["reference_molecule_data"],
-                reference_mol_dir=self.reference_molecule_directory,
-            )
-            features.update(featurize_ref_conformers_af3(processed_reference_molecules))
-
-            # Loss switches
-            features["loss_weights"] = set_loss_weights(
-                self.loss_settings,
-                self.dataset_cache["structure_data"][pdb_id]["resolution"],
+            sample_data = self.create_all_features(
+                pdb_id=pdb_id,
+                preferred_chain_or_interface=preferred_chain_or_interface,
+                return_atom_arrays=True,
             )
 
             # Fetch recorded runtimes
@@ -194,9 +105,9 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 self.save_data_statistics(
                     pdb_id,
                     preferred_chain_or_interface,
-                    features,
-                    atom_array_cropped,
-                    atom_array,
+                    sample_data["features"],
+                    sample_data["atom_array_cropped"],
+                    sample_data["atom_array"],
                     runtimes,
                 )
 
@@ -218,22 +129,25 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 self.save_atom_array == "per_datapoint"
             ):
                 self.save_features_atom_array(
-                    features, atom_array_cropped, pdb_id, preferred_chain_or_interface
+                    sample_data["features"],
+                    sample_data["atom_array_cropped"],
+                    pdb_id,
+                    preferred_chain_or_interface,
                 )
 
             # Asserts
             if self.run_asserts:
                 self.assert_full_compliance(
                     index,
-                    atom_array_cropped,
+                    sample_data["atom_array_cropped"],
                     pdb_id,
                     preferred_chain_or_interface,
-                    features,
+                    sample_data["features"],
                     self.token_budget,
-                    self.n_templates,
+                    self.template.n_templates,
                 )
 
-            return features
+            return sample_data["features"]
 
         except Exception as e:
             # Catch all other errors
@@ -248,15 +162,18 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 | (self.save_atom_array == "on_error")
                 | (self.save_features == "per_datapoint")
                 | (self.save_atom_array == "per_datapoint")
-            ):
+            ) & all([i in sample_data for i in ["features", "atom_array_cropped"]]):
                 self.save_features_atom_array(
-                    features, atom_array_cropped, pdb_id, preferred_chain_or_interface
+                    sample_data["features"],
+                    sample_data["atom_array_cropped"],
+                    pdb_id,
+                    preferred_chain_or_interface,
                 )
             if self.save_full_traceback:
                 self.save_full_traceback_for_sample(
                     e, pdb_id, preferred_chain_or_interface
                 )
-            return features
+            return {}
 
         finally:
             pass
@@ -569,13 +486,13 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 else:
                     statistics += ["NaN", "NaN"]
 
-            # radius of gyration
-            for aa in full_aa:
-                if len(aa) > 0:
-                    aa_resolved = aa[~np.isnan(aa.coord).any(axis=1)]
-                    statistics += [struc.gyration_radius(aa_resolved)]
-                else:
-                    statistics += ["NaN"]
+            # # radius of gyration
+            # for aa in full_aa:
+            #     if len(aa) > 0:
+            #         aa_resolved = aa[~np.isnan(aa.coord).any(axis=1)]
+            #         statistics += [struc.gyration_radius(aa_resolved)]
+            #     else:
+            #         statistics += ["NaN"]
 
             # interface statistics
             for aa_a, aa_b in zip(
@@ -587,7 +504,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 per_moltype_aa,
             ):
                 if (len(aa_a) > 0) & (len(aa_b) > 0):
-                    statistics += [get_interface_string(aa_a, aa_b)]
+                    statistics += [get_interface_string(aa_a, aa_b, "NaN")]
                 else:
                     statistics += ["NaN"]
 
@@ -630,11 +547,16 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
     ) -> np.ndarray[float]:
         """Fetches sub-pipeline runtimes.
 
-        Each sub-pipeline variable is decorated with a wrapper which stores its
-        runtime and that of any child functions.
+        Runtimes are collected into a single runtime dict of the topmost level function
+        called directly in the getitem, which, by default, is create_all_features. To
+        log the runtime of a specific function called in the getitem, make sure that
+        1. it is decorated with the @log_runtime_memory decorator
+        2. all higher-level functions in which it is called are also decorated with
+        @log_runtime_memory
+        3. its key str is in the F_NAME_ORDER list in logging_utils
 
         Args:
-            top_f (list[callable]):
+            top_function_call (list[callable]):
                 A list of top-level sub-pipeline functions called in the getitem.
 
         Returns:
@@ -645,8 +567,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         # Sub-function runtimes are collected in the runtime attribute of the top-level
         # function wrapper directly
         runtime_dict = {}
-        for f in self.top_f:
-            runtime_dict.update(f.runtime)
+        runtime_dict.update(self.create_all_features.runtime)
 
         # Get runtimes in order - 0 for any non-called function
         runtimes = np.array([runtime_dict.get(n, 0.0) for n in F_NAME_ORDER])

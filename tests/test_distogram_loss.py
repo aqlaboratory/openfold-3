@@ -41,6 +41,9 @@ class TestDistogramLoss(unittest.TestCase):
                 "atom_resolved_mask": gt_atom_mask,
                 "atom_positions": gt_atom_positions,
             },
+            "loss_weights": {
+                "distogram": torch.Tensor([3e-2]),
+            },
         }
 
     def test_distogram_loss(self):
@@ -55,7 +58,7 @@ class TestDistogramLoss(unittest.TestCase):
 
         logits = torch.randn((batch_size, n_token, n_token, no_bins))
 
-        l = all_atom_distogram_loss(
+        l, _ = all_atom_distogram_loss(
             batch=batch, logits=logits, **config.architecture.loss_module.distogram
         )
 

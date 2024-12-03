@@ -1,6 +1,5 @@
 import importlib
 from pathlib import Path
-from typing import Dict
 
 import torch
 
@@ -15,10 +14,7 @@ from openfold3.core.metrics.validation_all_atom import (
     get_validation_metrics,
 )
 from openfold3.core.runners.model_runner import ModelRunner
-from openfold3.core.utils.atomize_utils import (
-    broadcast_token_feat_to_atoms,
-    get_token_frame_atoms,
-)
+from openfold3.core.utils.atomize_utils import get_token_frame_atoms
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects.af3_all_atom.config.base_config import project_config
@@ -86,6 +82,17 @@ class AlphaFold3AllAtom(ModelRunner):
 
         self._log(loss_breakdown, batch, outputs, train=False)
 
+    def transfer_batch_to_device(self, batch, device, dataloader_idx):
+        # This is to avoid slow loading for nested dicts in PL
+        # Less frequent hanging when non_blocking=True on H200
+        # TODO: Determine if this is really needed given other
+        #  recent hanging fixes
+        def to_device(t):
+            return t.to(device=device, non_blocking=True)
+
+        batch = tensor_tree_map(to_device, batch)
+        return batch
+
     def on_train_epoch_start(self):
         # At the start of each virtual epoch we want to resample the set of
         # datapoints to train on
@@ -138,7 +145,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
     def _compute_validation_metrics(
         self, batch, outputs, superimposition_metrics=False
-    ) -> Dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor]:
         # Computes validation metrics
         metrics = get_validation_metrics(batch, outputs, superimposition_metrics)
 
@@ -178,15 +185,10 @@ class AlphaFold3AllAtom(ModelRunner):
                 )
             )
 
-            # Expand token mask to atom mask
-            atom_mask = broadcast_token_feat_to_atoms(
-                token_mask=batch["token_mask"],
-                num_atoms_per_token=batch["num_atoms_per_token"],
-                token_feat=batch["token_mask"],
-            )
-
             _, valid_frame_mask = get_token_frame_atoms(
-                batch=batch, x=outputs["atom_positions_predicted"], atom_mask=atom_mask
+                batch=batch,
+                x=outputs["atom_positions_predicted"],
+                atom_mask=batch["atom_mask"],
             )
 
             # Compute weighted pTM score

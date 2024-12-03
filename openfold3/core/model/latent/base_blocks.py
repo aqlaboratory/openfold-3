@@ -21,7 +21,8 @@ the EvoformerStack, ExtraMSAStack, and MSAModule.
 
 import sys
 from abc import ABC, abstractmethod
-from typing import Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -165,7 +166,7 @@ class MSABlock(nn.Module, ABC):
         chunk_size: Optional[int] = None,
         inplace_safe: bool = False,
         _offload_inference: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute the Outer Product Mean.
 
         Used in the forward pass of the MSABlock.
@@ -211,7 +212,7 @@ class MSABlock(nn.Module, ABC):
         _attn_chunk_size: Optional[int] = None,
         _offload_inference: bool = False,
         _offloadable_inputs: Optional[Sequence[torch.Tensor]] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         pass
 
 

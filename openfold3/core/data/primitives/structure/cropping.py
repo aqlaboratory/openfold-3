@@ -19,6 +19,7 @@ from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
     remove_atom_indices,
 )
+from openfold3.core.data.primitives.structure.tokenization import add_token_positions
 
 
 def crop_contiguous(
@@ -354,7 +355,9 @@ def set_crop_mask(
     """Samples and applies cropping strategy to the input assembly and sets mask.
 
     Running this function on an AtomArray will add the 'crop_mask' annotation which is
-    True for atoms inside the crop and False for atoms outside the crop.
+    True for atoms inside the crop and False for atoms outside the crop. It will also
+    add the 'token_position' annotation which indexes the position of each token in the
+    crop and is necessary for mapping the crop to the alignments and templates.
 
     Args:
         atom_array (AtomArray):
@@ -369,7 +372,8 @@ def set_crop_mask(
             Dictionary of crop weights.
 
     Returns:
-        None. The 'crop_mask' annotation is added to the input AtomArray in-place.
+        None. The 'crop_mask' and 'token_position' annotations are added to the input
+        AtomArray in-place.
     """
 
     # Take whole assembly if it fits in the budget
@@ -387,3 +391,9 @@ def set_crop_mask(
         crop_function(
             **{k: v for k, v in crop_input.items() if k in crop_function_argnames}
         )
+
+    # TODO: This may break and was only temporarily set like this for an intermediate
+    # dev-merge
+    # Crop and renumber token positions for the cropped atom array
+    atom_array_cropped = atom_array[atom_array.crop_mask]
+    add_token_positions(atom_array_cropped)

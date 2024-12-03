@@ -3,20 +3,21 @@
 import os
 import string
 from collections import OrderedDict
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
+from biotite.structure import AtomArray
 
 from openfold3.core.data.io.sequence.fasta import parse_fasta
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
 from openfold3.core.data.primitives.sequence.msa import (
-    MsaCollection,
-    MsaParsed,
-    MsaSlice,
+    MsaArray,
+    MsaArrayCollection,
 )
+from openfold3.core.data.resources.residues import MoleculeType
 
 
 def _msa_list_to_np(msa: Sequence[str]) -> np.array:
@@ -37,7 +38,7 @@ def _msa_list_to_np(msa: Sequence[str]) -> np.array:
     return msa_array
 
 
-def parse_a3m(msa_string: str, max_seq_count: int | None = None) -> MsaParsed:
+def parse_a3m(msa_string: str, max_seq_count: int | None = None) -> MsaArray:
     """Parses sequences and deletion matrix from a3m format alignment.
 
     This function needs to be wrapped in a with open call to read the file.
@@ -74,7 +75,7 @@ def parse_a3m(msa_string: str, max_seq_count: int | None = None) -> MsaParsed:
     msa = _msa_list_to_np(msa)
     deletion_matrix = np.array(deletion_matrix)
 
-    parsed_msa = MsaParsed(msa=msa, deletion_matrix=deletion_matrix, metadata=metadata)
+    parsed_msa = MsaArray(msa=msa, deletion_matrix=deletion_matrix, metadata=metadata)
 
     # Crop the MSA
     if max_seq_count is not None:
@@ -83,7 +84,7 @@ def parse_a3m(msa_string: str, max_seq_count: int | None = None) -> MsaParsed:
     return parsed_msa
 
 
-def parse_stockholm(msa_string: str, max_seq_count: int | None = None) -> MsaParsed:
+def parse_stockholm(msa_string: str, max_seq_count: int | None = None) -> MsaArray:
     """Parses sequences and deletion matrix from stockholm format alignment.
 
     This function needs to be wrapped in a with open call to read the file.
@@ -144,7 +145,7 @@ def parse_stockholm(msa_string: str, max_seq_count: int | None = None) -> MsaPar
     deletion_matrix = np.array(deletion_matrix)
     metadata = list(name_to_sequence.keys())
 
-    parsed_msa = MsaParsed(msa=msa, deletion_matrix=deletion_matrix, metadata=metadata)
+    parsed_msa = MsaArray(msa=msa, deletion_matrix=deletion_matrix, metadata=metadata)
 
     # Crop the MSA
     if max_seq_count is not None:
@@ -158,7 +159,7 @@ MSA_PARSER_REGISTRY = {".a3m": parse_a3m, ".sto": parse_stockholm}
 
 def parse_msas_direct(
     folder_path: Path, max_seq_counts: dict[str, int] | None = None
-) -> dict[str, MsaParsed]:
+) -> dict[str, MsaArray]:
     """Parses a set of MSA files into a dictionary of Msa objects.
 
     This function is used to parse MSAs for a single chain.
@@ -176,6 +177,10 @@ def parse_msas_direct(
     """
     # Get all msa filepaths, filenames and extensions for a specific chain
     file_list = list(folder_path.iterdir())
+
+    # Subset to keys in max_seq_counts if provided
+    if max_seq_counts is not None:
+        file_list = [file for file in file_list if file.stem in max_seq_counts]
     msas = {}
 
     if len(file_list) == 0:
@@ -194,10 +199,6 @@ def parse_msas_direct(
                     f"alignment parsing, not {ext}."
                 )
 
-            # Only include files with specified max values in the max_seq_counts dict
-            if max_seq_counts is not None and basename not in max_seq_counts:
-                continue
-
             # Parse the MSAs with the appropriate parser
             with open(aln_file.absolute()) as f:
                 msas[basename] = MSA_PARSER_REGISTRY[ext](
@@ -211,7 +212,7 @@ def parse_msas_alignment_database(
     alignment_index_entry: dict,
     alignment_database_path: Path,
     max_seq_counts: dict[str, int] | None = None,
-) -> dict[str, MsaParsed]:
+) -> dict[str, MsaArray]:
     """Parses an entry from an alignment database into a dictionary of Msa objects.
 
     This function is used to parse MSAs for a single chain.
@@ -247,7 +248,7 @@ def parse_msas_alignment_database(
             basename, ext = os.path.splitext(file_name)
             if ext not in [".sto", ".a3m"]:
                 raise NotImplementedError(
-                    "Currently only .sto and .a3m file parsing is supported for"
+                    "Currently only .sto and .a3m file parsing is supported for "
                     f"alignment parsing, not {ext}."
                 )
 
@@ -262,23 +263,68 @@ def parse_msas_alignment_database(
     return msas
 
 
+def parse_msas_preparsed(
+    folder_path: Path,
+    rep_id: str,
+) -> dict[str, MsaArray]:
+    """Parses a pre-parsed .npz file into a dictionary of Msa objects.
+
+    This function is used to parse MSAs for a single chain.
+
+    Args:
+        folder_path (Path):
+            Path to the folder containing the pre-parsed npz files.
+        rep_id (str):
+            The representative ID of the chain.
+
+    Returns:
+        dict[str, MsaArray]:
+            A dict containing the parsed MSAs.
+    """
+    # Parse npz file of the representative
+    pre_parsed_msas = np.load(
+        folder_path / Path(f"{rep_id}.npz"),
+        allow_pickle=True,
+    )
+
+    # Unpack the pre-parsed MSA arrays into a dict of MsaArrays
+    msas = {}
+    for k in list(pre_parsed_msas.keys()):
+        unpacked_msas = pre_parsed_msas[k].item()
+        msas[k] = MsaArray(
+            msa=unpacked_msas["msa"],
+            deletion_matrix=unpacked_msas["deletion_matrix"],
+            metadata=unpacked_msas["metadata"],
+        )
+    return msas
+
+
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-parse")
 def parse_msas_sample(
+    pdb_id: str,
+    atom_array: AtomArray,
+    dataset_cache: dict,
     alignments_directory: Path | None,
     alignment_db_directory: Path | None,
     alignment_index: dict | None,
-    msa_slice: MsaSlice,
+    alignment_array_directory: Path | None,
     max_seq_counts: dict[str, int | float] | None = None,
-) -> MsaCollection:
+) -> MsaArrayCollection:
     """Parses MSA(s) for a training sample.
 
     This function is used to parse MSAs for a one or multiple chains, depending on the
     number of chains in the parsed PDB file and crop during training.
 
+    If multiple paths are provided (not set to None), the following is the priority
+    order:
+        1. alignment_array_directory (pre-parsed npz)
+        2. alignment_db_directory + alignment_index (alignment database files)
+        3. alignments_directory (raw a3m or sto files)
+
     Args:
         alignments_directory (Path | None):
-            Path to the lowest-level directory containing the directories of MSAs
-            per chain ID.
+            Path to the lowest-level directory containing the directories of MSAs per
+            chain ID.
         alignment_db_directory (Path | None):
             Path to the directory containing the alignment database or its shards AND
             the alignment database superindex file. If provided, it is used over
@@ -298,41 +344,66 @@ def parse_msas_sample(
         MsaCollection:
             A collection of Msa objects and chain IDs for a single sample.
     """
-    chain_rep_map = msa_slice.chain_rep_map
+    # Get subset of atom array with only protein and RNA chains
+    atom_array_with_alignments = atom_array[
+        np.isin(
+            atom_array.molecule_type_id,
+            [MoleculeType.PROTEIN, MoleculeType.RNA],
+        )
+    ]
+
+    # Map chain IDs to representative IDs and molecule types
+    chain_id_to_rep_id = {}
+    chain_id_to_mol_type = {}
+    for chain_id_in_atom_array in sorted(set(atom_array_with_alignments.chain_id)):
+        chain_data = dataset_cache["structure_data"][pdb_id]["chains"][
+            chain_id_in_atom_array
+        ]
+        chain_id_to_rep_id[chain_id_in_atom_array] = chain_data[
+            "alignment_representative_id"
+        ]
+        chain_id_to_mol_type[chain_id_in_atom_array] = chain_data["molecule_type"]
 
     # Parse MSAs for each representative ID
-    # This requires parsing MSAs for duplicate chains only once
-    representative_chain_ids = list(set(chain_rep_map.values()))
-    representative_msas = {}
-    for rep_id in representative_chain_ids:
-        if alignment_db_directory is not None:
-            representative_msas[rep_id] = parse_msas_alignment_database(
-                alignment_index_entry=alignment_index[rep_id],
-                alignment_database_path=alignment_db_directory,
-                max_seq_counts=max_seq_counts,
-            )
-        else:
-            representative_msas[rep_id] = parse_msas_direct(
-                folder_path=(alignments_directory / Path(rep_id)),
-                max_seq_counts=max_seq_counts,
-            )
+    rep_id_to_msa, rep_id_to_query_seq = {}, {}
+    if len(chain_id_to_rep_id) > 0:
+        # Parse MSAs for each representative ID
+        # This requires parsing MSAs for duplicate chains only once
+        representative_chain_ids = sorted(set(chain_id_to_rep_id.values()))
+        representative_msas = {}
+        for rep_id in representative_chain_ids:
+            if alignment_array_directory is not None:
+                representative_msas[rep_id] = parse_msas_preparsed(
+                    folder_path=alignment_array_directory,
+                    rep_id=rep_id,
+                )
+            elif alignment_db_directory is not None:
+                representative_msas[rep_id] = parse_msas_alignment_database(
+                    alignment_index_entry=alignment_index[rep_id],
+                    alignment_database_path=alignment_db_directory,
+                    max_seq_counts=max_seq_counts,
+                )
+            else:
+                representative_msas[rep_id] = parse_msas_direct(
+                    folder_path=(alignments_directory / Path(rep_id)),
+                    max_seq_counts=max_seq_counts,
+                )
 
-    # Reindex the parsed MSAs to the original chain IDs and calculate Msa length and
-    # pull out the query sequence
-    rep_msa_map, rep_seq_map, num_cols = {}, {}, {}
+        # Reindex the parsed MSAs to the original chain IDs and calculate Msa length and
+        # pull out the query sequence
+        for _, rep_id in sorted(chain_id_to_rep_id.items()):
+            all_msas_per_chain = representative_msas[rep_id]
+            example_msa = all_msas_per_chain[sorted(all_msas_per_chain.keys())[0]].msa
+            if rep_id not in rep_id_to_msa:
+                rep_id_to_msa[rep_id] = all_msas_per_chain
+                rep_id_to_query_seq[rep_id] = example_msa[0, :][np.newaxis, :]
 
-    for _, rep_id in chain_rep_map.items():
-        all_msas_per_chain = representative_msas[rep_id]
-        example_msa = all_msas_per_chain[next(iter(all_msas_per_chain))].msa
-        if rep_id not in rep_msa_map:
-            rep_msa_map[rep_id] = all_msas_per_chain
-            rep_seq_map[rep_id] = example_msa[0, :]
-            num_cols[rep_id] = example_msa.shape[1]
-
-    return MsaCollection(
-        rep_msa_map=rep_msa_map,
-        rep_seq_map=rep_seq_map,
-        chain_rep_map=chain_rep_map,
-        chain_to_molecule_type=msa_slice.chain_to_molecule_type,
-        num_cols=num_cols,
+    # Set msa collection to parsed, will be empty if no protein or RNA chains
+    msa_array_collection = MsaArrayCollection(
+        chain_id_to_rep_id=chain_id_to_rep_id,
+        chain_id_to_mol_type=chain_id_to_mol_type,
     )
+    msa_array_collection.set_state_parsed(
+        rep_id_to_msa=rep_id_to_msa, rep_id_to_query_seq=rep_id_to_query_seq
+    )
+    return msa_array_collection

@@ -1,4 +1,4 @@
-""" "Treadmill helper functions for configuring the worker init function."""
+"""Preprocessing helper functions for configuring the worker init function."""
 
 import logging
 from pathlib import Path
@@ -199,8 +199,8 @@ def configure_extra_data_file(
             "res-covmod-dna",
             "res-special-dna-crop",
             "res-covmod-dna-crop",
-            "gyration-radius",
-            "gyration-radius-crop",
+            # "gyration-radius",
+            # "gyration-radius-crop",
             "interface-protein-protein",
             "interface-protein-protein-crop",
             "interface-protein-rna",

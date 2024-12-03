@@ -403,7 +403,7 @@ FEATURE_OTHER_DTYPES = {
     "template_restype": torch.int32,
     "template_pseudo_beta_mask": torch.float32,
     "template_backbone_frame_mask": torch.float32,
-    "template_distogram": torch.int32,
+    "template_distogram": torch.float32,
     "template_unit_vector": torch.float32,
     "msa_mask": torch.float32,
     "num_recycles": torch.int32,

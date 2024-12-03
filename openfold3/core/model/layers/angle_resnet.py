@@ -1,5 +1,3 @@
-from typing import Tuple
-
 import torch
 from torch import nn as nn
 
@@ -98,7 +96,7 @@ class AngleResnet(nn.Module):
 
     def forward(
         self, s: torch.Tensor, s_initial: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             s:

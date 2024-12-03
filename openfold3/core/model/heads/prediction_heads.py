@@ -12,6 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Optional
+
 import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
@@ -19,6 +21,7 @@ from ml_collections import ConfigDict
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.latent.pairformer import PairFormerStack
 from openfold3.core.model.primitives import LayerNorm, Linear
+from openfold3.core.utils.atomize_utils import max_atom_per_token_masked_select
 
 
 class PairformerEmbedding(nn.Module):
@@ -80,7 +83,11 @@ class PairformerEmbedding(nn.Module):
         x_pred: torch.Tensor,
         single_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: int,
+        chunk_size: Optional[int] = None,
+        use_deepspeed_evo_attention: bool = False,
+        use_lma: bool = False,
+        inplace_safe: bool = False,
+        _mask_trans: bool = True,
     ):
         """
         Args:
@@ -99,6 +106,16 @@ class PairformerEmbedding(nn.Module):
             chunk_size:
                 Inference-time subbatch size. Acts as a minimum if
                 self.tune_chunk_size is True
+            use_deepspeed_evo_attention:
+                Whether to use DeepSpeed memory efficient kernel.
+                Mutually exclusive with use_lma.
+            use_lma:
+                Whether to use low-memory attention during inference.
+                Mutually exclusive with use_deepspeed_evo_attention.
+            inplace_safe:
+                Whether inplace operations can be performed
+            _mask_trans:
+                Whether to mask the output of the transition layers
 
         Returns:
             si:
@@ -128,7 +145,17 @@ class PairformerEmbedding(nn.Module):
         zij = zij + self.linear_distance(dij)
 
         # PairFormer embedding
-        si, zij = self.pairformer_stack(si, zij, single_mask, pair_mask, chunk_size)
+        si, zij = self.pairformer_stack(
+            si,
+            zij,
+            single_mask,
+            pair_mask,
+            chunk_size=chunk_size,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_lma=use_lma,
+            inplace_safe=inplace_safe,
+            _mask_trans=_mask_trans,
+        )
 
         return si, zij
 
@@ -263,16 +290,25 @@ class PerResidueLDDAllAtom(nn.Module):
             logits:
                 [*, N_atom, C_out] Logits
         """
-        batch_dims = s.shape[:-2]
         n_token = s.shape[-2]
-        out_flat_shape = (*batch_dims, n_token * self.max_atoms_per_token, self.c_out)
-        logits = self.linear(s).reshape(out_flat_shape)
 
-        # TODO: Fix this to work with batch size > 1
-        # The # of atoms will differ per sample and padding will need to be added
-        logits = torch.masked_select(
-            logits, max_atom_per_token_mask[..., None].bool()
-        ).reshape((*batch_dims, -1, self.c_out))
+        # Flatten batch dims
+        max_atom_per_token_mask = max_atom_per_token_mask.reshape(
+            -1, n_token * self.max_atoms_per_token
+        )
+
+        # [*, N_token, max_atoms_per_token * c_out]
+        logits = self.linear(s)
+
+        # [*, N_token * max_atoms_per_token, c_out]
+        logits = logits.reshape(-1, n_token * self.max_atoms_per_token, self.c_out)
+
+        # [*, N_atom, c_out]
+        logits = max_atom_per_token_masked_select(
+            atom_feat=logits,
+            max_atom_per_token_mask=max_atom_per_token_mask,
+        )
+
         return logits
 
 
@@ -366,16 +402,25 @@ class ExperimentallyResolvedHeadAllAtom(nn.Module):
             logits:
                 [*, N_atom, C_out] Logits
         """
-        batch_dims = s.shape[:-2]
         n_token = s.shape[-2]
-        out_flat_shape = (*batch_dims, n_token * self.max_atoms_per_token, self.c_out)
-        logits = self.linear(s).reshape(out_flat_shape)
 
-        # TODO: Fix this to work with batch size > 1
-        # The # of atoms will differ per sample and padding will need to be added
-        logits = torch.masked_select(
-            logits, max_atom_per_token_mask[..., None].bool()
-        ).reshape((*batch_dims, -1, self.c_out))
+        # Flatten batch dims
+        max_atom_per_token_mask = max_atom_per_token_mask.reshape(
+            -1, n_token * self.max_atoms_per_token
+        )
+
+        # [*, N_token, max_atoms_per_token * c_out]
+        logits = self.linear(s)
+
+        # [*, N_token * max_atoms_per_token, c_out]
+        logits = logits.reshape(-1, n_token * self.max_atoms_per_token, self.c_out)
+
+        # [*, N_atom, c_out]
+        logits = max_atom_per_token_masked_select(
+            atom_feat=logits,
+            max_atom_per_token_mask=max_atom_per_token_mask,
+        )
+
         return logits
 
 
