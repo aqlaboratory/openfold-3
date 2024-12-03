@@ -809,6 +809,8 @@ def map_to_paired_msa_per_chain(
 
         valid_rows = msa_rows != -1
         # Update MSA and deletion matrix with paired data
+
+        # the bug is somewhere before this code block
         paired_msa_per_chain[chain_id].msa[paired_row_index_of_chain != -1] = (
             msa_array.msa[msa_rows[valid_rows]]
         )
