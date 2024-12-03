@@ -10,11 +10,11 @@ jobs:
       
       # Check for linter compliance
       - name: Lint with Ruff
-        uses: chartboost/ruff-action@v1
+        uses: astral-sh/ruff-action@v1
 
       # Check for formatter compliance
       - name: Check formatting with Ruff
         if: always()
-        uses: chartboost/ruff-action@v1
+        uses: astral-sh/ruff-action@v1
         with:
           args: 'format --check'
