@@ -1,10 +1,10 @@
-from openfold3.core.data.io.sequence.msa import parse_a3m, parse_stockholm
-from multiprocessing import Pool
-from Bio import SeqIO
-from pathlib import Path
 import sys
-import tqdm
+from multiprocessing import Pool
+from pathlib import Path
 from typing import Callable
+from Bio import SeqIO
+from openfold3.core.data.io.sequence.msa import parse_a3m, parse_stockholm
+
 
 def check_msa(file: str, ref_seq: str, parser: Callable[str], db: str, pdb_id: str):
     """make sure MSA exists, and query sequence matches ground truth
@@ -12,30 +12,32 @@ def check_msa(file: str, ref_seq: str, parser: Callable[str], db: str, pdb_id: s
     Args:
         file (str): abs path to MSA file
         ref_seq (str): ground truth amino acid sequence
-        parser (Callable[str]): parsing function for MSA file. one of parse_a3m or parse_stockholm
+        parser (Callable[str]): parsing function for MSA file. one of parse_a3m 
+                                or parse_stockholm
         db (str): which database MSA searched
-        pdb_id (str): pdb_identifier for sequence. propagated from input fasta
+        pdb_id (str): pdb_identifier for sequence. propagated from 
+                      input fasta
 
     Returns:
-        str: output string with logging info 
+        str: logging info
     """
     if not Path(file).exists():
         return f"{pdb_id},{db},missing\n"
-    msa_array = parser(open(file).read())
+    with open(file) as f:
+        msa_array = parser(f.read())
     q_obs = "".join(msa_array.msa[0])
     if q_obs == ref_seq:
         return ""
     else:
         return f"{pdb_id},{db},corrupt\n"
 
-
 def validate(pdb_id: str, ref_seq: str, msa_dir: str, outfile: str):
-    """_summary_
-
+    """
     Args:
         pdb_id (str): pdb_identifier for sequence. propagated from input fasta
         ref_seq (str): ground truth amino acid sequence
-        msa_dir (str): folder that contains alignments. folder names need to match to ids in input fasta
+        msa_dir (str): folder that contains alignments. folder 
+                    vnames need to match to ids in input fasta
         outfile (str): path to logfile that tracks alignments that fail validation
     """
 
@@ -83,7 +85,8 @@ def main():
     fasta = sys.argv[1]  ## path to fasta of ground truth sequences
     msa_dir = sys.argv[
         2
-    ]  ## folder that contains alignments. folder names need to match to ids in input fasta
+    ]  ## folder that contains alignments. 
+       ## folder names need to match to ids in input fasta
     outfile = sys.argv[
         3
     ]  ## path to logfile that tracks alignments that fail validation
@@ -100,7 +103,5 @@ def main():
     with Pool(nworkers) as p:
         p.map(wrap_validate, batched_args)
 
-
 if __name__ == "__main__":
     main()
-
