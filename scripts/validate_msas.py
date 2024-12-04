@@ -5,7 +5,6 @@ from typing import Callable
 from Bio import SeqIO
 from openfold3.core.data.io.sequence.msa import parse_a3m, parse_stockholm
 
-
 def check_msa(file: str, ref_seq: str, parser: Callable[str], db: str, pdb_id: str):
     """make sure MSA exists, and query sequence matches ground truth
 
@@ -74,12 +73,10 @@ def validate(pdb_id: str, ref_seq: str, msa_dir: str, outfile: str):
         Path(f"{msa_dir}/{pdb_id}/VALID_DIR").touch()
     return
 
-
 def wrap_validate(arg_l):
     for args in arg_l:
         validate(*args)
     return
-
 
 def main():
     fasta = sys.argv[1]  ## path to fasta of ground truth sequences
@@ -105,3 +102,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
