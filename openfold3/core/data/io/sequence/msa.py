@@ -84,7 +84,9 @@ def parse_a3m(msa_string: str, max_seq_count: int | None = None) -> MsaArray:
     return parsed_msa
 
 
-def parse_stockholm(msa_string: str, max_seq_count: int | None = None, gap_symbols: set = set("-", ".")) -> MsaArray:
+def parse_stockholm(
+    msa_string: str, max_seq_count: int | None = None, gap_symbols: set | None = None
+) -> MsaArray:
     """Parses sequences and deletion matrix from stockholm format alignment.
 
     This function needs to be wrapped in a with open call to read the file.
@@ -95,12 +97,15 @@ def parse_stockholm(msa_string: str, max_seq_count: int | None = None, gap_symbo
             should be the query sequence.
         max_seq_count (int | None):
             The maximum number of sequences to parse from the file.
-        gap_symbols (set):
+        gap_symbols (set | None):
             Set of symbols that are considered as gaps in the alignment.
 
     Returns:
         Msa: A Msa object containing the sequences, deletion matrix and metadata.
     """
+
+    if gap_symbols is None:
+        gap_symbols = set("-", ".")
 
     # Parse each line into header: sequence dictionary
     name_to_sequence = OrderedDict()
