@@ -32,10 +32,10 @@ from openfold3.core.data.pipelines.sample_processing.msa import process_msas_cro
 from openfold3.core.data.pipelines.sample_processing.structure import (
     process_target_structure_af3,
 )
-from openfold3.core.data.primitives.dataset_cache.types import ClusteredDatasetCache
 from openfold3.core.data.pipelines.sample_processing.template import (
     process_template_structures_af3,
 )
+from openfold3.core.data.primitives.caches.format import ClusteredDatasetCache
 from openfold3.core.data.resources.residues import MoleculeType
 
 
