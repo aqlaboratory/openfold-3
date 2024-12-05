@@ -5,7 +5,7 @@ from dataclasses import asdict
 from datetime import date
 from pathlib import Path
 
-from openfold3.core.data.primitives.dataset_cache.types import (
+from openfold3.core.data.primitives.caches.format import (
     DataCache,
 )
 from openfold3.core.data.resources.residues import MoleculeType

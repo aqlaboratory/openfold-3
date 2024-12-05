@@ -9,7 +9,7 @@ from biotite.structure import AtomArray
 from rdkit.Chem import Mol
 
 from openfold3.core.data.io.structure.mol import read_single_annotated_sdf
-from openfold3.core.data.primitives.dataset_cache.types import (
+from openfold3.core.data.primitives.caches.format import (
     DatasetChainData,
     DatasetReferenceMoleculeData,
 )

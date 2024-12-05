@@ -12,10 +12,14 @@ from openfold3.core.data.io.dataset_cache import (
 from openfold3.core.data.io.sequence.fasta import (
     consolidate_preprocessed_fastas,
 )
-from openfold3.core.data.primitives.dataset_cache.clustering import (
+from openfold3.core.data.primitives.caches.clustering import (
     add_cluster_ids_and_sizes,
 )
-from openfold3.core.data.primitives.dataset_cache.metadata import (
+from openfold3.core.data.primitives.caches.format import (
+    PreprocessingDataCache,
+    PreprocessingStructureDataCache,
+)
+from openfold3.core.data.primitives.caches.metadata import (
     add_and_filter_alignment_representatives,
     build_provisional_clustered_dataset_cache,
     filter_by_max_polymer_chains,
@@ -24,10 +28,6 @@ from openfold3.core.data.primitives.dataset_cache.metadata import (
     filter_by_skipped_structures,
     func_with_n_filtered_chain_log,
     set_nan_fallback_conformer_flag,
-)
-from openfold3.core.data.primitives.dataset_cache.types import (
-    PreprocessingDataCache,
-    PreprocessingStructureDataCache,
 )
 
 logger = logging.getLogger(__name__)

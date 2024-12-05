@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from biotite.structure import AtomArray
 
-from openfold3.core.data.primitives.dataset_cache.types import DatasetChainData
+from openfold3.core.data.primitives.caches.format import DatasetChainData
 from openfold3.core.data.primitives.featurization.structure import get_token_starts
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
