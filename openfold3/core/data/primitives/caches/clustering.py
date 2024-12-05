@@ -8,11 +8,11 @@ from typing import Literal
 import pandas as pd
 
 from openfold3.core.data.io.sequence.fasta import write_multichain_fasta
-from openfold3.core.data.primitives.dataset_cache.metadata import (
+from openfold3.core.data.primitives.caches.format import ClusteredDatasetCache
+from openfold3.core.data.primitives.caches.metadata import (
     get_all_cache_chains,
     logger,
 )
-from openfold3.core.data.primitives.dataset_cache.types import ClusteredDatasetCache
 from openfold3.core.data.resources.residues import MoleculeType
 
 

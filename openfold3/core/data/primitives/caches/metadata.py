@@ -9,7 +9,7 @@ from pathlib import Path
 from openfold3.core.data.io.sequence.fasta import (
     read_multichain_fasta,
 )
-from openfold3.core.data.primitives.dataset_cache.types import (
+from openfold3.core.data.primitives.caches.format import (
     ChainData,
     ClusteredDatasetCache,
     ClusteredDatasetChainData,
