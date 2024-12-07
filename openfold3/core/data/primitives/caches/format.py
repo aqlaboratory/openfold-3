@@ -274,6 +274,7 @@ class ChainInterfaceReferenceMolCache(DatasetCache):
     _structure_data_format: dataclass = None
     _ref_mol_data_format: dataclass = DatasetReferenceMoleculeData
 
+    @classmethod
     def from_json(cls, file: Path) -> ChainInterfaceReferenceMolCache:
         """Constructor to format a json into this dataclass structure."""
         if any(
