@@ -146,9 +146,9 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 alignment_db_directory=self.alignment_db_directory,
                 alignment_index=self.alignment_index,
                 atom_array=atom_array_cropped,
-                data_cache_entry_chains=self.dataset_cache["structure_data"][pdb_id][
-                    "chains"
-                ],
+                data_cache_entry_chains=self.dataset_cache.structure_data[
+                    pdb_id
+                ].chains,
                 max_seq_counts=self.msa.max_seq_counts,
                 token_budget=self.token_budget,
                 max_rows_paired=self.msa.max_rows_paired,
@@ -181,10 +181,8 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             # Reference conformer features
             processed_reference_molecules = get_reference_conformer_data_af3(
                 atom_array=atom_array_cropped,
-                per_chain_metadata=self.dataset_cache["structure_data"][pdb_id][
-                    "chains"
-                ],
-                reference_mol_metadata=self.dataset_cache["reference_molecule_data"],
+                per_chain_metadata=self.dataset_cache.structure_data[pdb_id].chains,
+                reference_mol_metadata=self.dataset_cache.reference_molecule_data,
                 reference_mol_dir=self.reference_molecule_directory,
             )
             features.update(featurize_ref_conformers_af3(processed_reference_molecules))
@@ -192,7 +190,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             # Loss switches
             features["loss_weights"] = set_loss_weights(
                 self.loss_settings,
-                self.dataset_cache["structure_data"][pdb_id]["resolution"],
+                self.dataset_cache.structure_data[pdb_id].resolution,
             )
 
             # Fetch recorded runtimes
