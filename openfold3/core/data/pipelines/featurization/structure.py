@@ -8,9 +8,9 @@ from biotite.structure import AtomArray
 
 from openfold3.core.data.primitives.featurization.padding import pad_token_dim
 from openfold3.core.data.primitives.featurization.structure import (
+    create_atom_to_token_index,
     create_sym_id,
     create_token_bonds,
-    create_token_mask,
     encode_one_hot,
     extract_starts_entities,
 )
@@ -20,8 +20,9 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
 from openfold3.core.data.resources.residues import (
     STANDARD_RESIDUES_WITH_GAP_3,
     MoleculeType,
-    get_with_unknown_3,
+    get_with_unknown_3_to_idx,
 )
+from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 
 
 def featurize_structure_af3(
@@ -71,7 +72,7 @@ def featurize_structure_af3(
         create_sym_id(entity_ids, atom_array, token_starts), dtype=torch.int32
     )
     restype_index = torch.tensor(
-        get_with_unknown_3(atom_array.res_name[token_starts]), dtype=torch.int64
+        get_with_unknown_3_to_idx(atom_array.res_name[token_starts]), dtype=torch.int64
     )
     features["restype"] = encode_one_hot(
         restype_index, len(STANDARD_RESIDUES_WITH_GAP_3)
@@ -99,19 +100,32 @@ def featurize_structure_af3(
     )
 
     # Masks
-    features["token_mask"] = create_token_mask(len(token_starts), token_budget)
+    features["token_mask"] = torch.ones(len(token_starts), dtype=torch.float32)
 
     # Atomization
     features["num_atoms_per_token"] = torch.tensor(
         np.diff(token_starts_with_stop),
         dtype=torch.int32,
     )
+
     features["start_atom_index"] = torch.tensor(
         token_starts,
         dtype=torch.int32,
     )
+
     features["is_atomized"] = torch.tensor(
         atom_array.is_atomized[token_starts], dtype=torch.int32
+    )
+
+    features["atom_mask"] = broadcast_token_feat_to_atoms(
+        token_mask=features["token_mask"],
+        num_atoms_per_token=features["num_atoms_per_token"],
+        token_feat=features["token_mask"],
+    )
+
+    features["atom_to_token_index"] = create_atom_to_token_index(
+        token_mask=features["token_mask"],
+        num_atoms_per_token=features["num_atoms_per_token"],
     )
 
     # Ground-truth-specific features
@@ -172,6 +186,7 @@ def featurize_target_gt_structure_af3(
         "num_atoms_per_token": [-1],
         "is_atomized": [-1],
         "start_atom_index": [-1],
+        "token_mask": [-1],
     }
     features_target = featurize_structure_af3(
         atom_array_cropped,

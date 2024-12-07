@@ -233,17 +233,9 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         token_mask = batch["token_mask"]
         pair_mask = token_mask[..., None] * token_mask[..., None, :]
 
-        # Expand token mask to atom mask
-        atom_mask = broadcast_token_feat_to_atoms(
-            token_mask=token_mask,
-            num_atoms_per_token=batch["num_atoms_per_token"],
-            token_feat=token_mask,
-        )
-
-        # TODO: Check why this gets a CUDA index error sometimes
         # Get representative atoms
         repr_x_pred, repr_x_mask = get_token_representative_atoms(
-            batch=batch, x=atom_positions_predicted, atom_mask=atom_mask
+            batch=batch, x=atom_positions_predicted, atom_mask=batch["atom_mask"]
         )
 
         # Embed trunk outputs

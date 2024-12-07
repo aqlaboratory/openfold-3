@@ -100,7 +100,7 @@ def broadcast_token_feat_to_atoms(
 
 def aggregate_atom_feat_to_tokens(
     token_mask: torch.Tensor,
-    num_atoms_per_token: torch.Tensor,
+    atom_to_token_index: torch.Tensor,
     atom_mask: torch.Tensor,
     atom_feat: torch.Tensor,
     atom_dim: Optional[int] = -1,
@@ -112,8 +112,8 @@ def aggregate_atom_feat_to_tokens(
     Args:
         token_mask:
             [*, N_token] Token mask
-        num_atoms_per_token:
-            [*, N_token] Number of atoms per token
+        atom_to_token_index:
+            [*, N_atom] Mapping from atom to its token index
         atom_mask:
             [*, N_atom] Atom mask
         atom_feat:
@@ -132,18 +132,9 @@ def aggregate_atom_feat_to_tokens(
     feat_dims = atom_feat.shape[atom_dim:][1:]
     atom_feat = atom_feat * atom_mask.reshape(atom_mask.shape + (1,) * len(feat_dims))
 
-    # Construct atom to token index
-    assert atom_mask.shape[:-1] == batch_dims
-    token_index = (
-        torch.arange(n_token, device=token_mask.device, dtype=token_mask.dtype)
-        .reshape((*((1,) * len(batch_dims)), n_token))
-        .repeat((*batch_dims, 1))
-    )
-    atom_to_token_index = broadcast_token_feat_to_atoms(
-        token_mask=token_mask,
-        num_atoms_per_token=num_atoms_per_token,
-        token_feat=token_index,
-    )
+    # Mask out atoms that are not part of the structure
+    # Padding value must be greater than the largest index so that it
+    # is properly excluded from the aggregation
     atom_to_token_index = atom_to_token_index * atom_mask + n_token * torch.ones_like(
         atom_to_token_index
     ) * (1 - atom_mask)

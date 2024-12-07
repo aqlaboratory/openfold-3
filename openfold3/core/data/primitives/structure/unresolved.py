@@ -175,7 +175,7 @@ def build_unresolved_polymer_segment(
             with the original dtypes in the AtomArray.
     """
     if polymer_type == "nucleic_acid":
-        logger.info("Building unresolved nucleic acid segment!")  # dev-only: del later
+        logger.debug("Building unresolved nucleic acid segment!")  # dev-only: del later
 
     default_annotations = reference_atom._annot.copy()
     default_annotations["ins_code"] = ""

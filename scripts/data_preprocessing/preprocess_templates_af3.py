@@ -7,6 +7,7 @@ import click
 
 from openfold3.core.data.pipelines.preprocessing.template import (
     create_template_cache_af3,
+    create_template_seq_cache_af3,
     filter_template_cache_af3,
 )
 
@@ -268,7 +269,19 @@ def main(
 
     # Run
     if not filter_only:
-        logging.info("Creating the template cache.")
+        logging.info("1/3: Creating the template sequence cache.")
+        create_template_seq_cache_af3(
+            template_structures_directory=template_structures_directory,
+            template_cache_directory=template_cache_directory,
+            template_file_format=template_file_format,
+            num_workers=num_workers,
+            log_level=log_level,
+            log_to_file=log_to_file,
+            log_to_console=log_to_console,
+            log_dir=template_cache_directory.parent / Path("template_seq_logs"),
+        )
+
+        logging.info("2/3: Creating the template cache.")
         create_template_cache_af3(
             dataset_cache_file=dataset_cache_file,
             template_alignment_directory=template_alignment_directory,
@@ -291,7 +304,7 @@ def main(
             f"from {template_cache_directory}."
         )
 
-    logging.info("Filtering the template cache.")
+    logging.info("3/3: Filtering the template cache.")
     filter_template_cache_af3(
         dataset_cache_file=dataset_cache_file,
         updated_dataset_cache_file=updated_dataset_cache_file,

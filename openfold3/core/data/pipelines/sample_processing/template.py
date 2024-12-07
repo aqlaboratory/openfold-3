@@ -12,7 +12,7 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
 )
 from openfold3.core.data.primitives.structure.template import (
     TemplateSliceCollection,
-    map_token_pos_to_templates,
+    align_template_to_query,
     sample_templates,
 )
 from openfold3.core.data.resources.residues import MoleculeType
@@ -82,7 +82,7 @@ def process_template_structures_af3(
         )
 
         # Map token positions to template atom arrays
-        template_slices[chain_id] = map_token_pos_to_templates(
+        template_slices[chain_id] = align_template_to_query(
             sampled_template_data,
             template_structures_directory,
             template_file_format,

@@ -18,6 +18,9 @@ import numpy as np
 import torch
 from scipy.spatial.transform import Rotation
 
+from openfold3.core.data.primitives.featurization.structure import (
+    create_atom_to_token_index,
+)
 from openfold3.core.np.token_atom_constants import (
     DNA_NUCLEOTIDE_TYPES,
     PROTEIN_RESTYPES,
@@ -181,6 +184,14 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ):
         (torch.zeros((1,)), torch.cumsum(num_atoms_per_token, dim=-1)[:-1]), dim=-1
     )
 
+    token_mask = torch.ones(n_token).float()
+    atom_mask = torch.ones(n_atom).float()
+
+    atom_to_token_index = create_atom_to_token_index(
+        token_mask=token_mask,
+        num_atoms_per_token=num_atoms_per_token,
+    ).int()
+
     asym_id = (
         torch.Tensor(random_asym_ids(n_token)).unsqueeze(0).repeat((batch_size, 1))
     )
@@ -232,11 +243,13 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ):
         # Bond features
         "token_bonds": torch.ones((batch_size, n_token, n_token)).int(),
         # Additional features
-        "token_mask": torch.ones((batch_size, n_token)).float(),
+        "token_mask": token_mask.unsqueeze(0).repeat((batch_size, 1)),
+        "atom_mask": atom_mask.unsqueeze(0).repeat((batch_size, 1)),
         "start_atom_index": start_atom_index.unsqueeze(0).repeat((batch_size, 1)).int(),
         "num_atoms_per_token": num_atoms_per_token.unsqueeze(0)
         .repeat((batch_size, 1))
         .int(),
+        "atom_to_token_index": atom_to_token_index.unsqueeze(0).repeat((batch_size, 1)),
         "msa_mask": torch.ones((batch_size, n_msa, n_token)).float(),
         "num_paired_seqs": torch.randint(
             low=n_msa // 4, high=n_msa // 2, size=(batch_size,)

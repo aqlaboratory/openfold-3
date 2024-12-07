@@ -4,6 +4,7 @@ import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
 
+from openfold3.core.data.primitives.featurization.structure import get_token_starts
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
@@ -18,6 +19,25 @@ from openfold3.core.data.resources.residues import (
     TOKEN_CENTER_ATOMS,
     MoleculeType,
 )
+
+
+def add_token_positions(atom_array: AtomArray) -> None:
+    """Adds token_position annotation to the input atom array.
+
+    Args:
+        atom_array (AtomArray):
+            AtomArray of the input assembly.
+    """
+    # Create token ID to token position mapping
+    token_starts = get_token_starts(atom_array)
+    token_positions_map = {
+        token: position
+        for position, token in enumerate(atom_array[token_starts].token_id)
+    }
+
+    # Map token ID to token position for all atoms and add annotation
+    token_positions = np.vectorize(token_positions_map.get)(atom_array.token_id)
+    atom_array.set_annotation("token_position", token_positions)
 
 
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-token")
@@ -236,5 +256,8 @@ def tokenize_atom_array(atom_array: AtomArray):
     # Remove temporary atom & residue indices
     remove_atom_indices(atom_array)
     atom_array.del_annotation("aux_residue_id")
+
+    # Add token_position annotation
+    add_token_positions(atom_array)
 
     return None
