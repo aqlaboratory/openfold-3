@@ -244,7 +244,7 @@ def build_provisional_clustered_dataset_cache(
                 cluster_id="",
                 cluster_size=0,
                 alignment_representative_id=None,
-                template_ids=None,  # added in a separate script
+                template_ids=None,  # added in a separate script after
             )
 
         # Add interface cluster data with dummy values
