@@ -261,10 +261,7 @@ class WeightedPDBDataset(SingleDataset):
                     entry,
                     interface_chains,
                     chain_moltypes,
-                    interface_chains,
-                    chain_moltypes,
                     DatapointType.INTERFACE,
-                    cluster_size,
                     cluster_size,
                 )
 
