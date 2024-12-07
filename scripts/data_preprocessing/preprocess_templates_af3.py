@@ -283,7 +283,7 @@ def main(
             log_level=log_level,
             log_to_file=log_to_file,
             log_to_console=log_to_console,
-            log_dir=template_cache_directory.parent / Path("template_construct_logs"),
+            log_dir=template_cache_directory.parent / "template_construct_logs",
         )
     else:
         logging.info(
@@ -303,7 +303,7 @@ def main(
         log_level=log_level,
         log_to_file=log_to_file,
         log_to_console=log_to_console,
-        log_dir=template_cache_directory.parent / Path("template_filter_logs"),
+        log_dir=template_cache_directory.parent / "template_filter_logs",
         max_release_date=max_release_date,
         min_release_date_diff=min_release_date_diff,
     )
