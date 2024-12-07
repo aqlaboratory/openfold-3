@@ -4,9 +4,7 @@ from pathlib import Path
 
 from biotite.structure import AtomArray
 
-from openfold3.core.data.io.sequence.msa import (
-    parse_msas_sample,
-)
+from openfold3.core.data.io.sequence.msa import parse_msas_sample
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
