@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TypedDict
+from typing import TypeAlias
 
 import openfold3.core.data.io.dataset_cache as io
 from openfold3.core.data.resources.residues import MoleculeType
@@ -155,12 +155,6 @@ class PreprocessingDataCache:
         io.write_datacache_to_json(self, file)
 
 
-class PreprocessingStructureDataCache(TypedDict):
-    """Structure data cache from preprocessing metadata_cache."""
-
-    pdb_id: PreprocessingStructureData
-
-
 @dataclass
 class PreprocessingStructureData:
     """Structure-wise data from preprocessing metadata_cache."""
@@ -170,6 +164,10 @@ class PreprocessingStructureData:
     resolution: float | None
     chains: dict[str, PreprocessingChainData] | None
     interfaces: list[tuple[str, str]] | None
+
+
+PreprocessingStructureDataCache: TypeAlias = dict[str, PreprocessingStructureData]
+"""Structure data cache from preprocessing metadata_cache."""
 
 
 @dataclass
@@ -183,12 +181,6 @@ class PreprocessingChainData:
     reference_mol_id: str | None  # only set for ligands
 
 
-class PreprocessingReferenceMoleculeCache(TypedDict):
-    """ "Reference molecule data cache from preprocessing metadata_cache."""
-
-    ref_mol_id: PreprocessingReferenceMoleculeData
-
-
 @dataclass
 class PreprocessingReferenceMoleculeData:
     """Reference molecule data from preprocessing metadata_cache."""
@@ -196,6 +188,11 @@ class PreprocessingReferenceMoleculeData:
     conformer_gen_strategy: str
     fallback_conformer_pdb_id: str | None
     canonical_smiles: str
+
+
+PreprocessingReferenceMoleculeCache: TypeAlias = dict[
+    str, PreprocessingReferenceMoleculeData
+]
 
 
 # ==============================================================================
@@ -233,14 +230,6 @@ class DatasetChainData:
     pass
 
 
-# Reference molecule data should be the same for all datasets so we provide it here as a
-# general template.
-class DatasetReferenceMoleculeCache(TypedDict):
-    """Format that every Dataset format's reference molecule cache should have."""
-
-    ref_mol_id: DatasetReferenceMoleculeData
-
-
 # TODO: Set fallback to NaN could be removed from here in the future?
 @dataclass
 class DatasetReferenceMoleculeData:
@@ -250,6 +239,11 @@ class DatasetReferenceMoleculeData:
     fallback_conformer_pdb_id: str | None
     canonical_smiles: str
     set_fallback_to_nan: bool
+
+
+# Reference molecule data should be the same for all datasets so we provide it here as a
+# general type.
+DatasetReferenceMoleculeCache: TypeAlias = dict[str, DatasetReferenceMoleculeData]
 
 
 # ==============================================================================
@@ -381,10 +375,8 @@ class ClusteredDatasetStructureData:
     interfaces: dict[str, ClusteredDatasetInterfaceData]
 
 
-class ClusteredDatasetStructureDataCache(TypedDict):
-    """Structure data cache with cluster information."""
-
-    pdb_id: ClusteredDatasetStructureData
+ClusteredDatasetStructureDataCache: TypeAlias = dict[str, ClusteredDatasetStructureData]
+"""Structure data cache with cluster information."""
 
 
 @register_datacache
