@@ -14,6 +14,7 @@ from openfold3.core.data.framework.single_datasets.abstract_single_dataset impor
     SingleDataset,
     register_dataset,
 )
+from openfold3.core.data.io.dataset_cache import read_datacache
 from openfold3.core.data.pipelines.featurization.conformer import (
     featurize_ref_conformers_af3,
 )
@@ -35,7 +36,6 @@ from openfold3.core.data.pipelines.sample_processing.structure import (
 from openfold3.core.data.pipelines.sample_processing.template import (
     process_template_structures_af3,
 )
-from openfold3.core.data.primitives.caches.format import ClusteredDatasetCache
 from openfold3.core.data.resources.residues import MoleculeType
 
 
@@ -207,7 +207,7 @@ class WeightedPDBDataset(SingleDataset):
 
         # Dataset/datapoint cache
         self.datapoint_cache = {}
-        self.dataset_cache = ClusteredDatasetCache.from_json(
+        self.dataset_cache = read_datacache(
             dataset_config["dataset_paths"]["dataset_cache_file"]
         )
         self.create_datapoint_cache()

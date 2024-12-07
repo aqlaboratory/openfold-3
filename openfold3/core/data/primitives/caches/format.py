@@ -7,15 +7,44 @@ from datetime import datetime
 from pathlib import Path
 from typing import TypedDict
 
-from openfold3.core.data.io.dataset_cache import write_datacache_to_json
+import openfold3.core.data.io.dataset_cache as io
 from openfold3.core.data.resources.residues import MoleculeType
 
+# This holds a mapping of the string name of all dataset cache classes to their actual
+# class object. This string name is additionally stored with every dataset cache as its
+# "_type" attribute, which is also written out to the JSON when saving a dataset cache.
+# This has the benefit that every downstream script can easily infer which class to use
+# to read the JSON file into a fully instantiated datacache object of the appropriate
+# type.
+# The mapping is populated anytime a new DataCache class is defined and registered with
+# the register_datacache decorator.
+DATASET_CACHE_CLASS_REGISTRY = {}
 
+
+# TODO: Could make post-init check that this is set
+def register_datacache(cls):
+    """Register a specific DataCache class in the DATASET_CACHE_CLASS_REGISTRY.
+
+    Args:
+        cls (Type[DataCache]): The class to register
+
+    Returns:
+        Type[DataCache]: The registered class
+    """
+    DATASET_CACHE_CLASS_REGISTRY[cls.__name__] = cls
+    cls._registered = True
+    cls._type = cls.__name__
+    return cls
+
+
+# TODO: Actually update the preprocessing code to use this class, currently it's only
+# used in the training dataset logic
 # ==============================================================================
 # PREPROCESSING CACHE
 # ==============================================================================
 # This is the cache that gets created by the preprocessing script, and is usually used
 # to create the other dataset caches for training / validation.
+@register_datacache
 @dataclass
 class PreprocessingDataCache:
     """Complete data cache from preprocessing metadata_cache."""
@@ -37,6 +66,12 @@ class PreprocessingDataCache:
         """
         # Load in dict format
         metadata_cache_dict = json.loads(file.read_text())
+
+        # Remove _type field (already an internal private attribute so shouldn't be
+        # defined as an explicit field)
+        if "_type" in metadata_cache_dict:
+            # This is conditional for legacy compatibility, should be removed after
+            del metadata_cache_dict["_type"]
 
         # Format the structure data
         structure_data_cache = {}
@@ -109,8 +144,7 @@ class PreprocessingDataCache:
             structure_data=structure_data_cache,
             reference_molecule_data=reference_molecule_data_cache,
         )
-    
-    
+
     def to_json(self, file: Path) -> None:
         """Write the metadata cache to a JSON file.
 
@@ -118,7 +152,7 @@ class PreprocessingDataCache:
             file:
                 Path to the JSON file to write the metadata cache to.
         """
-        write_datacache_to_json(self, file)
+        io.write_datacache_to_json(self, file)
 
 
 class PreprocessingStructureDataCache(TypedDict):
@@ -173,7 +207,7 @@ class PreprocessingReferenceMoleculeData:
 class DatasetCache(ABC):
     """Format that every Dataset Cache should have."""
 
-    name: str
+    name: str  # for referencing in dataset config
     structure_data: dataclass
     reference_molecule_data: dataclass
 
@@ -182,7 +216,6 @@ class DatasetCache(ABC):
     def from_json(cls, file: Path) -> DatasetCache:
         raise NotImplementedError("This method should be implemented in subclasses.")
 
-
     def to_json(self, file: Path) -> None:
         """Write the dataset cache to a JSON file.
 
@@ -190,12 +223,13 @@ class DatasetCache(ABC):
             file:
                 Path to the JSON file to write the dataset cache to.
         """
-        write_datacache_to_json(self, file)
+        io.write_datacache_to_json(self, file)
 
 
 @dataclass
 class DatasetChainData:
     """Central class for chain-wise data that can be used for general type-hinting."""
+
     pass
 
 
@@ -207,9 +241,10 @@ class DatasetReferenceMoleculeCache(TypedDict):
     ref_mol_id: DatasetReferenceMoleculeData
 
 
+# TODO: Set fallback to NaN could be removed from here in the future?
 @dataclass
 class DatasetReferenceMoleculeData:
-    """Fields for general Dataset reference molecule data should have."""
+    """Fields that every Dataset format's reference molecule data should have."""
 
     conformer_gen_strategy: str
     fallback_conformer_pdb_id: str | None
@@ -257,6 +292,12 @@ class ChainInterfaceReferenceMolCache(DatasetCache):
 
         with open(file) as f:
             data = json.load(f)
+
+        # Remove _type field (already an internal private attribute so shouldn't be
+        # defined as an explicit field)
+        if "_type" in data:
+            # This is conditional for legacy compatibility, should be removed after
+            del data["_type"]
 
         name = data["name"]
 
@@ -346,6 +387,7 @@ class ClusteredDatasetStructureDataCache(TypedDict):
     pdb_id: ClusteredDatasetStructureData
 
 
+@register_datacache
 @dataclass
 class ClusteredDatasetCache(ChainInterfaceReferenceMolCache):
     """Full data cache for clustered dataset.
