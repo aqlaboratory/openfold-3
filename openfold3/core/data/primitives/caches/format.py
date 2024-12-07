@@ -10,6 +10,9 @@ from typing import TypeAlias
 import openfold3.core.data.io.dataset_cache as io
 from openfold3.core.data.resources.residues import MoleculeType
 
+# TODO: Revisit in future if this registry is still needed after template script
+# refactor
+
 # This holds a mapping of the string name of all dataset cache classes to their actual
 # class object. This string name is additionally stored with every dataset cache as its
 # "_type" attribute, which is also written out to the JSON when saving a dataset cache.
