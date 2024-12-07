@@ -349,7 +349,7 @@ class PDBChainData(DatasetChainData):
     molecule_type: MoleculeType
     reference_mol_id: str | None  # only set for ligands
     alignment_representative_id: str | None  # not set for ligands and DNA
-    template_ids: list[str] | None = None  # only set for proteins
+    template_ids: list[str] | None  # only set for proteins
 
 
 # CLUSTERED DATASET FORMAT (e.g. PDB-weighted)
