@@ -6,6 +6,7 @@ import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFFile
 
+from openfold3.core.data.primitives.caches.format import DatasetCache
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
@@ -23,7 +24,7 @@ def process_template_structures_af3(
     n_templates: int,
     take_top_k: bool,
     template_cache_directory: Path,
-    dataset_cache: dict,
+    dataset_cache: DatasetCache,
     pdb_id: str,
     template_structures_directory: Path,
     template_file_format: str,

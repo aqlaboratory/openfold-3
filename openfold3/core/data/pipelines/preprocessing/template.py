@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+from openfold3.core.data.io.dataset_cache import read_datacache
 from openfold3.core.data.io.sequence.template import parse_hmmsearch_sto
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     TEMPLATE_PROCESS_LOGGER,
@@ -467,8 +468,7 @@ def create_template_cache_af3(
         log_dir.mkdir(parents=True, exist_ok=True)
 
     # Parse list of chains from metadata cache
-    with open(dataset_cache_file) as f:
-        dataset_cache = json.load(f)
+    dataset_cache = read_datacache(dataset_cache_file)
     template_query_iterator = parse_representatives(dataset_cache, True).entries
 
     # Create template cache for each query chain
@@ -795,8 +795,7 @@ def filter_template_cache_af3(
         log_dir.mkdir(parents=True, exist_ok=True)
 
     # Parse list of chains from metadata cache
-    with open(dataset_cache_file) as f:
-        dataset_cache = json.load(f)
+    dataset_cache = read_datacache(dataset_cache_file)
     template_query_iterator = parse_representatives(
         dataset_cache, is_core_train
     ).entries
@@ -828,17 +827,16 @@ def filter_template_cache_af3(
         ):
             # Update dataset cache with list of valid template representative IDs
             for (pdb_id, chain_id), valid_template_list in valid_templates.items():
-                dataset_cache["structure_data"][pdb_id]["chains"][chain_id][
-                    "template_ids"
-                ] = valid_template_list
+                dataset_cache.structure_data[pdb_id].chains[
+                    chain_id
+                ].template_ids = valid_template_list
 
             if (idx + 1) % save_frequency == 0:
                 with open(updated_dataset_cache_file, "w") as f:
                     json.dump(dataset_cache, f, indent=4)
 
     # Save final complete dataset cache
-    with open(updated_dataset_cache_file, "w") as f:
-        json.dump(dataset_cache, f, indent=4)
+    dataset_cache.to_json(updated_dataset_cache_file)
 
     # Collate data logs
     collate_data_logs(template_cache_directory, "full_data_log_filtered_cache.tsv")

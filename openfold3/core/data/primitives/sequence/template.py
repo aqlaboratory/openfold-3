@@ -12,6 +12,7 @@ from biotite.structure.io.pdbx import CIFFile
 from openfold3.core.data.io.sequence.fasta import read_multichain_fasta
 from openfold3.core.data.io.sequence.template import TemplateHit
 from openfold3.core.data.io.structure.cif import parse_mmcif
+from openfold3.core.data.primitives.caches.format import DatasetCache
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     TEMPLATE_PROCESS_LOGGER,
 )
@@ -56,7 +57,7 @@ class _TemplateQueryIterator:
 
 
 def parse_representatives(
-    dataset_cache: dict,
+    dataset_cache: DatasetCache,
     is_core_train: bool,
 ) -> _TemplateQueryIterator:
     """Extracts the chain ID mappings and release dates from the dataset cache.
@@ -65,7 +66,7 @@ def parse_representatives(
     to reduce the runtimes for the latter.
 
     Args:
-        dataset_cache (dict):
+        dataset_cache (DatasetCache):
             The precomputed dataset cache.
         is_core_train (bool):
             Parser mode. One of "construct", "filter_core_train", "filter_distillation".
@@ -80,33 +81,31 @@ def parse_representatives(
         return _TemplateQueryIterator(
             entries=[
                 _TemplateQueryEntry(
-                    chain_data["alignment_representative_id"],
-                    _DatedQueryEntry(
-                        f"{pdb_id}_{chain_id}", entry_data["release_date"]
-                    ),
+                    chain_data.alignment_representative_id,
+                    _DatedQueryEntry(f"{pdb_id}_{chain_id}", entry_data.release_date),
                 )
-                for pdb_id, entry_data in dataset_cache["structure_data"].items()
-                for chain_id, chain_data in entry_data["chains"].items()
-                if (chain_data["molecule_type"] == "PROTEIN")
+                for pdb_id, entry_data in dataset_cache.structure_data.items()
+                for chain_id, chain_data in entry_data.chains.items()
+                if (chain_data.molecule_type == "PROTEIN")
             ],
         )
     else:
         entries = {}
-        for pdb_id, entry_data in dataset_cache["structure_data"].items():
-            for chain_id, chain_data in entry_data["chains"].items():
-                if chain_data["molecule_type"] == "PROTEIN":
-                    rep_id = chain_data["alignment_representative_id"]
+        for pdb_id, entry_data in dataset_cache.structure_data.items():
+            for chain_id, chain_data in entry_data.chains.items():
+                if chain_data.molecule_type == "PROTEIN":
+                    rep_id = chain_data.alignment_representative_id
                     if rep_id not in entries:
                         entries[rep_id] = []
                         entries[rep_id].append(
                             _DatedQueryEntry(
-                                f"{pdb_id}_{chain_id}", entry_data["release_date"]
+                                f"{pdb_id}_{chain_id}", entry_data.release_date
                             )
                         )
                     else:
                         entries[rep_id].append(
                             _DatedQueryEntry(
-                                f"{pdb_id}_{chain_id}", entry_data["release_date"]
+                                f"{pdb_id}_{chain_id}", entry_data.release_date
                             )
                         )
         return _TemplateQueryIterator(
