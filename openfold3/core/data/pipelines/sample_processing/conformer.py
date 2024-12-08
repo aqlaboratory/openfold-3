@@ -9,6 +9,10 @@ from biotite.structure import AtomArray
 from rdkit.Chem import Mol
 
 from openfold3.core.data.io.structure.mol import read_single_annotated_sdf
+from openfold3.core.data.primitives.caches.format import (
+    DatasetChainData,
+    DatasetReferenceMoleculeData,
+)
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
@@ -113,7 +117,8 @@ def get_processed_reference_conformer(
 
     ## Overwrite the fallback conformer with a new conformer if possible
     if preferred_confgen_strategy != "use_fallback":
-        # If the new conformer generation fails, the fallback conformer is used
+        # If the new conformer generation fails, the below code is skipped and the
+        # fallback conformer is used
         with contextlib.suppress(ConformerGenerationError):
             if preferred_confgen_strategy == "default":
                 # Try with default, then use random init, then use fallback (technically
@@ -147,8 +152,8 @@ def get_processed_reference_conformer(
 @log_runtime_memory(runtime_dict_key="runtime-ref-conf-proc")
 def get_ref_conformer_data_af3(
     atom_array: AtomArray,
-    per_chain_metadata: dict,
-    reference_mol_metadata: dict,
+    per_chain_metadata: DatasetChainData,
+    reference_mol_metadata: DatasetReferenceMoleculeData,
     reference_mol_dir: Path,
 ) -> list[ProcessedReferenceMolecule]:
     """Extracts reference conformer data from AtomArray.
@@ -156,9 +161,9 @@ def get_ref_conformer_data_af3(
     Args:
         atom_array (AtomArray):
             Atom array of the whole crop.
-        per_chain_metadata (dict):
+        per_chain_metadata (DatasetChainData):
             The "chains" subdictionary of the particular target's dataset cache entry.
-        reference_mol_metadata (dict):
+        reference_mol_metadata (DatasetReferenceMoleculeData):
             The "reference_molecule_data" subdictionary of the dataset cache.
         reference_mol_dir (Path):
             Path to the directory containing the reference molecule .sdf files generated
@@ -178,7 +183,7 @@ def get_ref_conformer_data_af3(
     for chain_array in struc.chain_iter(atom_array):
         chain_id = chain_array.chain_id[0]
 
-        ref_mol_id = per_chain_metadata[chain_id].get("reference_mol_id", None)
+        ref_mol_id = per_chain_metadata[chain_id].reference_mol_id
 
         # Entire chain corresponds to a single reference molecule (e.g. a ligand chain)
         if ref_mol_id is not None:
@@ -190,7 +195,10 @@ def get_ref_conformer_data_af3(
                     ref_mol_id,
                     mol,
                     chain_array,
-                    reference_mol_metadata[ref_mol_id]["conformer_gen_strategy"],
+                    reference_mol_metadata[ref_mol_id].conformer_gen_strategy,
+                    set_fallback_to_nan=reference_mol_metadata[
+                        ref_mol_id
+                    ].set_fallback_to_nan,
                 )
             )
         # Decompose the chain into individual residues and their reference molecules
@@ -205,7 +213,10 @@ def get_ref_conformer_data_af3(
                         ref_mol_id,
                         mol,
                         residue_array,
-                        reference_mol_metadata[ref_mol_id]["conformer_gen_strategy"],
+                        reference_mol_metadata[ref_mol_id].conformer_gen_strategy,
+                        set_fallback_to_nan=reference_mol_metadata[
+                            ref_mol_id
+                        ].set_fallback_to_nan,
                     )
                 )
 

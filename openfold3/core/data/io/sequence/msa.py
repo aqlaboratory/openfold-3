@@ -356,13 +356,11 @@ def parse_msas_sample(
     chain_id_to_rep_id = {}
     chain_id_to_mol_type = {}
     for chain_id_in_atom_array in sorted(set(atom_array_with_alignments.chain_id)):
-        chain_data = dataset_cache["structure_data"][pdb_id]["chains"][
-            chain_id_in_atom_array
-        ]
-        chain_id_to_rep_id[chain_id_in_atom_array] = chain_data[
-            "alignment_representative_id"
-        ]
-        chain_id_to_mol_type[chain_id_in_atom_array] = chain_data["molecule_type"]
+        chain_data = dataset_cache.structure_data[pdb_id].chains[chain_id_in_atom_array]
+        chain_id_to_rep_id[chain_id_in_atom_array] = (
+            chain_data.alignment_representative_id
+        )
+        chain_id_to_mol_type[chain_id_in_atom_array] = chain_data.molecule_type
 
     # Parse MSAs for each representative ID
     rep_id_to_msa, rep_id_to_query_seq = {}, {}
