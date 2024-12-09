@@ -44,6 +44,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         save_statistics=None,
         log_runtimes=None,
         log_memory=None,
+        subset_to_examples=None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -54,6 +55,8 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         self.save_statistics = save_statistics
         self.log_runtimes = log_runtimes
         self.log_memory = log_memory
+        if subset_to_examples is not None or len(subset_to_examples) > 0:
+            self.subset_examples(subset_to_examples)
         """
         The following attributes are set in the worker_init_function_with_logging
         on a per-worker basis:
@@ -582,3 +585,29 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             )
 
         return runtimes
+
+    def subset_examples(self, subset_to_examples: str) -> None:
+        """Subsets the dataset_cache and datapoint_cache to a subset of examples.
+
+        Args:
+            subset_to_examples (str):
+                Comma-separated list of PDB IDs to subset the dataset_cache and
+                datapoint_cache to.
+        """
+        # Format input
+        subset_to_examples = (
+            subset_to_examples.split(",")
+            if ((subset_to_examples is not None) or (len(subset_to_examples) > 0))
+            else subset_to_examples
+        )
+
+        # Subset dataset_cache
+        structure_data = {
+            ex: self.dataset_cache.structure_data[ex] for ex in subset_to_examples
+        }
+        self.dataset_cache.structure_data = structure_data
+
+        # Subset datapoint_cache
+        self.datapoint_cache = self.datapoint_cache[
+            self.datapoint_cache["pdb_id"].isin(subset_to_examples)
+        ]

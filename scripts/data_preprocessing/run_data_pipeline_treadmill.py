@@ -190,6 +190,15 @@ np.set_printoptions(threshold=sys.maxsize)
         "logging_utils.F_NAME_ORDER will be profiled."
     ),
 )
+@click.option(
+    "--subset-to-examples",
+    default="",
+    type=str,
+    help=(
+        "Comma separated list of PDB IDs use to subset the dataset cache to run "
+        "asserts on."
+    ),
+)
 def main(
     runner_yml_file: Path,
     seed: int,
@@ -204,6 +213,7 @@ def main(
     log_runtimes: bool,
     log_memory: bool,
     mem_profiled_func_keys: str | None,
+    subset_to_examples: str,
 ) -> None:
     """Main function for running the data pipeline treadmill.
 
@@ -245,6 +255,9 @@ def main(
             memory_profile.log file in log-output-directory.
         mem_profiled_func_keys (list[str] | None):
             List of function keys for which to profile memory.
+        subset_to_examples: (str)
+            Comma separated list of PDB IDs use to subset the dataset cache to run
+            asserts on.
 
     Raises:
         ValueError:
@@ -289,6 +302,7 @@ def main(
         save_statistics=save_statistics,
         log_runtimes=log_runtimes,
         log_memory=log_memory,
+        subset_to_examples=subset_to_examples,
         dataset_config=data_module_config.datasets[0].config,
     )
 
