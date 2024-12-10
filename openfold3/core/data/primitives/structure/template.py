@@ -208,7 +208,7 @@ def parse_template_structure(
     template_pdb_id: str,
     template_chain_id: str,
     template_file_format: str,
-    ccd: CIFFile,
+    ccd: CIFFile | None,
 ) -> AtomArray:
     """Parses the template structure for the given chain.
 
@@ -224,7 +224,7 @@ def parse_template_structure(
             The chain ID of the template chain.
         template_file_format (str):
             The format of the template structures.
-        ccd (CIFFile):
+        ccd (CIFFile | None):
             Parsed CCD file.
 
     Raises:
@@ -374,7 +374,7 @@ def align_template_to_query(
     template_structures_directory: Path | None,
     template_structure_array_directory: Path | None,
     template_file_format: str,
-    ccd: CIFFile,
+    ccd: CIFFile | None,
     atom_array_query_chain: AtomArray,
 ) -> list[AtomArray]:
     """Identifies the subset of atoms in the template that align to the query crop.
@@ -389,7 +389,7 @@ def align_template_to_query(
             arrays are stored.
         template_file_format (str):
             The format of the template structures.
-        ccd (CIFFile):
+        ccd (CIFFile | None):
             Parsed CCD file.
         atom_array_query_chain (AtomArray):
             The cropped atom array containing atoms of the current protein chain.).

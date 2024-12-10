@@ -29,7 +29,7 @@ def process_template_structures_af3(
     template_structures_directory: Path | None,
     template_structure_array_directory: Path | None,
     template_file_format: str,
-    ccd: CIFFile,
+    ccd: CIFFile | None,
 ) -> TemplateSliceCollection:
     """Processes template structures for all chains of a given target structure.
 
@@ -58,7 +58,7 @@ def process_template_structures_af3(
             arrays are stored.
         template_file_format (str):
             The format of the template files.
-        ccd (CIFFile):
+        ccd (CIFFile | None):
             The parsed CCD file.
 
     Returns:

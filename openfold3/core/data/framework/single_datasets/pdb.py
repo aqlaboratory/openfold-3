@@ -224,8 +224,14 @@ class WeightedPDBDataset(SingleDataset):
         self.create_datapoint_cache()
         self.datapoint_probabilities = self.datapoint_cache["weight"].to_numpy()
 
-        # CCD
-        self.ccd = pdbx.CIFFile.read(dataset_config["dataset_paths"]["ccd_file"])
+        # CCD - only used if template structures are not preprocessed
+        if (
+            dataset_config["dataset_paths"]["template_structure_array_directory"]
+            is not None
+        ):
+            self.ccd = None
+        else:
+            self.ccd = pdbx.CIFFile.read(dataset_config["dataset_paths"]["ccd_file"])
 
         # Dataset configuration
         self.crop_weights = dataset_config["crop_weights"]
