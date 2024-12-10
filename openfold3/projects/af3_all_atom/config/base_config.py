@@ -498,6 +498,7 @@ project_config = mlc.ConfigDict(
                     "reference_molecule_directory": PLACEHOLDER_PATH,
                     "template_cache_directory": PLACEHOLDER_PATH,
                     "template_structures_directory": PLACEHOLDER_PATH,
+                    "template_structure_array_directory": PLACEHOLDER_PATH,
                     "template_file_format": PLACEHOLDER_PATH,
                     "ccd_file": PLACEHOLDER_PATH,
                 },

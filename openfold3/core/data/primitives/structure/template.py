@@ -1,6 +1,7 @@
 """Primitives for processing templates structures."""
 
 import dataclasses
+import pickle as pkl
 from pathlib import Path
 
 import biotite.structure as struc
@@ -199,12 +200,78 @@ def subset_template_index_map(
 
 
 @log_runtime_memory(
+    runtime_dict_key="runtime-template-proc-align-parse", multicall=True
+)
+def parse_template_structure(
+    template_structures_directory: Path | None,
+    template_structure_array_directory: Path | None,
+    template_pdb_id: str,
+    template_chain_id: str,
+    template_file_format: str,
+    ccd: CIFFile,
+) -> AtomArray:
+    """Parses the template structure for the given chain.
+
+    Args:
+        template_structures_directory (Path | None):
+            The directory where the raw template structures are stored.
+        template_structure_array_directory (Path | None):
+            The directory where the preparsed and pre-processed template structure
+            arrays are stored.
+        template_pdb_id (str):
+            The PDB ID of the template structure.
+        template_chain_id (str):
+            The chain ID of the template chain.
+        template_file_format (str):
+            The format of the template structures.
+        ccd (CIFFile):
+            Parsed CCD file.
+
+    Raises:
+        ValueError:
+            If neither template_structure_array_directory nor
+            template_structures_directory is provided.
+
+    Returns:
+        AtomArray:
+            The cleaned up template atom array for the given chain.
+    """
+    # Parse the pre-parsed template structure array
+    if template_structure_array_directory is not None:
+        with open(
+            template_structure_array_directory
+            / Path(f"{template_pdb_id}/{template_pdb_id}_{template_chain_id}.pkl"),
+            "rb",
+        ) as f:
+            atom_array_template_chain = pkl.load(f)
+    # Parse and clean the raw template structure file
+    elif template_structures_directory is not None:
+        # Parse the full template assembly and subset assembly to template chain
+        cif_file, atom_array_template_assembly = parse_mmcif(
+            template_structures_directory
+            / Path(f"{template_pdb_id}.{template_file_format}")
+        )
+
+        # Clean up the template atom array and subset to the chosen template chain
+        atom_array_template_chain = clean_template_atom_array(
+            atom_array_template_assembly, cif_file, template_chain_id, ccd
+        )
+    else:
+        raise ValueError(
+            "Either template_structure_array_directory or "
+            "template_structures_directory must be provided."
+        )
+
+    return atom_array_template_chain
+
+
+@log_runtime_memory(
     runtime_dict_key="runtime-template-proc-align-clean", multicall=True
 )
 def clean_template_atom_array(
     atom_array_template_assembly: AtomArray,
     cif_file: CIFFile,
-    template_chain_id: str,
+    template_chain_id: str | None,
     ccd: CIFFile,
 ) -> AtomArray:
     """Cleans up the template atom array for the given chain.
@@ -223,22 +290,23 @@ def clean_template_atom_array(
         AtomArray:
             The cleaned up template atom array for the given chain.
     """
-    # Clean up template atom array
-    atom_array_template_assembly = remove_waters(atom_array_template_assembly)
-    atom_array_template_assembly = remove_hydrogens(atom_array_template_assembly)
-    atom_array_template_assembly = remove_non_CCD_atoms(
-        atom_array_template_assembly, ccd
-    )
-    atom_array_template_assembly = add_unresolved_atoms(
-        atom_array_template_assembly, get_cif_block(cif_file), ccd
-    )
-
     # Get matching chain from the template assembly using the PDB assigned chain ID
-    atom_array_template_chain = atom_array_template_assembly[
-        atom_array_template_assembly.label_asym_id == template_chain_id
-    ]
+    if template_chain_id is not None:
+        atom_array_template = atom_array_template_assembly[
+            atom_array_template_assembly.label_asym_id == template_chain_id
+        ]
+    else:
+        atom_array_template = atom_array_template_assembly
 
-    return atom_array_template_chain
+    # Clean up template atom array
+    atom_array_template = remove_waters(atom_array_template)
+    atom_array_template = remove_hydrogens(atom_array_template)
+    atom_array_template = remove_non_CCD_atoms(atom_array_template, ccd)
+    atom_array_template = add_unresolved_atoms(
+        atom_array_template, get_cif_block(cif_file), ccd
+    )
+
+    return atom_array_template
 
 
 @log_runtime_memory(runtime_dict_key="runtime-template-proc-align-map", multicall=True)
@@ -303,7 +371,8 @@ def map_token_pos_to_template_residues(
 @log_runtime_memory(runtime_dict_key="runtime-template-proc-align", multicall=True)
 def align_template_to_query(
     sampled_template_data: dict[str, TemplateCacheEntry] | dict[None],
-    template_structures_directory: Path,
+    template_structures_directory: Path | None,
+    template_structure_array_directory: Path | None,
     template_file_format: str,
     ccd: CIFFile,
     atom_array_query_chain: AtomArray,
@@ -315,6 +384,9 @@ def align_template_to_query(
             The sampled template data per chain given chain.
         template_structures_directory (Path):
             The directory where the template structures are stored.
+        template_structure_array_directory (Path):
+            The directory where the preparsed and pre-processed template structure
+            arrays are stored.
         template_file_format (str):
             The format of the template structures.
         ccd (CIFFile):
@@ -342,15 +414,14 @@ def align_template_to_query(
         # Parse template IDs
         template_pdb_id, template_chain_id = template_pdb_chain_id.split("_")
 
-        # Parse the full template assembly
-        cif_file, atom_array_template_assembly = parse_mmcif(
-            template_structures_directory
-            / Path(f"{template_pdb_id}.{template_file_format}")
-        )
-
-        # Clean up the template atom array and subset to the chosen template chain
-        atom_array_template_chain = clean_template_atom_array(
-            atom_array_template_assembly, cif_file, template_chain_id, ccd
+        # Parse the template structure
+        atom_array_template_chain = parse_template_structure(
+            template_structures_directory,
+            template_structure_array_directory,
+            template_pdb_id,
+            template_chain_id,
+            template_file_format,
+            ccd,
         )
 
         # Create query token position to template residue ID map

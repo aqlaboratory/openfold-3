@@ -206,6 +206,9 @@ class WeightedPDBDataset(SingleDataset):
         self.template_structures_directory = dataset_config["dataset_paths"][
             "template_structures_directory"
         ]
+        self.template_structure_array_directory = dataset_config["dataset_paths"][
+            "template_structure_array_directory"
+        ]
         self.template_file_format = dataset_config["dataset_paths"][
             "template_file_format"
         ]
@@ -362,6 +365,7 @@ class WeightedPDBDataset(SingleDataset):
             dataset_cache=self.dataset_cache,
             pdb_id=pdb_id,
             template_structures_directory=self.template_structures_directory,
+            template_structure_array_directory=self.template_structure_array_directory,
             template_file_format=self.template_file_format,
             ccd=self.ccd,
         )

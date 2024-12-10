@@ -98,19 +98,28 @@ F_NAME_ORDER = [
     "runtime-msa-proc-homo-mono",
     "runtime-msa-proc-create-paired",
     "runtime-msa-proc-create-main",
+    "runtime-msa-feat-precursor",
     "runtime-template-proc-sample",
     "runtime-template-proc-align",
     "runtime-ref-conf-proc-fetch",
     # 5th-level functions
+    "runtime-msa-feat-precursor-rowcount",
+    "runtime-msa-feat-precursor-profile-del-mean",
+    "runtime-msa-feat-precursor-crop-vstack",
+    "runtime-msa-feat-precursor-create-token-mapper",
+    "runtime-msa-feat-precursor-map",
+    "runtime-template-proc-align-parse",
+    "runtime-template-proc-align-map",
+    # 6th-level functions
     "runtime-parse-mmcif",
     "runtime-template-proc-align-clean",
-    "runtime-template-proc-align-map",
 ]
 
 
 """
-See function call hierarchy for profiled functions below.
-Starred functions are called multiple times in a single context.
+See function call hierarchy for profiled functions below. Lower-level functions called 
+within other functions are indented. Starred functions are called multiple times in a 
+single context. Double-starred functions are conditionally ran.
 
 runtime-create-all-features
     runtime-create-target-structure-features
@@ -128,12 +137,19 @@ runtime-create-all-features
             runtime-msa-proc-create-paired
             runtime-msa-proc-create-main
         runtime-msa-feat
+            runtime-msa-feat-precursor
+                runtime-msa-feat-precursor-rowcount
+                runtime-msa-feat-precursor-profile-del-mean (* per chain)
+                runtime-msa-feat-precursor-crop-vstack (* per chain)
+                runtime-msa-feat-precursor-create-token-mapper (* per chain)
+                runtime-msa-feat-precursor-map (* per chain)
     runtime-create-template-features
         runtime-template-proc
             runtime-template-proc-sample (* per chain)
             runtime-template-proc-align (* per chain)
-                runtime-parse-mmcif (* per chain per template)
-                runtime-template-proc-align-clean (* per chain per template)
+                runtime-template-proc-align-parse (* per chain per template)
+                    runtime-parse-mmcif (* per chain per template, **)
+                    runtime-template-proc-align-clean (* per chain per template, **)
                 runtime-template-proc-align-map" (* per chain per template)
         runtime-template-feat
     runtime-create-ref-conf-features

@@ -55,6 +55,7 @@ class MsaTokenMapper:
     res_id: np.ndarray[int]
 
 
+@log_runtime_memory(runtime_dict_key="runtime-msa-feat-precursor-rowcount")
 def calculate_row_counts(
     msa_array_collection: MsaArrayCollection, max_rows: int, max_rows_paired: int
 ) -> tuple[int, int, dict[str, int]]:
@@ -145,6 +146,9 @@ def calculate_profile_per_column(
     return res_full_alphabet_counts / msa_array.shape[0]
 
 
+@log_runtime_memory(
+    runtime_dict_key="runtime-msa-feat-precursor-profile-del-mean", multicall=True
+)
 def calculate_profile_del_mean(
     msa_array_collection: MsaArrayCollection,
     chain_id: str,
@@ -172,13 +176,16 @@ def calculate_profile_del_mean(
     return profile, del_mean
 
 
+@log_runtime_memory(
+    runtime_dict_key="runtime-msa-feat-precursor-crop-vstack", multicall=True
+)
 def crop_vstack_msa_arrays(
     msa_array_collection: MsaArrayCollection,
     chain_id: str,
     n_rows: int,
     n_rows_paired_cropped: int,
     n_rows_main: dict[str, int],
-) -> MsaArray:
+) -> tuple[MsaArray, np.ndarray]:
     # Query stays the same
     msa_array_vstack = msa_array_collection.chain_id_to_query_seq[chain_id]
 
@@ -201,9 +208,18 @@ def crop_vstack_msa_arrays(
             axis=0,
         )
 
-    return msa_array_vstack
+    # Pad bottom of stacked MSA to max(1 + n paired + n main) across all chains
+    # and use padding to also create MSA mask for the chain
+    msa_array_vstack, msa_array_vstack_mask = msa_array_vstack.pad(
+        target_length=n_rows, axis=0
+    )
+
+    return msa_array_vstack, msa_array_vstack_mask
 
 
+@log_runtime_memory(
+    runtime_dict_key="runtime-msa-feat-precursor-create-token-mapper", multicall=True
+)
 def create_msa_token_mapper(atom_array: AtomArray, chain_id: str) -> MsaTokenMapper:
     # Token positions
     atom_array_chain = atom_array[atom_array.chain_id == chain_id]
@@ -216,6 +232,7 @@ def create_msa_token_mapper(atom_array: AtomArray, chain_id: str) -> MsaTokenMap
     return MsaTokenMapper(chain_token_positions, res_ids)
 
 
+@log_runtime_memory(runtime_dict_key="runtime-msa-feat-precursor-map", multicall=True)
 def map_msas_to_tokens(
     msa_feature_precursor: MsaFeaturePrecursorAF3,
     msa_array_vstack: MsaArray,
@@ -247,7 +264,7 @@ def map_msas_to_tokens(
     ]
 
 
-@log_runtime_memory(runtime_dict_key="runtime-msa-proc-apply-crop")
+@log_runtime_memory(runtime_dict_key="runtime-msa-feat-precursor")
 def create_msa_feature_precursor_af3(
     atom_array: AtomArray,
     msa_array_collection: MsaArrayCollection,
@@ -301,20 +318,13 @@ def create_msa_feature_precursor_af3(
             )
 
             # Crop and vertically stack query, paired MSA and main MSA arrays
-            msa_array_vstack = crop_vstack_msa_arrays(
+            msa_array_vstack, msa_array_vstack_mask = crop_vstack_msa_arrays(
                 msa_array_collection,
                 chain_id,
                 n_rows,
                 n_rows_paired_cropped,
                 n_rows_main,
             )
-
-            # Pad bottom of stacked MSA to max(1 + n paired + n main) across all chains
-            # and use padding to also create MSA mask for the chain
-            msa_array_vstack, msa_array_vstack_mask = msa_array_vstack.pad(
-                target_length=n_rows, axis=0
-            )
-
             # Get token positions and repeats from the atomarray of the chain
             msa_token_mapper = create_msa_token_mapper(atom_array, chain_id)
 
