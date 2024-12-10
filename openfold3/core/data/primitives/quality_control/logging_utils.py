@@ -78,7 +78,7 @@ F_NAME_ORDER = [
     "runtime-create-target-structure-features",
     "runtime-create-msa-features",
     "runtime-create-template-features",
-    "runtime-create-ref-conf-features",  # not yet implemented
+    "runtime-create-ref-conf-features",
     # 3rd-level functions
     "runtime-target-structure-proc",
     "runtime-target-structure-feat",
@@ -89,20 +89,58 @@ F_NAME_ORDER = [
     "runtime-ref-conf-proc",
     "runtime-ref-conf-feat",
     # 4th-level functions
-    # target structure
     "runtime-target-structure-proc-parse",
     "runtime-target-structure-proc-token",
     "runtime-target-structure-proc-crop",
     "runtime-target-structure-proc-expand",
-    # MSA
     "runtime-msa-proc-parse",
     "runtime-msa-proc-create-query",
     "runtime-msa-proc-homo-mono",
     "runtime-msa-proc-create-paired",
     "runtime-msa-proc-create-main",
-    # template
-    # reference conformers
+    "runtime-template-proc-sample",
+    "runtime-template-proc-align",
+    "runtime-ref-conf-proc-fetch",
+    # 5th-level functions
+    "runtime-parse-mmcif",
+    "runtime-template-proc-align-clean",
+    "runtime-template-proc-align-map",
 ]
+
+
+"""
+See function call hierarchy for profiled functions below.
+Starred functions are called multiple times in a single context.
+
+runtime-create-all-features
+    runtime-create-target-structure-features
+        runtime-target-structure-proc
+            runtime-target-structure-proc-parse
+            runtime-target-structure-proc-token
+            runtime-target-structure-proc-crop
+            runtime-target-structure-proc-expand
+        runtime-target-structure-feat
+    runtime-create-msa-features
+        runtime-msa-proc
+            runtime-msa-proc-parse
+            runtime-msa-proc-create-query
+            runtime-msa-proc-homo-mono
+            runtime-msa-proc-create-paired
+            runtime-msa-proc-create-main
+        runtime-msa-feat
+    runtime-create-template-features
+        runtime-template-proc
+            runtime-template-proc-sample (* per chain)
+            runtime-template-proc-align (* per chain)
+                runtime-parse-mmcif (* per chain per template)
+                runtime-template-proc-align-clean (* per chain per template)
+                runtime-template-proc-align-map" (* per chain per template)
+        runtime-template-feat
+    runtime-create-ref-conf-features
+        runtime-ref-conf-proc
+            runtime-ref-conf-proc-fetch (* per reference conformer)
+        runtime-ref-conf-feat
+"""
 
 
 def log_runtime_memory(
@@ -110,6 +148,7 @@ def log_runtime_memory(
     mem_enabled: bool = LOG_MEMORY,
     mem_stream: Path = WORKER_MEM_LOG_PATH,
     runtime_dict_key: str | None = None,
+    multicall: bool = False,
 ) -> callable:
     """Decorator factory to log the runtime or memory use of a function.
 
@@ -129,6 +168,9 @@ def log_runtime_memory(
         runtime_dict_key (str | None, optional):
             String to use as key in the runtime dict collecting the runtimes in a
             hierarchy of decorated functions.
+        multicall (bool, optional):
+            Whether the decorated function is called multiple times within the same
+            context. Defaults to False.
 
     Raises:
         RuntimeError:
@@ -181,6 +223,14 @@ def log_runtime_memory(
                 runtime = time.time() - start_time
 
                 # Log the runtime to the context variable and the wrapper attribute
+                # For multiple calls of the same function within the same context, the
+                # runtimes are stored in a comma-separated string
+                if multicall:
+                    runtime_prev = runtimes.get(function_name, "")
+                    if runtime_prev == "":
+                        runtime = str(runtime)
+                    else:
+                        runtime = runtime_prev + "," + str(runtime)
                 runtimes[function_name] = runtime
                 wrapper.runtime = runtimes
 

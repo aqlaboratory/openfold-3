@@ -15,12 +15,14 @@ from pathlib import Path
 import biotite.structure as struc
 import numpy as np
 import torch
+from biotite.structure import AtomArray
 
 from openfold3.core.data.framework.single_datasets.pdb import WeightedPDBDataset
 from openfold3.core.data.primitives.quality_control.asserts import ENSEMBLED_ASSERTS
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     F_NAME_ORDER,
     PDB_ID,
+    RUNTIME_DICT,
     get_interface_string,
 )
 from openfold3.core.data.resources.residues import (
@@ -55,7 +57,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         self.save_statistics = save_statistics
         self.log_runtimes = log_runtimes
         self.log_memory = log_memory
-        if subset_to_examples is not None or len(subset_to_examples) > 0:
+        if subset_to_examples is not None and len(subset_to_examples) > 0:
             self.subset_examples(subset_to_examples)
         """
         The following attributes are set in the worker_init_function_with_logging
@@ -77,8 +79,11 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         # Get PDB ID from the datapoint cache and the preferred chain/interface
         datapoint = self.datapoint_cache.iloc[index]
         pdb_id = datapoint["pdb_id"]
-        PDB_ID.set(pdb_id)
         preferred_chain_or_interface = datapoint["datapoint"]
+
+        # Set context variables and containers
+        PDB_ID.set(pdb_id)
+        RUNTIME_DICT.set({})
         sample_data = {}
 
         # Check if datapoint needs to be skipped
@@ -331,12 +336,12 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 
     def save_data_statistics(
         self,
-        pdb_id,
-        preferred_chain_or_interface,
-        features,
-        atom_array_cropped,
-        atom_array,
-        runtimes,
+        pdb_id: str,
+        preferred_chain_or_interface: str | list[str],
+        features: dict[str, torch.Tensor],
+        atom_array_cropped: AtomArray | None,
+        atom_array: AtomArray,
+        runtimes: np.ndarray[str],
     ):
         """Saves additional data statistics."""
         if self.save_statistics:
@@ -547,7 +552,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 
     def fetch_runtimes(
         self,
-    ) -> np.ndarray[float]:
+    ) -> np.ndarray[str]:
         """Fetches sub-pipeline runtimes.
 
         Runtimes are collected into a single runtime dict of the topmost level function
@@ -563,7 +568,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 A list of top-level sub-pipeline functions called in the getitem.
 
         Returns:
-            np.ndarray[float]:
+            np.ndarray[str]:
                 Float of runtimes for each sub-pipeline.
         """
         # Create flat runtime dictionary
@@ -600,6 +605,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             if ((subset_to_examples is not None) or (len(subset_to_examples) > 0))
             else subset_to_examples
         )
+        subset_to_examples = [ex.strip() for ex in subset_to_examples]
 
         # Subset dataset_cache
         structure_data = {

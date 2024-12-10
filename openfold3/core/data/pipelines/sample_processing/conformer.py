@@ -52,6 +52,7 @@ class ProcessedReferenceMolecule(NamedTuple):
     in_array_mask: np.ndarray[bool]
 
 
+@log_runtime_memory(runtime_dict_key="runtime-ref-conf-proc-fetch", multicall=True)
 def get_processed_reference_conformer(
     mol_id: Mol,
     mol: Mol,
