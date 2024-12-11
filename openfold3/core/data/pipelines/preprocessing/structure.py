@@ -2,7 +2,7 @@
 Centralized module for pre-assembled workflows corresponding to structure cleanup
 procedures of different models.
 """
-
+import boto3
 import json
 import logging
 import multiprocessing as mp
@@ -10,7 +10,7 @@ import traceback
 from functools import wraps
 from pathlib import Path
 from typing import Literal
-
+from tempfile import NamedTemporaryFile
 import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
@@ -21,11 +21,13 @@ from openfold3.core.data.io.sequence.fasta import write_multichain_fasta
 from openfold3.core.data.io.structure.cif import (
     SkippedStructure,
     parse_mmcif,
+    parse_pdb,
     write_structure,
 )
 from openfold3.core.data.io.structure.mol import write_annotated_sdf
 from openfold3.core.data.io.utils import encode_numpy_types
 from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
+from openfold3.core.data.io.utils import download_file_from_s3
 from openfold3.core.data.primitives.structure.cleanup import (
     convert_MSE_to_MET,
     fix_arginine_naming,
@@ -660,3 +662,66 @@ def preprocess_cif_dir_af3(
 
     with open(out_dir / "metadata.json", "w") as f:
         json.dump(output_dict, f, indent=4, default=encode_numpy_types)
+
+
+class _WrapProcessMonomerDistillStructure:
+    def __init__(self, s3_config:dict, session: boto3.Session, output_dir: Path):
+        self.s3_config = s3_config
+        self.session = session
+        self.output_dir = output_dir
+    def __call__(self, pdb_id):
+        try: 
+            with NamedTemporaryFile() as temp_file:
+                prefix = self.s3_config["prefix"]
+                prefix = f"{prefix}/{pdb_id}"
+                download_file_from_s3(
+                    bucket = self.s3_config["bucket"], 
+                    prefix = prefix, 
+                    filename = f"best_structure_relaxed.pdb", 
+                    outfile = temp_file.name, 
+                    session = self.session)
+                _, atom_array = parse_pdb(temp_file.name)
+                id_outdir = self.output_dir /  pdb_id 
+                id_outdir.mkdir(parents=True, exist_ok=True)
+                write_structure(atom_array, id_outdir / f"{pdb_id}.pkl")
+        except Exception as e:
+            tb = traceback.format_exc()  # Get the full traceback
+            logger.warning(
+                "-" * 40
+                + "\n"
+                + f"Failed to process {pdb_id}: {str(e)}\n"
+                + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
+                + "-" * 40
+            )
+            return 
+
+def preprocess_pdb_monomer_distilation(
+    output_dir: Path,
+    dataset_cache : Path,
+    num_workers: int  = 1,
+): 
+    """
+    Args:
+        structure_pred_dir (Path): _description_
+        output_dir (Path): _description_
+        dataset_cache (Path): _description_
+        num_workers (int | None, optional): _description_. Defaults to None.
+    """
+
+    with open(dataset_cache, "r") as f:
+        dataset_cache = json.load(f)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pdb_ids = list(dataset_cache["structure_data"].keys())
+    s3_config = dataset_cache["s3_data"]
+    session = boto3.Session(profile_name=s3_config["profile"])  
+    wrapper = _WrapProcessMonomerDistillStructure(s3_config, session, output_dir)
+    if num_workers > 1:
+        with mp.Pool(num_workers) as p:
+            for _ in tqdm(p.imap_unordered(wrapper, pdb_ids), total=len(pdb_ids)):
+                pass
+    else:
+        for pdb_id in tqdm(pdb_ids):
+            wrapper(pdb_id)
+
+    
