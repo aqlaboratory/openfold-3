@@ -1,38 +1,22 @@
+#%%
 import json
-
-from openfold3.core.data.framework.single_datasets.abstract_single_dataset import (
-    SingleDataset,
-    register_dataset,
-)
-
+import pandas as pd 
+from openfold3.core.data.framework.single_datasets.abstract_single_dataset import register_dataset
+from openfold3.core.data.framework.single_datasets.pdb import WeightedPDBDataset
 
 @register_dataset
-class ProteinMonomerDataset(SingleDataset):
-    """For monomeric protein distillation datasets for AF3."""
+class MonomerDistillationDataset(WeightedPDBDataset):
+    def create_datapoint_cache(self):
+        """
+        Same premise as the ValidationDatasetClass - no need for chain/interface
+        distinctions or sample weighting - just need to iterate over all entries
+        - "datapoint" is used here -> preferred_chain_or_interface = datapoint["datapoint"]
+        setting this to None uses just the chain 
+        """
+        pdb_ids = []
+        for entry, _ in self.dataset_cache.structure_data.items():
+            pdb_ids.append((entry, None, -1))
 
-    def __init__(self, data_config) -> None:
-        super().__init__()
-        self._preprocessing_pipeline = (
-            "<ProteinMonomerPreprocessingPipeline(data_config)>"
+        self.datapoint_cache = pd.DataFrame(
+            pdb_ids, columns=["pdb_id", "datapoint", "weight"]
         )
-        self._feature_pipeline = "<AF3ProteinFeaturePipeline(data_config)>"
-
-        with open(data_config["data_cache"]) as f:
-            self.data_cache = json.load(f)
-
-        "<assign other attributes here>"
-
-    @property
-    def preprocessing_pipeline(self):
-        return self._preprocessing_pipeline
-
-    @property
-    def feature_pipeline(self):
-        return self._feature_pipeline
-
-    def calculate_datapoint_probabilities(self, cache_entry) -> float:
-        # uniform sampling
-        return
-
-    def __len__(self):
-        return len(self.data_cache)
