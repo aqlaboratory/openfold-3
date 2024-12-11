@@ -157,6 +157,79 @@ class PreprocessingDataCache:
         """
         io.write_datacache_to_json(self, file)
 
+@register_datacache
+@dataclass
+class MonomerDistillationDataCache:
+    structure_data: PreprocessingStructureDataCache
+    reference_molecule_data: dict 
+    @classmethod
+    def from_json(cls, file: Path) -> MonomerDistillationDataCache:
+        metadata_cache_dict = json.loads(file.read_text())
+
+        # Remove _type field (already an internal private attribute so shouldn't be
+        # defined as an explicit field)
+        if "_type" in metadata_cache_dict:
+            # This is conditional for legacy compatibility, should be removed after
+            del metadata_cache_dict["_type"]
+
+        # Format the structure data
+        structure_data_cache = {}
+        status = "success"
+        interfaces = None
+        for pdb_id, structure_data in metadata_cache_dict["structure_data"].items():
+            release_date = structure_data["release_date"]
+            resolution = structure_data["resolution"]
+            chains = structure_data["chains"]
+            if chains is not None:
+                chain_data = {}
+
+                for chain_id, per_chain_data in chains.items():
+                    molecule_type = per_chain_data.pop("molecule_type")
+                    #molecule_type = MoleculeType[per_chain_data.pop("molecule_type")]
+
+                    # This is only set for ligand chains
+                    # TODO: this should be explicitly None after preprocessing refactor,
+                    # so if-condition should be removed
+                    if "reference_mol_id" in per_chain_data:
+                        reference_mol_id = per_chain_data.pop("reference_mol_id")
+                    else:
+                        reference_mol_id = None
+
+                    chain_data[chain_id] = PDBChainData(
+                        molecule_type=molecule_type,
+                        reference_mol_id=reference_mol_id,
+                        **per_chain_data,
+                    )
+            else:
+                chain_data = None
+
+            structure_data_cache[pdb_id] = PreprocessingStructureData(
+                status=status,
+                release_date=release_date,
+                resolution=resolution,
+                chains=chain_data,
+                interfaces=interfaces,
+            )
+
+        # ignore this for nw 
+        reference_molecule_data_cache = {}
+
+        return cls(
+            structure_data=structure_data_cache,
+            reference_molecule_data=reference_molecule_data_cache,
+        )
+            
+
+    def to_json(self, file: Path) -> None:
+        """Write the metadata cache to a JSON file.
+
+        Args:
+            file:
+                Path to the JSON file to write the metadata cache to.
+        """
+        io.write_datacache_to_json(self, file)
+
+
 
 @dataclass
 class PreprocessingStructureData:
