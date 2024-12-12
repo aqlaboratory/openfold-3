@@ -1,6 +1,5 @@
 """Preprocessing pipelines for template data ran before training/evaluation."""
 
-import logging
 import multiprocessing as mp
 import os
 import pickle as pkl
@@ -20,6 +19,7 @@ from openfold3.core.data.io.dataset_cache import read_datacache
 from openfold3.core.data.io.sequence.template import parse_hmmsearch_sto
 from openfold3.core.data.io.structure.cif import _load_ciffile, parse_mmcif
 from openfold3.core.data.primitives.quality_control.logging_utils import (
+    PDB_ID,
     TEMPLATE_PROCESS_LOGGER,
     configure_template_logger,
 )
@@ -1113,24 +1113,21 @@ def preprocess_template_structure_for_template(
     # Save template structure for each chain separately
     # TODO: can switch back to atom_array_template.label_asym_id once the dummy chain ID
     #  addition bug is resolved
-    label_asym_ids = np.unique(atom_array_template.chain_id)
+    chain_ids = np.unique(atom_array_template.chain_id)
     chains_included = []
-    for label_asym_id in label_asym_ids:
+    for chain_id in chain_ids:
         # Find molecule type of chain and save if included
-        atom_array_chain = atom_array_template[
-            atom_array_template.label_asym_id == label_asym_id
-        ]
+        atom_array_chain = atom_array_template[atom_array_template.chain_id == chain_id]
         chain_mol_type = np.array(list(set(atom_array_chain.molecule_type_id)))
         if len(chain_mol_type) != 1:
             raise ValueError(
-                f"Multiple molecule types found in chain {label_asym_id} of "
+                f"Multiple molecule types found in chain {chain_id} of "
                 f"template {template_pdb_id}."
             )
         if np.isin(chain_mol_type, moltypes_included).all():
-            chains_included.append(label_asym_id)
+            chains_included.append(chain_id)
             with open(
-                template_assembly_directory
-                / Path(f"{template_pdb_id}_{label_asym_id}.pkl"),
+                template_assembly_directory / Path(f"{template_pdb_id}_{chain_id}.pkl"),
                 "wb",
             ) as f:
                 pkl.dump(atom_array_chain, f)
@@ -1207,6 +1204,7 @@ class _AF3TemplateStructurePreprocessor:
                     log_dir=self.log_dir,
                 )
             )
+            PDB_ID.set(template_pdb_id)
             # Preprocess template structure
             preprocess_template_structure_for_template(
                 template_pdb_id=template_pdb_id,
@@ -1235,6 +1233,7 @@ def preprocess_template_structures(
     template_file_format: str,
     template_structure_array_directory: Path,
     ccd_file: Path,
+    completed_entries_file: Path | None,
     moltypes_included: str,
     num_workers: int,
     chunksize: int,
@@ -1254,6 +1253,8 @@ def preprocess_template_structures(
             Path to the directory where the template structure arrays will be saved.
         ccd_file (Path):
             Path to the Chemical Component Dictionary file.
+        completed_entries_file (Path | None):
+            Path to the file containing the list of completed entries.
         moltypes_included (str):
             Comma-separated str of molecule types to include in the template structure
             arrays.
@@ -1282,18 +1283,15 @@ def preprocess_template_structures(
     template_pdb_ids = []
     for f in list(template_structures_directory.glob(f"*.{template_file_format}")):
         template_pdb_ids.append(f.stem.split(".")[0])
-    logging.info(f"Found {len(template_pdb_ids)} template structures.")
+    print(f"Found {len(template_pdb_ids)} template structures.")
 
     # Subset the template PDB IDs to only those that have not been preprocessed
-    completed_entries_file = template_structure_array_directory.parent / Path(
-        "combined_completed.tsv"
-    )
-    if completed_entries_file.exists():
+    if completed_entries_file is not None:
         completed_entries = pd.read_csv(completed_entries_file, sep="\t", header=0)
         template_pdb_ids = list(
             set(template_pdb_ids) - set(completed_entries["entry"].tolist())
         )
-        logging.info(f"Preprocessing {len(template_pdb_ids)} template structures.")
+        print(f"Preprocessing {len(template_pdb_ids)} template structures.")
 
     # Pre-create directories for template structure arrays, otherwise IO issues
     for template_pdb_id in tqdm(

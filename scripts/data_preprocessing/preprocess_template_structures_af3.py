@@ -51,6 +51,18 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     ),
 )
 @click.option(
+    "--completed_entries_file",
+    required=False,
+    default=None,
+    help="File containing the list of completed entries from a previous run.",
+    type=click.Path(
+        exists=False,
+        file_okay=True,
+        dir_okay=False,
+        path_type=Path,
+    ),
+)
+@click.option(
     "--moltypes_included",
     type=str,
     help=(
@@ -96,6 +108,7 @@ def main(
     template_file_format: str,
     template_structure_array_directory: Path,
     ccd_file: Path,
+    completed_entries_file: Path | None,
     moltypes_included: str,
     num_workers: int,
     chunksize: int,
@@ -115,6 +128,8 @@ def main(
             the template structures are saved.
         ccd_file (Path):
             Chemical component dictionary file path.
+        completed_entries_file (Path | None):
+            File containing the list of completed entries from a previous run.
         moltypes_included (str):
             Comma-separated string of molecule types to include in the output template
             arrays.
@@ -148,6 +163,7 @@ def main(
             template_file_format=template_file_format,
             template_structure_array_directory=template_structure_array_directory,
             ccd_file=ccd_file,
+            completed_entries_file=completed_entries_file,
             moltypes_included=moltypes_included,
             num_workers=num_workers,
             chunksize=chunksize,
