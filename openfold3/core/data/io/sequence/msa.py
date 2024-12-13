@@ -84,7 +84,9 @@ def parse_a3m(msa_string: str, max_seq_count: int | None = None) -> MsaArray:
     return parsed_msa
 
 
-def parse_stockholm(msa_string: str, max_seq_count: int | None = None) -> MsaArray:
+def parse_stockholm(
+    msa_string: str, max_seq_count: int | None = None, gap_symbols: set | None = None
+) -> MsaArray:
     """Parses sequences and deletion matrix from stockholm format alignment.
 
     This function needs to be wrapped in a with open call to read the file.
@@ -95,10 +97,15 @@ def parse_stockholm(msa_string: str, max_seq_count: int | None = None) -> MsaArr
             should be the query sequence.
         max_seq_count (int | None):
             The maximum number of sequences to parse from the file.
+        gap_symbols (set | None):
+            Set of symbols that are considered as gaps in the alignment.
 
     Returns:
         Msa: A Msa object containing the sequences, deletion matrix and metadata.
     """
+
+    if gap_symbols is None:
+        gap_symbols = set("-", ".")
 
     # Parse each line into header: sequence dictionary
     name_to_sequence = OrderedDict()
@@ -121,7 +128,7 @@ def parse_stockholm(msa_string: str, max_seq_count: int | None = None) -> MsaArr
         if seq_index == 0:
             # Gather the columns with gaps from the query
             query = sequence
-            keep_columns = [i for i, res in enumerate(query) if res != "-"]
+            keep_columns = [i for i, res in enumerate(query) if res not in gap_symbols]
 
         # Remove the columns with gaps in the query from all sequences.
         aligned_sequence = "".join([sequence[c] for c in keep_columns])
@@ -132,8 +139,8 @@ def parse_stockholm(msa_string: str, max_seq_count: int | None = None) -> MsaArr
         deletion_vec = []
         deletion_count = 0
         for seq_res, query_res in zip(sequence, query):
-            if seq_res != "-" or query_res != "-":
-                if query_res == "-":
+            if seq_res not in gap_symbols or query_res not in gap_symbols:
+                if query_res in gap_symbols:
                     deletion_count += 1
                 else:
                     deletion_vec.append(deletion_count)
