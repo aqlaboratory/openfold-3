@@ -446,9 +446,9 @@ def main(
                 header=not full_extra_data_file.exists(),
                 mode="a",
             )
+        # Collate memory logs
         if log_memory:
-            # Convert memory profile logs to dataframes and collate from different
-            # workers
+            # Convert memory profile logs to dataframes
             df_all = pd.DataFrame()
             for worker_id in range(runner_args.num_workers):
                 worker_memory_file = log_output_directory / Path(
@@ -468,6 +468,17 @@ def main(
                 header=not full_worker_memory_file.exists(),
                 mode="a",
             )
+        # Collate logs
+        combined_log = log_output_directory / Path("worker_logs.log")
+        with combined_log.open("w") as out_file:
+            for worker_id in range(runner_args.num_workers):
+                worker_dir = log_output_directory / Path(f"worker_{worker_id}")
+                worker_log = worker_dir / Path(f"worker_{worker_id}.log")
+                out_file.write(f"Log file: {worker_log.name}\n")
+                out_file.write(worker_log.read_text())
+                worker_log.unlink()
+                if not any(worker_dir.iterdir()):
+                    worker_dir.rmdir()
 
 
 def run_arg_checks(

@@ -108,6 +108,7 @@ def sample_templates(
     take_top_k: bool,
     pdb_id: str,
     chain_id: str,
+    template_structure_array_directory: Path | None,
 ) -> dict[str, TemplateCacheEntry] | dict[None]:
     """Samples templates to featurize for a given chain.
 
@@ -126,13 +127,32 @@ def sample_templates(
             The PDB ID of the query structure.
         chain_id (str):
             The chain ID for which to sample the templates.
+        template_structure_array_directory (Path | None):
+            The directory where the preparsed and pre-processed template structure
+            arrays are stored.
 
     Returns:
         dict[str, TemplateCacheEntry] | dict[None]:
             The sampled template data per chain given chain.
     """
     chain_data = dataset_cache.structure_data[pdb_id].chains[chain_id]
-    template_ids = chain_data.template_ids
+    template_ids = np.array(chain_data.template_ids)
+
+    # Subset the template IDs to only those that have a pre-parsed structure array
+    # Some arrays may be missing due to preprocessing errors
+    # TODO: add logging for this
+    if template_structure_array_directory is not None:
+        template_array_paths = []
+        for template_id in template_ids:
+            template_pdb_id = template_id.split("_")[0]
+            template_array_paths.append(
+                template_structure_array_directory
+                / Path(f"{template_pdb_id}/{template_id}.pkl")
+            )
+        template_ids = template_ids[
+            np.array([p.exists() for p in template_array_paths]).astype(bool)
+        ]
+
     l = len(template_ids)
     if l == 0:
         return {}
@@ -153,7 +173,8 @@ def sample_templates(
         # Unpack into dict
         template_cache = {key: value.item() for key, value in template_cache.items()}
 
-        # Randomly sample k templates or take top k templates
+        # Randomly sample k templates (core PDB training sets) or take top k templates
+        # (distillation, inference sets)
         if take_top_k:
             sampled_template_ids = template_ids[:k]
         else:

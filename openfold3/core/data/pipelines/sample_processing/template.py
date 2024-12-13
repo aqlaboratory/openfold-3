@@ -83,6 +83,7 @@ def process_template_structures_af3(
             take_top_k,
             pdb_id,
             chain_id,
+            template_structure_array_directory,
         )
 
         # Map token positions to template atom arrays
