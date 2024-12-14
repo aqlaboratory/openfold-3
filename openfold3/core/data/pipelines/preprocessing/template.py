@@ -36,6 +36,9 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_release_date,
 )
 
+import boto3 
+from openfold3.core.data.io.utils import download_file_from_s3
+from tempfile import NamedTemporaryFile
 
 def create_seq_cache_for_template(
     template_pdb_id: str,
@@ -481,6 +484,7 @@ class _AF3TemplateCacheConstructor:
         log_to_file: bool,
         log_to_console: bool,
         log_dir: Path,
+        s3_config: Optional[dict] = None 
     ) -> None:
         """Wrapper class for creating the template cache.
 
@@ -532,6 +536,10 @@ class _AF3TemplateCacheConstructor:
         self.log_to_file = log_to_file
         self.log_to_console = log_to_console
         self.log_dir = log_dir
+        if s3_config is not None:
+            self.s3_bucket = s3_config["bucket"]
+            self.s3_session = boto3.Session(Profile=s3_config["profile"])
+            self.s3_prefix = s3_config["prefix"]
 
     @wraps(create_template_cache_for_query)
     def __call__(self, input: _TemplateQueryEntry) -> None:
@@ -552,15 +560,28 @@ class _AF3TemplateCacheConstructor:
                 input.rep_pdb_chain_id,
             )
             query_pdb_id = query_pdb_chain_id.split("_")[0]
-
-            # Create template cache for query
-            create_template_cache_for_query(
-                query_pdb_chain_id=query_pdb_chain_id,
-                template_alignment_file=(
+            ## if we have an s3 config, assume we need to download the template 
+            ## alignment file from s3
+            if self.s3_config is not None:
+                tmpfile = NamedTemporaryFile(delete=True)
+                template_alignment_file = Path(tmpfile.name)
+                download_file_from_s3(
+                    self.s3_bucket,
+                    f"{self.s3_prefix}/{rep_pdb_chain_id}",
+                    self.template_alignment_filename,
+                    str(template_alignment_file),
+                    session = self.s3_session
+                )
+            else:
+                template_alignment_file = (
                     self.template_alignment_directory
                     / Path(rep_pdb_chain_id)
                     / self.template_alignment_filename
-                ),
+                )
+            # Create template cache for query
+            create_template_cache_for_query(
+                query_pdb_chain_id=query_pdb_chain_id,
+                template_alignment_file=template_alignment_file,
                 template_structures_directory=self.template_structures_directory,
                 template_cache_directory=self.template_cache_directory,
                 query_structures_directory=self.query_structures_directory
@@ -633,11 +654,13 @@ def create_template_cache_af3(
     (template_cache_directory.parent / Path("data_log")).mkdir(
         parents=True, exist_ok=True
     )
-
     # Parse list of chains from metadata cache
     dataset_cache = read_datacache(dataset_cache_file)
     template_query_iterator = parse_representatives(dataset_cache, True).entries
-
+    if hasattr(dataset_cache, "s3_config"):
+        s3_config = dataset_cache.s3_config
+    else:
+        s3_config = None
     # Create template cache for each query chain
     wrapped_template_cache_constructor = _AF3TemplateCacheConstructor(
         template_alignment_directory,
@@ -652,6 +675,7 @@ def create_template_cache_af3(
         log_to_file,
         log_to_console,
         log_dir,
+        s3_config = s3_config,
     )
     with mp.Pool(num_workers) as pool:
         for _ in tqdm(
