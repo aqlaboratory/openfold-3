@@ -105,7 +105,7 @@ def parse_stockholm(
     """
 
     if gap_symbols is None:
-        gap_symbols = set("-", ".")
+        gap_symbols = set(["-", "."])
 
     # Parse each line into header: sequence dictionary
     name_to_sequence = OrderedDict()
@@ -115,7 +115,9 @@ def parse_stockholm(
             continue
         name, sequence = line.split()
         if name not in name_to_sequence:
+            # Add header to dictionary
             name_to_sequence[name] = ""
+        # Extend sequence
         name_to_sequence[name] += sequence
 
     msa = []
