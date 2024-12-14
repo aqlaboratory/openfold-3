@@ -5,8 +5,9 @@ import pickle
 from pathlib import Path
 from typing import NamedTuple
 
+import numpy as np
 from biotite.structure import AtomArray
-from biotite.structure.io import pdbx, pdb
+from biotite.structure.io import pdb, pdbx
 
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
@@ -21,10 +22,7 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_cif_block,
     get_first_bioassembly_polymer_count,
 )
-import  numpy as np 
 from openfold3.core.data.resources.residues import MoleculeType
-
-
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +189,10 @@ def parse_mmcif(
 
     return ParsedStructure(cif_file, atom_array)
 
-def parse_pdb(file_path: Path | str, include_bonds: bool = True, extra_fields: list | None = None):
+
+def parse_pdb(
+    file_path: Path | str, include_bonds: bool = True, extra_fields: list | None = None
+):
     """_summary_
 
     Args:
@@ -202,19 +203,19 @@ def parse_pdb(file_path: Path | str, include_bonds: bool = True, extra_fields: l
     Returns:
         ParsedStructure : _description_
     """
-    
+
     ## no label fields in pdb files
     pdb_file = pdb.PDBFile.read(file_path)
     extra_fields_preset = [
         "occupancy",
         "charge",
-    ] 
+    ]
 
     if extra_fields:
         extra_fields = extra_fields_preset + extra_fields
     else:
         extra_fields = extra_fields_preset
-    
+
     parser_args = {
         "pdb_file": pdb_file,
         "model": 1,
@@ -223,25 +224,26 @@ def parse_pdb(file_path: Path | str, include_bonds: bool = True, extra_fields: l
         "extra_fields": extra_fields,
     }
     atom_array = pdb.get_structure(
-                **parser_args,
-            )
-    
-    ## manually assign th entity and molecule type ids; 
-    ## monomers are all "single chain", so should have the same entity id, 
+        **parser_args,
+    )
+
+    ## manually assign th entity and molecule type ids;
+    ## monomers are all "single chain", so should have the same entity id,
     ## everything is a single asym, and sym id should be 1(identity)
     chain_ids = np.array([1] * len(atom_array), dtype=int)
     molecule_type_ids = np.array([MoleculeType.PROTEIN] * len(atom_array), dtype=int)
     entity_ids = np.array([1] * len(atom_array), dtype=int)
-    asym_ids = np.array([1] * len(atom_array), dtype=int)
-    sym_ids = np.array([1] * len(atom_array), dtype=int)
-    
+    # asym_ids = np.array([1] * len(atom_array), dtype=int)
+    # sym_ids = np.array([1] * len(atom_array), dtype=int)
+
     atom_array.set_annotation("chain_id", chain_ids)
     atom_array.set_annotation("molecule_type_id", molecule_type_ids)
     atom_array.set_annotation("entity_id", entity_ids)
-    atom_array.set_annotation("asym_id", asym_ids)
-    atom_array.set_annotation("sym_id", sym_ids)
-    
+    # atom_array.set_annotation("asym_id", asym_ids)
+    # atom_array.set_annotation("sym_id", sym_ids)
+
     return ParsedStructure(pdb_file, atom_array)
+
 
 def write_structure(
     atom_array: AtomArray,
