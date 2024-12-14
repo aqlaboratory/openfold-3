@@ -10,7 +10,7 @@ from openfold3.core.data.framework.single_datasets.base_single_dataset import (
 
 
 @register_dataset
-class MonomerDistillationDataset(BaseSingleDataset):
+class ProteinMonomerDataset(BaseSingleDataset):
     def create_datapoint_cache(self):
         """
         Same premise as the ValidationDatasetClass - no need for chain/interface
