@@ -157,79 +157,6 @@ class PreprocessingDataCache:
         """
         io.write_datacache_to_json(self, file)
 
-@register_datacache
-@dataclass
-class MonomerDistillationDataCache:
-    structure_data: PreprocessingStructureDataCache
-    reference_molecule_data: dict 
-    @classmethod
-    def from_json(cls, file: Path) -> MonomerDistillationDataCache:
-        metadata_cache_dict = json.loads(file.read_text())
-
-        # Remove _type field (already an internal private attribute so shouldn't be
-        # defined as an explicit field)
-        if "_type" in metadata_cache_dict:
-            # This is conditional for legacy compatibility, should be removed after
-            del metadata_cache_dict["_type"]
-
-        # Format the structure data
-        structure_data_cache = {}
-        status = "success"
-        interfaces = None
-        for pdb_id, structure_data in metadata_cache_dict["structure_data"].items():
-            release_date = structure_data["release_date"]
-            resolution = structure_data["resolution"]
-            chains = structure_data["chains"]
-            if chains is not None:
-                chain_data = {}
-
-                for chain_id, per_chain_data in chains.items():
-                    molecule_type = per_chain_data.pop("molecule_type")
-                    #molecule_type = MoleculeType[per_chain_data.pop("molecule_type")]
-
-                    # This is only set for ligand chains
-                    # TODO: this should be explicitly None after preprocessing refactor,
-                    # so if-condition should be removed
-                    if "reference_mol_id" in per_chain_data:
-                        reference_mol_id = per_chain_data.pop("reference_mol_id")
-                    else:
-                        reference_mol_id = None
-
-                    chain_data[chain_id] = PDBChainData(
-                        molecule_type=molecule_type,
-                        reference_mol_id=reference_mol_id,
-                        **per_chain_data,
-                    )
-            else:
-                chain_data = None
-
-            structure_data_cache[pdb_id] = PreprocessingStructureData(
-                status=status,
-                release_date=release_date,
-                resolution=resolution,
-                chains=chain_data,
-                interfaces=interfaces,
-            )
-
-        # ignore this for nw 
-        reference_molecule_data_cache = {}
-
-        return cls(
-            structure_data=structure_data_cache,
-            reference_molecule_data=reference_molecule_data_cache,
-        )
-            
-
-    def to_json(self, file: Path) -> None:
-        """Write the metadata cache to a JSON file.
-
-        Args:
-            file:
-                Path to the JSON file to write the metadata cache to.
-        """
-        io.write_datacache_to_json(self, file)
-
-
 
 @dataclass
 class PreprocessingStructureData:
@@ -424,6 +351,11 @@ class PDBChainData(DatasetChainData):
     alignment_representative_id: str | None  # not set for ligands and DNA
     template_ids: list[str] | None  # only set for proteins
 
+@dataclass
+class ProteinMonomerChainData:
+    alignment_representative_id: str | None  # not set for ligands and DNA
+    template_ids: list[str] | None
+    molecule_type: MoleculeType.PROTEIN
 
 # CLUSTERED DATASET FORMAT (e.g. PDB-weighted)
 @dataclass
@@ -451,10 +383,14 @@ class ClusteredDatasetStructureData:
     chains: dict[str, ClusteredDatasetChainData]
     interfaces: dict[str, ClusteredDatasetInterfaceData]
 
+@dataclass
+class ProteinMonomerStructureData:
+    chains: dict[str, ProteinMonomerChainData]
+## potentially add resolution here as a default value
 
 ClusteredDatasetStructureDataCache: TypeAlias = dict[str, ClusteredDatasetStructureData]
 """Structure data cache with cluster information."""
-
+ProteinMonomerStructureDataCache: TypeAlias = dict[str, ProteinMonomerStructureData]
 
 @register_datacache
 @dataclass
@@ -478,6 +414,57 @@ class ClusteredDatasetCache(ChainInterfaceReferenceMolCache):
     _interface_data_format = ClusteredDatasetInterfaceData
     _ref_mol_data_format = DatasetReferenceMoleculeData
     _structure_data_format = ClusteredDatasetStructureData
+
+
+@register_datacache
+@dataclass
+class ProteinMonomerDatasetCache(DatasetCache):
+    name: str
+    structure_data: ProteinMonomerStructureDataCache
+    reference_molecule_data: DatasetReferenceMoleculeCache
+    _chain_data_format = ProteinMonomerChainData
+    _ref_mol_data_format = DatasetReferenceMoleculeCache
+    _structure_data_format = ProteinMonomerStructureData
+    @classmethod
+    def from_json(cls, file: Path) -> ProteinMonomerDatasetCache:
+        """Constructor to format a json into this dataclass structure."""
+        with open(file) as f:
+            data = json.load(f)
+
+        # Remove _type field (already an internal private attribute so shouldn't be
+        # defined as an explicit field)
+        if "_type" in data:
+            # This is conditional for legacy compatibility, should be removed after
+            del data["_type"]
+
+        name = data["name"]
+
+        # Format structure data
+        structure_data = {}
+        for pdb_id, per_structure_data in data["structure_data"].items():
+            chain_data = per_structure_data.pop("chains")
+            # Extract all chain data into respective chain data format
+            chains = {
+                chain_id: cls._chain_data_format(**chain_data[chain_id])
+                for chain_id in chain_data
+            }
+
+            # Combine chain and interface data with remaining structure data
+            structure_data[pdb_id] = cls._structure_data_format(
+                chains=chains, **per_structure_data
+            )
+
+        # Format reference molecule data into respective format
+        ref_mol_data = {}
+        for ref_mol_id, per_ref_mol_data in data["reference_molecule_data"].items():
+            per_ref_mol_data_fmt = cls._ref_mol_data_format(**per_ref_mol_data)
+            ref_mol_data[ref_mol_id] = per_ref_mol_data_fmt
+
+        return cls(
+            name=name,
+            structure_data=structure_data,
+            reference_molecule_data=ref_mol_data,
+        )
 
 
 # Grouped type-aliases for more convenient type-hinting of general-purpose functions
