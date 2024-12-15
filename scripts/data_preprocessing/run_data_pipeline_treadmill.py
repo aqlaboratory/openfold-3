@@ -511,13 +511,10 @@ if __name__ == "__main__":
     main()
 
 # TODOs:
-# 5. add pytorch profiler and test, test with py-spy - should be separate runs from the
-# debugging runs
-# (6. implement the model forward pass)
-# 7. add logic to save which PDB entries/chains were already tested and restart from
-# there
+# 6. implement the model forward pass
 # 8. Add logic to re-crop the structure if the number of tokens is larger than the
 # token budget - the number of re-crops and featurizations should be determined
 # dynamically and in a way that likely covers the entire structure but with a
 # maximun number of re-crops
-# 9. Add logic to save extra data
+# 10. add weighted stochastic sampling
+# 11. add support for multiple datasets

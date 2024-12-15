@@ -343,7 +343,15 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         atom_array: AtomArray,
         runtimes: np.ndarray[str],
     ):
-        """Saves additional data statistics."""
+        """Saves additional data statistics.
+
+        !!! IMPORTANT NOTE: If the collection and order of items logged in this function
+        are changed, the worker_config > configure_extra_data_file > all_headers list
+        must be updated accordingly, EXCEPT FOR RUNTIMES, which should be updated in the
+        logging_utils > F_NAME_ORDER variable !!!
+        """
+        # TODO: add logic to jointly update the all_headers list in the logging_datasets
+        # and the save_data_statistics method in the WeightedPDBDatasetWithLogging class
         if self.save_statistics:
             # Set worker output directory
             chain_interface_str = self.stringify_chain_interface(
@@ -494,6 +502,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 else:
                     statistics += ["NaN", "NaN"]
 
+            # TODO: improve gyration radius calculation speed by reducing IO overhead
             # # radius of gyration
             # for aa in full_aa:
             #     if len(aa) > 0:
@@ -515,6 +524,10 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                     statistics += [get_interface_string(aa_a, aa_b, "NaN")]
                 else:
                     statistics += ["NaN"]
+
+            # Entry metadata from dataset cache
+            statistics += [self.dataset_cache.structure_data[pdb_id].resolution]
+            statistics += [self.dataset_cache.structure_data[pdb_id].release_date]
 
             # sub-pipeline runtimes
             statistics += list(runtimes)

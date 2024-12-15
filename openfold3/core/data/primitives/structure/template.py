@@ -323,6 +323,7 @@ def clean_template_atom_array(
     atom_array_template = remove_waters(atom_array_template)
     atom_array_template = remove_hydrogens(atom_array_template)
     atom_array_template = remove_non_CCD_atoms(atom_array_template, ccd)
+    # TODO: add flag to turn off atom check assert/error when introduced
     atom_array_template = add_unresolved_atoms(
         atom_array_template, get_cif_block(cif_file), ccd
     )
@@ -379,12 +380,22 @@ def map_token_pos_to_template_residues(
         )
     ]
 
-    # Add token position annotation to template atom array mapping to the crop
-    template_slice = TemplateSlice(
-        atom_array=atom_array_cropped_template,
-        query_token_positions=query_token_atoms_aligned_cropped.token_position,
-        template_residue_repeats=repeats,
-    )
+    # Skip template if query and template are still misaligned, this can happen due to
+    # unhandled multi-occupancy residues or author annotation errors
+    # TODO: add fixes and logging for these cases
+    if struc.get_residue_starts(atom_array_cropped_template).shape != repeats.shape:
+        template_slice = TemplateSlice(
+            atom_array=AtomArray(0),
+            query_token_positions=np.array([]),
+            template_residue_repeats=np.array([]),
+        )
+    else:
+        # Add token position annotation to template atom array mapping to the crop
+        template_slice = TemplateSlice(
+            atom_array=atom_array_cropped_template,
+            query_token_positions=query_token_atoms_aligned_cropped.token_position,
+            template_residue_repeats=repeats,
+        )
 
     return template_slice
 

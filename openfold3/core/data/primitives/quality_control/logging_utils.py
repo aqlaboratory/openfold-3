@@ -71,6 +71,10 @@ TEMPLATE_PROCESS_LOGGER = contextvars.ContextVar(
     "TEMPLATE_PROCESS_LOGGER", default=None
 )
 # Mapping of function names to their respective runtime logging functions
+# IMPORTANT NOTE: this variable needs to be updated if the set of functions for which
+# runtimes need to be logged changes
+# TODO: add logic to jointly update this variable and the default list of functions
+# decorated with log_runtime_memory
 F_NAME_ORDER = [
     # top level function in the getitem
     "runtime-create-all-features",
