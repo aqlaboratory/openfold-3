@@ -10,6 +10,7 @@ import numpy as np
 from biotite.structure import AtomArray
 
 from openfold3.core.data.io.sequence.fasta import parse_fasta
+from openfold3.core.data.primitives.caches.format import DatasetCache
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
@@ -313,17 +314,18 @@ def parse_msas_preparsed(
 def parse_msas_sample(
     pdb_id: str,
     atom_array: AtomArray,
-    dataset_cache: dict,
+    dataset_cache: DatasetCache,
+    moltypes: list[str],
     alignments_directory: Path | None,
     alignment_db_directory: Path | None,
     alignment_index: dict | None,
     alignment_array_directory: Path | None,
-    max_seq_counts: dict[str, int | float] | None = None,
+    max_seq_counts: dict[str, int] | None,
 ) -> MsaArrayCollection:
     """Parses MSA(s) for a training sample.
 
-    This function is used to parse MSAs for a one or multiple chains, depending on the
-    number of chains in the parsed PDB file and crop during training.
+    This function is used to parse MSAs for a single sample, which may be a single chain
+    for monomers or multiple chains for assemblies.
 
     If multiple paths are provided (not set to None), the following is the priority
     order:
@@ -332,6 +334,14 @@ def parse_msas_sample(
         3. alignments_directory (raw a3m or sto files)
 
     Args:
+        pdb_id (str):
+            The PDB ID of the target structure.
+        atom_array (AtomArray):
+            The cropped (training) or full (inference) atom array.
+        dataset_cache (DatasetCache):
+            The dataset cache of the dataset class.
+        moltypes (list[str]):
+            List of molecule type strings to consider for MSA parsing.
         alignments_directory (Path | None):
             Path to the lowest-level directory containing the directories of MSAs per
             chain ID.
@@ -339,26 +349,26 @@ def parse_msas_sample(
             Path to the directory containing the alignment database or its shards AND
             the alignment database superindex file. If provided, it is used over
             alignments_directory.
-        alignment_index (Optional[dict], optional):
+        alignment_index (dict | None):
             Dictionary containing the alignment index.
-        msa_slice (MsaSlice):
-            Object containing the mappings from the crop to the MSA sequences.
-        max_seq_counts (Optional[dict[str, int]], optional):
-            Dictionary mapping the sequence database from which sequence hits were
-            returned to the max number of sequences to parse from all the hits. See
-            Section 2.2, Tables 1 and 2 in the AlphaFold3 SI for more details. This
-            dict, when provided, is used to specify a) which alignment files to parse
-            and b) the maximum number of sequences to parse.
+        alignment_array_directory (Path | None):
+            Path to the directory containing the preprocessed alignment arrays.
+        max_seq_counts (dict[str, int] | None):
+            Dictionary mapping filename strings (without extension) to the max number of
+            sequences to parse from the corresponding MSA file. Only alignment files
+            whose names are keys in this dict will be parsed.
 
     Returns:
-        MsaCollection:
+        MsaArrayCollection:
             A collection of Msa objects and chain IDs for a single sample.
     """
-    # Get subset of atom array with only protein and RNA chains
+    # Get subset of atom array for which alignments are supposed to be provided
+    # based on the dataset config
+    moltypes_local = [MoleculeType[moltype.upper()].value for moltype in moltypes]
     atom_array_with_alignments = atom_array[
         np.isin(
             atom_array.molecule_type_id,
-            [MoleculeType.PROTEIN, MoleculeType.RNA],
+            moltypes_local,
         )
     ]
 

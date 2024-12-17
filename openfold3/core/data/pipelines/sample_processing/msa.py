@@ -5,6 +5,7 @@ from pathlib import Path
 from biotite.structure import AtomArray
 
 from openfold3.core.data.io.sequence.msa import parse_msas_sample
+from openfold3.core.data.primitives.caches.format import DatasetCache
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
@@ -21,7 +22,7 @@ from openfold3.core.data.primitives.sequence.msa import (
 def process_msas_af3(
     pdb_id: str,
     atom_array: AtomArray,
-    dataset_cache: dict,
+    dataset_cache: DatasetCache,
     alignments_directory: Path | None,
     alignment_db_directory: Path | None,
     alignment_index: dict | None,
@@ -29,6 +30,9 @@ def process_msas_af3(
     max_seq_counts: dict[str, int | float],
     aln_order: list[str],
     max_rows_paired: int,
+    min_chains_paired_partial: int,
+    pairing_mask_keys: list[str],
+    moltypes: list[str],
 ) -> MsaArrayCollection:
     """Prepares the arrays needed to create MSA feature tensors.
 
@@ -36,13 +40,20 @@ def process_msas_af3(
     1. Query sequence
     2. Paired sequences from UniProt
         - only if n unique protein chains > 1
-        - exclude block-diagonal unpaired sequences
+        - exclude block-diagonal unpaired sequences if min_chains_paired_partial = 2
+        - only protein-protein chains are paired
     3. Main MSAs for each chain with unpaired sequences from non-UniProt databases
 
     Note: The returned MsaProcessedCollection contains None for the query_sequences
     if there are no protein or RNA chains in the crop.
 
     Args:
+        pdb_id (str):
+            The PDB ID of the target structure.
+        atom_array (AtomArray):
+            The cropped (training) or full (inference) atom array.
+        dataset_cache (DatasetCache):
+            Dictionary containing the parsed MSA data.
         alignments_directory (Path | None):
             The path to the directory containing directories containing the alignment
             files per chain. Only used if alignment_db_directory is None.
@@ -55,23 +66,24 @@ def process_msas_af3(
             alignment_db_directory is provided.
         alignment_array_directory (Path | None):
             The path to the directory containing the preprocessed alignment arrays.
-        msa_slice (MsaSlice):
-            Object containing the mappings from the crop to the MSA sequences.
         max_seq_counts (int | float):
             Max number of sequences to keep from each parsed MSA. Also used to determine
             which MSAs to parse from each chain directory.
         aln_order (list[str]):
             A list of strings matching the alignment file names, indicating the order in
             which they should be concatenated to form the main MSA.
-        paired_row_cutoff (int):
-            The maximum number of rows to include in the paired MSA.
+        max_rows_paired (int):
+            The maximum number of rows to keep in the paired MSA.
+        min_chains_paired_partial (int):
+            The minimum number of chains to keep in the paired MSA.
+        pairing_mask_keys (list[str]):
+            List of keys indicating which types of masks to apply during pairing.
+        moltypes (list[str]):
+            List of molecule types to consider in the MSA.
 
     Returns:
-        tuple[Msa, Msa, dict[int, Msa]]:
-            Tuple containing
-                - Msa object for the query sequence
-                - paired Msa concatenated across all chains
-                - dict mapping chain IDs to main Msa objects.
+        MsaArrayCollection:
+            The collection of MsaArrays in the processed state.
     """
 
     if (alignment_db_directory is not None) and (alignment_index is None):
@@ -84,6 +96,7 @@ def process_msas_af3(
         pdb_id=pdb_id,
         atom_array=atom_array,
         dataset_cache=dataset_cache,
+        moltypes=moltypes,
         alignments_directory=alignments_directory,
         alignment_db_directory=alignment_db_directory,
         alignment_index=alignment_index,
@@ -100,7 +113,10 @@ def process_msas_af3(
         if not find_monomer_homomer(msa_array_collection):
             # Create paired UniProt MSA arrays
             chain_id_to_paired_msa = create_paired(
-                msa_array_collection, max_rows_paired=max_rows_paired
+                msa_array_collection,
+                max_rows_paired=max_rows_paired,
+                min_chains_paired_partial=min_chains_paired_partial,
+                pairing_mask_keys=pairing_mask_keys,
             )
         else:
             chain_id_to_paired_msa = {}

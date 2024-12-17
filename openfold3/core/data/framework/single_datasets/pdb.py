@@ -345,6 +345,9 @@ class WeightedPDBDataset(SingleDataset):
             max_seq_counts=self.msa.max_seq_counts,
             aln_order=self.msa.aln_order,
             max_rows_paired=self.msa.max_rows_paired,
+            min_chains_paired_partial=self.msa.min_chains_paired_partial,
+            pairing_mask_keys=self.msa.pairing_mask_keys,
+            moltypes=self.msa.moltypes,
         )
         msa_features = featurize_msa_af3(
             atom_array=atom_array_cropped,

@@ -439,6 +439,9 @@ project_config = mlc.ConfigDict(
                     "max_rows_paired": 8191,
                     "max_rows": 16384,
                     "subsample_with_bands": False,
+                    "min_chains_paired_partial": 2,
+                    "pairing_mask_keys": ["shared_by_two", "less_than_600"],
+                    "moltypes": ["PROTEIN", "RNA"],
                     "max_seq_counts": {
                         "uniref90_hits": 10000,
                         "uniprot_hits": 50000,
