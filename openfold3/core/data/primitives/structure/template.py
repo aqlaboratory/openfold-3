@@ -9,6 +9,7 @@ from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFFile
 
 from openfold3.core.data.io.structure.cif import parse_mmcif
+from openfold3.core.data.primitives.caches.format import DatasetCache
 from openfold3.core.data.primitives.featurization.structure import get_token_starts
 from openfold3.core.data.primitives.structure.cleanup import (
     remove_hydrogens,
@@ -96,7 +97,7 @@ def get_query_structure_res_ids(atom_array_cropped_chain: AtomArray) -> np.ndarr
 
 
 def sample_templates(
-    dataset_cache: dict,
+    dataset_cache: DatasetCache,
     template_cache_directory: Path,
     n_templates: int,
     take_top_k: bool,
@@ -125,8 +126,8 @@ def sample_templates(
         dict[str, TemplateCacheEntry] | dict[None]:
             The sampled template data per chain given chain.
     """
-    chain_data = dataset_cache["structure_data"][pdb_id]["chains"][chain_id]
-    template_ids = chain_data["template_ids"]
+    chain_data = dataset_cache.structure_data[pdb_id].chains[chain_id]
+    template_ids = chain_data.template_ids
     l = len(template_ids)
     if l == 0:
         return {}
@@ -139,7 +140,7 @@ def sample_templates(
 
     if k > 0:
         # Load template cache numpy file
-        template_file_name = chain_data["alignment_representative_id"] + ".npz"
+        template_file_name = chain_data.alignment_representative_id + ".npz"
         template_cache = np.load(
             template_cache_directory / Path(template_file_name), allow_pickle=True
         )

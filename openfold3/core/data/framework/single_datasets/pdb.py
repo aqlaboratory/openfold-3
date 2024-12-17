@@ -14,6 +14,7 @@ from openfold3.core.data.framework.single_datasets.abstract_single_dataset impor
     SingleDataset,
     register_dataset,
 )
+from openfold3.core.data.io.dataset_cache import read_datacache
 from openfold3.core.data.pipelines.featurization.conformer import (
     featurize_reference_conformers_af3,
 )
@@ -218,8 +219,9 @@ class WeightedPDBDataset(SingleDataset):
 
         # Dataset/datapoint cache
         self.datapoint_cache = {}
-        with open(dataset_config["dataset_paths"]["dataset_cache_file"]) as f:
-            self.dataset_cache = json.load(f)
+        self.dataset_cache = read_datacache(
+            dataset_config["dataset_paths"]["dataset_cache_file"]
+        )
         self.create_datapoint_cache()
         self.datapoint_probabilities = self.datapoint_cache["weight"].to_numpy()
 
@@ -240,24 +242,25 @@ class WeightedPDBDataset(SingleDataset):
         correspoinding datapoint probabilities. Used for mapping FROM the dataset_cache
         in the StochasticSamplerDataset and TO the dataset_cache in the getitem."""
         datapoint_collection = DatapointCollection.create_empty()
-        for entry, entry_data in self.dataset_cache["structure_data"].items():
+        for entry, entry_data in self.dataset_cache.structure_data.items():
             # Append chains
-            for chain, chain_data in entry_data["chains"].items():
+            for chain, chain_data in entry_data.chains.items():
                 datapoint_collection.append(
                     entry,
                     str(chain),
-                    chain_data["molecule_type"],
+                    chain_data.molecule_type,
                     DatapointType.CHAIN,
-                    int(chain_data["cluster_size"]),
+                    int(chain_data.cluster_size),
                 )
+
             # Append interfaces
-            for interface_id, cluster_data in entry_data["interfaces"].items():
+            for interface_id, cluster_data in entry_data.interfaces.items():
                 interface_chains = interface_id.split("_")
-                cluster_size = int(cluster_data["cluster_size"])
+                cluster_size = int(cluster_data.cluster_size)
                 chain_moltypes = [
-                    entry_data["chains"][chain]["molecule_type"]
-                    for chain in interface_chains
+                    entry_data.chains[chain].molecule_type for chain in interface_chains
                 ]
+
                 datapoint_collection.append(
                     entry,
                     interface_chains,
@@ -419,7 +422,7 @@ class WeightedPDBDataset(SingleDataset):
         loss_features = {}
         loss_features["loss_weights"] = set_loss_weights(
             self.loss_settings,
-            self.dataset_cache["structure_data"][pdb_id]["resolution"],
+            self.dataset_cache.structure_data[pdb_id].resolution,
         )
         return loss_features
 
