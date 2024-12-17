@@ -120,8 +120,14 @@ def create_token_bonds(atom_array: AtomArray, token_index: np.ndarray) -> torch.
 
         # Unmask corresponding bonds
         token_bonds[
-            (bond_partner_absolute_token_ids[:, 0], bond_partner_absolute_token_ids[:, 1]),
-            (bond_partner_absolute_token_ids[:, 1], bond_partner_absolute_token_ids[:, 0]),
+            (
+                bond_partner_absolute_token_ids[:, 0],
+                bond_partner_absolute_token_ids[:, 1],
+            ),
+            (
+                bond_partner_absolute_token_ids[:, 1],
+                bond_partner_absolute_token_ids[:, 0],
+            ),
         ] = True
 
     return torch.tensor(token_bonds, dtype=torch.int32)
