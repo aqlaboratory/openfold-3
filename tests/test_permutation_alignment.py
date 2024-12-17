@@ -1,10 +1,3 @@
-# TODO: Remove this
-import sys
-
-from biotite.structure import AtomArray
-
-sys.path.insert(0, "/Users/jarosch/perm_align_of_whole/openfold3")
-
 from pathlib import Path
 
 from openfold3.core.data.io.structure.atom_array import read_atomarray_from_npz
