@@ -1,7 +1,8 @@
 import contextlib
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, NamedTuple
+from typing import Literal
 
 import numpy as np
 from biotite.structure import AtomArray
@@ -11,19 +12,20 @@ from openfold3.core.data.io.structure.mol import read_single_annotated_sdf
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
-from openfold3.core.data.primitives.structure.component import component_iter
 from openfold3.core.data.primitives.structure.conformer import (
     ConformerGenerationError,
     add_conformer_atom_mask,
     compute_conformer,
     get_allnan_conformer,
+    get_cropped_permutations,
     multistrategy_compute_conformer,
     set_single_conformer,
 )
-from openfold3.core.data.primitives.structure.labels import uniquify_ids
+from openfold3.core.data.primitives.structure.labels import component_iter, uniquify_ids
 
 
-class ProcessedReferenceMolecule(NamedTuple):
+@dataclass
+class ProcessedReferenceMolecule:
     """Processed reference molecule instance with the reference conformer.
 
     Attributes:
@@ -39,13 +41,21 @@ class ProcessedReferenceMolecule(NamedTuple):
                     Atom names
                 - "annot_used_atom_mask":
                     Mask for atoms that are not NaN in the conformer.
-        in_array_mask (np.ndarray[np.bool]):
-            Mask for atoms that are within the current target's atom array.
+        component_id (int):
+            Original component ID in the cropped AtomArray.
+        in_crop_mask (np.ndarray[np.bool]):
+            Mask for atoms that are within the current cropped crop's AtomArray.
+        permutations (list[np.ndarray[np.int]]):
+            List of symmetry-equivalent atom permutations for the reference conformer,
+            adjusted to only map to in-crop atoms, and only draw from the pool of atoms
+            present in the GT.
     """
 
     mol_id: str
     mol: Mol
-    in_array_mask: np.ndarray[bool]
+    component_id: int
+    in_crop_mask: np.ndarray[bool]
+    permutations: list[np.ndarray[int]]
 
 
 def get_processed_reference_conformer(
@@ -54,6 +64,7 @@ def get_processed_reference_conformer(
     mol_atom_array: AtomArray,
     preferred_confgen_strategy: Literal["default", "random_init", "use_fallback"],
     set_fallback_to_nan: bool = False,
+    max_permutations: int = 1_000,
 ) -> ProcessedReferenceMolecule:
     """Creates a ProcessedReferenceMolecule instance.
 
@@ -80,6 +91,9 @@ def get_processed_reference_conformer(
             the special case where the fallback conformer was derived from CCD model
             coordinates but the corresponding PDB ID is in the test set. Defaults to
             False.
+        max_permutations (int, optional):
+            Maximum number of symmetry-equivalent atom permutations to generate for the
+            reference conformer. Defaults to 1_000.
 
     Returns:
         ProcessedReferenceMolecule:
@@ -88,23 +102,43 @@ def get_processed_reference_conformer(
     # Copy mol
     mol = Mol(mol)
 
+    # Extract component ID
+    component_id = mol_atom_array.component_id[0]
+
     # Ensure mol has only one fallback conformer
     assert mol.GetNumConformers() == 1
 
-    # Get atom names from RDKit mol and AtomArray
-    mol_atom_names = [atom.GetProp("annot_atom_name") for atom in mol.GetAtoms()]
-    array_atom_names = mol_atom_array.atom_name
+    # Get uniquified atom names from RDKit mol and AtomArray (necessary because
+    # multi-residue ligands can have duplicated atom names)
+    conf_atom_names = uniquify_ids(
+        [atom.GetProp("annot_atom_name") for atom in mol.GetAtoms()]
+    )
+    gt_atom_names = mol_atom_array.atom_name_unique
 
-    # Necessary because multi-residue ligands like glycans may have repeated atom names
-    # TODO: this is probably brittle, imagine a case where the spatial crop skips an
-    # intermediate monomer and then what should be C1 C3 becomes C1 C2
-    # FIX: run uniquification before cropping OR make use of original indices kept after
-    # cropping
-    mol_atom_names = np.array(uniquify_ids(mol_atom_names))
-    array_atom_names = np.array(uniquify_ids(array_atom_names))
+    # Ensure that all atoms in the ground-truth structure are also in the loaded
+    # conformer data
+    assert np.isin(gt_atom_names, conf_atom_names).all()
 
-    # Set mask for atoms that are in the current target's atom array
-    in_array_mask = np.isin(mol_atom_names, array_atom_names)
+    # Mask for atoms that are in the ground-truth array
+    in_gt_mask = np.isin(conf_atom_names, gt_atom_names)
+
+    # Mask for atoms that are in the crop itself
+    in_crop_atom_names = gt_atom_names[mol_atom_array.crop_mask]
+    in_crop_mask = np.isin(conf_atom_names, in_crop_atom_names)
+
+    cropped_permutations = get_cropped_permutations(
+        mol=mol,
+        in_gt_mask=in_gt_mask,
+        in_crop_mask=in_crop_mask,
+        max_permutations=max_permutations,
+    )
+
+    # Ensure that the cropped permutations map exactly to number of in-crop atoms
+    assert cropped_permutations.shape[1] == len(in_crop_atom_names)
+
+    # Ensure that the cropped pernutation indices are within the bounds of the
+    # ground-truth
+    assert cropped_permutations.max() <= len(gt_atom_names)
 
     # If we can't use the fallback conformer (e.g. if it was derived from a PDB ID in
     # the test set), we set it to NaN
@@ -145,11 +179,19 @@ def get_processed_reference_conformer(
             # worked)
             mol = add_conformer_atom_mask(mol)
 
-    return ProcessedReferenceMolecule(mol_id, mol, in_array_mask)
+    return ProcessedReferenceMolecule(
+        mol=mol,
+        mol_id=mol_id,
+        component_id=component_id,
+        in_crop_mask=in_crop_mask,
+        permutations=cropped_permutations,
+    )
 
 
+# TODO: update the docstring here to make clearer how this is operating on the full atom
+# array but only returning in-crop conformer data
 @log_runtime_memory(runtime_dict_key="runtime-ref-conf-proc")
-def get_ref_conformer_data_af3(
+def get_reference_conformer_data_af3(
     atom_array: AtomArray,
     per_chain_metadata: dict,
     reference_mol_metadata: dict,
@@ -179,15 +221,19 @@ def get_ref_conformer_data_af3(
     processed_conformers = []
 
     # Fill the list of processed reference conformers with all relevant information
-    for component_array in component_iter(atom_array, per_chain_metadata):
+    for component_array in component_iter(atom_array):
+        # Skip if no atoms are in the crop
+        if not component_array.crop_mask.any():
+            continue
+
         chain_id = component_array.chain_id[0]
 
         # Either get the reference molecule ID from the chain metadata (in case of a
         # ligand chain) or use the residue name (in case of a single component of a
         # biopolymer)
-        ref_mol_id = per_chain_metadata[chain_id].get(
-            "reference_mol_id", component_array.res_name[0]
-        )
+        ref_mol_id = per_chain_metadata[chain_id].get("reference_mol_id")
+        if ref_mol_id is None:
+            ref_mol_id = component_array.res_name[0]
 
         mol = read_single_annotated_sdf_cached(reference_mol_dir / f"{ref_mol_id}.sdf")
 

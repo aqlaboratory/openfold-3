@@ -509,4 +509,15 @@ def openfold_batch_collator(samples: list[dict[str, torch.Tensor]]):
         )
         return values.squeeze(-1)
 
-    return dict_multimap(pad_feat_fn, samples)
+    # The ligand permutation mappings are a special feature and need to be handled
+    # separately
+    ref_space_uid_to_perm_dicts = []
+    for sample in samples:
+        ref_space_uid_to_perm_dicts.append(sample.pop("ref_space_uid_to_perm"))
+
+    samples = dict_multimap(pad_feat_fn, samples)
+
+    # Add the ref_space_uid_to_perm back to the samples
+    samples["ref_space_uid_to_perm"] = ref_space_uid_to_perm_dicts
+
+    return samples

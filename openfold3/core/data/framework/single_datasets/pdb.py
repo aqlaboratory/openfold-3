@@ -15,7 +15,7 @@ from openfold3.core.data.framework.single_datasets.abstract_single_dataset impor
     register_dataset,
 )
 from openfold3.core.data.pipelines.featurization.conformer import (
-    featurize_ref_conformers_af3,
+    featurize_reference_conformers_af3,
 )
 from openfold3.core.data.pipelines.featurization.loss_weights import set_loss_weights
 from openfold3.core.data.pipelines.featurization.msa import featurize_msa_af3
@@ -26,7 +26,7 @@ from openfold3.core.data.pipelines.featurization.template import (
     featurize_template_structures_af3,
 )
 from openfold3.core.data.pipelines.sample_processing.conformer import (
-    get_ref_conformer_data_af3,
+    get_reference_conformer_data_af3,
 )
 from openfold3.core.data.pipelines.sample_processing.msa import (
     process_msas_af3,
@@ -37,9 +37,13 @@ from openfold3.core.data.pipelines.sample_processing.structure import (
 from openfold3.core.data.pipelines.sample_processing.template import (
     process_template_structures_af3,
 )
+from openfold3.core.data.primitives.permutation.mol_labels import (
+    separate_cropped_and_gt,
+)
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
+from openfold3.core.data.primitives.structure.tokenization import add_token_positions
 from openfold3.core.data.resources.residues import MoleculeType
 
 
@@ -285,37 +289,72 @@ class WeightedPDBDataset(SingleDataset):
         )
         return sample_data["features"]
 
-    @log_runtime_memory(runtime_dict_key="runtime-create-target-structure-features")
-    def create_target_structure_features(
-        self, pdb_id: str, preferred_chain_or_interface: str, return_atom_arrays: bool
+    @log_runtime_memory(runtime_dict_key="runtime-create-structure-features")
+    def create_structure_features(
+        self,
+        pdb_id: str,
+        preferred_chain_or_interface: str,
+        return_full_atom_array: bool,
     ) -> tuple[dict, AtomArray | torch.Tensor]:
-        """Creates the target structure features."""
+        """Creates the target structure and conformer features."""
 
-        # Target structure and duplicate-expanded GT structure features
-        target_structure_data = process_target_structure_af3(
+        # Processed ground-truth structure with added annotations and masks
+        atom_array_gt, crop_strategy = process_target_structure_af3(
             target_structures_directory=self.target_structures_directory,
             pdb_id=pdb_id,
             crop_weights=self.crop_weights,
             token_budget=self.token_budget,
             preferred_chain_or_interface=preferred_chain_or_interface,
             structure_format="pkl",
-            return_full_atom_array=return_atom_arrays,
+            per_chain_metadata=self.dataset_cache["structure_data"][pdb_id]["chains"],
         )
-        # NOTE that for now we avoid the need for permutation alignment by providing the
-        # cropped atom array as the ground truth atom array
-        # target_structure_features.update(
-        #     featurize_target_gt_structure_af3(
-        #         target_structure_data["atom_array_cropped"],
-        #         target_structure_data["atom_array_gt"],
-        #         self.token_budget
-        #     )
-        # )
+
+        # Processed reference conformers
+        processed_reference_molecules = get_reference_conformer_data_af3(
+            atom_array=atom_array_gt,
+            per_chain_metadata=self.dataset_cache["structure_data"][pdb_id]["chains"],
+            reference_mol_metadata=self.dataset_cache["reference_molecule_data"],
+            reference_mol_dir=self.reference_molecule_directory,
+        )
+
+        if return_full_atom_array:
+            atom_array_full = atom_array_gt.copy()
+
+        # Apply crop and subset GT to only contain the atoms that are symmetry-related
+        # to atoms in the crop and necessary for the permutation alignment
+        atom_array_cropped, atom_array_gt = separate_cropped_and_gt(
+            atom_array_gt=atom_array_gt,
+            crop_strategy=crop_strategy,
+            processed_ref_mol_list=processed_reference_molecules,
+        )
+
+        # TODO: Move this somewhere else?
+        # Necessary positional indices for MSA and template processing
+        add_token_positions(atom_array_cropped)
+
+        # Compute target and ground-truth structure features
         target_structure_features = featurize_target_gt_structure_af3(
-            target_structure_data["atom_array_cropped"],
-            target_structure_data["atom_array_cropped"],
-            self.token_budget,
+            atom_array_cropped=atom_array_cropped,
+            atom_array_gt=atom_array_gt,
+            token_budget=self.token_budget,
         )
-        target_structure_data["target_structure_features"] = target_structure_features
+
+        # Compute reference conformer features
+        reference_conformer_features = featurize_reference_conformers_af3(
+            processed_ref_mol_list=processed_reference_molecules
+        )
+
+        # Wrap up features
+        target_structure_data = {
+            "atom_array_gt": atom_array_gt,
+            "atom_array_cropped": atom_array_cropped,
+            "target_structure_features": target_structure_features,
+            "reference_conformer_features": reference_conformer_features,
+        }
+
+        if return_full_atom_array:
+            target_structure_data["atom_array"] = atom_array_full
+
         return target_structure_data
 
     @log_runtime_memory(runtime_dict_key="runtime-create-msa-features")
@@ -374,24 +413,6 @@ class WeightedPDBDataset(SingleDataset):
 
         return template_features
 
-    @log_runtime_memory(runtime_dict_key="runtime-create-ref-conformer-features")
-    def create_ref_conformer_features(
-        self, pdb_id: str, atom_array_cropped: AtomArray
-    ) -> dict:
-        """Creates the reference conformer features."""
-
-        processed_reference_molecules = get_ref_conformer_data_af3(
-            atom_array=atom_array_cropped,
-            per_chain_metadata=self.dataset_cache["structure_data"][pdb_id]["chains"],
-            reference_mol_metadata=self.dataset_cache["reference_molecule_data"],
-            reference_mol_dir=self.reference_molecule_directory,
-        )
-        reference_conformer_features = featurize_ref_conformers_af3(
-            processed_reference_molecules
-        )
-
-        return reference_conformer_features
-
     def create_loss_features(self, pdb_id: str) -> dict:
         """Creates the loss features."""
 
@@ -413,12 +434,15 @@ class WeightedPDBDataset(SingleDataset):
 
         sample_data = {"features": {}}
 
-        # Target structure features
-        target_structure_data = self.create_target_structure_features(
+        # Target & GT structure and conformer features
+        target_structure_data = self.create_structure_features(
             pdb_id, preferred_chain_or_interface, return_atom_arrays
         )
         sample_data["features"].update(
             target_structure_data["target_structure_features"]
+        )
+        sample_data["features"].update(
+            target_structure_data["reference_conformer_features"]
         )
 
         # MSA features
@@ -433,12 +457,6 @@ class WeightedPDBDataset(SingleDataset):
             pdb_id, target_structure_data["atom_array_cropped"]
         )
         sample_data["features"].update(template_features)
-
-        # Reference conformer features
-        reference_conformer_features = self.create_ref_conformer_features(
-            pdb_id, target_structure_data["atom_array_cropped"]
-        )
-        sample_data["features"].update(reference_conformer_features)
 
         # Loss switches
         loss_features = self.create_loss_features(pdb_id)

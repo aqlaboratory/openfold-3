@@ -413,7 +413,7 @@ def mol_from_atomarray(atom_array: AtomArray) -> AnnotatedMol:
     return mol
 
 
-def component_iter(atom_array: AtomArray, per_chain_metadata: dict):
+def component_iter_from_metadata(atom_array: AtomArray, per_chain_metadata: dict):
     for chain_array in struc.chain_iter(atom_array):
         chain_id = chain_array.chain_id[0]
 

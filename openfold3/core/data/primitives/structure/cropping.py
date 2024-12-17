@@ -19,7 +19,6 @@ from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
     remove_atom_indices,
 )
-from openfold3.core.data.primitives.structure.tokenization import add_token_positions
 
 
 def crop_contiguous(
@@ -321,7 +320,7 @@ CROP_REGISTRY = {
 }
 
 
-def sample_crop_strategy(crop_weights: dict[str, float]) -> tuple[Callable, tuple[str]]:
+def sample_crop_strategy(crop_weights: dict[str, float]) -> str:
     """Samples cropping strategy with dataset-specific weights.
 
     Args:
@@ -329,35 +328,31 @@ def sample_crop_strategy(crop_weights: dict[str, float]) -> tuple[Callable, tupl
             Dictionary of crop weights.
 
     Returns:
-        tuple[Callable, tuple[str]]:
-            Tuple of crop function and crop function arguments
+        str:
+            Sampled cropping strategy.
     """
     crop_keys = list(CROP_REGISTRY.keys())
 
-    return CROP_REGISTRY[
-        crop_keys[
-            torch.multinomial(
-                torch.tensor([crop_weights[c] for c in crop_keys], dtype=torch.float),
-                num_samples=1,
-                replacement=False,
-            ).item()
-        ]
+    return crop_keys[
+        torch.multinomial(
+            torch.tensor([crop_weights[c] for c in crop_keys], dtype=torch.float),
+            num_samples=1,
+            replacement=False,
+        ).item()
     ]
 
 
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-crop")
-def set_crop_mask(
+def sample_crop_and_set_mask(
     atom_array: AtomArray,
     token_budget: int,
     preferred_chain_or_interface: Optional[Union[int, tuple[int, int]]],
     crop_weights: dict[str, float],
-):
+) -> str:
     """Samples and applies cropping strategy to the input assembly and sets mask.
 
-    Running this function on an AtomArray will add the 'crop_mask' annotation which is
-    True for atoms inside the crop and False for atoms outside the crop. It will also
-    add the 'token_position' annotation which indexes the position of each token in the
-    crop and is necessary for mapping the crop to the alignments and templates.
+    Running this function on an AtomArray will add the 'crop_mask' annotation in-place,
+    which is True for atoms inside the crop and False for atoms outside the crop.
 
     Args:
         atom_array (AtomArray):
@@ -372,17 +367,20 @@ def set_crop_mask(
             Dictionary of crop weights.
 
     Returns:
-        None. The 'crop_mask' and 'token_position' annotations are added to the input
-        AtomArray in-place.
+        str:
+            Name of the sampled cropping strategy, e.g. 'contiguous'. Returns 'whole' if
+            the whole assembly fits into the token budget.
     """
 
     # Take whole assembly if it fits in the budget
     if len(set(atom_array.token_id)) <= token_budget:
         atom_array.set_annotation("crop_mask", np.repeat(True, len(atom_array)))
+        return "whole"
 
     # Otherwise run cropping function
     else:
-        crop_function, crop_function_argnames = sample_crop_strategy(crop_weights)
+        crop_strategy = sample_crop_strategy(crop_weights)
+        crop_function, crop_function_argnames = CROP_REGISTRY[crop_strategy]
         crop_input = {
             "atom_array": atom_array,
             "token_budget": token_budget,
@@ -391,9 +389,4 @@ def set_crop_mask(
         crop_function(
             **{k: v for k, v in crop_input.items() if k in crop_function_argnames}
         )
-
-    # TODO: This may break and was only temporarily set like this for an intermediate
-    # dev-merge
-    # Crop and renumber token positions for the cropped atom array
-    atom_array_cropped = atom_array[atom_array.crop_mask]
-    add_token_positions(atom_array_cropped)
+        return crop_strategy

@@ -259,3 +259,61 @@ def resolve_and_format_fallback_conformer(
     replace_nan_coords_with_zeros(mol)
 
     return mol, strategy
+
+
+def get_cropped_permutations(
+    mol: Mol,
+    in_gt_mask: np.ndarray,
+    in_crop_mask: np.ndarray,
+    max_permutations: int = 1_000,
+) -> np.ndarray:
+    # Define a mapping from the atom indices in the full conformer object to the atom
+    # indices in the ground-truth
+    conf_to_gt_index = np.full(len(in_gt_mask), -1, dtype=int)
+    conf_to_gt_index[in_gt_mask] = np.arange(np.sum(in_gt_mask))
+
+    # Get symmetry-equivalent atom permutations for this conformer following AF3 SI 4.2
+    # (uses useChirality=False because that's also what RDKit's symmetry-corrected RMSD
+    # uses)
+    permutations = np.array(
+        mol.GetSubstructMatches(
+            mol, uniquify=False, maxMatches=max_permutations, useChirality=False
+        )
+    )
+
+    # Map the permutations of full conformer atom indices to the ground-truth atoms
+    gt_permutations = conf_to_gt_index[permutations]
+
+    # Restrict permutations to atoms in the crop
+    gt_permutations = gt_permutations[:, in_crop_mask]
+
+    # Filter permutations that use atoms that are not in the ground-truth atoms
+    gt_permutations = gt_permutations[np.all(gt_permutations != -1, axis=1)]
+
+    assert gt_permutations.shape[1] == np.sum(in_crop_mask)
+    assert gt_permutations.shape[0] >= 1
+
+    return gt_permutations
+
+
+# TODO: change this docstring
+def renumber_permutations(
+    permutation: np.ndarray,
+) -> np.ndarray:
+    """Renumber a permutation to a contiguous range starting from 0.
+
+    Args:
+        permutation:
+            The permutation to renumber.
+
+    Returns:
+        The renumbered permutation.
+    """
+    renumbered_permutation = np.full_like(permutation, -1)
+    unique_permutation = np.unique(permutation)
+    for new_idx, old_idx in enumerate(unique_permutation):
+        renumbered_permutation[permutation == old_idx] = new_idx
+
+    assert np.all(renumbered_permutation != -1)
+
+    return renumbered_permutation
