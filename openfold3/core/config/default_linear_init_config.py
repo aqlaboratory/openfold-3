@@ -14,15 +14,15 @@ from ml_collections import ConfigDict
 # AF3
 swiglu_init = ConfigDict(
     {
-        "linear_a": {"bias": False, "init": "he_normal"},
-        "linear_b": {"bias": False, "init": "he_normal"},
+        "linear_a": {"bias": False, "init": "relu"},
+        "linear_b": {"bias": False, "init": "relu"},
     }
 )
 
 # AF3
 ada_ln_init = ConfigDict(
     {
-        "linear_g": {"bias": True, "init": "gating"},
+        "linear_g": {"bias": True, "init": "final"},
         "linear_s": {"bias": False, "init": "final"},
     }
 )
@@ -173,22 +173,28 @@ ref_atom_emb_init = ConfigDict(
 )
 
 # AF3
-noisy_pos_emb_init = ConfigDict(
+atom_trunk_emb_init = ConfigDict(
     {
         "linear_s": {"bias": False, "init": "default"},
         "linear_z": {"bias": False, "init": "default"},
-        "linear_r": {"bias": False, "init": "default"},
+    }
+)
+
+# AF3
+seq_local_atom_emb_init = ConfigDict(
+    {
+        "ref_atom_emb": ref_atom_emb_init,
+        "atom_trunk_emb": atom_trunk_emb_init,
+        "linear_l": {"bias": False, "init": "relu"},
+        "linear_m": {"bias": False, "init": "relu"},
+        "pair_mlp": {"bias": False, "init": "relu"},
     }
 )
 
 # AF3
 atom_att_enc_init = ConfigDict(
     {
-        "ref_atom_emb": ref_atom_emb_init,
-        "noisy_pos_emb": noisy_pos_emb_init,
-        "linear_l": {"bias": False, "init": "relu"},
-        "linear_m": {"bias": False, "init": "relu"},
-        "pair_mlp": {"bias": False, "init": "relu"},
+        "linear_r": {"bias": False, "init": "default"},
         "atom_transformer": atom_transformer_init,
         "linear_q": {"bias": False, "init": "relu"},
     }

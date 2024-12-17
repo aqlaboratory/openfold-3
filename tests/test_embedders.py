@@ -16,6 +16,11 @@ import unittest
 
 import torch
 
+from openfold3.core.model.feature_embedders.atom_embedders import (
+    AtomTrunkEmbedder,
+    RefAtomFeatureEmbedder,
+    SeqLocalAtomEmbedder,
+)
 from openfold3.core.model.feature_embedders.input_embedders import (
     InputEmbedder,
     InputEmbedderAllAtom,
@@ -32,6 +37,7 @@ from openfold3.core.model.feature_embedders.template_embedders import (
     TemplateSingleEmbedderMultimer,
 )
 from openfold3.projects import registry
+from openfold3.projects.af3_all_atom.config.base_config import c_atom_ref
 from tests.config import consts, monomer_consts, multimer_consts
 from tests.data_utils import random_af3_features, random_asym_ids, random_template_feats
 
@@ -160,6 +166,116 @@ class TestMSAModuleEmbedder(unittest.TestCase):
             msa.shape == (batch_size, n_sampled_seqs, n_token, msa_emb_config.c_m)
         )
         self.assertTrue(msa_mask.shape == (batch_size, n_sampled_seqs, n_token))
+
+
+class TestRefAtomFeatureEmbedder(unittest.TestCase):
+    def test_shape(self):
+        batch_size = consts.batch_size
+        n_atom = 4 * consts.n_res
+        c_atom = 64
+        c_atom_pair = 16
+
+        embedder = RefAtomFeatureEmbedder(
+            c_atom_ref=c_atom_ref.get(), c_atom=c_atom, c_atom_pair=c_atom_pair
+        )
+
+        batch = {
+            "ref_pos": torch.randn((batch_size, n_atom, 3)),
+            "ref_mask": torch.ones((batch_size, n_atom)),
+            "ref_element": torch.ones((batch_size, n_atom, 119)),
+            "ref_charge": torch.ones((batch_size, n_atom)),
+            "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
+            "ref_space_uid": torch.zeros((batch_size, n_atom)),
+        }
+
+        cl, plm = embedder(batch)
+
+        self.assertTrue(cl.shape == (batch_size, n_atom, c_atom))
+        self.assertTrue(plm.shape == (batch_size, n_atom, n_atom, c_atom_pair))
+
+
+class TestAtomTrunkEmbedder(unittest.TestCase):
+    def test_shape(self):
+        batch_size = consts.batch_size
+        n_token = consts.n_res
+        n_atom = 4 * consts.n_res
+        c_s = consts.c_s
+        c_z = consts.c_z
+        c_atom = 64
+        c_atom_pair = 16
+
+        embedder = AtomTrunkEmbedder(
+            c_s=c_s,
+            c_z=c_z,
+            c_atom=c_atom,
+            c_atom_pair=c_atom_pair,
+        )
+
+        cl = torch.randn((batch_size, n_atom, c_atom))
+        plm = torch.randn((batch_size, n_atom, n_atom, c_atom_pair))
+
+        si_trunk = torch.randn((batch_size, n_token, c_s))
+        zij_trunk = torch.randn((batch_size, n_token, n_token, c_z))
+
+        batch = {
+            "token_mask": torch.ones((batch_size, n_token)),
+            "num_atoms_per_token": torch.ones((batch_size, n_token)) * 4,
+        }
+
+        cl, plm = embedder(
+            batch=batch,
+            cl=cl,
+            plm=plm,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+        )
+
+        self.assertTrue(cl.shape == (batch_size, n_atom, c_atom))
+        self.assertTrue(plm.shape == (batch_size, n_atom, n_atom, c_atom_pair))
+
+
+class TestSeqLocalAtomEmbedder(unittest.TestCase):
+    def test_shape(self):
+        batch_size = consts.batch_size
+        n_token = consts.n_res
+        n_atom = 4 * consts.n_res
+        c_s = consts.c_s
+        c_z = consts.c_z
+        c_atom = 64
+        c_atom_pair = 16
+
+        embedder = SeqLocalAtomEmbedder(
+            c_atom_ref=c_atom_ref.get(),
+            c_atom=c_atom,
+            c_atom_pair=c_atom_pair,
+            add_trunk_emb=True,
+            c_s=c_s,
+            c_z=c_z,
+        )
+
+        si_trunk = torch.randn((batch_size, n_token, c_s))
+        zij_trunk = torch.randn((batch_size, n_token, n_token, c_z))
+
+        batch = {
+            "ref_pos": torch.randn((batch_size, n_atom, 3)),
+            "ref_mask": torch.ones((batch_size, n_atom)),
+            "ref_element": torch.ones((batch_size, n_atom, 119)),
+            "ref_charge": torch.ones((batch_size, n_atom)),
+            "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
+            "ref_space_uid": torch.zeros((batch_size, n_atom)),
+            "token_mask": torch.ones((batch_size, n_token)),
+            "num_atoms_per_token": torch.ones((batch_size, n_token)) * 4,
+        }
+
+        ql, cl, plm = embedder(
+            batch=batch,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+        )
+
+        self.assertTrue(ql.shape == (batch_size, n_atom, c_atom))
+        self.assertTrue(cl.shape == (batch_size, n_atom, c_atom))
+        self.assertTrue(plm.shape == (batch_size, n_atom, n_atom, c_atom_pair))
 
 
 class TestPreembeddingEmbedder(unittest.TestCase):

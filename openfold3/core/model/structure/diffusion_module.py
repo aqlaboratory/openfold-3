@@ -137,9 +137,7 @@ class DiffusionModule(nn.Module):
             **config.diffusion_conditioning
         )
 
-        self.atom_attn_enc = AtomAttentionEncoder(
-            **config.atom_attn_enc, add_noisy_pos=True
-        )
+        self.atom_attn_enc = AtomAttentionEncoder(**config.atom_attn_enc)
 
         diff_mod_init = config.diffusion_module.get(
             "linear_init_params", lin_init.diffusion_module_init
@@ -167,6 +165,9 @@ class DiffusionModule(nn.Module):
         token_mask: torch.Tensor,
         atom_mask: torch.Tensor,
         t: torch.Tensor,
+        ql: torch.Tensor,
+        cl: torch.Tensor,
+        plm: torch.Tensor,
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
@@ -212,10 +213,11 @@ class DiffusionModule(nn.Module):
 
         ai, ql, cl, plm = self.atom_attn_enc(
             batch=batch,
+            ql=ql,
+            cl=cl,
+            plm=plm,
             atom_mask=atom_mask,
             rl=rl_noisy,
-            si_trunk=si_trunk,
-            zij_trunk=zij_trunk,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=False,
         )
@@ -295,6 +297,9 @@ class SampleDiffusion(nn.Module):
     def forward(
         self,
         batch: dict,
+        ql: torch.Tensor,
+        cl: torch.Tensor,
+        plm: torch.Tensor,
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
@@ -354,6 +359,9 @@ class SampleDiffusion(nn.Module):
                 token_mask=batch["token_mask"],
                 atom_mask=atom_mask,
                 t=t.to(xl_noisy.device),
+                ql=ql,
+                cl=cl,
+                plm=plm,
                 si_input=si_input,
                 si_trunk=si_trunk,
                 zij_trunk=zij_trunk,

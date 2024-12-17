@@ -88,13 +88,22 @@ project_config = mlc.ConfigDict(
                     "c_z": c_z,
                     "max_relative_idx": max_relative_idx,
                     "max_relative_chain": max_relative_chain,
-                    "atom_attn_enc": {
-                        "c_s": c_s,
-                        "c_z": c_z,
+                    "seq_local_atom_embedder": {
                         "c_atom_ref": c_atom_ref,
                         "c_atom": c_atom,
                         "c_atom_pair": c_atom_pair,
+                        "add_trunk_emb": False,
+                        "c_s": c_s,
+                        "c_z": c_z,
+                        "ckpt_intermediate_steps": ckpt_intermediate_steps,
+                        "linear_init_params": lin_init.seq_local_atom_emb_init,
+                        "use_reentrant": False,
+                    },
+                    "atom_attn_enc": {
+                        "c_atom": c_atom,
+                        "c_atom_pair": c_atom_pair,
                         "c_token": c_token_embedder,
+                        "add_noisy_pos": False,
                         # c_atom / no_heads
                         # built into the function (might get float depending on conf.)
                         "c_hidden": 32,
@@ -198,6 +207,17 @@ project_config = mlc.ConfigDict(
                     "clear_cache_between_blocks": False,
                     "tune_chunk_size": tune_chunk_size,
                 },
+                "seq_local_atom_embedder": {
+                    "c_atom_ref": c_atom_ref,
+                    "c_atom": c_atom,
+                    "c_atom_pair": c_atom_pair,
+                    "add_trunk_emb": True,
+                    "c_s": c_s,
+                    "c_z": c_z,
+                    "ckpt_intermediate_steps": ckpt_intermediate_steps,
+                    "linear_init_params": lin_init.seq_local_atom_emb_init,
+                    "use_reentrant": False,
+                },
                 "diffusion_module": {
                     "diffusion_module": {
                         "c_s": c_s,
@@ -216,12 +236,10 @@ project_config = mlc.ConfigDict(
                         "linear_init_params": lin_init.diffusion_cond_init,
                     },
                     "atom_attn_enc": {
-                        "c_s": c_s,
-                        "c_z": c_z,
-                        "c_atom_ref": c_atom_ref,
                         "c_atom": c_atom,
                         "c_atom_pair": c_atom_pair,
                         "c_token": c_token_diffusion,
+                        "add_noisy_pos": True,
                         # c_atom / no_heads
                         # built into the function (might get float depending on conf.)
                         "c_hidden": 32,
@@ -498,6 +516,7 @@ project_config = mlc.ConfigDict(
                     "reference_molecule_directory": PLACEHOLDER_PATH,
                     "template_cache_directory": PLACEHOLDER_PATH,
                     "template_structures_directory": PLACEHOLDER_PATH,
+                    "template_structure_array_directory": PLACEHOLDER_PATH,
                     "template_file_format": PLACEHOLDER_PATH,
                     "ccd_file": PLACEHOLDER_PATH,
                 },

@@ -23,6 +23,7 @@ from openfold3.core.model.structure.diffusion_module import (
 )
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects import registry
+from openfold3.projects.af3_all_atom.config.base_config import c_atom, c_atom_pair
 from tests.config import consts
 from tests.data_utils import random_af3_features
 
@@ -53,6 +54,11 @@ class TestDiffusionModule(unittest.TestCase):
         xl_noisy = torch.randn((batch_size, n_atom, 3))
         t = torch.ones(1)
         atom_mask = torch.ones((batch_size, n_atom))
+
+        ql = torch.rand((batch_size, n_atom, c_atom.get()))
+        cl = torch.rand((batch_size, n_atom, c_atom.get()))
+        plm = torch.rand((batch_size, n_atom, n_atom, c_atom_pair.get()))
+
         si_input = torch.rand((batch_size, n_token, c_s_input))
         si_trunk = torch.rand((batch_size, n_token, c_s))
         zij_trunk = torch.rand((batch_size, n_token, n_token, c_z))
@@ -63,6 +69,9 @@ class TestDiffusionModule(unittest.TestCase):
             t=t,
             token_mask=batch["token_mask"],
             atom_mask=atom_mask,
+            ql=ql,
+            cl=cl,
+            plm=plm,
             si_input=si_input,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
@@ -97,6 +106,11 @@ class TestDiffusionModule(unittest.TestCase):
         xl_noisy = torch.randn((batch_size, n_sample, n_atom, 3))
         t = torch.ones((batch_size, n_sample))
         atom_mask = torch.ones((batch_size, 1, n_atom))
+
+        ql = torch.rand((batch_size, 1, n_atom, c_atom.get()))
+        cl = torch.rand((batch_size, 1, n_atom, c_atom.get()))
+        plm = torch.rand((batch_size, 1, n_atom, n_atom, c_atom_pair.get()))
+
         si_input = torch.rand((batch_size, 1, n_token, c_s_input))
         si_trunk = torch.rand((batch_size, 1, n_token, c_s))
         zij_trunk = torch.rand((batch_size, 1, n_token, n_token, c_z))
@@ -107,6 +121,9 @@ class TestDiffusionModule(unittest.TestCase):
             token_mask=batch["token_mask"],
             atom_mask=atom_mask,
             t=t,
+            ql=ql,
+            cl=cl,
+            plm=plm,
             si_input=si_input,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
@@ -143,6 +160,10 @@ class TestSampleDiffusion(unittest.TestCase):
         )
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
+        ql = torch.rand((batch_size, n_atom, c_atom.get()))
+        cl = torch.rand((batch_size, n_atom, c_atom.get()))
+        plm = torch.rand((batch_size, n_atom, n_atom, c_atom_pair.get()))
+
         si_input = torch.rand((batch_size, n_token, c_s_input))
         si_trunk = torch.rand((batch_size, n_token, c_s))
         zij_trunk = torch.rand((batch_size, n_token, n_token, c_z))
@@ -156,6 +177,9 @@ class TestSampleDiffusion(unittest.TestCase):
 
             xl = sd(
                 batch=batch,
+                ql=ql,
+                cl=cl,
+                plm=plm,
                 si_input=si_input,
                 si_trunk=si_trunk,
                 zij_trunk=zij_trunk,
