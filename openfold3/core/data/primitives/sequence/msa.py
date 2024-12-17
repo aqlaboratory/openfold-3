@@ -308,9 +308,13 @@ class MsaArrayCollection:
         3.) prefeaturized state:
             Processed state with the attribute row_counts also populated.
 
-    Attributes chain_id_to_rep_id, chain_id_to_mol_type are populated in both states.
+    Attributes _state, chain_id_to_rep_id, chain_id_to_mol_type are populated in both
+    states.
 
     Attributes:
+        _state (str):
+            The state of the MsaArrayCollection object. Can be one of "init", "parsed",
+            "processed", or "prefeaturized".
         rep_id_to_msa (dict[str, dict[str, MsaArray]]):
             Dictionary mapping representative chain IDs to dictionaries of Msa objects.
         rep_id_to_query_seq (dict[str, np.ndarray[str]]):
@@ -333,6 +337,7 @@ class MsaArrayCollection:
     """
 
     # Core attributes
+    _state: str = "init"
     chain_id_to_rep_id: dict[str, str]
     chain_id_to_mol_type: dict[str, str]
     row_counts: dict[str, int | dict[str, int]] = dataclasses.field(
@@ -356,6 +361,7 @@ class MsaArrayCollection:
 
     def set_state_parsed(self, rep_id_to_msa, rep_id_to_query_seq):
         """Set the state to parsed."""
+        self._state = "parsed"
         self.rep_id_to_msa = rep_id_to_msa
         self.rep_id_to_query_seq = rep_id_to_query_seq
         self.chain_id_to_query_seq = {}
@@ -366,6 +372,7 @@ class MsaArrayCollection:
         self, chain_id_to_query_seq, chain_id_to_paired_msa, chain_id_to_main_msa
     ):
         """Set the state to processed."""
+        self._state = "processed"
         self.chain_id_to_query_seq = chain_id_to_query_seq
         self.chain_id_to_paired_msa = chain_id_to_paired_msa
         self.chain_id_to_main_msa = chain_id_to_main_msa
@@ -374,6 +381,7 @@ class MsaArrayCollection:
 
     def set_state_prefeaturized(self, n_rows, n_rows_paired_cropped, n_rows_main):
         """Set the state to prefeaturized."""
+        self._state = "prefeaturized"
         self.row_counts = {
             "n_rows": n_rows,
             "n_rows_paired_cropped": n_rows_paired_cropped,
