@@ -37,7 +37,7 @@ def process_target_structure_af3(
     crop_weights: dict[str, float],
     token_budget: int,
     preferred_chain_or_interface: str,
-    structure_format: Literal["cif", "bcif", "pkl"],
+    structure_format: Literal["pkl", "npz"],
     per_chain_metadata: dict[str, dict[str, str]],
 ) -> tuple[AtomArray, AtomArray]:
     """AF3 pipeline for processing target structure into AtomArrays.
