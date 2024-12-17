@@ -1,11 +1,9 @@
 """This module contains pipelines for processing structural features on-the-fly."""
 
 import logging
-import time
 from pathlib import Path
 from typing import Literal, NamedTuple
 
-import numpy as np
 from biotite.structure import AtomArray
 
 from openfold3.core.data.io.structure.cif import parse_target_structure
@@ -22,11 +20,6 @@ from openfold3.core.data.primitives.structure.labels import (
     assign_uniquified_atom_names,
 )
 from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
-from openfold3.core.data.resources.residues import (
-    STANDARD_NUCLEIC_ACID_RESIDUES,
-    STANDARD_PROTEIN_RESIDUES_3,
-    MoleculeType,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -34,53 +27,6 @@ logger = logging.getLogger(__name__)
 class ProcessedTargetStructure(NamedTuple):
     atom_array_gt: AtomArray
     crop_strategy: str
-
-
-# Imported from new unresolved fix
-def set_residue_hetero_values(atom_array: AtomArray) -> None:
-    """Sets the "hetero" annotation in the AtomArray based on the residue names.
-
-    This function sets the "hetero" annotation in the AtomArray based on the residue
-    names. If the residue name is in the list of standard residues for the respective
-    molecule type, the "hetero" annotation is set to False, otherwise it is set to True.
-
-    Args:
-        atom_array:
-            AtomArray containing the structure to set the "hetero" annotation for.
-
-    Returns:
-        None, the "hetero" annotation is modified in-place.
-    """
-    protein_mask = atom_array.molecule_type_id == MoleculeType.PROTEIN
-    if protein_mask.any():
-        in_standard_protein_residues = np.isin(
-            atom_array.res_name, STANDARD_PROTEIN_RESIDUES_3
-        )
-    else:
-        in_standard_protein_residues = np.zeros(len(atom_array), dtype=bool)
-
-    rna_mask = atom_array.molecule_type_id == MoleculeType.RNA
-    if rna_mask.any():
-        in_standard_rna_residues = np.isin(
-            atom_array.res_name, STANDARD_NUCLEIC_ACID_RESIDUES
-        )
-    else:
-        in_standard_rna_residues = np.zeros(len(atom_array), dtype=bool)
-
-    dna_mask = atom_array.molecule_type_id == MoleculeType.DNA
-    if dna_mask.any():
-        in_standard_dna_residues = np.isin(
-            atom_array.res_name, STANDARD_NUCLEIC_ACID_RESIDUES
-        )
-    else:
-        in_standard_dna_residues = np.zeros(len(atom_array), dtype=bool)
-
-    atom_array.hetero[:] = True
-    atom_array.hetero[
-        (protein_mask & in_standard_protein_residues)
-        | (rna_mask & in_standard_rna_residues)
-        | (dna_mask & in_standard_dna_residues)
-    ] = False
 
 
 # TODO: Update docstring
@@ -126,8 +72,6 @@ def process_target_structure_af3(
         target_structures_directory, pdb_id, structure_format
     )
 
-    assert (atom_array.occupancy != 0).any(), f"No non-zero occupancy atoms in {pdb_id}"
-
     # Mark individual components (which get unique conformers)
     assign_component_ids_from_metadata(atom_array, per_chain_metadata)
 
@@ -155,13 +99,8 @@ def process_target_structure_af3(
         crop_weights,
     )
 
-    # TODO: put add_token_positions here
-
-    start = time.perf_counter()
     # Add labels to identify symmetric mols in permutation alignment
     atom_array = assign_mol_permutation_ids(atom_array)
-    end = time.perf_counter()
-    logger.debug(f"Time to assign mol permutation ids: {end - start:.2f}s")
 
     # NOTE: could move this to conformer processing
     # TODO: make this logic more robust (potentially by reverting treating multi-residue
@@ -169,10 +108,6 @@ def process_target_structure_af3(
     # Necessary for multi-residue ligands (which can have duplicated atom names) to
     # identify which atom names ended up in the crop.
     atom_array = assign_uniquified_atom_names(atom_array)
-
-    assert (
-        atom_array.occupancy[atom_array.crop_mask] != 0
-    ).any(), f"No non-zero occupancy atoms in crop of {pdb_id}"
 
     return ProcessedTargetStructure(
         atom_array_gt=atom_array,
