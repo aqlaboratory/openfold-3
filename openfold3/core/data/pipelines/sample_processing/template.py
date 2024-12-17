@@ -33,7 +33,8 @@ def process_template_structures_af3(
 ) -> TemplateSliceCollection:
     """Processes template structures for all chains of a given target structure.
 
-    Note: Only looks for templates for chains that have at least one atom in the crop.
+    Note: During training, only looks for templates for chains that have at least one
+    atom in the crop.
 
     Args:
         atom_array (AtomArray):
@@ -54,12 +55,13 @@ def process_template_structures_af3(
         template_structures_directory (Path | None):
             The directory where the template structures are stored.
         template_structure_array_directory (Path | None):
-            The directory where the preparsed and preprocessed template structure
-            arrays are stored.
+            The directory where the preparsed and preprocessed template structure arrays
+            are stored.
         template_file_format (str):
             The format of the template files.
         ccd (CIFFile | None):
-            The parsed CCD file.
+            The parsed CCD file. Not used if template_structure_array_directory is
+            provided.
 
     Returns:
         TemplateSliceCollection:

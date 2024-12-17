@@ -196,8 +196,11 @@ def sample_templates(
 
 def subset_template_index_map(
     template_cache_entry: TemplateCacheEntry, atom_array_query_chain: AtomArray
-) -> None:
-    """Subsets the idx map to template residues that align to the query crop.
+) -> bool:
+    """Subsets the idx map to template residues that align to the query chain.
+
+    The return value also determines whether the template is outside the crop during
+    training.
 
     Args:
         template_cache_entry (TemplateCacheEntry):
@@ -208,6 +211,11 @@ def subset_template_index_map(
             The query atom array for the current query chain. During training, this only
             contains the residues that are in the crop. During inference, this contains
             all residues of the query chain.
+
+    Returns:
+        bool:
+            True if for training samples where the template falls outside the crop,
+            False otherwise.
     """
     idx_map = template_cache_entry.idx_map
     idx_map = idx_map[idx_map[:, 0] != -1, :]
@@ -219,6 +227,8 @@ def subset_template_index_map(
     # Update template cache entry with idx map in crop
     template_cache_entry.idx_map = idx_map_in_crop
 
+    return template_cache_entry.idx_map.shape[0] == 0
+
 
 @log_runtime_memory(
     runtime_dict_key="runtime-template-proc-align-parse", multicall=True
@@ -226,8 +236,7 @@ def subset_template_index_map(
 def parse_template_structure(
     template_structures_directory: Path | None,
     template_structure_array_directory: Path | None,
-    template_pdb_id: str,
-    template_chain_id: str,
+    template_pdb_chain_id: str,
     template_file_format: str,
     ccd: CIFFile | None,
 ) -> AtomArray:
@@ -239,10 +248,8 @@ def parse_template_structure(
         template_structure_array_directory (Path | None):
             The directory where the preparsed and pre-processed template structure
             arrays are stored.
-        template_pdb_id (str):
-            The PDB ID of the template structure.
-        template_chain_id (str):
-            The chain ID of the template chain.
+        template_pdb_chain_id (str):
+            The PDB+chain ID of the template structure.
         template_file_format (str):
             The format of the template structures.
         ccd (CIFFile | None):
@@ -257,6 +264,9 @@ def parse_template_structure(
         AtomArray:
             The cleaned up template atom array for the given chain.
     """
+    # Parse template IDs
+    template_pdb_id, template_chain_id = template_pdb_chain_id.split("_")
+
     # Parse the pre-parsed template structure array
     if template_structure_array_directory is not None:
         with open(
@@ -297,6 +307,8 @@ def clean_template_atom_array(
 ) -> AtomArray:
     """Cleans up the template atom array for the given chain.
 
+    Only called if the template cif files are not pre-parsed and pre-processed.
+
     Args:
         atom_array_template_assembly (AtomArray):
             The full template atom array of the assembly containing the template chain.
@@ -333,16 +345,21 @@ def clean_template_atom_array(
 
 @log_runtime_memory(runtime_dict_key="runtime-template-proc-align-map", multicall=True)
 def map_token_pos_to_template_residues(
+    template_slices: list[TemplateSlice],
     template_cache_entry: TemplateCacheEntry,
     atom_array_query_chain: AtomArray,
     atom_array_template_chain: AtomArray,
-) -> TemplateSlice:
+) -> None:
     """Creates index maps for the template residues that align to the query chain.
 
     Note: during training, also subsets the template atom array to only contain residues
     that align to query residues in the crop.
 
     Args:
+        template_slices (list[TemplateSlice]):
+            List of atom arrays of a templates containing only residues that align to
+            query residues and the corresponding token positions and the
+            mapping from query token positions to template residue IDs.
         template_cache_entry (TemplateCacheEntry):
             An entry from the template cache, containing an n-by-2 numpy array, 1st col:
             query residue index, 2nd col: template residue index, only containing
@@ -353,12 +370,6 @@ def map_token_pos_to_template_residues(
             all residues of the query chain.
         atom_array_template_chain (AtomArray):
             The template atom array for the current template chain.
-
-    Returns:
-        TemplateSlice:
-            The atom array of a template containing only residues that align to query
-            residues in the crop and the corresponding token positions and the mapping
-            from query token positions to template residue IDs.
     """
     idx_map_in_crop = template_cache_entry.idx_map
 
@@ -397,7 +408,9 @@ def map_token_pos_to_template_residues(
             template_residue_repeats=repeats,
         )
 
-    return template_slice
+    # Add to list of cropped + aligned template atom arrays for this chain
+    if len(template_slice.atom_array) > 0:
+        template_slices.append(template_slice)
 
 
 @log_runtime_memory(runtime_dict_key="runtime-template-proc-align", multicall=True)
@@ -409,7 +422,7 @@ def align_template_to_query(
     ccd: CIFFile | None,
     atom_array_query_chain: AtomArray,
 ) -> list[AtomArray]:
-    """Identifies the subset of atoms in the template that align to the query crop.
+    """Identifies the subset of atoms in the template that align to the query.
 
     Args:
         sampled_template_data (dict[str, TemplateCacheEntry] | dict[None]):
@@ -429,7 +442,8 @@ def align_template_to_query(
     Returns:
         list[AtomArray]:
             List of template AtomArrays subset to residues that align to any residue in
-            the query atom array and with added token ids in the query structure.
+            the query atom array and with added ids indicating which token they map to
+            in the query chain AtomArray.
     """
     if len(sampled_template_data) == 0:
         return []
@@ -439,33 +453,24 @@ def align_template_to_query(
     for template_pdb_chain_id, template_cache_entry in sampled_template_data.items():
         # Subset the idx map to template residues that align to the query crop for
         # training and skip if the template is outside the crop
-        subset_template_index_map(template_cache_entry, atom_array_query_chain)
-        if template_cache_entry.idx_map.shape[0] == 0:
+        if subset_template_index_map(template_cache_entry, atom_array_query_chain):
             continue
-
-        # Parse template IDs
-        template_pdb_id, template_chain_id = template_pdb_chain_id.split("_")
 
         # Parse the template structure
         atom_array_template_chain = parse_template_structure(
             template_structures_directory,
             template_structure_array_directory,
-            template_pdb_id,
-            template_chain_id,
+            template_pdb_chain_id,
             template_file_format,
             ccd,
         )
 
         # Create query token position to template residue ID map
-        template_slice = map_token_pos_to_template_residues(
+        map_token_pos_to_template_residues(
+            template_slices,
             template_cache_entry,
             atom_array_query_chain,
             atom_array_template_chain,
         )
-
-        # Add to list of cropped + aligned template atom arrays for this chain
-        # if might not be needed here?
-        if len(template_slice.atom_array) > 0:
-            template_slices.append(template_slice)
 
     return template_slices
