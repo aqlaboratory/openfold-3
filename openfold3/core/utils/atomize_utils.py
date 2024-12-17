@@ -135,9 +135,10 @@ def aggregate_atom_feat_to_tokens(
     # Mask out atoms that are not part of the structure
     # Padding value must be greater than the largest index so that it
     # is properly excluded from the aggregation
-    atom_to_token_index = atom_to_token_index * atom_mask + n_token * torch.ones_like(
-        atom_to_token_index
-    ) * (1 - atom_mask)
+    atom_to_token_index = (
+        atom_to_token_index * atom_mask.int()
+        + n_token * torch.ones_like(atom_to_token_index) * (1 - atom_mask.int())
+    )
 
     # Prepare atom to token index for aggregation
     # Check for broadcasting and repeat accordingly

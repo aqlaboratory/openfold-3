@@ -235,13 +235,13 @@ class AttentionPairBias(nn.Module):
         n_key = 128
         n_atom = a.shape[-2]
 
-        offset = n_query // 2 - 0.5
-        n_center = int(n_atom // n_query) + 1
-        subset_centers = offset + torch.arange(n_center, device=a.device) * n_query
+        offset = n_query // 2
+
+        num_blocks = math.ceil(n_atom / n_query)
+        subset_centers = offset + torch.arange(num_blocks) * n_query
 
         pad_len_right_q = (n_query - n_atom % n_query) % n_query
         a_query = torch.nn.functional.pad(a, (0, 0, 0, pad_len_right_q), value=0.0)
-        num_blocks = a_query.shape[-2] // n_query
 
         a_query = convert_to_blocks_1d(
             x=a_query,
@@ -251,8 +251,8 @@ class AttentionPairBias(nn.Module):
             num_blocks=num_blocks,
         )
 
-        pad_len_right_k = math.ceil(subset_centers[-1]) + n_key // 2 - n_atom
-        pad_len_left_k = n_key // 2 - math.ceil(subset_centers[0])
+        pad_len_right_k = subset_centers[-1] + n_key // 2 - n_atom
+        pad_len_left_k = n_key // 2 - subset_centers[0]
         a_key = torch.nn.functional.pad(
             a, (0, 0, pad_len_left_k, pad_len_right_k), value=0.0
         )
