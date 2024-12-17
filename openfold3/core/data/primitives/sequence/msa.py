@@ -49,6 +49,8 @@ class MsaArray:
             row_slice (int | slice):
                 Number of sequences to keep in the MSA or a slice object applied along
                 the first axis of the MSA numpy array/metadata DataFrame.
+            inplace (bool, optional):
+                Whether to perform the operation in place. Defaults to False.
 
         Returns:
             None
@@ -150,7 +152,8 @@ class MsaArray:
 
         Note: Only the msa and deletion matrix is padded, not the metadata. Padding when
         target_length is less than the array size is not supported. If the array
-        dimension changes after padding, metadata is replaced with an empty DataFrame.
+        dimension changes after padding, metadata is replaced with an empty DataFrame,
+        otherwise kept the same.
 
         Args:
             target_length (int):
@@ -252,7 +255,20 @@ class MsaArray:
     def _make_padding_mask(
         self, padded_msa: np.ndarray, axis: int, current_size: int
     ) -> np.ndarray:
-        """Makes mask for the padded MSA."""
+        """Makes mask for the padded MSA.
+
+        Args:
+            padded_msa (np.ndarray):
+                The padded MSA array to be masked.
+            axis (int):
+                The axis along which the padding is applied.
+            current_size (int):
+                The input size of the array along the specified axis.
+
+        Returns:
+            np.ndarray:
+                The padding mask.
+        """
         # Init mask
         mask = np.ones(padded_msa.shape, dtype=int)
         # Create slice that selects full array
@@ -263,7 +279,13 @@ class MsaArray:
         mask[tuple(indexer)] = 0
         return mask
 
-    def to_dict(self):
+    def to_dict(self) -> dict[np.ndarray]:
+        """Casts the MsaArray attributes into a dict.
+
+        Returns:
+            dict[np.ndarray]:
+                A dictionary containing the MsaArray attributes as numpy arrays.
+        """
         return {
             "msa": self.msa,
             "deletion_matrix": self.deletion_matrix,
@@ -275,7 +297,7 @@ class MsaArray:
 class MsaArrayCollection:
     """Class representing a collection MSAs for a single sample.
 
-    This class can be in one of two states:
+    This class can be in one of three states:
         1.) parsed state:
             attributes rep_id_to_msa and rep_id_to_query_seq populated after parsing and
             chain_id_to_query_seq, chain_id_to_paired_msa, chain_id_to_main_msa
@@ -283,8 +305,9 @@ class MsaArrayCollection:
         2.) processed state:
             attributes rep_id_to_msa and rep_id_to_query_seq unpopulated and
             chain_id_to_query_seq, chain_id_to_paired_msa, chain_id_to_main_msa
-            populated after processing. Attribute chain_id_to_row_count is populated in
-            the processed state, separately from the other processed attributes.
+            populated after processing.
+        3.) prefeaturized state:
+            Processed state with the attribute row_counts also populated.
 
     Attributes chain_id_to_rep_id, chain_id_to_mol_type are populated in both states.
 
@@ -304,15 +327,18 @@ class MsaArrayCollection:
             Dictionary mapping chain IDs to representative chain IDs.
         chain_id_to_mol_type (dict[str, str]):
             Dictionary mapping chain IDs to the molecule type.
-        chain_id_to_row_count (dict[str, int]):
-            Dict mapping representative chain ID to the number of rows in the
-            unprocessed main MSA.
+        row_counts (dict[str, int | dict[str, int]]):
+            Dictionary containing the number of total number of rows in the horizontally
+            concatenated MSA capped to max_rows, the number of paired MSA rows after
+            cropping and the representative id to number of main MSA rows.
     """
 
     # Core attributes
     chain_id_to_rep_id: dict[str, str]
     chain_id_to_mol_type: dict[str, str]
-    chain_id_to_row_count: dict[str, int] = dataclasses.field(default_factory=dict)
+    row_counts: dict[str, int | dict[str, int]] = dataclasses.field(
+        default_factory=dict
+    )
 
     # State parsed attributes
     rep_id_to_msa: dict[str, dict[str, MsaArray]] = dataclasses.field(
@@ -346,6 +372,14 @@ class MsaArrayCollection:
         self.chain_id_to_main_msa = chain_id_to_main_msa
         self.rep_id_to_msa = {}
         self.rep_id_to_query_seq = {}
+
+    def set_state_prefeaturized(self, n_rows, n_rows_paired_cropped, n_rows_main):
+        """Set the state to prefeaturized."""
+        self.row_counts = {
+            "n_rows": n_rows,
+            "n_rows_paired_cropped": n_rows_paired_cropped,
+            "n_rows_main": n_rows_main,
+        }
 
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-homo-mono")

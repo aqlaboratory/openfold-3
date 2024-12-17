@@ -98,7 +98,8 @@ def parse_stockholm(
         max_seq_count (int | None):
             The maximum number of sequences to parse from the file.
         gap_symbols (set | None):
-            Set of symbols that are considered as gaps in the alignment.
+            Set of symbols that are considered as gaps in the alignment. When None,
+            defaults to {"-", "."}.
 
     Returns:
         Msa: A Msa object containing the sequences, deletion matrix and metadata.
