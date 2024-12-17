@@ -1,7 +1,7 @@
 """This module contains building blocks for cropping."""
 
 import random
-from typing import Callable, Optional, Union
+from typing import Optional, Union
 
 import numpy as np
 import torch
