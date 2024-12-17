@@ -106,7 +106,9 @@ def calculate_row_counts(
         n_rows_main = {}
 
     msa_array_collection.set_state_prefeaturized(
-        n_rows=n_rows, n_rows_paired=n_rows_paired_cropped, n_rows_main=n_rows_main
+        n_rows=n_rows,
+        n_rows_paired_cropped=n_rows_paired_cropped,
+        n_rows_main=n_rows_main,
     )
 
 
@@ -192,7 +194,7 @@ def calculate_profile_del_mean(
     """
     # TODO this function is the main runtime bottleneck in the current data pipeline
     # add runtime optimizations
-    if bool(msa_array_collection["n_rows_main"][chain_id]):
+    if bool(msa_array_collection.row_counts["n_rows_main"][chain_id]):
         profile = calculate_profile_per_column(
             msa_array_collection.chain_id_to_main_msa[chain_id].msa,
             MoleculeType[msa_array_collection.chain_id_to_mol_type[chain_id]],
@@ -240,21 +242,21 @@ def crop_vstack_msa_arrays(
     msa_array_vstack = msa_array_collection.chain_id_to_query_seq[chain_id]
 
     # Paired MSA is cropped
-    if msa_array_collection["n_rows_paired_cropped"] > 0:
+    if msa_array_collection.row_counts["n_rows_paired_cropped"] > 0:
         msa_array_paired_cropped = msa_array_collection.chain_id_to_paired_msa[
             chain_id
-        ].truncate(msa_array_collection["n_rows_paired_cropped"])
+        ].truncate(msa_array_collection.row_counts["n_rows_paired_cropped"])
         msa_array_vstack = msa_array_vstack.concatenate(
             msa_array_paired_cropped, axis=0
         )
 
     # This is where the BANDED subsampling logic will go optionally
     # Main MSA is cropped
-    if len(msa_array_collection["n_rows_main"]) > 0:
+    if len(msa_array_collection.row_counts["n_rows_main"]) > 0:
         msa_array_vstack = msa_array_vstack.concatenate(
             msa_array_collection.chain_id_to_main_msa[chain_id].truncate(
-                msa_array_collection["n_rows"]
-                - (msa_array_collection["n_rows_paired_cropped"] + 1)
+                msa_array_collection.row_counts["n_rows"]
+                - (msa_array_collection.row_counts["n_rows_paired_cropped"] + 1)
             ),
             axis=0,
         )
@@ -262,7 +264,7 @@ def crop_vstack_msa_arrays(
     # Pad bottom of stacked MSA to max(1 + n paired + n main) across all chains
     # and use padding to also create MSA mask for the chain
     msa_array_vstack, msa_array_vstack_mask = msa_array_vstack.pad(
-        target_length=msa_array_collection["n_rows"], axis=0
+        target_length=msa_array_collection.row_counts["n_rows"], axis=0
     )
 
     return msa_array_vstack, msa_array_vstack_mask
@@ -378,10 +380,14 @@ def create_msa_feature_precursor_af3(
 
         # Pre-allocate feature precursor container
         msa_feature_precursor = MsaFeaturePrecursorAF3(
-            msa=np.full([msa_array_collection["n_rows"], token_budget], "-"),
-            deletion_matrix=np.zeros([msa_array_collection["n_rows"], token_budget]),
-            n_rows_paired=msa_array_collection["n_rows_paired_cropped"] + 1,
-            msa_mask=np.zeros([msa_array_collection["n_rows"], token_budget]),
+            msa=np.full([msa_array_collection.row_counts["n_rows"], token_budget], "-"),
+            deletion_matrix=np.zeros(
+                [msa_array_collection.row_counts["n_rows"], token_budget]
+            ),
+            n_rows_paired=msa_array_collection.row_counts["n_rows_paired_cropped"] + 1,
+            msa_mask=np.zeros(
+                [msa_array_collection.row_counts["n_rows"], token_budget]
+            ),
             msa_profile=np.zeros([token_budget, len(STANDARD_RESIDUES_WITH_GAP_1)]),
             deletion_mean=np.zeros(token_budget),
         )

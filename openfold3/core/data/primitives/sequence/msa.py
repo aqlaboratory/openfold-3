@@ -337,12 +337,12 @@ class MsaArrayCollection:
     """
 
     # Core attributes
-    _state: str = "init"
     chain_id_to_rep_id: dict[str, str]
     chain_id_to_mol_type: dict[str, str]
     row_counts: dict[str, int | dict[str, int]] = dataclasses.field(
         default_factory=dict
     )
+    _state: str = "init"
 
     # State parsed attributes
     rep_id_to_msa: dict[str, dict[str, MsaArray]] = dataclasses.field(
