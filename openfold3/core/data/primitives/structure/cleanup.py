@@ -3,7 +3,7 @@ from functools import wraps
 
 import biotite.structure as struc
 import numpy as np
-from biotite.structure import AtomArray, BondList, get_molecule_indices, index_distance
+from biotite.structure import AtomArray, BondList, index_distance
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from scipy.spatial.distance import cdist
 
@@ -635,7 +635,7 @@ def filter_bonds(
             components are not disconnected before symmetry-labels are assigned. Default
             is True.
     """
-    initial_molecule_indices = get_molecule_indices(atom_array)
+    # initial_molecule_indices = get_molecule_indices(atom_array)
 
     bond_partners = atom_array.bonds.as_array()[:, :2]
 
