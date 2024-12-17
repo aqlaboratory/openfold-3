@@ -3,11 +3,12 @@
 import logging
 import pickle
 from pathlib import Path
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 
+from openfold3.core.data.io.structure.atom_array import read_atomarray_from_npz
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
@@ -233,7 +234,9 @@ def write_structure(
 
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-parse")
 def parse_target_structure(
-    target_structures_directory: Path, pdb_id: str, structure_format: str
+    target_structures_directory: Path,
+    pdb_id: str,
+    structure_format: Literal["pkl", "npz"],
 ) -> AtomArray:
     """Parses a target structure from a pickle file.
 
@@ -243,7 +246,8 @@ def parse_target_structure(
         pdb_id (str):
             PDB ID of the target structure.
         structure_format (str):
-            File extension of the target structure. Only "pkl" is supported.
+            File extension of the target structure. Only "pkl" and "npz" are currently
+            supported.
 
     Raises:
         ValueError:
@@ -258,6 +262,8 @@ def parse_target_structure(
     if structure_format == "pkl":
         with open(target_file, "rb") as f:
             atom_array = pickle.load(f)
+    elif structure_format == "npz":
+        atom_array = read_atomarray_from_npz(target_file)
     else:
         raise ValueError(
             f"Invalid structure format: {structure_format}. Only pickle "
