@@ -30,7 +30,12 @@ from openfold3.core.model.primitives import (
     LayerNorm,
     Linear,
 )
-from openfold3.core.utils.tensor_utils import permute_final_dims, sparsify_tensor
+from openfold3.core.utils.tensor_utils import (
+    convert_to_blocks_1d,
+    convert_to_blocks_2d,
+    permute_final_dims,
+    sparsify_tensor,
+)
 
 
 class AttentionPairBias(nn.Module):
@@ -215,21 +220,6 @@ class AttentionPairBias(nn.Module):
             mask = a.new_ones(
                 a.shape[:-1],
             )
-
-        def convert_to_blocks_1d(x, dim, shift_interval, block_len, num_blocks):
-            blocks = [
-                x.narrow(dim, shift_interval * i, block_len) for i in range(num_blocks)
-            ]
-            return torch.stack(blocks, dim=dim - 1)
-
-        def convert_to_blocks_2d(x, dims, shift_interval, block_lens, num_blocks):
-            blocks = [
-                x.narrow(dims[0], shift_interval * i, block_lens[0]).narrow(
-                    dims[1], shift_interval * i, block_lens[1]
-                )
-                for i in range(num_blocks)
-            ]
-            return torch.stack(blocks, dim=min(dims) - 1)
 
         n_query = 32
         n_key = 128

@@ -123,3 +123,23 @@ def sparsify_tensor(
         block_bias, dim=-3, index=torch.nonzero(mask.flatten()).squeeze()
     )
     return ret
+
+
+def convert_to_blocks_1d(x, dim, shift_interval, block_len, num_blocks):
+    if shift_interval == block_len:
+        blocks = torch.chunk(x, num_blocks, dim=dim)
+    else:
+        blocks = [
+            x.narrow(dim, shift_interval * i, block_len) for i in range(num_blocks)
+        ]
+    return torch.stack(blocks, dim=dim - 1)
+
+
+def convert_to_blocks_2d(x, dims, shift_interval, block_lens, num_blocks):
+    blocks = [
+        x.narrow(dims[0], shift_interval * i, block_lens[0]).narrow(
+            dims[1], shift_interval * i, block_lens[1]
+        )
+        for i in range(num_blocks)
+    ]
+    return torch.stack(blocks, dim=min(dims) - 1)
