@@ -8,11 +8,153 @@ from openfold3.core.model.layers.sequence_local_atom_attention import (
     AtomAttentionDecoder,
     AtomAttentionEncoder,
     AtomTransformer,
+    NoisyPositionEmbedder,
+    RefAtomFeatureEmbedder,
 )
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
 from openfold3.core.utils.tensor_utils import tensor_tree_map
+from openfold3.projects.af3_all_atom.config.base_config import c_atom_ref
 from tests.config import consts
 from tests.data_utils import random_af3_features
+
+
+class TestRefAtomFeatureEmbedder(unittest.TestCase):
+    def test_without_n_sample_channel(self):
+        batch_size = consts.batch_size
+        n_atom = 4 * consts.n_res
+        c_atom = 64
+        c_atom_pair = 16
+
+        embedder = RefAtomFeatureEmbedder(
+            c_atom_ref=c_atom_ref.get(), c_atom=c_atom, c_atom_pair=c_atom_pair
+        )
+
+        batch = {
+            "ref_pos": torch.randn((batch_size, n_atom, 3)),
+            "ref_mask": torch.ones((batch_size, n_atom)),
+            "ref_element": torch.ones((batch_size, n_atom, 119)),
+            "ref_charge": torch.ones((batch_size, n_atom)),
+            "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
+            "ref_space_uid": torch.zeros((batch_size, n_atom)),
+        }
+
+        cl, plm = embedder(batch)
+
+        self.assertTrue(cl.shape == (batch_size, n_atom, c_atom))
+        self.assertTrue(plm.shape == (batch_size, n_atom, n_atom, c_atom_pair))
+
+    def test_with_n_sample_channel(self):
+        batch_size = consts.batch_size
+        n_atom = 4 * consts.n_res
+        c_atom = 64
+        c_atom_pair = 16
+
+        embedder = RefAtomFeatureEmbedder(
+            c_atom_ref=c_atom_ref.get(), c_atom=c_atom, c_atom_pair=c_atom_pair
+        )
+
+        batch = {
+            "ref_pos": torch.randn((batch_size, 1, n_atom, 3)),
+            "ref_mask": torch.ones((batch_size, 1, n_atom)),
+            "ref_element": torch.ones((batch_size, 1, n_atom, 119)),
+            "ref_charge": torch.ones((batch_size, 1, n_atom)),
+            "ref_atom_name_chars": torch.ones((batch_size, 1, n_atom, 4, 64)),
+            "ref_space_uid": torch.zeros((batch_size, 1, n_atom)),
+        }
+
+        cl, plm = embedder(batch)
+
+        self.assertTrue(cl.shape == (batch_size, 1, n_atom, c_atom))
+        self.assertTrue(plm.shape == (batch_size, 1, n_atom, n_atom, c_atom_pair))
+
+
+class TestNoisyPositionEmbedder(unittest.TestCase):
+    def test_without_n_sample_channel(self):
+        batch_size = consts.batch_size
+        n_token = consts.n_res
+        n_atom = 4 * consts.n_res
+        c_s = consts.c_s
+        c_z = consts.c_z
+        c_atom = 64
+        c_atom_pair = 16
+
+        embedder = NoisyPositionEmbedder(
+            c_s=c_s,
+            c_z=c_z,
+            c_atom=c_atom,
+            c_atom_pair=c_atom_pair,
+        )
+
+        cl = torch.randn((batch_size, n_atom, c_atom))
+        plm = torch.randn((batch_size, n_atom, n_atom, c_atom_pair))
+        ql = torch.randn((batch_size, n_atom, c_atom))
+
+        si_trunk = torch.randn((batch_size, n_token, c_s))
+        zij_trunk = torch.randn((batch_size, n_token, n_token, c_z))
+        rl = torch.randn((batch_size, n_atom, 3))
+
+        batch = {
+            "token_mask": torch.ones((batch_size, n_token)),
+            "num_atoms_per_token": torch.ones((batch_size, n_token)) * 4,
+        }
+
+        cl, plm, ql = embedder(
+            batch=batch,
+            cl=cl,
+            plm=plm,
+            ql=ql,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+            rl=rl,
+        )
+
+        self.assertTrue(cl.shape == (batch_size, n_atom, c_atom))
+        self.assertTrue(plm.shape == (batch_size, n_atom, n_atom, c_atom_pair))
+        self.assertTrue(ql.shape == (batch_size, n_atom, c_atom))
+
+    def test_with_n_sample_channel(self):
+        batch_size = consts.batch_size
+        n_token = consts.n_res
+        n_atom = 4 * consts.n_res
+        c_s = consts.c_s
+        c_z = consts.c_z
+        c_atom = 64
+        c_atom_pair = 16
+        n_sample = 3
+
+        embedder = NoisyPositionEmbedder(
+            c_s=c_s,
+            c_z=c_z,
+            c_atom=c_atom,
+            c_atom_pair=c_atom_pair,
+        )
+
+        cl = torch.randn((batch_size, 1, n_atom, c_atom))
+        plm = torch.randn((batch_size, 1, n_atom, n_atom, c_atom_pair))
+        ql = torch.randn((batch_size, 1, n_atom, c_atom))
+
+        si_trunk = torch.randn((batch_size, 1, n_token, c_s))
+        zij_trunk = torch.randn((batch_size, 1, n_token, n_token, c_z))
+        rl = torch.randn((batch_size, n_sample, n_atom, 3))
+
+        batch = {
+            "token_mask": torch.ones((batch_size, 1, n_token)),
+            "num_atoms_per_token": torch.ones((batch_size, 1, n_token)) * 4,
+        }
+
+        cl, plm, ql = embedder(
+            batch=batch,
+            cl=cl,
+            plm=plm,
+            ql=ql,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+            rl=rl,
+        )
+
+        self.assertTrue(cl.shape == (batch_size, 1, n_atom, c_atom))
+        self.assertTrue(plm.shape == (batch_size, 1, n_atom, n_atom, c_atom_pair))
+        self.assertTrue(ql.shape == (batch_size, n_sample, n_atom, c_atom))
 
 
 class TestAtomTransformer(unittest.TestCase):
@@ -225,11 +367,12 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         inf = 1e10
 
         atom_attn_enc = AtomAttentionEncoder(
+            c_atom_ref=c_atom_ref.get(),
             c_atom=c_atom,
             c_atom_pair=c_atom_pair,
             c_token=c_token,
-            add_noisy_pos=False,
             c_hidden=c_hidden,
+            add_noisy_pos=False,
             no_heads=no_heads,
             no_blocks=no_blocks,
             n_transition=n_transition,
@@ -250,15 +393,9 @@ class TestAtomAttentionEncoder(unittest.TestCase):
 
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
-        ql = torch.rand((batch_size, n_atom, c_atom))
-        cl = torch.rand((batch_size, n_atom, c_atom))
-        plm = torch.rand((batch_size, n_atom, n_atom, c_atom_pair))
-
         atom_mask = torch.ones((batch_size, n_atom))
 
-        ai, ql, cl, plm = atom_attn_enc(
-            batch=batch, ql=ql, cl=cl, plm=plm, atom_mask=atom_mask
-        )
+        ai, ql, cl, plm = atom_attn_enc(batch=batch, atom_mask=atom_mask)
 
         self.assertTrue(ai.shape == (batch_size, n_token, c_token))
         self.assertTrue(ql.shape == (batch_size, n_atom, c_atom))
@@ -268,6 +405,8 @@ class TestAtomAttentionEncoder(unittest.TestCase):
     def test_with_noisy_positions(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
+        c_s = consts.c_s
+        c_z = consts.c_z
         c_atom = 128
         c_atom_pair = 16
         c_token = 384
@@ -281,6 +420,9 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         n_sample = 3
 
         atom_attn_enc = AtomAttentionEncoder(
+            c_s=c_s,
+            c_z=c_z,
+            c_atom_ref=c_atom_ref.get(),
             c_atom=c_atom,
             c_atom_pair=c_atom_pair,
             c_token=c_token,
@@ -309,18 +451,16 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
         atom_mask = torch.ones((batch_size, 1, n_atom))
-        ql = torch.rand((batch_size, 1, n_atom, c_atom))
-        cl = torch.rand((batch_size, 1, n_atom, c_atom))
-        plm = torch.rand((batch_size, 1, n_atom, n_atom, c_atom_pair))
         rl = torch.randn((batch_size, n_sample, n_atom, 3))
+        si_trunk = torch.randn((batch_size, 1, n_token, c_s))
+        zij_trunk = torch.randn((batch_size, 1, n_token, n_token, c_z))
 
         ai, ql, cl, plm = atom_attn_enc(
             batch=batch,
             atom_mask=atom_mask,
-            ql=ql,
-            cl=cl,
-            plm=plm,
             rl=rl,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
         )
 
         self.assertTrue(ai.shape == (batch_size, n_sample, n_token, c_token))

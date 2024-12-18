@@ -173,28 +173,22 @@ ref_atom_emb_init = ConfigDict(
 )
 
 # AF3
-atom_trunk_emb_init = ConfigDict(
+noisy_pos_emb_init = ConfigDict(
     {
         "linear_s": {"bias": False, "init": "default"},
         "linear_z": {"bias": False, "init": "default"},
-    }
-)
-
-# AF3
-seq_local_atom_emb_init = ConfigDict(
-    {
-        "ref_atom_emb": ref_atom_emb_init,
-        "atom_trunk_emb": atom_trunk_emb_init,
-        "linear_l": {"bias": False, "init": "relu"},
-        "linear_m": {"bias": False, "init": "relu"},
-        "pair_mlp": {"bias": False, "init": "relu"},
+        "linear_r": {"bias": False, "init": "default"},
     }
 )
 
 # AF3
 atom_att_enc_init = ConfigDict(
     {
-        "linear_r": {"bias": False, "init": "default"},
+        "ref_atom_emb": ref_atom_emb_init,
+        "noisy_pos_emb": noisy_pos_emb_init,
+        "linear_l": {"bias": False, "init": "relu"},
+        "linear_m": {"bias": False, "init": "relu"},
+        "pair_mlp": {"bias": False, "init": "relu"},
         "atom_transformer": atom_transformer_init,
         "linear_q": {"bias": False, "init": "relu"},
     }

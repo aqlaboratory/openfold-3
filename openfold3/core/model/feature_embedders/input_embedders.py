@@ -21,11 +21,10 @@ and all-atom models. Also includes the RecyclingEmbedder and ExtraMSAEmbedder.
 from typing import Optional
 
 import torch
+import torch.nn as nn
 from ml_collections import ConfigDict
-from torch import nn as nn
 
-from openfold3.core.config import default_linear_init_config as lin_init
-from openfold3.core.model.feature_embedders.atom_embedders import SeqLocalAtomEmbedder
+import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers.sequence_local_atom_attention import (
     AtomAttentionEncoder,
 )
@@ -448,7 +447,6 @@ class InputEmbedderAllAtom(nn.Module):
         c_z: int,
         max_relative_idx: int,
         max_relative_chain: int,
-        seq_local_atom_embedder: dict,
         atom_attn_enc: dict,
         linear_init_params: ConfigDict = lin_init.all_atom_input_emb_init,
     ):
@@ -464,8 +462,6 @@ class InputEmbedderAllAtom(nn.Module):
                 Maximum relative position and token indices clipped
             max_relative_chain:
                 Maximum relative chain indices clipped
-            seq_local_atom_embedder:
-                Config for the SeqLocalAtomEmbedder
             atom_attn_enc:
                 Config for the AtomAttentionEncoder
             linear_init_params:
@@ -474,9 +470,10 @@ class InputEmbedderAllAtom(nn.Module):
         """
         super().__init__()
 
-        self.seq_local_atom_embedder = SeqLocalAtomEmbedder(**seq_local_atom_embedder)
-
-        self.atom_attn_enc = AtomAttentionEncoder(**atom_attn_enc)
+        self.atom_attn_enc = AtomAttentionEncoder(
+            **atom_attn_enc,
+            add_noisy_pos=False,
+        )
 
         self.linear_s = Linear(c_s_input, c_s, **linear_init_params.linear_s)
         self.linear_z_i = Linear(c_s_input, c_z, **linear_init_params.linear_z_i)
@@ -516,12 +513,8 @@ class InputEmbedderAllAtom(nn.Module):
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
         """
-        ql, cl, plm = self.seq_local_atom_embedder(batch=batch)
         a, _, _, _ = self.atom_attn_enc(
             batch=batch,
-            ql=ql,
-            cl=cl,
-            plm=plm,
             atom_mask=batch["atom_mask"],
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
         )

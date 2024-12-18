@@ -23,7 +23,6 @@ import torch
 from ml_collections import ConfigDict
 from torch import nn
 
-from openfold3.core.model.feature_embedders.atom_embedders import SeqLocalAtomEmbedder
 from openfold3.core.model.feature_embedders.input_embedders import (
     InputEmbedderAllAtom,
     MSAModuleEmbedder,
@@ -82,10 +81,6 @@ class AlphaFold3(nn.Module):
         self.linear_s = Linear(self.shared.c_s, self.shared.c_s, bias=False)
 
         self.pairformer_stack = PairFormerStack(**self.config.architecture.pairformer)
-
-        self.seq_local_atom_embedder = SeqLocalAtomEmbedder(
-            **self.config.architecture.seq_local_atom_embedder,
-        )
 
         self.diffusion_module = DiffusionModule(
             config=self.config.architecture.diffusion_module
@@ -244,9 +239,6 @@ class AlphaFold3(nn.Module):
     def _rollout(
         self,
         batch: dict,
-        ql: torch.Tensor,
-        cl: torch.Tensor,
-        plm: torch.Tensor,
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
@@ -288,9 +280,6 @@ class AlphaFold3(nn.Module):
 
             atom_positions_predicted = self.sample_diffusion(
                 batch=batch,
-                ql=ql,
-                cl=cl,
-                plm=plm,
                 si_input=si_input,
                 si_trunk=si_trunk,
                 zij_trunk=zij_trunk,
@@ -326,9 +315,6 @@ class AlphaFold3(nn.Module):
     def _train_diffusion(
         self,
         batch: dict,
-        ql: torch.Tensor,
-        cl: torch.Tensor,
-        plm: torch.Tensor,
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
@@ -358,9 +344,6 @@ class AlphaFold3(nn.Module):
         si_input = si_input.unsqueeze(1)
         si_trunk = si_trunk.unsqueeze(1)
         zij_trunk = zij_trunk.unsqueeze(1)
-        ql = ql.unsqueeze(1)
-        cl = cl.unsqueeze(1)
-        plm = plm.unsqueeze(1)
 
         batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
         xl_gt = batch["ground_truth"]["atom_positions"]
@@ -393,9 +376,6 @@ class AlphaFold3(nn.Module):
             token_mask=token_mask,
             atom_mask=atom_mask_gt,
             t=t,
-            ql=ql,
-            cl=cl,
-            plm=plm,
             si_input=si_input,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
@@ -575,20 +555,9 @@ class AlphaFold3(nn.Module):
             batch=batch, num_cycles=num_cycles, inplace_safe=inplace_safe
         )
 
-        # Embed reference atom features with ref atom features and trunk embeddings
-        # ql: [*, N_atom, c_atom]
-        # cl: [*, N_atom, c_atom]
-        # plm: [*, N_atom, N_atom, c_atom_pair]
-        ql, cl, plm = self.seq_local_atom_embedder(
-            batch=batch, si_trunk=si_trunk, zij_trunk=zij_trunk
-        )
-
         # Mini rollout
         rollout_output = self._rollout(
             batch=batch,
-            ql=ql,
-            cl=cl,
-            plm=plm,
             si_input=si_input,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
@@ -616,9 +585,6 @@ class AlphaFold3(nn.Module):
 
                 diffusion_output = self._train_diffusion(
                     batch=batch,
-                    ql=ql,
-                    cl=cl,
-                    plm=plm,
                     si_input=si_input,
                     si_trunk=si_trunk,
                     zij_trunk=zij_trunk,
