@@ -238,6 +238,9 @@ class AttentionPairBias(nn.Module):
         offset = n_query // 2
 
         num_blocks = math.ceil(n_atom / n_query)
+
+        # TODO: This is here for hanging on AWS AMD CPU + H200 nodes. Remove later.
+        # subset_centers = [n_query * i + offset for i in range(num_blocks)]
         subset_centers = offset + torch.arange(num_blocks) * n_query
 
         pad_len_right_q = (n_query - n_atom % n_query) % n_query

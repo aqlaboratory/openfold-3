@@ -215,7 +215,7 @@ class DiffusionModule(nn.Module):
             atom_mask=atom_mask,
             rl=rl_noisy,
             si_trunk=si_trunk,
-            zij_trunk=zij_trunk,
+            zij_trunk=zij,  # Use conditioned trunk representation
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=False,
         )
