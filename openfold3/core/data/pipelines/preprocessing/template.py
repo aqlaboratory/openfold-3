@@ -726,21 +726,22 @@ def filter_template_cache_for_query(
                 ),
             ),
         )
-        data_log = {
-            "query_pdb_id": query_pdb_chain_id.split("_")[0],
-            "query_chain_id": query_pdb_chain_id.split("_")[1],
-            "can_load_template_cache": False,
-            "n_valid_templates_prefilter": 0,
-            "n_dropped_due_to_release_date": 0,
-            "n_valid_templates_postfilter": 0,
-        }
     else:
         rep_id, query_pdb_chain_ids_release_dates = (
             input_data.rep_pdb_chain_id,
             input_data.dated_query,
         )
+        query_pdb_chain_id = query_pdb_chain_ids_release_dates[0].query_pdb_chain_id
         if isinstance(max_release_date, str):
             max_release_date = datetime.strptime(max_release_date, "%Y-%m-%d")
+    data_log = {
+        "query_pdb_id": query_pdb_chain_id.split("_")[0],
+        "query_chain_id": query_pdb_chain_id.split("_")[1],
+        "can_load_template_cache": False,
+        "n_valid_templates_prefilter": 0,
+        "n_dropped_due_to_release_date": 0,
+        "n_valid_templates_postfilter": 0,
+    }
 
     # Parse template cache of the representative if available
     template_cache_file = template_cache_directory / Path(f"{rep_id}.npz")
