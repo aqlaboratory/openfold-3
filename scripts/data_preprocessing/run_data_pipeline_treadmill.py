@@ -190,6 +190,15 @@ np.set_printoptions(threshold=sys.maxsize)
         "logging_utils.F_NAME_ORDER will be profiled."
     ),
 )
+@click.option(
+    "--subset-to-examples",
+    default="",
+    type=str,
+    help=(
+        "Comma separated list of PDB IDs use to subset the dataset cache to run "
+        "asserts on."
+    ),
+)
 def main(
     runner_yml_file: Path,
     seed: int,
@@ -204,6 +213,7 @@ def main(
     log_runtimes: bool,
     log_memory: bool,
     mem_profiled_func_keys: str | None,
+    subset_to_examples: str,
 ) -> None:
     """Main function for running the data pipeline treadmill.
 
@@ -245,6 +255,9 @@ def main(
             memory_profile.log file in log-output-directory.
         mem_profiled_func_keys (list[str] | None):
             List of function keys for which to profile memory.
+        subset_to_examples: (str)
+            Comma separated list of PDB IDs use to subset the dataset cache to run
+            asserts on.
 
     Raises:
         ValueError:
@@ -289,6 +302,7 @@ def main(
         save_statistics=save_statistics,
         log_runtimes=log_runtimes,
         log_memory=log_memory,
+        subset_to_examples=subset_to_examples,
         dataset_config=data_module_config.datasets[0].config,
     )
 
@@ -432,9 +446,9 @@ def main(
                 header=not full_extra_data_file.exists(),
                 mode="a",
             )
+        # Collate memory logs
         if log_memory:
-            # Convert memory profile logs to dataframes and collate from different
-            # workers
+            # Convert memory profile logs to dataframes
             df_all = pd.DataFrame()
             for worker_id in range(runner_args.num_workers):
                 worker_memory_file = log_output_directory / Path(
@@ -454,6 +468,17 @@ def main(
                 header=not full_worker_memory_file.exists(),
                 mode="a",
             )
+        # Collate logs
+        combined_log = log_output_directory / Path("worker_logs.log")
+        with combined_log.open("w") as out_file:
+            for worker_id in range(runner_args.num_workers):
+                worker_dir = log_output_directory / Path(f"worker_{worker_id}")
+                worker_log = worker_dir / Path(f"worker_{worker_id}.log")
+                out_file.write(f"Log file: {worker_log.name}\n")
+                out_file.write(worker_log.read_text())
+                worker_log.unlink()
+                if not any(worker_dir.iterdir()):
+                    worker_dir.rmdir()
 
 
 def run_arg_checks(
@@ -486,13 +511,10 @@ if __name__ == "__main__":
     main()
 
 # TODOs:
-# 5. add pytorch profiler and test, test with py-spy - should be separate runs from the
-# debugging runs
-# (6. implement the model forward pass)
-# 7. add logic to save which PDB entries/chains were already tested and restart from
-# there
+# 6. implement the model forward pass
 # 8. Add logic to re-crop the structure if the number of tokens is larger than the
 # token budget - the number of re-crops and featurizations should be determined
 # dynamically and in a way that likely covers the entire structure but with a
 # maximun number of re-crops
-# 9. Add logic to save extra data
+# 10. add weighted stochastic sampling
+# 11. add support for multiple datasets

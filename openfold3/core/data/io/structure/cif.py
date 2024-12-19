@@ -59,6 +59,7 @@ def _load_ciffile(file_path: Path | str) -> pdbx.CIFFile:
 
 
 # TODO: update docstring with new residue ID handling and preset fields
+@log_runtime_memory(runtime_dict_key="runtime-parse-mmcif", multicall=True)
 def parse_mmcif(
     file_path: Path | str,
     expand_bioassembly: bool = False,

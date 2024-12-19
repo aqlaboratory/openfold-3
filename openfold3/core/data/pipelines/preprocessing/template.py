@@ -2,6 +2,7 @@
 
 import multiprocessing as mp
 import os
+import pickle as pkl
 import traceback
 from datetime import datetime
 from functools import wraps
@@ -10,12 +11,15 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
+from biotite.structure.io import pdbx
+from biotite.structure.io.pdbx import CIFFile
 from tqdm import tqdm
 
 from openfold3.core.data.io.dataset_cache import read_datacache
 from openfold3.core.data.io.sequence.template import parse_hmmsearch_sto
-from openfold3.core.data.io.structure.cif import _load_ciffile
+from openfold3.core.data.io.structure.cif import _load_ciffile, parse_mmcif
 from openfold3.core.data.primitives.quality_control.logging_utils import (
+    PDB_ID,
     TEMPLATE_PROCESS_LOGGER,
     configure_template_logger,
 )
@@ -35,8 +39,14 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_cif_block,
     get_release_date,
 )
+from openfold3.core.data.primitives.structure.template import clean_template_atom_array
+from openfold3.core.data.resources.residues import (
+    MoleculeType,
+)
 
 
+# --- Template alignment preprocessing ---
+# Step 1/3: Create sequence cache for template structures
 def create_seq_cache_for_template(
     template_pdb_id: str,
     template_structures_directory: Path,
@@ -191,7 +201,7 @@ def create_template_seq_cache_af3(
             pass
 
 
-# Metadata cache creation
+# Step 2/3: Create template cache for query chains
 def create_template_cache_for_query(
     query_pdb_chain_id: str,
     template_alignment_file: Path,
@@ -668,7 +678,7 @@ def create_template_cache_af3(
     collate_data_logs(template_cache_directory, "full_data_log_constructed_cache.tsv")
 
 
-# Dataset cache update
+# Step 3/3: Filter template cache for query chains and add to dataset cache
 def filter_template_cache_for_query(
     input_data: _TemplateQueryEntry,
     template_cache_directory: Path,
@@ -716,21 +726,22 @@ def filter_template_cache_for_query(
                 ),
             ),
         )
-        data_log = {
-            "query_pdb_id": query_pdb_chain_id.split("_")[0],
-            "query_chain_id": query_pdb_chain_id.split("_")[1],
-            "can_load_template_cache": False,
-            "n_valid_templates_prefilter": 0,
-            "n_dropped_due_to_release_date": 0,
-            "n_valid_templates_postfilter": 0,
-        }
     else:
         rep_id, query_pdb_chain_ids_release_dates = (
             input_data.rep_pdb_chain_id,
             input_data.dated_query,
         )
+        query_pdb_chain_id = query_pdb_chain_ids_release_dates[0].query_pdb_chain_id
         if isinstance(max_release_date, str):
             max_release_date = datetime.strptime(max_release_date, "%Y-%m-%d")
+    data_log = {
+        "query_pdb_id": query_pdb_chain_id.split("_")[0],
+        "query_chain_id": query_pdb_chain_id.split("_")[1],
+        "can_load_template_cache": False,
+        "n_valid_templates_prefilter": 0,
+        "n_dropped_due_to_release_date": 0,
+        "n_valid_templates_postfilter": 0,
+    }
 
     # Parse template cache of the representative if available
     template_cache_file = template_cache_directory / Path(f"{rep_id}.npz")
@@ -921,7 +932,6 @@ def filter_template_cache_af3(
     max_templates_filter: int,
     is_core_train: bool,
     num_workers: int,
-    save_frequency: int,
     log_level: str,
     log_to_file: bool,
     log_to_console: bool,
@@ -945,8 +955,6 @@ def filter_template_cache_af3(
             Whether the dataset is core train or not.
         num_workers (int):
             Number of workers to use for multiprocessing.
-        save_frequency (int):
-            Frequency at which to save the updated dataset cache.
         log_level (str):
             Log level for the logger.
         log_to_file (bool):
@@ -1056,3 +1064,268 @@ def collate_data_logs(template_cache_directory, fname):
     df_all.to_csv(
         template_cache_directory.parent / Path(f"{fname}"), sep="\t", index=False
     )
+
+
+# --- Template structure preprocessing ---
+# Step 1/1: Preprocess template structures
+def preprocess_template_structure_for_template(
+    template_pdb_id: str,
+    template_structures_directory: Path,
+    template_file_format: str,
+    template_structure_array_directory: Path,
+    ccd: CIFFile,
+    moltypes_included: np.ndarray[int],
+    log_dir: Path,
+):
+    """Preparse and process a template structure.
+
+    Args:
+        template_pdb_id (str):
+            PDB ID of the template structure.
+        template_structures_directory (Path):
+            Path to the directory containing template structures in mmCIF format.
+        template_file_format (str):
+            File format of the template structures.
+        template_structure_array_directory (Path):
+            Path to the directory where the template structure arrays will be saved.
+        ccd (CIFFile):
+            The Chemical Component Dictionary.
+        moltypes_included (np.ndarray[int]):
+            Array of molecule types to include in the template structure arrays.
+        log_dir (Path):
+            Directory where the log file are saved. This dir will also contain the per-
+            worker process logs for which samples have been successfully processed.
+    """
+    template_assembly_directory = template_structure_array_directory / Path(
+        f"{template_pdb_id}"
+    )
+
+    # Parse template structure
+    cif_file, atom_array_template_assembly = parse_mmcif(
+        template_structures_directory
+        / Path(f"{template_pdb_id}.{template_file_format}")
+    )
+
+    # Sanitize template structure
+    atom_array_template = clean_template_atom_array(
+        atom_array_template_assembly, cif_file, None, ccd
+    )
+
+    # Save template structure for each chain separately
+    # TODO: can switch back to atom_array_template.label_asym_id once the dummy chain ID
+    #  addition bug is resolved
+    chain_ids = np.unique(atom_array_template.chain_id)
+    chains_included = []
+    for chain_id in chain_ids:
+        # Find molecule type of chain and save if included
+        atom_array_chain = atom_array_template[atom_array_template.chain_id == chain_id]
+        chain_mol_type = np.array(list(set(atom_array_chain.molecule_type_id)))
+        if len(chain_mol_type) != 1:
+            raise ValueError(
+                f"Multiple molecule types found in chain {chain_id} of "
+                f"template {template_pdb_id}."
+            )
+        if np.isin(chain_mol_type, moltypes_included).all():
+            chains_included.append(chain_id)
+            with open(
+                template_assembly_directory / Path(f"{template_pdb_id}_{chain_id}.pkl"),
+                "wb",
+            ) as f:
+                pkl.dump(atom_array_chain, f)
+
+    # Log as completed
+    pid = os.getpid()
+    line = "{}\t{}\t{}\n".format(template_pdb_id, pid, ",".join(chains_included))
+    with open(log_dir / f"completed_{pid}.tsv", "a") as f:
+        f.write(line)
+
+
+class _AF3TemplateStructurePreprocessor:
+    def __init__(
+        self,
+        template_structures_directory: Path,
+        template_file_format: str,
+        template_structure_array_directory: Path,
+        ccd: CIFFile,
+        moltypes_included: np.ndarray[int],
+        log_level: str,
+        log_to_file: bool,
+        log_to_console: bool,
+        log_dir: Path,
+    ) -> None:
+        """Wrapper class for preprocessing template structures.
+
+        This wrapper around `preprocess_structure_for_template` is needed for
+        multiprocessing, so that we can pass the constant arguments in a convenient way
+        catch any errors that would crash the workers, and change the function call to
+        accept a single Iterable.
+
+        The wrapper is written as a class object because multiprocessing doesn't support
+        decorator-like nested functions.
+
+        Attributes:
+            template_structures_directory (Path):
+                Path to the directory containing template structures in mmCIF format.
+            template_file_format (str):
+                File format of the template structures.
+            template_structure_array_directory (Path):
+                Path to the directory where the template structure arrays will be saved.
+            ccd (CIFFile):
+                The parsed Chemical Component Dictionary.
+            moltypes_included (np.ndarray[int]):
+                Array of molecule types to include in the template structure arrays.
+            log_level (str):
+                Log level for the logger.
+            log_to_file (bool):
+                Whether to log to file.
+            log_to_console (bool):
+                Whether to log to console.
+            log_dir (Path):
+                Directory where the log file will be saved.
+        """
+        self.template_structures_directory = template_structures_directory
+        self.template_file_format = template_file_format
+        self.template_structure_array_directory = template_structure_array_directory
+        self.ccd = ccd
+        self.moltypes_included = moltypes_included
+        self.log_level = log_level
+        self.log_to_file = log_to_file
+        self.log_to_console = log_to_console
+        self.log_dir = log_dir
+
+    @wraps(preprocess_template_structure_for_template)
+    def __call__(self, template_pdb_id: str) -> None:
+        try:
+            # Create logger and set it as the context logger for the process
+            TEMPLATE_PROCESS_LOGGER.set(
+                configure_template_logger(
+                    log_level=self.log_level,
+                    log_to_file=self.log_to_file,
+                    log_to_console=self.log_to_console,
+                    log_dir=self.log_dir,
+                )
+            )
+            PDB_ID.set(template_pdb_id)
+            # Preprocess template structure
+            preprocess_template_structure_for_template(
+                template_pdb_id=template_pdb_id,
+                template_structures_directory=self.template_structures_directory,
+                template_file_format=self.template_file_format,
+                template_structure_array_directory=self.template_structure_array_directory,
+                ccd=self.ccd,
+                moltypes_included=self.moltypes_included,
+                log_dir=self.log_dir,
+            )
+            TEMPLATE_PROCESS_LOGGER.get().info(
+                "Successfully preprocessed template structure " f"{template_pdb_id}."
+            )
+        except Exception as e:
+            TEMPLATE_PROCESS_LOGGER.get().info(
+                "Failed to preprocess template structure "
+                f"{template_pdb_id}:"
+                f"\n\nException:\n{str(e)}"
+                f"\n\nType:\n{type(e).__name__}"
+                f"\n\nTraceback:\n{traceback.format_exc()}"
+            )
+
+
+def preprocess_template_structures(
+    template_structures_directory: Path,
+    template_file_format: str,
+    template_structure_array_directory: Path,
+    ccd_file: Path,
+    completed_entries_file: Path | None,
+    moltypes_included: str,
+    num_workers: int,
+    chunksize: int,
+    log_level: str,
+    log_to_file: bool,
+    log_to_console: bool,
+    log_dir: Path,
+) -> None:
+    """Preprocesses the template structures.
+
+    Args:
+        template_structures_directory (Path):
+            Path to the directory containing template structures.
+        template_file_format (str):
+            File format of the template structures.
+        template_structure_array_directory (Path):
+            Path to the directory where the template structure arrays will be saved.
+        ccd_file (Path):
+            Path to the Chemical Component Dictionary file.
+        completed_entries_file (Path | None):
+            Path to the file containing the list of completed entries.
+        moltypes_included (str):
+            Comma-separated str of molecule types to include in the template structure
+            arrays.
+        num_workers (int):
+            Number of workers to use for multiprocessing.
+        chunksize (int):
+            Number of tasks per worker.
+        log_level (str):
+            Log level for the logger.
+        log_to_file (bool):
+            Whether to log to file.
+        log_to_console (bool):
+            Whether to log to console.
+        log_dir (Path):
+            Directory where the log file will be saved.
+    """
+    if not log_dir.exists():
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Parse molecule types to include
+    moltypes_included = np.array(
+        [MoleculeType[t.strip().upper()] for t in moltypes_included.split(",")]
+    )
+
+    # Get list of unique template PDB IDs, create per-entry dirs
+    template_pdb_ids = []
+    for f in list(template_structures_directory.glob(f"*.{template_file_format}")):
+        template_pdb_ids.append(f.stem.split(".")[0])
+    print(f"Found {len(template_pdb_ids)} template structures.")
+
+    # Subset the template PDB IDs to only those that have not been preprocessed
+    if completed_entries_file is not None:
+        completed_entries = pd.read_csv(completed_entries_file, sep="\t", header=0)
+        template_pdb_ids = list(
+            set(template_pdb_ids) - set(completed_entries["entry"].tolist())
+        )
+        print(f"Preprocessing {len(template_pdb_ids)} template structures.")
+
+    # Pre-create directories for template structure arrays, otherwise IO issues
+    for template_pdb_id in tqdm(
+        template_pdb_ids, desc="1/2: Creating directories", total=len(template_pdb_ids)
+    ):
+        template_assembly_dir = template_structure_array_directory / Path(
+            f"{template_pdb_id}"
+        )
+        template_assembly_dir.mkdir(parents=True, exist_ok=True)
+
+    # Parse the CCD
+    ccd = pdbx.CIFFile.read(ccd_file)
+
+    # Preprocess template structures
+    wrapped_template_structure_preprocessor = _AF3TemplateStructurePreprocessor(
+        template_structures_directory,
+        template_file_format,
+        template_structure_array_directory,
+        ccd,
+        moltypes_included,
+        log_level,
+        log_to_file,
+        log_to_console,
+        log_dir,
+    )
+    with mp.Pool(num_workers) as pool:
+        for _ in tqdm(
+            pool.imap_unordered(
+                wrapped_template_structure_preprocessor,
+                template_pdb_ids,
+                chunksize=chunksize,
+            ),
+            total=len(template_pdb_ids),
+            desc="2/2: Preprocessing template structures",
+        ):
+            pass
