@@ -52,7 +52,7 @@ def crop_contiguous(
     assign_atom_indices(atom_array)
 
     # Get chain ids and permute
-    chains = np.array(list(set(atom_array.chain_id)))
+    chains = np.array(sorted(set(atom_array.chain_id)))
     chains = generator.permutation(chains)
 
     # Create cropping mask annotation

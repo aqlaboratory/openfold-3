@@ -565,7 +565,7 @@ def count_species_per_chain(
     species = []
     for chain_id in uniprot_hits:
         species.extend(set(uniprot_hits[chain_id].metadata["species_id"]))
-    species = np.array(list(set(species)))
+    species = np.array(sorted(set(species)))
     species_index = np.arange(len(species))
     species_index_map = {species[i]: i for i in species_index}
 
