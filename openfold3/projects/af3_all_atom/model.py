@@ -40,7 +40,9 @@ from openfold3.core.model.structure.diffusion_module import (
 )
 
 # from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation_align
-from openfold3.core.utils.permutation_alignment import multi_chain_permutation_alignment
+from openfold3.core.utils.permutation_alignment import (
+    safe_multi_chain_permutation_alignment,
+)
 from openfold3.core.utils.tensor_utils import add, tensor_tree_map
 
 
@@ -571,7 +573,7 @@ class AlphaFold3(nn.Module):
             # Apply permutation alignment to get the relevant and reordered subset of
             # ground-truth features
             with torch.no_grad():
-                batch["ground_truth"] = multi_chain_permutation_alignment(
+                batch["ground_truth"] = safe_multi_chain_permutation_alignment(
                     batch=batch, output=output
                 )
 
