@@ -156,7 +156,7 @@ class PreprocessingDataCache:
         """
         # Avoid circular import
         from openfold3.core.data.io.dataset_cache import write_datacache_to_json
-        
+
         write_datacache_to_json(self, file)
 
 
@@ -227,7 +227,7 @@ class DatasetCache(ABC):
         """
         # Avoid circular import
         from openfold3.core.data.io.dataset_cache import write_datacache_to_json
-        
+
         write_datacache_to_json(self, file)
 
 
