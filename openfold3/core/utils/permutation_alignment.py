@@ -487,7 +487,6 @@ def find_greedy_optimal_mol_permutation(
                 gt_any_resolved_mask_centroid = gt_resolved_mask_entity_segment.any(
                     dim=-1
                 )
-                # TODO: check this
                 pred_gt_dists_sq[~gt_any_resolved_mask_centroid] = torch.finfo(
                     pred_gt_dists_sq.dtype
                 ).max
@@ -1062,7 +1061,6 @@ def naive_alignment(batch):
 
     gt_atom_indices = []
 
-    # TODO: might be able to broadcast this
     # Match the GT atoms directly to the prediction by using the original token ID,
     # disregarding any potential permutation resolving
     for batch_id in range(batch_size):
