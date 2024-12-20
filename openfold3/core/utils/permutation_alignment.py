@@ -219,6 +219,7 @@ def get_gt_anchor_mask(
     gt_is_ligand: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, int]:
     gt_token_center_resolved_mask = gt_token_center_resolved_mask.bool()
+    gt_is_ligand = gt_is_ligand.bool()
 
     # Group symmetry-equivalent molecules of the same entity together
     entity_sym_id_combinations = torch.cat(
