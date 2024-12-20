@@ -671,12 +671,14 @@ def get_final_atom_permutation_index(
             # residues) skip the remaining computations
             if permutations.shape[0] == 1:
                 identity_permutation = permutations[0]
-                permuted_atom_idxs.extend(gt_atom_idx_subset_conf[identity_permutation].tolist())
-                
+                permuted_atom_idxs.extend(
+                    gt_atom_idx_subset_conf[identity_permutation].tolist()
+                )
+
                 # Ensure that the permutation does not change the order of the atoms
                 # (which would be unexpected)
                 assert torch.diff(identity_permutation).gt(0).all()
-                
+
                 continue
 
             # Versions of the ground-truth positions for each permutation
