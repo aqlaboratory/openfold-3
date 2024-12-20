@@ -1,9 +1,9 @@
 # NIT: confusing that this needs to be transposed, while the rotation matrix in
 # Transformation doesn't
 import logging
-from collections import Counter
+from collections import Counter, defaultdict
 from functools import partial
-from typing import overload
+from typing import NamedTuple, overload
 
 import torch
 
@@ -130,6 +130,88 @@ def get_sym_id_with_most_resolved_atoms(
     return best_sym_id, n_resolved
 
 
+class AnchorCandidate(NamedTuple):
+    entity_id: int
+    sym_id: int
+    n_resolved: int
+
+
+def get_least_ambiguous_anchor_candidate(
+    entity_sym_id_combinations: torch.Tensor,
+    gt_perm_entity_id: torch.Tensor,
+    gt_token_center_resolved_mask: torch.Tensor,
+    gt_perm_sym_id: torch.Tensor,
+) -> AnchorCandidate:
+    # Get number of symmetry mates for each entity
+    entity_stoichiometry = Counter(entity_sym_id_combinations[:, 0].tolist())
+
+    # Revert to get entitity IDs for each number of symmetry mates
+    count_to_entity_ids = defaultdict(list)
+    for entity_id, count in entity_stoichiometry.items():
+        count_to_entity_ids[count].append(entity_id)
+
+    # Traverse in order of least symmetry mates / ambiguity, breaking ties if necessary,
+    # to get the best anchor candidate
+    best_anchor_candidate = None
+    for count in sorted(count_to_entity_ids.keys()):
+        entity_ids = count_to_entity_ids[count]
+
+        # In case of tie, take the entity ID and sym ID with the biggest number of
+        # resolved ground-truth token center atoms (hopefully resulting in the most
+        # stable alignments on average)
+        if len(entity_ids) > 1:
+            logger.debug(
+                f"Multiple entities with {count} symmetry mates found. Breaking tie."
+            )
+
+            anchor_candidates = []
+            for entity_id in entity_ids:
+                entity_mask = gt_perm_entity_id == entity_id
+
+                best_sym_id, n_resolved = get_sym_id_with_most_resolved_atoms(
+                    gt_token_center_resolved_mask[entity_mask],
+                    gt_perm_sym_id[entity_mask],
+                )
+
+                anchor_candidates.append(
+                    AnchorCandidate(entity_id, best_sym_id, n_resolved)
+                )
+
+            # Select best anchor candidate based on number of resolved atoms
+            anchor_candidate = max(anchor_candidates, key=lambda x: x.n_resolved)
+        else:
+            (anchor_entity_id,) = entity_ids
+
+            best_sym_id, n_resolved = get_sym_id_with_most_resolved_atoms(
+                gt_token_center_resolved_mask[gt_perm_entity_id == anchor_entity_id],
+                gt_perm_sym_id[gt_perm_entity_id == anchor_entity_id],
+            )
+
+            anchor_candidate = AnchorCandidate(
+                anchor_entity_id, best_sym_id, n_resolved
+            )
+
+        # Break if we have a candidate with more than 3 resolved atoms (necessary for
+        # stable alignment)
+        if anchor_candidate.n_resolved > 3:
+            best_anchor_candidate = anchor_candidate
+            best_anchor_n_symmetry_mates = count
+            break
+        # Otherwise, overwrite best_anchor_candidate if we don't have one yet so that it
+        # at least corresponds to the least ambiguous stoichiometry. This will only be
+        # returned as the final result if no other candidate with more than 3 resolved
+        # atoms is found.
+        elif best_anchor_candidate is None:
+            best_anchor_candidate = anchor_candidate
+            best_anchor_n_symmetry_mates = count
+
+    logger.debug(
+        f"Chose anchor candidate with {best_anchor_n_symmetry_mates} symmetry mates."
+    )
+
+    return best_anchor_candidate
+
+
 def get_gt_anchor_mask(
     gt_token_center_resolved_mask: torch.Tensor,
     gt_perm_entity_id: torch.Tensor,
@@ -138,86 +220,95 @@ def get_gt_anchor_mask(
 ) -> tuple[torch.Tensor, torch.Tensor, int]:
     gt_token_center_resolved_mask = gt_token_center_resolved_mask.bool()
 
-    # Avoid selecting ligand anchor chains if there are any resolved non-ligand chains
-    # TODO: This also ignores covalent ligands for the purpose of selecting the anchor
-    # molecule, which isn't wrong but also not really necessary, but was more convenient
-    # to implement for now
-    if torch.any(~gt_is_ligand[gt_token_center_resolved_mask]):
-        gt_token_center_mask = gt_token_center_resolved_mask & ~gt_is_ligand
-    else:
-        logger.warning(
-            "No non-ligand chains found, selecting ligand anchor. This is likely to "
-            + "result in an unstable alignment in the current implementation if the "
-            + "ligand contains symmetric atoms."
-        )
-        gt_token_center_mask = gt_token_center_resolved_mask
-
-    # Figure out least ambiguous stoichiometry (ignoring entirely unresolved molecules)
+    # Group symmetry-equivalent molecules of the same entity together
     entity_sym_id_combinations = torch.cat(
         [
-            gt_perm_entity_id[gt_token_center_mask].unsqueeze(-1),
-            gt_perm_sym_id[gt_token_center_mask].unsqueeze(-1),
+            gt_perm_entity_id[gt_token_center_resolved_mask].unsqueeze(-1),
+            gt_perm_sym_id[gt_token_center_resolved_mask].unsqueeze(-1),
         ],
         dim=-1,
     )
     unique_entity_sym_id_combinations = torch.unique(entity_sym_id_combinations, dim=0)
-    entity_stoichiometry = Counter(unique_entity_sym_id_combinations[:, 0].tolist())
-    min_n_symmetry_mates = min(entity_stoichiometry.values())
-    least_ambiguous_entity_ids = [
-        entity_id
-        for entity_id, count in entity_stoichiometry.items()
-        if count == min_n_symmetry_mates
-    ]
 
-    # In case of tie, take the entity ID and sym ID with the biggest number of resolved
-    # ground-truth atoms (hopefully resulting in the most stable alignments on average)
-    if len(least_ambiguous_entity_ids) > 1:
-        logger.debug("Multiple least ambiguous entities found.")
+    # Group into polymeric entities and ligand-only entities. Ligand-only entities are
+    # deprioritized as anchor chains because of potentially less stable alignments due
+    # to symmetric atoms.
+    polymer_entity_sym_id_combinations = []
+    ligand_entity_sym_id_combinations = []
 
-        entity_sym_id_to_n_tokens = {}
+    for entity_id, sym_id in unique_entity_sym_id_combinations:
+        entity_mask = gt_perm_entity_id == entity_id
 
-        for entity_id in least_ambiguous_entity_ids:
-            entity_mask = gt_perm_entity_id == entity_id
-            best_sym_id, n_resolved = get_sym_id_with_most_resolved_atoms(
-                gt_token_center_resolved_mask[entity_mask],
-                gt_perm_sym_id[entity_mask],
+        if torch.all(gt_is_ligand[entity_mask]):
+            ligand_entity_sym_id_combinations.append((entity_id, sym_id))
+        else:
+            polymer_entity_sym_id_combinations.append((entity_id, sym_id))
+
+    polymer_entity_sym_id_combinations = torch.tensor(
+        polymer_entity_sym_id_combinations
+    )
+    ligand_entity_sym_id_combinations = torch.tensor(ligand_entity_sym_id_combinations)
+
+    have_polymer_entities = polymer_entity_sym_id_combinations.numel() > 0
+
+    # Try to get a polymeric anchor
+    if have_polymer_entities:
+        polymer_anchor_candidate = get_least_ambiguous_anchor_candidate(
+            polymer_entity_sym_id_combinations,
+            gt_perm_entity_id,
+            gt_token_center_resolved_mask,
+            gt_perm_sym_id,
+        )
+
+    # If no polymeric anchor available or only polymeric anchor has < 3 resolved atoms,
+    # try to see if there is a better ligand anchor
+    if not have_polymer_entities or polymer_anchor_candidate.n_resolved < 3:
+        logger.debug(
+            "Polymeric anchor candidate has less than 3 resolved atoms, "
+            "trying with ligand candidate."
+        )
+
+        if ligand_entity_sym_id_combinations:
+            ligand_anchor_candidate = get_least_ambiguous_anchor_candidate(
+                ligand_entity_sym_id_combinations,
+                gt_perm_entity_id,
+                gt_token_center_resolved_mask,
+                gt_perm_sym_id,
             )
 
-            entity_sym_id_to_n_tokens[(entity_id, best_sym_id)] = n_resolved
-
-        # Select final anchor entity and sym ID
-        anchor_entity_id, anchor_sym_id = max(
-            entity_sym_id_to_n_tokens, key=entity_sym_id_to_n_tokens.get
-        )
-
+            if ligand_anchor_candidate.n_resolved > 3:
+                final_anchor = ligand_anchor_candidate
+                logger.warning(
+                    "Chose ligand anchor molecule. This could result in an unstable "
+                    "alignment if the ligand has symmetric atoms."
+                )
+            else:
+                # Both polymer and ligand anchors have < 3 resolved atoms
+                logger.warning(
+                    "Chose anchor molecule with less than 3 resolved atoms. "
+                    "This will result in an unstable alignment."
+                )
+                # If no polymer anchors were available at all, must settle for ligand
+                # Otherwise, revert to the polymer anchor
+                final_anchor = (
+                    ligand_anchor_candidate
+                    if not have_polymer_entities
+                    else polymer_anchor_candidate
+                )
+        else:
+            # No ligand candidates available, must settle for the polymer candidate
+            logger.warning(
+                "Chose anchor molecule with less than 3 resolved atoms. "
+                "This will result in an unstable alignment."
+            )
+            final_anchor = polymer_anchor_candidate
     else:
-        # Single-element tuple unpacking (will fail if != 1 elements)
-        (anchor_entity_id,) = least_ambiguous_entity_ids
+        # Chose polymer anchor
+        final_anchor = polymer_anchor_candidate
 
-        # Get sym ID with biggest number of resolved ground-truth atoms
-        anchor_entity_mask = gt_perm_entity_id == anchor_entity_id
-        anchor_sym_id, _ = get_sym_id_with_most_resolved_atoms(
-            gt_token_center_resolved_mask[anchor_entity_mask],
-            gt_perm_sym_id[anchor_entity_mask],
-        )
-
-    # Get the mask for the anchor molecule
-    anchor_mask = (gt_perm_entity_id == anchor_entity_id) & (
-        gt_perm_sym_id == anchor_sym_id
-    )
-
-    # TODO: prevent this from happening instead of just throwing a warning
-    anchor_resolved_mask = gt_token_center_resolved_mask[anchor_mask]
-    n_resolved_anchor_atoms = anchor_resolved_mask.sum()
-    if n_resolved_anchor_atoms < 3:
-        logger.warning(
-            f"Anchor molecule has less than 3 resolved atoms "
-            f"({n_resolved_anchor_atoms}). This will result in an unstable "
-            "alignment."
-        )
-
-    logger.debug(
-        f"Number of resolved atoms in anchor molecule: {n_resolved_anchor_atoms}"
+    # Get the final mask for the anchor molecule
+    anchor_mask = (gt_perm_entity_id == final_anchor.entity_id) & (
+        gt_perm_sym_id == final_anchor.sym_id
     )
 
     return anchor_mask
