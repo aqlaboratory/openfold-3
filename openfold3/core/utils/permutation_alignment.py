@@ -412,7 +412,10 @@ def find_greedy_optimal_mol_permutation(
 
                 # Append the mapping between the predicted and ground-truth symmetry and
                 # entity IDs to the permutation
-                permutation_aln[(entity_id, sym_id)] = (entity_id, best_gt_sym_id)
+                permutation_aln[(entity_id.item(), sym_id.item())] = (
+                    entity_id.item(),
+                    best_gt_sym_id.item(),
+                )
 
         centroid_dists_sq.append(centroid_dists_sq_aln)
         permutations.append(permutation_aln)
