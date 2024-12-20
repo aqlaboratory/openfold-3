@@ -8,6 +8,8 @@ from openfold3.core.metrics.validation_all_atom import (
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 
 
+# TODO: This seems like it has a high degree of redundancy with the validation metrics
+# -> should improve that
 def model_selection_metric(
     batch: dict,
     outputs: dict,
