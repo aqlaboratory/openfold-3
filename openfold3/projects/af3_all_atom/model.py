@@ -38,8 +38,6 @@ from openfold3.core.model.structure.diffusion_module import (
     centre_random_augmentation,
     create_noise_schedule,
 )
-
-# from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation_align
 from openfold3.core.utils.permutation_alignment import (
     safe_multi_chain_permutation_alignment,
 )
@@ -398,7 +396,7 @@ class AlphaFold3(nn.Module):
 
         return output
 
-    def forward(self, batch: dict) -> [dict, dict]:
+    def forward(self, batch: dict) -> list[dict, dict]:
         """
         Args:
             batch:
