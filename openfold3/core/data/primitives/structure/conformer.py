@@ -297,24 +297,42 @@ def get_cropped_permutations(
     return gt_permutations
 
 
-# TODO: change this docstring
 def renumber_permutations(
     permutation: np.ndarray, required_gt_atoms: Iterable[int]
 ) -> np.ndarray:
-    """Renumber a permutation to a contiguous range starting from 0.
+    """Renumber permutation indices to reflect subsetted ground-truth atom indices.
+
+    This function should be called after the ground-truth structure has been within
+    `separate_cropped_and_gt`. In this case, there are now potentially fewer atoms in
+    the ground-truth, so the positional indices of the permutations become outdated.
+    This function takes all the required GT-atoms that are present in the new
+    ground-truth, and renumbers all the permutation indices to reflect the new atom
+    indices.
+
+    Example:
+    permutation: [[2, 4], [4, 2]]
+    required_gt_atoms: [1, 2, 4, 5, 6] (superset of permutations because of other
+                                        symmetry-equivalent molecules in structure)
+    Result: [[2, 3], [3, 2]]
 
     Args:
         permutation:
             The permutation to renumber.
+        required_gt_atoms:
+            The set of ground-truth atoms that is still required in the new
+            ground-truth.
 
     Returns:
         The renumbered permutation.
     """
+    # Renumber full set of required GT atoms monotonically and define mapping from old
+    # IDs
     required_gt_atoms = np.array(sorted(required_gt_atoms))
     required_gt_atoms_remapped = np.arange(len(required_gt_atoms))
     atom_idx_map = dict(zip(required_gt_atoms, required_gt_atoms_remapped))
-
     atom_idx_mapper = np.vectorize(lambda x: atom_idx_map[x])
+
+    # Update the set of atoms in the permutations to reflect the new indices
     renumbered_permutation = atom_idx_mapper(permutation)
 
     return renumbered_permutation
