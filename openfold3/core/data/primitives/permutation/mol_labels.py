@@ -454,10 +454,22 @@ def separate_cropped_and_gt(
         sym_id = mol.perm_sym_id[0]
         entity_to_valid_sym_ids[entity_id].append(sym_id)
 
+    # This keeps track of which total ground-truth atoms are required for this
+    # particular component. This is important later, as we need to edit the indices of
+    # this component's permutations to match the new subset of the ground-truth atom
+    # array.
+    absolute_component_id_to_required_gt_atoms = defaultdict(set)
+
     # Keep exactly the sections of the ground-truth that are symmetry-related to
     # sections in the crop
     for cropped_entities in perm_sym_entity_iter(atom_array_cropped):
         entity_id = cropped_entities.perm_entity_id[0]
+
+        sym_component_id_to_absolute_conformer_id = defaultdict(set)
+        for atom in cropped_entities:
+            sym_component_id_to_absolute_conformer_id[atom.perm_sym_conformer_id].add(
+                atom.component_id
+            )
 
         # Get the exact symmetry-equivalent atom sets per component
         sym_component_id_to_required_gt_atoms = defaultdict(set)
@@ -466,12 +478,23 @@ def separate_cropped_and_gt(
                 absolute_component_id = component.component_id[0]
                 sym_component_id = component.perm_sym_conformer_id[0]
 
+                # Symmetry-equivalent permutations from which the necessary ground-truth
+                # atoms can be concluded
                 permutations = component_id_to_permutations[absolute_component_id]
                 required_gt_atom_indices = np.unique(permutations)
 
+                required_gt_atom_indices_list = required_gt_atom_indices.tolist()
                 sym_component_id_to_required_gt_atoms[sym_component_id].update(
-                    required_gt_atom_indices.tolist()
+                    required_gt_atom_indices_list
                 )
+
+                # Update all related absolute conformer IDs
+                for absolute_conformer_id in sym_component_id_to_absolute_conformer_id[
+                    sym_component_id
+                ]:
+                    absolute_component_id_to_required_gt_atoms[
+                        absolute_conformer_id
+                    ].update(required_gt_atom_indices_list)
 
         # Get the valid symmetry-equivalent GT molecules
         same_entity_gt_mols = atom_array_gt[atom_array_gt.perm_entity_id == entity_id]
@@ -488,6 +511,7 @@ def separate_cropped_and_gt(
         for gt_component in component_iter(sym_equivalent_gt_mol):
             gt_sym_component_id = gt_component.perm_sym_conformer_id[0]
 
+            # If component is not in the crop at all, append all-False mask
             if gt_sym_component_id not in sym_component_id_to_required_gt_atoms:
                 gt_mol_keep_atom_mask.extend(np.zeros(len(gt_component), dtype=bool))
                 continue
@@ -515,7 +539,12 @@ def separate_cropped_and_gt(
     # Renumber the permutations, as the ground-truth atoms are now a subset of the
     # previous ones so the indices need to be re-mapped
     for processed_mol in processed_ref_mol_list:
-        processed_mol.permutations = renumber_permutations(processed_mol.permutations)
+        required_gt_atoms = absolute_component_id_to_required_gt_atoms[
+            processed_mol.component_id
+        ]
+        processed_mol.permutations = renumber_permutations(
+            processed_mol.permutations, required_gt_atoms
+        )
 
     # Construct the final atom array
     remove_atom_indices(atom_array_gt)

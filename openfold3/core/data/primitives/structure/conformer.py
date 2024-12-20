@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Iterable
 from typing import Literal
 
 import numpy as np
@@ -298,7 +299,7 @@ def get_cropped_permutations(
 
 # TODO: change this docstring
 def renumber_permutations(
-    permutation: np.ndarray,
+    permutation: np.ndarray, required_gt_atoms: Iterable[int]
 ) -> np.ndarray:
     """Renumber a permutation to a contiguous range starting from 0.
 
@@ -309,11 +310,11 @@ def renumber_permutations(
     Returns:
         The renumbered permutation.
     """
-    renumbered_permutation = np.full_like(permutation, -1)
-    unique_permutation = np.unique(permutation)
-    for new_idx, old_idx in enumerate(unique_permutation):
-        renumbered_permutation[permutation == old_idx] = new_idx
+    required_gt_atoms = np.array(sorted(required_gt_atoms))
+    required_gt_atoms_remapped = np.arange(len(required_gt_atoms))
+    atom_idx_map = dict(zip(required_gt_atoms, required_gt_atoms_remapped))
 
-    assert np.all(renumbered_permutation != -1)
+    atom_idx_mapper = np.vectorize(lambda x: atom_idx_map[x])
+    renumbered_permutation = atom_idx_mapper(permutation)
 
     return renumbered_permutation
