@@ -667,14 +667,16 @@ def get_final_atom_permutation_index(
             # All possible permutations for this conformer
             permutations = pred_ref_space_uid_to_perm[ref_space_uid.item()]
 
-            # If there is only the identity permutation (which is the case for a lot of
+            # If there is only a single permutation (which is the case for a lot of
             # residues) skip the remaining computations
             if permutations.shape[0] == 1:
                 identity_permutation = permutations[0]
-                assert torch.all(
-                    identity_permutation == torch.arange(permutations.shape[1])
-                )
-                permuted_atom_idxs.extend(gt_atom_idx_subset_conf[identity_permutation])
+                permuted_atom_idxs.extend(gt_atom_idx_subset_conf[identity_permutation].tolist())
+                
+                # Ensure that the permutation does not change the order of the atoms
+                # (which would be unexpected)
+                assert torch.diff(identity_permutation).gt(0).all()
+                
                 continue
 
             # Versions of the ground-truth positions for each permutation
