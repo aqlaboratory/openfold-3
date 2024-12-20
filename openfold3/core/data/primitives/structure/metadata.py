@@ -352,10 +352,10 @@ def get_ccd_atom_id_to_charge_dict(ccd_entry: CIFBlock) -> dict[str, float]:
     """
 
     atom_id_to_charge = {
-        atom_id.item(): charge.item()
+        atom_id.item(): (int(charge) if charge != "?" else 0)
         for atom_id, charge in zip(
             ccd_entry["chem_comp_atom"]["atom_id"].as_array(),
-            ccd_entry["chem_comp_atom"]["charge"].as_array().astype(int),
+            ccd_entry["chem_comp_atom"]["charge"].as_array(),
         )
     }
 

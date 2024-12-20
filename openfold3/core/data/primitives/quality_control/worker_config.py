@@ -134,6 +134,11 @@ def configure_extra_data_file(
 ) -> None:
     """Configures the extra data file for the worker.
 
+    !!! IMPORTANT NOTE: If the all_headers list is modified, the logging_datasets >
+    WeightedPDBDatasetWithLogging > save_data_statistics method must be updated
+    accordingly, EXCEPT FOR RUNTIMES, which should be updated in the logging_utils
+    > F_NAME_ORDER variable !!!
+
     Args:
         worker_id (int):
             Worker identifier.
@@ -147,6 +152,8 @@ def configure_extra_data_file(
             Treadmill output directory.
     """
     if save_statistics:
+        # TODO: add logic to jointly update the all_headers list in the logging_datasets
+        # and the save_data_statistics method in the WeightedPDBDatasetWithLogging class
         all_headers = [
             "pdb-id",
             "chain-or-interface",
@@ -209,6 +216,8 @@ def configure_extra_data_file(
             "interface-protein-dna-crop",
             "interface-protein-ligand",
             "interface-protein-ligand-crop",
+            "resolution",
+            "release_date",
         ]
 
         if log_runtimes:
