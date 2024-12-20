@@ -385,9 +385,6 @@ def find_greedy_optimal_mol_permutation(
     # Get the unique entity IDs
     unique_pred_perm_entity_ids = torch.unique(pred_perm_entity_ids)
 
-    # optimal_permutation = None
-    # optimal_rmsd = torch.inf
-
     # Keep track of centroid distances and permutations over all anchor alignments
     centroid_dists_sq = []
     permutations = []
@@ -527,8 +524,15 @@ def find_greedy_optimal_mol_permutation(
     optimal_alignment_index = torch.argmin(rmsds)
     optimal_permutation = permutations[optimal_alignment_index]
 
-    optimal_rmsd = rmsds[optimal_alignment_index]
-    logger.debug(f"Found optimal permutation with RMSD: {optimal_rmsd}")
+    # This RMSD re-computation is only for better logging, to give the RMSD without the
+    # artificial values for unresolved atoms (e.g. to see that it is near-0 in
+    # unit-tests)
+    centroid_dists_sq_optimal = centroid_dists_sq[optimal_alignment_index]
+    unresolved_vals_optimal = unresolved_vals[optimal_alignment_index]
+    optimal_rmsd_masked = torch.sqrt(
+        centroid_dists_sq_optimal[~unresolved_vals_optimal].mean()
+    )
+    logger.debug(f"Found optimal permutation with RMSD: {optimal_rmsd_masked}")
 
     assert optimal_permutation is not None
 
