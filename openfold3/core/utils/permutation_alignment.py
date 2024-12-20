@@ -692,7 +692,7 @@ def get_final_atom_permutation_index(
                 .sum(dim=-1)
                 .mul(gt_resolved_mask_subset_conf_perm)
             )
-            n_resolved_atoms = gt_resolved_mask_subset_conf.sum(dim=-1)
+            n_resolved_atoms = gt_resolved_mask_subset_conf_perm.sum(dim=-1)
             rmsd = torch.sqrt(dists_sq.sum(dim=-1) / n_resolved_atoms)
 
             # Get permutation that minimizes RMSD
