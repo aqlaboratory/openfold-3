@@ -411,7 +411,7 @@ class ClusteredDatasetCache(ChainInterfaceReferenceMolCache):
 @dataclass
 class ValClusteredDatasetChainData(ClusteredDatasetChainData):
     """Chain-wise data with cluster and alignment information.
-    
+
     Adds info on homology to train set. If chain is a monomer
     >40% seq id and if it is a ligand >0.85 tanimoto score.
     """
@@ -426,7 +426,7 @@ class ValClusteredDatasetChainData(ClusteredDatasetChainData):
 @dataclass
 class ValClusteredDatasetInterfaceData(ClusteredDatasetInterfaceData):
     """Interface-wise data with cluster information.
-    
+
     Adds info on if interfaces are homologous to the training data
     To be true both chains most have homology as defined in SI 5.8.
     """
@@ -440,8 +440,8 @@ class ValClusteredDatasetStructureData:
 
     release_date: datetime.date
     resolution: float
-    sampled_cluster: list[str] # TODO: remove this
-    token_count: int # TODO: remove this
+    sampled_cluster: list[str]  # TODO: remove this
+    token_count: int  # TODO: remove this
     chains: dict[str, ValClusteredDatasetChainData]
     interfaces: dict[str, ClusteredDatasetInterfaceData]
 
