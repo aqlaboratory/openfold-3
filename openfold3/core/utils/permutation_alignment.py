@@ -1052,3 +1052,41 @@ def multi_chain_permutation_alignment(batch: dict, output: dict):
 
 
 def naive_alignment(batch):
+    """Fallback that directly matches GT and predicted token IDs."""
+    pred_token_ids = batch["token_index"]
+    gt_token_ids = batch["ground_truth"]["token_index"]
+    pred_token_mask = batch["token_mask"].bool()
+    gt_token_mask = batch["ground_truth"]["token_mask"].bool()
+
+    batch_size = pred_token_ids.shape[0]
+
+    gt_atom_indices = []
+
+    # TODO: might be able to broadcast this
+    # Match the GT atoms directly to the prediction by using the original token ID,
+    # disregarding any potential permutation resolving
+    for batch_id in range(batch_size):
+        gt_token_ids_atomized_batch = broadcast_token_feat_to_atoms(
+            token_mask=gt_token_mask[batch_id],
+            num_atoms_per_token=batch["ground_truth"]["num_atoms_per_token"][batch_id],
+            token_feat=gt_token_ids[batch_id],
+        )
+        pred_token_ids_batch = pred_token_ids[batch_id][pred_token_mask[batch_id]]
+
+        atom_selection_mask = torch.isin(
+            gt_token_ids_atomized_batch, pred_token_ids_batch
+        )
+
+        gt_atom_indices.append(torch.nonzero(atom_selection_mask, as_tuple=True)[0])
+
+    ground_truth_features = update_gt_position_features(batch, gt_atom_indices)
+
+    return ground_truth_features
+
+
+def safe_multi_chain_permutation_alignment(batch: dict, output: dict):
+    try:
+        return multi_chain_permutation_alignment(batch, output)
+    except Exception as e:
+        logger.error(f"Error during multi-chain permutation alignment: {e}")
+        return naive_alignment(batch)
