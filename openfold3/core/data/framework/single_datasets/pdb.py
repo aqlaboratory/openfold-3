@@ -318,14 +318,14 @@ class WeightedPDBDataset(SingleDataset):
             token_budget=self.token_budget,
             preferred_chain_or_interface=preferred_chain_or_interface,
             structure_format="pkl",
-            per_chain_metadata=self.dataset_cache["structure_data"][pdb_id]["chains"],
+            per_chain_metadata=self.dataset_cache.structure_data[pdb_id].chains,
         )
 
         # Processed reference conformers
         processed_reference_molecules = get_reference_conformer_data_af3(
             atom_array=atom_array_gt,
-            per_chain_metadata=self.dataset_cache["structure_data"][pdb_id]["chains"],
-            reference_mol_metadata=self.dataset_cache["reference_molecule_data"],
+            per_chain_metadata=self.dataset_cache.structure_data[pdb_id].chains,
+            reference_mol_metadata=self.dataset_cache.reference_molecule_data,
             reference_mol_dir=self.reference_molecule_directory,
         )
 
