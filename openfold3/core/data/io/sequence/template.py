@@ -2,7 +2,7 @@
 Parsers for template alignments.
 """
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from typing import NamedTuple
 
 from openfold3.core.data.io.sequence.fasta import parse_fasta
@@ -142,20 +142,19 @@ def _parse_hmmsearch_description(description: str, index: int) -> HitMetadata:
     )
 
 
-def _convert_sto_seq_to_a3m(
-    query_non_gaps: Sequence[bool], sto_seq: str
-) -> Iterable[str]:
-    """_summary_
+def _convert_sto_seq_to_a3m(query_non_gaps: list[bool], sto_seq: str) -> Iterable[str]:
+    """Convert stockholm sequence to a3m format.
 
     Args:
-        query_non_gaps (Sequence[bool]): _description_
-        sto_seq (str): _description_
-
-    Returns:
-        Iterable[str]: _description_
+        query_non_gaps (list[bool]):
+            List of booleans indicating whether the query sequence has a non-gap residue
+            at each position.
+        sto_seq (str):
+            Stockholm sequence to convert to a3m format.
 
     Yields:
-        Iterator[Iterable[str]]: _description_
+        Iterator[Iterable[str]]:
+            Converted a3m sequence.
     """
     for is_query_res_non_gap, sequence_res in zip(query_non_gaps, sto_seq):
         if is_query_res_non_gap:

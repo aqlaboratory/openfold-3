@@ -406,7 +406,6 @@ FEATURE_OTHER_DTYPES = {
     "template_distogram": torch.float32,
     "template_unit_vector": torch.float32,
     "msa_mask": torch.float32,
-    "num_recycles": torch.int32,
     "num_paired_seqs": torch.int32,
 }
 FEATURE_LOSS_DTYPES = {

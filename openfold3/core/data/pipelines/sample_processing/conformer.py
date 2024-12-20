@@ -62,6 +62,7 @@ class ProcessedReferenceMolecule:
     permutations: list[np.ndarray[int]]
 
 
+@log_runtime_memory(runtime_dict_key="runtime-ref-conf-proc-fetch", multicall=True)
 def get_processed_reference_conformer(
     mol_id: Mol,
     mol: Mol,

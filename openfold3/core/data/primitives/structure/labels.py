@@ -312,6 +312,7 @@ def assign_molecule_type_ids(atom_array: AtomArray, cif_file: pdbx.CIFFile) -> N
         atom_mol_types = get_mol_types(chain_array.res_name)
 
         # Non-polymeric chains are always ligands
+        # TODO fix edge case where only one residue is resolved for a polymeric chain
         if not is_polymeric:
             molecule_type_ids[chain_start:next_chain_start] = MoleculeType.LIGAND
         # Assign a single molecule type to all atoms in the chain based on the majority

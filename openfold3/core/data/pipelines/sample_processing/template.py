@@ -26,13 +26,15 @@ def process_template_structures_af3(
     template_cache_directory: Path,
     dataset_cache: DatasetCache,
     pdb_id: str,
-    template_structures_directory: Path,
+    template_structures_directory: Path | None,
+    template_structure_array_directory: Path | None,
     template_file_format: str,
-    ccd: CIFFile,
+    ccd: CIFFile | None,
 ) -> TemplateSliceCollection:
     """Processes template structures for all chains of a given target structure.
 
-    Note: Only looks for templates for chains that have at least one atom in the crop.
+    Note: During training, only looks for templates for chains that have at least one
+    atom in the crop.
 
     Args:
         atom_array (AtomArray):
@@ -50,12 +52,16 @@ def process_template_structures_af3(
             The dataset cache.
         pdb_id (str):
             The PDB ID of the target structure.
-        template_structures_directory (Path):
+        template_structures_directory (Path | None):
             The directory where the template structures are stored.
+        template_structure_array_directory (Path | None):
+            The directory where the preparsed and preprocessed template structure arrays
+            are stored.
         template_file_format (str):
             The format of the template files.
-        ccd (CIFFile):
-            The parsed CCD file.
+        ccd (CIFFile | None):
+            The parsed CCD file. Not used if template_structure_array_directory is
+            provided.
 
     Returns:
         TemplateSliceCollection:
@@ -79,12 +85,14 @@ def process_template_structures_af3(
             take_top_k,
             pdb_id,
             chain_id,
+            template_structure_array_directory,
         )
 
         # Map token positions to template atom arrays
         template_slices[chain_id] = align_template_to_query(
             sampled_template_data,
             template_structures_directory,
+            template_structure_array_directory,
             template_file_format,
             ccd,
             atom_array[atom_array.chain_id == chain_id],

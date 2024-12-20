@@ -312,7 +312,6 @@ def main(
         max_templates_filter=max_templates_filter,
         is_core_train=is_core_train,
         num_workers=num_workers,
-        save_frequency=save_frequency,
         log_level=log_level,
         log_to_file=log_to_file,
         log_to_console=log_to_console,

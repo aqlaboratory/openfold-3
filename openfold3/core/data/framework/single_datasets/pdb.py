@@ -210,6 +210,9 @@ class WeightedPDBDataset(SingleDataset):
         self.template_structures_directory = dataset_config["dataset_paths"][
             "template_structures_directory"
         ]
+        self.template_structure_array_directory = dataset_config["dataset_paths"][
+            "template_structure_array_directory"
+        ]
         self.template_file_format = dataset_config["dataset_paths"][
             "template_file_format"
         ]
@@ -225,8 +228,14 @@ class WeightedPDBDataset(SingleDataset):
         self.create_datapoint_cache()
         self.datapoint_probabilities = self.datapoint_cache["weight"].to_numpy()
 
-        # CCD
-        self.ccd = pdbx.CIFFile.read(dataset_config["dataset_paths"]["ccd_file"])
+        # CCD - only used if template structures are not preprocessed
+        if (
+            dataset_config["dataset_paths"]["template_structure_array_directory"]
+            is not None
+        ):
+            self.ccd = None
+        else:
+            self.ccd = pdbx.CIFFile.read(dataset_config["dataset_paths"]["ccd_file"])
 
         # Dataset configuration
         self.crop_weights = dataset_config["crop_weights"]
@@ -375,6 +384,9 @@ class WeightedPDBDataset(SingleDataset):
             max_seq_counts=self.msa.max_seq_counts,
             aln_order=self.msa.aln_order,
             max_rows_paired=self.msa.max_rows_paired,
+            min_chains_paired_partial=self.msa.min_chains_paired_partial,
+            pairing_mask_keys=self.msa.pairing_mask_keys,
+            moltypes=self.msa.moltypes,
         )
         msa_features = featurize_msa_af3(
             atom_array=atom_array_cropped,
@@ -401,6 +413,7 @@ class WeightedPDBDataset(SingleDataset):
             dataset_cache=self.dataset_cache,
             pdb_id=pdb_id,
             template_structures_directory=self.template_structures_directory,
+            template_structure_array_directory=self.template_structure_array_directory,
             template_file_format=self.template_file_format,
             ccd=self.ccd,
         )
