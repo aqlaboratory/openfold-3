@@ -362,39 +362,11 @@ class ClusteredDatasetChainData(PDBChainData):
 
 
 @dataclass
-class ValClusteredDatasetChainData(ClusteredDatasetChainData):
-    """Chain-wise data with cluster and alignment information.
-    Adds info on homology to train set. If chain is a monomer
-    >40% seq id and if it is a ligand >0.85 tanimoto score
-    """
-
-    # Adds the following fields:
-    cluster_id: str
-    cluster_size: int
-    monomer_high_homology: int
-    ligand_high_homology: int
-    ligand_not_fit: int
-    num_residues_contact: int
-
-
-@dataclass
 class ClusteredDatasetInterfaceData:
     """Interface-wise data with cluster information."""
 
     cluster_id: str
     cluster_size: int
-
-
-@dataclass
-class ValClusteredDatasetInterfaceData(ClusteredDatasetInterfaceData):
-    """Interface-wise data with cluster information.
-    Adds info on if interfaces are homologous to the training data
-    To be true both chains most have homology as defined in SI 5.8
-    """
-
-    cluster_id: str
-    cluster_size: int
-    interface_high_homology: int
 
 
 @dataclass
@@ -407,23 +379,7 @@ class ClusteredDatasetStructureData:
     interfaces: dict[str, ClusteredDatasetInterfaceData]
 
 
-@dataclass
-class ValClusteredDatasetStructureData:
-    """Structure data with cluster and addded metadata information."""
-
-    release_date: datetime.date
-    resolution: float
-    sampled_cluster: list[str]
-    token_count: int
-    chains: dict[str, ValClusteredDatasetChainData]
-    interfaces: dict[str, ClusteredDatasetInterfaceData]
-
-
 ClusteredDatasetStructureDataCache: TypeAlias = dict[str, ClusteredDatasetStructureData]
-"""Structure data cache with cluster information."""
-ValClusteredDatasetStructureDataCache: TypeAlias = dict[
-    str, ValClusteredDatasetStructureData
-]
 """Structure data cache with cluster information."""
 
 
@@ -451,10 +407,56 @@ class ClusteredDatasetCache(ChainInterfaceReferenceMolCache):
     _structure_data_format = ClusteredDatasetStructureData
 
 
+# PDB VALIDATION DATASET FORMAT
+@dataclass
+class ValClusteredDatasetChainData(ClusteredDatasetChainData):
+    """Chain-wise data with cluster and alignment information.
+    
+    Adds info on homology to train set. If chain is a monomer
+    >40% seq id and if it is a ligand >0.85 tanimoto score.
+    """
+
+    # Adds the following fields:
+    monomer_high_homology: int
+    ligand_high_homology: int
+    ligand_not_fit: int
+    num_residues_contact: int
+
+
+@dataclass
+class ValClusteredDatasetInterfaceData(ClusteredDatasetInterfaceData):
+    """Interface-wise data with cluster information.
+    
+    Adds info on if interfaces are homologous to the training data
+    To be true both chains most have homology as defined in SI 5.8.
+    """
+
+    interface_high_homology: int
+
+
+@dataclass
+class ValClusteredDatasetStructureData:
+    """Structure data with cluster and added metadata information."""
+
+    release_date: datetime.date
+    resolution: float
+    sampled_cluster: list[str] # TODO: remove this
+    token_count: int # TODO: remove this
+    chains: dict[str, ValClusteredDatasetChainData]
+    interfaces: dict[str, ClusteredDatasetInterfaceData]
+
+
+ValClusteredDatasetStructureDataCache: TypeAlias = dict[
+    str, ValClusteredDatasetStructureData
+]
+"""Structure data cache with cluster information."""
+
+
+# TODO: Revisit this entire cache to remove all redundant fields
 @register_datacache
 @dataclass
 class ValClusteredDatasetCache(ChainInterfaceReferenceMolCache):
-    """Full data cache for clustered dataset with conformer leakage prevention."""
+    """Full data cache for the validation dataset."""
 
     name: str
     structure_data: ClusteredDatasetStructureDataCache
