@@ -831,55 +831,44 @@ def atom_subset_index_to_token_subset_index(
     return token_subset_index
 
 
-def permute_gt_features(
-    gt_feature_dict: dict[str, torch.Tensor],
-    atom_indexes: list[torch.Tensor],
-    token_indexes: list[torch.Tensor],
-):
-    new_feature_dict = {}
-    batch_size = gt_feature_dict["residue_index"].shape[0]
+def permute_gt_position_features(
+    gt_positions: torch.Tensor,
+    gt_resolved_mask: torch.Tensor,
+    atom_indexes: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    batch_size = gt_positions.shape[0]
 
-    # Extend the indexes to account for padding
-    n_tokens = gt_feature_dict["residue_index"].shape[1]
-    for i, token_index in enumerate(token_indexes):
-        full_token_index = torch.arange(n_tokens, device=token_index.device)
-        full_token_index[: token_index.shape[0]] = token_index
-        token_indexes[i] = full_token_index
+    features = [gt_positions, gt_resolved_mask]
+    new_features = []
 
-    n_atoms = gt_feature_dict["atom_positions"].shape[1]
-    for i, atom_index in enumerate(atom_indexes):
-        full_atom_index = torch.arange(n_atoms, device=atom_index.device)
-        full_atom_index[: atom_index.shape[0]] = atom_index
-        atom_indexes[i] = full_atom_index
+    for feat in features:
+        # Pad to longest sequence
+        new_feat = torch.nn.utils.rnn.pad_sequence(
+            [feat[batch][atom_indexes[batch]] for batch in range(batch_size)],
+            batch_first=True,
+        )
+        new_features.append(new_feat)
 
-    # NIT: Token dimensions for the feature dict could be handled in a more principled
-    # way across code, e.g. in a tensordict with according batch-dims?
-    # Permute all features in the feature dict
-    for key, value in gt_feature_dict.items():
-        if key in ["atom_positions", "atom_resolved_mask"]:
-            new_feature_dict[key] = torch.stack(
-                [
-                    torch.index_select(value[i], dim=0, index=atom_indexes[i])
-                    for i in range(batch_size)
-                ]
-            )
-        elif key == "token_bonds":
-            # token_bonds is [*, N_token, N_token]
-            new_feature_dict[key] = torch.stack(
-                [
-                    value[i][..., token_indexes[i]][:, token_indexes[i]]
-                    for i in range(batch_size)
-                ]
-            )
-        else:
-            new_feature_dict[key] = torch.stack(
-                [
-                    torch.index_select(value[i], dim=0, index=token_indexes[i])
-                    for i in range(batch_size)
-                ]
-            )
+    gt_positions, gt_resolved_mask = new_features
 
-    return new_feature_dict
+    return gt_positions, gt_resolved_mask
+
+
+def update_gt_position_features(batch, gt_atom_indexes):
+    ground_truth_features = deepcopy(batch["ground_truth"])
+
+    gt_atom_positions_permuted, gt_atom_resolved_mask_permuted = (
+        permute_gt_position_features(
+            ground_truth_features["atom_positions"],
+            ground_truth_features["atom_resolved_mask"],
+            gt_atom_indexes,
+        )
+    )
+
+    ground_truth_features["atom_positions"] = gt_atom_positions_permuted
+    ground_truth_features["atom_resolved_mask"] = gt_atom_resolved_mask_permuted
+
+    return ground_truth_features
 
 
 def single_batch_multi_chain_permutation_alignment(
@@ -1017,12 +1006,7 @@ def single_batch_multi_chain_permutation_alignment(
         optimal_mol_permutation=optimal_mol_permutation,
     )
 
-    # Get the equivalent token index permutation
-    gt_token_index = atom_subset_index_to_token_subset_index(
-        gt_atom_index, gt_num_atoms_per_token
-    )
-
-    return gt_atom_index, gt_token_index
+    return gt_atom_index
 
 
 # TODO: group all permutation features under separate key?
@@ -1032,7 +1016,6 @@ def multi_chain_permutation_alignment(batch: dict, output: dict):
     # This will store the final per-batch subsetting and reordering of the ground-truth
     # features
     gt_atom_indexes = []
-    gt_token_indexes = []
 
     # Currently has to be run sequentially per batch, so split features batch-wise
     for i in range(batch_size):
@@ -1054,17 +1037,15 @@ def multi_chain_permutation_alignment(batch: dict, output: dict):
 
         # Get the permutation indices for the current batch that subset and reorder the
         # ground-truth features to match the prediction
-        gt_atom_index, gt_token_index = single_batch_multi_chain_permutation_alignment(
+        gt_atom_index = single_batch_multi_chain_permutation_alignment(
             single_batch, single_predicted_positions
         )
         gt_atom_indexes.append(gt_atom_index)
-        gt_token_indexes.append(gt_token_index)
 
-    # TODO: Could require a specific input format here in which features are grouped
-    # into tensordicts by token-wise and atom-wise with the batch-dims precisely
-    # specified
-    ground_truth_dict_permuted = permute_gt_features(
-        batch["ground_truth"], gt_atom_indexes, gt_token_indexes
-    )
+    # Apply the permutation to the ground-truth position and unresolved mask features
+    ground_truth_features = update_gt_position_features(batch, gt_atom_indexes)
 
-    return ground_truth_dict_permuted
+    return ground_truth_features
+
+
+def naive_alignment(batch):
