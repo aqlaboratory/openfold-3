@@ -2,6 +2,7 @@
 # Transformation doesn't
 import logging
 from collections import Counter, defaultdict
+from copy import deepcopy
 from functools import partial
 from typing import NamedTuple, overload
 
@@ -854,7 +855,9 @@ def permute_gt_position_features(
     return gt_positions, gt_resolved_mask
 
 
-def update_gt_position_features(batch, gt_atom_indexes):
+def update_gt_position_features(
+    batch: dict, gt_atom_indexes: list[torch.Tensor]
+) -> dict:
     ground_truth_features = deepcopy(batch["ground_truth"])
 
     gt_atom_positions_permuted, gt_atom_resolved_mask_permuted = (
