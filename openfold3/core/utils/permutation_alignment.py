@@ -48,7 +48,7 @@ def split_feats_by_id(
                 features were split.
         or:
             tuple[list[torch.Tensor], torch.Tensor]:
-                A list corresponding to the single input feature split by the IDs, and 
+                A list corresponding to the single input feature split by the IDs, and
                 the unique IDs in the corresponding order.
     """
     unique_ids = torch.unique(id)
@@ -79,7 +79,7 @@ def get_gt_segment_mask(
     predicted segment. The corresponding segment is selected by pairing the predicted
     sym_token_index with the ground-truth sym_token_index. Optionally, the segment can
     be further filtered by the sym_id and entity_id.
-    
+
     This is necessary because the ground-truth values are usually more expansive and
     contain more atoms due to symmetry-equivalent atoms. Note that this function
     therefore selects atoms as corresponding to the original (arbitrary) input order,
@@ -139,16 +139,15 @@ def get_gt_segment_mask(
     return segment_mask
 
 
-
 def get_centroid(coords: torch.Tensor, mask: torch.Tensor):
     """Computes the centroids of resolved coordinates.
-    
+
     Args:
         coords (torch.Tensor):
             [*, N, 3] the coordinates to compute the centroid of.
         mask (torch.Tensor):
             [*, N] mask for resolved coordinates.
-    
+
     Returns:
         torch.Tensor:
             [*, 3] the centroid of the resolved coordinates
@@ -170,16 +169,16 @@ def get_sym_id_with_most_resolved_atoms(
     perm_sym_id: torch.Tensor,
 ) -> tuple[int, int]:
     """Returns the symmetry ID with the most resolved atoms.
-    
+
     Takes in an array of different symmetry IDs with a corresponding mask of resolved
     atoms, and returns the symmetry ID with the most corresponding resolved atoms.
-    
+
     Args:
         resolved_mask (torch.Tensor):
             [N] mask of resolved atoms.
         perm_sym_id (torch.Tensor):
             [N] symmetry IDs corresponding to the resolved atoms.
-    
+
     Returns:
         tuple[int, int]:
             The symmetry ID with the most resolved atoms, and the number of resolved
@@ -204,16 +203,16 @@ def get_sym_id_with_most_resolved_atoms(
 
 class AnchorCandidate(NamedTuple):
     """Small wrapper class around potential anchor molecule data.
-    
+
     Attributes:
         entity_id (int):
             The entity ID of this anchor candidate molecule.
         sym_id (int):
             The symmetry ID of this anchor candidate molecule.
-        n_resolved (int):   
+        n_resolved (int):
             The number of resolved token center atoms in this anchor candidate molecule.
     """
-    
+
     entity_id: int
     sym_id: int
     n_resolved: int
@@ -226,7 +225,7 @@ def get_least_ambiguous_anchor_candidate(
     gt_perm_sym_id: torch.Tensor,
 ) -> AnchorCandidate:
     """Finds the anchor candidate with the least ambiguity.
-    
+
     This function takes in a list of entity-symmetry ID combinations and returns the
     entity-symmetry ID pair with the least ambiguity. This is done primarily by
     selecting the entity with the least symmetry mates, corresponding to AF2-Multimer
@@ -234,7 +233,7 @@ def get_least_ambiguous_anchor_candidate(
     select the particular symmetric molecule instance to use as an anchor, the symmetric
     molecule with the most resolved atoms is selected, in the hope that this will result
     in the most stable alignment.
-    
+
     Args:
         entity_sym_id_combinations (torch.Tensor):
             [N, 2] a list of entity-symmetry ID combinations.
@@ -326,7 +325,7 @@ def get_gt_anchor_mask(
     gt_is_ligand: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, int]:
     """Finds a suitable ground-truth anchor molecule.
-    
+
     This function finds a suitable ground-truth anchor molecule for the anchor-chain
     alignment, by selecting the molecule with the least ambiguous alignment. Polymer
     anchor molecules are prioritized over ligand anchor molecules, as ligands are more
@@ -337,7 +336,7 @@ def get_gt_anchor_mask(
     suitable ligand anchor molecule.
 
     The selection logic is further detailed in `get_least_ambiguous_anchor_candidate`.
-    
+
     Args:
         gt_token_center_resolved_mask (torch.Tensor):
             [N] mask of resolved token center atoms.
@@ -352,7 +351,7 @@ def get_gt_anchor_mask(
         An [N] mask corresponding to the anchor molecule's token center atoms within the
         full ground-truth token center atoms.
     """
-    
+
     gt_token_center_resolved_mask = gt_token_center_resolved_mask.bool()
     gt_is_ligand = gt_is_ligand.bool()
 
@@ -461,14 +460,14 @@ def get_anchor_transformations(
     pred_perm_sym_token_index: torch.Tensor,
 ):
     """Computes optimal transformations for each predicted molecule onto the anchor.
-    
+
     This function takes in a ground-truth anchor molecule, detects all molecules in the
     prediction that are symmetric to the anchor, and computes the optimal transformation
     for each of these molecules onto the anchor molecule. The optimal transformation is
     computed using the Kabsch algorithm. This follows AlphaFold2-Multimer 7.3.1, though
     note that the coordinates aligned are the token center atoms, not only C-alpha
     carbons.
-    
+
     Args:
         gt_anchor_coords (torch.Tensor):
             [N, 3] the coordinates of the anchor molecule's token center atoms.
@@ -487,20 +486,19 @@ def get_anchor_transformations(
         pred_perm_sym_token_index (torch.Tensor):
             [N] the sym_token_index values of the predicted molecules' token center
             atoms.
-    
+
     Returns:
         Transformation:
             A Transformation object detailing the affine transformations of each of the
             M predicted molecules that are symmetric to the anchor onto the anchor.
-            
+
             Attributes:
                 rotation_matrix (torch.Tensor):
                     [M, 3, 3] the rotation matrix of the transformation.
                 translation_vector (torch.Tensor):
                     [M, 3] the translation vector of the transformation.
     """
-    
-    
+
     # Get all the molecules in the pred that are equivalent to the anchor
     pred_entity_mask = pred_perm_entity_id == gt_anchor_entity_id
     pred_coords_entity = pred_coords[pred_entity_mask]
@@ -517,7 +515,9 @@ def get_anchor_transformations(
 
         # Get the part of the full anchor chain that matches the in-crop segment
         gt_segment_mask = get_gt_segment_mask(
-            segment_perm_sym_token_index=pred_perm_sym_token_index_entity[pred_sym_mask],
+            segment_perm_sym_token_index=pred_perm_sym_token_index_entity[
+                pred_sym_mask
+            ],
             gt_perm_sym_token_index=gt_anchor_sym_token_index,
         )
         gt_segment_coords = gt_anchor_coords[gt_segment_mask]
@@ -593,7 +593,7 @@ def find_greedy_optimal_mol_permutation(
                 [gt_coords_entity, gt_sym_token_index_entity, gt_resolved_mask_entity],
                 gt_sym_ids_entity,
             )
-            
+
             # Stack to [N_sym, N, 3] and [N_sym, N] respectively
             gt_coords_entity_split = torch.stack(gt_coords_entity_split)
             gt_resolved_mask_entity_split = torch.stack(gt_resolved_mask_entity_split)
@@ -627,7 +627,7 @@ def find_greedy_optimal_mol_permutation(
                     segment_perm_sym_token_index=pred_sym_token_index_segment,
                     gt_perm_sym_token_index=gt_sym_token_index_segment,
                 )
-                
+
                 # [N_sym, N, 3] -> [N_sym, N_segment, 3]
                 gt_coords_entity_segment = gt_coords_entity_split[:, gt_segment_mask, :]
                 # [N_sym, N] -> [N_sym, N_segment]

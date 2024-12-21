@@ -76,8 +76,7 @@ class ValidationPDBDataset(WeightedPDBDataset):
         self.datapoint_cache = pd.DataFrame(
             pdb_ids, columns=["pdb_id", "datapoint", "weight"]
         )
-    
-    
+
     # TODO: Factor out redundancy with WeightedPDBDataset
     @log_runtime_memory(runtime_dict_key="runtime-create-structure-features")
     def create_structure_features(
