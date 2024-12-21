@@ -552,7 +552,7 @@ def steric_clash(
 
     inter_clash = torch.full(pred_pair.shape[:-2], torch.nan)
     inter_mask = mask * inter
-    if torch.any(intra_mask):
+    if torch.any(inter_mask):
         inter_clash = torch.sum(clash * inter_mask, dim=(-1, -2)) / torch.sum(
             inter_mask, dim=(-1, -2)
         )
@@ -867,4 +867,5 @@ def get_validation_metrics(
         )
         metrics = metrics | superimpose_metrics
 
-    return metrics
+    valid_metrics = {k: v[~nan_mask] for k, v in metrics.items() if not (nan_mask := torch.isnan(v)).all()}
+    return valid_metrics
