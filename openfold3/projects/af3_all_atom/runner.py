@@ -207,19 +207,19 @@ class AlphaFold3AllAtom(ModelRunner):
         phase = "train" if train else "val"
 
         loss_weights = batch["loss_weights"]
-            for loss_name, indiv_loss in loss_breakdown.items():
-                loss_weight_name = loss_name.split("_")[0]
-                if loss_weights[loss_weight_name].item():
-                    self.log(
-                        f"{phase}/{loss_name}",
-                        indiv_loss,
-                        prog_bar=(loss_name == "loss"),
-                        on_step=train,
-                        on_epoch=(not train),
-                        logger=True,
-                        sync_dist=False,
-                    )
-
+        for loss_name, indiv_loss in loss_breakdown.items():
+            loss_weight_name = loss_name.split("_")[0]
+            if loss_weights[loss_weight_name].item():
+                self.log(
+                    f"{phase}/{loss_name}",
+                    indiv_loss,
+                    prog_bar=(loss_name == "loss"),
+                    on_step=train,
+                    on_epoch=(not train),
+                    logger=True,
+                    sync_dist=False,
+                )
+        
             if train:
                 self.log(
                     f"{phase}/{loss_name}_epoch",
