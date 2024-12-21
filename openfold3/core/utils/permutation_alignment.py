@@ -14,32 +14,11 @@ from openfold3.core.utils.atomize_utils import (
 )
 from openfold3.core.utils.geometry.kabsch_alignment import (
     Transformation,
+    apply_transformation,
     get_optimal_transformation,
 )
 
 logger = logging.getLogger(__name__)
-
-
-def apply_transformation(
-    positions: torch.Tensor,
-    transformation: Transformation,
-) -> torch.Tensor:
-    """
-    Apply an affine transformation to a set of coordinates.
-
-    Args:
-        positions:
-            [*, N, 3] the coordinates to transform
-        transformation:
-            the transformation to apply
-
-    Returns:
-        [*, N, 3] the transformed coordinates
-    """
-    positions = positions @ transformation.rotation_matrix
-    positions = positions + transformation.translation_vector
-
-    return positions
 
 
 @overload

@@ -120,3 +120,27 @@ def get_optimal_transformation(
     t = centroid_target - (centroid_mobile @ Rt)
 
     return Transformation(rotation_matrix=Rt, translation_vector=t)
+
+
+def apply_transformation(
+    positions: torch.Tensor,
+    transformation: Transformation,
+) -> torch.Tensor:
+    """Applies an affine transformation to a set of coordinates.
+
+    The rotation matrix is right-multiplied with the coordinates and the
+    translation vector is added afterwards.
+
+    Args:
+        positions:
+            [*, N, 3] the coordinates to transform
+        transformation:
+            the transformation to apply
+
+    Returns:
+        [*, N, 3] the transformed coordinates
+    """
+    positions = positions @ transformation.rotation_matrix
+    positions = positions + transformation.translation_vector
+
+    return positions
