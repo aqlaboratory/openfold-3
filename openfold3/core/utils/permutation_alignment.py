@@ -138,25 +138,6 @@ def get_gt_segment_mask(
 
     return segment_mask
 
-# def get_centroid(coords: torch.Tensor, mask: torch.Tensor):
-#     """Computes the centroids of resolved coordinates.
-    
-#     Args:
-#         coords (torch.Tensor):
-#             [*, N, 3] the coordinates to compute the centroid of.
-#         mask (torch.Tensor):
-#             [*, N] mask for resolved coordinates.
-    
-#     Returns:
-#         torch.Tensor:
-#             [*, 3] the centroid of the resolved coordinates
-#     """
-#     mask = mask.unsqueeze(-1)
-    
-#     # Get centroid of only the unmasked coordinates
-#     centroid = masked_mean(mask, coords, dim=-2)
-
-#     return centroid
 
 
 def get_centroid(coords: torch.Tensor, mask: torch.Tensor):
