@@ -22,7 +22,7 @@ def process_target_structure_af3(
     pdb_id: str,
     crop_weights: dict[str, float],
     token_budget: int,
-    preferred_chain_or_interface: str,
+    preferred_chain_or_interface: str | list[str, str] | None,
     structure_format: Literal["cif", "bcif", "pkl"],
     return_full_atom_array: bool,
 ) -> dict[str, AtomArray]:
@@ -37,7 +37,7 @@ def process_target_structure_af3(
             Dataset-specific weights for each cropping strategy.
         token_budget (int):
             Crop size.
-        preferred_chain_or_interface (str):
+        preferred_chain_or_interface (str | list[str, str] | None):
             Sampled preferred chain or interface to sample the crop around.
         structure_format (Literal["cif", "bcif", "pkl"]):
             File extension of the target structure. One of "cif", "bcif", or "pkl".

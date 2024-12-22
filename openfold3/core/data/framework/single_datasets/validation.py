@@ -3,7 +3,7 @@ import logging
 import pandas as pd
 from biotite.structure import AtomArray
 
-from openfold3.core.data.framework.single_datasets.abstract_single_dataset import (
+from openfold3.core.data.framework.single_datasets.abstract_single import (
     register_dataset,
 )
 from openfold3.core.data.framework.single_datasets.pdb import WeightedPDBDataset

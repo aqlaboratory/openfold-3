@@ -10,16 +10,16 @@ def download_file_from_s3(
     profile: str | None = None,
     session: boto3.Session | None = None,
 ):
-    """ Download a file from an s3 bucket, using the provided profile or session.
+    """Download a file from an s3 bucket, using the provided profile or session.
     Args:
         bucket (str): the name of the s3 bucket. Must not have s3:// prefix
         prefix (str): the path from the bucket root to the dir containing the file
         filename (str): name of the file to download
         outfile (str): file to save the downloaded file to
         profile (str | None, optional): profile to instantiate the boto3 session with
-        session (boto3.Session | None, optional): instantiated boto3 session to use. 
+        session (boto3.Session | None, optional): instantiated boto3 session to use.
         one of profile or session must be provided
-        
+
     """
     if session is None:
         if profile is None:

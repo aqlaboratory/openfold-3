@@ -493,7 +493,15 @@ project_config = mlc.ConfigDict(
                         "pde": 1e-4,
                     },
                 },
-                "custom": {},
+                "custom": {
+                    "sample_weights": {
+                        "a_prot": 3.0,
+                        "a_nuc": 3.0,
+                        "a_ligand": 1.0,
+                        "w_chain": 0.5,
+                        "w_interface": 1.0,
+                    },
+                },
                 "dataset_paths": {
                     "alignments_directory": PLACEHOLDER_PATH,
                     "target_structures_directory": PLACEHOLDER_PATH,

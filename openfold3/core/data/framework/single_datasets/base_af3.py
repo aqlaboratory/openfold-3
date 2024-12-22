@@ -1,16 +1,13 @@
-import dataclasses
 import json
-from collections import Counter
-from enum import IntEnum
+from abc import ABC
 from pathlib import Path
-from typing import Union
+from typing import Any
 
-import pandas as pd
 import torch
 from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 
-from openfold3.core.data.framework.single_datasets.abstract_single_dataset import (
+from openfold3.core.data.framework.single_datasets.abstract_single import (
     SingleDataset,
     register_dataset,
 )
@@ -41,18 +38,31 @@ from openfold3.core.data.pipelines.sample_processing.template import (
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
-from openfold3.core.data.resources.residues import MoleculeType
 
 
+@register_dataset
+class BaseAF3Dataset(SingleDataset, ABC):
+    """Implements a general SingleDataset for handling inputs for AF3.
 
-class BaseSingleDataset(SingleDataset):
-    """ A re-usable dataset class for that implements the same 
-    preprocessing and featurization logicv across different 
-    datasets
+    The BaseAF3Dataset dataset
+    - implements a set of general class methods for processing and featurizing inputs
+    for AF3
+    - assigns general class attributes, including the dataset_cache property
+
+    The BaseAF3Dataset does NOT
+    - implement a __getitem__ method
+    - implement create_datapoint_cache method and hence the datapoint_cache property
+    - get added to the dataset registry as it is not decorated with the
+    register_dataset, as such, it is not intended to be used as a standalone dataset.
+
+    As required by the SingleDataset class, child classes of BaseAF3Dataset must
+    - implement the __getitem__ method
+    - implement the datapoint_cache property and
+    - decorate the class with the register_dataset decorator.
     """
 
     def __init__(self, dataset_config: dict) -> None:
-        """Initializes a WeightedPDBDataset.
+        """Initializes a BaseAF3Dataset.
 
         Args:
             dataset_config (dict):
@@ -85,6 +95,9 @@ class BaseSingleDataset(SingleDataset):
         self.template_structures_directory = dataset_config["dataset_paths"][
             "template_structures_directory"
         ]
+        self.template_structure_array_directory = dataset_config["dataset_paths"][
+            "template_structure_array_directory"
+        ]
         self.template_file_format = dataset_config["dataset_paths"][
             "template_file_format"
         ]
@@ -93,15 +106,19 @@ class BaseSingleDataset(SingleDataset):
         ]
 
         # Dataset/datapoint cache
-        
         self.dataset_cache = read_datacache(
             dataset_config["dataset_paths"]["dataset_cache_file"]
         )
-        self.create_datapoint_cache()
-        self.datapoint_probabilities = self.datapoint_cache["weight"].to_numpy()
+        self.datapoint_cache = {}
 
-        # CCD
-        self.ccd = pdbx.CIFFile.read(dataset_config["dataset_paths"]["ccd_file"])
+        # CCD - only used if template structures are not preprocessed
+        if (
+            dataset_config["dataset_paths"]["template_structure_array_directory"]
+            is not None
+        ):
+            self.ccd = None
+        else:
+            self.ccd = pdbx.CIFFile.read(dataset_config["dataset_paths"]["ccd_file"])
 
         # Dataset configuration
         self.crop_weights = dataset_config["crop_weights"]
@@ -110,19 +127,12 @@ class BaseSingleDataset(SingleDataset):
         self.msa = dataset_config["msa"]
         self.template = dataset_config["template"]
 
-    def create_datapoint_cache(self) -> None:
-        """
-        Creates a cache of datapoints for the dataset.
-        At its base, it's simply a list of sequence IDs, corresponding to 
-        entries in the dataset cache. For other datasets, adds 
-        sample-specific information such as the preferred chain or interface,
-        and the weight of the datapoint.
-        """
-        raise NotImplementedError("This method should be implemented in a subclass.")
+        # Misc
+        self.single_moltype = None
 
     def __getitem__(
         self, index: int
-    ) -> dict[str : Union[torch.Tensor, dict[str, torch.Tensor]]]:
+    ) -> dict[str : torch.Tensor | dict[str, torch.Tensor]]:
         """Returns a single datapoint from the dataset.
 
         Note: The data pipeline is modularized at the getitem level to enable
@@ -132,7 +142,7 @@ class BaseSingleDataset(SingleDataset):
         # Get PDB ID from the datapoint cache and the preferred chain/interface
         datapoint = self.datapoint_cache.iloc[index]
         pdb_id = datapoint["pdb_id"]
-        preferred_chain_or_interface = datapoint["datapoint"] if "datapoint" in datapoint else None
+        preferred_chain_or_interface = datapoint["datapoint"]
         sample_data = self.create_all_features(
             pdb_id=pdb_id,
             preferred_chain_or_interface=preferred_chain_or_interface,
@@ -174,13 +184,16 @@ class BaseSingleDataset(SingleDataset):
         return target_structure_data
 
     @log_runtime_memory(runtime_dict_key="runtime-create-msa-features")
-    def create_msa_features(self, pdb_id: str, atom_array_cropped: AtomArray) -> dict:
+    def create_msa_features(self, pdb_id: str, atom_array: AtomArray) -> dict:
         """Creates the MSA features."""
 
         msa_array_collection = process_msas_af3(
-            pdb_id=pdb_id,
-            atom_array=atom_array_cropped,
-            dataset_cache=self.dataset_cache,
+            atom_array=atom_array,
+            assembly_data=self.fetch_fields_for_chains(
+                pdb_id=pdb_id,
+                fields=["alignment_representative_id", "molecule_type"],
+                defaults=[None, self.single_moltype],
+            ),
             alignments_directory=self.alignments_directory,
             alignment_db_directory=self.alignment_db_directory,
             alignment_index=self.alignment_index,
@@ -188,9 +201,12 @@ class BaseSingleDataset(SingleDataset):
             max_seq_counts=self.msa.max_seq_counts,
             aln_order=self.msa.aln_order,
             max_rows_paired=self.msa.max_rows_paired,
+            min_chains_paired_partial=self.msa.min_chains_paired_partial,
+            pairing_mask_keys=self.msa.pairing_mask_keys,
+            moltypes=self.msa.moltypes,
         )
         msa_features = featurize_msa_af3(
-            atom_array=atom_array_cropped,
+            atom_array=atom_array,
             msa_array_collection=msa_array_collection,
             max_rows=self.msa.max_rows,
             max_rows_paired=self.msa.max_rows_paired,
@@ -201,19 +217,21 @@ class BaseSingleDataset(SingleDataset):
         return msa_features
 
     @log_runtime_memory(runtime_dict_key="runtime-create-template-features")
-    def create_template_features(
-        self, pdb_id: str, atom_array_cropped: AtomArray
-    ) -> dict:
+    def create_template_features(self, pdb_id: str, atom_array: AtomArray) -> dict:
         """Creates the template features."""
 
         template_slice_collection = process_template_structures_af3(
-            atom_array=atom_array_cropped,
+            atom_array=atom_array,
             n_templates=self.template.n_templates,
             take_top_k=False,
             template_cache_directory=self.template_cache_directory,
-            dataset_cache=self.dataset_cache,
-            pdb_id=pdb_id,
+            assembly_data=self.fetch_fields_for_chains(
+                pdb_id=pdb_id,
+                fields=["alignment_representative_id", "template_ids"],
+                defaults=[None, []],
+            ),
             template_structures_directory=self.template_structures_directory,
+            template_structure_array_directory=self.template_structure_array_directory,
             template_file_format=self.template_file_format,
             ccd=self.ccd,
         )
@@ -307,6 +325,45 @@ class BaseSingleDataset(SingleDataset):
             ]
 
         return sample_data
+
+    def fetch_fields_for_chains(
+        self, pdb_id: str, fields: list[str], defaults: list[Any]
+    ) -> dict[str, Any]:
+        """Fetches values for fields for all chains of a PDB entry in the cache.
+
+        Requires the dataset cache to contain the structure_data field storing metadata
+        per sample.
+
+        Args:
+            pdb_id (str):
+                The PDB ID of the target structure.
+            fields (list[str]):
+                List of fields to fetch for all chains.
+            defaults (list[Any]):
+                List of default values for the fields if they are not found in the
+                cache. Values for ALL chains are set to this value if the field is not
+                found.
+
+        Returns:
+            dict[str, Any]:
+                Dictionary containing the fetched values for the fields for all chains.
+        """
+        if len(fields) != len(defaults):
+            raise ValueError("Fields and defaults must have the same length.")
+
+        assembly_data = {}
+
+        for chain_id, chain_data in self.dataset_cache.structure_data[
+            pdb_id
+        ].chains.items():
+            assembly_data[chain_id] = {}
+            for field, default in zip(fields, defaults):
+                if chain_data.hasattr(field):
+                    assembly_data[chain_id][field] = chain_data.getattr(field)
+                else:
+                    assembly_data[chain_id][field] = default
+
+        return assembly_data
 
     def __len__(self):
         return len(self.datapoint_cache)

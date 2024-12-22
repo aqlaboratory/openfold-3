@@ -79,7 +79,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         # Get PDB ID from the datapoint cache and the preferred chain/interface
         datapoint = self.datapoint_cache.iloc[index]
         pdb_id = datapoint["pdb_id"]
-        preferred_chain_or_interface = datapoint["datapoint"]
+        preferred_chain_or_interface = datapoint["preferred_chain_or_interface"]
 
         # Set context variables and containers
         PDB_ID.set(pdb_id)

@@ -7,8 +7,10 @@ import traceback
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Optional
 
+import boto3
 import numpy as np
 import pandas as pd
 from biotite.structure.io import pdbx
@@ -18,6 +20,7 @@ from tqdm import tqdm
 from openfold3.core.data.io.dataset_cache import read_datacache
 from openfold3.core.data.io.sequence.template import parse_hmmsearch_sto
 from openfold3.core.data.io.structure.cif import _load_ciffile, parse_mmcif
+from openfold3.core.data.io.utils import download_file_from_s3
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     PDB_ID,
     TEMPLATE_PROCESS_LOGGER,
@@ -44,9 +47,6 @@ from openfold3.core.data.resources.residues import (
     MoleculeType,
 )
 
-import boto3 
-from openfold3.core.data.io.utils import download_file_from_s3
-from tempfile import NamedTemporaryFile
 
 # --- Template alignment preprocessing ---
 # Step 1/3: Create sequence cache for template structures
@@ -494,7 +494,7 @@ class _AF3TemplateCacheConstructor:
         log_to_file: bool,
         log_to_console: bool,
         log_dir: Path,
-        s3_config: Optional[dict] = None 
+        s3_config: Optional[dict] = None,
     ) -> None:
         """Wrapper class for creating the template cache.
 
@@ -570,18 +570,18 @@ class _AF3TemplateCacheConstructor:
                 input.rep_pdb_chain_id,
             )
             query_pdb_id = query_pdb_chain_id.split("_")[0]
-            ## if we have an s3 config, assume we need to download the template 
+            ## if we have an s3 config, assume we need to download the template
             ## alignment file from s3
             if self.s3_config is not None:
-                tmpfile = NamedTemporaryFile(delete=True)
-                template_alignment_file = Path(tmpfile.name)
-                download_file_from_s3(
-                    self.s3_bucket,
-                    f"{self.s3_prefix}/{rep_pdb_chain_id}",
-                    self.template_alignment_filename,
-                    str(template_alignment_file),
-                    session = self.s3_session
-                )
+                with NamedTemporaryFile(delete=True) as tmpfile:
+                    template_alignment_file = Path(tmpfile.name)
+                    download_file_from_s3(
+                        self.s3_bucket,
+                        f"{self.s3_prefix}/{rep_pdb_chain_id}",
+                        self.template_alignment_filename,
+                        str(template_alignment_file),
+                        session=self.s3_session,
+                    )
             else:
                 template_alignment_file = (
                     self.template_alignment_directory
@@ -685,7 +685,7 @@ def create_template_cache_af3(
         log_to_file,
         log_to_console,
         log_dir,
-        s3_config = s3_config,
+        s3_config=s3_config,
     )
     with mp.Pool(num_workers) as pool:
         for _ in tqdm(

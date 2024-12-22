@@ -3,6 +3,7 @@
 import dataclasses
 import pickle as pkl
 from pathlib import Path
+from typing import Any
 
 import biotite.structure as struc
 import numpy as np
@@ -10,7 +11,6 @@ from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFFile
 
 from openfold3.core.data.io.structure.cif import parse_mmcif
-from openfold3.core.data.primitives.caches.format import DatasetCache
 from openfold3.core.data.primitives.featurization.structure import get_token_starts
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
@@ -102,11 +102,10 @@ def get_query_structure_res_ids(atom_array_cropped_chain: AtomArray) -> np.ndarr
 
 @log_runtime_memory(runtime_dict_key="runtime-template-proc-sample", multicall=True)
 def sample_templates(
-    dataset_cache: DatasetCache,
+    assembly_data: dict[str, dict[str, Any]],
     template_cache_directory: Path,
     n_templates: int,
     take_top_k: bool,
-    pdb_id: str,
     chain_id: str,
     template_structure_array_directory: Path | None,
 ) -> dict[str, TemplateCacheEntry] | dict[None]:
@@ -115,16 +114,15 @@ def sample_templates(
     Follows the logic in section 2.4 of the AF3 SI.
 
     Args:
-        dataset_cache (dict):
-            The dataset cache.
+        assembly_data (dict[str, dict[str, Any]]):
+            Dict containing the alignment representatives and template IDs for each
+            chain.
         template_cache_directory (Path):
             The directory where the template cache is stored.
         n_templates (int):
             The max number of templates to sample for each chain.
         take_top_k (bool):
             Whether to take the top K templates (True) or sample randomly (False).
-        pdb_id (str):
-            The PDB ID of the query structure.
         chain_id (str):
             The chain ID for which to sample the templates.
         template_structure_array_directory (Path | None):
@@ -135,8 +133,8 @@ def sample_templates(
         dict[str, TemplateCacheEntry] | dict[None]:
             The sampled template data per chain given chain.
     """
-    chain_data = dataset_cache.structure_data[pdb_id].chains[chain_id]
-    template_ids = np.array(chain_data.template_ids)
+    chain_data = assembly_data[chain_id]
+    template_ids = np.array(chain_data["template_ids"])
 
     # Subset the template IDs to only those that have a pre-parsed structure array
     # Some arrays may be missing due to preprocessing errors
@@ -165,7 +163,7 @@ def sample_templates(
 
     if k > 0:
         # Load template cache numpy file
-        template_file_name = chain_data.alignment_representative_id + ".npz"
+        template_file_name = chain_data["alignment_representative_id"] + ".npz"
         template_cache = np.load(
             template_cache_directory / Path(template_file_name), allow_pickle=True
         )

@@ -23,12 +23,12 @@ import click
     type=str,
     help="S3 prefix to search for monomer distillation data.",
 )
-@click.option("--reference_conformer_json",
-              type = str, 
-              help = "Path to the reference conformer json file"
-              "ideally trimmed down to just amino acids"
-              )
-              
+@click.option(
+    "--reference_conformer_json",
+    type=str,
+    help="Path to the reference conformer json file"
+    "ideally trimmed down to just amino acids",
+)
 @click.option(
     "--max_seq_counts",
     type=int,
@@ -40,8 +40,12 @@ import click
     help="Output file to save the datacache.",
 )
 def main(
-    s3_profile: str, s3_bucket: str, s3_prefix: str, max_seq_counts: int, out_file: str, 
-    reference_conformer_json: str
+    s3_profile: str,
+    s3_bucket: str,
+    s3_prefix: str,
+    max_seq_counts: int,
+    out_file: str,
+    reference_conformer_json: str,
 ):
     base_dict = {
         "chains": {
@@ -68,9 +72,9 @@ def main(
         new_dict["chains"]["1"]["alignment_representative_id"] = mgy_id
         out_dict["structure_data"][mgy_id] = new_dict
 
-    with (open(reference_conformer_json, "r")) as f:
+    with open(reference_conformer_json) as f:
         ref_conformers = json.load(f)
-    
+
     out_dict["reference_molecule_data"] = ref_conformers
 
     with open(out_file, "w") as f:

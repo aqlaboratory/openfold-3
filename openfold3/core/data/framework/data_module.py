@@ -44,7 +44,7 @@ from ml_collections import ConfigDict
 from torch.utils.data import DataLoader
 
 from openfold3.core.data.framework.lightning_utils import _generate_seed_sequence
-from openfold3.core.data.framework.single_datasets.abstract_single_dataset import (
+from openfold3.core.data.framework.single_datasets.abstract_single import (
     DATASET_REGISTRY,
     SingleDataset,
 )

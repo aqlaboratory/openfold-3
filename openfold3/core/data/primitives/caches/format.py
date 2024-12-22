@@ -351,11 +351,13 @@ class PDBChainData(DatasetChainData):
     alignment_representative_id: str | None  # not set for ligands and DNA
     template_ids: list[str] | None  # only set for proteins
 
+
 @dataclass
 class ProteinMonomerChainData:
     alignment_representative_id: str | None  # not set for ligands and DNA
     template_ids: list[str] | None
     molecule_type: MoleculeType.PROTEIN
+
 
 # CLUSTERED DATASET FORMAT (e.g. PDB-weighted)
 @dataclass
@@ -383,14 +385,18 @@ class ClusteredDatasetStructureData:
     chains: dict[str, ClusteredDatasetChainData]
     interfaces: dict[str, ClusteredDatasetInterfaceData]
 
+
 @dataclass
 class ProteinMonomerStructureData:
     chains: dict[str, ProteinMonomerChainData]
+
+
 ## potentially add resolution here as a default value
 
 ClusteredDatasetStructureDataCache: TypeAlias = dict[str, ClusteredDatasetStructureData]
 """Structure data cache with cluster information."""
 ProteinMonomerStructureDataCache: TypeAlias = dict[str, ProteinMonomerStructureData]
+
 
 @register_datacache
 @dataclass
@@ -487,6 +493,7 @@ class ProteinMonomerDatasetCache(DatasetCache):
     _chain_data_format = ProteinMonomerChainData
     _ref_mol_data_format = DatasetReferenceMoleculeCache
     _structure_data_format = ProteinMonomerStructureData
+
     @classmethod
     def from_json(cls, file: Path) -> ProteinMonomerDatasetCache:
         """Constructor to format a json into this dataclass structure."""
