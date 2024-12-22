@@ -10,6 +10,7 @@ import numpy as np
 from biotite.structure import AtomArray
 
 from openfold3.core.data.io.sequence.fasta import parse_fasta
+from openfold3.core.data.primitives.caches.format import DatasetCache
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
@@ -84,7 +85,9 @@ def parse_a3m(msa_string: str, max_seq_count: int | None = None) -> MsaArray:
     return parsed_msa
 
 
-def parse_stockholm(msa_string: str, max_seq_count: int | None = None) -> MsaArray:
+def parse_stockholm(
+    msa_string: str, max_seq_count: int | None = None, gap_symbols: set | None = None
+) -> MsaArray:
     """Parses sequences and deletion matrix from stockholm format alignment.
 
     This function needs to be wrapped in a with open call to read the file.
@@ -95,10 +98,16 @@ def parse_stockholm(msa_string: str, max_seq_count: int | None = None) -> MsaArr
             should be the query sequence.
         max_seq_count (int | None):
             The maximum number of sequences to parse from the file.
+        gap_symbols (set | None):
+            Set of symbols that are considered as gaps in the alignment. When None,
+            defaults to {"-", "."}.
 
     Returns:
         Msa: A Msa object containing the sequences, deletion matrix and metadata.
     """
+
+    if gap_symbols is None:
+        gap_symbols = set(["-", "."])
 
     # Parse each line into header: sequence dictionary
     name_to_sequence = OrderedDict()
@@ -108,7 +117,9 @@ def parse_stockholm(msa_string: str, max_seq_count: int | None = None) -> MsaArr
             continue
         name, sequence = line.split()
         if name not in name_to_sequence:
+            # Add header to dictionary
             name_to_sequence[name] = ""
+        # Extend sequence
         name_to_sequence[name] += sequence
 
     msa = []
@@ -121,7 +132,7 @@ def parse_stockholm(msa_string: str, max_seq_count: int | None = None) -> MsaArr
         if seq_index == 0:
             # Gather the columns with gaps from the query
             query = sequence
-            keep_columns = [i for i, res in enumerate(query) if res != "-"]
+            keep_columns = [i for i, res in enumerate(query) if res not in gap_symbols]
 
         # Remove the columns with gaps in the query from all sequences.
         aligned_sequence = "".join([sequence[c] for c in keep_columns])
@@ -132,8 +143,8 @@ def parse_stockholm(msa_string: str, max_seq_count: int | None = None) -> MsaArr
         deletion_vec = []
         deletion_count = 0
         for seq_res, query_res in zip(sequence, query):
-            if seq_res != "-" or query_res != "-":
-                if query_res == "-":
+            if seq_res not in gap_symbols or query_res not in gap_symbols:
+                if query_res in gap_symbols:
                     deletion_count += 1
                 else:
                     deletion_vec.append(deletion_count)
@@ -303,17 +314,18 @@ def parse_msas_preparsed(
 def parse_msas_sample(
     pdb_id: str,
     atom_array: AtomArray,
-    dataset_cache: dict,
+    dataset_cache: DatasetCache,
+    moltypes: list[str],
     alignments_directory: Path | None,
     alignment_db_directory: Path | None,
     alignment_index: dict | None,
     alignment_array_directory: Path | None,
-    max_seq_counts: dict[str, int | float] | None = None,
+    max_seq_counts: dict[str, int] | None,
 ) -> MsaArrayCollection:
     """Parses MSA(s) for a training sample.
 
-    This function is used to parse MSAs for a one or multiple chains, depending on the
-    number of chains in the parsed PDB file and crop during training.
+    This function is used to parse MSAs for a single sample, which may be a single chain
+    for monomers or multiple chains for assemblies.
 
     If multiple paths are provided (not set to None), the following is the priority
     order:
@@ -322,6 +334,14 @@ def parse_msas_sample(
         3. alignments_directory (raw a3m or sto files)
 
     Args:
+        pdb_id (str):
+            The PDB ID of the target structure.
+        atom_array (AtomArray):
+            The cropped (training) or full (inference) atom array.
+        dataset_cache (DatasetCache):
+            The dataset cache of the dataset class.
+        moltypes (list[str]):
+            List of molecule type strings to consider for MSA parsing.
         alignments_directory (Path | None):
             Path to the lowest-level directory containing the directories of MSAs per
             chain ID.
@@ -329,26 +349,26 @@ def parse_msas_sample(
             Path to the directory containing the alignment database or its shards AND
             the alignment database superindex file. If provided, it is used over
             alignments_directory.
-        alignment_index (Optional[dict], optional):
+        alignment_index (dict | None):
             Dictionary containing the alignment index.
-        msa_slice (MsaSlice):
-            Object containing the mappings from the crop to the MSA sequences.
-        max_seq_counts (Optional[dict[str, int]], optional):
-            Dictionary mapping the sequence database from which sequence hits were
-            returned to the max number of sequences to parse from all the hits. See
-            Section 2.2, Tables 1 and 2 in the AlphaFold3 SI for more details. This
-            dict, when provided, is used to specify a) which alignment files to parse
-            and b) the maximum number of sequences to parse.
+        alignment_array_directory (Path | None):
+            Path to the directory containing the preprocessed alignment arrays.
+        max_seq_counts (dict[str, int] | None):
+            Dictionary mapping filename strings (without extension) to the max number of
+            sequences to parse from the corresponding MSA file. Only alignment files
+            whose names are keys in this dict will be parsed.
 
     Returns:
-        MsaCollection:
+        MsaArrayCollection:
             A collection of Msa objects and chain IDs for a single sample.
     """
-    # Get subset of atom array with only protein and RNA chains
+    # Get subset of atom array for which alignments are supposed to be provided
+    # based on the dataset config
+    moltypes_local = [MoleculeType[moltype.upper()].value for moltype in moltypes]
     atom_array_with_alignments = atom_array[
         np.isin(
             atom_array.molecule_type_id,
-            [MoleculeType.PROTEIN, MoleculeType.RNA],
+            moltypes_local,
         )
     ]
 
