@@ -54,11 +54,15 @@ class BaseAF3Dataset(SingleDataset, ABC):
     - implement create_datapoint_cache method and hence the datapoint_cache property
     - get added to the dataset registry as it is not decorated with the
     register_dataset, as such, it is not intended to be used as a standalone dataset.
+    - set whether cropping is performed
 
     As required by the SingleDataset class, child classes of BaseAF3Dataset must
     - implement the __getitem__ method
     - implement the datapoint_cache property and
     - decorate the class with the register_dataset decorator.
+
+    In addition, child classes of BaseAF3Dataset must set whether cropping is performed
+    by setting the self.apply_crop attribute.
     """
 
     def __init__(self, dataset_config: dict) -> None:
@@ -123,13 +127,21 @@ class BaseAF3Dataset(SingleDataset, ABC):
         # Dataset configuration
         # n_tokens can be set in the getitem method separately for each sample using
         # the output of create_target_structure_features
-        self.crop = dataset_config["crop"]
+        self.apply_crop = None
+        self.crop = {}
         self.loss = dataset_config["loss"]
         self.msa = dataset_config["msa"]
         self.template = dataset_config["template"]
 
         # Misc
         self.single_moltype = None
+
+    def __post_init__(self):
+        if self.apply_crop is None:
+            raise ValueError(
+                "Attribute self.apply_crop must be set in the __init__ of"
+                f"{self.get_class_name()}."
+            )
 
     @log_runtime_memory(runtime_dict_key="runtime-create-target-structure-features")
     def create_target_structure_features(
@@ -144,6 +156,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
         target_structure_data, self.n_tokens = process_target_structure_af3(
             target_structures_directory=self.target_structures_directory,
             pdb_id=pdb_id,
+            apply_crop=self.apply_crop,
             crop_config=self.crop,
             preferred_chain_or_interface=preferred_chain_or_interface,
             structure_format="pkl",

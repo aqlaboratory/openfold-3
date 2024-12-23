@@ -1,4 +1,3 @@
-
 import pandas as pd
 import torch
 
@@ -26,7 +25,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
         self.create_datapoint_cache()
 
         # Cropping is turned off
-        self.crop["apply_crop"] = False
+        self.apply_crop = False
 
     def create_datapoint_cache(self):
         """Creates the datapoint_cache for iterating over each sample.

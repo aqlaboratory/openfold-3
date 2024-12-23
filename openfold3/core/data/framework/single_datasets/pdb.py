@@ -153,13 +153,12 @@ class WeightedPDBDataset(BaseAF3Dataset):
         super().__init__(dataset_config)
 
         # Dataset configuration
+        self.apply_crop = True
+        self.crop = dataset_config["custom"]["crop"]
         self.sample_weights = dataset_config["custom"]["sample_weights"]
 
         # Datapoint cache
         self.create_datapoint_cache()
-
-        # Cropping is turned on
-        self.crop["apply_crop"] = True
 
     def create_datapoint_cache(self) -> None:
         """Creates the datapoint_cache with chain/interface probabilities.
