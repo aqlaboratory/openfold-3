@@ -21,6 +21,8 @@ from openfold3.core.data.primitives.structure.labels import (
 )
 from openfold3.core.data.primitives.structure.tokenization import add_token_positions
 
+NO_CROPPING_TOKEN_BUDGET_SENTINEL = -1
+
 
 def crop_contiguous(
     atom_array: AtomArray, token_budget: int, generator: Optional[Generator] = None
@@ -376,8 +378,9 @@ def apply_crop(
             the cropped atom array.
     """
 
+    no_cropping = token_budget == NO_CROPPING_TOKEN_BUDGET_SENTINEL
     # Take whole assembly if it fits in the budget
-    if len(set(atom_array.token_id)) <= token_budget:
+    if no_cropping or len(set(atom_array.token_id)) <= token_budget:
         atom_array.set_annotation("crop_mask", np.repeat(True, len(atom_array)))
 
     # Otherwise crop
