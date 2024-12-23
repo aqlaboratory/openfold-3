@@ -25,7 +25,10 @@ class ProteinMonomerDataset(BaseAF3Dataset):
         # Datapoint cache
         self.create_datapoint_cache()
 
-        # Misc
+        # Cropping is turned on
+        self.crop["apply_crop"] = True
+
+        # All samples are protein
         self.single_moltype = "PROTEIN"
 
     def create_datapoint_cache(self):

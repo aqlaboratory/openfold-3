@@ -40,7 +40,7 @@ class AF3TemplateFeaturePrecursor:
 def create_template_feature_precursor_af3(
     template_slice_collection: TemplateSliceCollection,
     n_templates: int,
-    token_budget: int,
+    n_tokens: int,
 ) -> AF3TemplateFeaturePrecursor:
     """Generates set of precursor features for AF3 template feature generation.
 
@@ -50,18 +50,16 @@ def create_template_feature_precursor_af3(
         n_templates (int):
             Number of templates.
         token_budget (int):
-            Crop size.
+            Number of tokens in the target structure.
 
     Returns:
         AF3TemplateFeaturePrecursor:
             The precursor features for AF3 template feature generation. Includes
             residue names, pseudo beta atom coordinates, and N, CA, C atom coordinates.
     """
-    res_names = np.full((n_templates, token_budget), "GAP", dtype=np.dtype("U3"))
-    pseudo_beta_atom_coords = np.full(
-        (n_templates, token_budget, 3), np.nan, dtype=float
-    )
-    frame_atom_coords = np.full((n_templates, token_budget, 3, 3), np.nan, dtype=float)
+    res_names = np.full((n_templates, n_tokens), "GAP", dtype=np.dtype("U3"))
+    pseudo_beta_atom_coords = np.full((n_templates, n_tokens, 3), np.nan, dtype=float)
+    frame_atom_coords = np.full((n_templates, n_tokens, 3, 3), np.nan, dtype=float)
 
     # Iterate over chains then templates per chain
     for _, template_slices in template_slice_collection.template_slices.items():

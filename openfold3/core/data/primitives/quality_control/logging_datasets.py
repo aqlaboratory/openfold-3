@@ -151,7 +151,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                     pdb_id,
                     preferred_chain_or_interface,
                     sample_data["features"],
-                    self.token_budget,
+                    self.n_tokens,
                     self.template.n_templates,
                 )
 

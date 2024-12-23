@@ -20,12 +20,11 @@ from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_
 def process_target_structure_af3(
     target_structures_directory: Path,
     pdb_id: str,
-    crop_weights: dict[str, float],
-    token_budget: int,
+    crop_config: dict,
     preferred_chain_or_interface: str | list[str, str] | None,
     structure_format: Literal["cif", "bcif", "pkl"],
     return_full_atom_array: bool,
-) -> dict[str, AtomArray]:
+) -> tuple[dict[str, AtomArray]]:
     """AF3 pipeline for processing target structure into AtomArrays.
 
     Args:
@@ -33,10 +32,11 @@ def process_target_structure_af3(
             Path to the directory containing the directories of target structure files.
         pdb_id (str):
             PDB ID of the target structure.
-        crop_weights (dict[str, float]):
-            Dataset-specific weights for each cropping strategy.
-        token_budget (int):
-            Crop size.
+        crop_config (dict):
+            Crop configuration dictionary, containing the following keys:
+            - apply_crop (bool): Whether to apply cropping.
+            - token_budget (int): Number of tokens to sample.
+            - crop_weights (dict): Weights of different crop strategies.
         preferred_chain_or_interface (str | list[str, str] | None):
             Sampled preferred chain or interface to sample the crop around.
         structure_format (Literal["cif", "bcif", "pkl"]):
@@ -45,11 +45,11 @@ def process_target_structure_af3(
             Whether to return the full, uncropped atom array.
 
     Returns:
-        dict[str, AtomArray]:
-            Dict of two or three atom arrays:
+        Tuple containing a dict of AtomArrays, including:
             - Atoms inside the crop.
             - Ground truth atoms expanded for chain permutation alignment.
             - Full atom array - optional.
+        and the number of tokens in the target structure AtomArray.
     """
     target_structure_data = {}
 
@@ -63,10 +63,9 @@ def process_target_structure_af3(
 
     # Create crop mask
     atom_array_cropped = apply_crop(
-        atom_array,
-        token_budget,
-        preferred_chain_or_interface,
-        crop_weights,
+        atom_array=atom_array,
+        crop_config=crop_config,
+        preferred_chain_or_interface=preferred_chain_or_interface,
     )
 
     # Expand duplicate chains
@@ -78,4 +77,12 @@ def process_target_structure_af3(
     if return_full_atom_array:
         target_structure_data["atom_array"] = atom_array
 
-    return target_structure_data
+    # The number of tokens is used in downstream parts of the data pipeline
+    # if cropping was done, we want to set the number of tokens to the token budget
+    if crop_config["apply_crop"]:
+        n_tokens = crop_config["token_budget"]
+    # otherwise set it to the number of tokens in the target structure
+    else:
+        n_tokens = len(set(atom_array.token_id))
+
+    return target_structure_data, n_tokens

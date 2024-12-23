@@ -121,9 +121,10 @@ class BaseAF3Dataset(SingleDataset, ABC):
             self.ccd = pdbx.CIFFile.read(dataset_config["dataset_paths"]["ccd_file"])
 
         # Dataset configuration
-        self.crop_weights = dataset_config["crop_weights"]
-        self.token_budget = dataset_config["token_budget"]
-        self.loss_settings = dataset_config["loss"]
+        # n_tokens can be set in the getitem method separately for each sample using
+        # the output of create_target_structure_features
+        self.crop = dataset_config["crop"]
+        self.loss = dataset_config["loss"]
         self.msa = dataset_config["msa"]
         self.template = dataset_config["template"]
 
@@ -140,11 +141,10 @@ class BaseAF3Dataset(SingleDataset, ABC):
         """Creates the target structure features."""
 
         # Target structure and duplicate-expanded GT structure features
-        target_structure_data = process_target_structure_af3(
+        target_structure_data, self.n_tokens = process_target_structure_af3(
             target_structures_directory=self.target_structures_directory,
             pdb_id=pdb_id,
-            crop_weights=self.crop_weights,
-            token_budget=self.token_budget,
+            crop_config=self.crop,
             preferred_chain_or_interface=preferred_chain_or_interface,
             structure_format="pkl",
             return_full_atom_array=return_atom_arrays,
@@ -161,7 +161,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
         target_structure_features = featurize_target_gt_structure_af3(
             target_structure_data["atom_array_cropped"],
             target_structure_data["atom_array_cropped"],
-            self.token_budget,
+            self.n_tokens,
         )
         target_structure_data["target_structure_features"] = target_structure_features
         return target_structure_data
@@ -193,7 +193,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
             msa_array_collection=msa_array_collection,
             max_rows=self.msa.max_rows,
             max_rows_paired=self.msa.max_rows_paired,
-            token_budget=self.token_budget,
+            n_tokens=self.n_tokens,
             subsample_with_bands=self.msa.subsample_with_bands,
         )
 
@@ -222,7 +222,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
         template_features = featurize_template_structures_af3(
             template_slice_collection=template_slice_collection,
             n_templates=self.template.n_templates,
-            token_budget=self.token_budget,
+            n_tokens=self.n_tokens,
             min_bin=self.template.distogram.min_bin,
             max_bin=self.template.distogram.max_bin,
             n_bins=self.template.distogram.n_bins,
@@ -253,7 +253,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
 
         loss_features = {}
         loss_features["loss_weights"] = set_loss_weights(
-            self.loss_settings,
+            self.loss,
             self.dataset_cache.structure_data[pdb_id].resolution,
         )
         return loss_features

@@ -429,11 +429,14 @@ project_config = mlc.ConfigDict(
             "weight": 0.0,
             "config": {
                 "loss_weight_mode": "default",
-                "token_budget": 384,
-                "crop_weights": {
-                    "contiguous": 0.2,
-                    "spatial": 0.4,
-                    "spatial_interface": 0.4,
+                "crop": {
+                    "apply_crop": True,  # remove? overriden in the dataset class init
+                    "token_budget": 384,
+                    "crop_weights": {
+                        "contiguous": 0.2,
+                        "spatial": 0.4,
+                        "spatial_interface": 0.4,
+                    },
                 },
                 "msa": {
                     "max_rows_paired": 8191,

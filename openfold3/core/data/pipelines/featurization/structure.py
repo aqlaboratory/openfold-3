@@ -27,7 +27,7 @@ from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 
 def featurize_structure_af3(
     atom_array: AtomArray,
-    token_budget: int,
+    n_tokens: int,
     token_dim_index_map: dict[str, int],
     is_gt: bool,
 ) -> dict[str, torch.Tensor]:
@@ -39,8 +39,8 @@ def featurize_structure_af3(
     Args:
         atom_array (AtomArray):
             AtomArray of the target or ground truth structure.
-        token_budget (int):
-            Crop size.
+        n_tokens (int):
+            Number of tokens in the target structure.
         token_dim_index_map (dict[str, int]):
             Mapping of feature names to the index of the token dimension.
         is_gt (bool):
@@ -141,16 +141,14 @@ def featurize_structure_af3(
         )
 
     # Pad and return
-    return pad_token_dim(
-        features, token_budget, token_dim_index_map=token_dim_index_map
-    )
+    return pad_token_dim(features, n_tokens, token_dim_index_map=token_dim_index_map)
 
 
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-feat")
 def featurize_target_gt_structure_af3(
-    atom_array_cropped: AtomArray,
+    atom_array: AtomArray,
     atom_array_gt: AtomArray,
-    token_budget: int,
+    n_tokens: int,
 ) -> dict[str, Union[torch.Tensor, dict[str, torch.Tensor]]]:
     """Wraps featurize_structure_af3 for creating target AND gt structure features.
 
@@ -159,12 +157,12 @@ def featurize_target_gt_structure_af3(
     subdictionary under the 'ground_truth' key.
 
     Args:
-        atom_array_cropped (AtomArray):
-            AtomArray of the target structure.
+        atom_array (AtomArray):
+            AtomArray of the target structure. Cropped for training datasets.
         atom_array_gt (AtomArray):
             AtomArray of the duplicate-expanded ground truth structure.
-        token_budget (int):
-            Crop size.
+        n_tokens (int):
+            Number of tokens in the target structure.
 
     Returns:
         dict[str, Union[torch.Tensor, dict[str, torch.Tensor]]]:
@@ -189,13 +187,13 @@ def featurize_target_gt_structure_af3(
         "token_mask": [-1],
     }
     features_target = featurize_structure_af3(
-        atom_array_cropped,
-        token_budget,
+        atom_array,
+        n_tokens,
         token_dim_index_map=token_dim_index_map,
         is_gt=False,
     )
     features_gt = featurize_structure_af3(
-        atom_array_gt, token_budget, token_dim_index_map=token_dim_index_map, is_gt=True
+        atom_array_gt, n_tokens, token_dim_index_map=token_dim_index_map, is_gt=True
     )
     features_target["ground_truth"] = features_gt
     return features_target
