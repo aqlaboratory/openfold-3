@@ -7,7 +7,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import TypeAlias
 
-import openfold3.core.data.io.dataset_cache as io
 from openfold3.core.data.resources.residues import MoleculeType
 
 # TODO: Revisit in future if this registry is still needed after template script
@@ -148,15 +147,6 @@ class PreprocessingDataCache:
             reference_molecule_data=reference_molecule_data_cache,
         )
 
-    def to_json(self, file: Path) -> None:
-        """Write the metadata cache to a JSON file.
-
-        Args:
-            file:
-                Path to the JSON file to write the metadata cache to.
-        """
-        io.write_datacache_to_json(self, file)
-
 
 @dataclass
 class PreprocessingStructureData:
@@ -215,15 +205,6 @@ class DatasetCache(ABC):
     @abstractmethod
     def from_json(cls, file: Path) -> DatasetCache:
         raise NotImplementedError("This method should be implemented in subclasses.")
-
-    def to_json(self, file: Path) -> None:
-        """Write the dataset cache to a JSON file.
-
-        Args:
-            file:
-                Path to the JSON file to write the dataset cache to.
-        """
-        io.write_datacache_to_json(self, file)
 
 
 @dataclass

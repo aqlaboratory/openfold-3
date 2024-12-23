@@ -17,7 +17,7 @@ from biotite.structure.io import pdbx
 from biotite.structure.io.pdbx import CIFFile
 from tqdm import tqdm
 
-from openfold3.core.data.io.dataset_cache import read_datacache
+from openfold3.core.data.io.dataset_cache import read_datacache, write_datacache_to_json
 from openfold3.core.data.io.sequence.template import parse_hmmsearch_sto
 from openfold3.core.data.io.structure.cif import _load_ciffile, parse_mmcif
 from openfold3.core.data.io.utils import download_file_from_s3
@@ -1037,7 +1037,7 @@ def filter_template_cache_af3(
             #         json.dump(dataset_cache, f, indent=4)
 
     # Save final complete dataset cache
-    dataset_cache.to_json(updated_dataset_cache_file)
+    write_datacache_to_json(dataset_cache, updated_dataset_cache_file)
 
     # Collate data logs
     collate_data_logs(template_cache_directory, "full_data_log_filtered_cache.tsv")

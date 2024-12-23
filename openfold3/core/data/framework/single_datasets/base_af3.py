@@ -130,26 +130,6 @@ class BaseAF3Dataset(SingleDataset, ABC):
         # Misc
         self.single_moltype = None
 
-    def __getitem__(
-        self, index: int
-    ) -> dict[str : torch.Tensor | dict[str, torch.Tensor]]:
-        """Returns a single datapoint from the dataset.
-
-        Note: The data pipeline is modularized at the getitem level to enable
-        subclassing for profiling without code duplication. See
-        logging_datasets.py for an example."""
-
-        # Get PDB ID from the datapoint cache and the preferred chain/interface
-        datapoint = self.datapoint_cache.iloc[index]
-        pdb_id = datapoint["pdb_id"]
-        preferred_chain_or_interface = datapoint["datapoint"]
-        sample_data = self.create_all_features(
-            pdb_id=pdb_id,
-            preferred_chain_or_interface=preferred_chain_or_interface,
-            return_atom_arrays=False,
-        )
-        return sample_data["features"]
-
     @log_runtime_memory(runtime_dict_key="runtime-create-target-structure-features")
     def create_target_structure_features(
         self, pdb_id: str, preferred_chain_or_interface: str, return_atom_arrays: bool
@@ -358,8 +338,8 @@ class BaseAF3Dataset(SingleDataset, ABC):
         ].chains.items():
             assembly_data[chain_id] = {}
             for field, default in zip(fields, defaults):
-                if chain_data.hasattr(field):
-                    assembly_data[chain_id][field] = chain_data.getattr(field)
+                if hasattr(chain_data, field):
+                    assembly_data[chain_id][field] = getattr(chain_data, field)
                 else:
                     assembly_data[chain_id][field] = default
 
