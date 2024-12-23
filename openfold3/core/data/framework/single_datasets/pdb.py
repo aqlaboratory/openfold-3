@@ -1,7 +1,6 @@
 import dataclasses
 from collections import Counter
 from enum import IntEnum
-from typing import Union
 
 import pandas as pd
 import torch
@@ -25,7 +24,7 @@ class DatapointCollection:
     """Dataclass to tally chain/interface properties."""
 
     pdb_id: list[str]
-    datapoint: list[Union[int, tuple[int, int]]]
+    datapoint: list[str | tuple[str, str]]
     n_prot: list[int]
     n_nuc: list[int]
     n_ligand: list[int]
@@ -49,8 +48,8 @@ class DatapointCollection:
     def append(
         self,
         pdb_id: str,
-        datapoint: Union[int, tuple[int, int]],
-        moltypes: Union[str, tuple[str, str]],
+        datapoint: str | tuple[str, str],
+        moltypes: str | tuple[str, str],
         type: DatapointType,
         n_clust: int,
     ) -> None:
@@ -59,9 +58,9 @@ class DatapointCollection:
         Args:
             pdb_id (str):
                 PDB ID.
-            datapoint (Union[int, tuple[int, int]]):
+            datapoint (int | tuple[int, int]):
                 Chain or interface ID.
-            moltypes (Union[str, tuple[str, str]]):
+            moltypes (str | tuple[str, str]):
                 Molecule types in the datapoint.
             type (DatapointType):
                 Datapoint type. One of chain or interface.
@@ -77,13 +76,11 @@ class DatapointCollection:
         self.type.append(type)
         self.n_clust.append(n_clust)
 
-    def count_moltypes(
-        self, moltypes: Union[str, tuple[str, str]]
-    ) -> tuple[int, int, int]:
+    def count_moltypes(self, moltypes: str | tuple[str, str]) -> tuple[int, int, int]:
         """Count the number of molecule types.
 
         Args:
-            moltypes (Union[str, tuple[str, str]]):
+            moltypes (str | tuple[str, str]):
                 Molecule type of the chain or types of the interface datapoint.
 
         Returns:
@@ -202,7 +199,7 @@ class WeightedPDBDataset(BaseAF3Dataset):
 
     def __getitem__(
         self, index: int
-    ) -> dict[str : Union[torch.Tensor, dict[str, torch.Tensor]]]:
+    ) -> dict[str : torch.Tensor | dict[str, torch.Tensor]]:
         """Returns a single datapoint from the dataset.
 
         Note: The data pipeline is modularized at the getitem level to enable

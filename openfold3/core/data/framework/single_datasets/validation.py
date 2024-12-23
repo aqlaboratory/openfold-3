@@ -1,12 +1,13 @@
 import logging
 
 import pandas as pd
+import torch
 from biotite.structure import AtomArray
 
 from openfold3.core.data.framework.single_datasets.abstract_single import (
     register_dataset,
 )
-from openfold3.core.data.framework.single_datasets.pdb import WeightedPDBDataset
+from openfold3.core.data.framework.single_datasets.base_af3 import BaseAF3Dataset
 from openfold3.core.data.pipelines.featurization.structure import (
     featurize_target_gt_structure_af3,
 )
@@ -19,8 +20,8 @@ from openfold3.core.data.primitives.structure.cropping import (
 
 
 @register_dataset
-class ValidationPDBDataset(WeightedPDBDataset):
-    """Dataset class for the validation set of the WeightedPDBDataset."""
+class ValidationPDBDataset(BaseAF3Dataset):
+    """Validation Dataset class."""
 
     def __init__(self, dataset_config: dict) -> None:
         """Initializes a ValidationDataset.
@@ -33,34 +34,19 @@ class ValidationPDBDataset(WeightedPDBDataset):
         super().__init__(dataset_config)
 
         # Dataset/datapoint cache
-        self.datapoint_cache = {}
         self.create_datapoint_cache()
-        self.datapoint_probabilities = self.datapoint_cache["weight"].to_numpy()
 
     def create_datapoint_cache(self):
+        """Creates the datapoint_cache for iterating over each sample.
+
+        Creates a Dataframe storing a flat list of structure_data keys. Used for mapping
+        TO the dataset_cache in the getitem. Note that the validation set is not wrapped
+        in a StoachasticSamplerDataset.
         """
-        The WeightedPDBDataset uses the per-chain/per-interface datapoint cache as the
-        base item, but all pre-processing code is applied to the complete structure,
-        then subset based on the crop. We want the validation set to be per-complete
-        structure - so we need to create a new cache However, the actual datapoint cache
-        values won't actually be ever used:
-
-        - The `datapoint` value is normally used as part of the crop generation process.
-          However, it only ends up being used when the complete structure is has more
-          tokens than the token budget, which is never the case for the validation set.
-        - The `weight` value is used within the datapoint cache to determine the
-          probability of sampling that chain - but appears to only ever be stored and
-          unused within the actual PDB dataset class.
-
-        Therefore creating a data cache with dummy values lets us re-use the whole PDB
-        dataset class. This does break if we have more tokens than the token budget
-        """
-        pdb_ids = []
-        for entry, _ in self.dataset_cache.structure_data.items():
-            pdb_ids.append((entry, -1, -1))
-
         self.datapoint_cache = pd.DataFrame(
-            pdb_ids, columns=["pdb_id", "datapoint", "weight"]
+            {
+                "pdb_id": list(self.dataset_cache.structure_data.keys()),
+            }
         )
 
     def create_target_structure_features(
@@ -77,6 +63,7 @@ class ValidationPDBDataset(WeightedPDBDataset):
         """
 
         # Target structure and duplicate-expanded GT structure features
+        # TODO: refactor cropping logic to enable cleaner way of turning it off
         target_structure_data = process_target_structure_af3(
             target_structures_directory=self.target_structures_directory,
             pdb_id=pdb_id,
@@ -108,3 +95,21 @@ class ValidationPDBDataset(WeightedPDBDataset):
 
         # Overwrite self.token_budget to be the number of tokens in this example
         return target_structure_data
+
+    def __getitem__(
+        self, index: int
+    ) -> dict[str : torch.Tensor | dict[str, torch.Tensor]]:
+        """Returns a single datapoint from the dataset.
+
+        Note: The data pipeline is modularized at the getitem level to enable
+        subclassing for profiling without code duplication. See
+        logging_datasets.py for an example."""
+
+        # Get PDB ID from the datapoint cache and the preferred chain/interface
+        datapoint = self.datapoint_cache.iloc[index]
+        sample_data = self.create_all_features(
+            pdb_id=datapoint["pdb_id"],
+            preferred_chain_or_interface=None,
+            return_atom_arrays=False,
+        )
+        return sample_data["features"]

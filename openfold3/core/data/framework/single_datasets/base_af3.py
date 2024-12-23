@@ -132,7 +132,10 @@ class BaseAF3Dataset(SingleDataset, ABC):
 
     @log_runtime_memory(runtime_dict_key="runtime-create-target-structure-features")
     def create_target_structure_features(
-        self, pdb_id: str, preferred_chain_or_interface: str, return_atom_arrays: bool
+        self,
+        pdb_id: str,
+        preferred_chain_or_interface: str | list[str, str] | None,
+        return_atom_arrays: bool,
     ) -> tuple[dict, AtomArray | torch.Tensor]:
         """Creates the target structure features."""
 
@@ -259,7 +262,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
     def create_all_features(
         self,
         pdb_id: str,
-        preferred_chain_or_interface: str,
+        preferred_chain_or_interface: str | list[str, str] | None,
         return_atom_arrays: bool,
     ) -> dict:
         """Creates all features for a single datapoint."""
@@ -344,6 +347,13 @@ class BaseAF3Dataset(SingleDataset, ABC):
                     assembly_data[chain_id][field] = default
 
         return assembly_data
+
+    def __getitem__(
+        self, index: int
+    ) -> dict[str : torch.Tensor | dict[str, torch.Tensor]]:
+        """Getitem method to be implemented by child classes."""
+
+        raise NotImplementedError("Missing __getitem__ method.")
 
     def __len__(self):
         return len(self.datapoint_cache)
