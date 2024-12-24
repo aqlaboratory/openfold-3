@@ -16,12 +16,16 @@ import click
 @click.option(
     "--s3_bucket",
     type=str,
-    help="S3 bucket name to search for monomer distillation data.",
+    help="S3 bucket name to search for monomer distillation data."
+    "For example, if a file is located at s3://foo/bar/"
+    "file.pdb, the bucket name is 'foo'.",
 )
 @click.option(
     "--s3_prefix",
     type=str,
-    help="S3 prefix to search for monomer distillation data.",
+    help="S3 prefix name to search for monomer distillation data."
+    "For example, if a file is located at s3://foo/bar/"
+    "file.pdb, the prefix name is 'bar'.",
 )
 @click.option(
     "--reference_conformer_json",
@@ -67,7 +71,7 @@ def main(
         "max_seq_counts": {"concat_cfdb_uniref100_filtered": max_seq_counts},
         "structure_data": {},
     }
-    for mgy_id in avail_mgy_ids[:5]:
+    for mgy_id in avail_mgy_ids:
         new_dict = deepcopy(base_dict)
         new_dict["chains"]["1"]["alignment_representative_id"] = mgy_id
         out_dict["structure_data"][mgy_id] = new_dict
