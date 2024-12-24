@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import dbm
 import json
+import shelve
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import TypeAlias
 
 from openfold3.core.data.resources.residues import MoleculeType
@@ -376,7 +379,9 @@ class ProteinMonomerStructureData:
 
 ClusteredDatasetStructureDataCache: TypeAlias = dict[str, ClusteredDatasetStructureData]
 """Structure data cache with cluster information."""
-ProteinMonomerStructureDataCache: TypeAlias = dict[str, ProteinMonomerStructureData]
+ProteinMonomerStructureDataCache: TypeAlias = shelve.Shelf[
+    str, ProteinMonomerStructureData
+]
 
 
 @register_datacache
@@ -490,6 +495,7 @@ class ProteinMonomerDatasetCache(DatasetCache):
         name = data["name"]
 
         # Format structure data
+
         structure_data = {}
         for pdb_id, per_structure_data in data["structure_data"].items():
             chain_data = per_structure_data.pop("chains")
@@ -503,7 +509,10 @@ class ProteinMonomerDatasetCache(DatasetCache):
             structure_data[pdb_id] = cls._structure_data_format(
                 chains=chains, **per_structure_data
             )
-
+        tempfile = NamedTemporaryFile(delete=False, suffix=".db")
+        structure_data_shelf = shelve.Shelf(dbm.open(tempfile.name, flag="n"))
+        for k, v in structure_data.items():
+            structure_data_shelf[k] = v
         # Format reference molecule data into respective format
         ref_mol_data = {}
         for ref_mol_id, per_ref_mol_data in data["reference_molecule_data"].items():
@@ -512,7 +521,7 @@ class ProteinMonomerDatasetCache(DatasetCache):
 
         return cls(
             name=name,
-            structure_data=structure_data,
+            structure_data=structure_data_shelf,
             reference_molecule_data=ref_mol_data,
         )
 
