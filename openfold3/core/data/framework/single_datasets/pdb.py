@@ -340,7 +340,6 @@ class WeightedPDBDataset(SingleDataset):
             processed_ref_mol_list=processed_reference_molecules,
         )
 
-        # TODO: Move this somewhere else?
         # Necessary positional indices for MSA and template processing
         add_token_positions(atom_array_cropped)
 
