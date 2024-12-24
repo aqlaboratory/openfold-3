@@ -109,6 +109,7 @@ class DiffusionTransformerBlock(nn.Module):
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
+        use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
     ) -> torch.Tensor:
         """
@@ -129,6 +130,8 @@ class DiffusionTransformerBlock(nn.Module):
                 Whether to use DeepSpeed Evo Attention kernel
             use_lma:
                 Whether to use LMA
+            use_high_precision_attention:
+                Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
         """
@@ -141,6 +144,7 @@ class DiffusionTransformerBlock(nn.Module):
             use_memory_efficient_kernel=use_memory_efficient_kernel,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_lma=use_lma,
+            use_high_precision_attention=use_high_precision_attention,
         )
 
         trans_mask = mask if _mask_trans else None
@@ -245,6 +249,7 @@ class DiffusionTransformer(nn.Module):
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
+        use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
     ) -> torch.Tensor:
         """
@@ -265,6 +270,8 @@ class DiffusionTransformer(nn.Module):
                 Whether to use DeepSpeed Evo Attention kernel
             use_lma:
                 Whether to use LMA
+            use_high_precision_attention:
+                Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
         """
@@ -279,6 +286,7 @@ class DiffusionTransformer(nn.Module):
                 use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
+                use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,
             )
             for b in self.blocks

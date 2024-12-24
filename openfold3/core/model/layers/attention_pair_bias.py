@@ -216,6 +216,7 @@ class AttentionPairBias(nn.Module):
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
+        use_high_precision_attention: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -234,6 +235,8 @@ class AttentionPairBias(nn.Module):
                 Whether to use DeepSpeed Evo Attention kernel
             use_lma:
                 Whether to use LMA
+            use_high_precision_attention:
+                Whether to run attention in high precision
         Returns
             [*, N, C_q] attention updated token or atom-level embedding
         """
@@ -257,6 +260,7 @@ class AttentionPairBias(nn.Module):
                 use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
+                use_high_precision=use_high_precision_attention,
             )
 
             # Convert back to unpadded and flattened atom representation
@@ -280,6 +284,7 @@ class AttentionPairBias(nn.Module):
                 use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
+                use_high_precision=use_high_precision_attention,
             )
 
             if use_deepspeed_evo_attention:

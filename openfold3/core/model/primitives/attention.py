@@ -50,6 +50,10 @@ if fa_is_installed:
     from flash_attn.bert_padding import unpad_input
     from flash_attn.flash_attn_interface import flash_attn_varlen_kvpacked_func
 
+triton_is_installed = importlib.util.find_spec("triton") is not None
+if triton_is_installed:
+    from openfold3.core.kernels.triton.fused_softmax import fused_softmax
+
 # To avoid errors if memory-efficient attention kernel is not installed
 attn_core_is_installed = importlib.util.find_spec("attn_core_inplace_cuda") is not None
 if attn_core_is_installed:
@@ -84,6 +88,7 @@ def _attention(
     key: torch.Tensor,
     value: torch.Tensor,
     biases: list[torch.Tensor],
+    use_high_precision: bool = False,
 ) -> torch.Tensor:
     """Attention operation with bias terms.
 
@@ -98,23 +103,29 @@ def _attention(
         key (shape [*, H, K, C_hidden]): key tensor
         value (shape [*, H, V, C_hidden]): value tensor
         biases : list of bias tensors
+        use_high_precision: Whether to use high precision up until
+            and including softmax
 
     Returns:
         shape [*, H, V, C_hidden]: attention output
     """
+    attn_dtype = torch.float32 if use_high_precision else query.dtype
+    with torch.amp.autocast("cuda", dtype=attn_dtype):
+        # Generate attention scores
+        scores = torch.einsum("...qc, ...kc->...qk", query, key)
 
-    # Generate attention scores
-    scores = torch.einsum("...qc, ...kc->...qk", query, key)
+        # Add the biases
+        for b in biases:
+            scores += b
 
-    # Add the biases
-    for b in biases:
-        scores += b
-
-    # Normalize the scores
-    scores = softmax_no_cast(scores, dim=-1)
+        # Normalize the scores
+        if triton_is_installed:
+            scores = fused_softmax(scores)
+        else:
+            scores = softmax_no_cast(scores, dim=-1)
 
     # Multiply scores by values
-    attention = torch.einsum("...qk, ...kc->...qc", scores, value)
+    attention = torch.einsum("...qk, ...kc->...qc", scores.to(dtype=value.dtype), value)
 
     return attention
 
@@ -297,6 +308,7 @@ class Attention(nn.Module):
         lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
         use_flash: bool = False,
         flash_mask: Optional[torch.Tensor] = None,
+        use_high_precision: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -323,6 +335,16 @@ class Attention(nn.Module):
                 Query chunk size (for LMA)
             lma_kv_chunk_size:
                 Key/Value chunk size (for LMA)
+            use_flash:
+                Whether to use FlashAttention. If none of the "use_<...>"
+                flags are True, a stock PyTorch implementation is used instead
+            flash_mask:
+                Mask for flash attention. Use instead of bias option since flash
+                attention is incompatible with bias terms.
+            use_high_precision:
+                Whether to use high precision up until and including softmax.
+                This requires using the default implementation and cannot be
+                used with the above kernel options.
         Returns
             [*, Q, C_q] attention update
         """
@@ -343,6 +365,7 @@ class Attention(nn.Module):
             use_deepspeed_evo_attention,
             use_lma,
             use_flash,
+            use_high_precision,
         ]
         if sum(attn_options) > 1:
             raise ValueError("Choose at most one alternative attention algorithm")
@@ -385,7 +408,7 @@ class Attention(nn.Module):
         elif use_flash:
             o = _flash_attn(q, k, v, flash_mask)
         else:
-            o = _attention(q, k, v, biases)
+            o = _attention(q, k, v, biases, use_high_precision=use_high_precision)
             o = o.transpose(-2, -3)
 
         o = self._wrap_up(o, q_x)

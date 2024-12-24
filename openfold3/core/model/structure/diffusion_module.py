@@ -173,6 +173,7 @@ class DiffusionModule(nn.Module):
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
+        use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
     ) -> torch.Tensor:
         """
@@ -199,6 +200,8 @@ class DiffusionModule(nn.Module):
                 Whether to use DeepSpeed Evo Attention kernel
             use_lma:
                 Whether to use LMA
+            use_high_precision_attention:
+                Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
         Returns:
@@ -217,7 +220,7 @@ class DiffusionModule(nn.Module):
             si_trunk=si_trunk,
             zij_trunk=zij,  # Use conditioned trunk representation
             chunk_size=chunk_size,
-            use_deepspeed_evo_attention=False,
+            use_high_precision_attention=use_high_precision_attention,
         )
 
         ai = ai + self.linear_s(self.layer_norm_s(si))
@@ -230,6 +233,7 @@ class DiffusionModule(nn.Module):
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_lma=use_lma,
+            use_high_precision_attention=use_high_precision_attention,
             _mask_trans=_mask_trans,
         )
 
@@ -243,7 +247,7 @@ class DiffusionModule(nn.Module):
             cl=cl,
             plm=plm,
             chunk_size=chunk_size,
-            use_deepspeed_evo_attention=False,
+            use_high_precision_attention=use_high_precision_attention,
         )
 
         xl_out = (
@@ -302,6 +306,7 @@ class SampleDiffusion(nn.Module):
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
+        use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
     ) -> torch.Tensor:
         """
@@ -322,6 +327,8 @@ class SampleDiffusion(nn.Module):
                 Whether to use DeepSpeed Evo Attention kernel
             use_lma:
                 Whether to use LMA
+            use_high_precision_attention:
+                Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
         Returns:
@@ -360,6 +367,7 @@ class SampleDiffusion(nn.Module):
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
+                use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,
             )
 
