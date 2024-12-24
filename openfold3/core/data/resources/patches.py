@@ -75,30 +75,31 @@ def get_molecule_indices(atom_array: struc.AtomArray) -> list[np.ndarray]:
     get_molecule_indices function. This is a temporary alternative implementation that
     should work the same way but is more robust.
     """
-    # Run original input asserts like Biotite does
-    if isinstance(atom_array, struc.BondList):
-        bonds = atom_array
-    elif isinstance(atom_array, (struc.AtomArray, struc.AtomArrayStack)):
+    # Currently only works with AtomArrays
+    if isinstance(atom_array, struc.AtomArray):
         if atom_array.bonds is None:
             raise ValueError("An associated BondList is required")
         bonds = atom_array.bonds
     else:
-        raise TypeError(
-            f"Expected a 'BondList', 'AtomArray' or 'AtomArrayStack', "
-            f"not '{type(atom_array).__name__}'"
-        )
+        raise TypeError(f"Expected an 'AtomArray', not '{type(atom_array).__name__}'")
 
     g = bonds.as_graph()
 
+    # Add any atoms that are not in the BondList as single-atom components
+    all_atoms = np.arange(len(atom_array))
+    atoms_in_graph = np.unique(list(g.nodes))
+    singleton_components = np.setdiff1d(all_atoms, atoms_in_graph)
+    singleton_components_formatted = [np.array([atom]) for atom in singleton_components]
+
+    # Add connected components and sort each by internal atom index
     connected_components = nx.connected_components(g)
+    connected_components_formatted = [np.sort(list(c)) for c in connected_components]
 
-    # Do inner-sort by internal atom-index, and outer-sort by order of first atom
-    # appearance
-    components_sorted = sorted(
-        [np.sort(list(c)) for c in connected_components], key=lambda x: x[0]
-    )
+    # Combine indices and do outer sort on first atom index
+    all_components = singleton_components_formatted + connected_components_formatted
+    all_components_sorted = sorted(all_components, key=lambda x: x[0])
 
-    return components_sorted
+    return all_components_sorted
 
 
 def molecule_iter(
