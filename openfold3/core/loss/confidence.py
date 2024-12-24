@@ -14,12 +14,14 @@
 
 """Confidence losses from predicted logits in the Confidence Module."""
 
-from typing import Dict, Tuple
-
 import torch
 import torch.nn.functional as F
 
-from openfold3.core.loss.loss_utils import sigmoid_cross_entropy, softmax_cross_entropy
+from openfold3.core.loss.loss_utils import (
+    loss_masked_batch_mean,
+    sigmoid_cross_entropy,
+    softmax_cross_entropy,
+)
 from openfold3.core.metrics.validation import lddt
 from openfold3.core.np import residue_constants
 from openfold3.core.utils.atomize_utils import (
@@ -189,7 +191,7 @@ def tm_loss(
 
 
 def express_coords_in_frames(
-    x: torch.Tensor, phi: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], eps: float
+    x: torch.Tensor, phi: tuple[torch.Tensor, torch.Tensor, torch.Tensor], eps: float
 ):
     """
     Implements AF3 Algorithm 29.
@@ -251,8 +253,8 @@ def express_coords_in_frames(
 def compute_alignment_error(
     x: torch.Tensor,
     x_gt: torch.Tensor,
-    phi: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-    phi_gt: Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    phi: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    phi_gt: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
     eps: float,
 ):
     """
@@ -280,7 +282,7 @@ def compute_alignment_error(
 
 
 def all_atom_plddt_loss(
-    batch: Dict,
+    batch: dict,
     x: torch.Tensor,
     logits: torch.Tensor,
     no_bins: int,
@@ -417,7 +419,7 @@ def all_atom_plddt_loss(
 
 
 def pae_loss(
-    batch: Dict,
+    batch: dict,
     x: torch.Tensor,
     logits: torch.Tensor,
     angle_threshold: float,
@@ -453,11 +455,7 @@ def pae_loss(
         [*] Losses on PAE
     """
     # Extract atom coordinates for frame construction
-    atom_mask = broadcast_token_feat_to_atoms(
-        token_mask=batch["token_mask"],
-        num_atoms_per_token=batch["num_atoms_per_token"],
-        token_feat=batch["token_mask"],
-    )
+    atom_mask = batch["atom_mask"]
     phi, valid_frame_mask = get_token_frame_atoms(
         batch=batch,
         x=x,
@@ -512,7 +510,7 @@ def pae_loss(
 
 
 def pde_loss(
-    batch: Dict,
+    batch: dict,
     x: torch.Tensor,
     logits: torch.Tensor,
     no_bins: int,
@@ -542,11 +540,7 @@ def pde_loss(
             [*] Loss on predicted distance error
     """
     # Extract representative atoms
-    atom_mask = broadcast_token_feat_to_atoms(
-        token_mask=batch["token_mask"],
-        num_atoms_per_token=batch["num_atoms_per_token"],
-        token_feat=batch["token_mask"],
-    )
+    atom_mask = batch["atom_mask"]
     rep_x, _ = get_token_representative_atoms(batch=batch, x=x, atom_mask=atom_mask)
     rep_x_gt, rep_atom_mask_gt = get_token_representative_atoms(
         batch=batch,
@@ -582,7 +576,7 @@ def pde_loss(
 
 
 def all_atom_experimentally_resolved_loss(
-    batch: Dict, logits: torch.Tensor, no_bins: int, eps: float
+    batch: dict, logits: torch.Tensor, no_bins: int, eps: float
 ):
     """
     Implements AF3 Equation 14.
@@ -606,13 +600,9 @@ def all_atom_experimentally_resolved_loss(
     atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
     y_b = F.one_hot(atom_mask_gt.long(), num_classes=no_bins)
 
-    # Compute loss on experimentally resolved prediction
-    atom_mask = broadcast_token_feat_to_atoms(
-        token_mask=batch["token_mask"],
-        num_atoms_per_token=batch["num_atoms_per_token"],
-        token_feat=batch["token_mask"],
-    )
+    atom_mask = batch["atom_mask"]
 
+    # Compute loss on experimentally resolved prediction
     errors = softmax_cross_entropy(logits, y_b)
 
     l_resolved = torch.sum(errors * atom_mask, dim=-1) / (
@@ -623,16 +613,16 @@ def all_atom_experimentally_resolved_loss(
 
 
 def confidence_loss(
-    batch: Dict,
-    output: Dict,
-    plddt: Dict,
-    pde: Dict,
-    experimentally_resolved: Dict,
-    pae: Dict,
+    batch: dict,
+    output: dict,
+    plddt: dict,
+    pde: dict,
+    experimentally_resolved: dict,
+    pae: dict,
     eps: float,
     inf: float,
     **kwargs,
-) -> [torch.Tensor, Dict]:
+) -> [torch.Tensor, dict]:
     """
     Compute loss on confidence module.
 
@@ -668,7 +658,7 @@ def confidence_loss(
         mean_loss:
             Loss on confidence module
         loss_breakdown:
-            Dict of individual component losses
+            Dict of individual component losses (unweighted)
     """
     loss_weights = batch["loss_weights"]
 
@@ -700,13 +690,13 @@ def confidence_loss(
     )
 
     loss_breakdown = {
-        "plddt": l_plddt.mean(),
-        "pde": l_pde.mean(),
-        "experimentally_resolved": l_resolved.mean(),
+        "plddt": l_plddt,
+        "pde": l_pde,
+        "experimentally_resolved": l_resolved,
     }
 
     pae_weight = loss_weights["pae"]
-    if pae_weight > 0:
+    if pae_weight.any():
         l_pae = pae_loss(
             batch=batch,
             x=output["atom_positions_predicted"],
@@ -719,14 +709,28 @@ def confidence_loss(
             inf=inf,
         )
 
-        loss_breakdown["pae"] = l_pae.mean()
+        loss_breakdown["pae"] = l_pae
 
+    # Calculate total confidence loss
+    # Mask out samples where the loss is disabled
     conf_loss = sum(
-        [loss * loss_weights[name].item() for name, loss in loss_breakdown.items()]
+        [
+            loss_masked_batch_mean(
+                loss=loss, weight=loss_weights[name], apply_weight=True, eps=eps
+            )
+            for name, loss in loss_breakdown.items()
+        ]
     )
 
+    # Unweighted mean over batch dimension for individual losses
     loss_breakdown = {
-        f"{k}_loss": v.detach().clone() for k, v in loss_breakdown.items()
+        f"{name}_loss": loss_masked_batch_mean(
+            loss=loss.detach().clone(),
+            weight=loss_weights[name],
+            apply_weight=False,
+            eps=eps,
+        )
+        for name, loss in loss_breakdown.items()
     }
 
     return conf_loss, loss_breakdown

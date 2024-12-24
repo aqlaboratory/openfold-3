@@ -6,6 +6,9 @@ alignment.
 import numpy as np
 from biotite.structure import AtomArray
 
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
     remove_atom_indices,
@@ -13,9 +16,10 @@ from openfold3.core.data.primitives.structure.labels import (
 from openfold3.core.data.resources.residues import MoleculeType
 
 
+@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-expand")
 def expand_duplicate_chains(
     atom_array: AtomArray,
-) -> tuple[AtomArray, AtomArray]:
+) -> AtomArray:
     """Finds subset of atoms in the assembly needed for permutation alignment.
 
     Need to be called after tokenization and cropping.
@@ -25,10 +29,8 @@ def expand_duplicate_chains(
             Atom array of the assembly.
 
     Returns:
-        tuple[AtomArray, AtomArray]:
-            Tuple of two atom arrays:
-            - Atoms inside the crop.
-            - Ground truth atoms expanded for chain permutation alignment.
+        AtomArray:
+            Ground truth atoms expanded for chain permutation alignment.
     """
     # Assign atom indices and duplicate chains mask
     assign_atom_indices(atom_array)
@@ -78,4 +80,4 @@ def expand_duplicate_chains(
 
     remove_atom_indices(atom_array)
 
-    return atom_array[atom_array.crop_mask], atom_array[duplicate_chains_mask]
+    return atom_array[duplicate_chains_mask]

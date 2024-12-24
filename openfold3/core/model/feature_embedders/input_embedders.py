@@ -18,16 +18,17 @@ Embedders for input features. Includes InputEmbedders for monomer, multimer, sol
 and all-atom models. Also includes the RecyclingEmbedder and ExtraMSAEmbedder.
 """
 
-from typing import Dict, Tuple
+from typing import Optional
 
 import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
-from openfold3.core.model.layers import AtomAttentionEncoder
+from openfold3.core.model.layers.sequence_local_atom_attention import (
+    AtomAttentionEncoder,
+)
 from openfold3.core.model.primitives import LayerNorm, Linear, normal_init_
-from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.tensor_utils import add, binned_one_hot
 
 
@@ -111,7 +112,7 @@ class InputEmbedder(nn.Module):
         ri: torch.Tensor,
         msa: torch.Tensor,
         inplace_safe: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             tf:
@@ -283,7 +284,7 @@ class InputEmbedderMultimer(nn.Module):
 
         return self.linear_relpos(rel_feat)
 
-    def forward(self, batch: Dict) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, batch: dict) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:
@@ -392,7 +393,7 @@ class RelposAllAtom(nn.Module):
 
         return rel_pos
 
-    def forward(self, batch: Dict) -> torch.Tensor:
+    def forward(self, batch: dict) -> torch.Tensor:
         """
         Args:
             batch:
@@ -406,6 +407,7 @@ class RelposAllAtom(nn.Module):
         entity_id = batch["entity_id"]
         same_chain = asym_id[..., None] == asym_id[..., None, :]
         same_res = res_idx[..., None] == res_idx[..., None, :]
+        same_entity = entity_id[..., None] == entity_id[..., None, :]
 
         rel_pos = self.relpos(
             pos=res_idx, condition=same_chain, rel_clip_idx=self.max_relative_idx
@@ -415,15 +417,13 @@ class RelposAllAtom(nn.Module):
             condition=same_chain & same_res,
             rel_clip_idx=self.max_relative_idx,
         )
-
-        same_entity = entity_id[..., None] == entity_id[..., None, :]
-        same_entity = same_entity[..., None].to(dtype=rel_pos.dtype)
-
         rel_chain = self.relpos(
             pos=batch["sym_id"],
-            condition=~same_chain,
+            condition=same_entity,
             rel_clip_idx=self.max_relative_chain,
         )
+
+        same_entity = same_entity[..., None].to(dtype=rel_pos.dtype)
 
         rel_feat = torch.cat([rel_pos, rel_token, same_entity, rel_chain], dim=-1).to(
             self.linear_relpos.weight.dtype
@@ -447,7 +447,7 @@ class InputEmbedderAllAtom(nn.Module):
         c_z: int,
         max_relative_idx: int,
         max_relative_chain: int,
-        atom_attn_enc: Dict,
+        atom_attn_enc: dict,
         linear_init_params: ConfigDict = lin_init.all_atom_input_emb_init,
     ):
         """
@@ -492,8 +492,11 @@ class InputEmbedderAllAtom(nn.Module):
         )
 
     def forward(
-        self, batch: Dict, inplace_safe: bool = False
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self,
+        batch: dict,
+        inplace_safe: bool = False,
+        use_deepspeed_evo_attention: Optional[bool] = False,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:
@@ -507,14 +510,14 @@ class InputEmbedderAllAtom(nn.Module):
                 [*, N_token, C_s] Single representation
             z:
                 [*, N_token, N_token, C_z] Pair representation
+            use_deepspeed_evo_attention:
+                Whether to use DeepSpeed Evo Attention kernel
         """
-        atom_mask = broadcast_token_feat_to_atoms(
-            token_mask=batch["token_mask"],
-            num_atoms_per_token=batch["num_atoms_per_token"],
-            token_feat=batch["token_mask"],
+        a, _, _, _ = self.atom_attn_enc(
+            batch=batch,
+            atom_mask=batch["atom_mask"],
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
         )
-
-        a, _, _, _ = self.atom_attn_enc(batch=batch, atom_mask=atom_mask)
 
         # [*, N_token, C_s_input]
         s_input = torch.cat(
@@ -582,7 +585,7 @@ class MSAModuleEmbedder(nn.Module):
         msa_mask: torch.Tensor,
         num_paired_seqs: torch.Tensor,
         asym_id: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Subsample main MSA features for a single sample in the batch.
         The subsampling is independent per each chain.
 
@@ -689,8 +692,8 @@ class MSAModuleEmbedder(nn.Module):
         return sampled_msa_feat, sampled_msa_mask
 
     def forward(
-        self, batch: Dict, s_input: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        self, batch: dict, s_input: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             batch:
@@ -880,7 +883,7 @@ class PreembeddingEmbedder(nn.Module):
         ri: torch.Tensor,
         preemb: torch.Tensor,
         inplace_safe: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         tf_m = self.linear_tf_m(tf).unsqueeze(-3)
         preemb_emb = self.linear_preemb_m(preemb[..., None, :, :]) + tf_m
         preemb_emb_i = self.linear_preemb_z_i(preemb)
@@ -945,7 +948,7 @@ class RecyclingEmbedder(nn.Module):
         z: torch.Tensor,
         x: torch.Tensor,
         inplace_safe: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             m:

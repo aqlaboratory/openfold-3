@@ -8,6 +8,9 @@ from typing import NamedTuple
 from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 from openfold3.core.data.primitives.structure.labels import (
     assign_entity_ids,
     assign_molecule_type_ids,
@@ -32,7 +35,31 @@ class SkippedStructure(NamedTuple):
     n_polymer_chains: int
 
 
+def _load_ciffile(file_path: Path | str) -> pdbx.CIFFile:
+    """Load a CIF file from a given path.
+
+    Args:
+        file_path (Path):
+            Path to the CIF file.
+
+    Returns:
+        pdbx.CIFFile:
+            CIF file object.
+    """
+    file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
+
+    if file_path.suffix == ".cif":
+        cif_class = pdbx.CIFFile
+    elif file_path.suffix == ".bcif":
+        cif_class = pdbx.BinaryCIFFile
+    else:
+        raise ValueError("File must be in mmCIF or binary mmCIF format")
+
+    return cif_class.read(file_path)
+
+
 # TODO: update docstring with new residue ID handling and preset fields
+@log_runtime_memory(runtime_dict_key="runtime-parse-mmcif", multicall=True)
 def parse_mmcif(
     file_path: Path | str,
     expand_bioassembly: bool = False,
@@ -86,16 +113,8 @@ def parse_mmcif(
         or a SkippedStructure NamedTuple containing the CIF file and the number of
         polymer chains in the first bioassembly.
     """
-    file_path = Path(file_path) if not isinstance(file_path, Path) else file_path
 
-    if file_path.suffix == ".cif":
-        cif_class = pdbx.CIFFile
-    elif file_path.suffix == ".bcif":
-        cif_class = pdbx.BinaryCIFFile
-    else:
-        raise ValueError("File must be in mmCIF or binary mmCIF format")
-
-    cif_file = cif_class.read(file_path)
+    cif_file = _load_ciffile(file_path)
     cif_data = get_cif_block(cif_file)
 
     if max_polymer_chains is not None:
@@ -160,7 +179,7 @@ def parse_mmcif(
     assign_entity_ids(atom_array)
 
     # Add molecule types for convenience
-    assign_molecule_type_ids(atom_array)
+    assign_molecule_type_ids(atom_array, cif_file)
 
     # Renumber chain IDs from 1 to avoid duplicate chain labels after bioassembly
     # expansion
@@ -211,3 +230,39 @@ def write_structure(
     )
 
     cif_file.write(output_path)
+
+
+@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-parse")
+def parse_target_structure(
+    target_structures_directory: Path, pdb_id: str, structure_format: str
+) -> AtomArray:
+    """Parses a target structure from a pickle file.
+
+    Args:
+        target_structures_directory (Path):
+            Directory containing target structure folders.
+        pdb_id (str):
+            PDB ID of the target structure.
+        structure_format (str):
+            File extension of the target structure. Only "pkl" is supported.
+
+    Raises:
+        ValueError:
+            If the structure format is not "pkl".
+
+    Returns:
+        AtomArray:
+            AtomArray of the target structure.
+    """
+    target_file = target_structures_directory / pdb_id / f"{pdb_id}.{structure_format}"
+
+    if structure_format == "pkl":
+        with open(target_file, "rb") as f:
+            atom_array = pickle.load(f)
+    else:
+        raise ValueError(
+            f"Invalid structure format: {structure_format}. Only pickle "
+            "format is supported in a torch dataset __getitem__."
+        )
+
+    return atom_array

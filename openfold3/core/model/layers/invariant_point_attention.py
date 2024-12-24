@@ -2,8 +2,9 @@ import importlib
 import math
 import sys
 from _operator import mul
+from collections.abc import Sequence
 from functools import reduce
-from typing import Optional, Sequence, Tuple, Union
+from typing import Optional, Union
 
 import torch
 from ml_collections import ConfigDict
@@ -50,7 +51,7 @@ class PointProjection(nn.Module):
         self,
         activations: torch.Tensor,
         rigids: Union[Rigid, Rigid3Array],
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    ) -> Union[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         # TODO: Needs to run in high precision during training
         points_local = self.linear(activations)
         out_shape = points_local.shape[:-1] + (self.no_heads, self.num_points, 3)

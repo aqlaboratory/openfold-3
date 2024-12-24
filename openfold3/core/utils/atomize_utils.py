@@ -1,5 +1,5 @@
 import math
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 
@@ -100,7 +100,7 @@ def broadcast_token_feat_to_atoms(
 
 def aggregate_atom_feat_to_tokens(
     token_mask: torch.Tensor,
-    num_atoms_per_token: torch.Tensor,
+    atom_to_token_index: torch.Tensor,
     atom_mask: torch.Tensor,
     atom_feat: torch.Tensor,
     atom_dim: Optional[int] = -1,
@@ -112,8 +112,8 @@ def aggregate_atom_feat_to_tokens(
     Args:
         token_mask:
             [*, N_token] Token mask
-        num_atoms_per_token:
-            [*, N_token] Number of atoms per token
+        atom_to_token_index:
+            [*, N_atom] Mapping from atom to its token index
         atom_mask:
             [*, N_atom] Atom mask
         atom_feat:
@@ -132,18 +132,9 @@ def aggregate_atom_feat_to_tokens(
     feat_dims = atom_feat.shape[atom_dim:][1:]
     atom_feat = atom_feat * atom_mask.reshape(atom_mask.shape + (1,) * len(feat_dims))
 
-    # Construct atom to token index
-    assert atom_mask.shape[:-1] == batch_dims
-    token_index = (
-        torch.arange(n_token, device=token_mask.device, dtype=token_mask.dtype)
-        .reshape((*((1,) * len(batch_dims)), n_token))
-        .repeat((*batch_dims, 1))
-    )
-    atom_to_token_index = broadcast_token_feat_to_atoms(
-        token_mask=token_mask,
-        num_atoms_per_token=num_atoms_per_token,
-        token_feat=token_index,
-    )
+    # Mask out atoms that are not part of the structure
+    # Padding value must be greater than the largest index so that it
+    # is properly excluded from the aggregation
     atom_to_token_index = atom_to_token_index * atom_mask + n_token * torch.ones_like(
         atom_to_token_index
     ) * (1 - atom_mask)
@@ -231,6 +222,54 @@ def get_atom_to_onehot_token_index(
     return atom_to_onehot_token_index
 
 
+def max_atom_per_token_masked_select(
+    atom_feat: torch.Tensor,
+    max_atom_per_token_mask: torch.Tensor,
+) -> torch.Tensor:
+    """Select atoms from features padded to max atoms per token.
+
+    Args:
+        atom_feat
+            [*, N_token * max_atoms_per_token, c_out] Atom features padded to
+            max atoms per token
+        max_atom_per_token_mask:
+            [*, N_token * max_atoms_per_token] Mask denoting valid atoms
+    Returns:
+        atom_feat:
+            [*, N_atom, c_out] Selected valid atom features
+    """
+    batch_dims = atom_feat.shape[:-2]
+    c_out = atom_feat.shape[-1]
+    max_atoms_in_batch = torch.max(torch.sum(max_atom_per_token_mask.int(), dim=-1))
+
+    def select_atoms(l: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """
+        Select atoms from max-atom padded feature based on max_atoms_in_batch.
+        Add padding to max number of atoms in the batch.
+        """
+        out = torch.masked_select(l, mask[..., None].bool()).reshape(-1, c_out)
+        out_padded = torch.nn.functional.pad(
+            out, (0, 0, 0, max_atoms_in_batch - out.shape[-2])
+        )
+        return out_padded
+
+    # Unbind batch dim if it exists, and select atom feats per batch
+    if len(batch_dims) > 0:
+        per_batch_logits = torch.unbind(atom_feat, dim=0)
+        per_batch_mask = torch.unbind(max_atom_per_token_mask, dim=0)
+
+        atom_feat = torch.stack(
+            [select_atoms(l, m) for l, m in zip(per_batch_logits, per_batch_mask)],
+            dim=0,
+        )
+    else:
+        atom_feat = select_atoms(atom_feat, max_atom_per_token_mask)
+
+    # Expand flattened batch dims
+    atom_feat = atom_feat.reshape(*batch_dims, -1, c_out)
+    return atom_feat
+
+
 def get_token_atom_index_offset(atom_name: str, restype: torch.Tensor):
     """
     Get index of a given atom (within its residue) in each residues.
@@ -265,7 +304,7 @@ def get_token_atom_index_offset(atom_name: str, restype: torch.Tensor):
     return token_atom_index_offset, token_atom_mask
 
 
-def get_token_center_atoms(batch: Dict, x: torch.Tensor, atom_mask: torch.Tensor):
+def get_token_center_atoms(batch: dict, x: torch.Tensor, atom_mask: torch.Tensor):
     """
     Extract center atoms per token, which returns
         -   Ca for standard amino acid residue
@@ -333,7 +372,7 @@ def get_token_center_atoms(batch: Dict, x: torch.Tensor, atom_mask: torch.Tensor
 
 
 def get_token_representative_atoms(
-    batch: Dict, x: torch.Tensor, atom_mask: torch.Tensor
+    batch: dict, x: torch.Tensor, atom_mask: torch.Tensor
 ):
     """
     Extract representative atoms per token, which returns
@@ -434,7 +473,7 @@ def get_token_representative_atoms(
 
 
 def get_token_frame_atoms(
-    batch: Dict,
+    batch: dict,
     x: torch.Tensor,
     atom_mask: torch.Tensor,
     angle_threshold: float = 25.0,

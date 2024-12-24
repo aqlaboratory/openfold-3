@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 import torch
 
@@ -29,7 +29,7 @@ def _calculate_bin_centers(boundaries: torch.Tensor):
 def _calculate_binned_predicted_error(
     boundaries: torch.Tensor,
     distance_error_probs: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     bin_centers = _calculate_bin_centers(boundaries)
     return (
         torch.sum(distance_error_probs * bin_centers, dim=-1),
@@ -74,7 +74,7 @@ def compute_predicted_aligned_error(
     max_bin: int = 31,
     no_bins: int = 64,
     **kwargs,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """Computes aligned confidence metrics from PredictedAlignedErrorHead logits"""
     confidence_probs, predicted_error, max_predicted_error = (
         compute_binned_predicted_error(logits=logits, max_bin=max_bin, no_bins=no_bins)
@@ -92,7 +92,7 @@ def compute_predicted_distance_error(
     max_bin: int = 31,
     no_bins: int = 64,
     **kwargs,
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """Computes aligned confidence metrics from PredictedDistanceErrorHead logits"""
     confidence_probs, predicted_error, max_predicted_error = (
         compute_binned_predicted_error(logits=logits, max_bin=max_bin, no_bins=no_bins)
@@ -171,7 +171,7 @@ def compute_weighted_ptm(
     residue_weights: Optional[torch.Tensor] = None,
     eps: float = 1e-8,
     **kwargs,
-) -> Dict:
+) -> dict:
     ptm_score = compute_ptm(
         logits,
         max_bin=max_bin,

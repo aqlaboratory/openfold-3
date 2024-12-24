@@ -4,6 +4,10 @@ import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
 
+from openfold3.core.data.primitives.featurization.structure import get_token_starts
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
     remove_atom_indices,
@@ -17,17 +21,82 @@ from openfold3.core.data.resources.residues import (
 )
 
 
-def tokenize_atom_array(atom_array: AtomArray):
-    """Generates token ids, token center atom annotations and atom id annotations for a
-    biotite atom_array.
-
-    Tokenizes the input atom array according to section 2.6. in the AF3 SI. The
-    tokenization is added to the input atom array as 'token_id' annotation alongside
-    'token_center_atom' and '_atom_idx' annotations.
+def add_token_positions(atom_array: AtomArray) -> None:
+    """Adds token_position annotation to the input atom array.
 
     Args:
-        atom_array (AtomArray): biotite atom array of the first bioassembly of a PDB
-        entry
+        atom_array (AtomArray):
+            AtomArray of the input assembly.
+    """
+    # Create token ID to token position mapping
+    token_starts = get_token_starts(atom_array)
+    token_positions_map = {
+        token: position
+        for position, token in enumerate(atom_array[token_starts].token_id)
+    }
+
+    # Map token ID to token position for all atoms and add annotation
+    token_positions = np.vectorize(token_positions_map.get)(atom_array.token_id)
+    atom_array.set_annotation("token_position", token_positions)
+
+
+@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-token")
+def tokenize_atom_array(atom_array: AtomArray):
+    """Creates token id, token center atom, and is_atomized annotations for atom array.
+
+    Tokenizes the input atom array according to section 2.6. in the AF3 SI. The
+    tokenization is added to the input atom array as a 'token_id' annotation alongside
+    'token_center_atom' and 'is_atomized' annotations.
+
+    High-level logic of the tokenizer:
+        1. Get set of standard polymer residues
+        2. Create list of token start indices for all standard residues
+        3. Find bonds (atom pair) where at least one atom is coming a standard residue
+           (st-(n)st)
+        4. Subset bonds
+            a. from 3. -> covalent bonds with at least one heteroatom
+            b. from 3. -> covalent bonds between residues in different chains
+            c. from 3. -> covalent bonds between side chains of residues in the same
+               chain
+        5. Get list of non-heteroatoms in any bond from step 4.a.-4.c.
+        6. Get the start indices of residues containing any non-heteroatom from step 5
+        7. Remove start indices of step 6 from the list of start indices of step 2
+        8. Get the set of atoms that are not part of standard residues (includes both
+            "ligands" and non-standard residues) 9. Combine indices for the following:
+            a. residue start indices of standard residues that are not atomized (step 7)
+            b. atom indices that are not part of standard residues (step 8) c. atom
+            indices of standard residues that are atomized (step 6)
+        10. Create is_atomized annotation from steps 9.b. and 9.c.
+        11. Create token_id annotation per-residue from step 9.a. and per atom from
+            steps 9.b. and 9.c. 12. Create token_center_atom annotation per-residue from
+            step 9.a. and per atom from steps 9.b. and 9.c.
+
+    High-level logic of the tokenizer:
+        1. Get set of standard polymer residues
+        2. Create list of token start indices for all standard residues
+        3. Find bonds (atom pair) where at least one atom is coming a standard residue
+           (st-(n)st)
+        4. Subset bonds
+            a. from 3. -> covalent bonds with at least one heteroatom
+            b. from 3. -> covalent bonds between residues in different chains
+            c. from 3. -> covalent bonds between side chains of residues in the same
+               chain
+        5. Get list of non-heteroatoms in any bond from step 4.a.-4.c.
+        6. Get the start indices of residues containing any non-heteroatom from step 5
+        7. Remove start indices of step 6 from the list of start indices of step 2
+        8. Get the set of atoms that are not part of standard residues (includes both
+            "ligands" and non-standard residues) 9. Combine indices for the following:
+            a. residue start indices of standard residues that are not atomized (step 7)
+            b. atom indices that are not part of standard residues (step 8) c. atom
+            indices of standard residues that are atomized (step 6)
+        10. Create is_atomized annotation from steps 9.b. and 9.c.
+        11. Create token_id annotation per-residue from step 9.a. and per atom from
+            steps 9.b. and 9.c. 12. Create token_center_atom annotation per-residue from
+            step 9.a. and per atom from steps 9.b. and 9.c.
+
+    Args:
+        atom_array (AtomArray):
+            biotite atom array of the first bioassembly of a PDB entry
 
     Returns:
         None
@@ -63,26 +132,27 @@ def tokenize_atom_array(atom_array: AtomArray):
     # Get bonds
     bondlist = atom_array.bonds.as_array()
 
-    # Find bonds with at least one standard residue atom (i.e. non-heteroatom)
+    # Find bonds with AT LEAST ONE standard residue atom
     bondlist_1_std = bondlist[
         np.isin(bondlist[:, 0], standard_residue_atom_ids)
         | np.isin(bondlist[:, 1], standard_residue_atom_ids)
     ]
-    # Find bonds which contain two standard residue atoms
-    bondlist_2_std = bondlist_1_std[
-        np.isin(bondlist_1_std[:, 0], standard_residue_atom_ids)
-        & np.isin(bondlist_1_std[:, 1], standard_residue_atom_ids)
-    ]
+    # # Find bonds which contain EXACLTY TWO standard residue atoms
+    # bondlist_2_std = bondlist_1_std[
+    #     np.isin(bondlist_1_std[:, 0], standard_residue_atom_ids)
+    #     & np.isin(bondlist_1_std[:, 1], standard_residue_atom_ids)
+    # ]
 
     # Find bonds which contain
     # - exactly one heteroatom
-    #   (standard residues with covalent ligands)
+    # -- these are standard or non-standard residues with covalent ligands
     is_heteroatom = atom_array.hetero
     is_one_heteroatom = (
         is_heteroatom[bondlist_1_std[:, 0]] ^ is_heteroatom[bondlist_1_std[:, 1]]
     )
-    # - two non-heteroatoms in different chains
-    #   (standard residues covalently linking different chains)
+    # - two atoms from two residues in different chains
+    # -- these bonds are coming from residue pairs where AT LEAST ONE residue is
+    #    a standard residue so should include std-std and std-nonstd pairs
     chain_ids = atom_array.chain_id
     is_different_chain = (
         chain_ids[bondlist_1_std[:, 0]] != chain_ids[bondlist_1_std[:, 1]]
@@ -100,13 +170,13 @@ def tokenize_atom_array(atom_array: AtomArray):
         ~np.isin(atom_names, PROTEIN_MAIN_CHAIN_ATOMS)
         & (molecule_types == MoleculeType.PROTEIN)
     )
-    is_same_chain = chain_ids[bondlist_2_std[:, 0]] == chain_ids[bondlist_2_std[:, 1]]
+    is_same_chain = chain_ids[bondlist_1_std[:, 0]] == chain_ids[bondlist_1_std[:, 1]]
     is_both_side_chain = (
-        is_side_chain[bondlist_2_std[:, 0]] & is_side_chain[bondlist_2_std[:, 1]]
+        is_side_chain[bondlist_1_std[:, 0]] & is_side_chain[bondlist_1_std[:, 1]]
     )
     is_different_residue = (
-        atom_array.aux_residue_id[bondlist_2_std[:, 0]]
-        != atom_array.aux_residue_id[bondlist_2_std[:, 1]]
+        atom_array.aux_residue_id[bondlist_1_std[:, 0]]
+        != atom_array.aux_residue_id[bondlist_1_std[:, 1]]
     )
     is_same_chain_diff_sidechain = (
         is_same_chain & is_both_side_chain & is_different_residue
@@ -115,8 +185,10 @@ def tokenize_atom_array(atom_array: AtomArray):
     # Combine
     bondlist_covalent_modification = np.concatenate(
         (
-            bondlist_1_std[is_one_heteroatom | is_different_chain],
-            bondlist_2_std[is_same_chain_diff_sidechain],
+            bondlist_1_std[
+                is_one_heteroatom | is_different_chain | is_same_chain_diff_sidechain
+            ],
+            # bondlist_2_std[is_same_chain_diff_sidechain],
         ),
         axis=0,
     )
@@ -129,7 +201,8 @@ def tokenize_atom_array(atom_array: AtomArray):
         atom_ids_covalent_modification
     ][~atom_array[atom_ids_covalent_modification].hetero]
 
-    # Get the set of all atoms in corresponding residues
+    # Get the start indices of residues with any atom in
+    # that need to be atomized according to the above criteria
     atomized_residue_token_start_ids = atom_array[
         np.isin(
             atom_array.aux_residue_id,
@@ -183,5 +256,8 @@ def tokenize_atom_array(atom_array: AtomArray):
     # Remove temporary atom & residue indices
     remove_atom_indices(atom_array)
     atom_array.del_annotation("aux_residue_id")
+
+    # Add token_position annotation
+    add_token_positions(atom_array)
 
     return None

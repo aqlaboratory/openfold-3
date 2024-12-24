@@ -20,7 +20,8 @@ MSAModuleEmbedder.
 """
 
 import sys
-from typing import Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Optional
 
 import torch
 from ml_collections import ConfigDict
@@ -53,7 +54,9 @@ class MSAModuleBlock(MSABlock):
         fuse_projection_weights: bool,
         inf: float,
         eps: float,
+        transition_ckpt_chunk_size: Optional[int] = None,
         linear_init_params: ConfigDict = lin_init.msa_module_init,
+        last_block: bool = False,
     ):
         """
         Args:
@@ -93,8 +96,14 @@ class MSAModuleBlock(MSABlock):
                 Large constant for masking
             eps:
                 Small constant for numerical stability
+            transition_ckpt_chunk_size:
+                Chunk size for activation checkpointing in the transition layer
+                (currently SwiGLU transition only)
             linear_init_params:
                 Parameters for linear layer initialization
+            last_block:
+                Whether this is the last block and the msa embedding updates should
+                be skipped
         """
         super().__init__(
             c_m=c_m,
@@ -116,16 +125,24 @@ class MSAModuleBlock(MSABlock):
             linear_init_params=linear_init_params,
         )
 
-        # Column attention is disabled and MSAPairWeightedAveraging replace
-        # MSARowAttentionWithPairBias
-        self.msa_att_row = MSAPairWeightedAveraging(
-            c_in=c_m,
-            c_z=c_z,
-            c_hidden=c_hidden_msa_att,
-            no_heads=no_heads_msa,
-            inf=inf,
-            linear_init_params=linear_init_params.msa_pair_avg,
-        )
+        self.transition_ckpt_chunk_size = transition_ckpt_chunk_size
+        self.skip_msa_update = last_block and opm_first
+
+        if not self.skip_msa_update:
+            # Column attention is disabled and MSAPairWeightedAveraging replace
+            # MSARowAttentionWithPairBias
+            self.msa_att_row = MSAPairWeightedAveraging(
+                c_in=c_m,
+                c_z=c_z,
+                c_hidden=c_hidden_msa_att,
+                no_heads=no_heads_msa,
+                inf=inf,
+                linear_init_params=linear_init_params.msa_pair_avg,
+            )
+        else:
+            self.msa_att_row = None
+            self.msa_dropout_layer = None
+            self.msa_transition = None
 
     def forward(
         self,
@@ -142,7 +159,7 @@ class MSAModuleBlock(MSABlock):
         _attn_chunk_size: Optional[int] = None,
         _offload_inference: bool = False,
         _offloadable_inputs: Optional[Sequence[torch.Tensor]] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         msa_trans_mask = msa_mask if _mask_trans else None
 
         if _attn_chunk_size is None:
@@ -167,49 +184,51 @@ class MSAModuleBlock(MSABlock):
                 _offload_inference=_offload_inference,
             )
 
-        m = add(
-            m,
-            self.msa_dropout_layer(
-                self.msa_att_row(
-                    m,
-                    z=z,
-                    mask=pair_mask,
-                )
-            ),
-            inplace=inplace_safe,
-        )
-
-        if _offload_inference and inplace_safe:
-            # m: GPU, z: CPU
-            del m, z
-            assert sys.getrefcount(input_tensors[1]) == 2
-            input_tensors[1] = input_tensors[1].cpu()
-            torch.cuda.empty_cache()
-            m, z = input_tensors
-
-        m = add(
-            m,
-            self.msa_transition(
+        if not self.skip_msa_update:
+            m = add(
                 m,
-                mask=msa_trans_mask,
-                chunk_size=chunk_size,
-            ),
-            inplace=inplace_safe,
-        )
-
-        if not self.opm_first:
-            if not inplace_safe:
-                input_tensors = [m, z]
-
-            del m, z
-
-            m, z = self._compute_opm(
-                input_tensors=input_tensors,
-                msa_mask=msa_mask,
-                chunk_size=chunk_size,
-                inplace_safe=inplace_safe,
-                _offload_inference=_offload_inference,
+                self.msa_dropout_layer(
+                    self.msa_att_row(
+                        m,
+                        z=z,
+                        mask=pair_mask,
+                    )
+                ),
+                inplace=inplace_safe,
             )
+
+            if _offload_inference and inplace_safe:
+                # m: GPU, z: CPU
+                del m, z
+                assert sys.getrefcount(input_tensors[1]) == 2
+                input_tensors[1] = input_tensors[1].cpu()
+                torch.cuda.empty_cache()
+                m, z = input_tensors
+
+            m = add(
+                m,
+                self.msa_transition(
+                    m,
+                    mask=msa_trans_mask,
+                    chunk_size=chunk_size,
+                    ckpt_chunk_size=self.transition_ckpt_chunk_size,
+                ),
+                inplace=inplace_safe,
+            )
+
+            if not self.opm_first:
+                if not inplace_safe:
+                    input_tensors = [m, z]
+
+                del m, z
+
+                m, z = self._compute_opm(
+                    input_tensors=input_tensors,
+                    msa_mask=msa_mask,
+                    chunk_size=chunk_size,
+                    inplace_safe=inplace_safe,
+                    _offload_inference=_offload_inference,
+                )
 
         if _offload_inference and inplace_safe:
             # m: CPU, z: GPU
@@ -273,6 +292,7 @@ class MSAModuleStack(MSAStack):
         blocks_per_ckpt: Optional[int],
         inf: float,
         eps: float,
+        transition_ckpt_chunk_size: Optional[int] = None,
         linear_init_params: ConfigDict = lin_init.msa_module_init,
         use_reentrant: Optional[bool] = None,
         clear_cache_between_blocks: bool = False,
@@ -321,6 +341,9 @@ class MSAModuleStack(MSAStack):
                 Large constant for masking
             eps:
                 Small constant for numerical stability
+            transition_ckpt_chunk_size:
+                Chunk size for activation checkpointing in the transition layer
+                (currently SwiGLU transition only)
             linear_init_params:
                 Parameters for linear layer initialization
             use_reentrant:
@@ -340,7 +363,7 @@ class MSAModuleStack(MSAStack):
             tune_chunk_size=tune_chunk_size,
         )
 
-        for _ in range(no_blocks):
+        for i in range(no_blocks):
             block = MSAModuleBlock(
                 c_m=c_m,
                 c_z=c_z,
@@ -358,7 +381,9 @@ class MSAModuleStack(MSAStack):
                 fuse_projection_weights=fuse_projection_weights,
                 inf=inf,
                 eps=eps,
+                transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                 linear_init_params=linear_init_params,
+                last_block=i == no_blocks - 1,
             )
             self.blocks.append(block)
 

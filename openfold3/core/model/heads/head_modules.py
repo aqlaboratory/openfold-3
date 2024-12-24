@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -129,40 +129,44 @@ class AuxiliaryHeadsAllAtom(nn.Module):
                 "experimentally_resolved": Experimentally_resolved config
         """
         super().__init__()
+        self.config = config
         self.max_atoms_per_token = config.max_atoms_per_token
 
         self.pairformer_embedding = PairformerEmbedding(
-            **config["pairformer_embedding"],
-        )
-
-        self.pae = PredictedAlignedErrorHead(
-            **config["pae"],
+            **self.config["pairformer_embedding"],
         )
 
         self.pde = PredictedDistanceErrorHead(
-            **config["pde"],
+            **self.config["pde"],
         )
 
         self.plddt = PerResidueLDDAllAtom(
-            **config["lddt"],
+            **self.config["lddt"],
         )
 
         self.distogram = DistogramHead(
-            **config["distogram"],
+            **self.config["distogram"],
         )
 
         self.experimentally_resolved = ExperimentallyResolvedHeadAllAtom(
-            **config["experimentally_resolved"],
+            **self.config["experimentally_resolved"],
         )
 
-        self.config = config
+        if self.config.pae.enabled:
+            self.pae = PredictedAlignedErrorHead(
+                **self.config["pae"],
+            )
 
     def forward(
         self,
-        batch: Dict,
+        batch: dict,
         si_input: torch.Tensor,
-        output: Dict,
-        chunk_size: int,
+        output: dict,
+        chunk_size: Optional[int] = None,
+        use_deepspeed_evo_attention: bool = False,
+        use_lma: bool = False,
+        inplace_safe: bool = False,
+        _mask_trans: bool = True,
     ):
         """
         Args:
@@ -178,7 +182,18 @@ class AuxiliaryHeadsAllAtom(nn.Module):
                         Pair representation output from model trunk
                     "atom_positions_predicted" ([*, N_atom, 3]):
                         Predicted atom positions
-            chunk_size: Feat associated with pairformer stack (int)
+            chunk_size:
+                Inference-time subbatch size. Associated with PairFormer embedding.
+            use_deepspeed_evo_attention:
+                Whether to use DeepSpeed memory efficient kernel.
+                Mutually exclusive with use_lma.
+            use_lma:
+                Whether to use low-memory attention during inference.
+                Mutually exclusive with use_deepspeed_evo_attention.
+            inplace_safe:
+                Whether inplace operations can be performed
+            _mask_trans:
+                Whether to mask the output of the transition layers
 
         Returns:
             aux_out:
@@ -210,24 +225,17 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             aux_out["distogram_logits"] = distogram_logits
 
         # Stop grad
-        si_trunk = si_trunk.detach()
-        zij_trunk = zij_trunk.detach()
-        atom_positions_predicted = atom_positions_predicted.detach()
+        si_input = si_input.detach().clone()
+        si_trunk = si_trunk.detach().clone()
+        zij_trunk = zij_trunk.detach().clone()
+        atom_positions_predicted = atom_positions_predicted.detach().clone()
 
         token_mask = batch["token_mask"]
         pair_mask = token_mask[..., None] * token_mask[..., None, :]
 
-        # Expand token mask to atom mask
-        atom_mask = broadcast_token_feat_to_atoms(
-            token_mask=token_mask,
-            num_atoms_per_token=batch["num_atoms_per_token"],
-            token_feat=token_mask,
-        )
-
-        # TODO: Check why this gets a CUDA index error sometimes
         # Get representative atoms
         repr_x_pred, repr_x_mask = get_token_representative_atoms(
-            batch=batch, x=atom_positions_predicted, atom_mask=atom_mask
+            batch=batch, x=atom_positions_predicted, atom_mask=batch["atom_mask"]
         )
 
         # Embed trunk outputs
@@ -239,6 +247,10 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             single_mask=repr_x_mask,
             pair_mask=pair_mask,
             chunk_size=chunk_size,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_lma=use_lma,
+            inplace_safe=inplace_safe,
+            _mask_trans=_mask_trans,
         )
 
         # Get atom mask padded to MAX_ATOMS_PER_TOKEN

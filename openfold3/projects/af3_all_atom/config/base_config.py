@@ -37,6 +37,7 @@ block_size = mlc.FieldReference(16, field_type=int)
 eps = mlc.FieldReference(1e-8, field_type=float)
 inf = mlc.FieldReference(1e9, field_type=float)
 blocks_per_ckpt = mlc.FieldReference(None, field_type=int)
+ckpt_intermediate_steps = mlc.FieldReference(False, field_type=bool)
 chunk_size = mlc.FieldReference(None, field_type=int)
 tune_chunk_size = mlc.FieldReference(True, field_type=bool)
 max_atoms_per_token = mlc.FieldReference(23, field_type=int)
@@ -47,6 +48,7 @@ project_config = mlc.ConfigDict(
         "model": {
             "settings": {
                 "blocks_per_ckpt": blocks_per_ckpt,
+                "ckpt_intermediate_steps": ckpt_intermediate_steps,
                 "chunk_size": chunk_size,
                 "use_block_sparse_attn": use_block_sparse_attn,
                 # Use DeepSpeed memory-efficient attention kernel. Mutually
@@ -72,8 +74,7 @@ project_config = mlc.ConfigDict(
                     "c_s_input": c_s_input,
                     "c_s": c_s,
                     "c_z": c_z,
-                    "no_cycles": 4,
-                    "last_recycle_grad_only": True,
+                    "max_cycles": 4,
                     "diffusion": {
                         "sigma_data": sigma_data,
                         "no_samples": no_samples,
@@ -106,6 +107,7 @@ project_config = mlc.ConfigDict(
                         "use_block_sparse_attn": use_block_sparse_attn,
                         "block_size": block_size,
                         "blocks_per_ckpt": blocks_per_ckpt,
+                        "ckpt_intermediate_steps": ckpt_intermediate_steps,
                         "inf": inf,
                         "linear_init_params": lin_init.atom_att_enc_init,
                         "use_reentrant": False,
@@ -169,6 +171,7 @@ project_config = mlc.ConfigDict(
                         "blocks_per_ckpt": blocks_per_ckpt,
                         "inf": inf,
                         "eps": eps,
+                        "transition_ckpt_chunk_size": None,
                         "linear_init_params": lin_init.msa_module_init,
                         "use_reentrant": False,
                         "clear_cache_between_blocks": False,
@@ -231,6 +234,7 @@ project_config = mlc.ConfigDict(
                         "use_block_sparse_attn": use_block_sparse_attn,
                         "block_size": block_size,
                         "blocks_per_ckpt": blocks_per_ckpt,
+                        "ckpt_intermediate_steps": ckpt_intermediate_steps,
                         "inf": inf,
                         "linear_init_params": lin_init.atom_att_enc_init,
                         "use_reentrant": False,
@@ -424,14 +428,50 @@ project_config = mlc.ConfigDict(
             "mode": "Placeholder mode",
             "weight": 0.0,
             "config": {
-                "n_templates": 4,
-                "use_alignment_database": True,
                 "loss_weight_mode": "default",
                 "token_budget": 384,
                 "crop_weights": {
                     "contiguous": 0.2,
                     "spatial": 0.4,
                     "spatial_interface": 0.4,
+                },
+                "msa": {
+                    "max_rows_paired": 8191,
+                    "max_rows": 16384,
+                    "subsample_with_bands": False,
+                    "min_chains_paired_partial": 2,
+                    "pairing_mask_keys": ["shared_by_two", "less_than_600"],
+                    "moltypes": ["PROTEIN", "RNA"],
+                    "max_seq_counts": {
+                        "uniref90_hits": 10000,
+                        "uniprot_hits": 50000,
+                        "bfd_uniclust_hits": 10000000,
+                        "bfd_uniref_hits": 10000000,
+                        "cfdb_uniref30": 10000000,
+                        "mgnify_hits": 5000,
+                        "rfam_hits": 10000,
+                        "rnacentral_hits": 10000,
+                        "nt_hits": 10000,
+                    },
+                    "aln_order": [
+                        "uniref90_hits",
+                        "bfd_uniclust_hits",
+                        "bfd_uniref_hits",
+                        "cfdb_uniref30",
+                        "mgnify_hits",
+                        "rfam_hits",
+                        "rnacentral_hits",
+                        "nt_hits",
+                    ],
+                },
+                "template": {
+                    "n_templates": 4,
+                    "take_top_k": False,
+                    "distogram": {
+                        "min_bin": 3.25,
+                        "max_bin": 50.75,
+                        "n_bins": 39,
+                    },
                 },
                 "loss": {
                     "min_resolution": 0.1,
@@ -458,10 +498,13 @@ project_config = mlc.ConfigDict(
                     "alignments_directory": PLACEHOLDER_PATH,
                     "target_structures_directory": PLACEHOLDER_PATH,
                     "alignment_db_directory": PLACEHOLDER_PATH,
+                    "alignment_array_directory": PLACEHOLDER_PATH,
                     "dataset_cache_file": PLACEHOLDER_PATH,
                     "reference_molecule_directory": PLACEHOLDER_PATH,
                     "template_cache_directory": PLACEHOLDER_PATH,
                     "template_structures_directory": PLACEHOLDER_PATH,
+                    "template_structure_array_directory": PLACEHOLDER_PATH,
+                    "template_file_format": PLACEHOLDER_PATH,
                     "ccd_file": PLACEHOLDER_PATH,
                 },
             },

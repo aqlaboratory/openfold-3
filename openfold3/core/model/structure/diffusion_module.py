@@ -17,20 +17,19 @@ Diffusion module. Implements the algorithms in section 3.7 of the
 Supplementary Information.
 """
 
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
 
 import openfold3.core.config.default_linear_init_config as lin_init
-from openfold3.core.model.layers import (
+from openfold3.core.model.layers.diffusion_conditioning import DiffusionConditioning
+from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
+from openfold3.core.model.layers.sequence_local_atom_attention import (
     AtomAttentionDecoder,
     AtomAttentionEncoder,
-    DiffusionTransformer,
 )
-from openfold3.core.model.layers.diffusion_conditioning import DiffusionConditioning
 from openfold3.core.model.primitives import LayerNorm, Linear
-from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.rigid_utils import quat_to_rot
 
 
@@ -163,7 +162,7 @@ class DiffusionModule(nn.Module):
 
     def forward(
         self,
-        batch: Dict,
+        batch: dict,
         xl_noisy: torch.Tensor,
         token_mask: torch.Tensor,
         atom_mask: torch.Tensor,
@@ -218,7 +217,8 @@ class DiffusionModule(nn.Module):
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
             chunk_size=chunk_size,
-        )  # differ from AF3
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+        )
 
         ai = ai + self.linear_s(self.layer_norm_s(si))
 
@@ -243,6 +243,7 @@ class DiffusionModule(nn.Module):
             cl=cl,
             plm=plm,
             chunk_size=chunk_size,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
         )
 
         xl_out = (
@@ -293,7 +294,7 @@ class SampleDiffusion(nn.Module):
 
     def forward(
         self,
-        batch: Dict,
+        batch: dict,
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
@@ -326,11 +327,7 @@ class SampleDiffusion(nn.Module):
         Returns:
             [*, N_atom, 3] Sampled atom positions
         """
-        atom_mask = broadcast_token_feat_to_atoms(
-            token_mask=batch["token_mask"],
-            num_atoms_per_token=batch["num_atoms_per_token"],
-            token_feat=batch["token_mask"],
-        )
+        atom_mask = batch["atom_mask"]
 
         xl = noise_schedule[0] * torch.randn(
             (*atom_mask.shape, 3), device=atom_mask.device, dtype=atom_mask.dtype
