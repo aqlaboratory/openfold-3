@@ -867,6 +867,9 @@ def get_validation_metrics(
         )
         metrics = metrics | superimpose_metrics
 
-    valid_metrics = {k: v[~nan_mask] for k, v in metrics.items() if not (
-        nan_mask := torch.isnan(v)).all()}
+    valid_metrics = {
+        k: v[~nan_mask]
+        for k, v in metrics.items()
+        if not (nan_mask := torch.isnan(v)).all()
+    }
     return valid_metrics

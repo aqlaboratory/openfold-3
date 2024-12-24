@@ -44,6 +44,49 @@ class AlphaFold3AllAtom(ModelRunner):
             else AlphaFold3Loss(config=model_config.architecture.loss_module)
         )
 
+    def _log(self, loss_breakdown, batch, outputs, train=True):
+        phase = "train" if train else "val"
+
+        loss_weights = batch["loss_weights"]
+        for loss_name, indiv_loss in loss_breakdown.items():
+            loss_weight_name = loss_name.split("_")[0]
+            if loss_weights[loss_weight_name].item():
+                self.log(
+                    f"{phase}/{loss_name}",
+                    indiv_loss,
+                    prog_bar=(loss_name == "loss"),
+                    on_step=train,
+                    on_epoch=(not train),
+                    logger=True,
+                    sync_dist=False,
+                )
+
+            if train:
+                self.log(
+                    f"{phase}/{loss_name}_epoch",
+                    indiv_loss,
+                    on_step=False,
+                    on_epoch=True,
+                    logger=True,
+                    sync_dist=False,
+                )
+
+        with torch.no_grad():
+            other_metrics = self._compute_validation_metrics(
+                batch, outputs, superimposition_metrics=(not train)
+            )
+
+        for k, v in other_metrics.items():
+            self.log(
+                f"{phase}/{k}",
+                torch.mean(v),
+                prog_bar=(k == "loss"),
+                on_step=False,
+                on_epoch=True,
+                logger=True,
+                sync_dist=False,
+            )
+
     def training_step(self, batch, batch_idx):
         example_feat = next(
             iter(v for v in batch.values() if isinstance(v, torch.Tensor))
@@ -202,47 +245,3 @@ class AlphaFold3AllAtom(ModelRunner):
             confidence_scores.update(ptm_scores)
 
         return confidence_scores
-
-    def _log(self, loss_breakdown, batch, outputs, train=True):
-        phase = "train" if train else "val"
-
-        loss_weights = batch["loss_weights"]
-        for loss_name, indiv_loss in loss_breakdown.items():
-            loss_weight_name = loss_name.split("_")[0]
-            if loss_weights[loss_weight_name].item():
-                self.log(
-                    f"{phase}/{loss_name}",
-                    indiv_loss,
-                    prog_bar=(loss_name == "loss"),
-                    on_step=train,
-                    on_epoch=(not train),
-                    logger=True,
-                    sync_dist=False,
-                )
-        
-            if train:
-                self.log(
-                    f"{phase}/{loss_name}_epoch",
-                    indiv_loss,
-                    on_step=False,
-                    on_epoch=True,
-                    logger=True,
-                    sync_dist=False,
-                )
-
-        with torch.no_grad():
-            other_metrics = self._compute_validation_metrics(
-                batch, outputs, superimposition_metrics=(not train)
-            )
-
-        for k, v in other_metrics.items():
-            self.log(
-                f"{phase}/{k}",
-                torch.mean(v),
-                prog_bar=(k == "loss"),
-                on_step=False,
-                on_epoch=True,
-                logger=True,
-                sync_dist=False,
-            )
-
