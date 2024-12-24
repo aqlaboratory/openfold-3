@@ -100,7 +100,7 @@ def process_target_structure_af3(
     )
 
     # Add labels to identify symmetric mols in permutation alignment
-    atom_array = assign_mol_permutation_ids(atom_array)
+    atom_array = assign_mol_permutation_ids(atom_array, retokenize=True)
 
     # NOTE: could move this to conformer processing
     # TODO: make this logic more robust (potentially by reverting treating multi-residue

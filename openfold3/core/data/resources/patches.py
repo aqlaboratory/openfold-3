@@ -1,8 +1,10 @@
 """Util file for patching bugs in used packages."""
 
 import re
+from collections.abc import Generator
 
 import biotite.structure as struc
+import networkx as nx
 import numpy as np
 
 
@@ -64,3 +66,51 @@ def correct_cif_string(cif_str: str, ccd_id: str):
     fixed_str = re.sub(pattern, r"\1\n\2", cif_str, flags=re.MULTILINE)
 
     return f"data_{ccd_id}\n{fixed_str}"
+
+
+def get_molecule_indices(atom_array: struc.AtomArray) -> list[np.ndarray]:
+    """Alternative implementation of Biotite's get_molecule_indices.
+
+    We are getting segfault errors on rare occasions when using Biotite's
+    get_molecule_indices function. This is a temporary alternative implementation that
+    should work the same way but is more robust.
+    """
+    # Run original input asserts like Biotite does
+    if isinstance(atom_array, struc.BondList):
+        bonds = atom_array
+    elif isinstance(atom_array, (struc.AtomArray, struc.AtomArrayStack)):
+        if atom_array.bonds is None:
+            raise ValueError("An associated BondList is required")
+        bonds = atom_array.bonds
+    else:
+        raise TypeError(
+            f"Expected a 'BondList', 'AtomArray' or 'AtomArrayStack', "
+            f"not '{type(atom_array).__name__}'"
+        )
+
+    g = bonds.as_graph()
+
+    connected_components = nx.connected_components(g)
+
+    # Do inner-sort by internal atom-index, and outer-sort by order of first atom
+    # appearance
+    components_sorted = sorted(
+        [np.sort(list(c)) for c in connected_components], key=lambda x: x[0]
+    )
+
+    return components_sorted
+
+
+def molecule_iter(
+    atom_array: struc.AtomArray,
+) -> Generator[struc.AtomArray, None, None]:
+    """Alternative implementation of Biotite's molecule_iter.
+
+    We are getting segfault errors on rare occasions when using Biotite's molecule_iter
+    function. This is a temporary alternative implementation that should work the same
+    way but is more robust.
+    """
+    molecule_indices = get_molecule_indices(atom_array)
+
+    for indices in molecule_indices:
+        yield atom_array[indices]

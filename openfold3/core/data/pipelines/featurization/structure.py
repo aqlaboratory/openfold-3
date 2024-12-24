@@ -129,17 +129,17 @@ def featurize_structure_af3(
     )
 
     # Permutation alignment helper labels
-    features["perm_entity_id"] = torch.tensor(
-        atom_array.perm_entity_id[token_starts], dtype=torch.int32
+    features["mol_entity_id"] = torch.tensor(
+        atom_array.mol_entity_id[token_starts], dtype=torch.int32
     )
-    features["perm_sym_id"] = torch.tensor(
-        atom_array.perm_sym_id[token_starts], dtype=torch.int32
+    features["mol_sym_id"] = torch.tensor(
+        atom_array.mol_sym_id[token_starts], dtype=torch.int32
     )
-    features["perm_sym_conformer_id"] = torch.tensor(
-        atom_array.perm_sym_conformer_id[token_starts], dtype=torch.int32
+    features["mol_sym_token_index"] = torch.tensor(
+        atom_array.mol_sym_token_index[token_starts], dtype=torch.int32
     )
-    features["perm_sym_token_index"] = torch.tensor(
-        atom_array.perm_sym_token_index[token_starts], dtype=torch.int32
+    features["mol_sym_component_id"] = torch.tensor(
+        atom_array.mol_sym_component_id[token_starts], dtype=torch.int32
     )
 
     # Ground-truth-specific features
@@ -152,11 +152,6 @@ def featurize_structure_af3(
             torch.ceil(torch.tensor(atom_array.occupancy, dtype=torch.float32)),
             min=0.0,
             max=1.0,
-        )
-        # This will get padded with False later on in the batch collator
-        # TODO: make dtype float? will never be used as float though
-        features["atom_pad_mask"] = torch.ones_like(
-            features["atom_resolved_mask"], dtype=torch.bool
         )
 
     # Pad and return
@@ -206,10 +201,10 @@ def featurize_target_gt_structure_af3(
         "is_atomized": [-1],
         "start_atom_index": [-1],
         "token_mask": [-1],
-        "perm_entity_id": [-1],
-        "perm_sym_id": [-1],
-        "perm_sym_token_index": [-1],
-        "perm_sym_conformer_id": [-1],
+        "mol_entity_id": [-1],
+        "mol_sym_id": [-1],
+        "mol_sym_token_index": [-1],
+        "mol_sym_component_id": [-1],
     }
     features_target = featurize_structure_af3(
         atom_array_cropped,

@@ -63,6 +63,18 @@ def get_optimal_rotation_matrix(
 # NIT: Maybe a bit confusing that there is already a rotation_matrix.py but that one
 # comes from OF2 and is way overkill for this purpose
 class Transformation(NamedTuple):
+    """Named tuple to store a rotation matrix and translation vector.
+    
+    The transformation is stored in a way such that:
+    
+    (mobile_positions @ rotation_matrix) + translation_vector ≈ target_positions
+    
+    Attributes:
+        rotation_matrix (torch.Tensor):
+            [*, 3, 3] the rotation matrix (right-multiplied)
+        translation_vector (torch.Tensor):
+            [*, 3] the translation vector
+    """
     rotation_matrix: torch.Tensor
     translation_vector: torch.Tensor
 
@@ -88,7 +100,7 @@ def get_optimal_transformation(
     Returns:
         A named tuple with the optimal rotation matrix [*, 3, 3] and the optimal
         translation vector [*, 3], so that:
-        (mobile_positions @ R) + t ~= target_positions
+        (mobile_positions @ R) + t ≈ target_positions
     """
     # Get centroid of only the unmasked coordinates
     n_observed_atoms = torch.sum(positions_mask, dim=-1, keepdim=True)

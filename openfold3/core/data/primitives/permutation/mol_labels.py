@@ -2,11 +2,15 @@ import hashlib
 import itertools
 import logging
 from collections import defaultdict
+from collections.abc import Generator
+from dataclasses import dataclass
+from typing import NamedTuple
 
 import networkx as nx
 import numpy as np
-from biotite.structure import AtomArray, chain_iter, molecule_iter
+from biotite.structure import AtomArray, chain_iter, get_chain_starts
 
+import openfold3.core.data.resources.patches as patch
 from openfold3.core.data.pipelines.sample_processing.conformer import (
     ProcessedReferenceMolecule,
 )
@@ -20,32 +24,57 @@ from openfold3.core.data.primitives.structure.labels import (
     get_token_starts,
     remove_atom_indices,
 )
+from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
 
 logger = logging.getLogger(__name__)
 
 
-# TODO: Is this used anywhere? Remove if not
-# TODO: put this function somewhere else for better discoverability?
-def get_cross_chain_bonds(atom_array):
-    """Gets all bonds between different chains in the atom array."""
-    all_bonds = atom_array.bonds.as_array()
-
-    chain_ids_atom_1 = atom_array.chain_id[all_bonds[:, 0]]
-    chain_ids_atom_2 = atom_array.chain_id[all_bonds[:, 1]]
-    cross_chain_selector = chain_ids_atom_1 != chain_ids_atom_2
-
-    return all_bonds[cross_chain_selector]
-
-
 def hash_bytes(input_bytes: bytes) -> str:
+    """Hashes a byte string using SHA-256.
+
+    Args:
+        input_bytes (bytes):
+            byte string to hash.
+
+    Returns:
+        str:
+            SHA-256 hash of the input byte string.
+    """
     hash_object = hashlib.sha256()
     hash_object.update(input_bytes)
 
     return hash_object.hexdigest()
 
 
-# TODO: make this consistent with single_comparison
-def construct_coarse_molecule_graph(atom_array):
+def construct_coarse_molecule_graph(atom_array: AtomArray) -> nx.Graph:
+    """Constructs a high-level graph representation of the molecule.
+
+    This function creates a graph that summarizes the overall layout of a molecule using
+    the following strategy:
+        - Each chain is represented by a node. Each node gets an internal representation
+          which is equivalent to an efficient SHA-256 hash of its internal atom names,
+          residue names, and entity ID.
+        - Each bond between two chains is represented by two nodes, one for each atom in
+          the bond. These special bond-atom nodes get an internal representation
+          equivalent to their atom index relative to the chain.
+
+    Following the above strategy, each symmetry-equivalent covalently connected set of
+    chains (e.g. a protein chain bound to its glycans and another symmetry-equivalent
+    protein chain bound to equivalent glycans) will have an equivalent set of bond-atom
+    nodes and chain nodes, and appear isomorphic in this graph representation.
+
+    Args:
+        atom_array (AtomArray):
+            The atom array to encode as a graph.
+
+    Returns:
+        nx.Graph:
+            A networkx graph object representing the molecule. Internal node_reprs
+            follow the strategy described above. Chain-level nodes get a string node
+            label formatted like "chain: {chain_id}", and bond-atom nodes get a string
+            node label formatted like "link: {chain_id}_{atom_idx_relative}".
+    """
+
     g = nx.Graph()
 
     # Use non-standard _atom_idx label to avoid collisions
@@ -114,88 +143,122 @@ def construct_coarse_molecule_graph(atom_array):
     return g
 
 
-def single_comparison(mol1, mol2):
-    """Matches the atom names, residue names and entity IDs."""
+class PrecursorMolGroupID(NamedTuple):
+    """Unique precursor molecule group identifier.
 
-    entity_id_atom_names_1 = np.stack(
-        [
-            mol1.entity_id,
-            mol1.atom_name,
-            mol1.res_name,
-        ],
-    )
+    Attributes:
+        entity_ids (tuple[int]):
+            Unique sorted entity IDs in the group.
+        mol_len (int):
+            The atom count of the molecules in the group.
+    """
 
-    entity_id_atom_names_2 = np.stack(
-        [
-            mol2.entity_id,
-            mol2.atom_name,
-            mol2.res_name,
-        ],
-    )
-
-    if not np.array_equal(entity_id_atom_names_1, entity_id_atom_names_2):
-        return False
-
-    # Explicitly compare cross-chain bonds only
-    cross_chain_bond_list_1 = get_cross_chain_bonds(mol1)
-    cross_chain_bond_list_2 = get_cross_chain_bonds(mol2)
-
-    return np.array_equal(cross_chain_bond_list_1, cross_chain_bond_list_2)
+    entity_ids: tuple[int]
+    mol_len: int
 
 
-def get_mol_groups(atom_array):
+def get_precursor_mol_groups(
+    atom_array: AtomArray,
+) -> dict[PrecursorMolGroupID, list[AtomArray]]:
     """Groups molecules in the atom array by entity IDs and length.
+
+    This function groups molecules in the atom array by their entity IDs and length.
+    This is a precursor step to assigning molecular symmetry IDs, as molecules
+    containing the same set of entity IDs and having the same number of atoms are very
+    likely to be symmetry-equivalent.
 
     Args:
         atom_array (AtomArray):
             The atom array to group.
 
     Returns:
-        dict: A dictionary mapping ((entity_ids), len) to
-            corresponding molecule atom_array slices.
+        dict:
+            A dictionary mapping ((entity_ids), len) to corresponding molecule
+            atom_array slices.
     """
     mol_groups = defaultdict(list)
 
-    for mol in molecule_iter(atom_array):
+    for mol in patch.molecule_iter(atom_array):
         entity_ids = tuple(np.unique(mol.entity_id))
         mol_len = len(mol)
-        group_id = (entity_ids, mol_len)
+        group_id = PrecursorMolGroupID(entity_ids, mol_len)
 
         mol_groups[group_id].append(mol)
 
     return mol_groups
 
 
-# TODO: Make repr_mol_info and mol_group some special typed datastructure
-def assign_mol_symmetry_ids(atom_array) -> AtomArray:
-    """This assigns an entity ID that takes the whole molecule into account.
+@dataclass
+class SymmetricMolGroup:
+    """Representation of information for a group of symmetry-equivalent molecules.
 
-    In contrast to normal PDB entity IDs, this parses entire molecules (= covalently
-    connected components) in the structure and assigns the same identifier if the entire
-    molecule is the same. For example, this will group together all covalently linked
-    glycans with their receptor chains under one single identifier.
+    Attributes:
+        repr_graph (nx.Graph):
+            A representative networkx graph capturing the layout of the molecule.
+        repr_chain_order (tuple[str]):
+            A representative chain order for the molecule (corresponding to the first
+            molecule). All other molecules in the group will be reordered to match this
+            order.
+        mol_entity_id (int):
+            A unique identifier for the symmetric molecule group, referred to as
+            molecular entity ID. This is different from the PDB entity ID in that it
+            groups together all covalently connected components in the structure into a
+            single molecule.
+        n_symmetric_instances (int):
+            The number of symmetry-equivalent instances of this molecule group.
     """
 
+    repr_graph: nx.Graph
+    repr_chain_order: tuple[str]
+    mol_entity_id: int
+    n_symmetric_instances: int = 1
+
+
+def assign_mol_symmetry_ids(atom_array: AtomArray) -> AtomArray:
+    """Assings molecular entity IDs and symmetry IDs to the atom array.
+
+    Following 4.2 of the AF3 SI, covalently connected components must be treated as a
+    single entity for the purpose of the chain permutation alignment. This raises the
+    problem of identifying symmetry-equivalent connected components in the atom array.
+    This function solves this by using isomorphic graph matching between coarse-grained
+    graph representations of covalently connected molecules in the atom array. The graph
+    representation is constructed by the construct_coarse_molecule_graph function.
+
+    Args:
+        atom_array (AtomArray):
+            The atom array to assign molecular symmetry IDs to.
+
+    Returns:
+        AtomArray:
+            The same atom array with two new annotations:
+                - mol_entity_id:
+                    A unique identifier for a group of symmetry-equivalent molecules,
+                    referred to as molecular entity ID. All molecules with the same
+                    molecular entity ID are fully symmetry-equivalent to each other.
+                - mol_sym_id:
+                    A unique identifier for each individual symmetry-equivalent molecule
+                    within a symmetric group, starting from 1.
+    """
     atom_array = atom_array.copy()
 
     # Set atom-wise indices to keep track of the original order
     assign_atom_indices(atom_array)
 
-    # Create a new annotation for the perm_entity_id
+    # Create a new annotation for the mol_entity_id
     atom_array.set_annotation(
-        "perm_entity_id", np.zeros(atom_array.array_length(), dtype=int)
+        "mol_entity_id", np.zeros(atom_array.array_length(), dtype=int)
     )
     atom_array.set_annotation(
-        "perm_sym_id", np.zeros(atom_array.array_length(), dtype=int)
+        "mol_sym_id", np.zeros(atom_array.array_length(), dtype=int)
     )
 
     # Dict mapping ((entity_ids), len) to the molecule atom_array slices. All molecules
     # in these groups share the same set of PDB entity IDs and have the same length, and
     # are therefore very likely to belong to the same molecule
-    mol_groups = get_mol_groups(atom_array)
+    mol_groups = get_precursor_mol_groups(atom_array)
 
-    # Counter for the permutation entity IDs
-    perm_id_counter = itertools.count(1)
+    # Counter for the molecular entity IDs
+    mol_entity_counter = itertools.count(start=1)
 
     # Builds up a sort operation at the end of the function so that chains in symmetric
     # entities are ordered the same way
@@ -203,63 +266,73 @@ def assign_mol_symmetry_ids(atom_array) -> AtomArray:
 
     # Iterate through the groups and verify which molecules are truly the same
     for grouped_mols in mol_groups.values():
+        # Will group truly symmetric molecules together
+        symmetric_mol_groups = []
+
         logger.debug("Processing group...")
+
+        # Start with the first molecule to build an initial group of symmetric molecules
+        # ------------------------------------------------
         first_mol = grouped_mols[0]
 
         # Generate a graph capturing the layout of the molecule
         first_mol_graph = construct_coarse_molecule_graph(first_mol)
 
-        # Mols representing unique perm_entities, formatted as
-        # (mol, nx_graph, perm_entity_id, total count of identical mols)
-        first_mol_perm_entity_id = next(perm_id_counter)
-        repr_mol_info = [[first_mol, first_mol_graph, first_mol_perm_entity_id, 1]]
+        first_mol_entity_id = next(mol_entity_counter)
+        first_mol_chain_order = tuple(first_mol.chain_id[get_chain_starts(first_mol)])
 
-        # Set IDs for first molecule
-        atom_array.perm_entity_id[first_mol._atom_idx] = first_mol_perm_entity_id
-        atom_array.perm_sym_id[first_mol._atom_idx] = 1  # always first instance
+        symmetric_mol_groups.append(
+            SymmetricMolGroup(
+                repr_graph=first_mol_graph,
+                repr_chain_order=first_mol_chain_order,
+                mol_entity_id=first_mol_entity_id,
+                n_symmetric_instances=1,
+            )
+        )
+
+        # Set symmetry IDs for first molecule
+        atom_array.mol_entity_id[first_mol._atom_idx] = first_mol_entity_id
+        atom_array.mol_sym_id[first_mol._atom_idx] = 1  # always first instance
+        # ------------------------------------------------
+
+        # Iterate through all other molecules in this group, adding them to already
+        # existing symmetry groups if they are symmetry-equivalent to the
+        # representative, or creating new groups if they are not
+        if len(grouped_mols) == 1:
+            continue
 
         for mol in grouped_mols[1:]:
             # Get graph capturing layout of query molecule
             mol_graph = construct_coarse_molecule_graph(mol)
 
-            for repr_info in repr_mol_info:
-                repr_mol, repr_graph, first_mol_perm_entity_id, count = repr_info
-
-                # TODO: If I'm already creating the graph, why not check networkx graph
-                # equivalence here as well and get rid of the single_comparison
-                # function?
+            # Check all existing symmetry groups for a match
+            for symm_group in symmetric_mol_groups:
                 # Try identity mapping
-                if single_comparison(repr_mol, mol):
+                if nx.utils.graphs_equal(symm_group.repr_graph, mol_graph):
                     logger.debug("Found match.")
+
                     # Increment count
-                    sym_id = count + 1
-                    repr_info[3] = sym_id
+                    mol_sym_id = symm_group.n_symmetric_instances + 1
+                    symm_group.n_symmetric_instances = mol_sym_id
 
                     # Set IDs
-                    atom_array.perm_entity_id[mol._atom_idx] = first_mol_perm_entity_id
-                    atom_array.perm_sym_id[mol._atom_idx] = sym_id
+                    atom_array.mol_entity_id[mol._atom_idx] = first_mol_entity_id
+                    atom_array.mol_sym_id[mol._atom_idx] = mol_sym_id
                     break
 
                 # Attempt permuting the molecule to find a match
                 else:
-                    logger.debug("Did not find direct match. Attempting permutation...")
+                    logger.debug("Did not find direct match. Attempting isomorphism...")
 
                     # Check if two molecules are identical after permutation
                     mapping = nx.algorithms.isomorphism.vf2pp_isomorphism(
-                        repr_graph, mol_graph, node_label="node_repr"
+                        symm_group.repr_graph, mol_graph, node_label="node_repr"
                     )
 
+                    # If isomorphism was found, add to group of same mol_entities and
+                    # reorder the atoms so that their features match the representative
                     if mapping is not None:
                         logger.debug("Found match after permutation.")
-
-                        # Get the chains in the reference molecule in their order of
-                        # appearance
-                        unique_repr_chain_idx = np.unique(
-                            repr_mol.chain_id, return_index=True
-                        )[1]
-                        unique_repr_chains = repr_mol.chain_id[
-                            np.sort(unique_repr_chain_idx)
-                        ]
 
                         # Extract the chain mappings from the vf2pp mapping
                         chain_mappings = {
@@ -273,7 +346,7 @@ def assign_mol_symmetry_ids(atom_array) -> AtomArray:
                         # the order matching the reference mol
                         within_mol_resort_index = []
 
-                        for chain_id_repr in unique_repr_chains:
+                        for chain_id_repr in symm_group.repr_chain_order:
                             # Get the corresponding chain of the current mol
                             chain_id_mol = chain_mappings[chain_id_repr]
 
@@ -287,25 +360,32 @@ def assign_mol_symmetry_ids(atom_array) -> AtomArray:
                         resort_index[mol._atom_idx] = within_mol_resort_index
 
                         # Increment count
-                        sym_id = count + 1
-                        repr_info[3] = sym_id
+                        mol_sym_id = symm_group.n_symmetric_instances + 1
+                        symm_group.n_symmetric_instances = mol_sym_id
 
                         # Set IDs
-                        atom_array.perm_entity_id[mol._atom_idx] = (
-                            first_mol_perm_entity_id
-                        )
-                        atom_array.perm_sym_id[mol._atom_idx] = sym_id
+                        atom_array.mol_entity_id[mol._atom_idx] = first_mol_entity_id
+                        atom_array.mol_sym_id[mol._atom_idx] = mol_sym_id
                         break
 
             else:
                 logger.debug("No match found after permutation, adding as new entity.")
 
                 # If there is no symmetry group to map to, add this molecule as a new
-                # representative with a distinct perm_entity_id
-                new_perm_entity_id = next(perm_id_counter)
-                repr_mol_info.append([mol, mol_graph, new_perm_entity_id, 1])
-                atom_array.perm_entity_id[mol._atom_idx] = new_perm_entity_id
-                atom_array.perm_sym_id[mol._atom_idx] = 1  # always first instance
+                # representative with a distinct mol_entity_id
+                new_mol_entity_id = next(mol_entity_counter)
+
+                symmetric_mol_groups.append(
+                    SymmetricMolGroup(
+                        repr_graph=mol_graph,
+                        repr_chain_order=tuple(mol.chain_id[get_chain_starts(mol)]),
+                        mol_entity_id=new_mol_entity_id,
+                        n_symmetric_instances=1,
+                    )
+                )
+
+                atom_array.mol_entity_id[mol._atom_idx] = new_mol_entity_id
+                atom_array.mol_sym_id[mol._atom_idx] = 1  # always first instance
 
     # Reorder the entire atom_array so that all symmetric molecules share the same exact
     # order of atoms
@@ -313,92 +393,190 @@ def assign_mol_symmetry_ids(atom_array) -> AtomArray:
 
     remove_atom_indices(atom_array)
 
-    assert np.all(atom_array.perm_entity_id != 0)
-    assert np.all(atom_array.perm_sym_id != 0)
+    assert np.all(atom_array.mol_entity_id != 0)
+    assert np.all(atom_array.mol_sym_id != 0)
 
     return atom_array
 
 
-def perm_sym_entity_iter(atom_array: AtomArray):
-    """
-    Returns atom_array slices corresponding to every perm_entity_id.
+def mol_entity_iter(atom_array: AtomArray) -> Generator[AtomArray, None, None]:
+    """Returns atom_array slices corresponding to every mol_entity_id.
 
     WARNING: The order with which the slices are returned may be different from the
     order of first appearance in the AtomArray.
+
+    Args:
+        atom_array (AtomArray):
+            The atom array to iterate over.
+
+    Yields:
+        AtomArray:
+            AtomArray slice corresponding to a unique mol_entity_id.
     """
-    entity_ids = np.unique(atom_array.perm_entity_id)
+    entity_ids = np.unique(atom_array.mol_entity_id)
 
     for entity_id in entity_ids:
-        yield atom_array[atom_array.perm_entity_id == entity_id]
+        yield atom_array[atom_array.mol_entity_id == entity_id]
 
 
-def perm_sym_mol_iter(atom_array: AtomArray):
-    """
-    Returns atom_array slices corresponding to every (perm_entity_id, perm_sym_id) pair.
+def mol_unique_instance_iter(
+    atom_array: AtomArray,
+) -> Generator[AtomArray, None, None]:
+    """Returns atom_array slices corresponding to every (mol_entity_id, mol_sym_id).
+
+    Similar in concept to Biotite's molecule_iter, but logic is based on the previously
+    assigned molecular symmetry IDs and does not read the internal AtomArray's bond
+    list.
 
     WARNING: The order with which the slices are returned may be different from the
     order of first appearance in the AtomArray.
+
+    Args:
+        atom_array (AtomArray):
+            The atom array to iterate over.
+
+    Yields:
+        AtomArray:
+            AtomArray slice corresponding to a unique (mol_entity_id, mol_sym_id).
     """
-    for entity in perm_sym_entity_iter(atom_array):
-        sym_ids = np.unique(entity.perm_sym_id)
+    for entity in mol_entity_iter(atom_array):
+        sym_ids = np.unique(entity.mol_sym_id)
 
         for sym_id in sym_ids:
-            yield entity[entity.perm_sym_id == sym_id]
+            yield entity[entity.mol_sym_id == sym_id]
 
 
-def assign_perm_sym_token_indices(atom_array: AtomArray):
+def assign_mol_sym_token_index(atom_array: AtomArray) -> None:
+    """Assigns renumbered token indices for every molecule instance.
+
+    Renumbers the token indices for every unique molecule (identified as a
+    (mol_entity_id, mol_sym_id) pair) in the atom array.
+
+    Args:
+        atom_array (AtomArray):
+            The atom array to assign the token indices to.
+
+    Returns:
+        None, the atom array is modified in-place.
+    """
+
     assign_atom_indices(atom_array)
 
     atom_array.set_annotation(
-        "perm_sym_token_index", -np.ones(len(atom_array), dtype=int)
+        "mol_sym_token_index", -np.ones(len(atom_array), dtype=int)
     )
 
     # Go through each symmetric mol and renumber the token indices from 1
-    for mol in perm_sym_mol_iter(atom_array):
+    for mol in mol_unique_instance_iter(atom_array):
         token_starts = get_token_starts(mol, add_exclusive_stop=True)
         token_id_repeats = np.diff(token_starts)
         token_indices_renumbered = np.repeat(
             np.arange(len(token_id_repeats)), token_id_repeats
         )
-        atom_array.perm_sym_token_index[mol._atom_idx] = token_indices_renumbered
+        atom_array.mol_sym_token_index[mol._atom_idx] = token_indices_renumbered
 
     remove_atom_indices(atom_array)
 
-    assert np.all(atom_array.perm_sym_token_index != -1)
+    assert np.all(atom_array.mol_sym_token_index != -1)
 
 
-def assign_perm_sym_conformer_ids(atom_array: AtomArray):
+def assign_mol_sym_component_ids(atom_array: AtomArray):
+    """Assigns renumbered component IDs for every molecule instance.
+
+    Renumbers the component IDs for every unique molecule (identified as a
+    (mol_entity_id, mol_sym_id) pair) in the atom array.
+
+    Args:
+        atom_array (AtomArray):
+            The atom array to assign the component IDs to.
+
+    Returns:
+        None, the atom array is modified in-place.
+    """
     assign_atom_indices(atom_array)
 
     atom_array.set_annotation(
-        "perm_sym_conformer_id", -np.ones(len(atom_array), dtype=int)
+        "mol_sym_component_id", -np.ones(len(atom_array), dtype=int)
     )
 
-    for mol_array in perm_sym_mol_iter(atom_array):
+    for mol_array in mol_unique_instance_iter(atom_array):
         for id, component in enumerate(component_iter(mol_array), start=1):
-            atom_array.perm_sym_conformer_id[component._atom_idx] = id
+            atom_array.mol_sym_component_id[component._atom_idx] = id
 
     remove_atom_indices(atom_array)
 
-    assert np.all(atom_array.perm_sym_conformer_id != -1)
+    assert np.all(atom_array.mol_sym_component_id != -1)
 
 
-@log_runtime_memory(runtime_dict_key="")
-def assign_mol_permutation_ids(atom_array: AtomArray) -> AtomArray:
+@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-permutation-labels")
+def assign_mol_permutation_ids(
+    atom_array: AtomArray, retokenize: bool = True
+) -> AtomArray:
+    """Assigns all permutation-related annotations to the atom array.
+
+    This function detects symmetry-equivalent covalently connected components (=
+    molecules) in the atom array and assigns symmetry-related annotations, required for
+    the permutation alignment. Additionally it reorders the chains within
+    symmetry-equivalent molecules to a consistent order if necessary, so that their
+    features match each other.
+
+    Args:
+        atom_array (AtomArray):
+            The atom array to assign the permutation labels to.
+        retokenize (bool):
+            If True, the atom array's token indices are reassigned after the operation
+            that can change the internal chain order.
+
+    Returns:
+        AtomArray:
+            The same atom array with the following new annotations:
+                - mol_entity_id:
+                    A unique identifier for a group of symmetry-equivalent molecules,
+                    referred to as molecular entity ID. All molecules with the same
+                    molecular entity ID are fully symmetry-equivalent to each other.
+                - mol_sym_id:
+                    A unique identifier for each individual symmetry-equivalent molecule
+                    within a symmetric group, starting from 1.
+                - mol_sym_token_index:
+                    Renumbered token indices for every molecule instance.
+                - mol_sym_component_id:
+                    Renumbered component IDs for every molecule instance.
+    """
+
     atom_array = atom_array.copy()
 
-    # Add the perm_entity_id and perm_sym_id annotations
+    # Add the mol_entity_id and mol_sym_id annotations (and potentially change internal
+    # chain order of atom array if necessary)
     atom_array = assign_mol_symmetry_ids(atom_array)
 
-    # Assign perm_sym_token_index attribute (renumbered token indices for every molecule
-    # instance)
-    assign_perm_sym_token_indices(atom_array)
+    # Reassign token indices to match the new chain order
+    if retokenize:
+        tokenize_atom_array(atom_array)
 
-    # Assign perm_sym_conformer_id attribute (renumbered conformer IDs (ref_space_uids)
+    # Assign mol_sym_token_index attribute (renumbered token indices for every molecule
+    # instance)
+    assign_mol_sym_token_index(atom_array)
+
+    # Assign mol_sym_component_id attribute (renumbered component IDs (ref_space_uids)
     # for every molecule instance)
-    assign_perm_sym_conformer_ids(atom_array)
+    assign_mol_sym_component_ids(atom_array)
 
     return atom_array
+
+
+class SeparatedTargetStructure(NamedTuple):
+    """Separated target structure for a single molecule.
+
+    Attributes:
+        cropped (AtomArray):
+            The cropped atom array.
+        gt (AtomArray):
+            The ground-truth atom array, subset to only the atoms that are
+            symmetry-related to the cropped atom array.
+    """
+
+    cropped: AtomArray
+    gt: AtomArray
 
 
 def separate_cropped_and_gt(
@@ -406,12 +584,46 @@ def separate_cropped_and_gt(
     crop_strategy: str,
     processed_ref_mol_list: list[ProcessedReferenceMolecule],
 ) -> tuple[AtomArray, AtomArray]:
+    """Separates the cropped and ground-truth atom arrays.
+
+    Splits the preprocessed atom array into the actual cropped subset and ground-truth
+    atoms. For efficiency reasons, only the atoms that are symmetry-related to the
+    cropped subset are kept in the ground-truth atom array.
+
+    Additionally, deviating slightly from AF2-Multimer/AF3, the way the ground-truth is
+    returned is dependent on the crop_strategy:
+        - spatial/spatial-interface:
+            The ground-truth atoms are restricted to molecules (= covalently connected
+            components) that have at least one atom in the crop. This means that the
+            chains included in the spatial crop can be permuted within themselves, but
+            not with chains outside the crop, to keep spatial proximity.
+        - contiguous/whole/other:
+            The ground-truth is expanded to atom slices in every symmetry-equivalent
+            molecule in the entire structure that is symmetry-equivalent to atoms in the
+            crop, no matter if they themselves are in the crop or not.
+
+    Args:
+        atom_array_gt (AtomArray):
+            The atom array to separate.
+        crop_strategy (str):
+            The crop strategy used to generate the crop. Should be one of "spatial",
+            "spatial_interface", "contiguous", or "whole". If the strategy is not
+            recognized, the ground-truth is expanded to atoms in all symmetric molecules
+            following the contiguous/whole strategy.
+        processed_ref_mol_list (list[ProcessedReferenceMolecule]):
+            List of processed reference molecules.
+
+    Returns:
+        tuple[AtomArray, AtomArray]:
+            A tuple containing the cropped and subset ground-truth atom arrays.
+    """
+
     if not all(
         annotation in atom_array_gt.get_annotation_categories()
         for annotation in [
-            "perm_entity_id",
-            "perm_sym_id",
-            "perm_sym_conformer_id",
+            "mol_entity_id",
+            "mol_sym_id",
+            "mol_sym_component_id",
         ]
     ):
         raise ValueError("Permutation labels not found in atom array.")
@@ -436,7 +648,7 @@ def separate_cropped_and_gt(
     # Defines the set of sym IDs to which symmetry-equivalence is restricted
     entity_to_valid_sym_ids = defaultdict(list)
 
-    for mol in perm_sym_mol_iter(atom_array_gt):
+    for mol in mol_unique_instance_iter(atom_array_gt):
         # For spatial crops, restrict sym IDs to the in-crop ones
         if crop_strategy in ["spatial", "spatial_interface"]:
             if not mol.crop_mask.any():
@@ -450,8 +662,8 @@ def separate_cropped_and_gt(
                 " symmetric molecules (equivalent to contiguous crop)."
             )
 
-        entity_id = mol.perm_entity_id[0]
-        sym_id = mol.perm_sym_id[0]
+        entity_id = mol.mol_entity_id[0]
+        sym_id = mol.mol_sym_id[0]
         entity_to_valid_sym_ids[entity_id].append(sym_id)
 
     # This keeps track of which total ground-truth atoms are required for this
@@ -462,21 +674,21 @@ def separate_cropped_and_gt(
 
     # Keep exactly the sections of the ground-truth that are symmetry-related to
     # sections in the crop
-    for cropped_entities in perm_sym_entity_iter(atom_array_cropped):
-        entity_id = cropped_entities.perm_entity_id[0]
+    for cropped_entities in mol_entity_iter(atom_array_cropped):
+        entity_id = cropped_entities.mol_entity_id[0]
 
         sym_component_id_to_absolute_conformer_id = defaultdict(set)
         for atom in cropped_entities:
-            sym_component_id_to_absolute_conformer_id[atom.perm_sym_conformer_id].add(
+            sym_component_id_to_absolute_conformer_id[atom.mol_sym_component_id].add(
                 atom.component_id
             )
 
         # Get the exact symmetry-equivalent atom sets per component
         sym_component_id_to_required_gt_atoms = defaultdict(set)
-        for sym_mol in perm_sym_mol_iter(cropped_entities):
+        for sym_mol in mol_unique_instance_iter(cropped_entities):
             for component in component_iter(sym_mol):
                 absolute_component_id = component.component_id[0]
-                sym_component_id = component.perm_sym_conformer_id[0]
+                sym_component_id = component.mol_sym_component_id[0]
 
                 # Symmetry-equivalent permutations from which the necessary ground-truth
                 # atoms can be concluded
@@ -497,19 +709,19 @@ def separate_cropped_and_gt(
                     ].update(required_gt_atom_indices_list)
 
         # Get the valid symmetry-equivalent GT molecules
-        same_entity_gt_mols = atom_array_gt[atom_array_gt.perm_entity_id == entity_id]
+        same_entity_gt_mols = atom_array_gt[atom_array_gt.mol_entity_id == entity_id]
         valid_sym_ids = entity_to_valid_sym_ids[entity_id]
         sym_equivalent_gt_mols = same_entity_gt_mols[
-            np.isin(same_entity_gt_mols.perm_sym_id, valid_sym_ids)
+            np.isin(same_entity_gt_mols.mol_sym_id, valid_sym_ids)
         ]
 
         # Get an arbitrary symmetry-equivalent GT molecule to construct the resulting
         # mask that can be equivalently applied to all symmetry-equivalent GT molecules
-        sym_equivalent_gt_mol = next(perm_sym_mol_iter(sym_equivalent_gt_mols))
+        sym_equivalent_gt_mol = next(mol_unique_instance_iter(sym_equivalent_gt_mols))
         gt_mol_keep_atom_mask = []
 
         for gt_component in component_iter(sym_equivalent_gt_mol):
-            gt_sym_component_id = gt_component.perm_sym_conformer_id[0]
+            gt_sym_component_id = gt_component.mol_sym_component_id[0]
 
             # If component is not in the crop at all, append all-False mask
             if gt_sym_component_id not in sym_component_id_to_required_gt_atoms:
@@ -533,7 +745,7 @@ def separate_cropped_and_gt(
 
         # Apply the mask to every symmetry-equivalent GT molecule to get the final atom
         # indices that need to be kept
-        for mol in perm_sym_mol_iter(sym_equivalent_gt_mols):
+        for mol in mol_unique_instance_iter(sym_equivalent_gt_mols):
             keep_atom_indices.update(mol._atom_idx[gt_mol_keep_atom_mask])
 
     # Renumber the permutations, as the ground-truth atoms are now a subset of the

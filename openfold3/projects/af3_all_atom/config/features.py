@@ -45,6 +45,11 @@ feature_dict = mlc.ConfigDict(
             "atom_to_token_index": [NUM_ATOMS],
             "msa_mask": [NUM_MSA_SEQ, NUM_TOKENS],
             "num_paired_seqs": [],
+            # Permutation alignment features
+            "mol_entity_id": [NUM_TOKENS],
+            "mol_sym_id": [NUM_TOKENS],
+            "mol_sym_token_index": [NUM_TOKENS],
+            "mol_sym_component_id": [NUM_TOKENS],
             "ground_truth": {
                 "residue_index": [NUM_TOKENS],
                 "token_index": [NUM_TOKENS],
@@ -57,6 +62,11 @@ feature_dict = mlc.ConfigDict(
                 "token_mask": [NUM_TOKENS],
                 "atom_positions": [NUM_ATOMS, 3],
                 "atom_resolved_mask": [NUM_ATOMS],
+                # Permutation alignment features
+                "mol_entity_id": [NUM_TOKENS],
+                "mol_sym_id": [NUM_TOKENS],
+                "mol_sym_token_index": [NUM_TOKENS],
+                "mol_sym_component_id": [NUM_TOKENS],
             },
             "loss_weights": {
                 "bond": [],

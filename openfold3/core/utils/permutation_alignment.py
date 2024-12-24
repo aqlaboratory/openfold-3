@@ -1,6 +1,7 @@
 # NIT: confusing that this needs to be transposed, while the rotation matrix in
 # Transformation doesn't
 import logging
+import traceback
 from collections import Counter, defaultdict
 from copy import deepcopy
 from functools import partial
@@ -63,15 +64,13 @@ def split_feats_by_id(
     return split_feats, unique_ids
 
 
-# TODO: Call all this stuff mol_entity_id, mol_sym_id, mol_atom_id, mol_conformer_id
-# TODO: Revisit this function if we really need all these optional args
 def get_gt_segment_mask(
-    segment_perm_sym_token_index: torch.Tensor,
-    gt_perm_sym_token_index: torch.Tensor,
-    segment_perm_sym_id: int | None = None,
-    segment_perm_entity_id: int | None = None,
-    gt_perm_sym_id: torch.Tensor | None = None,
-    gt_perm_entity_id: torch.Tensor | None = None,
+    segment_mol_sym_token_index: torch.Tensor,
+    gt_mol_sym_token_index: torch.Tensor,
+    segment_mol_sym_id: int | None = None,
+    segment_mol_entity_id: int | None = None,
+    gt_mol_sym_id: torch.Tensor | None = None,
+    gt_mol_entity_id: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Fetches a mask for the gt-segment matching the predicted segment
 
@@ -86,26 +85,26 @@ def get_gt_segment_mask(
     and makes no attempt to select a particular symmetry-optimal permutation.
 
     Args:
-        segment_perm_sym_token_index (torch.Tensor):
+        segment_mol_sym_token_index (torch.Tensor):
             The sym_token_index values of the token center atoms of the predicted
             segment the ground-truth is matched to.
-        gt_perm_sym_token_index (torch.Tensor):
+        gt_mol_sym_token_index (torch.Tensor):
             The sym_token_index values of the ground-truth's token center atoms.
-        segment_perm_sym_id (int):
-            The sym_id of the predicted segment. If this is specified, gt_perm_sym_id
+        segment_mol_sym_id (int):
+            The sym_id of the predicted segment. If this is specified, gt_mol_sym_id
             must be specified as well, and the mask will only include ground-truth atoms
             with the same sym_id. Defaults to None.
-        segment_perm_entity_id (int):
+        segment_mol_entity_id (int):
             The entity_id of the predicted segment. If this is specified,
-            gt_perm_entity_id must be specified as well, and the mask will only include
+            gt_mol_entity_id must be specified as well, and the mask will only include
             ground-truth atoms with the same entity_id. Defaults to None.
-        gt_perm_sym_id (torch.Tensor):
+        gt_mol_sym_id (torch.Tensor):
             The sym_id values of the ground-truth's token center atoms. If
-            segment_perm_sym_id is specified, this must be specified as well. Defaults
+            segment_mol_sym_id is specified, this must be specified as well. Defaults
             to None.
-        gt_perm_entity_id (torch.Tensor):
+        gt_mol_entity_id (torch.Tensor):
             The entity_id values of the ground-truth's token center atoms. If
-            segment_perm_entity_id is specified, this must be specified as well.
+            segment_mol_entity_id is specified, this must be specified as well.
             Defaults to None.
 
     Returns:
@@ -113,33 +112,31 @@ def get_gt_segment_mask(
             A boolean mask of the same shape as the ground-truth sym_token_index that
             selects the atoms that match the predicted segment.
     """
-    segment_mask = torch.ones_like(gt_perm_sym_token_index, dtype=torch.bool)
+    segment_mask = torch.ones_like(gt_mol_sym_token_index, dtype=torch.bool)
 
     # Optionally subset to particular sym_id
-    if segment_perm_sym_id is not None:
-        if gt_perm_sym_id is None:
-            raise ValueError(
-                "Need to pass gt_perm_sym_id if segment_perm_sym_id is set"
-            )
+    if segment_mol_sym_id is not None:
+        if gt_mol_sym_id is None:
+            raise ValueError("Need to pass gt_mol_sym_id if segment_mol_sym_id is set")
 
-        segment_mask &= gt_perm_sym_id == segment_perm_sym_id
+        segment_mask &= gt_mol_sym_id == segment_mol_sym_id
 
     # Optionally subset to particular entity_id
-    if segment_perm_entity_id is not None:
-        if gt_perm_entity_id is None:
+    if segment_mol_entity_id is not None:
+        if gt_mol_entity_id is None:
             raise ValueError(
-                "Need to pass gt_perm_entity_id if segment_perm_entity_id is set"
+                "Need to pass gt_mol_entity_id if segment_mol_entity_id is set"
             )
 
-        segment_mask &= gt_perm_entity_id == segment_perm_entity_id
+        segment_mask &= gt_mol_entity_id == segment_mol_entity_id
 
     # Subset to the sym_token_index of the predicted segment
-    segment_mask &= torch.isin(gt_perm_sym_token_index, segment_perm_sym_token_index)
+    segment_mask &= torch.isin(gt_mol_sym_token_index, segment_mol_sym_token_index)
 
     return segment_mask
 
 
-def get_centroid(coords: torch.Tensor, mask: torch.Tensor):
+def get_centroid(coords: torch.Tensor, mask: torch.Tensor, eps: float = 1e-4):
     """Computes the centroids of resolved coordinates.
 
     Args:
@@ -147,26 +144,25 @@ def get_centroid(coords: torch.Tensor, mask: torch.Tensor):
             [*, N, 3] the coordinates to compute the centroid of.
         mask (torch.Tensor):
             [*, N] mask for resolved coordinates.
+        eps (float):
+            A small value to prevent division by zero.
 
     Returns:
         torch.Tensor:
             [*, 3] the centroid of the resolved coordinates
     """
     n_observed_atoms = torch.sum(mask, dim=-1, keepdim=True)
-    centroid = (
-        torch.sum(
-            coords * mask[..., None],
-            dim=-2,
-        )
-        / n_observed_atoms
-    )
+    centroid = torch.sum(
+        coords * mask[..., None],
+        dim=-2,
+    ) / (n_observed_atoms + eps)
 
     return centroid
 
 
 def get_sym_id_with_most_resolved_atoms(
     resolved_mask: torch.Tensor,
-    perm_sym_id: torch.Tensor,
+    mol_sym_id: torch.Tensor,
 ) -> tuple[int, int]:
     """Returns the symmetry ID with the most resolved atoms.
 
@@ -176,7 +172,7 @@ def get_sym_id_with_most_resolved_atoms(
     Args:
         resolved_mask (torch.Tensor):
             [N] mask of resolved atoms.
-        perm_sym_id (torch.Tensor):
+        mol_sym_id (torch.Tensor):
             [N] symmetry IDs corresponding to the resolved atoms.
 
     Returns:
@@ -185,9 +181,9 @@ def get_sym_id_with_most_resolved_atoms(
             atoms. If there are no resolved atoms in the input, the first symmetry ID is
             returned.
     """
-    perm_sym_id = perm_sym_id[resolved_mask]
+    mol_sym_id = mol_sym_id[resolved_mask]
 
-    unique_sym_ids, n_resolved_atoms = torch.unique(perm_sym_id, return_counts=True)
+    unique_sym_ids, n_resolved_atoms = torch.unique(mol_sym_id, return_counts=True)
 
     # If no resolved atoms, return first sym_id
     if n_resolved_atoms.numel() == 0:
@@ -220,9 +216,9 @@ class AnchorCandidate(NamedTuple):
 
 def get_least_ambiguous_anchor_candidate(
     entity_sym_id_combinations: torch.Tensor,
-    gt_perm_entity_id: torch.Tensor,
+    gt_mol_entity_id: torch.Tensor,
     gt_token_center_resolved_mask: torch.Tensor,
-    gt_perm_sym_id: torch.Tensor,
+    gt_mol_sym_id: torch.Tensor,
 ) -> AnchorCandidate:
     """Finds the anchor candidate with the least ambiguity.
 
@@ -237,11 +233,11 @@ def get_least_ambiguous_anchor_candidate(
     Args:
         entity_sym_id_combinations (torch.Tensor):
             [N, 2] a list of entity-symmetry ID combinations.
-        gt_perm_entity_id (torch.Tensor):
+        gt_mol_entity_id (torch.Tensor):
             [N] the entity IDs of each ground-truth atom.
         gt_token_center_resolved_mask (torch.Tensor):
             [N] mask of resolved atoms.
-        gt_perm_sym_id (torch.Tensor):
+        gt_mol_sym_id (torch.Tensor):
             [N] the symmetry IDs of each ground-truth atom.
 
     Returns:
@@ -272,11 +268,11 @@ def get_least_ambiguous_anchor_candidate(
 
             anchor_candidates = []
             for entity_id in entity_ids:
-                entity_mask = gt_perm_entity_id == entity_id
+                entity_mask = gt_mol_entity_id == entity_id
 
                 best_sym_id, n_resolved = get_sym_id_with_most_resolved_atoms(
                     gt_token_center_resolved_mask[entity_mask],
-                    gt_perm_sym_id[entity_mask],
+                    gt_mol_sym_id[entity_mask],
                 )
 
                 anchor_candidates.append(
@@ -289,8 +285,8 @@ def get_least_ambiguous_anchor_candidate(
             (anchor_entity_id,) = entity_ids
 
             best_sym_id, n_resolved = get_sym_id_with_most_resolved_atoms(
-                gt_token_center_resolved_mask[gt_perm_entity_id == anchor_entity_id],
-                gt_perm_sym_id[gt_perm_entity_id == anchor_entity_id],
+                gt_token_center_resolved_mask[gt_mol_entity_id == anchor_entity_id],
+                gt_mol_sym_id[gt_mol_entity_id == anchor_entity_id],
             )
 
             anchor_candidate = AnchorCandidate(
@@ -320,8 +316,8 @@ def get_least_ambiguous_anchor_candidate(
 
 def get_gt_anchor_mask(
     gt_token_center_resolved_mask: torch.Tensor,
-    gt_perm_entity_id: torch.Tensor,
-    gt_perm_sym_id: torch.Tensor,
+    gt_mol_entity_id: torch.Tensor,
+    gt_mol_sym_id: torch.Tensor,
     gt_is_ligand: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, int]:
     """Finds a suitable ground-truth anchor molecule.
@@ -340,9 +336,9 @@ def get_gt_anchor_mask(
     Args:
         gt_token_center_resolved_mask (torch.Tensor):
             [N] mask of resolved token center atoms.
-        gt_perm_entity_id (torch.Tensor):
+        gt_mol_entity_id (torch.Tensor):
             [N] the entity IDs of each ground-truth token center atom.
-        gt_perm_sym_id (torch.Tensor):
+        gt_mol_sym_id (torch.Tensor):
             [N] the symmetry IDs of each ground-truth token center atom.
         gt_is_ligand (torch.Tensor):
             [N] whether each ground-truth token center atom is part of a ligand.
@@ -358,8 +354,8 @@ def get_gt_anchor_mask(
     # Group symmetry-equivalent molecules of the same entity together
     entity_sym_id_combinations = torch.cat(
         [
-            gt_perm_entity_id[gt_token_center_resolved_mask].unsqueeze(-1),
-            gt_perm_sym_id[gt_token_center_resolved_mask].unsqueeze(-1),
+            gt_mol_entity_id[gt_token_center_resolved_mask].unsqueeze(-1),
+            gt_mol_sym_id[gt_token_center_resolved_mask].unsqueeze(-1),
         ],
         dim=-1,
     )
@@ -372,7 +368,7 @@ def get_gt_anchor_mask(
     ligand_entity_sym_id_combinations = []
 
     for entity_id, sym_id in unique_entity_sym_id_combinations:
-        entity_mask = gt_perm_entity_id == entity_id
+        entity_mask = gt_mol_entity_id == entity_id
 
         if torch.all(gt_is_ligand[entity_mask]):
             ligand_entity_sym_id_combinations.append((entity_id, sym_id))
@@ -380,9 +376,11 @@ def get_gt_anchor_mask(
             polymer_entity_sym_id_combinations.append((entity_id, sym_id))
 
     polymer_entity_sym_id_combinations = torch.tensor(
-        polymer_entity_sym_id_combinations
+        polymer_entity_sym_id_combinations, device=gt_mol_entity_id.device
     )
-    ligand_entity_sym_id_combinations = torch.tensor(ligand_entity_sym_id_combinations)
+    ligand_entity_sym_id_combinations = torch.tensor(
+        ligand_entity_sym_id_combinations, device=gt_mol_entity_id.device
+    )
 
     have_polymer_entities = polymer_entity_sym_id_combinations.numel() > 0
 
@@ -390,9 +388,9 @@ def get_gt_anchor_mask(
     if have_polymer_entities:
         polymer_anchor_candidate = get_least_ambiguous_anchor_candidate(
             polymer_entity_sym_id_combinations,
-            gt_perm_entity_id,
+            gt_mol_entity_id,
             gt_token_center_resolved_mask,
-            gt_perm_sym_id,
+            gt_mol_sym_id,
         )
 
     # If no polymeric anchor available or only polymeric anchor has < 3 resolved atoms,
@@ -406,9 +404,9 @@ def get_gt_anchor_mask(
         if ligand_entity_sym_id_combinations:
             ligand_anchor_candidate = get_least_ambiguous_anchor_candidate(
                 ligand_entity_sym_id_combinations,
-                gt_perm_entity_id,
+                gt_mol_entity_id,
                 gt_token_center_resolved_mask,
-                gt_perm_sym_id,
+                gt_mol_sym_id,
             )
 
             if ligand_anchor_candidate.n_resolved > 3:
@@ -442,8 +440,8 @@ def get_gt_anchor_mask(
         final_anchor = polymer_anchor_candidate
 
     # Get the final mask for the anchor molecule
-    anchor_mask = (gt_perm_entity_id == final_anchor.entity_id) & (
-        gt_perm_sym_id == final_anchor.sym_id
+    anchor_mask = (gt_mol_entity_id == final_anchor.entity_id) & (
+        gt_mol_sym_id == final_anchor.sym_id
     )
 
     return anchor_mask
@@ -455,9 +453,9 @@ def get_anchor_transformations(
     gt_anchor_sym_token_index: torch.Tensor,
     gt_anchor_entity_id: int,
     pred_coords: torch.Tensor,
-    pred_perm_entity_id: torch.Tensor,
-    pred_perm_sym_id: torch.Tensor,
-    pred_perm_sym_token_index: torch.Tensor,
+    pred_mol_entity_id: torch.Tensor,
+    pred_mol_sym_id: torch.Tensor,
+    pred_mol_sym_token_index: torch.Tensor,
 ):
     """Computes optimal transformations for each predicted molecule onto the anchor.
 
@@ -479,11 +477,11 @@ def get_anchor_transformations(
             The entity ID of the anchor molecule.
         pred_coords (torch.Tensor):
             [N, 3] the coordinates of the predicted molecules' token center atoms.
-        pred_perm_entity_id (torch.Tensor):
+        pred_mol_entity_id (torch.Tensor):
             [N] the entity IDs of the predicted molecules' token center atoms.
-        pred_perm_sym_id (torch.Tensor):
+        pred_mol_sym_id (torch.Tensor):
             [N] the symmetry IDs of the predicted molecules' token center atoms.
-        pred_perm_sym_token_index (torch.Tensor):
+        pred_mol_sym_token_index (torch.Tensor):
             [N] the sym_token_index values of the predicted molecules' token center
             atoms.
 
@@ -500,25 +498,23 @@ def get_anchor_transformations(
     """
 
     # Get all the molecules in the pred that are equivalent to the anchor
-    pred_entity_mask = pred_perm_entity_id == gt_anchor_entity_id
+    pred_entity_mask = pred_mol_entity_id == gt_anchor_entity_id
     pred_coords_entity = pred_coords[pred_entity_mask]
-    pred_perm_sym_id_entity = pred_perm_sym_id[pred_entity_mask]
-    pred_perm_sym_token_index_entity = pred_perm_sym_token_index[pred_entity_mask]
+    pred_mol_sym_id_entity = pred_mol_sym_id[pred_entity_mask]
+    pred_mol_sym_token_index_entity = pred_mol_sym_token_index[pred_entity_mask]
 
-    pred_sym_ids = torch.unique(pred_perm_sym_id_entity)
+    pred_sym_ids = torch.unique(pred_mol_sym_id_entity)
 
     transformations = []
 
     # Transform each equivalent predicted molecule onto the anchor molecule
     for sym_id in pred_sym_ids:
-        pred_sym_mask = pred_perm_sym_id_entity == sym_id
+        pred_sym_mask = pred_mol_sym_id_entity == sym_id
 
         # Get the part of the full anchor chain that matches the in-crop segment
         gt_segment_mask = get_gt_segment_mask(
-            segment_perm_sym_token_index=pred_perm_sym_token_index_entity[
-                pred_sym_mask
-            ],
-            gt_perm_sym_token_index=gt_anchor_sym_token_index,
+            segment_mol_sym_token_index=pred_mol_sym_token_index_entity[pred_sym_mask],
+            gt_mol_sym_token_index=gt_anchor_sym_token_index,
         )
         gt_segment_coords = gt_anchor_coords[gt_segment_mask]
         gt_segment_resolved_mask = gt_anchor_resolved_mask[gt_segment_mask]
@@ -546,18 +542,60 @@ def get_anchor_transformations(
 def find_greedy_optimal_mol_permutation(
     gt_token_center_positions_transformed: torch.Tensor,
     gt_token_center_resolved_mask: torch.Tensor,
-    gt_perm_entity_ids: torch.Tensor,
-    gt_perm_sym_ids: torch.Tensor,
-    gt_perm_sym_token_index: torch.Tensor,
+    gt_mol_entity_ids: torch.Tensor,
+    gt_mol_sym_ids: torch.Tensor,
+    gt_mol_sym_token_index: torch.Tensor,
     pred_token_center_positions: torch.Tensor,
-    pred_perm_entity_ids: torch.Tensor,
-    pred_perm_sym_ids: torch.Tensor,
-    pred_perm_sym_token_index: torch.Tensor,
+    pred_mol_entity_ids: torch.Tensor,
+    pred_mol_sym_ids: torch.Tensor,
+    pred_mol_sym_token_index: torch.Tensor,
 ) -> dict[tuple[int, int], tuple[int, int]]:
+    """Finds the optimal (entity_id, sym_id) -> (entity_id, sym_id) mapping.
+
+    This function identifies the optimal mapping between symmetric molecules in the
+    prediction and the ground-truth, mostly following the Assignment stage of
+    AlphaFold2-Multimer (7.3.2). Molecules are greedily assigned to their best matching
+    partner by using greedy token center centroid matching under each anchor alignment.
+
+    NOTE: A slight difference to the AF2-Multimer algorithm is that we do not map the
+    predicted molecules to ground-truth molecules in an arbitrary order, but instead
+    sort the predicted molecules by the number of resolved atoms in the corresponding
+    ground-truth segments first. This can give a slightly more stable mapping,
+    especially in edge-cases where a predicted molecules has no unresolved atoms in the
+    ground-truth and could arbitrarily "steal" a ground-truth segment that would map
+    better to another symmetry-equivalent predicted molecule.
+
+    Args:
+        gt_token_center_positions_transformed (torch.Tensor):
+            [N_aln, N, 3] the transformed token center positions of the ground-truth
+                          molecules under each anchor alignment.
+        gt_token_center_resolved_mask (torch.Tensor):
+            [N] mask of resolved token center atoms in the ground-truth molecules.
+        gt_mol_entity_ids (torch.Tensor):
+            [N] the entity IDs of the ground-truth token center atoms.
+        gt_mol_sym_ids (torch.Tensor):
+            [N] the symmetry IDs of the ground-truth token center atoms.
+        gt_mol_sym_token_index (torch.Tensor):
+            [N] the sym_token_index values of the ground-truth token center atoms.
+        pred_token_center_positions (torch.Tensor):
+            [N, 3] the token center positions of the predicted molecules.
+        pred_mol_entity_ids (torch.Tensor):
+            [N] the entity IDs of the predicted molecules.
+        pred_mol_sym_ids (torch.Tensor):
+            [N] the symmetry IDs of the predicted molecules.
+        pred_mol_sym_token_index (torch.Tensor):
+            [N] the sym_token_index values of the predicted molecules.
+
+    Returns:
+        dict[tuple[int, int], tuple[int, int]]:
+            A dictionary defining a mapping between each predicted molecule and
+            corresponding ground-truth molecule, both uniquely identified by their
+            (entity_id, sym_id) pair.
+    """
     gt_token_center_resolved_mask = gt_token_center_resolved_mask.bool()
 
     # Get the unique entity IDs
-    unique_pred_perm_entity_ids = torch.unique(pred_perm_entity_ids)
+    unique_pred_mol_entity_ids = torch.unique(pred_mol_entity_ids)
 
     # Keep track of centroid distances and permutations over all anchor alignments
     centroid_dists_sq = []
@@ -569,17 +607,19 @@ def find_greedy_optimal_mol_permutation(
         permutation_aln = {}
 
         # Resolve permutation for each entity group separately
-        for entity_id in unique_pred_perm_entity_ids:
-            pred_entity_mask = pred_perm_entity_ids == entity_id
-            pred_coords_entity = pred_token_center_positions[pred_entity_mask]
-            pred_sym_ids_entity = pred_perm_sym_ids[pred_entity_mask]
-            pred_sym_token_index_entity = pred_perm_sym_token_index[pred_entity_mask]
+        for entity_id in unique_pred_mol_entity_ids:
+            entity_id = entity_id.item()
 
-            gt_entity_mask = gt_perm_entity_ids == entity_id
+            pred_entity_mask = pred_mol_entity_ids == entity_id
+            pred_coords_entity = pred_token_center_positions[pred_entity_mask]
+            pred_sym_ids_entity = pred_mol_sym_ids[pred_entity_mask]
+            pred_sym_token_index_entity = pred_mol_sym_token_index[pred_entity_mask]
+
+            gt_entity_mask = gt_mol_entity_ids == entity_id
             gt_coords_entity = gt_token_center_coords[gt_entity_mask]
             gt_resolved_mask_entity = gt_token_center_resolved_mask[gt_entity_mask]
-            gt_sym_ids_entity = gt_perm_sym_ids[gt_entity_mask]
-            gt_sym_token_index_entity = gt_perm_sym_token_index[gt_entity_mask]
+            gt_sym_ids_entity = gt_mol_sym_ids[gt_entity_mask]
+            gt_sym_token_index_entity = gt_mol_sym_token_index[gt_entity_mask]
 
             # Split ground-truth features into symmetric instances
             (
@@ -606,27 +646,45 @@ def find_greedy_optimal_mol_permutation(
             # All these should be equivalent, so we just take the first one
             gt_sym_token_index_segment = gt_sym_token_index_entity_split[0]
 
-            # Shuffle order of molecules (avoids any bias on the PDB ordering)
             unique_pred_sym_ids_entity = torch.unique(pred_sym_ids_entity)
-            unique_pred_sym_ids_entity = unique_pred_sym_ids_entity[
-                torch.randperm(unique_pred_sym_ids_entity.shape[0])
-            ]
+
+            # Precompute the segment masks which indicate what segment of each
+            # ground-truth symmetry-equivalent molecule corresponds to a particular
+            # predicted molecule
+            pred_sym_id_to_segment_mask = {
+                sym_id: get_gt_segment_mask(
+                    segment_mol_sym_token_index=pred_sym_token_index_entity[
+                        pred_sym_ids_entity == sym_id
+                    ],
+                    gt_mol_sym_token_index=gt_sym_token_index_segment,
+                )
+                for sym_id in unique_pred_sym_ids_entity.tolist()
+            }
+
+            # Get the number of resolved ground-truth atoms in the ground-truth segments
+            # corresponding to this predicted molecule
+            pred_sym_id_to_n_resolved_gt = {
+                sym_id: gt_resolved_mask_entity_split[:, mask].sum()
+                for sym_id, mask in pred_sym_id_to_segment_mask.items()
+            }
+
+            # Sort the predicted symmetry IDs by the number of resolved atoms in the
+            # corresponding ground-truth segments, so that predicted molecules with the
+            # least ambiguous mappings are considered first (slight deviation from
+            # AF2-Multimer)
+            unique_pred_sym_ids_entity_sorted = sorted(
+                unique_pred_sym_ids_entity.tolist(),
+                key=lambda sym_id: pred_sym_id_to_n_resolved_gt[sym_id],
+                reverse=True,
+            )
 
             # Track which ground-truth symmetry IDs have already been assigned
             used_gt_sym_ids = []
 
             # Run greedy assignment for this entity
-            for sym_id in unique_pred_sym_ids_entity:
-                # Get particular in-crop segment of the predicted molecule
-                pred_sym_token_index_segment = pred_sym_token_index_entity[
-                    pred_sym_ids_entity == sym_id
-                ]
-
+            for sym_id in unique_pred_sym_ids_entity_sorted:
                 # Match the segment of the predicted molecule
-                gt_segment_mask = get_gt_segment_mask(
-                    segment_perm_sym_token_index=pred_sym_token_index_segment,
-                    gt_perm_sym_token_index=gt_sym_token_index_segment,
-                )
+                gt_segment_mask = pred_sym_id_to_segment_mask[sym_id]
 
                 # [N_sym, N, 3] -> [N_sym, N_segment, 3]
                 gt_coords_entity_segment = gt_coords_entity_split[:, gt_segment_mask, :]
@@ -645,7 +703,7 @@ def find_greedy_optimal_mol_permutation(
                 # on the GT side indvidually for each symmetric ground-truth molecule
                 # [N_segment, 3]
                 pred_coords_sym = pred_coords_entity[pred_sym_ids_entity == sym_id]
-                # [N_sym, 3]
+                # [N_sym, 3] (N_sym because a different mask is used for each symm. gt)
                 pred_coords_sym_centroid = get_centroid(
                     pred_coords_sym.unsqueeze(0), gt_resolved_mask_entity_segment
                 )
@@ -660,7 +718,10 @@ def find_greedy_optimal_mol_permutation(
 
                 # Mask already used IDs
                 used_gt_sym_ids_mask = torch.isin(
-                    gt_unique_sym_ids_entity, torch.tensor(used_gt_sym_ids)
+                    gt_unique_sym_ids_entity,
+                    torch.tensor(
+                        used_gt_sym_ids, device=gt_unique_sym_ids_entity.device
+                    ),
                 )
                 pred_gt_dists_sq[used_gt_sym_ids_mask] = torch.inf
 
@@ -675,7 +736,7 @@ def find_greedy_optimal_mol_permutation(
 
                 # Get the best matching ground-truth symmetry ID
                 best_gt_index = torch.argmin(pred_gt_dists_sq)
-                best_gt_sym_id = gt_unique_sym_ids_entity[best_gt_index]
+                best_gt_sym_id = gt_unique_sym_ids_entity[best_gt_index].item()
                 best_gt_sym_id_dist_sq = pred_gt_dists_sq[best_gt_index]
 
                 centroid_dists_sq_aln.append(best_gt_sym_id_dist_sq)
@@ -683,15 +744,15 @@ def find_greedy_optimal_mol_permutation(
 
                 # Append the mapping between the predicted and ground-truth symmetry and
                 # entity IDs to the permutation
-                permutation_aln[(entity_id.item(), sym_id.item())] = (
-                    entity_id.item(),
-                    best_gt_sym_id.item(),
+                permutation_aln[(entity_id, sym_id)] = (
+                    entity_id,
+                    best_gt_sym_id,
                 )
 
         centroid_dists_sq.append(centroid_dists_sq_aln)
         permutations.append(permutation_aln)
 
-    centroid_dists_sq = torch.tensor(centroid_dists_sq)
+    centroid_dists_sq = torch.tensor(centroid_dists_sq, device=gt_mol_sym_ids.device)
 
     # Change the max-value placeholder of entirely unresolved chains to be just above
     # the max of any resolved centroid distance for numerical stability
@@ -721,31 +782,67 @@ def find_greedy_optimal_mol_permutation(
     return optimal_permutation
 
 
-def get_permuted_gt_segment_token_index(
-    gt_token_center_positions: torch.Tensor,
-    gt_token_center_resolved_mask: torch.Tensor,
-    gt_perm_entity_ids: torch.Tensor,
-    gt_perm_sym_ids: torch.Tensor,
-    gt_perm_sym_token_index: torch.Tensor,
-    pred_token_center_positions: torch.Tensor,
-    pred_perm_entity_ids: torch.Tensor,
-    pred_perm_sym_ids: torch.Tensor,
-    pred_perm_sym_token_index: torch.Tensor,
+# TODO: Could restrict global alignment to non-symmetric atoms which could be slightly
+# cleaner
+def get_permuted_gt_token_subset_index(
+    gt_mol_entity_ids: torch.Tensor,
+    gt_mol_sym_ids: torch.Tensor,
+    gt_mol_sym_token_index: torch.Tensor,
+    pred_mol_entity_ids: torch.Tensor,
+    pred_mol_sym_ids: torch.Tensor,
+    pred_mol_sym_token_index: torch.Tensor,
     optimal_permutation: dict[tuple[int, int], tuple[int, int]],
-):
-    gt_token_center_resolved_mask = gt_token_center_resolved_mask.bool()
+) -> torch.Tensor:
+    """Gets a selector for the ground-truth tokens to map to the predicted tokens.
+
+    This function creates a selection-index on token-level features that will reorder
+    and subset the ground-truth tokens in a way that there is a direct 1:1
+    correspondence between predicted and GT-tokens following the optimal molecule
+    permutation.
+
+    Note that in the case of ligand molecules, the resulting pred-gt mapping of
+    token-center atoms is not yet an optimized intra-ligand atom-wise permutation, but
+    represents an arbitrary mapping of the predicted ligand molecules to the
+    ground-truth ligand molecules. This may introduce slight noise in the alignment but
+    seems negligible in practice for most complexes.
+
+    Args:
+        gt_mol_entity_ids (torch.Tensor):
+            [N] the molecular entity IDs of the ground-truth token center atoms.
+        gt_mol_sym_ids (torch.Tensor):
+            [N] the molecular symmetry IDs of the ground-truth token center atoms.
+        gt_mol_sym_token_index (torch.Tensor):
+            [N] the molecular symmetry token indices of the ground-truth token center
+            atoms.
+        pred_mol_entity_ids (torch.Tensor):
+            [N] the molecular entity IDs of the predicted token center atoms.
+        pred_mol_sym_ids (torch.Tensor):
+            [N] the molecular symmetry IDs of the predicted token center atoms.
+        pred_mol_sym_token_index (torch.Tensor):
+            [N] the molecular symmetry token indices of the predicted token center
+            atoms.
+        optimal_permutation (dict[tuple[int, int], tuple[int, int]]):
+            The optimal mapping of (entity_id, sym_id) pairs between the predicted and
+            ground-truth molecules.
+
+    Returns:
+        torch.Tensor:
+            An index tensor of shape [N_pred] that selects the ground-truth token center
+            atoms that correspond to the predicted token center atoms.
+    """
+    device = pred_mol_entity_ids.device
 
     # Final index that will rearrange gt-token features to exactly match the prediction
     # (both in terms of matching the in-crop segment and the permuted order)
+    n_tokens_pred = pred_mol_entity_ids.shape[0]
     token_subset_index = -torch.ones(
-        pred_token_center_positions.shape[0],
+        n_tokens_pred,
         dtype=torch.long,
-        device=pred_token_center_positions.device,
+        device=device,
     )
 
-    gt_token_index = torch.arange(
-        gt_token_center_positions.shape[0], device=gt_token_center_positions.device
-    )
+    n_tokens_gt = gt_mol_entity_ids.shape[0]
+    gt_token_index = torch.arange(n_tokens_gt, device=device)
 
     for (pred_entity_id, pred_sym_id), (
         gt_entity_id,
@@ -753,26 +850,26 @@ def get_permuted_gt_segment_token_index(
     ) in optimal_permutation.items():
         # The exact section of the prediction feature tensor that corresponds to the
         # current (entity, sym) segment
-        pred_segment_mask = (pred_perm_entity_ids == pred_entity_id) & (
-            pred_perm_sym_ids == pred_sym_id
+        pred_segment_mask = (pred_mol_entity_ids == pred_entity_id) & (
+            pred_mol_sym_ids == pred_sym_id
         )
 
         # The exact section of the ground-truth feature tensor that corresponds to the
         # matching (entity, sym) segment as given by the optimal permutation
         gt_segment_mask = get_gt_segment_mask(
-            segment_perm_sym_token_index=pred_perm_sym_token_index[pred_segment_mask],
-            gt_perm_sym_token_index=gt_perm_sym_token_index,
-            segment_perm_entity_id=gt_entity_id,
-            segment_perm_sym_id=gt_sym_id,
-            gt_perm_entity_id=gt_perm_entity_ids,
-            gt_perm_sym_id=gt_perm_sym_ids,
+            segment_mol_sym_token_index=pred_mol_sym_token_index[pred_segment_mask],
+            gt_mol_sym_token_index=gt_mol_sym_token_index,
+            segment_mol_entity_id=gt_entity_id,
+            segment_mol_sym_id=gt_sym_id,
+            gt_mol_entity_id=gt_mol_entity_ids,
+            gt_mol_sym_id=gt_mol_sym_ids,
         )
 
         # Insert the corresponding token index
         token_subset_index[pred_segment_mask] = gt_token_index[gt_segment_mask]
 
     assert torch.all(token_subset_index != -1)
-    assert torch.equal(gt_perm_entity_ids[token_subset_index], pred_perm_entity_ids)
+    assert torch.equal(gt_mol_entity_ids[token_subset_index], pred_mol_entity_ids)
 
     return token_subset_index
 
@@ -780,29 +877,70 @@ def get_permuted_gt_segment_token_index(
 def get_pred_to_permuted_gt_transformation(
     gt_token_center_positions: torch.Tensor,
     gt_token_center_resolved_mask: torch.Tensor,
-    gt_perm_entity_ids: torch.Tensor,
-    gt_perm_sym_ids: torch.Tensor,
-    gt_perm_sym_token_index: torch.Tensor,
+    gt_mol_entity_ids: torch.Tensor,
+    gt_mol_sym_ids: torch.Tensor,
+    gt_mol_sym_token_index: torch.Tensor,
     pred_token_center_positions: torch.Tensor,
-    pred_perm_entity_ids: torch.Tensor,
-    pred_perm_sym_ids: torch.Tensor,
-    pred_perm_sym_token_index: torch.Tensor,
+    pred_mol_entity_ids: torch.Tensor,
+    pred_mol_sym_ids: torch.Tensor,
+    pred_mol_sym_token_index: torch.Tensor,
     optimal_permutation: dict[tuple[int, int], tuple[int, int]],
-) -> torch.Tensor:
+) -> Transformation:
+    """Computes a Kabsch alignment between pred. and GT following optimal permutation.
+
+    This function computes a Kabsch alignment of the predicted coordinates to the
+    ground-truth coordinates after the optimal molecule-wise permutation has been
+    applied. The resulting aligned structure can be used to resolve the intra-residue
+    symmetric atom permutations, following AF3 SI 4.2.
+
+    Note that the alignment computation for symmetric atoms will have to use the
+    arbitrary original permutation, as the intra-residue atom assignment is not yet
+    known.
+
+    Args:
+        gt_token_center_positions (torch.Tensor):
+            [N, 3] the token center positions of the ground-truth molecules.
+        gt_token_center_resolved_mask (torch.Tensor):
+            [N] mask of resolved token center atoms in the ground-truth molecules.
+        gt_mol_entity_ids (torch.Tensor):
+            [N] the molecular entity IDs of the ground-truth token center atoms.
+        gt_mol_sym_ids (torch.Tensor):
+            [N] the molecular symmetry IDs of the ground-truth token center atoms.
+        gt_mol_sym_token_index (torch.Tensor):
+            [N] the molecular symmetry token indices of the ground-truth token center
+            atoms.
+        pred_token_center_positions (torch.Tensor):
+            [N, 3] the token center positions of the predicted molecules.
+        pred_mol_entity_ids (torch.Tensor):
+            [N] the molecular entity IDs of the predicted token center atoms.
+        pred_mol_sym_ids (torch.Tensor):
+            [N] the molecular symmetry IDs of the predicted token center atoms.
+        pred_mol_sym_token_index (torch.Tensor):
+            [N] the molecular symmetry token indices of the predicted token center
+            atoms.
+        optimal_permutation (dict[tuple[int, int], tuple[int, int]]):
+            The optimal mapping of (entity_id, sym_id) pairs between the predicted and
+            ground-truth molecules.
+    Returns:
+        Transformation:
+            A NamedTuple containing the rotation matrix and translation vector of the
+            optimal transformation, such that:
+
+            pred_token_center_positions @ R + t ≈ gt_token_center_positions
+    """
+
     # Rearrange and subset the ground-truth coordinates to match the prediction (this
-    # uses an arbitrary assignment of symmetry-equivalent atoms based on the original
-    # ordering)
-    gt_token_subset_index = get_permuted_gt_segment_token_index(
-        gt_token_center_positions,
-        gt_token_center_resolved_mask,
-        gt_perm_entity_ids,
-        gt_perm_sym_ids,
-        gt_perm_sym_token_index,
-        pred_token_center_positions,
-        pred_perm_entity_ids,
-        pred_perm_sym_ids,
-        pred_perm_sym_token_index,
-        optimal_permutation,
+    # maps the overall symmetric molecules onto each other following the optimal
+    # permutation, but still uses an arbitrary assignment of symmetry-equivalent
+    # intra-residue atoms based on the original ordering)
+    gt_token_subset_index = get_permuted_gt_token_subset_index(
+        gt_mol_entity_ids=gt_mol_entity_ids,
+        gt_mol_sym_ids=gt_mol_sym_ids,
+        gt_mol_sym_token_index=gt_mol_sym_token_index,
+        pred_mol_entity_ids=pred_mol_entity_ids,
+        pred_mol_sym_ids=pred_mol_sym_ids,
+        pred_mol_sym_token_index=pred_mol_sym_token_index,
+        optimal_permutation=optimal_permutation,
     )
 
     gt_token_center_positions_rearranged = gt_token_center_positions[
@@ -813,73 +951,118 @@ def get_pred_to_permuted_gt_transformation(
     ]
 
     transformation = get_optimal_transformation(
-        pred_token_center_positions,
-        gt_token_center_positions_rearranged,
-        gt_token_center_resolved_mask_rearranged,
+        mobile_positions=pred_token_center_positions,
+        target_positions=gt_token_center_positions_rearranged,
+        positions_mask=gt_token_center_resolved_mask_rearranged,
     )
 
     return transformation
 
 
-# TODO: should broacdcasting happen inside this?
-# do I want to keep these variables this general if they're unpadded?
 def get_final_atom_permutation_index(
     gt_positions: torch.Tensor,
     gt_resolved_mask: torch.Tensor,
-    gt_perm_entity_id: torch.Tensor,
-    gt_perm_sym_id: torch.Tensor,
-    gt_perm_sym_conformer_id: torch.Tensor,
+    gt_mol_entity_id: torch.Tensor,
+    gt_mol_sym_id: torch.Tensor,
+    gt_mol_sym_component_id: torch.Tensor,
     gt_num_atoms_per_token: torch.Tensor,
-    pred_positions: torch.Tensor,
-    pred_perm_entity_id: torch.Tensor,
-    pred_perm_sym_id: torch.Tensor,
-    pred_perm_sym_conformer_id: torch.Tensor,
+    pred_positions_aligned: torch.Tensor,
+    pred_mol_entity_id: torch.Tensor,
+    pred_mol_sym_id: torch.Tensor,
+    pred_mol_sym_component_id: torch.Tensor,
     pred_num_atoms_per_token: torch.Tensor,
     pred_ref_space_uid: torch.Tensor,
     pred_ref_space_uid_to_perm: dict[int, torch.Tensor],
     optimal_mol_permutation: dict[tuple[int, int], tuple[int, int]],
 ):
+    """Gets the final atom-level index tensor to permute the ground-truth atoms.
+
+    Starting from the optimal molecule-wise permutation and a prediction coordinates
+    Kabsch-aligned to the ground-truth, this function computes the optimal atom-level
+    index that reorders and subsets the ground-truth atoms to best match the prediction.
+    In contrast to the molecule-wise permutation, this also resolved the intra-residue
+    symmetric atom permutations by minimizing RMSD, following AF3 SI 4.2.
+
+    Args:
+        gt_positions (torch.Tensor):
+            [N, 3] the ground-truth all-atom positions.
+        gt_resolved_mask (torch.Tensor):
+            [N] mask of resolved atoms in the ground-truth.
+        gt_mol_entity_id (torch.Tensor):
+            [N] the entity IDs of the ground-truth tokens.
+        gt_mol_sym_id (torch.Tensor):
+            [N] the symmetry IDs of the ground-truth tokens.
+        gt_mol_sym_component_id (torch.Tensor):
+            [N] the symmetry component IDs of the ground-truth tokens.
+        gt_num_atoms_per_token (torch.Tensor):
+            [N] the number of atoms per ground-truth token.
+        pred_positions_aligned (torch.Tensor):
+            [N, 3] the predicted all-atom positions aligned to the ground-truth.
+        pred_mol_entity_id (torch.Tensor):
+            [N] the entity IDs of the predicted tokens.
+        pred_mol_sym_id (torch.Tensor):
+            [N] the symmetry IDs of the predicted tokens.
+        pred_mol_sym_component_id (torch.Tensor):
+            [N] the symmetry component IDs of the predicted tokens.
+        pred_num_atoms_per_token (torch.Tensor):
+            [N] the number of atoms per predicted token.
+        pred_ref_space_uid (torch.Tensor):
+            [N] the ref_space_uids (absolute component IDs) of the predicted tokens.
+        pred_ref_space_uid_to_perm (dict[int, torch.Tensor]):
+            A dictionary mapping ref_space_uids to the possible relative ground-truth
+            atom permutations.
+        optimal_mol_permutation (dict[tuple[int, int], tuple[int, int]]):
+            The optimal mapping of (entity_id, sym_id) pairs between the predicted and
+            ground-truth molecules.
+
+    Returns:
+        torch.Tensor:
+            An index tensor of shape [N_pred] that selects the ground-truth atoms that
+            correspond to the predicted atoms.
+    """
     gt_resolved_mask = gt_resolved_mask.bool()
 
     # Will create a final indexing operation into the gt-features (initialize to -1 just
     # for easier assert at the end)
     atom_subset_index = -torch.ones(
-        pred_positions.shape[0], dtype=torch.long, device=pred_positions.device
+        pred_positions_aligned.shape[0],
+        dtype=torch.long,
+        device=pred_positions_aligned.device,
     )
 
     # Indices of all atoms in the ground-truth
     gt_all_atom_index = torch.arange(gt_positions.shape[0], device=gt_positions.device)
 
     # Expand features to atom-wise level
-    dummy_token_mask = torch.ones_like(pred_perm_entity_id, dtype=torch.bool)
+    dummy_token_mask = torch.ones_like(pred_mol_entity_id, dtype=torch.bool)
     pred_token_feat_to_atoms = partial(
         broadcast_token_feat_to_atoms,
         dummy_token_mask,
         pred_num_atoms_per_token,
     )
-    pred_perm_entity_id_atom = pred_token_feat_to_atoms(token_feat=pred_perm_entity_id)
-    pred_perm_sym_id_atom = pred_token_feat_to_atoms(pred_perm_sym_id)
-    pred_sym_conformer_id_atom = pred_token_feat_to_atoms(pred_perm_sym_conformer_id)
+    pred_mol_entity_id_atom = pred_token_feat_to_atoms(token_feat=pred_mol_entity_id)
+    pred_mol_sym_id_atom = pred_token_feat_to_atoms(pred_mol_sym_id)
+    pred_sym_conformer_id_atom = pred_token_feat_to_atoms(pred_mol_sym_component_id)
 
-    dummy_token_mask = torch.ones_like(gt_perm_entity_id, dtype=torch.bool)
+    dummy_token_mask = torch.ones_like(gt_mol_entity_id, dtype=torch.bool)
     gt_token_feat_to_atoms = partial(
         broadcast_token_feat_to_atoms,
         dummy_token_mask,
         gt_num_atoms_per_token,
     )
-    gt_perm_entity_id_atom = gt_token_feat_to_atoms(gt_perm_entity_id)
-    gt_perm_sym_id_atom = gt_token_feat_to_atoms(gt_perm_sym_id)
-    gt_sym_conformer_id_atom = gt_token_feat_to_atoms(gt_perm_sym_conformer_id)
+    gt_mol_entity_id_atom = gt_token_feat_to_atoms(gt_mol_entity_id)
+    gt_mol_sym_id_atom = gt_token_feat_to_atoms(gt_mol_sym_id)
+    gt_sym_conformer_id_atom = gt_token_feat_to_atoms(gt_mol_sym_component_id)
 
     for (pred_entity_id, pred_sym_id), (
         gt_entity_id,
         gt_sym_id,
     ) in optimal_mol_permutation.items():
         # Subset the predicted coords to current entity and symmetry ID
-        pred_mask = (pred_perm_entity_id_atom == pred_entity_id) & (
-            pred_perm_sym_id_atom == pred_sym_id
+        pred_mask = (pred_mol_entity_id_atom == pred_entity_id) & (
+            pred_mol_sym_id_atom == pred_sym_id
         )
-        pred_positions_subset = pred_positions[pred_mask]
+        pred_positions_subset = pred_positions_aligned[pred_mask]
         pred_ref_space_uids_subset = pred_ref_space_uid[pred_mask]
 
         pred_sym_conformer_id_atom_subset = pred_sym_conformer_id_atom[pred_mask]
@@ -888,8 +1071,8 @@ def get_final_atom_permutation_index(
         )
 
         # Subset ground-truth coords to current entity and symmetry ID
-        gt_mask = (gt_perm_entity_id_atom == gt_entity_id) & (
-            gt_perm_sym_id_atom == gt_sym_id
+        gt_mask = (gt_mol_entity_id_atom == gt_entity_id) & (
+            gt_mol_sym_id_atom == gt_sym_id
         )
         # Subset ground-truth to only the conformer-instances present in the prediction
         # (while still including potential extra symmetry-expanded atoms)
@@ -987,40 +1170,36 @@ def get_final_atom_permutation_index(
         # permutation. We use pred_mask here to ensure that we directly match the layout
         # of the pred-features, even if the features belonging to a connected molecule
         # are not contiguous.
-        atom_subset_index[pred_mask] = torch.tensor(permuted_atom_idxs)
+        atom_subset_index[pred_mask] = torch.tensor(
+            permuted_atom_idxs, device=gt_mol_sym_id.device
+        )
 
     assert torch.all(atom_subset_index != -1)
 
     return atom_subset_index
 
 
-def atom_subset_index_to_token_subset_index(
-    atom_subset_index: torch.Tensor,
-    gt_atoms_per_token: torch.Tensor,
-) -> torch.Tensor:
-    # Create an equivalent token subset index from the atom subset index
-    gt_token_index = torch.arange(
-        gt_atoms_per_token.shape[0], device=atom_subset_index.device
-    )
-    gt_token_index_atom = broadcast_token_feat_to_atoms(
-        torch.ones_like(gt_token_index, dtype=torch.bool),
-        gt_atoms_per_token,
-        gt_token_index,
-    )
-    gt_token_index_atom = gt_token_index_atom[atom_subset_index]
-    token_subset_index = torch.unique_consecutive(gt_token_index_atom)
+def permute_gt_atom_features(
+    features: list[torch.Tensor],
+    atom_indexes: list[torch.Tensor],
+) -> tuple[torch.Tensor]:
+    """Permute ground-truth atom-wise features according to a given index tensor.
 
-    return token_subset_index
+    Args:
+        features: (list[torch.Tensor]):
+            A list of atom-wise features to permute. Each tensor should have shape [B,
+            N, ...] where B is the batch size and N is the number of atoms.
+        atom_indexes (list[torch.Tensor]):
+            A list of atom indices to permute the features for each batch. The list
+            should be of length B, and each tensor should have shape [N'] where N' is
+            the number of atoms in the permuted order.
 
-
-def permute_gt_position_features(
-    gt_positions: torch.Tensor,
-    gt_resolved_mask: torch.Tensor,
-    atom_indexes: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    batch_size = gt_positions.shape[0]
-
-    features = [gt_positions, gt_resolved_mask]
+    Returns:
+        tuple[torch.Tensor]:
+            A tuple of permuted features of shape [B, N', ...], containing the features
+            in the same order as the input features list.
+    """
+    batch_size = features[0].shape[0]
     new_features = []
 
     for feat in features:
@@ -1031,20 +1210,35 @@ def permute_gt_position_features(
         )
         new_features.append(new_feat)
 
-    gt_positions, gt_resolved_mask = new_features
-
-    return gt_positions, gt_resolved_mask
+    return tuple(new_features)
 
 
 def update_gt_position_features(
     batch: dict, gt_atom_indexes: list[torch.Tensor]
 ) -> dict:
+    """Rearranges the ground-truth coordinates and resolved mask by index tensor.
+
+    Args:
+        batch (dict):
+            The initial feature dictionary containing a mini-batch of features.
+        gt_atom_indexes (list[torch.Tensor]):
+            A list of index tensors that permute the ground-truth atom-wise features for
+            each batch.
+
+    Returns:
+        dict:
+            The updated feature dictionary with the ground-truth "atom_positions" and
+            "atom_resolved_mask" features rearranged to perfectly match the prediction,
+            as defined by the given index tensors.
+    """
     ground_truth_features = deepcopy(batch["ground_truth"])
 
     gt_atom_positions_permuted, gt_atom_resolved_mask_permuted = (
-        permute_gt_position_features(
-            ground_truth_features["atom_positions"],
-            ground_truth_features["atom_resolved_mask"],
+        permute_gt_atom_features(
+            [
+                ground_truth_features["atom_positions"],
+                ground_truth_features["atom_resolved_mask"],
+            ],
             gt_atom_indexes,
         )
     )
@@ -1057,7 +1251,49 @@ def update_gt_position_features(
 
 def single_batch_multi_chain_permutation_alignment(
     single_batch: dict, single_predicted_positions: torch.Tensor
-):
+) -> torch.Tensor:
+    """Runs the whole permutation alignment algorithm for features of a single batch.
+
+    This function takes in a single batch of features without a batch dimension, and
+    runs through the whole permutation alignment algorithm to find the optimal atom-wise
+    subset & reordering of ground-truth atom features to match the predicted atom
+    features as well as possible. This follows section 4.2 of the AF3 SI, with some
+    slight deviations documented in corresponding functions.
+
+    Args:
+        single_batch (dict):
+            A dictionary containing the features of a single batch. The dictionary
+            should contain the following keys: - ground_truth
+                - token_mask: [N_token]
+                - atom_mask: [N_atom]
+                - atom_positions: [N_atom, 3]
+                - atom_resolved_mask: [N_atom]
+                - mol_entity_id: [N_token]
+                - mol_sym_id: [N_token]
+                - mol_sym_component_id: [N_token]
+                - mol_sym_token_index: [N_token]
+                - num_atoms_per_token: [N_token]
+                - is_ligand: [N_token]
+            - token_mask: [N_token]
+            - atom_mask: [N_atom]
+            - mol_entity_id: [N_token]
+            - mol_sym_id: [N_token]
+            - mol_sym_component_id: [N_token]
+            - mol_sym_token_index: [N_token]
+            - num_atoms_per_token: [N_token]
+            - ref_space_uid: [N_atom]
+            - ref_space_uid_to_perm:
+                dict[int, [N_permutations, N_conf_atoms]]
+
+        single_predicted_positions (torch.Tensor):
+            [N_atom_pred, 3] the predicted atom positions.
+
+    Returns:
+        torch.Tensor:
+            An index tensor of shape [N_atom_pred] that subselects and reorders the
+            ground-truth atom features to match the predicted atom features as well as
+            possible.
+    """
     # TODO: Note down what assumptions this function makes, especially with respect to
     # ordering of the mols
 
@@ -1065,30 +1301,28 @@ def single_batch_multi_chain_permutation_alignment(
 
     # Get relevant features and get rid of padding
     gt_token_pad_mask = gt_batch["token_mask"].bool()
-    gt_atom_pad_mask = gt_batch["atom_pad_mask"]
+    gt_atom_pad_mask = gt_batch["atom_mask"].bool()
     pred_token_pad_mask = single_batch["token_mask"].bool()
-    pred_atom_pad_mask = single_batch["atom_pad_mask"]
+    pred_atom_pad_mask = single_batch["atom_mask"].bool()
 
     gt_coords = gt_batch["atom_positions"][gt_atom_pad_mask]
     gt_resolved_mask = gt_batch["atom_resolved_mask"][gt_atom_pad_mask].bool()
-    gt_perm_entity_id = gt_batch["perm_entity_id"][gt_token_pad_mask]
-    gt_perm_sym_id = gt_batch["perm_sym_id"][gt_token_pad_mask]
-    gt_perm_sym_conformer_id = gt_batch["perm_sym_conformer_id"][
+    gt_mol_entity_id = gt_batch["mol_entity_id"][gt_token_pad_mask]
+    gt_mol_sym_id = gt_batch["mol_sym_id"][gt_token_pad_mask]
+    gt_mol_sym_component_id = gt_batch["mol_sym_component_id"][
         gt_token_pad_mask
     ]  # TODO: change this to atom-wise?
-    gt_perm_sym_token_index = gt_batch["perm_sym_token_index"][gt_token_pad_mask]
+    gt_mol_sym_token_index = gt_batch["mol_sym_token_index"][gt_token_pad_mask]
     gt_num_atoms_per_token = gt_batch["num_atoms_per_token"][gt_token_pad_mask]
     gt_is_ligand = gt_batch["is_ligand"][gt_token_pad_mask]
 
     pred_coords = single_predicted_positions[pred_atom_pad_mask]
-    pred_perm_entity_id = single_batch["perm_entity_id"][pred_token_pad_mask]
-    pred_perm_sym_id = single_batch["perm_sym_id"][pred_token_pad_mask]
-    pred_perm_sym_conformer_id = single_batch["perm_sym_conformer_id"][
+    pred_mol_entity_id = single_batch["mol_entity_id"][pred_token_pad_mask]
+    pred_mol_sym_id = single_batch["mol_sym_id"][pred_token_pad_mask]
+    pred_mol_sym_component_id = single_batch["mol_sym_component_id"][
         pred_token_pad_mask
     ]
-    pred_perm_sym_token_index = single_batch["perm_sym_token_index"][
-        pred_token_pad_mask
-    ]
+    pred_mol_sym_token_index = single_batch["mol_sym_token_index"][pred_token_pad_mask]
     pred_ref_space_uid = single_batch["ref_space_uid"][pred_atom_pad_mask]
     pred_ref_space_uid_to_perm = single_batch["ref_space_uid_to_perm"]
     pred_num_atoms_per_token = single_batch["num_atoms_per_token"][pred_token_pad_mask]
@@ -1114,25 +1348,25 @@ def single_batch_multi_chain_permutation_alignment(
     # Get the anchor molecule from the ground truth
     gt_anchor_mask = get_gt_anchor_mask(
         gt_token_center_mask,
-        gt_perm_entity_id,
-        gt_perm_sym_id,
+        gt_mol_entity_id,
+        gt_mol_sym_id,
         gt_is_ligand,
     )
     gt_anchor_coords = gt_token_center_coords[gt_anchor_mask]
     gt_anchor_resolved_mask = gt_token_center_mask[gt_anchor_mask]
-    gt_anchor_perm_entity_id = gt_perm_entity_id[gt_anchor_mask][0].item()
-    gt_anchor_perm_sym_token_index = gt_perm_sym_token_index[gt_anchor_mask]
+    gt_anchor_mol_entity_id = gt_mol_entity_id[gt_anchor_mask][0].item()
+    gt_anchor_mol_sym_token_index = gt_mol_sym_token_index[gt_anchor_mask]
 
     # Get transformations of ground-truth anchor molecule to predicted anchor molecules
     transformations = get_anchor_transformations(
         gt_anchor_coords,
         gt_anchor_resolved_mask,
-        gt_anchor_perm_sym_token_index,
-        gt_anchor_perm_entity_id,
+        gt_anchor_mol_sym_token_index,
+        gt_anchor_mol_entity_id,
         pred_token_center_coords,
-        pred_perm_entity_id,
-        pred_perm_sym_id,
-        pred_perm_sym_token_index,
+        pred_mol_entity_id,
+        pred_mol_sym_id,
+        pred_mol_sym_token_index,
     )
 
     gt_token_center_positions_transformed = apply_transformation(
@@ -1144,27 +1378,29 @@ def single_batch_multi_chain_permutation_alignment(
     optimal_mol_permutation = find_greedy_optimal_mol_permutation(
         gt_token_center_positions_transformed,
         gt_token_center_mask,
-        gt_perm_entity_id,
-        gt_perm_sym_id,
-        gt_perm_sym_token_index,
+        gt_mol_entity_id,
+        gt_mol_sym_id,
+        gt_mol_sym_token_index,
         pred_token_center_coords,
-        pred_perm_entity_id,
-        pred_perm_sym_id,
-        pred_perm_sym_token_index,
+        pred_mol_entity_id,
+        pred_mol_sym_id,
+        pred_mol_sym_token_index,
     )
 
+    # NOTE: Maybe alignments like these should be restricted to non-ligand token
+    # centers?
     # Get alignment of predicted token-center coordinates to the ground-truth
     # token-center coordinates before resolving the atom-level symmetry permutations
     pred_to_gt_transformation = get_pred_to_permuted_gt_transformation(
         gt_token_center_coords,
         gt_token_center_mask,
-        gt_perm_entity_id,
-        gt_perm_sym_id,
-        gt_perm_sym_token_index,
+        gt_mol_entity_id,
+        gt_mol_sym_id,
+        gt_mol_sym_token_index,
         pred_token_center_coords,
-        pred_perm_entity_id,
-        pred_perm_sym_id,
-        pred_perm_sym_token_index,
+        pred_mol_entity_id,
+        pred_mol_sym_id,
+        pred_mol_sym_token_index,
         optimal_mol_permutation,
     )
 
@@ -1176,14 +1412,14 @@ def single_batch_multi_chain_permutation_alignment(
     gt_atom_index = get_final_atom_permutation_index(
         gt_positions=gt_coords,
         gt_resolved_mask=gt_resolved_mask,
-        gt_perm_entity_id=gt_perm_entity_id,
-        gt_perm_sym_id=gt_perm_sym_id,
-        gt_perm_sym_conformer_id=gt_perm_sym_conformer_id,
+        gt_mol_entity_id=gt_mol_entity_id,
+        gt_mol_sym_id=gt_mol_sym_id,
+        gt_mol_sym_component_id=gt_mol_sym_component_id,
         gt_num_atoms_per_token=gt_num_atoms_per_token,
-        pred_positions=pred_coords_aligned,
-        pred_perm_entity_id=pred_perm_entity_id,
-        pred_perm_sym_id=pred_perm_sym_id,
-        pred_perm_sym_conformer_id=pred_perm_sym_conformer_id,
+        pred_positions_aligned=pred_coords_aligned,
+        pred_mol_entity_id=pred_mol_entity_id,
+        pred_mol_sym_id=pred_mol_sym_id,
+        pred_mol_sym_component_id=pred_mol_sym_component_id,
         pred_num_atoms_per_token=pred_num_atoms_per_token,
         pred_ref_space_uid=pred_ref_space_uid,
         pred_ref_space_uid_to_perm=pred_ref_space_uid_to_perm,
@@ -1232,8 +1468,22 @@ def multi_chain_permutation_alignment(batch: dict, output: dict):
     return ground_truth_features
 
 
-def naive_alignment(batch):
-    """Fallback that directly matches GT and predicted token IDs."""
+def naive_alignment(batch: dict) -> dict:
+    """Fallback that directly matches GT and predicted token IDs.
+
+    Matches ground-truth features to predicted features by directly matching the token
+    IDs. This therefore takes the arbitrary input permutation and does not attempt to
+    resolve any intra-residue symmetric atom permutations.
+
+    Args:
+        batch (dict):
+            The initial feature dictionary containing a mini-batch of features.
+
+    Returns:
+        dict:
+            The updated feature dictionary with the ground-truth "atom_positions" and
+            "atom_resolved_mask" features rearranged to match the prediction.
+    """
     pred_token_ids = batch["token_index"]
     gt_token_ids = batch["ground_truth"]["token_index"]
     pred_token_mask = batch["token_mask"].bool()
@@ -1246,12 +1496,20 @@ def naive_alignment(batch):
     # Match the GT atoms directly to the prediction by using the original token ID,
     # disregarding any potential permutation resolving
     for batch_id in range(batch_size):
+        pred_token_ids_batch = pred_token_ids[batch_id][pred_token_mask[batch_id]]
+        gt_token_ids_batch = gt_token_ids[batch_id][gt_token_mask[batch_id]]
+
+        # Sorted token IDs are required for the below logic to work
+        if not pred_token_ids_batch.diff().gt(0).all():
+            raise ValueError("'token_index' is not sorted.")
+        if not gt_token_ids_batch.diff().gt(0).all():
+            raise ValueError("'ground_truth.token_index' is not sorted.")
+
         gt_token_ids_atomized_batch = broadcast_token_feat_to_atoms(
             token_mask=gt_token_mask[batch_id],
             num_atoms_per_token=batch["ground_truth"]["num_atoms_per_token"][batch_id],
             token_feat=gt_token_ids[batch_id],
         )
-        pred_token_ids_batch = pred_token_ids[batch_id][pred_token_mask[batch_id]]
 
         atom_selection_mask = torch.isin(
             gt_token_ids_atomized_batch, pred_token_ids_batch
@@ -1264,9 +1522,39 @@ def naive_alignment(batch):
     return ground_truth_features
 
 
-def safe_multi_chain_permutation_alignment(batch: dict, output: dict):
+def safe_multi_chain_permutation_alignment(batch: dict, output: dict) -> dict:
+    """Runs the multi-chain permutation alignment algorithm with error handling.
+
+    This function attempts to run the multi-chain permutation alignment algorithm to
+    remap the ground-truth atom positions to match the predicted atom positions as well
+    as possible. If an error occurs during the alignment, it falls back to a naive
+    alignment that directly matches the ground-truth and predicted token IDs.
+
+    For more details, see the documentation of the `multi_chain_permutation_alignment`
+    and `single_batch_multi_chain_permutation_alignment` functions.
+
+    Args:
+        batch (dict):
+            The initial feature dictionary containing a mini-batch of features.
+        output (dict):
+            The output dictionary containing the predicted atom positions.
+
+    Returns:
+        dict:
+            The updated feature dictionary with the ground-truth "atom_positions" and
+            "atom_resolved_mask" features rearranged to match the prediction.
+    """
     try:
+        import random
+
+        if random.choice([True, False]):
+            logger.error("Raising random error.")
+            raise Exception("Random error")
+
         return multi_chain_permutation_alignment(batch, output)
     except Exception as e:
-        logger.error(f"Error during multi-chain permutation alignment: {e}")
+        tb = traceback.format_exc()
+        logger.error(
+            f"Caught error during multi-chain permutation alignment: {e}\n{tb}"
+        )
         return naive_alignment(batch)
