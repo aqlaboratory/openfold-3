@@ -64,17 +64,18 @@ def get_optimal_rotation_matrix(
 # comes from OF2 and is way overkill for this purpose
 class Transformation(NamedTuple):
     """Named tuple to store a rotation matrix and translation vector.
-    
+
     The transformation is stored in a way such that:
-    
+
     (mobile_positions @ rotation_matrix) + translation_vector ≈ target_positions
-    
+
     Attributes:
         rotation_matrix (torch.Tensor):
             [*, 3, 3] the rotation matrix (right-multiplied)
         translation_vector (torch.Tensor):
             [*, 3] the translation vector
     """
+
     rotation_matrix: torch.Tensor
     translation_vector: torch.Tensor
 

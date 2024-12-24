@@ -269,13 +269,13 @@ def get_cropped_permutations(
     max_permutations: int = 1_000,
 ) -> np.ndarray:
     """Get the subset of symmetry-equivalent atom permutations matching crop and GT.
-    
+
     This function computes the symmetry-equivalent atom permutations for a conformer
     using RDKit's `GetSubstructMatches` function. It then restricts these permutations
     so that the "slots" atoms can map to only correspond to atoms in the crop, and the
     indices atoms can be chosen from only correspond to atoms present in the
     ground-truth.
-    
+
     Args:
         mol:
             The molecule for which the permutations should be computed.
@@ -285,11 +285,11 @@ def get_cropped_permutations(
             A boolean mask of atoms in the crop.
         max_permutations:
             The maximum number of permutations to compute.
-    
+
     Returns:
         The symmetry-equivalent atom permutations that are valid for the crop and
         ground-truth.
-        
+
         Shape: [n_permutations, n_atoms_in_crop]
     """
     # Define a mapping from the atom indices in the full conformer object to the atom
