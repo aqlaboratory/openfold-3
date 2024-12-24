@@ -39,7 +39,7 @@ mha_init = ConfigDict(
 )
 
 # AF3
-block_sparse_mha_init = ConfigDict(
+att_pair_bias_mha_init = ConfigDict(
     {
         "linear_q": {"bias": True, "init": "glorot"},
         "linear_k": {"bias": False, "init": "glorot"},
@@ -67,7 +67,7 @@ att_pair_bias_init = ConfigDict(
         "ada_ln": ada_ln_init,
         "linear_ada_out": {"bias": True, "init": "gating_ada_zero"},
         "linear_z": {"bias": False, "init": "normal"},
-        "mha": block_sparse_mha_init,
+        "mha": att_pair_bias_mha_init,
     }
 )
 
