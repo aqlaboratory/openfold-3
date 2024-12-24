@@ -2,6 +2,7 @@ import logging
 from typing import Literal
 
 import numpy as np
+from func_timeout import FunctionTimedOut, func_set_timeout
 from rdkit import Chem
 from rdkit.Chem import AllChem, Mol
 
@@ -20,6 +21,7 @@ class ConformerGenerationError(ValueError):
     pass
 
 
+@func_set_timeout(30)
 def compute_conformer(
     mol: Mol, use_random_coord_init: bool = False, remove_hs: bool = True
 ) -> tuple[Mol, int]:
@@ -27,6 +29,7 @@ def compute_conformer(
 
     Wrapper around RDKit's EmbedMolecule, using ETKDGv3, handling hydrogen addition and
     removal, and raising an explicit ConformerGenerationError instead of returning -1.
+    A `FunctionTimedOut` exception is raised if conformer generation exceeds 30 seconds.
 
     Args:
         mol:
@@ -79,9 +82,9 @@ def multistrategy_compute_conformer(
     """Computes 3D coordinates for a molecule trying different initializations.
 
     Tries to compute 3D coordinates for a molecule using the standard RDKit ETKDGv3
-    strategy. If this fails, it falls back to using a different initializion for ETKDGv3
-    with random starting coordinates. If this also fails, a `ConformerGenerationError`
-    is raised.
+    strategy. If this fails or times out, it falls back to using a different
+    initialization for ETKDGv3 with random starting coordinates. If this also fails
+    or times out, a `ConformerGenerationError` is raised.
 
     Args:
         mol:
@@ -103,7 +106,7 @@ def multistrategy_compute_conformer(
         mol, conf_id = compute_conformer(
             mol, use_random_coord_init=False, remove_hs=remove_hs
         )
-    except ConformerGenerationError as e:
+    except (ConformerGenerationError, FunctionTimedOut) as e:
         logger.warning(
             f"Exception when trying standard conformer generation: {e}, "
             + "trying random initialization"
@@ -114,7 +117,7 @@ def multistrategy_compute_conformer(
             mol, conf_id = compute_conformer(
                 mol, use_random_coord_init=True, remove_hs=remove_hs
             )
-        except ConformerGenerationError as e:
+        except (ConformerGenerationError, FunctionTimedOut) as e:
             logger.warning(
                 "Exception when trying conformer generation with random "
                 + f"initialization: {e}"
