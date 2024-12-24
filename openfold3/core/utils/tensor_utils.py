@@ -110,36 +110,3 @@ def tree_map(fn, tree, leaf_type):
 
 
 tensor_tree_map = partial(tree_map, leaf_type=torch.Tensor)
-
-
-def sparsify_tensor(
-    x: torch.Tensor, mask: torch.Tensor, block: int, batch_dims: tuple[int]
-) -> torch.Tensor:
-    """Convert a regular tensor to sparse format"""
-    block_bias = (
-        x.to_sparse_bsr((block, block)).values().reshape(*batch_dims, -1, block, block)
-    )
-    ret = torch.index_select(
-        block_bias, dim=-3, index=torch.nonzero(mask.flatten()).squeeze()
-    )
-    return ret
-
-
-def convert_to_blocks_1d(x, dim, shift_interval, block_len, num_blocks):
-    if shift_interval == block_len:
-        blocks = torch.chunk(x, num_blocks, dim=dim)
-    else:
-        blocks = [
-            x.narrow(dim, shift_interval * i, block_len) for i in range(num_blocks)
-        ]
-    return torch.stack(blocks, dim=dim - 1)
-
-
-def convert_to_blocks_2d(x, dims, shift_interval, block_lens, num_blocks):
-    blocks = [
-        x.narrow(dims[0], shift_interval * i, block_lens[0]).narrow(
-            dims[1], shift_interval * i, block_lens[1]
-        )
-        for i in range(num_blocks)
-    ]
-    return torch.stack(blocks, dim=min(dims) - 1)
