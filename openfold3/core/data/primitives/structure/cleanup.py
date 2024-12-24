@@ -44,6 +44,7 @@ def return_on_empty_atom_array(func):
     return wrapper
 
 
+# TODO: Fix hetero annotation here
 @return_on_empty_atom_array
 def convert_MSE_to_MET(atom_array: AtomArray) -> None:
     """Converts selenomethionine (MSE) residues to methionine (MET) in-place
