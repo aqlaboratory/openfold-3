@@ -119,7 +119,7 @@ def _attention(
             scores += b
 
         # Normalize the scores
-        if triton_is_installed:
+        if triton_is_installed and scores.is_cuda:
             scores = fused_softmax(scores)
         else:
             scores = softmax_no_cast(scores, dim=-1)
