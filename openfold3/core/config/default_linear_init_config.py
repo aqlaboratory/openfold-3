@@ -14,15 +14,15 @@ from ml_collections import ConfigDict
 # AF3
 swiglu_init = ConfigDict(
     {
-        "linear_a": {"bias": False, "init": "he_normal"},
-        "linear_b": {"bias": False, "init": "he_normal"},
+        "linear_a": {"bias": False, "init": "relu"},
+        "linear_b": {"bias": False, "init": "relu"},
     }
 )
 
 # AF3
 ada_ln_init = ConfigDict(
     {
-        "linear_g": {"bias": True, "init": "gating"},
+        "linear_g": {"bias": True, "init": "final"},
         "linear_s": {"bias": False, "init": "final"},
     }
 )
@@ -39,7 +39,7 @@ mha_init = ConfigDict(
 )
 
 # AF3
-block_sparse_mha_init = ConfigDict(
+att_pair_bias_mha_init = ConfigDict(
     {
         "linear_q": {"bias": True, "init": "glorot"},
         "linear_k": {"bias": False, "init": "glorot"},
@@ -67,7 +67,7 @@ att_pair_bias_init = ConfigDict(
         "ada_ln": ada_ln_init,
         "linear_ada_out": {"bias": True, "init": "gating_ada_zero"},
         "linear_z": {"bias": False, "init": "normal"},
-        "mha": block_sparse_mha_init,
+        "mha": att_pair_bias_mha_init,
     }
 )
 
@@ -158,11 +158,6 @@ diffusion_transformer_init = ConfigDict(
 )
 
 # AF3
-atom_transformer_init = ConfigDict(
-    {"diffusion_transformer": diffusion_transformer_init}
-)
-
-# AF3
 ref_atom_emb_init = ConfigDict(
     {
         "linear_feats": {"bias": False, "init": "default"},
@@ -189,7 +184,7 @@ atom_att_enc_init = ConfigDict(
         "linear_l": {"bias": False, "init": "relu"},
         "linear_m": {"bias": False, "init": "relu"},
         "pair_mlp": {"bias": False, "init": "relu"},
-        "atom_transformer": atom_transformer_init,
+        "diffusion_transformer": diffusion_transformer_init,
         "linear_q": {"bias": False, "init": "relu"},
     }
 )
@@ -198,7 +193,7 @@ atom_att_enc_init = ConfigDict(
 atom_att_dec_init = ConfigDict(
     {
         "linear_q_in": {"bias": False, "init": "default"},
-        "atom_transformer": atom_transformer_init,
+        "diffusion_transformer": diffusion_transformer_init,
         "linear_q_out": {"bias": False, "init": "final"},
     }
 )

@@ -22,7 +22,6 @@ class TestAF3Model(unittest.TestCase):
         train=True,
         reduce_model_size=True,
         use_deepspeed_evo_attention=False,
-        use_block_sparse=False,
     ):
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -41,7 +40,6 @@ class TestAF3Model(unittest.TestCase):
             config.architecture.diffusion_module.diffusion_transformer.no_blocks = 4
 
         config.settings.use_deepspeed_evo_attention = use_deepspeed_evo_attention
-        config.settings.use_block_sparse_attn = use_block_sparse
         config.architecture.loss_module.diffusion.chunk_size = 16
 
         af3 = AlphaFold3AllAtom(config, _compile=False).to(device=device, dtype=dtype)
@@ -106,7 +104,6 @@ class TestAF3Model(unittest.TestCase):
             train=True,
             reduce_model_size=True,
             use_deepspeed_evo_attention=False,
-            use_block_sparse=False,
         )
 
         # Eval
@@ -119,7 +116,6 @@ class TestAF3Model(unittest.TestCase):
             train=False,
             reduce_model_size=True,
             use_deepspeed_evo_attention=False,
-            use_block_sparse=False,
         )
 
     @compare_utils.skip_unless_triton_installed()
@@ -141,7 +137,6 @@ class TestAF3Model(unittest.TestCase):
                 train=True,
                 reduce_model_size=True,
                 use_deepspeed_evo_attention=True,
-                use_block_sparse=True,
             )
 
             # Eval
@@ -154,7 +149,6 @@ class TestAF3Model(unittest.TestCase):
                 train=False,
                 reduce_model_size=True,
                 use_deepspeed_evo_attention=True,
-                use_block_sparse=True,
             )
 
     @unittest.skip(
@@ -178,7 +172,6 @@ class TestAF3Model(unittest.TestCase):
                 train=False,
                 reduce_model_size=False,
                 use_deepspeed_evo_attention=True,
-                use_block_sparse=True,
             )
 
     # @unittest.skip(
@@ -201,7 +194,6 @@ class TestAF3Model(unittest.TestCase):
             train=True,
             reduce_model_size=False,
             use_deepspeed_evo_attention=True,
-            use_block_sparse=True,
         )
 
 

@@ -142,7 +142,7 @@ class AlphaFold3(nn.Module):
         s_input, s_init, z_init = self.input_embedder(
             batch=batch,
             inplace_safe=inplace_safe,
-            use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+            use_high_precision_attention=True,
         )
 
         # s: [*, N_token, C_s]
@@ -380,8 +380,7 @@ class AlphaFold3(nn.Module):
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
             chunk_size=self.settings.chunk_size,
-            use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-            use_lma=self.settings.use_lma,
+            use_high_precision_attention=True,
             _mask_trans=True,
         )
 

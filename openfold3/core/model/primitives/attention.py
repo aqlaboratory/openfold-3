@@ -52,8 +52,7 @@ if fa_is_installed:
 
 triton_is_installed = importlib.util.find_spec("triton") is not None
 if triton_is_installed:
-    from openfold3.core.kernels.triton.blocksparse import matmul as blocksparse_matmul
-    from openfold3.core.kernels.triton.blocksparse import softmax as blocksparse_softmax
+    from openfold3.core.kernels.triton.fused_softmax import fused_softmax
 
 # To avoid errors if memory-efficient attention kernel is not installed
 attn_core_is_installed = importlib.util.find_spec("attn_core_inplace_cuda") is not None
@@ -89,6 +88,7 @@ def _attention(
     key: torch.Tensor,
     value: torch.Tensor,
     biases: list[torch.Tensor],
+    use_high_precision: bool = False,
 ) -> torch.Tensor:
     """Attention operation with bias terms.
 
@@ -103,23 +103,29 @@ def _attention(
         key (shape [*, H, K, C_hidden]): key tensor
         value (shape [*, H, V, C_hidden]): value tensor
         biases : list of bias tensors
+        use_high_precision: Whether to use high precision up until
+            and including softmax
 
     Returns:
         shape [*, H, V, C_hidden]: attention output
     """
+    attn_dtype = torch.float32 if use_high_precision else query.dtype
+    with torch.amp.autocast("cuda", dtype=attn_dtype):
+        # Generate attention scores
+        scores = torch.einsum("...qc, ...kc->...qk", query, key)
 
-    # Generate attention scores
-    scores = torch.einsum("...qc, ...kc->...qk", query, key)
+        # Add the biases
+        for b in biases:
+            scores += b
 
-    # Add the biases
-    for b in biases:
-        scores += b
-
-    # Normalize the scores
-    scores = softmax_no_cast(scores, dim=-1)
+        # Normalize the scores
+        if triton_is_installed and scores.is_cuda:
+            scores = fused_softmax(scores)
+        else:
+            scores = softmax_no_cast(scores, dim=-1)
 
     # Multiply scores by values
-    attention = torch.einsum("...qk, ...kc->...qc", scores, value)
+    attention = torch.einsum("...qk, ...kc->...qc", scores.to(dtype=value.dtype), value)
 
     return attention
 
@@ -302,6 +308,7 @@ class Attention(nn.Module):
         lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
         use_flash: bool = False,
         flash_mask: Optional[torch.Tensor] = None,
+        use_high_precision: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -328,6 +335,16 @@ class Attention(nn.Module):
                 Query chunk size (for LMA)
             lma_kv_chunk_size:
                 Key/Value chunk size (for LMA)
+            use_flash:
+                Whether to use FlashAttention. If none of the "use_<...>"
+                flags are True, a stock PyTorch implementation is used instead
+            flash_mask:
+                Mask for flash attention. Use instead of bias option since flash
+                attention is incompatible with bias terms.
+            use_high_precision:
+                Whether to use high precision up until and including softmax.
+                This requires using the default implementation and cannot be
+                used with the above kernel options.
         Returns
             [*, Q, C_q] attention update
         """
@@ -348,6 +365,7 @@ class Attention(nn.Module):
             use_deepspeed_evo_attention,
             use_lma,
             use_flash,
+            use_high_precision,
         ]
         if sum(attn_options) > 1:
             raise ValueError("Choose at most one alternative attention algorithm")
@@ -390,220 +408,10 @@ class Attention(nn.Module):
         elif use_flash:
             o = _flash_attn(q, k, v, flash_mask)
         else:
-            o = _attention(q, k, v, biases)
+            o = _attention(q, k, v, biases, use_high_precision=use_high_precision)
             o = o.transpose(-2, -3)
 
         o = self._wrap_up(o, q_x)
-
-        return o
-
-
-class BlockSparseAttention(Attention):
-    """
-    Block-sparse attention using triton kernels. Allows multiple bias vectors.
-    """
-
-    sparse_op_cache = {}  # Cache used for precomputing triton ops based on seq len
-
-    def __init__(
-        self,
-        c_q: int,
-        c_k: int,
-        c_v: int,
-        c_hidden: int,
-        no_heads: int,
-        gating: bool = True,
-        block_size: int = 16,
-        linear_init_params: ConfigDict = lin_init.block_sparse_mha_init,
-    ):
-        """
-        Args:
-            c_q:
-                Input dimension of query data
-            c_k:
-                Input dimension of key data
-            c_v:
-                Input dimension of value data
-            c_hidden:
-                Per-head hidden dimension
-            no_heads:
-                Number of attention heads
-            gating:
-                Whether the output should be gated using query data
-            block_size:
-                Block size to use in block sparse attention
-            linear_init_params:
-                Linear layer initialization parameters
-        """
-        super().__init__(
-            c_q=c_q,
-            c_k=c_k,
-            c_v=c_v,
-            c_hidden=c_hidden,
-            no_heads=no_heads,
-            gating=gating,
-            linear_init_params=linear_init_params,
-        )
-
-        self.block_size = block_size
-        if self.block_size not in [16, 32, 64, 128]:
-            raise ValueError("Only block sizes in [16, 32, 64, 128] are supported")
-
-    def get_sparse_ops(self, seq_len: int, layout, device: str) -> tuple:
-        """
-        Initialize matmul and softmax kernels. The kernels generate look-up tables
-        for incrementing pointers based on sequence length and block size.
-        Save this to avoid recomputing. Method copied from DeepSpeed sparse attention:
-        https://github.com/microsoft/DeepSpeed/blob/master/
-        deepspeed/ops/sparse_attention/sparse_self_attention.py#L64
-
-        TODO: Possibly move to using DeepSpeed if bf16 is supported
-        """
-        if seq_len not in BlockSparseAttention.sparse_op_cache:
-            # Init Triton kernels
-            # Infer device from query
-            sparse_dot_sdd = blocksparse_matmul(
-                layout,
-                self.block_size,
-                "sdd",
-                trans_a=False,
-                trans_b=True,
-                device=device,
-            )
-
-            sparse_dot_dsd = blocksparse_matmul(
-                layout,
-                self.block_size,
-                "dsd",
-                trans_a=False,
-                trans_b=False,
-                device=device,
-            )
-
-            sparse_softmax = blocksparse_softmax(
-                layout,
-                self.block_size,
-                device=device,
-            )
-
-            BlockSparseAttention.sparse_op_cache[seq_len] = (
-                sparse_dot_sdd,
-                sparse_dot_dsd,
-                sparse_softmax,
-            )
-        return BlockSparseAttention.sparse_op_cache[seq_len]
-
-    def attention(
-        self,
-        q: torch.Tensor,
-        k: torch.Tensor,
-        v: torch.Tensor,
-        biases: Optional[list[torch.Tensor]],
-        layout: torch.Tensor,
-    ) -> torch.Tensor:
-        """Run block-sparse attention.
-
-        Args:
-            q:
-                [*, H, Q, C_hidden] query data
-            k:
-                [*, H, K, C_hidden] key data
-            v:
-                [*, H, V, C_hidden] value data
-            biases:
-                List of biases that broadcast to [*, H, Q, K]
-            layout:
-                [Q / block_size, Q / block_size] Layout config for block sparse
-                attention. Dictates which sections of the attention matrix
-                to compute.
-        """
-
-        def flatten_batch_dims(x):
-            return x.reshape((-1, *x.shape[-3:]))
-
-        orig_shape = q.shape
-        batch_dims = orig_shape[:-3]
-        if len(batch_dims) > 1:
-            q = flatten_batch_dims(q)
-            k = flatten_batch_dims(k)
-            v = flatten_batch_dims(v)
-
-        sparse_dot_sdd, sparse_dot_dsd, sparse_softmax = self.get_sparse_ops(
-            seq_len=q.shape[-2], layout=layout, device=q.device
-        )
-
-        # Dense x Dense = Sparse
-        w = sparse_dot_sdd(q, k)
-
-        if biases is not None:
-            # Sum all bias terms together and sparsify the tensor
-            # [*, H, Q, K]
-            biases = sum(biases)
-
-            # This is ugly and should be refactored
-            # The batch dim of w must be flat: batch_size * no_samples
-            # Because the bias term is broadcasted over the samples (batch_size * 1),
-            # the shape mismatch requires reshaping the tensor to match the bias shape
-            attn_shape = w.shape
-            w = w.reshape((*batch_dims, *w.shape[-3:]))
-            w = w + biases
-            w = w.reshape(attn_shape)
-
-        w = sparse_softmax(w)
-
-        # Sparse x Dense = Dense
-        o = sparse_dot_dsd(w, v)
-
-        o = o.reshape(orig_shape)
-
-        return o
-
-    def forward(
-        self,
-        q_x: torch.Tensor,
-        kv_x: torch.Tensor,
-        biases: Optional[list[torch.Tensor]],
-        layout: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Args:
-            q_x:
-                [*, Q, C_q] query data
-            kv_x:
-                [*, K, C_k] key data
-            biases:
-                List of biases that broadcast to [*, H, Q, K]
-            layout:
-                [N / block_size, N / block_size] Layout config for block sparse
-                attention. Dictates which sections of the attention matrix
-                to compute.
-
-        Returns:
-            [*, Q, C_q] attention update
-        """
-        if not triton_is_installed:
-            raise ValueError("BlockSparseAttention requires that Triton be installed")
-        if q_x.shape[-2] != layout.shape[-2] * self.block_size:
-            raise ValueError(
-                "Sequence length and layout are inconsistent with block size"
-            )
-        if q_x.shape[-2] % self.block_size != 0:
-            raise ValueError(
-                "Sequence length {q_x.shape[-2]}  must be a multiple of"
-                "block size {self.block_size}"
-            )
-
-        # Apply the same layout across all attention heads
-        layout = layout[None].tile((self.no_heads, 1, 1)).long()
-
-        # [*, H, Q/K/V, C_hidden]
-        q, k, v = self._prep_qkv(q_x, kv_x, apply_scale=True)
-
-        o = self.attention(q=q, k=k, v=v, biases=biases, layout=layout)
-
-        o = o.transpose(-2, -3)
-
-        o = self._wrap_up(o=o, q_x=q_x)
 
         return o
 

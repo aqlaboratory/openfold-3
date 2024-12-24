@@ -25,11 +25,11 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import (
     AdaLN,
     Attention,
-    BlockSparseAttention,
     LayerNorm,
     Linear,
 )
-from openfold3.core.utils.tensor_utils import permute_final_dims, sparsify_tensor
+from openfold3.core.utils.atom_attention_block_utils import convert_single_rep_to_blocks
+from openfold3.core.utils.tensor_utils import permute_final_dims
 
 
 class AttentionPairBias(nn.Module):
@@ -48,8 +48,8 @@ class AttentionPairBias(nn.Module):
         c_hidden: int,
         no_heads: int,
         use_ada_layer_norm: bool = False,
-        use_block_sparse_attn: bool = False,
-        block_size: Optional[int] = 16,
+        n_query: Optional[int] = None,
+        n_key: Optional[int] = None,
         gating: bool = True,
         inf=1e9,
         linear_init_params: ConfigDict = lin_init.att_pair_bias_init,
@@ -72,10 +72,12 @@ class AttentionPairBias(nn.Module):
                 Number of attention heads
             use_ada_layer_norm:
                 Whether to apply AdaLN-Zero conditioning
-            use_block_sparse_attn:
-                Whether to use Triton block sparse attention kernels
-            block_size:
-                Block size to use in block sparse attention
+            n_query:
+                Number of queries (block height). If provided, inputs are split into
+                q/k blocks of n_query and n_key prior to attention.
+            n_key:
+                Number of keys (block width). If provided, inputs are split into
+                q/k blocks of n_query and n_key prior to attention.
             gating:
                 Whether the output should be gated using query data
             inf:
@@ -85,13 +87,14 @@ class AttentionPairBias(nn.Module):
         """
         super().__init__()
 
-        self.use_ada_layer_norm = use_ada_layer_norm
-        self.use_block_sparse_attn = use_block_sparse_attn
-        self.block_size = block_size
         self.c_q = c_q
         self.c_s = c_s
         self.c_z = c_z
         self.inf = inf
+
+        self.use_ada_layer_norm = use_ada_layer_norm
+        self.n_query = n_query
+        self.n_key = n_key
 
         if self.use_ada_layer_norm:
             self.layer_norm_a = AdaLN(
@@ -106,47 +109,30 @@ class AttentionPairBias(nn.Module):
         self.layer_norm_z = LayerNorm(self.c_z)
         self.linear_z = Linear(self.c_z, no_heads, **linear_init_params.linear_z)
 
-        if self.use_block_sparse_attn:
-            self.mha = BlockSparseAttention(
-                c_q=c_q,
-                c_k=c_k,
-                c_v=c_v,
-                c_hidden=c_hidden,
-                no_heads=no_heads,
-                block_size=block_size,
-                gating=gating,
-                linear_init_params=linear_init_params.mha,
-            )
-        else:
-            self.mha = Attention(
-                c_q=c_q,
-                c_k=c_k,
-                c_v=c_v,
-                c_hidden=c_hidden,
-                no_heads=no_heads,
-                gating=gating,
-                linear_init_params=linear_init_params.mha,
-            )
+        self.mha = Attention(
+            c_q=c_q,
+            c_k=c_k,
+            c_v=c_v,
+            c_hidden=c_hidden,
+            no_heads=no_heads,
+            gating=gating,
+            linear_init_params=linear_init_params.mha,
+        )
 
         self.sigmoid = nn.Sigmoid()
 
-    def _prep_sparse_bias(
+    def _prep_block_inputs(
         self,
         a: torch.Tensor,
-        z: torch.Tensor,
-        layout: torch.Tensor,
+        z: Optional[torch.Tensor],
         mask: Optional[torch.Tensor],
-    ) -> list[torch.Tensor]:
+    ) -> tuple:
         """
         Args:
             a:
                 [*, N, C_token] Token or atom-level embedding
             z:
                 [*, N, N, C_z] Pair embedding
-            layout:
-                [N / block_size, N / block_size] Layout config for block sparse
-                attention. Dictates which sections of the attention matrix
-                to compute.
             mask:
                 [*, N] Mask for token or atom-level embedding
 
@@ -159,41 +145,31 @@ class AttentionPairBias(nn.Module):
                 a.shape[:-1],
             )
 
-        # [*, 1, 1, N]
-        mask_bias = (self.inf * (mask - 1))[..., None, None, :]
-
-        batch_dims = z.shape[:-3]
-        feat_dim = z.shape[-1]
-
-        # [*, C_z, N, N]
-        z = permute_final_dims(z, [2, 0, 1])
-
-        z = z + mask_bias
-        layout = layout[None].tile((feat_dim, 1, 1)).long()
-
-        # [*, num_blocks, C_z, block_size, block_size]
-        z = sparsify_tensor(z, layout, self.block_size, batch_dims=batch_dims).reshape(
-            *batch_dims, -1, feat_dim, self.block_size, self.block_size
+        a_query, a_key, mask = convert_single_rep_to_blocks(
+            ql=a, n_query=self.n_query, n_key=self.n_key, atom_mask=mask
         )
 
-        # [*, num_blocks, block_size, block_size, C_z]
-        z = self.layer_norm_z(permute_final_dims(z, [1, 2, 0]))
+        # [*, 1, 1, N]
+        mask_bias = (self.inf * (mask - 1))[..., None, :, :]
+        biases = [mask_bias]
 
-        # [*, num_blocks, block_size, block_size, no_heads]
+        # [*, N, N, C_z]
+        z = self.layer_norm_z(z)
+
+        # [*, N, N, no_heads]
         z = self.linear_z(z)
 
-        # [*, num_blocks *  no_heads, block_size, block_size]
-        z = permute_final_dims(z, [2, 0, 1]).reshape(
-            *batch_dims, -1, self.block_size, self.block_size
-        )
+        # [*, no_heads, N, N]
+        z = permute_final_dims(z, [2, 0, 1])
 
-        return [z]
+        biases.append(z)
+
+        return a_query, a_key, biases
 
     def _prep_bias(
         self,
         a: torch.Tensor,
         z: Optional[torch.Tensor],
-        beta: Optional[torch.Tensor],
         mask: Optional[torch.Tensor],
     ) -> list[torch.Tensor]:
         """
@@ -202,8 +178,6 @@ class AttentionPairBias(nn.Module):
                 [*, N, C_token] Token or atom-level embedding
             z:
                 [*, N, N, C_z] Pair embedding
-            beta:
-                [*, N, N] Neighborhood mask
             mask:
                 [*, N] Mask for token or atom-level embedding
 
@@ -229,9 +203,6 @@ class AttentionPairBias(nn.Module):
         # [*, no_heads, N, N]
         z = permute_final_dims(z, [2, 0, 1])
 
-        if beta is not None:
-            z = z + beta.unsqueeze(-3)
-
         biases.append(z)
 
         return biases
@@ -241,12 +212,11 @@ class AttentionPairBias(nn.Module):
         a: torch.Tensor,
         z: torch.Tensor,
         s: Optional[torch.Tensor] = None,
-        beta: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
-        layout: Optional[torch.Tensor] = None,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
+        use_high_precision_attention: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -257,21 +227,16 @@ class AttentionPairBias(nn.Module):
             s:
                 [*, N, C_s] Single embedding. Used in AdaLN if use_ada_layer_norm is
                 True
-            beta:
-                [*, N, N] Neighborhood mask. Used in Sequence-local atom
-                attention for rectangular blocks along the diagonal.
             mask:
                 [*, N] Mask for token or atom-level embedding
-            layout:
-                [N / block_size, N / block_size] Layout config for block sparse
-                attention. Dictates which sections of the attention matrix
-                to compute.
             use_memory_efficient_kernel:
                 Whether to use memory efficient kernel
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
             use_lma:
                 Whether to use LMA
+            use_high_precision_attention:
+                Whether to run attention in high precision
         Returns
             [*, N, C_q] attention updated token or atom-level embedding
         """
@@ -279,21 +244,30 @@ class AttentionPairBias(nn.Module):
 
         # TODO: Make this less awkward, DS kernel has strict shape asserts
         #  and expects the mask to be tiled to the correct shape
-        reshape_mask = all(
-            [
-                not self.use_block_sparse_attn,
-                use_deepspeed_evo_attention,
-                a.shape[1] != mask.shape[1],
-            ]
-        )
-        if reshape_mask:
+        if use_deepspeed_evo_attention and a.shape[1] != mask.shape[1]:
             mask = mask.tile((1, a.shape[1], 1))
 
-        if self.use_block_sparse_attn:
-            biases = self._prep_sparse_bias(a=a, z=z, layout=layout, mask=mask)
-            a = self.mha(q_x=a, kv_x=a, biases=biases, layout=layout)
+        if self.n_query is not None:
+            batch_dims = a.shape[:-2]
+            n_atom, n_dim = a.shape[-2:]
+
+            a_q, a_k, biases = self._prep_block_inputs(a=a, z=z, mask=mask)
+
+            a = self.mha(
+                q_x=a_q,
+                kv_x=a_k,
+                biases=biases,
+                use_memory_efficient_kernel=use_memory_efficient_kernel,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_lma=use_lma,
+                use_high_precision=use_high_precision_attention,
+            )
+
+            # Convert back to unpadded and flattened atom representation
+            # [*, N_blocks, N_query, c_atom] -> [*, N_atom, c_atom]
+            a = a.view((*batch_dims, -1, n_dim))[..., :n_atom, :]
         else:
-            biases = self._prep_bias(a=a, z=z, beta=beta, mask=mask)
+            biases = self._prep_bias(a=a, z=z, mask=mask)
 
             # TODO: Make this less awkward, DS kernel has strict shape asserts
             #  and expects batch and seq dims to exist
@@ -310,6 +284,7 @@ class AttentionPairBias(nn.Module):
                 use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
+                use_high_precision=use_high_precision_attention,
             )
 
             if use_deepspeed_evo_attention:
