@@ -1,3 +1,4 @@
+import math
 import unittest
 
 import torch
@@ -193,6 +194,8 @@ class TestAtomAttentionEncoder(unittest.TestCase):
 
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
+        num_blocks = math.ceil(n_atom / n_query)
+
         atom_mask = torch.ones((batch_size, n_atom))
 
         ai, ql, cl, plm = atom_attn_enc(batch=batch, atom_mask=atom_mask)
@@ -200,7 +203,9 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         self.assertTrue(ai.shape == (batch_size, n_token, c_token))
         self.assertTrue(ql.shape == (batch_size, n_atom, c_atom))
         self.assertTrue(cl.shape == (batch_size, n_atom, c_atom))
-        self.assertTrue(plm.shape == (batch_size, n_atom, n_atom, c_atom_pair))
+        self.assertTrue(
+            plm.shape == (batch_size, num_blocks, n_query, n_key, c_atom_pair)
+        )
 
     def test_with_noisy_positions(self):
         batch_size = consts.batch_size
@@ -247,6 +252,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
 
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
+        num_blocks = math.ceil(n_atom / n_query)
 
         atom_mask = torch.ones((batch_size, 1, n_atom))
         rl = torch.randn((batch_size, n_sample, n_atom, 3))
@@ -264,7 +270,9 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         self.assertTrue(ai.shape == (batch_size, n_sample, n_token, c_token))
         self.assertTrue(ql.shape == (batch_size, n_sample, n_atom, c_atom))
         self.assertTrue(cl.shape == (batch_size, 1, n_atom, c_atom))
-        self.assertTrue(plm.shape == (batch_size, 1, n_atom, n_atom, c_atom_pair))
+        self.assertTrue(
+            plm.shape == (batch_size, 1, num_blocks, n_query, n_key, c_atom_pair)
+        )
 
 
 class TestAtomAttentionDecoder(unittest.TestCase):
@@ -304,12 +312,13 @@ class TestAtomAttentionDecoder(unittest.TestCase):
         )
 
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
+        num_blocks = math.ceil(n_atom / n_query)
 
         atom_mask = torch.ones((batch_size, n_atom))
         ai = torch.randn((batch_size, n_token, c_token))
         ql = torch.randn((batch_size, n_atom, c_atom))
         cl = torch.randn((batch_size, n_atom, c_atom))
-        plm = torch.randn((batch_size, n_atom, n_atom, c_atom_pair))
+        plm = torch.randn((batch_size, num_blocks, n_query, n_key, c_atom_pair))
 
         rl_update = atom_attn_dec(
             batch=batch, atom_mask=atom_mask, ai=ai, ql=ql, cl=cl, plm=plm
@@ -356,12 +365,13 @@ class TestAtomAttentionDecoder(unittest.TestCase):
         batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
 
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
+        num_blocks = math.ceil(n_atom / n_query)
 
         atom_mask = torch.ones((batch_size, 1, n_atom))
         ai = torch.randn((batch_size, n_sample, n_token, c_token))
         ql = torch.randn((batch_size, n_sample, n_atom, c_atom))
         cl = torch.randn((batch_size, 1, n_atom, c_atom))
-        plm = torch.randn((batch_size, 1, n_atom, n_atom, c_atom_pair))
+        plm = torch.randn((batch_size, 1, num_blocks, n_query, n_key, c_atom_pair))
 
         rl_update = atom_attn_dec(
             batch=batch, atom_mask=atom_mask, ai=ai, ql=ql, cl=cl, plm=plm

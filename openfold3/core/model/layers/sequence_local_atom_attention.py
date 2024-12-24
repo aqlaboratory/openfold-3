@@ -397,7 +397,8 @@ class AtomAttentionEncoder(nn.Module):
             cl:
                 [*, N_atom, c_atom] Atom single conditioning
             plm:
-                [*, N_atom, N_atom, c_atom_pair] Atom pair representation
+                [*, N_blocks, N_query, N_key, c_atom_pair] Atom pair representation
+                Note: Converted to block format ahead of time due to reduce memory cost
         """
         # Embed reference atom features
         # cl: [*, N_atom, c_atom]
@@ -489,7 +490,8 @@ class AtomAttentionEncoder(nn.Module):
             cl:
                 [*, N_atom, c_atom] Atom single conditioning
             plm:
-                [*, N_atom, N_atom, c_atom_pair] Atom pair representation
+                [*, N_blocks, N_query, N_key, c_atom_pair] Atom pair representation
+                Note: Converted to block format ahead of time due to reduce memory cost
         """
         atom_feat_args = (
             batch,
@@ -640,7 +642,8 @@ class AtomAttentionDecoder(nn.Module):
             cl:
                 [*, N_atom, c_atom] Atom single conditioning
             plm:
-                [*, N_atom, N_atom, c_atom_pair] Atom pair representation
+                [*, N_blocks, N_query, N_key, c_atom_pair] Atom pair representation
+                Note: Converted to block format in AtomAttentionEncoder
             chunk_size:
                 Inference-time subbatch size
             use_deepspeed_evo_attention:
