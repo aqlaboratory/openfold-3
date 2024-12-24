@@ -1545,12 +1545,6 @@ def safe_multi_chain_permutation_alignment(batch: dict, output: dict) -> dict:
             "atom_resolved_mask" features rearranged to match the prediction.
     """
     try:
-        import random
-
-        if random.choice([True, False]):
-            logger.error("Raising random error.")
-            raise Exception("Random error")
-
         return multi_chain_permutation_alignment(batch, output)
     except Exception as e:
         tb = traceback.format_exc()
