@@ -3,7 +3,7 @@ from typing import Literal
 
 import numpy as np
 from func_timeout import FunctionTimedOut, func_set_timeout
-from rdkit import Chem
+from rdkit import Chem, rdBase
 from rdkit.Chem import AllChem, Mol
 
 from openfold3.core.data.primitives.structure.component import (
@@ -63,7 +63,10 @@ def compute_conformer(
 
     strategy.clearConfs = False
 
+    # Disable overly verbous conformer generation warnings
+    blocker = rdBase.BlockLogs()
     conf_id = AllChem.EmbedMolecule(mol, strategy)
+    del blocker
 
     if remove_hs:
         mol = safe_remove_all_hs(mol)
