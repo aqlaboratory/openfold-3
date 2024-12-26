@@ -1,6 +1,9 @@
+import logging
 from typing import NamedTuple
 
 import torch
+
+logger = logging.getLogger(__name__)
 
 
 def get_optimal_rotation_matrix(
@@ -40,19 +43,43 @@ def get_optimal_rotation_matrix(
     # Calculate covariance matrix [*, 3, 3]
     H = mobile_positions.transpose(-2, -1) @ target_positions
 
-    # NOTE: cast H to float if this doesn't work with bf16
-    # SVD
-    U, _, Vt = torch.linalg.svd(H)
+    batch_dims = H.shape[:-2]
+    original_dtype = H.dtype
 
-    V = Vt.transpose(-2, -1)
-    Ut = U.transpose(-2, -1)
+    try:
+        # This is necessary for bf16 training
+        with torch.amp.autocast("cuda", enabled=False):
+            # SVD (cast to float because doesn't work with fp16)
+            U, _, Vt = torch.linalg.svd(H.float())
 
-    # Determinants for reflection correction (should be either 1 or -1)
-    dets = torch.det(V @ Ut)
+            V = Vt.transpose(-2, -1)
+            Ut = U.transpose(-2, -1)
+
+            # Determinants for reflection correction (should be either 1 or -1)
+            dets = torch.det(V @ Ut)
+
+    # Fix for rare edge-cases
+    except Exception as e:
+        logger.warning(
+            f"Error in computing rotation matrix."
+            f"Matrix:\n{H}\nError: {e}\n"
+            "Returning identity matrix instead."
+        )
+        # Return identity rotation
+        R = torch.eye(3, device=mobile_positions.device, dtype=original_dtype).tile(
+            *batch_dims, 1, 1
+        )
+        return R
+
+    # Cast back to original dtype
+    dets = dets.to(original_dtype)
+    V = V.to(original_dtype)
+    Ut = Ut.to(original_dtype)
 
     # Create correction tensor [*, 3, 3]
-    batch_dims = H.shape[:-2]
-    D = torch.eye(3, device=mobile_positions.device).tile(*batch_dims, 1, 1)
+    D = torch.eye(3, device=mobile_positions.device, dtype=original_dtype).tile(
+        *batch_dims, 1, 1
+    )
     D[..., -1, -1] = torch.sign(dets)
 
     R = V @ D @ Ut
