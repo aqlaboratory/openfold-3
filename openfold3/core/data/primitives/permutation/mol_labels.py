@@ -191,32 +191,12 @@ def get_precursor_mol_groups(
     return mol_groups
 
 
-def rename_node_labels_to_reprs(g: nx.Graph) -> nx.Graph:
-    """Renames the node labels in the graph to the node_reprs.
-
-    This is necessary as node labels in our case correspond to the actual chain IDs
-    which will be different even between symmetry-equivalent molecules, while the
-    node_repr values represent the actual invariant.
-
-    While we set the node labels to chain IDs explicitly for debugging/inspection
-    purposes, the networkx graph_equal function expects all node properties to be equal
-    so this function is needed.
-
-    Args:
-        g (nx.Graph):
-            The graph to rename the node labels in.
-
-    Returns:
-        nx.Graph:
-            A copy of the same graph with the node labels set to the node_reprs.
-    """
-    mapping = {node_label: g.nodes[node_label]["node_repr"] for node_label in g.nodes}
-
-    return nx.relabel_nodes(g, mapping, copy=True)
-
-
 def naive_graph_match(g1: nx.Graph, g2: nx.Graph) -> bool:
     """Matches the graphs directly without any isomorphic graph matching.
+    
+    The checks here are specific to the high-level graph representation of molecules,
+    and we only check the equivalence of the node_reprs (respecting the order of the
+    nodes), as well as the adjacency matrix of the graphs.
 
     Args:
         g1 (nx.Graph):
@@ -228,12 +208,18 @@ def naive_graph_match(g1: nx.Graph, g2: nx.Graph) -> bool:
         bool:
             True if the graphs are equal, False otherwise.
     """
-    # Temporarily set the node labels to the node_reprs, otherwise networkx will not
-    # consider them equal
-    g1_renamed = rename_node_labels_to_reprs(g1)
-    g2_renamed = rename_node_labels_to_reprs(g2)
+    # Check node_repr equivalence
+    node_reprs_g1 = [g1.nodes[node]["node_repr"] for node in g1.nodes]
+    node_reprs_g2 = [g2.nodes[node]["node_repr"] for node in g2.nodes]
+    
+    if node_reprs_g1 != node_reprs_g2:
+        return False
 
-    return nx.utils.graphs_equal(g1_renamed, g2_renamed)
+    # Check adjacency matrix equivalence
+    adj_matrix_g1 = nx.to_numpy_array(g1)
+    adj_matrix_g2 = nx.to_numpy_array(g2)
+    
+    return np.array_equal(adj_matrix_g1, adj_matrix_g2)
 
 
 @dataclass
@@ -347,6 +333,7 @@ def assign_mol_symmetry_ids(atom_array: AtomArray) -> AtomArray:
         # existing symmetry groups if they are symmetry-equivalent to the
         # representative, or creating new groups if they are not
         if len(grouped_mols) == 1:
+            logger.debug("Only one molecule in group, advancing to next.")
             continue
 
         for mol in grouped_mols[1:]:
