@@ -6,6 +6,7 @@ from typing import Literal
 
 import numpy as np
 from biotite.structure import AtomArray
+from func_timeout import FunctionTimedOut
 from rdkit.Chem import Mol
 
 from openfold3.core.data.io.structure.mol import read_single_annotated_sdf
@@ -158,7 +159,7 @@ def get_processed_reference_conformer(
     if preferred_confgen_strategy != "use_fallback":
         # If the new conformer generation fails, the below code is skipped and the
         # fallback conformer is used
-        with contextlib.suppress(ConformerGenerationError):
+        with contextlib.suppress(ConformerGenerationError, FunctionTimedOut):
             if preferred_confgen_strategy == "default":
                 # Try with default, then use random init, then use fallback (technically
                 # default should not fail because we already tried the strategy in

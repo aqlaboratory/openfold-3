@@ -3,7 +3,6 @@ from .attention import (
     DEFAULT_LMA_KV_CHUNK_SIZE,
     DEFAULT_LMA_Q_CHUNK_SIZE,
     Attention,
-    BlockSparseAttention,
     GlobalAttention,
 )
 from .dropout import Dropout, DropoutColumnwise, DropoutRowwise
@@ -24,7 +23,6 @@ from .normalization import AdaLN, LayerNorm
 __all__ = [
     "SwiGLU",
     "Attention",
-    "BlockSparseAttention",
     "GlobalAttention",
     "DEFAULT_LMA_Q_CHUNK_SIZE",
     "DEFAULT_LMA_KV_CHUNK_SIZE",

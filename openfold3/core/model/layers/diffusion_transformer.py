@@ -44,8 +44,8 @@ class DiffusionTransformerBlock(nn.Module):
         no_heads: int,
         n_transition: int,
         use_ada_layer_norm: bool,
-        use_block_sparse_attn: bool,
-        block_size: Optional[int],
+        n_query: Optional[int],
+        n_key: Optional[int],
         inf: float = 1e9,
         linear_init_params: ConfigDict = lin_init.diffusion_transformer_init,
     ):
@@ -63,10 +63,12 @@ class DiffusionTransformerBlock(nn.Module):
                 Dimension multiplication factor used in transition layer
             use_ada_layer_norm:
                 Whether to apply AdaLN-Zero conditioning
-            use_block_sparse_attn:
-                Whether to use Triton block sparse attention kernels
-            block_size:
-                Block size to use in block sparse attention
+            n_query:
+                Number of queries (block height). If provided, inputs are split into
+                q/k blocks of n_query and n_key prior to attention.
+            n_key:
+                Number of keys (block width). If provided, inputs are split into
+                q/k blocks of n_query and n_key prior to attention.
             inf:
                 Large constant used to create mask for attention logits
             linear_init_params:
@@ -83,8 +85,8 @@ class DiffusionTransformerBlock(nn.Module):
             c_hidden=c_hidden,
             no_heads=no_heads,
             use_ada_layer_norm=use_ada_layer_norm,
-            use_block_sparse_attn=use_block_sparse_attn,
-            block_size=block_size,
+            n_query=n_query,
+            n_key=n_key,
             gating=True,
             inf=inf,
             linear_init_params=linear_init_params.att_pair_bias,
@@ -103,12 +105,11 @@ class DiffusionTransformerBlock(nn.Module):
         s: torch.Tensor,
         z: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
-        beta: Optional[torch.Tensor] = None,
-        layout: Optional[torch.Tensor] = None,
         chunk_size: Optional[int] = None,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
+        use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
     ) -> torch.Tensor:
         """
@@ -121,13 +122,6 @@ class DiffusionTransformerBlock(nn.Module):
                 [*, N, N, C_z] Pair embedding
             mask:
                 [*, N] Mask for token-level embedding
-            beta:
-                [*, N, N] Neighborhood mask. Used in Sequence-local
-                atom attention for rectangular blocks along the diagonal.
-            layout:
-                [N / block_size, N / block_size] Layout config for block sparse
-                attention. Dictates which sections of the attention matrix
-                to compute.
             chunk_size:
                 Inference-time subbatch size
             use_memory_efficient_kernel:
@@ -136,6 +130,8 @@ class DiffusionTransformerBlock(nn.Module):
                 Whether to use DeepSpeed Evo Attention kernel
             use_lma:
                 Whether to use LMA
+            use_high_precision_attention:
+                Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
         """
@@ -145,11 +141,10 @@ class DiffusionTransformerBlock(nn.Module):
             z=z,
             s=s,
             mask=mask,
-            beta=beta,
-            layout=layout,
             use_memory_efficient_kernel=use_memory_efficient_kernel,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_lma=use_lma,
+            use_high_precision_attention=use_high_precision_attention,
         )
 
         trans_mask = mask if _mask_trans else None
@@ -179,8 +174,8 @@ class DiffusionTransformer(nn.Module):
         no_blocks: int,
         n_transition: int,
         use_ada_layer_norm: bool,
-        use_block_sparse_attn: bool,
-        block_size: Optional[int],
+        n_query: Optional[int],
+        n_key: Optional[int],
         inf: float,
         blocks_per_ckpt: Optional[int] = None,
         linear_init_params: ConfigDict = lin_init.diffusion_transformer_init,
@@ -202,10 +197,12 @@ class DiffusionTransformer(nn.Module):
                 Dimension multiplication factor used in transition layer
             use_ada_layer_norm:
                 Whether to apply AdaLN-Zero conditioning
-            use_block_sparse_attn:
-                Whether to use Triton block sparse attention kernels
-            block_size:
-                Block size to use in block sparse attention
+            n_query:
+                Number of queries (block height). If provided, inputs are split into
+                q/k blocks of n_query and n_key prior to attention.
+            n_key:
+                Number of keys (block width). If provided, inputs are split into
+                q/k blocks of n_query and n_key prior to attention.
             blocks_per_ckpt:
                 Number of blocks per checkpoint. If set, checkpointing will
                 be used to save memory.
@@ -233,8 +230,8 @@ class DiffusionTransformer(nn.Module):
                     no_heads=no_heads,
                     n_transition=n_transition,
                     use_ada_layer_norm=use_ada_layer_norm,
-                    use_block_sparse_attn=use_block_sparse_attn,
-                    block_size=block_size,
+                    n_query=n_query,
+                    n_key=n_key,
                     inf=inf,
                     linear_init_params=linear_init_params,
                 )
@@ -248,12 +245,11 @@ class DiffusionTransformer(nn.Module):
         s: torch.Tensor,
         z: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
-        beta: Optional[torch.Tensor] = None,
-        layout: Optional[torch.Tensor] = None,
         chunk_size: Optional[int] = None,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
+        use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
     ) -> torch.Tensor:
         """
@@ -266,13 +262,6 @@ class DiffusionTransformer(nn.Module):
                 [*, N, N, C_z] Pair embedding
             mask:
                 [*, N] Mask for token-level embedding
-            beta:
-                [*, N, N] Neighborhood mask. Used in Sequence-local
-                atom attention for rectangular blocks along the diagonal.
-            layout:
-                [N / block_size, N / block_size] Layout config for block sparse
-                attention. Dictates which sections of the attention matrix
-                to compute.
             chunk_size:
                 Inference-time subbatch size
             use_memory_efficient_kernel:
@@ -281,6 +270,8 @@ class DiffusionTransformer(nn.Module):
                 Whether to use DeepSpeed Evo Attention kernel
             use_lma:
                 Whether to use LMA
+            use_high_precision_attention:
+                Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
         """
@@ -291,12 +282,11 @@ class DiffusionTransformer(nn.Module):
                 s=s,
                 z=z,
                 mask=mask,
-                beta=beta,
-                layout=layout,
                 chunk_size=chunk_size,
                 use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
+                use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,
             )
             for b in self.blocks
