@@ -364,7 +364,8 @@ def assign_mol_symmetry_ids(atom_array: AtomArray) -> AtomArray:
                     symm_group.n_symmetric_instances = mol_sym_id
 
                     # Set IDs
-                    atom_array.mol_entity_id[mol._atom_idx] = first_mol_entity_id
+                    mol_entity_id = symm_group.mol_entity_id
+                    atom_array.mol_entity_id[mol._atom_idx] = mol_entity_id
                     atom_array.mol_sym_id[mol._atom_idx] = mol_sym_id
                     break
 
@@ -412,7 +413,8 @@ def assign_mol_symmetry_ids(atom_array: AtomArray) -> AtomArray:
                         symm_group.n_symmetric_instances = mol_sym_id
 
                         # Set IDs
-                        atom_array.mol_entity_id[mol._atom_idx] = first_mol_entity_id
+                        mol_entity_id = symm_group.mol_entity_id
+                        atom_array.mol_entity_id[mol._atom_idx] = mol_entity_id
                         atom_array.mol_sym_id[mol._atom_idx] = mol_sym_id
                         break
 
