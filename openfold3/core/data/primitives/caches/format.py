@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import dbm
 import json
-import shelve
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import TypeAlias
 
 from openfold3.core.data.resources.residues import MoleculeType
@@ -27,19 +23,59 @@ DATASET_CACHE_CLASS_REGISTRY = {}
 
 
 # TODO: Could make post-init check that this is set
-def register_datacache(cls):
-    """Register a specific DataCache class in the DATASET_CACHE_CLASS_REGISTRY.
+def register_datacache(format_list: list[str] = None) -> callable:
+    """Creates a decorator to register a DataCache class and check its format.
 
     Args:
-        cls (Type[DataCache]): The class to register
+        format_list (list[str], optional):
+            String names of format fields that need to be defined for the class.
+            Defaults to None.
+
+    Raises:
+        ValueError:
+            If a required format attribute is missing.
 
     Returns:
-        Type[DataCache]: The registered class
+        callable:
+            The decorator function.
     """
-    DATASET_CACHE_CLASS_REGISTRY[cls.__name__] = cls
-    cls._registered = True
-    cls._type = cls.__name__
-    return cls
+
+    if format_list is None:
+        format_list = []
+
+    def decorator(cls) -> type[DataCache]:
+        """Registers the class and checks its format.
+
+        Raises:
+            ValueError:
+                If a required format attribute is missing.
+
+        Returns:
+            type[DataCache]:
+                The decorated class.
+        """
+        # 1. Check required format attributes
+        missing_attrs = []
+        for attr in format_list:
+            if getattr(cls, attr, None) is None:
+                missing_attrs.append(attr)
+
+        if missing_attrs:
+            raise ValueError(
+                f"Class {cls.__name__} is missing required format "
+                f"attributes: {missing_attrs}"
+            )
+        else:
+            cls._format_validated = True
+
+        # 2. Register the class
+        DATASET_CACHE_CLASS_REGISTRY[cls.__name__] = cls
+        cls._registered = True
+        cls._type = cls.__name__
+
+        return cls
+
+    return decorator
 
 
 # TODO: Actually update the preprocessing code to use this class, currently it's only
@@ -197,17 +233,79 @@ PreprocessingReferenceMoleculeCache: TypeAlias = dict[
 # This is a general template format that every other dataset cache, such as
 # PDB-weighted, PDB-disordered, and PDB-validation, etc., should follow.
 @dataclass
-class DatasetCache(ABC):
+class DatasetCache:
     """Format that every Dataset Cache should have."""
 
     name: str  # for referencing in dataset config
     structure_data: dataclass
     reference_molecule_data: dataclass
 
+    _format_validated: bool = False
+
     @classmethod
-    @abstractmethod
     def from_json(cls, file: Path) -> DatasetCache:
-        raise NotImplementedError("This method should be implemented in subclasses.")
+        """Costructs a datacache from json."""
+
+        with open(file) as f:
+            data = json.load(f)
+
+        return cls(
+            name=cls._parse_name(data),
+            structure_data=cls._parse_structure_data(data),
+            reference_molecule_data=cls._parse_ref_mol_data(data),
+        )
+
+    def _parse_type(data: dict) -> None:
+        # Remove _type field (already an internal private attribute so shouldn't be
+        # defined as an explicit field)
+        if "_type" in data:
+            # This is conditional for legacy compatibility, should be removed after
+            del data["_type"]
+
+    def _parse_name(data: dict) -> str:
+        return data["name"]
+
+    @classmethod
+    def _parse_structure_data(cls, data: dict) -> dict:
+        # Format structure data
+        structure_data = {}
+        for pdb_id, per_structure_data in data["structure_data"].items():
+            chain_data = per_structure_data.pop("chains")
+            interface_data = per_structure_data.pop("interfaces")
+
+            # Extract all chain data into respective chain data format
+            chains = {
+                chain_id: cls._chain_data_format(**chain_data[chain_id])
+                for chain_id in chain_data
+            }
+
+            # Extract all interface data into respective interface data format
+            interfaces = {
+                interface_id: cls._interface_data_format(**interface_data[interface_id])
+                for interface_id in interface_data
+            }
+
+            # Combine chain and interface data with remaining structure data
+            structure_data[pdb_id] = cls._structure_data_format(
+                chains=chains, interfaces=interfaces, **per_structure_data
+            )
+        return structure_data
+
+    @classmethod
+    def _parse_ref_mol_data(cls, data: dict) -> dict:
+        # Format reference molecule data into respective format
+        ref_mol_data = {}
+        for ref_mol_id, per_ref_mol_data in data["reference_molecule_data"].items():
+            per_ref_mol_data_fmt = cls._ref_mol_data_format(**per_ref_mol_data)
+            ref_mol_data[ref_mol_id] = per_ref_mol_data_fmt
+        return ref_mol_data
+
+    def __post_init__(self):
+        if not self._format_validated:
+            raise ValueError(
+                "Datacache format was not validated. Decorate your class with "
+                "@register_datacache and provide a list of required format attributes."
+            )
 
 
 @dataclass
@@ -240,6 +338,117 @@ DatasetReferenceMoleculeCache: TypeAlias = dict[str, DatasetReferenceMoleculeDat
 # be implemented.
 
 
+# --- Chain data dataclasses ---
+# TEMPLATE for metadata for PDB datasets
+@dataclass
+class PDBChainData(DatasetChainData):
+    """Chain-wise data for PDB datasets."""
+
+    # TODO: These are not mandatory and currently kept for debugging purposes, but may
+    # be removed later
+    label_asym_id: str
+    auth_asym_id: str
+    entity_id: int
+
+    molecule_type: MoleculeType
+    reference_mol_id: str | None  # only set for ligands
+    alignment_representative_id: str | None  # not set for ligands and DNA
+    template_ids: list[str] | None  # only set for proteins
+
+
+# CLUSTERED DATASET FORMAT (e.g. PDB-weighted)
+@dataclass
+class ClusteredDatasetChainData(PDBChainData):
+    """Chain-wise data with cluster information."""
+
+    cluster_id: str
+    cluster_size: int
+
+
+@dataclass
+class ValClusteredDatasetChainData(ClusteredDatasetChainData):
+    """Chain-wise data with cluster and alignment information.
+
+    Adds info on homology to train set. If chain is a monomer
+    >40% seq id and if it is a ligand >0.85 tanimoto score.
+    """
+
+    # Adds the following fields:
+    monomer_high_homology: int
+    ligand_high_homology: int
+    ligand_not_fit: int
+    num_residues_contact: int
+
+
+@dataclass
+class ProteinMonomerChainData:
+    """Chain-wise data for protein monomers."""
+
+    alignment_representative_id: str | None
+    template_ids: list[str] | None
+
+
+# --- Interface data dataclasses ---
+@dataclass
+class ClusteredDatasetInterfaceData:
+    """Interface-wise data with cluster information."""
+
+    cluster_id: str
+    cluster_size: int
+
+
+@dataclass
+class ValClusteredDatasetInterfaceData(ClusteredDatasetInterfaceData):
+    """Interface-wise data with cluster information.
+
+    Adds info on if interfaces are homologous to the training data
+    To be true both chains most have homology as defined in SI 5.8.
+    """
+
+    interface_high_homology: int
+
+
+# --- Structure data dataclasses ---
+@dataclass
+class ClusteredDatasetStructureData:
+    """Structure data with clusters and added metadata."""
+
+    release_date: datetime.date
+    resolution: float
+    chains: dict[str, ClusteredDatasetChainData]
+    interfaces: dict[str, ClusteredDatasetInterfaceData]
+
+
+@dataclass
+class ValClusteredDatasetStructureData:
+    """Structure data with cluster and added metadata information."""
+
+    release_date: datetime.date
+    resolution: float
+    sampled_cluster: list[str]  # TODO: remove this
+    token_count: int  # TODO: remove this
+    chains: dict[str, ValClusteredDatasetChainData]
+    interfaces: dict[str, ClusteredDatasetInterfaceData]
+
+
+@dataclass
+class ProteinMonomerStructureData:
+    """Structure data for protein monomers.
+
+    Note that ProteinMonomerStructureDataCache is a wrapper around this dataclass
+    as each entry is a monomer so any metadata is stored at the chain level."""
+
+    chains: dict[str, ProteinMonomerChainData]
+
+
+ClusteredDatasetStructureDataCache: TypeAlias = dict[str, ClusteredDatasetStructureData]
+ValClusteredDatasetStructureDataCache: TypeAlias = dict[
+    str, ValClusteredDatasetStructureData
+]
+ProteinMonomerStructureDataCache: TypeAlias = ProteinMonomerStructureData
+
+
+# --- Dataset caches ---
 # TEMPLATE for dataset caches with chain-wise, interface-wise and reference molecule
 # data.
 @dataclass
@@ -258,133 +467,15 @@ class ChainInterfaceReferenceMolCache(DatasetCache):
     _structure_data_format: dataclass = None
     _ref_mol_data_format: dataclass = DatasetReferenceMoleculeData
 
-    @classmethod
-    def from_json(cls, file: Path) -> ChainInterfaceReferenceMolCache:
-        """Constructor to format a json into this dataclass structure."""
-        if any(
-            format_ is None
-            for format_ in [
-                cls._chain_data_format,
-                cls._interface_data_format,
-                cls._ref_mol_data_format,
-                cls._structure_data_format,
-            ]
-        ):
-            raise NotImplementedError("Data formats must be defined in subclass.")
 
-        with open(file) as f:
-            data = json.load(f)
-
-        # Remove _type field (already an internal private attribute so shouldn't be
-        # defined as an explicit field)
-        if "_type" in data:
-            # This is conditional for legacy compatibility, should be removed after
-            del data["_type"]
-
-        name = data["name"]
-
-        # Format structure data
-        structure_data = {}
-        for pdb_id, per_structure_data in data["structure_data"].items():
-            chain_data = per_structure_data.pop("chains")
-            interface_data = per_structure_data.pop("interfaces")
-
-            # Extract all chain data into respective chain data format
-            chains = {
-                chain_id: cls._chain_data_format(**chain_data[chain_id])
-                for chain_id in chain_data
-            }
-
-            # Extract all interface data into respective interface data format
-            interfaces = {
-                interface_id: cls._interface_data_format(**interface_data[interface_id])
-                for interface_id in interface_data
-            }
-
-            # Combine chain and interface data with remaining structure data
-            structure_data[pdb_id] = cls._structure_data_format(
-                chains=chains, interfaces=interfaces, **per_structure_data
-            )
-
-        # Format reference molecule data into respective format
-        ref_mol_data = {}
-        for ref_mol_id, per_ref_mol_data in data["reference_molecule_data"].items():
-            per_ref_mol_data_fmt = cls._ref_mol_data_format(**per_ref_mol_data)
-            ref_mol_data[ref_mol_id] = per_ref_mol_data_fmt
-
-        return cls(
-            name=name,
-            structure_data=structure_data,
-            reference_molecule_data=ref_mol_data,
-        )
-
-
-# TEMPLATE for metadata for PDB datasets
-@dataclass
-class PDBChainData(DatasetChainData):
-    """Chain-wise data for PDB datasets."""
-
-    # TODO: These are not mandatory and currently kept for debugging purposes, but may
-    # be removed later
-    label_asym_id: str
-    auth_asym_id: str
-    entity_id: int
-
-    molecule_type: MoleculeType
-    reference_mol_id: str | None  # only set for ligands
-    alignment_representative_id: str | None  # not set for ligands and DNA
-    template_ids: list[str] | None  # only set for proteins
-
-
-@dataclass
-class ProteinMonomerChainData:
-    alignment_representative_id: str | None  # not set for ligands and DNA
-    template_ids: list[str] | None
-    molecule_type: MoleculeType.PROTEIN
-
-
-# CLUSTERED DATASET FORMAT (e.g. PDB-weighted)
-@dataclass
-class ClusteredDatasetChainData(PDBChainData):
-    """Chain-wise data with cluster information."""
-
-    cluster_id: str
-    cluster_size: int
-
-
-@dataclass
-class ClusteredDatasetInterfaceData:
-    """Interface-wise data with cluster information."""
-
-    cluster_id: str
-    cluster_size: int
-
-
-@dataclass
-class ClusteredDatasetStructureData:
-    """Structure data with clusters and added metadata."""
-
-    release_date: datetime.date
-    resolution: float
-    chains: dict[str, ClusteredDatasetChainData]
-    interfaces: dict[str, ClusteredDatasetInterfaceData]
-
-
-@dataclass
-class ProteinMonomerStructureData:
-    chains: dict[str, ProteinMonomerChainData]
-
-
-## potentially add resolution here as a default value
-
-ClusteredDatasetStructureDataCache: TypeAlias = dict[str, ClusteredDatasetStructureData]
-"""Structure data cache with cluster information."""
-ProteinMonomerStructureDataCache: TypeAlias = shelve.Shelf[
-    str, ProteinMonomerStructureData
-]
-
-
-@register_datacache
+@register_datacache(
+    format_list=[
+        "_chain_data_format",
+        "_interface_data_format",
+        "_ref_mol_data_format",
+        "_structure_data_format",
+    ]
+)
 @dataclass
 class ClusteredDatasetCache(ChainInterfaceReferenceMolCache):
     """Full data cache for clustered dataset.
@@ -408,53 +499,15 @@ class ClusteredDatasetCache(ChainInterfaceReferenceMolCache):
     _structure_data_format = ClusteredDatasetStructureData
 
 
-# PDB VALIDATION DATASET FORMAT
-@dataclass
-class ValClusteredDatasetChainData(ClusteredDatasetChainData):
-    """Chain-wise data with cluster and alignment information.
-
-    Adds info on homology to train set. If chain is a monomer
-    >40% seq id and if it is a ligand >0.85 tanimoto score.
-    """
-
-    # Adds the following fields:
-    monomer_high_homology: int
-    ligand_high_homology: int
-    ligand_not_fit: int
-    num_residues_contact: int
-
-
-@dataclass
-class ValClusteredDatasetInterfaceData(ClusteredDatasetInterfaceData):
-    """Interface-wise data with cluster information.
-
-    Adds info on if interfaces are homologous to the training data
-    To be true both chains most have homology as defined in SI 5.8.
-    """
-
-    interface_high_homology: int
-
-
-@dataclass
-class ValClusteredDatasetStructureData:
-    """Structure data with cluster and added metadata information."""
-
-    release_date: datetime.date
-    resolution: float
-    sampled_cluster: list[str]  # TODO: remove this
-    token_count: int  # TODO: remove this
-    chains: dict[str, ValClusteredDatasetChainData]
-    interfaces: dict[str, ClusteredDatasetInterfaceData]
-
-
-ValClusteredDatasetStructureDataCache: TypeAlias = dict[
-    str, ValClusteredDatasetStructureData
-]
-"""Structure data cache with cluster information."""
-
-
 # TODO: Revisit this entire cache to remove all redundant fields
-@register_datacache
+@register_datacache(
+    format_list=[
+        "_chain_data_format",
+        "_interface_data_format",
+        "_ref_mol_data_format",
+        "_structure_data_format",
+    ]
+)
 @dataclass
 class ValClusteredDatasetCache(ChainInterfaceReferenceMolCache):
     """Full data cache for the validation dataset."""
@@ -470,7 +523,9 @@ class ValClusteredDatasetCache(ChainInterfaceReferenceMolCache):
     _structure_data_format = ValClusteredDatasetStructureData
 
 
-@register_datacache
+@register_datacache(
+    format_list=["_chain_data_format", "_ref_mol_data_format", "_structure_data_format"]
+)
 @dataclass
 class ProteinMonomerDatasetCache(DatasetCache):
     name: str
@@ -480,56 +535,14 @@ class ProteinMonomerDatasetCache(DatasetCache):
     _ref_mol_data_format = DatasetReferenceMoleculeCache
     _structure_data_format = ProteinMonomerStructureData
 
-    @classmethod
-    def from_json(cls, file: Path) -> ProteinMonomerDatasetCache:
-        """Constructor to format a json into this dataclass structure."""
-        with open(file) as f:
-            data = json.load(f)
-
-        # Remove _type field (already an internal private attribute so shouldn't be
-        # defined as an explicit field)
-        if "_type" in data:
-            # This is conditional for legacy compatibility, should be removed after
-            del data["_type"]
-
-        name = data["name"]
-
-        # Format structure data
-
-        structure_data = {}
-        for pdb_id, per_structure_data in data["structure_data"].items():
-            chain_data = per_structure_data.pop("chains")
-            # Extract all chain data into respective chain data format
-            chains = {
-                chain_id: cls._chain_data_format(**chain_data[chain_id])
-                for chain_id in chain_data
-            }
-
-            # Combine chain and interface data with remaining structure data
-            structure_data[pdb_id] = cls._structure_data_format(
-                chains=chains, **per_structure_data
-            )
-        tempfile = NamedTemporaryFile(delete=False, suffix=".db")
-        structure_data_shelf = shelve.Shelf(dbm.open(tempfile.name, flag="n"))
-        for k, v in structure_data.items():
-            structure_data_shelf[k] = v
-        # Format reference molecule data into respective format
-        ref_mol_data = {}
-        for ref_mol_id, per_ref_mol_data in data["reference_molecule_data"].items():
-            per_ref_mol_data_fmt = cls._ref_mol_data_format(**per_ref_mol_data)
-            ref_mol_data[ref_mol_id] = per_ref_mol_data_fmt
-
-        return cls(
-            name=name,
-            structure_data=structure_data_shelf,
-            reference_molecule_data=ref_mol_data,
-        )
-
 
 # Grouped type-aliases for more convenient type-hinting of general-purpose functions
-ChainData = PreprocessingChainData | PDBChainData
+ChainData = PreprocessingChainData | PDBChainData | ProteinMonomerChainData
 StructureDataCache = (
-    PreprocessingStructureDataCache | ClusteredDatasetStructureDataCache
+    PreprocessingStructureDataCache
+    | ClusteredDatasetStructureDataCache
+    | ValClusteredDatasetStructureDataCache
+    | ProteinMonomerStructureDataCache
 )
 ReferenceMoleculeCache = (
     PreprocessingReferenceMoleculeCache | DatasetReferenceMoleculeCache
