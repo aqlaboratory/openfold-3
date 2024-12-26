@@ -97,12 +97,16 @@ def get_sample_ids(bucket_name, prefix, profile):
         if "Contents" in page:
             for obj in page["Contents"]:
                 key = obj["Key"]
+                if key.endswith('best_structure_relaxed.pdb'):
                 # Extract sample_id from the key
-                parts = key.split("/")
-                if len(parts) > 2:  # Ensure the key has the structure
-                    sample_id = parts[-2]
-                    sample_ids.add(sample_id)
-
+                    parts = key.split("/")
+                    if len(parts) > 2:  # Ensure the key has the structure
+                        sample_id = parts[-2]
+                        sample_ids.add(sample_id)
+    if len(sample_ids) == 0:
+        raise ValueError("No sample ids found in the given bucket and prefix.")
+    else:
+        print(f"Found {len(sample_ids)} sample ids.")
     return list(sample_ids)
 
 
