@@ -1,8 +1,8 @@
 import logging
-from typing import Literal
+from typing import Literal, Optional
 
 import numpy as np
-from func_timeout import FunctionTimedOut, func_set_timeout
+from func_timeout import FunctionTimedOut, func_timeout
 from rdkit import Chem, rdBase
 from rdkit.Chem import AllChem, Mol
 
@@ -21,15 +21,18 @@ class ConformerGenerationError(ValueError):
     pass
 
 
-@func_set_timeout(30)
 def compute_conformer(
-    mol: Mol, use_random_coord_init: bool = False, remove_hs: bool = True
+    mol: Mol,
+    use_random_coord_init: bool = False,
+    remove_hs: bool = True,
+    timeout: Optional[float] = 30.0,
 ) -> tuple[Mol, int]:
     """Computes a conformer with the ETKDGv3 strategy.
 
     Wrapper around RDKit's EmbedMolecule, using ETKDGv3, handling hydrogen addition and
     removal, and raising an explicit ConformerGenerationError instead of returning -1.
-    A `FunctionTimedOut` exception is raised if conformer generation exceeds 30 seconds.
+    A FunctionTimedOut exception is raised if conformer generation exceeds the
+    given timeout.
 
     Args:
         mol:
@@ -40,6 +43,9 @@ def compute_conformer(
         remove_hs:
             Whether to remove hydrogens from the molecule after conformer generation.
             The function automatically adds hydrogens before conformer generation.
+        timeout:
+            The maximum time in seconds to allow for conformer generation.
+            Default value is 30 seconds. If None, no timeout is set.
 
     Returns:
         mol:
@@ -50,6 +56,9 @@ def compute_conformer(
     Raises:
         ConformerGenerationError:
             If the conformer generation fails.
+
+        FunctionTimedOut:
+            If the conformer generation exceeds the given timeout.
     """
     try:
         mol = Chem.AddHs(mol)
@@ -63,9 +72,16 @@ def compute_conformer(
 
     strategy.clearConfs = False
 
-    # Disable overly verbous conformer generation warnings
+    # Disable overly verbose conformer generation warnings
     blocker = rdBase.BlockLogs()
-    conf_id = AllChem.EmbedMolecule(mol, strategy)
+
+    if timeout is not None:
+        conf_id = func_timeout(
+            timeout=timeout, func=AllChem.EmbedMolecule, args=(mol, strategy)
+        )
+    else:
+        conf_id = AllChem.EmbedMolecule(mol, strategy)
+
     del blocker
 
     if remove_hs:
@@ -104,6 +120,8 @@ def multistrategy_compute_conformer(
             The strategy that was used for conformer generation. Either "default" or
             "random_init".
     """
+    smiles = Chem.MolToSmiles(mol)
+
     # Try standard ETKDGv3 strategy first
     try:
         mol, conf_id = compute_conformer(
@@ -111,7 +129,7 @@ def multistrategy_compute_conformer(
         )
     except (ConformerGenerationError, FunctionTimedOut) as e:
         logger.warning(
-            f"Exception when trying standard conformer generation: {e}, "
+            f"Exception when trying standard conformer generation for {smiles}: {e}, "
             + "trying random initialization"
         )
 
@@ -123,7 +141,7 @@ def multistrategy_compute_conformer(
         except (ConformerGenerationError, FunctionTimedOut) as e:
             logger.warning(
                 "Exception when trying conformer generation with random "
-                + f"initialization: {e}"
+                + f"initialization for {smiles}: {e}"
             )
             raise ConformerGenerationError("Failed to generate 3D coordinates") from e
         else:
