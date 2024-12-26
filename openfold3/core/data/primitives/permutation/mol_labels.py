@@ -193,7 +193,7 @@ def get_precursor_mol_groups(
 
 def naive_graph_match(g1: nx.Graph, g2: nx.Graph) -> bool:
     """Matches the graphs directly without any isomorphic graph matching.
-    
+
     The checks here are specific to the high-level graph representation of molecules,
     and we only check the equivalence of the node_reprs (respecting the order of the
     nodes), as well as the adjacency matrix of the graphs.
@@ -211,14 +211,14 @@ def naive_graph_match(g1: nx.Graph, g2: nx.Graph) -> bool:
     # Check node_repr equivalence
     node_reprs_g1 = [g1.nodes[node]["node_repr"] for node in g1.nodes]
     node_reprs_g2 = [g2.nodes[node]["node_repr"] for node in g2.nodes]
-    
+
     if node_reprs_g1 != node_reprs_g2:
         return False
 
     # Check adjacency matrix equivalence
     adj_matrix_g1 = nx.to_numpy_array(g1)
     adj_matrix_g2 = nx.to_numpy_array(g2)
-    
+
     return np.array_equal(adj_matrix_g1, adj_matrix_g2)
 
 
