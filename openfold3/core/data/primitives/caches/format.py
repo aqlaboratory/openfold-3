@@ -240,6 +240,7 @@ class DatasetCache:
     structure_data: dataclass
     reference_molecule_data: dataclass
 
+    _registered = False
     _format_validated: bool = False
 
     @classmethod
@@ -301,10 +302,16 @@ class DatasetCache:
         return ref_mol_data
 
     def __post_init__(self):
+        # Technically these two checks are redundant
         if not self._format_validated:
             raise ValueError(
                 "Datacache format was not validated. Decorate your class with "
                 "@register_datacache and provide a list of required format attributes."
+            )
+        if not self._registered:
+            raise ValueError(
+                "Datacache was not registered. Decorate your class with "
+                "@register_datacache."
             )
 
 
