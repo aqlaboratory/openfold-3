@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Iterable
-from typing import Literal
+from typing import Literal, Optional
 
 import numpy as np
 from func_timeout import FunctionTimedOut, func_timeout
