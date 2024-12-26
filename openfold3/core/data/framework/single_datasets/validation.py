@@ -1,6 +1,8 @@
 import logging
 
+import numpy as np
 import pandas as pd
+import torch
 from biotite.structure import AtomArray
 
 from openfold3.core.data.framework.single_datasets.abstract_single_dataset import (
@@ -12,6 +14,9 @@ from openfold3.core.data.pipelines.featurization.structure import (
 )
 from openfold3.core.data.pipelines.sample_processing.structure import (
     process_target_structure_af3,
+)
+from openfold3.core.data.primitives.featurization.structure import (
+    extract_starts_entities,
 )
 from openfold3.core.data.primitives.structure.cropping import (
     NO_CROPPING_TOKEN_BUDGET_SENTINEL,
@@ -108,3 +113,73 @@ class ValidationPDBDataset(WeightedPDBDataset):
 
         # Overwrite self.token_budget to be the number of tokens in this example
         return target_structure_data
+
+    def get_validation_homology_features(self, pdb_id: str, atom_array: AtomArray)-> dict:
+        """Create masks for validation metrics analysis.
+        
+        Args:
+            pdb_id: PDB id for example found in dataset_cache
+            atom_array: structure data for given pdb_id
+        Returns:
+            dict with two features:
+            - use_for_intra_validation [*, n_tokens] 
+                mask indicating if token should be used for intrachain metrics 
+            - use_for_inter_validation [*, n_tokens] 
+                mask indicating if token should be used for intrachain metrics 
+        """
+        features = {}
+
+        structure_entry = self.dataset_cache.structure_data[pdb_id]
+
+        chains_for_intra_metrics = [
+            cid
+            for cid, cdata in structure_entry.chains.items()
+            if cdata.use_intrachain_metrics
+        ]
+
+        chains_for_inter_metrics = set()
+        for interface_id, cluster_data in structure_entry.interfaces.items():
+            if cluster_data.use_interchain_metrics:
+                 interface_chains = interface_id.split("_") 
+                 chains_for_inter_metrics |= set(interface_chains)
+        chains_for_inter_metrics = list(chains_for_inter_metrics)
+        
+        # Create token mask for validation intra and inter metrics
+        token_starts_with_stop, _ = extract_starts_entities(atom_array)
+        token_starts = token_starts_with_stop[:-1]
+        features["use_for_intra_validation"] = torch.tensor(
+            np.isin(atom_array.chain_id[token_starts], chains_for_intra_metrics),
+            dtype=torch.int32,
+        )
+        features["use_for_inter_validation"] = torch.tensor(
+            np.isin(atom_array.chain_id[token_starts], chains_for_inter_metrics),
+            dtype=torch.int32,
+        )
+
+        return features
+
+    def create_all_features(
+        self,
+        pdb_id: str,
+        preferred_chain_or_interface: str,
+        return_atom_arrays: bool,
+    ) -> dict:
+        """Calls the parent create_all_features, and then adds features for homology
+        similarity."""
+        sample_data = super().create_all_features(
+            pdb_id, preferred_chain_or_interface, return_atom_arrays = True
+        )
+
+        validation_homology_features = self.get_validation_homology_features(
+            pdb_id, sample_data["atom_array"]
+        )
+        sample_data["features"].update(validation_homology_features)
+
+        # If we have all the datasets write their own create_all_features, we can avoid
+        # recording and then removing the atom_arrays
+        if not return_atom_arrays:
+            del sample_data["atom_array"]
+            del sample_data["atom_array_gt"]
+            del sample_data["atom_array_cropped"]
+        
+        return sample_data
