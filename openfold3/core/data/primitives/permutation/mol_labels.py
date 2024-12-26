@@ -72,7 +72,10 @@ def construct_coarse_molecule_graph(atom_array: AtomArray) -> nx.Graph:
             A networkx graph object representing the molecule. Internal node_reprs
             follow the strategy described above. Chain-level nodes get a string node
             label formatted like "chain: {chain_id}", and bond-atom nodes get a string
-            node label formatted like "link: {chain_id}_{atom_idx_relative}".
+            node label formatted like "link: {chain_id}_{atom_idx_relative}". The node
+            labels are only for inspection convenience and should not be used for graph
+            matching (as they differ between symmetric molecules), where the node_repr
+            values should solely be used instead.
     """
 
     g = nx.Graph()
@@ -186,6 +189,51 @@ def get_precursor_mol_groups(
         mol_groups[group_id].append(mol)
 
     return mol_groups
+
+
+def rename_node_labels_to_reprs(g: nx.Graph) -> nx.Graph:
+    """Renames the node labels in the graph to the node_reprs.
+
+    This is necessary as node labels in our case correspond to the actual chain IDs
+    which will be different even between symmetry-equivalent molecules, while the
+    node_repr values represent the actual invariant.
+
+    While we set the node labels to chain IDs explicitly for debugging/inspection
+    purposes, the networkx graph_equal function expects all node properties to be equal
+    so this function is needed.
+
+    Args:
+        g (nx.Graph):
+            The graph to rename the node labels in.
+
+    Returns:
+        nx.Graph:
+            A copy of the same graph with the node labels set to the node_reprs.
+    """
+    mapping = {node_label: g.nodes[node_label]["node_repr"] for node_label in g.nodes}
+
+    return nx.relabel_nodes(g, mapping, copy=True)
+
+
+def naive_graph_match(g1: nx.Graph, g2: nx.Graph) -> bool:
+    """Matches the graphs directly without any isomorphic graph matching.
+
+    Args:
+        g1 (nx.Graph):
+            The first graph to match.
+        g2 (nx.Graph):
+            The second graph to match.
+
+    Returns:
+        bool:
+            True if the graphs are equal, False otherwise.
+    """
+    # Temporarily set the node labels to the node_reprs, otherwise networkx will not
+    # consider them equal
+    g1_renamed = rename_node_labels_to_reprs(g1)
+    g2_renamed = rename_node_labels_to_reprs(g2)
+
+    return nx.utils.graphs_equal(g1_renamed, g2_renamed)
 
 
 @dataclass
@@ -308,7 +356,7 @@ def assign_mol_symmetry_ids(atom_array: AtomArray) -> AtomArray:
             # Check all existing symmetry groups for a match
             for symm_group in symmetric_mol_groups:
                 # Try identity mapping
-                if nx.utils.graphs_equal(symm_group.repr_graph, mol_graph):
+                if naive_graph_match(symm_group.repr_graph, mol_graph):
                     logger.debug("Found match.")
 
                     # Increment count
