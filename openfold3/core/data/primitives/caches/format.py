@@ -23,59 +23,33 @@ DATASET_CACHE_CLASS_REGISTRY = {}
 
 
 # TODO: Could make post-init check that this is set
-def register_datacache(format_list: list[str] = None) -> callable:
-    """Creates a decorator to register a DataCache class and check its format.
-
-    Args:
-        format_list (list[str], optional):
-            String names of format fields that need to be defined for the class.
-            Defaults to None.
-
-    Raises:
-        ValueError:
-            If a required format attribute is missing.
-
-    Returns:
-        callable:
-            The decorator function.
+def register_datacache(cls: type[DataCache]) -> type[DataCache]:
     """
+    Decorator to register a DataCache class in the registry and validate that
+    any attribute named like '_xxx_format' is non-None.
+    """
+    # 1. Detect all format-like attributes that start with '_' and end with '_format'
+    format_attrs = [
+        attr for attr in dir(cls) if attr.startswith("_") and attr.endswith("_format")
+    ]
 
-    if format_list is None:
-        format_list = []
+    # 2. Check each attribute to make sure it's not None
+    missing_attrs = [attr for attr in format_attrs if getattr(cls, attr, None) is None]
+    if missing_attrs:
+        raise ValueError(
+            f"Class {cls.__name__} is missing required format attribute(s): "
+            f"{missing_attrs}."
+        )
 
-    def decorator(cls) -> type[DataCache]:
-        """Registers the class and checks its format.
+    # 3. Put it in the registry
+    DATASET_CACHE_CLASS_REGISTRY[cls.__name__] = cls
 
-        Raises:
-            ValueError:
-                If a required format attribute is missing.
+    # 4. Mark the class as validated and registered
+    cls._format_validated = True
+    cls._registered = True
+    cls._type = cls.__name__
 
-        Returns:
-            type[DataCache]:
-                The decorated class.
-        """
-        # 1. Check required format attributes
-        missing_attrs = []
-        for attr in format_list:
-            if getattr(cls, attr, None) is None:
-                missing_attrs.append(attr)
-
-        if missing_attrs:
-            raise ValueError(
-                f"Class {cls.__name__} is missing required format "
-                f"attributes: {missing_attrs}"
-            )
-        else:
-            cls._format_validated = True
-
-        # 2. Register the class
-        DATASET_CACHE_CLASS_REGISTRY[cls.__name__] = cls
-        cls._registered = True
-        cls._type = cls.__name__
-
-        return cls
-
-    return decorator
+    return cls
 
 
 # TODO: Actually update the preprocessing code to use this class, currently it's only
@@ -301,14 +275,20 @@ class DatasetCache:
             ref_mol_data[ref_mol_id] = per_ref_mol_data_fmt
         return ref_mol_data
 
+    def __init_subclass__(cls, **kwargs):
+        """Ensure subclasses are properly initialized."""
+        super().__init_subclass__(**kwargs)
+        cls._format_validated = False
+        cls._registered = False
+
     def __post_init__(self):
         # Technically these two checks are redundant
-        if not self._format_validated:
+        if not self.__class__._format_validated:
             raise ValueError(
                 "Datacache format was not validated. Decorate your class with "
                 "@register_datacache and provide a list of required format attributes."
             )
-        if not self._registered:
+        if not self.__class__._registered:
             raise ValueError(
                 "Datacache was not registered. Decorate your class with "
                 "@register_datacache."
@@ -440,10 +420,7 @@ class ValClusteredDatasetStructureData:
 
 @dataclass
 class ProteinMonomerStructureData:
-    """Structure data for protein monomers.
-
-    Note that ProteinMonomerStructureDataCache is a wrapper around this dataclass
-    as each entry is a monomer so any metadata is stored at the chain level."""
+    """Structure data for protein monomers."""
 
     chains: dict[str, ProteinMonomerChainData]
 
@@ -452,7 +429,7 @@ ClusteredDatasetStructureDataCache: TypeAlias = dict[str, ClusteredDatasetStruct
 ValClusteredDatasetStructureDataCache: TypeAlias = dict[
     str, ValClusteredDatasetStructureData
 ]
-ProteinMonomerStructureDataCache: TypeAlias = ProteinMonomerStructureData
+ProteinMonomerStructureDataCache: TypeAlias = dict[str, ProteinMonomerStructureData]
 
 
 # --- Dataset caches ---
@@ -475,14 +452,7 @@ class ChainInterfaceReferenceMolCache(DatasetCache):
     _ref_mol_data_format: dataclass = DatasetReferenceMoleculeData
 
 
-@register_datacache(
-    format_list=[
-        "_chain_data_format",
-        "_interface_data_format",
-        "_ref_mol_data_format",
-        "_structure_data_format",
-    ]
-)
+@register_datacache
 @dataclass
 class ClusteredDatasetCache(ChainInterfaceReferenceMolCache):
     """Full data cache for clustered dataset.
@@ -507,14 +477,7 @@ class ClusteredDatasetCache(ChainInterfaceReferenceMolCache):
 
 
 # TODO: Revisit this entire cache to remove all redundant fields
-@register_datacache(
-    format_list=[
-        "_chain_data_format",
-        "_interface_data_format",
-        "_ref_mol_data_format",
-        "_structure_data_format",
-    ]
-)
+@register_datacache
 @dataclass
 class ValClusteredDatasetCache(ChainInterfaceReferenceMolCache):
     """Full data cache for the validation dataset."""
@@ -530,11 +493,11 @@ class ValClusteredDatasetCache(ChainInterfaceReferenceMolCache):
     _structure_data_format = ValClusteredDatasetStructureData
 
 
-@register_datacache(
-    format_list=["_chain_data_format", "_ref_mol_data_format", "_structure_data_format"]
-)
+@register_datacache
 @dataclass
 class ProteinMonomerDatasetCache(DatasetCache):
+    """Full data cache for protein monomer data from AF2."""
+
     name: str
     structure_data: ProteinMonomerStructureDataCache
     reference_molecule_data: DatasetReferenceMoleculeCache

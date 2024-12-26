@@ -16,8 +16,12 @@ from openfold3.core.data.primitives.caches.clustering import (
     add_cluster_ids_and_sizes,
 )
 from openfold3.core.data.primitives.caches.format import (
+    DatasetReferenceMoleculeData,
     PreprocessingDataCache,
     PreprocessingStructureDataCache,
+    ProteinMonomerChainData,
+    ProteinMonomerDatasetCache,
+    ProteinMonomerStructureData,
 )
 from openfold3.core.data.primitives.caches.metadata import (
     add_and_filter_alignment_representatives,
@@ -184,3 +188,60 @@ def create_pdb_training_dataset_cache_af3(
     write_datacache_to_json(dataset_cache, output_path)
 
     logger.info("DONE.")
+
+
+def create_protein_monomer_dataset_cache_af3(
+    data_directory: Path,
+    protein_reference_molecule_data_file: Path,
+    dataset_name: str,
+    output_path: Path,
+) -> None:
+    """Creates a protein monomer dataset cache.
+
+    Args:
+        data_directory (Path):
+            Directory containing subdirectories for each protein monomer.
+        protein_reference_molecule_data_file (Path):
+            Path to a JSON file containing reference molecule data for each canonical
+            protein monomer.
+        dataset_name (str):
+            Name of the dataset.
+        output_path (Path):
+            Path to write the dataset cache to.
+    """
+    # Get all chain directories and canonical protein reference molecule data
+    chain_directories = [entry for entry in data_directory.iterdir() if entry.is_dir()]
+    with open(protein_reference_molecule_data_file) as f:
+        reference_molecule_data_dict = json.load(f)
+
+    # Populate structure data field
+    structure_data = {}
+    for chain_directory in chain_directories:
+        chain_id = chain_directory.stem
+        structure_data[chain_id] = ProteinMonomerStructureData(
+            {
+                "1": ProteinMonomerChainData(
+                    alignment_representative_id=chain_id, template_ids=[]
+                )
+            }
+        )
+
+    # Reference molecule data
+    reference_molecule_data = {}
+    for ref_mol_id, ref_mol_data in reference_molecule_data_dict.items():
+        reference_molecule_data[ref_mol_id] = DatasetReferenceMoleculeData(
+            conformer_gen_strategy=ref_mol_data["conformer_gen_strategy"],
+            fallback_conformer_pdb_id=ref_mol_data["fallback_conformer_pdb_id"],
+            canonical_smiles=ref_mol_data["canonical_smiles"],
+            set_fallback_to_nan=ref_mol_data["set_fallback_to_nan"],
+        )
+
+    # Create dataset cache
+    dataset_cache = ProteinMonomerDatasetCache(
+        name=dataset_name,
+        structure_data=structure_data,
+        reference_molecule_data=reference_molecule_data,
+    )
+
+    # Write the final dataset cache to disk
+    write_datacache_to_json(dataset_cache, output_path)
