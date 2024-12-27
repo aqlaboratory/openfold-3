@@ -353,6 +353,11 @@ class Attention(nn.Module):
                 "use flash_mask instead"
             )
 
+        # TODO: Make this more explicit
+        # The EvoformerAttention kernel can only be used for sequence lengths > 16
+        if use_deepspeed_evo_attention and q_x.shape[-2] <= 16:
+            use_deepspeed_evo_attention = False
+
         attn_options = [
             use_memory_efficient_kernel,
             use_deepspeed_evo_attention,

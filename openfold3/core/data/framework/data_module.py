@@ -496,8 +496,11 @@ class DataModule(pl.LightningDataModule):
         return self.generate_dataloader(DatasetMode.prediction)
 
 
+# TODO: Remove debug logic
 def openfold_batch_collator(samples: list[dict[str, torch.Tensor]]):
     """Collates a list of samples into a batch."""
+
+    pdb_ids = [s.pop("pdb_id") for s in samples]
 
     def pad_feat_fn(values: list[torch.Tensor]) -> torch.Tensor:
         """
@@ -519,5 +522,7 @@ def openfold_batch_collator(samples: list[dict[str, torch.Tensor]]):
 
     # Add the ref_space_uid_to_perm back to the samples
     samples["ref_space_uid_to_perm"] = ref_space_uid_to_perm_dicts
+
+    samples["pdb_id"] = ", ".join(pdb_ids)
 
     return samples
