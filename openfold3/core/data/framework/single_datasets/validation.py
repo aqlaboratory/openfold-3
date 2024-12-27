@@ -23,6 +23,16 @@ from openfold3.core.data.primitives.structure.cropping import (
 )
 
 
+def make_chain_mask_padded(all_chains, interfaces_to_include):
+    largest_chain_index = torch.max(all_chains)
+    chain_mask = torch.zeros((largest_chain_index + 1, largest_chain_index + 1), dtype=torch.int)
+
+    for interface_tuple in interfaces_to_include:
+        chain_mask[interface_tuple[0], interface_tuple[1]] = 1
+        chain_mask[interface_tuple[1], interface_tuple[0]] = 1
+    
+    return chain_mask
+
 @register_dataset
 class ValidationPDBDataset(WeightedPDBDataset):
     """Dataset class for the validation set of the WeightedPDBDataset."""
@@ -138,26 +148,28 @@ class ValidationPDBDataset(WeightedPDBDataset):
         ]
         print(f"{pdb_id=} {chains_for_intra_metrics=}")
 
-        chains_for_inter_metrics = [] 
+        interfaces_to_include = [] 
         for interface_id, cluster_data in structure_entry.interfaces.items():
             if cluster_data.use_interchain_metrics:
                  print(f"{pdb_id=} {interface_id=} to be included")
-                 interface_chains = interface_id.split("_") 
-                 chains_for_inter_metrics.extend(interface_chains)
-        chains_for_inter_metrics = list(set(chains_for_inter_metrics))
-        print(f"{pdb_id=} {chains_for_inter_metrics=}") 
+                 interface_chains = tuple(interface_id.split("_")) 
+                 interfaces_to_include.append(interface_chains)
         
         # Create token mask for validation intra and inter metrics
         token_starts_with_stop, _ = extract_starts_entities(atom_array)
         token_starts = token_starts_with_stop[:-1]
+        token_chain_id = atom_array.chain_id[token_starts]
+
         features["use_for_intra_validation"] = torch.tensor(
-            np.isin(atom_array.chain_id[token_starts], chains_for_intra_metrics),
+            np.isin(token_chain_id, chains_for_intra_metrics),
             dtype=torch.int32,
         )
-        features["use_for_inter_validation"] = torch.tensor(
-            np.isin(atom_array.chain_id[token_starts], chains_for_inter_metrics),
-            dtype=torch.int32,
-        )
+
+        all_chain_ids = torch.unique(token_chain_id)
+        chain_mask_padded = make_chain_mask_padded(all_chain_ids, interfaces_to_include)
+
+        # [n_token, n_token] for pairwise interactions
+        features["use_for_inter_validation"] = chain_mask_padded[token_chain_id.unsqueeze(0), token_chain_id.unsqueeze(1)]
 
         return features
 
