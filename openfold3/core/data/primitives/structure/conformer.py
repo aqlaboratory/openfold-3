@@ -290,13 +290,13 @@ def get_name_match_argsort(
     atom_names: np.ndarray[str], ref_atom_names: np.ndarray[str]
 ) -> np.ndarray[int]:
     """Gets a sorting order for atom names based on a reference order.
-    
+
     Args:
         atom_names:
             The current atom names.
         ref_atom_names:
             The reference atom names to sort by.
-    
+
     Returns:
         The sorting order for the atom names to match the reference order. Any atom
         names not in the reference order are placed at the end.
