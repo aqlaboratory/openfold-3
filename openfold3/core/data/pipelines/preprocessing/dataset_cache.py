@@ -5,10 +5,13 @@ from dataclasses import asdict
 from functools import partial
 from pathlib import Path
 
+from tqdm import tqdm
+
 from openfold3.core.data.io.dataset_cache import (
     format_nested_dict_for_json,
     write_datacache_to_json,
 )
+from openfold3.core.data.io.s3 import list_bucket_entries
 from openfold3.core.data.io.sequence.fasta import (
     consolidate_preprocessed_fastas,
 )
@@ -190,17 +193,22 @@ def create_pdb_training_dataset_cache_af3(
     logger.info("DONE.")
 
 
+# TODO: implement a more general way to interact with both local and S3 data
 def create_protein_monomer_dataset_cache_af3(
     data_directory: Path,
     protein_reference_molecule_data_file: Path,
     dataset_name: str,
     output_path: Path,
+    s3_client_config: dict | None = None,
 ) -> None:
     """Creates a protein monomer dataset cache.
 
     Args:
         data_directory (Path):
-            Directory containing subdirectories for each protein monomer.
+            Directory containing subdirectories for each protein monomer. Names of the
+            per-chain directories will be used as chain IDs and representative ids for
+            the corresponding chain in the dataset cache. If the directory lives in an
+            S3 bucket, the path should be "s3:/<bucket>/<prefix>".
         protein_reference_molecule_data_file (Path):
             Path to a JSON file containing reference molecule data for each canonical
             protein monomer.
@@ -208,15 +216,40 @@ def create_protein_monomer_dataset_cache_af3(
             Name of the dataset.
         output_path (Path):
             Path to write the dataset cache to.
+        s3_client_config (dict, optional):
+            Configuration for the S3 client. If None, the client is started without a
+            profile. Supports profile and max_keys keys. Defaults to None.
     """
-    # Get all chain directories and canonical protein reference molecule data
-    chain_directories = [entry for entry in data_directory.iterdir() if entry.is_dir()]
+    # Get all chain directories
+    # S3
+    if str(data_directory).startswith("s3:/"):
+        if s3_client_config is None:
+            s3_client_config = {}
+        logger.info("1/4: Fetching chain directories from S3 bucket.")
+        chain_directories = list_bucket_entries(
+            bucket_name=data_directory.parts[1],
+            prefix="/".join(data_directory.parts[2:]) + "/",
+            profile=s3_client_config.get("profile", None),
+            max_keys=s3_client_config.get("max_keys", 1000),
+        )
+    # Local
+    else:
+        print("1/4: Fetching chain directories locally.")
+        chain_directories = [
+            entry for entry in data_directory.iterdir() if entry.is_dir()
+        ]
+
+    # Load reference molecule data
     with open(protein_reference_molecule_data_file) as f:
         reference_molecule_data_dict = json.load(f)
 
     # Populate structure data field
     structure_data = {}
-    for chain_directory in chain_directories:
+    for chain_directory in tqdm(
+        chain_directories,
+        total=len(chain_directories),
+        desc="2/4: Populating structure data",
+    ):
         chain_id = chain_directory.stem
         structure_data[chain_id] = ProteinMonomerStructureData(
             {
@@ -227,6 +260,7 @@ def create_protein_monomer_dataset_cache_af3(
         )
 
     # Reference molecule data
+    print("3/4: Populating reference molecule data.")
     reference_molecule_data = {}
     for ref_mol_id, ref_mol_data in reference_molecule_data_dict.items():
         reference_molecule_data[ref_mol_id] = DatasetReferenceMoleculeData(
@@ -244,4 +278,5 @@ def create_protein_monomer_dataset_cache_af3(
     )
 
     # Write the final dataset cache to disk
+    print("4/4: Writing dataset cache to disk.")
     write_datacache_to_json(dataset_cache, output_path)
