@@ -711,18 +711,21 @@ def separate_cropped_and_gt(
 
     # Keep exactly the sections of the ground-truth that are symmetry-related to
     # sections in the crop
-    for cropped_entities in mol_entity_iter(atom_array_cropped):
-        entity_id = cropped_entities.mol_entity_id[0]
+    for entity_cropped in mol_entity_iter(atom_array_cropped):
+        entity_id = entity_cropped.mol_entity_id[0]
 
+        # For every component sym ID, store the absolute conformer IDs of all components
+        # with that sym ID. This is useful to update all symmetry-equivalent conformers
+        # at once later.
         sym_component_id_to_absolute_conformer_id = defaultdict(set)
-        for atom in cropped_entities:
+        for atom in entity_cropped:
             sym_component_id_to_absolute_conformer_id[atom.mol_sym_component_id].add(
                 atom.component_id
             )
 
         # Get the exact symmetry-equivalent atom sets per component
         sym_component_id_to_required_gt_atoms = defaultdict(set)
-        for sym_mol in mol_unique_instance_iter(cropped_entities):
+        for sym_mol in mol_unique_instance_iter(entity_cropped):
             for component in component_iter(sym_mol):
                 absolute_component_id = component.component_id[0]
                 sym_component_id = component.mol_sym_component_id[0]
