@@ -7,6 +7,7 @@ from typing import Literal
 import numpy as np
 from biotite.structure import AtomArray
 from func_timeout import FunctionTimedOut
+from rdkit import Chem
 from rdkit.Chem import Mol
 
 from openfold3.core.data.io.structure.mol import read_single_annotated_sdf
@@ -23,6 +24,7 @@ from openfold3.core.data.primitives.structure.conformer import (
     compute_conformer,
     get_allnan_conformer,
     get_cropped_permutations,
+    get_name_match_argsort,
     multistrategy_compute_conformer,
     set_single_conformer,
 )
@@ -65,7 +67,7 @@ class ProcessedReferenceMolecule:
 
 @log_runtime_memory(runtime_dict_key="runtime-ref-conf-proc-fetch", multicall=True)
 def get_processed_reference_conformer(
-    mol_id: Mol,
+    mol_id: str,
     mol: Mol,
     mol_atom_array: AtomArray,
     preferred_confgen_strategy: Literal["default", "random_init", "use_fallback"],
@@ -116,10 +118,17 @@ def get_processed_reference_conformer(
 
     # Get uniquified atom names from RDKit mol and AtomArray (necessary because
     # multi-residue ligands can have duplicated atom names)
-    conf_atom_names = uniquify_ids(
-        [atom.GetProp("annot_atom_name") for atom in mol.GetAtoms()]
+    conf_atom_names = np.array(
+        uniquify_ids([atom.GetProp("annot_atom_name") for atom in mol.GetAtoms()])
     )
     gt_atom_names = mol_atom_array.atom_name_unique
+
+    # Reorder atoms if the name orders are different between the refence conformer and
+    # mol atom array
+    reorder_index = get_name_match_argsort(conf_atom_names, gt_atom_names)
+
+    conf_atom_names = conf_atom_names[reorder_index]
+    mol = Chem.RenumberAtoms(mol, reorder_index.tolist())
 
     # Ensure that all atoms in the ground-truth structure are also in the loaded
     # conformer data
@@ -127,6 +136,8 @@ def get_processed_reference_conformer(
 
     # Mask for atoms that are in the ground-truth array
     in_gt_mask = np.isin(conf_atom_names, gt_atom_names)
+
+    assert (conf_atom_names[in_gt_mask] == gt_atom_names).all()
 
     # Mask for atoms that are in the crop itself
     in_crop_atom_names = gt_atom_names[mol_atom_array.crop_mask]

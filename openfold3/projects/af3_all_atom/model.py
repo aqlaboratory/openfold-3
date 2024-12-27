@@ -567,12 +567,11 @@ class AlphaFold3(nn.Module):
         output.update(rollout_output)
 
         if self.training:  # noqa: SIM102
-            # Apply permutation alignment to get the relevant and reordered subset of
-            # ground-truth features
+            # Apply permutation alignment which will update the ground-truth
+            # coordinates/mask in-place with the correct permutation (and optionally
+            # disables losses in case of a critical error)
             with torch.no_grad():
-                batch["ground_truth"] = safe_multi_chain_permutation_alignment(
-                    batch=batch, output=output
-                )
+                safe_multi_chain_permutation_alignment(batch=batch, output=output)
 
             # Run training step (if necessary)
             if self.settings.diffusion_training_enabled:
