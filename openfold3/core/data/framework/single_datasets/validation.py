@@ -136,13 +136,16 @@ class ValidationPDBDataset(WeightedPDBDataset):
             for cid, cdata in structure_entry.chains.items()
             if cdata.use_intrachain_metrics
         ]
+        print(f"{pdb_id=} {chains_for_intra_metrics=}")
 
-        chains_for_inter_metrics = set()
+        chains_for_inter_metrics = [] 
         for interface_id, cluster_data in structure_entry.interfaces.items():
             if cluster_data.use_interchain_metrics:
+                 print(f"{pdb_id=} {interface_id=} to be included")
                  interface_chains = interface_id.split("_") 
-                 chains_for_inter_metrics |= set(interface_chains)
-        chains_for_inter_metrics = list(chains_for_inter_metrics)
+                 chains_for_inter_metrics.extend(interface_chains)
+        chains_for_inter_metrics = list(set(chains_for_inter_metrics))
+        print(f"{pdb_id=} {chains_for_inter_metrics=}") 
         
         # Create token mask for validation intra and inter metrics
         token_starts_with_stop, _ = extract_starts_entities(atom_array)
@@ -170,10 +173,10 @@ class ValidationPDBDataset(WeightedPDBDataset):
             pdb_id, preferred_chain_or_interface, return_atom_arrays = True
         )
 
-        validation_homology_features = self.get_validation_homology_features(
+        validation_homology_filters = self.get_validation_homology_features(
             pdb_id, sample_data["atom_array"]
         )
-        sample_data["features"].update(validation_homology_features)
+        sample_data["features"].update(validation_homology_filters)
 
         # If we have all the datasets write their own create_all_features, we can avoid
         # recording and then removing the atom_arrays
