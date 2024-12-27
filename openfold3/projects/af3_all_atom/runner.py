@@ -1,4 +1,3 @@
-import copy
 import importlib
 import logging
 import traceback
@@ -63,12 +62,6 @@ class AlphaFold3AllAtom(ModelRunner):
             f"step {self.global_step}"
         )
 
-        def to_cpu(t):
-            if t.dtype == torch.bfloat16:
-                return t.float().cpu()
-            return t.cpu()
-
-        batch_cpu = tensor_tree_map(to_cpu, copy.deepcopy(batch))
         try:
             # Run the model
             batch, outputs = self.model(batch)
@@ -88,7 +81,6 @@ class AlphaFold3AllAtom(ModelRunner):
                 + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
                 + "-" * 40
             )
-            torch.save(batch_cpu, f"batch_{pdb_id}.pt")
             raise e
 
         return loss
