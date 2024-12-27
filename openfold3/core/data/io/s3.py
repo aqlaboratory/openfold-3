@@ -87,6 +87,5 @@ def list_bucket_entries(
         if "CommonPrefixes" in page:
             for pfx in page["CommonPrefixes"]:
                 entries.append(Path(pfx["Prefix"]))
-        break
 
     return entries

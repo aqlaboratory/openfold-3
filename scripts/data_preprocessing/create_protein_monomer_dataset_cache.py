@@ -55,7 +55,8 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
 )
 @click.option(
     "--s3_client_config",
-    required=True,
+    required=False,
+    default=None,
     type=str,
     help="The argument s3_client_config "
     "input as a JSON string with keys 'profile' and 'max_keys'.",

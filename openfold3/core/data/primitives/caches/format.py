@@ -505,6 +505,25 @@ class ProteinMonomerDatasetCache(DatasetCache):
     _ref_mol_data_format = DatasetReferenceMoleculeCache
     _structure_data_format = ProteinMonomerStructureData
 
+    @classmethod
+    def _parse_structure_data(cls, data: dict) -> dict:
+        # Format structure data
+        structure_data = {}
+        for pdb_id, per_structure_data in data["structure_data"].items():
+            chain_data = per_structure_data.pop("chains")
+
+            # Extract all chain data into respective chain data format
+            chains = {
+                chain_id: cls._chain_data_format(**chain_data[chain_id])
+                for chain_id in chain_data
+            }
+
+            # Combine chain and interface data with remaining structure data
+            structure_data[pdb_id] = cls._structure_data_format(
+                chains=chains, **per_structure_data
+            )
+        return structure_data
+
 
 # Grouped type-aliases for more convenient type-hinting of general-purpose functions
 ChainData = PreprocessingChainData | PDBChainData | ProteinMonomerChainData
