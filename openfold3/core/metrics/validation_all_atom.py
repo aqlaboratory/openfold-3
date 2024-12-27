@@ -25,8 +25,8 @@ def lddt(
         pair_dist_pred_pos: pairwise distance of prediction [*, n_atom, n_atom]
         pair_dist_gt_pos: pairwise distance of gt [*, n_atom, n_atom]
         all_atom_mask: atom level mask [*, n_atom]
-        intra_mask_filter: 
-        inter_mask_filter: [*, n_atom, n_atom] 
+        intra_mask_filter:[*, n_atom] intra metrics filter 
+        inter_mask_filter: [*, n_atom, n_atom] pairwise interaction filter 
         asym_id: atomized asym_id feature [*, n_atom]
         threshold: a list of thresholds to apply for lddt computation
             - Standard values: [0.5, 1., 2., 4.]
@@ -104,7 +104,7 @@ def interface_lddt(
         all_atom_gt_pos_2: gt interacting molecule coordinates  [*, n_atom2, 3]
         all_atom_mask1: protein atom mask [*, n_atom1]
         all_atom_mask2: interacting molecule atom maks [*, n_atom2]
-        filter_mask: [*, n_atom1, n_atom2] 
+        filter_mask: [*, n_atom1, n_atom2] pairwise filter for atom types 
         cutoff: distance cutoff
             - Nucleic Acids (DNA/RNA) 30.
             - Others(Protein/Ligands) 15.
@@ -212,8 +212,8 @@ def get_protein_metrics(
     Args:
         is_protein_atomized: broadcasted is_protein feature [*, n_atom]
         asym_id: atomized asym_id feature [*, n_atom]
-        intra_mask_atomized:
-        inter_mask_atomized:
+        intra_mask_atomized:[*, n_atom] intra metrics filter 
+        inter_mask_atomized: [*, n_atom, n_atom] pairwise interaction filter 
         pred_coords: predicted coordinates [*, n_atom, 3]
         gt_coords: gt coordinates [*, n_atom, 3]
         all_atom_mask: atom mask [*, n_atom]
@@ -235,9 +235,10 @@ def get_protein_metrics(
         all_atom_mask_protein = all_atom_mask[is_protein_atomized].view((bs) + (-1,))
         intra_mask_atomized_protein = intra_mask_atomized[is_protein_atomized].view((bs) + (-1,))
 
-        # TODO figure out how to get the protein atoms only
+        # Apply pairwise protein mask to get protein index values for inter_chain_mask
         is_protein_atomized_pair = is_protein_atomized[..., None] * is_protein_atomized[..., None, :]
-        inter_mask_atomized_protein = inter_mask_atomized[is_protein_atomized_pair].view((bs) + (-1,))
+        n_protein_atoms = torch.sum(is_protein_atomized)
+        inter_mask_atomized_protein = torch.masked_select(inter_mask_atomized, is_protein_atomized_pair).reshape(bs, n_protein_atoms, n_protein_atoms)
 
         # (bs,(n_sample), n_prot, n_prot)
         gt_protein_pair = torch.sqrt(
@@ -296,8 +297,8 @@ def get_nucleic_acid_metrics(
     Args:
         is_nucleic_acid_atomized: broadcasted is_dna/rna feature [*, n_atom]
         asym_id: atomized asym_id feature [*, n_atom]
-        intra_mask_atomized:
-        inter_mask_atomized:
+        intra_mask_atomized:[*, n_atom] intra metrics filter 
+        inter_mask_atomized: [*, n_atom, n_atom] pairwise interaction filter 
         pred_coords: predicted coordinates [*, n_atom, 3]
         gt_coords: gt coordinates [*, n_atom, 3]
         all_atom_mask: atom mask [*, n_atom]
@@ -335,11 +336,18 @@ def get_nucleic_acid_metrics(
         asym_id_na = asym_id[is_nucleic_acid_atomized].view((bs) + (-1,))
 
         all_atom_mask_protein = all_atom_mask[is_protein_atomized].view((bs) + (-1,))
-        inter_mask_atomized_protein = inter_mask_atomized[is_protein_atomized].view((bs) + (-1,))
-
         all_atom_mask_na = all_atom_mask[is_nucleic_acid_atomized].view((bs) + (-1,))
         intra_mask_atomized_na = intra_mask_atomized[is_nucleic_acid_atomized].view((bs) + (-1,))
-        inter_mask_atomized_na = inter_mask_atomized[is_nucleic_acid_atomized].view((bs) + (-1,))
+
+        # Apply pairwise na mask to get intra na interactions 
+        is_nucleic_acid_atomized_pair = is_nucleic_acid_atomized[..., None] * is_nucleic_acid_atomized[..., None, :]
+        n_nucleic_acid_atoms = torch.sum(is_nucleic_acid_atomized)
+        inter_mask_atomized_na = torch.masked_select(inter_mask_atomized, is_nucleic_acid_atomized_pair).reshape(bs, n_nucleic_acid_atoms, n_nucleic_acid_atoms)
+
+        # Apply protein x na masks to select protein - na interactions 
+        is_protein_na_pair = is_protein_atomized[..., None] * is_nucleic_acid_atomized[..., None, :]
+        n_protein_atoms = torch.sum(is_protein_atomized)
+        inter_filter_mask = torch.masked_select(inter_mask_atomized, is_protein_na_pair).reshape(bs, n_protein_atoms, n_nucleic_acid_atoms)
 
         # (bs,(n_sample), n_na, n_na)
         gt_na_pair = torch.sqrt(
@@ -388,9 +396,8 @@ def get_nucleic_acid_metrics(
             gt_protein,
             gt_na,
             all_atom_mask_protein,
-            inter_mask_atomized_protein,
             all_atom_mask_na,
-            inter_mask_atomized_na,
+            inter_filter_mask,
             cutoff=30.0,
         )
         out["lddt_inter_protein_" + substrate] = inter_lddt_protein_na
@@ -401,9 +408,8 @@ def get_nucleic_acid_metrics(
             gt_protein,
             gt_na,
             all_atom_mask_protein,
-            inter_mask_atomized_protein,
             all_atom_mask_na,
-            inter_mask_atomized_na,
+            inter_filter_mask,
             cutoff=15.0,
         )
         out["lddt_inter_protein_" + substrate + "_15"] = inter_lddt_protein_na_15
@@ -478,14 +484,19 @@ def get_ligand_metrics(
         asym_id_ligand = asym_id[is_ligand_atomized].view((bs) + (-1,))
 
         all_atom_mask_protein = all_atom_mask[is_protein_atomized].view((bs) + (-1,))
-        inter_mask_atomized_protein = inter_mask_atomized[is_protein_atomized].view((bs) + (-1,))
-
         all_atom_mask_ligand = all_atom_mask[is_ligand_atomized].view((bs) + (-1,))
         intra_mask_atomized_ligand = intra_mask_atomized[is_ligand_atomized].view((bs) + (-1,))
-        # DO NOT SUBMIT, placeholder until we have correct ligand filters
-        intra_mask_atomized_ligand  = torch.ones_like(intra_mask_atomized_ligand)
 
-        inter_mask_atomized_ligand = inter_mask_atomized[is_ligand_atomized].view((bs) + (-1,))
+        # Apply pairwise na mask to get intra na interactions 
+        is_ligand_atomized_pair = is_ligand_atomized[..., None] * is_ligand_atomized[..., None, :]
+        n_ligand_atoms = torch.sum(is_ligand_atomized)
+        inter_mask_atomized_ligand = torch.masked_select(inter_mask_atomized, is_ligand_atomized_pair).reshape(bs, n_ligand_atoms, n_ligand_atoms)
+
+        # Apply protein x na masks to select protein - na interactions 
+        is_protein_ligand_pair = is_protein_atomized[..., None] * is_ligand_atomized[..., None, :]
+        n_protein_atoms = torch.sum(is_protein_atomized)
+        inter_filter_mask = torch.masked_select(inter_mask_atomized, is_protein_ligand_pair).reshape(bs, n_protein_atoms, n_ligand_atoms)
+
 
         # (bs,(n_sample), n_lig, n_lig)
         gt_ligand_pair = torch.sqrt(
@@ -530,9 +541,8 @@ def get_ligand_metrics(
             gt_protein,
             gt_ligand,
             all_atom_mask_protein,
-            inter_mask_atomized_protein,
             all_atom_mask_ligand,
-            inter_mask_atomized_ligand,
+            inter_filter_mask,
             cutoff=15.0,
         )
         out["lddt_inter_protein_ligand"] = inter_lddt_protein_ligand
@@ -883,14 +893,13 @@ def get_validation_metrics(
         token_mask, num_atoms_per_token, use_for_intra 
     )
 
+    # convert use_for_inter: [*, n_token, n_token] into [*, n_atom, n_atom]
     inter_filter_atomized = broadcast_token_feat_to_atoms(
         token_mask, num_atoms_per_token, use_for_inter, token_dim = -2,
     )
-
     inter_filter_atomized = broadcast_token_feat_to_atoms(
         token_mask, num_atoms_per_token, inter_filter_atomized.transpose(-1, -2), token_dim = -2,
     )
-
     inter_filter_atomized = inter_filter_atomized.transpose(-1, -2)
 
     protein_validation_metrics = get_protein_metrics(
