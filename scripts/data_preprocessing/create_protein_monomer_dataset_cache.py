@@ -1,9 +1,9 @@
 # %%
-import json
 from pathlib import Path
 
 import click
 
+from openfold3.core.data.io.s3 import parse_s3_config
 from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
     create_protein_monomer_dataset_cache_af3,
 )
@@ -13,7 +13,7 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
 @click.option(
     "--data_directory",
     required=True,
-    help="Directory containing per-monomer folders.If the directory lives in an"
+    help="Directory containing per-monomer folders. If the directory lives in an"
     " S3 bucket, the path should be 's3:/<bucket>/<prefix>'.",
     type=click.Path(
         file_okay=False,
@@ -69,7 +69,7 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
     help="This enables a recursive search of the specified s3 directory"
     "This is an expensive operation and should only be used when necessary."
     "The passed filename should be a basename of the file to search for,"
-    "for exampl, 'best_structure_relaxed.pdb'; the associated ID of the "
+    "for example, 'best_structure_relaxed.pdb'; the associated ID of the "
     "file will only be added if the file exists."
     "You should specify a large value for --num_workers to speed up the search.",
 )
@@ -90,15 +90,37 @@ def main(
     check_filename_exists: str | None = None,
     num_workers: int = 1,
 ):
+    """Create a dataset cache for a protein monomer dataset.
+
+    Args:
+        data_directory (Path):
+            Directory containing per-monomer folders. If the directory lives in an
+            S3 bucket, the path should be 's3:/<bucket>/<prefix>'.
+        protein_reference_molecule_data_file (Path):
+            Path to a reference molecule data file containing the unique set of all CCD
+            reference molecules that occur in the entries. An example file is
+            available in openfold3/core/data/resources.
+        dataset_name (str):
+            The name of the dataset to create.
+        output_path (Path):
+            Path to where the dataset cache json is saved.
+        s3_client_config (dict | None, optional):
+            The argument s3_client_config input as a JSON string with keys 'profile' and
+            'max_keys'. Defaults to None.
+        check_filename_exists (str | None, optional):
+            This enables a recursive search of the specified s3 directory
+            This is an expensive operation and should only be used when necessary.
+            The passed filename should be a basename of the file to search for,
+            for example, 'best_structure_relaxed.pdb'; the associated ID of the
+            file will only be added if the file exists.
+            You should specify a large value for --num_workers to speed up the search.
+            Defaults to None.
+        num_workers (int, optional):
+            The number of workers to use for parallel processing.
+            Only used if --target_filename is specified. Defaults to 1.
+    """
     # Parse S3 config
-    if s3_client_config is not None:
-        try:
-            s3_client_config = json.loads(s3_client_config)
-        except json.JSONDecodeError:
-            click.echo("Invalid max_seq_counts JSON string!")
-            return
-    else:
-        s3_client_config = {}
+    s3_client_config = parse_s3_config(s3_client_config)
 
     # Create cache
     create_protein_monomer_dataset_cache_af3(

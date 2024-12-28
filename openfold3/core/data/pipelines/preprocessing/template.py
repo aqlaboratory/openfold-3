@@ -16,6 +16,7 @@ from biotite.structure.io.pdbx import CIFFile
 from tqdm import tqdm
 
 from openfold3.core.data.io.dataset_cache import read_datacache, write_datacache_to_json
+from openfold3.core.data.io.s3 import open_local_or_s3
 from openfold3.core.data.io.sequence.template import (
     parse_entry_chain_id,
     parse_hmmsearch_sto,
@@ -218,6 +219,7 @@ def create_template_cache_for_query(
     query_structures_filename: str,
     query_file_format: str,
     query_seq_load_logic: str,
+    s3_client_config: dict | None,
 ) -> None:
     """Creates a json cache of filtered template hits for a query.
 
@@ -273,6 +275,9 @@ def create_template_cache_for_query(
         query_seq_load_logic (str):
             Whether to derive the structure-associated query sequence from a structure
             file or a preprocessed fasta file. Should be one of "structure" or "fasta".
+        s3_client_config (dict | None):
+            Configuration for the S3 client. Should contain the profile name for the S3
+            client.
     """
     template_process_logger = TEMPLATE_PROCESS_LOGGER.get()
 
@@ -293,7 +298,9 @@ def create_template_cache_for_query(
 
     # Parse alignment
     try:
-        with open(template_alignment_file) as f:
+        with open_local_or_s3(
+            template_alignment_file, profile=s3_client_config["profile"], mode="r"
+        ) as f:
             hits = parse_hmmsearch_sto(f.read())
     except Exception as e:
         template_process_logger.info(
@@ -339,7 +346,8 @@ def create_template_cache_for_query(
     qp = query_structures_directory / Path(
         f"{query_structures_filename}.{query_file_format}"
     )
-    if not (qp).exists():
+    # Currently only checking existence of local files
+    if (not str(qp).startswith("s3:/")) and (not (qp).exists()):
         template_process_logger.info(
             f"Query .{query_file_format} structure {query_structures_filename} not "
             f"found in  {query_structures_directory}. Skipping templates for this "
@@ -364,6 +372,7 @@ def create_template_cache_for_query(
         query_seq_load_logic,
         query_file_format,
         query_structures_filename,
+        s3_profile=s3_client_config["profile"],
     ):
         template_process_logger.info(
             f"The query sequences in the structure (query {query_pdb_id} chain "
@@ -516,6 +525,7 @@ class _AF3TemplateCacheConstructor:
         log_to_file: bool,
         log_to_console: bool,
         log_dir: Path,
+        s3_client_config: dict | None,
     ) -> None:
         """Wrapper class for creating the template cache.
 
@@ -557,6 +567,8 @@ class _AF3TemplateCacheConstructor:
                 Whether to log to file.
             log_dir (Path):
                 Directory where the log file will be saved.
+            s3_client_config (dict | None):
+                Configuration for the S3 client.
 
         """
         self.template_alignment_directory = template_alignment_directory
@@ -572,6 +584,7 @@ class _AF3TemplateCacheConstructor:
         self.log_to_file = log_to_file
         self.log_to_console = log_to_console
         self.log_dir = log_dir
+        self.s3_client_config = s3_client_config
 
     @wraps(create_template_cache_for_query)
     def __call__(self, input: _TemplateQueryEntry) -> None:
@@ -610,6 +623,7 @@ class _AF3TemplateCacheConstructor:
                 query_structures_filename=self.query_structures_filename,
                 query_file_format=self.query_file_format,
                 query_seq_load_logic=self.query_seq_load_logic,
+                s3_client_config=self.s3_client_config,
             )
         except Exception as e:
             TEMPLATE_PROCESS_LOGGER.get().info(
@@ -634,6 +648,7 @@ def create_template_cache_af3(
     log_to_file: bool,
     log_to_console: bool,
     log_dir: Path,
+    s3_client_config: dict | None,
 ) -> None:
     """Creates the full template cache for all query chains.
 
@@ -679,6 +694,8 @@ def create_template_cache_af3(
             Whether to log to console.
         log_dir (Path):
             Directory where the log file will be saved.
+        s3_client_config (dict | None):
+            Configuration for the S3 client.
     """
     log_dir.mkdir(parents=True, exist_ok=True)
     template_cache_directory.mkdir(parents=True, exist_ok=True)
@@ -705,6 +722,7 @@ def create_template_cache_af3(
         log_to_file,
         log_to_console,
         log_dir,
+        s3_client_config,
     )
     with mp.Pool(num_workers) as pool:
         for _ in tqdm(

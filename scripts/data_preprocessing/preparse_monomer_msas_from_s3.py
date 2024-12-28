@@ -9,19 +9,19 @@ import click
 import numpy as np
 from tqdm import tqdm
 
+from openfold3.core.data.io.s3 import download_file_from_s3
 from openfold3.core.data.io.sequence.msa import parse_msas_direct
-from openfold3.core.data.io.utils import download_file_from_s3
 
 _worker_session = None
 
 
-# TODO: merge with existing MSA pre-parsing code
 def _init_worker(profile_name: str = "openfold") -> None:
     """Initialize the boto3 session in each worker."""
     global _worker_session
     _worker_session = boto3.Session(profile_name=profile_name)
 
 
+# TODO: merge with existing MSA pre-parsing code
 @click.command()
 @click.option(
     "--alignment_array_directory",

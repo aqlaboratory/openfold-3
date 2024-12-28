@@ -213,6 +213,7 @@ def match_query_chain_and_sequence(
     query_seq_load_logic: str,
     query_file_format: str,
     query_structure_filename: str,
+    s3_profile: str | None,
 ) -> bool:
     """Checks if the query sequences in the CIF and template alignment file match.
 
@@ -238,7 +239,11 @@ def match_query_chain_and_sequence(
             The file format of the query structure from which the sequence is parsed if
             load_logic is set to 'structure'.
         query_structure_filename (str):
-            The filename of the query structure file.
+            The filename of the query structure file. Only used if seq_load_logic is set
+            to 'structure'.
+        s3_profile (str | None):
+            The AWS profile to use for downloading the CIF file from S3. Only used if
+            seq_load_logic is set to 'structure'.
 
     Returns:
         bool:
@@ -246,7 +251,7 @@ def match_query_chain_and_sequence(
     """
     is_query_invalid = True
 
-    # TODO: rework this logic
+    # TODO: rework this logic, currently only 2 options are supported
     # Get the query sequence from the structure
     if query_seq_load_logic == "fasta":
         chain_id_seq_map = read_multichain_fasta(
@@ -258,9 +263,13 @@ def match_query_chain_and_sequence(
             f"{query_structure_filename}.{query_file_format}"
         )
         if query_file_format in ["cif", "bcif"]:
-            _, atom_array = parse_structure(file_path, query_pdb_id, query_file_format)
+            # _, atom_array = parse_structure(
+            # file_path, query_pdb_id, query_file_format)
+            raise NotImplementedError
         elif query_file_format == "pdb":
-            _, atom_array = parse_protein_monomer_pdb_tmp(file_path)
+            _, atom_array = parse_protein_monomer_pdb_tmp(
+                file_path, s3_profile=s3_profile
+            )
         else:
             raise ValueError(
                 "Invalid query file format. Must be one of 'cif', 'bcif', or 'pdb'."

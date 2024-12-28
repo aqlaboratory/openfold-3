@@ -9,6 +9,7 @@ import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io import pdb, pdbx
 
+from openfold3.core.data.io.s3 import open_local_or_s3
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
@@ -193,7 +194,10 @@ def parse_mmcif(
 
 # TODO: refactor PDB file reading logic as it currently only supports monomers
 def parse_protein_monomer_pdb_tmp(
-    file_path: Path | str, include_bonds: bool = True, extra_fields: list | None = None
+    file_path: Path | str,
+    include_bonds: bool = True,
+    extra_fields: list | None = None,
+    s3_profile: str | None = None,
 ):
     """Temporary function to parse a protein monomer from a PDB file.
 
@@ -207,7 +211,8 @@ def parse_protein_monomer_pdb_tmp(
     """
 
     ## no label fields in pdb files
-    pdb_file = pdb.PDBFile.read(file_path)
+    with open_local_or_s3(file_path, profile=s3_profile) as f:
+        pdb_file = pdb.PDBFile.read(f)
     extra_fields_preset = [
         "occupancy",
         "charge",

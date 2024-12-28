@@ -19,6 +19,7 @@ from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from rdkit import Chem
 from tqdm import tqdm
 
+from openfold3.core.data.io.s3 import download_file_from_s3
 from openfold3.core.data.io.sequence.fasta import write_multichain_fasta
 from openfold3.core.data.io.structure.cif import (
     SkippedStructure,
@@ -27,7 +28,7 @@ from openfold3.core.data.io.structure.cif import (
     write_structure,
 )
 from openfold3.core.data.io.structure.mol import write_annotated_sdf
-from openfold3.core.data.io.utils import download_file_from_s3, encode_numpy_types
+from openfold3.core.data.io.utils import encode_numpy_types
 from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
 from openfold3.core.data.primitives.structure.cleanup import (
     convert_MSE_to_MET,

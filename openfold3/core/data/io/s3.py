@@ -1,3 +1,5 @@
+import io
+import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -6,7 +8,32 @@ import botocore
 import botocore.paginate
 
 
-def start_client(profile: str) -> boto3.client:
+def parse_s3_config(s3_client_config_str: str | None) -> dict:
+    """Converts a string representation of an S3 client config to a dictionary.
+
+    Args:
+        s3_client_config_str (str | None):
+            The string representation of the S3 client config.
+
+    Raises:
+        ValueError:
+            If the provided string is not a valid JSON.
+
+    Returns:
+        dict:
+            The S3 client config as a dictionary.
+    """
+    if s3_client_config_str is not None:
+        try:
+            s3_client_config = json.loads(s3_client_config_str)
+        except json.JSONDecodeError as e:
+            raise ValueError("Invalid s3 client config provided.") from e
+    else:
+        s3_client_config = {}
+    return s3_client_config
+
+
+def start_s3_client(profile: str) -> boto3.client:
     """Starts an S3 client with the given profile.
 
     Args:
@@ -26,7 +53,7 @@ def create_paginated_bucket_iterator(
     prefix: str,
     profile: str,
     max_keys: int,
-    enable_recursive_search: bool = False,
+    enable_recursive_search: bool,
 ) -> botocore.paginate.PageIterator:
     """Creates an iterator for the contents of a bucket under a given prefix.
 
@@ -41,7 +68,7 @@ def create_paginated_bucket_iterator(
             The maximum number of keys to return.
         enable_recursive_search (bool):
             Whether to enable recursive search; recursively search for
-            all files within the prefix.Enabling this option will slow down
+            all files within the prefix. Enabling this option will slow down
             the search significantly; however, it permits
             searching for specific files within the prefix.
 
@@ -50,7 +77,7 @@ def create_paginated_bucket_iterator(
             The iterator for the contents of the bucket under the given prefix.
 
     """
-    s3_client = start_client(profile)
+    s3_client = start_s3_client(profile)
     paginator = s3_client.get_paginator("list_objects_v2")
     operation_parameters = {
         "Bucket": bucket_name,
@@ -122,7 +149,7 @@ def list_bucket_entries(
         return valid_entries
     else:
         paginated_iterator = create_paginated_bucket_iterator(
-            bucket_name, prefix, profile, max_keys
+            bucket_name, prefix, profile, max_keys, enable_recursive_search=False
         )
 
         entries = []
@@ -136,3 +163,88 @@ def list_bucket_entries(
                     entries.append(Path(pfx["Prefix"]))
 
     return entries
+
+
+def download_file_from_s3(
+    bucket: str,
+    prefix: str,
+    filename: str,
+    outfile: str,
+    profile: str | None = None,
+    session: boto3.Session | None = None,
+):
+    """Download a file from an s3 bucket, using the provided profile or session.
+
+    Args:
+        bucket (str):
+            The name of the s3 bucket. Must not have s3:// prefix.
+        prefix (str):
+            The path from the bucket root to the dir containing the file.
+        filename (str):
+            Name of the file to download.
+        outfile (str):
+            File to save the downloaded file to.
+        profile (str | None, optional):
+            Profile to instantiate the boto3 session with
+        session (boto3.Session | None, optional):
+            Instantiated boto3 session to use.
+
+    Raises:
+        ValueError:
+            If neither profile nor session is provided.
+        Exception:
+            If the download fails.
+
+    """
+    # TODO: rework with existing primitives
+    if session is None:
+        if profile is None:
+            raise ValueError("Either profile or session must be provided")
+        session = boto3.Session(profile_name=profile)
+    s3_client = session.client("s3")
+    try:
+        s3_client.download_file(bucket, f"{prefix}/{filename}", outfile)
+    except Exception as e:
+        print(f"Error downloading file from s3://{bucket}/{prefix}/{filename}")
+        raise e
+    return
+
+
+def open_local_or_s3(
+    filepath: Path, profile: str | None, mode: str = "r"
+) -> io.StringIO | io.BytesIO:
+    """
+    Return a file-like object for reading text/binary from either a local
+    path or an S3 URI.
+
+    Args:
+        path (Path):
+            Local file path or an S3 URI (e.g., "s3:/bucket/key"). Note the single
+            forward slash after "s3:".
+        profile (str, optional):
+            Boto3 profile name (if needed).
+        mode (str):
+            "r" for text mode, "rb" for binary, etc.
+
+    Returns:
+        io.StringIO | io.BytesIO:
+            A file-like object, which can be used just like an open() file.
+    """
+    # S3 path
+    if str(filepath).startswith("s3:/"):
+        # Parse out bucket and key
+        s3_client = start_s3_client(profile)
+        response = s3_client.get_object(
+            Bucket=filepath.parts[1], Key="/".join(filepath.parts[2:])
+        )
+        body = response["Body"].read()  # this is bytes
+
+        # If reading text, wrap bytes in a StringIO, else wrap in BytesIO
+        if "b" in mode:
+            return io.BytesIO(body)
+        else:
+            # decode bytes to string
+            return io.StringIO(body.decode("utf-8"))
+    # Normal local path
+    else:
+        return open(Path(filepath), mode)

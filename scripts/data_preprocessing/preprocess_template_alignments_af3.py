@@ -5,6 +5,7 @@ from pathlib import Path
 
 import click
 
+from openfold3.core.data.io.s3 import parse_s3_config
 from openfold3.core.data.pipelines.preprocessing.template import (
     create_template_cache_af3,
     create_template_seq_cache_af3,
@@ -16,9 +17,11 @@ from openfold3.core.data.pipelines.preprocessing.template import (
 @click.option(
     "--template_alignment_directory",
     required=True,
-    help="Directory containing per-chain folders with template alignments.",
+    help=(
+        "Directory containing per-chain folders with template alignments. If the "
+        "directory lives in an S3 bucket, the path should be 's3:/<bucket>/<prefix>'."
+    ),
     type=click.Path(
-        exists=True,
         file_okay=False,
         dir_okay=True,
         path_type=Path,
@@ -57,7 +60,6 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     required=True,
     help="Directory containing query structures used for training or inference.",
     type=click.Path(
-        exists=True,
         file_okay=False,
         dir_okay=True,
         path_type=Path,
@@ -197,6 +199,14 @@ from openfold3.core.data.pipelines.preprocessing.template import (
 @click.option(
     "--log_to_console", default=False, type=bool, help="Enable logging to the console."
 )
+@click.option(
+    "--s3_client_config",
+    required=False,
+    default=None,
+    type=str,
+    help="The argument s3_client_config "
+    "input as a JSON string with keys 'profile' and 'max_keys'.",
+)
 def main(
     template_alignment_directory: Path,
     template_alignment_filename: str,
@@ -220,6 +230,7 @@ def main(
     filter_only: bool,
     log_to_file: bool,
     log_to_console: bool,
+    s3_client_config: str | None,
 ) -> None:
     """Preprocesses templates for AF3 datasets.
 
@@ -282,6 +293,9 @@ def main(
             Enable logging to a file.
         log_to_console (bool):
             Enable logging to the console.
+        s3_client_config (str | None):
+            The argument s3_client_config input as a JSON string with keys 'profile' and
+            'max_keys'.
 
     Raises:
         ValueError:
@@ -289,6 +303,8 @@ def main(
         ValueError:
             If is_core_train is False and max_release_date is None.
     """
+    # Parse S3 config
+    s3_client_config = parse_s3_config(s3_client_config)
 
     # Error handling
     if is_core_train & (min_release_date_diff is None):
@@ -334,6 +350,7 @@ def main(
             log_to_file=log_to_file,
             log_to_console=log_to_console,
             log_dir=template_cache_directory.parent / "template_construct_logs",
+            s3_client_config=s3_client_config,
         )
     else:
         logging.info(
