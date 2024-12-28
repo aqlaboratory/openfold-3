@@ -200,6 +200,8 @@ def create_protein_monomer_dataset_cache_af3(
     dataset_name: str,
     output_path: Path,
     s3_client_config: dict | None = None,
+    check_filename_exists: str | None = None,
+    num_workers: int = 1,
 ) -> None:
     """Creates a protein monomer dataset cache.
 
@@ -218,7 +220,14 @@ def create_protein_monomer_dataset_cache_af3(
             Path to write the dataset cache to.
         s3_client_config (dict, optional):
             Configuration for the S3 client. If None, the client is started without a
-            profile. Supports profile and max_keys keys. Defaults to None.
+            profile. Supports profile and max_keys keys. Defaults to None.,
+        check_filename_exists (str, optional):
+            If provided, only adds proteins to the dataset cache if the given filename
+            exists within the chain directory. Defaults to None, and if None all 
+            directories are added.
+        num_workers (int, optional):
+            Number of workers to use for parallel processing. Defaults to 1. Only used 
+            if check_filename_exists is specified.
     """
     # Get all chain directories
     # S3
@@ -231,6 +240,8 @@ def create_protein_monomer_dataset_cache_af3(
             prefix="/".join(data_directory.parts[2:]) + "/",
             profile=s3_client_config.get("profile", None),
             max_keys=s3_client_config.get("max_keys", 1000),
+            check_filename_exists=check_filename_exists,
+            num_workers=num_workers,
         )
     # Local
     else:
