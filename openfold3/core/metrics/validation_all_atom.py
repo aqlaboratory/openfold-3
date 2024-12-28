@@ -236,9 +236,10 @@ def get_protein_metrics(
         intra_mask_atomized_protein = intra_mask_atomized[is_protein_atomized].view((bs) + (-1,))
 
         # Apply pairwise protein mask to get protein index values for inter_chain_mask
-        is_protein_atomized_pair = is_protein_atomized[..., None] * is_protein_atomized[..., None, :]
-        n_protein_atoms = torch.sum(is_protein_atomized)
-        inter_mask_atomized_protein = torch.masked_select(inter_mask_atomized, is_protein_atomized_pair).reshape(bs, n_protein_atoms, n_protein_atoms)
+        is_protein_atomized_pair = is_protein_atomized[..., None] * is_protein_atomized[..., None, :] #(1, n_protein, n_protein)
+        n_protein_atoms = torch.sum(is_protein_atomized).item() #n_protein
+
+        inter_mask_atomized_protein = torch.masked_select(inter_mask_atomized, is_protein_atomized_pair).reshape(bs + (n_protein_atoms, n_protein_atoms))
 
         # (bs,(n_sample), n_prot, n_prot)
         gt_protein_pair = torch.sqrt(
@@ -341,13 +342,13 @@ def get_nucleic_acid_metrics(
 
         # Apply pairwise na mask to get intra na interactions 
         is_nucleic_acid_atomized_pair = is_nucleic_acid_atomized[..., None] * is_nucleic_acid_atomized[..., None, :]
-        n_nucleic_acid_atoms = torch.sum(is_nucleic_acid_atomized)
-        inter_mask_atomized_na = torch.masked_select(inter_mask_atomized, is_nucleic_acid_atomized_pair).reshape(bs, n_nucleic_acid_atoms, n_nucleic_acid_atoms)
+        n_nucleic_acid_atoms = torch.sum(is_nucleic_acid_atomized).item()
+        inter_mask_atomized_na = torch.masked_select(inter_mask_atomized, is_nucleic_acid_atomized_pair).reshape(bs +  (n_nucleic_acid_atoms, n_nucleic_acid_atoms))
 
         # Apply protein x na masks to select protein - na interactions 
         is_protein_na_pair = is_protein_atomized[..., None] * is_nucleic_acid_atomized[..., None, :]
-        n_protein_atoms = torch.sum(is_protein_atomized)
-        inter_filter_mask = torch.masked_select(inter_mask_atomized, is_protein_na_pair).reshape(bs, n_protein_atoms, n_nucleic_acid_atoms)
+        n_protein_atoms = torch.sum(is_protein_atomized).item()
+        inter_filter_mask = torch.masked_select(inter_mask_atomized, is_protein_na_pair).reshape(bs + (n_protein_atoms, n_nucleic_acid_atoms))
 
         # (bs,(n_sample), n_na, n_na)
         gt_na_pair = torch.sqrt(
@@ -489,13 +490,13 @@ def get_ligand_metrics(
 
         # Apply pairwise na mask to get intra na interactions 
         is_ligand_atomized_pair = is_ligand_atomized[..., None] * is_ligand_atomized[..., None, :]
-        n_ligand_atoms = torch.sum(is_ligand_atomized)
-        inter_mask_atomized_ligand = torch.masked_select(inter_mask_atomized, is_ligand_atomized_pair).reshape(bs, n_ligand_atoms, n_ligand_atoms)
+        n_ligand_atoms = torch.sum(is_ligand_atomized).item()
+        inter_mask_atomized_ligand = torch.masked_select(inter_mask_atomized, is_ligand_atomized_pair).reshape(bs + (n_ligand_atoms, n_ligand_atoms))
 
         # Apply protein x na masks to select protein - na interactions 
         is_protein_ligand_pair = is_protein_atomized[..., None] * is_ligand_atomized[..., None, :]
-        n_protein_atoms = torch.sum(is_protein_atomized)
-        inter_filter_mask = torch.masked_select(inter_mask_atomized, is_protein_ligand_pair).reshape(bs, n_protein_atoms, n_ligand_atoms)
+        n_protein_atoms = torch.sum(is_protein_atomized).item()
+        inter_filter_mask = torch.masked_select(inter_mask_atomized, is_protein_ligand_pair).reshape(bs + (n_protein_atoms, n_ligand_atoms))
 
 
         # (bs,(n_sample), n_lig, n_lig)
@@ -886,8 +887,8 @@ def get_validation_metrics(
     )
     
     # set up filters for validation metrics if present, otherwise pass ones
-    use_for_intra = batch.get("use_for_intra_validation", torch.ones_like(is_protein))
-    use_for_inter = batch.get("use_for_inter_validation", torch.ones((is_protein.size()[0], is_protein.size()[0])))
+    use_for_intra = batch.get("use_for_intra_validation", torch.ones_like(is_protein)).to(token_mask.device) 
+    use_for_inter = batch.get("use_for_inter_validation", torch.ones((is_protein.size()[-1], is_protein.size()[-1]))).unsqueeze(0).to(token_mask.device)
 
     intra_filter_atomized = broadcast_token_feat_to_atoms(
         token_mask, num_atoms_per_token, use_for_intra 
