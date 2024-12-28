@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 @log_runtime_memory(runtime_dict_key="runtime-ref-conf-feat")
-def featurize_ref_conformers_af3(
+def featurize_reference_conformers_af3(
     processed_ref_mol_list: list[ProcessedReferenceMolecule],
 ) -> dict[str, torch.Tensor]:
     """AF3 pipeline for creating reference conformer features.
@@ -61,9 +61,13 @@ def featurize_ref_conformers_af3(
     ref_charge = []
     ref_atom_name_chars = []
     ref_space_uid = []  # deviation from SI! see docstring
+    ref_space_uid_to_perm = {}
 
     for mol_idx, processed_mol in enumerate(processed_ref_mol_list):
-        mol_id, mol, in_array_mask = processed_mol
+        mol = processed_mol.mol
+        in_crop_mask = processed_mol.in_crop_mask
+        permutations = processed_mol.permutations
+
         conf = mol.GetConformer()
 
         # Intermediate for this conformer's coordinates so that we can jointly apply a
@@ -72,7 +76,7 @@ def featurize_ref_conformers_af3(
         mol_ref_mask = []
 
         # Featurize the parts of the molecule that ended up in the selected crop
-        for atom, mask in zip(mol.GetAtoms(), in_array_mask):
+        for atom, mask in zip(mol.GetAtoms(), in_crop_mask):
             # Skip atom not in crop
             if mask == 0:
                 continue
@@ -91,6 +95,8 @@ def featurize_ref_conformers_af3(
             else:
                 ref_element.append(PERIODIC_TABLE.GetAtomicNumber(element_symbol) - 1)
 
+            # TODO: check whether pdbeccdutils sets this correctly for charged amino
+            # acids
             # Charges
             ref_charge.append(atom.GetFormalCharge())
 
@@ -118,12 +124,14 @@ def featurize_ref_conformers_af3(
             ref_pos.append(mol_ref_pos)
             ref_mask.append(mol_ref_mask)
 
+        # Append mapping of each unique conformer instance to its permutations
+        ref_space_uid_to_perm[mol_idx] = torch.tensor(permutations, dtype=torch.int32)
+
     ref_pos = torch.concat(ref_pos)
     ref_mask = torch.concat(ref_mask)
 
     # DISCREPANCY TO SI: We set the maximum atomic number to 118, not 128, which is the
-    # largest known atomic number
-    # The last bin is for unknown elements
+    # largest known atomic number, and add an additional bin for unknown elements
     ref_element = F.one_hot(torch.tensor(ref_element), 119).to(torch.int32)
 
     ref_charge = torch.tensor(ref_charge, dtype=torch.float32)
@@ -132,6 +140,9 @@ def featurize_ref_conformers_af3(
     )
     ref_space_uid = torch.tensor(ref_space_uid, dtype=torch.int32)
 
+    # This will get padded with 0s in the batch collator
+    atom_pad_mask = torch.ones_like(ref_mask, dtype=torch.bool)
+
     return {
         "ref_pos": ref_pos,
         "ref_mask": ref_mask,
@@ -139,4 +150,6 @@ def featurize_ref_conformers_af3(
         "ref_charge": ref_charge,
         "ref_atom_name_chars": ref_atom_name_chars,
         "ref_space_uid": ref_space_uid,
+        "ref_space_uid_to_perm": ref_space_uid_to_perm,
+        "atom_pad_mask": atom_pad_mask,
     }

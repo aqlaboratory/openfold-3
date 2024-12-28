@@ -1,5 +1,9 @@
+import copy
 import dataclasses
 import json
+import logging
+import random
+import traceback
 from collections import Counter
 from enum import IntEnum
 from pathlib import Path
@@ -10,13 +14,14 @@ import torch
 from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 
+from openfold3.core.data.framework.data_module import openfold_batch_collator
 from openfold3.core.data.framework.single_datasets.abstract_single_dataset import (
     SingleDataset,
     register_dataset,
 )
 from openfold3.core.data.io.dataset_cache import read_datacache
 from openfold3.core.data.pipelines.featurization.conformer import (
-    featurize_ref_conformers_af3,
+    featurize_reference_conformers_af3,
 )
 from openfold3.core.data.pipelines.featurization.loss_weights import set_loss_weights
 from openfold3.core.data.pipelines.featurization.msa import featurize_msa_af3
@@ -27,7 +32,7 @@ from openfold3.core.data.pipelines.featurization.template import (
     featurize_template_structures_af3,
 )
 from openfold3.core.data.pipelines.sample_processing.conformer import (
-    get_ref_conformer_data_af3,
+    get_reference_conformer_data_af3,
 )
 from openfold3.core.data.pipelines.sample_processing.msa import (
     process_msas_af3,
@@ -38,10 +43,113 @@ from openfold3.core.data.pipelines.sample_processing.structure import (
 from openfold3.core.data.pipelines.sample_processing.template import (
     process_template_structures_af3,
 )
+from openfold3.core.data.primitives.permutation.mol_labels import (
+    separate_cropped_and_gt,
+)
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
+from openfold3.core.data.primitives.structure.tokenization import add_token_positions
 from openfold3.core.data.resources.residues import MoleculeType
+from openfold3.core.utils.atomize_utils import (
+    broadcast_token_feat_to_atoms,
+)
+from openfold3.core.utils.permutation_alignment import (
+    multi_chain_permutation_alignment,
+)
+
+logger = logging.getLogger(__name__)
+
+
+DEBUG_PDB_BLACKLIST = ["6fg3", "6dra", "6dr2", "6dqj", "7lx0"]
+
+
+# TODO: Remove debug logic
+def is_invalid_feature_dict(features: dict) -> bool:
+    """
+    Validate the feature dictionary for a single datapoint.
+    Do not fail early to log all potential errors.
+
+    Args:
+        features (dict):
+            Feature dictionary for a single datapoint
+
+    Returns:
+        skip (bool):
+            Whether the feature dictionary is invalid and should be skipped
+    """
+    skip = False
+    pdb_id = features["pdb_id"]
+
+    # Check that the sum of the number of atoms per token is equal to the
+    # number of atoms in the reference conformer
+    num_atoms_sum = torch.max(torch.sum(features["num_atoms_per_token"], dim=-1)).int()
+    num_ref_atoms = features["ref_pos"].shape[-2]
+    if num_atoms_sum != num_ref_atoms:
+        logger.warning(
+            f"Size mismatch {pdb_id} with {num_atoms_sum} vs " f"{num_ref_atoms} atoms"
+        )
+        skip = True
+
+    # Check that for overlapping token indices, the total number of
+    # atoms in the ground truth is equal to the number of atoms in the
+    # reference conformer
+    gt_token_ids_atomized = broadcast_token_feat_to_atoms(
+        token_mask=features["ground_truth"]["token_mask"].bool(),
+        num_atoms_per_token=features["ground_truth"]["num_atoms_per_token"],
+        token_feat=features["ground_truth"]["token_index"],
+    )
+    atom_selection_mask = torch.isin(gt_token_ids_atomized, features["token_index"])
+    gt_atom_indices = torch.nonzero(atom_selection_mask, as_tuple=True)[0]
+    if gt_atom_indices.shape[0] != num_ref_atoms:
+        logger.warning(
+            f"Size mismatch between ground truth {gt_atom_indices.shape[0]} atoms vs "
+            f"crop {num_ref_atoms} atoms for the same token indices."
+        )
+        skip = True
+
+    # Check that the token indices in the crop is a subset of the ground truth
+    if not torch.isin(
+        features["token_index"], features["ground_truth"]["token_index"]
+    ).all():
+        logger.warning(f"Token index mismatch for ground truth vs featurized {pdb_id}")
+        skip = True
+
+    # Check that the crop has some resolved atoms
+    if not features["ground_truth"]["atom_resolved_mask"].any():
+        logger.warning(f"Skipping {pdb_id}: no resolved atoms")
+        skip = True
+
+    # Check that the ligand and atomized masks are consistent
+    if (features["is_ligand"] & ~features["is_atomized"]).any():
+        logger.warning(f"Skipping {pdb_id}: contains non-atomized ligands")
+        skip = True
+
+    # Check that the number of tokens per atom is less than the maximum expected
+    if (features["num_atoms_per_token"] > 23).any():
+        logger.warning(
+            f"Skipping {pdb_id}: token contains number of atoms > " f"max expected (23)"
+        )
+        skip = True
+
+    # Check that all input features are finite
+    for k, v in features.items():
+        if isinstance(v, torch.Tensor) and not torch.isfinite(v).all():
+            logger.warning(f"Non-finite values in {pdb_id} for {k}")
+            skip = True
+        if isinstance(v, dict):
+            for i, j in v.items():
+                if isinstance(j, torch.Tensor) and not torch.isfinite(j).all():
+                    logger.warning(f"Non-finite values in {pdb_id} for {i}")
+                    skip = True
+
+    # Run the permutation alignment to skip over samples that may fail in the model
+    # This could throw an exception that is handled in the __getitem__
+    feats_perm = openfold_batch_collator([copy.deepcopy(features)])
+    outputs = {"atom_positions_predicted": torch.randn_like(feats_perm["ref_pos"])}
+    multi_chain_permutation_alignment(feats_perm, outputs)
+
+    return skip
 
 
 class DatapointType(IntEnum):
@@ -290,44 +398,106 @@ class WeightedPDBDataset(SingleDataset):
         datapoint = self.datapoint_cache.iloc[index]
         pdb_id = datapoint["pdb_id"]
         preferred_chain_or_interface = datapoint["datapoint"]
-        sample_data = self.create_all_features(
-            pdb_id=pdb_id,
-            preferred_chain_or_interface=preferred_chain_or_interface,
-            return_atom_arrays=False,
-        )
-        return sample_data["features"]
 
-    @log_runtime_memory(runtime_dict_key="runtime-create-target-structure-features")
-    def create_target_structure_features(
-        self, pdb_id: str, preferred_chain_or_interface: str, return_atom_arrays: bool
+        # TODO: Remove debug logic
+        try:
+            if pdb_id in DEBUG_PDB_BLACKLIST:
+                logger.warning(f"Skipping blacklisted pdb id {pdb_id}")
+                index = random.randint(0, len(self) - 1)
+                return self.__getitem__(index)
+
+            sample_data = self.create_all_features(
+                pdb_id=pdb_id,
+                preferred_chain_or_interface=preferred_chain_or_interface,
+                return_atom_arrays=False,
+            )
+
+            features = sample_data["features"]
+
+            features["pdb_id"] = pdb_id
+            if is_invalid_feature_dict(features):
+                index = random.randint(0, len(self) - 1)
+                return self.__getitem__(index)
+
+            return features
+
+        except Exception as e:
+            tb = traceback.format_exc()
+            logger.warning(
+                "-" * 40
+                + "\n"
+                + f"Failed to process {pdb_id}: {str(e)}\n"
+                + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
+                + "-" * 40
+            )
+            index = random.randint(0, len(self) - 1)
+            return self.__getitem__(index)
+
+    @log_runtime_memory(runtime_dict_key="runtime-create-structure-features")
+    def create_structure_features(
+        self,
+        pdb_id: str,
+        preferred_chain_or_interface: str,
+        return_full_atom_array: bool,
     ) -> tuple[dict, AtomArray | torch.Tensor]:
-        """Creates the target structure features."""
+        """Creates the target structure and conformer features."""
 
-        # Target structure and duplicate-expanded GT structure features
-        target_structure_data = process_target_structure_af3(
+        # Processed ground-truth structure with added annotations and masks
+        atom_array_gt, crop_strategy = process_target_structure_af3(
             target_structures_directory=self.target_structures_directory,
             pdb_id=pdb_id,
             crop_weights=self.crop_weights,
             token_budget=self.token_budget,
             preferred_chain_or_interface=preferred_chain_or_interface,
             structure_format="pkl",
-            return_full_atom_array=return_atom_arrays,
+            per_chain_metadata=self.dataset_cache.structure_data[pdb_id].chains,
         )
-        # NOTE that for now we avoid the need for permutation alignment by providing the
-        # cropped atom array as the ground truth atom array
-        # target_structure_features.update(
-        #     featurize_target_gt_structure_af3(
-        #         target_structure_data["atom_array_cropped"],
-        #         target_structure_data["atom_array_gt"],
-        #         self.token_budget
-        #     )
-        # )
+
+        # Processed reference conformers
+        processed_reference_molecules = get_reference_conformer_data_af3(
+            atom_array=atom_array_gt,
+            per_chain_metadata=self.dataset_cache.structure_data[pdb_id].chains,
+            reference_mol_metadata=self.dataset_cache.reference_molecule_data,
+            reference_mol_dir=self.reference_molecule_directory,
+        )
+
+        if return_full_atom_array:
+            atom_array_full = atom_array_gt.copy()
+
+        # Apply crop and subset GT to only contain the atoms that are symmetry-related
+        # to atoms in the crop and necessary for the permutation alignment
+        atom_array_cropped, atom_array_gt = separate_cropped_and_gt(
+            atom_array_gt=atom_array_gt,
+            crop_strategy=crop_strategy,
+            processed_ref_mol_list=processed_reference_molecules,
+        )
+
+        # Necessary positional indices for MSA and template processing
+        add_token_positions(atom_array_cropped)
+
+        # Compute target and ground-truth structure features
         target_structure_features = featurize_target_gt_structure_af3(
-            target_structure_data["atom_array_cropped"],
-            target_structure_data["atom_array_cropped"],
-            self.token_budget,
+            atom_array_cropped=atom_array_cropped,
+            atom_array_gt=atom_array_gt,
+            token_budget=self.token_budget,
         )
-        target_structure_data["target_structure_features"] = target_structure_features
+
+        # Compute reference conformer features
+        reference_conformer_features = featurize_reference_conformers_af3(
+            processed_ref_mol_list=processed_reference_molecules
+        )
+
+        # Wrap up features
+        target_structure_data = {
+            "atom_array_gt": atom_array_gt,
+            "atom_array_cropped": atom_array_cropped,
+            "target_structure_features": target_structure_features,
+            "reference_conformer_features": reference_conformer_features,
+        }
+
+        if return_full_atom_array:
+            target_structure_data["atom_array"] = atom_array_full
+
         return target_structure_data
 
     @log_runtime_memory(runtime_dict_key="runtime-create-msa-features")
@@ -390,24 +560,6 @@ class WeightedPDBDataset(SingleDataset):
 
         return template_features
 
-    @log_runtime_memory(runtime_dict_key="runtime-create-ref-conformer-features")
-    def create_ref_conformer_features(
-        self, pdb_id: str, atom_array_cropped: AtomArray
-    ) -> dict:
-        """Creates the reference conformer features."""
-
-        processed_reference_molecules = get_ref_conformer_data_af3(
-            atom_array=atom_array_cropped,
-            per_chain_metadata=self.dataset_cache.structure_data[pdb_id].chains,
-            reference_mol_metadata=self.dataset_cache.reference_molecule_data,
-            reference_mol_dir=self.reference_molecule_directory,
-        )
-        reference_conformer_features = featurize_ref_conformers_af3(
-            processed_reference_molecules
-        )
-
-        return reference_conformer_features
-
     def create_loss_features(self, pdb_id: str) -> dict:
         """Creates the loss features."""
 
@@ -429,12 +581,15 @@ class WeightedPDBDataset(SingleDataset):
 
         sample_data = {"features": {}}
 
-        # Target structure features
-        target_structure_data = self.create_target_structure_features(
+        # Target & GT structure and conformer features
+        target_structure_data = self.create_structure_features(
             pdb_id, preferred_chain_or_interface, return_atom_arrays
         )
         sample_data["features"].update(
             target_structure_data["target_structure_features"]
+        )
+        sample_data["features"].update(
+            target_structure_data["reference_conformer_features"]
         )
 
         # MSA features
@@ -449,12 +604,6 @@ class WeightedPDBDataset(SingleDataset):
             pdb_id, target_structure_data["atom_array_cropped"]
         )
         sample_data["features"].update(template_features)
-
-        # Reference conformer features
-        reference_conformer_features = self.create_ref_conformer_features(
-            pdb_id, target_structure_data["atom_array_cropped"]
-        )
-        sample_data["features"].update(reference_conformer_features)
 
         # Loss switches
         loss_features = self.create_loss_features(pdb_id)

@@ -1,4 +1,6 @@
 import importlib
+import logging
+import traceback
 from pathlib import Path
 
 import torch
@@ -28,6 +30,8 @@ deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
     from deepspeed.ops.adam import DeepSpeedCPUAdam
 
+logger = logging.getLogger(__name__)
+
 REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_config.yml"
 
 
@@ -51,14 +55,33 @@ class AlphaFold3AllAtom(ModelRunner):
         if self.ema.device != example_feat.device:
             self.ema.to(example_feat.device)
 
-        # Run the model
-        batch, outputs = self.model(batch)
+        # TODO: Remove debug logic
+        pdb_id = batch.pop("pdb_id")
+        logger.warning(
+            f"Started model forward pass for {pdb_id} on rank {self.global_rank} "
+            f"step {self.global_step}"
+        )
 
-        # Compute loss
-        loss, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
+        try:
+            # Run the model
+            batch, outputs = self.model(batch)
 
-        # Log it
-        self._log(loss_breakdown, batch, outputs)
+            # Compute loss
+            loss, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
+
+            # Log it
+            self._log(loss_breakdown, batch, outputs)
+
+        except Exception as e:
+            tb = traceback.format_exc()
+            logger.warning(
+                "-" * 40
+                + "\n"
+                + f"Train step failed with pdb id {pdb_id}: {str(e)}\n"
+                + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
+                + "-" * 40
+            )
+            raise e
 
         return loss
 
@@ -74,15 +97,37 @@ class AlphaFold3AllAtom(ModelRunner):
             self.cached_weights = tensor_tree_map(clone_param, self.model.state_dict())
             self.model.load_state_dict(self.ema.state_dict()["params"])
 
-        # Run the model
-        batch, outputs = self(batch)
+        # TODO: Remove debug logic
+        pdb_id = batch.pop("pdb_id")
+        logger.warning(
+            f"Started validation for {pdb_id} on rank {self.global_rank} "
+            f"step {self.global_step}"
+        )
 
-        # Compute loss and other metrics
-        _, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
+        try:
+            # Run the model
+            batch, outputs = self(batch)
 
-        self._log(loss_breakdown, batch, outputs, train=False)
+            # Compute loss and other metrics
+            _, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
+
+            self._log(loss_breakdown, batch, outputs, train=False)
+
+        except Exception as e:
+            tb = traceback.format_exc()  # Get the full traceback
+            logger.warning(
+                "-" * 40
+                + "\n"
+                + f"Train step failed with pdb id {pdb_id}: {str(e)}\n"
+                + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
+                + "-" * 40
+            )
+            raise e
 
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
+        # TODO: Remove debug logic
+        pdb_id = batch.pop("pdb_id")
+
         # This is to avoid slow loading for nested dicts in PL
         # Less frequent hanging when non_blocking=True on H200
         # TODO: Determine if this is really needed given other
@@ -91,6 +136,8 @@ class AlphaFold3AllAtom(ModelRunner):
             return t.to(device=device, non_blocking=True)
 
         batch = tensor_tree_map(to_device, batch)
+        batch["pdb_id"] = pdb_id
+
         return batch
 
     def on_train_epoch_start(self):

@@ -3,7 +3,7 @@ from functools import wraps
 
 import biotite.structure as struc
 import numpy as np
-from biotite.structure import AtomArray
+from biotite.structure import AtomArray, BondList, index_distance
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from scipy.spatial.distance import cdist
 
@@ -44,6 +44,7 @@ def return_on_empty_atom_array(func):
     return wrapper
 
 
+# TODO: Fix hetero annotation here
 @return_on_empty_atom_array
 def convert_MSE_to_MET(atom_array: AtomArray) -> None:
     """Converts selenomethionine (MSE) residues to methionine (MET) in-place
@@ -600,3 +601,104 @@ def remove_std_residue_terminal_atoms(atom_array: AtomArray) -> AtomArray:
     logger.debug(f"Removed {terminal_atom_mask.sum()} terminal atoms")
 
     return atom_array
+
+
+def filter_bonds(
+    atom_array: AtomArray,
+    keep_consecutive: bool = True,
+    keep_polymer_ligand: bool = True,
+    keep_ligand_ligand: bool = True,
+    remove_larger_than: float = 2.4,
+    mask_intra_component: bool = True,
+) -> None:
+    """Filter bonds in an AtomArray
+
+    This function filters bonds based on AF3 SI Table 5 "token_bonds". It additionally
+    allows to keep bonds of consecutive residues as well as bonds within the same
+    residue, which can be necessary in the earlier stages of the sample processing
+    pipeline.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to filter the bonds for.
+        keep_consecutive:
+            Whether to keep bonds between atoms not more than 1 residue apart. Default
+            is True.
+        keep_polymer_ligand:
+            Whether to keep polymer-ligand bonds. Default is True.
+        keep_ligand_ligand:
+            Whether to keep ligand-ligand bonds. Default is True.
+        remove_larger_than:
+            Remove any bond larger than this cutoff distance (in Å). Default is 2.4 Å.
+        mask_intra_component:
+            Whether to mask all bonds within the same component from any filtering. This
+            overrules all previous filters. For example important for ensuring that
+            components are not disconnected before symmetry-labels are assigned. Default
+            is True.
+    """
+    # initial_molecule_indices = get_molecule_indices(atom_array)
+
+    bond_partners = atom_array.bonds.as_array()[:, :2]
+
+    valid_bonds_mask = np.zeros(len(bond_partners), dtype=bool)
+
+    # Keep bonds between atoms not more than 1 residue apart
+    if keep_consecutive:
+        bond_partner_res_ids = atom_array.res_id[bond_partners]
+        is_consecutive = (np.abs(np.diff(bond_partner_res_ids, axis=1)) < 2).squeeze()
+        valid_bonds_mask[is_consecutive] = True
+
+    if keep_polymer_ligand or keep_ligand_ligand:
+        bond_partner_moltypes = atom_array.molecule_type_id[bond_partners]
+
+        is_ligand = np.isin(bond_partner_moltypes, [MoleculeType.LIGAND])
+
+        # Keep polymer-ligand bonds
+        if keep_polymer_ligand:
+            is_polymer = np.isin(
+                bond_partner_moltypes,
+                [MoleculeType.PROTEIN, MoleculeType.DNA, MoleculeType.RNA],
+            )
+            is_polymer_ligand = is_polymer.any(axis=1) & is_ligand.any(axis=1)
+            valid_bonds_mask[is_polymer_ligand] = True
+
+        # Keep ligand-ligand bonds
+        if keep_ligand_ligand:
+            is_ligand_ligand = is_ligand.all(axis=1)
+            valid_bonds_mask[is_ligand_ligand] = True
+
+    # Filter all current bonds to only keep those shorter than the cutoff
+    # TODO: check behavior if valid_bonds_mask is empty
+    distances = index_distance(atom_array, bond_partners[valid_bonds_mask])
+    valid_bonds_index = np.nonzero(valid_bonds_mask)[0]
+    remove_index = valid_bonds_index[
+        (distances > remove_larger_than) & ~np.isnan(distances)
+    ]
+    valid_bonds_mask[remove_index] = False
+
+    # If mask_intra_component is True, overrule all previous filters and keep all bonds
+    # within the same component to ensure it's not getting disconnected
+    if mask_intra_component:
+        bond_partner_component_id = atom_array.component_id[bond_partners]
+        is_intra_component = np.diff(bond_partner_component_id, axis=1).squeeze() == 0
+        valid_bonds_mask[is_intra_component] = True
+
+    new_bondlist = BondList(
+        atom_count=len(atom_array), bonds=atom_array.bonds.as_array()[valid_bonds_mask]
+    )
+    atom_array.bonds = new_bondlist
+
+    # TODO: Revise this assert
+    # final_molecule_indices = get_molecule_indices(atom_array)
+
+    # if not all(
+    #     np.array_equal(initial_mol_idx, final_mol_idx)
+    #     for initial_mol_idx, final_mol_idx in zip(
+    #         initial_molecule_indices, final_molecule_indices
+    #     )
+    # ):
+    #     # TODO: Make this ignore disulfide bonds?
+    #     logger.warning(
+    #         "Filtering bonds disconnected a molecule. This can result in unwanted"
+    #         " behavior in the permutation alignment."
+    #     )

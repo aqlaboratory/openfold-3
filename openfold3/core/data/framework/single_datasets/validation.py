@@ -1,21 +1,35 @@
 import logging
 
+import numpy as np
 import pandas as pd
+import torch
 from biotite.structure import AtomArray
 
 from openfold3.core.data.framework.single_datasets.abstract_single_dataset import (
     register_dataset,
 )
 from openfold3.core.data.framework.single_datasets.pdb import WeightedPDBDataset
+from openfold3.core.data.pipelines.featurization.conformer import (
+    featurize_reference_conformers_af3,
+)
 from openfold3.core.data.pipelines.featurization.structure import (
     featurize_target_gt_structure_af3,
+)
+from openfold3.core.data.pipelines.sample_processing.conformer import (
+    get_reference_conformer_data_af3,
 )
 from openfold3.core.data.pipelines.sample_processing.structure import (
     process_target_structure_af3,
 )
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 from openfold3.core.data.primitives.structure.cropping import (
     NO_CROPPING_TOKEN_BUDGET_SENTINEL,
 )
+from openfold3.core.data.primitives.structure.tokenization import add_token_positions
+
+logger = logging.getLogger(__name__)
 
 
 @register_dataset
@@ -63,48 +77,70 @@ class ValidationPDBDataset(WeightedPDBDataset):
             pdb_ids, columns=["pdb_id", "datapoint", "weight"]
         )
 
-    def create_target_structure_features(
+    # TODO: Factor out redundancy with WeightedPDBDataset
+    @log_runtime_memory(runtime_dict_key="runtime-create-structure-features")
+    def create_structure_features(
         self,
         pdb_id: str,
         preferred_chain_or_interface: str,
-        unused_return_atom_arrays: bool,
-    ) -> tuple[dict, AtomArray]:
-        """Creates the target structure features.
+        return_full_atom_array: bool,
+    ) -> tuple[dict, AtomArray | torch.Tensor]:
+        """Creates the target structure and conformer features."""
 
-        IMPORTANT: Because there is no cropping in the validation set, this method will
-        additionally overwrite self.token_budget to match the number of tokens in the
-        PDB structure.
-        """
-
-        # Target structure and duplicate-expanded GT structure features
-        target_structure_data = process_target_structure_af3(
+        # Processed ground-truth structure with added annotations and masks
+        atom_array_gt, crop_strategy = process_target_structure_af3(
             target_structures_directory=self.target_structures_directory,
             pdb_id=pdb_id,
             crop_weights=self.crop_weights,
             token_budget=NO_CROPPING_TOKEN_BUDGET_SENTINEL,
             preferred_chain_or_interface=preferred_chain_or_interface,
             structure_format="pkl",
-            return_full_atom_array=True,
+            per_chain_metadata=self.dataset_cache.structure_data[pdb_id].chains,
         )
-        # NOTE that for now we avoid the need for permutation alignment by providing the
-        # cropped atom array as the ground truth atom array
-        # target_structure_features.update(
-        #     featurize_target_gt_structure_af3(
-        #         atom_array_cropped, atom_array_gt, self.token_budget
-        #     )
-        # )
-        n_tokens = len(set(target_structure_data["atom_array"].token_id))
+
+        # Processed reference conformers
+        processed_reference_molecules = get_reference_conformer_data_af3(
+            atom_array=atom_array_gt,
+            per_chain_metadata=self.dataset_cache.structure_data[pdb_id].chains,
+            reference_mol_metadata=self.dataset_cache.reference_molecule_data,
+            reference_mol_dir=self.reference_molecule_directory,
+        )
+
+        if return_full_atom_array:
+            atom_array_full = atom_array_gt.copy()
+
+        # Necessary for compatibility with downstream function signatures
+        atom_array_cropped = atom_array_gt.copy()
+
+        # Necessary positional indices for MSA and template processing
+        add_token_positions(atom_array_cropped)
 
         # Overwrite token_budget to the number of tokens in this example
-        logging.info(f"Overwriting token budget to {n_tokens} for {pdb_id}")
+        n_tokens = np.unique(atom_array_gt.token_id).size
+        logger.info(f"Overwriting token budget to {n_tokens} for {pdb_id}")
         self.token_budget = n_tokens
 
+        # Compute target and ground-truth structure features
         target_structure_features = featurize_target_gt_structure_af3(
-            target_structure_data["atom_array"],
-            target_structure_data["atom_array"],
-            self.token_budget,
+            atom_array_cropped=atom_array_cropped,
+            atom_array_gt=atom_array_gt,
+            token_budget=self.token_budget,
         )
-        target_structure_data["target_structure_features"] = target_structure_features
 
-        # Overwrite self.token_budget to be the number of tokens in this example
+        # Compute reference conformer features
+        reference_conformer_features = featurize_reference_conformers_af3(
+            processed_ref_mol_list=processed_reference_molecules
+        )
+
+        # Wrap up features
+        target_structure_data = {
+            "atom_array_gt": atom_array_gt,
+            "atom_array_cropped": atom_array_cropped,
+            "target_structure_features": target_structure_features,
+            "reference_conformer_features": reference_conformer_features,
+        }
+
+        if return_full_atom_array:
+            target_structure_data["atom_array"] = atom_array_full
+
         return target_structure_data

@@ -7,7 +7,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import TypeAlias
 
-import openfold3.core.data.io.dataset_cache as io
 from openfold3.core.data.resources.residues import MoleculeType
 
 # TODO: Revisit in future if this registry is still needed after template script
@@ -155,7 +154,10 @@ class PreprocessingDataCache:
             file:
                 Path to the JSON file to write the metadata cache to.
         """
-        io.write_datacache_to_json(self, file)
+        # Avoid circular import
+        from openfold3.core.data.io.dataset_cache import write_datacache_to_json
+
+        write_datacache_to_json(self, file)
 
 
 @dataclass
@@ -223,7 +225,10 @@ class DatasetCache(ABC):
             file:
                 Path to the JSON file to write the dataset cache to.
         """
-        io.write_datacache_to_json(self, file)
+        # Avoid circular import
+        from openfold3.core.data.io.dataset_cache import write_datacache_to_json
+
+        write_datacache_to_json(self, file)
 
 
 @dataclass
