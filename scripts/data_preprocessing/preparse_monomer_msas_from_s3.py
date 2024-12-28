@@ -12,6 +12,14 @@ from tqdm import tqdm
 from openfold3.core.data.io.sequence.msa import parse_msas_direct
 from openfold3.core.data.io.utils import download_file_from_s3
 
+_worker_session = None
+
+
+def _init_worker(profile_name: str = "openfold") -> None:
+    """Initialize the boto3 session in each worker."""
+    global _worker_session
+    _worker_session = boto3.Session(profile_name=profile_name)
+
 
 @click.command()
 @click.option(
@@ -57,7 +65,9 @@ def main(
         alignment_array_directory, max_seq_counts, s3_config
     )
     if num_workers > 1:
-        with mp.Pool(num_workers) as pool:
+        with mp.Pool(
+            num_workers, initializer=_init_worker, initargs=(s3_config["profile"],)
+        ) as pool:
             for _ in tqdm(
                 pool.imap_unordered(
                     wrapped_msa_preparser,
@@ -122,18 +132,18 @@ class _MsaPreparser:
         self.alignment_array_directory = alignment_array_directory
         self.max_seq_counts = max_seq_counts
         self.s3_config = s3_config
-        self.session = boto3.Session(profile_name=self.s3_config["profile"])
 
     def __call__(self, rep_pdb_chain_id: str) -> None:
         tmp_dir = Path(f"/tmp/alignments/{rep_pdb_chain_id}")
         tmp_dir.mkdir(parents=True, exist_ok=True)
+        global _worker_session
         try:
             download_file_from_s3(
                 bucket=self.s3_config["bucket"],
                 prefix=f'{self.s3_config["prefix"]}/{rep_pdb_chain_id}',
                 filename="concat_cfdb_uniref100_filtered.a3m",
                 outfile=str(tmp_dir / "concat_cfdb_uniref100_filtered.a3m"),
-                session=self.session,
+                session=_worker_session,
             )
 
             preparse_msas(

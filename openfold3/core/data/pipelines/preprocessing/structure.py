@@ -74,6 +74,14 @@ from openfold3.core.data.primitives.structure.unresolved import add_unresolved_a
 
 logger = logging.getLogger(__name__)
 
+_worker_session = None
+
+
+def _init_worker(profile_name: str = "openfold") -> None:
+    """Initialize the boto3 session in each worker."""
+    global _worker_session
+    _worker_session = boto3.Session(profile_name=profile_name)
+
 
 def cleanup_structure_af3(
     atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile
@@ -666,9 +674,8 @@ def preprocess_cif_dir_af3(
 
 
 class _WrapProcessMonomerDistillStructure:
-    def __init__(self, s3_config: dict, session: boto3.Session, output_dir: Path):
+    def __init__(self, s3_config: dict, output_dir: Path):
         self.s3_config = s3_config
-        self.session = session
         self.output_dir = output_dir
 
     def __call__(self, pdb_id):
@@ -676,12 +683,13 @@ class _WrapProcessMonomerDistillStructure:
             with NamedTemporaryFile() as temp_file:
                 prefix = self.s3_config["prefix"]
                 prefix = f"{prefix}/{pdb_id}"
+                global _worker_session
                 download_file_from_s3(
                     bucket=self.s3_config["bucket"],
                     prefix=prefix,
                     filename="best_structure_relaxed.pdb",
                     outfile=temp_file.name,
-                    session=self.session,
+                    session=_worker_session,
                 )
                 _, atom_array = parse_pdb(temp_file.name)
                 id_outdir = self.output_dir / pdb_id
@@ -718,10 +726,11 @@ def preprocess_pdb_monomer_distilation(
     output_dir.mkdir(parents=True, exist_ok=True)
     pdb_ids = list(dataset_cache["structure_data"].keys())
     s3_config = dataset_cache["s3_data"]
-    session = boto3.Session(profile_name=s3_config["profile"])
-    wrapper = _WrapProcessMonomerDistillStructure(s3_config, session, output_dir)
+    wrapper = _WrapProcessMonomerDistillStructure(s3_config, output_dir)
     if num_workers > 1:
-        with mp.Pool(num_workers) as p:
+        with mp.Pool(
+            num_workers, initializer=_init_worker, initargs=(s3_config["profile"],)
+        ) as p:
             for _ in tqdm(p.imap_unordered(wrapper, pdb_ids), total=len(pdb_ids)):
                 pass
     else:
