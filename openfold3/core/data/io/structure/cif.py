@@ -191,10 +191,11 @@ def parse_mmcif(
     return ParsedStructure(cif_file, atom_array)
 
 
-def parse_pdb(
+# TODO: refactor PDB file reading logic as it currently only supports monomers
+def parse_protein_monomer_pdb_tmp(
     file_path: Path | str, include_bonds: bool = True, extra_fields: list | None = None
 ):
-    """_summary_
+    """Temporary function to parse a protein monomer from a PDB file.
 
     Args:
         file_path (Path | str): _description_
@@ -234,14 +235,10 @@ def parse_pdb(
     chain_ids = np.array([1] * len(atom_array), dtype=int)
     molecule_type_ids = np.array([MoleculeType.PROTEIN] * len(atom_array), dtype=int)
     entity_ids = np.array([1] * len(atom_array), dtype=int)
-    # asym_ids = np.array([1] * len(atom_array), dtype=int)
-    # sym_ids = np.array([1] * len(atom_array), dtype=int)
 
     atom_array.set_annotation("chain_id", chain_ids)
     atom_array.set_annotation("molecule_type_id", molecule_type_ids)
     atom_array.set_annotation("entity_id", entity_ids)
-    # atom_array.set_annotation("asym_id", asym_ids)
-    # atom_array.set_annotation("sym_id", sym_ids)
 
     return ParsedStructure(pdb_file, atom_array)
 

@@ -64,6 +64,16 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     ),
 )
 @click.option(
+    "--query_structures_filename",
+    required=False,
+    default="None",
+    help=(
+        "Filename for the query structures. If 'None', uses the per-entry dir names "
+        "as filenames."
+    ),
+    type=str,
+)
+@click.option(
     "--query_file_format",
     required=True,
     help="File format for the query structures.",
@@ -72,8 +82,28 @@ from openfold3.core.data.pipelines.preprocessing.template import (
 @click.option(
     "--template_file_format",
     required=True,
-    help="File format for the query structures.",
+    help="File format for the template structures.",
     type=str,
+)
+@click.option(
+    "--query_seq_load_logic",
+    required=True,
+    help=(
+        "Whether to load the query sequences associated with structures from fasta "
+        "or structure files."
+    ),
+    type=click.Choice(["fasta", "structure"], case_sensitive=True),
+)
+@click.option(
+    "--single_moltype",
+    required=False,
+    default=None,
+    help=(
+        "Constant molecule type to use for datasets that have one molecule type "
+        "across all entries and whose dataset cache is missing the per-chain "
+        "molecule type field."
+    ),
+    type=click.Choice(["PROTEIN", "RNA", "DNA", "LIGAND"], case_sensitive=True),
 )
 @click.option(
     "--num_workers",
@@ -127,16 +157,6 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     ),
 )
 @click.option(
-    "--save_frequency",
-    required=True,
-    type=int,
-    help=(
-        "Number of query chains after which to save the dataset cache update with"
-        " valid templates."
-    ),
-    default=1000,
-)
-@click.option(
     "--max_release_date",
     required=False,
     help=(
@@ -159,7 +179,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
 @click.option(
     "--log_level",
     default="WARNING",
-    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False),
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=True),
     help="Set the logging level",
 )
 @click.option(
@@ -183,15 +203,17 @@ def main(
     template_structures_directory: Path,
     template_cache_directory: Path,
     query_structures_directory: Path,
+    query_structures_filename: str,
     query_file_format: str,
     template_file_format: str,
+    query_seq_load_logic: str,
+    single_moltype: str | None,
     num_workers: int,
     dataset_cache_file: Path,
     updated_dataset_cache_file: Path,
     max_templates_construct: int,
     max_templates_filter: int,
     is_core_train: bool,
-    save_frequency: int,
     max_release_date: str,
     min_release_date_diff: int,
     log_level: str,
@@ -213,6 +235,19 @@ def main(
         query_structures_directory (Path):
             Directory containing the sanitized query structures used for training or
             inference.
+        query_structures_filename (str):
+            Name of the query file.
+        query_file_format (str):
+            File format for the query structures.
+        template_file_format (str):
+            File format for the template structures.
+        query_seq_load_logic (str):
+            Whether to load the query sequences associated with structures from fasta or
+            structure files.
+        single_moltype (str | None):
+            Constant molecule type to use if all query structures contain the same
+            molecule type. Needed if the input dataset cache is missing the per-chain
+            molecule type field.
         num_workers (int):
             Number of workers to parallelize the template cache computation and
             filtering over.
@@ -290,8 +325,10 @@ def main(
             template_cache_directory=template_cache_directory,
             query_structures_directory=query_structures_directory,
             max_templates_construct=max_templates_construct,
+            query_structures_filename=query_structures_filename,
             query_file_format=query_file_format,
-            template_file_format=template_file_format,
+            query_seq_load_logic=query_seq_load_logic,
+            single_moltype=single_moltype,
             num_workers=num_workers,
             log_level=log_level,
             log_to_file=log_to_file,
@@ -310,6 +347,7 @@ def main(
         updated_dataset_cache_file=updated_dataset_cache_file,
         template_cache_directory=template_cache_directory,
         max_templates_filter=max_templates_filter,
+        single_moltype=single_moltype,
         is_core_train=is_core_train,
         num_workers=num_workers,
         log_level=log_level,
