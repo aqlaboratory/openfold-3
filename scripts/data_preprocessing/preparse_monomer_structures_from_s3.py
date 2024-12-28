@@ -9,6 +9,7 @@ from openfold3.core.data.pipelines.preprocessing.structure import (
 )
 
 
+# TODO: add option to load from local dir, merge with monomer cache creation code
 # %%
 @click.command()
 @click.option(

@@ -223,10 +223,10 @@ def create_protein_monomer_dataset_cache_af3(
             profile. Supports profile and max_keys keys. Defaults to None.,
         check_filename_exists (str, optional):
             If provided, only adds proteins to the dataset cache if the given filename
-            exists within the chain directory. Defaults to None, and if None all 
+            exists within the chain directory. Defaults to None, and if None all
             directories are added.
         num_workers (int, optional):
-            Number of workers to use for parallel processing. Defaults to 1. Only used 
+            Number of workers to use for parallel processing. Defaults to 1. Only used
             if check_filename_exists is specified.
     """
     # Get all chain directories

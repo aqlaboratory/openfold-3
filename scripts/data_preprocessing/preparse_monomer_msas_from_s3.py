@@ -15,6 +15,7 @@ from openfold3.core.data.io.utils import download_file_from_s3
 _worker_session = None
 
 
+# TODO: merge with existing MSA pre-parsing code
 def _init_worker(profile_name: str = "openfold") -> None:
     """Initialize the boto3 session in each worker."""
     global _worker_session

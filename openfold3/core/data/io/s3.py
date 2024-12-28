@@ -85,6 +85,11 @@ def list_bucket_entries(
             The AWS profile to use.
         max_keys (int):
             The maximum number of keys to return.
+        check_filename_exists (str):
+            File to search for among the listed entries. If provided, this function
+            returns the list of parent directories that contain the specified file.
+        num_workers (int):
+            The number of workers to use for processing the paginated results.
 
     Returns:
         list[str]:
