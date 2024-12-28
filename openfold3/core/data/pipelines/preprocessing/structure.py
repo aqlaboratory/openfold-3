@@ -23,7 +23,7 @@ from openfold3.core.data.io.sequence.fasta import write_multichain_fasta
 from openfold3.core.data.io.structure.cif import (
     SkippedStructure,
     parse_mmcif,
-    parse_pdb,
+    parse_protein_monomer_pdb_tmp,
     write_structure,
 )
 from openfold3.core.data.io.structure.mol import write_annotated_sdf
@@ -691,7 +691,7 @@ class _WrapProcessMonomerDistillStructure:
                     outfile=temp_file.name,
                     session=_worker_session,
                 )
-                _, atom_array = parse_pdb(temp_file.name)
+                _, atom_array = parse_protein_monomer_pdb_tmp(temp_file.name)
                 id_outdir = self.output_dir / pdb_id
                 id_outdir.mkdir(parents=True, exist_ok=True)
                 write_structure(atom_array, id_outdir / f"{pdb_id}.pkl")
@@ -710,6 +710,7 @@ class _WrapProcessMonomerDistillStructure:
 def preprocess_pdb_monomer_distilation(
     output_dir: Path,
     dataset_cache: Path,
+    s3_config: dict,
     num_workers: int = 1,
 ):
     """
@@ -725,7 +726,7 @@ def preprocess_pdb_monomer_distilation(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     pdb_ids = list(dataset_cache["structure_data"].keys())
-    s3_config = dataset_cache["s3_data"]
+
     wrapper = _WrapProcessMonomerDistillStructure(s3_config, output_dir)
     if num_workers > 1:
         with mp.Pool(

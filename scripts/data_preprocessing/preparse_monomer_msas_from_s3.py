@@ -39,6 +39,11 @@ def _init_worker(profile_name: str = "openfold") -> None:
     "make_monomer_distillation_set_datacache.py",
 )
 @click.option(
+    "--s3_config",
+    type=str,
+    help="Path to the s3 client config file.",
+)
+@click.option(
     "--num_workers",
     default=1,
     type=int,
@@ -47,16 +52,27 @@ def _init_worker(profile_name: str = "openfold") -> None:
         " over."
     ),
 )
+@click.option(
+    "--max_seq_config",
+    type=str,
+    default=None,
+    help="json string mapping alignment db to max seq counts",
+)
 def main(
     alignment_array_directory: Path,
     dataset_cache_file: str,
     num_workers: int,
+    s3_config: str,
+    max_seq_config: str,
 ):
     """Preparse multiple sequence alignments for AF3 dataset."""
     with open(dataset_cache_file) as f:
         dataset_cache = json.load(f)
-    s3_config = dataset_cache["s3_data"]
-    max_seq_counts = dataset_cache["max_seq_counts"]
+    with open(s3_config) as f:
+        s3_config = json.load(f)
+
+    max_seq_counts = json.loads(max_seq_config)
+
     alignment_array_directory.mkdir(parents=True, exist_ok=True)
     rep_chain_dir_iterator = list(dataset_cache["structure_data"].keys())
 
