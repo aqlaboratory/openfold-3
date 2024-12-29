@@ -199,6 +199,12 @@ np.set_printoptions(threshold=sys.maxsize)
         "asserts on."
     ),
 )
+@click.option(
+    "--no-preferred-chain-or-interface",
+    type=bool,
+    default=False,
+    help="Whether to log memory use of subpipelines during data processing.",
+)
 def main(
     runner_yml_file: Path,
     seed: int,
@@ -214,6 +220,7 @@ def main(
     log_memory: bool,
     mem_profiled_func_keys: str | None,
     subset_to_examples: str,
+    no_preferred_chain_or_interface: bool,
 ) -> None:
     """Main function for running the data pipeline treadmill.
 
@@ -258,6 +265,10 @@ def main(
         subset_to_examples: (str)
             Comma separated list of PDB IDs use to subset the dataset cache to run
             asserts on.
+        no_preferred_chain_or_interface (bool):
+            Whether to sample a crop without a preferred chain or interface. Also
+            let the treadmill skip all variations of each sample with all preferred
+            chains and interfaces.
 
     Raises:
         ValueError:
@@ -303,6 +314,7 @@ def main(
         log_runtimes=log_runtimes,
         log_memory=log_memory,
         subset_to_examples=subset_to_examples,
+        no_preferred_chain_or_interface=no_preferred_chain_or_interface,
         dataset_config=data_module_config.datasets[0].config,
     )
 
