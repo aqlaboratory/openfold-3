@@ -304,9 +304,9 @@ def create_template_cache_for_query(
             hits = parse_hmmsearch_sto(f.read())
     except Exception as e:
         template_process_logger.info(
-            "Failed to parse alignment file, skipping. Make sure that"
-            " an hmmsearch output globally aligned with hmmalign was provided. "
-            f"\nError: \n{e}\nTraceback: \n{traceback.format_exc()}"
+            f"Failed to parse alignment file {template_alignment_file}, skipping. Make"
+            " sure that an hmmsearch output globally aligned with hmmalign was "
+            f"provided. \nError: \n{e}\nTraceback: \n{traceback.format_exc()}"
         )
         data_log_to_tsv(
             data_log,
