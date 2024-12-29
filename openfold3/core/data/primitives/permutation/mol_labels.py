@@ -616,6 +616,7 @@ class SeparatedTargetStructure(NamedTuple):
     gt: AtomArray
 
 
+@log_runtime_memory(runtime_dict_key="runtime-separate-cropped-gt")
 def separate_cropped_and_gt(
     atom_array_gt: AtomArray,
     crop_strategy: str,
