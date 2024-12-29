@@ -8,30 +8,9 @@ import numpy as np
 import torch
 from biotite.structure import AtomArray
 
+from openfold3.core.data.primitives.structure.cleanup import filter_bonds
+from openfold3.core.data.primitives.structure.labels import get_token_starts
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
-
-
-def get_token_starts(
-    atom_array: AtomArray, add_exclusive_stop: bool = False
-) -> np.ndarray:
-    """Gets the indices of the first atom of each token.
-
-    Args:
-        atom_array (AtomArray):
-            AtomArray of the target or ground truth structure
-        add_exclusive_stop (bool, optional):
-            Whether to add append an int with the size of the input atom array at the
-            end of returned indices. Defaults to False.
-
-    Returns:
-        np.ndarray: _description_
-    """
-    token_id_diffs = np.diff(atom_array.token_id)
-    token_starts = np.where(token_id_diffs != 0)[0] + 1
-    token_starts = np.append(0, token_starts)
-    if add_exclusive_stop:
-        token_starts = np.append(token_starts, len(atom_array))
-    return token_starts
 
 
 def encode_one_hot(x: torch.Tensor, num_classes: int) -> torch.Tensor:
@@ -109,48 +88,47 @@ def create_token_bonds(atom_array: AtomArray, token_index: np.ndarray) -> torch.
         torch.Tensor:
             token_bonds feature.
     """
-    # Get bonds from whole cropped array
-    bonds = atom_array.bonds.as_array()
+    # Fully subset bonds with strict defintion to only the ones in AF3 SI Table 5
+    # "token_bonds"
+    filter_bonds(
+        atom_array=atom_array,
+        keep_consecutive=False,
+        keep_polymer_ligand=True,
+        keep_ligand_ligand=True,
+        remove_larger_than=2.4,
+        mask_intra_component=False,
+    )
+
+    # Initialize N_token x N_token bond matrix
     token_bonds = np.zeros([len(token_index), len(token_index)])
 
-    # Get covalent subset - exclude coordinate bonds
-    # TODO implement
+    # Get bonded atoms
+    bond_partners = atom_array.bonds.as_array()[:, :2]
 
-    # Get subset connecting at least one atomized token
-    atom_ids_atomized_tokens = np.where(atom_array.is_atomized)[0]
-    if atom_ids_atomized_tokens.size > 0:
-        bonds_atomized_tokens = bonds[
-            (np.isin(bonds[:, 0], atom_ids_atomized_tokens))
-            & np.isin(bonds[:, 1], atom_ids_atomized_tokens),
-            :,
-        ]
+    # Ensure that all relevant bonded atoms are atomized
+    assert atom_array.is_atomized[bond_partners].all()
 
-        # Get subset < 2.4A
-        bonds_atomized_tokens = bonds_atomized_tokens[
-            struc.distance(
-                atom_array.coord[bonds_atomized_tokens[:, 0]],
-                atom_array.coord[bonds_atomized_tokens[:, 1]],
-            )
-            < 2.4
-        ]
+    if bond_partners.size > 0:
+        # Map atom indices to token indices to token-in-crop index
+        token_to_token_in_crop = {t: tic for tic, t in enumerate(token_index)}
 
-        if bonds_atomized_tokens.size > 0:
-            # Map atom indices to token indices to token-in-crop index
-            token_to_token_in_crop = {t: tic for tic, t in enumerate(token_index)}
-            bonds_atomized_token_ids = np.stack(
-                [
-                    np.vectorize(token_to_token_in_crop.get)(
-                        atom_array.token_id[bonds_atomized_tokens[:, i]]
-                    )
-                    for i in [0, 1]
-                ]
-            )
+        get_absolute_token_id = np.vectorize(token_to_token_in_crop.get)
 
-            # Unmask corresponding bonds
-            token_bonds[
-                (bonds_atomized_token_ids[0], bonds_atomized_token_ids[1]),
-                (bonds_atomized_token_ids[1], bonds_atomized_token_ids[0]),
-            ] = True
+        bond_partner_absolute_token_ids = get_absolute_token_id(
+            atom_array.token_id[bond_partners]
+        )
+
+        # Unmask corresponding bonds
+        token_bonds[
+            (
+                bond_partner_absolute_token_ids[:, 0],
+                bond_partner_absolute_token_ids[:, 1],
+            ),
+            (
+                bond_partner_absolute_token_ids[:, 1],
+                bond_partner_absolute_token_ids[:, 0],
+            ),
+        ] = True
 
     return torch.tensor(token_bonds, dtype=torch.int32)
 

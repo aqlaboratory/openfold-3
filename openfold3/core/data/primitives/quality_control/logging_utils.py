@@ -79,10 +79,9 @@ F_NAME_ORDER = [
     # top level function in the getitem
     "runtime-create-all-features",
     # 2nd-level functions
-    "runtime-create-target-structure-features",
+    "runtime-create-structure-features",
     "runtime-create-msa-features",
     "runtime-create-template-features",
-    "runtime-create-ref-conf-features",
     # 3rd-level functions
     "runtime-target-structure-proc",
     "runtime-target-structure-feat",
@@ -97,6 +96,8 @@ F_NAME_ORDER = [
     "runtime-target-structure-proc-token",
     "runtime-target-structure-proc-crop",
     "runtime-target-structure-proc-expand",
+    "runtime-target-structure-proc-permutation-labels",
+    # MSA
     "runtime-msa-proc-parse",
     "runtime-msa-proc-create-query",
     "runtime-msa-proc-homo-mono",

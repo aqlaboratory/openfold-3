@@ -411,3 +411,17 @@ def mol_from_atomarray(atom_array: AtomArray) -> AnnotatedMol:
     mol = set_atomwise_annotation(mol, "atom_name", atom_array.atom_name)
 
     return mol
+
+
+def component_iter_from_metadata(atom_array: AtomArray, per_chain_metadata: dict):
+    for chain_array in struc.chain_iter(atom_array):
+        chain_id = chain_array.chain_id[0]
+
+        ref_mol_id = per_chain_metadata[chain_id].reference_mol_id
+
+        # Entire chain corresponds to a single reference molecule (e.g. a ligand chain)
+        if ref_mol_id is not None:
+            yield chain_array
+        # Decompose the chain into individual residues and their reference molecules
+        else:
+            yield from struc.residue_iter(chain_array)

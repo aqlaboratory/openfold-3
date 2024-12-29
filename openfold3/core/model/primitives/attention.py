@@ -50,10 +50,6 @@ if fa_is_installed:
     from flash_attn.bert_padding import unpad_input
     from flash_attn.flash_attn_interface import flash_attn_varlen_kvpacked_func
 
-triton_is_installed = importlib.util.find_spec("triton") is not None
-if triton_is_installed:
-    from openfold3.core.kernels.triton.fused_softmax import fused_softmax
-
 # To avoid errors if memory-efficient attention kernel is not installed
 attn_core_is_installed = importlib.util.find_spec("attn_core_inplace_cuda") is not None
 if attn_core_is_installed:
@@ -119,10 +115,7 @@ def _attention(
             scores += b
 
         # Normalize the scores
-        if triton_is_installed and scores.is_cuda:
-            scores = fused_softmax(scores)
-        else:
-            scores = softmax_no_cast(scores, dim=-1)
+        scores = softmax_no_cast(scores, dim=-1)
 
     # Multiply scores by values
     attention = torch.einsum("...qk, ...kc->...qc", scores.to(dtype=value.dtype), value)
@@ -359,6 +352,11 @@ class Attention(nn.Module):
                 "use_flash is incompatible with the bias option. For masking, "
                 "use flash_mask instead"
             )
+
+        # TODO: Make this more explicit
+        # The EvoformerAttention kernel can only be used for sequence lengths > 16
+        if use_deepspeed_evo_attention and q_x.shape[-2] <= 16:
+            use_deepspeed_evo_attention = False
 
         attn_options = [
             use_memory_efficient_kernel,
