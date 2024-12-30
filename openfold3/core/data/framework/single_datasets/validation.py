@@ -42,8 +42,8 @@ def make_chain_mask_padded(all_chains, interfaces_to_include):
     )
 
     for interface_tuple in interfaces_to_include:
-        chain_mask[interface_tuple[0], interface_tuple[1]] = 1
-        chain_mask[interface_tuple[1], interface_tuple[0]] = 1
+        chain_mask[int(interface_tuple[0]), int(interface_tuple[1])] = 1
+        chain_mask[int(interface_tuple[1]), int(interface_tuple[0])] = 1
 
     return chain_mask
 
@@ -183,26 +183,29 @@ class ValidationPDBDataset(WeightedPDBDataset):
         chains_for_intra_metrics = [
             cid
             for cid, cdata in structure_entry.chains.items()
-            if cdata.use_intrachain_metrics
+            #if cdata.use_intrachain_metrics
         ]
         print(f"{pdb_id=} {chains_for_intra_metrics=}")
 
         interfaces_to_include = []
         for interface_id, cluster_data in structure_entry.interfaces.items():
-            if cluster_data.use_interchain_metrics:
-                print(f"{pdb_id=} {interface_id=} to be included")
-                interface_chains = tuple(interface_id.split("_"))
-                interfaces_to_include.append(interface_chains)
+            #if cluster_data.use_interchain_metrics:
+            print(f"{pdb_id=} {interface_id=} to be included")
+            interface_chains = tuple(interface_id.split("_"))
+            interfaces_to_include.append(interface_chains)
 
         # Create token mask for validation intra and inter metrics
         token_starts_with_stop, _ = extract_starts_entities(atom_array)
         token_starts = token_starts_with_stop[:-1]
-        token_chain_id = atom_array.chain_id[token_starts]
+        token_chain_id = atom_array.chain_id[token_starts].astype(int)
+
 
         features["use_for_intra_validation"] = torch.tensor(
             np.isin(token_chain_id, chains_for_intra_metrics),
             dtype=torch.int32,
         )
+        
+        token_chain_id = torch.tensor(token_chain_id, dtype = torch.int32)
 
         all_chain_ids = torch.unique(token_chain_id)
         chain_mask_padded = make_chain_mask_padded(all_chain_ids, interfaces_to_include)
