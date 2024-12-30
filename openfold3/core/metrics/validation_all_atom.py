@@ -1015,13 +1015,29 @@ def get_validation_metrics(
 
     if torch.any(intra_filter_atomized):
         plddt_complex = compute_plddt(plddt_logits)
-        metrics.update({'plddt_complex': torch.sum(plddt_complex * intra_filter_atomized, dim = -1) / torch.sum(intra_filter_atomized)})
+        metrics.update({'plddt_complex': torch.sum(
+            plddt_complex * intra_filter_atomized, 
+            dim = -1) / torch.sum(intra_filter_atomized)})
         
         # do the whole complex lddt
-        gt_pair = torch.sqrt(torch.sum((gt_coords.unsqueeze(-2) - gt_coords.unsqueeze(-3)) ** 2, dim=-1))
-        pred_pair = torch.sqrt(torch.sum((pred_coords.unsqueeze(-2) - pred_coords.unsqueeze(-3)) ** 2, dim=-1))
+        gt_pair = torch.sqrt(
+            torch.sum(
+                (gt_coords.unsqueeze(-2) - gt_coords.unsqueeze(-3)) ** 2, dim=-1
+            )
+        )
+        pred_pair = torch.sqrt(
+            torch.sum(
+                (pred_coords.unsqueeze(-2) - pred_coords.unsqueeze(-3)) ** 2, dim=-1
+            )
+        )        
         inter_filter_atomized_zeros = torch.zeros_like(inter_filter_atomized)
-        complex_lddt, _ = lddt(gt_pair,pred_pair, all_atom_mask,intra_filter_atomized, inter_filter_atomized_zeros,asym_id_atomized,)
+        complex_lddt, _ = lddt(
+            gt_pair,pred_pair, 
+            all_atom_mask,
+            intra_filter_atomized, 
+            inter_filter_atomized_zeros,
+            asym_id_atomized,
+            )
         metrics.update({'lddt_complex': complex_lddt})
 
         is_protein_atomized = is_protein_atomized * intra_filter_atomized
@@ -1032,19 +1048,23 @@ def get_validation_metrics(
 
         if torch.any(is_protein_atomized):
             plddt_logits_protein = plddt_complex[is_protein_atomized.bool()]
-            metrics.update({'plddt_protein': torch.sum(plddt_logits_protein) / torch.sum(is_protein_atomized)})
+            metrics.update({'plddt_protein': torch.sum(
+                plddt_logits_protein) / torch.sum(is_protein_atomized)})
             
         if torch.any(is_ligand_atomized):
             plddt_logits_ligand = plddt_complex[is_ligand_atomized.bool()]
-            metrics.update({'plddt_ligand': torch.sum(plddt_logits_ligand) / torch.sum(is_ligand_atomized)})
+            metrics.update({'plddt_ligand': torch.sum(
+                plddt_logits_ligand) / torch.sum(is_ligand_atomized)})
             
         if torch.any(is_rna_atomized):
             plddt_logits_rna = plddt_complex[is_rna_atomized.bool()]
-            metrics.update({'plddt_rna': torch.sum(plddt_logits_rna) / torch.sum(is_rna_atomized)})
+            metrics.update({'plddt_rna': torch.sum(
+                plddt_logits_rna) / torch.sum(is_rna_atomized)})
 
         if torch.any(is_dna_atomized):
             plddt_logits_dna = plddt_complex[is_dna_atomized.bool()]
-            metrics.update({'plddt_dna': torch.sum(plddt_logits_dna) / torch.sum(is_dna_atomized)})
+            metrics.update({'plddt_dna': torch.sum(
+                plddt_logits_dna) / torch.sum(is_dna_atomized)})
 
     ## Model selection metric
     #TODO: refactor this 
@@ -1060,7 +1080,7 @@ def get_validation_metrics(
     if torch.any(is_ligand_atomized) and torch.any(is_rna_atomized):
         is_rna_ligand_pair = is_rna_atomized[..., None] * is_ligand_atomized[..., None, :]
         n_rna_atoms = torch.sum(is_rna_atomized).to(int).item()
-        # TODO: just works for bs = 1, sample size = 1
+        #TODO: just works for bs = 1, sample size = 1
         inter_filter_mask_rna_ligand = inter_filter_atomized[0, is_rna_atomized.bool()[0], :][:, is_ligand_atomized.bool()[0]].unsqueeze(0)
 
         lddt_inter_ligand_rna = interface_lddt(
@@ -1115,8 +1135,18 @@ def get_validation_metrics(
         n_mr_atoms = torch.sum(is_modified_res_atomized).item() 
         inter_mask_atomized_mr = inter_filter_atomized[0, is_modified_res_atomized.bool()[0], :][:, is_modified_res_atomized.bool()[0]].unsqueeze(0)
         
-        pred_mr_pair = torch.sqrt(torch.sum((pred_mr.unsqueeze(-2) - pred_mr.unsqueeze(-3)) ** 2,dim=-1,))
-        gt_mr_pair = torch.sqrt(torch.sum((gt_mr.unsqueeze(-2) - gt_mr.unsqueeze(-3)) ** 2,dim=-1,))
+        pred_mr_pair = torch.sqrt(
+            torch.sum(
+                (pred_mr.unsqueeze(-2) - pred_mr.unsqueeze(-3)) ** 2,
+                dim=-1,
+            )
+        )
+        gt_mr_pair = torch.sqrt(
+            torch.sum(
+                (gt_mr.unsqueeze(-2) - gt_mr.unsqueeze(-3)) ** 2,
+                dim=-1,
+            )
+        )
         lddt_intra_modified_residues, _ = lddt(
             pred_mr_pair, 
             gt_mr_pair, 
