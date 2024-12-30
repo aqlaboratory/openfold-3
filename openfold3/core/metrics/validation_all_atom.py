@@ -1003,7 +1003,7 @@ def get_validation_metrics(
         )
         metrics = metrics | superimpose_metrics
 
-    valid_metrics = {
+    metrics = {
         k: v[~nan_mask]
         for k, v in metrics.items()
         if not (nan_mask := torch.isnan(v)).all()
@@ -1080,8 +1080,13 @@ def get_validation_metrics(
     if torch.any(is_ligand_atomized) and torch.any(is_rna_atomized):
         is_rna_ligand_pair = is_rna_atomized[..., None] * is_ligand_atomized[..., None, :]
         n_rna_atoms = torch.sum(is_rna_atomized).to(int).item()
+        n_ligand_atoms = torch.sum(is_ligand_atomized).to(int).item()
         #TODO: just works for bs = 1, sample size = 1
-        inter_filter_mask_rna_ligand = inter_filter_atomized[0, is_rna_atomized.bool()[0], :][:, is_ligand_atomized.bool()[0]].unsqueeze(0)
+        #inter_filter_mask_rna_ligand = inter_filter_atomized[0, is_rna_atomized.bool()[0], :][:, is_ligand_atomized.bool()[0]].unsqueeze(0)
+        inter_filter_mask_rna_ligand = torch.masked_select(
+            inter_filter_atomized, is_rna_ligand_pair.bool()
+        ).reshape((bs) + (n_rna_atoms, n_ligand_atoms))
+
 
         lddt_inter_ligand_rna = interface_lddt(
             pred_coords[is_rna_atomized.bool()].view((bs) + (-1, 3)),
@@ -1102,7 +1107,11 @@ def get_validation_metrics(
     if torch.any(is_ligand_atomized) and torch.any(is_dna_atomized):
         is_dna_ligand_pair = is_dna_atomized[..., None] * is_ligand_atomized[..., None, :]
         n_dna_atoms = torch.sum(is_dna_atomized).to(int).item()
-        inter_filter_mask_dna_ligand = inter_filter_atomized[0, is_dna_atomized.bool()[0], :][:, is_ligand_atomized.bool()[0]].unsqueeze(0)
+        n_ligand_atoms = torch.sum(is_ligand_atomized).to(int).item()
+        #inter_filter_mask_dna_ligand = inter_filter_atomized[0, is_dna_atomized.bool()[0], :][:, is_ligand_atomized.bool()[0]].unsqueeze(0)
+        inter_filter_mask_dna_ligand = torch.masked_select(
+            inter_filter_atomized, is_dna_ligand_pair.bool()
+        ).reshape((bs) + (n_dna_atoms, n_ligand_atoms))
         
         lddt_inter_ligand_dna = interface_lddt(
             pred_coords[is_dna_atomized.bool()].view((bs) + (-1, 3)),
@@ -1131,9 +1140,12 @@ def get_validation_metrics(
         intra_mask_atomized_mr = intra_filter_atomized[is_modified_res_atomized.bool()].view((bs) + (-1,))
         is_mr_atomized_pair = is_modified_res_atomized[..., None] * is_modified_res_atomized[..., None, :]
 
-
         n_mr_atoms = torch.sum(is_modified_res_atomized).item() 
-        inter_mask_atomized_mr = inter_filter_atomized[0, is_modified_res_atomized.bool()[0], :][:, is_modified_res_atomized.bool()[0]].unsqueeze(0)
+        #inter_mask_atomized_mr = inter_filter_atomized[0, is_modified_res_atomized.bool()[0], :][:, is_modified_res_atomized.bool()[0]].unsqueeze(0)
+        inter_mask_atomized_mr = torch.inter_filter_atomized(
+            inter_mask_atomized, is_mr_atomized_pair.bool()
+        ).reshape((bs) + (n_mr_atoms, n_mr_atoms))
+        
         
         pred_mr_pair = torch.sqrt(
             torch.sum(
