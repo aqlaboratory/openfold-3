@@ -17,7 +17,6 @@ import numpy as np
 import torch
 from biotite.structure import AtomArray
 
-from openfold3.core.data.framework.single_datasets.pdb import WeightedPDBDataset
 from openfold3.core.data.primitives.quality_control.asserts import ENSEMBLED_ASSERTS
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     F_NAME_ORDER,
@@ -33,12 +32,17 @@ from openfold3.core.data.resources.residues import (
 )
 
 
-class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
-    """Custom PDB dataset class with logging in the __getitem__."""
+def add_logging_to_dataset(dataset_cls):
+    class LoggedDataset(LoggingMixin, dataset_cls):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
 
+    return LoggedDataset
+
+
+class LoggingMixin:
     def __init__(
         self,
-        *args,
         run_asserts=None,
         save_features=None,
         save_atom_array=None,
@@ -49,7 +53,6 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         subset_to_examples=None,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
         self.run_asserts = run_asserts
         self.save_features = save_features
         self.save_atom_array = save_atom_array
@@ -59,6 +62,8 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         self.log_memory = log_memory
         if subset_to_examples is not None and len(subset_to_examples) > 0:
             self.subset_examples(subset_to_examples)
+
+        super().__init__(**kwargs)
         """
         The following attributes are set in the worker_init_function_with_logging
         on a per-worker basis:
@@ -79,7 +84,9 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         # Get PDB ID from the datapoint cache and the preferred chain/interface
         datapoint = self.datapoint_cache.iloc[index]
         pdb_id = datapoint["pdb_id"]
-        preferred_chain_or_interface = datapoint["preferred_chain_or_interface"]
+        preferred_chain_or_interface = datapoint.get(
+            "preferred_chain_or_interface", None
+        )
 
         # Set context variables and containers
         PDB_ID.set(pdb_id)
@@ -263,6 +270,11 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 
     @staticmethod
     def stringify_chain_interface(preferred_chain_or_interface: str | list[str]) -> str:
+        preferred_chain_or_interface = (
+            "nan"
+            if preferred_chain_or_interface is None
+            else preferred_chain_or_interface
+        )
         return (
             "-".join(preferred_chain_or_interface)
             if isinstance(preferred_chain_or_interface, list)

@@ -198,11 +198,11 @@ def create_protein_monomer_dataset_cache_af3(
     data_directory: Path,
     protein_reference_molecule_data_file: Path,
     dataset_name: str,
-    output_path: Path,
+    output_dir: Path,
     s3_client_config: dict | None = None,
     check_filename_exists: str | None = None,
     num_workers: int = 1,
-) -> None:
+) -> ProteinMonomerDatasetCache:
     """Creates a protein monomer dataset cache.
 
     Args:
@@ -216,8 +216,8 @@ def create_protein_monomer_dataset_cache_af3(
             protein monomer.
         dataset_name (str):
             Name of the dataset.
-        output_path (Path):
-            Path to write the dataset cache to.
+        output_dir (Path):
+            Directory to write the dataset cache to.
         s3_client_config (dict, optional):
             Configuration for the S3 client. If None, the client is started without a
             profile. Supports profile and max_keys keys. Defaults to None.,
@@ -228,6 +228,9 @@ def create_protein_monomer_dataset_cache_af3(
         num_workers (int, optional):
             Number of workers to use for parallel processing. Defaults to 1. Only used
             if check_filename_exists is specified.
+
+    Returns:
+        ProteinMonomerDatasetCache: The created dataset cache.
     """
     # Get all chain directories
     # S3
@@ -290,4 +293,8 @@ def create_protein_monomer_dataset_cache_af3(
 
     # Write the final dataset cache to disk
     print("4/4: Writing dataset cache to disk.")
-    write_datacache_to_json(dataset_cache, output_path)
+    write_datacache_to_json(
+        dataset_cache, output_dir / "training_cache_protein_monomer.json"
+    )
+
+    return dataset_cache
