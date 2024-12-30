@@ -3,6 +3,7 @@ from typing import Optional
 
 import torch
 
+from openfold3.core.metrics.confidence import compute_plddt
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 
 
@@ -1007,4 +1008,149 @@ def get_validation_metrics(
         for k, v in metrics.items()
         if not (nan_mask := torch.isnan(v)).all()
     }
-    return valid_metrics
+
+    ## plDDTs and lDDTs correlation
+    #TODO: major refactor
+    plddt_logits = outputs['plddt_logits'] # (n_atom, 50)    
+
+    if torch.any(intra_filter_atomized):
+        plddt_complex = compute_plddt(plddt_logits)
+        metrics.update({'plddt_complex': torch.sum(plddt_complex * intra_filter_atomized, dim = -1) / torch.sum(intra_filter_atomized)})
+        
+        # do the whole complex lddt
+        gt_pair = torch.sqrt(torch.sum((gt_coords.unsqueeze(-2) - gt_coords.unsqueeze(-3)) ** 2, dim=-1))
+        pred_pair = torch.sqrt(torch.sum((pred_coords.unsqueeze(-2) - pred_coords.unsqueeze(-3)) ** 2, dim=-1))
+        inter_filter_atomized_zeros = torch.zeros_like(inter_filter_atomized)
+        complex_lddt, _ = lddt(gt_pair,pred_pair, all_atom_mask,intra_filter_atomized, inter_filter_atomized_zeros,asym_id_atomized,)
+        metrics.update({'lddt_complex': complex_lddt})
+
+        is_protein_atomized = is_protein_atomized * intra_filter_atomized
+        #BUG: current intra_filter wipes out all ligands. don't include it.
+        #is_ligand_atomized = is_ligand_atomized * intra_filter_atomized
+        is_rna_atomized = is_rna_atomized * intra_filter_atomized
+        is_dna_atomized = is_dna_atomized * intra_filter_atomized
+
+        if torch.any(is_protein_atomized):
+            plddt_logits_protein = plddt_complex[is_protein_atomized.bool()]
+            metrics.update({'plddt_protein': torch.sum(plddt_logits_protein) / torch.sum(is_protein_atomized)})
+            
+        if torch.any(is_ligand_atomized):
+            plddt_logits_ligand = plddt_complex[is_ligand_atomized.bool()]
+            metrics.update({'plddt_ligand': torch.sum(plddt_logits_ligand) / torch.sum(is_ligand_atomized)})
+            
+        if torch.any(is_rna_atomized):
+            plddt_logits_rna = plddt_complex[is_rna_atomized.bool()]
+            metrics.update({'plddt_rna': torch.sum(plddt_logits_rna) / torch.sum(is_rna_atomized)})
+
+        if torch.any(is_dna_atomized):
+            plddt_logits_dna = plddt_complex[is_dna_atomized.bool()]
+            metrics.update({'plddt_dna': torch.sum(plddt_logits_dna) / torch.sum(is_dna_atomized)})
+
+    ## Model selection metric
+    #TODO: refactor this 
+    #TODO: RASA and multiple samples 
+    bs = is_protein_atomized.shape[:-1]
+
+    n_protein_new = torch.sum(is_protein_atomized).item()
+    n_ligand_new = torch.sum(is_ligand_atomized).item()
+    n_dna_new = torch.sum(is_dna_atomized).item()
+    n_rna_new = torch.sum(is_rna_atomized).item()
+
+    # interLDDT: ligand_rna
+    if torch.any(is_ligand_atomized) and torch.any(is_rna_atomized):
+        is_rna_ligand_pair = is_rna_atomized[..., None] * is_ligand_atomized[..., None, :]
+        n_rna_atoms = torch.sum(is_rna_atomized).to(int).item()
+        # TODO: just works for bs = 1, sample size = 1
+        inter_filter_mask_rna_ligand = inter_filter_atomized[0, is_rna_atomized.bool()[0], :][:, is_ligand_atomized.bool()[0]].unsqueeze(0)
+
+        lddt_inter_ligand_rna = interface_lddt(
+            pred_coords[is_rna_atomized.bool()].view((bs) + (-1, 3)),
+            pred_coords[is_ligand_atomized.bool()].view((bs) + (-1, 3)),
+            gt_coords[is_rna_atomized.bool()].view((bs) + (-1, 3)),
+            gt_coords[is_ligand_atomized.bool()].view((bs) + (-1, 3)),
+            all_atom_mask[is_rna_atomized.bool()].view((bs) + (-1,)),
+            all_atom_mask[is_ligand_atomized.bool()].view((bs) + (-1,)),
+            inter_filter_mask_rna_ligand,
+            cutoff=30.0,
+            )
+
+        if not (torch.isnan(lddt_inter_ligand_rna)).all():
+            lddt_inter_ligand_rna[~torch.isnan(lddt_inter_ligand_rna)]
+            metrics.update({"lddt_inter_ligand_rna": lddt_inter_ligand_rna})
+
+
+    if torch.any(is_ligand_atomized) and torch.any(is_dna_atomized):
+        is_dna_ligand_pair = is_dna_atomized[..., None] * is_ligand_atomized[..., None, :]
+        n_dna_atoms = torch.sum(is_dna_atomized).to(int).item()
+        inter_filter_mask_dna_ligand = inter_filter_atomized[0, is_dna_atomized.bool()[0], :][:, is_ligand_atomized.bool()[0]].unsqueeze(0)
+        
+        lddt_inter_ligand_dna = interface_lddt(
+            pred_coords[is_dna_atomized.bool()].view((bs) + (-1, 3)),
+            pred_coords[is_ligand_atomized.bool()].view((bs) + (-1, 3)),
+            gt_coords[is_dna_atomized.bool()].view((bs) + (-1, 3)),
+            gt_coords[is_ligand_atomized.bool()].view((bs) + (-1, 3)),
+            all_atom_mask[is_dna_atomized.bool()].view((bs) + (-1,)),
+            all_atom_mask[is_ligand_atomized.bool()].view((bs) + (-1,)),
+            inter_filter_mask_dna_ligand,
+            cutoff=30.0,
+            )
+            
+        if not (torch.isnan(lddt_inter_ligand_dna)).all():
+            lddt_inter_ligand_dna[~torch.isnan(lddt_inter_ligand_dna)]
+            metrics.update({"lddt_inter_ligand_dna": lddt_inter_ligand_dna})
+
+
+    # intraLDDT: modified_residues
+    is_modified_res = batch["is_atomized"]
+    is_modified_res = is_modified_res * (1 - batch["is_ligand"])
+    is_modified_res_atomized = broadcast_token_feat_to_atoms(token_mask, num_atoms_per_token, is_modified_res).to(bool)
+    
+    if torch.any(is_modified_res):
+        pred_mr = pred_coords[is_modified_res_atomized.bool()].view((bs) + (-1, 3))
+        gt_mr = gt_coords[is_modified_res_atomized.bool()].view((bs) + (-1, 3))
+        intra_mask_atomized_mr = intra_filter_atomized[is_modified_res_atomized.bool()].view((bs) + (-1,))
+        is_mr_atomized_pair = is_modified_res_atomized[..., None] * is_modified_res_atomized[..., None, :]
+
+
+        n_mr_atoms = torch.sum(is_modified_res_atomized).item() 
+        inter_mask_atomized_mr = inter_filter_atomized[0, is_modified_res_atomized.bool()[0], :][:, is_modified_res_atomized.bool()[0]].unsqueeze(0)
+        
+        pred_mr_pair = torch.sqrt(torch.sum((pred_mr.unsqueeze(-2) - pred_mr.unsqueeze(-3)) ** 2,dim=-1,))
+        gt_mr_pair = torch.sqrt(torch.sum((gt_mr.unsqueeze(-2) - gt_mr.unsqueeze(-3)) ** 2,dim=-1,))
+        lddt_intra_modified_residues, _ = lddt(
+            pred_mr_pair, 
+            gt_mr_pair, 
+            all_atom_mask[is_modified_res_atomized.bool()].view((bs) + (-1,)), 
+            intra_mask_atomized_mr,
+            inter_mask_atomized_mr,
+            asym_id_atomized[is_modified_res_atomized.bool()].view((bs) + (-1,))
+        )
+
+        if not (torch.isnan(lddt_intra_modified_residues)).all():
+            lddt_intra_modified_residues[~torch.isnan(lddt_intra_modified_residues)]
+            metrics.update({"lddt_intra_modified_residues": lddt_intra_modified_residues})
+
+    weights = {
+        "lddt_inter_protein_protein": 20.0,
+        "lddt_inter_protein_dna": 10.0,
+        "lddt_inter_protein_rna": 10.0,
+        "lddt_inter_ligand_dna": 5.0,
+        "lddt_inter_protein_ligand": 10.0,
+        "lddt_inter_ligand_rna": 5.0,
+        "lddt_intra_protein": 20.0,
+        "lddt_intra_dna": 4.0,
+        "lddt_intra_rna": 16.0,    
+        "lddt_intra_ligand": 20.0,
+        "lddt_intra_modified_residues": 10.0,
+    }
+
+    model_selection_metric = 0.
+    sum_weights = 1e-8
+    for k, v in weights.items():
+        if k in metrics:
+            model_selection_metric += metrics[k] * v
+            sum_weights += v
+    score = model_selection_metric / sum_weights
+    metrics.update({"model_selection_score": score})
+
+    return metrics
