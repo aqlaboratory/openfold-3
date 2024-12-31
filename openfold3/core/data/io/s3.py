@@ -6,7 +6,7 @@ from pathlib import Path
 import boto3
 import botocore
 import botocore.paginate
-
+from botocore.config import Config
 
 def parse_s3_config(s3_client_config_str: str | None) -> dict:
     """Converts a string representation of an S3 client config to a dictionary.
@@ -44,7 +44,11 @@ def start_s3_client(profile: str) -> boto3.client:
         boto3.client:
             The S3 client.
     """
-    session = boto3.Session(profile_name=profile)
+    ### instantiate a boto3 session using adaptive retries
+    ### this will automatically retry failed requests
+    ### using an exponential backoff strategy, to avoid 
+    ### errors from rate limiting. 
+    session = boto3.Session(profile_name=profile, config=Config(retries={'max_attempts': 10, 'mode': 'adaptive'}))
     return session.client("s3")
 
 
