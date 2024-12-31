@@ -502,7 +502,7 @@ class ProteinMonomerDatasetCache(DatasetCache):
     structure_data: ProteinMonomerStructureDataCache
     reference_molecule_data: DatasetReferenceMoleculeCache
     _chain_data_format = ProteinMonomerChainData
-    _ref_mol_data_format = DatasetReferenceMoleculeCache
+    _ref_mol_data_format = DatasetReferenceMoleculeData
     _structure_data_format = ProteinMonomerStructureData
 
     @classmethod

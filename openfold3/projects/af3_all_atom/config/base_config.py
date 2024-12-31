@@ -446,6 +446,7 @@ project_config = mlc.ConfigDict(
                         "rfam_hits": 10000,
                         "rnacentral_hits": 10000,
                         "nt_hits": 10000,
+                        "concat_cfdb_uniref100_filtered": 10000000,
                     },
                     "aln_order": [
                         "uniref90_hits",
@@ -456,6 +457,7 @@ project_config = mlc.ConfigDict(
                         "rfam_hits",
                         "rnacentral_hits",
                         "nt_hits",
+                        "concat_cfdb_uniref100_filtered",
                     ],
                 },
                 "template": {

@@ -184,7 +184,7 @@ def get_ref_conformer_data_af3(
     for chain_array in struc.chain_iter(atom_array):
         chain_id = chain_array.chain_id[0]
 
-        ref_mol_id = per_chain_metadata[chain_id].reference_mol_id
+        ref_mol_id = getattr(per_chain_metadata[chain_id], "reference_mol_id", None)
 
         # Entire chain corresponds to a single reference molecule (e.g. a ligand chain)
         if ref_mol_id is not None:

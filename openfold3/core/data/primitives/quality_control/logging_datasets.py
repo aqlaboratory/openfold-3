@@ -53,6 +53,7 @@ class LoggingMixin:
         subset_to_examples=None,
         **kwargs,
     ):
+        super().__init__(**kwargs)
         self.run_asserts = run_asserts
         self.save_features = save_features
         self.save_atom_array = save_atom_array
@@ -63,7 +64,6 @@ class LoggingMixin:
         if subset_to_examples is not None and len(subset_to_examples) > 0:
             self.subset_examples(subset_to_examples)
 
-        super().__init__(**kwargs)
         """
         The following attributes are set in the worker_init_function_with_logging
         on a per-worker basis:
@@ -538,8 +538,12 @@ class LoggingMixin:
                     statistics += ["NaN"]
 
             # Entry metadata from dataset cache
-            statistics += [self.dataset_cache.structure_data[pdb_id].resolution]
-            statistics += [self.dataset_cache.structure_data[pdb_id].release_date]
+            statistics += [
+                getattr(self.dataset_cache.structure_data[pdb_id], "resolution", None)
+            ]
+            statistics += [
+                getattr(self.dataset_cache.structure_data[pdb_id], "release_date", None)
+            ]
 
             # sub-pipeline runtimes
             statistics += list(runtimes)

@@ -267,7 +267,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
         loss_features = {}
         loss_features["loss_weights"] = set_loss_weights(
             self.loss,
-            self.dataset_cache.structure_data[pdb_id].resolution,
+            getattr(self.dataset_cache.structure_data[pdb_id], "resolution", None),
         )
         return loss_features
 
