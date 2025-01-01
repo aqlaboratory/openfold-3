@@ -318,35 +318,45 @@ class WeightedPDBDataset(BaseAF3Dataset):
         preferred_chain_or_interface = datapoint["datapoint"]
 
         # TODO: Remove debug logic
-        try:
-            if pdb_id in DEBUG_PDB_BLACKLIST:
-                logger.warning(f"Skipping blacklisted pdb id {pdb_id}")
-                index = random.randint(0, len(self) - 1)
-                return self.__getitem__(index)
-
+        if not self.debug_mode:
             sample_data = self.create_all_features(
                 pdb_id=pdb_id,
                 preferred_chain_or_interface=preferred_chain_or_interface,
                 return_atom_arrays=False,
             )
-
             features = sample_data["features"]
-
             features["pdb_id"] = pdb_id
-            if is_invalid_feature_dict(features):
+            return features
+        else:
+            try:
+                if pdb_id in DEBUG_PDB_BLACKLIST:
+                    logger.warning(f"Skipping blacklisted pdb id {pdb_id}")
+                    index = random.randint(0, len(self) - 1)
+                    return self.__getitem__(index)
+
+                sample_data = self.create_all_features(
+                    pdb_id=pdb_id,
+                    preferred_chain_or_interface=preferred_chain_or_interface,
+                    return_atom_arrays=False,
+                )
+
+                features = sample_data["features"]
+
+                features["pdb_id"] = pdb_id
+                if is_invalid_feature_dict(features):
+                    index = random.randint(0, len(self) - 1)
+                    return self.__getitem__(index)
+
+                return features
+
+            except Exception as e:
+                tb = traceback.format_exc()
+                logger.warning(
+                    "-" * 40
+                    + "\n"
+                    + f"Failed to process WeightedPDBDataset entry {pdb_id}: {str(e)}\n"
+                    + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
+                    + "-" * 40
+                )
                 index = random.randint(0, len(self) - 1)
                 return self.__getitem__(index)
-
-            return features
-
-        except Exception as e:
-            tb = traceback.format_exc()
-            logger.warning(
-                "-" * 40
-                + "\n"
-                + f"Failed to process WeightedPDBDataset entry {pdb_id}: {str(e)}\n"
-                + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
-                + "-" * 40
-            )
-            index = random.randint(0, len(self) - 1)
-            return self.__getitem__(index)

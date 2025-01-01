@@ -13,7 +13,6 @@ from openfold3.core.data.framework.single_datasets.abstract_single import (
 )
 from openfold3.core.data.io.dataset_cache import read_datacache
 from openfold3.core.data.pipelines.featurization.conformer import (
-    featurize_ref_conformers_af3,
     featurize_reference_conformers_af3,
 )
 from openfold3.core.data.pipelines.featurization.loss_weights import set_loss_weights
@@ -25,7 +24,6 @@ from openfold3.core.data.pipelines.featurization.template import (
     featurize_template_structures_af3,
 )
 from openfold3.core.data.pipelines.sample_processing.conformer import (
-    get_ref_conformer_data_af3,
     get_reference_conformer_data_af3,
 )
 from openfold3.core.data.pipelines.sample_processing.msa import (
@@ -85,9 +83,9 @@ class BaseAF3Dataset(SingleDataset, ABC):
         self.target_structures_directory = dataset_config["dataset_paths"][
             "target_structures_directory"
         ]
-        self.target_structure_file_format = dataset_config["dataset_paths"][
-            "target_structure_file_format"
-        ]
+        self.target_structure_file_format = str(
+            dataset_config["dataset_paths"]["target_structure_file_format"]
+        )
         self.alignments_directory = dataset_config["dataset_paths"][
             "alignments_directory"
         ]
@@ -111,9 +109,9 @@ class BaseAF3Dataset(SingleDataset, ABC):
         self.template_structure_array_directory = dataset_config["dataset_paths"][
             "template_structure_array_directory"
         ]
-        self.template_file_format = dataset_config["dataset_paths"][
-            "template_file_format"
-        ]
+        self.template_file_format = str(
+            dataset_config["dataset_paths"]["template_file_format"]
+        )
         self.reference_molecule_directory = dataset_config["dataset_paths"][
             "reference_molecule_directory"
         ]
@@ -144,6 +142,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
 
         # Misc
         self.single_moltype = None
+        self.debug_mode = dataset_config["debug_mode"]
 
     def __post_init__(self):
         if self.apply_crop is None:
@@ -283,24 +282,6 @@ class BaseAF3Dataset(SingleDataset, ABC):
         )
 
         return template_features
-
-    @log_runtime_memory(runtime_dict_key="runtime-create-ref-conformer-features")
-    def create_ref_conformer_features(
-        self, pdb_id: str, atom_array_cropped: AtomArray
-    ) -> dict:
-        """Creates the reference conformer features."""
-
-        processed_reference_molecules = get_ref_conformer_data_af3(
-            atom_array=atom_array_cropped,
-            per_chain_metadata=self.dataset_cache.structure_data[pdb_id].chains,
-            reference_mol_metadata=self.dataset_cache.reference_molecule_data,
-            reference_mol_dir=self.reference_molecule_directory,
-        )
-        reference_conformer_features = featurize_ref_conformers_af3(
-            processed_reference_molecules
-        )
-
-        return reference_conformer_features
 
     def create_loss_features(self, pdb_id: str) -> dict:
         """Creates the loss features."""

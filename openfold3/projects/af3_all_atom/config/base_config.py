@@ -420,6 +420,8 @@ project_config = mlc.ConfigDict(
             "weight": 0.0,
             "config": {
                 "loss_weight_mode": "default",
+                # TODO: remove this flag once debug logic is gone
+                "debug_mode": True,
                 "msa": {
                     "max_rows_paired": 8191,
                     "max_rows": 16384,
