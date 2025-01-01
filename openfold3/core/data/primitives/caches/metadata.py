@@ -672,6 +672,7 @@ def set_nan_fallback_conformer_flag(
     return None
 
 
+# TODO: Do this in preprocessing instead to avoid it going out-of-sync with the data?
 def get_model_ranking_fit(pdb_id):
     """Fetches the model ranking fit entries for all ligands of a single PDB-ID.
 
