@@ -49,7 +49,7 @@ def create_template_feature_precursor_af3(
             The collection of cropped template atom arrays per chain, per template.
         n_templates (int):
             Number of templates.
-        token_budget (int):
+        n_tokens (int):
             Number of tokens in the target structure.
 
     Returns:
