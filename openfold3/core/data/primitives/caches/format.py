@@ -426,14 +426,14 @@ class ValClusteredDatasetChainData(ClusteredDatasetChainData):
     Attributes:
         low_homology (bool):
             Whether the chain has low-homology with the training data (see AF3 SI 5.8).
-        use_intrachain_metrics (int):
+        use_intrachain_metrics (bool):
             Whether validation metrics should be calculated for this chain (see AF3 SI
             5.8).
     """
 
     # Adds the following fields:
     low_homology: bool
-    use_intrachain_metrics: int
+    use_intrachain_metrics: bool
 
 
 @dataclass
@@ -444,14 +444,14 @@ class ValClusteredDatasetInterfaceData(ClusteredDatasetInterfaceData):
         low_homology (bool):
             Whether the interface has low-homology with the training data (see AF3 SI
             5.8).
-        use_interchain_metrics (int):
+        use_interchain_metrics (bool):
             Whether validation metrics should be calculated for this interface (see AF3
             SI 5.8).
     """
 
     # Adds the following fields:
     low_homology: bool
-    use_interchain_metrics: int
+    use_interchain_metrics: bool
 
 
 @dataclass
