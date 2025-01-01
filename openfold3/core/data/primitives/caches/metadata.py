@@ -850,6 +850,12 @@ def filter_cache_by_specified_interfaces(
         for chain_id in chains_to_remove:
             del structure_data.chains[chain_id]
 
+    # TODO: Remove at some point
+    assert not any(
+        len(structure_data.chains) == 0 or len(structure_data.interfaces) == 0
+        for structure_data in dataset_cache.structure_data.values()
+    )
+
 
 def subsample_interfaces_per_cluster(
     dataset_cache: DatasetCache,
@@ -885,10 +891,11 @@ def subsample_interfaces_per_cluster(
             )
 
     # Take specified number of interfaces per cluster
-    subsampled_interface_datapoints = [
-        random.sample(interface_datapoints, num_interfaces_per_cluster)
-        for interface_datapoints in cluster_id_to_interfaces.values()
-    ]
+    subsampled_interface_datapoints = []
+    for interface_datapoints in cluster_id_to_interfaces.values():
+        subsampled_interface_datapoints.extend(
+            random.sample(interface_datapoints, num_interfaces_per_cluster)
+        )
 
     filter_cache_by_specified_interfaces(
         dataset_cache, set(subsampled_interface_datapoints)
@@ -907,8 +914,7 @@ def filter_cache_to_specified_chains(
 ) -> None:
     """In-place deletes the chains and interfaces not specified to be kept.
 
-    This code makes no attempt to save interfaces and will only keep the specified
-    chains.
+    This code deletes all interfaces and will only keep the specified chains.
 
     Args:
         dataset_cache (DatasetCache):
@@ -917,7 +923,7 @@ def filter_cache_to_specified_chains(
             A set of (pdb_id, chain_id) tuples specifying which chains to keep.
 
     Returns:
-        None, the cache is updated in-place.
+        None, the cache is updated in-place(!)
     """
     # Create dictionary mapping each PDB-ID to all chains to keep
     pdb_id_to_keep_chains = defaultdict(set)
@@ -1119,11 +1125,6 @@ def subsample_interfaces_by_type(
             n_rna = molecule_types.count(MoleculeType.RNA)
             n_ligand = molecule_types.count(MoleculeType.LIGAND)
 
-            n_protein = molecule_types.count(MoleculeType.PROTEIN)
-            n_dna = molecule_types.count(MoleculeType.DNA)
-            n_rna = molecule_types.count(MoleculeType.RNA)
-            n_ligand = molecule_types.count(MoleculeType.LIGAND)
-
             if n_protein == 2:
                 interface_type = "protein_protein"
             elif n_protein == 1 and n_dna == 1:
@@ -1188,9 +1189,10 @@ def select_multimer_cache(
 ) -> ValClusteredDatasetCache:
     """Filters out chains/interfaces following AF3 SI 5.8 Multimer Selection Step 2-4.
 
-    Filters the cache to only low-homology interfaces, and filter out interfaces
+    Filters the cache to only low-homology interfaces, and filters out interfaces
     involving a ligand with ranking_model_fit below a certain threshold or with multiple
-    residues. Keeps the chains corresponding to those interfaces.
+    residues. Then subsamples the remaining interfaces as specified in the SI and only
+    keeps the chains corresponding to those interfaces.
 
     Args:
         val_dataset_cache (ValClusteredDatasetCache):
@@ -1229,8 +1231,8 @@ def select_multimer_cache(
             The random seed to use for subsampling. Default is None.
 
     Returns:
-        A copy of the original cache filtered to only contain the desired chains and
-        interfaces.
+        A copy of the original cache filtered to only contain the subsampled interfaces
+        created by the filtering steps, as well as their corresponding chains.
     """
     logger.info("Selecting multimer set...")
     filtered_cache = deepcopy(val_dataset_cache)
@@ -1250,9 +1252,16 @@ def select_multimer_cache(
                 chain_data = structure_data.chains[chain_id]
 
                 if chain_data.molecule_type == MoleculeType.LIGAND:
+                    # Check that fit is above threshold
                     if chain_data.ranking_model_fit < min_ranking_model_fit:
                         continue
-                    if chain_data.num_residues_contact > 1:
+
+                    # Check that ligand has only one residue
+                    mol_id = chain_data.reference_mol_id
+                    residue_count = val_dataset_cache.reference_molecule_data[
+                        mol_id
+                    ].residue_count
+                    if residue_count > 1:
                         continue
 
             keep_interface_datapoints.add(InterfaceDataPoint(pdb_id, interface_id))
@@ -1296,11 +1305,44 @@ def select_multimer_cache(
 def select_monomer_cache(
     val_dataset_cache: ValClusteredDatasetCache,
     id_to_sequence: dict[str, str],
+    max_token_count: int = 2048,
     n_protein: int = 40,
     n_dna: int | None = None,
     n_rna: int | None = None,
     random_seed: int | None = None,
 ) -> ValClusteredDatasetCache:
+    """Filters out chains/interfaces following AF3 SI 5.8 Monomer Selection Step 2-4.
+
+    Filters the cache down to only low-homology polymeric chains and subsamples the
+    remaining chains according to the SI.
+
+    Note that proteins are sampled as unique cluster representatives, which is not
+    directly stated in the SI but seems logical given that chains are preclustered.
+
+    Args:
+        val_dataset_cache (ValClusteredDatasetCache):
+            The cache to filter.
+        id_to_sequence (dict[str, str]):
+            A dictionary mapping PDB-chain IDs to sequences. Required for clustering.
+        max_token_count (int):
+            The maximum token count for structures to be included in the cache. Defaults
+            to 2048.
+        n_protein (int):
+            The number of protein chains to sample. Default is 40.
+        n_dna (int | None):
+            The number of DNA chains to sample. Default is None, which means that all
+            DNA chains will be selected.
+        n_rna (int | None):
+            The number of RNA chains to sample. Default is None, which means that all
+            RNA chains will be selected.
+        random_seed (int | None):
+            The random seed to use for subsampling. Default is None.
+
+    Returns:
+        A copy of the original cache filtered to only contain the subsampled chains
+        created by the filtering steps.
+    """
+    logger.info("Selecting monomer set...")
     filtered_cache = deepcopy(val_dataset_cache)
 
     # Filter to only low-homology polymers
@@ -1325,12 +1367,15 @@ def select_monomer_cache(
                 keep_chain_datapoints.add(ChainDataPoint(pdb_id, chain_id))
 
     # Filter the cache to only contain the specified chains
+    logger.info("Filtering cache by specified chains.")
     filter_cache_to_specified_chains(filtered_cache, keep_chain_datapoints)
 
     # Assign cluster IDs
+    logger.info("Assigning cluster IDs.")
     add_cluster_data(filtered_cache, id_to_sequence=id_to_sequence, add_sizes=False)
 
     # Subsample chains by molecule type
+    logger.info("Subsampling chains.")
     subsample_chains_by_type(
         filtered_cache,
         n_protein=n_protein,
@@ -1339,6 +1384,9 @@ def select_monomer_cache(
         random_seed=random_seed,
     )
 
+    # Filter by token count
+    filtered_cache.structure_data = filter_by_token_count(
+        filtered_cache.structure_data, max_tokens=max_token_count
     )
 
     return filtered_cache
