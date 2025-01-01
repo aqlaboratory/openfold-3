@@ -1,7 +1,7 @@
 import json
 from abc import ABC
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import torch
 from biotite.structure import AtomArray
@@ -44,6 +44,7 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
 from openfold3.core.data.primitives.structure.tokenization import add_token_positions
 
 
+# TODO: update docstring with inputs
 @register_dataset
 class BaseAF3Dataset(SingleDataset, ABC):
     """Implements a general SingleDataset for handling inputs for AF3.
@@ -52,13 +53,6 @@ class BaseAF3Dataset(SingleDataset, ABC):
     - implements a set of general class methods for processing and featurizing inputs
     for AF3
     - assigns general class attributes, including the dataset_cache property
-
-    The BaseAF3Dataset does NOT
-    - implement a __getitem__ method
-    - implement create_datapoint_cache method and hence the datapoint_cache property
-    - get added to the dataset registry as it is not decorated with the
-    register_dataset, as such, it is not intended to be used as a standalone dataset.
-    - set whether cropping is performed
 
     As required by the SingleDataset class, child classes of BaseAF3Dataset must
     - implement the __getitem__ method
@@ -141,7 +135,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
         self.template = dataset_config["template"]
 
         # Misc
-        self.single_moltype = None
+        self.single_moltype = Optional[str] = None
         self.debug_mode = dataset_config["debug_mode"]
 
     def __post_init__(self):
