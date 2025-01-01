@@ -852,7 +852,9 @@ def filter_cache_by_specified_interfaces(
 
 
 def subsample_interfaces_per_cluster(
-    dataset_cache: DatasetCache, num_interfaces_per_cluster: int = 1
+    dataset_cache: DatasetCache,
+    num_interfaces_per_cluster: int = 1,
+    random_seed: int | None = None,
 ) -> None:
     """Subsamples a fixed number of interfaces per cluster.
 
@@ -860,14 +862,19 @@ def subsample_interfaces_per_cluster(
     interfaces in the cache.
 
     Args:
-        dataset_cache:
+        dataset_cache (DatasetCache):
             The cache to subsample.
-        num_interfaces_per_cluster:
+        num_interfaces_per_cluster (int):
             The number of interfaces to keep per cluster. Default is 1.
+        random_seed (int | None):
+            The random seed to use for sampling. Default is None.
 
     Returns:
         None, the cache is updated in-place.
     """
+    if random_seed is not None:
+        random.seed(random_seed)
+
     # Get all interface datapoints belonging to each cluster
     cluster_id_to_interfaces = defaultdict(list)
     for pdb_id, structure_data in dataset_cache.structure_data.items():
@@ -941,6 +948,7 @@ def subsample_chains_by_type(
     n_protein: int | None = 40,
     n_dna: int | None = None,
     n_rna: int | None = None,
+    random_seed: int | None = None,
 ) -> None:
     """Selects a fixed number of chains by molecule type.
 
@@ -951,20 +959,25 @@ def subsample_chains_by_type(
     directly stated in the SI but seems logical given that chains are preclustered.
 
     Args:
-        dataset_cache:
+        dataset_cache (ClusteredDatasetCache):
             The cache to subsample.
-        n_protein:
+        n_protein (int | None):
             The number of protein chains to sample. Default is 40.
-        n_dna:
+        n_dna (int | None):
             The number of DNA chains to sample. Default is None, which means that all
             DNA chains will be selected across all clusters.
-        n_rna:
+        n_rna (int | None):
             The number of RNA chains to sample. Default is None, which means that all
             RNA chains will be selected across all clusters.
+        random_seed (int | None):
+            The random seed to use for sampling. Default is None.
 
     Returns:
         None, the cache is updated in-place.
     """
+    if random_seed is not None:
+        random.seed(random_seed)
+
     # Store the chain data points grouped by cluster
     chain_type_to_clusters = {
         MoleculeType.PROTEIN: defaultdict(list),
@@ -1024,6 +1037,7 @@ def subsample_interfaces_by_type(
     n_rna_rna: int | None = None,
     n_dna_rna: int | None = None,
     n_rna_ligand: int | None = None,
+    random_seed: int | None = None,
 ) -> None:
     """Subsamples a fixed number of interfaces per type.
 
@@ -1032,36 +1046,41 @@ def subsample_interfaces_by_type(
     interfaces.
 
     Args:
-        dataset_cache:
+        dataset_cache (DatasetCache):
             The cache to subsample.
-        n_protein_protein:
+        n_protein_protein (int | None):
             The number of protein-protein interfaces to sample. Default is 600.
-        n_protein_dna:
+        n_protein_dna (int | None):
             The number of protein-DNA interfaces to sample. Default is 100.
-        n_dna_dna:
+        n_dna_dna (int | None):
             The number of DNA-DNA interfaces to sample. Default is 100.
-        n_protein_ligand:
+        n_protein_ligand (int | None):
             The number of protein-ligand interfaces to sample. Default is 600.
-        n_dna_ligand:
+        n_dna_ligand (int | None):
             The number of DNA-ligand interfaces to sample. Default is 50.
-        n_ligand_ligand:
+        n_ligand_ligand (int | None):
             The number of ligand-ligand interfaces to sample. Default is 200.
-        n_protein_rna:
+        n_protein_rna (int | None):
             The number of protein-RNA interfaces to sample. Default is None, which means
             that all protein-RNA interfaces will be selected.
-        n_rna_rna:
+        n_rna_rna (int | None):
             The number of RNA-RNA interfaces to sample. Default is None, which means
             that all RNA-RNA interfaces will be selected.
-        n_dna_rna:
+        n_dna_rna (int | None):
             The number of DNA-RNA interfaces to sample. Default is None, which means
             that all DNA-RNA interfaces will be selected.
-        n_rna_ligand:
+        n_rna_ligand (int | None):
             The number of RNA-ligand interfaces to sample. Default is None, which means
             that all RNA-ligand interfaces will be selected.
+        random_seed (int | None):
+            The random seed to use for sampling. Default is None.
 
     Returns:
         None, the cache is updated in-place.
     """
+    if random_seed is not None:
+        random.seed(random_seed)
+
     interface_datapoints_by_type = {
         "protein_protein": [],
         "protein_dna": [],
@@ -1165,6 +1184,7 @@ def select_multimer_cache(
     n_rna_rna: int | None = None,
     n_dna_rna: int | None = None,
     n_rna_ligand: int | None = None,
+    random_seed: int | None = None,
 ) -> ValClusteredDatasetCache:
     """Filters out chains/interfaces following AF3 SI 5.8 Multimer Selection Step 2-4.
 
@@ -1205,6 +1225,8 @@ def select_multimer_cache(
             How many interfaces to sample from DNA-RNA interfaces. Default is all.
         n_rna_ligand (int | None):
             How many interfaces to sample from RNA-ligand interfaces. Default is all.
+        random_seed (int | None):
+            The random seed to use for subsampling. Default is None.
 
     Returns:
         A copy of the original cache filtered to only contain the desired chains and
@@ -1245,7 +1267,7 @@ def select_multimer_cache(
 
     # Subsample one interface per cluster
     logger.info("Subsampling interfaces.")
-    subsample_interfaces_per_cluster(filtered_cache)
+    subsample_interfaces_per_cluster(filtered_cache, random_seed=random_seed)
 
     # Subsample interfaces by prespecified counts for certain types
     subsample_interfaces_by_type(
@@ -1260,10 +1282,10 @@ def select_multimer_cache(
         n_rna_rna=n_rna_rna,
         n_dna_rna=n_dna_rna,
         n_rna_ligand=n_rna_ligand,
+        random_seed=random_seed,
     )
 
     # Filter by token count
-    logger.info("Filtering by token count.")
     filtered_cache.structure_data = filter_by_token_count(
         filtered_cache.structure_data, max_token_count
     )
@@ -1277,6 +1299,7 @@ def select_monomer_cache(
     n_protein: int = 40,
     n_dna: int | None = None,
     n_rna: int | None = None,
+    random_seed: int | None = None,
 ) -> ValClusteredDatasetCache:
     filtered_cache = deepcopy(val_dataset_cache)
 
@@ -1309,7 +1332,13 @@ def select_monomer_cache(
 
     # Subsample chains by molecule type
     subsample_chains_by_type(
-        filtered_cache, n_protein=n_protein, n_dna=n_dna, n_rna=n_rna
+        filtered_cache,
+        n_protein=n_protein,
+        n_dna=n_dna,
+        n_rna=n_rna,
+        random_seed=random_seed,
+    )
+
     )
 
     return filtered_cache

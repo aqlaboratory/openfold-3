@@ -215,7 +215,7 @@ def create_pdb_training_dataset_cache_af3(
     logger.info("DONE.")
 
 
-def create_pdb_val_dataset_cache_af3_new(
+def create_pdb_val_dataset_cache_af3(
     train_cache_path: Path,
     metadata_cache_path: Path,
     preprocessed_dir: Path,
@@ -229,10 +229,10 @@ def create_pdb_val_dataset_cache_af3_new(
     write_no_alignment_repr_entries: bool = True,
     max_tokens_initial: int = 2560,
     max_tokens_final: int = 2048,
-    num_ligand_residue_threshold: int = 1,
     ranking_fit_threshold: float = 0.5,
     seq_identity_threshold: float = 0.4,
     tanimoto_threshold: float = 0.85,
+    random_seed: int = 12345,
 ) -> None:
     metadata_cache = PreprocessingDataCache.from_json(metadata_cache_path)
 
@@ -324,7 +324,8 @@ def create_pdb_val_dataset_cache_af3_new(
         val_dataset_cache=val_dataset_cache,
         id_to_sequence=id_to_sequence,
         min_ranking_model_fit=ranking_fit_threshold,
-        num_ligand_residues=num_ligand_residue_threshold,
+        max_token_count=max_tokens_final,
+        random_seed=random_seed
     )
     multimer_cache = filter_by_token_count(multimer_cache, max_tokens_final)
     multimer_pdb_ids = set(multimer_cache.structure_data.keys())
@@ -333,10 +334,9 @@ def create_pdb_val_dataset_cache_af3_new(
     monomer_cache = select_monomer_cache(
         val_dataset_cache=val_dataset_cache,
         id_to_sequence=id_to_sequence,
-        min_ranking_model_fit=ranking_fit_threshold,
-        num_ligand_residues=num_ligand_residue_threshold,
+        max_token_count=max_tokens_final,
+        random_seed=random_seed
     )
-    monomer_cache = filter_by_token_count(monomer_cache, max_tokens_final)
     monomer_pdbs = set(monomer_cache.structure_data.keys())
 
     # TODO: Write-out cache and finish up
