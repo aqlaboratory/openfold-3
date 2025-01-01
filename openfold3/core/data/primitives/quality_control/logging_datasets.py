@@ -14,6 +14,7 @@ from pathlib import Path
 
 import biotite.structure as struc
 import numpy as np
+import pandas as pd
 import torch
 from biotite.structure import AtomArray
 
@@ -51,6 +52,7 @@ class LoggingMixin:
         log_runtimes=None,
         log_memory=None,
         subset_to_examples=None,
+        no_preferred_chain_or_interface=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -64,6 +66,8 @@ class LoggingMixin:
         if subset_to_examples is not None and len(subset_to_examples) > 0:
             self.subset_examples(subset_to_examples)
 
+        if no_preferred_chain_or_interface:
+            self.remove_preferred_chain_or_interface()
         """
         The following attributes are set in the worker_init_function_with_logging
         on a per-worker basis:
@@ -646,3 +650,16 @@ class LoggingMixin:
         self.datapoint_cache = self.datapoint_cache[
             self.datapoint_cache["pdb_id"].isin(subset_to_examples)
         ]
+
+    def remove_preferred_chain_or_interface(self) -> None:
+        """Removes a preferred chain or interface from the datapoint_cache."""
+
+        # Remove from datapoint_cache
+        unique_pdb_ids = sorted(set(self.datapoint_cache["pdb_id"]))
+        self.datapoint_cache = pd.DataFrame(
+            {
+                "pdb_id": unique_pdb_ids,
+                "datapoint": [None] * len(unique_pdb_ids),
+                "weight": [1] * len(unique_pdb_ids),
+            }
+        )

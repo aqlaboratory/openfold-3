@@ -181,6 +181,15 @@ def main(args):
                 datamodule=lightning_data_module,
                 ckpt_path=ckpt_path,
             )
+
+    # Validation
+    elif runner_args.mode == "eval":
+        trainer.validate(
+            model=lightning_module,
+            datamodule=lightning_data_module,
+            ckpt_path=ckpt_path,
+        )
+
     # Testing
     elif runner_args.mode == "test":
         trainer.test(
@@ -188,6 +197,7 @@ def main(args):
             datamodule=lightning_data_module,
             ckpt_path=ckpt_path,
         )
+
     # Prediction == inference
     elif runner_args.mode == "predict":
         trainer.predict(

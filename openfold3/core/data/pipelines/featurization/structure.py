@@ -128,6 +128,20 @@ def featurize_structure_af3(
         num_atoms_per_token=features["num_atoms_per_token"],
     )
 
+    # Permutation alignment helper labels
+    features["mol_entity_id"] = torch.tensor(
+        atom_array.mol_entity_id[token_starts], dtype=torch.int32
+    )
+    features["mol_sym_id"] = torch.tensor(
+        atom_array.mol_sym_id[token_starts], dtype=torch.int32
+    )
+    features["mol_sym_token_index"] = torch.tensor(
+        atom_array.mol_sym_token_index[token_starts], dtype=torch.int32
+    )
+    features["mol_sym_component_id"] = torch.tensor(
+        atom_array.mol_sym_component_id[token_starts], dtype=torch.int32
+    )
+
     # Ground-truth-specific features
     # TODO reorganize GT feature logic
     if is_gt:
@@ -185,6 +199,10 @@ def featurize_target_gt_structure_af3(
         "is_atomized": [-1],
         "start_atom_index": [-1],
         "token_mask": [-1],
+        "mol_entity_id": [-1],
+        "mol_sym_id": [-1],
+        "mol_sym_token_index": [-1],
+        "mol_sym_component_id": [-1],
     }
     features_target = featurize_structure_af3(
         atom_array,
@@ -192,8 +210,13 @@ def featurize_target_gt_structure_af3(
         token_dim_index_map=token_dim_index_map,
         is_gt=False,
     )
+
+    # TODO: Make token budget adjustment automatic for is_gt=True
     features_gt = featurize_structure_af3(
-        atom_array_gt, n_tokens, token_dim_index_map=token_dim_index_map, is_gt=True
+        atom_array_gt,
+        token_budget=len(np.unique(atom_array_gt.token_id)),
+        token_dim_index_map=token_dim_index_map,
+        is_gt=True,
     )
     features_target["ground_truth"] = features_gt
     return features_target
