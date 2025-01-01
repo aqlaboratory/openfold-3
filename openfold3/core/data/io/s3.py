@@ -48,8 +48,8 @@ def start_s3_client(profile: str) -> boto3.client:
     ### this will automatically retry failed requests
     ### using an exponential backoff strategy, to avoid 
     ### errors from rate limiting. 
-    session = boto3.Session(profile_name=profile, config=Config(retries={'max_attempts': 10, 'mode': 'adaptive'}))
-    return session.client("s3")
+    session = boto3.Session(profile_name=profile)
+    return session.client("s3",config=Config(retries={'max_attempts': 10, 'mode': 'adaptive'}))
 
 
 def create_paginated_bucket_iterator(
