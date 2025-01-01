@@ -288,8 +288,8 @@ def build_provisional_clustered_dataset_cache(
                 entity_id=chain_data.entity_id,
                 molecule_type=chain_data.molecule_type,
                 reference_mol_id=chain_data.reference_mol_id,
-                cluster_id="",
-                cluster_size=0,
+                cluster_id=None,
+                cluster_size=None,
                 alignment_representative_id=None,
                 template_ids=None,  # added in a separate script after
             )
@@ -368,15 +368,12 @@ def build_provisional_clustered_val_dataset_cache(
                 entity_id=chain_data.entity_id,
                 molecule_type=chain_data.molecule_type,
                 reference_mol_id=chain_data.reference_mol_id,
-                cluster_id="",
-                cluster_size=0,
                 alignment_representative_id=None,
-                monomer_high_homology=0,
-                ligand_high_homology=0,
-                ligand_not_fit=0,
-                num_residues_contact=1,  # BUG: This should NOT be set to a constant
                 template_ids=None,
-                use_intrachain_metrics=1,
+                cluster_id=None,
+                cluster_size=None,
+                low_homology=None,
+                use_intrachain_metrics=None,
             )
 
         # Add interface cluster data with dummy values
@@ -385,10 +382,10 @@ def build_provisional_clustered_val_dataset_cache(
             chain_1, chain_2 = interface
             interface_id = f"{chain_1}_{chain_2}"
             new_interface_data[interface_id] = ValClusteredDatasetInterfaceData(
-                cluster_id="",
-                cluster_size=0,
-                interface_high_homology=0,
-                use_interchain_metrics=1,
+                cluster_id=None,
+                cluster_size=None,
+                low_homology=None,
+                use_interchain_metrics=None,
             )
 
     # Create reference molecule data with set_fallback_to_nan=False everywhere (for now)
