@@ -24,10 +24,10 @@ from openfold3.core.data.io.sequence.fasta import write_multichain_fasta
 from openfold3.core.data.io.structure.cif import (
     SkippedStructure,
     parse_mmcif,
-    parse_protein_monomer_pdb_tmp,
     write_structure,
 )
 from openfold3.core.data.io.structure.mol import write_annotated_sdf
+from openfold3.core.data.io.structure.pdb import parse_protein_monomer_pdb_tmp
 from openfold3.core.data.io.utils import encode_numpy_types
 from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
 from openfold3.core.data.primitives.caches.format import ProteinMonomerDatasetCache
