@@ -8,6 +8,7 @@ import botocore
 import botocore.paginate
 from botocore.config import Config
 
+
 def parse_s3_config(s3_client_config_str: str | None) -> dict:
     """Converts a string representation of an S3 client config to a dictionary.
 
@@ -46,10 +47,12 @@ def start_s3_client(profile: str) -> boto3.client:
     """
     ### instantiate a boto3 session using adaptive retries
     ### this will automatically retry failed requests
-    ### using an exponential backoff strategy, to avoid 
-    ### errors from rate limiting. 
+    ### using an exponential backoff strategy, to avoid
+    ### errors from rate limiting.
     session = boto3.Session(profile_name=profile)
-    return session.client("s3",config=Config(retries={'max_attempts': 10, 'mode': 'adaptive'}))
+    return session.client(
+        "s3", config=Config(retries={"max_attempts": 10, "mode": "adaptive"})
+    )
 
 
 def create_paginated_bucket_iterator(
@@ -251,4 +254,4 @@ def open_local_or_s3(
             return io.StringIO(body.decode("utf-8"))
     # Normal local path
     else:
-        return open(Path(filepath), mode)
+        return open(Path(filepath), mode)  # noqa: SIM115
