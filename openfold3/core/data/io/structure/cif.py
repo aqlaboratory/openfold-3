@@ -9,8 +9,8 @@ import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io import pdb, pdbx
 
-from openfold3.core.data.io.structure.atom_array import read_atomarray_from_npz
 from openfold3.core.data.io.s3 import open_local_or_s3
+from openfold3.core.data.io.structure.atom_array import read_atomarray_from_npz
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )

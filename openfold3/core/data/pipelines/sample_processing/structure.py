@@ -111,7 +111,7 @@ def process_target_structure_af3(
     # identify which atom names ended up in the crop.
     atom_array = assign_uniquified_atom_names(atom_array)
 
-   # The number of tokens is used in downstream parts of the data pipeline
+    # The number of tokens is used in downstream parts of the data pipeline
     # if cropping was done, we want to set the number of tokens to the token budget
     if apply_crop:
         n_tokens = crop_config["token_budget"]

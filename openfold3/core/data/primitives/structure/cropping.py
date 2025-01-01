@@ -372,7 +372,7 @@ def sample_crop_and_set_mask(
     Returns:
         str:
             Name of the sampled cropping strategy. Returns 'whole' if
-            the whole assembly fits into the token budget. Should be one of 
+            the whole assembly fits into the token budget. Should be one of
             ['contiguous', 'spatial', 'spatial_interface', 'whole'].
     """
 

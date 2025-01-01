@@ -229,6 +229,7 @@ class DatasetCache:
     _registered = False
     _format_validated: bool = False
 
+    # TODO: update parsers for this base class
     @classmethod
     def from_json(cls, file: Path) -> DatasetCache:
         """Costructs a datacache from json."""

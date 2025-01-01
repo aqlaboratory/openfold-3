@@ -1,6 +1,5 @@
 import copy
 import dataclasses
-import json
 import logging
 import random
 import traceback
@@ -17,7 +16,6 @@ from openfold3.core.data.framework.single_datasets.abstract_single import (
 from openfold3.core.data.framework.single_datasets.base_af3 import (
     BaseAF3Dataset,
 )
-from openfold3.core.data.primitives.structure.tokenization import add_token_positions
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.core.utils.atomize_utils import (
     broadcast_token_feat_to_atoms,
@@ -307,7 +305,7 @@ class WeightedPDBDataset(BaseAF3Dataset):
 
     def __getitem__(
         self, index: int
-    ) -> dict[str : Union[torch.Tensor, dict[str, torch.Tensor]]]:
+    ) -> dict[str : torch.Tensor | dict[str, torch.Tensor]]:
         """Returns a single datapoint from the dataset.
 
         Note: The data pipeline is modularized at the getitem level to enable
@@ -346,10 +344,9 @@ class WeightedPDBDataset(BaseAF3Dataset):
             logger.warning(
                 "-" * 40
                 + "\n"
-                + f"Failed to process {pdb_id}: {str(e)}\n"
+                + f"Failed to process WeightedPDBDataset entry {pdb_id}: {str(e)}\n"
                 + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
                 + "-" * 40
             )
             index = random.randint(0, len(self) - 1)
             return self.__getitem__(index)
-

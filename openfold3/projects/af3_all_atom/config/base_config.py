@@ -481,6 +481,7 @@ project_config = mlc.ConfigDict(
                     },
                 },
                 "custom": {
+                    # TODO: use in runner yml for every training dataset
                     "crop": {
                         "token_budget": 384,
                         "crop_weights": {
@@ -489,6 +490,7 @@ project_config = mlc.ConfigDict(
                             "spatial_interface": 0.4,
                         },
                     },
+                    # TODO: use in weightedPDB/disordered PDB runner yml
                     "sample_weights": {
                         "a_prot": 3.0,
                         "a_nuc": 3.0,
@@ -496,10 +498,12 @@ project_config = mlc.ConfigDict(
                         "w_chain": 0.5,
                         "w_interface": 1.0,
                     },
+                    # TODO: disordered flag goes here, eventually move to yml
                 },
                 "dataset_paths": {
                     "alignments_directory": PLACEHOLDER_PATH,
                     "target_structures_directory": PLACEHOLDER_PATH,
+                    "target_structure_file_format": PLACEHOLDER_PATH,
                     "alignment_db_directory": PLACEHOLDER_PATH,
                     "alignment_array_directory": PLACEHOLDER_PATH,
                     "dataset_cache_file": PLACEHOLDER_PATH,
