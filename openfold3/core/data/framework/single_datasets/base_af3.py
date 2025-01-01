@@ -195,9 +195,9 @@ class BaseAF3Dataset(SingleDataset, ABC):
 
         # Compute target and ground-truth structure features
         target_structure_features = featurize_target_gt_structure_af3(
-            atom_array_cropped=atom_array_cropped,
+            atom_array=atom_array_cropped,
             atom_array_gt=atom_array_gt,
-            token_budget=self.token_budget,
+            n_tokens=self.n_tokens,
         )
 
         # Compute reference conformer features

@@ -117,13 +117,13 @@ def cleanup_structure_af3(
 
     ## Structure cleanup
     convert_MSE_to_MET(atom_array)
-    fix_arginine_naming(atom_array)
+    fix_arginine_naming(atom_array)  #
     atom_array = remove_waters(atom_array)
 
     if get_experimental_method(cif_data) == "X-RAY DIFFRACTION":
         atom_array = remove_crystallization_aids(atom_array)
 
-    atom_array = remove_hydrogens(atom_array)
+    atom_array = remove_hydrogens(atom_array)  #
     atom_array = remove_small_polymers(atom_array, cif_data, max_residues=3)
     atom_array = remove_fully_unknown_polymers(atom_array)
     atom_array = remove_clashing_chains(
@@ -146,7 +146,7 @@ def cleanup_structure_af3(
 
     # Remove terminal atoms to ensure consistent atom count for standard tokens in the
     # model
-    atom_array = remove_std_residue_terminal_atoms(atom_array)
+    atom_array = remove_std_residue_terminal_atoms(atom_array)  #
 
     return atom_array
 

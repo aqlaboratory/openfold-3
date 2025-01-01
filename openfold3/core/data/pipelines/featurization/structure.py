@@ -205,16 +205,16 @@ def featurize_target_gt_structure_af3(
         "mol_sym_component_id": [-1],
     }
     features_target = featurize_structure_af3(
-        atom_array,
-        n_tokens,
+        atom_array=atom_array,
+        n_tokens=n_tokens,
         token_dim_index_map=token_dim_index_map,
         is_gt=False,
     )
 
     # TODO: Make token budget adjustment automatic for is_gt=True
     features_gt = featurize_structure_af3(
-        atom_array_gt,
-        token_budget=len(np.unique(atom_array_gt.token_id)),
+        atom_array=atom_array_gt,
+        n_tokens=len(np.unique(atom_array_gt.token_id)),
         token_dim_index_map=token_dim_index_map,
         is_gt=True,
     )
