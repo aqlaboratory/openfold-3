@@ -750,6 +750,10 @@ def preparse_monomer(
     structure_file_format: str,
     output_dir: Path,
 ):
+    ### to reduce run times only parse if the file does not exist
+    output_file = output_dir / f"{entry_id}/{entry_id}.pkl"
+    if output_file.exists():
+        return
     _, atom_array = parse_protein_monomer_pdb_tmp(
         data_directory / entry_id / f"{structure_filename}.{structure_file_format}"
     )
