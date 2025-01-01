@@ -1,7 +1,7 @@
 import json
 from abc import ABC
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import torch
 from biotite.structure import AtomArray
@@ -13,7 +13,7 @@ from openfold3.core.data.framework.single_datasets.abstract_single import (
 )
 from openfold3.core.data.io.dataset_cache import read_datacache
 from openfold3.core.data.pipelines.featurization.conformer import (
-    featurize_ref_conformers_af3,
+    featurize_reference_conformers_af3,
 )
 from openfold3.core.data.pipelines.featurization.loss_weights import set_loss_weights
 from openfold3.core.data.pipelines.featurization.msa import featurize_msa_af3
@@ -24,7 +24,7 @@ from openfold3.core.data.pipelines.featurization.template import (
     featurize_template_structures_af3,
 )
 from openfold3.core.data.pipelines.sample_processing.conformer import (
-    get_ref_conformer_data_af3,
+    get_reference_conformer_data_af3,
 )
 from openfold3.core.data.pipelines.sample_processing.msa import (
     process_msas_af3,
@@ -35,11 +35,16 @@ from openfold3.core.data.pipelines.sample_processing.structure import (
 from openfold3.core.data.pipelines.sample_processing.template import (
     process_template_structures_af3,
 )
+from openfold3.core.data.primitives.permutation.mol_labels import (
+    separate_cropped_and_gt,
+)
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
+from openfold3.core.data.primitives.structure.tokenization import add_token_positions
 
 
+# TODO: update docstring with inputs
 @register_dataset
 class BaseAF3Dataset(SingleDataset, ABC):
     """Implements a general SingleDataset for handling inputs for AF3.
@@ -48,13 +53,6 @@ class BaseAF3Dataset(SingleDataset, ABC):
     - implements a set of general class methods for processing and featurizing inputs
     for AF3
     - assigns general class attributes, including the dataset_cache property
-
-    The BaseAF3Dataset does NOT
-    - implement a __getitem__ method
-    - implement create_datapoint_cache method and hence the datapoint_cache property
-    - get added to the dataset registry as it is not decorated with the
-    register_dataset, as such, it is not intended to be used as a standalone dataset.
-    - set whether cropping is performed
 
     As required by the SingleDataset class, child classes of BaseAF3Dataset must
     - implement the __getitem__ method
@@ -79,6 +77,9 @@ class BaseAF3Dataset(SingleDataset, ABC):
         self.target_structures_directory = dataset_config["dataset_paths"][
             "target_structures_directory"
         ]
+        self.target_structure_file_format = str(
+            dataset_config["dataset_paths"]["target_structure_file_format"]
+        )
         self.alignments_directory = dataset_config["dataset_paths"][
             "alignments_directory"
         ]
@@ -102,9 +103,9 @@ class BaseAF3Dataset(SingleDataset, ABC):
         self.template_structure_array_directory = dataset_config["dataset_paths"][
             "template_structure_array_directory"
         ]
-        self.template_file_format = dataset_config["dataset_paths"][
-            "template_file_format"
-        ]
+        self.template_file_format = str(
+            dataset_config["dataset_paths"]["template_file_format"]
+        )
         self.reference_molecule_directory = dataset_config["dataset_paths"][
             "reference_molecule_directory"
         ]
@@ -134,7 +135,8 @@ class BaseAF3Dataset(SingleDataset, ABC):
         self.template = dataset_config["template"]
 
         # Misc
-        self.single_moltype = None
+        self.single_moltype = Optional[str] = None
+        self.debug_mode = dataset_config["debug_mode"]
 
     def __post_init__(self):
         if self.apply_crop is None:
@@ -143,40 +145,72 @@ class BaseAF3Dataset(SingleDataset, ABC):
                 f"{self.get_class_name()}."
             )
 
-    @log_runtime_memory(runtime_dict_key="runtime-create-target-structure-features")
-    def create_target_structure_features(
+    @log_runtime_memory(runtime_dict_key="runtime-create-structure-features")
+    def create_structure_features(
         self,
         pdb_id: str,
         preferred_chain_or_interface: str | list[str, str] | None,
-        return_atom_arrays: bool,
+        return_full_atom_array: bool,
     ) -> tuple[dict, AtomArray | torch.Tensor]:
         """Creates the target structure features."""
 
-        # Target structure and duplicate-expanded GT structure features
-        target_structure_data, self.n_tokens = process_target_structure_af3(
+        # Processed ground-truth structure with added annotations and masks
+        atom_array_gt, crop_strategy, self.n_tokens = process_target_structure_af3(
             target_structures_directory=self.target_structures_directory,
             pdb_id=pdb_id,
             apply_crop=self.apply_crop,
             crop_config=self.crop,
             preferred_chain_or_interface=preferred_chain_or_interface,
-            structure_format="pkl",
-            return_full_atom_array=return_atom_arrays,
+            structure_format=self.target_structure_file_format,
+            per_chain_metadata=self.dataset_cache.structure_data[pdb_id].chains,
         )
-        # NOTE that for now we avoid the need for permutation alignment by providing the
-        # cropped atom array as the ground truth atom array
-        # target_structure_features.update(
-        #     featurize_target_gt_structure_af3(
-        #         target_structure_data["atom_array_cropped"],
-        #         target_structure_data["atom_array_gt"],
-        #         self.token_budget
-        #     )
-        # )
+
+        # Processed reference conformers
+        processed_reference_molecules = get_reference_conformer_data_af3(
+            atom_array=atom_array_gt,
+            per_chain_metadata=self.dataset_cache.structure_data[pdb_id].chains,
+            reference_mol_metadata=self.dataset_cache.reference_molecule_data,
+            reference_mol_dir=self.reference_molecule_directory,
+        )
+
+        if return_full_atom_array:
+            atom_array_full = atom_array_gt.copy()
+
+        # Apply crop and subset GT to only contain the atoms that are symmetry-related
+        # to atoms in the crop and necessary for the permutation alignment
+        atom_array_cropped, atom_array_gt = separate_cropped_and_gt(
+            atom_array_gt=atom_array_gt,
+            crop_strategy=crop_strategy,
+            processed_ref_mol_list=processed_reference_molecules,
+        )
+
+        # Necessary positional indices for MSA and template processing
+        add_token_positions(atom_array_cropped)
+
+        # Compute target and ground-truth structure features
         target_structure_features = featurize_target_gt_structure_af3(
-            target_structure_data["atom_array_cropped"],
-            target_structure_data["atom_array_cropped"],
-            self.n_tokens,
+            atom_array=atom_array_cropped,
+            atom_array_gt=atom_array_gt,
+            n_tokens=self.n_tokens,
         )
-        target_structure_data["target_structure_features"] = target_structure_features
+
+        # Compute reference conformer features
+        reference_conformer_features = featurize_reference_conformers_af3(
+            processed_ref_mol_list=processed_reference_molecules
+        )
+
+        # Wrap up features
+        # TODO: is there a reason to return atom_array_gt?
+        target_structure_data = {
+            "atom_array_gt": atom_array_gt,
+            "atom_array_cropped": atom_array_cropped,
+            "target_structure_features": target_structure_features,
+            "reference_conformer_features": reference_conformer_features,
+        }
+
+        if return_full_atom_array:
+            target_structure_data["atom_array"] = atom_array_full
+
         return target_structure_data
 
     @log_runtime_memory(runtime_dict_key="runtime-create-msa-features")
@@ -243,24 +277,6 @@ class BaseAF3Dataset(SingleDataset, ABC):
 
         return template_features
 
-    @log_runtime_memory(runtime_dict_key="runtime-create-ref-conformer-features")
-    def create_ref_conformer_features(
-        self, pdb_id: str, atom_array_cropped: AtomArray
-    ) -> dict:
-        """Creates the reference conformer features."""
-
-        processed_reference_molecules = get_ref_conformer_data_af3(
-            atom_array=atom_array_cropped,
-            per_chain_metadata=self.dataset_cache.structure_data[pdb_id].chains,
-            reference_mol_metadata=self.dataset_cache.reference_molecule_data,
-            reference_mol_dir=self.reference_molecule_directory,
-        )
-        reference_conformer_features = featurize_ref_conformers_af3(
-            processed_reference_molecules
-        )
-
-        return reference_conformer_features
-
     def create_loss_features(self, pdb_id: str) -> dict:
         """Creates the loss features."""
 
@@ -282,12 +298,15 @@ class BaseAF3Dataset(SingleDataset, ABC):
 
         sample_data = {"features": {}}
 
-        # Target structure features
-        target_structure_data = self.create_target_structure_features(
+        # Target & GT structure and conformer features
+        target_structure_data = self.create_structure_features(
             pdb_id, preferred_chain_or_interface, return_atom_arrays
         )
         sample_data["features"].update(
             target_structure_data["target_structure_features"]
+        )
+        sample_data["features"].update(
+            target_structure_data["reference_conformer_features"]
         )
 
         # MSA features
@@ -302,12 +321,6 @@ class BaseAF3Dataset(SingleDataset, ABC):
             pdb_id, target_structure_data["atom_array_cropped"]
         )
         sample_data["features"].update(template_features)
-
-        # Reference conformer features
-        reference_conformer_features = self.create_ref_conformer_features(
-            pdb_id, target_structure_data["atom_array_cropped"]
-        )
-        sample_data["features"].update(reference_conformer_features)
 
         # Loss switches
         loss_features = self.create_loss_features(pdb_id)

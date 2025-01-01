@@ -187,6 +187,7 @@ class PredictedAlignedErrorHead(nn.Module):
         self.c_z = c_z
         self.c_out = c_out
 
+        self.layer_norm = LayerNorm(self.c_z)
         self.linear = Linear(self.c_z, self.c_out, **linear_init_params.linear)
 
     def forward(self, zij):
@@ -198,7 +199,7 @@ class PredictedAlignedErrorHead(nn.Module):
             logits:
                 [*, N, N, C_out] Logits
         """
-        logits = self.linear(zij)
+        logits = self.linear(self.layer_norm(zij))
         return logits
 
 
@@ -229,6 +230,7 @@ class PredictedDistanceErrorHead(nn.Module):
         self.c_z = c_z
         self.c_out = c_out
 
+        self.layer_norm = LayerNorm(self.c_z)
         self.linear = Linear(self.c_z, self.c_out, **linear_init_params.linear)
 
     def forward(self, zij):
@@ -240,7 +242,8 @@ class PredictedDistanceErrorHead(nn.Module):
             logits:
                 [*, N, N, C_out] Logits
         """
-        logits = self.linear(zij + zij.transpose(-2, -3))
+        logits = self.linear(self.layer_norm(zij))
+        logits = logits + logits.transpose(-2, -3)
         return logits
 
 
@@ -274,6 +277,7 @@ class PerResidueLDDAllAtom(nn.Module):
         self.max_atoms_per_token = max_atoms_per_token
         self.c_out = c_out
 
+        self.layer_norm = LayerNorm(self.c_s)
         self.linear = Linear(
             self.c_s, self.max_atoms_per_token * self.c_out, **linear_init_params.linear
         )
@@ -298,7 +302,7 @@ class PerResidueLDDAllAtom(nn.Module):
         )
 
         # [*, N_token, max_atoms_per_token * c_out]
-        logits = self.linear(s)
+        logits = self.linear(self.layer_norm(s))
 
         # [*, N_token * max_atoms_per_token, c_out]
         logits = logits.reshape(-1, n_token * self.max_atoms_per_token, self.c_out)
@@ -386,6 +390,7 @@ class ExperimentallyResolvedHeadAllAtom(nn.Module):
         self.max_atoms_per_token = max_atoms_per_token
         self.c_out = c_out
 
+        self.layer_norm = LayerNorm(self.c_s)
         self.linear = Linear(
             self.c_s, self.max_atoms_per_token * self.c_out, **linear_init_params.linear
         )
@@ -410,7 +415,7 @@ class ExperimentallyResolvedHeadAllAtom(nn.Module):
         )
 
         # [*, N_token, max_atoms_per_token * c_out]
-        logits = self.linear(s)
+        logits = self.linear(self.layer_norm(s))
 
         # [*, N_token * max_atoms_per_token, c_out]
         logits = logits.reshape(-1, n_token * self.max_atoms_per_token, self.c_out)
@@ -512,6 +517,7 @@ class DistogramHead(nn.Module):
         Note:
             For symmetric pairwise PairDistanceError loss (PDE),
             logits are calculated by linear(zij + zij.transpose(-2, -3))
+            In SI this happens before the linear layer is applied.
         """
 
         logits = self.linear(z)

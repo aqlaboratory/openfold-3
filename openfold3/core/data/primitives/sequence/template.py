@@ -14,8 +14,8 @@ from openfold3.core.data.io.sequence.fasta import read_multichain_fasta
 from openfold3.core.data.io.sequence.template import TemplateHit
 from openfold3.core.data.io.structure.cif import (
     parse_mmcif,
-    parse_protein_monomer_pdb_tmp,
 )
+from openfold3.core.data.io.structure.pdb import parse_protein_monomer_pdb_tmp
 from openfold3.core.data.primitives.caches.format import DatasetCache
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     TEMPLATE_PROCESS_LOGGER,

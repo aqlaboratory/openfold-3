@@ -2,6 +2,8 @@
 Pipelines for setting the loss weights in the FeatureDict.
 """
 
+import copy
+
 import torch
 
 
@@ -22,9 +24,10 @@ def set_loss_weights(loss_settings: dict, resolution: float | None) -> dict[str,
     Returns:
         dict[str, float]: _description_
     """
-    loss_weight = loss_settings["loss_weights"]
-    if (resolution is None) or (resolution < loss_settings["min_resolution"]) | (
-        resolution > loss_settings["max_resolution"]
+    loss_weight = copy.deepcopy(loss_settings["loss_weights"])
+    if (resolution is None) or (
+        resolution < loss_settings["min_resolution"]
+        or resolution > loss_settings["max_resolution"]
     ):
         # Set all confidence losses to 0
         for loss_name in loss_settings["confidence_loss_names"]:

@@ -6,6 +6,12 @@ import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
+from openfold3.core.data.primitives.structure.component import (
+    component_iter_from_metadata,
+)
 from openfold3.core.data.resources.residues import (
     CHEM_COMP_TYPE_TO_MOLECULE_TYPE,
     STANDARD_NUCLEIC_ACID_RESIDUES,
@@ -151,7 +157,9 @@ def assign_renumbered_chain_ids(
     atom_array.chain_id = chain_ids_per_atom
 
 
-def assign_atom_indices(atom_array: AtomArray) -> None:
+def assign_atom_indices(
+    atom_array: AtomArray, label: str = "_atom_idx", overwrite: bool = False
+) -> None:
     """Assigns atom indices to the AtomArray
 
     Atom indices are a simple range from 0 to the number of atoms in the AtomArray which
@@ -162,8 +170,17 @@ def assign_atom_indices(atom_array: AtomArray) -> None:
     Args:
         atom_array:
             AtomArray containing the structure to assign atom indices to.
+        label:
+            Name of the annotation field to store the atom indices in. Defaults to
+            "_atom_idx".
+        overwrite:
+            Whether to overwrite an existing annotation field with the same name.
+            Defaults to False.
     """
-    atom_array.set_annotation("_atom_idx", range(len(atom_array)))
+    if label in atom_array.get_annotation_categories() and not overwrite:
+        raise ValueError(f"Annotation field '{label}' already exists in AtomArray.")
+    else:
+        atom_array.set_annotation(label, range(len(atom_array)))
 
 
 def remove_atom_indices(atom_array: AtomArray) -> None:
@@ -336,6 +353,118 @@ def uniquify_ids(ids: list[str]) -> list[str]:
         uniquified_ids.append(f"{id}_{id_counter[id]}")
 
     return uniquified_ids
+
+
+@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-unqual-atoms")
+def assign_uniquified_atom_names(atom_array: AtomArray) -> None:
+    assign_atom_indices(atom_array, label="_atom_idx_unqf_atoms")
+    atom_array.set_annotation(
+        "atom_name_unique", np.full(len(atom_array), fill_value="-", dtype=object)
+    )
+
+    for component in component_iter(atom_array):
+        atom_names = component.atom_name
+        atom_names_uniquified = uniquify_ids(atom_names)
+
+        atom_array.atom_name_unique[component._atom_idx_unqf_atoms] = (
+            atom_names_uniquified
+        )
+
+    atom_array.del_annotation("_atom_idx_unqf_atoms")
+
+    assert np.all(atom_array.atom_name_unique != "-")
+
+    return atom_array
+
+
+def get_id_starts(
+    atom_array: AtomArray, id_field: str, add_exclusive_stop: bool = False
+) -> np.ndarray:
+    """Gets the indices of the first atom of each ID.
+
+    Args:
+        atom_array:
+            AtomArray of the target or ground truth structure
+        id_field:
+            Name of an annotation field containing consecutive IDs.
+
+    Returns:
+        np.ndarray:
+            Array of indices of the first atom of each ID.
+    """
+    id_diffs = np.diff(getattr(atom_array, id_field))
+    id_starts = np.where(id_diffs != 0)[0] + 1
+    id_starts = np.append(0, id_starts)
+
+    if add_exclusive_stop:
+        id_starts = np.append(id_starts, len(atom_array))
+
+    return id_starts
+
+
+def get_token_starts(
+    atom_array: AtomArray, add_exclusive_stop: bool = False
+) -> np.ndarray:
+    """Gets the indices of the first atom of each token.
+
+    Args:
+        atom_array (AtomArray):
+            AtomArray of the target or ground truth structure
+        add_exclusive_stop (bool, optional):
+            Whether to add append an int with the size of the input atom array at the
+            end of returned indices. Defaults to False.
+
+    Returns:
+        np.ndarray: _description_
+    """
+    return get_id_starts(atom_array, "token_id", add_exclusive_stop)
+
+
+def get_component_starts(atom_array: AtomArray, add_exclusive_stop: bool = False):
+    """Gets the indices of the first atom of each component.
+
+    Args:
+        atom_array (AtomArray):
+            AtomArray of the target or ground truth structure
+        add_exclusive_stop (bool, optional):
+            Whether to append an int with the size of the input atom array at the
+            end of returned indices. Defaults to False.
+
+    Returns:
+        np.ndarray:
+            Array of indices of the first atom of each component.
+    """
+    return get_id_starts(atom_array, "component_id", add_exclusive_stop)
+
+
+def component_iter(atom_array: AtomArray):
+    """Iterates through components in an AtomArray.
+
+    Args:
+        atom_array (AtomArray):
+            AtomArray of the target or ground truth structure
+
+    Yields:
+        AtomArray:
+            AtomArray containing a single component.
+    """
+    component_starts = get_component_starts(atom_array, add_exclusive_stop=True)
+    for start, stop in zip(component_starts[:-1], component_starts[1:]):
+        yield atom_array[start:stop]
+
+
+@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-comp-id-assign")
+def assign_component_ids_from_metadata(
+    atom_array: AtomArray, per_chain_metadata: dict[str, dict]
+) -> None:
+    atom_array.set_annotation(
+        "component_id", np.full(len(atom_array), fill_value=-1, dtype=int)
+    )
+
+    for id, component in enumerate(
+        component_iter_from_metadata(atom_array, per_chain_metadata), start=1
+    ):
+        component.component_id[:] = id
 
 
 def set_residue_hetero_values(atom_array: AtomArray) -> None:

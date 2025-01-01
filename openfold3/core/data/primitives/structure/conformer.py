@@ -1,8 +1,10 @@
 import logging
-from typing import Literal
+from collections.abc import Iterable
+from typing import Literal, Optional
 
 import numpy as np
-from rdkit import Chem
+from func_timeout import FunctionTimedOut, func_timeout
+from rdkit import Chem, rdBase
 from rdkit.Chem import AllChem, Mol
 
 from openfold3.core.data.primitives.structure.component import (
@@ -21,12 +23,17 @@ class ConformerGenerationError(ValueError):
 
 
 def compute_conformer(
-    mol: Mol, use_random_coord_init: bool = False, remove_hs: bool = True
+    mol: Mol,
+    use_random_coord_init: bool = False,
+    remove_hs: bool = True,
+    timeout: Optional[float] = 30.0,
 ) -> tuple[Mol, int]:
     """Computes a conformer with the ETKDGv3 strategy.
 
     Wrapper around RDKit's EmbedMolecule, using ETKDGv3, handling hydrogen addition and
     removal, and raising an explicit ConformerGenerationError instead of returning -1.
+    A FunctionTimedOut exception is raised if conformer generation exceeds the
+    given timeout.
 
     Args:
         mol:
@@ -37,6 +44,9 @@ def compute_conformer(
         remove_hs:
             Whether to remove hydrogens from the molecule after conformer generation.
             The function automatically adds hydrogens before conformer generation.
+        timeout:
+            The maximum time in seconds to allow for conformer generation.
+            Default value is 30 seconds. If None, no timeout is set.
 
     Returns:
         mol:
@@ -47,6 +57,9 @@ def compute_conformer(
     Raises:
         ConformerGenerationError:
             If the conformer generation fails.
+
+        FunctionTimedOut:
+            If the conformer generation exceeds the given timeout.
     """
     try:
         mol = Chem.AddHs(mol)
@@ -60,7 +73,17 @@ def compute_conformer(
 
     strategy.clearConfs = False
 
-    conf_id = AllChem.EmbedMolecule(mol, strategy)
+    # Disable overly verbose conformer generation warnings
+    blocker = rdBase.BlockLogs()
+
+    if timeout is not None:
+        conf_id = func_timeout(
+            timeout=timeout, func=AllChem.EmbedMolecule, args=(mol, strategy)
+        )
+    else:
+        conf_id = AllChem.EmbedMolecule(mol, strategy)
+
+    del blocker
 
     if remove_hs:
         mol = safe_remove_all_hs(mol)
@@ -79,9 +102,9 @@ def multistrategy_compute_conformer(
     """Computes 3D coordinates for a molecule trying different initializations.
 
     Tries to compute 3D coordinates for a molecule using the standard RDKit ETKDGv3
-    strategy. If this fails, it falls back to using a different initializion for ETKDGv3
-    with random starting coordinates. If this also fails, a `ConformerGenerationError`
-    is raised.
+    strategy. If this fails or times out, it falls back to using a different
+    initialization for ETKDGv3 with random starting coordinates. If this also fails
+    or times out, a `ConformerGenerationError` is raised.
 
     Args:
         mol:
@@ -98,14 +121,16 @@ def multistrategy_compute_conformer(
             The strategy that was used for conformer generation. Either "default" or
             "random_init".
     """
+    smiles = Chem.MolToSmiles(mol)
+
     # Try standard ETKDGv3 strategy first
     try:
         mol, conf_id = compute_conformer(
             mol, use_random_coord_init=False, remove_hs=remove_hs
         )
-    except ConformerGenerationError as e:
+    except (ConformerGenerationError, FunctionTimedOut) as e:
         logger.warning(
-            f"Exception when trying standard conformer generation: {e}, "
+            f"Exception when trying standard conformer generation for {smiles}: {e}, "
             + "trying random initialization"
         )
 
@@ -114,10 +139,10 @@ def multistrategy_compute_conformer(
             mol, conf_id = compute_conformer(
                 mol, use_random_coord_init=True, remove_hs=remove_hs
             )
-        except ConformerGenerationError as e:
+        except (ConformerGenerationError, FunctionTimedOut) as e:
             logger.warning(
                 "Exception when trying conformer generation with random "
-                + f"initialization: {e}"
+                + f"initialization for {smiles}: {e}"
             )
             raise ConformerGenerationError("Failed to generate 3D coordinates") from e
         else:
@@ -259,3 +284,133 @@ def resolve_and_format_fallback_conformer(
     replace_nan_coords_with_zeros(mol)
 
     return mol, strategy
+
+
+def get_name_match_argsort(
+    atom_names: np.ndarray[str], ref_atom_names: np.ndarray[str]
+) -> np.ndarray[int]:
+    """Gets a sorting order for atom names based on a reference order.
+
+    Args:
+        atom_names:
+            The current atom names.
+        ref_atom_names:
+            The reference atom names to sort by.
+
+    Returns:
+        The sorting order for the atom names to match the reference order. Any atom
+        names not in the reference order are placed at the end.
+    """
+    # Map atom names to indices
+    ref_order_map = {name: idx for idx, name in enumerate(ref_atom_names)}
+
+    # Map the atom names in the molecule to the reference order (setting names that are
+    # not in the reference to the end)
+    atom_names_sort_keys = np.array(
+        [ref_order_map.get(name, float("inf")) for name in atom_names]
+    )
+
+    # Sort the atoms by the reference order
+    atom_names_new_order = np.argsort(atom_names_sort_keys)
+
+    return atom_names_new_order
+
+
+def get_cropped_permutations(
+    mol: Mol,
+    in_gt_mask: np.ndarray,
+    in_crop_mask: np.ndarray,
+    max_permutations: int = 1_000,
+) -> np.ndarray:
+    """Get the subset of symmetry-equivalent atom permutations matching crop and GT.
+
+    This function computes the symmetry-equivalent atom permutations for a conformer
+    using RDKit's `GetSubstructMatches` function. It then restricts these permutations
+    so that the "slots" atoms can map to only correspond to atoms in the crop, and the
+    indices atoms can be chosen from only correspond to atoms present in the
+    ground-truth.
+
+    Args:
+        mol:
+            The molecule for which the permutations should be computed.
+        in_gt_mask:
+            A boolean mask of atoms in the ground-truth structure.
+        in_crop_mask:
+            A boolean mask of atoms in the crop.
+        max_permutations:
+            The maximum number of permutations to compute.
+
+    Returns:
+        The symmetry-equivalent atom permutations that are valid for the crop and
+        ground-truth.
+
+        Shape: [n_permutations, n_atoms_in_crop]
+    """
+    # Define a mapping from the atom indices in the full conformer object to the atom
+    # indices in the ground-truth
+    conf_to_gt_index = np.full(len(in_gt_mask), -1, dtype=int)
+    conf_to_gt_index[in_gt_mask] = np.arange(np.sum(in_gt_mask))
+
+    # Get symmetry-equivalent atom permutations for this conformer following AF3 SI 4.2
+    # (uses useChirality=False because that's also what RDKit's symmetry-corrected RMSD
+    # uses)
+    permutations = np.array(
+        mol.GetSubstructMatches(
+            mol, uniquify=False, maxMatches=max_permutations, useChirality=False
+        )
+    )
+
+    # Map the permutations of full conformer atom indices to the ground-truth atoms
+    gt_permutations = conf_to_gt_index[permutations]
+
+    # Restrict permutations to atoms in the crop
+    gt_permutations = gt_permutations[:, in_crop_mask]
+
+    # Filter permutations that use atoms that are not in the ground-truth atoms
+    gt_permutations = gt_permutations[np.all(gt_permutations != -1, axis=1)]
+
+    assert gt_permutations.shape[1] == np.sum(in_crop_mask)
+    assert gt_permutations.shape[0] >= 1
+
+    return gt_permutations
+
+
+def renumber_permutations(
+    permutation: np.ndarray, required_gt_atoms: Iterable[int]
+) -> np.ndarray:
+    """Renumber permutation indices to reflect subsetted ground-truth atom indices.
+
+    This function should be called after the ground-truth structure has been within
+    `separate_cropped_and_gt`. In this case, there are now potentially fewer atoms in
+    the ground-truth, so the positional indices of the permutations become outdated.
+    This function takes all the required GT-atoms that are present in the new
+    ground-truth, and renumbers all the permutation indices to reflect the new atom
+    indices.
+
+    Example:
+    permutation: [[2, 4], [4, 2]]
+    required_gt_atoms: [1, 2, 4, 5, 6] (superset of permutations because of other
+                                        symmetry-equivalent molecules in structure)
+    Result: [[2, 3], [3, 2]]
+
+    Args:
+        permutation:
+            The permutation to renumber.
+        required_gt_atoms:
+            The set of ground-truth atoms that is still required in the new
+            ground-truth.
+
+    Returns:
+        The renumbered permutation.
+    """
+    # Renumber full set of required GT atoms monotonically and define mapping from old
+    # IDs
+    required_gt_atoms = np.array(sorted(required_gt_atoms))
+    required_gt_atoms_remapped = np.arange(len(required_gt_atoms))
+    atom_idx_map = dict(zip(required_gt_atoms, required_gt_atoms_remapped))
+    atom_idx_mapper = np.vectorize(lambda x: atom_idx_map[x])
+
+    # Update the set of atoms in the permutations to reflect the new indices
+    renumbered_permutation = atom_idx_mapper(permutation)
+
+    return renumbered_permutation

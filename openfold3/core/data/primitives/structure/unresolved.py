@@ -613,6 +613,7 @@ def add_unresolved_atoms_within_residue(
 
         # TODO: add logic for correctly inferring unobserved atoms also in covalent
         # ligands
+        # TODO: also need to skip monomeric covalently connected ligands
         # Skip covalently connected ligand chains
         if (struc.get_residue_count(chain) > 1) & is_ligand:
             continue

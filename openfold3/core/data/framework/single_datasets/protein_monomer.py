@@ -1,4 +1,8 @@
 # %%
+import logging
+import random
+import traceback
+
 import pandas as pd
 import torch
 
@@ -8,6 +12,9 @@ from openfold3.core.data.framework.single_datasets.abstract_single import (
 from openfold3.core.data.framework.single_datasets.base_af3 import (
     BaseAF3Dataset,
 )
+from openfold3.core.data.framework.single_datasets.pdb import is_invalid_feature_dict
+
+logger = logging.getLogger(__name__)
 
 
 @register_dataset
@@ -59,9 +66,45 @@ class ProteinMonomerDataset(BaseAF3Dataset):
 
         # Get PDB ID from the datapoint cache and the preferred chain/interface
         datapoint = self.datapoint_cache.iloc[index]
-        sample_data = self.create_all_features(
-            pdb_id=datapoint["pdb_id"],
-            preferred_chain_or_interface=None,
-            return_atom_arrays=False,
-        )
-        return sample_data["features"]
+        pdb_id = datapoint["pdb_id"]
+
+        # TODO: Remove debug logic
+        if not self.debug_mode:
+            sample_data = self.create_all_features(
+                pdb_id=datapoint["pdb_id"],
+                preferred_chain_or_interface=None,
+                return_atom_arrays=False,
+            )
+
+            features = sample_data["features"]
+            features["pdb_id"] = pdb_id
+            return features
+        else:
+            try:
+                sample_data = self.create_all_features(
+                    pdb_id=datapoint["pdb_id"],
+                    preferred_chain_or_interface=None,
+                    return_atom_arrays=False,
+                )
+
+                features = sample_data["features"]
+
+                features["pdb_id"] = pdb_id
+                if is_invalid_feature_dict(features):
+                    index = random.randint(0, len(self) - 1)
+                    return self.__getitem__(index)
+
+                return features
+
+            except Exception as e:
+                tb = traceback.format_exc()
+                logger.warning(
+                    "-" * 40
+                    + "\n"
+                    + f"Failed to process ProteinMonomerDataset entry {pdb_id}:"
+                    + f" {str(e)}\n"
+                    + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
+                    + "-" * 40
+                )
+                index = random.randint(0, len(self) - 1)
+                return self.__getitem__(index)

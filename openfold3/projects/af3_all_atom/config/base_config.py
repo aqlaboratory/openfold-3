@@ -30,8 +30,6 @@ no_full_rollout_steps = mlc.FieldReference(200, field_type=int)
 diffusion_training_enabled = mlc.FieldReference(True, field_type=bool)
 n_query = mlc.FieldReference(32, field_type=int)
 n_key = mlc.FieldReference(128, field_type=int)
-use_block_sparse_attn = mlc.FieldReference(False, field_type=bool)
-block_size = mlc.FieldReference(16, field_type=int)
 
 # templates_enabled = mlc.FieldReference(True, field_type=bool)
 eps = mlc.FieldReference(1e-8, field_type=float)
@@ -50,7 +48,6 @@ project_config = mlc.ConfigDict(
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "ckpt_intermediate_steps": ckpt_intermediate_steps,
                 "chunk_size": chunk_size,
-                "use_block_sparse_attn": use_block_sparse_attn,
                 # Use DeepSpeed memory-efficient attention kernel. Mutually
                 # exclusive with use_lma and use_flash.
                 "use_deepspeed_evo_attention": False,
@@ -104,8 +101,6 @@ project_config = mlc.ConfigDict(
                         "n_query": n_query,
                         "n_key": n_key,
                         "use_ada_layer_norm": True,
-                        "use_block_sparse_attn": use_block_sparse_attn,
-                        "block_size": block_size,
                         "blocks_per_ckpt": blocks_per_ckpt,
                         "ckpt_intermediate_steps": ckpt_intermediate_steps,
                         "inf": inf,
@@ -231,8 +226,6 @@ project_config = mlc.ConfigDict(
                         "n_query": n_query,
                         "n_key": n_key,
                         "use_ada_layer_norm": True,
-                        "use_block_sparse_attn": use_block_sparse_attn,
-                        "block_size": block_size,
                         "blocks_per_ckpt": blocks_per_ckpt,
                         "ckpt_intermediate_steps": ckpt_intermediate_steps,
                         "inf": inf,
@@ -248,8 +241,8 @@ project_config = mlc.ConfigDict(
                         "no_blocks": 24,
                         "n_transition": 2,
                         "use_ada_layer_norm": True,
-                        "use_block_sparse_attn": False,
-                        "block_size": None,
+                        "n_query": None,
+                        "n_key": None,
                         "inf": inf,
                         "blocks_per_ckpt": blocks_per_ckpt,
                         "linear_init_params": lin_init.diffusion_transformer_init,
@@ -266,8 +259,6 @@ project_config = mlc.ConfigDict(
                         "n_query": n_query,
                         "n_key": n_key,
                         "use_ada_layer_norm": True,
-                        "use_block_sparse_attn": use_block_sparse_attn,
-                        "block_size": block_size,
                         "blocks_per_ckpt": blocks_per_ckpt,
                         "inf": inf,
                         "linear_init_params": lin_init.atom_att_dec_init,
@@ -429,6 +420,8 @@ project_config = mlc.ConfigDict(
             "weight": 0.0,
             "config": {
                 "loss_weight_mode": "default",
+                # TODO: remove this flag once debug logic is gone
+                "debug_mode": True,
                 "msa": {
                     "max_rows_paired": 8191,
                     "max_rows": 16384,
@@ -490,6 +483,7 @@ project_config = mlc.ConfigDict(
                     },
                 },
                 "custom": {
+                    # TODO: use in runner yml for every training dataset
                     "crop": {
                         "token_budget": 384,
                         "crop_weights": {
@@ -498,6 +492,7 @@ project_config = mlc.ConfigDict(
                             "spatial_interface": 0.4,
                         },
                     },
+                    # TODO: use in weightedPDB/disordered PDB runner yml
                     "sample_weights": {
                         "a_prot": 3.0,
                         "a_nuc": 3.0,
@@ -505,10 +500,12 @@ project_config = mlc.ConfigDict(
                         "w_chain": 0.5,
                         "w_interface": 1.0,
                     },
+                    # TODO: disordered flag goes here, eventually move to yml
                 },
                 "dataset_paths": {
                     "alignments_directory": PLACEHOLDER_PATH,
                     "target_structures_directory": PLACEHOLDER_PATH,
+                    "target_structure_file_format": PLACEHOLDER_PATH,
                     "alignment_db_directory": PLACEHOLDER_PATH,
                     "alignment_array_directory": PLACEHOLDER_PATH,
                     "dataset_cache_file": PLACEHOLDER_PATH,

@@ -1,3 +1,5 @@
+# TODO: Can DEPRECATE this entire module
+
 """
 Primitives for expanding duplicates chains in an assembly for chain permutation
 alignment.

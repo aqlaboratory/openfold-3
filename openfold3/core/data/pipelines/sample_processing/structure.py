@@ -1,21 +1,36 @@
 """This module contains pipelines for processing structural features on-the-fly."""
 
+import logging
 from pathlib import Path
-from typing import Literal
+from typing import Literal, NamedTuple
 
 from biotite.structure import AtomArray
 
 from openfold3.core.data.io.structure.cif import parse_target_structure
+from openfold3.core.data.primitives.permutation.mol_labels import (
+    assign_mol_permutation_ids,
+)
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
-from openfold3.core.data.primitives.structure.cropping import crop_atom_array
-from openfold3.core.data.primitives.structure.duplicate_expansion import (
-    expand_duplicate_chains,
+from openfold3.core.data.primitives.structure.cleanup import filter_bonds
+from openfold3.core.data.primitives.structure.cropping import sample_crop_and_set_mask
+from openfold3.core.data.primitives.structure.labels import (
+    assign_component_ids_from_metadata,
+    assign_uniquified_atom_names,
 )
 from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
 
+logger = logging.getLogger(__name__)
 
+
+class ProcessedTargetStructure(NamedTuple):
+    atom_array_gt: AtomArray
+    crop_strategy: str
+    n_tokens: int
+
+
+# TODO: Update docstring
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-proc")
 def process_target_structure_af3(
     target_structures_directory: Path,
@@ -23,9 +38,9 @@ def process_target_structure_af3(
     apply_crop: bool,
     crop_config: dict,
     preferred_chain_or_interface: str | list[str, str] | None,
-    structure_format: Literal["cif", "bcif", "pkl"],
-    return_full_atom_array: bool,
-) -> tuple[dict[str, AtomArray]]:
+    structure_format: Literal["pkl", "npz"],
+    per_chain_metadata: dict[str, dict[str, str]],
+) -> ProcessedTargetStructure:
     """AF3 pipeline for processing target structure into AtomArrays.
 
     Args:
@@ -41,44 +56,60 @@ def process_target_structure_af3(
             - crop_weights (dict): Weights of different crop strategies.
         preferred_chain_or_interface (str | list[str, str] | None):
             Sampled preferred chain or interface to sample the crop around.
-        structure_format (Literal["cif", "bcif", "pkl"]):
-            File extension of the target structure. One of "cif", "bcif", or "pkl".
-        return_full_atom_array (bool):
-            Whether to return the full, uncropped atom array.
+        structure_format (Literal["pkl", "npz"]):
+            File extension of the target structure. Only "pkl" and "npz" are currently
+            supported.
+        per_chain_metadata (dict[str, dict[str, str]]):
+            Metadata for each chain in the target structure, obtained from the dataset
+            cache.
 
     Returns:
-        Tuple containing a dict of AtomArrays, including:
-            - Atoms inside the crop.
-            - Ground truth atoms expanded for chain permutation alignment.
-            - Full atom array - optional.
-        and the number of tokens in the target structure AtomArray.
+        ProcessedTargetStructure:
+            A NamedTuple containing the full AtomArray, the crop strategy, and the
+            number of tokens in the full AtomArray if apply_crop is False or the slice
+            of the AtomArray with crop_mask=True if apply_crop is True.
     """
-    target_structure_data = {}
-
     # Parse target structure
     atom_array = parse_target_structure(
         target_structures_directory, pdb_id, structure_format
     )
 
+    # Mark individual components (which get unique conformers)
+    assign_component_ids_from_metadata(atom_array, per_chain_metadata)
+
+    # Remove bonds not following AF3 criteria, but keep intra-residue bonds and
+    # consecutive inter-residue bonds for now (necessary for molecule detection in
+    # permutation IDs)
+    filter_bonds(
+        atom_array=atom_array,
+        keep_consecutive=True,
+        keep_polymer_ligand=True,
+        keep_ligand_ligand=True,
+        remove_larger_than=2.4,
+        mask_intra_component=True,
+    )
+
     # Tokenize
     tokenize_atom_array(atom_array=atom_array)
 
-    # Create crop mask
-    atom_array_cropped = crop_atom_array(
+    # Set the crop_mask attribute of the atom_array, marking which atoms are in the crop
+    # and which aren't, and get the crop strategy that was used
+    crop_strategy = sample_crop_and_set_mask(
         atom_array=atom_array,
         apply_crop=apply_crop,
         crop_config=crop_config,
         preferred_chain_or_interface=preferred_chain_or_interface,
     )
 
-    # Expand duplicate chains
-    atom_array_gt = expand_duplicate_chains(atom_array)
+    # Add labels to identify symmetric mols in permutation alignment
+    atom_array = assign_mol_permutation_ids(atom_array, retokenize=True)
 
-    target_structure_data["atom_array_cropped"] = atom_array_cropped
-    target_structure_data["atom_array_gt"] = atom_array_gt
-
-    if return_full_atom_array:
-        target_structure_data["atom_array"] = atom_array
+    # NOTE: could move this to conformer processing
+    # TODO: make this logic more robust (potentially by reverting treating multi-residue
+    # ligands as single compnents)
+    # Necessary for multi-residue ligands (which can have duplicated atom names) to
+    # identify which atom names ended up in the crop.
+    atom_array = assign_uniquified_atom_names(atom_array)
 
     # The number of tokens is used in downstream parts of the data pipeline
     # if cropping was done, we want to set the number of tokens to the token budget
@@ -88,4 +119,8 @@ def process_target_structure_af3(
     else:
         n_tokens = len(set(atom_array.token_id))
 
-    return target_structure_data, n_tokens
+    return ProcessedTargetStructure(
+        atom_array_gt=atom_array,
+        crop_strategy=crop_strategy,
+        n_tokens=n_tokens,
+    )

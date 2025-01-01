@@ -3,13 +3,12 @@
 import logging
 import pickle
 from pathlib import Path
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
-import numpy as np
 from biotite.structure import AtomArray
-from biotite.structure.io import pdb, pdbx
+from biotite.structure.io import pdbx
 
-from openfold3.core.data.io.s3 import open_local_or_s3
+from openfold3.core.data.io.structure.atom_array import read_atomarray_from_npz
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
@@ -23,7 +22,6 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_cif_block,
     get_first_bioassembly_polymer_count,
 )
-from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
 
@@ -192,62 +190,6 @@ def parse_mmcif(
     return ParsedStructure(cif_file, atom_array)
 
 
-# TODO: refactor PDB file reading logic as it currently only supports monomers
-def parse_protein_monomer_pdb_tmp(
-    file_path: Path | str,
-    include_bonds: bool = True,
-    extra_fields: list | None = None,
-    s3_profile: str | None = None,
-):
-    """Temporary function to parse a protein monomer from a PDB file.
-
-    Args:
-        file_path (Path | str): _description_
-        include_bonds (bool, optional): _description_. Defaults to True.
-        extra_fields (list | None, optional): _description_. Defaults to None.
-
-    Returns:
-        ParsedStructure : _description_
-    """
-
-    ## no label fields in pdb files
-    with open_local_or_s3(file_path, profile=s3_profile) as f:
-        pdb_file = pdb.PDBFile.read(f)
-    extra_fields_preset = [
-        "occupancy",
-        "charge",
-    ]
-
-    if extra_fields:
-        extra_fields = extra_fields_preset + extra_fields
-    else:
-        extra_fields = extra_fields_preset
-
-    parser_args = {
-        "pdb_file": pdb_file,
-        "model": 1,
-        "altloc": "occupancy",
-        "include_bonds": include_bonds,
-        "extra_fields": extra_fields,
-    }
-    atom_array = pdb.get_structure(
-        **parser_args,
-    )
-
-    ## manually assign th entity and molecule type ids;
-    ## monomers are all "single chain", so should have the same entity id,
-    ## everything is a single asym, and sym id should be 1(identity)
-    chain_ids = np.array([1] * len(atom_array), dtype=int)
-    molecule_type_ids = np.array([MoleculeType.PROTEIN] * len(atom_array), dtype=int)
-    entity_ids = np.array([1] * len(atom_array), dtype=int)
-
-    atom_array.set_annotation("chain_id", chain_ids)
-    atom_array.set_annotation("molecule_type_id", molecule_type_ids)
-    atom_array.set_annotation("entity_id", entity_ids)
-
-    return ParsedStructure(pdb_file, atom_array)
-
-
 def write_structure(
     atom_array: AtomArray,
     output_path: Path,
@@ -293,7 +235,9 @@ def write_structure(
 
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-parse")
 def parse_target_structure(
-    target_structures_directory: Path, pdb_id: str, structure_format: str
+    target_structures_directory: Path,
+    pdb_id: str,
+    structure_format: Literal["pkl", "npz"],
 ) -> AtomArray:
     """Parses a target structure from a pickle file.
 
@@ -303,7 +247,8 @@ def parse_target_structure(
         pdb_id (str):
             PDB ID of the target structure.
         structure_format (str):
-            File extension of the target structure. Only "pkl" is supported.
+            File extension of the target structure. Only "pkl" and "npz" are currently
+            supported.
 
     Raises:
         ValueError:
@@ -318,6 +263,8 @@ def parse_target_structure(
     if structure_format == "pkl":
         with open(target_file, "rb") as f:
             atom_array = pickle.load(f)
+    elif structure_format == "npz":
+        atom_array = read_atomarray_from_npz(target_file)
     else:
         raise ValueError(
             f"Invalid structure format: {structure_format}. Only pickle "

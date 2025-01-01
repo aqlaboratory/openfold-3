@@ -36,6 +36,7 @@ dependencies:
   - pytorch::pytorch=2.4
   - pytorch::pytorch-cuda=12.1
   - memory_profiler==0.61.0
+  - func_timeout
   - boto3
   - conda-forge::python-lmdb
   - conda-forge::ijson

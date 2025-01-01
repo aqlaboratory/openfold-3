@@ -38,8 +38,9 @@ from openfold3.core.model.structure.diffusion_module import (
     centre_random_augmentation,
     create_noise_schedule,
 )
-
-# from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation_align
+from openfold3.core.utils.permutation_alignment import (
+    safe_multi_chain_permutation_alignment,
+)
 from openfold3.core.utils.tensor_utils import add, tensor_tree_map
 
 
@@ -142,7 +143,7 @@ class AlphaFold3(nn.Module):
         s_input, s_init, z_init = self.input_embedder(
             batch=batch,
             inplace_safe=inplace_safe,
-            use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+            use_high_precision_attention=True,
         )
 
         # s: [*, N_token, C_s]
@@ -380,8 +381,7 @@ class AlphaFold3(nn.Module):
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
             chunk_size=self.settings.chunk_size,
-            use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-            use_lma=self.settings.use_lma,
+            use_high_precision_attention=True,
             _mask_trans=True,
         )
 
@@ -395,7 +395,7 @@ class AlphaFold3(nn.Module):
 
         return output
 
-    def forward(self, batch: dict) -> [dict, dict]:
+    def forward(self, batch: dict) -> list[dict, dict]:
         """
         Args:
             batch:
@@ -567,14 +567,11 @@ class AlphaFold3(nn.Module):
         output.update(rollout_output)
 
         if self.training:  # noqa: SIM102
-            # TODO: Add multi-chain permutation alignment here
-            #  Permutation code needs to be updated first
-            #  Needs to happen before losses and training diffusion step
-            #  New batch will include the cropped and assigned GT dict
-            # ground_truth = batch.pop("ground_truth")
-            # batch = multi_chain_permutation_align(
-            #     out=output, features=batch, ground_truth=ground_truth
-            # )
+            # Apply permutation alignment which will update the ground-truth
+            # coordinates/mask in-place with the correct permutation (and optionally
+            # disables losses in case of a critical error)
+            with torch.no_grad():
+                safe_multi_chain_permutation_alignment(batch=batch, output=output)
 
             # Run training step (if necessary)
             if self.settings.diffusion_training_enabled:
