@@ -86,11 +86,13 @@ class PreprocessingDataCache:
                 resolution = None
                 chains = None
                 interfaces = None
+                token_count = None
             elif status == "success":
                 release_date = structure_data["release_date"]
                 resolution = structure_data["resolution"]
                 chains = structure_data["chains"]
                 interfaces = structure_data["interfaces"]
+                token_count = structure_data["token_count"]
             # TODO: Release date should never be None with new version, fix this after
             # rerunning preprocessing
             elif status == "failed":
@@ -98,6 +100,7 @@ class PreprocessingDataCache:
                 resolution = None
                 chains = None
                 interfaces = None
+                token_count = None
             else:
                 raise ValueError(f"Unexpected status: {status}")
 
@@ -132,6 +135,7 @@ class PreprocessingDataCache:
                 resolution=resolution,
                 chains=chain_data,
                 interfaces=interfaces,
+                token_count=token_count,
             )
 
         # Format the reference molecule data
@@ -169,6 +173,7 @@ class PreprocessingStructureData:
     resolution: float | None
     chains: dict[str, PreprocessingChainData] | None
     interfaces: list[tuple[str, str]] | None
+    token_count: int
 
 
 PreprocessingStructureDataCache: TypeAlias = dict[str, PreprocessingStructureData]
@@ -193,6 +198,7 @@ class PreprocessingReferenceMoleculeData:
     conformer_gen_strategy: str
     fallback_conformer_pdb_id: str | None
     canonical_smiles: str
+    residue_count: int  # TODO: Remove this from after-preprocessing caches except Val
 
 
 PreprocessingReferenceMoleculeCache: TypeAlias = dict[
@@ -415,38 +421,46 @@ class ClusteredDatasetCache(ChainInterfaceReferenceMolCache):
 # PDB VALIDATION DATASET FORMAT
 @dataclass
 class ValClusteredDatasetChainData(ClusteredDatasetChainData):
-    """Chain-wise data with cluster and alignment information.
+    """Chain-wise data with additional validation fields.
 
-    Adds info on homology to train set. If chain is a monomer
-    >40% seq id and if it is a ligand >0.85 tanimoto score.
+    Attributes:
+        low_homology (bool):
+            Whether the chain has low-homology with the training data (see AF3 SI 5.8).
+        use_intrachain_metrics (int):
+            Whether validation metrics should be calculated for this chain (see AF3 SI
+            5.8).
     """
 
     # Adds the following fields:
-    monomer_high_homology: int
-    ligand_high_homology: int
-    ligand_not_fit: int
-    num_residues_contact: int
+    low_homology: bool
+    use_intrachain_metrics: int
 
 
 @dataclass
 class ValClusteredDatasetInterfaceData(ClusteredDatasetInterfaceData):
-    """Interface-wise data with cluster information.
+    """Interface-wise data with additional validation fields.
 
-    Adds info on if interfaces are homologous to the training data
-    To be true both chains most have homology as defined in SI 5.8.
+    Attributes:
+        low_homology (bool):
+            Whether the interface has low-homology with the training data (see AF3 SI
+            5.8).
+        use_interchain_metrics (int):
+            Whether validation metrics should be calculated for this interface (see AF3
+            SI 5.8).
     """
 
-    interface_high_homology: int
+    # Adds the following fields:
+    low_homology: bool
+    use_interchain_metrics: int
 
 
 @dataclass
 class ValClusteredDatasetStructureData:
-    """Structure data with cluster and added metadata information."""
+    """Structure data wrapper for validation set."""
 
     release_date: datetime.date
     resolution: float
-    sampled_cluster: list[str]  # TODO: remove this
-    token_count: int  # TODO: remove this
+    token_count: int
     chains: dict[str, ValClusteredDatasetChainData]
     interfaces: dict[str, ClusteredDatasetInterfaceData]
 
@@ -454,10 +468,9 @@ class ValClusteredDatasetStructureData:
 ValClusteredDatasetStructureDataCache: TypeAlias = dict[
     str, ValClusteredDatasetStructureData
 ]
-"""Structure data cache with cluster information."""
+"""Structure data cache for validation set."""
 
 
-# TODO: Revisit this entire cache to remove all redundant fields
 @register_datacache
 @dataclass
 class ValClusteredDatasetCache(ChainInterfaceReferenceMolCache):

@@ -7,6 +7,7 @@ from typing import NamedTuple, TypeAlias
 import biotite.structure as struc
 import gemmi
 import numpy as np
+import requests
 from biotite.structure import AtomArray, BondType
 from biotite.structure.io.pdbx import CIFFile
 from pdbeccdutils.core import ccd_reader
@@ -413,15 +414,56 @@ def mol_from_atomarray(atom_array: AtomArray) -> AnnotatedMol:
     return mol
 
 
-def component_iter_from_metadata(atom_array: AtomArray, per_chain_metadata: dict):
-    for chain_array in struc.chain_iter(atom_array):
-        chain_id = chain_array.chain_id[0]
+def get_ranking_fit(pdb_id):
+    url = "https://data.rcsb.org/graphql"  # RCSB PDB's GraphQL API endpoint
 
-        ref_mol_id = per_chain_metadata[chain_id].reference_mol_id
+    # Define the query as a multi-line string with a variable for pdb_id
+    query = """
+    query GetRankingFit($pdb_id: String!) {
+    entry(entry_id: $pdb_id) {
+        nonpolymer_entities {
+        rcsb_nonpolymer_entity_container_identifiers {
+            nonpolymer_comp_id
+        }
+        nonpolymer_entity_instances {
+            rcsb_id
+            rcsb_nonpolymer_instance_validation_score {
+            ranking_model_fit
+            }
+        }
+        }
+    }
+    }
+    """
 
-        # Entire chain corresponds to a single reference molecule (e.g. a ligand chain)
-        if ref_mol_id is not None:
-            yield chain_array
-        # Decompose the chain into individual residues and their reference molecules
+    # Prepare the request with the pdb_id as a variable
+    variables = {"pdb_id": pdb_id}
+
+    # Make the request to the GraphQL endpoint using the variables
+    response = requests.post(url, json={"query": query, "variables": variables})
+
+    # Make the request to the GraphQL endpoint
+    # response = requests.post(url, json={"query": query})
+
+    # Check if the request was successful
+    if response.status_code == 200:
+        # Parse the JSON response
+        data = response.json()
+        extracted_data = {}
+
+        # Loop through each nonpolymer entity and its instances
+        if data["data"]["entry"]["nonpolymer_entities"]:
+            for entity in data["data"]["entry"]["nonpolymer_entities"]:
+                for instance in entity["nonpolymer_entity_instances"]:
+                    rcsb_id = instance["rcsb_id"]
+                    ranking_model_fit = instance[
+                        "rcsb_nonpolymer_instance_validation_score"
+                    ][0]["ranking_model_fit"]
+                    extracted_data[rcsb_id] = ranking_model_fit
+            data = extracted_data
         else:
-            yield from struc.residue_iter(chain_array)
+            data = {}
+    else:
+        data = {}
+
+    return data
