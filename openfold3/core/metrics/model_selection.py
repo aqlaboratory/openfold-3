@@ -8,7 +8,7 @@ from openfold3.core.metrics.validation_all_atom import (
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 
 
-# WIP: model selection should accept the output of 
+# WIP: model selection should accept the output of
 # get_validation_metrics and compute 3 additional LDDTs
 #   - lddt_inter_ligand_rna
 #   - lddt_inter_ligand_dna

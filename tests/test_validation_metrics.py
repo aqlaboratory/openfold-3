@@ -78,7 +78,9 @@ class TestLDDT(unittest.TestCase):
 
         # TODO: write a test that checks intra / inter masking behavior
         intra_mask_filter = torch.ones((batch_size, n_atom))  # [batch_size, n_atom]
-        inter_mask_filter = torch.ones((batch_size, n_atom, n_atom))  # [batch_size, n_atom, n_atom]
+        inter_mask_filter = torch.ones(
+            (batch_size, n_atom, n_atom)
+        )  # [batch_size, n_atom, n_atom]
 
         pair_gt = torch.cdist(
             gt_structure, gt_structure
@@ -100,9 +102,9 @@ class TestLDDT(unittest.TestCase):
         np.testing.assert_equal(intra_lddt.shape, exp_shape)
         np.testing.assert_equal(inter_lddt.shape, exp_shape)
 
-        # lddt should always be less than one 
-        np.testing.assert_array_less(intra_lddt, 1.)
-        np.testing.assert_array_less(inter_lddt, 1.)
+        # lddt should always be less than one
+        np.testing.assert_array_less(intra_lddt, 1.0)
+        np.testing.assert_array_less(inter_lddt, 1.0)
 
         # rototranslation.
         # lddt between gt_structure and gt_structure_rototranslated should give 1.0s
@@ -132,6 +134,7 @@ class TestLDDT(unittest.TestCase):
             exp_outputs,
             atol=consts.eps,
         )
+
 
 class TestInterfaceLDDT(unittest.TestCase):
     def test_interface_lddt(self):

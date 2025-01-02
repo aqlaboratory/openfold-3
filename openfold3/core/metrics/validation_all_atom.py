@@ -1129,7 +1129,7 @@ def get_validation_metrics(
             all_atom_mask,
         )
         metrics = metrics | superimpose_metrics
-    
+
     for k, v in metrics.items():
         print(f"{k=}, {v.type()}")
 

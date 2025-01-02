@@ -35,14 +35,16 @@ from openfold3.core.data.primitives.structure.tokenization import add_token_posi
 logger = logging.getLogger(__name__)
 
 
-def make_chain_pair_mask_padded(all_chains: torch.Tensor, interfaces_to_include: list[tuple[int, int]])-> torch.Tensor:
-    """Creates a pairwise mask for chains given a list of chain tuples. 
+def make_chain_pair_mask_padded(
+    all_chains: torch.Tensor, interfaces_to_include: list[tuple[int, int]]
+) -> torch.Tensor:
+    """Creates a pairwise mask for chains given a list of chain tuples.
     Args:
-        all_chains: tensor containing all chain ids in complex 
+        all_chains: tensor containing all chain ids in complex
         interfaces_to_include: tuples with pairwise interactions to include
     Returns:
         torch.Tensor [n_chains + 1, n_chains + 1] where:
-            - each value [i,j] represents 
+            - each value [i,j] represents
             - a 0th row and 0th column of all zeros is added as padding
     """
     largest_chain_index = torch.max(all_chains)
@@ -213,7 +215,9 @@ class ValidationPDBDataset(WeightedPDBDataset):
 
         token_chain_id = torch.tensor(token_chain_id, dtype=torch.int32)
 
-        chain_mask_padded = make_chain_pair_mask_padded(token_chain_id, interfaces_to_include)
+        chain_mask_padded = make_chain_pair_mask_padded(
+            token_chain_id, interfaces_to_include
+        )
 
         # [n_token, n_token] for pairwise interactions
         features["use_for_inter_validation"] = chain_mask_padded[

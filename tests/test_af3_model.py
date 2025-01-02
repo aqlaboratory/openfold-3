@@ -51,7 +51,6 @@ class TestAF3Model(unittest.TestCase):
             n_templ=n_templ,
             is_eval=(not train),
         )
-        print("use_for_inter_validation" in batch.keys())
 
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
@@ -82,6 +81,10 @@ class TestAF3Model(unittest.TestCase):
 
         else:
             af3.eval()
+
+            # filters used by validation metrics
+            assert "use_for_intra_validation" in batch
+            assert "use_for_inter_validation" in batch
 
             with torch.no_grad():
                 _, outputs = af3(batch=batch)
