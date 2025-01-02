@@ -10,6 +10,8 @@ Supported use cases:
 import logging
 import pickle as pkl
 import traceback
+import warnings
+from collections.abc import Sequence
 from pathlib import Path
 
 import biotite.structure as struc
@@ -17,7 +19,12 @@ import numpy as np
 import pandas as pd
 import torch
 from biotite.structure import AtomArray
+from torch.utils.data import Dataset
 
+from openfold3.core.data.framework.data_module import DatasetMode, MultiDatasetConfig
+from openfold3.core.data.framework.single_datasets.abstract_single import (
+    DATASET_REGISTRY,
+)
 from openfold3.core.data.primitives.quality_control.asserts import ENSEMBLED_ASSERTS
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     F_NAME_ORDER,
@@ -662,4 +669,84 @@ class LoggingMixin:
                 "datapoint": [None] * len(unique_pdb_ids),
                 "weight": [1] * len(unique_pdb_ids),
             }
+        )
+
+
+def init_datasets_with_logging(
+    multi_dataset_config: MultiDatasetConfig,
+    type_to_init: DatasetMode,
+    run_asserts,
+    save_features,
+    save_atom_array,
+    save_full_traceback,
+    save_statistics,
+    log_runtimes,
+    log_memory,
+    subset_to_examples,
+    no_preferred_chain_or_interface,
+) -> Sequence[Dataset]:
+    """Adds logging to the dataset classes and initializes them.
+
+    Same as DataModule.init_datasets() with added logging support
+    for each individual dataset.
+
+    Args:
+        multi_dataset_config (MultiDatasetConfig): _description_
+        type_to_init (DatasetMode): _description_
+        run_asserts (_type_): _description_
+        save_features (_type_): _description_
+        save_atom_array (_type_): _description_
+        save_full_traceback (_type_): _description_
+        save_statistics (_type_): _description_
+        log_runtimes (_type_): _description_
+        log_memory (_type_): _description_
+        subset_to_examples (_type_): _description_
+        no_preferred_chain_or_interface (_type_): _description_
+
+    Returns:
+        Sequence[Dataset]: _description_
+    """
+    # Note that the dataset config already contains the paths!
+    if type_to_init is None:
+        types_to_init = [
+            DatasetMode.train,
+            DatasetMode.validation,
+            DatasetMode.test,
+            DatasetMode.prediction,
+        ]
+    else:
+        types_to_init = [type_to_init]
+    datasets = [
+        (
+            add_logging_to_dataset(DATASET_REGISTRY[dataset_class])(
+                run_asserts=run_asserts,
+                save_features=save_features,
+                save_atom_array=save_atom_array,
+                save_full_traceback=save_full_traceback,
+                save_statistics=save_statistics,
+                log_runtimes=log_runtimes,
+                log_memory=log_memory,
+                subset_to_examples=subset_to_examples,
+                no_preferred_chain_or_interface=no_preferred_chain_or_interface,
+                dataset_config=dataset_config,
+            )
+        )
+        for dataset_class, dataset_config, dataset_type in zip(
+            multi_dataset_config.classes,
+            multi_dataset_config.configs,
+            multi_dataset_config.modes,
+        )
+        if dataset_type in types_to_init
+    ]
+
+    if (
+        type_to_init
+        in [DatasetMode.validation, DatasetMode.test, DatasetMode.prediction]
+    ) & (len(datasets) > 1):
+        datasets = datasets[:1]
+        warnings.warn(
+            f"Currently only one {type_to_init} dataset is supported, but "
+            f"{len(datasets)} datasets were found. Using only the "
+            "first one.",
+            stacklevel=2,
         )

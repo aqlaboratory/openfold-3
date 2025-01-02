@@ -65,13 +65,20 @@ from torch.utils.data import DataLoader, get_worker_info
 from tqdm import tqdm
 
 from openfold3.core.config import config_utils
-from openfold3.core.data.framework.data_module import _NUMPY_AVAILABLE
+from openfold3.core.data.framework.data_module import (
+    _NUMPY_AVAILABLE,
+    DataModule,
+)
 from openfold3.core.data.framework.lightning_utils import _generate_seed_sequence
 from openfold3.core.data.framework.single_datasets.abstract_single import (
     DATASET_REGISTRY,
 )
+from openfold3.core.data.framework.stochastic_sampler_dataset import (
+    StochasticSamplerDataset,
+)
 from openfold3.core.data.primitives.quality_control.logging_datasets import (
     add_logging_to_dataset,
+    init_datasets_with_logging,
 )
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     parse_memory_profiler_log,
@@ -208,6 +215,12 @@ np.set_printoptions(threshold=sys.maxsize)
     default=False,
     help="Whether to log memory use of subpipelines during data processing.",
 )
+@click.option(
+    "--add-stochastic-sampling",
+    type=bool,
+    default=False,
+    help="Whether to sample the datapoints with stochastic sampling.",
+)
 def main(
     runner_yml_file: Path,
     seed: int,
@@ -224,6 +237,7 @@ def main(
     mem_profiled_func_keys: str | None,
     subset_to_examples: str,
     no_preferred_chain_or_interface: bool,
+    add_stochastic_sampling: bool,
 ) -> None:
     """Main function for running the data pipeline treadmill.
 
@@ -272,6 +286,8 @@ def main(
             Whether to sample a crop without a preferred chain or interface. Also
             let the treadmill skip all variations of each sample with all preferred
             chains and interfaces.
+        add_stochastic_sampling (bool):
+            Whether to sample the datapoints with stochastic sampling.
 
     Raises:
         ValueError:
@@ -308,29 +324,66 @@ def main(
         dataset_config_builder,
         project_config,
     )
+    # TODO: remove this block
     if len(data_module_config.datasets) > 1:
         raise NotImplementedError(
             "Running the treadmill script with multiple datasets is not yet "
             "implemented."
         )
 
-    dataset_settings = data_module_config.datasets[0]
-    LoggingDataset = add_logging_to_dataset(
-        DATASET_REGISTRY[dataset_settings.get("class")]
-    )
-    # add_stochastic_sampler_to_dataset here?
-    logging_dataset = LoggingDataset(
-        run_asserts=run_asserts,
-        save_features=save_features,
-        save_atom_array=save_atom_array,
-        save_full_traceback=save_full_traceback,
-        save_statistics=save_statistics,
-        log_runtimes=log_runtimes,
-        log_memory=log_memory,
-        subset_to_examples=subset_to_examples,
-        no_preferred_chain_or_interface=no_preferred_chain_or_interface,
-        dataset_config=dataset_settings.get("config"),
-    )
+    # TODO: add more extended checks here
+    # Only use the first and only dataset
+    if len(data_module_config.datasets) == 1:
+        dataset_settings = data_module_config.datasets[0]
+        LoggingDataset = add_logging_to_dataset(
+            DATASET_REGISTRY[dataset_settings.get("class")]
+        )
+
+        logging_dataset = LoggingDataset(
+            run_asserts=run_asserts,
+            save_features=save_features,
+            save_atom_array=save_atom_array,
+            save_full_traceback=save_full_traceback,
+            save_statistics=save_statistics,
+            log_runtimes=log_runtimes,
+            log_memory=log_memory,
+            subset_to_examples=subset_to_examples,
+            no_preferred_chain_or_interface=no_preferred_chain_or_interface,
+            dataset_config=dataset_settings.get("config"),
+        )
+    # Otherwise stochastically sample from multiple datasets
+    elif len(data_module_config.datasets) > 1:
+        # Dataset configs in input format -> flattened dataset configs
+        multi_dataset_config = DataModule.parse_data_config(data_module_config.datasets)
+
+        # wrap each dataset
+
+        datasets = init_datasets_with_logging(
+            multi_dataset_config=multi_dataset_config,
+            run_asserts=run_asserts,
+            save_features=save_features,
+            save_atom_array=save_atom_array,
+            save_full_traceback=save_full_traceback,
+            save_statistics=save_statistics,
+            log_runtimes=log_runtimes,
+            log_memory=log_memory,
+            subset_to_examples=subset_to_examples,
+            no_preferred_chain_or_interface=no_preferred_chain_or_interface,
+        )
+
+        # pass it into stochastic sampler
+        logging_dataset = StochasticSamplerDataset(
+            datasets=datasets,
+            dataset_probabilities=multi_dataset_config.weights,
+            epoch_len=data_module_config.epoch_len,
+            num_epochs=data_module_config.num_epochs,
+            generator=torch.Generator(device="cpu").manual_seed(
+                data_module_config.data_seed
+            ),
+        )
+
+    else:
+        raise ValueError("No datasets found in the input yaml file.")
 
     # This function needs to be defined here to form a closure
     # around log_output_directory, log_level and save_statistics
