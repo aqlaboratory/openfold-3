@@ -318,6 +318,7 @@ def main(
     LoggingDataset = add_logging_to_dataset(
         DATASET_REGISTRY[dataset_settings.get("class")]
     )
+    # add_stochastic_sampler_to_dataset here?
     logging_dataset = LoggingDataset(
         run_asserts=run_asserts,
         save_features=save_features,
