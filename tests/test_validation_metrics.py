@@ -2,7 +2,6 @@ import math
 import unittest
 
 import numpy as np
-from tests.data_utils import random_asym_ids
 import torch
 
 from openfold3.core.metrics.validation_all_atom import (
@@ -78,8 +77,8 @@ class TestLDDT(unittest.TestCase):
         atom_mask = torch.ones(batch_size, n_atom)  # [batch_size, n_atom]
 
         # TODO: write a test that checks intra / inter masking behavior
-        intra_mask_filter = torch.ones((self.batch_size, self.n_atom))  # [batch_size, n_atom]
-        inter_mask_filter = torch.ones((self.batch_size, self.n_atom, self.n_atom))  # [batch_size, n_atom, n_atom]
+        intra_mask_filter = torch.ones((batch_size, n_atom))  # [batch_size, n_atom]
+        inter_mask_filter = torch.ones((batch_size, n_atom, n_atom))  # [batch_size, n_atom, n_atom]
 
         pair_gt = torch.cdist(
             gt_structure, gt_structure

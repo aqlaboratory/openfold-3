@@ -49,7 +49,9 @@ class TestAF3Model(unittest.TestCase):
             n_token=n_token,
             n_msa=n_msa,
             n_templ=n_templ,
+            is_eval=(not train),
         )
+        print("use_for_inter_validation" in batch.keys())
 
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
 
