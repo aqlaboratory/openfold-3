@@ -426,7 +426,7 @@ class ValClusteredDatasetChainData(ClusteredDatasetChainData):
     ligand_high_homology: int
     ligand_not_fit: int
     num_residues_contact: int
-    #use_intrachain_metrics: int
+    use_intrachain_metrics: int
 
 
 @dataclass
@@ -438,7 +438,7 @@ class ValClusteredDatasetInterfaceData(ClusteredDatasetInterfaceData):
     """
 
     interface_high_homology: int
-    #use_interchain_metrics: int
+    use_interchain_metrics: int
 
 
 @dataclass

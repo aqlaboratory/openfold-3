@@ -35,7 +35,16 @@ from openfold3.core.data.primitives.structure.tokenization import add_token_posi
 logger = logging.getLogger(__name__)
 
 
-def make_chain_mask_padded(all_chains, interfaces_to_include):
+def make_chain_pair_mask_padded(all_chains: torch.Tensor, interfaces_to_include: list[tuple[int, int]])-> torch.Tensor:
+    """Creates a pairwise mask for chains given a list of chain tuples. 
+    Args:
+        all_chains: tensor containing all chain ids in complex 
+        interfaces_to_include: tuples with pairwise interactions to include
+    Returns:
+        torch.Tensor [n_chains + 1, n_chains + 1] where:
+            - each value [i,j] represents 
+            - a 0th row and 0th column of all zeros is added as padding
+    """
     largest_chain_index = torch.max(all_chains)
     chain_mask = torch.zeros(
         (largest_chain_index + 1, largest_chain_index + 1), dtype=torch.int
@@ -183,32 +192,28 @@ class ValidationPDBDataset(WeightedPDBDataset):
         chains_for_intra_metrics = [
             cid
             for cid, cdata in structure_entry.chains.items()
-            #if cdata.use_intrachain_metrics
+            if cdata.use_intrachain_metrics
         ]
-        print(f"{pdb_id=} {chains_for_intra_metrics=}")
 
         interfaces_to_include = []
         for interface_id, cluster_data in structure_entry.interfaces.items():
-            #if cluster_data.use_interchain_metrics:
-            print(f"{pdb_id=} {interface_id=} to be included")
-            interface_chains = tuple(interface_id.split("_"))
-            interfaces_to_include.append(interface_chains)
+            if cluster_data.use_interchain_metrics:
+                interface_chains = tuple(interface_id.split("_"))
+                interfaces_to_include.append(interface_chains)
 
         # Create token mask for validation intra and inter metrics
         token_starts_with_stop, _ = extract_starts_entities(atom_array)
         token_starts = token_starts_with_stop[:-1]
         token_chain_id = atom_array.chain_id[token_starts].astype(int)
 
-
         features["use_for_intra_validation"] = torch.tensor(
             np.isin(token_chain_id, chains_for_intra_metrics),
             dtype=torch.int32,
         )
-        
-        token_chain_id = torch.tensor(token_chain_id, dtype = torch.int32)
 
-        all_chain_ids = torch.unique(token_chain_id)
-        chain_mask_padded = make_chain_mask_padded(all_chain_ids, interfaces_to_include)
+        token_chain_id = torch.tensor(token_chain_id, dtype=torch.int32)
+
+        chain_mask_padded = make_chain_pair_mask_padded(token_chain_id, interfaces_to_include)
 
         # [n_token, n_token] for pairwise interactions
         features["use_for_inter_validation"] = chain_mask_padded[

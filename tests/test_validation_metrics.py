@@ -2,6 +2,7 @@ import math
 import unittest
 
 import numpy as np
+from tests.data_utils import random_asym_ids
 import torch
 
 from openfold3.core.metrics.validation_all_atom import (
@@ -76,6 +77,10 @@ class TestLDDT(unittest.TestCase):
         )  # [batch_size, n_atom, 3]
         atom_mask = torch.ones(batch_size, n_atom)  # [batch_size, n_atom]
 
+        # TODO: write a test that checks intra / inter masking behavior
+        intra_mask_filter = torch.ones((self.batch_size, self.n_atom))  # [batch_size, n_atom]
+        inter_mask_filter = torch.ones((self.batch_size, self.n_atom, self.n_atom))  # [batch_size, n_atom, n_atom]
+
         pair_gt = torch.cdist(
             gt_structure, gt_structure
         )  # [batch_size, n_atom, n_atom]
@@ -88,11 +93,17 @@ class TestLDDT(unittest.TestCase):
             pair_pred,
             pair_gt,
             atom_mask,
+            intra_mask_filter,
+            inter_mask_filter,
             asym_id,
         )
         exp_shape = (batch_size,)
         np.testing.assert_equal(intra_lddt.shape, exp_shape)
         np.testing.assert_equal(inter_lddt.shape, exp_shape)
+
+        # lddt should always be less than one 
+        np.testing.assert_array_less(intra_lddt, 1.)
+        np.testing.assert_array_less(inter_lddt, 1.)
 
         # rototranslation.
         # lddt between gt_structure and gt_structure_rototranslated should give 1.0s
@@ -108,6 +119,8 @@ class TestLDDT(unittest.TestCase):
             pair_rototranslated,
             pair_gt,
             atom_mask,
+            intra_mask_filter,
+            inter_mask_filter,
             asym_id,
         )
         np.testing.assert_allclose(
@@ -120,7 +133,6 @@ class TestLDDT(unittest.TestCase):
             exp_outputs,
             atol=consts.eps,
         )
-
 
 class TestInterfaceLDDT(unittest.TestCase):
     def test_interface_lddt(self):
@@ -137,6 +149,7 @@ class TestInterfaceLDDT(unittest.TestCase):
         )  # [batch_size, n_atom, 3]
         mask1 = torch.ones(batch_size, n_atom)  # [batch_size, n_atom,]
         mask2 = torch.ones(batch_size, n_atom2)  # [batch_size, n_atom,]
+        filter_mask = torch.ones(batch_size, n_atom, n_atom2)
 
         # shape test
         out_interface_lddt = interface_lddt(
@@ -146,6 +159,7 @@ class TestInterfaceLDDT(unittest.TestCase):
             gt_structure_2,
             mask1,
             mask2,
+            filter_mask,
         )
         exp_shape = (batch_size,)
         np.testing.assert_equal(out_interface_lddt.shape, exp_shape)
@@ -158,7 +172,7 @@ class TestInterfaceLDDT(unittest.TestCase):
         p1, p2 = torch.split(combined_coordinates_rt, [n_atom, n_atom2], dim=1)
         # run interface_lddt
         out_interface_lddt = interface_lddt(
-            p1, p2, gt_structure_1, gt_structure_2, mask1, mask2
+            p1, p2, gt_structure_1, gt_structure_2, mask1, mask2, filter_mask
         )
         exp_outputs = torch.ones(batch_size)
         np.testing.assert_allclose(out_interface_lddt, exp_outputs, atol=consts.eps)
