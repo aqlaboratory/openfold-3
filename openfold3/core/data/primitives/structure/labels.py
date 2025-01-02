@@ -6,6 +6,9 @@ import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 from openfold3.core.data.primitives.structure.component import (
     component_iter_from_metadata,
 )
@@ -352,6 +355,7 @@ def uniquify_ids(ids: list[str]) -> list[str]:
     return uniquified_ids
 
 
+@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-unqual-atoms")
 def assign_uniquified_atom_names(atom_array: AtomArray) -> None:
     assign_atom_indices(atom_array, label="_atom_idx_unqf_atoms")
     atom_array.set_annotation(
@@ -449,6 +453,7 @@ def component_iter(atom_array: AtomArray):
         yield atom_array[start:stop]
 
 
+@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-comp-id-assign")
 def assign_component_ids_from_metadata(
     atom_array: AtomArray, per_chain_metadata: dict[str, dict]
 ) -> None:

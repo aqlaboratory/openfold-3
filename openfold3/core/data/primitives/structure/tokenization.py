@@ -21,6 +21,7 @@ from openfold3.core.data.resources.residues import (
 )
 
 
+@log_runtime_memory(runtime_dict_key="runtime-add-token-pos")
 def add_token_positions(atom_array: AtomArray) -> None:
     """Adds token_position annotation to the input atom array.
 

@@ -14,10 +14,10 @@ from pathlib import Path
 
 import biotite.structure as struc
 import numpy as np
+import pandas as pd
 import torch
 from biotite.structure import AtomArray
 
-from openfold3.core.data.framework.single_datasets.pdb import WeightedPDBDataset
 from openfold3.core.data.primitives.quality_control.asserts import ENSEMBLED_ASSERTS
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     F_NAME_ORDER,
@@ -33,12 +33,17 @@ from openfold3.core.data.resources.residues import (
 )
 
 
-class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
-    """Custom PDB dataset class with logging in the __getitem__."""
+def add_logging_to_dataset(dataset_cls):
+    class LoggedDataset(LoggingMixin, dataset_cls):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
 
+    return LoggedDataset
+
+
+class LoggingMixin:
     def __init__(
         self,
-        *args,
         run_asserts=None,
         save_features=None,
         save_atom_array=None,
@@ -47,9 +52,10 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         log_runtimes=None,
         log_memory=None,
         subset_to_examples=None,
+        no_preferred_chain_or_interface=None,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
         self.run_asserts = run_asserts
         self.save_features = save_features
         self.save_atom_array = save_atom_array
@@ -59,6 +65,9 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         self.log_memory = log_memory
         if subset_to_examples is not None and len(subset_to_examples) > 0:
             self.subset_examples(subset_to_examples)
+
+        if no_preferred_chain_or_interface:
+            self.remove_preferred_chain_or_interface()
         """
         The following attributes are set in the worker_init_function_with_logging
         on a per-worker basis:
@@ -79,7 +88,9 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         # Get PDB ID from the datapoint cache and the preferred chain/interface
         datapoint = self.datapoint_cache.iloc[index]
         pdb_id = datapoint["pdb_id"]
-        preferred_chain_or_interface = datapoint["datapoint"]
+        preferred_chain_or_interface = datapoint.get(
+            "preferred_chain_or_interface", None
+        )
 
         # Set context variables and containers
         PDB_ID.set(pdb_id)
@@ -151,7 +162,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                     pdb_id,
                     preferred_chain_or_interface,
                     sample_data["features"],
-                    self.token_budget,
+                    self.n_tokens,
                     self.template.n_templates,
                 )
 
@@ -263,6 +274,11 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 
     @staticmethod
     def stringify_chain_interface(preferred_chain_or_interface: str | list[str]) -> str:
+        preferred_chain_or_interface = (
+            "nan"
+            if preferred_chain_or_interface is None
+            else preferred_chain_or_interface
+        )
         return (
             "-".join(preferred_chain_or_interface)
             if isinstance(preferred_chain_or_interface, list)
@@ -526,8 +542,12 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                     statistics += ["NaN"]
 
             # Entry metadata from dataset cache
-            statistics += [self.dataset_cache.structure_data[pdb_id].resolution]
-            statistics += [self.dataset_cache.structure_data[pdb_id].release_date]
+            statistics += [
+                getattr(self.dataset_cache.structure_data[pdb_id], "resolution", None)
+            ]
+            statistics += [
+                getattr(self.dataset_cache.structure_data[pdb_id], "release_date", None)
+            ]
 
             # sub-pipeline runtimes
             statistics += list(runtimes)
@@ -630,3 +650,16 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         self.datapoint_cache = self.datapoint_cache[
             self.datapoint_cache["pdb_id"].isin(subset_to_examples)
         ]
+
+    def remove_preferred_chain_or_interface(self) -> None:
+        """Removes a preferred chain or interface from the datapoint_cache."""
+
+        # Remove from datapoint_cache
+        unique_pdb_ids = sorted(set(self.datapoint_cache["pdb_id"]))
+        self.datapoint_cache = pd.DataFrame(
+            {
+                "pdb_id": unique_pdb_ids,
+                "datapoint": [None] * len(unique_pdb_ids),
+                "weight": [1] * len(unique_pdb_ids),
+            }
+        )

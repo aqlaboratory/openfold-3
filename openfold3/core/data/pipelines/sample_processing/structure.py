@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 class ProcessedTargetStructure(NamedTuple):
     atom_array_gt: AtomArray
     crop_strategy: str
+    n_tokens: int
 
 
 # TODO: Update docstring
@@ -34,12 +35,12 @@ class ProcessedTargetStructure(NamedTuple):
 def process_target_structure_af3(
     target_structures_directory: Path,
     pdb_id: str,
-    crop_weights: dict[str, float],
-    token_budget: int,
-    preferred_chain_or_interface: str,
+    apply_crop: bool,
+    crop_config: dict,
+    preferred_chain_or_interface: str | list[str, str] | None,
     structure_format: Literal["pkl", "npz"],
     per_chain_metadata: dict[str, dict[str, str]],
-) -> tuple[AtomArray, AtomArray]:
+) -> ProcessedTargetStructure:
     """AF3 pipeline for processing target structure into AtomArrays.
 
     Args:
@@ -47,11 +48,13 @@ def process_target_structure_af3(
             Path to the directory containing the directories of target structure files.
         pdb_id (str):
             PDB ID of the target structure.
-        crop_weights (dict[str, float]):
-            Dataset-specific weights for each cropping strategy.
-        token_budget (int):
-            Crop size.
-        preferred_chain_or_interface (str):
+        apply_crop (bool):
+            Whether to apply cropping.
+        crop_config (dict):
+            Crop configuration dictionary, containing the following keys:
+            - token_budget (int): Number of tokens to sample.
+            - crop_weights (dict): Weights of different crop strategies.
+        preferred_chain_or_interface (str | list[str, str] | None):
             Sampled preferred chain or interface to sample the crop around.
         structure_format (Literal["pkl", "npz"]):
             File extension of the target structure. Only "pkl" and "npz" are currently
@@ -61,11 +64,10 @@ def process_target_structure_af3(
             cache.
 
     Returns:
-        tuple[AtomArray, AtomArray]:
-            Tuple of two or three atom arrays:
-            - Atoms inside the crop.
-            - Ground truth atoms expanded for chain permutation alignment.
-            (- Full atom array - optional.)
+        ProcessedTargetStructure:
+            A NamedTuple containing the full AtomArray, the crop strategy, and the
+            number of tokens in the full AtomArray if apply_crop is False or the slice
+            of the AtomArray with crop_mask=True if apply_crop is True.
     """
     # Parse target structure
     atom_array = parse_target_structure(
@@ -93,10 +95,10 @@ def process_target_structure_af3(
     # Set the crop_mask attribute of the atom_array, marking which atoms are in the crop
     # and which aren't, and get the crop strategy that was used
     crop_strategy = sample_crop_and_set_mask(
-        atom_array,
-        token_budget,
-        preferred_chain_or_interface,
-        crop_weights,
+        atom_array=atom_array,
+        apply_crop=apply_crop,
+        crop_config=crop_config,
+        preferred_chain_or_interface=preferred_chain_or_interface,
     )
 
     # Add labels to identify symmetric mols in permutation alignment
@@ -109,7 +111,16 @@ def process_target_structure_af3(
     # identify which atom names ended up in the crop.
     atom_array = assign_uniquified_atom_names(atom_array)
 
+    # The number of tokens is used in downstream parts of the data pipeline
+    # if cropping was done, we want to set the number of tokens to the token budget
+    if apply_crop:
+        n_tokens = crop_config["token_budget"]
+    # otherwise set it to the number of tokens in the target structure
+    else:
+        n_tokens = len(set(atom_array.token_id))
+
     return ProcessedTargetStructure(
         atom_array_gt=atom_array,
         crop_strategy=crop_strategy,
+        n_tokens=n_tokens,
     )
