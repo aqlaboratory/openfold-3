@@ -10,6 +10,7 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
 )
 
 
+# TODO: Does the disordered dataset also need to be an input to this?
 @click.command()
 @click.option(
     "--train-cache",
@@ -77,6 +78,12 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
     help="Maximum number of polymer chains for included structures.",
 )
 @click.option(
+    "--random-seed",
+    type=int | None,
+    default=None,
+    help="Random seed for reproducibility.",
+)
+@click.option(
     "--write-no-alignment-repr-entries",
     is_flag=True,
     help=(
@@ -97,7 +104,7 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
     default=None,
 )
 def main(  # TODO: Docstring
-    train_cache_path: Path,
+    pdb_weighted_cache_path: Path,
     metadata_cache_path: Path,
     preprocessed_dir: Path,
     alignment_representatives_fasta: Path,
@@ -107,36 +114,48 @@ def main(  # TODO: Docstring
     min_release_date: str = "2021-10-01",
     max_resolution: float = 4.5,
     max_polymer_chains: int = 1000,
+    random_seed: int | None = None,
     write_no_alignment_repr_entries: bool = False,
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
     log_file: Path | None = None,
 ) -> None:
-    """Create a validation dataset cache using validation (AF supplement 5.8)
-    filtering procedures.
+    """Create a validation dataset cache using AF3 filtering procedures.
 
-    This applies basic filtering procedures to create a validation dataset cache
-    that can be used by the DataLoader from the more general metadata cache
-    created in preprocessing. Following AF3, the filters applied are:
-        - release date can be no later than max_release_date
-        - resolution can be no higher than max_resolution
-        - number of polymer chains can be no higher than max_polymer_chains
-
-    This also adds the following additional information:
-        Name of the dataset (for use with the DataSet registry) Structure data:
-            - alignment_representative_id:
-                The ID of the alignment of this chain
-            - cluster_id:
-                The ID of the cluster this chain/interface belongs to
-            - cluster_size:
-                The size of the cluster this chain/interface belongs to
-            -monomer and interface homology:
-                If there is high homology with the training dataset
-        Reference molecule data:
-            - set_fallback_to_nan:
-                Whether to set the fallback conformer of this molecule to NaN. This
-                applies to the very special case where the fallback conformer was
-                derived from CCD model coordinates coming from a PDB-ID that was
-                released outside of the time cutoff (see AF3 SI 2.8)
+    This follows the validation set creation outlined in the AF3 SI Section 5.8.
+    
+    Args:
+        pdb_weighted_cache_path (Path):
+            Path to the PDB-weighted training set cache created in preprocessing.
+        metadata_cache_path (Path):
+            Path to the structure metadata_cache.json created in preprocessing.
+        preprocessed_dir (Path):
+            Path to directory of directories containing files related to preprocessed
+            structures (in particular the .fasta files created by the preprocessing
+            pipeline).
+        alignment_representatives_fasta (Path):
+            Path to the alignment representatives FASTA file.
+        output_path (Path):
+            Output path the validation dataset cache JSON will be written to.
+        dataset_name (str):
+            Name of the dataset, e.g. 'PDB-validation'.
+        max_release_date (str):
+            Maximum release date for included structures, formatted as 'YYYY-MM-DD'.
+        min_release_date (str):
+            Minimum release date for included structures, formatted as 'YYYY-MM-DD'.
+        max_resolution (float):
+            Maximum resolution for structures in the dataset in Å.
+        max_polymer_chains (int):
+            Maximum number of polymer chains a structure can have to be included as a
+            target.
+        random_seed (int | None):
+            Random seed for reproducibility.
+        write_no_alignment_repr_entries (bool):
+            Whether to write out entries with no alignment representative explicitly to
+            a no_alignment_representative_entries.json.
+        log_level (Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL]):
+            Set the logging level.
+        log_file (Path | None):
+            Path to write the log file to.
     """
     max_release_date = datetime.strptime(max_release_date, "%Y-%m-%d").date()
     min_release_date = datetime.strptime(min_release_date, "%Y-%m-%d").date()
@@ -151,7 +170,7 @@ def main(  # TODO: Docstring
         logger.addHandler(file_handler)
 
     create_pdb_val_dataset_cache_af3(
-        train_cache_path=train_cache_path,
+        train_cache_path=pdb_weighted_cache_path,
         metadata_cache_path=metadata_cache_path,
         preprocessed_dir=preprocessed_dir,
         alignment_representatives_fasta=alignment_representatives_fasta,
@@ -161,6 +180,7 @@ def main(  # TODO: Docstring
         min_release_date=min_release_date,
         max_resolution=max_resolution,
         max_polymer_chains=max_polymer_chains,
+        random_seed=random_seed,
         write_no_alignment_repr_entries=write_no_alignment_repr_entries,
     )
 
