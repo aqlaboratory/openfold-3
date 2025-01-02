@@ -1,7 +1,7 @@
 import json
 from abc import ABC
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import torch
 from biotite.structure import AtomArray
@@ -135,7 +135,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
         self.template = dataset_config["template"]
 
         # Misc
-        self.single_moltype = Optional[str] = None
+        self.single_moltype = None
         self.debug_mode = dataset_config["debug_mode"]
 
     def __post_init__(self):

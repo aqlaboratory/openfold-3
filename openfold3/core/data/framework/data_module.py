@@ -334,15 +334,16 @@ class DataModule(pl.LightningDataModule):
 
         # Check if provided crop weights sum to 1
         for idx, config_i in enumerate(train_dataset_config.configs):
-            if sum(config_i["crop_weights"].values()) != 1:
+            config_i_crop_weights = config_i["custom"]["crop"]["crop_weights"]
+            if sum(config_i_crop_weights.values()) != 1:
                 warnings.warn(
                     f"Dataset {train_dataset_config.classes[idx]} crop weights do not "
                     "sum to 1. Normalizing weights.",
                     stacklevel=2,
                 )
-                train_dataset_config.configs[idx]["crop_weights"] = {
-                    key: value / sum(config_i["crop_weights"].values())
-                    for key, value in config_i["crop_weights"].items()
+                train_dataset_config.configs[idx]["custom"]["crop"]["crop_weights"] = {
+                    key: value / sum(config_i_crop_weights.values())
+                    for key, value in config_i_crop_weights.items()
                 }
 
         # Check if provided dataset mode combination is valid
