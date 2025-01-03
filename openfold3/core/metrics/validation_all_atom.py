@@ -965,6 +965,118 @@ def get_plddt_metrics(
     return out
 
 
+def get_validation_lddt_metrics(
+    pred_coords: torch.Tensor,
+    gt_coords: torch.Tensor,
+    is_ligand_atomized: torch.Tensor,
+    is_rna_atomized: torch.Tensor,
+    is_dna_atomized: torch.Tensor,
+    is_modified_residue_atomized: torch.Tensor,
+    all_atom_mask: torch.Tensor,
+    asym_id_atomized: torch.Tensor,
+    intra_filter_atomized: torch.Tensor,
+    inter_filter_atomized: torch.Tensor,
+):
+    """Compute lddt metrics for ligand-RNA, ligand-DNA and modified residues.
+    These extra metrics are required for model selection metric.
+
+    """
+    metrics = {}
+    bs = is_ligand_atomized.shape[:-1]  # (bs, (n_sample),)
+
+    if torch.any(is_ligand_atomized) and torch.any(is_rna_atomized):
+        is_rna_ligand_pair = (
+            is_rna_atomized[..., None] * is_ligand_atomized[..., None, :]
+        )
+        n_rna_atoms = torch.sum(is_rna_atomized).to(int).item()
+        n_ligand_atoms = torch.sum(is_ligand_atomized).to(int).item()
+        # TODO: just works for bs = 1, sample size = 1
+        inter_filter_mask_rna_ligand = torch.masked_select(
+            inter_filter_atomized, is_rna_ligand_pair.bool()
+        ).reshape(bs + (n_rna_atoms, n_ligand_atoms))
+        lddt_inter_ligand_rna = interface_lddt(
+            pred_coords[is_rna_atomized.bool()].view((bs) + (-1, 3)),
+            pred_coords[is_ligand_atomized.bool()].view((bs) + (-1, 3)),
+            gt_coords[is_rna_atomized.bool()].view((bs) + (-1, 3)),
+            gt_coords[is_ligand_atomized.bool()].view((bs) + (-1, 3)),
+            all_atom_mask[is_rna_atomized.bool()].view((bs) + (-1,)),
+            all_atom_mask[is_ligand_atomized.bool()].view((bs) + (-1,)),
+            inter_filter_mask_rna_ligand,
+            cutoff=30.0,
+        )
+
+        if not (torch.isnan(lddt_inter_ligand_rna)).all():
+            lddt_inter_ligand_rna[~torch.isnan(lddt_inter_ligand_rna)]
+            metrics.update({"lddt_inter_ligand_rna": lddt_inter_ligand_rna})
+
+    if torch.any(is_ligand_atomized) and torch.any(is_dna_atomized):
+        is_dna_ligand_pair = (
+            is_dna_atomized[..., None] * is_ligand_atomized[..., None, :]
+        )
+        n_dna_atoms = torch.sum(is_dna_atomized).to(int).item()
+        n_ligand_atoms = torch.sum(is_ligand_atomized).to(int).item()
+        inter_filter_mask_dna_ligand = torch.masked_select(
+            inter_filter_atomized, is_dna_ligand_pair.bool()
+        ).reshape(bs + (n_dna_atoms, n_ligand_atoms))
+
+        lddt_inter_ligand_dna = interface_lddt(
+            pred_coords[is_dna_atomized.bool()].view((bs) + (-1, 3)),
+            pred_coords[is_ligand_atomized.bool()].view((bs) + (-1, 3)),
+            gt_coords[is_dna_atomized.bool()].view((bs) + (-1, 3)),
+            gt_coords[is_ligand_atomized.bool()].view((bs) + (-1, 3)),
+            all_atom_mask[is_dna_atomized.bool()].view((bs) + (-1,)),
+            all_atom_mask[is_ligand_atomized.bool()].view((bs) + (-1,)),
+            inter_filter_mask_dna_ligand,
+            cutoff=30.0,
+        )
+
+        if not (torch.isnan(lddt_inter_ligand_dna)).all():
+            lddt_inter_ligand_dna[~torch.isnan(lddt_inter_ligand_dna)]
+            metrics["lddt_inter_ligand_dna"] = lddt_inter_ligand_dna
+
+    if torch.any(is_modified_residue_atomized):
+        pred_mr = pred_coords[is_modified_residue_atomized.bool()].view((bs) + (-1, 3))
+        gt_mr = gt_coords[is_modified_residue_atomized.bool()].view((bs) + (-1, 3))
+        intra_mask_atomized_mr = intra_filter_atomized[
+            is_modified_residue_atomized.bool()
+        ].view((bs) + (-1,))
+        is_mr_atomized_pair = (
+            is_modified_residue_atomized[..., None] * is_modified_residue_atomized[..., None, :]
+        )
+
+        n_mr_atoms = torch.sum(is_modified_residue_atomized).to(int).item()
+        inter_mask_atomized_mr = torch.masked_select(
+            inter_filter_atomized, is_mr_atomized_pair.bool()
+        ).reshape(bs + (n_mr_atoms, n_mr_atoms))
+
+        pred_mr_pair = torch.sqrt(
+            torch.sum(
+                (pred_mr.unsqueeze(-2) - pred_mr.unsqueeze(-3)) ** 2,
+                dim=-1,
+            )
+        )
+        gt_mr_pair = torch.sqrt(
+            torch.sum(
+                (gt_mr.unsqueeze(-2) - gt_mr.unsqueeze(-3)) ** 2,
+                dim=-1,
+            )
+        )
+        lddt_intra_modified_residues, _ = lddt(
+            pred_mr_pair,
+            gt_mr_pair,
+            all_atom_mask[is_modified_residue_atomized.bool()].view((bs) + (-1,)),
+            intra_mask_atomized_mr,
+            inter_mask_atomized_mr,
+            asym_id_atomized[is_modified_residue_atomized.bool()].view((bs) + (-1,)),
+        )
+
+        if not (torch.isnan(lddt_intra_modified_residues)).all():
+            lddt_intra_modified_residues[~torch.isnan(lddt_intra_modified_residues)]
+            metrics["lddt_intra_modified_residues"] = lddt_intra_modified_residues
+
+        return metrics
+
+
 def get_metrics(
     batch,
     outputs,
@@ -1029,6 +1141,12 @@ def get_metrics(
     asym_id_atomized = broadcast_token_feat_to_atoms(
         token_mask, num_atoms_per_token, batch["asym_id"]
     )
+    is_modified_residue = batch["is_atomized"]
+    is_modified_residue = is_modified_residue * (1 - batch["is_ligand"])
+    is_modified_residue_atomized = broadcast_token_feat_to_atoms(
+        token_mask, num_atoms_per_token, is_modified_residue
+    )
+    is_modified_residue_atomized = is_modified_residue_atomized.bool()
 
     # set up filters for validation metrics if present, otherwise pass ones
     use_for_intra = batch.get(
@@ -1133,6 +1251,21 @@ def get_metrics(
             all_atom_mask,
         )
         metrics = metrics | superimpose_metrics
+    
+    if not is_train:
+        extra_lddt = get_validation_lddt_metrics(
+            pred_coords,
+            gt_coords,
+            is_ligand_atomized,
+            is_rna_atomized,
+            is_dna_atomized,
+            is_modified_residue_atomized,
+            all_atom_mask,
+            asym_id_atomized,
+            intra_filter_atomized,
+            inter_filter_atomized,
+        )
+        metrics = metrics | extra_lddt
 
     metrics = {
         k: v[~nan_mask]
