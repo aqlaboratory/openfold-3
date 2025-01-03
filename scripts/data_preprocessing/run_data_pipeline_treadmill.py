@@ -67,8 +67,11 @@ from tqdm import tqdm
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import _NUMPY_AVAILABLE
 from openfold3.core.data.framework.lightning_utils import _generate_seed_sequence
+from openfold3.core.data.framework.single_datasets.abstract_single import (
+    DATASET_REGISTRY,
+)
 from openfold3.core.data.primitives.quality_control.logging_datasets import (
-    WeightedPDBDatasetWithLogging,
+    add_logging_to_dataset,
 )
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     parse_memory_profiler_log,
@@ -199,6 +202,12 @@ np.set_printoptions(threshold=sys.maxsize)
         "asserts on."
     ),
 )
+@click.option(
+    "--no-preferred-chain-or-interface",
+    type=bool,
+    default=False,
+    help="Whether to log memory use of subpipelines during data processing.",
+)
 def main(
     runner_yml_file: Path,
     seed: int,
@@ -214,6 +223,7 @@ def main(
     log_memory: bool,
     mem_profiled_func_keys: str | None,
     subset_to_examples: str,
+    no_preferred_chain_or_interface: bool,
 ) -> None:
     """Main function for running the data pipeline treadmill.
 
@@ -258,6 +268,10 @@ def main(
         subset_to_examples: (str)
             Comma separated list of PDB IDs use to subset the dataset cache to run
             asserts on.
+        no_preferred_chain_or_interface (bool):
+            Whether to sample a crop without a preferred chain or interface. Also
+            let the treadmill skip all variations of each sample with all preferred
+            chains and interfaces.
 
     Raises:
         ValueError:
@@ -294,7 +308,17 @@ def main(
         dataset_config_builder,
         project_config,
     )
-    dataset = WeightedPDBDatasetWithLogging(
+    if len(data_module_config.datasets) > 1:
+        raise NotImplementedError(
+            "Running the treadmill script with multiple datasets is not yet "
+            "implemented."
+        )
+
+    dataset_settings = data_module_config.datasets[0]
+    LoggingDataset = add_logging_to_dataset(
+        DATASET_REGISTRY[dataset_settings.get("class")]
+    )
+    logging_dataset = LoggingDataset(
         run_asserts=run_asserts,
         save_features=save_features,
         save_atom_array=save_atom_array,
@@ -303,7 +327,8 @@ def main(
         log_runtimes=log_runtimes,
         log_memory=log_memory,
         subset_to_examples=subset_to_examples,
-        dataset_config=data_module_config.datasets[0].config,
+        no_preferred_chain_or_interface=no_preferred_chain_or_interface,
+        dataset_config=dataset_settings.get("config"),
     )
 
     # This function needs to be defined here to form a closure
@@ -375,7 +400,7 @@ def main(
 
     # Configure DataLoader
     data_loader = DataLoader(
-        dataset=dataset,
+        dataset=logging_dataset,
         batch_size=data_module_config.batch_size,
         num_workers=data_module_config.num_workers,
         worker_init_fn=worker_init_function_with_logging,
@@ -391,7 +416,9 @@ def main(
     # Iterate over dataset - catch interruptions
     try:
         for _ in tqdm(
-            data_loader, desc="Iterating over WeightedPDBDataset", total=len(dataset)
+            data_loader,
+            desc="Iterating over WeightedPDBDataset",
+            total=len(logging_dataset),
         ):
             pass
     finally:
