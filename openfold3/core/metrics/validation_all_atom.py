@@ -152,7 +152,10 @@ def interface_lddt(
         norm = 1.0 / (eps + torch.sum(dists_to_score, dim=(-1, -2)))
         score = norm * (eps + torch.sum(dists_to_score * score, dim=(-1, -2)))
     else:
-        score = torch.nan
+        shape = all_atom_mask1.shape[:-1]
+        if not shape: 
+            shape = (1,)
+        score = torch.full(shape, torch.nan)
     return score
 
 
@@ -1129,9 +1132,6 @@ def get_validation_metrics(
             all_atom_mask,
         )
         metrics = metrics | superimpose_metrics
-
-    for k, v in metrics.items():
-        print(f"{k=}, {v.type()}")
 
     metrics = {
         k: v[~nan_mask]

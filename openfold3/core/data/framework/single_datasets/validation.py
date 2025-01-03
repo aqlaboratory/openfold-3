@@ -121,7 +121,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
                 logger.warning(
                     "-" * 40
                     + "\n"
-                    + f"Failed to process ProteinMonomerDataset entry {pdb_id}:"
+                    + f"Failed to process ValidationPDBDataset entry {pdb_id}:"
                     + f" {str(e)}\n"
                     + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
                     + "-" * 40
