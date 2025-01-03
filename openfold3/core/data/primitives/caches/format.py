@@ -390,6 +390,7 @@ class ValClusteredDatasetChainData(ClusteredDatasetChainData):
     ligand_high_homology: int
     ligand_not_fit: int
     num_residues_contact: int
+    use_intrachain_metrics: int
 
 
 @dataclass
@@ -418,6 +419,7 @@ class ValClusteredDatasetInterfaceData(ClusteredDatasetInterfaceData):
     """
 
     interface_high_homology: int
+    use_interchain_metrics: int
 
 
 # --- Structure data dataclasses ---
@@ -499,53 +501,6 @@ class ClusteredDatasetCache(ChainInterfaceReferenceMolCache):
     _interface_data_format = ClusteredDatasetInterfaceData
     _ref_mol_data_format = DatasetReferenceMoleculeData
     _structure_data_format = ClusteredDatasetStructureData
-
-
-# PDB VALIDATION DATASET FORMAT
-@dataclass
-class ValClusteredDatasetChainData(ClusteredDatasetChainData):
-    """Chain-wise data with cluster and alignment information.
-
-    Adds info on homology to train set. If chain is a monomer
-    >40% seq id and if it is a ligand >0.85 tanimoto score.
-    """
-
-    # Adds the following fields:
-    monomer_high_homology: int
-    ligand_high_homology: int
-    ligand_not_fit: int
-    num_residues_contact: int
-    use_intrachain_metrics: int
-
-
-@dataclass
-class ValClusteredDatasetInterfaceData(ClusteredDatasetInterfaceData):
-    """Interface-wise data with cluster information.
-
-    Adds info on if interfaces are homologous to the training data
-    To be true both chains most have homology as defined in SI 5.8.
-    """
-
-    interface_high_homology: int
-    use_interchain_metrics: int
-
-
-@dataclass
-class ValClusteredDatasetStructureData:
-    """Structure data with cluster and added metadata information."""
-
-    release_date: datetime.date
-    resolution: float
-    sampled_cluster: list[str]  # TODO: remove this
-    token_count: int  # TODO: remove this
-    chains: dict[str, ValClusteredDatasetChainData]
-    interfaces: dict[str, ClusteredDatasetInterfaceData]
-
-
-ValClusteredDatasetStructureDataCache: TypeAlias = dict[
-    str, ValClusteredDatasetStructureData
-]
-"""Structure data cache with cluster information."""
 
 
 # TODO: Revisit this entire cache to remove all redundant fields
