@@ -10,7 +10,6 @@ Supported use cases:
 import logging
 import pickle as pkl
 import traceback
-import warnings
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -716,6 +715,7 @@ def init_datasets_with_logging(
         ]
     else:
         types_to_init = [type_to_init]
+    # TODO: add explicit for loop to make logic clearer
     datasets = [
         (
             add_logging_to_dataset(DATASET_REGISTRY[dataset_class])(
@@ -739,14 +739,4 @@ def init_datasets_with_logging(
         if dataset_type in types_to_init
     ]
 
-    if (
-        type_to_init
-        in [DatasetMode.validation, DatasetMode.test, DatasetMode.prediction]
-    ) & (len(datasets) > 1):
-        datasets = datasets[:1]
-        warnings.warn(
-            f"Currently only one {type_to_init} dataset is supported, but "
-            f"{len(datasets)} datasets were found. Using only the "
-            "first one.",
-            stacklevel=2,
-        )
+    return datasets
