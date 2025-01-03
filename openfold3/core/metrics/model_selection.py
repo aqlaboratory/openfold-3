@@ -1,12 +1,10 @@
-import torch
 from collections import defaultdict
+
+import torch
 
 from openfold3.core.metrics.validation_all_atom import (
     get_validation_metrics,
-    interface_lddt,
-    lddt,
 )
-from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.openfold3.openfold3.openfold3.core.metrics.rasa import compute_rasa_batch
 
 # WIP: model selection should accept the output of
@@ -88,19 +86,19 @@ def compute_model_selection_metric(
     # Get the validation metrics. We assume `metrics` already has shape [bs, n_samples]
     # -------------------------------------------------------------------------
     metrics = defaultdict(list)
-    
+
     for i in range(N_samples):
-        output_sample = {
-            key: value[:, i, ...] for key, value in outputs.items()
-        }
-        metrics_sample = get_validation_metrics(batch, output_sample, superimposition_metrics=True, is_train=False)
+        output_sample = {key: value[:, i, ...] for key, value in outputs.items()}
+        metrics_sample = get_validation_metrics(
+            batch, output_sample, superimposition_metrics=True, is_train=False
+        )
         for metric_name, metric_values in metrics_sample.items():
             metrics[metric_name].append(metric_values)
-            
+
     # Convert the lists to tensors
     for metric_name, metric_values in metrics.items():
         metrics[metric_name] = torch.stack(metric_values, dim=1)
-  
+
     # For now, we'll create an empty dictionary
     # metrics = {}
     # Add RASA metrics
@@ -192,13 +190,11 @@ def compute_model_selection_metric(
 #             In the case where no valid atom_type is available, metric dict doesn't
 #             contain the key.
 #     """
-    
+
 
 #     return compute_model_selection_metric(
 #         batch, outputs, metrics, weights
 #     )
-
-
 
 
 # probably should be in config
