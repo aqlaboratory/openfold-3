@@ -109,11 +109,11 @@ class AlphaFold3AllAtom(ModelRunner):
             # Run the model
             batch, outputs = self(batch)
 
-            batch["atom_array"] = atom_array
-            batch["pdb_id"] = pdb_id
             # Compute loss and other metrics
             _, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
-
+            
+            batch["atom_array"] = atom_array
+            batch["pdb_id"] = pdb_id
             self._log(loss_breakdown, batch, outputs, train=False)
 
         except Exception as e:
