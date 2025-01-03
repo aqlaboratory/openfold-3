@@ -1,14 +1,17 @@
 import logging
+from typing import Union
 
 import numpy as np
 import pandas as pd
+import random
+import traceback
 import torch
 from biotite.structure import AtomArray
 
 from openfold3.core.data.framework.single_datasets.abstract_single_dataset import (
     register_dataset,
 )
-from openfold3.core.data.framework.single_datasets.pdb import WeightedPDBDataset
+from openfold3.core.data.framework.single_datasets.pdb import WeightedPDBDataset, is_invalid_feature_dict
 from openfold3.core.data.pipelines.featurization.conformer import (
     featurize_reference_conformers_af3,
 )
@@ -194,14 +197,14 @@ class ValidationPDBDataset(WeightedPDBDataset):
         chains_for_intra_metrics = [
             cid
             for cid, cdata in structure_entry.chains.items()
-            if cdata.use_intrachain_metrics
+            # if cdata.use_intrachain_metrics
         ]
 
         interfaces_to_include = []
         for interface_id, cluster_data in structure_entry.interfaces.items():
-            if cluster_data.use_interchain_metrics:
-                interface_chains = tuple(interface_id.split("_"))
-                interfaces_to_include.append(interface_chains)
+            # if cluster_data.use_interchain_metrics:
+            interface_chains = tuple(interface_id.split("_"))
+            interfaces_to_include.append(interface_chains)
 
         # Create token mask for validation intra and inter metrics
         token_starts_with_stop, _ = extract_starts_entities(atom_array)
@@ -225,7 +228,8 @@ class ValidationPDBDataset(WeightedPDBDataset):
         ]
 
         return features
-
+    
+    
     def create_all_features(
         self,
         pdb_id: str,
@@ -242,6 +246,7 @@ class ValidationPDBDataset(WeightedPDBDataset):
             pdb_id, sample_data["atom_array"]
         )
         sample_data["features"].update(validation_homology_filters)
+        sample_data["features"]["atom_array"] = sample_data["atom_array"]
 
         # If we have all the datasets write their own create_all_features, we can avoid
         # recording and then removing the atom_arrays
