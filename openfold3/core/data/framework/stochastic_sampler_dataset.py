@@ -115,7 +115,9 @@ class StochasticSamplerDataset(Dataset):
 
                 # Retrieve datapoint probabilities for given dataset
                 datapoint_probabilities = torch.tensor(
-                    self.datasets[dataset_idx].datapoint_probabilities
+                    self.datasets[dataset_idx]
+                    .datapoint_cache["datapoint_probabilities"]
+                    .to_numpy()
                 )
 
                 # Sample datapoint indices

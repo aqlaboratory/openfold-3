@@ -7,7 +7,7 @@ import copy
 import torch
 
 
-def set_loss_weights(loss_settings: dict, resolution: float) -> dict[str, float]:
+def set_loss_weights(loss_settings: dict, resolution: float | None) -> dict[str, float]:
     """Updates and tensorizes loss weights in the FeatureDict based on the resolution.
 
     Args:
@@ -18,14 +18,14 @@ def set_loss_weights(loss_settings: dict, resolution: float) -> dict[str, float]
                 - loss_weight
                 - min_resolution
                 - max_resolution
-        resolution (float):
+        resolution (float | None):
             The resolution of the input data.
 
     Returns:
         dict[str, float]: _description_
     """
     loss_weight = copy.deepcopy(loss_settings["loss_weights"])
-    if (
+    if (resolution is None) or (
         resolution < loss_settings["min_resolution"]
         or resolution > loss_settings["max_resolution"]
     ):
