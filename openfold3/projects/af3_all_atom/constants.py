@@ -17,6 +17,8 @@ LOSSES = [
     # Distogram losses
     "distogram_loss",
     "scaled_distogram_loss",
+    # Total
+    "loss",
 ]
 
 METRICS = [

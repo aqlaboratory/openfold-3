@@ -25,8 +25,8 @@ from openfold3.projects.af3_all_atom.config.base_config import project_config
 from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
     AF3DatasetConfigBuilder,
 )
+from openfold3.projects.af3_all_atom.constants import LOGGED_METRICS
 from openfold3.projects.af3_all_atom.model import AlphaFold3
-from openfold3.projects.constants import LOGGED_METRICS
 from openfold3.projects.registry import register_project
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
