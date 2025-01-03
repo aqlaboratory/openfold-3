@@ -1,12 +1,9 @@
 import logging
-from typing import Union
 import random
 import traceback
 
 import numpy as np
 import pandas as pd
-import random
-import traceback
 import torch
 from biotite.structure import AtomArray
 
@@ -154,14 +151,14 @@ class ValidationPDBDataset(BaseAF3Dataset):
         chains_for_intra_metrics = [
             cid
             for cid, cdata in structure_entry.chains.items()
-            # if cdata.use_intrachain_metrics
+            if cdata.use_intrachain_metrics
         ]
 
         interfaces_to_include = []
         for interface_id, cluster_data in structure_entry.interfaces.items():
-            # if cluster_data.use_interchain_metrics:
-            interface_chains = tuple(interface_id.split("_"))
-            interfaces_to_include.append(interface_chains)
+            if cluster_data.use_interchain_metrics:
+                interface_chains = tuple(interface_id.split("_"))
+                interfaces_to_include.append(interface_chains)
 
         # Create token mask for validation intra and inter metrics
         token_starts_with_stop, _ = extract_starts_entities(atom_array)
@@ -185,8 +182,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
         ]
 
         return features
-    
-    
+
     def create_all_features(
         self,
         pdb_id: str,
@@ -205,7 +201,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
         sample_data["features"].update(validation_homology_filters)
         sample_data["features"]["atom_array"] = sample_data["atom_array"]
 
-        # Remove atom arrays if they are not needed 
+        # Remove atom arrays if they are not needed
         if not return_atom_arrays:
             del sample_data["atom_array"]
             del sample_data["atom_array_gt"]

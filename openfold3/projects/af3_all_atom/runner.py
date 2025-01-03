@@ -108,7 +108,7 @@ class AlphaFold3AllAtom(ModelRunner):
         try:
             # Run the model
             batch, outputs = self(batch)
-            
+
             batch["atom_array"] = atom_array
             batch["pdb_id"] = pdb_id
             # Compute loss and other metrics
@@ -131,6 +131,7 @@ class AlphaFold3AllAtom(ModelRunner):
         # TODO: Remove debug logic
         pdb_id = batch.pop("pdb_id")
         atom_array = batch.pop("atom_array")
+
         # This is to avoid slow loading for nested dicts in PL
         # Less frequent hanging when non_blocking=True on H200
         # TODO: Determine if this is really needed given other

@@ -7,7 +7,7 @@ from openfold3.projects.af3_all_atom.config import (
 )
 
 PLACEHOLDER_PATH = Path("placeholder/path")
-PLACEHOLDER_FORMAT = "placeholder_format" 
+PLACEHOLDER_FORMAT = "placeholder_format"
 
 # Hidden dimensions
 c_s = mlc.FieldReference(384, field_type=int)

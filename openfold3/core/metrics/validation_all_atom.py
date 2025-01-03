@@ -153,7 +153,7 @@ def interface_lddt(
         score = norm * (eps + torch.sum(dists_to_score * score, dim=(-1, -2)))
     else:
         shape = all_atom_mask1.shape[:-1]
-        if not shape: 
+        if not shape:
             shape = (1,)
         score = torch.full(shape, torch.nan)
     return score
