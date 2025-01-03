@@ -53,14 +53,11 @@ def gdt(p1, p2, mask, cutoffs):
 
     p1 = p1.float()
     p2 = p2.float()
-    distances = torch.sqrt(torch.sum((p1 - p2) ** 2, dim=-1))
-    scores = []
-    for c in cutoffs:
-        score = torch.sum((distances <= c) * mask, dim=-1) / n
-        score = torch.mean(score)
-        scores.append(score)
 
-    return sum(scores) / len(scores)
+    distances = torch.sqrt(torch.sum((p1 - p2) ** 2, dim=-1))
+    scores = [torch.sum((distances <= c) * mask, dim=-1) / n for c in cutoffs]
+
+    return torch.sum(torch.stack(scores, dim=-1), dim=-1) / len(scores)
 
 
 def gdt_ts(p1, p2, mask):

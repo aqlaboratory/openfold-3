@@ -1,9 +1,11 @@
 import importlib
+import itertools
 import logging
 import traceback
 from pathlib import Path
 
 import torch
+from torchmetrics import MeanMetric, MetricCollection
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.metrics.confidence import (
@@ -24,6 +26,7 @@ from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
     AF3DatasetConfigBuilder,
 )
 from openfold3.projects.af3_all_atom.model import AlphaFold3
+from openfold3.projects.constants import LOGGED_METRICS
 from openfold3.projects.registry import register_project
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
@@ -47,6 +50,102 @@ class AlphaFold3AllAtom(ModelRunner):
             if _compile
             else AlphaFold3Loss(config=model_config.architecture.loss_module)
         )
+
+        # Initialize all epoch metric objects
+        metrics = MetricCollection(
+            {
+                metric_name: MeanMetric(nan_strategy="ignore")
+                for metric_name in LOGGED_METRICS
+            }
+        )
+
+        # TODO: Forcing naming convention to be compatible with older runs
+        #  Make consistent later
+        self.train_metrics = metrics.clone(prefix="train/", postfix="_epoch")
+        self.val_metrics = metrics.clone(prefix="val/")
+
+        # Not all metrics will be calculated for each stage of training or between
+        # training and validation. Keep track of which metrics are enabled.
+        metric_log_names = itertools.chain(
+            self.train_metrics.keys(), self.val_metrics.keys()
+        )
+        self.metric_enabled = {metric_name: False for metric_name in metric_log_names}
+
+    def _update_epoch_metric(
+        self, phase: str, metric_log_name: str, metric_value: torch.Tensor
+    ):
+        """
+
+        Args:
+            phase:
+                Phase of training, accepts "train" or "val"
+            metric_log_name:
+                Name of the metric in the log, including prefix or postfix
+            metric_value:
+                Value of the metric to update
+        """
+        if metric_log_name not in self.metric_enabled:
+            raise ValueError(
+                f"Metric {metric_log_name} is not being tracked and will "
+                f"not appear in epoch metrics. Please add it to "
+                f"the LOGGED_METRICS constant."
+            )
+
+        if not self.metric_enabled[metric_log_name]:
+            self.metric_enabled[metric_log_name] = True
+
+        metrics = self.train_metrics if phase == "train" else self.val_metrics
+        metric_obj = metrics[metric_log_name]
+        metric_obj.update(metric_value)
+
+    def _log(self, loss_breakdown, batch, outputs, train=True):
+        phase = "train" if train else "val"
+
+        for loss_name, indiv_loss in loss_breakdown.items():
+            metric_name = f"{phase}/{loss_name}"
+            metric_epoch_name = f"{metric_name}_epoch" if train else metric_name
+
+            # Update mean metrics for epoch logging
+            self._update_epoch_metric(
+                phase=phase, metric_log_name=metric_epoch_name, metric_value=indiv_loss
+            )
+
+            # Only log steps for training
+            if train:
+                self.log(
+                    metric_name,
+                    indiv_loss,
+                    on_step=True,
+                    on_epoch=False,
+                    logger=True,
+                    sync_dist=False,
+                )
+
+        with torch.no_grad():
+            other_metrics = self._compute_validation_metrics(
+                batch, outputs, superimposition_metrics=(not train)
+            )
+
+        for k, v in other_metrics.items():
+            mean_metric = torch.mean(v)
+            metric_name = f"{phase}/{k}"
+
+            # Update mean metrics for epoch logging
+            self._update_epoch_metric(
+                phase=phase, metric_log_name=metric_name, metric_value=mean_metric
+            )
+
+            # TODO: Maybe remove this extra logging
+            # Only log steps for training
+            if train and not torch.isnan(mean_metric):
+                self.log(
+                    f"{metric_name}_step",
+                    mean_metric,
+                    on_step=True,
+                    on_epoch=False,
+                    logger=True,
+                    sync_dist=False,
+                )
 
     def training_step(self, batch, batch_idx):
         example_feat = next(
@@ -144,6 +243,37 @@ class AlphaFold3AllAtom(ModelRunner):
         # At the start of each virtual epoch we want to resample the set of
         # datapoints to train on
         self.trainer.train_dataloader.dataset.resample_epoch()
+
+    def _log_epoch_metrics(self, metrics: MetricCollection):
+        """Log aggregated epoch metrics for training or validation.
+
+        Args:
+            metrics: MetricCollection object containing the metrics to log
+        """
+        for metric_name, metric_obj in metrics.items():
+            # Only log metrics that have been updated
+            if self.metric_enabled.get(metric_name):
+                # Sync and reduce metric across ranks
+                output = metric_obj.compute()
+                self.log(
+                    metric_name,
+                    output,
+                    on_step=False,
+                    on_epoch=True,
+                    logger=True,
+                    sync_dist=False,  # Already synced in compute()
+                )
+
+                # Reset metric for next epoch
+                metric_obj.reset()
+
+    def on_train_epoch_end(self):
+        """Log aggregated epoch metrics for training."""
+        self._log_epoch_metrics(metrics=self.train_metrics)
+
+    def on_validation_epoch_end(self):
+        """Log aggregated epoch metrics for validation."""
+        self._log_epoch_metrics(metrics=self.val_metrics)
 
     def configure_optimizers(
         self,

@@ -3,7 +3,9 @@ from typing import Optional
 
 import torch
 
+from openfold3.core.metrics.validation import gdt_ha, gdt_ts, rmsd
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
+from openfold3.core.utils.geometry.kabsch_alignment import kabsch_align
 
 
 def lddt(
@@ -536,8 +538,8 @@ def steric_clash(
         all_atom_mask.unsqueeze(-1) * all_atom_mask.unsqueeze(-2)
     )
 
-    intra = torch.where(asym_id.unsqueeze(-1) == asym_id.unsqueeze(-2), 1, 0).float()
-    inter = 1 - intra
+    intra = torch.where(asym_id.unsqueeze(-1) == asym_id.unsqueeze(-2), 1, 0).bool()
+    inter = ~intra
 
     # Compute the clash
     clash = torch.relu(threshold - pred_pair)
@@ -604,104 +606,6 @@ def interface_steric_clash(
     return interface_clash
 
 
-def gdt(
-    all_atom_pred_pos: torch.Tensor,
-    all_atom_gt_pos: torch.Tensor,
-    all_atom_mask: torch.Tensor,
-    cutoffs: list,
-) -> torch.Tensor:
-    """
-    Calculates gdt scores
-
-    Args:
-        all_atom_pred_pos: predicted structures [*, n_atom, 3]
-        all_atom_gt_pos: gt structure [*, n_atom, 3]
-        all_atom_mask: mask [*, n_atom]
-        cutoffs: list of cutoffs
-    Returns:
-        gdt score: [*]
-    """
-
-    distances = torch.sqrt(
-        torch.sum((all_atom_pred_pos - all_atom_gt_pos) ** 2, dim=-1)
-    )
-
-    n = torch.sum(all_atom_mask, dim=-1)
-    scores = []
-    for c in cutoffs:
-        score = torch.sum((distances <= c) * all_atom_mask, dim=-1)
-        score = score / n
-        scores.append(score)
-    return torch.sum(torch.stack(scores, dim=-1), dim=-1) / len(scores)
-
-
-def gdt_ts(p1, p2, mask):
-    return gdt(p1, p2, mask, [1.0, 2.0, 4.0, 8.0])
-
-
-def gdt_ha(p1, p2, mask):
-    return gdt(p1, p2, mask, [0.5, 1.0, 2.0, 4.0])
-
-
-def batched_kabsch(
-    all_atom_pred_pos: torch.Tensor,
-    all_atom_gt_pos: torch.Tensor,
-    all_atom_mask: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """
-    Computes optimal rotation and translation via Kabsch algorithm
-
-    Args:
-        all_atom_pred_pos: [*, n_atom, 3]
-        all_atom_gt_pos: [*, n_atom, 3]
-        all_atom_mask: [*, n_atom]
-
-    Returns:
-        optimal translation: [*, 1, 3]
-        optimal rotation: [*, 3, 3]
-        rmsd: alignment rmsd [*]
-    """
-
-    n_atom = all_atom_gt_pos.shape[-2]
-    predicted_coordinates = all_atom_pred_pos * all_atom_mask.unsqueeze(-1)
-    gt_coordinates = all_atom_gt_pos * all_atom_mask.unsqueeze(-1)
-
-    # translation: center two molecules
-    centroid_predicted = torch.mean(predicted_coordinates, dim=-2, keepdim=True)
-    centroid_gt = torch.mean(gt_coordinates, dim=-2, keepdim=True)
-    translation = centroid_gt - centroid_predicted
-    predicted_coordinates_centered = predicted_coordinates - centroid_predicted
-    gt_coordinates_centered = gt_coordinates - centroid_gt
-
-    # SVD
-    H = predicted_coordinates_centered.transpose(-2, -1) @ gt_coordinates_centered
-    # fp16 not supported
-    with torch.cuda.amp.autocast(enabled=False):
-        U, S, Vt = torch.linalg.svd(H.float())
-        Ut, V = U.transpose(-1, -2), Vt.transpose(-1, -2)  #
-
-    # determine handedness
-    dets = torch.det(V @ Ut)  # just do U @ Vt
-    batch_dims = H.shape[:-2]
-    D = torch.eye(3).tile(*batch_dims, 1, 1).to(V.device)
-    D[..., -1, -1] = torch.sign(dets).to(torch.float64)
-
-    rotation = V @ D @ Ut
-    rmsd = torch.sqrt(
-        torch.sum(
-            (
-                predicted_coordinates_centered @ rotation.transpose(-2, -1)
-                - gt_coordinates_centered
-            )
-            ** 2,
-            dim=(-1, -2),
-        )
-        / n_atom
-    )
-
-    return translation, rotation, rmsd
-
-
 def get_superimpose_metrics(
     all_atom_pred_pos: torch.Tensor,
     all_atom_gt_pos: torch.Tensor,
@@ -722,35 +626,30 @@ def get_superimpose_metrics(
     """
     out = {}
 
-    _, rotation, rmsd = batched_kabsch(
-        all_atom_pred_pos,
+    all_atom_pred_pos_aligned = kabsch_align(
+        mobile_positions=all_atom_pred_pos,
+        target_positions=all_atom_gt_pos,
+        positions_mask=all_atom_mask,
+    )
+
+    out["superimpose_rmsd"] = rmsd(
+        pred_positions=all_atom_pred_pos_aligned,
+        target_positions=all_atom_gt_pos,
+        positions_mask=all_atom_mask,
+    )
+
+    out["gdt_ts"] = gdt_ts(
+        all_atom_pred_pos_aligned,
         all_atom_gt_pos,
         all_atom_mask,
     )
-    out["superimpose_rmsd"] = rmsd
 
-    pred_centered = all_atom_pred_pos - torch.mean(
-        all_atom_pred_pos, dim=-2, keepdim=True
-    )
-    gt_centered = all_atom_gt_pos - torch.mean(
+    out["gdt_ha"] = gdt_ha(
+        all_atom_pred_pos_aligned,
         all_atom_gt_pos,
-        dim=-2,
-        keepdim=True,
+        all_atom_mask,
     )
-    pred_superimposed = pred_centered @ rotation.transpose(-1, -2)
 
-    gdt_ts_score = gdt_ts(
-        pred_superimposed,
-        gt_centered,
-        all_atom_mask,
-    )
-    gdt_ha_score = gdt_ha(
-        pred_superimposed,
-        gt_centered,
-        all_atom_mask,
-    )
-    out["gdt_ts"] = gdt_ts_score
-    out["gdt_ha"] = gdt_ha_score
     return out
 
 
@@ -786,9 +685,9 @@ def get_validation_metrics(
     """
     metrics = {}
 
-    gt_coords = batch["ground_truth"]["atom_positions"].float()
-    pred_coords = outputs["atom_positions_predicted"].float()
-    all_atom_mask = batch["ref_mask"]
+    gt_coords = batch["ground_truth"]["atom_positions"]
+    pred_coords = outputs["atom_positions_predicted"]
+    all_atom_mask = batch["ground_truth"]["atom_resolved_mask"].bool()
     token_mask = batch["token_mask"]
     num_atoms_per_token = batch["num_atoms_per_token"]
 
@@ -867,9 +766,4 @@ def get_validation_metrics(
         )
         metrics = metrics | superimpose_metrics
 
-    valid_metrics = {
-        k: v[~nan_mask]
-        for k, v in metrics.items()
-        if not (nan_mask := torch.isnan(v)).all()
-    }
-    return valid_metrics
+    return metrics
