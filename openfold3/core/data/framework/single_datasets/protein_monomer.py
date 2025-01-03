@@ -51,7 +51,7 @@ class ProteinMonomerDataset(BaseAF3Dataset):
         self.datapoint_cache = pd.DataFrame(
             {
                 "pdb_id": sample_ids,
-                "datapoint_probabilities": [1] * len(sample_ids),
+                "datapoint_probabilities": [1.0] * len(sample_ids),
             }
         )
 

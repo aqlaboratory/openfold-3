@@ -315,7 +315,7 @@ class WeightedPDBDataset(BaseAF3Dataset):
         # Get PDB ID from the datapoint cache and the preferred chain/interface
         datapoint = self.datapoint_cache.iloc[index]
         pdb_id = datapoint["pdb_id"]
-        preferred_chain_or_interface = datapoint["datapoint"]
+        preferred_chain_or_interface = datapoint["preferred_chain_or_interface"]
 
         # TODO: Remove debug logic
         if not self.debug_mode:
