@@ -99,6 +99,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
         # TODO: Remove debug logic
         pdb_id = batch.pop("pdb_id")
+        atom_array = batch.pop("atom_array")
         logger.warning(
             f"Started validation for {pdb_id} on rank {self.global_rank} "
             f"step {self.global_step}"
@@ -107,7 +108,9 @@ class AlphaFold3AllAtom(ModelRunner):
         try:
             # Run the model
             batch, outputs = self(batch)
-
+            
+            batch["atom_array"] = atom_array
+            batch["pdb_id"] = pdb_id
             # Compute loss and other metrics
             _, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
 
@@ -127,7 +130,7 @@ class AlphaFold3AllAtom(ModelRunner):
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         # TODO: Remove debug logic
         pdb_id = batch.pop("pdb_id")
-
+        atom_array = batch.pop("atom_array")
         # This is to avoid slow loading for nested dicts in PL
         # Less frequent hanging when non_blocking=True on H200
         # TODO: Determine if this is really needed given other
@@ -137,6 +140,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
         batch = tensor_tree_map(to_device, batch)
         batch["pdb_id"] = pdb_id
+        batch["atom_array"] = atom_array
 
         return batch
 
