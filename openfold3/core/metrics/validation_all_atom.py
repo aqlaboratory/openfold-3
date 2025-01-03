@@ -965,10 +965,11 @@ def get_plddt_metrics(
     return out
 
 
-def get_validation_metrics(
+def get_metrics(
     batch,
     outputs,
     superimposition_metrics=False,
+    is_train=True,
 ) -> dict[str, torch.Tensor]:
     """
     Compute validation metrics on all substrates

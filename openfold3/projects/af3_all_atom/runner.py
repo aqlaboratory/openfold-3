@@ -13,7 +13,7 @@ from openfold3.core.metrics.confidence import (
     compute_weighted_ptm,
 )
 from openfold3.core.metrics.validation_all_atom import (
-    get_validation_metrics,
+    get_metrics,
 )
 from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.atomize_utils import get_token_frame_atoms
@@ -111,7 +111,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
             # Compute loss and other metrics
             _, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
-            
+
             batch["atom_array"] = atom_array
             batch["pdb_id"] = pdb_id
             self._log(loss_breakdown, batch, outputs, train=False)
@@ -195,12 +195,23 @@ class AlphaFold3AllAtom(ModelRunner):
         ema = checkpoint["ema"]
         self.ema.load_state_dict(ema)
 
-    def _compute_validation_metrics(
-        self, batch, outputs, superimposition_metrics=False
+    def _compute_training_metrics(
+        self,
+        batch,
+        outputs,
     ) -> dict[str, torch.Tensor]:
-        # Computes validation metrics
-        metrics = get_validation_metrics(batch, outputs, superimposition_metrics)
+        metrics = get_metrics(
+            batch, outputs, superimposition_metrics=False, is_train=True
+        )
+        return metrics
 
+    def _compute_validation_metrics(
+        self,
+        batch,
+        outputs,
+        superimposition_metrics=True,
+    ) -> dict[str, torch.Tensor]:
+        metrics = get_metrics(batch, outputs, superimposition_metrics, is_train=False)
         return metrics
 
     # TODO: Integrate with prediction step

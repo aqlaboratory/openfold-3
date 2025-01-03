@@ -75,11 +75,12 @@ class ModelRunner(pl.LightningModule):
                 )
 
         with torch.no_grad():
-            other_metrics = self._compute_validation_metrics(
-                batch, outputs, superimposition_metrics=(not train)
-            )
+            if train:
+                metrics = self._compute_training_metrics(batch, outputs)
+            else:
+                metrics = self._compute_validation_metrics(batch, outputs)
 
-        for k, v in other_metrics.items():
+        for k, v in metrics.items():
             self.log(
                 f"{phase}/{k}",
                 torch.mean(v),

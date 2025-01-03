@@ -3,9 +3,8 @@ from collections import defaultdict
 import torch
 
 from openfold3.core.metrics.validation_all_atom import (
-    get_validation_metrics,
+    get_metrics,
 )
-from openfold3.openfold3.openfold3.openfold3.core.metrics.rasa import compute_rasa_batch
 
 # WIP: model selection should accept the output of
 # get_validation_metrics and compute 3 additional LDDTs
@@ -46,7 +45,8 @@ def compute_model_selection_metric(
     # -------------------------------------------------------------------------
     # pde_logits shape: [bs, n_samples, n_tokens, n_tokens, 64]
     pde_logits = outputs["pde_logits"].detach()
-    # 64 bins equally spaced from 0 Å to 32 Å in 0.5 Å increments => centers in [0.25, 31.75]
+    # 64 bins equally spaced from 0 Å to 32 Å in 
+    # 0.5 Å increments => centers in [0.25, 31.75]
     bin_centers = torch.linspace(0.25, 31.75, 64, device=device)
 
     # PDE shape: [bs, n_samples, n_tokens, n_tokens]
@@ -89,7 +89,7 @@ def compute_model_selection_metric(
 
     for i in range(N_samples):
         output_sample = {key: value[:, i, ...] for key, value in outputs.items()}
-        metrics_sample = get_validation_metrics(
+        metrics_sample = get_metrics(
             batch, output_sample, superimposition_metrics=True, is_train=False
         )
         for metric_name, metric_values in metrics_sample.items():
