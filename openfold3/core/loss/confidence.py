@@ -391,7 +391,9 @@ def all_atom_plddt_loss(
     # Construct pair atom selection mask for lddt computation
     # [*, N_atom, N_atom]
     pair_atom_mask = atom_mask_gt[..., None] * atom_mask[..., None, :]
-    pair_mask = pair_mask * pair_atom_mask
+    pair_mask = (
+        pair_mask * pair_atom_mask * (1.0 - torch.eye(n_atom, device=atom_mask.device))
+    )
 
     # Compute lddt
     # [*, N_atom]
