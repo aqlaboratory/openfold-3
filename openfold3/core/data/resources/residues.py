@@ -255,9 +255,10 @@ RESIDUE_SASA_SCALES = {
         "TRP": 285.0,
         "TYR": 263.0,
         "VAL": 174.0,
-    }
+    },
 }
-    
+
+
 def get_mol_residue_index_mappings() -> tuple[dict, dict, dict]:
     """Get mappings from molecule type to residue indices.
 
