@@ -980,6 +980,28 @@ def get_validation_lddt_metrics(
     """Compute lddt metrics for ligand-RNA, ligand-DNA and modified residues.
     These extra metrics are required for model selection metric.
 
+    Args:
+        pred_coords: predicted coordinates [*, n_atom, 3]
+        gt_coords: gt coordinates [*, n_atom, 3]
+        is_ligand_acid_atomized: broadcasted is_ligand feature [*, n_atom]
+        is_rna_atomized: broadcasted is_rna feature [*, n_atom]
+        is_dna_acid_atomized: broadcasted is_dna feature [*, n_atom]
+        is_modified_residue_atomized: broadcasted is_modified_residue feature [*, n_atom]
+        all_atom_mask: atom mask [*, n_atom]
+        asym_id: atomized asym_id feature [*, n_atom]
+        intra_mask_atomized:[*, n_atom] filter for intra chain computations
+        inter_mask_atomized: [*, n_atom, n_atom] pairwise interaction filter
+    Returns:
+        out: dictionary containing validation metrics, if applicable
+            'lddt_inter_ligand_dna': inter ligand dna lddt 
+            'lddt_inter_ligand_rna': inter ligand rna lddt 
+            'lddt_intra_modified_residue': intra modified residue lddt 
+
+    Notes:
+        if there exists no appropriate substrate: returns an empty dict {}
+        function is compatible with multiple samples,
+            not compatible with batch with different number of atoms/substrates 
+    
     """
     metrics = {}
     bs = is_ligand_atomized.shape[:-1]  # (bs, (n_sample),)
@@ -1074,7 +1096,7 @@ def get_validation_lddt_metrics(
             lddt_intra_modified_residues[~torch.isnan(lddt_intra_modified_residues)]
             metrics["lddt_intra_modified_residues"] = lddt_intra_modified_residues
 
-        return metrics
+    return metrics
 
 
 def get_metrics(

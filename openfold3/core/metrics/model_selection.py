@@ -6,14 +6,6 @@ from openfold3.core.metrics.validation_all_atom import (
     get_metrics,
 )
 
-# WIP: model selection should accept the output of
-# get_validation_metrics and compute 3 additional LDDTs
-#   - lddt_inter_ligand_rna
-#   - lddt_inter_ligand_dna
-#   - lddt_intra_modified_residues
-# We may move the lddt computation of the three additional metrics to validation.py
-# in a future PR to ensure that all the masks are computed in the same place.
-
 
 def compute_model_selection_metric(
     batch: dict,
@@ -83,7 +75,7 @@ def compute_model_selection_metric(
     top1_global_PDE = torch.argmax(global_PDE, dim=1)
 
     # -------------------------------------------------------------------------
-    # Get the validation metrics. We assume `metrics` already has shape [bs, n_samples]
+    # Get the validation metrics, looping over each diffusion sample. 
     # -------------------------------------------------------------------------
     metrics = defaultdict(list)
 
@@ -99,8 +91,6 @@ def compute_model_selection_metric(
     for metric_name, metric_values in metrics.items():
         metrics[metric_name] = torch.stack(metric_values, dim=1)
 
-    # For now, we'll create an empty dictionary
-    # metrics = {}
     # Add RASA metrics
     # metrics["RASA"] = compute_rasa_batch(batch, outputs)
     # squeeze the sample dimension
@@ -157,44 +147,6 @@ def compute_model_selection_metric(
     final_metrics["model_selection_metric"] = total_weighted / sum_weights
 
     return final_metrics
-
-
-# def model_selection_metric(
-#     batch: dict,
-#     outputs: dict,
-#     weights: dict,
-# ):
-#     """
-#     Implements Model Selection (Section 5.7.3) LDDT metrics computation
-
-#     Args:
-#             batch: Updated batch dictionary post permutation alignment
-#             output: Output dictionary
-#     Returns:
-#             metrics: Dictionary containing lddts of following keys:
-#                     'lddt_inter_protein_protein': Protein-protein interface LDDT
-#                     'lddt_inter_protein_dna': DNA-protein interface LDDT
-#                     'lddt_inter_protein_rna': Protein-RNA interface LDDT
-#                     'lddt_inter_ligand_dna': DNA-ligand interface LDDT
-#                     'lddt_inter_protein_ligand': Ligand-protein interface LDDT
-#                     'lddt_inter_ligand_rna': Ligand-RNA interface LDDT
-#                     'lddt_intra_protein': Protein intra-chain LDDT
-#                     'lddt_intra_dna': DNA intra-chain LDDT
-#                     'lddt_intra_rna': RNA intra-chain LDDT
-#                     'lddt_intra_ligand': Ligand intra-chain LDDT
-#                     'lddt_intra_modified_residues':Modified residue intra-chain LDDT
-
-#             with [bs, n_samples] shape for all metrics
-
-#     Note:
-#             In the case where no valid atom_type is available, metric dict doesn't
-#             contain the key.
-#     """
-
-
-#     return compute_model_selection_metric(
-#         batch, outputs, metrics, weights
-#     )
 
 
 # probably should be in config
