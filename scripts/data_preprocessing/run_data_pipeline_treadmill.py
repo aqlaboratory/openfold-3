@@ -61,7 +61,7 @@ from lightning_fabric.utilities.rank_zero import (
     rank_zero_only,
 )
 from ml_collections import ConfigDict
-from torch.utils.data import ConcatDataset, DataLoader, get_worker_info
+from torch.utils.data import DataLoader, get_worker_info
 from tqdm import tqdm
 
 from openfold3.core.config import config_utils
@@ -74,6 +74,7 @@ from openfold3.core.data.framework.stochastic_sampler_dataset import (
     StochasticSamplerDataset,
 )
 from openfold3.core.data.primitives.quality_control.logging_datasets import (
+    ConcatDataset,
     init_datasets_with_logging,
 )
 from openfold3.core.data.primitives.quality_control.logging_utils import (
@@ -84,6 +85,7 @@ from openfold3.core.data.primitives.quality_control.worker_config import (
     configure_context_variables,
     configure_extra_data_file,
     configure_worker_init_func_logger,
+    set_worker_init_attributes,
 )
 from openfold3.projects import registry
 
@@ -336,6 +338,7 @@ def main(
     # Wrap each dataset in logging
     datasets = init_datasets_with_logging(
         multi_dataset_config=multi_dataset_config,
+        type_to_init=None,
         run_asserts=run_asserts,
         save_features=save_features,
         save_atom_array=save_atom_array,
@@ -410,8 +413,12 @@ def main(
         )
         worker_logger.info(f"process ID: {os.getpid()}")
 
+        # Propagate the logger to the wrapped datasets
+        set_worker_init_attributes(worker_dataset, ["logger"])
+
+        configured_attributes = []
         # Configure data file
-        configure_extra_data_file(
+        configured_attributes += configure_extra_data_file(
             worker_id,
             worker_dataset,
             save_statistics,
@@ -420,12 +427,17 @@ def main(
         )
 
         # Configure compliance file
-        configure_compliance_log(worker_dataset, log_output_directory)
+        configured_attributes += configure_compliance_log(
+            worker_dataset, log_output_directory
+        )
 
         # Configure context variables
-        configure_context_variables(
+        configured_attributes += configure_context_variables(
             log_runtimes, log_memory, worker_dataset, mem_profiled_func_keys
         )
+
+        # Propagate all other configured attributes to the wrapped datasets
+        set_worker_init_attributes(worker_dataset, configured_attributes)
 
     # Configure DataLoader
     data_loader = DataLoader(

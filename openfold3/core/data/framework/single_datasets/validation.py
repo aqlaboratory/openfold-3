@@ -65,6 +65,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
                 pdb_id=pdb_id,
                 preferred_chain_or_interface=None,
                 return_atom_arrays=False,
+                return_crop_strategy=False,
             )
             features = sample_data["features"]
             features["pdb_id"] = pdb_id
@@ -76,6 +77,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
                     pdb_id=pdb_id,
                     preferred_chain_or_interface=None,
                     return_atom_arrays=False,
+                    return_crop_strategy=False,
                 )
 
                 features = sample_data["features"]
