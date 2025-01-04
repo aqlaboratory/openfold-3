@@ -71,10 +71,12 @@ def lddt(
     score = score / len(threshold)
 
     # normalize to get intra_lddt scores
-    intra_norm = 1.0 / (eps + torch.sum(dists_to_score * intra_mask, dim=(-1, -2)))
-    intra_score = intra_norm * (
-        eps + torch.sum(dists_to_score * intra_mask * score, dim=(-1, -2))
-    )
+    intra_score = torch.full(intra_mask.shape[:-1], torch.nan)
+    if torch.any(intra_mask):
+        intra_norm = 1.0 / (eps + torch.sum(dists_to_score * intra_mask, dim=(-1, -2)))
+        intra_score = intra_norm * (
+            eps + torch.sum(dists_to_score * intra_mask * score, dim=(-1, -2))
+        )
 
     # inter_score only applies when there exist atom pairs with
     # different asym_id (inter_mask) and distance threshold (dists_to_score)
@@ -993,15 +995,15 @@ def get_validation_lddt_metrics(
         inter_mask_atomized: [*, n_atom, n_atom] pairwise interaction filter
     Returns:
         out: dictionary containing validation metrics, if applicable
-            'lddt_inter_ligand_dna': inter ligand dna lddt 
-            'lddt_inter_ligand_rna': inter ligand rna lddt 
-            'lddt_intra_modified_residue': intra modified residue lddt 
+            'lddt_inter_ligand_dna': inter ligand dna lddt
+            'lddt_inter_ligand_rna': inter ligand rna lddt
+            'lddt_intra_modified_residue': intra modified residue lddt
 
     Notes:
         if there exists no appropriate substrate: returns an empty dict {}
         function is compatible with multiple samples,
-            not compatible with batch with different number of atoms/substrates 
-    
+            not compatible with batch with different number of atoms/substrates
+
     """
     metrics = {}
     bs = is_ligand_atomized.shape[:-1]  # (bs, (n_sample),)
@@ -1063,7 +1065,8 @@ def get_validation_lddt_metrics(
             is_modified_residue_atomized.bool()
         ].view((bs) + (-1,))
         is_mr_atomized_pair = (
-            is_modified_residue_atomized[..., None] * is_modified_residue_atomized[..., None, :]
+            is_modified_residue_atomized[..., None]
+            * is_modified_residue_atomized[..., None, :]
         )
 
         n_mr_atoms = torch.sum(is_modified_residue_atomized).to(int).item()
@@ -1134,7 +1137,7 @@ def get_metrics(
 
     gt_coords = batch["ground_truth"]["atom_positions"].float()
     pred_coords = outputs["atom_positions_predicted"].float()
-    all_atom_mask = batch["ref_mask"]
+    all_atom_mask = batch["ground_truth"]["atom_resolved_mask"].bool()
     token_mask = batch["token_mask"]
     num_atoms_per_token = batch["num_atoms_per_token"]
 
@@ -1273,7 +1276,7 @@ def get_metrics(
             all_atom_mask,
         )
         metrics = metrics | superimpose_metrics
-    
+
     if not is_train:
         extra_lddt = get_validation_lddt_metrics(
             pred_coords,
