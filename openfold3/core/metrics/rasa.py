@@ -339,7 +339,9 @@ def compute_rasa_batch(
     N_batch, N_samples = outputs["atom_positions_predicted"].shape[
         :2
     ]  # (N_batch, N_samples, N_atoms, 3)
-    unresolved_rasas = torch.zeros((N_batch, N_samples))
+    unresolved_rasas = torch.zeros(
+        (N_batch, N_samples), device=outputs["atom_positions_predicted"].device
+    )
     for k, atom_arr in enumerate(struct_arrays):
         for sample in range(N_samples):
             atom_positions = outputs["atom_positions_predicted"][

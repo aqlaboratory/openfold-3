@@ -2,6 +2,7 @@ from collections import defaultdict
 
 import torch
 
+from openfold3.core.metrics.rasa import compute_rasa_batch
 from openfold3.core.metrics.validation_all_atom import (
     get_metrics,
 )
@@ -10,7 +11,6 @@ from openfold3.core.metrics.validation_all_atom import (
 def compute_model_selection_metric(
     batch: dict,
     outputs: dict,
-    metrics: dict,
     weights: dict,
 ):
     """
@@ -19,7 +19,6 @@ def compute_model_selection_metric(
     Args:
         batch: Updated batch dictionary post permutation alignment.
         outputs: Output dictionary from the model.
-        metrics: Dictionary containing validation metrics.
         weights: Dict of weights for each metric to compute a weighted average.
 
     Returns:
@@ -37,7 +36,7 @@ def compute_model_selection_metric(
     # -------------------------------------------------------------------------
     # pde_logits shape: [bs, n_samples, n_tokens, n_tokens, 64]
     pde_logits = outputs["pde_logits"].detach()
-    # 64 bins equally spaced from 0 Å to 32 Å in 
+    # 64 bins equally spaced from 0 Å to 32 Å in
     # 0.5 Å increments => centers in [0.25, 31.75]
     bin_centers = torch.linspace(0.25, 31.75, 64, device=device)
 
@@ -75,12 +74,15 @@ def compute_model_selection_metric(
     top1_global_PDE = torch.argmax(global_PDE, dim=1)
 
     # -------------------------------------------------------------------------
-    # Get the validation metrics, looping over each diffusion sample. 
+    # Get the validation metrics, looping over each diffusion sample.
     # -------------------------------------------------------------------------
     metrics = defaultdict(list)
 
     for i in range(N_samples):
-        output_sample = {key: value[:, i, ...] for key, value in outputs.items()}
+        output_sample = {
+            key: value[:, i, ...] for key, value in outputs.items() if key != "recycles"
+        }
+        # output_sample["recycles"] = outputs["recycles"]
         metrics_sample = get_metrics(
             batch, output_sample, superimposition_metrics=True, is_train=False
         )
@@ -92,7 +94,7 @@ def compute_model_selection_metric(
         metrics[metric_name] = torch.stack(metric_values, dim=1)
 
     # Add RASA metrics
-    # metrics["RASA"] = compute_rasa_batch(batch, outputs)
+    metrics["RASA"] = compute_rasa_batch(batch, outputs)
     # squeeze the sample dimension
     for metric_name, metric_values in metrics.items():
         metrics[metric_name] = metric_values.unsqueeze(1)
@@ -138,7 +140,7 @@ def compute_model_selection_metric(
 
     # Sum up the weighted metrics (shape: [bs])
     # and then divide by the sum of weights (scalar).
-    total_weighted = torch.zeros(pde_logits.shape[0], device=device)
+    total_weighted = 0.0
     sum_weights = 0.0
     for metric_name in metrics_to_average:
         total_weighted += final_metrics[metric_name] * weights[metric_name]
