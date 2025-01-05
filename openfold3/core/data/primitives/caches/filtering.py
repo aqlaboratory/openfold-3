@@ -372,7 +372,7 @@ def build_provisional_clustered_val_dataset_cache(
                 cluster_id=None,
                 cluster_size=None,
                 low_homology=None,
-                use_metrics=None,
+                use_metrics=False,
                 ranking_model_fit=None,
             )
 
@@ -386,7 +386,7 @@ def build_provisional_clustered_val_dataset_cache(
                 cluster_size=None,
                 low_homology=None,
                 metric_eligible=None,
-                use_metrics=None,
+                use_metrics=False,
             )
 
     # Create reference molecule data with set_fallback_to_nan=False everywhere (for now)
@@ -1308,9 +1308,10 @@ def get_validation_summary_stats(
     Args:
         structure_data: dict[str, ValClusteredDatasetStructureData]
             The structure data to log statistics for.
-    
+
     Returns:
         A NamedTuple with the following fields:
+
             - n_pdb_ids (int)
             - n_chains (int)
             - n_low_homology_chains (int)
