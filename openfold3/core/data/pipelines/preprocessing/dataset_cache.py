@@ -695,3 +695,6 @@ def create_pdb_val_dataset_cache_af3(
         f"Number of low-homology interfaces: {final_stats.n_low_homology_interfaces}"
     )
     logger.info(f"Number of scored interfaces: {final_stats.n_scored_interfaces}")
+    
+    # Write out final dataset cache
+    write_datacache_to_json(val_dataset_cache, output_path)
