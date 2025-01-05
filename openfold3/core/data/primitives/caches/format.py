@@ -4,8 +4,14 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TypeAlias
+from typing import Literal, TypeAlias
 
+import lmdb
+
+from openfold3.core.data.primitives.caches.lmdb import (
+    LMDBDict,
+    convert_datacache_to_lmdb,
+)
 from openfold3.core.data.resources.residues import MoleculeType
 
 # TODO: Revisit in future if this registry is still needed after template script
@@ -220,7 +226,7 @@ PreprocessingReferenceMoleculeCache: TypeAlias = dict[
 # PDB-weighted, PDB-disordered, and PDB-validation, etc., should follow.
 @dataclass
 class DatasetCache:
-    """Format that every Dataset Cache should have."""
+    """Base class for all dataset cache classes."""
 
     name: str  # for referencing in dataset config
     structure_data: dataclass
@@ -232,29 +238,38 @@ class DatasetCache:
     # TODO: update parsers for this base class
     @classmethod
     def from_json(cls, file: Path) -> DatasetCache:
-        """Costructs a datacache from json."""
+        """Costructs a datacache from a json.
+
+        Args:
+            file (Path):
+                Path to the JSON file to read the datacache from.
+
+        Returns:
+            DatasetCache:
+                The constructed datacache.
+        """
 
         with open(file) as f:
             data = json.load(f)
 
         return cls(
-            name=cls._parse_name(data),
-            structure_data=cls._parse_structure_data(data),
-            reference_molecule_data=cls._parse_ref_mol_data(data),
+            name=cls._parse_name_json(data),
+            structure_data=cls._parse_structure_data_json(data),
+            reference_molecule_data=cls._parse_ref_mol_data_json(data),
         )
 
-    def _parse_type(data: dict) -> None:
+    def _parse_type_json(data: dict) -> None:
         # Remove _type field (already an internal private attribute so shouldn't be
         # defined as an explicit field)
         if "_type" in data:
             # This is conditional for legacy compatibility, should be removed after
             del data["_type"]
 
-    def _parse_name(data: dict) -> str:
+    def _parse_name_json(data: dict) -> str:
         return data["name"]
 
     @classmethod
-    def _parse_structure_data(cls, data: dict) -> dict:
+    def _parse_structure_data_json(cls, data: dict) -> dict:
         # Format structure data
         structure_data = {}
         for pdb_id, per_structure_data in data["structure_data"].items():
@@ -280,7 +295,7 @@ class DatasetCache:
         return structure_data
 
     @classmethod
-    def _parse_ref_mol_data(cls, data: dict) -> dict:
+    def _parse_ref_mol_data_json(cls, data: dict) -> dict:
         # Format reference molecule data into respective format
         ref_mol_data = {}
         for ref_mol_id, per_ref_mol_data in data["reference_molecule_data"].items():
@@ -299,6 +314,150 @@ class DatasetCache:
         from openfold3.core.data.io.dataset_cache import write_datacache_to_json
 
         write_datacache_to_json(self, file)
+
+    @classmethod
+    def from_lmdb(
+        cls,
+        lmdb_direrctory: Path,
+        str_encoding: Literal["utf-8", "pkl"] = "utf-8",
+        structure_data_encoding: Literal["utf-8", "pkl"] = "pkl",
+        reference_molecule_data_encoding: Literal["utf-8", "pkl"] = "pkl",
+    ) -> DatasetCache:
+        """Constructs a datacache from an LMDB.
+
+        LMDB-backed datacaches are used for large datasets that do not fit in memory as
+        they allow for lazy loading of structure_data and reference_molecule_data
+        entries.
+
+        Args:
+            lmdb_directory (Path):
+                The directory containing the LMDB database.
+        str_encoding (Literal["utf-8", "pkl"]):
+            The encoding to use for the cache keys and _type and name values.
+        structure_data_encoding (Literal["utf-8", "pkl"]):
+            The encoding to use for the structure_data values. The 'pkl' encoding saves
+            the dataclasses directly, whereas 'utf-8' encoding requires re-creating the
+            dataclasses.
+        reference_molecule_data_encoding (Literal["utf-8", "pkl"]):
+            The encoding to use for the reference_molecule_data values.The 'pkl'
+            encoding saves the dataclasses directly, whereas 'utf-8' encoding requires
+            re-creating the dataclasses.
+
+        Returns:
+            DatasetCache:
+                The constructed datacache.
+        """
+
+        lmdb_env = lmdb.open(
+            str(lmdb_direrctory), readonly=True, lock=False, subdir=True
+        )
+
+        with lmdb_env.begin() as transaction:
+            _ = cls._parse_type_lmdb(transaction, str_encoding)
+            name = cls._parse_name_lmdb(transaction, str_encoding)
+            structure_data = cls._parse_structure_data_lmdb(
+                lmdb_env, str_encoding, structure_data_encoding
+            )
+            reference_molecule_data = cls._parse_ref_mol_data_lmdb(
+                lmdb_env, str_encoding, reference_molecule_data_encoding
+            )
+
+            return cls(
+                name=name,
+                structure_data=structure_data,
+                reference_molecule_data=reference_molecule_data,
+            )
+
+    def _parse_type_lmdb(
+        transaction: lmdb.Transaction, str_encoding: Literal["utf-8", "pkl"]
+    ) -> str:
+        _type_bytes = transaction.get("_type".encode(str_encoding))
+        if not _type_bytes:
+            raise ValueError("No _type key found in the LMDB.")
+        else:
+            _type = json.loads(_type_bytes.decode(str_encoding))
+
+        return _type
+
+    def _parse_name_lmdb(
+        transaction: lmdb.Transaction, str_encoding: Literal["utf-8", "pkl"]
+    ) -> str:
+        name_bytes = transaction.get("_type".encode(str_encoding))
+        if not name_bytes:
+            raise ValueError("No name key found in the LMDB.")
+        else:
+            name = json.loads(name_bytes.decode(str_encoding))
+
+        return name
+
+    def _parse_structure_data_lmdb(
+        lmdb_env: lmdb.Environment,
+        str_encoding: Literal["utf-8", "pkl"],
+        structure_data_encoding: Literal["utf-8", "pkl"],
+    ) -> LMDBDict:
+        return LMDBDict(
+            lmdb_env=lmdb_env,
+            prefix="structure_data",
+            key_encoding=str_encoding,
+            value_encoding=structure_data_encoding,
+        )
+
+    def _parse_ref_mol_data_lmdb(
+        lmdb_env: lmdb.Environment,
+        str_encoding: Literal["utf-8", "pkl"],
+        reference_molecule_data_encoding: Literal["utf-8", "pkl"],
+    ) -> LMDBDict:
+        return LMDBDict(
+            lmdb_env=lmdb_env,
+            prefix="reference_molecule_data",
+            key_encoding=str_encoding,
+            value_encoding=reference_molecule_data_encoding,
+        )
+
+    def to_lmdb(
+        self,
+        lmdb_directory: Path,
+        map_size: int,
+        mode: Literal["single-read", "iterative"] = "single-read",
+        str_encoding: Literal["utf-8", "pkl"] = "utf-8",
+        structure_data_encoding: Literal["utf-8", "pkl"] = "pkl",
+        reference_molecule_data_encoding: Literal["utf-8", "pkl"] = "pkl",
+    ) -> None:
+        """Creates an LMDB database from the dataset cache.
+
+        Args:
+            json_file (Path | DatasetCache):
+                The datacache JSON file to convert or an existing DatasetCache object.
+            lmdb_directory (Path):
+                The LMDB dir to which the data and lock files are to be written.
+            map_size (int):
+                Size of the json file in bytes, for example  2 * (1024**3) for a 2GB
+                file. Provide a value slightly larger than the actual size of the json
+                file.
+            mode (Literal["single-read", "iterative"]):
+                The mode to use to parse the json file. Can be one of 'single-read' or
+                'iterative'. Use 'single-read' for small files and 'iterative' for large
+                files.
+            str_encoding (Literal["utf-8", "pkl"]):
+                The encoding to use for the cache keys and _type and name values.
+            structure_data_encoding (Literal["utf-8", "pkl"]):
+                The encoding to use for the structure_data values. The 'pkl' encoding
+                saves the dataclasses directly, whereas 'utf-8' encoding requires
+                re-creating the dataclasses.
+            reference_molecule_data_encoding (Literal["utf-8", "pkl"]):
+                The encoding to use for the reference_molecule_data values.The 'pkl'
+                encoding saves the dataclasses directly, whereas 'utf-8' encoding
+                requires re-creating the dataclasses.
+        """
+        convert_datacache_to_lmdb(
+            dataset_cache_file_or_obj=self,
+            lmdb_directory=lmdb_directory,
+            map_size=map_size,
+            mode=mode,
+            str_encoding=str_encoding,
+            structure_data_encoding=structure_data_encoding,
+            reference_molecule_data_encoding=reference_molecule_data_encoding,
+        )
 
     def __init_subclass__(cls, **kwargs):
         """Ensure subclasses are properly initialized."""
@@ -531,7 +690,7 @@ class ProteinMonomerDatasetCache(DatasetCache):
     _structure_data_format = ProteinMonomerStructureData
 
     @classmethod
-    def _parse_structure_data(cls, data: dict) -> dict:
+    def _parse_structure_data_json(cls, data: dict) -> dict:
         # Format structure data
         structure_data = {}
         for pdb_id, per_structure_data in data["structure_data"].items():
