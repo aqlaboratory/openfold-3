@@ -384,18 +384,23 @@ class ClusteredDatasetChainData(PDBChainData):
 
 
 @dataclass
-class ValClusteredDatasetChainData(ClusteredDatasetChainData):
-    """Chain-wise data with cluster and alignment information.
+class ValidationDatasetChainData(ClusteredDatasetChainData):
+    """Chain-wise data with additional validation fields.
 
-    Adds info on homology to train set. If chain is a monomer
-    >40% seq id and if it is a ligand >0.85 tanimoto score.
+    Additional attributes:
+        low_homology (bool):
+            Whether the chain has low-homology with the training data (see AF3 SI 5.8).
+        use_metrics (bool):
+            Whether validation metrics should be calculated for this chain (see AF3 SI
+            5.8).
+        ranking_model_fit (float | None):
+            The ranking model fit of this chain. Only applies to ligand chains.
     """
 
     # Adds the following fields:
-    monomer_high_homology: int
-    ligand_high_homology: int
-    ligand_not_fit: int
-    num_residues_contact: int
+    low_homology: bool
+    use_metrics: bool
+    ranking_model_fit: float | None
 
 
 @dataclass
@@ -416,14 +421,26 @@ class ClusteredDatasetInterfaceData:
 
 
 @dataclass
-class ValClusteredDatasetInterfaceData(ClusteredDatasetInterfaceData):
-    """Interface-wise data with cluster information.
+class ValidationDatasetInterfaceData(ClusteredDatasetInterfaceData):
+    """Interface-wise data with additional validation fields.
 
-    Adds info on if interfaces are homologous to the training data
-    To be true both chains most have homology as defined in SI 5.8.
+    Additional attributes:
+        low_homology (bool):
+            Whether the interface has low-homology with the training data (see AF3 SI
+            5.8).
+        metric_eligible (bool):
+            Whether the interface is eligible for validation metrics (see ligand quality
+            and residue critera in AF3 SI 5.8). (Only used as an intermediate field for
+            the final use_metrics)
+        use_metrics (bool):
+            Whether validation metrics should be calculated for this interface (see AF3
+            SI 5.8).
     """
 
-    interface_high_homology: int
+    # Adds the following fields:
+    low_homology: bool
+    metric_eligible: bool
+    use_metrics: bool
 
 
 # --- Structure data dataclasses ---
@@ -438,14 +455,13 @@ class ClusteredDatasetStructureData:
 
 
 @dataclass
-class ValClusteredDatasetStructureData:
-    """Structure data with cluster and added metadata information."""
+class ValidationDatasetStructureData:
+    """Structure data wrapper for validation set."""
 
     release_date: datetime.date
     resolution: float
-    sampled_cluster: list[str]  # TODO: remove this
-    token_count: int  # TODO: remove this
-    chains: dict[str, ValClusteredDatasetChainData]
+    token_count: int
+    chains: dict[str, ValidationDatasetChainData]
     interfaces: dict[str, ClusteredDatasetInterfaceData]
 
 
@@ -458,34 +474,26 @@ class ProteinMonomerStructureData:
 
 ClusteredDatasetStructureDataCache: TypeAlias = dict[str, ClusteredDatasetStructureData]
 ValClusteredDatasetStructureDataCache: TypeAlias = dict[
-    str, ValClusteredDatasetStructureData
+    str, ValidationDatasetStructureData
 ]
 ProteinMonomerStructureDataCache: TypeAlias = dict[str, ProteinMonomerStructureData]
+
+
+# --- Reference molecule dataclasses ---
+@dataclass
+class ValidationDatasetReferenceMoleculeData(DatasetReferenceMoleculeData):
+    """Reference molecule data for validation set."""
+
+    # Adds the following field:
+    residue_count: int
 
 
 # --- Dataset caches ---
 # TEMPLATE for dataset caches with chain-wise, interface-wise and reference molecule
 # data.
-@dataclass
-class ChainInterfaceReferenceMolCache(DatasetCache):
-    """Specialized dataset cache format template.
-
-    Template for any data cache with chain-wise, interface-wise, and reference molecule
-    data. For example the PDB-weighted set, PDB-disordered set, and PDB-validation set.
-    """
-
-    # This defines the individual constructors for the chain, interface, reference
-    # molecule, and structure data, so that all other datasets can inherit this
-    # from_json method and set their own formats.
-    _chain_data_format: dataclass = None
-    _interface_data_format: dataclass = None
-    _structure_data_format: dataclass = None
-    _ref_mol_data_format: dataclass = DatasetReferenceMoleculeData
-
-
 @register_datacache
 @dataclass
-class ClusteredDatasetCache(ChainInterfaceReferenceMolCache):
+class ClusteredDatasetCache(DatasetCache):
     """Full data cache for clustered dataset.
 
     This is the most information-rich data cache format, with full chain-wise,
@@ -508,78 +516,11 @@ class ClusteredDatasetCache(ChainInterfaceReferenceMolCache):
 
 
 # PDB VALIDATION DATASET FORMAT
-@dataclass
-class ValClusteredDatasetChainData(ClusteredDatasetChainData):
-    """Chain-wise data with additional validation fields.
-
-    Additional attributes:
-        low_homology (bool):
-            Whether the chain has low-homology with the training data (see AF3 SI 5.8).
-        use_metrics (bool):
-            Whether validation metrics should be calculated for this chain (see AF3 SI
-            5.8).
-        ranking_model_fit (float | None):
-            The ranking model fit of this chain. Only applies to ligand chains.
-    """
-
-    # Adds the following fields:
-    low_homology: bool
-    use_metrics: bool
-    ranking_model_fit: float | None
-
-
-@dataclass
-class ValClusteredDatasetInterfaceData(ClusteredDatasetInterfaceData):
-    """Interface-wise data with additional validation fields.
-
-    Additional attributes:
-        low_homology (bool):
-            Whether the interface has low-homology with the training data (see AF3 SI
-            5.8).
-        metric_eligible (bool):
-            Whether the interface is eligible for validation metrics (see ligand quality
-            and residue critera in AF3 SI 5.8).
-        use_metrics (bool):
-            Whether validation metrics should be calculated for this interface (see AF3
-            SI 5.8).
-    """
-
-    # Adds the following fields:
-    low_homology: bool
-    metric_eligible: bool
-    use_metrics: bool
-
-
-@dataclass
-class ValClusteredDatasetStructureData:
-    """Structure data wrapper for validation set."""
-
-    release_date: datetime.date
-    resolution: float
-    token_count: int
-    chains: dict[str, ValClusteredDatasetChainData]
-    interfaces: dict[str, ClusteredDatasetInterfaceData]
-
-
-ValClusteredDatasetStructureDataCache: TypeAlias = dict[
-    str, ValClusteredDatasetStructureData
-]
-"""Structure data cache for validation set."""
-
-
-@dataclass
-class ValClusteredDatasetReferenceMoleculeData(DatasetReferenceMoleculeData):
-    """Reference molecule data for validation set."""
-
-    # Adds the following field:
-    residue_count: int
-
-
 # TODO: Some of these fields are only required for filtering and should not be in the
 # final cache
 @register_datacache
 @dataclass
-class ValClusteredDatasetCache(ChainInterfaceReferenceMolCache):
+class ValidationDatasetCache(DatasetCache):
     """Full data cache for the validation dataset."""
 
     name: str
@@ -587,10 +528,10 @@ class ValClusteredDatasetCache(ChainInterfaceReferenceMolCache):
     reference_molecule_data: DatasetReferenceMoleculeCache
 
     # Defines the constructor formats for the inherited from_json method
-    _chain_data_format = ValClusteredDatasetChainData
-    _interface_data_format = ValClusteredDatasetInterfaceData
-    _ref_mol_data_format = DatasetReferenceMoleculeData
-    _structure_data_format = ValClusteredDatasetStructureData
+    _chain_data_format = ValidationDatasetChainData
+    _interface_data_format = ValidationDatasetInterfaceData
+    _ref_mol_data_format = ValidationDatasetReferenceMoleculeData
+    _structure_data_format = ValidationDatasetStructureData
 
 
 @register_datacache

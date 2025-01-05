@@ -16,7 +16,7 @@ from openfold3.core.data.primitives.caches.filtering import (
 )
 from openfold3.core.data.primitives.caches.format import (
     ClusteredDatasetCache,
-    ValClusteredDatasetCache,
+    ValidationDatasetCache,
 )
 from openfold3.core.data.resources.residues import MoleculeType
 
@@ -308,12 +308,12 @@ def get_polymer_chain_to_homolog_chains(
 
 
 def assign_homology_labels(
-    val_dataset_cache: ValClusteredDatasetCache,
+    val_dataset_cache: ValidationDatasetCache,
     train_dataset_cache: ClusteredDatasetCache,
     id_to_sequence: dict[str, str],
     seq_identity_threshold: float = 0.4,
     tanimoto_threshold: float = 0.85,
-) -> ValClusteredDatasetCache:
+) -> ValidationDatasetCache:
     """Detects if chains/interfaces are low-homology to the training dataset.
 
     Following AF3 SI 5.8, this function labels chains as low homology if there is no

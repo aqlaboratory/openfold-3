@@ -19,14 +19,6 @@ from openfold3.core.data.io.sequence.fasta import (
 from openfold3.core.data.primitives.caches.clustering import (
     add_cluster_data,
 )
-from openfold3.core.data.primitives.caches.format import (
-    DatasetReferenceMoleculeData,
-    PreprocessingDataCache,
-    PreprocessingStructureDataCache,
-    ProteinMonomerChainData,
-    ProteinMonomerDatasetCache,
-    ProteinMonomerStructureData,
-)
 from openfold3.core.data.primitives.caches.filtering import (
     ChainDataPoint,
     InterfaceDataPoint,
@@ -53,9 +45,13 @@ from openfold3.core.data.primitives.caches.filtering import (
 )
 from openfold3.core.data.primitives.caches.format import (
     ClusteredDatasetCache,
+    DatasetReferenceMoleculeData,
     PreprocessingDataCache,
     PreprocessingStructureDataCache,
-    ValClusteredDatasetCache,
+    ProteinMonomerChainData,
+    ProteinMonomerDatasetCache,
+    ProteinMonomerStructureData,
+    ValidationDatasetCache,
 )
 from openfold3.core.data.primitives.caches.homology import assign_homology_labels
 from openfold3.core.data.resources.residues import MoleculeType
@@ -342,7 +338,7 @@ def create_protein_monomer_dataset_cache_af3(
 
 
 def select_multimer_cache(
-    val_dataset_cache: ValClusteredDatasetCache,
+    val_dataset_cache: ValidationDatasetCache,
     id_to_sequence: dict[str, str],
     max_token_count: int = 2048,
     n_protein_protein: int = 600,
@@ -356,7 +352,7 @@ def select_multimer_cache(
     n_dna_rna: int | None = None,
     n_rna_ligand: int | None = None,
     random_seed: int | None = None,
-) -> ValClusteredDatasetCache:
+) -> ValidationDatasetCache:
     """Filters out chains/interfaces following AF3 SI 5.8 Multimer Selection Step 2-4.
 
     Filters the cache to only interfaces passing the metrics inclusion criteria
@@ -449,14 +445,14 @@ def select_multimer_cache(
 
 
 def select_monomer_cache(
-    val_dataset_cache: ValClusteredDatasetCache,
+    val_dataset_cache: ValidationDatasetCache,
     id_to_sequence: dict[str, str],
     max_token_count: int = 2048,
     n_protein: int = 40,
     n_dna: int | None = None,
     n_rna: int | None = None,
     random_seed: int | None = None,
-) -> ValClusteredDatasetCache:
+) -> ValidationDatasetCache:
     """Filters out chains/interfaces following AF3 SI 5.8 Monomer Selection Step 2-4.
 
     Filters the cache down to only low-homology polymeric chains with optional ligands,

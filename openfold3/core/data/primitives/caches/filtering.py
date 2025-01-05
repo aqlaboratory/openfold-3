@@ -29,11 +29,11 @@ from openfold3.core.data.primitives.caches.format import (
     PreprocessingDataCache,
     PreprocessingStructureDataCache,
     StructureDataCache,
-    ValClusteredDatasetCache,
-    ValClusteredDatasetChainData,
-    ValClusteredDatasetInterfaceData,
-    ValClusteredDatasetReferenceMoleculeData,
-    ValClusteredDatasetStructureData,
+    ValidationDatasetCache,
+    ValidationDatasetChainData,
+    ValidationDatasetInterfaceData,
+    ValidationDatasetReferenceMoleculeData,
+    ValidationDatasetStructureData,
 )
 from openfold3.core.data.resources.residues import MoleculeType
 
@@ -327,7 +327,7 @@ def build_provisional_clustered_dataset_cache(
 # logic in general might not be the best way to go about this
 def build_provisional_clustered_val_dataset_cache(
     preprocessing_cache: PreprocessingDataCache, dataset_name: str
-) -> ValClusteredDatasetCache:
+) -> ValidationDatasetCache:
     """Build a preliminary clustered-dataset cache with empty new values.
 
     Reformats the PreprocessingDataCache to the ClusteredDatasetCache format, with empty
@@ -350,7 +350,7 @@ def build_provisional_clustered_val_dataset_cache(
 
     # First create structure data
     for pdb_id, preprocessed_structure_data in prepr_structure_data.items():
-        structure_data[pdb_id] = ValClusteredDatasetStructureData(
+        structure_data[pdb_id] = ValidationDatasetStructureData(
             release_date=preprocessed_structure_data.release_date,
             resolution=preprocessed_structure_data.resolution,
             token_count=preprocessed_structure_data.token_count,
@@ -361,7 +361,7 @@ def build_provisional_clustered_val_dataset_cache(
         # Add all the chain metadata with dummy cluster values
         new_chain_data = structure_data[pdb_id].chains
         for chain_id, chain_data in preprocessed_structure_data.chains.items():
-            new_chain_data[chain_id] = ValClusteredDatasetChainData(
+            new_chain_data[chain_id] = ValidationDatasetChainData(
                 label_asym_id=chain_data.label_asym_id,
                 auth_asym_id=chain_data.auth_asym_id,
                 entity_id=chain_data.entity_id,
@@ -381,7 +381,7 @@ def build_provisional_clustered_val_dataset_cache(
         for interface in preprocessed_structure_data.interfaces:
             chain_1, chain_2 = interface
             interface_id = f"{chain_1}_{chain_2}"
-            new_interface_data[interface_id] = ValClusteredDatasetInterfaceData(
+            new_interface_data[interface_id] = ValidationDatasetInterfaceData(
                 cluster_id=None,
                 cluster_size=None,
                 low_homology=None,
@@ -393,7 +393,7 @@ def build_provisional_clustered_val_dataset_cache(
     prepr_ref_mol_data = preprocessing_cache.reference_molecule_data
 
     for ref_mol_id, ref_mol_data in prepr_ref_mol_data.items():
-        reference_molecule_data[ref_mol_id] = ValClusteredDatasetReferenceMoleculeData(
+        reference_molecule_data[ref_mol_id] = ValidationDatasetReferenceMoleculeData(
             conformer_gen_strategy=ref_mol_data.conformer_gen_strategy,
             fallback_conformer_pdb_id=ref_mol_data.fallback_conformer_pdb_id,
             canonical_smiles=ref_mol_data.canonical_smiles,
@@ -401,7 +401,7 @@ def build_provisional_clustered_val_dataset_cache(
             set_fallback_to_nan=False,
         )
 
-    new_dataset_cache = ValClusteredDatasetCache(
+    new_dataset_cache = ValidationDatasetCache(
         name=dataset_name,
         structure_data=structure_data,
         reference_molecule_data=reference_molecule_data,
@@ -749,7 +749,7 @@ def get_model_ranking_fit(pdb_id):
 
 
 def assign_ligand_model_fits(
-    structure_cache: ValClusteredDatasetCache, num_threads: int = 3
+    structure_cache: ValidationDatasetCache, num_threads: int = 3
 ) -> None:
     """Fetch the model ranking fit values for all ligands in the cache.
 
@@ -768,7 +768,7 @@ def assign_ligand_model_fits(
     """
 
     def fetch_ligand_model_fits(
-        pdb_id: str, structure_data: ValClusteredDatasetStructureData
+        pdb_id: str, structure_data: ValidationDatasetStructureData
     ):
         """Add the ranking_model_fit values for a single PDB entry."""
         ligand_chain_data = [
@@ -1184,9 +1184,9 @@ def subsample_interfaces_by_type(
 
 def check_interface_metric_eligibility(
     interface_id: str,
-    interface_data: ValClusteredDatasetInterfaceData,
-    chain_dict: dict[str, ValClusteredDatasetChainData],
-    reference_mol_dict: ValClusteredDatasetReferenceMoleculeData,
+    interface_data: ValidationDatasetInterfaceData,
+    chain_dict: dict[str, ValidationDatasetChainData],
+    reference_mol_dict: ValidationDatasetReferenceMoleculeData,
     min_ranking_model_fit: float = 0.5,
 ) -> bool:
     """Decides whether an interface is eligible for validation metric inclusion.
@@ -1236,7 +1236,7 @@ def check_interface_metric_eligibility(
 
 
 def assign_interface_metric_eligibility_labels(
-    val_dataset_cache: ValClusteredDatasetCache,
+    val_dataset_cache: ValidationDatasetCache,
     min_ranking_model_fit: float = 0.5,
 ) -> None:
     """Sets the metric_eligible attribute for all interfaces in the cache.
@@ -1301,7 +1301,7 @@ class ValidationSummaryStats(NamedTuple):
 
 
 def get_validation_summary_stats(
-    structure_data: dict[str, ValClusteredDatasetStructureData],
+    structure_data: dict[str, ValidationDatasetStructureData],
 ) -> None:
     """Gets summary statistics for a validation dataset cache.
 
@@ -1345,8 +1345,8 @@ def get_validation_summary_stats(
 
 
 def add_ligand_data_to_monomer_cache(
-    unfiltered_structure_data: ValClusteredDatasetCache,
-    monomer_structure_data: dict[str, ValClusteredDatasetCache],
+    unfiltered_structure_data: ValidationDatasetCache,
+    monomer_structure_data: dict[str, ValidationDatasetCache],
 ) -> None:
     """Expands the validation monomer set with valid ligand chains and interfaces.
 
@@ -1408,9 +1408,9 @@ def add_ligand_data_to_monomer_cache(
 
 
 def select_final_validation_data(
-    unfiltered_cache: ValClusteredDatasetCache,
-    monomer_structure_data: dict[str, ValClusteredDatasetStructureData],
-    multimer_structure_data: dict[str, ValClusteredDatasetStructureData],
+    unfiltered_cache: ValidationDatasetCache,
+    monomer_structure_data: dict[str, ValidationDatasetStructureData],
+    multimer_structure_data: dict[str, ValidationDatasetStructureData],
 ) -> None:
     """Selects the final targets and marks chains/interfaces to score on.
 
