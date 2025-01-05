@@ -1274,7 +1274,7 @@ def assign_interface_metric_eligibility_labels(
 class ValidationSummaryStats(NamedTuple):
     """Summary statistics about chains/interfaces for a validation set cache.
 
-    Args:
+    Attributes:
         n_pdb_ids (int):
             The number of PDB IDs in the cache.
         n_chains (int):
@@ -1305,9 +1305,19 @@ def get_validation_summary_stats(
 ) -> ValidationSummaryStats:
     """Gets summary statistics for a validation dataset cache.
 
-    Parameters:
+    Args:
         structure_data: dict[str, ValClusteredDatasetStructureData]
             The structure data to log statistics for.
+    
+    Returns:
+        A NamedTuple with the following fields:
+            - n_pdb_ids (int)
+            - n_chains (int)
+            - n_low_homology_chains (int)
+            - n_scored_chains (int)
+            - n_interfaces (int)
+            - n_low_homology_interfaces (int)
+            - n_scored_interfaces (int)
     """
     n_pdb_ids = len(structure_data)
 
