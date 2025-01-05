@@ -1302,7 +1302,7 @@ class ValidationSummaryStats(NamedTuple):
 
 def get_validation_summary_stats(
     structure_data: dict[str, ValidationDatasetStructureData],
-) -> None:
+) -> ValidationSummaryStats:
     """Gets summary statistics for a validation dataset cache.
 
     Parameters:
