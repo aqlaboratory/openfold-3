@@ -129,15 +129,33 @@ def create_pdb_training_dataset_cache_af3(
     max_release_date: datetime.date | str,
     max_resolution: float = 9.0,
     max_polymer_chains: int = 300,
-    write_no_alignment_repr_entries: bool = True,
+    missing_alignment_log: Path = None,
 ) -> None:
     """Create a training cache from a metadata cache.
 
     Args:
         metadata_cache_path:
             Path to the preprocessed metadata cache.
+        preprocessed_dir:
+            Preprocessing output directory with preprocessed structure and fasta files.
+        alignment_representatives_fasta:
+            A FASTA file containing the identifier of each alignment as a header and the
+            query sequence as the sequence. Used to map every sequence in the
+            preprocessed directory to a corresponding MSA. Every protein or RNA sequence
+            without an alignment will be filtered out.
         output_path:
-            Path to write the training cache to.
+            Path to write the training dataset cache to.
+        dataset_name:
+            Name of the dataset, e.g. 'PDB-weighted'.
+        max_release_date:
+            Maximum release date for included structures, formatted as 'YYYY-MM-DD'.
+        max_resolution:
+            Maximum resolution for structures in the dataset in Å.
+        max_polymer_chains:
+            Maximum number of polymer chains for included structures.
+        missing_alignment_log:
+            Path to write a JSON file containing all chains that were filtered out
+            because they do not have a corresponding alignment.
     """
     metadata_cache = PreprocessingDataCache.from_json(metadata_cache_path)
 
@@ -170,7 +188,7 @@ def create_pdb_training_dataset_cache_af3(
 
     # Map each target chain to an alignment representative, then filter all structures
     # without alignment representatives
-    if write_no_alignment_repr_entries:
+    if missing_alignment_log:
         structure_data, unmatched_entries = with_log(
             add_and_filter_alignment_representatives
         )(
@@ -182,9 +200,7 @@ def create_pdb_training_dataset_cache_af3(
 
         # Write all chains without alignment representatives to a JSON file. These are
         # excluded from training.
-        with open(
-            output_path.parent / "no_alignment_representative_entries.json", "w"
-        ) as f:
+        with open(missing_alignment_log, "w") as f:
             # Convert the internal dataclasses to dict
             unmatched_entries = {
                 pdb_id: {chain_id: asdict(chain_data)}
@@ -542,6 +558,7 @@ def select_monomer_cache(
     return filtered_cache
 
 
+# TODO: Could expose more arguments?
 def create_pdb_val_dataset_cache_af3(
     train_cache_path: Path,
     metadata_cache_path: Path,
@@ -553,7 +570,7 @@ def create_pdb_val_dataset_cache_af3(
     min_release_date: datetime.date | str = "2021-09-30",
     max_resolution: float = 4.5,
     max_polymer_chains: int = 1000,
-    write_no_alignment_repr_entries: bool = True,
+    missing_alignment_log: Path = None,
     max_tokens_initial: int = 2560,
     max_tokens_final: int = 2048,
     ranking_fit_threshold: float = 0.5,
@@ -595,7 +612,7 @@ def create_pdb_val_dataset_cache_af3(
 
     # Map each target chain to an alignment representative, then filter all structures
     # without alignment representatives
-    if write_no_alignment_repr_entries:
+    if missing_alignment_log:
         structure_data, unmatched_entries = with_log(
             add_and_filter_alignment_representatives
         )(
@@ -607,9 +624,7 @@ def create_pdb_val_dataset_cache_af3(
 
         # Write all chains without alignment representatives to a JSON file. These are
         # excluded from training.
-        with open(
-            output_path.parent / "no_alignment_representative_entries.json", "w"
-        ) as f:
+        with open(missing_alignment_log, "w") as f:
             # Convert the internal dataclasses to dict
             unmatched_entries = {
                 pdb_id: {chain_id: asdict(chain_data)}

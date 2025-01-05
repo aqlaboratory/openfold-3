@@ -84,11 +84,12 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
     help="Random seed for reproducibility.",
 )
 @click.option(
-    "--write-no-alignment-repr-entries",
-    is_flag=True,
+    "--missing_alignment_log",
+    type=click.Path(exists=False, file_okay=True, dir_okay=False, path_type=Path),
+    default=None,
     help=(
-        "Whether to write out entries with no alignment representative explicitly to "
-        "a no_alignment_representative_entries.json."
+        "If this is specified, writes all entries without an alignment representative "
+        "to the specified log file."
     ),
 )
 @click.option(
@@ -115,7 +116,7 @@ def main(
     max_resolution: float = 4.5,
     max_polymer_chains: int = 1000,
     random_seed: int | None = None,
-    write_no_alignment_repr_entries: bool = False,
+    missing_alignment_log: Path | None = None,
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
     log_file: Path | None = None,
 ) -> None:
@@ -149,9 +150,9 @@ def main(
             target.
         random_seed (int | None):
             Random seed for reproducibility.
-        write_no_alignment_repr_entries (bool):
-            Whether to write out entries with no alignment representative explicitly to
-            a no_alignment_representative_entries.json.
+        missing_alignment_log (Path | None):
+            If not None, write all entries with missing alignment representatives to an
+            additional log file.
         log_level (Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL]):
             Set the logging level.
         log_file (Path | None):
@@ -181,7 +182,7 @@ def main(
         max_resolution=max_resolution,
         max_polymer_chains=max_polymer_chains,
         random_seed=random_seed,
-        write_no_alignment_repr_entries=write_no_alignment_repr_entries,
+        missing_alignment_log=missing_alignment_log,
     )
 
 
