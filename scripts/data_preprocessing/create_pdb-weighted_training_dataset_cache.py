@@ -131,7 +131,7 @@ def main(
 
     # Add file handler if log file is specified
     if log_file:
-        file_handler = logging.FileHandler(log_file)
+        file_handler = logging.FileHandler(log_file, mode="w")
         logger.addHandler(file_handler)
 
     create_pdb_training_dataset_cache_af3(
