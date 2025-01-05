@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, TypeAlias
+from typing import Literal, TypeAlias, TypeVar
 
 import lmdb
 
@@ -14,6 +14,8 @@ from openfold3.core.data.primitives.caches.lmdb import (
 )
 from openfold3.core.data.resources.residues import MoleculeType
 
+K = TypeVar("K")
+V = TypeVar("V")
 # TODO: Revisit in future if this registry is still needed after template script
 # refactor
 
@@ -425,6 +427,9 @@ class DatasetCache:
     ) -> None:
         """Creates an LMDB database from the dataset cache.
 
+        Use the convert_datacache_to_lmdb function directly if you want to convert a
+        datacache JSON file to an LMDB database that does not fit into memory.
+
         Args:
             json_file (Path | DatasetCache):
                 The datacache JSON file to convert or an existing DatasetCache object.
@@ -499,7 +504,10 @@ class DatasetReferenceMoleculeData:
 
 # Reference molecule data should be the same for all datasets so we provide it here as a
 # general type.
-DatasetReferenceMoleculeCache: TypeAlias = dict[str, DatasetReferenceMoleculeData]
+DictOrLMDBDict = dict[K, V] | LMDBDict[K, V]
+DatasetReferenceMoleculeCache: TypeAlias = DictOrLMDBDict[
+    str, DatasetReferenceMoleculeData
+]
 
 
 # ==============================================================================
@@ -609,11 +617,15 @@ class ProteinMonomerStructureData:
     chains: dict[str, ProteinMonomerChainData]
 
 
-ClusteredDatasetStructureDataCache: TypeAlias = dict[str, ClusteredDatasetStructureData]
-ValClusteredDatasetStructureDataCache: TypeAlias = dict[
+ClusteredDatasetStructureDataCache: TypeAlias = DictOrLMDBDict[
+    str, ClusteredDatasetStructureData
+]
+ValClusteredDatasetStructureDataCache: TypeAlias = DictOrLMDBDict[
     str, ValClusteredDatasetStructureData
 ]
-ProteinMonomerStructureDataCache: TypeAlias = dict[str, ProteinMonomerStructureData]
+ProteinMonomerStructureDataCache: TypeAlias = DictOrLMDBDict[
+    str, ProteinMonomerStructureData
+]
 
 
 # --- Dataset caches ---

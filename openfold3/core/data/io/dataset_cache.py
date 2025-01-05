@@ -5,7 +5,7 @@ import re
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from openfold3.core.data.primitives.caches.format import (
     DATASET_CACHE_CLASS_REGISTRY,
@@ -99,12 +99,28 @@ def write_datacache_to_json(datacache: DataCache, output_path: Path) -> Path:
         json.dump(datacache_dict, f, indent=4)
 
 
-def read_datacache(datacache_path: Path) -> DataCache:
+def read_datacache(
+    datacache_path: Path,
+    str_encoding: Literal["utf-8", "pkl"] = "utf-8",
+    structure_data_encoding: Literal["utf-8", "pkl"] = "pkl",
+    reference_molecule_data_encoding: Literal["utf-8", "pkl"] = "pkl",
+) -> DataCache:
     """Reads a DataCache dataclass from a JSON file.
 
     Args:
         datacache_path:
-            Path to the JSON file containing the DataCache data.
+            Path to the JSON file or LMDB directory containing the DataCache data.
+        str_encoding (Literal["utf-8", "pkl"]):
+            The encoding to use for the cache keys and _type and name values. Only used
+            for LMDB reading.
+        structure_data_encoding (Literal["utf-8", "pkl"]):
+            The encoding to use for the structure_data values. The 'pkl' encoding saves
+            the dataclasses directly, whereas 'utf-8' encoding requires re-creating the
+            dataclasses. Only used for LMDB reading.
+        reference_molecule_data_encoding (Literal["utf-8", "pkl"]):
+            The encoding to use for the reference_molecule_data values.The 'pkl'
+            encoding saves the dataclasses directly, whereas 'utf-8' encoding requires
+            re-creating the dataclasses. Only used for LMDB reading.
 
     Returns:
         A fully instantiated DataCache of the appropriate type.
@@ -130,4 +146,13 @@ def read_datacache(datacache_path: Path) -> DataCache:
         raise ValueError(f"Unknown dataset cache type: {dataset_cache_type}") from exc
 
     # Read the JSON file and return
-    return dataset_cache_class.from_json(datacache_path)
+    if datacache_path.is_file():
+        dataset_cache = dataset_cache_class.from_json(datacache_path)
+    if datacache_path.is_dir():
+        dataset_cache = dataset_cache_class.from_lmdb(
+            lmdb_direrctory=datacache_path,
+            str_encoding=str_encoding,
+            structure_data_encoding=structure_data_encoding,
+            reference_molecule_data_encoding=reference_molecule_data_encoding,
+        )
+    return dataset_cache

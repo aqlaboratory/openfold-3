@@ -2,7 +2,7 @@ import json
 import pickle as pkl
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal
+from typing import Generic, Literal, TypeVar
 
 import lmdb
 from tqdm import tqdm
@@ -12,6 +12,9 @@ from openfold3.core.data.io.dataset_cache import (
     read_datacache,
 )
 from openfold3.core.data.primitives.caches.format import DatasetCache
+
+K = TypeVar("K")
+V = TypeVar("V")
 
 
 def convert_datacache_to_lmdb(
@@ -108,7 +111,7 @@ def convert_datacache_to_lmdb(
         raise NotImplementedError("Iterative mode is not yet implemented.")
 
 
-class LMDBDict(Mapping):
+class LMDBDict(Mapping[K, V], Generic[K, V]):
     def __init__(
         self,
         lmdb_env: lmdb.Environment,

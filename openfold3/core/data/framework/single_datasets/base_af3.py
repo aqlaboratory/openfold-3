@@ -111,6 +111,9 @@ class BaseAF3Dataset(SingleDataset, ABC):
         ]
 
         # Dataset/datapoint cache
+        # TODO: rename dataset_cache_file to dataset_cache_path to signal that it can be
+        # a directory or a file
+        # TODO: potentially expose the LMDB database encoding types
         self.dataset_cache = read_datacache(
             dataset_config["dataset_paths"]["dataset_cache_file"]
         )
