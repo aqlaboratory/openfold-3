@@ -42,7 +42,7 @@ def get_sequence_to_cluster_id(
             Sequence similarity threshold to cluster at. Defaults to 0.4.
         coverage (float, optional):
             Minimum sequence coverage of query/subject/both (depends on cov_mode).
-            Defaults to 0.9.
+            Defaults to 0.8.
         coverage_mode (int, optional):
             Coverage definition to use (see
             https://github.com/soedinglab/MMseqs2/wiki#how-to-set-the-right-alignment-coverage-to-cluster).
@@ -62,7 +62,9 @@ def get_sequence_to_cluster_id(
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_dir = Path(temp_dir)
 
-        temp_fasta = write_multichain_fasta(temp_dir / "seqs.fa", id_to_sequence)
+        temp_fasta = write_multichain_fasta(
+            temp_dir / "seqs.fa", id_to_sequence, sort=True
+        )
         output_prefix = temp_dir / "clusterRes"
 
         cmd = (
