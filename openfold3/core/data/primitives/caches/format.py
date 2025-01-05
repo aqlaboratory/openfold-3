@@ -4,15 +4,14 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Literal, TypeAlias, TypeVar
 
 import lmdb
 
-from openfold3.core.data.primitives.caches.lmdb import (
-    LMDBDict,
-    convert_datacache_to_lmdb,
-)
 from openfold3.core.data.resources.residues import MoleculeType
+
+if TYPE_CHECKING:
+    from openfold3.core.data.primitives.caches.lmdb import LMDBDict
 
 K = TypeVar("K")
 V = TypeVar("V")
@@ -31,7 +30,7 @@ DATASET_CACHE_CLASS_REGISTRY = {}
 
 
 # TODO: Could make post-init check that this is set
-def register_datacache(cls: type[DataCache]) -> type[DataCache]:
+def register_datacache(cls: DataCacheType) -> DataCacheType:
     """
     Decorator to register a DataCache class in the registry and validate that
     any attribute named like '_xxx_format' is non-None.
@@ -397,6 +396,10 @@ class DatasetCache:
         str_encoding: Literal["utf-8", "pkl"],
         structure_data_encoding: Literal["utf-8", "pkl"],
     ) -> LMDBDict:
+        from openfold3.core.data.primitives.caches.lmdb import (
+            LMDBDict,
+        )
+
         return LMDBDict(
             lmdb_env=lmdb_env,
             prefix="structure_data",
@@ -409,6 +412,10 @@ class DatasetCache:
         str_encoding: Literal["utf-8", "pkl"],
         reference_molecule_data_encoding: Literal["utf-8", "pkl"],
     ) -> LMDBDict:
+        from openfold3.core.data.primitives.caches.lmdb import (
+            LMDBDict,
+        )
+
         return LMDBDict(
             lmdb_env=lmdb_env,
             prefix="reference_molecule_data",
@@ -454,6 +461,10 @@ class DatasetCache:
                 encoding saves the dataclasses directly, whereas 'utf-8' encoding
                 requires re-creating the dataclasses.
         """
+        from openfold3.core.data.primitives.caches.lmdb import (
+            convert_datacache_to_lmdb,
+        )
+
         convert_datacache_to_lmdb(
             dataset_cache_file_or_obj=self,
             lmdb_directory=lmdb_directory,
@@ -504,10 +515,11 @@ class DatasetReferenceMoleculeData:
 
 # Reference molecule data should be the same for all datasets so we provide it here as a
 # general type.
-DictOrLMDBDict = dict[K, V] | LMDBDict[K, V]
-DatasetReferenceMoleculeCache: TypeAlias = DictOrLMDBDict[
-    str, DatasetReferenceMoleculeData
-]
+if TYPE_CHECKING:
+    DictOrLMDBDict: TypeAlias = dict[K, V] | LMDBDict[K, V]
+    DatasetReferenceMoleculeCache: TypeAlias = DictOrLMDBDict[
+        str, DatasetReferenceMoleculeData
+    ]
 
 
 # ==============================================================================
@@ -617,15 +629,16 @@ class ProteinMonomerStructureData:
     chains: dict[str, ProteinMonomerChainData]
 
 
-ClusteredDatasetStructureDataCache: TypeAlias = DictOrLMDBDict[
-    str, ClusteredDatasetStructureData
-]
-ValClusteredDatasetStructureDataCache: TypeAlias = DictOrLMDBDict[
-    str, ValClusteredDatasetStructureData
-]
-ProteinMonomerStructureDataCache: TypeAlias = DictOrLMDBDict[
-    str, ProteinMonomerStructureData
-]
+if TYPE_CHECKING:
+    ClusteredDatasetStructureDataCache: TypeAlias = DictOrLMDBDict[
+        str, ClusteredDatasetStructureData
+    ]
+    ValClusteredDatasetStructureDataCache: TypeAlias = DictOrLMDBDict[
+        str, ValClusteredDatasetStructureData
+    ]
+    ProteinMonomerStructureDataCache: TypeAlias = DictOrLMDBDict[
+        str, ProteinMonomerStructureData
+    ]
 
 
 # --- Dataset caches ---
@@ -722,14 +735,17 @@ class ProteinMonomerDatasetCache(DatasetCache):
 
 
 # Grouped type-aliases for more convenient type-hinting of general-purpose functions
-ChainData = PreprocessingChainData | PDBChainData | ProteinMonomerChainData
-StructureDataCache = (
-    PreprocessingStructureDataCache
-    | ClusteredDatasetStructureDataCache
-    | ValClusteredDatasetStructureDataCache
-    | ProteinMonomerStructureDataCache
-)
-ReferenceMoleculeCache = (
-    PreprocessingReferenceMoleculeCache | DatasetReferenceMoleculeCache
-)
-DataCache = PreprocessingDataCache | DatasetCache
+if TYPE_CHECKING:
+    ChainData: TypeAlias = (
+        PreprocessingChainData | PDBChainData | ProteinMonomerChainData
+    )
+    StructureDataCache: TypeAlias = (
+        PreprocessingStructureDataCache
+        | ClusteredDatasetStructureDataCache
+        | ValClusteredDatasetStructureDataCache
+        | ProteinMonomerStructureDataCache
+    )
+    ReferenceMoleculeCache: TypeAlias = (
+        PreprocessingReferenceMoleculeCache | DatasetReferenceMoleculeCache
+    )
+    DataCacheType: TypeAlias = PreprocessingDataCache | DatasetCache

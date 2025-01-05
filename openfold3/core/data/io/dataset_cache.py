@@ -5,13 +5,15 @@ import re
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from openfold3.core.data.primitives.caches.format import (
     DATASET_CACHE_CLASS_REGISTRY,
-    DataCache,
 )
 from openfold3.core.data.resources.residues import MoleculeType
+
+if TYPE_CHECKING:
+    from openfold3.core.data.primitives.caches.format import DataCacheType
 
 
 def encode_datacache_types(obj: object) -> object:
@@ -67,7 +69,7 @@ def convert_dataclass_to_dict(dataclass: Any) -> dict:
     # Remove private fields
     datacache_dict = {k: v for k, v in datacache_dict.items() if not k.startswith("_")}
 
-    if isinstance(dataclass, DataCache):
+    if isinstance(dataclass, DataCacheType):
         # Add type (which is not a field but an attribute) as the very first(!) key of
         # the dict
         datacache_dict = {"_type": dataclass._type, **datacache_dict}
@@ -77,7 +79,7 @@ def convert_dataclass_to_dict(dataclass: Any) -> dict:
     return datacache_dict
 
 
-def write_datacache_to_json(datacache: DataCache, output_path: Path) -> Path:
+def write_datacache_to_json(datacache: "DataCacheType", output_path: Path) -> Path:
     """Writes a DataCache dataclass to a JSON file.
 
     This ignores any private fields (those starting with an underscore) in the
@@ -104,7 +106,7 @@ def read_datacache(
     str_encoding: Literal["utf-8", "pkl"] = "utf-8",
     structure_data_encoding: Literal["utf-8", "pkl"] = "pkl",
     reference_molecule_data_encoding: Literal["utf-8", "pkl"] = "pkl",
-) -> DataCache:
+) -> "DataCacheType":
     """Reads a DataCache dataclass from a JSON file.
 
     Args:
