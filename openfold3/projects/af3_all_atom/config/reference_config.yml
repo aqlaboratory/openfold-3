@@ -1,5 +1,7 @@
 finetune1:
   model:
+    setting:
+      model_selection_weight_scheme: fine_tuning
     architecture:
       shared:
         diffusion:

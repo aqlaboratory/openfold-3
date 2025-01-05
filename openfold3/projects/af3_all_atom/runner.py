@@ -19,7 +19,10 @@ from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.atomize_utils import get_token_frame_atoms
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.projects.af3_all_atom.config.base_config import project_config
+from openfold3.projects.af3_all_atom.config.base_config import (
+    model_selection_metric_weights_config,
+    project_config,
+)
 from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
     AF3DatasetConfigBuilder,
 )
@@ -47,6 +50,10 @@ class AlphaFold3AllAtom(ModelRunner):
             if _compile
             else AlphaFold3Loss(config=model_config.architecture.loss_module)
         )
+
+        self.model_selection_weights = model_selection_metric_weights_config[
+            self.config.settings.model_selection_weight_scheme
+        ]
 
     def training_step(self, batch, batch_idx):
         example_feat = next(
