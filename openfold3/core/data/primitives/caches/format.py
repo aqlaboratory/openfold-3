@@ -319,7 +319,7 @@ class DatasetCache:
     @classmethod
     def from_lmdb(
         cls,
-        lmdb_direrctory: Path,
+        lmdb_directory: Path,
         str_encoding: Literal["utf-8", "pkl"] = "utf-8",
         structure_data_encoding: Literal["utf-8", "pkl"] = "pkl",
         reference_molecule_data_encoding: Literal["utf-8", "pkl"] = "pkl",
@@ -350,7 +350,7 @@ class DatasetCache:
         """
 
         lmdb_env = lmdb.open(
-            str(lmdb_direrctory), readonly=True, lock=False, subdir=True
+            str(lmdb_directory), readonly=True, lock=False, subdir=True
         )
 
         with lmdb_env.begin() as transaction:
@@ -372,7 +372,7 @@ class DatasetCache:
     def _parse_type_lmdb(
         transaction: lmdb.Transaction, str_encoding: Literal["utf-8", "pkl"]
     ) -> str:
-        _type_bytes = transaction.get("_type".encode(str_encoding))
+        _type_bytes = transaction.get(b"_type")
         if not _type_bytes:
             raise ValueError("No _type key found in the LMDB.")
         else:
@@ -383,7 +383,7 @@ class DatasetCache:
     def _parse_name_lmdb(
         transaction: lmdb.Transaction, str_encoding: Literal["utf-8", "pkl"]
     ) -> str:
-        name_bytes = transaction.get("_type".encode(str_encoding))
+        name_bytes = transaction.get(b"name")
         if not name_bytes:
             raise ValueError("No name key found in the LMDB.")
         else:

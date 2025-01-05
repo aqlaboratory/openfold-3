@@ -55,17 +55,17 @@ def convert_datacache_to_lmdb(
     if mode == "single-read":
         dataset_cache = read_datacache(dataset_cache_file_or_obj)
 
-        lmdb_env = lmdb.open(lmdb_directory, map_size=map_size, subdir=True)
+        lmdb_env = lmdb.open(str(lmdb_directory), map_size=map_size, subdir=True)
 
         with lmdb_env.begin(write=True) as transaction:
             print("1/4: Adding _type to the LMDB.")
             transaction.put(
-                json.dumps("_type").encode(str_encoding),
+                b"_type",
                 json.dumps(dataset_cache._type).encode(str_encoding),
             )
             print("2/4: Adding name to the LMDB.")
             transaction.put(
-                json.dumps("name").encode(str_encoding),
+                b"name",
                 json.dumps(dataset_cache.name).encode(str_encoding),
             )
 
@@ -119,29 +119,53 @@ class LMDBDict(Mapping[K, V], Generic[K, V]):
         key_encoding: Literal["utf-8", "pkl"] = "utf-8",
         value_encoding: Literal["utf-8", "pkl"] = "pkl",
     ):
+        """A dict-like class with an LMDB backend for lazy loading of datacache entries.
+
+        Args:
+            lmdb_env (lmdb.Environment):
+                The LMDB environment object.
+            prefix (str): _description_
+            key_encoding (Literal["utf-8", "pkl"]):
+                Encoding of keys. Defaults to "utf-8".
+            value_encoding (Literal["utf-8", "pkl"]):
+                Encoding of values. Defaults to "pkl".
+
+        Raises:
+            KeyError:
+                If a non-existent key is requested.
+        """
         self._lmdb_env = lmdb_env
         self._prefix = prefix
         self._key_encoding = key_encoding
         self._value_encoding = value_encoding
 
-        with self._lmdb_env.begin() as transaction:
-            top_level_key = f"{prefix}:__keys__".encode(self._encoding)
-            top_level_keys_bytes = transaction.get(top_level_key)
-            if not top_level_keys_bytes:
-                raise KeyError(f"Top-level key {prefix} not found in the LMDB.")
-            else:
-                if self._key_encoding == "pkl":
-                    self._keys = pkl.loads(top_level_keys_bytes)
-                else:
-                    self._keys = json.loads(
-                        top_level_keys_bytes.decode(self._key_encoding)
-                    )
+        with self._lmdb_env.begin() as transaction, transaction.cursor() as cursor:
+            # Collect all keys
+            encoded_prefix = prefix.encode(self._key_encoding)
+            # Assign the number of keys so don't have to store all keys in memory
+            self._n_keys = len(
+                [key for key, _ in cursor if key.startswith(encoded_prefix)]
+            )
 
     def __iter__(self):
-        return iter(self._keys)
+        "Use an iterative method to not have to store all keys in memory."
+        encoded_prefix = self._prefix.encode(self._key_encoding)
+        with self._lmdb_env.begin() as txn, txn.cursor() as cursor:
+            # Seek to the first key >= prefix
+            if cursor.set_range(encoded_prefix):
+                while True:
+                    current_key = cursor.key()
+                    if not current_key.startswith(encoded_prefix):
+                        break
+                    # convert current_key into the user-facing key
+                    # e.g. remove the prefix and decode if needed
+                    user_key = self._decode_key(current_key, encoded_prefix)
+                    yield user_key
+                    if not cursor.next():
+                        break
 
     def __len__(self):
-        return len(self._keys)
+        return self._n_keys
 
     def __getitem__(self, key):
         with self._lmdb_env.begin() as transaction:
