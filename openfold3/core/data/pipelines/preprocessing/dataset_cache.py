@@ -548,7 +548,6 @@ def create_pdb_val_dataset_cache_af3(
     multimer_cache = select_multimer_cache(
         val_dataset_cache=val_dataset_cache,
         id_to_sequence=id_to_sequence,
-        min_ranking_model_fit=ranking_fit_threshold,
         max_token_count=max_tokens_final,
         random_seed=random_seed,
     )
