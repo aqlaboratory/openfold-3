@@ -93,6 +93,36 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
     ),
 )
 @click.option(
+    "--max-tokens-initial",
+    type=int,
+    default=2560,
+    help="Maximum number of tokens for initial filtering.",
+)
+@click.option(
+    "--max-tokens-final",
+    type=int,
+    default=2048,
+    help="Maximum number of tokens for final filtering.",
+)
+@click.option(
+    "--ranking-fit-threshold",
+    type=float,
+    default=0.5,
+    help="Model ranking fit threshold for interface filtering.",
+)
+@click.option(
+    "--seq-identity-threshold",
+    type=float,
+    default=0.4,
+    help="Sequence identity threshold for homology detection.",
+)
+@click.option(
+    "--tanimoto-threshold",
+    type=float,
+    default=0.85,
+    help="Tanimoto similarity threshold for ligand homology detection.",
+)
+@click.option(
     "--log-level",
     type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
     default="WARNING",
@@ -115,8 +145,13 @@ def main(
     min_release_date: str = "2021-10-01",
     max_resolution: float = 4.5,
     max_polymer_chains: int = 1000,
-    random_seed: int | None = None,
     missing_alignment_log: Path | None = None,
+    max_tokens_initial: int = 2560,
+    max_tokens_final: int = 2048,
+    ranking_fit_threshold: float = 0.5,
+    seq_identity_threshold: float = 0.4,
+    tanimoto_threshold: float = 0.85,
+    random_seed: int | None = None,
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
     log_file: Path | None = None,
 ) -> None:
@@ -181,8 +216,13 @@ def main(
         min_release_date=min_release_date,
         max_resolution=max_resolution,
         max_polymer_chains=max_polymer_chains,
-        random_seed=random_seed,
         missing_alignment_log=missing_alignment_log,
+        max_tokens_initial=max_tokens_initial,
+        max_tokens_final=max_tokens_final,
+        ranking_fit_threshold=ranking_fit_threshold,
+        seq_identity_threshold=seq_identity_threshold,
+        tanimoto_threshold=tanimoto_threshold,
+        random_seed=random_seed,
     )
 
 
