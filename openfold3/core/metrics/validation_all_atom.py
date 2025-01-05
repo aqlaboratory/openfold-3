@@ -71,10 +71,12 @@ def lddt(
     score = score / len(threshold)
 
     # normalize to get intra_lddt scores
-    intra_norm = 1.0 / (eps + torch.sum(dists_to_score * intra_mask, dim=(-1, -2)))
-    intra_score = intra_norm * (
-        eps + torch.sum(dists_to_score * intra_mask * score, dim=(-1, -2))
-    )
+    intra_score = torch.full(intra_mask.shape[:-1], torch.nan)
+    if torch.any(intra_mask):
+        intra_norm = 1.0 / (eps + torch.sum(dists_to_score * intra_mask, dim=(-1, -2)))
+        intra_score = intra_norm * (
+            eps + torch.sum(dists_to_score * intra_mask * score, dim=(-1, -2))
+        )
 
     # inter_score only applies when there exist atom pairs with
     # different asym_id (inter_mask) and distance threshold (dists_to_score)
@@ -999,7 +1001,7 @@ def get_validation_metrics(
 
     gt_coords = batch["ground_truth"]["atom_positions"].float()
     pred_coords = outputs["atom_positions_predicted"].float()
-    all_atom_mask = batch["ref_mask"]
+    all_atom_mask = batch["ground_truth"]["atom_mask_resolved"].bool()
     token_mask = batch["token_mask"]
     num_atoms_per_token = batch["num_atoms_per_token"]
 
