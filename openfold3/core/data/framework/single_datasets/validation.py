@@ -37,8 +37,8 @@ def make_chain_pair_mask_padded(
     )
 
     for interface_tuple in interfaces_to_include:
-        chain_mask[int(interface_tuple[0]), int(interface_tuple[1])] = 1
-        chain_mask[int(interface_tuple[1]), int(interface_tuple[0])] = 1
+        chain_mask[interface_tuple[0], interface_tuple[1]] = 1
+        chain_mask[interface_tuple[1], interface_tuple[0]] = 1
 
     return chain_mask
 
@@ -149,7 +149,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
         structure_entry = self.dataset_cache.structure_data[pdb_id]
 
         chains_for_intra_metrics = [
-            cid
+            int(cid)
             for cid, cdata in structure_entry.chains.items()
             if cdata.use_intrachain_metrics
         ]
@@ -157,7 +157,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
         interfaces_to_include = []
         for interface_id, cluster_data in structure_entry.interfaces.items():
             if cluster_data.use_interchain_metrics:
-                interface_chains = tuple(interface_id.split("_"))
+                interface_chains = tuple(int(ci) for ci in interface_id.split("_"))
                 interfaces_to_include.append(interface_chains)
 
         # Create token mask for validation intra and inter metrics
