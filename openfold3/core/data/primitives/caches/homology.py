@@ -5,28 +5,30 @@ from pathlib import Path
 
 import pandas as pd
 from rdkit import Chem
+from rdkit.Chem import rdFingerprintGenerator
+from tqdm import tqdm
 
 from openfold3.core.data.io.sequence.fasta import write_multichain_fasta
-from openfold3.core.data.primitives.caches.format import (
-    ClusteredDatasetCache,
-    ValClusteredDatasetCache,
-)
-from openfold3.core.data.primitives.caches.metadata import (
+from openfold3.core.data.primitives.caches.filtering import (
     get_all_cache_chains,
     get_mol_id_to_smiles,
     logger,
+)
+from openfold3.core.data.primitives.caches.format import (
+    ClusteredDatasetCache,
+    ValClusteredDatasetCache,
 )
 from openfold3.core.data.resources.residues import MoleculeType
 
 
 def precompute_fingerprints(
-    smiles_list: list[str], mfpgen: Chem.rdFingerprintGenerator
+    smiles_list: list[str], mfpgen: rdFingerprintGenerator
 ) -> list[Chem.DataStructs.ExplicitBitVect | None]:
     """Precompute fingerprints for a list of SMILES strings.
 
     Args:
         smiles_list (list[str]): List of SMILES strings.
-        mfpgen (Chem.rdFingerprintGenerator): RDKit fingerprint generator.
+        mfpgen (rdFingerprintGenerator): RDKit fingerprint generator.
 
     Returns:
         list[Chem.DataStructs.ExplicitBitVect | None]:
@@ -69,8 +71,10 @@ def get_mol_id_to_tanimoto_ligands(
             Mapping of ligand reference IDs in the validation set to homologous ligand
             reference IDs in the training set.
     """
+    logger.info("Computing fingerprints.")
+
     # Initialize fingerprint generator once
-    mfpgen = Chem.rdFingerprintGenerator.GetMorganGenerator(radius=3, fpSize=2048)
+    mfpgen = rdFingerprintGenerator.GetMorganGenerator(radius=3, fpSize=2048)
 
     # Extract SMILES and reference IDs from validation dataset
     val_refid_to_smiles = get_mol_id_to_smiles(val_dataset_cache)
@@ -93,11 +97,17 @@ def get_mol_id_to_tanimoto_ligands(
 
     assert len(train_refids) == len(train_fps)
 
+    if None in train_fps:
+        raise ValueError(
+            "Currently doesn't work if some training fingerprints are None."
+        )
+
     # Make map of ligands to high-homology-related ligands
     val_refid_to_homologs = defaultdict(set)
 
     # Iterate over validation set ligands
-    for val_refid, val_fp in val_refid_to_fp.items():
+    logger.info("Computing ligand similarities.")
+    for val_refid, val_fp in tqdm(val_refid_to_fp.items()):
         # If fingerprint is not available, conservatively set homologous ligands
         # to everything
         if val_fp is None:
@@ -128,12 +138,11 @@ def run_mmseqs_search(
     min_sequence_identity: float = 0.4,
     sensitivity: float = 8.0,
     mmseqs_binary: str = "mmseqs",
-    threads: int = 4,
-    split_mem: str = "5G",
+    dbtype: int = 0,
 ) -> dict[str, set[str]]:
     """
-    Perform MMseqs2 search between query and target sequences and return
-    pairs above a certain sequence identity.
+    Perform MMseqs2 search between query and target sequences and return pairs above a
+    certain sequence identity.
 
     Args:
         query_id_to_sequence (Dict[str, str]):
@@ -146,11 +155,9 @@ def run_mmseqs_search(
             Sensitivity of the search.
         mmseqs_binary (str):
             Path to the MMseqs2 binary.
-        threads (int):
-            Number of threads to use.
-        split_mem (str):
-            Limits the system RAM for prefiltering data structures. See MMSeqs
-            --split-memory-limit option for more information.
+        dbtype (int):
+            Database type passed to MMSeqs2. 0 for auto, 1 for amino acids, 2 for
+            nucleotides.
     Returns:
         Dict[str, set[str]]:
             Mapping of query sequence IDs to homologous target sequence IDs.
@@ -169,20 +176,32 @@ def run_mmseqs_search(
         write_multichain_fasta(target_fasta, target_id_to_sequence)
 
         # Create MMseqs2 database for target
-        cmd_make_db = f"{mmseqs_binary} createdb {target_fasta} {db_target}"
+        cmd_make_db = (
+            f"{mmseqs_binary} createdb {target_fasta} {db_target} --dbtype {dbtype}"
+        )
         logger.info("Creating MMseqs2 database for target sequences.")
         sp.run(cmd_make_db, shell=True, check=True)
 
-        cmd_make_db = f"{mmseqs_binary} createdb {query_fasta} {db_query}"
+        cmd_make_db = (
+            f"{mmseqs_binary} createdb {query_fasta} {db_query} --dbtype {dbtype}"
+        )
         logger.info("Creating MMseqs2 database for query sequences.")
         sp.run(cmd_make_db, shell=True, check=True)
+
+        # Decide search setting by dbtype
+        if dbtype == 1:
+            search_type = 1  # amino acid
+        elif dbtype == 2:
+            search_type = 3  # nucleotide
+        else:
+            search_type = 0  # auto
 
         # Run MMseqs2 search with high sensitivity and ensuring that all target
         # sequences can be included in the hits
         cmd_search = (
             f"{mmseqs_binary} search {db_query} {db_target} {db_result} "
-            f"{temp_dir}/tmp -s {sensitivity} --split-memory-limit {split_mem} "
-            f"--threads {threads} --max-seqs {len(target_id_to_sequence)}"
+            f"{temp_dir}/tmp -s {sensitivity} --max-seqs {len(target_id_to_sequence)} "
+            f"--search-type {search_type}"
         )
         logger.info("Running MMseqs2 search.")
         sp.run(cmd_search, shell=True, check=True)
@@ -199,15 +218,19 @@ def run_mmseqs_search(
         sp.run(cmd_convert, shell=True, check=True)
 
         # Parse the search results
-        query_seq_id_to_homologs = defaultdict(set)
         logger.info("Parsing MMseqs2 search results.")
-        df = pd.read_csv(result_tsv, sep="\t", header=None)
-
+        df = pd.read_csv(result_tsv, sep="\t", header=None, usecols=[0, 1, 2])
         assert df[2].min() >= 0.0 and df[2].max() <= 1.0
 
+        logger.info("Filtering templates.")
+        query_seq_id_to_homologs = {}
         high_identity = df[df[2] > min_sequence_identity]
-        for _, row in high_identity.iterrows():
-            query_seq_id_to_homologs[row[0]].add(row[1])
+
+        # Group by column 0 (query ID), then collect sets of column 1 (homolog IDs)
+        grouped = high_identity.groupby(0)[1].apply(set)
+
+        for query_id, homologs in tqdm(grouped.items()):
+            query_seq_id_to_homologs[query_id] = homologs
 
     logger.info(f"Found hits for {len(query_seq_id_to_homologs)} sequences.")
 
@@ -242,8 +265,8 @@ def get_polymer_chain_to_homolog_chains(
             Mapping of validation {pdb_id}_{chain_id} to homologous training
             {pdb_id}_{chain_id}s.
     """
-    val_structure_cache = val_dataset_cache.structure_cache
-    train_structure_cache = train_dataset_cache.structure_cache
+    val_structure_cache = val_dataset_cache.structure_data
+    train_structure_cache = train_dataset_cache.structure_data
 
     # Dictionary keyed on validation {pdb_id}_{chain_id} mapping to the homologous
     # training {pdb_id}_{chain_id}s
@@ -267,14 +290,17 @@ def get_polymer_chain_to_homolog_chains(
 
         if molecule_types == (MoleculeType.PROTEIN,):
             logger.info("Running MMseqs2 search for protein chains.")
+            db_type = 1
         else:
             logger.info("Running MMseqs2 search for nucleotide chains.")
+            db_type = 2
 
         chain_to_homologs.update(
             run_mmseqs_search(
                 query_id_to_sequence=val_id_to_sequence,
                 target_id_to_sequence=train_id_to_sequence,
                 min_sequence_identity=min_sequence_identity,
+                dbtype=db_type,
             )
         )
 
@@ -310,8 +336,8 @@ def assign_homology_labels(
         tanimoto_threshold (float):
             Minimum Tanimoto similarity for a hit to be considered homologous.
     """
-    val_structure_cache = val_dataset_cache.structure_cache
-    train_structure_cache = train_dataset_cache.structure_cache
+    val_structure_cache = val_dataset_cache.structure_data
+    train_structure_cache = train_dataset_cache.structure_data
 
     # PREPARE LIGAND SIMILARITY
     # Get ligands with high Tanimoto similarity
@@ -352,22 +378,25 @@ def assign_homology_labels(
         for val_chain, train_chain_ids in val_chain_to_homologs.items()
     }
 
-    def get_homolog_pdbs(chain_id: str, chain_data):
+    def get_homolog_pdbs(pdb_id: str, chain_id: str, chain_data):
         """Small helper function to retrieve the set of homolog PDBs for a chain."""
+        pdb_chain_id = f"{pdb_id}_{chain_id}"
+
         # Get homologous PDBs for ligand chains
         if chain_data.molecule_type == MoleculeType.LIGAND:
             return val_mol_id_to_homolog_pdbs.get(chain_data.reference_mol_id, set())
         # Get homologous PDBs for polymer chains
         else:
-            return val_chain_to_homolog_pdbs.get(chain_id, set())
+            return val_chain_to_homolog_pdbs.get(pdb_chain_id, set())
 
     # SET HOMOLOGY LABELS
     # Assign homology labels to validation dataset
-    for structure_data in val_structure_cache.values():
+    logger.info("Setting homology labels.")
+    for pdb_id, structure_data in tqdm(val_structure_cache.items()):
         # Start by setting chain-wise homology
         for chain_id, chain_data in structure_data.chains.items():
             # Set homology to low if there is no training PDB with a homologous chain
-            homolog_pdbs = get_homolog_pdbs(chain_id, chain_data)
+            homolog_pdbs = get_homolog_pdbs(pdb_id, chain_id, chain_data)
             chain_data.low_homology = len(homolog_pdbs) == 0
 
         # Continue with interface-wise homology
@@ -376,13 +405,32 @@ def assign_homology_labels(
             chain_data_1 = structure_data.chains[chain_id_1]
             chain_data_2 = structure_data.chains[chain_id_2]
 
-            pdbs_with_homolog_chain_1 = get_homolog_pdbs(chain_id_1, chain_data_1)
-            pdbs_with_homolog_chain_2 = get_homolog_pdbs(chain_id_2, chain_data_2)
+            pdbs_with_homolog_chain_1 = get_homolog_pdbs(
+                pdb_id, chain_id_1, chain_data_1
+            )
+            pdbs_with_homolog_chain_2 = get_homolog_pdbs(
+                pdb_id, chain_id_2, chain_data_2
+            )
 
             # Set to low homology if there is no single PDB-ID containing chains
             # homologous to both interface chains
             interface_data.low_homology = pdbs_with_homolog_chain_1.isdisjoint(
                 pdbs_with_homolog_chain_2
             )
+
+    # TODO: Can be removed at some point
+    n_total_chains = 0
+    n_low_homology_chains = 0
+
+    for structure_data in val_structure_cache.values():
+        n_total_chains += len(structure_data.chains)
+        n_low_homology_chains += sum(
+            chain_data.low_homology for chain_data in structure_data.chains.values()
+        )
+
+    logger.info(
+        f"Marked {n_low_homology_chains} chains as low homology out of "
+        f"{n_total_chains} chains."
+    )
 
     return val_dataset_cache

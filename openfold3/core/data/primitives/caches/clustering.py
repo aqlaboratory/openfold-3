@@ -8,12 +8,12 @@ from typing import Literal
 import pandas as pd
 
 from openfold3.core.data.io.sequence.fasta import write_multichain_fasta
-from openfold3.core.data.primitives.caches.format import (
-    ClusteredDatasetCache,
-)
-from openfold3.core.data.primitives.caches.metadata import (
+from openfold3.core.data.primitives.caches.filtering import (
     get_all_cache_chains,
     logger,
+)
+from openfold3.core.data.primitives.caches.format import (
+    ClusteredDatasetCache,
 )
 from openfold3.core.data.resources.residues import MoleculeType
 
@@ -21,22 +21,19 @@ from openfold3.core.data.resources.residues import MoleculeType
 def get_sequence_to_cluster_id(
     id_to_sequence: dict[str, str],
     min_seq_identity: float = 0.4,
-    coverage: float = 0.9,
-    coverage_mode: str = "0",
+    coverage: float = 0.8,
+    coverage_mode: int = 0,
     sensitivity: float = 8,
     max_seqs: int = 1000,
     cluster_mode: Literal[0, 1, 2, 3] = 0,
     verbosity_level: int = 3,
     mmseq_binary: str = "mmseqs",
-    split_mem: str = "5G",  # TODO: pass these through to high-level arguments
-    threads: int = 4,
 ) -> dict[str, int]:
     """Runs MMseqs2 clustering and returns a mapping of sequence id to cluster id.
 
-    Default settings are mostly derived from what is internally used at RCSB PDB (see
-    https://github.com/soedinglab/MMseqs2/issues/452), although we set the cluster_mode
-    to the greedy set cover default in order to avoid getting too-large clusters, and
-    the default min_seq_identity to 40% which is used in AF3 SI 2.5.3.
+    Default settings are mostly derived from a combination of the MMSeqs defaults and
+    what is used internally at RCSB PDB (see
+    https://github.com/soedinglab/MMseqs2/issues/452).
 
     Args:
         id_to_sequence (dict[str, str]):
@@ -46,10 +43,10 @@ def get_sequence_to_cluster_id(
         coverage (float, optional):
             Minimum sequence coverage of query/subject/both (depends on cov_mode).
             Defaults to 0.9.
-        coverage_mode (str, optional):
+        coverage_mode (int, optional):
             Coverage definition to use (see
             https://github.com/soedinglab/MMseqs2/wiki#how-to-set-the-right-alignment-coverage-to-cluster).
-            Defaults to "0".
+            Defaults to 0.
         sensitivity (float, optional):
             Sensitivity of the clustering algorithm. Defaults to 8.
         max_seqs (int, optional):
@@ -72,7 +69,7 @@ def get_sequence_to_cluster_id(
             f"{mmseq_binary} easy-cluster {temp_fasta} {output_prefix} {temp_dir} "
             f"--min-seq-id {min_seq_identity} -c {coverage} --cov-mode {coverage_mode} "
             f"-s {sensitivity} --max-seqs {max_seqs} --cluster-mode {cluster_mode} "
-            f"-v {verbosity_level} --split-memory-limit {split_mem} --threads {threads}"
+            f"-v {verbosity_level}"
         )
 
         # Run and read required cluster information, then delete tmp_dir
@@ -140,15 +137,17 @@ def add_cluster_data(
     reference_mol_cache = dataset_cache.reference_molecule_data
 
     # Subset sequences to only the ones explicitly in cache for correct clustering
+    all_cache_chains = get_all_cache_chains(structure_cache)
     all_protein_chains = get_all_cache_chains(
         structure_cache, restrict_to_molecule_types=[MoleculeType.PROTEIN]
     )
-    id_to_sequence = {
+    id_to_sequence = {k: v for k, v in id_to_sequence.items() if k in all_cache_chains}
+    id_to_sequence_proteins = {
         k: v for k, v in id_to_sequence.items() if k in all_protein_chains
     }
 
     # Get sequences to cluster IDs with MMSeqs2-based clustering
-    id_to_cluster_id = get_sequence_to_cluster_id(id_to_sequence)
+    id_to_cluster_id = get_sequence_to_cluster_id(id_to_sequence_proteins)
 
     # Make a generator for new cluster IDs
     cluster_id_gen = itertools.count(start=max(id_to_cluster_id.values()) + 1)

@@ -13,8 +13,8 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
 # TODO: Does the disordered dataset also need to be an input to this?
 @click.command()
 @click.option(
-    "--train-cache",
-    "train_cache_path",
+    "--pdb-weighted-cache",
+    "pdb_weighted_cache_path",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     required=True,
     help="Path to the structure train_cache.json created in preprocessing.",
@@ -79,7 +79,7 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
 )
 @click.option(
     "--random-seed",
-    type=int | None,
+    type=int,
     default=None,
     help="Random seed for reproducibility.",
 )
@@ -103,7 +103,7 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
     help="Path to write the log file to.",
     default=None,
 )
-def main(  # TODO: Docstring
+def main(
     pdb_weighted_cache_path: Path,
     metadata_cache_path: Path,
     preprocessed_dir: Path,
@@ -122,7 +122,7 @@ def main(  # TODO: Docstring
     """Create a validation dataset cache using AF3 filtering procedures.
 
     This follows the validation set creation outlined in the AF3 SI Section 5.8.
-    
+
     Args:
         pdb_weighted_cache_path (Path):
             Path to the PDB-weighted training set cache created in preprocessing.

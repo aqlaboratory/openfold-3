@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+from copy import deepcopy
 from dataclasses import asdict
 from functools import partial
 from pathlib import Path
@@ -15,14 +16,12 @@ from openfold3.core.data.io.sequence.fasta import (
 from openfold3.core.data.primitives.caches.clustering import (
     add_cluster_data,
 )
-from openfold3.core.data.primitives.caches.format import (
-    ClusteredDatasetCache,
-    PreprocessingDataCache,
-    PreprocessingStructureDataCache,
-)
-from openfold3.core.data.primitives.caches.homology import assign_homology_labels
-from openfold3.core.data.primitives.caches.metadata import (
+from openfold3.core.data.primitives.caches.filtering import (
+    ChainDataPoint,
+    InterfaceDataPoint,
     add_and_filter_alignment_representatives,
+    add_ligand_data_to_monomer_cache,
+    assign_interface_metric_eligibility_labels,
     assign_ligand_model_fits,
     build_provisional_clustered_dataset_cache,
     build_provisional_clustered_val_dataset_cache,
@@ -31,11 +30,24 @@ from openfold3.core.data.primitives.caches.metadata import (
     filter_by_resolution,
     filter_by_skipped_structures,
     filter_by_token_count,
+    filter_cache_by_specified_interfaces,
+    filter_cache_to_specified_chains,
     func_with_n_filtered_chain_log,
-    select_monomer_cache,
-    select_multimer_cache,
+    get_validation_summary_stats,
+    select_final_validation_data,
     set_nan_fallback_conformer_flag,
+    subsample_chains_by_type,
+    subsample_interfaces_by_type,
+    subsample_interfaces_per_cluster,
 )
+from openfold3.core.data.primitives.caches.format import (
+    ClusteredDatasetCache,
+    PreprocessingDataCache,
+    PreprocessingStructureDataCache,
+    ValClusteredDatasetCache,
+)
+from openfold3.core.data.primitives.caches.homology import assign_homology_labels
+from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +59,7 @@ def filter_structure_metadata_af3(
     min_release_date: datetime.date | str = None,
     max_resolution: float = 9.0,
     max_polymer_chains: int = 300,
-    max_tokens: int = None,
+    max_tokens: int | None = None,
 ) -> PreprocessingStructureDataCache:
     """Filter the structure metadata cache for training or validation.
 
@@ -85,16 +97,12 @@ def filter_structure_metadata_af3(
     # probably set resolution for them to zero
     filtered_cache = with_log(filter_by_resolution)(filtered_cache, max_resolution)
 
-    if min_release_date:
-        filtered_cache = with_log(filter_by_release_date)(
-            filtered_cache,
-            min_release_date=min_release_date,
-            max_release_date=max_release_date,
-        )
-    else:
-        filtered_cache = with_log(filter_by_release_date)(
-            filtered_cache, min_release_date=None, max_release_date=max_release_date
-        )
+    filtered_cache = with_log(filter_by_release_date)(
+        filtered_cache,
+        min_date=min_release_date,
+        max_date=max_release_date,
+    )
+
     filtered_cache = with_log(filter_by_max_polymer_chains)(
         filtered_cache, max_polymer_chains
     )
@@ -215,6 +223,211 @@ def create_pdb_training_dataset_cache_af3(
     logger.info("DONE.")
 
 
+def select_multimer_cache(
+    val_dataset_cache: ValClusteredDatasetCache,
+    id_to_sequence: dict[str, str],
+    max_token_count: int = 2048,
+    n_protein_protein: int = 600,
+    n_protein_dna: int = 100,
+    n_dna_dna: int = 100,
+    n_protein_ligand: int = 600,
+    n_dna_ligand: int = 50,
+    n_ligand_ligand: int = 200,
+    n_protein_rna: int | None = None,
+    n_rna_rna: int | None = None,
+    n_dna_rna: int | None = None,
+    n_rna_ligand: int | None = None,
+    random_seed: int | None = None,
+) -> ValClusteredDatasetCache:
+    """Filters out chains/interfaces following AF3 SI 5.8 Multimer Selection Step 2-4.
+
+    Filters the cache to only interfaces passing the metrics inclusion criteria
+    (low-homology, and good ranking model fit and single-residue for ligands). Then
+    subsamples the remaining interfaces as specified in the SI and only keeps the chains
+    corresponding to those interfaces.
+
+    Args:
+        val_dataset_cache (ValClusteredDatasetCache):
+            The cache to filter.
+        id_to_sequence (dict[str, str]):
+            A dictionary mapping PDB-chain IDs to sequences. Required for clustering.
+        max_token_count (int):
+            The maximum token count for structures to be included in the cache. Default
+            is 2048.
+        n_protein_protein (int):
+            How many interfaces to sample from protein-protein interfaces. Default is
+            600.
+        n_protein_dna (int):
+            How many interfaces to sample from protein-DNA interfaces. Default is 100.
+        n_dna_dna (int):
+            How many interfaces to sample from DNA-DNA interfaces. Default is 100.
+        n_protein_ligand (int):
+            How many interfaces to sample from protein-ligand interfaces. Default is
+            600.
+        n_dna_ligand (int):
+            How many interfaces to sample from DNA-ligand interfaces. Default is 50.
+        n_ligand_ligand (int):
+            How many interfaces to sample from ligand-ligand interfaces. Default is 200.
+        n_protein_rna (int | None):
+            How many interfaces to sample from protein-RNA interfaces. Default is all.
+        n_rna_rna (int | None):
+            How many interfaces to sample from RNA-RNA interfaces. Default is all.
+        n_dna_rna (int | None):
+            How many interfaces to sample from DNA-RNA interfaces. Default is all.
+        n_rna_ligand (int | None):
+            How many interfaces to sample from RNA-ligand interfaces. Default is all.
+        random_seed (int | None):
+            The random seed to use for subsampling. Default is None.
+
+    Returns:
+        A copy of the original cache filtered to only contain the subsampled interfaces
+        created by the filtering steps, as well as their corresponding chains.
+    """
+    logger.info("Selecting multimer set...")
+    filtered_cache = deepcopy(val_dataset_cache)
+
+    keep_interface_datapoints = set()
+
+    for pdb_id, structure_data in val_dataset_cache.structure_data.items():
+        # Mark interfaces and chains to keep
+        for interface_id, interface_data in structure_data.interfaces.items():
+            if interface_data.metric_eligible:
+                keep_interface_datapoints.add(InterfaceDataPoint(pdb_id, interface_id))
+
+    # Remove any chains/interfaces that should not be kept from the cache
+    logger.info("Filtering cache by specified interfaces.")
+    filter_cache_by_specified_interfaces(filtered_cache, keep_interface_datapoints)
+
+    # Assign cluster ids
+    logger.info("Assigning cluster IDs.")
+    add_cluster_data(filtered_cache, id_to_sequence=id_to_sequence, add_sizes=False)
+
+    # Subsample one interface per cluster
+    logger.info("Subsampling interfaces.")
+    subsample_interfaces_per_cluster(filtered_cache, random_seed=random_seed)
+
+    # Subsample interfaces by prespecified counts for certain types
+    subsample_interfaces_by_type(
+        filtered_cache,
+        n_protein_protein=n_protein_protein,
+        n_protein_dna=n_protein_dna,
+        n_dna_dna=n_dna_dna,
+        n_protein_ligand=n_protein_ligand,
+        n_dna_ligand=n_dna_ligand,
+        n_ligand_ligand=n_ligand_ligand,
+        n_protein_rna=n_protein_rna,
+        n_rna_rna=n_rna_rna,
+        n_dna_rna=n_dna_rna,
+        n_rna_ligand=n_rna_ligand,
+        random_seed=random_seed,
+    )
+
+    # Filter by token count
+    filtered_cache.structure_data = filter_by_token_count(
+        filtered_cache.structure_data, max_token_count
+    )
+
+    return filtered_cache
+
+
+def select_monomer_cache(
+    val_dataset_cache: ValClusteredDatasetCache,
+    id_to_sequence: dict[str, str],
+    max_token_count: int = 2048,
+    n_protein: int = 40,
+    n_dna: int | None = None,
+    n_rna: int | None = None,
+    random_seed: int | None = None,
+) -> ValClusteredDatasetCache:
+    """Filters out chains/interfaces following AF3 SI 5.8 Monomer Selection Step 2-4.
+
+    Filters the cache down to only low-homology polymeric chains with optional ligands,
+    and subsamples the remaining chains according to the SI.
+
+    Note that proteins are sampled as unique cluster representatives, which is not
+    directly stated in the SI but seems logical given that chains are preclustered.
+
+    Args:
+        val_dataset_cache (ValClusteredDatasetCache):
+            The cache to filter.
+        id_to_sequence (dict[str, str]):
+            A dictionary mapping PDB-chain IDs to sequences. Required for clustering.
+        max_token_count (int):
+            The maximum token count for structures to be included in the cache. Defaults
+            to 2048.
+        n_protein (int):
+            The number of protein chains to sample. Default is 40.
+        n_dna (int | None):
+            The number of DNA chains to sample. Default is None, which means that all
+            DNA chains will be selected.
+        n_rna (int | None):
+            The number of RNA chains to sample. Default is None, which means that all
+            RNA chains will be selected.
+        random_seed (int | None):
+            The random seed to use for subsampling. Default is None.
+
+    Returns:
+        A copy of the original cache filtered to only contain desired chains selected by
+        the filtering steps. The returned cache's structure_data contains the subsampled
+        monomer chains as well as all low-homology ligand chains and ligand-containing
+        interfaces that pass the metric-eligibility criteria (low-homology, good ranking
+        model fit, and single-residue for ligands).
+    """
+    logger.info("Selecting monomer set...")
+    filtered_cache = deepcopy(val_dataset_cache)
+
+    # Filter to only low-homology polymers
+    keep_chain_datapoints = set()
+
+    for pdb_id, structure_data in val_dataset_cache.structure_data.items():
+        polymer_chains = [
+            chain_id
+            for chain_id, chain_data in structure_data.chains.items()
+            if chain_data.molecule_type
+            in (MoleculeType.PROTEIN, MoleculeType.RNA, MoleculeType.DNA)
+        ]
+
+        if len(polymer_chains) > 1 or len(polymer_chains) == 0:
+            # Skip if there are multiple or no polymeric chains
+            continue
+        else:
+            # Otherwise check if the one polymer chain is low-homology
+            chain_id = polymer_chains[0]
+
+            if structure_data.chains[chain_id].low_homology:
+                keep_chain_datapoints.add(ChainDataPoint(pdb_id, chain_id))
+
+    # Filter the cache to only contain the specified chains
+    logger.info("Filtering cache by specified chains.")
+    filter_cache_to_specified_chains(filtered_cache, keep_chain_datapoints)
+
+    # Assign cluster IDs
+    logger.info("Assigning cluster IDs.")
+    add_cluster_data(filtered_cache, id_to_sequence=id_to_sequence, add_sizes=False)
+
+    # Subsample chains by molecule type
+    logger.info("Subsampling chains.")
+    subsample_chains_by_type(
+        filtered_cache,
+        n_protein=n_protein,
+        n_dna=n_dna,
+        n_rna=n_rna,
+        random_seed=random_seed,
+    )
+
+    # Filter by token count
+    filtered_cache.structure_data = filter_by_token_count(
+        filtered_cache.structure_data, max_tokens=max_token_count
+    )
+
+    # Add back valid ligand chains and interfaces
+    add_ligand_data_to_monomer_cache(
+        val_dataset_cache.structure_data, filtered_cache.structure_data
+    )
+
+    return filtered_cache
+
+
 def create_pdb_val_dataset_cache_af3(
     train_cache_path: Path,
     metadata_cache_path: Path,
@@ -296,15 +509,21 @@ def create_pdb_val_dataset_cache_af3(
             json.dump(unmatched_entries, f, indent=4)
     else:
         structure_data = with_log(add_and_filter_alignment_representatives)(
-            val_dataset_cache.structure_data,
+            structure_cache=val_dataset_cache.structure_data,
             query_chain_to_seq=id_to_sequence,
             alignment_representatives_fasta=alignment_representatives_fasta,
-            preprocessed_dir=preprocessed_dir,
+            return_no_repr=False,
         )
     val_dataset_cache.structure_data = structure_data
 
     # Load the training cache which we need for homology comparisons
     train_dataset_cache = ClusteredDatasetCache.from_json(train_cache_path)
+
+    # TODO: This is a temporary solution, MoleculeType should be parsed as a class
+    # natively
+    for structure_data in train_dataset_cache.structure_data.values():
+        for chain_data in structure_data.chains.values():
+            chain_data.molecule_type = MoleculeType[chain_data.molecule_type]
 
     # Get model_ranking_fit for all ligand chains
     logger.info("Fetching ligand model fit from RCSB PDB.")
@@ -319,24 +538,47 @@ def create_pdb_val_dataset_cache_af3(
         tanimoto_threshold=tanimoto_threshold,
     )
 
+    # Set metric_eligible attributes for all interfaces
+    assign_interface_metric_eligibility_labels(
+        val_dataset_cache=val_dataset_cache,
+        min_ranking_model_fit=ranking_fit_threshold,
+    )
+
     # Build a validation dataset cache corresponding to the multimer set in SI 5.8
     multimer_cache = select_multimer_cache(
         val_dataset_cache=val_dataset_cache,
         id_to_sequence=id_to_sequence,
         min_ranking_model_fit=ranking_fit_threshold,
         max_token_count=max_tokens_final,
-        random_seed=random_seed
+        random_seed=random_seed,
     )
-    multimer_cache = filter_by_token_count(multimer_cache, max_tokens_final)
-    multimer_pdb_ids = set(multimer_cache.structure_data.keys())
 
     # Build a validation dataset cache corresponding to the monomer set in SI 5.8
     monomer_cache = select_monomer_cache(
         val_dataset_cache=val_dataset_cache,
         id_to_sequence=id_to_sequence,
         max_token_count=max_tokens_final,
-        random_seed=random_seed
+        random_seed=random_seed,
     )
-    monomer_pdbs = set(monomer_cache.structure_data.keys())
 
-    # TODO: Write-out cache and finish up
+    # Subset the original cache to only the PDB-IDs in the multimer and monomer sets
+    # and turn metrics on for only select chains and interfaces in those two sets
+    select_final_validation_data(
+        unfiltered_cache=val_dataset_cache,
+        monomer_structure_data=monomer_cache.structure_data,
+        multimer_structure_data=multimer_cache.structure_data,
+    )
+
+    final_stats = get_validation_summary_stats(val_dataset_cache.structure_data)
+
+    logger.info("Final cache statistics:")
+    logger.info("=" * 40)
+    logger.info(f"Number of PDB-IDs: {final_stats.n_pdb_ids}")
+    logger.info(f"Number of chains: {final_stats.n_total_chains}")
+    logger.info(f"Number of low-homology chains: {final_stats.n_low_homology_chains}")
+    logger.info(f"Number of scored chains: {final_stats.n_scored_chains}")
+    logger.info(f"Number of interfaces: {final_stats.n_total_interfaces}")
+    logger.info(
+        f"Number of low-homology interfaces: {final_stats.n_low_homology_interfaces}"
+    )
+    logger.info(f"Number of scored interfaces: {final_stats.n_scored_interfaces}")

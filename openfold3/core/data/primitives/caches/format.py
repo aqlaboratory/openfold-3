@@ -357,7 +357,7 @@ class PDBChainData(DatasetChainData):
     auth_asym_id: str
     entity_id: int
 
-    molecule_type: MoleculeType
+    molecule_type: str  # TODO: This should be parsed as a MoleculeType
     reference_mol_id: str | None  # only set for ligands
     alignment_representative_id: str | None  # not set for ligands and DNA
     template_ids: list[str] | None  # only set for proteins
@@ -423,35 +423,42 @@ class ClusteredDatasetCache(ChainInterfaceReferenceMolCache):
 class ValClusteredDatasetChainData(ClusteredDatasetChainData):
     """Chain-wise data with additional validation fields.
 
-    Attributes:
+    Additional attributes:
         low_homology (bool):
             Whether the chain has low-homology with the training data (see AF3 SI 5.8).
-        use_intrachain_metrics (bool):
+        use_metrics (bool):
             Whether validation metrics should be calculated for this chain (see AF3 SI
             5.8).
+        ranking_model_fit (float | None):
+            The ranking model fit of this chain. Only applies to ligand chains.
     """
 
     # Adds the following fields:
     low_homology: bool
-    use_intrachain_metrics: bool
+    use_metrics: bool
+    ranking_model_fit: float | None
 
 
 @dataclass
 class ValClusteredDatasetInterfaceData(ClusteredDatasetInterfaceData):
     """Interface-wise data with additional validation fields.
 
-    Attributes:
+    Additional attributes:
         low_homology (bool):
             Whether the interface has low-homology with the training data (see AF3 SI
             5.8).
-        use_interchain_metrics (bool):
+        metric_eligible (bool):
+            Whether the interface is eligible for validation metrics (see ligand quality
+            and residue critera in AF3 SI 5.8).
+        use_metrics (bool):
             Whether validation metrics should be calculated for this interface (see AF3
             SI 5.8).
     """
 
     # Adds the following fields:
     low_homology: bool
-    use_interchain_metrics: bool
+    metric_eligible: bool
+    use_metrics: bool
 
 
 @dataclass
@@ -471,6 +478,16 @@ ValClusteredDatasetStructureDataCache: TypeAlias = dict[
 """Structure data cache for validation set."""
 
 
+@dataclass
+class ValClusteredDatasetReferenceMoleculeData(DatasetReferenceMoleculeData):
+    """Reference molecule data for validation set."""
+
+    # Adds the following field:
+    residue_count: int
+
+
+# TODO: Some of these fields are only required for filtering and should not be in the
+# final cache
 @register_datacache
 @dataclass
 class ValClusteredDatasetCache(ChainInterfaceReferenceMolCache):
