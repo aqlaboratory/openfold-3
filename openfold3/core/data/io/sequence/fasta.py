@@ -94,6 +94,7 @@ def consolidate_preprocessed_fastas(preprocessed_dir: Path) -> dict[str, str]:
 def write_multichain_fasta(
     output_path: Path,
     id_to_sequence: dict[str, str],
+    sort: bool = False,
 ) -> Path:
     """Writes a FASTA file from a dictionary of IDs to sequences.
 
@@ -104,12 +105,17 @@ def write_multichain_fasta(
     Args:
         output_path:
             Path to write the FASTA file to.
-        chain_to_sequence:
+        id_to_sequence:
             Dictionary mapping IDs to sequences.
+        sort:
+            Whether to sort by ID before writing. Defaults to False.
 
     Returns:
         Path to the written FASTA file.
     """
+    if sort:
+        id_to_sequence = dict(sorted(id_to_sequence.items()))
+
     with open(output_path, "w") as file:
         file.writelines(f">{id_}\n{seq}\n" for id_, seq in id_to_sequence.items())
 
