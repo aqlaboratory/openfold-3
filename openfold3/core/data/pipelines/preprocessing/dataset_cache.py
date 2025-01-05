@@ -702,10 +702,10 @@ def create_pdb_val_dataset_cache_af3(
     logger.info("Final cache statistics:")
     logger.info("=" * 40)
     logger.info(f"Number of PDB-IDs: {final_stats.n_pdb_ids}")
-    logger.info(f"Number of chains: {final_stats.n_total_chains}")
+    logger.info(f"Number of chains: {final_stats.n_chains}")
     logger.info(f"Number of low-homology chains: {final_stats.n_low_homology_chains}")
     logger.info(f"Number of scored chains: {final_stats.n_scored_chains}")
-    logger.info(f"Number of interfaces: {final_stats.n_total_interfaces}")
+    logger.info(f"Number of interfaces: {final_stats.n_interfaces}")
     logger.info(
         f"Number of low-homology interfaces: {final_stats.n_low_homology_interfaces}"
     )
