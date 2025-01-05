@@ -73,6 +73,7 @@ def convert_datacache_to_lmdb(
         lmdb_env.close()
 
 
+# update with LMDB dict-like class
 # def fetch_lmdb_entry(lmdb_directory: Path, pdb_id) -> None:
 #     lmdb_env = lmdb.open(lmdb_directory, readonly=True, lock=False, subdir=True)
 #     with lmdb_env.begin() as transaction:
