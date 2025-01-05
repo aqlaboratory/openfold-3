@@ -1,11 +1,11 @@
 """This module contains SampleProcessingPipelines for MSA features."""
 
 from pathlib import Path
+from typing import Any
 
 from biotite.structure import AtomArray
 
 from openfold3.core.data.io.sequence.msa import parse_msas_sample
-from openfold3.core.data.primitives.caches.format import DatasetCache
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
@@ -20,9 +20,8 @@ from openfold3.core.data.primitives.sequence.msa import (
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc")
 def process_msas_af3(
-    pdb_id: str,
     atom_array: AtomArray,
-    dataset_cache: DatasetCache,
+    assembly_data: dict[str, dict[str, Any]],
     alignments_directory: Path | None,
     alignment_db_directory: Path | None,
     alignment_index: dict | None,
@@ -48,12 +47,11 @@ def process_msas_af3(
     if there are no protein or RNA chains in the crop.
 
     Args:
-        pdb_id (str):
-            The PDB ID of the target structure.
         atom_array (AtomArray):
             The cropped (training) or full (inference) atom array.
-        dataset_cache (DatasetCache):
-            Dictionary containing the parsed MSA data.
+        assembly_data (dict[str, dict[str, Any]]):
+            Dict containing the alignment representatives and molecule types for each
+            chain.
         alignments_directory (Path | None):
             The path to the directory containing directories containing the alignment
             files per chain. Only used if alignment_db_directory is None.
@@ -93,9 +91,8 @@ def process_msas_af3(
 
     # Parse MSAs, deletion matrices into numpy arrays and metadata into dataframes
     msa_array_collection = parse_msas_sample(
-        pdb_id=pdb_id,
         atom_array=atom_array,
-        dataset_cache=dataset_cache,
+        assembly_data=assembly_data,
         moltypes=moltypes,
         alignments_directory=alignments_directory,
         alignment_db_directory=alignment_db_directory,

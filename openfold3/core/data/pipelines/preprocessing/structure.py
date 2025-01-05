@@ -9,14 +9,17 @@ import multiprocessing as mp
 import traceback
 from functools import wraps
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Literal
 
+import boto3
 import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from rdkit import Chem
 from tqdm import tqdm
 
+from openfold3.core.data.io.s3 import download_file_from_s3
 from openfold3.core.data.io.sequence.fasta import write_multichain_fasta
 from openfold3.core.data.io.structure.cif import (
     SkippedStructure,
@@ -24,8 +27,10 @@ from openfold3.core.data.io.structure.cif import (
     write_structure,
 )
 from openfold3.core.data.io.structure.mol import write_annotated_sdf
+from openfold3.core.data.io.structure.pdb import parse_protein_monomer_pdb_tmp
 from openfold3.core.data.io.utils import encode_numpy_types
 from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
+from openfold3.core.data.primitives.caches.format import ProteinMonomerDatasetCache
 from openfold3.core.data.primitives.structure.cleanup import (
     convert_MSE_to_MET,
     fix_arginine_naming,
@@ -71,6 +76,14 @@ from openfold3.core.data.primitives.structure.unresolved import add_unresolved_a
 
 logger = logging.getLogger(__name__)
 
+_worker_session = None
+
+
+def _init_worker(profile_name: str = "openfold") -> None:
+    """Initialize the boto3 session in each worker."""
+    global _worker_session
+    _worker_session = boto3.Session(profile_name=profile_name)
+
 
 def cleanup_structure_af3(
     atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile
@@ -104,13 +117,13 @@ def cleanup_structure_af3(
 
     ## Structure cleanup
     convert_MSE_to_MET(atom_array)
-    fix_arginine_naming(atom_array)
+    fix_arginine_naming(atom_array)  #
     atom_array = remove_waters(atom_array)
 
     if get_experimental_method(cif_data) == "X-RAY DIFFRACTION":
         atom_array = remove_crystallization_aids(atom_array)
 
-    atom_array = remove_hydrogens(atom_array)
+    atom_array = remove_hydrogens(atom_array)  #
     atom_array = remove_small_polymers(atom_array, cif_data, max_residues=3)
     atom_array = remove_fully_unknown_polymers(atom_array)
     atom_array = remove_clashing_chains(
@@ -133,7 +146,7 @@ def cleanup_structure_af3(
 
     # Remove terminal atoms to ensure consistent atom count for standard tokens in the
     # model
-    atom_array = remove_std_residue_terminal_atoms(atom_array)
+    atom_array = remove_std_residue_terminal_atoms(atom_array)  #
 
     return atom_array
 
@@ -660,3 +673,153 @@ def preprocess_cif_dir_af3(
 
     with open(out_dir / "metadata.json", "w") as f:
         json.dump(output_dict, f, indent=4, default=encode_numpy_types)
+
+
+# TODO: combine local and S3 preparsing
+class _WrapProcessMonomerDistillStructure:
+    def __init__(self, s3_config: dict, output_dir: Path):
+        self.s3_config = s3_config
+        self.output_dir = output_dir
+
+    def __call__(self, pdb_id):
+        try:
+            with NamedTemporaryFile() as temp_file:
+                prefix = self.s3_config["prefix"]
+                prefix = f"{prefix}/{pdb_id}"
+                global _worker_session
+                download_file_from_s3(
+                    bucket=self.s3_config["bucket"],
+                    prefix=prefix,
+                    filename="best_structure_relaxed.pdb",
+                    outfile=temp_file.name,
+                    session=_worker_session,
+                )
+                _, atom_array = parse_protein_monomer_pdb_tmp(temp_file.name)
+                id_outdir = self.output_dir / pdb_id
+                id_outdir.mkdir(parents=True, exist_ok=True)
+                write_structure(atom_array, id_outdir / f"{pdb_id}.pkl")
+        except Exception as e:
+            tb = traceback.format_exc()  # Get the full traceback
+            logger.warning(
+                "-" * 40
+                + "\n"
+                + f"Failed to process {pdb_id}: {str(e)}\n"
+                + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
+                + "-" * 40
+            )
+            return
+
+
+def preprocess_pdb_monomer_distilation(
+    output_dir: Path,
+    dataset_cache: Path,
+    s3_config: dict,
+    num_workers: int = 1,
+):
+    """
+    Args:
+        structure_pred_dir (Path): _description_
+        output_dir (Path): _description_
+        dataset_cache (Path): _description_
+        num_workers (int | None, optional): _description_. Defaults to None.
+    """
+
+    with open(dataset_cache) as f:
+        dataset_cache = json.load(f)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pdb_ids = list(dataset_cache["structure_data"].keys())
+
+    wrapper = _WrapProcessMonomerDistillStructure(s3_config, output_dir)
+    if num_workers > 1:
+        with mp.Pool(
+            num_workers, initializer=_init_worker, initargs=(s3_config["profile"],)
+        ) as p:
+            for _ in tqdm(p.imap_unordered(wrapper, pdb_ids), total=len(pdb_ids)):
+                pass
+    else:
+        for pdb_id in tqdm(pdb_ids):
+            wrapper(pdb_id)
+
+
+# TODO: combine local and S3 monomer preparsing
+def preparse_monomer(
+    entry_id: str,
+    data_directory: Path,
+    structure_filename: str,
+    structure_file_format: str,
+    output_dir: Path,
+):
+    ### to reduce run times only parse if the file does not exist
+    output_file = output_dir / f"{entry_id}/{entry_id}.pkl"
+    if output_file.exists():
+        return
+    _, atom_array = parse_protein_monomer_pdb_tmp(
+        data_directory / entry_id / f"{structure_filename}.{structure_file_format}"
+    )
+    write_structure(atom_array, output_dir / f"{entry_id}/{entry_id}.pkl")
+
+
+class _ProteinMonomerPreprocessingWrapper:
+    def __init__(
+        self,
+        data_directory: Path,
+        structure_filename: str,
+        structure_file_format: str,
+        output_dir: Path,
+    ) -> None:
+        """Wrapper class for pre-parsing protein mononer files into .pkl."""
+        self.data_directory = data_directory
+        self.structure_filename = structure_filename
+        self.structure_file_format = structure_file_format
+        self.output_dir = output_dir
+
+    @wraps(preparse_monomer)
+    def __call__(self, entry_id: str) -> None:
+        try:
+            preparse_monomer(
+                entry_id,
+                self.data_directory,
+                self.structure_filename,
+                self.structure_file_format,
+                self.output_dir,
+            )
+        except Exception as e:
+            print("Failed to preparse monomer " f"{entry_id}:\n{e}\n")
+
+
+def preparse_protein_monomer_structures(
+    dataset_cache: ProteinMonomerDatasetCache,
+    data_directory: Path,
+    structure_filename: str,
+    structure_file_format: str,
+    output_dir: Path,
+    num_workers: int,
+    chunksize: int,
+):
+    # Create per-chain directories
+    entry_ids = list(dataset_cache.structure_data.keys())
+    output_dir = output_dir / "structure_files"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for entry_id in tqdm(
+        entry_ids, total=len(entry_ids), desc="1/2: Creating output directories"
+    ):
+        entry_dir = output_dir / f"{entry_id}"
+        if not entry_dir.exists():
+            entry_dir.mkdir(parents=True, exist_ok=True)
+
+    wrapped_monomer_preparser = _ProteinMonomerPreprocessingWrapper(
+        data_directory, structure_filename, structure_file_format, output_dir
+    )
+
+    with mp.Pool(num_workers) as pool:
+        for _ in tqdm(
+            pool.imap_unordered(
+                wrapped_monomer_preparser,
+                entry_ids,
+                chunksize=chunksize,
+            ),
+            total=len(entry_ids),
+            desc="2/2: Pre-parsing monomer structures",
+        ):
+            pass

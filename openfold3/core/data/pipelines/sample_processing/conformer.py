@@ -249,7 +249,7 @@ def get_reference_conformer_data_af3(
         # Either get the reference molecule ID from the chain metadata (in case of a
         # ligand chain) or use the residue name (in case of a single component of a
         # biopolymer)
-        ref_mol_id = per_chain_metadata[chain_id].reference_mol_id
+        ref_mol_id = getattr(per_chain_metadata[chain_id], "reference_mol_id", None)
         if ref_mol_id is None:
             ref_mol_id = component_array.res_name[0]
 

@@ -5,12 +5,12 @@ import string
 from collections import OrderedDict
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from biotite.structure import AtomArray
 
 from openfold3.core.data.io.sequence.fasta import parse_fasta
-from openfold3.core.data.primitives.caches.format import DatasetCache
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
@@ -312,9 +312,8 @@ def parse_msas_preparsed(
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-parse")
 def parse_msas_sample(
-    pdb_id: str,
     atom_array: AtomArray,
-    dataset_cache: DatasetCache,
+    assembly_data: dict[str, dict[str, Any]],
     moltypes: list[str],
     alignments_directory: Path | None,
     alignment_db_directory: Path | None,
@@ -334,12 +333,11 @@ def parse_msas_sample(
         3. alignments_directory (raw a3m or sto files)
 
     Args:
-        pdb_id (str):
-            The PDB ID of the target structure.
         atom_array (AtomArray):
             The cropped (training) or full (inference) atom array.
-        dataset_cache (DatasetCache):
-            The dataset cache of the dataset class.
+        assembly_data (dict[str, dict[str, Any]]):
+            Dict containing the alignment representatives and molecule types for each
+            chain.
         moltypes (list[str]):
             List of molecule type strings to consider for MSA parsing.
         alignments_directory (Path | None):
@@ -376,11 +374,11 @@ def parse_msas_sample(
     chain_id_to_rep_id = {}
     chain_id_to_mol_type = {}
     for chain_id_in_atom_array in sorted(set(atom_array_with_alignments.chain_id)):
-        chain_data = dataset_cache.structure_data[pdb_id].chains[chain_id_in_atom_array]
-        chain_id_to_rep_id[chain_id_in_atom_array] = (
-            chain_data.alignment_representative_id
-        )
-        chain_id_to_mol_type[chain_id_in_atom_array] = chain_data.molecule_type
+        chain_data = assembly_data[chain_id_in_atom_array]
+        chain_id_to_rep_id[chain_id_in_atom_array] = chain_data[
+            "alignment_representative_id"
+        ]
+        chain_id_to_mol_type[chain_id_in_atom_array] = chain_data["molecule_type"]
 
     # Parse MSAs for each representative ID
     rep_id_to_msa, rep_id_to_query_seq = {}, {}
