@@ -265,12 +265,20 @@ class AlphaFold3(nn.Module):
             Output dictionary containing the predicted trunk embeddings,
             all-atom positions, and confidence/distogram head logits
         """
-        # Compute atom positions
+        # Determine number of rollout steps and samples depending on training/eval mode
         no_rollout_steps = (
             self.shared.diffusion.no_mini_rollout_steps
             if self.training
             else self.shared.diffusion.no_full_rollout_steps
         )
+
+        no_rollout_samples = (
+            self.shared.diffusion.no_mini_rollout_samples
+            if self.training
+            else self.shared.diffusion.no_full_rollout_samples
+        )
+
+        # Compute atom positions
         with torch.no_grad():
             noise_schedule = create_noise_schedule(
                 no_rollout_steps=no_rollout_steps,
@@ -285,6 +293,7 @@ class AlphaFold3(nn.Module):
                 si_trunk=si_trunk,
                 zij_trunk=zij_trunk,
                 noise_schedule=noise_schedule,
+                no_rollout_samples=no_rollout_samples,
                 chunk_size=self.settings.chunk_size,
                 use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
                 use_lma=self.settings.use_lma,
@@ -340,13 +349,6 @@ class AlphaFold3(nn.Module):
                 "atom_positions_diffusion" ([*, N_samples, N_atom, 3]):
                     Predicted atom positions
         """
-        # Expand sampling dimension
-        # Is this ideal?
-        si_input = si_input.unsqueeze(1)
-        si_trunk = si_trunk.unsqueeze(1)
-        zij_trunk = zij_trunk.unsqueeze(1)
-
-        batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
         xl_gt = batch["ground_truth"]["atom_positions"]
         atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
 
@@ -390,12 +392,9 @@ class AlphaFold3(nn.Module):
             "atom_positions_diffusion": xl,
         }
 
-        # Remove sample dimension
-        tensor_tree_map(lambda t: t.squeeze(1), batch)
-
         return output
 
-    def forward(self, batch: dict) -> list[dict, dict]:
+    def forward(self, batch: dict) -> tuple[dict, dict]:
         """
         Args:
             batch:
@@ -554,6 +553,12 @@ class AlphaFold3(nn.Module):
         si_input, si_trunk, zij_trunk = self.run_trunk(
             batch=batch, num_cycles=num_cycles, inplace_safe=inplace_safe
         )
+
+        # Expand sampling dimension for rollout and diffusion
+        si_input = si_input.unsqueeze(1)
+        si_trunk = si_trunk.unsqueeze(1)
+        zij_trunk = zij_trunk.unsqueeze(1)
+        batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
 
         # Mini rollout
         rollout_output = self._rollout(

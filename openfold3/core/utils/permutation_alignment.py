@@ -17,6 +17,7 @@ from openfold3.core.utils.geometry.kabsch_alignment import (
     apply_transformation,
     get_optimal_transformation,
 )
+from openfold3.core.utils.tensor_utils import tensor_tree_map
 
 logger = logging.getLogger(__name__)
 
@@ -1584,9 +1585,23 @@ def safe_multi_chain_permutation_alignment(batch: dict, output: dict) -> None:
     Returns:
         None, the batch dictionary is modified in-place(!)
     """
+    no_samples = output["atom_positions_predicted"].shape[1]
+
+    # TODO: Update later, temporary fix to handle more than one sample
+    #  from the rollout output
+    def format_multisample_batch(t: torch.tensor):
+        """Expands the batch dimension to match the number of samples in the output."""
+        feat_dims = t.shape[2:]
+        t = t.expand(-1, no_samples, *((-1,) * len(feat_dims)))
+        return t.reshape(-1, *feat_dims)
+
+    per_sample_batch = tensor_tree_map(format_multisample_batch, deepcopy(batch))
+
     # Try to run full permutation alignment algorithm
     try:
-        new_gt_features = multi_chain_permutation_alignment(batch=batch, output=output)
+        new_gt_features = multi_chain_permutation_alignment(
+            batch=per_sample_batch, output=output
+        )
     except Exception as e:
         logger.error(
             "Caught error during multi-chain permutation alignment, falling back to "
@@ -1598,7 +1613,7 @@ def safe_multi_chain_permutation_alignment(batch: dict, output: dict) -> None:
         # sanitized properly
         try:
             # In case of failure, try a naive matching procedure
-            new_gt_features = naive_alignment(batch=batch, output=output)
+            new_gt_features = naive_alignment(batch=per_sample_batch, output=output)
         except Exception as e:
             logger.error(f"Caught error during naive alignment: {e}", exc_info=True)
             logger.error("Critical error in permutation alignment, turning off losses.")
