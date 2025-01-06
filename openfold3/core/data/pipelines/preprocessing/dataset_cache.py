@@ -421,6 +421,7 @@ def select_multimer_cache(
     for pdb_id, structure_data in val_dataset_cache.structure_data.items():
         # Mark interfaces and chains to keep
         for interface_id, interface_data in structure_data.interfaces.items():
+            # Check if interface satisfies both low-homology and ligand criteria
             if interface_data.metric_eligible:
                 keep_interface_datapoints.add(InterfaceDataPoint(pdb_id, interface_id))
 

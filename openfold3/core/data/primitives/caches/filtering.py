@@ -616,8 +616,9 @@ def get_mol_id_to_smiles(
     for structure_data in structure_cache.values():
         for chain_data in structure_data.chains.values():
             if chain_data.molecule_type == MoleculeType.LIGAND:
-                smiles = ref_mol_cache[chain_data.reference_mol_id].canonical_smiles
-                mol_id_to_smiles[chain_data.reference_mol_id] = smiles
+                mol_id = chain_data.reference_mol_id
+                smiles = ref_mol_cache[mol_id].canonical_smiles
+                mol_id_to_smiles[mol_id] = smiles
 
     return mol_id_to_smiles
 
@@ -761,7 +762,7 @@ def assign_ligand_model_fits(
             The cache to fetch model fit values for.
         num_threads:
             The number of threads to use for fetching the model fit values. Default is
-            16.
+            3 due to PDB-API rate limits.
 
     Returns:
         None, the structure cache is updated in-place.
@@ -786,6 +787,7 @@ def assign_ligand_model_fits(
         for chain in ligand_chain_data:
             rcsb_id = f"{pdb_id.upper()}.{chain.label_asym_id}"
 
+            # Set to worst possible fit if not found
             chain.ranking_model_fit = ligand_fits.get(rcsb_id, 0.0)
 
     if num_threads == 1:

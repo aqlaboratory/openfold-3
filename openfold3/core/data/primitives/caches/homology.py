@@ -99,7 +99,8 @@ def get_mol_id_to_tanimoto_ligands(
 
     if None in train_fps:
         raise ValueError(
-            "Currently doesn't work if some training fingerprints are None."
+            "Some training-set molecule fingerprints are None. Can't reliably calculate"
+            " training-set homology."
         )
 
     # Make map of ligands to high-homology-related ligands
@@ -417,20 +418,5 @@ def assign_homology_labels(
             interface_data.low_homology = pdbs_with_homolog_chain_1.isdisjoint(
                 pdbs_with_homolog_chain_2
             )
-
-    # TODO: Can be removed at some point
-    n_total_chains = 0
-    n_low_homology_chains = 0
-
-    for structure_data in val_structure_cache.values():
-        n_total_chains += len(structure_data.chains)
-        n_low_homology_chains += sum(
-            chain_data.low_homology for chain_data in structure_data.chains.values()
-        )
-
-    logger.info(
-        f"Marked {n_low_homology_chains} chains as low homology out of "
-        f"{n_total_chains} chains."
-    )
 
     return val_dataset_cache

@@ -62,7 +62,7 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
     "--min-release-date",
     type=str,
     required=True,
-    default="2021-09-30",
+    default="2021-10-01",
     help="Minimum release date for included structures, formatted as 'YYYY-MM-DD'.",
 )
 @click.option(
