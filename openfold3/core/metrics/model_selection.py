@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 
 import torch
@@ -7,12 +8,15 @@ from openfold3.core.metrics.validation_all_atom import (
     get_metrics,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def compute_model_selection_metric(
     batch: dict,
     outputs: dict,
     weights: dict,
-):
+    eps: float = 1e-8,
+) -> dict:
     """
     Implements Model Selection (Section 5.7.3) LDDT metrics computation
 
@@ -20,6 +24,7 @@ def compute_model_selection_metric(
         batch: Updated batch dictionary post permutation alignment.
         outputs: Output dictionary from the model.
         weights: Dict of weights for each metric to compute a weighted average.
+        eps: Small value to avoid division by zero.
 
     Returns:
         metrics: Dictionary containing:
@@ -29,10 +34,9 @@ def compute_model_selection_metric(
               the final weighted model-selection metric.
     """
     device = outputs["pde_logits"].device
-    epsilon = 1e-8
-    N_samples = outputs["pde_logits"].shape[1]
+    n_samples = outputs["pde_logits"].shape[1]
     # -------------------------------------------------------------------------
-    # Compute PDE (predicted distance error)
+    # Compute pde (predicted distance error)
     # -------------------------------------------------------------------------
     # pde_logits shape: [bs, n_samples, n_tokens, n_tokens, 64]
     pde_logits = outputs["pde_logits"].detach()
@@ -40,8 +44,8 @@ def compute_model_selection_metric(
     # 0.5 Å increments => centers in [0.25, 31.75]
     bin_centers = torch.linspace(0.25, 31.75, 64, device=device)
 
-    # PDE shape: [bs, n_samples, n_tokens, n_tokens]
-    PDE = torch.sum(
+    # pde shape: [bs, n_samples, n_tokens, n_tokens]
+    pde = torch.sum(
         pde_logits * bin_centers, dim=-1
     )  # expectation of distance for each pair
 
@@ -59,30 +63,29 @@ def compute_model_selection_metric(
     pij = torch.sum(distogram_logits[..., distogram_bins_8A], dim=-1)
 
     # -------------------------------------------------------------------------
-    # Global PDE: weighted by contact probability pij
+    # Global pde: weighted by contact probability pij
     # -------------------------------------------------------------------------
     # weighted_pde shape: [bs, n_samples]
-    weighted_pde = torch.sum(pij * PDE, dim=[2, 3])
-    sum_pij = torch.sum(pij, dim=[2, 3]) + epsilon  # avoid division by zero
-    # global_PDE shape: [bs, n_samples]
-    global_PDE = weighted_pde / sum_pij
+    weighted_pde = torch.sum(pij * pde, dim=[2, 3])
+    sum_pij = torch.sum(pij, dim=[2, 3]) + eps  # avoid division by zero
+    # global_pde shape: [bs, n_samples]
+    global_pde = weighted_pde / sum_pij
 
     # -------------------------------------------------------------------------
-    # Find the top-1 sample per batch based on global PDE
+    # Find the top-1 sample per batch based on global pde
     # -------------------------------------------------------------------------
-    # top1_global_PDE shape: [bs]
-    top1_global_PDE = torch.argmax(global_PDE, dim=1)
+    # top1_global_pde shape: [bs]
+    top1_global_pde = torch.argmax(global_pde, dim=1)
 
     # -------------------------------------------------------------------------
     # Get the validation metrics, looping over each diffusion sample.
     # -------------------------------------------------------------------------
     metrics = defaultdict(list)
 
-    for i in range(N_samples):
+    for i in range(n_samples):
         output_sample = {
             key: value[:, i, ...] for key, value in outputs.items() if key != "recycles"
         }
-        # output_sample["recycles"] = outputs["recycles"]
         metrics_sample = get_metrics(
             batch, output_sample, superimposition_metrics=True, is_train=False
         )
@@ -92,13 +95,12 @@ def compute_model_selection_metric(
     # Convert the lists to tensors
     for metric_name, metric_values in metrics.items():
         metrics[metric_name] = torch.stack(metric_values, dim=1)
+        # print(metrics[metric_name].shape)
 
     # Add RASA metrics
-    metrics["RASA"] = compute_rasa_batch(batch, outputs)
-    # squeeze the sample dimension
-    for metric_name, metric_values in metrics.items():
-        metrics[metric_name] = metric_values.unsqueeze(1)
-
+    rasa = compute_rasa_batch(batch, outputs)
+    if not torch.isnan(rasa).any():
+        metrics["rasa"] = rasa
     # -------------------------------------------------------------------------
     # Select the top-1 metric values (across the sample dimension) per batch
     # -------------------------------------------------------------------------
@@ -107,7 +109,7 @@ def compute_model_selection_metric(
         # metric_values shape: [bs, n_samples]
         # Index each batch by the top-1 sample
         batch_indices = torch.arange(metric_values.shape[0], device=device)
-        metrics_top_1[metric_name] = metric_values[batch_indices, top1_global_PDE]
+        metrics_top_1[metric_name] = metric_values[batch_indices, top1_global_pde]
 
     # -------------------------------------------------------------------------
     # Compute the best metric value (top) across all samples per batch
@@ -132,10 +134,16 @@ def compute_model_selection_metric(
     # -------------------------------------------------------------------------
     metrics_to_average = set(final_metrics.keys()).intersection(set(weights.keys()))
     if len(metrics_to_average) == 0:
-        # If no overlapping metrics, return empty or raise an error
-        final_metrics["model_selection_metric"] = torch.zeros(
-            pde_logits.shape[0], device=device
+        # If no overlapping metrics, return a tensor of nan and put a warning
+        final_metrics["model_selection_metric"] = torch.full(
+            (outputs["pde_logits"].shape[0],), float("nan"), device=device
         )
+        logging.warning(
+            f"No overlapping metrics between the computed metrics: "
+            f"{final_metrics.keys()} and the weights: {weights.keys()} "
+            f"for pdb_id: {batch['pdb_id']}"
+        )
+
         return final_metrics
 
     # Sum up the weighted metrics (shape: [bs])
