@@ -302,10 +302,7 @@ def create_template_cache_for_query(
 
     # Parse alignment
     try:
-
-        with open_local_or_s3(
-            template_alignment_file, profile=profile, mode="r"
-        ) as f:
+        with open_local_or_s3(template_alignment_file, profile=profile, mode="r") as f:
             hits = parse_hmmsearch_sto(f.read())
     except Exception as e:
         template_process_logger.info(
