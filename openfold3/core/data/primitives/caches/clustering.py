@@ -193,13 +193,12 @@ def add_cluster_data(
                 # TODO: remove this logic after debugging the preprocessing
                 try:
                     smiles = reference_mol_cache[reference_mol_id].canonical_smiles
+                    cluster_id = non_protein_ident_to_cluster_id[smiles]
                 except KeyError:
                     logger.warning(
                         f"No reference molecule found for {reference_mol_id}"
                     )
                     cluster_id = "UNKNOWN"
-
-                cluster_id = non_protein_ident_to_cluster_id[smiles]
             else:
                 raise ValueError(f"Unexpected molecule type: {molecule_type}")
 
