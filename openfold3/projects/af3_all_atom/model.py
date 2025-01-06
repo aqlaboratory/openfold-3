@@ -558,7 +558,13 @@ class AlphaFold3(nn.Module):
         si_input = si_input.unsqueeze(1)
         si_trunk = si_trunk.unsqueeze(1)
         zij_trunk = zij_trunk.unsqueeze(1)
+
+        # Expand sampling dimension for batch features
+        # Exclude ref_space_uid_to_perm feature since this
+        # does not have a proper batch dimension
+        ref_space_uid_to_perm = batch.pop("ref_space_uid_to_perm", None)
         batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
+        batch["ref_space_uid_to_perm"] = ref_space_uid_to_perm
 
         # Mini rollout
         rollout_output = self._rollout(
@@ -576,7 +582,10 @@ class AlphaFold3(nn.Module):
             # coordinates/mask in-place with the correct permutation (and optionally
             # disables losses in case of a critical error)
             with torch.no_grad():
-                safe_multi_chain_permutation_alignment(batch=batch, output=output)
+                safe_multi_chain_permutation_alignment(
+                    batch=batch,
+                    atom_positions_predicted=output["atom_positions_predicted"],
+                )
 
         if self.training:  # noqa: SIM102
             # Run training step (if necessary)

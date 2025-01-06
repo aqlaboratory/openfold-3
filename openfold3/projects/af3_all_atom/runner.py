@@ -266,16 +266,17 @@ class AlphaFold3AllAtom(ModelRunner):
         for metric_name, metric_obj in metrics.items():
             # Only log metrics that have been updated
             if self.metric_enabled.get(metric_name):
-                # Sync and reduce metric across ranks
-                output = metric_obj.compute()
-                self.log(
-                    metric_name,
-                    output,
-                    on_step=False,
-                    on_epoch=True,
-                    logger=True,
-                    sync_dist=False,  # Already synced in compute()
-                )
+                if not self.trainer.sanity_checking:
+                    # Sync and reduce metric across ranks
+                    output = metric_obj.compute()
+                    self.log(
+                        metric_name,
+                        output,
+                        on_step=False,
+                        on_epoch=True,
+                        logger=True,
+                        sync_dist=False,  # Already synced in compute()
+                    )
 
                 # Reset metric for next epoch
                 metric_obj.reset()

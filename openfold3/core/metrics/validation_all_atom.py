@@ -687,9 +687,9 @@ def get_validation_metrics(
 
     gt_coords = batch["ground_truth"]["atom_positions"]
     pred_coords = outputs["atom_positions_predicted"]
-    all_atom_mask = batch["ground_truth"]["atom_resolved_mask"].bool()
     token_mask = batch["token_mask"]
     num_atoms_per_token = batch["num_atoms_per_token"]
+    no_samples = pred_coords.shape[1]
 
     # getting rid of modified residues
     is_protein = batch["is_protein"]
@@ -700,21 +700,34 @@ def get_validation_metrics(
     is_rna = is_rna * not_modified_res
     is_dna = is_dna * not_modified_res
 
+    # TODO: Update in metrics PR, temporary fix to handle more than one sample
+    #  from the rollout output
+    def expand_sample_dim(t: torch.tensor) -> torch.tensor:
+        feat_dims = t.shape[2:]
+        t = t.expand(-1, no_samples, *((-1,) * len(feat_dims)))
+        return t
+
+    all_atom_mask = expand_sample_dim(
+        batch["ground_truth"]["atom_resolved_mask"].bool()
+    )
+
     # broadcast token level features to atom level features
-    is_protein_atomized = broadcast_token_feat_to_atoms(
-        token_mask, num_atoms_per_token, is_protein
+    is_protein_atomized = expand_sample_dim(
+        broadcast_token_feat_to_atoms(token_mask, num_atoms_per_token, is_protein)
     )
-    is_ligand_atomized = broadcast_token_feat_to_atoms(
-        token_mask, num_atoms_per_token, batch["is_ligand"]
+    is_ligand_atomized = expand_sample_dim(
+        broadcast_token_feat_to_atoms(
+            token_mask, num_atoms_per_token, batch["is_ligand"]
+        )
     )
-    is_rna_atomized = broadcast_token_feat_to_atoms(
-        token_mask, num_atoms_per_token, is_rna
+    is_rna_atomized = expand_sample_dim(
+        broadcast_token_feat_to_atoms(token_mask, num_atoms_per_token, is_rna)
     )
-    is_dna_atomized = broadcast_token_feat_to_atoms(
-        token_mask, num_atoms_per_token, is_dna
+    is_dna_atomized = expand_sample_dim(
+        broadcast_token_feat_to_atoms(token_mask, num_atoms_per_token, is_dna)
     )
-    asym_id_atomized = broadcast_token_feat_to_atoms(
-        token_mask, num_atoms_per_token, batch["asym_id"]
+    asym_id_atomized = expand_sample_dim(
+        broadcast_token_feat_to_atoms(token_mask, num_atoms_per_token, batch["asym_id"])
     )
 
     protein_validation_metrics = get_protein_metrics(
