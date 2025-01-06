@@ -55,7 +55,7 @@ model_selection_metric_weights_config = mlc.FrozenConfigDict(
             "lddt_inter_protein_ligand": 10.0,
             "lddt_inter_protein_dna": 10.0,
             "lddt_inter_protein_rna": 10.0,
-            "RASA": 10.0,
+            "rasa": 10.0,
         },
         "fine_tuning": {
             "lddt_inter_ligand_rna": 2.0,
@@ -68,7 +68,7 @@ model_selection_metric_weights_config = mlc.FrozenConfigDict(
             "lddt_inter_protein_ligand": 10.0,
             "lddt_inter_protein_dna": 10.0,
             "lddt_inter_protein_rna": 2.0,
-            "RASA": 10.0,
+            "rasa": 10.0,
         },
     }
 )
