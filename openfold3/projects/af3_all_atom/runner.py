@@ -95,9 +95,7 @@ class AlphaFold3AllAtom(ModelRunner):
             metric_value:
                 Value of the metric to update
         """
-        metrics = self.train_metrics if phase == "train" else self.val_metrics
-
-        if metric_log_name not in metrics:
+        if metric_log_name not in self.metric_enabled:
             raise ValueError(
                 f"Metric {metric_log_name} is not being tracked and will "
                 f"not appear in epoch metrics. Please add it to "
@@ -107,6 +105,7 @@ class AlphaFold3AllAtom(ModelRunner):
         if not self.metric_enabled[metric_log_name]:
             self.metric_enabled[metric_log_name] = True
 
+        metrics = self.train_metrics if phase == "train" else self.val_metrics
         metric_obj = metrics[metric_log_name]
         metric_obj.update(metric_value)
 
