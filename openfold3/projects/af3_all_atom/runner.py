@@ -111,7 +111,8 @@ class AlphaFold3AllAtom(ModelRunner):
             )
 
             # Only log steps for training
-            if train:
+            # Ignore nan losses, where the loss was not applicable for the sample
+            if train and not torch.isnan(indiv_loss):
                 self.log(
                     metric_name,
                     indiv_loss,
@@ -137,6 +138,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
             # TODO: Maybe remove this extra logging
             # Only log steps for training
+            # Ignore nan metric, where the metric was not applicable for the sample
             if train and not torch.isnan(mean_metric):
                 self.log(
                     f"{metric_name}_step",

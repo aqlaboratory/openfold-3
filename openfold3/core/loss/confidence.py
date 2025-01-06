@@ -718,7 +718,11 @@ def confidence_loss(
     conf_loss = sum(
         [
             loss_masked_batch_mean(
-                loss=loss, weight=loss_weights[name], apply_weight=True, eps=eps
+                loss=loss,
+                weight=loss_weights[name],
+                apply_weight=True,
+                nan_zero_weights=False,
+                eps=eps,
             )
             for name, loss in loss_breakdown.items()
         ]
@@ -730,6 +734,7 @@ def confidence_loss(
             loss=loss.detach().clone(),
             weight=loss_weights[name],
             apply_weight=False,
+            nan_zero_weights=True,
             eps=eps,
         )
         for name, loss in loss_breakdown.items()
