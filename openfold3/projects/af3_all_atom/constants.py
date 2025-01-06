@@ -3,21 +3,36 @@ Constants specific to AF3 project. This currently only contains losses and
 metrics for logging.
 """
 
-LOSSES = [
-    # Diffusion losses
-    "mse_loss",
-    "smooth_lddt_loss",
-    "bond_loss",
-    "diffusion_loss",
-    # Confidence losses
+CONFIDENCE_LOSSES = [
     "plddt_loss",
     "pde_loss",
     "experimentally_resolved_loss",
     "confidence_loss",
-    # Distogram losses
+]
+
+DIFFUSION_LOSSES = [
+    "mse_loss",
+    "smooth_lddt_loss",
+    "bond_loss",
+    "diffusion_loss",
+]
+
+DISTOGRAM_LOSSES = [
     "distogram_loss",
     "scaled_distogram_loss",
-    # Total
+]
+
+
+TRAIN_LOSSES = [
+    *CONFIDENCE_LOSSES,
+    *DIFFUSION_LOSSES,
+    *DISTOGRAM_LOSSES,
+    "loss",
+]
+
+VAL_LOSSES = [
+    *CONFIDENCE_LOSSES,
+    *DISTOGRAM_LOSSES,
     "loss",
 ]
 
@@ -60,10 +75,13 @@ METRICS = [
     "clash_intra_rna",
     "clash_inter_rna_rna",
     "clash_inter_protein_rna",
-    # Superimposition metrics
+]
+
+SUPERIMPOSE_METRICS = [
     "superimpose_rmsd",
     "gdt_ts",
     "gdt_ha",
 ]
 
-LOGGED_METRICS = METRICS + LOSSES
+TRAIN_LOGGED_METRICS = TRAIN_LOSSES + METRICS
+VAL_LOGGED_METRICS = VAL_LOSSES + METRICS + SUPERIMPOSE_METRICS

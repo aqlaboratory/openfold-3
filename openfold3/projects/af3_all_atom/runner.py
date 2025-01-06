@@ -25,7 +25,10 @@ from openfold3.projects.af3_all_atom.config.base_config import project_config
 from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
     AF3DatasetConfigBuilder,
 )
-from openfold3.projects.af3_all_atom.constants import LOGGED_METRICS
+from openfold3.projects.af3_all_atom.constants import (
+    TRAIN_LOGGED_METRICS,
+    VAL_LOGGED_METRICS,
+)
 from openfold3.projects.af3_all_atom.model import AlphaFold3
 from openfold3.projects.registry import register_project
 
@@ -51,18 +54,26 @@ class AlphaFold3AllAtom(ModelRunner):
             else AlphaFold3Loss(config=model_config.architecture.loss_module)
         )
 
-        # Initialize all epoch metric objects
-        metrics = MetricCollection(
-            {
-                metric_name: MeanMetric(nan_strategy="ignore")
-                for metric_name in LOGGED_METRICS
-            }
-        )
-
         # TODO: Forcing naming convention to be compatible with older runs
         #  Make consistent later
-        self.train_metrics = metrics.clone(prefix="train/", postfix="_epoch")
-        self.val_metrics = metrics.clone(prefix="val/")
+        # Initialize all training epoch metric objects
+        self.train_metrics = MetricCollection(
+            {
+                metric_name: MeanMetric(nan_strategy="ignore")
+                for metric_name in TRAIN_LOGGED_METRICS
+            },
+            prefix="train/",
+            postfix="_epoch",
+        )
+
+        # Initialize all validation epoch metric objects
+        self.val_metrics = MetricCollection(
+            {
+                metric_name: MeanMetric(nan_strategy="ignore")
+                for metric_name in VAL_LOGGED_METRICS
+            },
+            prefix="val/",
+        )
 
         # Not all metrics will be calculated for each stage of training or between
         # training and validation. Keep track of which metrics are enabled.
@@ -84,17 +95,18 @@ class AlphaFold3AllAtom(ModelRunner):
             metric_value:
                 Value of the metric to update
         """
-        if metric_log_name not in self.metric_enabled:
+        metrics = self.train_metrics if phase == "train" else self.val_metrics
+
+        if metric_log_name not in metrics:
             raise ValueError(
                 f"Metric {metric_log_name} is not being tracked and will "
                 f"not appear in epoch metrics. Please add it to "
-                f"the LOGGED_METRICS constant."
+                f"the {phase.upper()}_LOGGED_METRICS constant."
             )
 
         if not self.metric_enabled[metric_log_name]:
             self.metric_enabled[metric_log_name] = True
 
-        metrics = self.train_metrics if phase == "train" else self.val_metrics
         metric_obj = metrics[metric_log_name]
         metric_obj.update(metric_value)
 
