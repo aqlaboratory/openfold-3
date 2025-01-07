@@ -125,7 +125,7 @@ class LMDBDict(Mapping[K, V], Generic[K, V]):
         Args:
             lmdb_env (lmdb.Environment):
                 The LMDB environment object.
-            prefix (str): header for fields used to construct keys in lmdb 
+            prefix (str): header for fields used to construct keys in lmdb
             separator (chr): Single separator character used to construct key
             key_encoding (Literal["utf-8", "pkl"]):
                 Encoding of keys. Defaults to "utf-8".
@@ -137,7 +137,7 @@ class LMDBDict(Mapping[K, V], Generic[K, V]):
                 If a non-existent key is requested.
         """
         self._lmdb_env = lmdb_env
-        self._prefix = prefix + separator 
+        self._prefix = prefix + separator
         self._key_encoding = key_encoding
         self._value_encoding = value_encoding
 
@@ -151,7 +151,7 @@ class LMDBDict(Mapping[K, V], Generic[K, V]):
 
     def _decode_key(self, key):
         encoded_prefix = self._prefix.encode(self._key_encoding)
-        return key[len(encoded_prefix):].decode(self._key_encoding)
+        return key[len(encoded_prefix) :].decode(self._key_encoding)
 
     def __iter__(self):
         "Use an iterative method to not have to store all keys in memory."

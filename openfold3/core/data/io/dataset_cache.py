@@ -1,12 +1,13 @@
 """IO functions to read and write metadata and dataset caches."""
 
 import json
-import lmdb
 import re
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
+
+import lmdb
 
 from openfold3.core.data.primitives.caches.format import (
     DATASET_CACHE_CLASS_REGISTRY,
@@ -120,7 +121,9 @@ def _read_datacache_file(datacache_path: Path) -> "DataCacheType":
             # Infer which class to build
             dataset_cache_class = DATASET_CACHE_CLASS_REGISTRY.get(dataset_cache_type)
         except KeyError as exc:
-            raise ValueError(f"Unknown dataset cache type: {dataset_cache_type}") from exc
+            raise ValueError(
+                f"Unknown dataset cache type: {dataset_cache_type}"
+            ) from exc
 
     return dataset_cache_class.from_json(datacache_path)
 
@@ -164,7 +167,7 @@ def read_datacache(
         type_key = "_type".encode(str_encoding)
         with lmdb_env.begin() as txn:
             dataset_cache_type = json.loads(txn.get(type_key).decode(str_encoding))
-        
+
         if not dataset_cache_type:
             raise ValueError("No type found for this directory.")
 
@@ -172,7 +175,9 @@ def read_datacache(
             # Infer which class to build
             dataset_cache_class = DATASET_CACHE_CLASS_REGISTRY.get(dataset_cache_type)
         except KeyError as exc:
-            raise ValueError(f"Unknown dataset cache type: {dataset_cache_type}") from exc
+            raise ValueError(
+                f"Unknown dataset cache type: {dataset_cache_type}"
+            ) from exc
 
         dataset_cache = dataset_cache_class.from_lmdb(
             datacache_path,
