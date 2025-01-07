@@ -65,6 +65,9 @@ def convert_MSE_to_MET(atom_array: AtomArray) -> None:
     atom_array.element[mse_selenium_atoms] = "S"
     atom_array.atom_name[mse_selenium_atoms] = "SD"
 
+    # Set hetero to False for new MET residues
+    atom_array.hetero[mse_residues] = False
+
 
 @return_on_empty_atom_array
 def fix_single_arginine_naming(arg_atom_array: AtomArray) -> None:
