@@ -3,7 +3,7 @@ from functools import wraps
 
 import biotite.structure as struc
 import numpy as np
-from biotite.structure import AtomArray, BondList, index_distance
+from biotite.structure import AtomArray, BondList, BondType, index_distance
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from scipy.spatial.distance import cdist
 
@@ -615,6 +615,7 @@ def filter_bonds(
     keep_polymer_ligand: bool = True,
     keep_ligand_ligand: bool = True,
     remove_larger_than: float = 2.4,
+    remove_metal_coordination: bool = True,
     mask_intra_component: bool = True,
 ) -> None:
     """Filter bonds in an AtomArray
@@ -636,6 +637,9 @@ def filter_bonds(
             Whether to keep ligand-ligand bonds. Default is True.
         remove_larger_than:
             Remove any bond larger than this cutoff distance (in Å). Default is 2.4 Å.
+        remove_metal_coordination:
+            Whether to remove any metal-coordination bonds. Default is True. Note that
+            this takes precedence over any of the keep_* options.
         mask_intra_component:
             Whether to mask all bonds within the same component from any filtering. This
             overrules all previous filters. For example important for ensuring that
@@ -651,8 +655,12 @@ def filter_bonds(
     # Keep bonds between atoms not more than 1 residue apart
     if keep_consecutive:
         bond_partner_res_ids = atom_array.res_id[bond_partners]
+        bond_partner_chain_ids = atom_array.chain_id[bond_partners]
+
         is_consecutive = (np.abs(np.diff(bond_partner_res_ids, axis=1)) < 2).squeeze()
-        valid_bonds_mask[is_consecutive] = True
+        is_same_chain = bond_partner_chain_ids[:, 0] == bond_partner_chain_ids[:, 1]
+
+        valid_bonds_mask[is_consecutive & is_same_chain] = True
 
     if keep_polymer_ligand or keep_ligand_ligand:
         bond_partner_moltypes = atom_array.molecule_type_id[bond_partners]
@@ -681,6 +689,13 @@ def filter_bonds(
         (distances > remove_larger_than) & ~np.isnan(distances)
     ]
     valid_bonds_mask[remove_index] = False
+
+    # Remove any metal-coordination bonds
+    if remove_metal_coordination:
+        bond_types = atom_array.bonds.as_array()[:, 2]
+        is_metal_coordination = bond_types == BondType.COORDINATION
+
+        valid_bonds_mask[is_metal_coordination] = False
 
     # If mask_intra_component is True, overrule all previous filters and keep all bonds
     # within the same component to ensure it's not getting disconnected

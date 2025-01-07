@@ -87,6 +87,7 @@ def process_target_structure_af3(
         keep_polymer_ligand=True,
         keep_ligand_ligand=True,
         remove_larger_than=2.4,
+        remove_metal_coordination=True,
         mask_intra_component=True,
     )
 
