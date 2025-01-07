@@ -116,6 +116,7 @@ class LMDBDict(Mapping[K, V], Generic[K, V]):
         self,
         lmdb_env: lmdb.Environment,
         prefix: str,
+        separator: chr = ":",
         key_encoding: Literal["utf-8", "pkl"] = "utf-8",
         value_encoding: Literal["utf-8", "pkl"] = "pkl",
     ):
@@ -124,7 +125,8 @@ class LMDBDict(Mapping[K, V], Generic[K, V]):
         Args:
             lmdb_env (lmdb.Environment):
                 The LMDB environment object.
-            prefix (str): _description_
+            prefix (str): header for fields used to construct keys in lmdb 
+            separator (chr): Single separator character used to construct key
             key_encoding (Literal["utf-8", "pkl"]):
                 Encoding of keys. Defaults to "utf-8".
             value_encoding (Literal["utf-8", "pkl"]):
@@ -135,7 +137,7 @@ class LMDBDict(Mapping[K, V], Generic[K, V]):
                 If a non-existent key is requested.
         """
         self._lmdb_env = lmdb_env
-        self._prefix = prefix
+        self._prefix = prefix + separator 
         self._key_encoding = key_encoding
         self._value_encoding = value_encoding
 
@@ -146,6 +148,10 @@ class LMDBDict(Mapping[K, V], Generic[K, V]):
             self._n_keys = len(
                 [key for key, _ in cursor if key.startswith(encoded_prefix)]
             )
+
+    def _decode_key(self, key):
+        encoded_prefix = self._prefix.encode(self._key_encoding)
+        return key[len(encoded_prefix):].decode(self._key_encoding)
 
     def __iter__(self):
         "Use an iterative method to not have to store all keys in memory."
@@ -159,7 +165,7 @@ class LMDBDict(Mapping[K, V], Generic[K, V]):
                         break
                     # convert current_key into the user-facing key
                     # e.g. remove the prefix and decode if needed
-                    user_key = self._decode_key(current_key, encoded_prefix)
+                    user_key = self._decode_key(current_key)
                     yield user_key
                     if not cursor.next():
                         break
@@ -169,7 +175,7 @@ class LMDBDict(Mapping[K, V], Generic[K, V]):
 
     def __getitem__(self, key):
         with self._lmdb_env.begin() as transaction:
-            key_bytes = f"{self._prefix}:{key}".encode(self._key_encoding)
+            key_bytes = f"{self._prefix}{key}".encode(self._key_encoding)
             value_bytes = transaction.get(key_bytes)
             if not value_bytes:
                 raise KeyError(key)
