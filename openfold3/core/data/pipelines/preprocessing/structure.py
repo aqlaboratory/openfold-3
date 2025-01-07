@@ -535,7 +535,6 @@ class _AF3PreprocessingWrapper:
         self.skip_components = skip_components
         self.output_formats = output_formats
 
-    @wraps(preprocess_structure_and_write_outputs_af3)
     def __call__(self, paths: tuple[Path, Path]) -> tuple[dict, dict]:
         cif_file, out_dir = paths
 
