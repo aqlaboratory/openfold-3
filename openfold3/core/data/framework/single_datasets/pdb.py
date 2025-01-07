@@ -112,8 +112,10 @@ def is_invalid_feature_dict(features: dict) -> bool:
     # Run the permutation alignment to skip over samples that may fail in the model
     # This could throw an exception that is handled in the __getitem__
     feats_perm = openfold_batch_collator([copy.deepcopy(features)])
-    outputs = {"atom_positions_predicted": torch.randn_like(feats_perm["ref_pos"])}
-    multi_chain_permutation_alignment(feats_perm, outputs)
+    multi_chain_permutation_alignment(
+        batch=feats_perm,
+        atom_positions_predicted=torch.randn_like(feats_perm["ref_pos"]),
+    )
 
     return skip
 

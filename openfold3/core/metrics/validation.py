@@ -53,14 +53,11 @@ def gdt(p1, p2, mask, cutoffs):
 
     p1 = p1.float()
     p2 = p2.float()
-    distances = torch.sqrt(torch.sum((p1 - p2) ** 2, dim=-1))
-    scores = []
-    for c in cutoffs:
-        score = torch.sum((distances <= c) * mask, dim=-1) / n
-        score = torch.mean(score)
-        scores.append(score)
 
-    return sum(scores) / len(scores)
+    distances = torch.sqrt(torch.sum((p1 - p2) ** 2, dim=-1))
+    scores = [torch.sum((distances <= c) * mask, dim=-1) / n for c in cutoffs]
+
+    return torch.sum(torch.stack(scores, dim=-1), dim=-1) / len(scores)
 
 
 def gdt_ts(p1, p2, mask):
@@ -69,6 +66,40 @@ def gdt_ts(p1, p2, mask):
 
 def gdt_ha(p1, p2, mask):
     return gdt(p1, p2, mask, [0.5, 1.0, 2.0, 4.0])
+
+
+def rmsd(
+    pred_positions: torch.Tensor,
+    target_positions: torch.Tensor,
+    positions_mask: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Computes the Root Mean Square Deviation of Atomic Positions (RMSD) between a
+    set of predicted and ground-truth coordinates.
+
+    Args:
+        pred_positions:
+            [*, N, 3] the predicted coordinates
+        target_positions:
+            [*, N, 3] the ground-truth coordinates
+        positions_mask:
+            [*, N] mask for coordinates that should not be considered
+
+    Returns:
+        [*] the RMSDs of the predicted coordinates for each "batch" dimension
+        (e.g. actual batch dimension and/or structure module layers)
+    """
+    squared_error_dists = torch.sum((pred_positions - target_positions) ** 2, dim=-1)
+
+    # mask unobserved atoms
+    squared_error_dists = squared_error_dists * positions_mask
+    n_observed_atoms = torch.sum(positions_mask, dim=-1)
+
+    # compute RMSD
+    msd = torch.sum(squared_error_dists, dim=-1) / n_observed_atoms
+    rmsd = torch.sqrt(msd)
+
+    return rmsd
 
 
 def lddt(

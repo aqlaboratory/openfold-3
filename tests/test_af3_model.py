@@ -86,7 +86,17 @@ class TestAF3Model(unittest.TestCase):
 
             atom_positions_predicted = outputs["atom_positions_predicted"]
 
-        assert atom_positions_predicted.shape == (batch_size, n_atom, 3)
+        num_rollout_samples = (
+            config.architecture.shared.diffusion.no_mini_rollout_samples
+            if train
+            else config.architecture.shared.diffusion.no_full_rollout_samples
+        )
+        assert atom_positions_predicted.shape == (
+            batch_size,
+            num_rollout_samples,
+            n_atom,
+            3,
+        )
 
     def test_shape_small_fp32(self):
         batch_size = consts.batch_size
