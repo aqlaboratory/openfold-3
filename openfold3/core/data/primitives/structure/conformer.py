@@ -98,6 +98,8 @@ def compute_conformer(
 def multistrategy_compute_conformer(
     mol: Mol,
     remove_hs: bool = True,
+    timeout_standard: Optional[float] = 30.0,
+    timeout_rand_init: Optional[float] = 30.0,
 ) -> tuple[Mol, int, Literal["default", "random_init"]]:
     """Computes 3D coordinates for a molecule trying different initializations.
 
@@ -111,7 +113,12 @@ def multistrategy_compute_conformer(
             The molecule for which the 3D coordinates should be computed.
         remove_hs:
             Whether to remove hydrogens from the molecule after conformer generation.
-
+        timeout_standard:
+            The maximum time in seconds to allow for conformer generation with the
+            standard strategy. Default value is 30 seconds. If None, no timeout is set.
+        timeout_rand_init:
+            The maximum time in seconds to allow for conformer generation with random
+            initialization. Default value is 30 seconds. If None, no timeout is set.
     Returns:
         mol:
             The molecule for which the 3D coordinates should be computed.
@@ -126,7 +133,10 @@ def multistrategy_compute_conformer(
     # Try standard ETKDGv3 strategy first
     try:
         mol, conf_id = compute_conformer(
-            mol, use_random_coord_init=False, remove_hs=remove_hs
+            mol,
+            use_random_coord_init=False,
+            remove_hs=remove_hs,
+            timeout=timeout_standard,
         )
     except (ConformerGenerationError, FunctionTimedOut) as e:
         logger.warning(
@@ -137,7 +147,10 @@ def multistrategy_compute_conformer(
         # Try random coordinates as fallback
         try:
             mol, conf_id = compute_conformer(
-                mol, use_random_coord_init=True, remove_hs=remove_hs
+                mol,
+                use_random_coord_init=True,
+                remove_hs=remove_hs,
+                timeout=timeout_rand_init,
             )
         except (ConformerGenerationError, FunctionTimedOut) as e:
             logger.warning(
@@ -261,9 +274,12 @@ def resolve_and_format_fallback_conformer(
                 - "use_fallback": Conformer generation is not possible and the stored
                   fallback conformer should be used.
     """
+    # TODO: Expose timeouts as arguments
     # Test if conformer generation is possible
     try:
-        mol, conf_id, strategy = multistrategy_compute_conformer(mol)
+        mol, conf_id, strategy = multistrategy_compute_conformer(
+            mol, remove_hs=True, timeout_standard=300, timeout_rand_init=300
+        )
         conf = mol.GetConformer(conf_id)
     except ConformerGenerationError:
         strategy = "use_fallback"
