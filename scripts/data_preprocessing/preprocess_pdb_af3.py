@@ -52,12 +52,12 @@ from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif
 )
 @click.option(
     "--output-format",
-    type=click.Choice(["cif", "bcif", "pkl"]),
+    type=click.Choice(["npz", "cif", "bcif", "pkl"]),
     multiple=True,
     required=True,
     help=(
         "What output formats to write the structures to. "
-        "Can be 'cif', 'bcif', and 'pkl'."
+        "Can be 'npz', 'cif', 'bcif', and 'pkl'."
     ),
 )
 @click.option(
@@ -76,7 +76,7 @@ def main(
     cif_dir: Path,
     ccd_path: Path,
     out_dir: Path,
-    output_format: list[Literal["cif", "bcif", "pkl"]],
+    output_format: list[Literal["npz", "cif", "bcif", "pkl"]],
     max_polymer_chains: int = 300,
     num_workers: int | None = None,
     chunksize: int = 50,

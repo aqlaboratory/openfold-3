@@ -583,7 +583,7 @@ def preprocess_cif_dir_af3(
     max_polymer_chains: int | None = None,
     num_workers: int | None = None,
     chunksize: int = 20,
-    output_formats: list[Literal["cif", "bcif", "pkl"]] = False,
+    output_formats: list[Literal["npz", "cif", "bcif", "pkl"]] = False,
     early_stop: int | None = None,
 ) -> None:
     """Preprocesses a directory of PDB files following the AlphaFold3 SI.
@@ -609,8 +609,8 @@ def preprocess_cif_dir_af3(
         chunksize:
             Number of CIF files to process in each worker task.
         output_formats:
-            What formats to write the output files to. Allowed values are "cif", "bcif",
-            and "pkl".
+            What formats to write the output files to. Allowed values are "npz", "cif",
+            "bcif", and "pkl".
         early_stop:
             Stop after processing this many CIFs. Only used for debugging.
     """
