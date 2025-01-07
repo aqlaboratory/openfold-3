@@ -1,6 +1,7 @@
 """IO functions to read and write metadata and dataset caches."""
 
 import json
+import lmdb
 import re
 from dataclasses import asdict
 from datetime import date
@@ -101,6 +102,29 @@ def write_datacache_to_json(datacache: "DataCacheType", output_path: Path) -> Pa
         json.dump(datacache_dict, f, indent=4)
 
 
+def _read_datacache_file(datacache_path: Path) -> "DataCacheType":
+    """Loads a datacache from a json file"""
+    with open(datacache_path) as f:
+        next(f)
+        second_line = next(f)
+
+        # formatted like "name": "value"
+        match = re.search(r'"_type":\s*"([^"]+)"', second_line)
+
+        if match:
+            dataset_cache_type = match.group(1)
+        else:
+            raise ValueError("Could not determine the type of the dataset cache.")
+
+        try:
+            # Infer which class to build
+            dataset_cache_class = DATASET_CACHE_CLASS_REGISTRY.get(dataset_cache_type)
+        except KeyError as exc:
+            raise ValueError(f"Unknown dataset cache type: {dataset_cache_type}") from exc
+
+    return dataset_cache_class.from_json(datacache_path)
+
+
 def read_datacache(
     datacache_path: Path,
     str_encoding: Literal["utf-8", "pkl"] = "utf-8",
@@ -129,32 +153,31 @@ def read_datacache(
     """
 
     # Determine the type of dataset cache first without reading the whole file
-    with open(datacache_path) as f:
-        next(f)
-        second_line = next(f)
-
-        # formatted like "name": "value"
-        match = re.search(r'"_type":\s*"([^"]+)"', second_line)
-
-        if match:
-            dataset_cache_type = match.group(1)
-        else:
-            raise ValueError("Could not determine the type of the dataset cache.")
-
-    try:
-        # Infer which class to build
-        dataset_cache_class = DATASET_CACHE_CLASS_REGISTRY.get(dataset_cache_type)
-    except KeyError as exc:
-        raise ValueError(f"Unknown dataset cache type: {dataset_cache_type}") from exc
-
-    # Read the JSON file and return
     if datacache_path.is_file():
-        dataset_cache = dataset_cache_class.from_json(datacache_path)
-    if datacache_path.is_dir():
+        return _read_datacache_file(datacache_path)
+
+    elif datacache_path.is_dir():
+        # Assumed to be an lmdb dir
+        lmdb_env = lmdb.open(
+            str(datacache_path), readonly=True, lock=False, subdir=True
+        )
+        type_key = "_type".encode(str_encoding)
+        with lmdb_env.begin() as txn:
+            dataset_cache_type = json.loads(txn.get(type_key).decode(str_encoding))
+        
+        if not dataset_cache_type:
+            raise ValueError("No type found for this directory.")
+
+        try:
+            # Infer which class to build
+            dataset_cache_class = DATASET_CACHE_CLASS_REGISTRY.get(dataset_cache_type)
+        except KeyError as exc:
+            raise ValueError(f"Unknown dataset cache type: {dataset_cache_type}") from exc
+
         dataset_cache = dataset_cache_class.from_lmdb(
-            lmdb_direrctory=datacache_path,
+            datacache_path,
             str_encoding=str_encoding,
             structure_data_encoding=structure_data_encoding,
             reference_molecule_data_encoding=reference_molecule_data_encoding,
         )
-    return dataset_cache
+        return dataset_cache
