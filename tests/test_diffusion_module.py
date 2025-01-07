@@ -129,6 +129,7 @@ class TestSampleDiffusion(unittest.TestCase):
         c_z = config.architecture.shared.c_z
         config.architecture.shared.no_mini_rollout_steps = 2
         config.architecture.shared.no_full_rollout_steps = 2
+        no_rollout_samples = 5
 
         sample_config = config.architecture.sample_diffusion
 
@@ -142,10 +143,11 @@ class TestSampleDiffusion(unittest.TestCase):
             n_templ=consts.n_templ,
         )
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
+        batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
 
-        si_input = torch.rand((batch_size, n_token, c_s_input))
-        si_trunk = torch.rand((batch_size, n_token, c_s))
-        zij_trunk = torch.rand((batch_size, n_token, n_token, c_z))
+        si_input = torch.rand((batch_size, 1, n_token, c_s_input))
+        si_trunk = torch.rand((batch_size, 1, n_token, c_s))
+        zij_trunk = torch.rand((batch_size, 1, n_token, n_token, c_z))
 
         with torch.no_grad():
             noise_sched_config = config.architecture.noise_schedule
@@ -160,9 +162,10 @@ class TestSampleDiffusion(unittest.TestCase):
                 si_trunk=si_trunk,
                 zij_trunk=zij_trunk,
                 noise_schedule=noise_schedule,
+                no_rollout_samples=no_rollout_samples,
             )
 
-        self.assertTrue(xl.shape == (batch_size, n_atom, 3))
+        self.assertTrue(xl.shape == (batch_size, no_rollout_samples, n_atom, 3))
 
 
 if __name__ == "__main__":

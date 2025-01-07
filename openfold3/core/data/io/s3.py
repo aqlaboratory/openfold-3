@@ -9,7 +9,7 @@ import botocore.paginate
 from botocore.config import Config
 
 
-def parse_s3_config(s3_client_config_str: str | None) -> dict:
+def parse_s3_config(s3_client_config_str: str) -> dict:
     """Converts a string representation of an S3 client config to a dictionary.
 
     Args:
@@ -24,14 +24,11 @@ def parse_s3_config(s3_client_config_str: str | None) -> dict:
         dict:
             The S3 client config as a dictionary.
     """
-    if s3_client_config_str is not None:
-        try:
-            s3_client_config = json.loads(s3_client_config_str)
-        except json.JSONDecodeError as e:
-            raise ValueError("Invalid s3 client config provided.") from e
-    else:
-        s3_client_config = {}
-    return s3_client_config
+    try:
+        s3_client_config = json.loads(s3_client_config_str)
+        return s3_client_config
+    except json.JSONDecodeError as e:
+        raise ValueError("Invalid s3 client config provided.") from e
 
 
 def start_s3_client(profile: str) -> boto3.client:
