@@ -7,6 +7,7 @@ from typing import Literal, NamedTuple
 from biotite.structure import AtomArray
 
 from openfold3.core.data.io.structure.cif import parse_target_structure
+from openfold3.core.data.primitives.caches.format import PreprocessingChainData
 from openfold3.core.data.primitives.permutation.mol_labels import (
     assign_mol_permutation_ids,
 )
@@ -38,7 +39,7 @@ def process_target_structure_af3(
     token_budget: int,
     preferred_chain_or_interface: str,
     structure_format: Literal["pkl", "npz"],
-    per_chain_metadata: dict[str, dict[str, str]],
+    per_chain_metadata: dict[str, PreprocessingChainData],
 ) -> tuple[AtomArray, AtomArray]:
     """AF3 pipeline for processing target structure into AtomArrays.
 
@@ -56,7 +57,7 @@ def process_target_structure_af3(
         structure_format (Literal["pkl", "npz"]):
             File extension of the target structure. Only "pkl" and "npz" are currently
             supported.
-        per_chain_metadata (dict[str, dict[str, str]]):
+        per_chain_metadata (dict[str, PreprocessingChainData]):
             Metadata for each chain in the target structure, obtained from the dataset
             cache.
 
