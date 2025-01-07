@@ -380,7 +380,8 @@ def mol_from_atomarray(atom_array: AtomArray) -> AnnotatedMol:
     mol.BeginBatchEdit()
 
     # Add all atoms from the AtomArray
-    for atom in atom_array:
+    conf = Chem.Conformer(atom_array.array_length())
+    for idx, atom in enumerate(atom_array):
         element = atom.element.capitalize()
         atomic_number = PERIODIC_TABLE.GetAtomicNumber(element)
 
@@ -391,6 +392,12 @@ def mol_from_atomarray(atom_array: AtomArray) -> AnnotatedMol:
         new_atom.SetFormalCharge(int(atom.charge.item()))
 
         mol.AddAtom(Chem.Atom(new_atom))
+
+        # Set atom coordinates to the ones from the AtomArray for stereochemistry
+        # detection later
+        conf.SetAtomPosition(idx, atom.coord)
+
+    mol.AddConformer(conf)
 
     # Form bonds based on the parsed BondList
     for atom_1, atom_2, bond_type_id in atom_array.bonds.as_array():
@@ -414,6 +421,12 @@ def mol_from_atomarray(atom_array: AtomArray) -> AnnotatedMol:
             logger.warning(f"Failed to sanitize molecule: {e}")
 
     Chem.AssignStereochemistryFrom3D(mol)
+
+    # Remove conformer again to ensure that no information can leak from the
+    # ground-truth
+    assert len(mol.GetConformers()) == 1
+    mol.RemoveConformer(0)
+    assert len(mol.GetConformers()) == 0
 
     # Add original atom IDs as properties
     mol = set_atomwise_annotation(mol, "atom_name", atom_array.atom_name)
