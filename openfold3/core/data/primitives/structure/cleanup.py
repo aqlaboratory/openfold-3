@@ -65,9 +65,6 @@ def convert_MSE_to_MET(atom_array: AtomArray) -> None:
     atom_array.element[mse_selenium_atoms] = "S"
     atom_array.atom_name[mse_selenium_atoms] = "SD"
 
-    # Set hetero to False for new MET residues
-    atom_array.hetero[mse_residues] = False
-
 
 @return_on_empty_atom_array
 def fix_single_arginine_naming(arg_atom_array: AtomArray) -> None:
@@ -251,14 +248,14 @@ def remove_chain_and_attached_ligands(
     Returns:
         AtomArray with the specified chain and all attached covalent ligands removed
     """
-    # Assign temporary helper indices
-    assign_atom_indices(atom_array)
-
     chain_mask = atom_array.chain_id == chain_id
 
     # If the chain itself is a hetero-chain, only remove the chain
     if np.all(atom_array.hetero[chain_mask]):
         return atom_array[~chain_mask]
+
+    # Assign temporary helper indices
+    assign_atom_indices(atom_array)
 
     # Remove everything but the particular chain and all ligands, so that when we search
     # for connected atoms to the chain we will only find the directly connected ligands
