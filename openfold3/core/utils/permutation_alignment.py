@@ -401,7 +401,8 @@ def get_gt_anchor_mask(
             "trying with ligand candidate."
         )
 
-        if ligand_entity_sym_id_combinations:
+        have_ligand_entities = ligand_entity_sym_id_combinations.numel() > 0
+        if have_ligand_entities:
             ligand_anchor_candidate = get_least_ambiguous_anchor_candidate(
                 ligand_entity_sym_id_combinations,
                 gt_mol_entity_id,
@@ -1231,7 +1232,7 @@ def update_gt_position_features(
             "atom_resolved_mask" features rearranged to perfectly match the prediction,
             as defined by the given index tensors.
     """
-    ground_truth_features = deepcopy(batch["ground_truth"])
+    ground_truth_features = batch["ground_truth"]
 
     gt_atom_positions_permuted, gt_atom_resolved_mask_permuted = (
         permute_gt_atom_features(
@@ -1243,10 +1244,12 @@ def update_gt_position_features(
         )
     )
 
-    ground_truth_features["atom_positions"] = gt_atom_positions_permuted
-    ground_truth_features["atom_resolved_mask"] = gt_atom_resolved_mask_permuted
+    updated_ground_truth_features = {
+        "atom_positions": gt_atom_positions_permuted,
+        "atom_resolved_mask": gt_atom_resolved_mask_permuted,
+    }
 
-    return ground_truth_features
+    return updated_ground_truth_features
 
 
 def single_batch_multi_chain_permutation_alignment(
@@ -1592,8 +1595,12 @@ def reshape_per_sample_inputs(
             the rollout, with the batch and sample dimension flattened.
     """
     atom_pos_pred_shape = atom_positions_predicted.shape
-    batch_size = atom_pos_pred_shape[0]
-    no_samples = atom_pos_pred_shape[1]
+
+    # No sample dimension, return as is
+    if len(atom_pos_pred_shape[:-2]) == 1:
+        return batch, atom_positions_predicted
+
+    batch_size, no_samples = atom_pos_pred_shape[:2]
 
     def reshape_batch_feats(t: torch.tensor):
         """Expands the batch dimension to match the number of samples in the output."""
@@ -1617,6 +1624,43 @@ def reshape_per_sample_inputs(
     )
 
     return per_sample_batch, per_sample_atom_pos_pred
+
+
+# TODO: Update later, temporary fix to handle more than one sample
+#  from the rollout output
+def format_output_gt_features(ground_truth_features: dict, batch_dims: tuple) -> dict:
+    """
+    Unflatten the batch and sample dimensions of the output ground truth
+    features to match the input.
+
+    Args:
+        ground_truth_features (dict):
+            The final ground-truth features after the permutation alignment. Requires
+            the keys "atom_positions" and "atom_resolved_mask".
+        batch_dims (list):
+            The batch dimensions of the input features, including the sample dimension.
+    Returns:
+        reshaped_gt_features (dict):
+            The feature dictionary with the batch and sample dimensions reshaped to
+            match the input features.
+    """
+    batch_size = batch_dims[0]
+    has_sample_dim = len(batch_dims) > 1
+
+    reshaped_gt_features = {}
+    if has_sample_dim:
+        for feature, value in ground_truth_features.items():
+            reshaped_value = value.reshape(batch_size, -1, value.shape[1:])
+
+            # Only the positions require the sample dimension
+            # All other features can be broadcasted when performing operations
+            # over the sample dimension.
+            if feature != "atom_positions":
+                reshaped_value = reshaped_value[:, :1]
+
+            reshaped_gt_features[feature] = reshaped_value
+
+    return reshaped_gt_features
 
 
 def safe_multi_chain_permutation_alignment(
@@ -1644,21 +1688,19 @@ def safe_multi_chain_permutation_alignment(
     Returns:
         None, the batch dictionary is modified in-place(!)
     """
-    batch_size = atom_positions_predicted.shape[0]
+    batch_dims = atom_positions_predicted.shape[:-2]
     per_sample_batch, per_sample_atom_pos_pred = reshape_per_sample_inputs(
         batch=batch, atom_positions_predicted=atom_positions_predicted
     )
-
-    def format_output_gt_feats(t: torch.tensor):
-        """Unflatten the batch and sample dimensions to match the input."""
-        return t.reshape(batch_size, -1, *t.shape[1:])
 
     # Try to run full permutation alignment algorithm
     try:
         new_gt_features = multi_chain_permutation_alignment(
             batch=per_sample_batch, atom_positions_predicted=per_sample_atom_pos_pred
         )
-        new_gt_features = tensor_tree_map(format_output_gt_feats, new_gt_features)
+        new_gt_features = format_output_gt_features(
+            ground_truth_features=new_gt_features, batch_dims=batch_dims
+        )
     except Exception as e:
         logger.error(
             "Caught error during multi-chain permutation alignment, falling back to "
@@ -1674,7 +1716,9 @@ def safe_multi_chain_permutation_alignment(
                 batch=per_sample_batch,
                 atom_positions_predicted=per_sample_atom_pos_pred,
             )
-            new_gt_features = tensor_tree_map(format_output_gt_feats, new_gt_features)
+            new_gt_features = format_output_gt_features(
+                ground_truth_features=new_gt_features, batch_dims=batch_dims
+            )
         except Exception as e:
             logger.error(f"Caught error during naive alignment: {e}", exc_info=True)
             logger.error("Critical error in permutation alignment, turning off losses.")
@@ -1692,4 +1736,4 @@ def safe_multi_chain_permutation_alignment(
             for loss_key, weights in batch["loss_weights"].items():
                 batch["loss_weights"][loss_key] = torch.zeros_like(weights)
 
-    batch["ground_truth"] = new_gt_features
+    batch["ground_truth"].update(new_gt_features)
