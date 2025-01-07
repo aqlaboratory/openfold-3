@@ -46,5 +46,4 @@ dependencies:
       - dm-tree==0.1.6
       - git+https://github.com/NVIDIA/dllogger.git
       - flash-attn==2.6.0.post1
-      - liger-kernel
       - pdbeccdutils
