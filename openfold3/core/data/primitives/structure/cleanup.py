@@ -7,6 +7,9 @@ from biotite.structure import AtomArray, BondList, index_distance
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from scipy.spatial.distance import cdist
 
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 from openfold3.core.data.primitives.structure.interface import (
     chain_paired_interface_atom_iter,
     get_interface_token_center_atoms,
@@ -606,6 +609,7 @@ def remove_std_residue_terminal_atoms(atom_array: AtomArray) -> AtomArray:
     return atom_array
 
 
+@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-filter-bonds")
 def filter_bonds(
     atom_array: AtomArray,
     keep_consecutive: bool = True,

@@ -274,7 +274,7 @@ def parse_target_structure(
     else:
         raise ValueError(
             f"Invalid structure format: {structure_format}. Only pickle "
-            "format is supported in a torch dataset __getitem__."
+            "or npz formats are supported in a torch dataset __getitem__."
         )
 
     return atom_array

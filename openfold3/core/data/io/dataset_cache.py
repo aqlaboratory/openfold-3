@@ -5,6 +5,7 @@ import re
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 from openfold3.core.data.primitives.caches.format import (
     DATASET_CACHE_CLASS_REGISTRY,
@@ -46,6 +47,36 @@ def format_nested_dict_for_json(data: dict) -> dict:
     return data
 
 
+def convert_dataclass_to_dict(dataclass: Any) -> dict:
+    """Converts a dataclass into a dictionary.
+
+    Note: this is intended to be a general function that can be called at any level
+    of the DataCache dataclass hierarchy.
+
+    Args:
+        dataclass (Any):
+            The dataclass to convert. If the dataclass is a DataCache, this function
+            adds the "_type" attribute to the dictionary.
+
+    Returns:
+        dict:
+            The datacache as a dictionary.
+    """
+    datacache_dict = asdict(dataclass)
+
+    # Remove private fields
+    datacache_dict = {k: v for k, v in datacache_dict.items() if not k.startswith("_")}
+
+    if isinstance(dataclass, DataCache):
+        # Add type (which is not a field but an attribute) as the very first(!) key of
+        # the dict
+        datacache_dict = {"_type": dataclass._type, **datacache_dict}
+
+    datacache_dict = format_nested_dict_for_json(datacache_dict)
+
+    return datacache_dict
+
+
 def write_datacache_to_json(datacache: DataCache, output_path: Path) -> Path:
     """Writes a DataCache dataclass to a JSON file.
 
@@ -62,16 +93,7 @@ def write_datacache_to_json(datacache: DataCache, output_path: Path) -> Path:
     Returns:
         Full path to the output JSON file.
     """
-    datacache_dict = asdict(datacache)
-
-    # Remove private fields
-    datacache_dict = {k: v for k, v in datacache_dict.items() if not k.startswith("_")}
-
-    # Add type (which is not a field but an attribute) as the very first(!) key of the
-    # dict
-    datacache_dict = {"_type": datacache._type, **datacache_dict}
-
-    datacache_dict = format_nested_dict_for_json(datacache_dict)
+    datacache_dict = convert_dataclass_to_dict(datacache)
 
     with open(output_path, "w") as f:
         json.dump(datacache_dict, f, indent=4)

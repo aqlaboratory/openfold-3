@@ -420,12 +420,8 @@ project_config = mlc.ConfigDict(
             "weight": 0.0,
             "config": {
                 "loss_weight_mode": "default",
-                "token_budget": 384,
-                "crop_weights": {
-                    "contiguous": 0.2,
-                    "spatial": 0.4,
-                    "spatial_interface": 0.4,
-                },
+                # TODO: remove this flag once debug logic is gone
+                "debug_mode": True,
                 "msa": {
                     "max_rows_paired": 8191,
                     "max_rows": 16384,
@@ -443,6 +439,7 @@ project_config = mlc.ConfigDict(
                         "rfam_hits": 10000,
                         "rnacentral_hits": 10000,
                         "nt_hits": 10000,
+                        "concat_cfdb_uniref100_filtered": 10000000,
                     },
                     "aln_order": [
                         "uniref90_hits",
@@ -453,6 +450,7 @@ project_config = mlc.ConfigDict(
                         "rfam_hits",
                         "rnacentral_hits",
                         "nt_hits",
+                        "concat_cfdb_uniref100_filtered",
                     ],
                 },
                 "template": {
@@ -484,10 +482,30 @@ project_config = mlc.ConfigDict(
                         "pde": 1e-4,
                     },
                 },
-                "custom": {},
+                "custom": {
+                    # TODO: use in runner yml for every training dataset
+                    "crop": {
+                        "token_budget": 384,
+                        "crop_weights": {
+                            "contiguous": 0.2,
+                            "spatial": 0.4,
+                            "spatial_interface": 0.4,
+                        },
+                    },
+                    # TODO: use in weightedPDB/disordered PDB runner yml
+                    "sample_weights": {
+                        "a_prot": 3.0,
+                        "a_nuc": 3.0,
+                        "a_ligand": 1.0,
+                        "w_chain": 0.5,
+                        "w_interface": 1.0,
+                    },
+                    # TODO: disordered flag goes here, eventually move to yml
+                },
                 "dataset_paths": {
                     "alignments_directory": PLACEHOLDER_PATH,
                     "target_structures_directory": PLACEHOLDER_PATH,
+                    "target_structure_file_format": PLACEHOLDER_PATH,
                     "alignment_db_directory": PLACEHOLDER_PATH,
                     "alignment_array_directory": PLACEHOLDER_PATH,
                     "dataset_cache_file": PLACEHOLDER_PATH,
