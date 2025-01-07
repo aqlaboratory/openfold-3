@@ -26,7 +26,8 @@ from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
     AF3DatasetConfigBuilder,
 )
 from openfold3.projects.af3_all_atom.constants import (
-    TRAIN_LOGGED_METRICS,
+    METRICS,
+    TRAIN_LOSSES,
     VAL_LOGGED_METRICS,
 )
 from openfold3.projects.af3_all_atom.model import AlphaFold3
@@ -57,14 +58,14 @@ class AlphaFold3AllAtom(ModelRunner):
         # TODO: Forcing naming convention to be compatible with older runs
         #  Make consistent later
         # Initialize all training epoch metric objects
-        self.train_metrics = MetricCollection(
-            {
-                metric_name: MeanMetric(nan_strategy="ignore")
-                for metric_name in TRAIN_LOGGED_METRICS
-            },
-            prefix="train/",
-            postfix="_epoch",
+        train_metrics = {
+            f"{loss_name}_epoch": MeanMetric(nan_strategy="ignore")
+            for loss_name in TRAIN_LOSSES
+        }
+        train_metrics.update(
+            {metric_name: MeanMetric(nan_strategy="ignore") for metric_name in METRICS}
         )
+        self.train_metrics = MetricCollection(train_metrics, prefix="train/")
 
         # Initialize all validation epoch metric objects
         self.val_metrics = MetricCollection(

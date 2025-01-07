@@ -1650,7 +1650,7 @@ def format_output_gt_features(ground_truth_features: dict, batch_dims: tuple) ->
     reshaped_gt_features = {}
     if has_sample_dim:
         for feature, value in ground_truth_features.items():
-            reshaped_value = value.reshape(batch_size, -1, value.shape[1:])
+            reshaped_value = value.reshape(batch_size, -1, *value.shape[1:])
 
             # Only the positions require the sample dimension
             # All other features can be broadcasted when performing operations
