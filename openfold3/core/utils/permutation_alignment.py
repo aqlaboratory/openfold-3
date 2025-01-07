@@ -1647,20 +1647,13 @@ def format_output_gt_features(ground_truth_features: dict, batch_dims: tuple) ->
     batch_size = batch_dims[0]
     has_sample_dim = len(batch_dims) > 1
 
-    reshaped_gt_features = {}
     if has_sample_dim:
-        for feature, value in ground_truth_features.items():
-            reshaped_value = value.reshape(batch_size, -1, *value.shape[1:])
+        ground_truth_features = {
+            feature: value.reshape(batch_size, -1, *value.shape[1:])
+            for feature, value in ground_truth_features.items()
+        }
 
-            # Only the positions require the sample dimension
-            # All other features can be broadcasted when performing operations
-            # over the sample dimension.
-            if feature != "atom_positions":
-                reshaped_value = reshaped_value[:, :1]
-
-            reshaped_gt_features[feature] = reshaped_value
-
-    return reshaped_gt_features
+    return ground_truth_features
 
 
 def safe_multi_chain_permutation_alignment(
