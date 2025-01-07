@@ -577,10 +577,10 @@ class AlphaFold3(nn.Module):
 
         output.update(rollout_output)
 
+        # Apply permutation alignment for training and validation
         if "ground_truth" in batch:
-            # Apply permutation alignment which will update the ground-truth
-            # coordinates/mask in-place with the correct permutation (and optionally
-            # disables losses in case of a critical error)
+            # Update the ground-truth coordinates/mask in-place with the correct
+            # permutation (and optionally disable losses in case of a critical error)
             with torch.no_grad():
                 safe_multi_chain_permutation_alignment(
                     batch=batch,
