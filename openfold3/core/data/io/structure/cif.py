@@ -8,7 +8,10 @@ from typing import Literal, NamedTuple
 from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 
-from openfold3.core.data.io.structure.atom_array import read_atomarray_from_npz
+from openfold3.core.data.io.structure.atom_array import (
+    read_atomarray_from_npz,
+    write_atomarray_to_npz,
+)
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
@@ -206,7 +209,7 @@ def write_structure(
             AtomArray to write to an output file.
         output_path:
             Path to write the output file to. The output format is inferred from the
-            file suffix. Allowed values are .cif, .bcif, and .pkl.
+            file suffix. Allowed values are .npz, .cif, .bcif, and .pkl.
         data_block:
             Name of the data block in the CIF/BCIF file. Defaults to None. Ignored if
             the format is pkl.
@@ -215,7 +218,10 @@ def write_structure(
             is pkl in which the entire BondList is written to the file.
     """
     suffix = output_path.suffix
-    if suffix == ".pkl":
+    if suffix == ".npz":
+        write_atomarray_to_npz(atom_array, output_path)
+        return
+    elif suffix == ".pkl":
         with open(output_path, "wb") as f:
             pickle.dump(atom_array, f)
         return
