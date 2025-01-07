@@ -25,9 +25,9 @@ import openfold3.core.config.default_linear_init_config as lin_init
 
 from .linear import Linear
 
-fa_is_installed = importlib.util.find_spec("flash_attn") is not None
-if fa_is_installed:
-    from flash_attn.ops.activations import swiglu
+liger_is_installed = importlib.util.find_spec("liger_kernel") is not None
+if liger_is_installed:
+    from liger_kernel.ops.swiglu import LigerSiLUMulFunction
 
 
 class SwiGLU(nn.Module):
@@ -55,7 +55,7 @@ class SwiGLU(nn.Module):
         self.swish = nn.SiLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if fa_is_installed and x.is_cuda:
-            return swiglu(self.linear_a(x), self.linear_b(x))
+        if liger_is_installed and x.is_cuda:
+            return LigerSiLUMulFunction.apply(self.linear_a(x), self.linear_b(x))
 
         return self.swish(self.linear_a(x)) * self.linear_b(x)

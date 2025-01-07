@@ -67,7 +67,7 @@ def get_optimal_rotation_matrix(
         )
         # Return identity rotation
         R = torch.eye(3, device=mobile_positions.device, dtype=original_dtype).tile(
-            *batch_dims, 1, 1
+            (*batch_dims, 1, 1)
         )
         return R
 
@@ -111,7 +111,7 @@ def get_optimal_transformation(
     mobile_positions: torch.Tensor,
     target_positions: torch.Tensor,
     positions_mask: torch.Tensor,
-) -> NamedTuple:
+) -> Transformation:
     """
     Uses the Kabsch algorithm to get the optimal rotation matrix and translation
     vector to align a set of mobile coordinates onto a set of fixed target
@@ -184,3 +184,36 @@ def apply_transformation(
     positions = positions + transformation.translation_vector
 
     return positions
+
+
+def kabsch_align(
+    mobile_positions: torch.Tensor,
+    target_positions: torch.Tensor,
+    positions_mask: torch.Tensor,
+):
+    """
+    Aligns the predicted coordinates to the ground-truth coordinates
+    using the Kabsch algorithm.
+
+    Args:
+        mobile_positions:
+            [*, N, 3] the predicted coordinates
+        target_positions:
+            [*, N, 3] the ground-truth coordinates
+        positions_mask:
+            [*, N] mask for coordinates that should not be considered
+
+    Returns:
+        [*, N, 3] the mobile positions aligned to the target positions
+    """
+    transformation = get_optimal_transformation(
+        mobile_positions=mobile_positions,
+        target_positions=target_positions,
+        positions_mask=positions_mask,
+    )
+
+    mobile_positions_aligned = apply_transformation(
+        positions=mobile_positions, transformation=transformation
+    )
+
+    return mobile_positions_aligned

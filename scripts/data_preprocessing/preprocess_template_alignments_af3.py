@@ -304,7 +304,8 @@ def main(
             If is_core_train is False and max_release_date is None.
     """
     # Parse S3 config
-    s3_client_config = parse_s3_config(s3_client_config)
+    if s3_client_config is not None:
+        s3_client_config = parse_s3_config(s3_client_config)
 
     # Error handling
     if is_core_train & (min_release_date_diff is None):
