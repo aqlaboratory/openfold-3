@@ -808,7 +808,6 @@ class _ProteinMonomerPreprocessingWrapper:
         self.structure_file_format = structure_file_format
         self.output_dir = output_dir
 
-    @wraps(preparse_monomer)
     def __call__(self, entry_id: str) -> None:
         try:
             preparse_monomer(
