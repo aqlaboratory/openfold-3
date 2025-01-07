@@ -48,24 +48,28 @@ bondtype_conversion = {
 }
 
 
-class PDBComponents(NamedTuple):
+class PDBComponentInfo(NamedTuple):
     """Named tuple grouping all the molecular components of a PDB structure.
 
     residue_components:
         List of all 3-letter codes of residues that are part of a polymer chain.
-    standard_ligands:
+    standard_ligands_to_chains:
         Dictionary mapping each unique ligand 3-letter code to the list of respective
         chain IDs
-    non_standard_ligands:
+    non_standard_ligands_to_chains:
         Dictionary mapping each unique non-standard ligand entity ID to the list of
         respective chain IDs. A non-standard ligand can generally be any ligand not
         directly mapping to a CCD code, which in this case are usually covalently
         connected multi-component ligands like glycans or certain BIRDs.
+    non_standard_ligands_to_rescount:
+        Dictionary mapping each unique non-standard ligand entity ID to the number of
+        residues it consists of.
     """
 
     residue_components: list[str]
-    standard_ligands: dict[str, list[str]]
-    non_standard_ligands: dict[int, list[str]]
+    standard_ligands_to_chains: dict[str, list[str]]
+    non_standard_ligands_to_chains: dict[int, list[str]]
+    non_standard_ligands_to_rescount: dict[int, int]
 
 
 def set_atomwise_annotation(
@@ -103,7 +107,7 @@ def set_atomwise_annotation(
     return mol
 
 
-def get_components(atom_array: AtomArray) -> PDBComponents:
+def get_component_info(atom_array: AtomArray) -> PDBComponentInfo:
     """Extracts all unique components from an AtomArray.
 
     Standard residue and ligand components correspond to molecular building blocks of
@@ -126,6 +130,7 @@ def get_components(atom_array: AtomArray) -> PDBComponents:
     residue_components = set()
     standard_ligands_to_chain = defaultdict(list)
     non_standard_ligands_to_chain = defaultdict(list)
+    non_standard_ligands_to_rescount = defaultdict(int)
 
     ligand_filter = atom_array.molecule_type_id == MoleculeType.LIGAND
 
@@ -140,13 +145,15 @@ def get_components(atom_array: AtomArray) -> PDBComponents:
             chain_id = ligand_chain.chain_id[0].item()
 
             # Append standard single-residue ligand
-            if struc.get_residue_count(ligand_chain) == 1:
+            residue_count = struc.get_residue_count(ligand_chain)
+            if residue_count == 1:
                 ccd_id = ligand_chain.res_name[0].item()
                 standard_ligands_to_chain[ccd_id].append(chain_id)
             # Append non-standard multi-residue ligand
             else:
                 entity_id = ligand_chain.entity_id[0].item()
                 non_standard_ligands_to_chain[entity_id].append(chain_id)
+                non_standard_ligands_to_rescount[entity_id] = residue_count
 
     # TODO: remove later
     # Check that all ligands of the same entity have the same atoms
@@ -162,10 +169,11 @@ def get_components(atom_array: AtomArray) -> PDBComponents:
         # TODO: improve atom expansion for non-standard ligands
         assert len(chain_atom_names) == 1
 
-    return PDBComponents(
+    return PDBComponentInfo(
         residue_components=list(residue_components),
-        standard_ligands=dict(standard_ligands_to_chain),
-        non_standard_ligands=dict(non_standard_ligands_to_chain),
+        standard_ligands_to_chains=dict(standard_ligands_to_chain),
+        non_standard_ligands_to_chains=dict(non_standard_ligands_to_chain),
+        non_standard_ligands_to_rescount=non_standard_ligands_to_rescount,
     )
 
 

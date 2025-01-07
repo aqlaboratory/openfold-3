@@ -26,6 +26,10 @@ from openfold3.core.data.io.structure.cif import (
 from openfold3.core.data.io.structure.mol import write_annotated_sdf
 from openfold3.core.data.io.utils import encode_numpy_types
 from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
+from openfold3.core.data.primitives.caches.format import PreprocessingChainData
+from openfold3.core.data.primitives.permutation.mol_labels import (
+    assign_mol_permutation_ids,
+)
 from openfold3.core.data.primitives.structure.cleanup import (
     convert_MSE_to_MET,
     fix_arginine_naming,
@@ -42,7 +46,7 @@ from openfold3.core.data.primitives.structure.cleanup import (
 )
 from openfold3.core.data.primitives.structure.component import (
     AnnotatedMol,
-    get_components,
+    get_component_info,
     mol_from_atomarray,
     mol_from_ccd_entry,
 )
@@ -53,6 +57,7 @@ from openfold3.core.data.primitives.structure.interface import (
     get_interface_chain_id_pairs,
 )
 from openfold3.core.data.primitives.structure.labels import (
+    assign_component_ids_from_metadata,
     get_chain_to_author_chain_dict,
     get_chain_to_entity_dict,
     get_chain_to_molecule_type_dict,
@@ -237,9 +242,11 @@ def extract_component_data_af3(
     def get_reference_molecule_metadata(
         mol: AnnotatedMol,
         conformer_strategy: Literal["default", "random_init", "use_fallback"],
+        residue_count: int,
     ) -> dict:
         """Convenience function to return the metadata for a reference molecule."""
         conf_metadata = {
+            "residue_count": residue_count,
             "conformer_gen_strategy": conformer_strategy,
         }
 
@@ -263,14 +270,21 @@ def extract_component_data_af3(
     reference_mol_metadata = {}
 
     # Get all different types of components
-    residue_components, std_ligands_to_chains, non_std_ligands_to_chains = (
-        get_components(atom_array)
-    )
+    (
+        residue_components,
+        std_ligands_to_chains,
+        non_std_ligands_to_chains,
+        non_std_ligands_to_rescount,
+    ) = get_component_info(atom_array)
 
     # Assign IDs to non-standard components based on the PDB ID and entity ID
     non_std_ligands_to_chains = {
         f"{pdb_id}_{entity}": chains
         for entity, chains in non_std_ligands_to_chains.items()
+    }
+    non_std_ligands_to_rescount = {
+        f"{pdb_id}_{entity}": rescount
+        for entity, rescount in non_std_ligands_to_rescount.items()
     }
 
     all_ligands_to_chains = {**std_ligands_to_chains, **non_std_ligands_to_chains}
@@ -315,9 +329,10 @@ def extract_component_data_af3(
     # Generate conformer metadata for all components and write SDF files with reference
     # conformer coordinates
     for mol_id, mol in all_component_mols.items():
+        residue_count = non_std_ligands_to_rescount.get(mol_id, 1)
         mol, conformer_strategy = resolve_and_format_fallback_conformer(mol)
         reference_mol_metadata[mol_id] = get_reference_molecule_metadata(
-            mol, conformer_strategy
+            mol, conformer_strategy, residue_count
         )
 
         # Write SDF file
@@ -419,6 +434,7 @@ def preprocess_structure_and_write_outputs_af3(
 
     # Cleanup structure and extract metadata
     atom_array = cleanup_structure_af3(atom_array, cif_data, ccd)
+
     chain_int_metadata_dict = extract_chain_and_interface_metadata_af3(
         atom_array, cif_data
     )
@@ -442,6 +458,24 @@ def preprocess_structure_and_write_outputs_af3(
             **chain_int_metadata_dict,
         }
     }
+
+    # TODO: Clean this up
+    # Set permutation labels
+    per_chain_metadata = {
+        chain_id: PreprocessingChainData(
+            label_asym_id=chain_data["label_asym_id"],
+            auth_asym_id=chain_data["auth_asym_id"],
+            entity_id=chain_data["entity_id"],
+            molecule_type=chain_data["molecule_type"],
+            reference_mol_id=chain_data.get("reference_mol_id"),
+        )
+        for chain_id, chain_data in chain_int_metadata_dict["chains"].items()
+    }
+    assign_component_ids_from_metadata(
+        atom_array, per_chain_metadata=per_chain_metadata
+    )
+    tokenize_atom_array(atom_array)
+    atom_array = assign_mol_permutation_ids(atom_array)
 
     # Get canonicalized sequence for each chain (should match PDB SeqRes)
     chain_to_canonical_seq = get_chain_to_canonical_seq_dict(atom_array, cif_data)
