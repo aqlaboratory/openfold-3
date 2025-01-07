@@ -253,7 +253,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
         template_slice_collection = process_template_structures_af3(
             atom_array=atom_array,
             n_templates=self.template.n_templates,
-            take_top_k=False,
+            take_top_k=self.template.take_top_k,
             template_cache_directory=self.template_cache_directory,
             assembly_data=self.fetch_fields_for_chains(
                 pdb_id=pdb_id,
