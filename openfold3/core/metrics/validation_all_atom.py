@@ -887,7 +887,7 @@ def get_validation_lddt_metrics(
         is_ligand_acid_atomized: broadcasted is_ligand feature [*, n_atom]
         is_rna_atomized: broadcasted is_rna feature [*, n_atom]
         is_dna_acid_atomized: broadcasted is_dna feature [*, n_atom]
-        is_modified_residue_atomized: broadcasted is_modified_residue feature [*, n_atom]
+        is_modified_residue_atomized: broadcasted is_modified_residue [*, n_atom]
         all_atom_mask: atom mask [*, n_atom]
         asym_id: atomized asym_id feature [*, n_atom]
         intra_mask_atomized:[*, n_atom] filter for intra chain computations
@@ -1005,7 +1005,7 @@ def get_metrics(
     batch,
     outputs,
     superimposition_metrics=False,
-    is_train=True,
+    compute_extra_lddt_metrics=False,
 ) -> dict[str, torch.Tensor]:
     """
     Compute validation metrics on all substrates
@@ -1073,17 +1073,19 @@ def get_metrics(
     is_rna_atomized = expand_sample_dim(
         broadcast_token_feat_to_atoms(token_mask, num_atoms_per_token, is_rna)
     )
-    is_dna_atomized = expand_sample_dim(broadcast_token_feat_to_atoms(
-        token_mask, num_atoms_per_token, is_dna
-    ))
+    is_dna_atomized = expand_sample_dim(
+        broadcast_token_feat_to_atoms(token_mask, num_atoms_per_token, is_dna)
+    )
     asym_id_atomized = expand_sample_dim(
         broadcast_token_feat_to_atoms(token_mask, num_atoms_per_token, batch["asym_id"])
     )
     is_modified_residue = batch["is_atomized"]
     is_modified_residue = is_modified_residue * (1 - batch["is_ligand"])
-    is_modified_residue_atomized = expand_sample_dim(broadcast_token_feat_to_atoms(
-        token_mask, num_atoms_per_token, is_modified_residue.bool()
-    ))
+    is_modified_residue_atomized = expand_sample_dim(
+        broadcast_token_feat_to_atoms(
+            token_mask, num_atoms_per_token, is_modified_residue.bool()
+        )
+    )
 
     # set up filters for validation metrics if present, otherwise pass ones
     use_for_intra = batch.get(
@@ -1189,7 +1191,7 @@ def get_metrics(
         )
         metrics = metrics | superimpose_metrics
 
-    if not is_train:
+    if compute_extra_lddt_metrics:
         extra_lddt = get_validation_lddt_metrics(
             pred_coords,
             gt_coords,

@@ -224,7 +224,7 @@ def process_proteins(
             Default maximum accessible surface area for residues not in the dictionary.
             Defaults to 113.0.
         vdw_radii:
-            The set of van der Waals radii to use for SASA calculation 
+            The set of van der Waals radii to use for SASA calculation
                 (default = "ProtOr").
         residue_sasa_scale:
             The residue SASA scale to use (default is "Sander").
@@ -300,7 +300,7 @@ def compute_rasa_batch(
             Default maximum accessible surface area for residues not in the dictionary.
             Defaults to 113.0.
         vdw_radii:
-            The set of van der Waals radii to use for SASA calculation 
+            The set of van der Waals radii to use for SASA calculation
                 (default = "ProtOr").
         residue_sasa_scale:
             The residue SASA scale to use (default is "Sander").

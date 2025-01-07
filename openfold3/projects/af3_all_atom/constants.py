@@ -83,5 +83,13 @@ SUPERIMPOSE_METRICS = [
     "gdt_ha",
 ]
 
+VAL_EXTRA_LDDT_METRICS = [
+    "lddt_inter_ligand_dna",
+    "lddt_inter_ligand_rna",
+    "lddt_inter_modified_residues",
+]
+
+MODEL_SELECTION = VAL_EXTRA_LDDT_METRICS + ["model_selection"]
+
 TRAIN_LOGGED_METRICS = TRAIN_LOSSES + METRICS
-VAL_LOGGED_METRICS = VAL_LOSSES + METRICS + SUPERIMPOSE_METRICS
+VAL_LOGGED_METRICS = VAL_LOSSES + METRICS + SUPERIMPOSE_METRICS + MODEL_SELECTION

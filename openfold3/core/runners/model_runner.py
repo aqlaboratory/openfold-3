@@ -75,10 +75,7 @@ class ModelRunner(pl.LightningModule):
                 )
 
         with torch.no_grad():
-            if train:
-                metrics = self._compute_training_metrics(batch, outputs)
-            else:
-                metrics = self._compute_validation_metrics(batch, outputs)
+            metrics = self._compute_validation_metrics(batch, outputs)
 
         for k, v in metrics.items():
             self.log(

@@ -165,7 +165,6 @@ class ValidationPDBDataset(BaseAF3Dataset):
         token_starts = token_starts_with_stop[:-1]
         token_chain_id = atom_array.chain_id[token_starts].astype(int)
 
-
         features["use_for_intra_validation"] = torch.tensor(
             np.isin(token_chain_id, chains_for_intra_metrics),
             dtype=torch.int32,

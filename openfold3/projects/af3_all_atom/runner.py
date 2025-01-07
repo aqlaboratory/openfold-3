@@ -57,7 +57,7 @@ class AlphaFold3AllAtom(ModelRunner):
             if _compile
             else AlphaFold3Loss(config=model_config.architecture.loss_module)
         )
-        
+
         self.model_selection_weights = model_selection_metric_weights_config[
             self.config.settings.model_selection_weight_scheme
         ]
@@ -142,9 +142,23 @@ class AlphaFold3AllAtom(ModelRunner):
                 )
 
         with torch.no_grad():
-            other_metrics = self._compute_validation_metrics(
-                batch, outputs, superimposition_metrics=(not train)
-            )
+            if train:
+                other_metrics = get_metrics(
+                    batch,
+                    outputs,
+                    superimposition_metrics=False,
+                    compute_extra_lddt_metrics=False,
+                )
+            else:
+                # TODO: Model seelction - consider replacing this call directly with
+                # model selection call so that we have aggregated statistics of
+                # all the diffusion samples
+                other_metrics = get_metrics(
+                    batch,
+                    outputs,
+                    superimposition_metrics=True,
+                    compute_extra_lddt_metrics=True,
+                )
 
         for k, v in other_metrics.items():
             mean_metric = torch.mean(v)
@@ -167,10 +181,6 @@ class AlphaFold3AllAtom(ModelRunner):
                     logger=True,
                     sync_dist=False,
                 )
-
-        self.model_selection_weights = model_selection_metric_weights_config[
-            self.config.settings.model_selection_weight_scheme
-        ]
 
     def training_step(self, batch, batch_idx):
         example_feat = next(
@@ -354,25 +364,6 @@ class AlphaFold3AllAtom(ModelRunner):
     def on_load_checkpoint(self, checkpoint):
         ema = checkpoint["ema"]
         self.ema.load_state_dict(ema)
-
-    def _compute_training_metrics(
-        self,
-        batch,
-        outputs,
-    ) -> dict[str, torch.Tensor]:
-        metrics = get_metrics(
-            batch, outputs, superimposition_metrics=False, is_train=True
-        )
-        return metrics
-
-    def _compute_validation_metrics(
-        self,
-        batch,
-        outputs,
-        superimposition_metrics=True,
-    ) -> dict[str, torch.Tensor]:
-        metrics = get_metrics(batch, outputs, superimposition_metrics, is_train=False)
-        return metrics
 
     # TODO: Integrate with prediction step
     def _compute_confidence_scores(self, batch: dict, outputs: dict) -> dict:
