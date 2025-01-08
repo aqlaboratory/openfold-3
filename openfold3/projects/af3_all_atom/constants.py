@@ -75,6 +75,8 @@ METRICS = [
     "clash_intra_rna",
     "clash_inter_rna_rna",
     "clash_inter_protein_rna",
+    # Complex metrics
+    "lddt_complex",
 ]
 
 SUPERIMPOSE_METRICS = [
