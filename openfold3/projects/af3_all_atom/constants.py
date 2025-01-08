@@ -43,7 +43,6 @@ METRICS = [
     "drmsd_intra_protein",
     "clash_intra_protein",
     "clash_inter_protein_protein",
-    "plddt_protein",
     # Ligand metrics
     "lddt_intra_ligand",
     "lddt_inter_ligand_ligand",
@@ -54,7 +53,6 @@ METRICS = [
     "clash_intra_ligand",
     "clash_inter_ligand_ligand",
     "clash_inter_protein_ligand",
-    "plddt_ligand",
     # DNA metrics
     "lddt_intra_dna",
     "lddt_inter_dna_dna",
@@ -66,7 +64,6 @@ METRICS = [
     "clash_intra_dna",
     "clash_inter_dna_dna",
     "clash_inter_protein_dna",
-    "plddt_dna",
     # RNA metrics
     "lddt_intra_rna",
     "lddt_inter_rna_rna",
@@ -78,10 +75,6 @@ METRICS = [
     "clash_intra_rna",
     "clash_inter_rna_rna",
     "clash_inter_protein_rna",
-    "plddt_rna",
-    # Complex metrics
-    "lddt_complex",
-    "plddt_complex",
 ]
 
 SUPERIMPOSE_METRICS = [
@@ -96,7 +89,31 @@ VAL_EXTRA_LDDT_METRICS = [
     "lddt_inter_modified_residues",
 ]
 
-MODEL_SELECTION = VAL_EXTRA_LDDT_METRICS + ["model_selection"]
+VAL_EXTRA_LDDT_CORR_METRICS = [
+    # pLDDT metrics
+    "plddt_protein",
+    "plddt_ligand",
+    "plddt_dna",
+    "plddt_rna",
+    # Complex metrics
+    "lddt_complex",
+    "plddt_complex",
+]
 
-TRAIN_LOGGED_METRICS = TRAIN_LOSSES + METRICS
-VAL_LOGGED_METRICS = VAL_LOSSES + METRICS + SUPERIMPOSE_METRICS + MODEL_SELECTION
+MODEL_SELECTION = [
+    *VAL_EXTRA_LDDT_METRICS,
+    "model_selection",
+]
+
+TRAIN_LOGGED_METRICS = [
+    *TRAIN_LOSSES,
+    *METRICS,
+]
+
+VAL_LOGGED_METRICS = [
+    *VAL_LOSSES,
+    *METRICS,
+    *SUPERIMPOSE_METRICS,
+    *MODEL_SELECTION,
+    *VAL_EXTRA_LDDT_CORR_METRICS,
+]

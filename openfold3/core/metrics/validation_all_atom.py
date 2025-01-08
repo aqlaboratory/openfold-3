@@ -1172,29 +1172,6 @@ def get_metrics(
         )
         metrics = metrics | dna_validation_metrics
 
-    if torch.any(intra_filter_atomized):
-        full_complex_lddt_metrics = get_full_complex_lddt(
-            asym_id_atomized,
-            intra_filter_atomized,
-            pred_coords,
-            gt_coords,
-            all_atom_mask,
-        )
-        metrics = metrics | full_complex_lddt_metrics
-
-    # TODO: Replace with correlation metric
-    if torch.any(intra_filter_atomized):
-        plddt_logits = expand_sample_dim(outputs["plddt_logits"])
-        plddt_metrics = get_plddt_metrics(
-            is_protein_atomized,
-            is_ligand_atomized,
-            is_rna_atomized,
-            is_dna_atomized,
-            intra_filter_atomized,
-            plddt_logits,
-        )
-        metrics = metrics | plddt_metrics
-
     if superimposition_metrics:
         superimpose_metrics = get_superimpose_metrics(
             pred_coords,
@@ -1204,6 +1181,29 @@ def get_metrics(
         metrics = metrics | superimpose_metrics
 
     if compute_extra_lddt_metrics:
+        if torch.any(intra_filter_atomized):
+            full_complex_lddt_metrics = get_full_complex_lddt(
+                asym_id_atomized,
+                intra_filter_atomized,
+                pred_coords,
+                gt_coords,
+                all_atom_mask,
+            )
+            metrics = metrics | full_complex_lddt_metrics
+
+        # TODO: Replace with correlation metric
+        if torch.any(intra_filter_atomized):
+            plddt_logits = expand_sample_dim(outputs["plddt_logits"])
+            plddt_metrics = get_plddt_metrics(
+                is_protein_atomized,
+                is_ligand_atomized,
+                is_rna_atomized,
+                is_dna_atomized,
+                intra_filter_atomized,
+                plddt_logits,
+            )
+            metrics = metrics | plddt_metrics
+
         extra_lddt = get_validation_lddt_metrics(
             pred_coords,
             gt_coords,
@@ -1217,4 +1217,5 @@ def get_metrics(
             inter_filter_atomized,
         )
         metrics = metrics | extra_lddt
+
     return metrics
