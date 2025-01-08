@@ -16,6 +16,8 @@ from openfold3.core.data.framework.single_datasets.pdb import is_invalid_feature
 
 logger = logging.getLogger(__name__)
 
+DEBUG_PROTEIN_MONOMER_BLACKLIST = ["MGYP000285232442"]
+
 
 @register_dataset
 class ProteinMonomerDataset(BaseAF3Dataset):
@@ -81,6 +83,11 @@ class ProteinMonomerDataset(BaseAF3Dataset):
             return features
         else:
             try:
+                if pdb_id in DEBUG_PROTEIN_MONOMER_BLACKLIST:
+                    logger.warning(f"Skipping blacklisted pdb id {pdb_id}")
+                    index = random.randint(0, len(self) - 1)
+                    return self.__getitem__(index)
+
                 sample_data = self.create_all_features(
                     pdb_id=datapoint["pdb_id"],
                     preferred_chain_or_interface=None,

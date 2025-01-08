@@ -391,7 +391,9 @@ def all_atom_plddt_loss(
     # Construct pair atom selection mask for lddt computation
     # [*, N_atom, N_atom]
     pair_atom_mask = atom_mask_gt[..., None] * atom_mask[..., None, :]
-    pair_mask = pair_mask * pair_atom_mask
+    pair_mask = (
+        pair_mask * pair_atom_mask * (1.0 - torch.eye(n_atom, device=atom_mask.device))
+    )
 
     # Compute lddt
     # [*, N_atom]
@@ -716,7 +718,11 @@ def confidence_loss(
     conf_loss = sum(
         [
             loss_masked_batch_mean(
-                loss=loss, weight=loss_weights[name], apply_weight=True, eps=eps
+                loss=loss,
+                weight=loss_weights[name],
+                apply_weight=True,
+                nan_zero_weights=False,
+                eps=eps,
             )
             for name, loss in loss_breakdown.items()
         ]
@@ -728,6 +734,7 @@ def confidence_loss(
             loss=loss.detach().clone(),
             weight=loss_weights[name],
             apply_weight=False,
+            nan_zero_weights=True,
             eps=eps,
         )
         for name, loss in loss_breakdown.items()

@@ -4,14 +4,17 @@ import unittest
 import numpy as np
 import torch
 
+from openfold3.core.metrics.validation import gdt_ha, gdt_ts, rmsd
 from openfold3.core.metrics.validation_all_atom import (
-    batched_kabsch,
     drmsd,
-    gdt_ha,
-    gdt_ts,
     get_superimpose_metrics,
     interface_lddt,
     lddt,
+)
+from openfold3.core.utils.geometry.kabsch_alignment import (
+    apply_transformation,
+    get_optimal_transformation,
+    kabsch_align,
 )
 from tests.config import consts
 
@@ -74,7 +77,15 @@ class TestLDDT(unittest.TestCase):
         predicted_structure = torch.randn(
             batch_size, n_atom, 3
         )  # [batch_size, n_atom, 3]
-        atom_mask = torch.ones(batch_size, n_atom)  # [batch_size, n_atom]
+        atom_mask = torch.ones(batch_size, n_atom).bool()  # [batch_size, n_atom]
+
+        # TODO: write a test that checks intra / inter masking behavior
+        intra_mask_filter = torch.ones(
+            (batch_size, n_atom)
+        ).bool()  # [batch_size, n_atom]
+        inter_mask_filter = torch.ones(
+            (batch_size, n_atom, n_atom)
+        ).bool()  # [batch_size, n_atom, n_atom]
 
         pair_gt = torch.cdist(
             gt_structure, gt_structure
@@ -88,11 +99,17 @@ class TestLDDT(unittest.TestCase):
             pair_pred,
             pair_gt,
             atom_mask,
+            intra_mask_filter,
+            inter_mask_filter,
             asym_id,
         )
         exp_shape = (batch_size,)
         np.testing.assert_equal(intra_lddt.shape, exp_shape)
         np.testing.assert_equal(inter_lddt.shape, exp_shape)
+
+        # lddt should always be less than one
+        np.testing.assert_array_less(intra_lddt, 1.0)
+        np.testing.assert_array_less(inter_lddt, 1.0)
 
         # rototranslation.
         # lddt between gt_structure and gt_structure_rototranslated should give 1.0s
@@ -108,6 +125,8 @@ class TestLDDT(unittest.TestCase):
             pair_rototranslated,
             pair_gt,
             atom_mask,
+            intra_mask_filter,
+            inter_mask_filter,
             asym_id,
         )
         np.testing.assert_allclose(
@@ -135,8 +154,10 @@ class TestInterfaceLDDT(unittest.TestCase):
         predicted_structure_2 = torch.randn(
             batch_size, n_atom2, 3
         )  # [batch_size, n_atom, 3]
-        mask1 = torch.ones(batch_size, n_atom)  # [batch_size, n_atom,]
-        mask2 = torch.ones(batch_size, n_atom2)  # [batch_size, n_atom,]
+
+        mask1 = torch.ones(batch_size, n_atom).bool()  # [batch_size, n_atom,]
+        mask2 = torch.ones(batch_size, n_atom2).bool()  # [batch_size, n_atom,]
+        filter_mask = torch.ones(batch_size, n_atom, n_atom2).bool()
 
         # shape test
         out_interface_lddt = interface_lddt(
@@ -146,6 +167,7 @@ class TestInterfaceLDDT(unittest.TestCase):
             gt_structure_2,
             mask1,
             mask2,
+            filter_mask,
         )
         exp_shape = (batch_size,)
         np.testing.assert_equal(out_interface_lddt.shape, exp_shape)
@@ -158,7 +180,7 @@ class TestInterfaceLDDT(unittest.TestCase):
         p1, p2 = torch.split(combined_coordinates_rt, [n_atom, n_atom2], dim=1)
         # run interface_lddt
         out_interface_lddt = interface_lddt(
-            p1, p2, gt_structure_1, gt_structure_2, mask1, mask2
+            p1, p2, gt_structure_1, gt_structure_2, mask1, mask2, filter_mask
         )
         exp_outputs = torch.ones(batch_size)
         np.testing.assert_allclose(out_interface_lddt, exp_outputs, atol=consts.eps)
@@ -173,7 +195,7 @@ class TestDRMSD(unittest.TestCase):
         predicted_structure = torch.randn(
             batch_size, n_atom, 3
         )  # [batch_size, n_atom, 3]
-        mask = torch.ones(batch_size, n_atom)  # [batch_size, n_atom]
+        mask = torch.ones(batch_size, n_atom).bool()  # [batch_size, n_atom]
 
         pair_gt = torch.cdist(
             gt_structure,
@@ -214,33 +236,53 @@ class TestDRMSD(unittest.TestCase):
         np.testing.assert_allclose(inter_drmsd_rt, exp_outputs, atol=consts.eps)
 
 
-class TestBatchedKabsch(unittest.TestCase):
-    def test_batched_kabsch(self):
+class TestKabschAlign(unittest.TestCase):
+    def test_kabsch_align(self):
         batch_size = consts.batch_size
         n_atom = consts.n_res
 
         gt_structure = torch.randn(batch_size, n_atom, 3)  # [batch_size, n_atom, 3]
         pred_structure = torch.randn(batch_size, n_atom, 3)  # [batch_size, n_atom, 3]
-        mask = torch.ones(batch_size, n_atom)
+        mask = torch.ones(batch_size, n_atom).bool()
 
         # shape test
-        out_translation, out_rotation, out_coordinates = batched_kabsch(
-            pred_structure,
-            gt_structure,
-            mask,
+        out_transformation = get_optimal_transformation(
+            mobile_positions=pred_structure,
+            target_positions=gt_structure,
+            positions_mask=mask,
         )
+
+        out_coordinates = apply_transformation(
+            positions=pred_structure, transformation=out_transformation
+        )
+
         exp_shape_translation = (batch_size, 1, 3)
         exp_shape_rotation = (batch_size, 3, 3)
-        exp_shape_coordinates = (batch_size,)
-        np.testing.assert_equal(out_translation.shape, exp_shape_translation)
-        np.testing.assert_equal(out_rotation.shape, exp_shape_rotation)
+        exp_shape_coordinates = (batch_size, n_atom, 3)
+        np.testing.assert_equal(
+            out_transformation.translation_vector.shape, exp_shape_translation
+        )
+        np.testing.assert_equal(
+            out_transformation.rotation_matrix.shape, exp_shape_rotation
+        )
         np.testing.assert_equal(out_coordinates.shape, exp_shape_coordinates)
 
         # rototranslation test. should give 0.s
         gt_structure_rototranslated = random_rotation_translation(gt_structure)
         exp_outputs = torch.zeros(batch_size)
-        out_kabsch = batched_kabsch(gt_structure_rototranslated, gt_structure, mask)[-1]
-        np.testing.assert_allclose(out_kabsch, exp_outputs, atol=consts.eps)
+        out_kabsch = kabsch_align(
+            mobile_positions=gt_structure_rototranslated,
+            target_positions=gt_structure,
+            positions_mask=mask,
+        )
+
+        out_rmsd = rmsd(
+            pred_positions=out_kabsch,
+            target_positions=gt_structure,
+            positions_mask=mask,
+        )
+
+        np.testing.assert_allclose(out_rmsd, exp_outputs, atol=consts.eps)
 
 
 class TestGDT(unittest.TestCase):
@@ -250,22 +292,17 @@ class TestGDT(unittest.TestCase):
 
         gt_structure = torch.randn(batch_size, n_atom, 3)
         predicted_structure = torch.randn(batch_size, n_atom, 3)
-        mask = torch.ones(batch_size, n_atom)
+        mask = torch.ones(batch_size, n_atom).bool()
 
         # shape test
-        trans, optimal_rotation, rmsd = batched_kabsch(
-            predicted_structure,
-            gt_structure,
-            mask,
+        pred_superimposed = kabsch_align(
+            mobile_positions=predicted_structure,
+            target_positions=gt_structure,
+            positions_mask=mask,
         )
 
-        gt_centered = gt_structure - torch.mean(gt_structure, dim=-2, keepdim=True)
-        pred_centered = predicted_structure - torch.mean(
-            predicted_structure, dim=-2, keepdim=True
-        )
-        pred_superimposed = pred_centered @ optimal_rotation.transpose(-1, -2)
-        out_gdt_ts = gdt_ts(pred_superimposed, gt_centered, mask)
-        out_gdt_ha = gdt_ha(pred_superimposed, gt_centered, mask)
+        out_gdt_ts = gdt_ts(pred_superimposed, gt_structure, mask)
+        out_gdt_ha = gdt_ha(pred_superimposed, gt_structure, mask)
 
         exp_gdt_ts_shape = (batch_size,)
         exp_gdt_ha_shape = (batch_size,)
@@ -274,25 +311,17 @@ class TestGDT(unittest.TestCase):
 
         # rototranslation test
         gt_structure = torch.randn(batch_size, n_atom, 3)
-        gt_structure_centered = gt_structure - torch.mean(
-            gt_structure, dim=-2, keepdim=True
+
+        mask = torch.ones(batch_size, n_atom).bool()
+        pred = random_rotation_translation(gt_structure)
+        pred_superimposed = kabsch_align(
+            mobile_positions=pred,
+            target_positions=gt_structure,
+            positions_mask=mask,
         )
 
-        mask = torch.ones(batch_size, n_atom)
-        pred = random_rotation_translation(gt_structure)
-        trans, optimal_rotation, rmsd = batched_kabsch(
-            pred,
-            gt_structure,
-            mask,
-        )
-        pred_centered = pred - torch.mean(
-            pred,
-            dim=-2,
-            keepdim=True,
-        )
-        pred_superimposed = pred_centered @ optimal_rotation.transpose(-1, -2)
-        out_gdt_ts = gdt_ts(pred_superimposed, gt_structure_centered, mask)
-        out_gdt_ha = gdt_ha(pred_superimposed, gt_structure_centered, mask)
+        out_gdt_ts = gdt_ts(pred_superimposed, gt_structure, mask)
+        out_gdt_ha = gdt_ha(pred_superimposed, gt_structure, mask)
 
         exp_gdt_ts_outs = torch.ones(batch_size)
         exp_gdt_ha_outs = torch.ones(batch_size)
@@ -308,7 +337,7 @@ class TestGetSuperimposeMetrics(unittest.TestCase):
 
         coords_pred = torch.randn(batch_size, n_atom, 3)
         coords_gt = torch.randn(batch_size, n_atom, 3)
-        all_atom_mask = torch.ones((n_atom,))
+        all_atom_mask = torch.ones((n_atom,)).bool()
 
         out = get_superimpose_metrics(coords_pred, coords_gt, all_atom_mask)
         exp_shape = (batch_size,)

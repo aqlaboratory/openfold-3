@@ -303,6 +303,7 @@ class SampleDiffusion(nn.Module):
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
         noise_schedule: torch.Tensor,
+        no_rollout_samples: int,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
@@ -321,6 +322,8 @@ class SampleDiffusion(nn.Module):
                 [*, N_token, N_token, c_z] Pair representation
             noise_schedule:
                 [no_rollout_steps] Noise schedule
+            no_rollout_samples:
+                [no_rollout_samples] Number of samples to generate for rollout
             chunk_size:
                 Inference-time subbatch size
             use_deepspeed_evo_attention:
@@ -335,9 +338,12 @@ class SampleDiffusion(nn.Module):
             [*, N_atom, 3] Sampled atom positions
         """
         atom_mask = batch["atom_mask"]
+        batch_dim, num_atoms = atom_mask.shape[0], atom_mask.shape[-1]
 
         xl = noise_schedule[0] * torch.randn(
-            (*atom_mask.shape, 3), device=atom_mask.device, dtype=atom_mask.dtype
+            (batch_dim, no_rollout_samples, num_atoms, 3),
+            device=atom_mask.device,
+            dtype=atom_mask.dtype,
         )
 
         for tau, c_tau in enumerate(noise_schedule[1:]):

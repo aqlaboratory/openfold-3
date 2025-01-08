@@ -24,7 +24,6 @@ import torch
 from openfold3.core.loss.loss_utils import loss_masked_batch_mean
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.checkpointing import checkpoint_section
-from openfold3.core.utils.tensor_utils import tensor_tree_map
 
 logger = logging.getLogger(__name__)
 
@@ -361,9 +360,6 @@ def diffusion_loss(
     bond_weight = loss_weights["bond"]
     smooth_lddt_weight = loss_weights["smooth_lddt"]
 
-    # Expand to broadcast to number of samples
-    batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
-
     l_mse = mse_loss(
         x=x,
         batch=batch,
@@ -413,7 +409,11 @@ def diffusion_loss(
     # Mask out samples where the loss is disabled
     loss_breakdown = {
         f"{name}_loss": loss_masked_batch_mean(
-            loss=loss, weight=loss_weights[name], apply_weight=False, eps=eps
+            loss=loss,
+            weight=loss_weights[name],
+            apply_weight=False,
+            nan_zero_weights=True,
+            eps=eps,
         )
         for name, loss in loss_breakdown.items()
     }
@@ -432,10 +432,11 @@ def diffusion_loss(
 
     # Mean over batch dimension, only for samples with diffusion losses enabled
     mean_loss = loss_masked_batch_mean(
-        loss=mean_loss, weight=mse_weight, apply_weight=False, eps=eps
+        loss=mean_loss,
+        weight=mse_weight,
+        apply_weight=False,
+        nan_zero_weights=False,
+        eps=eps,
     )
-
-    # Return to original batch size
-    tensor_tree_map(lambda t: t.squeeze(1), batch)
 
     return mean_loss, loss_breakdown
