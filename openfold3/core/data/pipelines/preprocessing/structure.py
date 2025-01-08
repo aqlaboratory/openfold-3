@@ -37,6 +37,7 @@ from openfold3.core.data.primitives.permutation.mol_labels import (
     assign_mol_permutation_ids,
 )
 from openfold3.core.data.primitives.structure.cleanup import (
+    canonicalize_atom_order,
     convert_MSE_to_MET,
     fix_arginine_naming,
     remove_chains_with_CA_gaps,
@@ -136,6 +137,7 @@ def cleanup_structure_af3(
         atom_array, clash_distance=1.7, clash_percentage=0.3
     )
     atom_array = remove_non_CCD_atoms(atom_array, ccd)
+    atom_array = canonicalize_atom_order(atom_array, ccd)
     atom_array = remove_chains_with_CA_gaps(atom_array, distance_threshold=10.0)
 
     # Subset bioassemblies larger than 20 chains
@@ -152,7 +154,7 @@ def cleanup_structure_af3(
 
     # Remove terminal atoms to ensure consistent atom count for standard tokens in the
     # model
-    atom_array = remove_std_residue_terminal_atoms(atom_array)  #
+    atom_array = remove_std_residue_terminal_atoms(atom_array)
 
     return atom_array
 

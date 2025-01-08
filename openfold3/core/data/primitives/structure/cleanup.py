@@ -428,6 +428,73 @@ def remove_non_CCD_atoms(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
 
 
 @return_on_empty_atom_array
+def canonicalize_atom_order(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
+    """Canonicalizes the order of atoms in the AtomArray by the CCD order.
+
+    This function sorts the atoms in the AtomArray based on the order of atoms for the
+    corresponding residue in the Chemical Component Dictionary (CCD). This is necessary
+    for downstream functionalities that expect atoms across equivalent residues to
+    perfectly match, such as the permutation alignment.
+
+    Args:
+        atom_array (AtomArray):
+            AtomArray containing the structure to canonicalize the atom order for.
+        ccd (CIFFile):
+            A parsed CIFFile containing the Chemical Component Dictionary
+            (components.cif).
+
+    Returns:
+        AtomArray with the atoms sorted in the canonical CCD order.
+    """
+
+    def get_ref_atoms(res_name):
+        """Convenience function that gets the reference atom names in CCD order."""
+        return ccd[res_name]["chem_comp_atom"]["atom_id"].as_array().tolist()
+
+    # Fetches the CCD atoms for each residue name as a list
+    res_name_to_ref_atoms = {}
+
+    # Track original order
+    assign_atom_indices(atom_array, label="_atom_idx_can_order")
+
+    # Create a resorting index that will be populated to sort the entire AtomArray in a
+    # final operation
+    resort_idx = np.full(atom_array.array_length(), -1, dtype=int)
+
+    for residue in struc.residue_iter(atom_array):
+        # Get the reference atom order for the residue
+        res_name = residue.res_name[0]
+        if res_name in res_name_to_ref_atoms:
+            ref_atoms = res_name_to_ref_atoms[res_name]
+        else:
+            ref_atoms = get_ref_atoms(res_name)
+            res_name_to_ref_atoms[res_name] = ref_atoms
+
+        old_atom_idx = residue._atom_idx_can_order
+
+        # Get the sorting index that will sort the residue's atoms to match the
+        # reference order
+        idx_in_ref = np.array([ref_atoms.index(atom) for atom in residue.atom_name])
+        reordered_atom_idx = residue._atom_idx_can_order[np.argsort(idx_in_ref)]
+
+        # TODO: Remove?
+        if not np.array_equal(old_atom_idx, reordered_atom_idx):
+            logger.debug(f"Residue {res_name} was reordered")
+
+        resort_idx[old_atom_idx] = reordered_atom_idx
+
+    assert np.all(resort_idx != -1), "Not all atoms were reordered"
+
+    # Apply the sorting index to the entire AtomArray
+    atom_array = atom_array[resort_idx]
+
+    # Clean up temporary indices
+    atom_array.del_annotation("_atom_idx_can_order")
+
+    return atom_array
+
+
+@return_on_empty_atom_array
 def remove_chains_with_CA_gaps(
     atom_array: AtomArray, distance_threshold: float = 10.0
 ) -> AtomArray:
