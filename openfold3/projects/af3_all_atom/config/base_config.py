@@ -7,6 +7,7 @@ from openfold3.projects.af3_all_atom.config import (
 )
 
 PLACEHOLDER_PATH = Path("placeholder/path")
+PLACEHOLDER_FORMAT = "placeholder_format"
 
 # Hidden dimensions
 c_s = mlc.FieldReference(384, field_type=int)
@@ -504,7 +505,7 @@ project_config = mlc.ConfigDict(
                 "dataset_paths": {
                     "alignments_directory": PLACEHOLDER_PATH,
                     "target_structures_directory": PLACEHOLDER_PATH,
-                    "target_structure_file_format": PLACEHOLDER_PATH,
+                    "target_structure_file_format": PLACEHOLDER_FORMAT,
                     "alignment_db_directory": PLACEHOLDER_PATH,
                     "alignment_array_directory": PLACEHOLDER_PATH,
                     "dataset_cache_file": PLACEHOLDER_PATH,
@@ -512,7 +513,7 @@ project_config = mlc.ConfigDict(
                     "template_cache_directory": PLACEHOLDER_PATH,
                     "template_structures_directory": PLACEHOLDER_PATH,
                     "template_structure_array_directory": PLACEHOLDER_PATH,
-                    "template_file_format": PLACEHOLDER_PATH,
+                    "template_file_format": PLACEHOLDER_FORMAT,
                     "ccd_file": PLACEHOLDER_PATH,
                 },
             },
