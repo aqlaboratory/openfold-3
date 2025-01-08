@@ -133,6 +133,8 @@ def get_mol_id_to_tanimoto_ligands(
     return val_refid_to_homologs
 
 
+# TODO: Add back thread and memory settings if they keep being a problem with newer
+# MMSeqs versions
 def run_mmseqs_search(
     query_id_to_sequence: dict[str, str],
     target_id_to_sequence: dict[str, str],
