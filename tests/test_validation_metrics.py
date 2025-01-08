@@ -80,10 +80,12 @@ class TestLDDT(unittest.TestCase):
         atom_mask = torch.ones(batch_size, n_atom).bool()  # [batch_size, n_atom]
 
         # TODO: write a test that checks intra / inter masking behavior
-        intra_mask_filter = torch.ones((batch_size, n_atom))  # [batch_size, n_atom]
+        intra_mask_filter = torch.ones(
+            (batch_size, n_atom)
+        ).bool()  # [batch_size, n_atom]
         inter_mask_filter = torch.ones(
             (batch_size, n_atom, n_atom)
-        )  # [batch_size, n_atom, n_atom]
+        ).bool()  # [batch_size, n_atom, n_atom]
 
         pair_gt = torch.cdist(
             gt_structure, gt_structure
@@ -155,7 +157,7 @@ class TestInterfaceLDDT(unittest.TestCase):
 
         mask1 = torch.ones(batch_size, n_atom).bool()  # [batch_size, n_atom,]
         mask2 = torch.ones(batch_size, n_atom2).bool()  # [batch_size, n_atom,]
-        filter_mask = torch.ones(batch_size, n_atom, n_atom2)
+        filter_mask = torch.ones(batch_size, n_atom, n_atom2).bool()
 
         # shape test
         out_interface_lddt = interface_lddt(

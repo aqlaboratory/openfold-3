@@ -151,12 +151,12 @@ class ValidationPDBDataset(BaseAF3Dataset):
         chains_for_intra_metrics = [
             int(cid)
             for cid, cdata in structure_entry.chains.items()
-            if cdata.use_intrachain_metrics
+            if cdata.use_metrics
         ]
 
         interfaces_to_include = []
         for interface_id, cluster_data in structure_entry.interfaces.items():
-            if cluster_data.use_interchain_metrics:
+            if cluster_data.use_metrics:
                 interface_chains = tuple(int(ci) for ci in interface_id.split("_"))
                 interfaces_to_include.append(interface_chains)
 
