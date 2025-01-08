@@ -1430,9 +1430,9 @@ def select_final_validation_data(
     This will create the final validation dataset cache by subsetting the unfiltered
     cache only to the relevant PDB-IDs, and then turning on the use_metrics flag only
     for select chains and interfaces coming out of the multimer and monomer sets. Note
-    that we are not including all low-homology chains and interfaces of each target in
-    the final validation set, but only those that are part of the selected monomer and
-    multimer sets.
+    that we are not scoring validation metrics on all low-homology chains and interfaces
+    of each target in the final validation set, but only those that are part of the
+    selected monomer and multimer sets.
 
     Args:
         unfiltered_cache: ValClusteredDatasetCache
