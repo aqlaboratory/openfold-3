@@ -43,6 +43,7 @@ METRICS = [
     "drmsd_intra_protein",
     "clash_intra_protein",
     "clash_inter_protein_protein",
+    "plddt_protein",
     # Ligand metrics
     "lddt_intra_ligand",
     "lddt_inter_ligand_ligand",
@@ -53,6 +54,7 @@ METRICS = [
     "clash_intra_ligand",
     "clash_inter_ligand_ligand",
     "clash_inter_protein_ligand",
+    "plddt_ligand",
     # DNA metrics
     "lddt_intra_dna",
     "lddt_inter_dna_dna",
@@ -64,6 +66,7 @@ METRICS = [
     "clash_intra_dna",
     "clash_inter_dna_dna",
     "clash_inter_protein_dna",
+    "plddt_dna",
     # RNA metrics
     "lddt_intra_rna",
     "lddt_inter_rna_rna",
@@ -75,8 +78,10 @@ METRICS = [
     "clash_intra_rna",
     "clash_inter_rna_rna",
     "clash_inter_protein_rna",
+    "plddt_rna",
     # Complex metrics
     "lddt_complex",
+    "plddt_complex",
 ]
 
 SUPERIMPOSE_METRICS = [

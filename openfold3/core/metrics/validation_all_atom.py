@@ -834,7 +834,8 @@ def get_plddt_metrics(
 
     out = {}
 
-    plddt_complex = compute_plddt(plddt_logits)
+    # Report plddt scaled to 0-1
+    plddt_complex = compute_plddt(plddt_logits) / 100
     out["plddt_complex"] = torch.sum(
         plddt_complex * intra_filter_atomized, dim=-1
     ) / torch.sum(intra_filter_atomized)
@@ -957,6 +958,9 @@ def get_validation_metrics(
     )
     intra_filter_atomized = expand_sample_dim(intra_filter_atomized).bool()
 
+    # TODO: This mask is not broadcasted in the sample dimensions due to
+    #  max int size threshold in masked select. Make mask dims more consistent
+    #  in the future.
     # convert use_for_inter: [*, n_token, n_token] into [*, n_atom, n_atom]
     inter_filter_atomized = broadcast_token_feat_to_atoms(
         token_mask,
@@ -1036,16 +1040,17 @@ def get_validation_metrics(
         metrics = metrics | full_complex_lddt_metrics
 
     # TODO: Replace with correlation metric
-    # if torch.any(intra_filter_atomized):
-    #     plddt_metrics = get_plddt_metrics(
-    #         is_protein_atomized,
-    #         is_ligand_atomized,
-    #         is_rna_atomized,
-    #         is_dna_atomized,
-    #         intra_filter_atomized,
-    #         outputs["plddt_logits"],
-    #     )
-    #     metrics = metrics | plddt_metrics
+    if torch.any(intra_filter_atomized):
+        plddt_logits = expand_sample_dim(outputs["plddt_logits"])
+        plddt_metrics = get_plddt_metrics(
+            is_protein_atomized,
+            is_ligand_atomized,
+            is_rna_atomized,
+            is_dna_atomized,
+            intra_filter_atomized,
+            plddt_logits,
+        )
+        metrics = metrics | plddt_metrics
 
     if superimposition_metrics:
         superimpose_metrics = get_superimpose_metrics(
