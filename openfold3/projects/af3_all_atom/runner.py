@@ -150,9 +150,9 @@ class AlphaFold3AllAtom(ModelRunner):
                     compute_extra_lddt_metrics=False,
                 )
             else:
-                # TODO: Model seelction - consider replacing this call directly with
-                # model selection call so that we have aggregated statistics of
-                # all the diffusion samples
+                # TODO: Model selection - consider replacing this call directly with
+                #  model selection call so that we have aggregated statistics of
+                #  all the diffusion samples
                 other_metrics = get_metrics(
                     batch,
                     outputs,

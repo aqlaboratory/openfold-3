@@ -86,7 +86,7 @@ SUPERIMPOSE_METRICS = [
 VAL_EXTRA_LDDT_METRICS = [
     "lddt_inter_ligand_dna",
     "lddt_inter_ligand_rna",
-    "lddt_inter_modified_residues",
+    "lddt_intra_modified_residues",
 ]
 
 VAL_EXTRA_LDDT_CORR_METRICS = [
