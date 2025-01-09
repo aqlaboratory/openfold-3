@@ -90,8 +90,7 @@ if __name__ == "__main__":
         "input_fasta",
         type=Path,
         help=(
-            "Input .fasta file. Sequence names should be in format "
-            ">{PDB_ID}_{CHAIN_ID}"
+            "Input .fasta file. Sequence names should be in format >{PDB_ID}_{CHAIN_ID}"
         ),
     )
     parser.add_argument(

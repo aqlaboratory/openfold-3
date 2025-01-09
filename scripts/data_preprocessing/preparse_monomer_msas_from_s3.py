@@ -157,7 +157,7 @@ class _MsaPreparser:
         try:
             download_file_from_s3(
                 bucket=self.s3_config["bucket"],
-                prefix=f'{self.s3_config["prefix"]}/{rep_pdb_chain_id}',
+                prefix=f"{self.s3_config['prefix']}/{rep_pdb_chain_id}",
                 filename="concat_cfdb_uniref100_filtered.a3m",
                 outfile=str(tmp_dir / "concat_cfdb_uniref100_filtered.a3m"),
                 session=_worker_session,
@@ -172,7 +172,7 @@ class _MsaPreparser:
             (tmp_dir / "concat_cfdb_uniref100_filtered.a3m").unlink()
             tmp_dir.rmdir()
         except Exception as e:
-            print("Failed to preparse MSAs for chain " f"{rep_pdb_chain_id}:\n{e}\n")
+            print(f"Failed to preparse MSAs for chain {rep_pdb_chain_id}:\n{e}\n")
 
 
 if __name__ == "__main__":

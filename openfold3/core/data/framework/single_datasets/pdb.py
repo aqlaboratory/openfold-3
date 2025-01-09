@@ -53,7 +53,7 @@ def is_invalid_feature_dict(features: dict) -> bool:
     num_ref_atoms = features["ref_pos"].shape[-2]
     if num_atoms_sum != num_ref_atoms:
         logger.warning(
-            f"Size mismatch {pdb_id} with {num_atoms_sum} vs " f"{num_ref_atoms} atoms"
+            f"Size mismatch {pdb_id} with {num_atoms_sum} vs {num_ref_atoms} atoms"
         )
         skip = True
 
@@ -94,7 +94,7 @@ def is_invalid_feature_dict(features: dict) -> bool:
     # Check that the number of tokens per atom is less than the maximum expected
     if (features["num_atoms_per_token"] > 23).any():
         logger.warning(
-            f"Skipping {pdb_id}: token contains number of atoms > " f"max expected (23)"
+            f"Skipping {pdb_id}: token contains number of atoms > max expected (23)"
         )
         skip = True
 
