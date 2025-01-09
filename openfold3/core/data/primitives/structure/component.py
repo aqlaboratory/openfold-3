@@ -14,6 +14,9 @@ from pdbeccdutils.core.ccd_reader import Component
 from rdkit import Chem
 from rdkit.Chem import AllChem, Mol
 
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
 from openfold3.core.data.resources.patches import correct_cif_string
 from openfold3.core.data.resources.residues import MoleculeType
 
@@ -446,3 +449,17 @@ def component_iter_from_metadata(atom_array: AtomArray, per_chain_metadata: dict
         # Decompose the chain into individual residues and their reference molecules
         else:
             yield from struc.residue_iter(chain_array)
+
+
+@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-comp-id-assign")
+def assign_component_ids_from_metadata(
+    atom_array: AtomArray, per_chain_metadata: dict[str, dict]
+) -> None:
+    atom_array.set_annotation(
+        "component_id", np.full(len(atom_array), fill_value=-1, dtype=int)
+    )
+
+    for id, component in enumerate(
+        component_iter_from_metadata(atom_array, per_chain_metadata), start=1
+    ):
+        component.component_id[:] = id
