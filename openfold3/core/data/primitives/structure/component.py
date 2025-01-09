@@ -17,6 +17,7 @@ from rdkit.Chem import AllChem, Mol
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
+from openfold3.core.data.primitives.structure.labels import assign_atom_indices
 from openfold3.core.data.resources.patches import correct_cif_string
 from openfold3.core.data.resources.residues import MoleculeType
 
@@ -178,6 +179,58 @@ def get_component_info(atom_array: AtomArray) -> PDBComponentInfo:
         non_standard_ligands_to_chains=dict(non_standard_ligands_to_chain),
         non_standard_ligands_to_rescount=non_standard_ligands_to_rescount,
     )
+
+
+def get_covalent_component_chain_ids(atom_array: AtomArray) -> list[str]:
+    """Gets all the chains in an AtomArray that represent covalent components.
+
+    A covalent component is a ligand that is either covalently bonded to another chain
+    or consists of multiple residues covalently connected to each other. Note that this
+    ignores metal coordination bonds.
+
+    Args:
+        atom_array:
+            AtomArray containing the chains to check.
+
+    Returns:
+        List of chain IDs that represent covalent components.
+    """
+    assign_atom_indices(atom_array, label="_atom_idx_coval_comp")
+    bond_list = atom_array.bonds.as_array()
+
+    # Filter out metal coordination bonds
+    bond_list = bond_list[bond_list[:, 2] != BondType.COORDINATION]
+
+    ligand_chain_ids = struc.get_chains(
+        atom_array[atom_array.molecule_type_id == MoleculeType.LIGAND]
+    )
+    ligand_chains = atom_array[np.isin(atom_array.chain_id, ligand_chain_ids)]
+
+    covalent_component_chains = []
+
+    # Get all chains that have at least one covalent bond
+    for chain in struc.chain_iter(ligand_chains):
+        chain_id = chain.chain_id[0].item()
+
+        if struc.get_residue_count(chain) > 1:
+            # Multi-residue ligand
+            covalent_component_chains.append(chain_id)
+            continue
+
+        chain_bonds = bond_list[
+            np.isin(bond_list[:, 0], chain._atom_idx_coval_comp)
+            | np.isin(bond_list[:, 1], chain._atom_idx_coval_comp)
+        ]
+
+        # Check if any bond is cross-chain
+        bond_chain_ids = atom_array.chain_id[chain_bonds[:, :2]]
+
+        if np.any(bond_chain_ids[:, 0] != bond_chain_ids[:, 1]):
+            covalent_component_chains.append(chain_id)
+
+    atom_array.del_annotation("_atom_idx_coval-comp")
+
+    return covalent_component_chains
 
 
 def pdbeccdutils_component_from_ccd(ccd_id: str, ccd: CIFFile) -> Component:

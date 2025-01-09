@@ -548,6 +548,12 @@ def add_unresolved_atoms_within_residue(
     chain breaks, or missing sequence starts/ends, this function adds missing atoms
     within residues that are partially resolved.
 
+    NOTE: For now, this function skips adding unresolved atoms for covalently connected
+    components such as ligands bound to a polymer or multi-residue ligands (like
+    glycans). This is because it is challenging to infer which atom is not present due
+    to the covalent connection and which atom is truly missing (and leaving-atom
+    annotations are ambiguous). This should be addressed in a future version.
+
     Args:
         atom_array:
             AtomArray containing the structure to add missing atoms to.
@@ -602,24 +608,23 @@ def add_unresolved_atoms_within_residue(
     std_protein_residues = set(STANDARD_PROTEIN_RESIDUES_3)
     std_na_residues = set(STANDARD_NUCLEIC_ACID_RESIDUES)
 
+    covalent_ligand_chain_ids = get_covalent_component_chain_ids(atom_array)
+
     missing_atom_list = []
 
     for chain in struc.chain_iter(extended_atom_array):
         chain_id = chain.chain_id[0]
 
+        # TODO: Add logic for correctly inferring unobserved atoms also in covalent
+        # ligands
+        if chain_id in covalent_ligand_chain_ids:
+            continue
+
         (chain_molecule_type_id,) = np.unique(chain.molecule_type_id)
         chain_molecule_type = MoleculeType(chain_molecule_type_id)
 
-        is_ligand = chain_molecule_type == MoleculeType.LIGAND
         is_protein = chain_molecule_type == MoleculeType.PROTEIN
         is_nucleic_acid = chain_molecule_type in (MoleculeType.RNA, MoleculeType.DNA)
-
-        # TODO: add logic for correctly inferring unobserved atoms also in covalent
-        # ligands
-        # TODO: also need to skip monomeric covalently connected ligands
-        # Skip covalently connected ligand chains
-        if (struc.get_residue_count(chain) > 1) & is_ligand:
-            continue
 
         # Find unresolved atoms for all residues in each chain
         for residue in struc.residue_iter(chain):
