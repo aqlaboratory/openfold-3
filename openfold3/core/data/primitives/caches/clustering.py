@@ -8,10 +8,12 @@ from typing import Literal
 import pandas as pd
 
 from openfold3.core.data.io.sequence.fasta import write_multichain_fasta
-from openfold3.core.data.primitives.caches.format import ClusteredDatasetCache
-from openfold3.core.data.primitives.caches.metadata import (
+from openfold3.core.data.primitives.caches.filtering import (
     get_all_cache_chains,
     logger,
+)
+from openfold3.core.data.primitives.caches.format import (
+    ClusteredDatasetCache,
 )
 from openfold3.core.data.resources.residues import MoleculeType
 
@@ -19,8 +21,8 @@ from openfold3.core.data.resources.residues import MoleculeType
 def get_sequence_to_cluster_id(
     id_to_sequence: dict[str, str],
     min_seq_identity: float = 0.4,
-    coverage: float = 0.9,
-    coverage_mode: str = "0",
+    coverage: float = 0.8,
+    coverage_mode: int = 0,
     sensitivity: float = 8,
     max_seqs: int = 1000,
     cluster_mode: Literal[0, 1, 2, 3] = 0,
@@ -29,10 +31,9 @@ def get_sequence_to_cluster_id(
 ) -> dict[str, int]:
     """Runs MMseqs2 clustering and returns a mapping of sequence id to cluster id.
 
-    Default settings are mostly derived from what is internally used at RCSB PDB (see
-    https://github.com/soedinglab/MMseqs2/issues/452), although we set the cluster_mode
-    to the greedy set cover default in order to avoid getting too-large clusters, and
-    the default min_seq_identity to 40% which is used in AF3 SI 2.5.3.
+    Default settings are mostly derived from a combination of the MMSeqs defaults and
+    what is used internally at RCSB PDB (see
+    https://github.com/soedinglab/MMseqs2/issues/452).
 
     Args:
         id_to_sequence (dict[str, str]):
@@ -41,11 +42,11 @@ def get_sequence_to_cluster_id(
             Sequence similarity threshold to cluster at. Defaults to 0.4.
         coverage (float, optional):
             Minimum sequence coverage of query/subject/both (depends on cov_mode).
-            Defaults to 0.9.
-        coverage_mode (str, optional):
+            Defaults to 0.8.
+        coverage_mode (int, optional):
             Coverage definition to use (see
             https://github.com/soedinglab/MMseqs2/wiki#how-to-set-the-right-alignment-coverage-to-cluster).
-            Defaults to "0".
+            Defaults to 0.
         sensitivity (float, optional):
             Sensitivity of the clustering algorithm. Defaults to 8.
         max_seqs (int, optional):
@@ -55,15 +56,15 @@ def get_sequence_to_cluster_id(
             https://github.com/soedinglab/MMseqs2/wiki#clustering-modes). Defaults to 0.
         mmseq_binary (str, optional):
             Full path to mmseqs2 binary. Defaults to "mmseqs".
-
     Returns:
         dict[str, int]: Mapping of sequence id to cluster id
     """
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_dir = Path(temp_dir)
 
-        temp_fasta = write_multichain_fasta(temp_dir / "seqs.fa", id_to_sequence)
-
+        temp_fasta = write_multichain_fasta(
+            temp_dir / "seqs.fa", id_to_sequence, sort=True
+        )
         output_prefix = temp_dir / "clusterRes"
 
         cmd = (
@@ -107,16 +108,16 @@ def make_interface_cluster_id(chain_1_cluster_id: str, chain_2_cluster_id: str) 
             Cluster ID of the first chain in the interface.
         chain_2_cluster_id:
             Cluster ID of the second chain in the interface.
-
     Returns:
         Cluster ID of the interface.
     """
     return "_".join(sorted([chain_1_cluster_id, chain_2_cluster_id]))
 
 
-def add_cluster_ids_and_sizes(
+def add_cluster_data(
     dataset_cache: ClusteredDatasetCache,
     id_to_sequence: dict[str, str],
+    add_sizes: bool = True,
 ) -> None:
     """Add cluster IDs to the structure metadata cache.
 
@@ -130,16 +131,25 @@ def add_cluster_ids_and_sizes(
             The dataset cache to update.
         id_to_sequence:
             Dictionary mapping sequence IDs to sequences.
+        add_sizes:
+            Whether to add cluster sizes to the cluster_size field of each chain and
+            interface. Defaults to True.
     """
     structure_cache = dataset_cache.structure_data
     reference_mol_cache = dataset_cache.reference_molecule_data
 
     # Subset sequences to only the ones explicitly in cache for correct clustering
     all_cache_chains = get_all_cache_chains(structure_cache)
+    all_protein_chains = get_all_cache_chains(
+        structure_cache, restrict_to_molecule_types=[MoleculeType.PROTEIN]
+    )
     id_to_sequence = {k: v for k, v in id_to_sequence.items() if k in all_cache_chains}
+    id_to_sequence_proteins = {
+        k: v for k, v in id_to_sequence.items() if k in all_protein_chains
+    }
 
     # Get sequences to cluster IDs with MMSeqs2-based clustering
-    id_to_cluster_id = get_sequence_to_cluster_id(id_to_sequence)
+    id_to_cluster_id = get_sequence_to_cluster_id(id_to_sequence_proteins)
 
     # Make a generator for new cluster IDs
     cluster_id_gen = itertools.count(start=max(id_to_cluster_id.values()) + 1)
@@ -183,13 +193,12 @@ def add_cluster_ids_and_sizes(
                 # TODO: remove this logic after debugging the preprocessing
                 try:
                     smiles = reference_mol_cache[reference_mol_id].canonical_smiles
+                    cluster_id = non_protein_ident_to_cluster_id[smiles]
                 except KeyError:
                     logger.warning(
                         f"No reference molecule found for {reference_mol_id}"
                     )
                     cluster_id = "UNKNOWN"
-
-                cluster_id = non_protein_ident_to_cluster_id[smiles]
             else:
                 raise ValueError(f"Unexpected molecule type: {molecule_type}")
 
@@ -216,23 +225,24 @@ def add_cluster_ids_and_sizes(
             cluster_id_to_size[interface_cluster_id] += 1
 
     # Add cluster sizes
-    for metadata in structure_cache.values():
-        for chain_data in metadata.chains.values():
-            cluster_id = chain_data.cluster_id
+    if add_sizes:
+        for metadata in structure_cache.values():
+            for chain_data in metadata.chains.values():
+                cluster_id = chain_data.cluster_id
 
-            # TODO: remove this after debugging preprocessing
-            if cluster_id == "UNKNOWN":
-                chain_data.cluster_size = 1
-            else:
-                chain_data.cluster_size = cluster_id_to_size[cluster_id]
+                # TODO: remove this after debugging preprocessing
+                if cluster_id == "UNKNOWN":
+                    chain_data.cluster_size = 1
+                else:
+                    chain_data.cluster_size = cluster_id_to_size[cluster_id]
 
-        for interface_data in metadata.interfaces.values():
-            cluster_id = interface_data.cluster_id
+            for interface_data in metadata.interfaces.values():
+                cluster_id = interface_data.cluster_id
 
-            # TODO: remove this after debugging preprocessing
-            if "UNKNOWN" in cluster_id:
-                interface_data.cluster_size = 1
-            else:
-                interface_data.cluster_size = cluster_id_to_size[cluster_id]
+                # TODO: remove this after debugging preprocessing
+                if "UNKNOWN" in cluster_id:
+                    interface_data.cluster_size = 1
+                else:
+                    interface_data.cluster_size = cluster_id_to_size[cluster_id]
 
     return None

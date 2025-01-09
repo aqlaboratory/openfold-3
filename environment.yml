@@ -28,8 +28,9 @@ dependencies:
   - aria2
   - git
   - ruff>=0.5.0
-  - biotite
-  - rdkit
+  - biotite==1.0.1
+  - rdkit==2024.03.3
+  - mmseqs2==15.6f452
   - bioconda::hmmer
   - bioconda::hhsuite
   - bioconda::kalign2

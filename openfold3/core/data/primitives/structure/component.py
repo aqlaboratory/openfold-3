@@ -1,12 +1,13 @@
 # TODO: note in module level docstrings that nothing here supports hydrogens
 import logging
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Generator, Iterable
 from typing import NamedTuple, TypeAlias
 
 import biotite.structure as struc
 import gemmi
 import numpy as np
+import requests
 from biotite.structure import AtomArray, BondType
 from biotite.structure.io.pdbx import CIFFile
 from pdbeccdutils.core import ccd_reader
@@ -14,6 +15,7 @@ from pdbeccdutils.core.ccd_reader import Component
 from rdkit import Chem
 from rdkit.Chem import AllChem, Mol
 
+from openfold3.core.data.primitives.caches.format import ChainData
 from openfold3.core.data.resources.patches import correct_cif_string
 from openfold3.core.data.resources.residues import MoleculeType
 
@@ -413,7 +415,10 @@ def mol_from_atomarray(atom_array: AtomArray) -> AnnotatedMol:
     return mol
 
 
-def component_iter_from_metadata(atom_array: AtomArray, per_chain_metadata: dict):
+def component_iter_from_metadata(
+    atom_array: AtomArray, per_chain_metadata: ChainData
+) -> Generator[AtomArray, None, None]:
+    """Yields AtomArrays for each component in a structure."""
     for chain_array in struc.chain_iter(atom_array):
         chain_id = chain_array.chain_id[0]
 
@@ -425,3 +430,58 @@ def component_iter_from_metadata(atom_array: AtomArray, per_chain_metadata: dict
         # Decompose the chain into individual residues and their reference molecules
         else:
             yield from struc.residue_iter(chain_array)
+
+
+def get_ranking_fit(pdb_id):
+    url = "https://data.rcsb.org/graphql"  # RCSB PDB's GraphQL API endpoint
+
+    # Define the query as a multi-line string with a variable for pdb_id
+    query = """
+    query GetRankingFit($pdb_id: String!) {
+    entry(entry_id: $pdb_id) {
+        nonpolymer_entities {
+        rcsb_nonpolymer_entity_container_identifiers {
+            nonpolymer_comp_id
+        }
+        nonpolymer_entity_instances {
+            rcsb_id
+            rcsb_nonpolymer_instance_validation_score {
+            ranking_model_fit
+            }
+        }
+        }
+    }
+    }
+    """
+
+    # Prepare the request with the pdb_id as a variable
+    variables = {"pdb_id": pdb_id}
+
+    # Make the request to the GraphQL endpoint using the variables
+    response = requests.post(url, json={"query": query, "variables": variables})
+
+    # Make the request to the GraphQL endpoint
+    # response = requests.post(url, json={"query": query})
+
+    # Check if the request was successful
+    if response.status_code == 200:
+        # Parse the JSON response
+        data = response.json()
+        extracted_data = {}
+
+        # Loop through each nonpolymer entity and its instances
+        if data["data"]["entry"]["nonpolymer_entities"]:
+            for entity in data["data"]["entry"]["nonpolymer_entities"]:
+                for instance in entity["nonpolymer_entity_instances"]:
+                    rcsb_id = instance["rcsb_id"]
+                    ranking_model_fit = instance[
+                        "rcsb_nonpolymer_instance_validation_score"
+                    ][0]["ranking_model_fit"]
+                    extracted_data[rcsb_id] = ranking_model_fit
+            data = extracted_data
+        else:
+            data = {}
+    else:
+        data = {}
+
+    return data
