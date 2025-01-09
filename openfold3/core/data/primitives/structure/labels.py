@@ -172,7 +172,8 @@ def assign_atom_indices(
             AtomArray containing the structure to assign atom indices to.
         label:
             Name of the annotation field to store the atom indices in. Defaults to
-            "_atom_idx".
+            "_atom_idx". Useful to avoid attribute clashes if a function is called on an
+            AtomArray that already has an "_atom_idx" field.
         overwrite:
             Whether to overwrite an existing annotation field with the same name.
             Defaults to False.
