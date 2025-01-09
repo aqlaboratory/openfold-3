@@ -11,7 +11,7 @@ import lmdb
 from openfold3.core.data.resources.residues import MoleculeType
 
 if TYPE_CHECKING:
-    from openfold3.core.data.primitives.caches.lmdb import LMDBDict
+    from openfold3.core.data.primitives.caches.lmdb import LMDBDict, TimeStampedLMDBDict
 
 K = TypeVar("K")
 V = TypeVar("V")
@@ -356,7 +356,7 @@ class DatasetCache:
         """
 
         lmdb_env = lmdb.open(
-            str(lmdb_directory), readonly=True, lock=False, subdir=True
+            str(lmdb_directory), readonly=False, lock=False, subdir=True
         )
 
         with lmdb_env.begin() as transaction:
@@ -403,12 +403,13 @@ class DatasetCache:
         structure_data_encoding: Literal["utf-8", "pkl"],
     ) -> LMDBDict:
         from openfold3.core.data.primitives.caches.lmdb import (
-            LMDBDict,
+            TimeStampedLMDBDict,
         )
 
-        return LMDBDict(
+        return TimeStampedLMDBDict(
             lmdb_env=lmdb_env,
             prefix="structure_data",
+            min_timestamp="now",
             key_encoding=str_encoding,
             value_encoding=structure_data_encoding,
         )
