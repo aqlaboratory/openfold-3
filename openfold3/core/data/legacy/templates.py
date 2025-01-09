@@ -255,9 +255,7 @@ def _assess_hhsearch_hit(
 
     if _is_after_cutoff(hit_pdb_code, release_dates, release_date_cutoff):
         date = release_dates[hit_pdb_code.upper()]
-        raise DateError(
-            f"Date ({date}) > max template date " f"({release_date_cutoff})."
-        )
+        raise DateError(f"Date ({date}) > max template date ({release_date_cutoff}).")
 
     if align_ratio <= min_align_ratio:
         raise AlignRatioError(
@@ -618,7 +616,7 @@ def _extract_template_features(
         )
     except (CaDistanceError, KeyError) as ex:
         raise NoAtomDataInTemplateError(
-            f"Could not get atom data ({pdb_id}_{chain_id}): " f"{str(ex)}"
+            f"Could not get atom data ({pdb_id}_{chain_id}): {str(ex)}"
         ) from ex
 
     all_atom_positions = np.split(all_atom_positions, all_atom_positions.shape[0])
