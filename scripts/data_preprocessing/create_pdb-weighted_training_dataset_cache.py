@@ -63,11 +63,12 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
     help="Maximum number of polymer chains for included structures.",
 )
 @click.option(
-    "--write-no-alignment-repr-entries",
-    is_flag=True,
+    "--missing_alignment_log",
+    type=click.Path(exists=False, file_okay=True, dir_okay=False, path_type=Path),
+    default=None,
     help=(
-        "Whether to write out entries with no alignment representative explicitly to "
-        "a no_alignment_representative_entries.json."
+        "If this is specified, writes all entries without an alignment representative "
+        "to the specified log file."
     ),
 )
 @click.option(
@@ -91,7 +92,7 @@ def main(
     max_release_date: str = "2021-09-30",
     max_resolution: float = 9.0,
     max_polymer_chains: int = 300,
-    write_no_alignment_repr_entries: bool = False,
+    missing_alignment_log: Path | None = None,
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
     log_file: Path | None = None,
 ) -> None:
@@ -105,7 +106,9 @@ def main(
         - number of polymer chains can be no higher than max_polymer_chains
 
     This also adds the following additional information:
-        Name of the dataset (for use with the DataSet registry) Structure data:
+        Name of the dataset (for use with the DataSet registry)
+
+        Structure data:
             - alignment_representative_id:
                 The ID of the alignment of this chain
             - cluster_id:
@@ -128,7 +131,7 @@ def main(
 
     # Add file handler if log file is specified
     if log_file:
-        file_handler = logging.FileHandler(log_file)
+        file_handler = logging.FileHandler(log_file, mode="w")
         logger.addHandler(file_handler)
 
     create_pdb_training_dataset_cache_af3(
@@ -140,7 +143,7 @@ def main(
         max_release_date=max_release_date,
         max_resolution=max_resolution,
         max_polymer_chains=max_polymer_chains,
-        write_no_alignment_repr_entries=write_no_alignment_repr_entries,
+        missing_alignment_log=missing_alignment_log,
     )
 
 

@@ -53,7 +53,7 @@ def is_invalid_feature_dict(features: dict) -> bool:
     num_ref_atoms = features["ref_pos"].shape[-2]
     if num_atoms_sum != num_ref_atoms:
         logger.warning(
-            f"Size mismatch {pdb_id} with {num_atoms_sum} vs " f"{num_ref_atoms} atoms"
+            f"Size mismatch {pdb_id} with {num_atoms_sum} vs {num_ref_atoms} atoms"
         )
         skip = True
 
@@ -94,7 +94,7 @@ def is_invalid_feature_dict(features: dict) -> bool:
     # Check that the number of tokens per atom is less than the maximum expected
     if (features["num_atoms_per_token"] > 23).any():
         logger.warning(
-            f"Skipping {pdb_id}: token contains number of atoms > " f"max expected (23)"
+            f"Skipping {pdb_id}: token contains number of atoms > max expected (23)"
         )
         skip = True
 
@@ -112,8 +112,10 @@ def is_invalid_feature_dict(features: dict) -> bool:
     # Run the permutation alignment to skip over samples that may fail in the model
     # This could throw an exception that is handled in the __getitem__
     feats_perm = openfold_batch_collator([copy.deepcopy(features)])
-    outputs = {"atom_positions_predicted": torch.randn_like(feats_perm["ref_pos"])}
-    multi_chain_permutation_alignment(feats_perm, outputs)
+    multi_chain_permutation_alignment(
+        batch=feats_perm,
+        atom_positions_predicted=torch.randn_like(feats_perm["ref_pos"]),
+    )
 
     return skip
 

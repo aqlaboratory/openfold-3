@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
 from typing import Optional
 
 import torch
@@ -34,6 +35,10 @@ from openfold3.core.utils.atomize_utils import (
     broadcast_token_feat_to_atoms,
     get_token_representative_atoms,
 )
+
+deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
+if deepspeed_is_installed:
+    import deepspeed
 
 
 class AuxiliaryHeadsAF2(nn.Module):
@@ -152,7 +157,12 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             **self.config["experimentally_resolved"],
         )
 
-        if self.config.pae.enabled:
+        # DDP does not allow unused parameters without performance hit
+        # Only initialize PAE head if enabled or using DeepSpeed
+        deepspeed_is_initialized = (
+            deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
+        )
+        if self.config.pae.enabled or deepspeed_is_initialized:
             self.pae = PredictedAlignedErrorHead(
                 **self.config["pae"],
             )

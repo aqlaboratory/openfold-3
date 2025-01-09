@@ -40,7 +40,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description=(
-            "Converts raw ProteinNet MSAs into a format recognized " "by the parser"
+            "Converts raw ProteinNet MSAs into a format recognized by the parser"
         )
     )
     parser.add_argument(
