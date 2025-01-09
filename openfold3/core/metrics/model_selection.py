@@ -1,12 +1,9 @@
 import logging
-from collections import defaultdict
 
 import torch
 
+from openfold3.core.metrics.confidence import compute_predicted_distance_error
 from openfold3.core.metrics.rasa import compute_rasa_batch
-from openfold3.core.metrics.validation_all_atom import (
-    get_metrics,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +11,7 @@ logger = logging.getLogger(__name__)
 def compute_model_selection_metric(
     batch: dict,
     outputs: dict,
+    metrics: dict,
     weights: dict,
     eps: float = 1e-8,
 ) -> dict:
@@ -34,21 +32,22 @@ def compute_model_selection_metric(
               the final weighted model-selection metric.
     """
     device = outputs["pde_logits"].device
-    n_samples = outputs["pde_logits"].shape[1]
     # -------------------------------------------------------------------------
     # Compute pde (predicted distance error)
     # -------------------------------------------------------------------------
-    # pde_logits shape: [bs, n_samples, n_tokens, n_tokens, 64]
-    pde_logits = outputs["pde_logits"].detach()
-    # 64 bins equally spaced from 0 Å to 32 Å in
-    # 0.5 Å increments => centers in [0.25, 31.75]
-    bin_centers = torch.linspace(0.25, 31.75, 64, device=device)
+    # # pde_logits shape: [bs, n_samples, n_tokens, n_tokens, 64]
+    # pde_logits = outputs["pde_logits"].detach()
+    # # 64 bins equally spaced from 0 Å to 32 Å in
+    # # 0.5 Å increments => centers in [0.25, 31.75]
+    # bin_centers = torch.linspace(0.25, 31.75, 64, device=device)
 
-    # pde shape: [bs, n_samples, n_tokens, n_tokens]
-    pde = torch.sum(
-        pde_logits * bin_centers, dim=-1
-    )  # expectation of distance for each pair
-
+    # # pde shape: [bs, n_samples, n_tokens, n_tokens]
+    # pde = torch.sum(
+    #     pde_logits * bin_centers, dim=-1
+    # )  # expectation of distance for each pair
+    pde = compute_predicted_distance_error(
+        outputs["pde_logits"].detach(), max_bin=32, no_bins=64
+    )["predicted_distance_error"]
     # -------------------------------------------------------------------------
     # Compute distogram-based contact probabilities (pij)
     # -------------------------------------------------------------------------
@@ -80,22 +79,6 @@ def compute_model_selection_metric(
     # -------------------------------------------------------------------------
     # Get the validation metrics, looping over each diffusion sample.
     # -------------------------------------------------------------------------
-    metrics = defaultdict(list)
-
-    for i in range(n_samples):
-        output_sample = {
-            key: value[:, i, ...] for key, value in outputs.items() if key != "recycles"
-        }
-        metrics_sample = get_metrics(
-            batch, output_sample, superimposition_metrics=True, is_train=False
-        )
-        for metric_name, metric_values in metrics_sample.items():
-            metrics[metric_name].append(metric_values)
-
-    # Convert the lists to tensors
-    for metric_name, metric_values in metrics.items():
-        metrics[metric_name] = torch.stack(metric_values, dim=1)
-        # print(metrics[metric_name].shape)
 
     # Add RASA metrics
     rasa = compute_rasa_batch(batch, outputs)
@@ -154,6 +137,6 @@ def compute_model_selection_metric(
         total_weighted += final_metrics[metric_name] * weights[metric_name]
         sum_weights += weights[metric_name]
 
-    final_metrics["model_selection_metric"] = total_weighted / sum_weights
+    final_metrics["model_selection"] = total_weighted / sum_weights
 
     return final_metrics

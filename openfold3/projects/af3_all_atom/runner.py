@@ -6,6 +6,7 @@ from pathlib import Path
 
 import torch
 from torchmetrics import MeanMetric, MetricCollection
+from torchmetrics.regression import PearsonCorrCoef
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.metrics.confidence import (
@@ -14,6 +15,7 @@ from openfold3.core.metrics.confidence import (
     compute_predicted_distance_error,
     compute_weighted_ptm,
 )
+from openfold3.core.metrics.model_selection import compute_model_selection_metric
 from openfold3.core.metrics.validation_all_atom import (
     get_metrics,
 )
@@ -29,6 +31,7 @@ from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
     AF3DatasetConfigBuilder,
 )
 from openfold3.projects.af3_all_atom.constants import (
+    CORRELATION_METRICS,
     METRICS,
     TRAIN_LOSSES,
     VAL_LOGGED_METRICS,
@@ -75,13 +78,18 @@ class AlphaFold3AllAtom(ModelRunner):
         self.train_metrics = MetricCollection(train_metrics, prefix="train/")
 
         # Initialize all validation epoch metric objects
-        self.val_metrics = MetricCollection(
+        val_metrics = {
+            metric_name: MeanMetric(nan_strategy="ignore")
+            for metric_name in VAL_LOGGED_METRICS
+            if metric_name not in CORRELATION_METRICS
+        }
+        val_metrics.update(
             {
-                metric_name: MeanMetric(nan_strategy="ignore")
-                for metric_name in VAL_LOGGED_METRICS
-            },
-            prefix="val/",
+                metric_name: PearsonCorrCoef(num_outputs=1)
+                for metric_name in CORRELATION_METRICS
+            }
         )
+        self.val_metrics = MetricCollection(val_metrics, prefix="val/")
 
         # Not all metrics will be calculated for each stage of training or between
         # training and validation. Keep track of which metrics are enabled.
@@ -115,7 +123,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
         metrics = self.train_metrics if phase == "train" else self.val_metrics
         metric_obj = metrics[metric_log_name]
-        metric_obj.update(metric_value)
+        metric_obj.update(*metric_value)
 
     def _log(self, loss_breakdown, batch, outputs, train=True):
         phase = "train" if train else "val"
@@ -126,7 +134,9 @@ class AlphaFold3AllAtom(ModelRunner):
 
             # Update mean metrics for epoch logging
             self._update_epoch_metric(
-                phase=phase, metric_log_name=metric_epoch_name, metric_value=indiv_loss
+                phase=phase,
+                metric_log_name=metric_epoch_name,
+                metric_value=(indiv_loss,),
             )
 
             # Only log steps for training
@@ -153,11 +163,18 @@ class AlphaFold3AllAtom(ModelRunner):
                 # TODO: Model selection - consider replacing this call directly with
                 #  model selection call so that we have aggregated statistics of
                 #  all the diffusion samples
-                other_metrics = get_metrics(
+                other_metrics_per_sample = get_metrics(
                     batch,
                     outputs,
                     superimposition_metrics=True,
                     compute_extra_lddt_metrics=True,
+                )
+
+                other_metrics = compute_model_selection_metric(
+                    batch=batch,
+                    outputs=outputs,
+                    metrics=other_metrics_per_sample,
+                    weights=self.model_selection_weights,
                 )
 
         for k, v in other_metrics.items():
@@ -166,7 +183,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
             # Update mean metrics for epoch logging
             self._update_epoch_metric(
-                phase=phase, metric_log_name=metric_name, metric_value=mean_metric
+                phase=phase, metric_log_name=metric_name, metric_value=(mean_metric,)
             )
 
             # TODO: Maybe remove this extra logging
@@ -181,6 +198,27 @@ class AlphaFold3AllAtom(ModelRunner):
                     logger=True,
                     sync_dist=False,
                 )
+
+        if not train:
+            for molecule_type in ["protein", "rna", "dna", "ligand", "complex"]:
+                plddt_key = f"plddt_{molecule_type}"
+                lddt_key = (
+                    f"lddt_intra_{molecule_type}"
+                    if molecule_type != "complex"
+                    else f"lddt_{molecule_type}"
+                )
+                if (
+                    plddt_key in other_metrics_per_sample
+                    and lddt_key in other_metrics_per_sample
+                ):
+                    plddt = other_metrics_per_sample[plddt_key].flatten()
+                    lddt = other_metrics_per_sample[lddt_key].flatten()
+                    metric_name = f"val/correlation_lddt_plddt_{molecule_type}"
+                    self._update_epoch_metric(
+                        phase=phase,
+                        metric_log_name=metric_name,
+                        metric_value=(lddt, plddt),
+                    )
 
     def training_step(self, batch, batch_idx):
         example_feat = next(

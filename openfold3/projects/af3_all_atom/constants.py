@@ -100,8 +100,17 @@ VAL_EXTRA_LDDT_CORR_METRICS = [
     "plddt_complex",
 ]
 
+CORRELATION_METRICS = [
+    "correlation_lddt_plddt_protein",
+    "correlation_lddt_plddt_ligand",
+    "correlation_lddt_plddt_dna",
+    "correlation_lddt_plddt_rna",
+    "correlation_lddt_plddt_complex",
+]
+
 MODEL_SELECTION = [
     *VAL_EXTRA_LDDT_METRICS,
+    "rasa",
     "model_selection",
 ]
 
