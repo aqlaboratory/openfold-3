@@ -36,7 +36,7 @@ class ParsedStructure(NamedTuple):
 
 class SkippedStructure(NamedTuple):
     cif_file: pdbx.CIFFile
-    n_polymer_chains: int
+    reason: str
 
 
 def _load_ciffile(file_path: Path | str) -> pdbx.CIFFile:
@@ -71,6 +71,7 @@ def parse_mmcif(
     renumber_chain_ids: bool = False,
     extra_fields: list | None = None,
     max_polymer_chains: int | None = None,
+    skip_all_zero_occ: bool = True,
 ) -> ParsedStructure | SkippedStructure:
     """Convenience wrapper around biotite's CIF parsing
 
@@ -111,11 +112,14 @@ def parse_mmcif(
         max_polymer_chains:
             Maximum number of polymer chains in the first bioassembly after which a
             structure is skipped by the get_structure() parser. Defaults to None.
+        skip_all_zero_occ:
+            Whether to skip structures where all atoms have zero occupancy. Defaults to
+            True.
 
     Returns:
         A ParsedStructure NamedTuple containing the parsed CIF file and the AtomArray,
-        or a SkippedStructure NamedTuple containing the CIF file and the number of
-        polymer chains in the first bioassembly.
+        or a SkippedStructure NamedTuple containing the CIF file and the reason for why
+        the structure was skipped.
     """
 
     cif_file = _load_ciffile(file_path)
@@ -126,7 +130,7 @@ def parse_mmcif(
         n_polymers = get_first_bioassembly_polymer_count(cif_data)
 
         if n_polymers > max_polymer_chains:
-            return SkippedStructure(cif_file, n_polymers)
+            return SkippedStructure(cif_file, f"Too many polymer chains: {n_polymers}")
 
     cif_data = get_cif_block(cif_file)
 
@@ -175,6 +179,10 @@ def parse_mmcif(
         atom_array = pdbx.get_structure(
             **parser_args,
         )
+
+    # Skip structures where all atoms have zero occupancy
+    if skip_all_zero_occ and atom_array.occupancy.sum() == 0:
+        return SkippedStructure(cif_file, "All atoms have zero occupancy")
 
     # Replace author-assigned IDs with PDB-assigned IDs
     update_author_to_pdb_labels(atom_array)

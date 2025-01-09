@@ -435,15 +435,12 @@ def preprocess_structure_and_write_outputs_af3(
 
     # Handle structures that got skipped due to max_polymer_chains
     if isinstance(parsed_mmcif, SkippedStructure):
-        logger.info(
-            f"Skipping structure with more than {max_polymer_chains} polymer chains."
-        )
-        n_polymer_chains = parsed_mmcif.n_polymer_chains
+        logger.info(f"Skipping structure {pdb_id}: {parsed_mmcif.reason}")
 
         return {
             pdb_id: {
                 "release_date": release_date,
-                "status": f"skipped: (n_chains: {n_polymer_chains})",
+                "status": f"skipped: {parsed_mmcif.reason}",
             }
         }, {}
     else:
