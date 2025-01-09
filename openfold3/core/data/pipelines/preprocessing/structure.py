@@ -53,6 +53,7 @@ from openfold3.core.data.primitives.structure.cleanup import (
 )
 from openfold3.core.data.primitives.structure.component import (
     AnnotatedMol,
+    assign_component_ids_from_metadata,
     get_component_info,
     mol_from_atomarray,
     mol_from_ccd_entry,
@@ -64,7 +65,6 @@ from openfold3.core.data.primitives.structure.interface import (
     get_interface_chain_id_pairs,
 )
 from openfold3.core.data.primitives.structure.labels import (
-    assign_component_ids_from_metadata,
     get_chain_to_author_chain_dict,
     get_chain_to_entity_dict,
     get_chain_to_molecule_type_dict,

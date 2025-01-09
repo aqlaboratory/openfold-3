@@ -7,6 +7,9 @@ import numpy as np
 from biotite.structure import Atom, AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 
+from openfold3.core.data.primitives.structure.component import (
+    get_covalent_component_chain_ids,
+)
 from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
     remove_atom_indices,

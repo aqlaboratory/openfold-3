@@ -15,9 +15,11 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
 from openfold3.core.data.primitives.structure.cleanup import filter_bonds
+from openfold3.core.data.primitives.structure.component import (
+    assign_component_ids_from_metadata,
+)
 from openfold3.core.data.primitives.structure.cropping import sample_crop_and_set_mask
 from openfold3.core.data.primitives.structure.labels import (
-    assign_component_ids_from_metadata,
     assign_uniquified_atom_names,
 )
 from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
