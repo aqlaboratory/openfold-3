@@ -9,7 +9,7 @@ import pandas as pd
 
 from openfold3.core.data.io.sequence.fasta import write_multichain_fasta
 from openfold3.core.data.primitives.caches.format import ClusteredDatasetCache
-from openfold3.core.data.primitives.caches.metadata import (
+from openfold3.core.data.primitives.caches.filtering import (
     get_all_cache_chains,
     logger,
 )

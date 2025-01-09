@@ -26,7 +26,7 @@ from openfold3.core.data.primitives.caches.format import (
     ProteinMonomerDatasetCache,
     ProteinMonomerStructureData,
 )
-from openfold3.core.data.primitives.caches.metadata import (
+from openfold3.core.data.primitives.caches.filtering import (
     add_and_filter_alignment_representatives,
     build_provisional_clustered_dataset_cache,
     filter_by_max_polymer_chains,
