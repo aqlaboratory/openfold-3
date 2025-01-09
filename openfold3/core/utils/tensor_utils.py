@@ -17,6 +17,7 @@ from functools import partial
 
 import torch
 import torch.nn as nn
+from biotite.structure import AtomArray
 
 
 def add(m1, m2, inplace):
@@ -58,6 +59,8 @@ def dict_multimap(fn, dicts):
         all_v = [d[k] for d in dicts]
         if isinstance(v, dict):
             new_dict[k] = dict_multimap(fn, all_v)
+        elif isinstance(v, (AtomArray, str)):
+            new_dict[k] = all_v
         else:
             new_dict[k] = fn(all_v)
 
