@@ -748,8 +748,7 @@ if __name__ == "__main__":
         "--experiment_config_json",
         default="",
         help=(
-            "Path to a json file with custom config values "
-            "to overwrite config setting"
+            "Path to a json file with custom config values to overwrite config setting"
         ),
     )
     parser.add_argument(

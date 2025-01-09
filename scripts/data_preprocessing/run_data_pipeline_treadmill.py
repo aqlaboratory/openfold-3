@@ -91,7 +91,7 @@ np.set_printoptions(threshold=sys.maxsize)
 @click.option(
     "--runner-yml-file",
     required=True,
-    help="Yaml that specifies model and dataset parameters," "see examples/runner.yml",
+    help="Yaml that specifies model and dataset parameters, see examples/runner.yml",
     type=click.Path(
         exists=True,
         file_okay=True,

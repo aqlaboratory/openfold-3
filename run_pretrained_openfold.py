@@ -511,16 +511,14 @@ if __name__ == "__main__":
         action="store_true",
         default=False,
         help=(
-            "Output predicted models in ModelCIF format instead of "
-            "PDB format (default)"
+            "Output predicted models in ModelCIF format instead of PDB format (default)"
         ),
     )
     parser.add_argument(
         "--experiment_config_json",
         default="",
         help=(
-            "Path to a json file with custom config values "
-            "to overwrite config setting"
+            "Path to a json file with custom config values to overwrite config setting"
         ),
     )
     parser.add_argument(

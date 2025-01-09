@@ -236,7 +236,7 @@ def fetch_token_center_atoms(
 
     if len(token_center_atoms) == 0:
         raise RuntimeError(
-            "Cannot crop a structure with no resolved token center " "atoms."
+            "Cannot crop a structure with no resolved token center atoms."
         )
 
     if preferred_chain_or_interface is not None:

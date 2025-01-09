@@ -4,6 +4,7 @@ __pycache__/
 *.egg-info
 build
 dist
+.DS_Store
 
 # files from script downloads
 openfold3/resources/
