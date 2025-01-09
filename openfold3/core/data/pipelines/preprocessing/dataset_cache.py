@@ -75,7 +75,9 @@ def filter_structure_metadata_training_af3(
 
     # TODO: we need to catch NMR etc. here which don't have a defined resolution and
     # probably set resolution for them to zero
-    filtered_cache = with_log(filter_by_resolution)(filtered_cache, max_resolution)
+    filtered_cache = with_log(filter_by_resolution)(
+        filtered_cache, max_resolution, ignore_nmr=True
+    )
     filtered_cache = with_log(filter_by_release_date)(filtered_cache, max_release_date)
     filtered_cache = with_log(filter_by_max_polymer_chains)(
         filtered_cache, max_polymer_chains

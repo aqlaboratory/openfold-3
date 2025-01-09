@@ -115,6 +115,7 @@ def filter_by_release_date(
 def filter_by_resolution(
     structure_cache: StructureDataCache,
     max_resolution: float,
+    ignore_nmr: bool = True,
 ) -> StructureDataCache:
     """Filter the cache by removing entries with resolution higher than a given value.
 
@@ -125,15 +126,26 @@ def filter_by_resolution(
             Filter out entries with resolution (numerically) higher than this value.
             E.g. if max_resolution=9.0, entries with resolution 9.1 Å or higher will be
             removed.
-
+        ignore_nmr:
+            If True, ignore NMR structures when filtering (which have no resolution).
+            Default is True.
     Returns:
         The filtered cache.
     """
-    structure_cache = {
-        pdb_id: metadata
-        for pdb_id, metadata in structure_cache.items()
-        if metadata.resolution <= max_resolution
-    }
+    if ignore_nmr:
+        nmr_methods = ("SOLID-STATE NMR", "SOLUTION NMR")
+        structure_cache = {
+            pdb_id: metadata
+            for pdb_id, metadata in structure_cache.items()
+            if metadata.resolution <= max_resolution
+            or metadata.experimental_method in nmr_methods
+        }
+    else:
+        structure_cache = {
+            pdb_id: metadata
+            for pdb_id, metadata in structure_cache.items()
+            if metadata.resolution <= max_resolution
+        }
 
     return structure_cache
 

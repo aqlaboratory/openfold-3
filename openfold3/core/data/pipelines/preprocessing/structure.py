@@ -185,6 +185,7 @@ def extract_chain_and_interface_metadata_af3(
     # Get basic metadata
     metadata_dict["release_date"] = get_release_date(cif_data).strftime("%Y-%m-%d")
     metadata_dict["resolution"] = get_resolution(cif_data)
+    metadata_dict["experimental_method"] = get_experimental_method(cif_data)
 
     # NOTE: This could be reduced to only the critical information, currently some
     # chain IDs are put in for easier manual interpretability

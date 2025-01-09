@@ -179,6 +179,7 @@ class PreprocessingStructureData:
 
     status: str
     release_date: datetime.date
+    experimental_method: str
     resolution: float | None
     chains: dict[str, PreprocessingChainData] | None
     interfaces: list[tuple[str, str]] | None
