@@ -540,7 +540,7 @@ def add_unresolved_polymer_residues(
 
 # NIT: This could be split up into multiple functions
 def add_unresolved_atoms_within_residue(
-    atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile
+    atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile, add_terminal: bool = False
 ) -> AtomArray:
     """Adds atoms for residues that are partially resolved.
 
@@ -564,6 +564,10 @@ def add_unresolved_atoms_within_residue(
         ccd:
             Parsed Chemical Component Dictionary (CCD) containing the residue
             information.
+        add_terminal:
+            Whether to consider missing terminal atoms as unresolved, which are the OXT
+            for protein chains and the phosphodiester leaving oxygen for nucleic acid
+            chains. Defaults to False.
 
     Returns:
         AtomArray:
@@ -640,6 +644,10 @@ def add_unresolved_atoms_within_residue(
             ].as_array()
             required_atoms = all_atoms[all_atom_elements != "H"].tolist()
 
+            # Record the original required atom before the leaving-atom subsetting logic
+            # for a later assert
+            required_atoms_with_terminal = required_atoms.copy()
+
             # General metadata for atoms
             atom_ids_to_elements = get_ccd_atom_id_to_element_dict(ccd[res_name])
             atom_ids_to_charges = get_ccd_atom_id_to_charge_dict(ccd[res_name])
@@ -649,21 +657,23 @@ def add_unresolved_atoms_within_residue(
                 is_first_residue = res_id == 1
                 is_last_residue = res_id == chain_to_seqlen[chain_id]
 
-                # Handle terminal atom inclusion or exclusion
-                if is_protein and not is_last_residue:
+                # Don't add OXT if it's not a terminal residue or adding terminal atoms
+                # is disabled in general
+                if (is_protein and "OXT" in required_atoms) and (
+                    not is_last_residue or not add_terminal
+                ):
                     if res_name not in std_protein_residues:
                         logger.debug(
                             "Adding unresolved atoms within protein chain for non-"
                             f"standard protein residue: {res_name}"
                         )
-                    # If amino acid is mid-sequence, skip terminal oxygen
-                    if "OXT" in required_atoms:
-                        required_atoms.remove("OXT")
+
+                    required_atoms.remove("OXT")
 
                 # Find the "leaving oxygen" for the phosphate group which is displaced
-                # during phosphodiester bond formation and should not be considered a
-                # missing atom
-                elif is_nucleic_acid and not is_first_residue:
+                # during phosphodiester bond formation, but do not be consider it a
+                # missing atom for the first residue or if terminal atoms are disabled
+                elif is_nucleic_acid and (not is_first_residue or not add_terminal):
                     if res_name not in std_na_residues:
                         logger.debug(
                             "Adding unresolved atoms within NA chain for non-standard "
@@ -721,7 +731,7 @@ def add_unresolved_atoms_within_residue(
                     if leaving_oxygen in required_atoms:
                         required_atoms.remove(leaving_oxygen)
 
-            assert resolved_atom_set.issubset(required_atoms)  # TODO: remove
+            assert resolved_atom_set.issubset(required_atoms_with_terminal)
 
             unresolved_atom_set = set(required_atoms) - resolved_atom_set
 
@@ -820,7 +830,9 @@ def add_unresolved_atoms_within_residue(
     return extended_atom_array
 
 
-def add_unresolved_atoms(atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile):
+def add_unresolved_atoms(
+    atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile, add_terminal: bool = False
+) -> AtomArray:
     """Adds missing atoms within residues and missing residues to the AtomArray.
 
     This function augments the given `AtomArray` by adding any missing atoms within
@@ -838,6 +850,10 @@ def add_unresolved_atoms(atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile
             `metadata_extraction.get_cif_block`).
         ccd:
             Parsed Chemical Component Dictionary (CCD) containing residue information.
+        add_terminal:
+            Whether to consider missing terminal atoms as unresolved, which are the OXT
+            for protein chains and the phosphodiester leaving oxygen for nucleic acid
+            chains. Defaults to False.
 
     Returns:
         AtomArray:
@@ -854,11 +870,13 @@ def add_unresolved_atoms(atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile
           inter-residue bonds for the added atoms and residues.
     """
     # Add missing atoms within residues
-    extended_atom_array = add_unresolved_atoms_within_residue(atom_array, cif_data, ccd)
+    extended_atom_array = add_unresolved_atoms_within_residue(
+        atom_array=atom_array, cif_data=cif_data, ccd=ccd, add_terminal=add_terminal
+    )
 
     # Add missing residues
     extended_atom_array = add_unresolved_polymer_residues(
-        extended_atom_array, cif_data, ccd
+        atom_array=extended_atom_array, cif_data=cif_data, ccd=ccd
     )
 
     return extended_atom_array
