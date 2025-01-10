@@ -327,7 +327,7 @@ def compute_rasa_batch(
             atom_positions = outputs["atom_positions_predicted"][
                 k, sample, : len(atom_arr), :3
             ]
-            atom_arr.coord = atom_positions.detach().cpu().numpy()
+            atom_arr.coord = atom_positions.float().detach().cpu().numpy()
 
             unresolved_rasas[k, sample] = process_proteins(
                 atom_arr,

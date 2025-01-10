@@ -73,7 +73,12 @@ def lddt(
     score = score / len(threshold)
 
     # normalize to get intra_lddt scores
-    intra_score = torch.full(intra_mask.shape[:-1], torch.nan)
+    intra_score = torch.full(
+        intra_mask.shape[:-1],
+        torch.nan,
+        device=pair_dist_pred_pos.device,
+        dtype=pair_dist_pred_pos.dtype,
+    )
     if torch.any(intra_mask):
         intra_norm = 1.0 / (eps + torch.sum(dists_to_score * intra_mask, dim=(-1, -2)))
         intra_score = intra_norm * (
@@ -82,7 +87,12 @@ def lddt(
 
     # inter_score only applies when there exist atom pairs with
     # different asym_id (inter_mask) and distance threshold (dists_to_score)
-    inter_score = torch.full(intra_score.shape, torch.nan)
+    inter_score = torch.full(
+        intra_score.shape,
+        torch.nan,
+        device=pair_dist_pred_pos.device,
+        dtype=pair_dist_pred_pos.dtype,
+    )
     inter_mask = dists_to_score * inter_mask
     if torch.any(inter_mask):
         inter_norm = 1.0 / (eps + torch.sum(inter_mask, dim=(-1, -2)))
@@ -160,7 +170,9 @@ def interface_lddt(
         shape = all_atom_mask1.shape[:-1]
         if not shape:
             shape = (1,)
-        score = torch.full(shape, torch.nan)
+        score = torch.full(
+            shape, torch.nan, device=pair_dist_pred.device, dtype=pair_dist_pred.dtype
+        )
 
     return score
 
@@ -199,7 +211,9 @@ def drmsd(
     n_intra = torch.sum(intra_mask * mask, dim=(-1, -2))
     intra_drmsd = intra_drmsd * (1 / n_intra)
 
-    inter_drmsd = torch.full(intra_drmsd.shape, torch.nan)
+    inter_drmsd = torch.full(
+        intra_drmsd.shape, torch.nan, device=drmsd.device, dtype=drmsd.dtype
+    )
     inter_mask = inter_mask * mask
     if torch.any(inter_mask):
         inter_drmsd = drmsd * inter_mask
@@ -650,7 +664,9 @@ def steric_clash(
     # Compute the clash
     clash = torch.relu(threshold - pred_pair)
 
-    intra_clash = torch.full(pred_pair.shape[:-2], torch.nan)
+    intra_clash = torch.full(
+        pred_pair.shape[:-2], torch.nan, device=clash.device, dtype=clash.dtype
+    )
     intra_mask = mask * intra
     if torch.any(intra_mask):
         intra_clash = torch.sum(clash * intra_mask, dim=(-1, -2)) / torch.sum(
@@ -658,7 +674,9 @@ def steric_clash(
         )
         intra_clash = intra_clash / threshold
 
-    inter_clash = torch.full(pred_pair.shape[:-2], torch.nan)
+    inter_clash = torch.full(
+        pred_pair.shape[:-2], torch.nan, device=clash.device, dtype=clash.dtype
+    )
     inter_mask = mask * inter
     if torch.any(inter_mask):
         inter_clash = torch.sum(clash * inter_mask, dim=(-1, -2)) / torch.sum(
@@ -702,7 +720,9 @@ def interface_steric_clash(
     mask = all_atom_mask_protein.unsqueeze(-1) * all_atom_mask_substrate.unsqueeze(-2)
     clash = torch.relu(threshold - pair_dist)
 
-    interface_clash = torch.full(pair_dist.shape[:-2], torch.nan)
+    interface_clash = torch.full(
+        pair_dist.shape[:-2], torch.nan, device=pair_dist.device, dtype=pair_dist.dtype
+    )
     if torch.any(mask):
         interface_clash = torch.sum(clash * mask, dim=(-1, -2)) / torch.sum(
             mask, dim=(-1, -2)
