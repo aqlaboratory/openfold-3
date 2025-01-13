@@ -3,7 +3,7 @@ import logging
 import biotite.structure as struc
 import numpy as np
 import torch
-
+from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.core.data.resources.residues import RESIDUE_SASA_SCALES
 
 logger = logging.getLogger(__name__)
@@ -201,7 +201,6 @@ def calculate_res_rasa(
 
 def process_proteins(
     struct_array: np.ndarray,
-    pol_type: str = "peptide",
     window: int = 25,
     max_acc_dict: dict = None,
     default_max_acc: float = 113.0,
@@ -216,8 +215,6 @@ def process_proteins(
     Args:
         struct_array:
             The full structure array (which may contain multiple chains).
-        pol_type:
-            Polymer type to filter (default is "peptide").
         window:
             The window size for smoothing RASA values (default = 25).
         max_acc_dict:
@@ -248,8 +245,12 @@ def process_proteins(
     unresolved_residues_rasa = []
 
     # Filter the structure to only consider the specified polymer type (e.g., peptides)
-    filtered = struct_array[struc.filter_polymer(struct_array, pol_type=pol_type)]
+    filtered = struct_array[struct_array.molecule_type_id == MoleculeType.PROTEIN]
 
+    if len(filtered) == 0:
+        logging.warning(f"No protein chains found in pdb_id={pdb_id}")
+        return float("nan")
+    
     # Set a default max_acc for fallback residues
     if default_max_acc is None:
         default_max_acc = max_acc_dict.get("ALA", 113.0)
@@ -276,7 +277,6 @@ def process_proteins(
 def compute_rasa_batch(
     batch: dict,
     outputs: dict,
-    pol_type: str = "peptide",
     window: int = 25,
     max_acc_dict: dict = None,
     default_max_acc: float = 113.0,
@@ -292,8 +292,6 @@ def compute_rasa_batch(
             A batch of data containing Biotite structure arrays and other metadata.
         outputs:
             The model outputs containing predicted atom positions.
-        pol_type:
-            Polymer type to filter (default is "peptide").
         window :
             The window size for smoothing RASA values (default = 25).
         max_acc_dict:
@@ -343,7 +341,6 @@ def compute_rasa_batch(
 
             unresolved_rasas[k, sample] = process_proteins(
                 struct_array=atom_arr,
-                pol_type=pol_type,
                 window=window,
                 max_acc_dict=max_acc_dict,
                 default_max_acc=default_max_acc,
