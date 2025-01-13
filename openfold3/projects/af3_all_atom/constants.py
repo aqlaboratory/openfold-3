@@ -100,12 +100,26 @@ VAL_EXTRA_LDDT_CORR_METRICS = [
     "plddt_complex",
 ]
 
+
+PEARSON_CORRELATION_METRICS = [
+    "pearson_correlation_lddt_plddt_protein",
+    "pearson_correlation_lddt_plddt_ligand",
+    "pearson_correlation_lddt_plddt_dna",
+    "pearson_correlation_lddt_plddt_rna",
+    "pearson_correlation_lddt_plddt_complex",
+]
+
+SPEARMAN_CORRELATION_METRICS = [
+     "spearman_correlation_lddt_plddt_protein",
+    "spearman_correlation_lddt_plddt_ligand",
+    "spearman_correlation_lddt_plddt_dna",
+    "spearman_correlation_lddt_plddt_rna",
+    "spearman_correlation_lddt_plddt_complex",
+]
+
 CORRELATION_METRICS = [
-    "correlation_lddt_plddt_protein",
-    "correlation_lddt_plddt_ligand",
-    "correlation_lddt_plddt_dna",
-    "correlation_lddt_plddt_rna",
-    "correlation_lddt_plddt_complex",
+    *PEARSON_CORRELATION_METRICS,
+    *SPEARMAN_CORRELATION_METRICS,
 ]
 
 MODEL_SELECTION = [
@@ -119,10 +133,17 @@ TRAIN_LOGGED_METRICS = [
     *METRICS,
 ]
 
+RASA_METRICS = [
+    "rasa",
+]
+
 VAL_LOGGED_METRICS = [
     *VAL_LOSSES,
     *METRICS,
     *SUPERIMPOSE_METRICS,
     *MODEL_SELECTION,
     *VAL_EXTRA_LDDT_CORR_METRICS,
+    *PEARSON_CORRELATION_METRICS,
+    *SPEARMAN_CORRELATION_METRICS,
+    *RASA_METRICS,
 ]

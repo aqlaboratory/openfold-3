@@ -856,8 +856,10 @@ def get_plddt_metrics(
 
     # Report plddt scaled to 0-1
     plddt_complex = compute_plddt(plddt_logits) / 100
+
     out["plddt_complex"] = torch.sum(
         plddt_complex * intra_filter_atomized, dim=-1
+    ) / torch.sum(intra_filter_atomized, dim=-1)
     ) / torch.sum(intra_filter_atomized, dim=-1)
 
     is_protein_atomized = is_protein_atomized * intra_filter_atomized
@@ -869,9 +871,15 @@ def get_plddt_metrics(
         plddt_logits_protein = plddt_complex * is_protein_atomized
         out["plddt_protein"] = torch.sum(plddt_logits_protein, dim=-1) / torch.sum(
             is_protein_atomized, dim=-1
+        plddt_logits_protein = plddt_complex * is_protein_atomized
+        out["plddt_protein"] = torch.sum(plddt_logits_protein, dim=-1) / torch.sum(
+            is_protein_atomized, dim=-1
         )
 
     if torch.any(is_ligand_atomized):
+        plddt_logits_ligand = plddt_complex * is_ligand_atomized
+        out["plddt_ligand"] = torch.sum(plddt_logits_ligand, dim=-1) / torch.sum(
+            is_ligand_atomized, dim=-1
         plddt_logits_ligand = plddt_complex * is_ligand_atomized
         out["plddt_ligand"] = torch.sum(plddt_logits_ligand, dim=-1) / torch.sum(
             is_ligand_atomized, dim=-1
@@ -882,8 +890,16 @@ def get_plddt_metrics(
         out["plddt_rna"] = torch.sum(plddt_logits_rna, dim=-1) / torch.sum(
             is_rna_atomized, dim=-1
         )
+        plddt_logits_rna = plddt_complex * is_rna_atomized
+        out["plddt_rna"] = torch.sum(plddt_logits_rna, dim=-1) / torch.sum(
+            is_rna_atomized, dim=-1
+        )
 
     if torch.any(is_dna_atomized):
+        plddt_logits_dna = plddt_complex * is_dna_atomized
+        out["plddt_dna"] = torch.sum(plddt_logits_dna, dim=-1) / torch.sum(
+            is_dna_atomized, dim=-1
+        )
         plddt_logits_dna = plddt_complex * is_dna_atomized
         out["plddt_dna"] = torch.sum(plddt_logits_dna, dim=-1) / torch.sum(
             is_dna_atomized, dim=-1
@@ -1061,14 +1077,12 @@ def get_metrics(
     """
     metrics = {}
 
-    pred_coords = outputs["atom_positions_predicted"]
     gt_coords = batch["ground_truth"]["atom_positions"]
-    all_atom_mask = batch["ground_truth"]["atom_resolved_mask"].bool()
+    pred_coords = outputs["atom_positions_predicted"]
 
     token_mask = batch["token_mask"]
     num_atoms_per_token = batch["num_atoms_per_token"]
     no_samples = pred_coords.shape[1]
-
     # getting rid of modified residues
     is_protein = batch["is_protein"]
     is_rna = batch["is_rna"]
@@ -1084,6 +1098,8 @@ def get_metrics(
         feat_dims = t.shape[2:]
         t = t.expand(-1, no_samples, *((-1,) * len(feat_dims)))
         return t
+
+    all_atom_mask = batch["ground_truth"]["atom_resolved_mask"].bool()
 
     # broadcast token level features to atom level features
     is_protein_atomized = expand_sample_dim(
@@ -1244,5 +1260,8 @@ def get_metrics(
             inter_filter_atomized,
         )
         metrics = metrics | extra_lddt
+
+    # remove all metrics that are nan
+    metrics = {k: v for k, v in metrics.items() if not torch.any(torch.isnan(v))}
 
     return metrics

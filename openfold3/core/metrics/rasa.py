@@ -47,22 +47,24 @@ def _calculate_residue_sasa(
     return struc.apply_residue_wise(chain, approx_atom_sasa, np.sum)
 
 
-def _identify_unresolved_residues(chain: np.ndarray) -> np.ndarray:
+def _identify_unresolved_residues(
+    chain: np.ndarray,
+) -> np.ndarray:
     """
     Identify unresolved residues based on atom occupancies.
-    Residues with product of occupancies < 1 are considered unresolved.
+    Residues with sum of resolved atoms < 1 are considered unresolved.
 
     Args:
         chain:
             A chain array representing a single protein chain.
-
     Returns:
         unresolved_residues:
             A boolean array indicating which residues are unresolved.
             True = unresolved, False = resolved.
     """
+
     return np.invert(
-        struc.apply_residue_wise(chain, chain.occupancy, np.sum).astype(bool)
+        struc.apply_residue_wise(chain, chain.atom_resolved_mask, np.sum).astype(bool)
     )
 
 
@@ -323,14 +325,24 @@ def compute_rasa_batch(
         (n_batch, n_samples), device=outputs["atom_positions_predicted"].device
     )
     for k, atom_arr in enumerate(struct_arrays):
+        atom_arr.set_annotation(
+            "atom_resolved_mask", np.ones_like(atom_arr.occupancy, dtype=bool)
+        )
         for sample in range(n_samples):
             atom_positions = outputs["atom_positions_predicted"][
                 k, sample, : len(atom_arr), :3
             ]
-            atom_arr.coord = atom_positions.float().detach().cpu().numpy()
+            resolved_mask = (
+                batch["ground_truth"]["atom_resolved_mask"][k, sample, : len(atom_arr)]
+                .detach()
+                .cpu()
+                .numpy()
+            )                
+            atom_arr.coord = atom_positions.detach().cpu().numpy()
+            atom_arr.atom_resolved_mask = resolved_mask
 
             unresolved_rasas[k, sample] = process_proteins(
-                atom_arr,
+                struct_array=atom_arr,
                 pol_type=pol_type,
                 window=window,
                 max_acc_dict=max_acc_dict,

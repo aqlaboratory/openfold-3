@@ -69,6 +69,7 @@ def compute_model_selection_metric(
     for metric_name, metric_values in metrics.items():
         # metric_values shape: [bs, n_samples]
         # Index each batch by the top-1 sample
+        print(metric_name, metric_values)
         batch_indices = torch.arange(metric_values.shape[0], device=device)
         metrics_top_1[metric_name] = metric_values[batch_indices, top1_global_pde]
 
