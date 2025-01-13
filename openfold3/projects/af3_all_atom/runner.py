@@ -194,14 +194,6 @@ class AlphaFold3AllAtom(ModelRunner):
                     compute_extra_lddt_metrics=True,
                 )
 
-                model_selection_based_metrics = compute_model_selection_metric(
-                    batch=batch,
-                    outputs=outputs,
-                    metrics=other_metrics,
-                    weights=self.model_selection_weights,
-                )
-
-        for k, v in model_selection_based_metrics.items():
                 other_metrics = compute_model_selection_metric(
                     batch=batch,
                     outputs=outputs,
@@ -249,7 +241,7 @@ class AlphaFold3AllAtom(ModelRunner):
                         metric_log_name=metric_name,
                         metric_value=(lddt, plddt),
                     )
-            self.tracker.update(model_selection_based_metrics["model_selection"])
+            self.tracker.update(other_metrics["model_selection"])
 
     def training_step(self, batch, batch_idx):
         example_feat = next(
