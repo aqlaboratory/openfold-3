@@ -860,7 +860,6 @@ def get_plddt_metrics(
     out["plddt_complex"] = torch.sum(
         plddt_complex * intra_filter_atomized, dim=-1
     ) / torch.sum(intra_filter_atomized, dim=-1)
-    ) / torch.sum(intra_filter_atomized, dim=-1)
 
     is_protein_atomized = is_protein_atomized * intra_filter_atomized
     is_ligand_atomized = is_ligand_atomized * intra_filter_atomized
@@ -871,15 +870,9 @@ def get_plddt_metrics(
         plddt_logits_protein = plddt_complex * is_protein_atomized
         out["plddt_protein"] = torch.sum(plddt_logits_protein, dim=-1) / torch.sum(
             is_protein_atomized, dim=-1
-        plddt_logits_protein = plddt_complex * is_protein_atomized
-        out["plddt_protein"] = torch.sum(plddt_logits_protein, dim=-1) / torch.sum(
-            is_protein_atomized, dim=-1
         )
 
     if torch.any(is_ligand_atomized):
-        plddt_logits_ligand = plddt_complex * is_ligand_atomized
-        out["plddt_ligand"] = torch.sum(plddt_logits_ligand, dim=-1) / torch.sum(
-            is_ligand_atomized, dim=-1
         plddt_logits_ligand = plddt_complex * is_ligand_atomized
         out["plddt_ligand"] = torch.sum(plddt_logits_ligand, dim=-1) / torch.sum(
             is_ligand_atomized, dim=-1
@@ -890,16 +883,8 @@ def get_plddt_metrics(
         out["plddt_rna"] = torch.sum(plddt_logits_rna, dim=-1) / torch.sum(
             is_rna_atomized, dim=-1
         )
-        plddt_logits_rna = plddt_complex * is_rna_atomized
-        out["plddt_rna"] = torch.sum(plddt_logits_rna, dim=-1) / torch.sum(
-            is_rna_atomized, dim=-1
-        )
 
     if torch.any(is_dna_atomized):
-        plddt_logits_dna = plddt_complex * is_dna_atomized
-        out["plddt_dna"] = torch.sum(plddt_logits_dna, dim=-1) / torch.sum(
-            is_dna_atomized, dim=-1
-        )
         plddt_logits_dna = plddt_complex * is_dna_atomized
         out["plddt_dna"] = torch.sum(plddt_logits_dna, dim=-1) / torch.sum(
             is_dna_atomized, dim=-1
