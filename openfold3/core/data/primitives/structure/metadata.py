@@ -11,6 +11,7 @@ from biotite.structure.io.pdbx import BinaryCIFFile, CIFBlock, CIFFile
 from openfold3.core.data.primitives.structure.labels import (
     get_chain_to_entity_dict,
 )
+from openfold3.core.data.resources.residues import STANDARD_PROTEIN_RESIDUES_1
 
 
 def get_pdb_id(cif_file: CIFFile, format: Literal["upper", "lower"] = "lower") -> str:
@@ -136,22 +137,70 @@ def get_cif_block(cif_file: CIFFile) -> CIFBlock:
     return cif_block
 
 
-def get_entity_to_canonical_seq_dict(cif_data: CIFBlock) -> dict[int, str]:
+def get_entity_to_canonical_seq_dict(
+    cif_data: CIFBlock, multi_letter_res_to_X: bool = True, ccd: CIFFile | None = None
+) -> dict[int, str]:
     """Get a dictionary mapping entity IDs to their canonical sequences.
 
     Args:
-        The CIF data block containing the entity_poly table.
+        cif_data (CIFBlock):
+            The CIF data block containing the entity_poly table.
+        multi_letter_res_to_X (bool):
+            Whether to replace residues that map to multiple one-letter codes with 'X',
+            which can be necessary to keep a 1:1 correspondence of MSA-residue features
+            downstream. An example for this are GFP chromophores. Defaults to True.
+        ccd (CIFFile | None):
+            The parsed chemical component dictionary (CCD). Only necessary if
+            `multi_letter_res_to_X` is True.
 
     Returns:
         A dictionary mapping entity IDs to their sequences.
     """
+    if multi_letter_res_to_X and ccd is None:
+        raise ValueError("If multi_letter_res_to_X is True, the CCD must be provided.")
+
     polymer_entities = cif_data["entity_poly"]["entity_id"].as_array(dtype=int)
     polymer_canonical_seqs = cif_data["entity_poly"][
         "pdbx_seq_one_letter_code_can"
     ].as_array()
     polymer_canonical_seqs = np.char.replace(polymer_canonical_seqs, "\n", "")
 
-    return dict(zip(polymer_entities.tolist(), polymer_canonical_seqs.tolist()))
+    entity_to_canonical_seq_dict = dict(
+        zip(polymer_entities.tolist(), polymer_canonical_seqs.tolist())
+    )
+
+    if not multi_letter_res_to_X:
+        return entity_to_canonical_seq_dict
+
+    # Check if there is any entity that has multi-letter residues
+    entity_to_3l_dict = get_entity_to_three_letter_codes_dict(cif_data)
+    for entity in polymer_entities.tolist():
+        unique_3l = set(entity_to_3l_dict[entity])
+
+        # If there is any multi-letter residue, rebuild the sequence using the
+        # CCD-one-letter-codes, setting everything not in the standard 20 AA to 'X'
+        # NOTE: Technically this could also respect parent ID annotations for
+        # non-standard AA to cast less residues to 'X', but we go with a simpler
+        # approach given that multi-letter residues are rare
+        if any(
+            len(ccd[three_letter]["chem_comp"]["one_letter_code"].as_item()) > 1
+            for three_letter in unique_3l
+        ):
+            new_seq = []
+
+            for three_letter in entity_to_3l_dict[entity]:
+                one_letter = ccd[three_letter]["chem_comp"]["one_letter_code"].as_item()
+
+                # Set to 'X' if not a standard AA
+                one_letter = (
+                    one_letter if one_letter in STANDARD_PROTEIN_RESIDUES_1 else "X"
+                )
+
+                new_seq.append(one_letter)
+
+            entity_to_canonical_seq_dict[entity] = "".join(new_seq)
+
+    return entity_to_canonical_seq_dict
 
 
 def get_chain_to_canonical_seq_dict(
@@ -178,29 +227,34 @@ def get_chain_to_canonical_seq_dict(
     return chain_to_seq_dict
 
 
+# TODO: Revisit multi-letter-res arguments
 def get_asym_id_to_canonical_seq_dict(
     cif_file: CIFFile | BinaryCIFFile,
+    multi_letter_res_to_X: bool = False,
+    ccd: CIFFile | None = None,
 ) -> dict[str, str]:
     """Get a dictionary mapping asym IDs to their canonical sequences.
 
     Args:
         cif_file (CIFFile | BinaryCIFFile):
             Parsed mmCIF file containing the structure.
+        multi_letter_res_to_X (bool):
+            Whether to replace residues that map to multiple one-letter codes with 'X',
+            which can be necessary to keep a 1:1 correspondence of sequence-residue
+            features downstream. An example for this are GFP chromophores. Defaults to
+            False.
+        ccd (CIFFile | None):
+            The parsed chemical component dictionary (CCD). Only necessary if
+            `multi_letter_res_to_X` is True.
 
     Returns:
         dict[str, str]:
             A dictionary mapping asym IDs to their canonical sequences.
     """
-    # TODO refactor to reduce redundancy with above code
     # Create entity_id -> canonical sequence map
-    entity_poly_canoncal_seqs = cif_file.block["entity_poly"][
-        "pdbx_seq_one_letter_code_can"
-    ].as_array()
-    entity_poly_entity_id = cif_file.block["entity_poly"]["entity_id"].as_array()
-    entity_id_to_can_seq = {
-        entity_id: seq.replace("\n", "")
-        for entity_id, seq in zip(entity_poly_entity_id, entity_poly_canoncal_seqs)
-    }
+    entity_id_to_can_seq = get_entity_to_canonical_seq_dict(
+        get_cif_block(cif_file), multi_letter_res_to_X, ccd
+    )
 
     # Create asym_id -> canonical sequence map
     asym_ids = cif_file.block["pdbx_poly_seq_scheme"]["asym_id"].as_array()
