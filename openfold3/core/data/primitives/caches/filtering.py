@@ -127,8 +127,8 @@ def filter_by_resolution(
             E.g. if max_resolution=9.0, entries with resolution 9.1 Å or higher will be
             removed.
         ignore_nmr:
-            If True, ignore NMR structures when filtering (which have no resolution).
-            Default is True.
+            If True, ignore NMR structures when filtering (which have no resolution),
+            meaning that they will be kept always. Default is True.
     Returns:
         The filtered cache.
     """
