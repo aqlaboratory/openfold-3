@@ -15,7 +15,7 @@ from pdbeccdutils.core.ccd_reader import Component
 from rdkit import Chem
 from rdkit.Chem import AllChem, Mol
 
-from openfold3.core.data.primitives.caches.format import ChainData
+from openfold3.core.data.primitives.caches.format import DatasetChainData
 from openfold3.core.data.resources.patches import correct_cif_string
 from openfold3.core.data.resources.residues import MoleculeType
 
@@ -416,7 +416,7 @@ def mol_from_atomarray(atom_array: AtomArray) -> AnnotatedMol:
 
 
 def component_iter_from_metadata(
-    atom_array: AtomArray, per_chain_metadata: ChainData
+    atom_array: AtomArray, per_chain_metadata: DatasetChainData
 ) -> Generator[AtomArray, None, None]:
     """Yields AtomArrays for each component in a structure."""
     for chain_array in struc.chain_iter(atom_array):
