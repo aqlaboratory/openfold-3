@@ -1,12 +1,13 @@
 """Helper functions to test the lmdb dict"""
 
 import json
-import lmdb
-from openfold3.core.data.io.dataset_cache import read_datacache
+
 import pytest  # noqa: F401  - used for pytest tmp fixture
 
-from openfold3.core.data.primitives.caches.lmdb import convert_datacache_to_lmdb
-from openfold3.core.data.primitives.caches.lmdb import LMDBDict
+from openfold3.core.data.io.dataset_cache import read_datacache
+from openfold3.core.data.primitives.caches.lmdb import (
+    convert_datacache_to_lmdb,
+)
 
 TEST_DATASET_CONFIG = {
     "_type": "ProteinMonomerDatasetCache",
