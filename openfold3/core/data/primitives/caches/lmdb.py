@@ -1,11 +1,8 @@
-from datetime import datetime
 import json
 import pickle as pkl
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Generic, Literal, TypeVar
-from unittest.mock import DEFAULT
-from zoneinfo import ZoneInfo
 
 import lmdb
 from tqdm import tqdm
@@ -18,11 +15,6 @@ from openfold3.core.data.primitives.caches.format import DatasetCache
 
 K = TypeVar("K")
 V = TypeVar("V")
-DEFAULT_TIMEZONE = "America/New_York"
-
-
-class DatasetKeyPreviouslyAccessed(Exception):
-    """Custom error to indicate that a key has been previously accessed"""
 
 
 def convert_datacache_to_lmdb(
@@ -181,12 +173,6 @@ class LMDBDict(Mapping[K, V], Generic[K, V]):
     def __len__(self):
         return self._n_keys
 
-    def _load_example(self, value_bytes):
-        if self._value_encoding == "pkl":
-            return pkl.loads(value_bytes)
-        else:
-            return json.loads(value_bytes.decode(self._value_encoding))
-
     def __getitem__(self, key):
         with self._lmdb_env.begin() as transaction:
             key_bytes = f"{self._prefix}{key}".encode(self._key_encoding)
@@ -194,93 +180,7 @@ class LMDBDict(Mapping[K, V], Generic[K, V]):
             if not value_bytes:
                 raise KeyError(key)
             else:
-                return self._load_example(value_bytes)
-
-
-class TimeStampedLMDBDict(LMDBDict):
-    def __init__(
-        self,
-        lmdb_env: lmdb.Environment,
-        prefix: str,
-        separator: chr = ":",
-        key_encoding: Literal["utf-8", "pkl"] = "utf-8",
-        value_encoding: Literal["utf-8", "pkl"] = "pkl",
-        min_timestamp: datetime = datetime.now(tz=ZoneInfo(DEFAULT_TIMEZONE)),
-    ):
-        """LMDBDict subclass that writes and checks timestamps of last access of entries.
-
-        Args:
-            lmdb_env (lmdb.Environment):
-                The LMDB environment object.
-            prefix (str): header for fields used to construct keys in lmdb
-            separator (chr): Single separator character used to construct key
-            key_encoding (Literal["utf-8", "pkl"]):
-                Encoding of keys. Defaults to "utf-8".
-            value_encoding (Literal["utf-8", "pkl"]):
-                Encoding of values. Defaults to "pkl".
-            min_timestamp (datetime): Cutoff time to use for filtering examples
-
-        Raises:
-            KeyError:
-                If a non-existent key is requested.
-            DatasetKeyPreviouslyAccessed:
-                If a key has a timestamp that is later than the min_timestamp
-        """
-        self.min_timestamp = min_timestamp
-        self.timezone = DEFAULT_TIMEZONE 
-        self._access_prefix = "last_accessed" + separator
-
-        super().__init__(
-            lmdb_env,
-            prefix,
-            separator=separator,
-            key_encoding=key_encoding,
-            value_encoding=value_encoding,
-        )
-
-
-    def __iter__(self):
-        "Use an iterative method to not have to store all keys in memory."
-        encoded_prefix = self._prefix.encode(self._key_encoding)
-        with self._lmdb_env.begin() as txn, txn.cursor() as cursor:
-            # Seek to the first key >= prefix
-            if cursor.set_range(encoded_prefix):
-                while True:
-                    current_key = cursor.key()
-                    if not current_key.startswith(encoded_prefix):
-                        break
-                    # convert current_key into the user-facing key
-                    # e.g. remove the prefix and decode if needed
-                    user_key = self._decode_key(current_key)
-                    yield user_key
-                    if not cursor.next():
-                        break
-
-    def _check_timestamp(self, key):
-        with self._lmdb_env.begin(write=False) as transaction:
-            access_key_bytes = f"{self._access_prefix}{key}".encode(self._key_encoding)
-            access_value_bytes = transaction.get(access_key_bytes)
-
-            if not access_value_bytes:
-                return
-
-            prev_access = json.loads(access_value_bytes.decode("utf-8"))
-            prev_access = datetime.strptime(prev_access, "%Y-%m-%d %H:%M:%S.%f%z")
-
-            print("comparing timestamps")
-            if prev_access > self.min_timestamp:
-                raise DatasetKeyPreviouslyAccessed(
-                    f"Dataset sample {key} previously accessed on {prev_access}, "
-                    f"which is later than {self.min_timestamp}"
-                )
-
-    def __getitem__(self, key):
-        with self._lmdb_env.begin(write=True) as transaction:
-            self._check_timestamp(key)
-
-            access_key_bytes = f"{self._access_prefix}{key}".encode(self._key_encoding)
-            current_time = str(datetime.now(tz=ZoneInfo(self.timezone)))
-            timevalue_bytes = json.dumps(current_time).encode("utf-8")
-            transaction.put(access_key_bytes, timevalue_bytes, overwrite=True)
-
-        return super().__getitem__(key) 
+                if self._value_encoding == "pkl":
+                    return pkl.loads(value_bytes)
+                else:
+                    return json.loads(value_bytes.decode(self._value_encoding))

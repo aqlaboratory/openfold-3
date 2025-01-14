@@ -81,7 +81,7 @@ class AlphaFold3AllAtom(ModelRunner):
         metric_log_names = itertools.chain(
             self.train_metrics.keys(), self.val_metrics.keys()
         )
-        self.metric_enabled = {metric_name: True for metric_name in metric_log_names}
+        self.metric_enabled = {metric_name: False for metric_name in metric_log_names}
 
     def _update_epoch_metric(
         self, phase: str, metric_log_name: str, metric_value: torch.Tensor
