@@ -36,14 +36,15 @@ VAL_LOSSES = [
     "loss",
 ]
 
-METRICS = [
-    # Protein metrics
+PROTEIN_METRICS = [
     "lddt_intra_protein",
     "lddt_inter_protein_protein",
     "drmsd_intra_protein",
     "clash_intra_protein",
     "clash_inter_protein_protein",
-    # Ligand metrics
+]
+
+LIGAND_METRICS = [
     "lddt_intra_ligand",
     "lddt_inter_ligand_ligand",
     "lddt_intra_ligand_uha",
@@ -53,7 +54,9 @@ METRICS = [
     "clash_intra_ligand",
     "clash_inter_ligand_ligand",
     "clash_inter_protein_ligand",
-    # DNA metrics
+]
+
+DNA_METRICS = [
     "lddt_intra_dna",
     "lddt_inter_dna_dna",
     "drmsd_intra_dna",
@@ -64,7 +67,9 @@ METRICS = [
     "clash_intra_dna",
     "clash_inter_dna_dna",
     "clash_inter_protein_dna",
-    # RNA metrics
+]
+
+RNA_METRICS = [
     "lddt_intra_rna",
     "lddt_inter_rna_rna",
     "drmsd_intra_rna",
@@ -77,6 +82,13 @@ METRICS = [
     "clash_inter_protein_rna",
 ]
 
+METRICS = [
+    *PROTEIN_METRICS,
+    *LIGAND_METRICS,
+    *DNA_METRICS,
+    *RNA_METRICS,
+]
+
 SUPERIMPOSE_METRICS = [
     "superimpose_rmsd",
     "gdt_ts",
@@ -84,12 +96,10 @@ SUPERIMPOSE_METRICS = [
 ]
 
 VAL_EXTRA_LDDT_METRICS = [
+    # LDDT metrics for model selection
     "lddt_inter_ligand_dna",
     "lddt_inter_ligand_rna",
     "lddt_intra_modified_residues",
-]
-
-VAL_EXTRA_LDDT_CORR_METRICS = [
     # pLDDT metrics
     "plddt_protein",
     "plddt_ligand",
@@ -100,6 +110,10 @@ VAL_EXTRA_LDDT_CORR_METRICS = [
     "plddt_complex",
 ]
 
+MODEL_SELECTION = [
+    "rasa",
+    "model_selection",
+]
 
 PEARSON_CORRELATION_METRICS = [
     "pearson_correlation_lddt_plddt_protein",
@@ -122,28 +136,16 @@ CORRELATION_METRICS = [
     *SPEARMAN_CORRELATION_METRICS,
 ]
 
-MODEL_SELECTION = [
-    *VAL_EXTRA_LDDT_METRICS,
-    "rasa",
-    "model_selection",
-]
-
 TRAIN_LOGGED_METRICS = [
     *TRAIN_LOSSES,
     *METRICS,
 ]
 
-RASA_METRICS = [
-    "rasa",
-]
-
 VAL_LOGGED_METRICS = [
     *VAL_LOSSES,
     *METRICS,
+    *VAL_EXTRA_LDDT_METRICS,
     *SUPERIMPOSE_METRICS,
     *MODEL_SELECTION,
-    *VAL_EXTRA_LDDT_CORR_METRICS,
-    *PEARSON_CORRELATION_METRICS,
-    *SPEARMAN_CORRELATION_METRICS,
-    *RASA_METRICS,
+    *CORRELATION_METRICS,
 ]

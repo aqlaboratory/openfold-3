@@ -7,6 +7,7 @@ from openfold3.core.metrics.confidence import compute_plddt
 from openfold3.core.metrics.validation import gdt_ha, gdt_ts, rmsd
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.geometry.kabsch_alignment import kabsch_align
+from openfold3.projects.af3_all_atom.constants import METRICS, VAL_EXTRA_LDDT_METRICS
 
 
 def lddt(
@@ -72,13 +73,8 @@ def lddt(
         score += (dist_l1 < distance_threshold).type(dist_l1.dtype)
     score = score / len(threshold)
 
-    # normalize to get intra_lddt scores
-    intra_score = torch.full(
-        intra_mask.shape[:-1],
-        torch.nan,
-        device=pair_dist_pred_pos.device,
-        dtype=pair_dist_pred_pos.dtype,
-    )
+    # Normalize to get intra_lddt scores
+    intra_score = None
     if torch.any(intra_mask):
         intra_norm = 1.0 / (eps + torch.sum(dists_to_score * intra_mask, dim=(-1, -2)))
         intra_score = intra_norm * (
@@ -87,13 +83,8 @@ def lddt(
 
     # inter_score only applies when there exist atom pairs with
     # different asym_id (inter_mask) and distance threshold (dists_to_score)
-    inter_score = torch.full(
-        intra_score.shape,
-        torch.nan,
-        device=pair_dist_pred_pos.device,
-        dtype=pair_dist_pred_pos.dtype,
-    )
     inter_mask = dists_to_score * inter_mask
+    inter_score = None
     if torch.any(inter_mask):
         inter_norm = 1.0 / (eps + torch.sum(inter_mask, dim=(-1, -2)))
         inter_score = inter_norm * (eps + torch.sum(inter_mask * score, dim=(-1, -2)))
@@ -152,6 +143,7 @@ def interface_lddt(
     )  # [*, n_atom1, n_atom2]
     dists_to_score = dists_to_score * filter_mask
 
+    score = None
     if torch.any(dists_to_score):
         # get score
         dist_l1 = torch.abs(pair_dist_true - pair_dist_pred)
@@ -166,13 +158,6 @@ def interface_lddt(
         # normalize
         norm = 1.0 / (eps + torch.sum(dists_to_score, dim=(-1, -2)))
         score = norm * (eps + torch.sum(dists_to_score * score, dim=(-1, -2)))
-    else:
-        shape = all_atom_mask1.shape[:-1]
-        if not shape:
-            shape = (1,)
-        score = torch.full(
-            shape, torch.nan, device=pair_dist_pred.device, dtype=pair_dist_pred.dtype
-        )
 
     return score
 
@@ -211,10 +196,9 @@ def drmsd(
     n_intra = torch.sum(intra_mask * mask, dim=(-1, -2))
     intra_drmsd = intra_drmsd * (1 / n_intra)
 
-    inter_drmsd = torch.full(
-        intra_drmsd.shape, torch.nan, device=drmsd.device, dtype=drmsd.dtype
-    )
     inter_mask = inter_mask * mask
+
+    inter_drmsd = None
     if torch.any(inter_mask):
         inter_drmsd = drmsd * inter_mask
         inter_drmsd = torch.sum(inter_drmsd, dim=(-1, -2))
@@ -664,20 +648,16 @@ def steric_clash(
     # Compute the clash
     clash = torch.relu(threshold - pred_pair)
 
-    intra_clash = torch.full(
-        pred_pair.shape[:-2], torch.nan, device=clash.device, dtype=clash.dtype
-    )
     intra_mask = mask * intra
+    intra_clash = None
     if torch.any(intra_mask):
         intra_clash = torch.sum(clash * intra_mask, dim=(-1, -2)) / torch.sum(
             intra_mask, dim=(-1, -2)
         )
         intra_clash = intra_clash / threshold
 
-    inter_clash = torch.full(
-        pred_pair.shape[:-2], torch.nan, device=clash.device, dtype=clash.dtype
-    )
     inter_mask = mask * inter
+    inter_clash = None
     if torch.any(inter_mask):
         inter_clash = torch.sum(clash * inter_mask, dim=(-1, -2)) / torch.sum(
             inter_mask, dim=(-1, -2)
@@ -717,12 +697,11 @@ def interface_steric_clash(
             (pred_protein.unsqueeze(-2) - pred_substrate.unsqueeze(-3)) ** 2, dim=-1
         )
     )
-    mask = all_atom_mask_protein.unsqueeze(-1) * all_atom_mask_substrate.unsqueeze(-2)
-    clash = torch.relu(threshold - pair_dist)
 
-    interface_clash = torch.full(
-        pair_dist.shape[:-2], torch.nan, device=pair_dist.device, dtype=pair_dist.dtype
-    )
+    clash = torch.relu(threshold - pair_dist)
+    mask = all_atom_mask_protein.unsqueeze(-1) * all_atom_mask_substrate.unsqueeze(-2)
+
+    interface_clash = None
     if torch.any(mask):
         interface_clash = torch.sum(clash * mask, dim=(-1, -2)) / torch.sum(
             mask, dim=(-1, -2)
@@ -1200,6 +1179,14 @@ def get_metrics(
         )
         metrics = metrics | dna_validation_metrics
 
+    metrics.update(
+        {
+            metric_name: torch.tensor(torch.nan, device=pred_coords.device)
+            for metric_name in METRICS
+            if metrics.get(metric_name) is None
+        }
+    )
+
     if superimposition_metrics:
         superimpose_metrics = get_superimpose_metrics(
             pred_coords,
@@ -1219,7 +1206,6 @@ def get_metrics(
             )
             metrics = metrics | full_complex_lddt_metrics
 
-        # TODO: Replace with correlation metric
         if torch.any(intra_filter_atomized):
             plddt_logits = expand_sample_dim(outputs["plddt_logits"])
             plddt_metrics = get_plddt_metrics(
@@ -1245,5 +1231,13 @@ def get_metrics(
             inter_filter_atomized,
         )
         metrics = metrics | extra_lddt
+
+        metrics.update(
+            {
+                metric_name: torch.tensor(torch.nan, device=pred_coords.device)
+                for metric_name in VAL_EXTRA_LDDT_METRICS
+                if metrics.get(metric_name) is None
+            }
+        )
 
     return metrics

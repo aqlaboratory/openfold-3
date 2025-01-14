@@ -332,11 +332,12 @@ def compute_rasa_batch(
             ]
             resolved_mask = (
                 batch["ground_truth"]["atom_resolved_mask"][k, sample, : len(atom_arr)]
+                .float()
                 .detach()
                 .cpu()
                 .numpy()
             )
-            atom_arr.coord = atom_positions.detach().cpu().numpy()
+            atom_arr.coord = atom_positions.float().detach().cpu().numpy()
             atom_arr.atom_resolved_mask = resolved_mask
 
             unresolved_rasas[k, sample] = process_proteins(
