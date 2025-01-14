@@ -3,8 +3,8 @@ import logging
 import biotite.structure as struc
 import numpy as np
 import torch
-from openfold3.core.data.resources.residues import MoleculeType
-from openfold3.core.data.resources.residues import RESIDUE_SASA_SCALES
+
+from openfold3.core.data.resources.residues import RESIDUE_SASA_SCALES, MoleculeType
 
 logger = logging.getLogger(__name__)
 
@@ -250,7 +250,7 @@ def process_proteins(
     if len(filtered) == 0:
         logging.warning(f"No protein chains found in pdb_id={pdb_id}")
         return float("nan")
-    
+
     # Set a default max_acc for fallback residues
     if default_max_acc is None:
         default_max_acc = max_acc_dict.get("ALA", 113.0)
@@ -335,7 +335,7 @@ def compute_rasa_batch(
                 .detach()
                 .cpu()
                 .numpy()
-            )                
+            )
             atom_arr.coord = atom_positions.detach().cpu().numpy()
             atom_arr.atom_resolved_mask = resolved_mask
 

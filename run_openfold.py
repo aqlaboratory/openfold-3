@@ -126,13 +126,10 @@ def main(args):
 
     if runner_args.get("checkpoint"):
         callbacks.append(ModelCheckpoint(**runner_args.checkpoint.to_dict()))
-        
+
     if runner_args.get("checkpoint_best"):
-        callbacks.append(
-            ModelCheckpoint(**runner_args.checkpoint_best.to_dict()
-        )
-            )
-        
+        callbacks.append(ModelCheckpoint(**runner_args.checkpoint_best.to_dict()))
+
     if runner_args.get("log_lr") and wandb_logger is not None:
         callbacks.append(LearningRateMonitor(logging_interval="step"))
 

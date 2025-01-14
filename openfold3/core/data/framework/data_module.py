@@ -524,6 +524,6 @@ def openfold_batch_collator(samples: list[dict[str, torch.Tensor]]):
     # Add the ref_space_uid_to_perm back to the samples
     samples["ref_space_uid_to_perm"] = ref_space_uid_to_perm_dicts
 
-    samples["pdb_id"] = ", ".join(pdb_ids)
+    samples["pdb_id"] = pdb_ids
 
     return samples

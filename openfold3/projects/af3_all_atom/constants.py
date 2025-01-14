@@ -110,7 +110,7 @@ PEARSON_CORRELATION_METRICS = [
 ]
 
 SPEARMAN_CORRELATION_METRICS = [
-     "spearman_correlation_lddt_plddt_protein",
+    "spearman_correlation_lddt_plddt_protein",
     "spearman_correlation_lddt_plddt_ligand",
     "spearman_correlation_lddt_plddt_dna",
     "spearman_correlation_lddt_plddt_rna",

@@ -98,20 +98,6 @@ class AlphaFold3AllAtom(ModelRunner):
             }
         )
         self.val_metrics = MetricCollection(val_metrics, prefix="val/")
-        # self.val_metrics = MetricCollection(
-        #     {
-        #         metric_name: MeanMetric(nan_strategy="ignore")
-        #         for metric_name in VAL_LOGGED_METRICS if not metric_name in CORRELATION_METRICS
-        #     },
-        #     prefix="val/",
-        # )
-
-        # self.val_metrics.update(
-        #     {
-        #         metric_name: PearsonCorrCoef(num_outputs=1)
-        #         for metric_name in CORRELATION_METRICS
-        #     }
-        # )
 
         # Not all metrics will be calculated for each stage of training or between
         # training and validation. Keep track of which metrics are enabled.
@@ -251,7 +237,7 @@ class AlphaFold3AllAtom(ModelRunner):
             self.ema.to(example_feat.device)
 
         # TODO: Remove debug logic
-        pdb_id = batch.pop("pdb_id")
+        pdb_id = ", ".join(batch.pop("pdb_id"))
         logger.warning(
             f"Started model forward pass for {pdb_id} on rank {self.global_rank} "
             f"step {self.global_step}"
@@ -296,7 +282,7 @@ class AlphaFold3AllAtom(ModelRunner):
         pdb_id = batch.pop("pdb_id")
         atom_array = batch.pop("atom_array")
         logger.warning(
-            f"Started validation for {pdb_id} on rank {self.global_rank} "
+            f"Started validation for {', '.join(pdb_id)} on rank {self.global_rank} "
             f"step {self.global_step}"
         )
 
@@ -317,7 +303,7 @@ class AlphaFold3AllAtom(ModelRunner):
             logger.warning(
                 "-" * 40
                 + "\n"
-                + f"Train step failed with pdb id {pdb_id}: {str(e)}\n"
+                + f"Train step failed with pdb id {', '.join(pdb_id)}: {str(e)}\n"
                 + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
                 + "-" * 40
             )
@@ -351,7 +337,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
     def on_validation_epoch_start(self):
         self.tracker.increment()
-        
+
     def _log_epoch_metrics(self, metrics: MetricCollection):
         """Log aggregated epoch metrics for training or validation.
 
@@ -375,7 +361,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
                 # Reset metric for next epoch
                 metric_obj.reset()
-                    
+
     def _log_epoch_tracker(self):
         """Log the tracker metric for the epoch."""
         if not self.trainer.sanity_checking:
@@ -404,8 +390,7 @@ class AlphaFold3AllAtom(ModelRunner):
                 logger=True,
                 sync_dist=False,
             )
-            
-            
+
     def on_train_epoch_end(self):
         """Log aggregated epoch metrics for training."""
         self._log_epoch_metrics(metrics=self.train_metrics)
@@ -413,7 +398,7 @@ class AlphaFold3AllAtom(ModelRunner):
     def on_validation_epoch_end(self):
         """Log aggregated epoch metrics for validation."""
         self._log_epoch_metrics(metrics=self.val_metrics)
-        self._log_epoch_tracker()        
+        self._log_epoch_tracker()
 
     def configure_optimizers(
         self,

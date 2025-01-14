@@ -68,7 +68,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
 
         Creates a Dataframe storing a flat list of structure_data keys. Used for mapping
         TO the dataset_cache in the getitem. Note that the validation set is not wrapped
-        in a StoachasticSamplerDataset.
+        in a StochasticSamplerDataset.
         """
         self.datapoint_cache = pd.DataFrame(
             {
@@ -93,7 +93,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
             sample_data = self.create_all_features(
                 pdb_id=pdb_id,
                 preferred_chain_or_interface=None,
-                return_atom_arrays=False,
+                return_atom_arrays=True,
             )
             features = sample_data["features"]
             features["pdb_id"] = pdb_id
@@ -104,7 +104,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
                 sample_data = self.create_all_features(
                     pdb_id=pdb_id,
                     preferred_chain_or_interface=None,
-                    return_atom_arrays=False,
+                    return_atom_arrays=True,
                 )
 
                 features = sample_data["features"]
@@ -192,7 +192,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
         """Calls the parent create_all_features, and then adds features for homology
         similarity."""
         sample_data = super().create_all_features(
-            pdb_id, preferred_chain_or_interface, return_atom_arrays=True
+            pdb_id, preferred_chain_or_interface, return_atom_arrays=return_atom_arrays
         )
 
         validation_homology_filters = self.get_validation_homology_features(

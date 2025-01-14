@@ -1246,7 +1246,4 @@ def get_metrics(
         )
         metrics = metrics | extra_lddt
 
-    # remove all metrics that are nan
-    metrics = {k: v for k, v in metrics.items() if not torch.any(torch.isnan(v))}
-
     return metrics
