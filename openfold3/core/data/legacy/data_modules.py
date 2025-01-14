@@ -907,8 +907,7 @@ class OpenFoldDataModule(pl.LightningDataModule):
 
         if self.train_data_dir is None and self.predict_data_dir is None:
             raise ValueError(
-                "At least one of train_data_dir or predict_data_dir must be "
-                "specified"
+                "At least one of train_data_dir or predict_data_dir must be specified"
             )
 
         self.training_mode = self.train_data_dir is not None

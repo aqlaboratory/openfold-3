@@ -435,13 +435,11 @@ BondAngle = collections.namedtuple(
 
 
 @functools.cache
-def load_stereo_chemical_props() -> (
-    tuple[
-        Mapping[str, list[Bond]],
-        Mapping[str, list[Bond]],
-        Mapping[str, list[BondAngle]],
-    ]
-):
+def load_stereo_chemical_props() -> tuple[
+    Mapping[str, list[Bond]],
+    Mapping[str, list[Bond]],
+    Mapping[str, list[BondAngle]],
+]:
     """Load stereo_chemical_props.txt into a nice structure.
 
     Load literature values for bond lengths and bond angles and translate
