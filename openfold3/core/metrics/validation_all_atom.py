@@ -195,18 +195,16 @@ def drmsd(
     intra_drmsd = torch.sum(intra_drmsd, dim=(-1, -2))
     n_intra = torch.sum(intra_mask * mask, dim=(-1, -2))
     intra_drmsd = intra_drmsd * (1 / n_intra)
-
-    inter_mask = inter_mask * mask
+    intra_drmsd = torch.sqrt(intra_drmsd)
 
     inter_drmsd = None
+    inter_mask = inter_mask * mask
     if torch.any(inter_mask):
         inter_drmsd = drmsd * inter_mask
         inter_drmsd = torch.sum(inter_drmsd, dim=(-1, -2))
         n_inter = torch.sum(inter_mask * mask, dim=(-1, -2))
         inter_drmsd = inter_drmsd * (1 / n_inter)
-
-    intra_drmsd = torch.sqrt(intra_drmsd)
-    inter_drmsd = torch.sqrt(inter_drmsd)
+        inter_drmsd = torch.sqrt(inter_drmsd)
 
     return intra_drmsd, inter_drmsd
 
@@ -1181,7 +1179,12 @@ def get_metrics(
 
     metrics.update(
         {
-            metric_name: torch.tensor(torch.nan, device=pred_coords.device)
+            metric_name: torch.full(
+                pred_coords.shape[:-2],
+                torch.nan,
+                device=pred_coords.device,
+                dtype=pred_coords.dtype,
+            )
             for metric_name in METRICS
             if metrics.get(metric_name) is None
         }
@@ -1234,7 +1237,12 @@ def get_metrics(
 
         metrics.update(
             {
-                metric_name: torch.tensor(torch.nan, device=pred_coords.device)
+                metric_name: torch.full(
+                    pred_coords.shape[:-2],
+                    torch.nan,
+                    device=pred_coords.device,
+                    dtype=pred_coords.dtype,
+                )
                 for metric_name in VAL_EXTRA_LDDT_METRICS
                 if metrics.get(metric_name) is None
             }

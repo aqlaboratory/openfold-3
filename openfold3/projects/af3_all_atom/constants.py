@@ -115,25 +115,12 @@ MODEL_SELECTION = [
     "model_selection",
 ]
 
-PEARSON_CORRELATION_METRICS = [
+CORRELATION_METRICS = [
     "pearson_correlation_lddt_plddt_protein",
     "pearson_correlation_lddt_plddt_ligand",
     "pearson_correlation_lddt_plddt_dna",
     "pearson_correlation_lddt_plddt_rna",
     "pearson_correlation_lddt_plddt_complex",
-]
-
-SPEARMAN_CORRELATION_METRICS = [
-    "spearman_correlation_lddt_plddt_protein",
-    "spearman_correlation_lddt_plddt_ligand",
-    "spearman_correlation_lddt_plddt_dna",
-    "spearman_correlation_lddt_plddt_rna",
-    "spearman_correlation_lddt_plddt_complex",
-]
-
-CORRELATION_METRICS = [
-    *PEARSON_CORRELATION_METRICS,
-    *SPEARMAN_CORRELATION_METRICS,
 ]
 
 TRAIN_LOGGED_METRICS = [

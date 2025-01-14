@@ -5,7 +5,7 @@ import traceback
 from pathlib import Path
 
 import torch
-from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef, SpearmanCorrCoef
+from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
 from torchmetrics.wrappers import MetricTracker
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
@@ -33,8 +33,6 @@ from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
 from openfold3.projects.af3_all_atom.constants import (
     CORRELATION_METRICS,
     METRICS,
-    PEARSON_CORRELATION_METRICS,
-    SPEARMAN_CORRELATION_METRICS,
     TRAIN_LOSSES,
     VAL_LOGGED_METRICS,
 )
@@ -88,13 +86,7 @@ class AlphaFold3AllAtom(ModelRunner):
         val_metrics.update(
             {
                 metric_name: PearsonCorrCoef(num_outputs=1)
-                for metric_name in PEARSON_CORRELATION_METRICS
-            }
-        )
-        val_metrics.update(
-            {
-                metric_name: SpearmanCorrCoef(num_outputs=1)
-                for metric_name in SPEARMAN_CORRELATION_METRICS
+                for metric_name in CORRELATION_METRICS
             }
         )
         self.val_metrics = MetricCollection(val_metrics, prefix="val/")
@@ -221,12 +213,7 @@ class AlphaFold3AllAtom(ModelRunner):
                         metric_log_name=metric_name,
                         metric_value=(lddt, plddt),
                     )
-                    metric_name = f"val/spearman_correlation_lddt_plddt_{molecule_type}"
-                    self._update_epoch_metric(
-                        phase=phase,
-                        metric_log_name=metric_name,
-                        metric_value=(lddt, plddt),
-                    )
+
             self.tracker.update(other_metrics["model_selection"])
 
     def training_step(self, batch, batch_idx):

@@ -60,9 +60,7 @@ def compute_model_selection_metric(
     top1_global_pde = torch.argmax(global_pde, dim=1)
 
     # Compute RASA (Relative ASA) metric
-    rasa = compute_rasa_batch(batch, outputs)
-    if not torch.isnan(rasa).any():
-        metrics["rasa"] = rasa
+    metrics["rasa"] = compute_rasa_batch(batch, outputs)
 
     # Select the top-1 metric values (across the sample dimension) per batch
     metrics_top_1 = {}
