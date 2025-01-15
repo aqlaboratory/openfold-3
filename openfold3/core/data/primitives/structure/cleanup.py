@@ -168,13 +168,11 @@ def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
 
 
 @return_on_empty_atom_array
-def remove_small_polymers(
-    atom_array: AtomArray, cif_data: CIFBlock, max_residues: int = 3
-) -> AtomArray:
+def remove_small_polymers(atom_array: AtomArray, max_residues: int = 3) -> AtomArray:
     """Removes small polymer chains from the AtomArray
 
     Follows 2.5.4 of the AlphaFold3 SI and removes all polymer chains with up to
-    max_residues residues. We consider proteins and nucleic acids as polymers.
+    max_residues resolved residues. We consider proteins and nucleic acids as polymers.
 
     Args:
         atom_array:
@@ -183,13 +181,25 @@ def remove_small_polymers(
             Maximum number of residues for a polymer chain to be considered as small.
 
     Returns:
-        AtomArray with all polymer chains with fewer than min_residues residues removed.
+        AtomArray with all polymer chains with up to max_residues residues removed.
     """
-    chain_to_seq = get_chain_to_canonical_seq_dict(atom_array, cif_data)
+    prot_mask = struc.filter_polymer(atom_array, pol_type="peptide")
+    nuc_mask = struc.filter_polymer(atom_array, pol_type="nucleotide")
+    polymer_mask = prot_mask | nuc_mask
+
+    resolved_mask = atom_array.occupancy > 0.0
+
+    # Get only resolved polymer residues
+    resolved_poly_array = atom_array[polymer_mask & resolved_mask]
+
+    # Identify too-small polymers
     small_polymer_chains = [
-        chain for chain, seq in chain_to_seq.items() if len(seq) <= max_residues
+        chain_arr.chain_id[0]
+        for chain_arr in struc.chain_iter(resolved_poly_array)
+        if struc.get_residue_count(chain_arr) <= max_residues
     ]
 
+    # Remove small polymer chains
     for chain_id in small_polymer_chains:
         atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
         logger.debug(f"Removed small polymer chain {chain_id}")

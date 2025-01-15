@@ -130,8 +130,8 @@ def cleanup_structure_af3(
     if get_experimental_method(cif_data) == "X-RAY DIFFRACTION":
         atom_array = remove_crystallization_aids(atom_array)
 
-    atom_array = remove_hydrogens(atom_array)  #
-    atom_array = remove_small_polymers(atom_array, cif_data, max_residues=3)
+    atom_array = remove_hydrogens(atom_array)
+    atom_array = remove_small_polymers(atom_array, max_residues=3)
     atom_array = remove_fully_unknown_polymers(atom_array)
     atom_array = remove_clashing_chains(
         atom_array, clash_distance=1.7, clash_percentage=0.3
