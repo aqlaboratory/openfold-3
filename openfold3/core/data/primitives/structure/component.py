@@ -197,15 +197,18 @@ def get_covalent_component_chain_ids(atom_array: AtomArray) -> list[str]:
     Returns:
         List of chain IDs that represent covalent components.
     """
+    # First check if there even are any ligands
+    lig_mask = atom_array.molecule_type_id == MoleculeType.LIGAND
+    if not np.any(lig_mask):
+        return []
+
     assign_atom_indices(atom_array, label="_atom_idx_coval_comp")
     bond_list = atom_array.bonds.as_array()
 
     # Filter out metal coordination bonds
     bond_list = bond_list[bond_list[:, 2] != BondType.COORDINATION]
 
-    ligand_chain_ids = struc.get_chains(
-        atom_array[atom_array.molecule_type_id == MoleculeType.LIGAND]
-    )
+    ligand_chain_ids = struc.get_chains(atom_array[lig_mask])
     ligand_chains = atom_array[np.isin(atom_array.chain_id, ligand_chain_ids)]
 
     covalent_component_chains = []
