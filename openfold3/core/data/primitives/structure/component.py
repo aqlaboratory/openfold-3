@@ -456,7 +456,7 @@ def mol_from_atomarray(atom_array: AtomArray) -> AnnotatedMol:
 
         # Set atom coordinates to the ones from the AtomArray for stereochemistry
         # detection later
-        conf.SetAtomPosition(idx, atom.coord)
+        conf.SetAtomPosition(idx, atom.coord.tolist())
 
     mol.AddConformer(conf)
 
