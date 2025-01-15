@@ -20,7 +20,6 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
 from openfold3.core.data.primitives.structure.labels import assign_atom_indices
-from openfold3.core.data.resources.patches import correct_cif_string
 from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
@@ -255,8 +254,8 @@ def pdbeccdutils_component_from_ccd(ccd_id: str, ccd: CIFFile) -> Component:
         pdbeccdutils Component object representing the CCD entry.
     """
     cif_block = ccd[ccd_id]
+    cif_block.name = ccd_id
     cif_str = cif_block.serialize()
-    cif_str = correct_cif_string(cif_str, ccd_id)
 
     # Manually recreate ccd_reader.read_pdb_cif_file but using a string instead of
     # file-path input
