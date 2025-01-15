@@ -3,6 +3,10 @@ Constants specific to AF3 project. This currently only contains losses and
 metrics for logging.
 """
 
+###################################
+# Losses
+###################################
+
 CONFIDENCE_LOSSES = [
     "plddt_loss",
     "pde_loss",
@@ -35,6 +39,10 @@ VAL_LOSSES = [
     *DISTOGRAM_LOSSES,
     "loss",
 ]
+
+###################################
+# Metrics
+###################################
 
 PROTEIN_METRICS = [
     "lddt_intra_protein",
@@ -95,18 +103,23 @@ SUPERIMPOSE_METRICS = [
     "gdt_ha",
 ]
 
+###################################
+# Model Selection
+# pLDDT/LDDT Correlation Metrics
+###################################
+
 VAL_EXTRA_LDDT_METRICS = [
     # LDDT metrics for model selection
     "lddt_inter_ligand_dna",
     "lddt_inter_ligand_rna",
     "lddt_intra_modified_residues",
+    # Complex metrics
+    "lddt_intra_complex",
     # pLDDT metrics
     "plddt_protein",
     "plddt_ligand",
     "plddt_dna",
     "plddt_rna",
-    # Complex metrics
-    "lddt_complex",
     "plddt_complex",
 ]
 

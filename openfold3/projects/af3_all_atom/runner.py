@@ -201,18 +201,25 @@ class AlphaFold3AllAtom(ModelRunner):
                     sync_dist=False,
                 )
         if not train:
-            for molecule_type in ["protein", "rna", "dna", "ligand", "complex"]:
+            for metric in CORRELATION_METRICS:
+                molecule_type = metric.split("_")[-1]
                 plddt_key = f"plddt_{molecule_type}"
                 lddt_key = f"lddt_intra_{molecule_type}"
-                if plddt_key in other_metrics and lddt_key in other_metrics:
-                    plddt = other_metrics[plddt_key].flatten()
-                    lddt = other_metrics[lddt_key].flatten()
-                    metric_name = f"val/pearson_correlation_lddt_plddt_{molecule_type}"
-                    self._update_epoch_metric(
-                        phase=phase,
-                        metric_log_name=metric_name,
-                        metric_value=(lddt, plddt),
+
+                plddt = other_metrics.get(plddt_key)
+                lddt = other_metrics.get(lddt_key)
+
+                if plddt is None or lddt is None:
+                    raise KeyError(
+                        f"Missing metrics: {plddt_key} and {lddt_key} must "
+                        f"both be present to compute correlation metrics."
                     )
+
+                self._update_epoch_metric(
+                    phase=phase,
+                    metric_log_name=f"{phase}/{metric}",
+                    metric_value=(lddt.flatten(), plddt.flatten()),
+                )
 
             self.tracker.update(other_metrics["model_selection"])
 

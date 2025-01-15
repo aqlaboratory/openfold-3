@@ -800,7 +800,7 @@ def get_full_complex_lddt(
         asym_id,
     )
 
-    out["lddt_complex"] = complex_lddt
+    out["lddt_intra_complex"] = complex_lddt
 
     return out
 
