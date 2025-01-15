@@ -89,6 +89,7 @@ class StochasticSamplerDataset(Dataset):
     def resample_epoch(self):
         """Resample epoch_len number of samples according to the provided
         probabilities."""
+        # TODO: refactor
         # Sample dataset indices
         n_datasets = len(self.datasets)
         dataset_indices = torch.multinomial(

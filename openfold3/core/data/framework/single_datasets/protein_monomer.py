@@ -49,6 +49,7 @@ class ProteinMonomerDataset(BaseAF3Dataset):
         dataset_cache in the StochasticSamplerDataset and TO the dataset_cache in the
         getitem.
         """
+        # TODO: refactor
         sample_ids = list(self.dataset_cache.structure_data.keys())
         self.datapoint_cache = pd.DataFrame(
             {
