@@ -204,7 +204,10 @@ def get_entity_to_canonical_seq_dict(
 
 
 def get_chain_to_canonical_seq_dict(
-    atom_array: struc.AtomArray, cif_data: CIFBlock
+    atom_array: struc.AtomArray,
+    cif_data: CIFBlock,
+    multi_letter_res_to_X: bool = True,
+    ccd: CIFFile | None = None,
 ) -> dict[int, str]:
     """Get a dictionary mapping chain IDs to their canonical sequences.
 
@@ -214,8 +217,18 @@ def get_chain_to_canonical_seq_dict(
         cif_data:
             Parsed mmCIF data of the structure. Note that this expects a CIFBlock which
             requires one prior level of indexing into the CIFFile, (see `get_cif_block`)
+        multi_letter_res_to_X (bool):
+            Whether to replace residues that map to multiple one-letter codes with 'X',
+            which can be necessary to keep a 1:1 correspondence of sequence-residue
+            features downstream. An example for this are GFP chromophores. Defaults to
+            True.
+        ccd (CIFFile | None):
+            The parsed chemical component dictionary (CCD). Only necessary if
+            `multi_letter_res_to_X` is True.
     """
-    entity_to_seq_dict = get_entity_to_canonical_seq_dict(cif_data)
+    entity_to_seq_dict = get_entity_to_canonical_seq_dict(
+        cif_data=cif_data, multi_letter_res_to_X=multi_letter_res_to_X, ccd=ccd
+    )
     chain_to_entity_dict = get_chain_to_entity_dict(atom_array)
 
     chain_to_seq_dict = {
