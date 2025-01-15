@@ -4,7 +4,7 @@ from functools import wraps
 import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray, BondList, BondType, index_distance
-from biotite.structure.io.pdbx import CIFBlock, CIFFile
+from biotite.structure.io.pdbx import CIFFile
 from scipy.spatial.distance import cdist
 
 from openfold3.core.data.primitives.quality_control.logging_utils import (
@@ -17,9 +17,6 @@ from openfold3.core.data.primitives.structure.interface import (
 from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
     remove_atom_indices,
-)
-from openfold3.core.data.primitives.structure.metadata import (
-    get_chain_to_canonical_seq_dict,
 )
 from openfold3.core.data.resources.lists import (
     CRYSTALLIZATION_AIDS,
@@ -560,6 +557,7 @@ def subset_large_structure(
     atom_array: AtomArray,
     n_chains: int = 20,
     interface_distance_threshold: float = 15.0,
+    random_seed: int = None,
 ) -> AtomArray:
     """Subsets structures with too many chains to n chains
 
@@ -578,10 +576,15 @@ def subset_large_structure(
             Distance threshold in Å that an interface token center atom must have to any
             token center atom in another chain to be considered an interface token
             center atom
+        random_seed:
+            Random seed for reproducibility. Default is None.
 
     Returns:
         AtomArray with the closest n_chains based on token center atom distances
     """
+    if random_seed is not None:
+        np.random.seed(random_seed)
+
     # Select random interface token center atom
     interface_token_center_atoms = get_interface_token_center_atoms(
         atom_array, distance_threshold=interface_distance_threshold

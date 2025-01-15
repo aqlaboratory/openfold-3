@@ -61,6 +61,12 @@ from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif
     ),
 )
 @click.option(
+    "--random-seed",
+    type=int,
+    default=None,
+    help="Seed for reproducibility in large-assembly subsetting.",
+)
+@click.option(
     "--log-level",
     type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
     default="WARNING",
@@ -80,6 +86,7 @@ def main(
     max_polymer_chains: int = 300,
     num_workers: int | None = None,
     chunksize: int = 50,
+    random_seed: int | None = None,
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
     early_stop: int | None = None,
 ) -> None:
@@ -101,6 +108,7 @@ def main(
         num_workers=num_workers,
         chunksize=chunksize,
         output_formats=output_format,
+        random_seed=random_seed,
         early_stop=early_stop,
     )
 

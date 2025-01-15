@@ -93,7 +93,10 @@ def _init_worker(profile_name: str = "openfold") -> None:
 
 
 def cleanup_structure_af3(
-    atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile
+    atom_array: AtomArray,
+    cif_data: CIFBlock,
+    ccd: CIFFile,
+    random_seed: int | None = None,
 ) -> AtomArray:
     """Cleans up a structure following the AlphaFold3 SI and formats it for training.
 
@@ -116,6 +119,8 @@ def cleanup_structure_af3(
             `metadata_extraction.get_cif_block`)
         ccd:
             CIFFile containing the parsed CCD (components.cif)
+        random_seed:
+            Random seed for reproducibility in large-assembly-subsetting.
 
     Returns:
         AtomArray with all cleaning steps applied
@@ -145,7 +150,10 @@ def cleanup_structure_af3(
         # Tokenization is required for large-structure subsetting
         tokenize_atom_array(atom_array)
         atom_array = subset_large_structure(
-            atom_array=atom_array, n_chains=20, interface_distance_threshold=15.0
+            atom_array=atom_array,
+            n_chains=20,
+            interface_distance_threshold=15.0,
+            random_seed=random_seed,
         )
 
     ## Structure formatting
@@ -367,6 +375,7 @@ def preprocess_structure_and_write_outputs_af3(
     output_formats: list[Literal["cif", "bcif", "pkl"]],
     max_polymer_chains: int | None = None,
     skip_components: set | SharedSet | None = None,
+    random_seed: int | None = None,
 ) -> tuple[dict, dict]:
     """Wrapper function to preprocess a single structure for the AF3 data pipeline.
 
@@ -385,15 +394,18 @@ def preprocess_structure_and_write_outputs_af3(
             Path to the output directory that reference molecule SDF files (specifying
             the molecular graph for each ligand as well as a fallback conformer for use
             in featurization) are written to.
+        output_formats:
+            What formats to write the output files to. Allowed values are "cif", "bcif",
+            "npz", and "pkl".
         max_polymer_chains:
             The maximum number of polymer chains in the first bioassembly after which a
             structure is skipped by the parser.
         skip_components:
             A set of components to skip, if any. Useful to avoid repeated processing of
             components e.g. by using a SharedSet.
-        write_additional_cifs:
-            Whether to additionally write normal .cif files on top of the binary .bcif
-            files, which can be helpful for manual inspection.
+        random_seed:
+            Random seed for reproducibility in large-assembly-subsetting.
+
 
     Returns:
         Tuple containing:
@@ -447,7 +459,9 @@ def preprocess_structure_and_write_outputs_af3(
         atom_array = parsed_mmcif.atom_array
 
     # Cleanup structure and extract metadata
-    atom_array = cleanup_structure_af3(atom_array, cif_data, ccd)
+    atom_array = cleanup_structure_af3(
+        atom_array=atom_array, cif_data=cif_data, ccd=ccd, random_seed=random_seed
+    )
 
     chain_int_metadata_dict = extract_chain_and_interface_metadata_af3(
         atom_array, cif_data
@@ -535,6 +549,8 @@ class _AF3PreprocessingWrapper:
         output_formats:
             What formats to write the output files to. Allowed values are "cif", "bcif",
             and "pkl".
+        random_seed:
+            Random seed for reproducibility in large-assembly-subsetting.
     """
 
     def __init__(
@@ -544,12 +560,14 @@ class _AF3PreprocessingWrapper:
         max_polymer_chains: int | None,
         skip_components: set | SharedSet | None,
         output_formats: list[Literal["cif", "bcif", "pkl"]],
+        random_seed: int | None = None,
     ):
         self.ccd = ccd
         self.reference_mol_out_dir = reference_mol_out_dir
         self.max_polymer_chains = max_polymer_chains
         self.skip_components = skip_components
         self.output_formats = output_formats
+        self.random_seed = random_seed
 
     def __call__(self, paths: tuple[Path, Path]) -> tuple[dict, dict]:
         cif_file, out_dir = paths
@@ -565,6 +583,7 @@ class _AF3PreprocessingWrapper:
                     max_polymer_chains=self.max_polymer_chains,
                     skip_components=self.skip_components,
                     output_formats=self.output_formats,
+                    random_seed=self.random_seed,
                 )
             )
 
@@ -600,6 +619,7 @@ def preprocess_cif_dir_af3(
     num_workers: int | None = None,
     chunksize: int = 20,
     output_formats: list[Literal["npz", "cif", "bcif", "pkl"]] = False,
+    random_seed: int | None = None,
     early_stop: int | None = None,
 ) -> None:
     """Preprocesses a directory of PDB files following the AlphaFold3 SI.
@@ -627,6 +647,8 @@ def preprocess_cif_dir_af3(
         output_formats:
             What formats to write the output files to. Allowed values are "npz", "cif",
             "bcif", and "pkl".
+        random_seed:
+            Random seed for reproducibility in large-assembly-subsetting.
         early_stop:
             Stop after processing this many CIFs. Only used for debugging.
     """
@@ -667,6 +689,7 @@ def preprocess_cif_dir_af3(
         max_polymer_chains=max_polymer_chains,
         skip_components=processed_mol_ids,
         output_formats=output_formats,
+        random_seed=random_seed,
     )
 
     def update_output_dicts(structure_metadata_dict: dict, ref_mol_metadata_dict: dict):
