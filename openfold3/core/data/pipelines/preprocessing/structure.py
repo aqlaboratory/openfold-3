@@ -491,8 +491,10 @@ def preprocess_structure_and_write_outputs_af3(
     tokenize_atom_array(atom_array)
     atom_array = assign_mol_permutation_ids(atom_array)
 
-    # Get canonicalized sequence for each chain (should match PDB SeqRes)
-    chain_to_canonical_seq = get_chain_to_canonical_seq_dict(atom_array, cif_data)
+    # Get canonicalized sequence for each chain
+    chain_to_canonical_seq = get_chain_to_canonical_seq_dict(
+        atom_array, cif_data, multi_letter_res_to_X=True, ccd=ccd
+    )
 
     # Write CIF and FASTA outputs
     out_dir.mkdir(parents=True, exist_ok=True)
