@@ -3,13 +3,12 @@ import logging
 import torch
 
 from openfold3.core.metrics.confidence import compute_predicted_distance_error
-from openfold3.core.metrics.rasa import compute_rasa_batch
+from openfold3.projects.af3_all_atom.constants import METRICS_MAXIMIZE, METRICS_MINIMIZE
 
 logger = logging.getLogger(__name__)
 
 
 def compute_model_selection_metric(
-    batch: dict,
     outputs: dict,
     metrics: dict,
     weights: dict,
@@ -19,7 +18,6 @@ def compute_model_selection_metric(
     Implements Model Selection (Section 5.7.3) LDDT metrics computation
 
     Args:
-        batch: Updated batch dictionary post permutation alignment.
         outputs: Output dictionary from the model.
         weights: Dict of weights for each metric to compute a weighted average.
         eps: Small value to avoid division by zero.
@@ -59,9 +57,6 @@ def compute_model_selection_metric(
     # top1_global_pde shape: [bs]
     top1_global_pde = torch.argmax(global_pde, dim=1)
 
-    # Compute RASA (Relative ASA) metric
-    metrics["rasa"] = compute_rasa_batch(batch, outputs)
-
     # Select the top-1 metric values (across the sample dimension) per batch
     metrics_top_1 = {}
     for metric_name, metric_values in metrics.items():
@@ -71,17 +66,29 @@ def compute_model_selection_metric(
         metrics_top_1[metric_name] = metric_values[batch_indices, top1_global_pde]
 
     # Compute the best metric value (top) across all samples per batch
-    # (referred to as "metric_top_5" in the original AF3, though it's just max)
-    metric_top_max = {}
+    # (referred to as "metric_top_5" in the original AF3, though it's just max/min
+    # based on the metric type)
+    metric_best = {}
     for metric_name, metric_values in metrics.items():
-        # Take the max across the sample dimension => shape [bs]
-        metric_top_max[metric_name] = torch.max(metric_values, dim=1)[0]
+        # Take the best across the sample dimension => shape [bs]
+        metric_type = metric_name.split("_")[0]
+        if metric_type in METRICS_MAXIMIZE:
+            best_metric_sample = torch.max(metric_values, dim=1)[0]
+        elif metric_type in METRICS_MINIMIZE:
+            best_metric_sample = torch.min(metric_values, dim=1)[0]
+        else:
+            raise ValueError(
+                f"Please specify whether metric should be maximized "
+                f"or minimized in the METRICS_MAX or METRICS_MIN "
+                f"constants: {metric_name}"
+            )
+        metric_best[metric_name] = best_metric_sample
 
     # Combine top-1 and top-max metrics by arithmetic mean
     final_metrics = {}
     for metric_name in metrics_top_1:
         final_metrics[metric_name] = 0.5 * (
-            metrics_top_1[metric_name] + metric_top_max[metric_name]
+            metrics_top_1[metric_name] + metric_best[metric_name]
         )
 
     # Sum up the weighted metrics (shape: [bs])
@@ -92,6 +99,7 @@ def compute_model_selection_metric(
         for metric_name in valid_metrics
         if not torch.isnan(final_metrics[metric_name]).any()
     ]
+
     total_weighted = 0.0
     sum_weights = 0.0
     for metric_name in valid_metrics:

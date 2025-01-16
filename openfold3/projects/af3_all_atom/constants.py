@@ -97,18 +97,22 @@ METRICS = [
     *RNA_METRICS,
 ]
 
+###################################
+# Model Selection
+# pLDDT/LDDT Correlation Metrics
+# Superimposition Metrics
+###################################
+
 SUPERIMPOSE_METRICS = [
-    "superimpose_rmsd",
+    "rmsd",
     "gdt_ts",
     "gdt_ha",
 ]
 
-###################################
-# Model Selection
-# pLDDT/LDDT Correlation Metrics
-###################################
-
-VAL_EXTRA_LDDT_METRICS = [
+VAL_EXTRA_METRICS = [
+    *SUPERIMPOSE_METRICS,
+    # RASA for model selection
+    "rasa",
     # LDDT metrics for model selection
     "lddt_inter_ligand_dna",
     "lddt_inter_ligand_rna",
@@ -123,10 +127,7 @@ VAL_EXTRA_LDDT_METRICS = [
     "plddt_complex",
 ]
 
-MODEL_SELECTION = [
-    "rasa",
-    "model_selection",
-]
+MODEL_SELECTION = "model_selection"
 
 CORRELATION_METRICS = [
     "pearson_correlation_lddt_plddt_protein",
@@ -144,8 +145,19 @@ TRAIN_LOGGED_METRICS = [
 VAL_LOGGED_METRICS = [
     *VAL_LOSSES,
     *METRICS,
-    *VAL_EXTRA_LDDT_METRICS,
-    *SUPERIMPOSE_METRICS,
-    *MODEL_SELECTION,
+    *VAL_EXTRA_METRICS,
     *CORRELATION_METRICS,
+]
+
+METRICS_MAXIMIZE = [
+    "gdt",
+    "lddt",
+    "plddt",
+    "rasa",
+]
+
+METRICS_MINIMIZE = [
+    "clash",
+    "drmsd",
+    "rmsd",
 ]

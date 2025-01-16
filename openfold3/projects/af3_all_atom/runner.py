@@ -33,6 +33,7 @@ from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
 from openfold3.projects.af3_all_atom.constants import (
     CORRELATION_METRICS,
     METRICS,
+    MODEL_SELECTION,
     TRAIN_LOSSES,
     VAL_LOGGED_METRICS,
 )
@@ -101,7 +102,7 @@ class AlphaFold3AllAtom(ModelRunner):
         self.tracker = MetricTracker(MeanMetric(nan_strategy="ignore"), maximize=True)
 
     def _update_epoch_metric(
-        self, phase: str, metric_log_name: str, metric_value: torch.Tensor
+        self, phase: str, metric_log_name: str, metric_value: [torch.Tensor, tuple]
     ):
         """
 
@@ -125,27 +126,80 @@ class AlphaFold3AllAtom(ModelRunner):
 
         metrics = self.train_metrics if phase == "train" else self.val_metrics
         metric_obj = metrics[metric_log_name]
+
+        metric_value = (
+            (metric_value,) if type(metric_value) is not tuple else metric_value
+        )
         metric_obj.update(*metric_value)
+
+    def _get_metrics(self, batch, outputs, train=True) -> dict:
+        with torch.no_grad():
+            if train:
+                return get_metrics(
+                    batch,
+                    outputs,
+                    compute_extra_val_metrics=False,
+                )
+
+            # TODO: Model selection - consider replacing this call directly with
+            #  model selection call so that we have aggregated statistics of
+            #  all the diffusion samples
+            metrics_per_sample = get_metrics(
+                batch,
+                outputs,
+                compute_extra_val_metrics=True,
+            )
+
+            metrics = compute_model_selection_metric(
+                outputs=outputs,
+                metrics=metrics_per_sample,
+                weights=self.model_selection_weights,
+            )
+
+            # for metric_name in CORRELATION_METRICS:
+            #     molecule_type = metric_name.split("_")[-1]
+            #     plddt_key = f"plddt_{molecule_type}"
+            #     lddt_key = f"lddt_intra_{molecule_type}"
+            #
+            #     plddt = metrics.get(plddt_key)
+            #     lddt = metrics.get(lddt_key)
+            #
+            #     if plddt is None or lddt is None:
+            #         raise KeyError(
+            #             f"Missing metrics: {plddt_key} and {lddt_key} must "
+            #             f"both be present to compute correlation metrics."
+            #         )
+            #
+            #     # Drop nan values
+            #     nan_indices = torch.isnan(lddt) | torch.isnan(plddt)
+            #     lddt = lddt[~nan_indices]
+            #     plddt = plddt[~nan_indices]
+            #
+            #     metrics[metric_name] = (lddt, plddt)
+
+            return metrics
 
     def _log(self, loss_breakdown, batch, outputs, train=True):
         phase = "train" if train else "val"
 
+        metrics = self._get_metrics(batch, outputs, train=train)
+
         for loss_name, indiv_loss in loss_breakdown.items():
-            metric_name = f"{phase}/{loss_name}"
-            metric_epoch_name = f"{metric_name}_epoch" if train else metric_name
+            metric_log_name = f"{phase}/{loss_name}"
+            metric_epoch_name = f"{metric_log_name}_epoch" if train else metric_log_name
 
             # Update mean metrics for epoch logging
             self._update_epoch_metric(
                 phase=phase,
                 metric_log_name=metric_epoch_name,
-                metric_value=(indiv_loss,),
+                metric_value=indiv_loss,
             )
 
             # Only log steps for training
             # Ignore nan losses, where the loss was not applicable for the sample
             if train and not torch.isnan(indiv_loss):
                 self.log(
-                    metric_name,
+                    metric_log_name,
                     indiv_loss,
                     on_step=True,
                     on_epoch=False,
@@ -153,75 +207,33 @@ class AlphaFold3AllAtom(ModelRunner):
                     sync_dist=False,
                 )
 
-        with torch.no_grad():
-            if train:
-                other_metrics = get_metrics(
-                    batch,
-                    outputs,
-                    superimposition_metrics=False,
-                    compute_extra_lddt_metrics=False,
-                )
-            else:
-                # TODO: Model selection - consider replacing this call directly with
-                #  model selection call so that we have aggregated statistics of
-                #  all the diffusion samples
-                other_metrics_per_sample = get_metrics(
-                    batch,
-                    outputs,
-                    superimposition_metrics=True,
-                    compute_extra_lddt_metrics=True,
-                )
+        for metric_name, metric_value in metrics.items():
+            # Update model selection metric
+            if metric_name == MODEL_SELECTION:
+                self.tracker.update(metric_value)
+                continue
 
-                other_metrics = compute_model_selection_metric(
-                    batch=batch,
-                    outputs=outputs,
-                    metrics=other_metrics_per_sample,
-                    weights=self.model_selection_weights,
-                )
-
-        for k, v in other_metrics.items():
-            mean_metric = torch.mean(v)
-            metric_name = f"{phase}/{k}"
+            metric_log_name = f"{phase}/{metric_name}"
 
             # Update mean metrics for epoch logging
             self._update_epoch_metric(
-                phase=phase, metric_log_name=metric_name, metric_value=(mean_metric,)
+                phase=phase,
+                metric_log_name=metric_log_name,
+                metric_value=metric_value,
             )
 
             # TODO: Maybe remove this extra logging
             # Only log steps for training
             # Ignore nan metric, where the metric was not applicable for the sample
-            if train and not torch.isnan(mean_metric):
+            if train and not torch.isnan(metric_value).any():
                 self.log(
-                    f"{metric_name}_step",
-                    mean_metric,
+                    f"{metric_log_name}_step",
+                    metric_value,
                     on_step=True,
                     on_epoch=False,
                     logger=True,
                     sync_dist=False,
                 )
-        if not train:
-            for metric in CORRELATION_METRICS:
-                molecule_type = metric.split("_")[-1]
-                plddt_key = f"plddt_{molecule_type}"
-                lddt_key = f"lddt_intra_{molecule_type}"
-
-                plddt = other_metrics.get(plddt_key)
-                lddt = other_metrics.get(lddt_key)
-
-                if plddt is None or lddt is None:
-                    raise KeyError(
-                        f"Missing metrics: {plddt_key} and {lddt_key} must "
-                        f"both be present to compute correlation metrics."
-                    )
-
-                self._update_epoch_metric(
-                    phase=phase,
-                    metric_log_name=f"{phase}/{metric}",
-                    metric_value=(lddt.flatten(), plddt.flatten()),
-                )
-
-            self.tracker.update(other_metrics["model_selection"])
 
     def training_step(self, batch, batch_idx):
         example_feat = next(

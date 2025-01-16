@@ -4,10 +4,11 @@ from typing import Optional
 import torch
 
 from openfold3.core.metrics.confidence import compute_plddt
+from openfold3.core.metrics.rasa import compute_rasa_batch
 from openfold3.core.metrics.validation import gdt_ha, gdt_ts, rmsd
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.geometry.kabsch_alignment import kabsch_align
-from openfold3.projects.af3_all_atom.constants import METRICS, VAL_EXTRA_LDDT_METRICS
+from openfold3.projects.af3_all_atom.constants import METRICS, VAL_EXTRA_METRICS
 
 
 def lddt(
@@ -735,7 +736,7 @@ def get_superimpose_metrics(
         positions_mask=all_atom_mask,
     )
 
-    out["superimpose_rmsd"] = rmsd(
+    out["rmsd"] = rmsd(
         pred_positions=all_atom_pred_pos_aligned,
         target_positions=all_atom_gt_pos,
         positions_mask=all_atom_mask,
@@ -1007,8 +1008,7 @@ def get_validation_lddt_metrics(
 def get_metrics(
     batch,
     outputs,
-    superimposition_metrics=False,
-    compute_extra_lddt_metrics=False,
+    compute_extra_val_metrics=False,
 ) -> dict[str, torch.Tensor]:
     """
     Compute validation metrics on all substrates
@@ -1016,8 +1016,7 @@ def get_metrics(
     Args:
         batch: ground truth and permutation applied features
         outputs: model outputs
-        superimposition_metrics: computes superimposition metrics
-        compute_extra_lddt_metrics: computes extra lddt metrics needed
+        compute_extra_val_metrics: computes extra lddt metrics needed
             for model selection
     Returns:
         metrics: dict containing validation metrics across all substrates
@@ -1190,15 +1189,7 @@ def get_metrics(
         }
     )
 
-    if superimposition_metrics:
-        superimpose_metrics = get_superimpose_metrics(
-            pred_coords,
-            gt_coords,
-            all_atom_mask,
-        )
-        metrics = metrics | superimpose_metrics
-
-    if compute_extra_lddt_metrics:
+    if compute_extra_val_metrics:
         if torch.any(intra_filter_atomized):
             full_complex_lddt_metrics = get_full_complex_lddt(
                 asym_id_atomized,
@@ -1209,7 +1200,6 @@ def get_metrics(
             )
             metrics = metrics | full_complex_lddt_metrics
 
-        if torch.any(intra_filter_atomized):
             plddt_logits = expand_sample_dim(outputs["plddt_logits"])
             plddt_metrics = get_plddt_metrics(
                 is_protein_atomized,
@@ -1235,6 +1225,16 @@ def get_metrics(
         )
         metrics = metrics | extra_lddt
 
+        superimpose_metrics = get_superimpose_metrics(
+            pred_coords,
+            gt_coords,
+            all_atom_mask,
+        )
+        metrics = metrics | superimpose_metrics
+
+        # Compute RASA (Relative ASA) metric
+        metrics["rasa"] = compute_rasa_batch(batch, outputs)
+
         metrics.update(
             {
                 metric_name: torch.full(
@@ -1243,7 +1243,7 @@ def get_metrics(
                     device=pred_coords.device,
                     dtype=pred_coords.dtype,
                 )
-                for metric_name in VAL_EXTRA_LDDT_METRICS
+                for metric_name in VAL_EXTRA_METRICS
                 if metrics.get(metric_name) is None
             }
         )
