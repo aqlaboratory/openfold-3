@@ -27,12 +27,16 @@ and highlight where you currently are in the process:
     batched data -> model
 """
 
+import logging
 from collections.abc import Sequence
 from typing import Any
 
 import torch
 from torch.utils.data import Dataset
+
 from openfold3.core.data.framework.single_datasets.base_af3 import BaseAF3Dataset
+
+logger = logging.getLogger(__name__)
 
 
 class SamplerDataset(Dataset):
@@ -68,6 +72,8 @@ class SamplerDataset(Dataset):
         self.epoch_len = epoch_len
         self.num_epochs = num_epochs
         self.generator = generator
+        # TODO put this in a dictionary somewhere
+        self.current_monomer_idx = 0
         self.resample_epoch()
 
     def __len__(self):
@@ -89,7 +95,7 @@ class SamplerDataset(Dataset):
 
     def get_random_subset(
         self, dataset: BaseAF3Dataset, num_examples: int, generator: torch.Generator
-    ):
+    ) -> torch.Tensor:
         """Selects random indices from dataset based on dataset probabilities."""
         # Retrieve datapoint probabilities for given dataset
         datapoint_probabilities = torch.tensor(
@@ -104,6 +110,38 @@ class SamplerDataset(Dataset):
             generator=generator,
         )
         return datapoint_indices_i
+
+    def get_ordered_subset(
+        self, dataset: BaseAF3Dataset, num_examples: int
+    ) -> torch.Tensor:
+        """Selects indices based on sliced examples from the dataset."""
+
+        datapoint_probabilities = torch.tensor(
+            dataset.datapoint_cache["datapoint_probabilities"].to_numpy()
+        )
+        if not torch.all(torch.eq(datapoint_probabilities, 1.0)):
+            raise ValueError(
+                "Ordered slicing of datasets not supported for "
+                "datasets with non uniform probabilities"
+            )
+
+        start_idx = self.current_monomer_idx
+        end_idx = start_idx + num_examples
+
+        slice_indices = torch.arange(start_idx, min(end_idx, len(dataset)))
+
+        if end_idx > len(dataset):
+            end_idx = end_idx - len(dataset)
+            logger.warning(
+                f"Reached the end of the dataset for dataset_name,"
+                f"missing {end_idx} examples,"
+                "Sampling will loop back from beginning of dataset."
+            )
+            slice_indices = torch.concat((slice_indices, torch.arange(0, end_idx)))
+
+        self.current_monomer_idx = end_idx
+
+        return slice_indices
 
     def resample_epoch(self):
         """Resample epoch_len number of samples according to the provided
@@ -126,39 +164,27 @@ class SamplerDataset(Dataset):
         ):
             if num_datapoints_per_dataset == 0:
                 continue
-            else:
-                dataset = self.datasets[dataset_idx]
-                datapoint_idx_generator = torch.Generator(
-                    device=self.generator.device
-                ).manual_seed(
-                    torch.randint(
-                        low=0, high=100000, size=(1,), generator=self.generator
-                    ).item()
-                )
+            dataset = self.datasets[dataset_idx]
+            generator_seed = torch.randint(
+                low=0, high=100000, size=(1,), generator=self.generator
+            ).item()
+            datapoint_idx_generator = torch.Generator(
+                device=self.generator.device
+            ).manual_seed(generator_seed)
 
+            if dataset.get_class_name() == "ProteinMonomerDataset":
+                datapoint_indices_i = self.get_ordered_subset(
+                    dataset, num_datapoints_per_dataset
+                )
+            else:
                 datapoint_indices_i = self.get_random_subset(
                     dataset, num_datapoints_per_dataset, datapoint_idx_generator
                 )
 
-                # Retrieve datapoint probabilities for given dataset
-                datapoint_probabilities = torch.tensor(
-                    self.datasets[dataset_idx]
-                    .datapoint_cache["datapoint_probabilities"]
-                    .to_numpy()
-                )
-
-                # Sample datapoint indices
-                datapoint_indices_i = torch.multinomial(
-                    input=datapoint_probabilities,
-                    num_samples=num_datapoints_per_dataset,
-                    replacement=True,
-                    generator=datapoint_idx_generator,
-                )
-
-                # Add to datapoint index container to pair with dataset indices
-                datapoint_indices[torch.where(dataset_indices == dataset_idx)] = (
-                    datapoint_indices_i
-                )
+            # Add to datapoint index container to pair with dataset indices
+            datapoint_indices[torch.where(dataset_indices == dataset_idx)] = (
+                datapoint_indices_i
+            )
 
         self.indices = torch.stack((dataset_indices, datapoint_indices), dim=1).tolist()
 
