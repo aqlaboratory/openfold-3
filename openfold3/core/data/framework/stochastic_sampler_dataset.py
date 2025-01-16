@@ -122,7 +122,7 @@ class SamplerDataset(Dataset):
         if not torch.all(torch.eq(datapoint_probabilities, 1.0)):
             raise ValueError(
                 "Ordered slicing of datasets not supported for "
-                "datasets with non uniform probabilities"
+                "datasets with nonuniform probabilities"
             )
 
         start_idx = self.current_monomer_idx
@@ -172,7 +172,7 @@ class SamplerDataset(Dataset):
                 device=self.generator.device
             ).manual_seed(generator_seed)
 
-            if dataset.get_class_name() == "ProteinMonomerDataset":
+            if dataset.name in ["long-monomer-distillation"]:
                 datapoint_indices_i = self.get_ordered_subset(
                     dataset, num_datapoints_per_dataset
                 )

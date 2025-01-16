@@ -232,7 +232,7 @@ class DataModule(pl.LightningDataModule):
                 multi_dataset_config_prediction, DatasetMode.prediction
             )[0]
 
-    def parse_data_config(self, data_config: list[ConfigDict]) -> MultiDatasetConfig:
+    def parse_data_config(self, data_configs: list[ConfigDict]) -> MultiDatasetConfig:
         """Parses input data_config into separate lists.
 
         Args:
@@ -277,19 +277,16 @@ class DataModule(pl.LightningDataModule):
             except ValueError as exc:
                 raise ValueError(f"Could not cast {key} to {cast_type}.") from exc
 
-        classes, modes, configs, weights = list(
-            zip(
-                *[
-                    (
-                        get_cast(dataset_entry, "class", str),
-                        DatasetMode[get_cast(dataset_entry, "mode", str)],
-                        dataset_entry.get("config", None),
-                        get_cast(dataset_entry, "weight", float),
-                    )
-                    for dataset_entry in data_config
-                ]
-            )
-        )
+        classes, modes, configs, weights = [], [], [], []
+        for dataset_entry in data_configs:
+            classes.append(get_cast(dataset_entry, "class", str))
+            modes.append(DatasetMode[get_cast(dataset_entry, "mode", str)])
+            weights.append(get_cast(dataset_entry, "weight", float))
+
+            config = dataset_entry.get("config", dict())
+            config["name"] = dataset_entry["name"]
+            configs.append(config)
+
         multi_dataset_config = MultiDatasetConfig(
             classes=classes,
             modes=modes,
