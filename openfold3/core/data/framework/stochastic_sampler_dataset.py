@@ -32,6 +32,7 @@ from typing import Any
 
 import torch
 from torch.utils.data import Dataset
+from openfold3.core.data.framework.single_datasets.base_af3 import BaseAF3Dataset
 
 
 class StochasticSamplerDataset(Dataset):
@@ -86,6 +87,24 @@ class StochasticSamplerDataset(Dataset):
         # This calls the __getitem__ method of the SingleDataset class
         return self.datasets[dataset_idx][datapoint_idx]
 
+    def get_random_subset(
+        self, dataset: BaseAF3Dataset, num_examples: int, generator: torch.Generator
+    ):
+        """Selects random indices from dataset based on dataset probabilities."""
+        # Retrieve datapoint probabilities for given dataset
+        datapoint_probabilities = torch.tensor(
+            dataset.datapoint_cache["datapoint_probabilities"].to_numpy()
+        )
+
+        # Sample datapoint indices
+        datapoint_indices_i = torch.multinomial(
+            input=datapoint_probabilities,
+            num_samples=num_examples,
+            replacement=True,
+            generator=generator,
+        )
+        return datapoint_indices_i
+
     def resample_epoch(self):
         """Resample epoch_len number of samples according to the provided
         probabilities."""
@@ -105,13 +124,20 @@ class StochasticSamplerDataset(Dataset):
             torch.arange(n_datasets),
             torch.bincount(dataset_indices, minlength=n_datasets),
         ):
-            if num_datapoints_per_dataset > 0:
+            if num_datapoints_per_dataset == 0:
+                continue
+            else:
+                dataset = self.datasets[dataset_idx]
                 datapoint_idx_generator = torch.Generator(
                     device=self.generator.device
                 ).manual_seed(
                     torch.randint(
                         low=0, high=100000, size=(1,), generator=self.generator
                     ).item()
+                )
+
+                datapoint_indices_i = self.get_random_subset(
+                    dataset, num_datapoints_per_dataset, datapoint_idx_generator
                 )
 
                 # Retrieve datapoint probabilities for given dataset
@@ -133,8 +159,6 @@ class StochasticSamplerDataset(Dataset):
                 datapoint_indices[torch.where(dataset_indices == dataset_idx)] = (
                     datapoint_indices_i
                 )
-            else:
-                continue
 
         self.indices = torch.stack((dataset_indices, datapoint_indices), dim=1).tolist()
 
