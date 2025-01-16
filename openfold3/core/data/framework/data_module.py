@@ -15,12 +15,12 @@ and highlight where you currently are in the process:
     preprocessed data -> parsed/processed data -> FeatureDict
 3. SingleDataset
     datapoints -> __getitem__ -> FeatureDict
-4. StochasticSamplerDataset (optional)
+4. SamplerDataset (optional)
     Sequence[SingleDataset] -> __getitem__ -> FeatureDict
 5. DataLoader
     FeatureDict -> batched data
 6. DataModule [YOU ARE HERE]
-    SingleDataset/StochasticSamplerDataset -> DataLoader
+    SingleDataset/SamplerDataset -> DataLoader
 7. ModelRunner
     batched data -> model
 """
@@ -49,7 +49,7 @@ from openfold3.core.data.framework.single_datasets.abstract_single import (
     SingleDataset,
 )
 from openfold3.core.data.framework.stochastic_sampler_dataset import (
-    StochasticSamplerDataset,
+    SamplerDataset,
 )
 from openfold3.core.utils.tensor_utils import dict_multimap
 
@@ -197,7 +197,7 @@ class DataModule(pl.LightningDataModule):
             self.generator = torch.Generator(device="cpu").manual_seed(self.data_seed)
 
             # Wrap train datasets in the sampler dataset class
-            self.train_dataset = StochasticSamplerDataset(
+            self.train_dataset = SamplerDataset(
                 datasets=train_datasets,
                 dataset_probabilities=multi_dataset_config_train.weights,
                 epoch_len=self.epoch_len,

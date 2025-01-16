@@ -1,6 +1,6 @@
-"""This module contains the StochasticSamplerDataset class.
+"""This module contains the SamplerDataset class.
 
-The StochasticSamplerDataset class is a pytorch Dataset class that wraps one or
+The amplerDataset class is a pytorch Dataset class that wraps one or
 more SingleDataset instances and samples a desired number of datapoints based on
 the provided dataset and datapoint probabilities. The sampling is done by
 generating a list of index tuples for a given dataset-datapoint pair per
@@ -17,12 +17,12 @@ and highlight where you currently are in the process:
     preprocessed data -> parsed/processed data -> FeatureDict
 3. SingleDataset
     datapoints -> __getitem__ -> FeatureDict
-4. StochasticSamplerDataset (optional) [YOU ARE HERE]
+4. SamplerDataset (optional) [YOU ARE HERE]
     Sequence[SingleDataset] -> __getitem__ -> FeatureDict
 5. DataLoader
     FeatureDict -> batched data
 6. DataModule
-    SingleDataset/StochasticSamplerDataset -> DataLoader
+    SingleDataset/SamplerDataset -> DataLoader
 7. ModelRunner
     batched data -> model
 """
@@ -35,7 +35,7 @@ from torch.utils.data import Dataset
 from openfold3.core.data.framework.single_datasets.base_af3 import BaseAF3Dataset
 
 
-class StochasticSamplerDataset(Dataset):
+class SamplerDataset(Dataset):
     """A dataset class for combining multiple SingleDataset instances and
     sampling from them with the provided probabilities."""
 
@@ -47,7 +47,7 @@ class StochasticSamplerDataset(Dataset):
         num_epochs: int,
         generator: torch.Generator,
     ) -> None:
-        """Initializes the StochasticSamplerDataset class.
+        """Initializes the SamplerDataset class.
 
         Args:
             datasets (Sequence[Dataset]):

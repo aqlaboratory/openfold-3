@@ -46,7 +46,7 @@ class ProteinMonomerDataset(BaseAF3Dataset):
 
         Creates a Dataframe storing a flat list of structure_data keys and sets
         corresponding datapoint probabilities all to 1. Used for mapping FROM the
-        dataset_cache in the StochasticSamplerDataset and TO the dataset_cache in the
+        dataset_cache in the SamplerDataset and TO the dataset_cache in the
         getitem.
         """
         # TODO: refactor
