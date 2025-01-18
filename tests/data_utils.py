@@ -156,7 +156,7 @@ def random_attention_inputs(
     return q, kv, mask, biases
 
 
-def random_af3_features(batch_size, n_token, n_msa, n_templ):
+def random_af3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
     restypes_flat = torch.randint(0, len(TOKEN_TYPES), (n_token,))
     restypes_names = [TOKEN_TYPES[token_idx] for token_idx in restypes_flat]
     restypes_one_hot = torch.nn.functional.one_hot(
@@ -196,7 +196,7 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ):
         torch.Tensor(random_asym_ids(n_token)).unsqueeze(0).repeat((batch_size, 1))
     )
 
-    return {
+    features = {
         # Input features
         "residue_index": torch.arange(0, n_token)
         .unsqueeze(0)
@@ -269,3 +269,11 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ):
             "distogram": torch.Tensor([3e-2]).repeat(batch_size),
         },
     }
+
+    if is_eval:
+        features["use_for_intra_validation"] = torch.ones(batch_size, n_token).int()
+        features["use_for_inter_validation"] = torch.ones(
+            batch_size, n_token, n_token
+        ).int()
+
+    return features

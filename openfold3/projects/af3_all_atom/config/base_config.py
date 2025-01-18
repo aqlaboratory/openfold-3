@@ -7,6 +7,7 @@ from openfold3.projects.af3_all_atom.config import (
 )
 
 PLACEHOLDER_PATH = Path("placeholder/path")
+PLACEHOLDER_FORMAT = "placeholder_format"
 
 # Hidden dimensions
 c_s = mlc.FieldReference(384, field_type=int)
@@ -24,9 +25,6 @@ c_s_input = mlc.FieldReference(c_token_embedder + 65, field_type=int)
 sigma_data = mlc.FieldReference(16, field_type=int)
 max_relative_idx = mlc.FieldReference(32, field_type=int)
 max_relative_chain = mlc.FieldReference(2, field_type=int)
-no_samples = mlc.FieldReference(48, field_type=int)
-no_mini_rollout_steps = mlc.FieldReference(20, field_type=int)
-no_full_rollout_steps = mlc.FieldReference(200, field_type=int)
 diffusion_training_enabled = mlc.FieldReference(True, field_type=bool)
 n_query = mlc.FieldReference(32, field_type=int)
 n_key = mlc.FieldReference(128, field_type=int)
@@ -74,9 +72,11 @@ project_config = mlc.ConfigDict(
                     "max_cycles": 4,
                     "diffusion": {
                         "sigma_data": sigma_data,
-                        "no_samples": no_samples,
-                        "no_mini_rollout_steps": no_mini_rollout_steps,
-                        "no_full_rollout_steps": no_full_rollout_steps,
+                        "no_samples": 48,
+                        "no_mini_rollout_samples": 1,
+                        "no_full_rollout_samples": 5,
+                        "no_mini_rollout_steps": 20,
+                        "no_full_rollout_steps": 200,
                     },
                 },
                 "input_embedder": {
@@ -505,7 +505,7 @@ project_config = mlc.ConfigDict(
                 "dataset_paths": {
                     "alignments_directory": PLACEHOLDER_PATH,
                     "target_structures_directory": PLACEHOLDER_PATH,
-                    "target_structure_file_format": PLACEHOLDER_PATH,
+                    "target_structure_file_format": PLACEHOLDER_FORMAT,
                     "alignment_db_directory": PLACEHOLDER_PATH,
                     "alignment_array_directory": PLACEHOLDER_PATH,
                     "dataset_cache_file": PLACEHOLDER_PATH,
@@ -513,7 +513,7 @@ project_config = mlc.ConfigDict(
                     "template_cache_directory": PLACEHOLDER_PATH,
                     "template_structures_directory": PLACEHOLDER_PATH,
                     "template_structure_array_directory": PLACEHOLDER_PATH,
-                    "template_file_format": PLACEHOLDER_PATH,
+                    "template_file_format": PLACEHOLDER_FORMAT,
                     "ccd_file": PLACEHOLDER_PATH,
                 },
             },

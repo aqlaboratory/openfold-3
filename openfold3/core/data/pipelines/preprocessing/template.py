@@ -295,12 +295,14 @@ def create_template_cache_for_query(
         "n_template_chain_match": 0,
         "n_valid_templates_prefilter": 0,
     }
+    if s3_client_config is not None:
+        profile = s3_client_config["profile"]
+    else:
+        profile = None
 
     # Parse alignment
     try:
-        with open_local_or_s3(
-            template_alignment_file, profile=s3_client_config["profile"], mode="r"
-        ) as f:
+        with open_local_or_s3(template_alignment_file, profile=profile, mode="r") as f:
             hits = parse_hmmsearch_sto(f.read())
     except Exception as e:
         template_process_logger.info(
@@ -372,7 +374,7 @@ def create_template_cache_for_query(
         query_seq_load_logic,
         query_file_format,
         query_structures_filename,
-        s3_profile=s3_client_config["profile"],
+        s3_profile=profile,
     ):
         template_process_logger.info(
             f"The query sequences in the structure (query {query_pdb_id} chain "

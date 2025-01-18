@@ -294,6 +294,7 @@ class PerResidueLDDAllAtom(nn.Module):
             logits:
                 [*, N_atom, C_out] Logits
         """
+        batch_dims = s.shape[:-2]
         n_token = s.shape[-2]
 
         # Flatten batch dims
@@ -305,7 +306,9 @@ class PerResidueLDDAllAtom(nn.Module):
         logits = self.linear(self.layer_norm(s))
 
         # [*, N_token * max_atoms_per_token, c_out]
-        logits = logits.reshape(-1, n_token * self.max_atoms_per_token, self.c_out)
+        logits = logits.reshape(
+            *batch_dims, n_token * self.max_atoms_per_token, self.c_out
+        )
 
         # [*, N_atom, c_out]
         logits = max_atom_per_token_masked_select(
@@ -407,6 +410,7 @@ class ExperimentallyResolvedHeadAllAtom(nn.Module):
             logits:
                 [*, N_atom, C_out] Logits
         """
+        batch_dims = s.shape[:-2]
         n_token = s.shape[-2]
 
         # Flatten batch dims
@@ -418,7 +422,9 @@ class ExperimentallyResolvedHeadAllAtom(nn.Module):
         logits = self.linear(self.layer_norm(s))
 
         # [*, N_token * max_atoms_per_token, c_out]
-        logits = logits.reshape(-1, n_token * self.max_atoms_per_token, self.c_out)
+        logits = logits.reshape(
+            *batch_dims, n_token * self.max_atoms_per_token, self.c_out
+        )
 
         # [*, N_atom, c_out]
         logits = max_atom_per_token_masked_select(

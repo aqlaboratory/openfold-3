@@ -111,6 +111,9 @@ class BaseAF3Dataset(SingleDataset, ABC):
         ]
 
         # Dataset/datapoint cache
+        # TODO: rename dataset_cache_file to dataset_cache_path to signal that it can be
+        # a directory or a file
+        # TODO: potentially expose the LMDB database encoding types
         self.dataset_cache = read_datacache(
             dataset_config["dataset_paths"]["dataset_cache_file"]
         )
@@ -257,7 +260,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
         template_slice_collection = process_template_structures_af3(
             atom_array=atom_array,
             n_templates=self.template.n_templates,
-            take_top_k=False,
+            take_top_k=self.template.take_top_k,
             template_cache_directory=self.template_cache_directory,
             assembly_data=self.fetch_fields_for_chains(
                 pdb_id=pdb_id,

@@ -148,7 +148,8 @@ def main(
             The number of entries to process in each chunk. Defaults to 1.
     """
     # Parse S3 config
-    s3_client_config = parse_s3_config(s3_client_config)
+    if s3_client_config is not None:
+        s3_client_config = parse_s3_config(s3_client_config)
 
     # Create cache
     logger.info("Creating dataset cache...")

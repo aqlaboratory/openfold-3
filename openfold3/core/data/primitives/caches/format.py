@@ -4,10 +4,17 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TypeAlias
+from typing import TYPE_CHECKING, Literal, TypeAlias, TypeVar
+
+import lmdb
 
 from openfold3.core.data.resources.residues import MoleculeType
 
+if TYPE_CHECKING:
+    from openfold3.core.data.primitives.caches.lmdb import LMDBDict
+
+K = TypeVar("K")
+V = TypeVar("V")
 # TODO: Revisit in future if this registry is still needed after template script
 # refactor
 
@@ -23,7 +30,7 @@ DATASET_CACHE_CLASS_REGISTRY = {}
 
 
 # TODO: Could make post-init check that this is set
-def register_datacache(cls: type[DataCache]) -> type[DataCache]:
+def register_datacache(cls: DataCacheType) -> DataCacheType:
     """
     Decorator to register a DataCache class in the registry and validate that
     any attribute named like '_xxx_format' is non-None.
@@ -99,11 +106,13 @@ class PreprocessingDataCache:
                 resolution = None
                 chains = None
                 interfaces = None
+                token_count = None
             elif status == "success":
                 release_date = structure_data["release_date"]
                 resolution = structure_data["resolution"]
                 chains = structure_data["chains"]
                 interfaces = structure_data["interfaces"]
+                token_count = structure_data["token_count"]
             # TODO: Release date should never be None with new version, fix this after
             # rerunning preprocessing
             elif status == "failed":
@@ -111,6 +120,7 @@ class PreprocessingDataCache:
                 resolution = None
                 chains = None
                 interfaces = None
+                token_count = None
             else:
                 raise ValueError(f"Unexpected status: {status}")
 
@@ -145,6 +155,7 @@ class PreprocessingDataCache:
                 resolution=resolution,
                 chains=chain_data,
                 interfaces=interfaces,
+                token_count=token_count,
             )
 
         # Format the reference molecule data
@@ -182,6 +193,7 @@ class PreprocessingStructureData:
     resolution: float | None
     chains: dict[str, PreprocessingChainData] | None
     interfaces: list[tuple[str, str]] | None
+    token_count: int
 
 
 PreprocessingStructureDataCache: TypeAlias = dict[str, PreprocessingStructureData]
@@ -206,6 +218,7 @@ class PreprocessingReferenceMoleculeData:
     conformer_gen_strategy: str
     fallback_conformer_pdb_id: str | None
     canonical_smiles: str
+    residue_count: int  # TODO: Remove this from after-preprocessing caches except Val
 
 
 PreprocessingReferenceMoleculeCache: TypeAlias = dict[
@@ -220,7 +233,7 @@ PreprocessingReferenceMoleculeCache: TypeAlias = dict[
 # PDB-weighted, PDB-disordered, and PDB-validation, etc., should follow.
 @dataclass
 class DatasetCache:
-    """Format that every Dataset Cache should have."""
+    """Base class for all dataset cache classes."""
 
     name: str  # for referencing in dataset config
     structure_data: dataclass
@@ -232,29 +245,38 @@ class DatasetCache:
     # TODO: update parsers for this base class
     @classmethod
     def from_json(cls, file: Path) -> DatasetCache:
-        """Costructs a datacache from json."""
+        """Costructs a datacache from a json.
+
+        Args:
+            file (Path):
+                Path to the JSON file to read the datacache from.
+
+        Returns:
+            DatasetCache:
+                The constructed datacache.
+        """
 
         with open(file) as f:
             data = json.load(f)
 
         return cls(
-            name=cls._parse_name(data),
-            structure_data=cls._parse_structure_data(data),
-            reference_molecule_data=cls._parse_ref_mol_data(data),
+            name=cls._parse_name_json(data),
+            structure_data=cls._parse_structure_data_json(data),
+            reference_molecule_data=cls._parse_ref_mol_data_json(data),
         )
 
-    def _parse_type(data: dict) -> None:
+    def _parse_type_json(data: dict) -> None:
         # Remove _type field (already an internal private attribute so shouldn't be
         # defined as an explicit field)
         if "_type" in data:
             # This is conditional for legacy compatibility, should be removed after
             del data["_type"]
 
-    def _parse_name(data: dict) -> str:
+    def _parse_name_json(data: dict) -> str:
         return data["name"]
 
     @classmethod
-    def _parse_structure_data(cls, data: dict) -> dict:
+    def _parse_structure_data_json(cls, data: dict) -> dict:
         # Format structure data
         structure_data = {}
         for pdb_id, per_structure_data in data["structure_data"].items():
@@ -280,7 +302,7 @@ class DatasetCache:
         return structure_data
 
     @classmethod
-    def _parse_ref_mol_data(cls, data: dict) -> dict:
+    def _parse_ref_mol_data_json(cls, data: dict) -> dict:
         # Format reference molecule data into respective format
         ref_mol_data = {}
         for ref_mol_id, per_ref_mol_data in data["reference_molecule_data"].items():
@@ -299,6 +321,165 @@ class DatasetCache:
         from openfold3.core.data.io.dataset_cache import write_datacache_to_json
 
         write_datacache_to_json(self, file)
+
+    @classmethod
+    def from_lmdb(
+        cls,
+        lmdb_directory: Path,
+        str_encoding: Literal["utf-8", "pkl"] = "utf-8",
+        structure_data_encoding: Literal["utf-8", "pkl"] = "pkl",
+        reference_molecule_data_encoding: Literal["utf-8", "pkl"] = "pkl",
+    ) -> DatasetCache:
+        """Constructs a datacache from an LMDB.
+
+        LMDB-backed datacaches are used for large datasets that do not fit in memory as
+        they allow for lazy loading of structure_data and reference_molecule_data
+        entries.
+
+        Args:
+            lmdb_directory (Path):
+                The directory containing the LMDB database.
+        str_encoding (Literal["utf-8", "pkl"]):
+            The encoding to use for the cache keys and _type and name values.
+        structure_data_encoding (Literal["utf-8", "pkl"]):
+            The encoding to use for the structure_data values. The 'pkl' encoding saves
+            the dataclasses directly, whereas 'utf-8' encoding requires re-creating the
+            dataclasses.
+        reference_molecule_data_encoding (Literal["utf-8", "pkl"]):
+            The encoding to use for the reference_molecule_data values.The 'pkl'
+            encoding saves the dataclasses directly, whereas 'utf-8' encoding requires
+            re-creating the dataclasses.
+
+        Returns:
+            DatasetCache:
+                The constructed datacache.
+        """
+
+        lmdb_env = lmdb.open(
+            str(lmdb_directory), readonly=True, lock=False, subdir=True
+        )
+
+        with lmdb_env.begin() as transaction:
+            _ = cls._parse_type_lmdb(transaction, str_encoding)
+            name = cls._parse_name_lmdb(transaction, str_encoding)
+            structure_data = cls._parse_structure_data_lmdb(
+                lmdb_env, str_encoding, structure_data_encoding
+            )
+            reference_molecule_data = cls._parse_ref_mol_data_lmdb(
+                lmdb_env, str_encoding, reference_molecule_data_encoding
+            )
+
+            return cls(
+                name=name,
+                structure_data=structure_data,
+                reference_molecule_data=reference_molecule_data,
+            )
+
+    def _parse_type_lmdb(
+        transaction: lmdb.Transaction, str_encoding: Literal["utf-8", "pkl"]
+    ) -> str:
+        _type_bytes = transaction.get(b"_type")
+        if not _type_bytes:
+            raise ValueError("No _type key found in the LMDB.")
+        else:
+            _type = json.loads(_type_bytes.decode(str_encoding))
+
+        return _type
+
+    def _parse_name_lmdb(
+        transaction: lmdb.Transaction, str_encoding: Literal["utf-8", "pkl"]
+    ) -> str:
+        name_bytes = transaction.get(b"name")
+        if not name_bytes:
+            raise ValueError("No name key found in the LMDB.")
+        else:
+            name = json.loads(name_bytes.decode(str_encoding))
+
+        return name
+
+    def _parse_structure_data_lmdb(
+        lmdb_env: lmdb.Environment,
+        str_encoding: Literal["utf-8", "pkl"],
+        structure_data_encoding: Literal["utf-8", "pkl"],
+    ) -> LMDBDict:
+        from openfold3.core.data.primitives.caches.lmdb import (
+            LMDBDict,
+        )
+
+        return LMDBDict(
+            lmdb_env=lmdb_env,
+            prefix="structure_data",
+            key_encoding=str_encoding,
+            value_encoding=structure_data_encoding,
+        )
+
+    def _parse_ref_mol_data_lmdb(
+        lmdb_env: lmdb.Environment,
+        str_encoding: Literal["utf-8", "pkl"],
+        reference_molecule_data_encoding: Literal["utf-8", "pkl"],
+    ) -> LMDBDict:
+        from openfold3.core.data.primitives.caches.lmdb import (
+            LMDBDict,
+        )
+
+        return LMDBDict(
+            lmdb_env=lmdb_env,
+            prefix="reference_molecule_data",
+            key_encoding=str_encoding,
+            value_encoding=reference_molecule_data_encoding,
+        )
+
+    def to_lmdb(
+        self,
+        lmdb_directory: Path,
+        map_size: int,
+        mode: Literal["single-read", "iterative"] = "single-read",
+        str_encoding: Literal["utf-8", "pkl"] = "utf-8",
+        structure_data_encoding: Literal["utf-8", "pkl"] = "pkl",
+        reference_molecule_data_encoding: Literal["utf-8", "pkl"] = "pkl",
+    ) -> None:
+        """Creates an LMDB database from the dataset cache.
+
+        Use the convert_datacache_to_lmdb function directly if you want to convert a
+        datacache JSON file to an LMDB database that does not fit into memory.
+
+        Args:
+            json_file (Path | DatasetCache):
+                The datacache JSON file to convert or an existing DatasetCache object.
+            lmdb_directory (Path):
+                The LMDB dir to which the data and lock files are to be written.
+            map_size (int):
+                Size of the json file in bytes, for example  2 * (1024**3) for a 2GB
+                file. Provide a value slightly larger than the actual size of the json
+                file.
+            mode (Literal["single-read", "iterative"]):
+                The mode to use to parse the json file. Can be one of 'single-read' or
+                'iterative'. Use 'single-read' for small files and 'iterative' for large
+                files.
+            str_encoding (Literal["utf-8", "pkl"]):
+                The encoding to use for the cache keys and _type and name values.
+            structure_data_encoding (Literal["utf-8", "pkl"]):
+                The encoding to use for the structure_data values. The 'pkl' encoding
+                saves the dataclasses directly, whereas 'utf-8' encoding requires
+                re-creating the dataclasses.
+            reference_molecule_data_encoding (Literal["utf-8", "pkl"]):
+                The encoding to use for the reference_molecule_data values.The 'pkl'
+                encoding saves the dataclasses directly, whereas 'utf-8' encoding
+                requires re-creating the dataclasses.
+        """
+        from openfold3.core.data.primitives.caches.lmdb import (
+            convert_datacache_to_lmdb,
+        )
+
+        convert_datacache_to_lmdb(
+            dataset_cache_file_or_obj=self,
+            lmdb_directory=lmdb_directory,
+            map_size=map_size,
+            mode=mode,
+            str_encoding=str_encoding,
+            structure_data_encoding=structure_data_encoding,
+            reference_molecule_data_encoding=reference_molecule_data_encoding,
+        )
 
     def __init_subclass__(cls, **kwargs):
         """Ensure subclasses are properly initialized."""
@@ -340,7 +521,11 @@ class DatasetReferenceMoleculeData:
 
 # Reference molecule data should be the same for all datasets so we provide it here as a
 # general type.
-DatasetReferenceMoleculeCache: TypeAlias = dict[str, DatasetReferenceMoleculeData]
+if TYPE_CHECKING:
+    DictOrLMDBDict: TypeAlias = dict[K, V] | LMDBDict[K, V]
+    DatasetReferenceMoleculeCache: TypeAlias = DictOrLMDBDict[
+        str, DatasetReferenceMoleculeData
+    ]
 
 
 # ==============================================================================
@@ -362,7 +547,7 @@ class PDBChainData(DatasetChainData):
     auth_asym_id: str
     entity_id: int
 
-    molecule_type: MoleculeType
+    molecule_type: str  # TODO: This should be parsed as a MoleculeType
     reference_mol_id: str | None  # only set for ligands
     alignment_representative_id: str | None  # not set for ligands and DNA
     template_ids: list[str] | None  # only set for proteins
@@ -378,18 +563,23 @@ class ClusteredDatasetChainData(PDBChainData):
 
 
 @dataclass
-class ValClusteredDatasetChainData(ClusteredDatasetChainData):
-    """Chain-wise data with cluster and alignment information.
+class ValidationDatasetChainData(ClusteredDatasetChainData):
+    """Chain-wise data with additional validation fields.
 
-    Adds info on homology to train set. If chain is a monomer
-    >40% seq id and if it is a ligand >0.85 tanimoto score.
+    Additional attributes:
+        low_homology (bool):
+            Whether the chain has low-homology with the training data (see AF3 SI 5.8).
+        use_metrics (bool):
+            Whether validation metrics should be calculated for this chain (see AF3 SI
+            5.8).
+        ranking_model_fit (float | None):
+            The ranking model fit of this chain. Only applies to ligand chains.
     """
 
     # Adds the following fields:
-    monomer_high_homology: int
-    ligand_high_homology: int
-    ligand_not_fit: int
-    num_residues_contact: int
+    low_homology: bool
+    use_metrics: bool
+    ranking_model_fit: float | None
 
 
 @dataclass
@@ -410,14 +600,26 @@ class ClusteredDatasetInterfaceData:
 
 
 @dataclass
-class ValClusteredDatasetInterfaceData(ClusteredDatasetInterfaceData):
-    """Interface-wise data with cluster information.
+class ValidationDatasetInterfaceData(ClusteredDatasetInterfaceData):
+    """Interface-wise data with additional validation fields.
 
-    Adds info on if interfaces are homologous to the training data
-    To be true both chains most have homology as defined in SI 5.8.
+    Additional attributes:
+        low_homology (bool):
+            Whether the interface has low-homology with the training data (see AF3 SI
+            5.8).
+        metric_eligible (bool):
+            Whether the interface is eligible for validation metrics (see ligand quality
+            and residue critera in AF3 SI 5.8). (Only used as an intermediate field for
+            the final use_metrics)
+        use_metrics (bool):
+            Whether validation metrics should be calculated for this interface (see AF3
+            SI 5.8).
     """
 
-    interface_high_homology: int
+    # Adds the following fields:
+    low_homology: bool
+    metric_eligible: bool
+    use_metrics: bool
 
 
 # --- Structure data dataclasses ---
@@ -432,14 +634,13 @@ class ClusteredDatasetStructureData:
 
 
 @dataclass
-class ValClusteredDatasetStructureData:
-    """Structure data with cluster and added metadata information."""
+class ValidationDatasetStructureData:
+    """Structure data wrapper for validation set."""
 
     release_date: datetime.date
     resolution: float
-    sampled_cluster: list[str]  # TODO: remove this
-    token_count: int  # TODO: remove this
-    chains: dict[str, ValClusteredDatasetChainData]
+    token_count: int
+    chains: dict[str, ValidationDatasetChainData]
     interfaces: dict[str, ClusteredDatasetInterfaceData]
 
 
@@ -450,36 +651,33 @@ class ProteinMonomerStructureData:
     chains: dict[str, ProteinMonomerChainData]
 
 
-ClusteredDatasetStructureDataCache: TypeAlias = dict[str, ClusteredDatasetStructureData]
-ValClusteredDatasetStructureDataCache: TypeAlias = dict[
-    str, ValClusteredDatasetStructureData
-]
-ProteinMonomerStructureDataCache: TypeAlias = dict[str, ProteinMonomerStructureData]
+if TYPE_CHECKING:
+    ClusteredDatasetStructureDataCache: TypeAlias = DictOrLMDBDict[
+        str, ClusteredDatasetStructureData
+    ]
+    ValClusteredDatasetStructureDataCache: TypeAlias = DictOrLMDBDict[
+        str, ValidationDatasetStructureData
+    ]
+    ProteinMonomerStructureDataCache: TypeAlias = DictOrLMDBDict[
+        str, ProteinMonomerStructureData
+    ]
+
+
+# --- Reference molecule dataclasses ---
+@dataclass
+class ValidationDatasetReferenceMoleculeData(DatasetReferenceMoleculeData):
+    """Reference molecule data for validation set."""
+
+    # Adds the following field:
+    residue_count: int
 
 
 # --- Dataset caches ---
 # TEMPLATE for dataset caches with chain-wise, interface-wise and reference molecule
 # data.
-@dataclass
-class ChainInterfaceReferenceMolCache(DatasetCache):
-    """Specialized dataset cache format template.
-
-    Template for any data cache with chain-wise, interface-wise, and reference molecule
-    data. For example the PDB-weighted set, PDB-disordered set, and PDB-validation set.
-    """
-
-    # This defines the individual constructors for the chain, interface, reference
-    # molecule, and structure data, so that all other datasets can inherit this
-    # from_json method and set their own formats.
-    _chain_data_format: dataclass = None
-    _interface_data_format: dataclass = None
-    _structure_data_format: dataclass = None
-    _ref_mol_data_format: dataclass = DatasetReferenceMoleculeData
-
-
 @register_datacache
 @dataclass
-class ClusteredDatasetCache(ChainInterfaceReferenceMolCache):
+class ClusteredDatasetCache(DatasetCache):
     """Full data cache for clustered dataset.
 
     This is the most information-rich data cache format, with full chain-wise,
@@ -501,10 +699,12 @@ class ClusteredDatasetCache(ChainInterfaceReferenceMolCache):
     _structure_data_format = ClusteredDatasetStructureData
 
 
-# TODO: Revisit this entire cache to remove all redundant fields
+# PDB VALIDATION DATASET FORMAT
+# TODO: Some of these fields are only required for filtering and should not be in the
+# final cache
 @register_datacache
 @dataclass
-class ValClusteredDatasetCache(ChainInterfaceReferenceMolCache):
+class ValidationDatasetCache(DatasetCache):
     """Full data cache for the validation dataset."""
 
     name: str
@@ -512,10 +712,10 @@ class ValClusteredDatasetCache(ChainInterfaceReferenceMolCache):
     reference_molecule_data: DatasetReferenceMoleculeCache
 
     # Defines the constructor formats for the inherited from_json method
-    _chain_data_format = ValClusteredDatasetChainData
-    _interface_data_format = ValClusteredDatasetInterfaceData
-    _ref_mol_data_format = DatasetReferenceMoleculeData
-    _structure_data_format = ValClusteredDatasetStructureData
+    _chain_data_format = ValidationDatasetChainData
+    _interface_data_format = ValidationDatasetInterfaceData
+    _ref_mol_data_format = ValidationDatasetReferenceMoleculeData
+    _structure_data_format = ValidationDatasetStructureData
 
 
 @register_datacache
@@ -531,7 +731,7 @@ class ProteinMonomerDatasetCache(DatasetCache):
     _structure_data_format = ProteinMonomerStructureData
 
     @classmethod
-    def _parse_structure_data(cls, data: dict) -> dict:
+    def _parse_structure_data_json(cls, data: dict) -> dict:
         # Format structure data
         structure_data = {}
         for pdb_id, per_structure_data in data["structure_data"].items():
@@ -551,14 +751,17 @@ class ProteinMonomerDatasetCache(DatasetCache):
 
 
 # Grouped type-aliases for more convenient type-hinting of general-purpose functions
-ChainData = PreprocessingChainData | PDBChainData | ProteinMonomerChainData
-StructureDataCache = (
-    PreprocessingStructureDataCache
-    | ClusteredDatasetStructureDataCache
-    | ValClusteredDatasetStructureDataCache
-    | ProteinMonomerStructureDataCache
-)
-ReferenceMoleculeCache = (
-    PreprocessingReferenceMoleculeCache | DatasetReferenceMoleculeCache
-)
-DataCache = PreprocessingDataCache | DatasetCache
+if TYPE_CHECKING:
+    ChainData: TypeAlias = (
+        PreprocessingChainData | PDBChainData | ProteinMonomerChainData
+    )
+    StructureDataCache: TypeAlias = (
+        PreprocessingStructureDataCache
+        | ClusteredDatasetStructureDataCache
+        | ValClusteredDatasetStructureDataCache
+        | ProteinMonomerStructureDataCache
+    )
+    ReferenceMoleculeCache: TypeAlias = (
+        PreprocessingReferenceMoleculeCache | DatasetReferenceMoleculeCache
+    )
+    DataCacheType: TypeAlias = PreprocessingDataCache | DatasetCache

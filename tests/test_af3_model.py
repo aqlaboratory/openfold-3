@@ -49,6 +49,7 @@ class TestAF3Model(unittest.TestCase):
             n_token=n_token,
             n_msa=n_msa,
             n_templ=n_templ,
+            is_eval=(not train),
         )
 
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
@@ -81,12 +82,26 @@ class TestAF3Model(unittest.TestCase):
         else:
             af3.eval()
 
+            # filters used by validation metrics
+            assert "use_for_intra_validation" in batch
+            assert "use_for_inter_validation" in batch
+
             with torch.no_grad():
                 _, outputs = af3(batch=batch)
 
             atom_positions_predicted = outputs["atom_positions_predicted"]
 
-        assert atom_positions_predicted.shape == (batch_size, n_atom, 3)
+        num_rollout_samples = (
+            config.architecture.shared.diffusion.no_mini_rollout_samples
+            if train
+            else config.architecture.shared.diffusion.no_full_rollout_samples
+        )
+        assert atom_positions_predicted.shape == (
+            batch_size,
+            num_rollout_samples,
+            n_atom,
+            3,
+        )
 
     def test_shape_small_fp32(self):
         batch_size = consts.batch_size

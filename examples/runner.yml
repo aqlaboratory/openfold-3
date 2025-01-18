@@ -93,6 +93,7 @@ dataset_configs:
         loss_weight_mode: default
         template:
           n_templates: 4
+          take_top_k: False
         custom:
           crop:
             token_budget: 384
@@ -107,6 +108,7 @@ dataset_configs:
         loss_weight_mode: default
         template:
           n_templates: 4
+          take_top_k: False
         custom:
           crop:
             token_budget: 384
@@ -120,3 +122,4 @@ dataset_configs:
       config:
         template:
           n_templates: 4
+          take_top_k: True

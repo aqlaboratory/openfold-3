@@ -29,7 +29,10 @@ from openfold3.core.loss.confidence import (
 )
 from openfold3.core.loss.diffusion import diffusion_loss
 from openfold3.core.loss.distogram import all_atom_distogram_loss, cbeta_distogram_loss
-from openfold3.core.loss.loss_utils import compute_renamed_ground_truth
+from openfold3.core.loss.loss_utils import (
+    compute_renamed_ground_truth,
+    get_cumulative_loss_log_val,
+)
 from openfold3.core.loss.structure import (
     chain_center_of_mass_loss,
     fape_loss,
@@ -169,7 +172,9 @@ class AlphaFold3Loss(nn.Module):
         )
         losses.update(l_confidence_breakdown)
 
-        losses["confidence_loss"] = l_confidence.detach().clone()
+        losses["confidence_loss"] = get_cumulative_loss_log_val(
+            loss=l_confidence, loss_breakdown=l_confidence_breakdown
+        )
 
         # Weighted in confidence_loss()
         cum_loss = cum_loss + l_confidence
@@ -185,7 +190,9 @@ class AlphaFold3Loss(nn.Module):
             )
             losses.update(l_diffusion_breakdown)
 
-            losses["diffusion_loss"] = l_diffusion.detach().clone()
+            losses["diffusion_loss"] = get_cumulative_loss_log_val(
+                loss=l_diffusion, loss_breakdown=l_diffusion_breakdown
+            )
 
             # Weighted in diffusion_loss()
             cum_loss = cum_loss + l_diffusion
@@ -195,7 +202,9 @@ class AlphaFold3Loss(nn.Module):
         )
         losses.update(l_distogram_breakdown)
 
-        losses["scaled_distogram_loss"] = l_distogram.detach().clone()
+        losses["scaled_distogram_loss"] = get_cumulative_loss_log_val(
+            loss=l_distogram, loss_breakdown=l_distogram_breakdown
+        )
 
         # Weighted in all_atom_distogram_loss()
         cum_loss = cum_loss + l_distogram
