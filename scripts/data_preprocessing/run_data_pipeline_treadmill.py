@@ -1,15 +1,6 @@
 """
 Script to iterate over datapoints with the data pipeline.
 
-Components:
-- WeightedPDBDatasetWithLogging:
-    - Custom WeightedPDBDataset class that catches asserts and exceptions in the
-    __getitem__.
-    - also allows for saving features and atom array when an exception occurs
-    in a worker process.
-- worker_init_function_with_logging:
-    Custom worker init function with per-worker logging and feature/atom array saving.
-
 The treadmill requires at least one worker to run.
 
 Ways to run the treadmill:
@@ -44,6 +35,12 @@ Ways to run the treadmill:
 Mutually exclusive options:
  - run_asserts v. save_statistics
  - log_runtimes v. log_memory
+
+In addition, one can specify the following flags for extended functionality:
+- subset_to_examples: sample IDs to subset the dataset to.
+- no_preferred_chain_or_interface: removes duplicate samples with different preferred
+    chains or interfaces.
+- add_stochastic_sampling: samples the datapoints with stochastic sampling.
 """
 
 import os
