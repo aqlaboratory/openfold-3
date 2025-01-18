@@ -144,6 +144,8 @@ class PairformerEmbedding(nn.Module):
         dij = ((dij > squared_bins) * (dij < upper)).type(x_pred.dtype)
         zij = zij + self.linear_distance(dij)
 
+        si = si.expand(*(zij.shape[:-3] + si.shape[-2:])).clone()
+
         # PairFormer embedding
         si, zij = self.pairformer_stack(
             si,
