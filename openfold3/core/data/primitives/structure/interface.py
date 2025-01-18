@@ -406,8 +406,7 @@ def get_interface_token_center_atoms(
 
     if "token_center_atom" not in atom_array.get_annotation_categories():
         raise ValueError(
-            "Token center atoms not found in atom array, run "
-            "tokenize_atom_array first"
+            "Token center atoms not found in atom array, run tokenize_atom_array first"
         )
 
     token_center_atoms = atom_array[atom_array.token_center_atom]

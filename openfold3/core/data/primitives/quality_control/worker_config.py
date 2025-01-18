@@ -52,7 +52,7 @@ def configure_worker_init_func_logger(
     worker_dir.mkdir(parents=True, exist_ok=True)
     handler = logging.FileHandler(worker_dir / Path(f"worker_{worker_id}.log"))
     formatter = logging.Formatter(
-        "%(asctime)s - Worker %(worker_id)s - " "%(levelname)s - %(message)s"
+        "%(asctime)s - Worker %(worker_id)s - %(levelname)s - %(message)s"
     )
     handler.setFormatter(formatter)
 
@@ -182,7 +182,7 @@ def configure_extra_data_file(
         full_extra_data_file = log_output_directory / Path("datapoint_statistics.tsv")
         if full_extra_data_file.exists():
             worker_dataset.logger.info(
-                "Parsing processed datapoints from " f"{full_extra_data_file}."
+                f"Parsing processed datapoints from {full_extra_data_file}."
             )
             df = pd.read_csv(full_extra_data_file, sep="\t", na_values=["NaN"])
             worker_dataset.processed_datapoint_log = list(set(df["pdb-id"]))

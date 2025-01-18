@@ -83,7 +83,7 @@ class StochasticSamplerDataset(Dataset):
         dataset_idx, datapoint_idx = self.indices[index]
 
         # Set datapoint index in sampled dataset - used for logging in the treadmill
-        self.datasets[dataset_idx].datapoint_idx = index
+        self.datasets[dataset_idx].set_current_datapoint_index(index)
 
         # Index into the list of datasets then datapoints for the given dataset
         # This calls the __getitem__ method of the SingleDataset class

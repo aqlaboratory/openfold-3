@@ -139,7 +139,7 @@ class _AF3TemplateSequenceCacheConstructor:
             )
         except Exception as e:
             TEMPLATE_PROCESS_LOGGER.get().info(
-                "Failed to process template " f"{template_pdb_id}:\n{e}\n"
+                f"Failed to process template {template_pdb_id}:\n{e}\n"
             )
 
 
@@ -627,7 +627,7 @@ class _AF3TemplateCacheConstructor:
             )
         except Exception as e:
             TEMPLATE_PROCESS_LOGGER.get().info(
-                "Failed to process templates for query " f"{query_pdb_chain_id}:\n{e}\n"
+                f"Failed to process templates for query {query_pdb_chain_id}:\n{e}\n"
             )
 
 
@@ -968,7 +968,7 @@ class _AF3TemplateCacheFilter:
         except Exception as e:
             if self.is_core_train:
                 TEMPLATE_PROCESS_LOGGER.get().info(
-                    "Failed to filter templates for query " f"{input[0][0]}: \n{e}\n"
+                    f"Failed to filter templates for query {input[0][0]}: \n{e}\n"
                 )
                 return {input[0][0]: []}
             else:
@@ -1283,7 +1283,7 @@ class _AF3TemplateStructurePreprocessor:
                 log_dir=self.log_dir,
             )
             TEMPLATE_PROCESS_LOGGER.get().info(
-                "Successfully preprocessed template structure " f"{template_pdb_id}."
+                f"Successfully preprocessed template structure {template_pdb_id}."
             )
         except Exception as e:
             TEMPLATE_PROCESS_LOGGER.get().info(

@@ -785,7 +785,7 @@ class _ProteinMonomerPreprocessingWrapper:
                 self.output_dir,
             )
         except Exception as e:
-            print("Failed to preparse monomer " f"{entry_id}:\n{e}\n")
+            print(f"Failed to preparse monomer {entry_id}:\n{e}\n")
 
 
 def preparse_protein_monomer_structures(

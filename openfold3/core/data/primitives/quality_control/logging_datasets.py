@@ -728,9 +728,9 @@ class ConcatDataset(Dataset[_T_co]):
         self.datasets = list(datasets)
         assert len(self.datasets) > 0, "datasets should not be an empty iterable"  # type: ignore[arg-type]
         for d in self.datasets:
-            assert not isinstance(
-                d, IterableDataset
-            ), "ConcatDataset does not support IterableDataset"
+            assert not isinstance(d, IterableDataset), (
+                "ConcatDataset does not support IterableDataset"
+            )
         self.cumulative_sizes = self.cumsum(self.datasets)
 
     def __len__(self):
@@ -783,15 +783,15 @@ class ConcatDataset(Dataset[_T_co]):
 def init_datasets_with_logging(
     multi_dataset_config: MultiDatasetConfig,
     type_to_init: DatasetMode,
-    run_asserts,
-    save_features,
-    save_atom_array,
-    save_full_traceback,
-    save_statistics,
-    log_runtimes,
-    log_memory,
-    subset_to_examples,
-    no_preferred_chain_or_interface,
+    run_asserts: bool,
+    save_features: bool,
+    save_atom_array: bool,
+    save_full_traceback: bool,
+    save_statistics: bool,
+    log_runtimes: bool,
+    log_memory: bool,
+    subset_to_examples: list[str],
+    no_preferred_chain_or_interface: bool,
 ) -> Sequence[Dataset]:
     """Adds logging to the dataset classes and initializes them.
 
@@ -799,20 +799,32 @@ def init_datasets_with_logging(
     for each individual dataset.
 
     Args:
-        multi_dataset_config (MultiDatasetConfig): _description_
-        type_to_init (DatasetMode): _description_
-        run_asserts (_type_): _description_
-        save_features (_type_): _description_
-        save_atom_array (_type_): _description_
-        save_full_traceback (_type_): _description_
-        save_statistics (_type_): _description_
-        log_runtimes (_type_): _description_
-        log_memory (_type_): _description_
-        subset_to_examples (_type_): _description_
-        no_preferred_chain_or_interface (_type_): _description_
+        multi_dataset_config (MultiDatasetConfig):
+            Nested dataset config dicts.
+        type_to_init (DatasetMode):
+            Dataset mode to initialize.
+        run_asserts (bool):
+            Whether to run asserts.
+        save_features (bool):
+            Whether to save the featuredict upon error.
+        save_atom_array (bool):
+            Whether to save the atom array upon error.
+        save_full_traceback (bool):
+            Whether to save the full traceback upon error.
+        save_statistics (bool):
+            Whether to save additional data statistics.
+        log_runtimes (bool):
+            Whether to log runtimes.
+        log_memory (bool):
+            Whether to log memory usage.
+        subset_to_examples (list[str]):
+            List of PDB IDs to subset the dataset_cache and datapoint_cache to.
+        no_preferred_chain_or_interface (bool):
+            Whether to remove the preferred chain or interface from the datapoint_cache.
 
     Returns:
-        Sequence[Dataset]: _description_
+        Sequence[Dataset]:
+            List of initialized datasets.
     """
     # Note that the dataset config already contains the paths!
     if type_to_init is None:
