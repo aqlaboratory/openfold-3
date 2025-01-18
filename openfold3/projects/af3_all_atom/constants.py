@@ -129,11 +129,15 @@ VAL_EXTRA_METRICS = [
 
 MODEL_SELECTION = "model_selection"
 
+# TODO: Only log full complex correlation for now, update later.
+#  Possible hanging from some GPUs not having values for one of the
+#  molecule modalities. PearsonCorr torch metric does not handle nans
+#  or empty tensors internally.
 CORRELATION_METRICS = [
-    "pearson_correlation_lddt_plddt_protein",
-    "pearson_correlation_lddt_plddt_ligand",
-    "pearson_correlation_lddt_plddt_dna",
-    "pearson_correlation_lddt_plddt_rna",
+    # "pearson_correlation_lddt_plddt_protein",
+    # "pearson_correlation_lddt_plddt_ligand",
+    # "pearson_correlation_lddt_plddt_dna",
+    # "pearson_correlation_lddt_plddt_rna",
     "pearson_correlation_lddt_plddt_complex",
 ]
 
@@ -146,7 +150,6 @@ VAL_LOGGED_METRICS = [
     *VAL_LOSSES,
     *METRICS,
     *VAL_EXTRA_METRICS,
-    *CORRELATION_METRICS,
 ]
 
 METRICS_MAXIMIZE = [

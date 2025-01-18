@@ -3,6 +3,7 @@ import logging
 import biotite.structure as struc
 import numpy as np
 import torch
+from biotite.structure import AtomArray
 
 from openfold3.core.data.resources.residues import RESIDUE_SASA_SCALES, MoleculeType
 
@@ -200,7 +201,7 @@ def calculate_res_rasa(
 
 
 def process_proteins(
-    struct_array: np.ndarray,
+    struct_array: AtomArray,
     window: int = 25,
     max_acc_dict: dict = None,
     default_max_acc: float = 113.0,
@@ -227,6 +228,8 @@ def process_proteins(
                 (default = "ProtOr").
         residue_sasa_scale:
             The residue SASA scale to use (default is "Sander").
+        pdb_id:
+            The PDB ID of the structure.
 
     Returns:
         The mean RASA value for unresolved residues across all processed protein chains.
@@ -316,22 +319,20 @@ def compute_rasa_batch(
     """
     struct_arrays = batch["atom_array"]
     pdb_ids = batch["pdb_id"]
-    n_batch, n_samples = outputs["atom_positions_predicted"].shape[
-        :2
-    ]  # (N_batch, N_samples, N_atoms, 3)
-    unresolved_rasas = torch.zeros(
-        (n_batch, n_samples), device=outputs["atom_positions_predicted"].device
-    )
+    atom_positions_predicted = outputs["atom_positions_predicted"]
+
+    # (N_batch, N_samples, N_atoms, 3)
+    n_batch, n_samples = atom_positions_predicted.shape[:2]
+
+    unresolved_rasas = torch.zeros((n_batch, n_samples))
     for k, atom_arr in enumerate(struct_arrays):
         atom_arr.set_annotation(
             "atom_resolved_mask", np.ones_like(atom_arr.occupancy, dtype=bool)
         )
         for sample in range(n_samples):
-            atom_positions = outputs["atom_positions_predicted"][
-                k, sample, : len(atom_arr), :3
-            ]
+            atom_positions = atom_positions_predicted[k, sample]
             resolved_mask = (
-                batch["ground_truth"]["atom_resolved_mask"][k, sample, : len(atom_arr)]
+                batch["ground_truth"]["atom_resolved_mask"][k, sample]
                 .float()
                 .detach()
                 .cpu()
@@ -349,4 +350,8 @@ def compute_rasa_batch(
                 residue_sasa_scale=residue_sasa_scale,
                 pdb_id=pdb_ids[k],
             )
+
+    unresolved_rasas = unresolved_rasas.to(
+        device=atom_positions_predicted.device, dtype=atom_positions_predicted.dtype
+    )
     return unresolved_rasas

@@ -82,7 +82,6 @@ class AlphaFold3AllAtom(ModelRunner):
         val_metrics = {
             metric_name: MeanMetric(nan_strategy="ignore")
             for metric_name in VAL_LOGGED_METRICS
-            if metric_name not in CORRELATION_METRICS
         }
         val_metrics.update(
             {
@@ -104,7 +103,7 @@ class AlphaFold3AllAtom(ModelRunner):
     def _update_epoch_metric(
         self, phase: str, metric_log_name: str, metric_value: [torch.Tensor, tuple]
     ):
-        """
+        """Update metrics for the epoch logging.
 
         Args:
             phase:
@@ -156,26 +155,21 @@ class AlphaFold3AllAtom(ModelRunner):
                 weights=self.model_selection_weights,
             )
 
-            # for metric_name in CORRELATION_METRICS:
-            #     molecule_type = metric_name.split("_")[-1]
-            #     plddt_key = f"plddt_{molecule_type}"
-            #     lddt_key = f"lddt_intra_{molecule_type}"
-            #
-            #     plddt = metrics.get(plddt_key)
-            #     lddt = metrics.get(lddt_key)
-            #
-            #     if plddt is None or lddt is None:
-            #         raise KeyError(
-            #             f"Missing metrics: {plddt_key} and {lddt_key} must "
-            #             f"both be present to compute correlation metrics."
-            #         )
-            #
-            #     # Drop nan values
-            #     nan_indices = torch.isnan(lddt) | torch.isnan(plddt)
-            #     lddt = lddt[~nan_indices]
-            #     plddt = plddt[~nan_indices]
-            #
-            #     metrics[metric_name] = (lddt, plddt)
+            for metric_name in CORRELATION_METRICS:
+                molecule_type = metric_name.split("_")[-1]
+                plddt_key = f"plddt_{molecule_type}"
+                lddt_key = f"lddt_intra_{molecule_type}"
+
+                plddt = metrics.get(plddt_key)
+                lddt = metrics.get(lddt_key)
+
+                if plddt is None or lddt is None:
+                    raise KeyError(
+                        f"Missing metrics: {plddt_key} and {lddt_key} must "
+                        f"both be present to compute correlation metrics."
+                    )
+
+                metrics[metric_name] = (lddt, plddt)
 
             return metrics
 
@@ -373,7 +367,7 @@ class AlphaFold3AllAtom(ModelRunner):
         if not self.trainer.sanity_checking:
             best_score, which_epoch = self.tracker.best_metric(return_step=True)
             self.log(
-                "val/model_selection_metric",
+                f"val/{MODEL_SELECTION}",
                 self.tracker.compute(),
                 on_step=False,
                 on_epoch=True,
@@ -381,7 +375,7 @@ class AlphaFold3AllAtom(ModelRunner):
                 sync_dist=False,
             )
             self.log(
-                "val/best_model_selection_metric",
+                f"val/best_{MODEL_SELECTION}",
                 best_score,
                 on_step=False,
                 on_epoch=True,
@@ -389,7 +383,7 @@ class AlphaFold3AllAtom(ModelRunner):
                 sync_dist=False,
             )
             self.log(
-                "val/best_model_selection_epoch",
+                f"val/best_{MODEL_SELECTION}_epoch",
                 which_epoch,
                 on_step=False,
                 on_epoch=True,

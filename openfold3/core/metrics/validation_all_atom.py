@@ -1060,7 +1060,9 @@ def get_metrics(
         t = t.expand(-1, no_samples, *((-1,) * len(feat_dims)))
         return t
 
-    all_atom_mask = batch["ground_truth"]["atom_resolved_mask"].bool()
+    all_atom_mask = expand_sample_dim(
+        batch["ground_truth"]["atom_resolved_mask"]
+    ).bool()
 
     # broadcast token level features to atom level features
     is_protein_atomized = expand_sample_dim(

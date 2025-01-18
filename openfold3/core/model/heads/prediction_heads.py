@@ -144,7 +144,19 @@ class PairformerEmbedding(nn.Module):
         dij = ((dij > squared_bins) * (dij < upper)).type(x_pred.dtype)
         zij = zij + self.linear_distance(dij)
 
+        # Expand sample dimension
         si = si.expand(*(zij.shape[:-3] + si.shape[-2:])).clone()
+        single_mask = single_mask.expand(*(zij.shape[:-3] + single_mask.shape[-1:]))
+        pair_mask = pair_mask.expand(*(zij.shape[:-3] + pair_mask.shape[-2:]))
+
+        # TODO: Make this less awkward, DS kernel has strict shape asserts
+        #  and expects batch and seq dims to exist, but no sample dim
+        batch_dims = si.shape[:-2]
+        if use_deepspeed_evo_attention:
+            si = si.reshape(-1, *si.shape[-2:])
+            zij = zij.reshape(-1, *zij.shape[-3:])
+            single_mask = single_mask.reshape(-1, single_mask.shape[-1])
+            pair_mask = pair_mask.reshape(-1, *pair_mask.shape[-2:])
 
         # PairFormer embedding
         si, zij = self.pairformer_stack(
@@ -158,6 +170,10 @@ class PairformerEmbedding(nn.Module):
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
         )
+
+        if use_deepspeed_evo_attention:
+            si = si.reshape(*batch_dims, *si.shape[-2:])
+            zij = zij.reshape(*batch_dims, *zij.shape[-3:])
 
         return si, zij
 

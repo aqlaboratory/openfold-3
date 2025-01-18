@@ -33,7 +33,7 @@ def compute_model_selection_metric(
 
     # Compute pde (predicted distance error)
     pde = compute_predicted_distance_error(
-        outputs["pde_logits"].detach(), max_bin=32, no_bins=64
+        outputs["pde_logits"].detach(), max_bin=31, no_bins=64
     )["predicted_distance_error"]
 
     # Compute distogram-based contact probabilities (pij)
@@ -42,14 +42,15 @@ def compute_model_selection_metric(
     distogram_bins = torch.linspace(2, 22, 65, device=device)
     distogram_bins_8A = distogram_bins <= 8.0  # boolean mask for bins <= 8 Å
     distogram_bins_8A = distogram_bins_8A[1:]  # exclude the first bin (2 Å)
+
     # Probability of contact between tokens i and j (sum over bins <= 8 Å)
     # pij shape: [bs, n_samples, n_tokens, n_tokens]
     pij = torch.sum(distogram_logits[..., distogram_bins_8A], dim=-1)
 
     # Global pde: weighted by contact probability pij
     # weighted_pde shape: [bs, n_samples]
-    weighted_pde = torch.sum(pij * pde, dim=[2, 3])
-    sum_pij = torch.sum(pij, dim=[2, 3]) + eps  # avoid division by zero
+    weighted_pde = torch.sum(pij * pde, dim=[-2, -1])
+    sum_pij = torch.sum(pij, dim=[-2, -1]) + eps  # avoid division by zero
     # global_pde shape: [bs, n_samples]
     global_pde = weighted_pde / sum_pij
 
