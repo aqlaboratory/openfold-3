@@ -1,15 +1,6 @@
 """
 Script to iterate over datapoints with the data pipeline.
 
-Components:
-- WeightedPDBDatasetWithLogging:
-    - Custom WeightedPDBDataset class that catches asserts and exceptions in the
-    __getitem__.
-    - also allows for saving features and atom array when an exception occurs
-    in a worker process.
-- worker_init_function_with_logging:
-    Custom worker init function with per-worker logging and feature/atom array saving.
-
 The treadmill requires at least one worker to run.
 
 Ways to run the treadmill:
@@ -44,6 +35,12 @@ Ways to run the treadmill:
 Mutually exclusive options:
  - run_asserts v. save_statistics
  - log_runtimes v. log_memory
+
+In addition, one can specify the following flags for extended functionality:
+- subset_to_examples: sample IDs to subset the dataset to.
+- no_preferred_chain_or_interface: removes duplicate samples with different preferred
+    chains or interfaces.
+- add_stochastic_sampling: samples the datapoints with stochastic sampling.
 """
 
 import os
@@ -65,13 +62,17 @@ from torch.utils.data import DataLoader, get_worker_info
 from tqdm import tqdm
 
 from openfold3.core.config import config_utils
-from openfold3.core.data.framework.data_module import _NUMPY_AVAILABLE
+from openfold3.core.data.framework.data_module import (
+    _NUMPY_AVAILABLE,
+    DataModule,
+)
 from openfold3.core.data.framework.lightning_utils import _generate_seed_sequence
-from openfold3.core.data.framework.single_datasets.abstract_single import (
-    DATASET_REGISTRY,
+from openfold3.core.data.framework.stochastic_sampler_dataset import (
+    StochasticSamplerDataset,
 )
 from openfold3.core.data.primitives.quality_control.logging_datasets import (
-    add_logging_to_dataset,
+    ConcatDataset,
+    init_datasets_with_logging,
 )
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     parse_memory_profiler_log,
@@ -81,6 +82,7 @@ from openfold3.core.data.primitives.quality_control.worker_config import (
     configure_context_variables,
     configure_extra_data_file,
     configure_worker_init_func_logger,
+    set_worker_init_attributes,
 )
 from openfold3.projects import registry
 
@@ -208,6 +210,16 @@ np.set_printoptions(threshold=sys.maxsize)
     default=False,
     help="Whether to log memory use of subpipelines during data processing.",
 )
+@click.option(
+    "--add-stochastic-sampling",
+    type=bool,
+    default=False,
+    help=(
+        "Whether to sample the datapoints with stochastic sampling."
+        " If multiple datasets are provided without sttochastic sampling enabled,"
+        " the datasets will be concatenated."
+    ),
+)
 def main(
     runner_yml_file: Path,
     seed: int,
@@ -224,6 +236,7 @@ def main(
     mem_profiled_func_keys: str | None,
     subset_to_examples: str,
     no_preferred_chain_or_interface: bool,
+    add_stochastic_sampling: bool,
 ) -> None:
     """Main function for running the data pipeline treadmill.
 
@@ -272,6 +285,10 @@ def main(
             Whether to sample a crop without a preferred chain or interface. Also
             let the treadmill skip all variations of each sample with all preferred
             chains and interfaces.
+        add_stochastic_sampling (bool):
+            Whether to sample the datapoints with stochastic sampling. If multiple
+            datasets are provided without sttochastic sampling enabled, the datasets
+            will be concatenated.
 
     Raises:
         ValueError:
@@ -308,17 +325,17 @@ def main(
         dataset_config_builder,
         project_config,
     )
-    if len(data_module_config.datasets) > 1:
-        raise NotImplementedError(
-            "Running the treadmill script with multiple datasets is not yet "
-            "implemented."
-        )
+    if len(data_module_config.datasets) < 1:
+        raise ValueError("No datasets found in the input yaml file.")
 
-    dataset_settings = data_module_config.datasets[0]
-    LoggingDataset = add_logging_to_dataset(
-        DATASET_REGISTRY[dataset_settings.get("class")]
-    )
-    logging_dataset = LoggingDataset(
+    # TODO: add more extended checks here
+    # Dataset configs in input format -> flattened dataset configs
+    multi_dataset_config = DataModule.parse_data_config(data_module_config.datasets)
+
+    # Wrap each dataset in logging
+    datasets = init_datasets_with_logging(
+        multi_dataset_config=multi_dataset_config,
+        type_to_init=None,
         run_asserts=run_asserts,
         save_features=save_features,
         save_atom_array=save_atom_array,
@@ -328,8 +345,20 @@ def main(
         log_memory=log_memory,
         subset_to_examples=subset_to_examples,
         no_preferred_chain_or_interface=no_preferred_chain_or_interface,
-        dataset_config=dataset_settings.get("config"),
     )
+
+    if add_stochastic_sampling:
+        logging_dataset = StochasticSamplerDataset(
+            datasets=datasets,
+            dataset_probabilities=multi_dataset_config.weights,
+            epoch_len=data_module_config.epoch_len,
+            num_epochs=data_module_config.num_epochs,
+            generator=torch.Generator(device="cpu").manual_seed(
+                data_module_config.data_seed
+            ),
+        )
+    else:
+        logging_dataset = ConcatDataset(datasets)
 
     # This function needs to be defined here to form a closure
     # around log_output_directory, log_level and save_statistics
@@ -381,8 +410,12 @@ def main(
         )
         worker_logger.info(f"process ID: {os.getpid()}")
 
+        # Propagate the logger to the wrapped datasets
+        set_worker_init_attributes(worker_dataset, ["logger"])
+
+        configured_attributes = []
         # Configure data file
-        configure_extra_data_file(
+        configured_attributes += configure_extra_data_file(
             worker_id,
             worker_dataset,
             save_statistics,
@@ -391,12 +424,17 @@ def main(
         )
 
         # Configure compliance file
-        configure_compliance_log(worker_dataset, log_output_directory)
+        configured_attributes += configure_compliance_log(
+            worker_dataset, log_output_directory
+        )
 
         # Configure context variables
-        configure_context_variables(
+        configured_attributes += configure_context_variables(
             log_runtimes, log_memory, worker_dataset, mem_profiled_func_keys
         )
+
+        # Propagate all other configured attributes to the wrapped datasets
+        set_worker_init_attributes(worker_dataset, configured_attributes)
 
     # Configure DataLoader
     data_loader = DataLoader(
