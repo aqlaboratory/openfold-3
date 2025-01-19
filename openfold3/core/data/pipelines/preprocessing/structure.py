@@ -9,6 +9,7 @@ import multiprocessing as mp
 import traceback
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from time import time
 from typing import Literal
 
 import boto3
@@ -430,6 +431,9 @@ def preprocess_structure_and_write_outputs_af3(
                 - "fallback_conformer_pdb_id": The PDB ID of the fallback conformer
                 - "canonical_smiles": The canonical SMILES of the component
     """
+    # Log how long this is taking
+    start_time = time.perf_counter()
+
     # Parse the input CIF file
     parsed_mmcif = parse_mmcif(
         input_cif,
@@ -519,6 +523,10 @@ def preprocess_structure_and_write_outputs_af3(
 
     out_fasta_path = out_dir / f"{pdb_id}.fasta"
     write_multichain_fasta(out_fasta_path, chain_to_canonical_seq)
+
+    end_time = time.perf_counter()
+
+    logger.debug(f"Processing {pdb_id} took {end_time - start_time:.2f} seconds.")
 
     return structure_metadata_dict, ref_mol_metadata_dict
 
