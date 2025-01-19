@@ -83,7 +83,9 @@ def get_resolution(cif_data: CIFBlock) -> float:
 
     for key in keys_to_check:
         try:
-            resolution = cif_data[key[0]][key[1]].as_item()
+            # as_array() because very rare structures can have multiple resolutions
+            # (e.g. 7TX3)
+            resolution = cif_data[key[0]][key[1]].as_array()[0].item()
 
             # Try next if not specified
             if resolution in ("?", "."):
@@ -116,6 +118,7 @@ def get_experimental_method(cif_data: CIFBlock) -> str:
     Returns:
         The experimental method used to determine the structure.
     """
+    # as_array() because very rare structures can have multiple methods (e.g. 7TX3)
     method = cif_data["exptl"]["method"].as_array()[0].item().upper()
 
     return method
