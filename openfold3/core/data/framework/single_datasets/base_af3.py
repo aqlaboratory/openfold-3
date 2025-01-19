@@ -111,6 +111,9 @@ class BaseAF3Dataset(SingleDataset, ABC):
         ]
 
         # Dataset/datapoint cache
+        # TODO: rename dataset_cache_file to dataset_cache_path to signal that it can be
+        # a directory or a file
+        # TODO: potentially expose the LMDB database encoding types
         self.dataset_cache = read_datacache(
             dataset_config["dataset_paths"]["dataset_cache_file"]
         )
@@ -151,6 +154,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
         pdb_id: str,
         preferred_chain_or_interface: str | list[str, str] | None,
         return_full_atom_array: bool,
+        return_crop_strategy: bool,
     ) -> tuple[dict, AtomArray | torch.Tensor]:
         """Creates the target structure features."""
 
@@ -210,6 +214,9 @@ class BaseAF3Dataset(SingleDataset, ABC):
 
         if return_full_atom_array:
             target_structure_data["atom_array"] = atom_array_full
+
+        if return_crop_strategy:
+            target_structure_data["crop_strategy"] = crop_strategy
 
         return target_structure_data
 
@@ -293,6 +300,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
         pdb_id: str,
         preferred_chain_or_interface: str | list[str, str] | None,
         return_atom_arrays: bool,
+        return_crop_strategy: bool,
     ) -> dict:
         """Creates all features for a single datapoint."""
 
@@ -300,7 +308,10 @@ class BaseAF3Dataset(SingleDataset, ABC):
 
         # Target & GT structure and conformer features
         target_structure_data = self.create_structure_features(
-            pdb_id, preferred_chain_or_interface, return_atom_arrays
+            pdb_id,
+            preferred_chain_or_interface,
+            return_atom_arrays,
+            return_crop_strategy,
         )
         sample_data["features"].update(
             target_structure_data["target_structure_features"]
@@ -332,6 +343,8 @@ class BaseAF3Dataset(SingleDataset, ABC):
             sample_data["atom_array_cropped"] = target_structure_data[
                 "atom_array_cropped"
             ]
+        if return_crop_strategy:
+            sample_data["crop_strategy"] = target_structure_data["crop_strategy"]
 
         return sample_data
 

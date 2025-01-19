@@ -1,6 +1,7 @@
 import logging
 import random
 import traceback
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -93,7 +94,8 @@ class ValidationPDBDataset(BaseAF3Dataset):
             sample_data = self.create_all_features(
                 pdb_id=pdb_id,
                 preferred_chain_or_interface=None,
-                return_atom_arrays=False,
+                return_atom_arrays=True,
+                return_crop_strategy=False,
             )
             features = sample_data["features"]
             features["pdb_id"] = pdb_id
@@ -104,7 +106,8 @@ class ValidationPDBDataset(BaseAF3Dataset):
                 sample_data = self.create_all_features(
                     pdb_id=pdb_id,
                     preferred_chain_or_interface=None,
-                    return_atom_arrays=False,
+                    return_atom_arrays=True,
+                    return_crop_strategy=False,
                 )
 
                 features = sample_data["features"]
@@ -186,13 +189,17 @@ class ValidationPDBDataset(BaseAF3Dataset):
     def create_all_features(
         self,
         pdb_id: str,
-        preferred_chain_or_interface: str,
+        preferred_chain_or_interface: Optional[str],
         return_atom_arrays: bool,
+        return_crop_strategy: bool,
     ) -> dict:
         """Calls the parent create_all_features, and then adds features for homology
         similarity."""
         sample_data = super().create_all_features(
-            pdb_id, preferred_chain_or_interface, return_atom_arrays=True
+            pdb_id,
+            preferred_chain_or_interface,
+            return_atom_arrays=return_atom_arrays,
+            return_crop_strategy=return_crop_strategy,
         )
 
         validation_homology_filters = self.get_validation_homology_features(
