@@ -15,19 +15,14 @@
 
 """Activation functions."""
 
-import importlib
-
 import torch
 from ml_collections import ConfigDict
 from torch import nn
 
 import openfold3.core.config.default_linear_init_config as lin_init
+from openfold3.core.kernels.triton.swiglu import LigerSiLUMulFunction
 
 from .linear import Linear
-
-liger_is_installed = importlib.util.find_spec("liger_kernel") is not None
-if liger_is_installed:
-    from liger_kernel.ops.swiglu import LigerSiLUMulFunction
 
 
 class SwiGLU(nn.Module):
@@ -55,7 +50,7 @@ class SwiGLU(nn.Module):
         self.swish = nn.SiLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if liger_is_installed and x.is_cuda:
+        if x.is_cuda:
             return LigerSiLUMulFunction.apply(self.linear_a(x), self.linear_b(x))
 
         return self.swish(self.linear_a(x)) * self.linear_b(x)

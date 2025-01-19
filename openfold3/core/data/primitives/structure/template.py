@@ -392,12 +392,16 @@ def map_token_pos_to_template_residues(
     # Skip template if query and template are still misaligned, this can happen due to
     # unhandled multi-occupancy residues or author annotation errors
     # TODO: add fixes and logging for these cases
-    if struc.get_residue_starts(atom_array_cropped_template).shape != repeats.shape:
+    has_multioccupancy_residue = (
+        struc.get_residue_starts(atom_array_cropped_template).shape != repeats.shape
+    )
+    if has_multioccupancy_residue:
         template_slice = TemplateSlice(
             atom_array=AtomArray(0),
             query_token_positions=np.array([]),
             template_residue_repeats=np.array([]),
         )
+
     else:
         # Add token position annotation to template atom array mapping to the crop
         template_slice = TemplateSlice(

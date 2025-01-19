@@ -232,7 +232,8 @@ class DataModule(pl.LightningDataModule):
                 multi_dataset_config_prediction, DatasetMode.prediction
             )[0]
 
-    def parse_data_config(self, data_config: list[ConfigDict]) -> MultiDatasetConfig:
+    @classmethod
+    def parse_data_config(cls, data_config: list[ConfigDict]) -> MultiDatasetConfig:
         """Parses input data_config into separate lists.
 
         Args:
@@ -298,7 +299,7 @@ class DataModule(pl.LightningDataModule):
         )
 
         # Check dataset configuration
-        self.run_checks(multi_dataset_config)
+        cls.run_checks(multi_dataset_config)
 
         return multi_dataset_config
 

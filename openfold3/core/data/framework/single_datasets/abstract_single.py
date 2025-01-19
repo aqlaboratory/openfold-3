@@ -78,6 +78,8 @@ class SingleDataset(ABC, Dataset):
         if not self.__class__._registered:
             raise DatasetNotRegisteredError(self.__class__.__name__)
 
+        self.datapoint_index = None
+
     def __post_init__(self) -> None:
         if self.dataset_cache is None:
             raise ValueError(
@@ -94,6 +96,10 @@ class SingleDataset(ABC, Dataset):
     def get_class_name(self) -> str:
         """Returns the name of the class."""
         return self.__class__.__name__
+
+    def set_current_datapoint_index(self, index: int) -> None:
+        """Set the current datapoint index for logging purposes."""
+        self.datapoint_index = index
 
     @abstractmethod
     def __getitem__(self, index: int) -> dict[str, Union[torch.Tensor]]:
