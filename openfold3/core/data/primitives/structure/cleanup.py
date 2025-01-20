@@ -164,6 +164,8 @@ def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
     return atom_array
 
 
+# TODO: Could check if this would be faster using MoleculeType if it is present (could
+# make a use_moltype_annot: bool argument)
 def get_polymer_mask(atom_array):
     """Returns a mask of all standard polymer atoms in the AtomArray.
 

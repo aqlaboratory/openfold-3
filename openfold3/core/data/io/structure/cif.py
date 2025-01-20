@@ -26,7 +26,6 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_cif_block,
     get_first_bioassembly_polymer_count,
 )
-from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
 
