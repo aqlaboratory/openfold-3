@@ -79,7 +79,10 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_release_date,
     get_resolution,
 )
-from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
+from openfold3.core.data.primitives.structure.tokenization import (
+    get_token_count,
+    tokenize_atom_array,
+)
 from openfold3.core.data.primitives.structure.unresolved import add_unresolved_atoms
 
 logger = logging.getLogger(__name__)
@@ -195,6 +198,7 @@ def extract_chain_and_interface_metadata_af3(
     metadata_dict["release_date"] = get_release_date(cif_data).strftime("%Y-%m-%d")
     metadata_dict["resolution"] = get_resolution(cif_data)
     metadata_dict["experimental_method"] = get_experimental_method(cif_data)
+    metadata_dict["token_count"] = get_token_count(atom_array)
 
     # NOTE: This could be reduced to only the critical information, currently some
     # chain IDs are put in for easier manual interpretability
@@ -373,7 +377,7 @@ def preprocess_structure_and_write_outputs_af3(
     ccd: CIFFile,
     out_dir: Path,
     reference_mol_out_dir: Path,
-    output_formats: list[Literal["cif", "bcif", "pkl"]],
+    output_formats: list[Literal["npz", "cif", "bcif", "pkl"]],
     max_polymer_chains: int | None = None,
     skip_components: set | SharedSet | None = None,
     random_seed: int | None = None,
@@ -567,7 +571,7 @@ class _AF3PreprocessingWrapper:
         reference_mol_out_dir: Path,
         max_polymer_chains: int | None,
         skip_components: set | SharedSet | None,
-        output_formats: list[Literal["cif", "bcif", "pkl"]],
+        output_formats: list[Literal["npz", "cif", "bcif", "pkl"]],
         random_seed: int | None = None,
     ):
         self.ccd = ccd
