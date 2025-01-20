@@ -6,7 +6,6 @@ from pathlib import Path
 
 import torch
 from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
-from torchmetrics.wrappers import MetricTracker
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.metrics.confidence import (
@@ -33,7 +32,6 @@ from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
 from openfold3.projects.af3_all_atom.constants import (
     CORRELATION_METRICS,
     METRICS,
-    MODEL_SELECTION,
     TRAIN_LOSSES,
     VAL_LOGGED_METRICS,
 )
@@ -97,8 +95,6 @@ class AlphaFold3AllAtom(ModelRunner):
             self.train_metrics.keys(), self.val_metrics.keys()
         )
         self.metric_enabled = {metric_name: False for metric_name in metric_log_names}
-
-        self.tracker = MetricTracker(MeanMetric(nan_strategy="ignore"), maximize=True)
 
     def _update_epoch_metric(
         self, phase: str, metric_log_name: str, metric_value: [torch.Tensor, tuple]
@@ -202,11 +198,6 @@ class AlphaFold3AllAtom(ModelRunner):
                 )
 
         for metric_name, metric_value in metrics.items():
-            # Update model selection metric
-            if metric_name == MODEL_SELECTION:
-                self.tracker.update(metric_value)
-                continue
-
             metric_log_name = f"{phase}/{metric_name}"
 
             # Update mean metrics for epoch logging
@@ -335,9 +326,6 @@ class AlphaFold3AllAtom(ModelRunner):
         # datapoints to train on
         self.trainer.train_dataloader.dataset.resample_epoch()
 
-    def on_validation_epoch_start(self):
-        self.tracker.increment()
-
     def _log_epoch_metrics(self, metrics: MetricCollection):
         """Log aggregated epoch metrics for training or validation.
 
@@ -362,35 +350,6 @@ class AlphaFold3AllAtom(ModelRunner):
                 # Reset metric for next epoch
                 metric_obj.reset()
 
-    def _log_epoch_tracker(self):
-        """Log the tracker metric for the epoch."""
-        if not self.trainer.sanity_checking:
-            best_score, which_epoch = self.tracker.best_metric(return_step=True)
-            self.log(
-                f"val/{MODEL_SELECTION}",
-                self.tracker.compute(),
-                on_step=False,
-                on_epoch=True,
-                logger=True,
-                sync_dist=False,
-            )
-            self.log(
-                f"val/best_{MODEL_SELECTION}",
-                best_score,
-                on_step=False,
-                on_epoch=True,
-                logger=True,
-                sync_dist=False,
-            )
-            self.log(
-                f"val/best_{MODEL_SELECTION}_epoch",
-                which_epoch,
-                on_step=False,
-                on_epoch=True,
-                logger=True,
-                sync_dist=False,
-            )
-
     def on_train_epoch_end(self):
         """Log aggregated epoch metrics for training."""
         self._log_epoch_metrics(metrics=self.train_metrics)
@@ -398,7 +357,6 @@ class AlphaFold3AllAtom(ModelRunner):
     def on_validation_epoch_end(self):
         """Log aggregated epoch metrics for validation."""
         self._log_epoch_metrics(metrics=self.val_metrics)
-        self._log_epoch_tracker()
 
     def configure_optimizers(
         self,

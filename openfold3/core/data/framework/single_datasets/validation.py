@@ -71,9 +71,16 @@ class ValidationPDBDataset(BaseAF3Dataset):
         TO the dataset_cache in the getitem. Note that the validation set is not wrapped
         in a StochasticSamplerDataset.
         """
+        # Order by token count so that the run times are more consistent across GPUs
+        pdb_ids = list(self.dataset_cache.structure_data.keys())
+        pdb_ids = sorted(
+            pdb_ids,
+            key=lambda x: self.dataset_cache.structure_data[x].token_count,
+        )
+
         self.datapoint_cache = pd.DataFrame(
             {
-                "pdb_id": list(self.dataset_cache.structure_data.keys()),
+                "pdb_id": pdb_ids,
             }
         )
 

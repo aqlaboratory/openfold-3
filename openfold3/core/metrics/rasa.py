@@ -324,7 +324,11 @@ def compute_rasa_batch(
     # (N_batch, N_samples, N_atoms, 3)
     n_batch, n_samples = atom_positions_predicted.shape[:2]
 
-    unresolved_rasas = torch.zeros((n_batch, n_samples))
+    unresolved_rasas = torch.zeros(
+        (n_batch, n_samples),
+        device=atom_positions_predicted.device,
+        dtype=atom_positions_predicted.dtype,
+    )
     for k, atom_arr in enumerate(struct_arrays):
         atom_arr.set_annotation(
             "atom_resolved_mask", np.ones_like(atom_arr.occupancy, dtype=bool)
@@ -351,7 +355,4 @@ def compute_rasa_batch(
                 pdb_id=pdb_ids[k],
             )
 
-    unresolved_rasas = unresolved_rasas.to(
-        device=atom_positions_predicted.device, dtype=atom_positions_predicted.dtype
-    )
     return unresolved_rasas
