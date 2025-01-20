@@ -79,7 +79,10 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_release_date,
     get_resolution,
 )
-from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
+from openfold3.core.data.primitives.structure.tokenization import (
+    get_token_count,
+    tokenize_atom_array,
+)
 from openfold3.core.data.primitives.structure.unresolved import add_unresolved_atoms
 
 logger = logging.getLogger(__name__)
@@ -195,6 +198,7 @@ def extract_chain_and_interface_metadata_af3(
     metadata_dict["release_date"] = get_release_date(cif_data).strftime("%Y-%m-%d")
     metadata_dict["resolution"] = get_resolution(cif_data)
     metadata_dict["experimental_method"] = get_experimental_method(cif_data)
+    metadata_dict["token_count"] = get_token_count(atom_array)
 
     # NOTE: This could be reduced to only the critical information, currently some
     # chain IDs are put in for easier manual interpretability
