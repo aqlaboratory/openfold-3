@@ -11,6 +11,7 @@ CONFIDENCE_LOSSES = [
     "plddt_loss",
     "pde_loss",
     "experimentally_resolved_loss",
+    "pae_loss",
     "confidence_loss",
 ]
 
@@ -25,7 +26,6 @@ DISTOGRAM_LOSSES = [
     "distogram_loss",
     "scaled_distogram_loss",
 ]
-
 
 TRAIN_LOSSES = [
     *CONFIDENCE_LOSSES,
@@ -127,28 +127,18 @@ VAL_EXTRA_METRICS = [
     "plddt_complex",
 ]
 
-# TODO: Only log full complex correlation for now, update later.
-#  Possible hanging from some GPUs not having values for one of the
-#  molecule modalities. PearsonCorr torch metric does not handle nans
-#  or empty tensors internally.
-CORRELATION_METRICS = [
-    # "pearson_correlation_lddt_plddt_protein",
-    # "pearson_correlation_lddt_plddt_ligand",
-    # "pearson_correlation_lddt_plddt_dna",
-    # "pearson_correlation_lddt_plddt_rna",
-    "pearson_correlation_lddt_plddt_complex",
-]
-
-TRAIN_LOGGED_METRICS = [
-    *TRAIN_LOSSES,
-    *METRICS,
-]
-
 VAL_LOGGED_METRICS = [
-    *VAL_LOSSES,
     *METRICS,
     *VAL_EXTRA_METRICS,
     "model_selection",
+]
+
+CORRELATION_METRICS = [
+    "pearson_correlation_lddt_plddt_protein",
+    "pearson_correlation_lddt_plddt_ligand",
+    "pearson_correlation_lddt_plddt_dna",
+    "pearson_correlation_lddt_plddt_rna",
+    "pearson_correlation_lddt_plddt_complex",
 ]
 
 METRICS_MAXIMIZE = [

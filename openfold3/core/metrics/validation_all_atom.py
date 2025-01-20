@@ -8,7 +8,6 @@ from openfold3.core.metrics.rasa import compute_rasa_batch
 from openfold3.core.metrics.validation import gdt_ha, gdt_ts, rmsd
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.geometry.kabsch_alignment import kabsch_align
-from openfold3.projects.af3_all_atom.constants import METRICS, VAL_EXTRA_METRICS
 
 
 def lddt(
@@ -46,7 +45,7 @@ def lddt(
         inter_score: inter lddt scores [*]
 
     Note:
-        returns nan for inter_score if inter_lddt invalid
+        returns None for inter_score if inter_lddt invalid
         (ie. single chain, no atom pair within cutoff)
     """
     # create a mask
@@ -182,7 +181,7 @@ def drmsd(
         inter_drmsd: drmsd across chains
 
     Note:
-        returns nan if inter_drmsd is invalid (ie. single chain)
+        returns None if inter_drmsd is invalid (ie. single chain)
     """
     drmsd = pair_dist_pred_pos - pair_dist_gt_pos
     drmsd = drmsd**2
@@ -1178,19 +1177,6 @@ def get_metrics(
         )
         metrics = metrics | dna_validation_metrics
 
-    metrics.update(
-        {
-            metric_name: torch.full(
-                pred_coords.shape[:-2],
-                torch.nan,
-                device=pred_coords.device,
-                dtype=pred_coords.dtype,
-            )
-            for metric_name in METRICS
-            if metrics.get(metric_name) is None
-        }
-    )
-
     if compute_extra_val_metrics:
         if torch.any(intra_filter_atomized):
             full_complex_lddt_metrics = get_full_complex_lddt(
@@ -1237,17 +1223,8 @@ def get_metrics(
         # Compute RASA (Relative ASA) metric
         metrics["rasa"] = compute_rasa_batch(batch, outputs)
 
-        metrics.update(
-            {
-                metric_name: torch.full(
-                    pred_coords.shape[:-2],
-                    torch.nan,
-                    device=pred_coords.device,
-                    dtype=pred_coords.dtype,
-                )
-                for metric_name in VAL_EXTRA_METRICS
-                if metrics.get(metric_name) is None
-            }
-        )
+    valid_metrics = {
+        name: value for name, value in metrics.items() if value is not None
+    }
 
-    return metrics
+    return valid_metrics

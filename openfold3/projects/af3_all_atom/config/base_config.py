@@ -398,7 +398,6 @@ project_config = mlc.ConfigDict(
                             "no_bins": 64,
                             "bin_min": 0.0,
                             "bin_max": 32.0,
-                            "weight": 0.0,
                         },
                         "eps": eps,
                         "inf": inf,
