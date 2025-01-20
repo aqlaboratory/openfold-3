@@ -6,10 +6,10 @@ procedures of different models.
 import json
 import logging
 import multiprocessing as mp
+import time
 import traceback
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from time import time
 from typing import Literal
 
 import boto3
