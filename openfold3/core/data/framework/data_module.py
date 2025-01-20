@@ -27,6 +27,7 @@ and highlight where you currently are in the process:
 
 import dataclasses
 import enum
+import logging
 import random
 import warnings
 from pathlib import Path
@@ -54,7 +55,7 @@ from openfold3.core.data.framework.stochastic_sampler_dataset import (
 from openfold3.core.utils.tensor_utils import dict_multimap
 
 _NUMPY_AVAILABLE = RequirementCache("numpy")
-
+logger = logging.getLogger(__name__)
 
 @dataclasses.dataclass
 class MultiDatasetConfig:
@@ -147,9 +148,14 @@ class DataModule(pl.LightningDataModule):
         self.epoch_len = data_config.epoch_len
         self.num_epochs = data_config.num_epochs
 
-        # Parse datasets
-        multi_dataset_config = self.parse_data_config(data_config.datasets)
+        # TODO replace this with something that loads the state and gives it to the
+        # sampler dataset
+        self.last_used_dataset_indices = {"long-monomer-distillation": 0, "short-monomer-distillation": 0}
 
+        # Parse datasets
+        self.multi_dataset_config = self.parse_data_config(data_config.datasets)
+
+    def setup(self, stage=None):
         # Custom worker init function with manual data seed
         def worker_init_function_with_data_seed(
             worker_id: int, rank: Optional[int] = None
@@ -188,11 +194,11 @@ class DataModule(pl.LightningDataModule):
         self.worker_init_function_with_data_seed = worker_init_function_with_data_seed
 
         # Initialize datasets
-        if DatasetMode.train in multi_dataset_config.modes:
+        if DatasetMode.train in self.multi_dataset_config.modes:
             # Initialize train datasets
-            train_datasets = self.init_datasets(multi_dataset_config, DatasetMode.train)
-            multi_dataset_config_train = multi_dataset_config.get_subset(
-                [mode == DatasetMode.train for mode in multi_dataset_config.modes]
+            train_datasets = self.init_datasets(self.multi_dataset_config, DatasetMode.train)
+            multi_dataset_config_train = self.multi_dataset_config.get_subset(
+                [mode == DatasetMode.train for mode in self.multi_dataset_config.modes]
             )
             self.generator = torch.Generator(device="cpu").manual_seed(self.data_seed)
 
@@ -203,11 +209,12 @@ class DataModule(pl.LightningDataModule):
                 epoch_len=self.epoch_len,
                 num_epochs=self.num_epochs,
                 generator=self.generator,
+                last_used_dataset_indices=self.last_used_dataset_indices,
             )
 
-        if DatasetMode.validation in multi_dataset_config.modes:
-            multi_dataset_config_validation = multi_dataset_config.get_subset(
-                [mode == DatasetMode.validation for mode in multi_dataset_config.modes]
+        if DatasetMode.validation in self.multi_dataset_config.modes:
+            multi_dataset_config_validation = self.multi_dataset_config.get_subset(
+                [mode == DatasetMode.validation for mode in self.multi_dataset_config.modes]
             )
             self.validation_dataset = self.init_datasets(
                 multi_dataset_config_validation, DatasetMode.validation
@@ -216,22 +223,22 @@ class DataModule(pl.LightningDataModule):
         else:
             self.validation_dataset = []
 
-        if DatasetMode.test in multi_dataset_config.modes:
-            multi_dataset_config_test = multi_dataset_config.get_subset(
-                [mode == DatasetMode.test for mode in multi_dataset_config.modes]
+        if DatasetMode.test in self.multi_dataset_config.modes:
+            multi_dataset_config_test = self.multi_dataset_config.get_subset(
+                [mode == DatasetMode.test for mode in self.multi_dataset_config.modes]
             )
             self.test_dataset = self.init_datasets(
                 multi_dataset_config_test, DatasetMode.test
             )[0]
 
-        if DatasetMode.prediction in multi_dataset_config.modes:
-            multi_dataset_config_prediction = multi_dataset_config.get_subset(
-                [mode == DatasetMode.prediction for mode in multi_dataset_config.modes]
+        if DatasetMode.prediction in self.multi_dataset_config.modes:
+            multi_dataset_config_prediction = self.multi_dataset_config.get_subset(
+                [mode == DatasetMode.prediction for mode in self.multi_dataset_config.modes]
             )
             self.prediction_dataset = self.init_datasets(
                 multi_dataset_config_prediction, DatasetMode.prediction
             )[0]
-
+    
     def parse_data_config(self, data_configs: list[ConfigDict]) -> MultiDatasetConfig:
         """Parses input data_config into separate lists.
 
@@ -492,6 +499,13 @@ class DataModule(pl.LightningDataModule):
             DataLoader: prediction dataloader.
         """
         return self.generate_dataloader(DatasetMode.prediction)
+    
+    def state_dict(self):
+        state = {"last_used_dataset_indices": self.last_used_dataset_indices}
+        return state
+    
+    def load_state_dict(self, state_dict: dict[str, Any]):
+        self.last_used_dataset_indices = state_dict["last_used_dataset_indices"]
 
 
 # TODO: Remove debug logic

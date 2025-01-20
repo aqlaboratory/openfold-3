@@ -50,6 +50,7 @@ class SamplerDataset(Dataset):
         epoch_len: int,
         num_epochs: int,
         generator: torch.Generator,
+        last_used_dataset_indices: dict[str, Any],
     ) -> None:
         """Initializes the SamplerDataset class.
 
@@ -64,6 +65,8 @@ class SamplerDataset(Dataset):
                 Total number of virtual epochs. Used for calculating coverage.
             generator (torch.Generator):
                 torch.Generator instance for reproducibility.
+            last_used_dataset_indices:
+                Record of last used indices for datasets that use in-order sampling
         """
         super().__init__()
 
@@ -72,9 +75,8 @@ class SamplerDataset(Dataset):
         self.epoch_len = epoch_len
         self.num_epochs = num_epochs
         self.generator = generator
-        # TODO put this in a dictionary somewhere
-        self.current_monomer_idx = 0
-        self.resample_epoch()
+        self.last_used_dataset_indices = last_used_dataset_indices 
+        self.indices = None
 
     def __len__(self):
         return self.epoch_len
@@ -86,6 +88,10 @@ class SamplerDataset(Dataset):
             index (int):
                 Index of the example to retrieve, passed from the DataLoader.
         """
+        if not self.indices:
+            logger.warning(f"Resampling epoch in getitem(), {self.last_used_dataset_indices=}")
+            self.resample_epoch()
+        
         # Get the dataset-datapoint pair for the given index
         dataset_idx, datapoint_idx = self.indices[index]
 
@@ -125,7 +131,7 @@ class SamplerDataset(Dataset):
                 "datasets with nonuniform probabilities"
             )
 
-        start_idx = self.current_monomer_idx
+        start_idx = self.last_used_dataset_indices[dataset.name]
         end_idx = start_idx + num_examples
 
         slice_indices = torch.arange(start_idx, min(end_idx, len(dataset)))
@@ -133,13 +139,14 @@ class SamplerDataset(Dataset):
         if end_idx > len(dataset):
             end_idx = end_idx - len(dataset)
             logger.warning(
-                f"Reached the end of the dataset for dataset_name,"
+                f"Reached the end of the dataset {dataset.name},"
                 f"missing {end_idx} examples,"
                 "Sampling will loop back from beginning of dataset."
             )
             slice_indices = torch.concat((slice_indices, torch.arange(0, end_idx)))
 
-        self.current_monomer_idx = end_idx
+        self.last_used_dataset_indices[dataset.name] = end_idx
+        logging.warning(f"{dataset.name=} {slice_indices=}")
 
         return slice_indices
 
@@ -172,9 +179,9 @@ class SamplerDataset(Dataset):
                 device=self.generator.device
             ).manual_seed(generator_seed)
 
-            if dataset.name in ["long-monomer-distillation"]:
+            if dataset.name in self.last_used_dataset_indices:
                 datapoint_indices_i = self.get_ordered_subset(
-                    dataset, num_datapoints_per_dataset
+                    dataset, num_datapoints_per_dataset 
                 )
             else:
                 datapoint_indices_i = self.get_random_subset(
@@ -187,6 +194,8 @@ class SamplerDataset(Dataset):
             )
 
         self.indices = torch.stack((dataset_indices, datapoint_indices), dim=1).tolist()
+        # TODO Remove return of indices -- only used for debugging
+        return self.indices
 
     def calculate_coverage(self):
         """Calculate dataset coverage - low priority functionality."""
