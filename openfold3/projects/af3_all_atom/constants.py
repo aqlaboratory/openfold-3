@@ -3,10 +3,15 @@ Constants specific to AF3 project. This currently only contains losses and
 metrics for logging.
 """
 
+###################################
+# Losses
+###################################
+
 CONFIDENCE_LOSSES = [
     "plddt_loss",
     "pde_loss",
     "experimentally_resolved_loss",
+    "pae_loss",
     "confidence_loss",
 ]
 
@@ -22,7 +27,6 @@ DISTOGRAM_LOSSES = [
     "scaled_distogram_loss",
 ]
 
-
 TRAIN_LOSSES = [
     *CONFIDENCE_LOSSES,
     *DIFFUSION_LOSSES,
@@ -36,15 +40,19 @@ VAL_LOSSES = [
     "loss",
 ]
 
-METRICS = [
-    # Protein metrics
+###################################
+# Metrics
+###################################
+
+PROTEIN_METRICS = [
     "lddt_intra_protein",
     "lddt_inter_protein_protein",
     "drmsd_intra_protein",
     "clash_intra_protein",
     "clash_inter_protein_protein",
-    "plddt_protein",
-    # Ligand metrics
+]
+
+LIGAND_METRICS = [
     "lddt_intra_ligand",
     "lddt_inter_ligand_ligand",
     "lddt_intra_ligand_uha",
@@ -54,8 +62,9 @@ METRICS = [
     "clash_intra_ligand",
     "clash_inter_ligand_ligand",
     "clash_inter_protein_ligand",
-    "plddt_ligand",
-    # DNA metrics
+]
+
+DNA_METRICS = [
     "lddt_intra_dna",
     "lddt_inter_dna_dna",
     "drmsd_intra_dna",
@@ -66,8 +75,9 @@ METRICS = [
     "clash_intra_dna",
     "clash_inter_dna_dna",
     "clash_inter_protein_dna",
-    "plddt_dna",
-    # RNA metrics
+]
+
+RNA_METRICS = [
     "lddt_intra_rna",
     "lddt_inter_rna_rna",
     "drmsd_intra_rna",
@@ -78,17 +88,68 @@ METRICS = [
     "clash_intra_rna",
     "clash_inter_rna_rna",
     "clash_inter_protein_rna",
-    "plddt_rna",
-    # Complex metrics
-    "lddt_complex",
-    "plddt_complex",
 ]
 
+METRICS = [
+    *PROTEIN_METRICS,
+    *LIGAND_METRICS,
+    *DNA_METRICS,
+    *RNA_METRICS,
+]
+
+###################################
+# Model Selection
+# pLDDT/LDDT Correlation Metrics
+# Superimposition Metrics
+###################################
+
 SUPERIMPOSE_METRICS = [
-    "superimpose_rmsd",
+    "rmsd",
     "gdt_ts",
     "gdt_ha",
 ]
 
-TRAIN_LOGGED_METRICS = TRAIN_LOSSES + METRICS
-VAL_LOGGED_METRICS = VAL_LOSSES + METRICS + SUPERIMPOSE_METRICS
+VAL_EXTRA_METRICS = [
+    *SUPERIMPOSE_METRICS,
+    # RASA for model selection
+    "rasa",
+    # LDDT metrics for model selection
+    "lddt_inter_ligand_dna",
+    "lddt_inter_ligand_rna",
+    "lddt_intra_modified_residues",
+    # Complex metrics
+    "lddt_intra_complex",
+    # pLDDT metrics
+    "plddt_protein",
+    "plddt_ligand",
+    "plddt_dna",
+    "plddt_rna",
+    "plddt_complex",
+]
+
+VAL_LOGGED_METRICS = [
+    *METRICS,
+    *VAL_EXTRA_METRICS,
+    "model_selection",
+]
+
+CORRELATION_METRICS = [
+    "pearson_correlation_lddt_plddt_protein",
+    "pearson_correlation_lddt_plddt_ligand",
+    "pearson_correlation_lddt_plddt_dna",
+    "pearson_correlation_lddt_plddt_rna",
+    "pearson_correlation_lddt_plddt_complex",
+]
+
+METRICS_MAXIMIZE = [
+    "gdt",
+    "lddt",
+    "plddt",
+    "rasa",
+]
+
+METRICS_MINIMIZE = [
+    "clash",
+    "drmsd",
+    "rmsd",
+]
