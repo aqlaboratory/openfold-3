@@ -164,6 +164,24 @@ def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
     return atom_array
 
 
+def get_polymer_mask(atom_array):
+    """Returns a mask of all standard polymer atoms in the AtomArray.
+
+    Polymers here are defined as proteins and nucleic acids (no carbohydrates).
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to get the polymer mask for.
+
+    Returns:
+        Mask for all polymer atoms.
+    """
+    prot_mask = struc.filter_polymer(atom_array, pol_type="peptide")
+    nuc_mask = struc.filter_polymer(atom_array, pol_type="nucleotide")
+
+    return prot_mask | nuc_mask
+
+
 @return_on_empty_atom_array
 def remove_small_polymers(atom_array: AtomArray, max_residues: int = 3) -> AtomArray:
     """Removes small polymer chains from the AtomArray
@@ -180,9 +198,7 @@ def remove_small_polymers(atom_array: AtomArray, max_residues: int = 3) -> AtomA
     Returns:
         AtomArray with all polymer chains with up to max_residues residues removed.
     """
-    prot_mask = struc.filter_polymer(atom_array, pol_type="peptide")
-    nuc_mask = struc.filter_polymer(atom_array, pol_type="nucleotide")
-    polymer_mask = prot_mask | nuc_mask
+    polymer_mask = get_polymer_mask(atom_array)
 
     resolved_mask = atom_array.occupancy > 0.0
 
@@ -217,15 +233,11 @@ def remove_fully_unknown_polymers(atom_array: AtomArray) -> AtomArray:
         AtomArray with all polymer chains containing only unknown residues removed.
     """
     # Masks for standard polymers
-    proteins = struc.filter_polymer(atom_array, pol_type="peptide")
-    nucleic_acids = struc.filter_polymer(atom_array, pol_type="nucleotide")
-
-    # Combine to get mask for all polymers
-    polymers = proteins | nucleic_acids
+    polymer_mask = get_polymer_mask(atom_array)
 
     atom_array_filtered = atom_array
 
-    for chain in struc.chain_iter(atom_array[polymers]):
+    for chain in struc.chain_iter(atom_array[polymer_mask]):
         # Explicit single-element unpacking (will fail if >1 chain_id)
         (chain_id,) = np.unique(chain.chain_id)
 

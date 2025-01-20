@@ -5,7 +5,7 @@ import pickle
 from pathlib import Path
 from typing import Literal, NamedTuple
 
-from biotite.structure import AtomArray
+from biotite.structure import AtomArray, get_chain_count
 from biotite.structure.io import pdbx
 
 from openfold3.core.data.io.structure.atom_array import (
@@ -15,6 +15,7 @@ from openfold3.core.data.io.structure.atom_array import (
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
+from openfold3.core.data.primitives.structure.cleanup import get_polymer_mask
 from openfold3.core.data.primitives.structure.labels import (
     assign_entity_ids,
     assign_molecule_type_ids,
@@ -25,6 +26,7 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_cif_block,
     get_first_bioassembly_polymer_count,
 )
+from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
 
@@ -125,14 +127,12 @@ def parse_mmcif(
     cif_file = _load_ciffile(file_path)
     cif_data = get_cif_block(cif_file)
 
+    # Try predetermining if the structure has too many chains
     if max_polymer_chains is not None:
-        # Polymers in first bioassembly
         n_polymers = get_first_bioassembly_polymer_count(cif_data)
 
         if n_polymers > max_polymer_chains:
             return SkippedStructure(cif_file, f"Too many polymer chains: {n_polymers}")
-
-    cif_data = get_cif_block(cif_file)
 
     # Always include these fields
     label_fields = [
@@ -179,6 +179,13 @@ def parse_mmcif(
         atom_array = pdbx.get_structure(
             **parser_args,
         )
+
+    # Check again if the structure has too many chains
+    if max_polymer_chains is not None:
+        n_polymers = get_chain_count(atom_array[get_polymer_mask(atom_array)])
+
+        if n_polymers > max_polymer_chains:
+            return SkippedStructure(cif_file, f"Too many polymer chains: {n_polymers}")
 
     # Skip structures where all atoms have zero occupancy
     if skip_all_zero_occ and atom_array.occupancy.sum() == 0:
