@@ -57,6 +57,7 @@ from openfold3.core.utils.tensor_utils import dict_multimap
 _NUMPY_AVAILABLE = RequirementCache("numpy")
 logger = logging.getLogger(__name__)
 
+
 class DatasetMode(enum.Enum):
     """Enum for dataset modes."""
 
@@ -64,6 +65,7 @@ class DatasetMode(enum.Enum):
     validation = enum.auto()
     test = enum.auto()
     prediction = enum.auto()
+
 
 @dataclasses.dataclass
 class MultiDatasetConfig:
@@ -110,8 +112,8 @@ class MultiDatasetConfig:
             configs=apply_bool(self.configs, index),
             weights=apply_bool(self.weights, index),
         )
-    
-    def get_config_for_mode(self, mode: DatasetMode)-> "MultiDatasetConfig":
+
+    def get_config_for_mode(self, mode: DatasetMode) -> "MultiDatasetConfig":
         datasets_stage_mask = [m == mode for m in self.modes]
         return self.get_subset(datasets_stage_mask)
 
@@ -153,10 +155,18 @@ class DataModule(pl.LightningDataModule):
 
         # TODO replace this with something that loads the state and gives it to the
         # sampler dataset
-        self.last_used_dataset_indices = {"long-monomer-distillation": 0, "short-monomer-distillation": 0}
+        # self.last_used_dataset_indices = {"long-monomer-distillation": 0, "short-monomer-distillation": 0}
 
         # Parse datasets
         self.multi_dataset_config = self.parse_data_config(data_config.datasets)
+        self._initialize_last_used_dataset_indices()
+
+    def _initialize_last_used_dataset_indices(self):
+        train_configs = self.multi_dataset_config.get_config_for_mode(DatasetMode.train)
+        self.last_used_dataset_indices = dict()
+        for cfg in train_configs.configs:
+            if cfg.custom.sample_in_order:
+                self.last_used_dataset_indices[cfg.name] = 0
 
     def setup(self, stage=None):
         # Custom worker init function with manual data seed
@@ -199,7 +209,9 @@ class DataModule(pl.LightningDataModule):
         self.datasets_by_mode = {k: [] for k in DatasetMode}
         # Initialize datasets
         if DatasetMode.train in self.multi_dataset_config.modes:
-            multi_dataset_config_train = self.multi_dataset_config.get_config_for_mode(DatasetMode.train)
+            multi_dataset_config_train = self.multi_dataset_config.get_config_for_mode(
+                DatasetMode.train
+            )
             # Initialize train datasets
             all_train_datasets = self.init_datasets(multi_dataset_config_train)
             self.generator = torch.Generator(device="cpu").manual_seed(self.data_seed)
@@ -214,9 +226,15 @@ class DataModule(pl.LightningDataModule):
                 last_used_dataset_indices=self.last_used_dataset_indices,
             )
             self.datasets_by_mode[DatasetMode.train] = train_dataset
-        
-        for dataset_mode in [DatasetMode.validation, DatasetMode.test, DatasetMode.prediction]:
-            multi_dataset_config_mode = self.multi_dataset_config.get_config_for_mode(dataset_mode)
+
+        for dataset_mode in [
+            DatasetMode.validation,
+            DatasetMode.test,
+            DatasetMode.prediction,
+        ]:
+            multi_dataset_config_mode = self.multi_dataset_config.get_config_for_mode(
+                dataset_mode
+            )
             mode_datasets = self.init_datasets(multi_dataset_config_mode)
 
             if len(mode_datasets) > 1:
@@ -227,8 +245,10 @@ class DataModule(pl.LightningDataModule):
                     stacklevel=2,
                 )
 
-            self.datasets_by_mode[dataset_mode] = mode_datasets[0] if mode_datasets else []
-    
+            self.datasets_by_mode[dataset_mode] = (
+                mode_datasets[0] if mode_datasets else []
+            )
+
     def parse_data_config(self, data_configs: list[ConfigDict]) -> MultiDatasetConfig:
         """Parses input data_config into separate lists.
 
@@ -444,12 +464,20 @@ class DataModule(pl.LightningDataModule):
             DataLoader: prediction dataloader.
         """
         return self.generate_dataloader(DatasetMode.prediction)
-    
+
     def state_dict(self):
         state = {"last_used_dataset_indices": self.last_used_dataset_indices}
         return state
-    
+
     def load_state_dict(self, state_dict: dict[str, Any]):
+        loaded_index_keys = state_dict["last_used_dataset_indices"].keys()
+        current_index_keys = self.last_used_dataset_indices.keys()
+        if set(loaded_index_keys) != set(current_index_keys):
+            raise ValueError(
+                "Datasets selected for in-order sampling do not match in"
+                "current configuration and checkpoint."
+                f"Current {current_index_keys} Checkpoint {loaded_index_keys}"
+            )
         self.last_used_dataset_indices = state_dict["last_used_dataset_indices"]
 
 
