@@ -149,31 +149,41 @@ class PairformerEmbedding(nn.Module):
         single_mask = single_mask.expand(*(zij.shape[:-3] + single_mask.shape[-1:]))
         pair_mask = pair_mask.expand(*(zij.shape[:-3] + pair_mask.shape[-2:]))
 
-        # TODO: Make this less awkward, DS kernel has strict shape asserts
-        #  and expects batch and seq dims to exist, but no sample dim
-        batch_dims = si.shape[:-2]
-        if use_deepspeed_evo_attention:
-            si = si.reshape(-1, *si.shape[-2:])
-            zij = zij.reshape(-1, *zij.shape[-3:])
-            single_mask = single_mask.reshape(-1, single_mask.shape[-1])
-            pair_mask = pair_mask.reshape(-1, *pair_mask.shape[-2:])
+        # # TODO: Make this less awkward, DS kernel has strict shape asserts
+        # #  and expects batch and seq dims to exist, but no sample dim
+        # batch_dims = si.shape[:-2]
+        # if use_deepspeed_evo_attention:
+        #     si = si.reshape(-1, *si.shape[-2:])
+        #     zij = zij.reshape(-1, *zij.shape[-3:])
+        #     single_mask = single_mask.reshape(-1, single_mask.shape[-1])
+        #     pair_mask = pair_mask.reshape(-1, *pair_mask.shape[-2:])
 
-        # PairFormer embedding
-        si, zij = self.pairformer_stack(
-            si,
-            zij,
-            single_mask,
-            pair_mask,
-            chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_lma=use_lma,
-            inplace_safe=inplace_safe,
-            _mask_trans=_mask_trans,
-        )
+        si_chunks = []
+        zij_chunks = []
+        no_samples = zij.shape[1]
+        for i in range(no_samples):
+            # PairFormer embedding
+            si_chunk, zij_chunk = self.pairformer_stack(
+                si[:, i],
+                zij[:, i],
+                single_mask[:, i],
+                pair_mask[:, i],
+                chunk_size=chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                _mask_trans=_mask_trans,
+            )
 
-        if use_deepspeed_evo_attention:
-            si = si.reshape(*batch_dims, *si.shape[-2:])
-            zij = zij.reshape(*batch_dims, *zij.shape[-3:])
+            si_chunks.append(si_chunk)
+            zij_chunks.append(zij_chunk)
+
+        si = torch.stack(si_chunks, dim=1)
+        zij = torch.stack(zij_chunks, dim=1)
+
+        # if use_deepspeed_evo_attention:
+        #     si = si.reshape(*batch_dims, *si.shape[-2:])
+        #     zij = zij.reshape(*batch_dims, *zij.shape[-3:])
 
         return si, zij
 
