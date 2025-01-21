@@ -38,6 +38,37 @@ chunk_size = mlc.FieldReference(None, field_type=int)
 tune_chunk_size = mlc.FieldReference(True, field_type=bool)
 max_atoms_per_token = mlc.FieldReference(23, field_type=int)
 
+model_selection_metric_weights_config = mlc.FrozenConfigDict(
+    {
+        "initial_training": {
+            "lddt_intra_modified_residues": 10.0,
+            "lddt_inter_ligand_rna": 5.0,
+            "lddt_inter_ligand_dna": 5.0,
+            "lddt_intra_protein": 20.0,
+            "lddt_intra_ligand": 20.0,
+            "lddt_intra_dna": 4.0,
+            "lddt_intra_rna": 16.0,
+            "lddt_inter_protein_protein": 20.0,
+            "lddt_inter_protein_ligand": 10.0,
+            "lddt_inter_protein_dna": 10.0,
+            "lddt_inter_protein_rna": 10.0,
+            "rasa": 10.0,
+        },
+        "fine_tuning": {
+            "lddt_inter_ligand_rna": 2.0,
+            "lddt_inter_ligand_dna": 5.0,
+            "lddt_intra_protein": 20.0,
+            "lddt_intra_ligand": 20.0,
+            "lddt_intra_dna": 4.0,
+            "lddt_intra_rna": 16.0,
+            "lddt_inter_protein_protein": 20.0,
+            "lddt_inter_protein_ligand": 10.0,
+            "lddt_inter_protein_dna": 10.0,
+            "lddt_inter_protein_rna": 2.0,
+            "rasa": 10.0,
+        },
+    }
+)
 
 project_config = mlc.ConfigDict(
     {
@@ -63,6 +94,7 @@ project_config = mlc.ConfigDict(
                 },
                 "ema": {"decay": 0.999},
                 "gradient_clipping": 10.0,
+                "model_selection_weight_scheme": "initial_training",
             },
             "architecture": {
                 "shared": {
@@ -366,7 +398,6 @@ project_config = mlc.ConfigDict(
                             "no_bins": 64,
                             "bin_min": 0.0,
                             "bin_max": 32.0,
-                            "weight": 0.0,
                         },
                         "eps": eps,
                         "inf": inf,

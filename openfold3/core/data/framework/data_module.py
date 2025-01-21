@@ -245,7 +245,8 @@ class DataModule(pl.LightningDataModule):
                 mode_datasets[0] if mode_datasets else []
             )
 
-    def parse_data_config(self, data_configs: list[ConfigDict]) -> MultiDatasetConfig:
+    @classmethod
+    def parse_data_config(cls, data_config: list[ConfigDict]) -> MultiDatasetConfig:
         """Parses input data_config into separate lists.
 
         Args:
@@ -291,7 +292,7 @@ class DataModule(pl.LightningDataModule):
                 raise ValueError(f"Could not cast {key} to {cast_type}.") from exc
 
         classes, modes, configs, weights = [], [], [], []
-        for dataset_entry in data_configs:
+        for dataset_entry in data_config:
             classes.append(get_cast(dataset_entry, "class", str))
             modes.append(DatasetMode[get_cast(dataset_entry, "mode", str)])
             weights.append(get_cast(dataset_entry, "weight", float))
@@ -308,7 +309,7 @@ class DataModule(pl.LightningDataModule):
         )
 
         # Check dataset configuration
-        self.run_checks(multi_dataset_config)
+        cls.run_checks(multi_dataset_config)
 
         return multi_dataset_config
 
@@ -504,6 +505,6 @@ def openfold_batch_collator(samples: list[dict[str, torch.Tensor]]):
     # Add the ref_space_uid_to_perm back to the samples
     samples["ref_space_uid_to_perm"] = ref_space_uid_to_perm_dicts
 
-    samples["pdb_id"] = ", ".join(pdb_ids)
+    samples["pdb_id"] = pdb_ids
 
     return samples

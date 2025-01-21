@@ -77,6 +77,7 @@ class ProteinMonomerDataset(BaseAF3Dataset):
                 pdb_id=datapoint["pdb_id"],
                 preferred_chain_or_interface=None,
                 return_atom_arrays=False,
+                return_crop_strategy=False,
             )
 
             features = sample_data["features"]
@@ -93,6 +94,7 @@ class ProteinMonomerDataset(BaseAF3Dataset):
                     pdb_id=datapoint["pdb_id"],
                     preferred_chain_or_interface=None,
                     return_atom_arrays=False,
+                    return_crop_strategy=False,
                 )
 
                 features = sample_data["features"]

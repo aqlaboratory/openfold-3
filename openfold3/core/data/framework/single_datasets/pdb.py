@@ -240,7 +240,12 @@ class DatapointCollection:
         )
 
         return self.metadata[
-            ["pdb_id", "preferred_chain_or_interface", "datapoint_probabilities"]
+            [
+                "pdb_id",
+                "preferred_chain_or_interface",
+                "datapoint_probabilities",
+                "n_clust",
+            ]
         ]
 
 
@@ -325,6 +330,7 @@ class WeightedPDBDataset(BaseAF3Dataset):
                 pdb_id=pdb_id,
                 preferred_chain_or_interface=preferred_chain_or_interface,
                 return_atom_arrays=False,
+                return_crop_strategy=False,
             )
             features = sample_data["features"]
             features["pdb_id"] = pdb_id
@@ -340,6 +346,7 @@ class WeightedPDBDataset(BaseAF3Dataset):
                     pdb_id=pdb_id,
                     preferred_chain_or_interface=preferred_chain_or_interface,
                     return_atom_arrays=False,
+                    return_crop_strategy=False,
                 )
 
                 features = sample_data["features"]

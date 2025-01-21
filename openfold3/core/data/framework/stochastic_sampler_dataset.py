@@ -97,6 +97,9 @@ class SamplerDataset(Dataset):
         # Get the dataset-datapoint pair for the given index
         dataset_idx, datapoint_idx = self.indices[index]
 
+        # Set datapoint index in sampled dataset - used for logging in the treadmill
+        self.datasets[dataset_idx].set_current_datapoint_index(index)
+
         # Index into the list of datasets then datapoints for the given dataset
         # This calls the __getitem__ method of the SingleDataset class
         return self.datasets[dataset_idx][datapoint_idx]
@@ -198,6 +201,23 @@ class SamplerDataset(Dataset):
         self.indices = torch.stack((dataset_indices, datapoint_indices), dim=1).tolist()
         # TODO Remove return of indices -- only used for debugging
         return self.indices
+
+    def get_worker_path(self, subdirs: list[str] | None, fname: str) -> str:
+        """Returns the path to the worker output directory or file.
+
+        Note: Treadmill logging utility. This function only works if individual datasets
+        passed to the StochasticSamplerDataset were wrapped with the LoggingMixin.
+
+        Args:
+            subdirs (list[str] | None):
+                List of subdirectories to append to the path.
+            fname (str):
+                Filename to append to the path.
+        """
+        # Get the dataset-specific path
+        dataset_path = self.datasets[0].get_worker_path(subdirs=subdirs, fname=fname)
+
+        return dataset_path
 
     def calculate_coverage(self):
         """Calculate dataset coverage - low priority functionality."""

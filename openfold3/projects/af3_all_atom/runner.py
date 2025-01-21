@@ -1,11 +1,10 @@
 import importlib
 import itertools
 import logging
-import traceback
 from pathlib import Path
 
 import torch
-from torchmetrics import MeanMetric, MetricCollection
+from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.metrics.confidence import (
@@ -14,21 +13,27 @@ from openfold3.core.metrics.confidence import (
     compute_predicted_distance_error,
     compute_weighted_ptm,
 )
+from openfold3.core.metrics.model_selection import compute_model_selection_metric
 from openfold3.core.metrics.validation_all_atom import (
-    get_validation_metrics,
+    get_metrics,
 )
 from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.atomize_utils import get_token_frame_atoms
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.projects.af3_all_atom.config.base_config import project_config
+from openfold3.projects.af3_all_atom.config.base_config import (
+    model_selection_metric_weights_config,
+    project_config,
+)
 from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
     AF3DatasetConfigBuilder,
 )
 from openfold3.projects.af3_all_atom.constants import (
+    CORRELATION_METRICS,
     METRICS,
     TRAIN_LOSSES,
     VAL_LOGGED_METRICS,
+    VAL_LOSSES,
 )
 from openfold3.projects.af3_all_atom.model import AlphaFold3
 from openfold3.projects.registry import register_project
@@ -55,38 +60,78 @@ class AlphaFold3AllAtom(ModelRunner):
             else AlphaFold3Loss(config=model_config.architecture.loss_module)
         )
 
+        self.model_selection_weights = model_selection_metric_weights_config[
+            self.config.settings.model_selection_weight_scheme
+        ]
+
+        self._setup_train_metrics()
+        self._setup_val_metrics()
+        self._init_metric_enabled_tracker()
+
+    def _setup_train_metrics(self):
+        """Set up training loss and metric collection objects."""
+
         # TODO: Forcing naming convention to be compatible with older runs
         #  Make consistent later
         # Initialize all training epoch metric objects
-        train_metrics = {
-            f"{loss_name}_epoch": MeanMetric(nan_strategy="ignore")
-            for loss_name in TRAIN_LOSSES
+        train_losses = {
+            loss_name: MeanMetric(nan_strategy="ignore") for loss_name in TRAIN_LOSSES
         }
-        train_metrics.update(
-            {metric_name: MeanMetric(nan_strategy="ignore") for metric_name in METRICS}
+        self.train_losses = MetricCollection(
+            train_losses, prefix="train/", postfix="_epoch"
         )
+
+        train_metrics = {
+            metric_name: MeanMetric(nan_strategy="ignore") for metric_name in METRICS
+        }
+
         self.train_metrics = MetricCollection(train_metrics, prefix="train/")
 
-        # Initialize all validation epoch metric objects
-        self.val_metrics = MetricCollection(
-            {
-                metric_name: MeanMetric(nan_strategy="ignore")
-                for metric_name in VAL_LOGGED_METRICS
-            },
-            prefix="val/",
-        )
+    def _setup_val_metrics(self):
+        """Set up validation loss and metric collection objects."""
 
-        # Not all metrics will be calculated for each stage of training or between
-        # training and validation. Keep track of which metrics are enabled.
+        # Initialize all validation epoch metric objects
+        val_losses = {
+            loss_name: MeanMetric(nan_strategy="ignore") for loss_name in VAL_LOSSES
+        }
+        self.val_losses = MetricCollection(val_losses, prefix="val/")
+
+        val_metrics = {
+            metric_name: MeanMetric(nan_strategy="ignore")
+            for metric_name in VAL_LOGGED_METRICS
+        }
+        val_metrics.update(
+            {
+                metric_name: PearsonCorrCoef(num_outputs=1)
+                for metric_name in CORRELATION_METRICS
+            }
+        )
+        self.val_metrics = MetricCollection(val_metrics, prefix="val/")
+
+    def _init_metric_enabled_tracker(self):
+        """
+        Initialize map of enabled losses and metrics for logging. Losses default to
+        False because not all losses will be calculated for each stage of training.
+        The appropriate losses will be enabled after the first pass through the model.
+        """
+        loss_log_names = itertools.chain(
+            self.train_losses.keys(), self.val_losses.keys()
+        )
         metric_log_names = itertools.chain(
             self.train_metrics.keys(), self.val_metrics.keys()
         )
-        self.metric_enabled = {metric_name: True for metric_name in metric_log_names}
+        metric_enabled = {loss_name: False for loss_name in loss_log_names}
+        metric_enabled.update({metric_name: True for metric_name in metric_log_names})
+        self.metric_enabled = metric_enabled
 
     def _update_epoch_metric(
-        self, phase: str, metric_log_name: str, metric_value: torch.Tensor
+        self,
+        phase: str,
+        metric_log_name: str,
+        metric_value: [torch.Tensor, tuple],
+        metric_collection: MetricCollection,
     ):
-        """
+        """Update metrics for the epoch logging.
 
         Args:
             phase:
@@ -95,38 +140,86 @@ class AlphaFold3AllAtom(ModelRunner):
                 Name of the metric in the log, including prefix or postfix
             metric_value:
                 Value of the metric to update
+            metric_collection:
+                MetricCollection object containing the metric to update
         """
         if metric_log_name not in self.metric_enabled:
             raise ValueError(
                 f"Metric {metric_log_name} is not being tracked and will "
                 f"not appear in epoch metrics. Please add it to "
-                f"the {phase.upper()}_LOGGED_METRICS constant."
+                f"the {phase.upper()}_LOSSES or METRICS constants."
             )
 
         if not self.metric_enabled[metric_log_name]:
             self.metric_enabled[metric_log_name] = True
 
-        metrics = self.train_metrics if phase == "train" else self.val_metrics
-        metric_obj = metrics[metric_log_name]
-        metric_obj.update(metric_value)
+        metric_obj = metric_collection[metric_log_name]
+
+        metric_value = (
+            (metric_value,) if type(metric_value) is not tuple else metric_value
+        )
+        metric_obj.update(*metric_value)
+
+    def _get_metrics(self, batch, outputs, train=True) -> dict:
+        with torch.no_grad():
+            if train:
+                return get_metrics(
+                    batch,
+                    outputs,
+                    compute_extra_val_metrics=False,
+                )
+
+            # TODO: Model selection - consider replacing this call directly with
+            #  model selection call so that we have aggregated statistics of
+            #  all the diffusion samples
+            metrics_per_sample = get_metrics(
+                batch,
+                outputs,
+                compute_extra_val_metrics=True,
+            )
+
+            metrics = compute_model_selection_metric(
+                outputs=outputs,
+                metrics=metrics_per_sample,
+                weights=self.model_selection_weights,
+            )
+
+            for metric_name in CORRELATION_METRICS:
+                molecule_type = metric_name.split("_")[-1]
+                plddt_key = f"plddt_{molecule_type}"
+                lddt_key = f"lddt_intra_{molecule_type}"
+
+                plddt = metrics.get(plddt_key)
+                lddt = metrics.get(lddt_key)
+
+                if plddt is not None and lddt is not None:
+                    metrics[metric_name] = (lddt, plddt)
+
+            return metrics
 
     def _log(self, loss_breakdown, batch, outputs, train=True):
         phase = "train" if train else "val"
 
+        metrics = self._get_metrics(batch, outputs, train=train)
+
+        loss_collection = self.train_losses if phase == "train" else self.val_losses
         for loss_name, indiv_loss in loss_breakdown.items():
-            metric_name = f"{phase}/{loss_name}"
-            metric_epoch_name = f"{metric_name}_epoch" if train else metric_name
+            metric_log_name = f"{phase}/{loss_name}"
+            metric_epoch_name = f"{metric_log_name}_epoch" if train else metric_log_name
 
             # Update mean metrics for epoch logging
             self._update_epoch_metric(
-                phase=phase, metric_log_name=metric_epoch_name, metric_value=indiv_loss
+                phase=phase,
+                metric_log_name=metric_epoch_name,
+                metric_value=indiv_loss,
+                metric_collection=loss_collection,
             )
 
             # Only log steps for training
             # Ignore nan losses, where the loss was not applicable for the sample
             if train and not torch.isnan(indiv_loss):
                 self.log(
-                    metric_name,
+                    metric_log_name,
                     indiv_loss,
                     on_step=True,
                     on_epoch=False,
@@ -134,27 +227,25 @@ class AlphaFold3AllAtom(ModelRunner):
                     sync_dist=False,
                 )
 
-        with torch.no_grad():
-            other_metrics = self._compute_validation_metrics(
-                batch, outputs, superimposition_metrics=(not train)
-            )
-
-        for k, v in other_metrics.items():
-            mean_metric = torch.mean(v)
-            metric_name = f"{phase}/{k}"
+        metric_collection = self.train_metrics if phase == "train" else self.val_metrics
+        for metric_name, metric_value in metrics.items():
+            metric_log_name = f"{phase}/{metric_name}"
 
             # Update mean metrics for epoch logging
             self._update_epoch_metric(
-                phase=phase, metric_log_name=metric_name, metric_value=mean_metric
+                phase=phase,
+                metric_log_name=metric_log_name,
+                metric_value=metric_value,
+                metric_collection=metric_collection,
             )
 
             # TODO: Maybe remove this extra logging
             # Only log steps for training
             # Ignore nan metric, where the metric was not applicable for the sample
-            if train and not torch.isnan(mean_metric):
+            if train and not torch.isnan(metric_value).any():
                 self.log(
-                    f"{metric_name}_step",
-                    mean_metric,
+                    f"{metric_log_name}_step",
+                    metric_value,
                     on_step=True,
                     on_epoch=False,
                     logger=True,
@@ -169,8 +260,8 @@ class AlphaFold3AllAtom(ModelRunner):
             self.ema.to(example_feat.device)
 
         # TODO: Remove debug logic
-        pdb_id = batch.pop("pdb_id")
-        logger.warning(
+        pdb_id = ", ".join(batch.pop("pdb_id"))
+        logger.debug(
             f"Started model forward pass for {pdb_id} on rank {self.global_rank} "
             f"step {self.global_step}"
         )
@@ -185,16 +276,8 @@ class AlphaFold3AllAtom(ModelRunner):
             # Log it
             self._log(loss_breakdown, batch, outputs)
 
-        except Exception as e:
-            tb = traceback.format_exc()
-            logger.warning(
-                "-" * 40
-                + "\n"
-                + f"Train step failed with pdb id {pdb_id}: {str(e)}\n"
-                + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
-                + "-" * 40
-            )
-            raise e
+        except Exception:
+            logger.exception(f"Train step failed with pdb id {pdb_id}")
 
         return loss
 
@@ -213,8 +296,8 @@ class AlphaFold3AllAtom(ModelRunner):
         # TODO: Remove debug logic
         pdb_id = batch.pop("pdb_id")
         atom_array = batch.pop("atom_array")
-        logger.warning(
-            f"Started validation for {pdb_id} on rank {self.global_rank} "
+        logger.debug(
+            f"Started validation for {', '.join(pdb_id)} on rank {self.global_rank} "
             f"step {self.global_step}"
         )
 
@@ -230,16 +313,8 @@ class AlphaFold3AllAtom(ModelRunner):
 
             self._log(loss_breakdown, batch, outputs, train=False)
 
-        except Exception as e:
-            tb = traceback.format_exc()  # Get the full traceback
-            logger.warning(
-                "-" * 40
-                + "\n"
-                + f"Train step failed with pdb id {pdb_id}: {str(e)}\n"
-                + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
-                + "-" * 40
-            )
-            raise e
+        except Exception:
+            logger.exception(f"Validation step failed with pdb id {pdb_id}")
 
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         # TODO: Remove debug logic
@@ -295,31 +370,33 @@ class AlphaFold3AllAtom(ModelRunner):
         Args:
             metrics: MetricCollection object containing the metrics to log
         """
-        for metric_name, metric_obj in metrics.items():
+        # Sync and reduce metrics across ranks
+        metrics_output = metrics.compute()
+        for name, result in metrics_output.items():
             # Only log metrics that have been updated
-            if self.metric_enabled.get(metric_name):
-                if not self.trainer.sanity_checking:
-                    # Sync and reduce metric across ranks
-                    output = metric_obj.compute()
-                    self.log(
-                        metric_name,
-                        output,
-                        on_step=False,
-                        on_epoch=True,
-                        logger=True,
-                        sync_dist=False,  # Already synced in compute()
-                    )
+            if self.metric_enabled.get(name):
+                self.log(
+                    name,
+                    result,
+                    on_step=False,
+                    on_epoch=True,
+                    logger=True,
+                    sync_dist=False,  # Already synced in compute()
+                )
 
-                # Reset metric for next epoch
-                metric_obj.reset()
+        # Reset metrics for next epoch
+        metrics.reset()
 
     def on_train_epoch_end(self):
         """Log aggregated epoch metrics for training."""
+        self._log_epoch_metrics(metrics=self.train_losses)
         self._log_epoch_metrics(metrics=self.train_metrics)
 
     def on_validation_epoch_end(self):
         """Log aggregated epoch metrics for validation."""
-        self._log_epoch_metrics(metrics=self.val_metrics)
+        if not self.trainer.sanity_checking:
+            self._log_epoch_metrics(metrics=self.val_losses)
+            self._log_epoch_metrics(metrics=self.val_metrics)
 
     def configure_optimizers(
         self,
@@ -365,14 +442,6 @@ class AlphaFold3AllAtom(ModelRunner):
     def on_load_checkpoint(self, checkpoint):
         ema = checkpoint["ema"]
         self.ema.load_state_dict(ema)
-
-    def _compute_validation_metrics(
-        self, batch, outputs, superimposition_metrics=False
-    ) -> dict[str, torch.Tensor]:
-        # Computes validation metrics
-        metrics = get_validation_metrics(batch, outputs, superimposition_metrics)
-
-        return metrics
 
     # TODO: Integrate with prediction step
     def _compute_confidence_scores(self, batch: dict, outputs: dict) -> dict:
