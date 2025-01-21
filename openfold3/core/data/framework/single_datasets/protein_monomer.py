@@ -49,14 +49,24 @@ class ProteinMonomerDataset(BaseAF3Dataset):
         dataset_cache in the SamplerDataset and TO the dataset_cache in the
         getitem.
         """
-        # TODO: refactor
+        # TODO: rename PDB ID to MGnify ID or more generic name
         sample_ids = list(self.dataset_cache.structure_data.keys())
-        self.datapoint_cache = pd.DataFrame(
+        sample_indices = list(
+            [
+                entry_data.chains["1"].index
+                for entry_data in self.dataset_cache.structure_data.values()
+            ]
+        )
+        datapoint_cache_unsorted = pd.DataFrame(
             {
                 "pdb_id": sample_ids,
+                "index": sample_indices,
                 "datapoint_probabilities": [1.0] * len(sample_ids),
             }
         )
+        self.datapoint_cache = datapoint_cache_unsorted.sort_values("index")[
+            ["pdb_id", "datapoint_probabilities"]
+        ]
 
     def __getitem__(
         self, index: int
