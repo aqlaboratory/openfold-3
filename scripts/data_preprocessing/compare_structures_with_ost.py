@@ -164,7 +164,7 @@ def main(
     alignment_output_directory = output_directory / "alignment_results"
     alignment_output_directory.mkdir(exist_ok=True)
     for pdb_id in tqdm(
-        pred_pdb_ids, desc="1/2: Creating output directories", total=len(pred_pdb_ids)
+        pred_pdb_ids, desc="1/3: Creating output directories", total=len(pred_pdb_ids)
     ):
         (alignment_output_directory / f"{pdb_id}").mkdir(exist_ok=True)
 
@@ -187,7 +187,7 @@ def main(
                 chunksize=chunksize,
             ),
             total=len(pred_pdb_ids),
-            desc="2/2: Aligning structures",
+            desc="2/3: Aligning structures",
         ):
             pass
 
@@ -201,6 +201,14 @@ def main(
         pd.DataFrame(failed_pdb_ids).to_csv(
             output_directory / "failed.tsv", index=False, header=False, sep="\t"
         )
+
+        for pdb_id in tqdm(
+            failed_pdb_ids, desc="3/3: Removing failed dirs", total=len(failed_pdb_ids)
+        ):
+            (alignment_output_directory / f"{pdb_id}").rmdir()
+
+    else:
+        logger.info("3/3: No failed dirs to remove.")
 
 
 def compare_pred_to_gt(

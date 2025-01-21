@@ -31,8 +31,15 @@ from openfold3.core.data.io.structure.cif import (
 from openfold3.core.data.io.structure.mol import write_annotated_sdf
 from openfold3.core.data.io.structure.pdb import parse_protein_monomer_pdb_tmp
 from openfold3.core.data.io.utils import encode_numpy_types
+from openfold3.core.data.pipelines.preprocessing.caches.pdb_disordered import (
+    build_provisional_disordered_metadata_cache,
+    find_parent_metadata_cache_subset,
+)
 from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
-from openfold3.core.data.primitives.caches.format import ProteinMonomerDatasetCache
+from openfold3.core.data.primitives.caches.format import (
+    PreprocessingDataCache,
+    ProteinMonomerDatasetCache,
+)
 from openfold3.core.data.primitives.structure.cleanup import (
     convert_MSE_to_MET,
     fix_arginine_naming,
@@ -834,8 +841,28 @@ def preprocess_pdb_disordered_af3(
     pred_file_name: str,
     output_directory: Path,
     ost_aln_output_directory: Path,
-    subset_file: Path | None = None,
+    subset_file: Path | None,
+    logger: Path,
 ):
+    # Find subset parent metadata cache
+    parent_metadata_cache = PreprocessingDataCache.from_json(metadata_cache_file)
+    shared_pdb_ids = find_parent_metadata_cache_subset(
+        parent_metadata_cache=parent_metadata_cache,
+        pred_structures_directory=pred_structures_directory,
+        gt_structures_directory=gt_structures_directory,
+        ost_aln_output_directory=ost_aln_output_directory,
+        subset_file=subset_file,
+        logger=logger,
+    )
+
+    # Build provisional metadata cache with GDT and chain_map
+    provisional_metadata_cache = build_provisional_disordered_metadata_cache(
+        parent_metadata_cache=parent_metadata_cache,
+        pdb_id_list=shared_pdb_ids,
+        ost_aln_output_directory=ost_aln_output_directory,
+    )
+
+    print(provisional_metadata_cache)
     pass
     # with open(metadata_cache_file) as f:
     #     metadata_cache = json.load(f)

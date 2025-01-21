@@ -2,7 +2,6 @@
 
 import logging
 from pathlib import Path
-from typing import Literal
 
 import click
 
@@ -107,10 +106,14 @@ from openfold3.core.data.pipelines.preprocessing.structure import (
     ),
 )
 @click.option(
-    "--log_level",
-    default="INFO",
-    help="Logging level.",
-    type=Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    "--log_file",
+    required=True,
+    help=("A log file where the output logs are saved."),
+    type=click.Path(
+        file_okay=True,
+        dir_okay=False,
+        path_type=Path,
+    ),
 )
 def main(
     metadata_cache_file: Path,
@@ -120,7 +123,7 @@ def main(
     output_directory: Path,
     ost_aln_output_directory: Path,
     subset_file: Path,
-    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    log_file: Path,
 ) -> None:
     """Creates a metadata cache for the disordered distillation set.
 
@@ -139,13 +142,19 @@ def main(
             _description_
         subset_file (Path):
             _description_
-        log_level (Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]):
+        log_file (Path):
             _description_
     """
-
-    logger = logging.getLogger("openfold3")
-    logger.setLevel(getattr(logging, log_level))
-    logger.addHandler(logging.StreamHandler())
+    # Configure the logger
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.INFO)  # Set the logging level for the file handler
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
 
     preprocess_pdb_disordered_af3(
         metadata_cache_file=metadata_cache_file,
@@ -155,6 +164,7 @@ def main(
         output_directory=output_directory,
         ost_aln_output_directory=ost_aln_output_directory,
         subset_file=subset_file,
+        logger=logger,
     )
 
 
