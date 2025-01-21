@@ -47,22 +47,10 @@ from tqdm import tqdm
     ),
 )
 @click.option(
-    "--pred_file_name",
-    required=True,
-    help="Name of the predicted structure file to choose from each per-entry subdir.",
-    type=str,
-)
-@click.option(
     "--gt_structure_file_format",
     required=True,
     help="File format of the ground truth structures.",
     type=Literal["cif", "pdb"],
-)
-@click.option(
-    "--pred_structure_file_format",
-    required=Literal["cif", "pdb"],
-    help="File format of the predicted structures.",
-    type=str,
 )
 @click.option(
     "--output_directory",
@@ -125,9 +113,7 @@ from tqdm import tqdm
 def main(
     gt_structures_directory: Path,
     pred_structures_directory: Path,
-    pred_file_name: str,
     gt_structure_file_format: Literal["cif", "pdb"],
-    pred_structure_file_format: Literal["cif", "pdb"],
     output_directory: Path,
     gt_biounit_id: str | None,
     pred_biounit_id: str | None,
@@ -155,13 +141,6 @@ def main(
         )
         logger.info(msg)
         warnings.warn(msg, stacklevel=2)
-    if (pred_structure_file_format == "pdb") and (pred_biounit_id is not None):
-        msg = (
-            "Bioassembly ID is only supported for pred structures in mmcif format."
-            " The specified bioassembly will be ignored."
-        )
-        warnings.warn(msg, stacklevel=2)
-        logger.info(msg)
 
     # Get list of predicted structures with GT structures available
     pred_pdb_ids = [i.stem for i in list(pred_structures_directory.iterdir())]
@@ -181,15 +160,19 @@ def main(
         output_directory / "preds_with_gt.tsv", index=False, header=False, sep="\t"
     )
 
-    # Run OST for each GT-pred pair
+    # Pre-create directories
     alignment_output_directory = output_directory / "alignment_results"
     alignment_output_directory.mkdir(exist_ok=True)
+    for pdb_id in tqdm(
+        pred_pdb_ids, desc="1/2: Creating output directories", total=len(pred_pdb_ids)
+    ):
+        (alignment_output_directory / f"{pdb_id}").mkdir(exist_ok=True)
+
+    # Run OST for each GT-pred pair
     wrapped_ost_aligner = _OSTCompareStructuresWrapper(
         gt_structures_directory=gt_structures_directory,
         pred_structures_directory=pred_structures_directory,
-        pred_file_name=pred_file_name,
         gt_structure_file_format=gt_structure_file_format,
-        pred_structure_file_format=pred_structure_file_format,
         alignment_output_directory=alignment_output_directory,
         gt_biounit_id=gt_biounit_id,
         pred_biounit_id=pred_biounit_id,
@@ -204,7 +187,7 @@ def main(
                 chunksize=chunksize,
             ),
             total=len(pred_pdb_ids),
-            desc="1/1: Aligning structures",
+            desc="2/2: Aligning structures",
         ):
             pass
 
@@ -224,9 +207,7 @@ def compare_pred_to_gt(
     pdb_id: str,
     gt_structures_directory: Path,
     pred_structures_directory: Path,
-    pred_file_name: str,
     gt_structure_file_format: Literal["cif", "pdb"],
-    pred_structure_file_format: Literal["cif", "pdb"],
     alignment_output_directory: Path,
     gt_biounit_id: str | None,
     pred_biounit_id: str | None,
@@ -243,12 +224,8 @@ def compare_pred_to_gt(
         pred_structures_directory (Path):
             Directory containing one subdir per PDB entry, with each subdir
             containing one or multiple pdb files of predicted structures.
-        pred_file_name (str):
-            Filename that specifies the predicted structure to use.
         gt_structure_file_format (Literal["cif", "pdb"]):
             File format of the ground truth structures.
-        pred_structure_file_format (Literal["cif", "pdb"]):
-            File format of the predicted structures.
         alignment_output_directory (Path):
             Output directory for OST.
         gt_biounit_id (str | None):
@@ -258,25 +235,29 @@ def compare_pred_to_gt(
     """
     # Make sure the reference format is mmcif so that the specified bioassembly is used
     rf = "mmcif" if gt_structure_file_format == "cif" else "pdb"
-    ost_command = [
-        "ost",
-        "compare-structures",
-        "-m",
-        f"{str(pred_structures_directory)}/{pdb_id}/{pred_file_name}.{pred_structure_file_format}",
-        "-r",
-        f"{str(gt_structures_directory)}/{pdb_id}.{gt_structure_file_format}",
-        "-o",
-        f"{str(alignment_output_directory)}/{pdb_id}.json",
-        "-rf",
-        f"{rf}",
-        "--rigid-scores",
-    ]
-    if gt_biounit_id is not None:
-        ost_command.extend(["-rb", gt_biounit_id])
-    if pred_biounit_id is not None:
-        ost_command.extend(["-mb", pred_biounit_id])
 
-    subprocess.run(ost_command)
+    # Run OST on each model file
+    model_files = list((pred_structures_directory / pdb_id).iterdir())
+    for model_file in model_files:
+        ost_command = [
+            "ost",
+            "compare-structures",
+            "-m",
+            f"{model_file}",
+            "-r",
+            f"{str(gt_structures_directory)}/{pdb_id}.{gt_structure_file_format}",
+            "-o",
+            f"{str(alignment_output_directory)}/{pdb_id}.json",
+            "-rf",
+            f"{rf}",
+            "--rigid-scores",
+        ]
+        if gt_biounit_id is not None:
+            ost_command.extend(["-rb", gt_biounit_id])
+        if pred_biounit_id is not None:
+            ost_command.extend(["-mb", pred_biounit_id])
+
+        subprocess.run(ost_command)
 
 
 class _OSTCompareStructuresWrapper:
@@ -284,9 +265,7 @@ class _OSTCompareStructuresWrapper:
         self,
         gt_structures_directory: Path,
         pred_structures_directory: Path,
-        pred_file_name: str,
         gt_structure_file_format: Literal["cif", "pdb"],
-        pred_structure_file_format: Literal["cif", "pdb"],
         alignment_output_directory: Path,
         gt_biounit_id: str | None,
         pred_biounit_id: str | None,
@@ -311,12 +290,8 @@ class _OSTCompareStructuresWrapper:
             pred_structures_directory (Path):
                 Directory containing one subdir per PDB entry, with each subdir
                 containing one or multiple pdb files of predicted structures
-            pred_file_name (str):
-                Filename that specifies the predicted structure to use.
             gt_structure_file_format (Literal["cif", "pdb"]):
                 File format of the ground truth structures.
-            pred_structure_file_format (Literal["cif", "pdb"]):
-                File format of the predicted structures.
             alignment_output_directory (Path):
                 Output directory for OST.
             gt_biounit_id (str | None):
@@ -328,9 +303,7 @@ class _OSTCompareStructuresWrapper:
         """
         self.gt_structures_directory = gt_structures_directory
         self.pred_structures_directory = pred_structures_directory
-        self.pred_file_name = pred_file_name
         self.gt_structure_file_format = gt_structure_file_format
-        self.pred_structure_file_format = pred_structure_file_format
         self.alignment_output_directory = alignment_output_directory
         self.gt_biounit_id = gt_biounit_id
         self.pred_biounit_id = pred_biounit_id
@@ -343,9 +316,7 @@ class _OSTCompareStructuresWrapper:
                 pdb_id=pdb_id,
                 gt_structures_directory=self.gt_structures_directory,
                 pred_structures_directory=self.pred_structures_directory,
-                pred_file_name=self.pred_file_name,
                 gt_structure_file_format=self.gt_structure_file_format,
-                pred_structure_file_format=self.pred_structure_file_format,
                 alignment_output_directory=self.alignment_output_directory,
                 gt_biounit_id=self.gt_biounit_id,
                 pred_biounit_id=self.pred_biounit_id,

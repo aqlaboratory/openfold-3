@@ -11,6 +11,7 @@ from openfold3.core.data.pipelines.preprocessing.structure import (
 )
 
 
+# TODO: rename to make it more clear this script is for metadata cache creation
 @click.command()
 @click.option(
     "--metadata_cache_file",
@@ -70,13 +71,14 @@ from openfold3.core.data.pipelines.preprocessing.structure import (
         path_type=Path,
     ),
 )
-# TODO: add option to run OpenStructure inside this script
+# TODO: add option to run OpenStructure inside this script - requires OpenStructure as
+# a non-conflicting dependency of openfold3
 @click.option(
     "--ost_aln_output_directory",
     required=True,
     help=(
         "Directory where precomputed structural aligment results can be provided."
-        "Structural alignments can be precomputed using ."
+        "Structural alignments can be precomputed using "
         "scripts/data_preprocessing/compare_structures_with_ost.py, which requires "
         "OpenStructure to be installed. Currently, this is necessary to run the "
         "the disordered distillation preprocessing pipeline."

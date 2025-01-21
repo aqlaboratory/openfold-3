@@ -7,6 +7,7 @@ import click
 from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif_dir_af3
 
 
+# TODO: rename to make it more clear this script is for metadata cache creation
 @click.command()
 @click.option(
     "--cif-dir",

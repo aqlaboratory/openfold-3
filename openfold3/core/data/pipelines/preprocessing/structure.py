@@ -3,6 +3,8 @@ Centralized module for pre-assembled workflows corresponding to structure cleanu
 procedures of different models.
 """
 
+# TODO: organize this file so that we separate components for creating the metadata
+# cache for each dataset
 import json
 import logging
 import multiprocessing as mp
