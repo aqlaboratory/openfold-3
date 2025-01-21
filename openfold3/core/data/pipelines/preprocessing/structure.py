@@ -3,6 +3,7 @@ Centralized module for pre-assembled workflows corresponding to structure cleanu
 procedures of different models.
 """
 
+# TODO: clean up and organize contents of this module
 import json
 import logging
 import multiprocessing as mp
@@ -823,3 +824,49 @@ def preparse_protein_monomer_structures(
             desc="2/2: Pre-parsing monomer structures",
         ):
             pass
+
+
+def preprocess_pdb_disordered_af3(
+    metadata_cache_file: Path,
+    gt_structures_directory: Path,
+    pred_structures_directory: Path,
+    pred_file_name: str,
+    output_directory: Path,
+    ost_aln_output_directory: Path,
+    subset_file: Path | None = None,
+):
+    pass
+    # with open(metadata_cache_file) as f:
+    #     metadata_cache = json.load(f)
+
+    # output_dir.mkdir(parents=True, exist_ok=True)
+    # pdb_ids = list(metadata_cache["structure_data"].keys())
+
+    # for pdb_id in tqdm(pdb_ids):
+    #     gt_structure = gt_structures_directory / f"{pdb_id}.cif"
+    #     pred_structure = pred_structures_directory / pdb_id / pred_file_name
+    #     output_file = output_dir / f"{pdb_id}.pkl"
+
+    #     if subset_file is not None:
+    #         with open(subset_file) as f:
+    #             subset = json.load(f)
+    #         if pdb_id not in subset:
+    #             continue
+
+    #     if not gt_structure.exists():
+    #         logger.warning(f"Missing ground truth structure for {pdb_id}")
+    #         continue
+
+    #     if not pred_structure.exists():
+    #         logger.warning(f"Missing predicted structure for {pdb_id}")
+    #         continue
+
+    #     try:
+    #         _, gt_atom_array = parse_protein_monomer_pdb_tmp(gt_structure)
+    #         _, pred_atom_array = parse_protein_monomer_pdb_tmp(pred_structure)
+
+    #         write_structure(gt_atom_array, output_file, data_block="ground_truth")
+    #         write_structure(pred_atom_array, output_file, data_block="predicted")
+    #     except Exception as e:
+    #         logger.warning(f"Failed to process {pdb_id}: {str(e)}")
+    #         continue
