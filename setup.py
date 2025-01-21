@@ -40,11 +40,6 @@ extra_cuda_flags = [
     "--expt-relaxed-constexpr",
     "--expt-extended-lambda",
 ]
-## Set the default compiler to gcc and g++
-## on some machines(NERSC) this is not the default,
-## and the buid will fail.
-os.environ["CC"] = "gcc"
-os.environ["CXX"] = "g++"
 
 
 def get_cuda_bare_metal_version(cuda_dir):
