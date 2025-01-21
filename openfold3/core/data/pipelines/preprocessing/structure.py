@@ -3,7 +3,6 @@ Centralized module for pre-assembled workflows corresponding to structure cleanu
 procedures of different models.
 """
 
-# TODO: clean up and organize contents of this module
 import json
 import logging
 import multiprocessing as mp

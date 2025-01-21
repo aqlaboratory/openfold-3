@@ -34,6 +34,7 @@ from openfold3.core.data.primitives.caches.format import (
 logger = logging.getLogger(__name__)
 
 
+# TODO: reorganize metadata cache creation pipelines into a caches module
 # TODO: Make docstring more complete for new args
 def filter_structure_metadata_af3(
     structure_cache: PreprocessingStructureDataCache,
