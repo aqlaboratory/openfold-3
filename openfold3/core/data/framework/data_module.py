@@ -153,10 +153,6 @@ class DataModule(pl.LightningDataModule):
         self.epoch_len = data_config.epoch_len
         self.num_epochs = data_config.num_epochs
 
-        # TODO replace this with something that loads the state and gives it to the
-        # sampler dataset
-        # self.last_used_dataset_indices = {"long-monomer-distillation": 0, "short-monomer-distillation": 0}
-
         # Parse datasets
         self.multi_dataset_config = self.parse_data_config(data_config.datasets)
         self._initialize_last_used_dataset_indices()

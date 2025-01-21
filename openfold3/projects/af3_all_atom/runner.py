@@ -261,23 +261,32 @@ class AlphaFold3AllAtom(ModelRunner):
             batch["atom_array"] = atom_array
 
         return batch
-    
+
     def _save_train_dataset_state_to_datamodule(self):
-        self.trainer.datamodule.last_used_dataset_indices = self.trainer.train_dataloader.dataset.last_used_dataset_indices
-    
+        self.trainer.datamodule.last_used_dataset_indices = (
+            self.trainer.train_dataloader.dataset.last_used_dataset_indices
+        )
+
     def _load_train_dataset_state_from_datamodule(self):
-        self.trainer.train_dataloader.dataset.last_used_dataset_indices = self.trainer.datamodule.last_used_dataset_indices
-    
+        self.trainer.train_dataloader.dataset.last_used_dataset_indices = (
+            self.trainer.datamodule.last_used_dataset_indices
+        )
+
     def on_train_start(self):
-        # Reload state from datamodule in case checkpoint has been used 
+        # Reload state from datamodule in case checkpoint has been used
         self._load_train_dataset_state_from_datamodule()
-        logger.warning(f"Rank {self.global_rank} train start, setting up {self.trainer.train_dataloader.dataset.last_used_dataset_indices=}")
+        logger.warning(
+            f"Rank {self.global_rank} train start, setting up "
+            f"{self.trainer.train_dataloader.dataset.last_used_dataset_indices=}"
+        )
 
     def on_train_epoch_start(self):
         # At the start of each virtual epoch we want to resample the set of
         # datapoints to train on
         indices = self.trainer.train_dataloader.dataset.resample_epoch()
-        logger.warning(f"Rank {self.global_rank} Resample epoch at train epoch start {indices=}")
+        logger.warning(
+            f"Rank {self.global_rank} Resample epoch at train epoch start {indices=}"
+        )
         self._save_train_dataset_state_to_datamodule()
 
     def _log_epoch_metrics(self, metrics: MetricCollection):

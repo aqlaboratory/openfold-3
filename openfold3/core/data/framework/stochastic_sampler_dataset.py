@@ -75,7 +75,7 @@ class SamplerDataset(Dataset):
         self.epoch_len = epoch_len
         self.num_epochs = num_epochs
         self.generator = generator
-        self.last_used_dataset_indices = last_used_dataset_indices 
+        self.last_used_dataset_indices = last_used_dataset_indices
         self.indices = None
 
     def __len__(self):
@@ -89,9 +89,11 @@ class SamplerDataset(Dataset):
                 Index of the example to retrieve, passed from the DataLoader.
         """
         if not self.indices:
-            logger.warning(f"Resampling epoch in getitem(), {self.last_used_dataset_indices=}")
+            logger.info(
+                f"Resampling epoch in getitem(), {self.last_used_dataset_indices=}"
+            )
             self.resample_epoch()
-        
+
         # Get the dataset-datapoint pair for the given index
         dataset_idx, datapoint_idx = self.indices[index]
 
@@ -181,7 +183,7 @@ class SamplerDataset(Dataset):
 
             if dataset.name in self.last_used_dataset_indices:
                 datapoint_indices_i = self.get_ordered_subset(
-                    dataset, num_datapoints_per_dataset 
+                    dataset, num_datapoints_per_dataset
                 )
             else:
                 datapoint_indices_i = self.get_random_subset(
