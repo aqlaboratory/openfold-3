@@ -149,6 +149,8 @@ def cleanup_structure_af3(
     atom_array = canonicalize_atom_order(atom_array, ccd)
     atom_array = remove_chains_with_CA_gaps(atom_array, distance_threshold=10.0)
 
+    # TODO: Could change this to use get_chain_count from Biotite which will be more
+    # robust for non-renumbered chains
     # Subset bioassemblies larger than 20 chains
     if len(np.unique(atom_array.chain_id)) > 20:
         # Tokenization is required for large-structure subsetting
