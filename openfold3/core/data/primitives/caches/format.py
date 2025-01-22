@@ -229,8 +229,9 @@ class DisorderedPreprocessingDataCache:
                 interfaces = None
                 token_count = None
                 gdt = None
-                has_clash = None
                 chain_map = None
+                best_model_filename = None
+                has_clash = None
             elif status == "success":
                 release_date = structure_data["release_date"]
                 resolution = structure_data["resolution"]
@@ -238,8 +239,9 @@ class DisorderedPreprocessingDataCache:
                 interfaces = structure_data["interfaces"]
                 token_count = structure_data["token_count"]
                 gdt = structure_data["gdt"]
-                has_clash = structure_data["has_clash"]
                 chain_map = structure_data["chain_map"]
+                best_model_filename = structure_data["best_model_filename"]
+                has_clash = structure_data["has_clash"]
             # TODO: Release date should never be None with new version, fix this after
             # rerunning preprocessing
             elif status == "failed":
@@ -249,8 +251,9 @@ class DisorderedPreprocessingDataCache:
                 interfaces = None
                 token_count = None
                 gdt = None
-                has_clash = None
                 chain_map = None
+                best_model_filename = None
+                has_clash = None
             else:
                 raise ValueError(f"Unexpected status: {status}")
 
@@ -287,8 +290,9 @@ class DisorderedPreprocessingDataCache:
                 interfaces=interfaces,
                 token_count=token_count,
                 gdt=gdt,
-                has_clash=has_clash,
                 chain_map=chain_map,
+                best_model_filename=best_model_filename,
+                has_clash=has_clash,
             )
 
         # Format the reference molecule data
@@ -322,8 +326,9 @@ class DisorderedPreprocessingStructureData(PreprocessingStructureData):
     """Structure-wise data from preprocessing metadata_cache with disordered data."""
 
     gdt: float
-    has_clash: bool
     chain_map: dict[str, str]
+    best_model_filename: str
+    has_clash: bool
 
 
 PreprocessingStructureDataCache: TypeAlias = dict[str, PreprocessingStructureData]

@@ -834,6 +834,29 @@ def preparse_protein_monomer_structures(
             pass
 
 
+def preprocess_disoredered_structure_and_write_outputs_af3(
+    pdb_id: str,
+):
+    pass
+
+
+class _AF3PreprocessingDisorderedWrapper:
+    def __init__(
+        self,
+        logger: logging.Logger,
+    ):
+        self.logger = logger
+        pass
+
+    @wraps(preprocess_disoredered_structure_and_write_outputs_af3)
+    def __call__(self, pdb_id) -> None:
+        try:
+            pass
+
+        except Exception as e:
+            self.logger.info(f"Error processing {pdb_id}: {e}")
+
+
 def preprocess_pdb_disordered_af3(
     metadata_cache_file: Path,
     gt_structures_directory: Path,
@@ -842,6 +865,8 @@ def preprocess_pdb_disordered_af3(
     output_directory: Path,
     ost_aln_output_directory: Path,
     subset_file: Path | None,
+    num_workers: int,
+    chunksize: int,
     logger: Path,
 ):
     # Find subset parent metadata cache
@@ -860,6 +885,8 @@ def preprocess_pdb_disordered_af3(
         parent_metadata_cache=parent_metadata_cache,
         pdb_id_list=shared_pdb_ids,
         ost_aln_output_directory=ost_aln_output_directory,
+        num_workers=num_workers,
+        chunksize=chunksize,
     )
 
     print(provisional_metadata_cache)

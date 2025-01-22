@@ -106,6 +106,20 @@ from openfold3.core.data.pipelines.preprocessing.structure import (
     ),
 )
 @click.option(
+    "--num_workers",
+    required=False,
+    default=1,
+    help="Number of workers to use for parallel processing.",
+    type=int,
+)
+@click.option(
+    "--chunksize",
+    required=False,
+    default=1,
+    help="Number of workers to use for parallel processing.",
+    type=int,
+)
+@click.option(
     "--log_file",
     required=True,
     help=("A log file where the output logs are saved."),
@@ -123,6 +137,8 @@ def main(
     output_directory: Path,
     ost_aln_output_directory: Path,
     subset_file: Path,
+    num_workers: int,
+    chunksize: int,
     log_file: Path,
 ) -> None:
     """Creates a metadata cache for the disordered distillation set.
@@ -141,6 +157,10 @@ def main(
         ost_aln_output_directory (Path):
             _description_
         subset_file (Path):
+            _description_
+        num_workers (int):
+            _description_
+        chunksize (int):
             _description_
         log_file (Path):
             _description_
@@ -164,6 +184,8 @@ def main(
         output_directory=output_directory,
         ost_aln_output_directory=ost_aln_output_directory,
         subset_file=subset_file,
+        num_workers=num_workers,
+        chunksize=chunksize,
         logger=logger,
     )
 
