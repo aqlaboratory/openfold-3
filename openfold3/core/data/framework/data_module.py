@@ -131,11 +131,12 @@ class DataModuleConfig:
         _dict = self.__dict__.copy()
         datasets = []
         for d in _dict["datasets"]:
-            d.config.dataset_paths = {
+            new_d = d.copy_and_resolve_references() 
+            new_d.config.dataset_paths = {
                 k: (str(v) if isinstance(v, Path) else v)
-                for k, v in d.config.dataset_paths.items()
+                for k, v in new_d.config.dataset_paths.items()
             }
-            datasets.append(d.to_dict())
+            datasets.append(new_d.to_dict())
         _dict["datasets"] = datasets
         return _dict
 
