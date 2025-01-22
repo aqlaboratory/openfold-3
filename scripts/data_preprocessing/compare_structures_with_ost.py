@@ -50,7 +50,7 @@ from tqdm import tqdm
     "--gt_structure_file_format",
     required=True,
     help="File format of the ground truth structures.",
-    type=Literal["cif", "pdb"],
+    type=click.Choice(["cif", "pdb"], case_sensitive=True),
 )
 @click.option(
     "--output_directory",
