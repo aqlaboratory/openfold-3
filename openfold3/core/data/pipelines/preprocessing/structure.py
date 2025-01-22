@@ -1036,6 +1036,21 @@ def build_provisional_disordered_metadata_cache(
 def preprocess_disordered_structure_and_write_outputs_af3(
     pdb_id: str,
 ):
+    # Create copy of GT
+
+    # Detect non-protein chains covalently linked to a protein chain and remove
+
+    # Replace GT copy coordinates with non-aligned predicted coordinates
+
+    # iterate over non-protein chains and
+    # - pocket align and apply transform
+    # - replace coordinates of matching non-protein chain in GT copy with transformed
+
+    # Calculate clashes
+
+    # Save structure
+
+    # Return clash status
     pass
 
 
@@ -1107,43 +1122,10 @@ def preprocess_pdb_disordered_af3(
         chunksize=chunksize,
     )
 
+    # Save provisional metadata cache
     print(provisional_metadata_cache)
 
     # Preprocess disordered structures and update metadata cache entries
     preprocess_disordered_structure_and_write_outputs_af3()
 
-    pass
-    # with open(metadata_cache_file) as f:
-    #     metadata_cache = json.load(f)
-
-    # output_dir.mkdir(parents=True, exist_ok=True)
-    # pdb_ids = list(metadata_cache["structure_data"].keys())
-
-    # for pdb_id in tqdm(pdb_ids):
-    #     gt_structure = gt_structures_directory / f"{pdb_id}.cif"
-    #     pred_structure = pred_structures_directory / pdb_id / pred_file_name
-    #     output_file = output_dir / f"{pdb_id}.pkl"
-
-    #     if subset_file is not None:
-    #         with open(subset_file) as f:
-    #             subset = json.load(f)
-    #         if pdb_id not in subset:
-    #             continue
-
-    #     if not gt_structure.exists():
-    #         logger.warning(f"Missing ground truth structure for {pdb_id}")
-    #         continue
-
-    #     if not pred_structure.exists():
-    #         logger.warning(f"Missing predicted structure for {pdb_id}")
-    #         continue
-
-    #     try:
-    #         _, gt_atom_array = parse_protein_monomer_pdb_tmp(gt_structure)
-    #         _, pred_atom_array = parse_protein_monomer_pdb_tmp(pred_structure)
-
-    #         write_structure(gt_atom_array, output_file, data_block="ground_truth")
-    #         write_structure(pred_atom_array, output_file, data_block="predicted")
-    #     except Exception as e:
-    #         logger.warning(f"Failed to process {pdb_id}: {str(e)}")
-    #         continue
+    # Save final disordered metadata cache
