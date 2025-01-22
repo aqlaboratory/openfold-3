@@ -288,7 +288,7 @@ def compare_pred_to_gt(
         if pred_biounit_id is not None:
             ost_command.extend(["-mb", pred_biounit_id])
 
-        result = subprocess.run(ost_command)
+        result = subprocess.run(ost_command, capture_output=True, text=True)
         if result.stdout:
             logger.info("STDOUT:\n%s", result.stdout.strip())
         if result.stderr:
