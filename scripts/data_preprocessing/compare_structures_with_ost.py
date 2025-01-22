@@ -7,11 +7,13 @@ OpenStructure, but will be combined with it in a future release."""
 
 import logging
 import multiprocessing as mp
+import os
+import re
 import subprocess
 import warnings
 from functools import wraps
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 import click
 import pandas as pd
@@ -115,8 +117,8 @@ def main(
     pred_structures_directory: Path,
     gt_structure_file_format: Literal["cif", "pdb"],
     output_directory: Path,
-    gt_biounit_id: str | None,
-    pred_biounit_id: str | None,
+    gt_biounit_id: Optional[str],
+    pred_biounit_id: Optional[str],
     log_file: Path,
     num_workers: int,
     chunksize: int,
@@ -124,35 +126,31 @@ def main(
     """Run OpenStructure structure alignment for all GT-pred pairs."""
 
     # Configure the logger
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
+    logger_main = logging.getLogger(__name__)
+    logger_main.setLevel(logging.INFO)
     file_handler = logging.FileHandler(log_file)
-    file_handler.setLevel(logging.INFO)  # Set the logging level for the file handler
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    file_handler.setLevel(logging.INFO)
+    logger_main.addHandler(file_handler)
 
     if (gt_structure_file_format == "pdb") and (gt_biounit_id is not None):
         msg = (
             "Bioassembly ID is only supported for GT structures in mmcif format."
             " The specified bioassembly will be ignored."
         )
-        logger.info(msg)
+        logger_main.info(msg)
         warnings.warn(msg, stacklevel=2)
 
     # Get list of predicted structures with GT structures available
     pred_pdb_ids = [i.stem for i in list(pred_structures_directory.iterdir())]
-    logger.info(
+    logger_main.info(
         f"Found dirs for {len(pred_pdb_ids)} predicted structures in "
         f"{pred_structures_directory}."
     )
     gt_pdb_ids = [i.stem for i in list(pred_structures_directory.iterdir())]
 
     pred_pdb_ids = sorted(set(pred_pdb_ids) & set(gt_pdb_ids))
-    logger.info(
-        f"{len(pred_pdb_ids)} predicted structures have corresponding GT."
+    logger_main.info(
+        f"{len(pred_pdb_ids)} predicted structures have corresponding GT"
         f"structure at {gt_structures_directory}."
     )
 
@@ -160,55 +158,76 @@ def main(
         output_directory / "preds_with_gt.tsv", index=False, header=False, sep="\t"
     )
 
-    # Pre-create directories
-    alignment_output_directory = output_directory / "alignment_results"
-    alignment_output_directory.mkdir(exist_ok=True)
-    for pdb_id in tqdm(
-        pred_pdb_ids, desc="1/3: Creating output directories", total=len(pred_pdb_ids)
-    ):
-        (alignment_output_directory / f"{pdb_id}").mkdir(exist_ok=True)
-
-    # Run OST for each GT-pred pair
-    wrapped_ost_aligner = _OSTCompareStructuresWrapper(
-        gt_structures_directory=gt_structures_directory,
-        pred_structures_directory=pred_structures_directory,
-        gt_structure_file_format=gt_structure_file_format,
-        alignment_output_directory=alignment_output_directory,
-        gt_biounit_id=gt_biounit_id,
-        pred_biounit_id=pred_biounit_id,
-        logger=logger,
-    )
-
-    with mp.Pool(num_workers) as pool:
-        for _ in tqdm(
-            pool.imap_unordered(
-                wrapped_ost_aligner,
-                pred_pdb_ids,
-                chunksize=chunksize,
-            ),
+    try:
+        # Pre-create directories
+        alignment_output_directory = output_directory / "alignment_results"
+        alignment_output_directory.mkdir(exist_ok=True)
+        worker_log_directory = output_directory / "worker_logs"
+        worker_log_directory.mkdir(exist_ok=True)
+        for pdb_id in tqdm(
+            pred_pdb_ids,
+            desc="1/4: Creating output directories",
             total=len(pred_pdb_ids),
-            desc="2/3: Aligning structures",
         ):
-            pass
+            (alignment_output_directory / f"{pdb_id}").mkdir(exist_ok=True)
 
-    # Collect failed entries
-    aln_pdb_ids = [i.stem for i in list(alignment_output_directory.iterdir())]
-    failed_pdb_ids = sorted(set(pred_pdb_ids) - set(aln_pdb_ids))
-
-    logger.info(f"{len(failed_pdb_ids)} failed to be aligned.")
-
-    if len(failed_pdb_ids) > 0:
-        pd.DataFrame(failed_pdb_ids).to_csv(
-            output_directory / "failed.tsv", index=False, header=False, sep="\t"
+        # Run OST for each GT-pred pair
+        wrapped_ost_aligner = _OSTCompareStructuresWrapper(
+            gt_structures_directory=gt_structures_directory,
+            pred_structures_directory=pred_structures_directory,
+            gt_structure_file_format=gt_structure_file_format,
+            alignment_output_directory=alignment_output_directory,
+            gt_biounit_id=gt_biounit_id,
+            pred_biounit_id=pred_biounit_id,
         )
 
-        for pdb_id in tqdm(
-            failed_pdb_ids, desc="3/3: Removing failed dirs", total=len(failed_pdb_ids)
-        ):
-            (alignment_output_directory / f"{pdb_id}").rmdir()
+        with mp.Pool(num_workers) as pool:
+            for _ in tqdm(
+                pool.imap_unordered(
+                    wrapped_ost_aligner,
+                    pred_pdb_ids,
+                    chunksize=chunksize,
+                ),
+                total=len(pred_pdb_ids),
+                desc="2/4: Aligning structures",
+            ):
+                pass
+    except Exception as e:
+        logger_main.info(f"Failed to align structures:\n{e}\n")
+    finally:
+        # Collate logs
+        with log_file.open("a") as out_file:
+            for worker_log in tqdm(
+                worker_log_directory.iterdir(),
+                desc="3/4: Collating worker logs",
+                total=len(list(worker_log_directory.iterdir())),
+            ):
+                out_file.write(f"Log file: {worker_log.name}\n")
+                out_file.write(worker_log.read_text())
+                worker_log.unlink()
 
-    else:
-        logger.info("3/3: No failed dirs to remove.")
+            if not list(worker_log_directory.iterdir()):
+                worker_log_directory.rmdir()
+
+        # Collect failed entries
+        failed_pdb_ids = parse_failed_ids(log_file)
+
+        logger_main.info(f"{len(failed_pdb_ids)} failed to be aligned.")
+
+        if len(failed_pdb_ids) > 0:
+            pd.DataFrame(failed_pdb_ids).to_csv(
+                output_directory / "failed.tsv", index=False, header=False, sep="\t"
+            )
+
+            for pdb_id in tqdm(
+                failed_pdb_ids,
+                desc="4/4: Removing failed dirs",
+                total=len(failed_pdb_ids),
+            ):
+                (alignment_output_directory / f"{pdb_id}").rmdir()
+
+        else:
+            logger_main.info("4/4: No failed dirs to remove.")
 
 
 def compare_pred_to_gt(
@@ -217,8 +236,9 @@ def compare_pred_to_gt(
     pred_structures_directory: Path,
     gt_structure_file_format: Literal["cif", "pdb"],
     alignment_output_directory: Path,
-    gt_biounit_id: str | None,
-    pred_biounit_id: str | None,
+    gt_biounit_id: Optional[str],
+    pred_biounit_id: Optional[str],
+    logger: logging.Logger,
 ) -> None:
     """Runs OpenStructure structure alignment for a single GT-pred pair.
 
@@ -247,25 +267,34 @@ def compare_pred_to_gt(
     # Run OST on each model file
     model_files = list((pred_structures_directory / pdb_id).iterdir())
     for model_file in model_files:
+        model_filename = model_file.stem
         ost_command = [
             "ost",
             "compare-structures",
             "-m",
             f"{model_file}",
             "-r",
-            f"{str(gt_structures_directory)}/{pdb_id}.{gt_structure_file_format}",
+            f"{gt_structures_directory}/{pdb_id}.{gt_structure_file_format}",
             "-o",
-            f"{str(alignment_output_directory)}/{pdb_id}.json",
+            f"{alignment_output_directory}/{pdb_id}/{model_filename}.json",
             "-rf",
             f"{rf}",
             "--rigid-scores",
+            "-v",
+            "0",
         ]
         if gt_biounit_id is not None:
             ost_command.extend(["-rb", gt_biounit_id])
         if pred_biounit_id is not None:
             ost_command.extend(["-mb", pred_biounit_id])
 
-        subprocess.run(ost_command)
+        result = subprocess.run(ost_command)
+        if result.stdout:
+            logger.info("STDOUT:\n%s", result.stdout.strip())
+        if result.stderr:
+            logger.error("STDERR:\n%s", result.stderr.strip())
+        if result.returncode != 0:
+            logger.error("Command failed with return code %d", result.returncode)
 
 
 class _OSTCompareStructuresWrapper:
@@ -275,9 +304,8 @@ class _OSTCompareStructuresWrapper:
         pred_structures_directory: Path,
         gt_structure_file_format: Literal["cif", "pdb"],
         alignment_output_directory: Path,
-        gt_biounit_id: str | None,
-        pred_biounit_id: str | None,
-        logger: logging.Logger,
+        gt_biounit_id: Optional[str],
+        pred_biounit_id: Optional[str],
     ) -> None:
         """Wrapper class for aligning PDB structures to AF2-predicted models.
 
@@ -306,8 +334,6 @@ class _OSTCompareStructuresWrapper:
                 Bioassembly ID of the GT structure to compare.
             pred_biounit_id (str | None):
                 Bioassembly ID of the predicted structure to compare.
-            logger (logging.Logger):
-                The configured logger object.
         """
         self.gt_structures_directory = gt_structures_directory
         self.pred_structures_directory = pred_structures_directory
@@ -315,11 +341,23 @@ class _OSTCompareStructuresWrapper:
         self.alignment_output_directory = alignment_output_directory
         self.gt_biounit_id = gt_biounit_id
         self.pred_biounit_id = pred_biounit_id
-        self.logger = logger
 
     @wraps(compare_pred_to_gt)
     def __call__(self, pdb_id: str) -> None:
         try:
+            # Setup worker logger
+            logger = logging.getLogger(f"worker_{os.getpid()}")
+            logger.setLevel(logging.INFO)
+            logger.handlers = []
+            logger.propagate = False
+            handler = logging.FileHandler(
+                self.alignment_output_directory.parent
+                / f"worker_logs/worker_{os.getpid()}.log"
+            )
+            logger.addHandler(handler)
+
+            logger.info(f"Processing {pdb_id}.")
+
             compare_pred_to_gt(
                 pdb_id=pdb_id,
                 gt_structures_directory=self.gt_structures_directory,
@@ -328,9 +366,29 @@ class _OSTCompareStructuresWrapper:
                 alignment_output_directory=self.alignment_output_directory,
                 gt_biounit_id=self.gt_biounit_id,
                 pred_biounit_id=self.pred_biounit_id,
+                logger=logger,
             )
         except Exception as e:
-            self.logger.info(f"Failed to preprocess entry {pdb_id}:\n{e}\n")
+            logger.info(f"Failed to preprocess entry {pdb_id}:\n{e}\n")
+
+
+def parse_failed_ids(log_file: Path):
+    pattern = re.compile(r"^Failed to preprocess entry (\S+):")
+    failed_entries = []
+
+    # Read the entire file at once, splitting by lines
+    lines = log_file.read_text().splitlines()
+
+    for i, line in enumerate(lines):
+        match = pattern.search(line)
+        if match:
+            pdb_id = match.group(1)
+            error_line = lines[i + 1] if i + 1 < len(lines) else ""
+            # Check if the next line mentions 'Permission denied'
+            if "Permission denied" in error_line:
+                failed_entries.append({"pdb_id": pdb_id, "error": error_line.strip()})
+
+    return failed_entries
 
 
 if __name__ == "__main__":
