@@ -158,28 +158,42 @@ class PairformerEmbedding(nn.Module):
         #     single_mask = single_mask.reshape(-1, single_mask.shape[-1])
         #     pair_mask = pair_mask.reshape(-1, *pair_mask.shape[-2:])
 
+        # PairFormer embedding
         si_chunks = []
         zij_chunks = []
-        no_samples = zij.shape[1]
-        for i in range(no_samples):
-            # PairFormer embedding
-            si_chunk, zij_chunk = self.pairformer_stack(
-                si[:, i],
-                zij[:, i],
-                single_mask[:, i],
-                pair_mask[:, i],
+        no_batch_dims = len(zij.shape[:-3])
+        if no_batch_dims > 1:
+            no_samples = zij.shape[1]
+            for i in range(no_samples):
+                si_chunk, zij_chunk = self.pairformer_stack(
+                    si[:, i],
+                    zij[:, i],
+                    single_mask[:, i],
+                    pair_mask[:, i],
+                    chunk_size=chunk_size,
+                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_lma=use_lma,
+                    inplace_safe=inplace_safe,
+                    _mask_trans=_mask_trans,
+                )
+
+                si_chunks.append(si_chunk)
+                zij_chunks.append(zij_chunk)
+
+            si = torch.stack(si_chunks, dim=1)
+            zij = torch.stack(zij_chunks, dim=1)
+        else:
+            si, zij = self.pairformer_stack(
+                si,
+                zij,
+                single_mask,
+                pair_mask,
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
             )
-
-            si_chunks.append(si_chunk)
-            zij_chunks.append(zij_chunk)
-
-        si = torch.stack(si_chunks, dim=1)
-        zij = torch.stack(zij_chunks, dim=1)
 
         # if use_deepspeed_evo_attention:
         #     si = si.reshape(*batch_dims, *si.shape[-2:])
