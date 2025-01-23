@@ -78,7 +78,7 @@ def lddt(
     if torch.any(intra_mask):
         intra_norm = 1.0 / (eps + torch.sum(dists_to_score * intra_mask, dim=(-1, -2)))
         intra_score = intra_norm * (
-            eps + torch.sum(dists_to_score * intra_mask * score, dim=(-1, -2))
+            torch.sum(dists_to_score * intra_mask * score, dim=(-1, -2))
         )
 
     # inter_score only applies when there exist atom pairs with
@@ -87,7 +87,7 @@ def lddt(
     inter_score = None
     if torch.any(inter_mask):
         inter_norm = 1.0 / (eps + torch.sum(inter_mask, dim=(-1, -2)))
-        inter_score = inter_norm * (eps + torch.sum(inter_mask * score, dim=(-1, -2)))
+        inter_score = inter_norm * (torch.sum(inter_mask * score, dim=(-1, -2)))
 
     return intra_score, inter_score
 
@@ -124,13 +124,15 @@ def interface_lddt(
     """
     # get pairwise distance
     pair_dist_true = torch.sqrt(
-        torch.sum(
+        eps
+        + torch.sum(
             (all_atom_gt_pos_1.unsqueeze(-2) - all_atom_gt_pos_2.unsqueeze(-3)) ** 2,
             dim=-1,
         )
     )  # [*, n_atom1, n_atom2]
     pair_dist_pred = torch.sqrt(
-        torch.sum(
+        eps
+        + torch.sum(
             (all_atom_pred_pos_1.unsqueeze(-2) - all_atom_pred_pos_2.unsqueeze(-3))
             ** 2,
             dim=-1,
@@ -157,7 +159,7 @@ def interface_lddt(
 
         # normalize
         norm = 1.0 / (eps + torch.sum(dists_to_score, dim=(-1, -2)))
-        score = norm * (eps + torch.sum(dists_to_score * score, dim=(-1, -2)))
+        score = norm * (torch.sum(dists_to_score * score, dim=(-1, -2)))
 
     return score
 
@@ -167,6 +169,7 @@ def drmsd(
     pair_dist_gt_pos: torch.Tensor,
     all_atom_mask: torch.Tensor,
     asym_id: torch.Tensor,
+    eps: Optional[float] = 1e-10,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Computes drmsds from pair distances
@@ -176,6 +179,7 @@ def drmsd(
         pair_dist_gt_pos: gt coordinates [*, n_atom, n_atom]
         all_atom_mask: atom mask [*, n_atom]
         asym_id: atomized asym_id feature [*, n_atom]
+        eps: epsilon
     Returns:
         intra_drmsd: drmsd within chains
         inter_drmsd: drmsd across chains
@@ -193,7 +197,7 @@ def drmsd(
 
     intra_drmsd = drmsd * mask * intra_mask
     intra_drmsd = torch.sum(intra_drmsd, dim=(-1, -2))
-    n_intra = torch.sum(intra_mask * mask, dim=(-1, -2))
+    n_intra = torch.sum(intra_mask * mask, dim=(-1, -2)) + eps
     intra_drmsd = intra_drmsd * (1 / n_intra)
     intra_drmsd = torch.sqrt(intra_drmsd)
 
@@ -202,7 +206,7 @@ def drmsd(
     if torch.any(inter_mask):
         inter_drmsd = drmsd * inter_mask
         inter_drmsd = torch.sum(inter_drmsd, dim=(-1, -2))
-        n_inter = torch.sum(inter_mask * mask, dim=(-1, -2))
+        n_inter = torch.sum(inter_mask * mask, dim=(-1, -2)) + eps
         inter_drmsd = inter_drmsd * (1 / n_inter)
         inter_drmsd = torch.sqrt(inter_drmsd)
 
@@ -217,6 +221,7 @@ def get_protein_metrics(
     pred_coords: torch.Tensor,
     gt_coords: torch.Tensor,
     all_atom_mask: torch.Tensor,
+    eps: Optional[float] = 1e-10,
 ) -> dict[str, torch.Tensor]:
     """
     Compute validation metrics of protein
@@ -229,6 +234,7 @@ def get_protein_metrics(
         pred_coords: predicted coordinates [*, n_atom, 3]
         gt_coords: gt coordinates [*, n_atom, 3]
         all_atom_mask: atom mask [*, n_atom]
+        eps: epsilon
     Returns:
         out: dictionary containing validation metrics
             'lddt_intra_protein': intra protein lddt
@@ -261,10 +267,12 @@ def get_protein_metrics(
 
     # (bs,(n_sample), n_prot, n_prot)
     gt_protein_pair = torch.sqrt(
-        torch.sum((gt_protein.unsqueeze(-2) - gt_protein.unsqueeze(-3)) ** 2, dim=-1)
+        eps
+        + torch.sum((gt_protein.unsqueeze(-2) - gt_protein.unsqueeze(-3)) ** 2, dim=-1)
     )
     pred_protein_pair = torch.sqrt(
-        torch.sum(
+        eps
+        + torch.sum(
             (pred_protein.unsqueeze(-2) - pred_protein.unsqueeze(-3)) ** 2, dim=-1
         )
     )
@@ -277,6 +285,7 @@ def get_protein_metrics(
         inter_mask_atomized_protein,
         asym_id_protein,
         cutoff=15.0,
+        eps=eps,
     )
     out["lddt_intra_protein"] = intra_lddt
     out["lddt_inter_protein_protein"] = inter_lddt
@@ -286,11 +295,16 @@ def get_protein_metrics(
         pred_protein_pair,
         all_atom_mask_protein,
         asym_id_protein,
+        eps=eps,
     )
     out["drmsd_intra_protein"] = intra_drmsd
 
     intra_clash, inter_clash = steric_clash(
-        pred_protein_pair, all_atom_mask_protein, asym_id_protein, threshold=1.1
+        pred_protein_pair,
+        all_atom_mask_protein,
+        asym_id_protein,
+        threshold=1.1,
+        eps=eps,
     )
     out["clash_intra_protein"] = intra_clash
     out["clash_inter_protein_protein"] = inter_clash
@@ -308,6 +322,7 @@ def get_nucleic_acid_metrics(
     all_atom_mask: torch.Tensor,
     is_protein_atomized: torch.Tensor,
     substrate: str,
+    eps: Optional[float] = 1e-10,
 ) -> dict[str, torch.Tensor]:
     """
     Compute validation metrics of nucleic acids (dna/rna)
@@ -322,13 +337,13 @@ def get_nucleic_acid_metrics(
         all_atom_mask: atom mask [*, n_atom]
         is_protein_atomized: broadcasted is_protein feature [*, n_atom]
         substrate: 'rna', 'dna'
+        eps: epsilon
     Returns:
         out: dictionary containing validation metrics
             'lddt_intra_f'{dna/rna}': intra dna/rna lddt
             'lddt_inter_f'{dna/rna}'_f'{dna/rna}': inter dna/rna lddt
             'drmsd_intra_f'{dna/rna}': intra dna/rna drmsd
             'lddt_inter_protein_f'{dna/rna}': inter protein-dna/rna lddt
-
             'lddt_intra_{dna/rna}_15': intra dna/rna lddt with 15 A radius
             'lddt_inter_{dna/rna}_{dna/rna}_15': inter lddt with 15 A radius
             'lddt_inter_protein_{dna/rna}_15': inter protein-dna/rna lddt
@@ -380,10 +395,10 @@ def get_nucleic_acid_metrics(
 
     # (bs,(n_sample), n_na, n_na)
     gt_na_pair = torch.sqrt(
-        torch.sum((gt_na.unsqueeze(-2) - gt_na.unsqueeze(-3)) ** 2, dim=-1)
+        eps + torch.sum((gt_na.unsqueeze(-2) - gt_na.unsqueeze(-3)) ** 2, dim=-1)
     )
     pred_na_pair = torch.sqrt(
-        torch.sum((pred_na.unsqueeze(-2) - pred_na.unsqueeze(-3)) ** 2, dim=-1)
+        eps + torch.sum((pred_na.unsqueeze(-2) - pred_na.unsqueeze(-3)) ** 2, dim=-1)
     )
 
     intra_lddt, inter_lddt = lddt(
@@ -394,15 +409,13 @@ def get_nucleic_acid_metrics(
         inter_mask_atomized_na,
         asym_id_na,
         cutoff=30.0,
+        eps=eps,
     )
     out["lddt_intra_" + substrate] = intra_lddt
     out["lddt_inter_" + substrate + "_" + substrate] = inter_lddt
 
     intra_drmsd, _ = drmsd(
-        pred_na_pair,
-        gt_na_pair,
-        all_atom_mask_na,
-        asym_id_na,
+        pred_na_pair, gt_na_pair, all_atom_mask_na, asym_id_na, eps=eps
     )
     out["drmsd_intra_" + substrate] = intra_drmsd
 
@@ -414,6 +427,7 @@ def get_nucleic_acid_metrics(
         inter_mask_atomized_na,
         asym_id_na,
         cutoff=15.0,
+        eps=eps,
     )
     out["lddt_intra_" + substrate + "_15"] = intra_lddt_15
     out["lddt_inter_" + substrate + "_" + substrate + "_15"] = inter_lddt_15
@@ -428,6 +442,7 @@ def get_nucleic_acid_metrics(
         all_atom_mask_na,
         inter_filter_mask,
         cutoff=30.0,
+        eps=eps,
     )
     out["lddt_inter_protein_" + substrate] = inter_lddt_protein_na
 
@@ -440,6 +455,7 @@ def get_nucleic_acid_metrics(
         all_atom_mask_na,
         inter_filter_mask,
         cutoff=15.0,
+        eps=eps,
     )
     out["lddt_inter_protein_" + substrate + "_15"] = inter_lddt_protein_na_15
 
@@ -455,6 +471,7 @@ def get_nucleic_acid_metrics(
         all_atom_mask_protein,
         all_atom_mask_na,
         threshold=1.1,
+        eps=eps,
     )
     out["clash_inter_protein_" + substrate] = interface_clash
 
@@ -470,6 +487,7 @@ def get_ligand_metrics(
     gt_coords: torch.Tensor,
     all_atom_mask: torch.Tensor,
     is_protein_atomized: torch.Tensor,
+    eps: Optional[float] = 1e-10,
 ) -> dict[str, torch.Tensor]:
     """
     Compute validation metrics of a ligand
@@ -483,6 +501,7 @@ def get_ligand_metrics(
         gt_coords: gt coordinates [*, n_atom, 3]
         all_atom_mask: atom mask [*, n_atom]
         is_protein_atomized: broadcasted is_protein feature [*, n_atom]
+        eps: epsilon
     Returns:
         out: dictionary containing validation metrics
             'lddt_intra_ligand: intra ligand lddt
@@ -538,10 +557,14 @@ def get_ligand_metrics(
 
     # (bs,(n_sample), n_lig, n_lig)
     gt_ligand_pair = torch.sqrt(
-        torch.sum((gt_ligand.unsqueeze(-2) - gt_ligand.unsqueeze(-3)) ** 2, dim=-1)
+        eps
+        + torch.sum((gt_ligand.unsqueeze(-2) - gt_ligand.unsqueeze(-3)) ** 2, dim=-1)
     )
     pred_ligand_pair = torch.sqrt(
-        torch.sum((pred_ligand.unsqueeze(-2) - pred_ligand.unsqueeze(-3)) ** 2, dim=-1)
+        eps
+        + torch.sum(
+            (pred_ligand.unsqueeze(-2) - pred_ligand.unsqueeze(-3)) ** 2, dim=-1
+        )
     )
 
     intra_lddt, inter_lddt = lddt(
@@ -552,6 +575,7 @@ def get_ligand_metrics(
         inter_mask_atomized_ligand,
         asym_id_ligand,
         cutoff=15.0,
+        eps=eps,
     )
     out["lddt_intra_ligand"] = intra_lddt
     out["lddt_inter_ligand_ligand"] = inter_lddt
@@ -566,6 +590,7 @@ def get_ligand_metrics(
         asym_id_ligand,
         threshold=[0.25, 0.5, 0.75, 1.0],
         cutoff=15.0,
+        eps=eps,
     )
     out["lddt_intra_ligand_uha"] = intra_lddt_uha
     out["lddt_inter_ligand_ligand_uha"] = inter_lddt_uha
@@ -580,19 +605,17 @@ def get_ligand_metrics(
         all_atom_mask_ligand,
         inter_filter_mask,
         cutoff=15.0,
+        eps=eps,
     )
     out["lddt_inter_protein_ligand"] = inter_lddt_protein_ligand
 
     intra_drmsd, _ = drmsd(
-        pred_ligand_pair,
-        gt_ligand_pair,
-        all_atom_mask_ligand,
-        asym_id_ligand,
+        pred_ligand_pair, gt_ligand_pair, all_atom_mask_ligand, asym_id_ligand, eps=eps
     )
     out["drmsd_intra_ligand"] = intra_drmsd
 
     intra_clash, inter_clash = steric_clash(
-        pred_ligand_pair, all_atom_mask_ligand, asym_id_ligand, threshold=1.1
+        pred_ligand_pair, all_atom_mask_ligand, asym_id_ligand, threshold=1.1, eps=eps
     )
     out["clash_intra_ligand"] = intra_clash
     out["clash_inter_ligand_ligand"] = inter_clash
@@ -603,6 +626,7 @@ def get_ligand_metrics(
         all_atom_mask_protein,
         all_atom_mask_ligand,
         threshold=1.1,
+        eps=eps,
     )
     out["clash_inter_protein_ligand"] = interface_clash
 
@@ -614,6 +638,7 @@ def steric_clash(
     all_atom_mask: torch.Tensor,
     asym_id: torch.Tensor,
     threshold: Optional[float] = 1.1,
+    eps: Optional[float] = 1e-10,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Computes steric clash score
@@ -625,6 +650,7 @@ def steric_clash(
         threshold: threshold to define if there is steric clash
             Based on AF3 (SI 5.9.), define threshold as 1.1 Angstrom
             By no means perfect, a good threshold to capture any heavy atoms clashes
+        eps: epsilon
     Returns:
         intra_clash_score: steric clash for atoms with same asym_id (intra-chain)
         inter_clash_score: steric clash for atoms with different asym_id (inter-chain)
@@ -657,8 +683,8 @@ def steric_clash(
     inter_mask = mask * inter
     inter_clash = None
     if torch.any(inter_mask):
-        inter_clash = torch.sum(clash * inter_mask, dim=(-1, -2)) / torch.sum(
-            inter_mask, dim=(-1, -2)
+        inter_clash = torch.sum(clash * inter_mask, dim=(-1, -2)) / (
+            torch.sum(inter_mask, dim=(-1, -2)) + eps
         )
         inter_clash = inter_clash / threshold
 
@@ -671,6 +697,7 @@ def interface_steric_clash(
     all_atom_mask_protein: torch.Tensor,
     all_atom_mask_substrate: torch.Tensor,
     threshold: Optional[float] = 1.1,
+    eps: Optional[float] = 1e-10,
 ) -> torch.Tensor:
     """
     Computes steric clash score across protein and substrate
@@ -681,6 +708,7 @@ def interface_steric_clash(
         all_atom_mask_protein: protein atom mask
         all_atom_mask_substrate: substrate atom mask
         threshold: threshold definiing if two atoms have any steric clash
+        eps: epsilon
     Returns:
         interface_clash: clash between protein and substrate interface
 
@@ -691,7 +719,8 @@ def interface_steric_clash(
     """
     # pair distance
     pair_dist = torch.sqrt(
-        torch.sum(
+        eps
+        + torch.sum(
             (pred_protein.unsqueeze(-2) - pred_substrate.unsqueeze(-3)) ** 2, dim=-1
         )
     )
@@ -701,8 +730,8 @@ def interface_steric_clash(
 
     interface_clash = None
     if torch.any(mask):
-        interface_clash = torch.sum(clash * mask, dim=(-1, -2)) / torch.sum(
-            mask, dim=(-1, -2)
+        interface_clash = torch.sum(clash * mask, dim=(-1, -2)) / (
+            torch.sum(mask, dim=(-1, -2)) + eps
         )
         interface_clash = interface_clash / threshold
 
@@ -762,6 +791,7 @@ def get_full_complex_lddt(
     pred_coords: torch.Tensor,
     gt_coords: torch.Tensor,
     all_atom_mask: torch.Tensor,
+    eps: Optional[float] = 1e-10,
 ) -> dict[str, torch.Tensor]:
     """
     Computes lddt for the full complex, subject to intra chain filters
@@ -772,6 +802,7 @@ def get_full_complex_lddt(
         pred_coords: predicted coordinates [*, n_atom, 3]
         gt_coords: gt coordinates [*, n_atom, 3]
         all_atom_mask: atom mask [*, n_atom]
+        eps: epsilon
     Returns:
         out: dictionary containing validation metrics
             'lddt_complex': full complex lddt score
@@ -780,10 +811,14 @@ def get_full_complex_lddt(
 
     # Do the whole complex lddt
     gt_pair = torch.sqrt(
-        torch.sum((gt_coords.unsqueeze(-2) - gt_coords.unsqueeze(-3)) ** 2, dim=-1)
+        eps
+        + torch.sum((gt_coords.unsqueeze(-2) - gt_coords.unsqueeze(-3)) ** 2, dim=-1)
     )
     pred_pair = torch.sqrt(
-        torch.sum((pred_coords.unsqueeze(-2) - pred_coords.unsqueeze(-3)) ** 2, dim=-1)
+        eps
+        + torch.sum(
+            (pred_coords.unsqueeze(-2) - pred_coords.unsqueeze(-3)) ** 2, dim=-1
+        )
     )
 
     # mask out all inter chain computations
@@ -798,6 +833,7 @@ def get_full_complex_lddt(
         intra_filter_atomized,
         inter_filter_atomized_zeros,
         asym_id,
+        eps=eps,
     )
 
     out["lddt_intra_complex"] = complex_lddt
@@ -812,6 +848,7 @@ def get_plddt_metrics(
     is_dna_atomized: torch.Tensor,
     intra_filter_atomized: torch.Tensor,
     plddt_logits: torch.Tensor,
+    eps: Optional[float] = 1e-10,
 ) -> dict[str, torch.Tensor]:
     """
     Compute plddt metric and report for different atom types.
@@ -822,6 +859,7 @@ def get_plddt_metrics(
         is_dna_atomized: broadcasted is_dna feature [*, n_atom]
         intra_filter_atomized:[*, n_atom] filter for intra chain computations
         plddt_logits: [*, n_atom, 50] prediction output of lddt from model
+        eps: epsilon
     Returns:
         out: dictionary containing validation metrics
             'lddt_intra_protein': intra protein lddt
@@ -834,9 +872,9 @@ def get_plddt_metrics(
     # Report plddt scaled to 0-1
     plddt_complex = compute_plddt(plddt_logits) / 100
 
-    out["plddt_complex"] = torch.sum(
-        plddt_complex * intra_filter_atomized, dim=-1
-    ) / torch.sum(intra_filter_atomized, dim=-1)
+    out["plddt_complex"] = torch.sum(plddt_complex * intra_filter_atomized, dim=-1) / (
+        torch.sum(intra_filter_atomized, dim=-1) + eps
+    )
 
     is_protein_atomized = is_protein_atomized * intra_filter_atomized
     is_ligand_atomized = is_ligand_atomized * intra_filter_atomized
@@ -845,26 +883,26 @@ def get_plddt_metrics(
 
     if torch.any(is_protein_atomized):
         plddt_logits_protein = plddt_complex * is_protein_atomized
-        out["plddt_protein"] = torch.sum(plddt_logits_protein, dim=-1) / torch.sum(
-            is_protein_atomized, dim=-1
+        out["plddt_protein"] = torch.sum(plddt_logits_protein, dim=-1) / (
+            torch.sum(is_protein_atomized, dim=-1) + eps
         )
 
     if torch.any(is_ligand_atomized):
         plddt_logits_ligand = plddt_complex * is_ligand_atomized
-        out["plddt_ligand"] = torch.sum(plddt_logits_ligand, dim=-1) / torch.sum(
-            is_ligand_atomized, dim=-1
+        out["plddt_ligand"] = torch.sum(plddt_logits_ligand, dim=-1) / (
+            torch.sum(is_ligand_atomized, dim=-1) + eps
         )
 
     if torch.any(is_rna_atomized):
         plddt_logits_rna = plddt_complex * is_rna_atomized
-        out["plddt_rna"] = torch.sum(plddt_logits_rna, dim=-1) / torch.sum(
-            is_rna_atomized, dim=-1
+        out["plddt_rna"] = torch.sum(plddt_logits_rna, dim=-1) / (
+            torch.sum(is_rna_atomized, dim=-1) + eps
         )
 
     if torch.any(is_dna_atomized):
         plddt_logits_dna = plddt_complex * is_dna_atomized
-        out["plddt_dna"] = torch.sum(plddt_logits_dna, dim=-1) / torch.sum(
-            is_dna_atomized, dim=-1
+        out["plddt_dna"] = torch.sum(plddt_logits_dna, dim=-1) / (
+            torch.sum(is_dna_atomized, dim=-1) + eps
         )
 
     return out
@@ -881,6 +919,7 @@ def get_validation_lddt_metrics(
     asym_id_atomized: torch.Tensor,
     intra_filter_atomized: torch.Tensor,
     inter_filter_atomized: torch.Tensor,
+    eps: Optional[float] = 1e-10,
 ):
     """Compute lddt metrics for ligand-RNA, ligand-DNA and modified residues.
     These extra metrics are required for model selection metric.
@@ -896,6 +935,7 @@ def get_validation_lddt_metrics(
         asym_id_atomized: atomized asym_id feature [*, n_atom]
         intra_filter_atomized:[*, n_atom] filter for intra chain computations
         inter_filter_atomized: [*, n_atom, n_atom] pairwise interaction filter
+        eps: epsilon
     Returns:
         out: dictionary containing validation metrics, if applicable
             'lddt_inter_ligand_dna': inter ligand dna lddt
@@ -931,6 +971,7 @@ def get_validation_lddt_metrics(
             all_atom_mask[is_ligand_atomized].view(bs + (-1,)),
             inter_filter_mask_rna_ligand,
             cutoff=30.0,
+            eps=eps,
         )
         metrics.update({"lddt_inter_ligand_rna": lddt_inter_ligand_rna})
 
@@ -954,6 +995,7 @@ def get_validation_lddt_metrics(
             all_atom_mask[is_ligand_atomized].view(bs + (-1,)),
             inter_filter_mask_dna_ligand,
             cutoff=30.0,
+            eps=eps,
         )
 
         metrics["lddt_inter_ligand_dna"] = lddt_inter_ligand_dna
@@ -977,14 +1019,16 @@ def get_validation_lddt_metrics(
         ).reshape(inter_filter_atomized.shape[:-2] + (n_mr_atoms, n_mr_atoms))
 
         pred_mr_pair = torch.sqrt(
-            torch.sum(
+            eps
+            + torch.sum(
                 (pred_mr.unsqueeze(-2) - pred_mr.unsqueeze(-3)) ** 2,
                 dim=-1,
             )
         )
 
         gt_mr_pair = torch.sqrt(
-            torch.sum(
+            eps
+            + torch.sum(
                 (gt_mr.unsqueeze(-2) - gt_mr.unsqueeze(-3)) ** 2,
                 dim=-1,
             )
@@ -997,6 +1041,7 @@ def get_validation_lddt_metrics(
             intra_mask_atomized_mr,
             inter_mask_atomized_mr,
             asym_id_atomized[is_modified_residue_atomized].view(bs + (-1,)),
+            eps=eps,
         )
 
         metrics["lddt_intra_modified_residues"] = lddt_intra_modified_residues
