@@ -9,6 +9,7 @@ import logging
 import multiprocessing as mp
 import os
 import re
+import shutil
 import subprocess
 import warnings
 from functools import wraps
@@ -88,6 +89,21 @@ from tqdm import tqdm
     type=str,
 )
 @click.option(
+    "--subset_file",
+    required=False,
+    default=None,
+    help=(
+        "A tsv file of a single column containing IDs from the set of predicted"
+        "structures to subset the alignment to."
+    ),
+    type=click.Path(
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        path_type=Path,
+    ),
+)
+@click.option(
     "--log_file",
     required=True,
     help="File to where the output logs are saved.",
@@ -119,6 +135,7 @@ def main(
     output_directory: Path,
     gt_biounit_id: Optional[str],
     pred_biounit_id: Optional[str],
+    subset_file: Optional[Path],
     log_file: Path,
     num_workers: int,
     chunksize: int,
@@ -157,6 +174,14 @@ def main(
     pd.DataFrame(pred_pdb_ids).to_csv(
         output_directory / "preds_with_gt.tsv", index=False, header=False, sep="\t"
     )
+
+    if subset_file is not None:
+        subset_pdb_ids = pd.read_csv(subset_file, header=None, sep="\t")[0].tolist()
+        logger_main.info(f"{len(subset_pdb_ids)} IDs are in the subset file.")
+        pred_pdb_ids = sorted(set(pred_pdb_ids) & set(subset_pdb_ids))
+        logger_main.info(
+            f"{len(pred_pdb_ids)} predicted structures are in the subset file."
+        )
 
     try:
         # Pre-create directories
@@ -210,9 +235,15 @@ def main(
                 worker_log_directory.rmdir()
 
         # Collect failed entries
-        failed_pdb_ids = parse_failed_ids(log_file)
+        successful_pdb_ids, failed_pdb_ids = parse_success_status(log_file)
 
+        logger_main.info(f"{len(successful_pdb_ids)} are successfully aligned.")
         logger_main.info(f"{len(failed_pdb_ids)} failed to be aligned.")
+
+        if len(successful_pdb_ids) > 0:
+            pd.DataFrame(successful_pdb_ids).to_csv(
+                output_directory / "successful.tsv", index=False, header=False, sep="\t"
+            )
 
         if len(failed_pdb_ids) > 0:
             pd.DataFrame(failed_pdb_ids).to_csv(
@@ -224,7 +255,7 @@ def main(
                 desc="4/4: Removing failed dirs",
                 total=len(failed_pdb_ids),
             ):
-                (alignment_output_directory / f"{pdb_id}").rmdir()
+                shutil.rmtree(alignment_output_directory / f"{pdb_id}")
 
         else:
             logger_main.info("4/4: No failed dirs to remove.")
@@ -372,23 +403,63 @@ class _OSTCompareStructuresWrapper:
             logger.info(f"Failed to preprocess entry {pdb_id}:\n{e}\n")
 
 
-def parse_failed_ids(log_file: Path):
-    pattern = re.compile(r"^Failed to preprocess entry (\S+):")
-    failed_entries = []
+def parse_success_status(log_file: Path):
+    """
+    Parse the log and return two sorted lists:
+      - success_pdb_ids: PDBs that were processed and did not fail
+      - failed_pdb_ids: PDBs that encountered a failure
 
-    # Read the entire file at once, splitting by lines
+    A PDB is considered 'failed' if either:
+      1) The log contains "Failed to preprocess entry <PDB_ID>:"
+      2) The log shows "Command failed with return code X"
+         after a line "Processing <PDB_ID>."
+
+    Otherwise, if we see "Processing <PDB_ID>." and no corresponding fail,
+    that PDB is 'successful'.
+    """
+
+    # Regex patterns for relevant lines
+    re_failed_preprocess = re.compile(r"^Failed to preprocess entry (\S+):")
+    re_processing = re.compile(r"^Processing (\S+)\.$")
+    re_command_failed = re.compile(r"^Command failed with return code \d+")
+
+    # Keep track of all PDBs we see, and which ones fail
+    all_pdb_ids = set()
+    failed_pdb_ids = set()
+
+    # Tracks the current PDB being processed for associating "Command failed ..."
+    current_pdb = None
+
     lines = log_file.read_text().splitlines()
+    for line in lines:
+        # 1) "Processing <PDB_ID>." => track it as seen
+        match_proc = re_processing.match(line)
+        if match_proc:
+            current_pdb = match_proc.group(1)
+            all_pdb_ids.add(current_pdb)
+            continue
 
-    for i, line in enumerate(lines):
-        match = pattern.search(line)
-        if match:
-            pdb_id = match.group(1)
-            error_line = lines[i + 1] if i + 1 < len(lines) else ""
-            # Check if the next line mentions 'Permission denied'
-            if "Permission denied" in error_line:
-                failed_entries.append({"pdb_id": pdb_id, "error": error_line.strip()})
+        # 2) "Failed to preprocess entry <PDB_ID>:"
+        match_failp = re_failed_preprocess.match(line)
+        if match_failp:
+            pdb_id = match_failp.group(1)
+            all_pdb_ids.add(pdb_id)  # ensure it's in our set of 'seen' PDBs
+            failed_pdb_ids.add(pdb_id)
+            continue
 
-    return failed_entries
+        # 3) "Command failed with return code X" => last processed PDB is considered
+        #    failed
+        match_cmdfail = re_command_failed.match(line)
+        if match_cmdfail and current_pdb:
+            failed_pdb_ids.add(current_pdb)
+            # Optionally reset current_pdb = None if you want to avoid a repeated
+            # assignment if subsequent lines belong to a different PDB, but it's safe to
+            # leave.
+
+    success_pdb_ids = sorted(all_pdb_ids - failed_pdb_ids)
+    failed_pdb_ids = sorted(failed_pdb_ids)
+
+    return success_pdb_ids, failed_pdb_ids
 
 
 if __name__ == "__main__":
