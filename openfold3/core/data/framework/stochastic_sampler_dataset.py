@@ -89,7 +89,8 @@ class SamplerDataset(Dataset):
                 Index of the example to retrieve, passed from the DataLoader.
         """
         if not self.indices:
-            logger.info(
+            # This resampling should only be used for plightning training sanity check
+            logger.debug(
                 f"Resampling epoch in getitem(), {self.last_used_dataset_indices=}"
             )
             self.resample_epoch()
@@ -158,7 +159,6 @@ class SamplerDataset(Dataset):
     def resample_epoch(self):
         """Resample epoch_len number of samples according to the provided
         probabilities."""
-        # TODO: refactor
         # Sample dataset indices
         n_datasets = len(self.datasets)
         dataset_indices = torch.multinomial(
@@ -199,8 +199,6 @@ class SamplerDataset(Dataset):
             )
 
         self.indices = torch.stack((dataset_indices, datapoint_indices), dim=1).tolist()
-        # TODO Remove return of indices -- only used for debugging
-        return self.indices
 
     def get_worker_path(self, subdirs: list[str] | None, fname: str) -> str:
         """Returns the path to the worker output directory or file.

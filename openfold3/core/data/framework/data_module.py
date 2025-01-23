@@ -27,7 +27,6 @@ and highlight where you currently are in the process:
 
 import dataclasses
 import enum
-import logging
 import random
 import warnings
 from pathlib import Path
@@ -55,7 +54,6 @@ from openfold3.core.data.framework.stochastic_sampler_dataset import (
 from openfold3.core.utils.tensor_utils import dict_multimap
 
 _NUMPY_AVAILABLE = RequirementCache("numpy")
-logger = logging.getLogger(__name__)
 
 
 class DatasetMode(enum.Enum):
@@ -131,7 +129,7 @@ class DataModuleConfig:
         _dict = self.__dict__.copy()
         datasets = []
         for d in _dict["datasets"]:
-            new_d = d.copy_and_resolve_references() 
+            new_d = d.copy_and_resolve_references()
             new_d.config.dataset_paths = {
                 k: (str(v) if isinstance(v, Path) else v)
                 for k, v in new_d.config.dataset_paths.items()

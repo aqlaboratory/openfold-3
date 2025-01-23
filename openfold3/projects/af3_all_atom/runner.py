@@ -350,7 +350,7 @@ class AlphaFold3AllAtom(ModelRunner):
     def on_train_start(self):
         # Reload state from datamodule in case checkpoint has been used
         self._load_train_dataset_state_from_datamodule()
-        logger.warning(
+        logger.debug(
             f"Rank {self.global_rank} train start, setting up "
             f"{self.trainer.train_dataloader.dataset.last_used_dataset_indices=}"
         )
@@ -358,10 +358,7 @@ class AlphaFold3AllAtom(ModelRunner):
     def on_train_epoch_start(self):
         # At the start of each virtual epoch we want to resample the set of
         # datapoints to train on
-        indices = self.trainer.train_dataloader.dataset.resample_epoch()
-        logger.warning(
-            f"Rank {self.global_rank} Resample epoch at train epoch start {indices=}"
-        )
+        self.trainer.train_dataloader.dataset.resample_epoch()
         self._save_train_dataset_state_to_datamodule()
 
     def _log_epoch_metrics(self, metrics: MetricCollection):
