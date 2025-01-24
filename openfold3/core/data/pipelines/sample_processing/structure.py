@@ -7,6 +7,7 @@ from typing import Literal, NamedTuple
 from biotite.structure import AtomArray
 
 from openfold3.core.data.io.structure.cif import parse_target_structure
+from openfold3.core.data.primitives.caches.format import PreprocessingChainData
 from openfold3.core.data.primitives.permutation.mol_labels import (
     assign_mol_permutation_ids,
 )
@@ -14,9 +15,11 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
 from openfold3.core.data.primitives.structure.cleanup import filter_bonds
+from openfold3.core.data.primitives.structure.component import (
+    assign_component_ids_from_metadata,
+)
 from openfold3.core.data.primitives.structure.cropping import sample_crop_and_set_mask
 from openfold3.core.data.primitives.structure.labels import (
-    assign_component_ids_from_metadata,
     assign_uniquified_atom_names,
 )
 from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
@@ -39,7 +42,7 @@ def process_target_structure_af3(
     crop_config: dict,
     preferred_chain_or_interface: str | list[str, str] | None,
     structure_format: Literal["pkl", "npz"],
-    per_chain_metadata: dict[str, dict[str, str]],
+    per_chain_metadata: dict[str, PreprocessingChainData],
 ) -> ProcessedTargetStructure:
     """AF3 pipeline for processing target structure into AtomArrays.
 
@@ -59,7 +62,7 @@ def process_target_structure_af3(
         structure_format (Literal["pkl", "npz"]):
             File extension of the target structure. Only "pkl" and "npz" are currently
             supported.
-        per_chain_metadata (dict[str, dict[str, str]]):
+        per_chain_metadata (dict[str, PreprocessingChainData]):
             Metadata for each chain in the target structure, obtained from the dataset
             cache.
 
@@ -86,6 +89,7 @@ def process_target_structure_af3(
         keep_polymer_ligand=True,
         keep_ligand_ligand=True,
         remove_larger_than=2.4,
+        remove_metal_coordination=True,
         mask_intra_component=True,
     )
 
