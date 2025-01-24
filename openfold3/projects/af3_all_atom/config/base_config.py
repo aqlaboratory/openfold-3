@@ -531,7 +531,8 @@ project_config = mlc.ConfigDict(
                         "w_chain": 0.5,
                         "w_interface": 1.0,
                     },
-                    # TODO: disordered flag goes here, eventually move to yml
+                    # TODO: use in disordered PDB dataset, eventually move to yml
+                    "disable_non_protein_diffusion_weights": False,
                 },
                 "dataset_paths": {
                     "alignments_directory": PLACEHOLDER_PATH,
