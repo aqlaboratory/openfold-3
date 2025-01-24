@@ -1,5 +1,6 @@
 import logging
 from collections import defaultdict
+from typing import Literal
 
 import biotite.structure as struc
 import numpy as np
@@ -200,6 +201,7 @@ def update_author_to_pdb_labels(
     atom_array: AtomArray,
     use_author_res_id_if_missing: bool = True,
     create_auth_label_annotations: bool = True,
+    atom_array_source_format: Literal["cif", "pdb", "pdb_af2"] = "cif",
 ) -> None:
     """Changes labels in an author-assigned PDB structure to PDB-assigned labels.
 
@@ -212,12 +214,15 @@ def update_author_to_pdb_labels(
         atom_array:
             AtomArray containing the structure to change labels in.
         keep_res_id_if_nan:
-            Whether to keep the author-assigned residue IDs if they are NaN in
-            the PDB labels. This is important for correct bond record parsing/writing in
+            Whether to keep the author-assigned residue IDs if they are NaN in the PDB
+            labels. This is important for correct bond record parsing/writing in
             Biotite. Defaults to True.
         auth_label_annotations:
             Whether to keep the original author-assigned labels as annotations in the
             AtomArray.
+        atom_array_source_format:
+            Whether the AtomArray was parsed from a CIF file, PDB file or a PDB file
+            predicted by AF2, required due to some fields missing from the PDB format.
 
     """
     if create_auth_label_annotations:
@@ -226,14 +231,29 @@ def update_author_to_pdb_labels(
         atom_array.set_annotation("auth_comp_id", atom_array.res_name)
         atom_array.set_annotation("auth_atom_id", atom_array.atom_name)
 
-    # Replace author-assigned IDs with PDB-assigned IDs
-    atom_array.chain_id = atom_array.label_asym_id
-    atom_array.res_name = atom_array.label_comp_id
-    atom_array.atom_name = atom_array.label_atom_id
+    if atom_array_source_format == "cif":
+        # Replace author-assigned IDs with PDB-assigned IDs if cif
+        atom_array.chain_id = atom_array.label_asym_id
+        atom_array.res_name = atom_array.label_comp_id
+        atom_array.atom_name = atom_array.label_atom_id
+    elif atom_array_source_format == "pdb":
+        raise NotImplementedError(
+            "PDB format is not yet supported for updating author-assigned labels."
+        )
+    elif atom_array_source_format == "pdb_af2":
+        # Add "label_" IDs if pdb
+        atom_array.set_annotation("label_asym_id", atom_array.chain_id)
+        atom_array.set_annotation("label_comp_id", atom_array.res_name)
+        atom_array.set_annotation("label_atom_id", atom_array.atom_name)
+    else:
+        raise ValueError(
+            "The AtomArray source format must be either 'cif', 'pdb' or 'pdb_af2'."
+        )
 
     # Set residue IDs to PDB-assigned IDs but fallback to author-assigned IDs if they
     # are not assigned (important for correct bond record parsing/writing)
-    if use_author_res_id_if_missing:
+    # TODO: check if this is necessary for 'pdb' format
+    if use_author_res_id_if_missing & (atom_array_source_format == "cif"):
         author_res_ids = atom_array.res_id
         pdb_res_ids = atom_array.label_seq_id
         merged_res_ids = np.where(
@@ -242,7 +262,10 @@ def update_author_to_pdb_labels(
         atom_array.res_id = merged_res_ids
 
 
-def assign_entity_ids(atom_array: AtomArray) -> None:
+def assign_entity_ids(
+    atom_array: AtomArray,
+    atom_array_source_format: Literal["cif", "pdb", "pdb_af2"] = "cif",
+) -> None:
     """Assigns entity IDs to the AtomArray
 
     Entity IDs are assigned to each chain in the AtomArray based on the
@@ -252,10 +275,21 @@ def assign_entity_ids(atom_array: AtomArray) -> None:
     Args:
         atom_array:
             AtomArray containing the structure to assign entity IDs to.
+        atom_array_source_format:
+            Whether the AtomArray was parsed from a CIF file, PDB file or a PDB file
+            predicted by AF2, required due to some fields missing from the PDB format.
     """
     # Cast entity IDs from string to int and shorten name
-    atom_array.set_annotation("entity_id", atom_array.label_entity_id.astype(int))
-    atom_array.del_annotation("label_entity_id")
+    if atom_array_source_format == "cif":
+        atom_array.set_annotation("entity_id", atom_array.label_entity_id.astype(int))
+        atom_array.del_annotation("label_entity_id")
+    elif atom_array_source_format == "pdb":
+        raise NotImplementedError(
+            "PDB format is not yet supported for assigning entity IDs."
+        )
+    elif atom_array_source_format == "pdb_af2":
+        _, inverse_indices = np.unique(atom_array.chain_id, return_inverse=True)
+        atom_array.set_annotation("entity_id", inverse_indices)
 
 
 def assign_molecule_type_ids(atom_array: AtomArray, cif_file: pdbx.CIFFile) -> None:

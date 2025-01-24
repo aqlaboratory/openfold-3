@@ -29,7 +29,11 @@ from openfold3.core.data.pipelines.preprocessing.structure import (
 @click.option(
     "--gt_structures_directory",
     required=True,
-    help="Flat directory of cif files of ground truth PDB structures.",
+    help=(
+        "Directory of preprocessed GT PDB structures. It should contain one subdir "
+        "per PDB entry, with each subdir containing one or multiple structure files "
+        "of ground truth structures preprocessed using preprocess_pdb_af3.py."
+    ),
     type=click.Path(
         exists=True,
         file_okay=False,
@@ -41,10 +45,11 @@ from openfold3.core.data.pipelines.preprocessing.structure import (
     "--pred_structures_directory",
     required=True,
     help=(
-        "Directory containing one subdir per PDB entry, with each subdir."
-        " containing one or multiple cif files of predicted structures. The input "
-        "metadata cache is always subset to the set of PDB IDs for which a predicted"
-        " structure can be found in the pred_structures_directory."
+        "Directory of PDB structures predicted using AF2. It should contain one subdir "
+        "per PDB entry, with each subdir containing one or multiple cif files of "
+        "predicted structures. The input metadata cache is always subset to the set "
+        "of PDB IDs for which a predicted structure can be found in the "
+        "pred_structures_directory."
     ),
     type=click.Path(
         exists=True,
@@ -54,9 +59,15 @@ from openfold3.core.data.pipelines.preprocessing.structure import (
     ),
 )
 @click.option(
-    "--pred_file_name",
+    "--gt_file_format",
     required=True,
-    help="Name of the predicted structure file to choose from each per-entry subdir.",
+    help="File format of the structure file to use from gt_structures_directory.",
+    type=str,
+)
+@click.option(
+    "--pred_file_format",
+    required=True,
+    help="File format of the predicted file to use from pred_structures_directory.",
     type=str,
 )
 @click.option(
@@ -133,7 +144,8 @@ def main(
     metadata_cache_file: Path,
     gt_structures_directory: Path,
     pred_structures_directory: Path,
-    pred_file_name: str,
+    gt_file_format: str,
+    pred_file_format: str,
     output_directory: Path,
     ost_aln_output_directory: Path,
     subset_file: Path,
@@ -145,25 +157,34 @@ def main(
 
     Args:
         metadata_cache_file (Path):
-            _description_
+            Parent metadata cache file created by preprocessing the PDB using
+            scripts/data_preprocessing/preprocess_pdb_af3.py.
         gt_structures_directory (Path):
-            _description_
+            Directory of preprocessed GT PDB structures. It should contain one subdir
+            per PDB entry, with each subdir containing one or multiple structure files
+            of ground truth structures preprocessed using preprocess_pdb_af3.py.
         pred_structures_directory (Path):
-            _description_
-        pred_file_name (str):
-            _description_
+            Directory of PDB structures predicted using AF2. It should contain one
+            subdir per PDB entry, with each subdir containing one or multiple files
+            of predicted structures. The input metadata cache is always subset to the
+            set of PDB IDs for which a predicted structure can be found in the
+            pred_structures_directory.
         output_directory (Path):
-            _description_
+            Output directory for the disordered metadata cache and processed structures.
         ost_aln_output_directory (Path):
-            _description_
+            Directory where precomputed structural aligment results can be provided.
         subset_file (Path):
-            _description_
+            A tsv file containing a single column of PDB IDs to subset the metadata
+            cache to. If not provided, all PDB IDs from the metadata cache will be
+            used to create the disordered metadata cache. The input metadata cache is
+            always subset to the set of PDB IDs for which a predicted structure can
+            be found in the pred_structures_directory.
         num_workers (int):
-            _description_
+            Number of workers to use for parallel processing.
         chunksize (int):
-            _description_
+            Chunksize for parallel processing.
         log_file (Path):
-            _description_
+            A log file where the output logs are saved.
     """
     # Configure the logger
     logger = logging.getLogger(__name__)
@@ -180,7 +201,8 @@ def main(
         metadata_cache_file=metadata_cache_file,
         gt_structures_directory=gt_structures_directory,
         pred_structures_directory=pred_structures_directory,
-        pred_file_name=pred_file_name,
+        gt_file_format=gt_file_format,
+        pred_file_format=pred_file_format,
         output_directory=output_directory,
         ost_aln_output_directory=ost_aln_output_directory,
         subset_file=subset_file,

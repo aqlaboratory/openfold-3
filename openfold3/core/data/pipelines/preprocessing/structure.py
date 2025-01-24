@@ -27,10 +27,14 @@ from openfold3.core.data.io.sequence.fasta import write_multichain_fasta
 from openfold3.core.data.io.structure.cif import (
     SkippedStructure,
     parse_mmcif,
+    parse_target_structure,
     write_structure,
 )
 from openfold3.core.data.io.structure.mol import write_annotated_sdf
-from openfold3.core.data.io.structure.pdb import parse_protein_monomer_pdb_tmp
+from openfold3.core.data.io.structure.pdb import (
+    parse_pdb_af2,
+    parse_protein_monomer_pdb_tmp,
+)
 from openfold3.core.data.io.utils import encode_numpy_types
 from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
 from openfold3.core.data.primitives.caches.format import (
@@ -417,7 +421,7 @@ def preprocess_structure_and_write_outputs_af3(
         renumber_chain_ids=True,
         max_polymer_chains=max_polymer_chains,
     )
-    cif_file = parsed_mmcif.cif_file
+    cif_file = parsed_mmcif.structure_file
 
     # Basic structure-level metadata
     cif_data = get_cif_block(cif_file)
@@ -839,8 +843,8 @@ def preparse_protein_monomer_structures(
 # ---- disordered PDB metadata cache pipelines ----
 def find_parent_metadata_cache_subset(
     parent_metadata_cache: PreprocessingDataCache,
-    pred_structures_directory: Path,
     gt_structures_directory: Path,
+    pred_structures_directory: Path,
     ost_aln_output_directory: Path,
     subset_file: Path | None,
     logger: logging.Logger,
@@ -849,8 +853,8 @@ def find_parent_metadata_cache_subset(
 
     Args:
         parent_metadata_cache (PreprocessingDataCache): _description_
-        pred_structures_directory (Path): _description_
         gt_structures_directory (Path): _description_
+        pred_structures_directory (Path): _description_
         ost_aln_output_directory (Path): _description_
         subset_file (Path | None): _description_
         logger (logging.Logger): _description_
@@ -866,7 +870,7 @@ def find_parent_metadata_cache_subset(
 
     # - structures available
     pred_pdb_ids = [i.stem for i in list(pred_structures_directory.iterdir())]
-    gt_pdb_ids = [i.stem for i in list(pred_structures_directory.iterdir())]
+    gt_pdb_ids = [i.stem for i in list(gt_structures_directory.iterdir())]
 
     shared_pdb_ids = sorted(
         set(pred_pdb_ids)
@@ -1035,12 +1039,29 @@ def build_provisional_disordered_metadata_cache(
 
 def preprocess_disordered_structure_and_write_outputs_af3(
     pdb_id: str,
+    structure_data_entry: DisorderedPreprocessingStructureData,
+    gt_structures_directory: Path,
+    pred_structures_directory: Path,
+    gt_file_format: str,
+    pred_file_format: str,
 ):
-    # Create copy of GT
+    # Load GT and best GDT pred structures into AtomArrays
+    gt_atom_array = parse_target_structure(
+        target_structures_directory=gt_structures_directory,
+        pdb_id=pdb_id,
+        structure_format=gt_file_format,
+    )
+    _, pred_atom_array = parse_pdb_af2(
+        pred_structures_directory
+        / f"{pdb_id}/{structure_data_entry.best_model_filename}.{pred_file_format}"
+    )
 
     # Detect non-protein chains covalently linked to a protein chain and remove
 
     # Replace GT copy coordinates with non-aligned predicted coordinates
+    chimera_atom_array = gt_atom_array.copy()
+
+    print(chimera_atom_array)
 
     # iterate over non-protein chains and
     # - pocket align and apply transform
@@ -1080,7 +1101,8 @@ def preprocess_pdb_disordered_af3(
     metadata_cache_file: Path,
     gt_structures_directory: Path,
     pred_structures_directory: Path,
-    pred_file_name: str,
+    gt_file_format: str,
+    pred_file_format: str,
     output_directory: Path,
     ost_aln_output_directory: Path,
     subset_file: Path | None,
@@ -1088,26 +1110,13 @@ def preprocess_pdb_disordered_af3(
     chunksize: int,
     logger: Path,
 ):
-    """The full pipeline for creating the disordered metadata cache.
-
-    Args:
-        metadata_cache_file (Path): _description_
-        gt_structures_directory (Path): _description_
-        pred_structures_directory (Path): _description_
-        pred_file_name (str): _description_
-        output_directory (Path): _description_
-        ost_aln_output_directory (Path): _description_
-        subset_file (Path | None): _description_
-        num_workers (int): _description_
-        chunksize (int): _description_
-        logger (Path): _description_
-    """
+    """The full pipeline for creating the disordered metadata cache."""
     # Find subset parent metadata cache
     parent_metadata_cache = PreprocessingDataCache.from_json(metadata_cache_file)
     shared_pdb_ids = find_parent_metadata_cache_subset(
         parent_metadata_cache=parent_metadata_cache,
-        pred_structures_directory=pred_structures_directory,
         gt_structures_directory=gt_structures_directory,
+        pred_structures_directory=pred_structures_directory,
         ost_aln_output_directory=ost_aln_output_directory,
         subset_file=subset_file,
         logger=logger,
@@ -1123,9 +1132,11 @@ def preprocess_pdb_disordered_af3(
     )
 
     # Save provisional metadata cache
-    print(provisional_metadata_cache)
+    provisional_metadata_cache.to_json(
+        output_directory / "provisional_metadata_cache.json"
+    )
 
     # Preprocess disordered structures and update metadata cache entries
-    preprocess_disordered_structure_and_write_outputs_af3()
+    preprocess_disordered_structures()
 
     # Save final disordered metadata cache
