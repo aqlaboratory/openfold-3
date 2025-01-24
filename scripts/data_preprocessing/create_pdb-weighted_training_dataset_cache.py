@@ -63,6 +63,15 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
     help="Maximum number of polymer chains for included structures.",
 )
 @click.option(
+    "--allow-missing-alignment",
+    is_flag=True,
+    help=(
+        "If this flag is set, allow entries where not every RNA and protein sequence "
+        "matches to an alignment representative in the alignment_representatives_fasta."
+        " Otherwise skip these entries."
+    ),
+)
+@click.option(
     "--missing_alignment_log",
     type=click.Path(exists=False, file_okay=True, dir_okay=False, path_type=Path),
     default=None,
@@ -82,7 +91,7 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
     type=click.Path(exists=False, file_okay=True, dir_okay=False, path_type=Path),
     help="Path to write the log file to.",
     default=None,
-)
+) # TODO: Add docstring
 def main(
     metadata_cache_path: Path,
     preprocessed_dir: Path,
@@ -92,6 +101,7 @@ def main(
     max_release_date: str = "2021-09-30",
     max_resolution: float = 9.0,
     max_polymer_chains: int = 300,
+    allow_missing_alignment: bool = False,
     missing_alignment_log: Path | None = None,
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
     log_file: Path | None = None,
@@ -143,6 +153,7 @@ def main(
         max_release_date=max_release_date,
         max_resolution=max_resolution,
         max_polymer_chains=max_polymer_chains,
+        filter_missing_alignment=not allow_missing_alignment,
         missing_alignment_log=missing_alignment_log,
     )
 
