@@ -49,6 +49,7 @@ from openfold3.core.data.primitives.structure.cleanup import (
     fix_arginine_naming,
     remove_chains_with_CA_gaps,
     remove_clashing_chains,
+    remove_covalent_nonprotein_chains,
     remove_crystallization_aids,
     remove_fully_unknown_polymers,
     remove_hydrogens,
@@ -1057,6 +1058,7 @@ def preprocess_disordered_structure_and_write_outputs_af3(
     )
 
     # Detect non-protein chains covalently linked to a protein chain and remove
+    gt_atom_array = remove_covalent_nonprotein_chains(gt_atom_array)
 
     # Replace GT copy coordinates with non-aligned predicted coordinates
     chimera_atom_array = gt_atom_array.copy()

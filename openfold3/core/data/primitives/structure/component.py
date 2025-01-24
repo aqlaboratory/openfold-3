@@ -485,3 +485,25 @@ def get_ranking_fit(pdb_id):
         data = {}
 
     return data
+
+
+# TODO: find better place for this function
+def find_cross_chain_bonds(atom_array: AtomArray) -> np.ndarray:
+    """Finds all bonds between atoms in different chains.
+
+    Args:
+        atom_array (AtomArray):
+            The atom array to search for cross-chain bonds.
+
+    Returns:
+        np.ndarray:
+            A 2D array of shape (n_cross_chain_bonds, 3) where each row corresponds to a
+            bond between atoms in different chains. The columns are (atom_1_idx,
+            atom_2_idx, bond_type).
+    """
+    all_bonds = atom_array.bonds.as_array()
+    chain_ids_atom_1 = atom_array.chain_id[all_bonds[:, 0]]
+    chain_ids_atom_2 = atom_array.chain_id[all_bonds[:, 1]]
+    cross_chain_selector = chain_ids_atom_1 != chain_ids_atom_2
+
+    return all_bonds[cross_chain_selector]
