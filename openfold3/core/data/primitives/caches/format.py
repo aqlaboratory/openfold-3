@@ -103,12 +103,14 @@ class PreprocessingDataCache:
 
             if "skipped" in status:
                 release_date = structure_data["release_date"]
+                experimental_method = None
                 resolution = None
                 chains = None
                 interfaces = None
                 token_count = None
             elif status == "success":
                 release_date = structure_data["release_date"]
+                experimental_method = structure_data["experimental_method"]
                 resolution = structure_data["resolution"]
                 chains = structure_data["chains"]
                 interfaces = structure_data["interfaces"]
@@ -152,6 +154,7 @@ class PreprocessingDataCache:
             structure_data_cache[pdb_id] = PreprocessingStructureData(
                 status=status,
                 release_date=release_date,
+                experimental_method=experimental_method,
                 resolution=resolution,
                 chains=chain_data,
                 interfaces=interfaces,
