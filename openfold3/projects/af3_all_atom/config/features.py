@@ -77,6 +77,7 @@ feature_dict = mlc.ConfigDict(
                 "experimentally_resolved": [],
                 "pae": [],
                 "distogram": [],
+                "disable_non_protein_diffusion_weights": [],
             },
         },
     }
