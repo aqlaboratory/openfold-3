@@ -5,13 +5,17 @@ import pickle
 from pathlib import Path
 from typing import Literal, NamedTuple
 
-from biotite.structure import AtomArray
+from biotite.structure import AtomArray, get_chain_count
 from biotite.structure.io import pdb, pdbx
 
-from openfold3.core.data.io.structure.atom_array import read_atomarray_from_npz
+from openfold3.core.data.io.structure.atom_array import (
+    read_atomarray_from_npz,
+    write_atomarray_to_npz,
+)
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
+from openfold3.core.data.primitives.structure.cleanup import get_polymer_mask
 from openfold3.core.data.primitives.structure.labels import (
     assign_entity_ids,
     assign_molecule_type_ids,
@@ -33,7 +37,7 @@ class ParsedStructure(NamedTuple):
 
 class SkippedStructure(NamedTuple):
     structure_file: pdbx.CIFFile | pdb.PDBFile
-    n_polymer_chains: int
+    reason: str
 
 
 def _load_ciffile(file_path: Path | str) -> pdbx.CIFFile:
@@ -68,6 +72,7 @@ def parse_mmcif(
     renumber_chain_ids: bool = False,
     extra_fields: list | None = None,
     max_polymer_chains: int | None = None,
+    skip_all_zero_occ: bool = True,
 ) -> ParsedStructure | SkippedStructure:
     """Convenience wrapper around biotite's CIF parsing
 
@@ -108,24 +113,25 @@ def parse_mmcif(
         max_polymer_chains:
             Maximum number of polymer chains in the first bioassembly after which a
             structure is skipped by the get_structure() parser. Defaults to None.
+        skip_all_zero_occ:
+            Whether to skip structures where all atoms have zero occupancy. Defaults to
+            True.
 
     Returns:
         A ParsedStructure NamedTuple containing the parsed CIF file and the AtomArray,
-        or a SkippedStructure NamedTuple containing the CIF file and the number of
-        polymer chains in the first bioassembly.
+        or a SkippedStructure NamedTuple containing the CIF file and the reason for why
+        the structure was skipped.
     """
 
     cif_file = _load_ciffile(file_path)
     cif_data = get_cif_block(cif_file)
 
+    # Try predetermining if the structure has too many chains
     if max_polymer_chains is not None:
-        # Polymers in first bioassembly
         n_polymers = get_first_bioassembly_polymer_count(cif_data)
 
         if n_polymers > max_polymer_chains:
-            return SkippedStructure(cif_file, n_polymers)
-
-    cif_data = get_cif_block(cif_file)
+            return SkippedStructure(cif_file, f"Too many polymer chains: {n_polymers}")
 
     # Always include these fields
     label_fields = [
@@ -173,6 +179,17 @@ def parse_mmcif(
             **parser_args,
         )
 
+    # Check again if the structure has too many chains
+    if max_polymer_chains is not None:
+        n_polymers = get_chain_count(atom_array[get_polymer_mask(atom_array)])
+
+        if n_polymers > max_polymer_chains:
+            return SkippedStructure(cif_file, f"Too many polymer chains: {n_polymers}")
+
+    # Skip structures where all atoms have zero occupancy
+    if skip_all_zero_occ and atom_array.occupancy.sum() == 0:
+        return SkippedStructure(cif_file, "All atoms have zero occupancy")
+
     # Replace author-assigned IDs with PDB-assigned IDs
     update_author_to_pdb_labels(atom_array)
 
@@ -206,7 +223,7 @@ def write_structure(
             AtomArray to write to an output file.
         output_path:
             Path to write the output file to. The output format is inferred from the
-            file suffix. Allowed values are .cif, .bcif, and .pkl.
+            file suffix. Allowed values are .npz, .cif, .bcif, and .pkl.
         data_block:
             Name of the data block in the CIF/BCIF file. Defaults to None. Ignored if
             the format is pkl.
@@ -215,7 +232,10 @@ def write_structure(
             is pkl in which the entire BondList is written to the file.
     """
     suffix = output_path.suffix
-    if suffix == ".pkl":
+    if suffix == ".npz":
+        write_atomarray_to_npz(atom_array, output_path)
+        return
+    elif suffix == ".pkl":
         with open(output_path, "wb") as f:
             pickle.dump(atom_array, f)
         return

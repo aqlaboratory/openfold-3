@@ -10,9 +10,6 @@ from biotite.structure.io import pdbx
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
-from openfold3.core.data.primitives.structure.component import (
-    component_iter_from_metadata,
-)
 from openfold3.core.data.resources.residues import (
     CHEM_COMP_TYPE_TO_MOLECULE_TYPE,
     STANDARD_NUCLEIC_ACID_RESIDUES,
@@ -173,7 +170,8 @@ def assign_atom_indices(
             AtomArray containing the structure to assign atom indices to.
         label:
             Name of the annotation field to store the atom indices in. Defaults to
-            "_atom_idx".
+            "_atom_idx". Useful to avoid attribute clashes if a function is called on an
+            AtomArray that already has an "_atom_idx" field.
         overwrite:
             Whether to overwrite an existing annotation field with the same name.
             Defaults to False.
@@ -485,20 +483,6 @@ def component_iter(atom_array: AtomArray):
     component_starts = get_component_starts(atom_array, add_exclusive_stop=True)
     for start, stop in zip(component_starts[:-1], component_starts[1:]):
         yield atom_array[start:stop]
-
-
-@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-comp-id-assign")
-def assign_component_ids_from_metadata(
-    atom_array: AtomArray, per_chain_metadata: dict[str, dict]
-) -> None:
-    atom_array.set_annotation(
-        "component_id", np.full(len(atom_array), fill_value=-1, dtype=int)
-    )
-
-    for id, component in enumerate(
-        component_iter_from_metadata(atom_array, per_chain_metadata), start=1
-    ):
-        component.component_id[:] = id
 
 
 def set_residue_hetero_values(atom_array: AtomArray) -> None:

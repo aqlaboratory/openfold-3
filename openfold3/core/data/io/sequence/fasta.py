@@ -1,11 +1,14 @@
 """This module contains IO functions for reading and writing fasta files."""
 
 import contextlib
+import logging
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 
 def read_multichain_fasta(input_path: Path) -> dict[str, str]:
@@ -67,7 +70,13 @@ def consolidate_preprocessed_fastas(preprocessed_dir: Path) -> dict[str, str]:
     # Function to read FASTA for a single directory
     def process_pdb_dir(pdb_dir: Path):
         pdb_id = pdb_dir.name
-        chain_id_to_seq = read_multichain_fasta(pdb_dir / f"{pdb_id}.fasta")
+        fasta_path = pdb_dir / f"{pdb_id}.fasta"
+
+        if not fasta_path.exists():
+            logger.warning(f"FASTA file not found for {pdb_id}")
+            return {}
+
+        chain_id_to_seq = read_multichain_fasta(fasta_path)
         return {
             f"{pdb_id}_{chain_id}": seq for chain_id, seq in chain_id_to_seq.items()
         }

@@ -1,6 +1,5 @@
 """Util file for patching bugs in used packages."""
 
-import re
 from collections.abc import Generator
 
 import biotite.structure as struc
@@ -42,30 +41,6 @@ def construct_atom_array(atoms: list[struc.Atom]) -> struc.AtomArray:
     ##### PATCH END #####
 
     return array
-
-
-def correct_cif_string(cif_str: str, ccd_id: str):
-    """Temporary fix for a current bug in Biotite CIFBlock.serialize()
-
-    Essentially adds back erroneously missing line-breaks between comments and data
-    blocks. Also adds the data block name as a header.
-
-    Args:
-        cif_str:
-            CIF string to fix.
-        ccd_id:
-            CCD ID of the component to extract.
-
-    Returns:
-        Fixed CIF string.
-    """
-    # Matches `#` or `#  #` followed by a character
-    pattern = r"(^#\s*#?\s*)(\S)"
-
-    # Puts a newline between the two matched groups
-    fixed_str = re.sub(pattern, r"\1\n\2", cif_str, flags=re.MULTILINE)
-
-    return f"data_{ccd_id}\n{fixed_str}"
 
 
 def get_molecule_indices(atom_array: struc.AtomArray) -> list[np.ndarray]:

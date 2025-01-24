@@ -84,6 +84,15 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_val import (
     help="Random seed for reproducibility.",
 )
 @click.option(
+    "--allow-missing-alignment",
+    is_flag=True,
+    help=(
+        "If this flag is set, allow entries where not every RNA and protein sequence "
+        "matches to an alignment representative in the alignment_representatives_fasta."
+        " Otherwise skip these entries."
+    ),
+)
+@click.option(
     "--missing_alignment_log",
     type=click.Path(exists=False, file_okay=True, dir_okay=False, path_type=Path),
     default=None,
@@ -145,6 +154,7 @@ def main(
     min_release_date: str = "2021-10-01",
     max_resolution: float = 4.5,
     max_polymer_chains: int = 1000,
+    allow_missing_alignment: bool = False,
     missing_alignment_log: Path | None = None,
     max_tokens_initial: int = 2560,
     max_tokens_final: int = 2048,
@@ -185,6 +195,10 @@ def main(
             target.
         random_seed (int | None):
             Random seed for reproducibility.
+        allow_missing_alignment (bool):
+            If True, allow entries where not every RNA and protein sequence matches to
+            an alignment representative in the alignment_representatives_fasta.
+            Otherwise skip these entries.
         missing_alignment_log (Path | None):
             If not None, write all entries with missing alignment representatives to an
             additional log file.
@@ -216,6 +230,7 @@ def main(
         min_release_date=min_release_date,
         max_resolution=max_resolution,
         max_polymer_chains=max_polymer_chains,
+        filter_missing_alignment=not allow_missing_alignment,
         missing_alignment_log=missing_alignment_log,
         max_tokens_initial=max_tokens_initial,
         max_tokens_final=max_tokens_final,
