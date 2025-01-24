@@ -91,7 +91,7 @@ from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
     type=click.Path(exists=False, file_okay=True, dir_okay=False, path_type=Path),
     help="Path to write the log file to.",
     default=None,
-) # TODO: Add docstring
+)  # TODO: Add docstring
 def main(
     metadata_cache_path: Path,
     preprocessed_dir: Path,
