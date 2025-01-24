@@ -19,6 +19,7 @@ from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModule
 from openfold3.projects import registry
+from openfold3.projects.af3_all_atom.config.runner_file_checks import _check_data_module_config 
 
 torch_versions = torch.__version__.split(".")
 torch_major_version = int(torch_versions[0])
@@ -91,6 +92,7 @@ def main(args):
         dataset_config_builder,
         project_config,
     )
+    _check_data_module_config(data_module_config)
     lightning_data_module = DataModule(data_module_config)
 
     loggers = []
