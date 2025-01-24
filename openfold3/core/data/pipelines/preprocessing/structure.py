@@ -86,7 +86,9 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_resolution,
 )
 from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
+from openfold3.core.data.primitives.structure.transmutation import replace_coordinates
 from openfold3.core.data.primitives.structure.unresolved import add_unresolved_atoms
+from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
 
@@ -1045,6 +1047,7 @@ def preprocess_disordered_structure_and_write_outputs_af3(
     pred_structures_directory: Path,
     gt_file_format: str,
     pred_file_format: str,
+    ccd: CIFFile,
 ):
     # Load GT and best GDT pred structures into AtomArrays
     gt_atom_array = parse_target_structure(
@@ -1056,14 +1059,24 @@ def preprocess_disordered_structure_and_write_outputs_af3(
         pred_structures_directory
         / f"{pdb_id}/{structure_data_entry.best_model_filename}.{pred_file_format}"
     )
+    pred_atom_array = remove_hydrogens(pred_atom_array)
+    pred_atom_array = remove_std_residue_terminal_atoms(pred_atom_array)
+
+    # Sort atom order
+    gt_atom_array = canonicalize_atom_order(gt_atom_array, ccd)
+    pred_atom_array = canonicalize_atom_order(pred_atom_array, ccd)
 
     # Detect non-protein chains covalently linked to a protein chain and remove
     gt_atom_array = remove_covalent_nonprotein_chains(gt_atom_array)
 
     # Replace GT copy coordinates with non-aligned predicted coordinates
-    chimera_atom_array = gt_atom_array.copy()
-
-    print(chimera_atom_array)
+    chimera_atom_array = replace_coordinates(
+        target_atom_array=gt_atom_array,
+        source_atom_array=pred_atom_array,
+        chain_map=structure_data_entry.chain_map,
+        target_atom_mask=gt_atom_array.molecule_type_id == MoleculeType.PROTEIN,
+        source_atom_mask=pred_atom_array.molecule_type_id == MoleculeType.PROTEIN,
+    )
 
     # iterate over non-protein chains and
     # - pocket align and apply transform
