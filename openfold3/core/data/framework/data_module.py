@@ -154,14 +154,14 @@ class DataModule(pl.LightningDataModule):
 
         # Parse datasets
         self.multi_dataset_config = self.parse_data_config(data_config.datasets)
-        self._initialize_last_used_dataset_indices()
+        self._initialize_next_dataset_indices()
 
-    def _initialize_last_used_dataset_indices(self):
+    def _initialize_next_dataset_indices(self):
         train_configs = self.multi_dataset_config.get_config_for_mode(DatasetMode.train)
-        self.last_used_dataset_indices = dict()
+        self.next_dataset_indices = dict()
         for cfg in train_configs.configs:
             if cfg.custom.sample_in_order:
-                self.last_used_dataset_indices[cfg.name] = 0
+                self.next_dataset_indices[cfg.name] = 0
 
     def setup(self, stage=None):
         # Custom worker init function with manual data seed
@@ -218,7 +218,7 @@ class DataModule(pl.LightningDataModule):
                 epoch_len=self.epoch_len,
                 num_epochs=self.num_epochs,
                 generator=self.generator,
-                last_used_dataset_indices=self.last_used_dataset_indices,
+                next_dataset_indices = self.next_dataset_indices,
             )
             self.datasets_by_mode[DatasetMode.train] = train_dataset
 
@@ -462,19 +462,19 @@ class DataModule(pl.LightningDataModule):
         return self.generate_dataloader(DatasetMode.prediction)
 
     def state_dict(self):
-        state = {"last_used_dataset_indices": self.last_used_dataset_indices}
+        state = {"next_dataset_indices": self.next_dataset_indices}
         return state
 
     def load_state_dict(self, state_dict: dict[str, Any]):
-        loaded_index_keys = state_dict["last_used_dataset_indices"].keys()
-        current_index_keys = self.last_used_dataset_indices.keys()
+        loaded_index_keys = state_dict["next_dataset_indices"].keys()
+        current_index_keys = self.next_dataset_indices.keys()
         if set(loaded_index_keys) != set(current_index_keys):
             raise ValueError(
                 "Datasets selected for in-order sampling do not match in"
                 "current configuration and checkpoint."
                 f"Current {current_index_keys} Checkpoint {loaded_index_keys}"
             )
-        self.last_used_dataset_indices = state_dict["last_used_dataset_indices"]
+        self.next_dataset_indices = state_dict["next_dataset_indices"]
 
 
 # TODO: Remove debug logic

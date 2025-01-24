@@ -50,7 +50,7 @@ class SamplerDataset(Dataset):
         epoch_len: int,
         num_epochs: int,
         generator: torch.Generator,
-        last_used_dataset_indices: dict[str, Any],
+        next_dataset_indices: dict[str, Any],
     ) -> None:
         """Initializes the SamplerDataset class.
 
@@ -65,7 +65,7 @@ class SamplerDataset(Dataset):
                 Total number of virtual epochs. Used for calculating coverage.
             generator (torch.Generator):
                 torch.Generator instance for reproducibility.
-            last_used_dataset_indices:
+            next_dataset_indices:
                 Record of last used indices for datasets that use in-order sampling
         """
         super().__init__()
@@ -75,7 +75,7 @@ class SamplerDataset(Dataset):
         self.epoch_len = epoch_len
         self.num_epochs = num_epochs
         self.generator = generator
-        self.last_used_dataset_indices = last_used_dataset_indices
+        self.next_dataset_indices = next_dataset_indices
         self.indices = None
 
     def __len__(self):
@@ -91,7 +91,7 @@ class SamplerDataset(Dataset):
         if not self.indices:
             # This resampling should only be used for plightning training sanity check
             logger.debug(
-                f"Resampling epoch in getitem(), {self.last_used_dataset_indices=}"
+                f"Resampling epoch in getitem(), {self.next_dataset_indices=}"
             )
             self.resample_epoch()
 
@@ -137,7 +137,7 @@ class SamplerDataset(Dataset):
                 "datasets with nonuniform probabilities"
             )
 
-        start_idx = self.last_used_dataset_indices[dataset.name]
+        start_idx = self.next_dataset_indices[dataset.name]
         end_idx = start_idx + num_examples
 
         slice_indices = torch.arange(start_idx, min(end_idx, len(dataset)))
@@ -151,7 +151,7 @@ class SamplerDataset(Dataset):
             )
             slice_indices = torch.concat((slice_indices, torch.arange(0, end_idx)))
 
-        self.last_used_dataset_indices[dataset.name] = end_idx
+        self.next_dataset_indices[dataset.name] = end_idx
 
         return slice_indices
 
@@ -183,7 +183,7 @@ class SamplerDataset(Dataset):
                 device=self.generator.device
             ).manual_seed(generator_seed)
 
-            if dataset.name in self.last_used_dataset_indices:
+            if dataset.name in self.next_dataset_indices:
                 datapoint_indices_i = self.get_ordered_subset(
                     dataset, num_datapoints_per_dataset
                 )

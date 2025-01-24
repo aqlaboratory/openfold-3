@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import sys
+from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
@@ -62,7 +63,8 @@ def main(args):
 
     if runner_args.get("log_level"):
         log_level = runner_args.get("log_level").upper()
-        logging.basicConfig(filename='console_logs.log', level=log_level)
+        log_filepath = Path(runner_args.get("output_dir")) / "console_logs.log"
+        logging.basicConfig(filename=log_filepath, level=log_level)
 
     is_distributed = (
         runner_args.get("num_gpus", 0) > 1 or runner_args.get("num_nodes", 1) > 1

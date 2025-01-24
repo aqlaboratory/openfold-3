@@ -338,13 +338,13 @@ class AlphaFold3AllAtom(ModelRunner):
         return batch
 
     def _save_train_dataset_state_to_datamodule(self):
-        self.trainer.datamodule.last_used_dataset_indices = (
-            self.trainer.train_dataloader.dataset.last_used_dataset_indices
+        self.trainer.datamodule.next_dataset_indices = (
+            self.trainer.train_dataloader.dataset.next_dataset_indices
         )
 
     def _load_train_dataset_state_from_datamodule(self):
-        self.trainer.train_dataloader.dataset.last_used_dataset_indices = (
-            self.trainer.datamodule.last_used_dataset_indices
+        self.trainer.train_dataloader.dataset.next_dataset_indices = (
+            self.trainer.datamodule.next_dataset_indices
         )
 
     def on_train_start(self):
@@ -353,7 +353,7 @@ class AlphaFold3AllAtom(ModelRunner):
         if self.global_rank == 0:
             logger.debug(
                 f"Train start, setting up "
-                f"{self.trainer.train_dataloader.dataset.last_used_dataset_indices=}"
+                f"{self.trainer.train_dataloader.dataset.next_dataset_indices=}"
             )
 
     def on_train_epoch_start(self):
