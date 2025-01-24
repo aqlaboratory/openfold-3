@@ -29,7 +29,7 @@ def _check_data_module_config(data_module_config: DataModuleConfig):
         alignment_path_names = ["alignments_directory", "alignment_db_directory", "alignment_array_directory"] 
         _check_file_path_group(dataset_paths, alignment_path_names)
 
-        template_path_names = ["template_cache_directory", "template_structures_directory", "template_structure_array_directory"]
+        template_path_names = ["template_structures_directory", "template_structure_array_directory"]
         _check_file_path_group(dataset_paths, template_path_names)
 
         structure_path_names = ["target_structures_directory"]
