@@ -152,7 +152,6 @@ class SamplerDataset(Dataset):
             slice_indices = torch.concat((slice_indices, torch.arange(0, end_idx)))
 
         self.last_used_dataset_indices[dataset.name] = end_idx
-        logging.warning(f"{dataset.name=} {slice_indices=}")
 
         return slice_indices
 

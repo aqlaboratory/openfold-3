@@ -27,6 +27,8 @@ if torch_major_version > 1 or (torch_major_version == 1 and torch_minor_version 
     # Gives a large speedup on Ampere-class GPUs
     torch.set_float32_matmul_precision("high")
 
+logger = logging.getLogger(__name__)
+
 
 def _configure_wandb_logger(
     wandb_args: ConfigDict, is_mpi_rank_zero: bool, output_dir: str
@@ -57,6 +59,10 @@ def _configure_wandb_logger(
 
 def main(args):
     runner_args = ConfigDict(config_utils.load_yaml(args.runner_yaml))
+
+    if runner_args.get("log_level"):
+        log_level = runner_args.get("log_level").upper()
+        logging.basicConfig(filename='console_logs.log', level=log_level)
 
     is_distributed = (
         runner_args.get("num_gpus", 0) > 1 or runner_args.get("num_nodes", 1) > 1
