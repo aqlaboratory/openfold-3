@@ -10,10 +10,11 @@ import logging
 import multiprocessing as mp
 import time
 import traceback
+from functools import wraps
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Literal
-from functools import wraps
+
 import boto3
 import numpy as np
 import pandas as pd
@@ -38,9 +39,9 @@ from openfold3.core.data.io.structure.pdb import (
 from openfold3.core.data.io.utils import encode_numpy_types
 from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
 from openfold3.core.data.primitives.caches.format import (
-    PreprocessingChainData,
     DisorderedPreprocessingDataCache,
     DisorderedPreprocessingStructureData,
+    PreprocessingChainData,
     PreprocessingDataCache,
     PreprocessingStructureData,
     ProteinMonomerDatasetCache,
@@ -1147,6 +1148,7 @@ def preprocess_disordered_structure_and_write_outputs_af3(
         target_atom_mask=gt_atom_array.molecule_type_id == MoleculeType.PROTEIN,
         source_atom_mask=pred_atom_array.molecule_type_id == MoleculeType.PROTEIN,
     )
+    print(chimera_atom_array)
 
     # iterate over non-protein chains and
     # - pocket align and apply transform

@@ -78,7 +78,9 @@ def filter_structure_metadata_af3(
     filtered_cache = filter_by_skipped_structures(structure_cache)
     # TODO: we need to catch NMR etc. here which don't have a defined resolution and
     # probably set resolution for them to zero
-    filtered_cache = with_log(filter_by_resolution)(filtered_cache, max_resolution)
+    filtered_cache = with_log(filter_by_resolution)(
+        filtered_cache, max_resolution, ignore_nmr=True
+    )
 
     filtered_cache = with_log(filter_by_release_date)(
         filtered_cache,
@@ -105,6 +107,7 @@ def create_pdb_training_dataset_cache_af3(
     max_release_date: datetime.date | str,
     max_resolution: float = 9.0,
     max_polymer_chains: int = 300,
+    filter_missing_alignment: bool = True,
     missing_alignment_log: Path = None,
 ) -> None:
     """Create a training cache from a metadata cache.
@@ -129,6 +132,10 @@ def create_pdb_training_dataset_cache_af3(
             Maximum resolution for structures in the dataset in Å.
         max_polymer_chains:
             Maximum number of polymer chains for included structures.
+        filter_missing_alignment:
+            Whether to filter out chains (and their corresponding structures) whose
+            sequences do not match to a representative in the
+            alignment_representatives_fasta.
         missing_alignment_log:
             Path to write a JSON file containing all chains that were filtered out
             because they do not have a corresponding alignment.
@@ -164,39 +171,40 @@ def create_pdb_training_dataset_cache_af3(
 
     # Map each target chain to an alignment representative, then filter all structures
     # without alignment representatives
-    if missing_alignment_log:
-        structure_data, unmatched_entries = with_log(
-            add_and_filter_alignment_representatives
-        )(
-            structure_cache=dataset_cache.structure_data,
-            query_chain_to_seq=id_to_sequence,
-            alignment_representatives_fasta=alignment_representatives_fasta,
-            return_no_repr=True,
-        )
+    if filter_missing_alignment:
+        if missing_alignment_log:
+            structure_data, unmatched_entries = with_log(
+                add_and_filter_alignment_representatives
+            )(
+                structure_cache=dataset_cache.structure_data,
+                query_chain_to_seq=id_to_sequence,
+                alignment_representatives_fasta=alignment_representatives_fasta,
+                return_no_repr=True,
+            )
 
-        # Write all chains without alignment representatives to a JSON file. These are
-        # excluded from training.
-        with open(missing_alignment_log, "w") as f:
-            # Convert the internal dataclasses to dict
-            unmatched_entries = {
-                pdb_id: {chain_id: asdict(chain_data)}
-                for pdb_id, chain_data in unmatched_entries.items()
-                for chain_id, chain_data in chain_data.items()
-            }
+            # Write all chains without alignment representatives to a JSON file. These
+            # are excluded from training.
+            with open(missing_alignment_log, "w") as f:
+                # Convert the internal dataclasses to dict
+                unmatched_entries = {
+                    pdb_id: {chain_id: asdict(chain_data)}
+                    for pdb_id, chain_data in unmatched_entries.items()
+                    for chain_id, chain_data in chain_data.items()
+                }
 
-            # Format datacache-types appropriately
-            unmatched_entries = format_nested_dict_for_json(unmatched_entries)
+                # Format datacache-types appropriately
+                unmatched_entries = format_nested_dict_for_json(unmatched_entries)
 
-            json.dump(unmatched_entries, f, indent=4)
-    else:
-        structure_data = with_log(add_and_filter_alignment_representatives)(
-            dataset_cache.structure_data,
-            query_chain_to_seq=id_to_sequence,
-            alignment_representatives_fasta=alignment_representatives_fasta,
-            preprocessed_dir=preprocessed_dir,
-        )
+                json.dump(unmatched_entries, f, indent=4)
+        else:
+            structure_data = with_log(add_and_filter_alignment_representatives)(
+                dataset_cache.structure_data,
+                query_chain_to_seq=id_to_sequence,
+                alignment_representatives_fasta=alignment_representatives_fasta,
+                preprocessed_dir=preprocessed_dir,
+            )
 
-    dataset_cache.structure_data = structure_data
+        dataset_cache.structure_data = structure_data
 
     # Add cluster IDs and cluster sizes for all chains
     logger.info("Adding cluster information...")

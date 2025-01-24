@@ -41,9 +41,10 @@ def replace_coordinates(
 
     source_atom_array_slice = source_atom_array[source_atom_mask].copy()
 
+    print(source_atom_array_slice)
     # Add replaced coordinates back to the full atom array
 
-    return chimera_atom_array
+    # return chimera_atom_array
 
 
 def check_atom_array_compatibility(

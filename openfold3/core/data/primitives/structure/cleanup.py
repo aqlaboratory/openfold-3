@@ -3,7 +3,7 @@ from functools import wraps
 
 import biotite.structure as struc
 import numpy as np
-from biotite.structure import AtomArray, BondList, BondType, BondType, index_distance
+from biotite.structure import AtomArray, BondList, BondType, index_distance
 from biotite.structure.io.pdbx import CIFFile
 from scipy.spatial.distance import cdist
 
