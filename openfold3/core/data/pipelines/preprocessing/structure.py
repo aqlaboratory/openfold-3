@@ -15,6 +15,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Literal
 
+import biotite.structure as struc
 import boto3
 import numpy as np
 import pandas as pd
@@ -49,6 +50,7 @@ from openfold3.core.data.primitives.caches.format import (
 from openfold3.core.data.primitives.permutation.mol_labels import (
     assign_mol_permutation_ids,
 )
+from openfold3.core.data.primitives.structure.alignment import coalign_atom_arrays
 from openfold3.core.data.primitives.structure.cleanup import (
     canonicalize_atom_order,
     convert_MSE_to_MET,
@@ -1125,6 +1127,7 @@ def preprocess_disordered_structure_and_write_outputs_af3(
     pred_structures_directory: Path,
     gt_file_format: str,
     pred_file_format: str,
+    pocket_distance_threshold: float,
     ccd: CIFFile,
 ):
     # Load GT and best GDT pred structures into AtomArrays
@@ -1182,10 +1185,23 @@ def preprocess_disordered_structure_and_write_outputs_af3(
     )
     print(pred_atom_array_annotated)
 
-    # iterate over non-protein chains and
-    # - pocket align and apply transform
-    # - replace coordinates of matching non-protein chain in GT copy with transformed
-
+    # Pocket align each GT non-protein chain to the predicted protein chains via
+    # the GT protein chains
+    gt_atom_array_nonprotein = gt_atom_array[
+        gt_atom_array.molecule_type_id != MoleculeType.PROTEIN
+    ]
+    gt_atom_array_nonprotein_aligned = coalign_atom_arrays(
+        fixed=pred_atom_array_annotated,
+        mobile=gt_atom_array_protein,
+        comobile=gt_atom_array_nonprotein,
+        distance_threshold=pocket_distance_threshold,
+        mobile_distance_atom_names=["N", "CA", "C"],
+        alignment_mask_atom_names=["N", "CA", "C"],
+    )
+    chimeric_atom_array = struc.stack(
+        [pred_atom_array_annotated, gt_atom_array_nonprotein_aligned]
+    )
+    print(chimeric_atom_array)
     # Calculate clashes
 
     # Save structure
