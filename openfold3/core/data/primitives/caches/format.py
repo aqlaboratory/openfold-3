@@ -295,7 +295,7 @@ class DisorderedPreprocessingDataCache:
                 gdt=gdt,
                 chain_map=chain_map,
                 best_model_filename=best_model_filename,
-                has_clash=has_clash,
+                distance_clash_map=has_clash,
             )
 
         # Format the reference molecule data
@@ -332,7 +332,7 @@ class DisorderedPreprocessingStructureData(PreprocessingStructureData):
     gdt: float
     chain_map: dict[str, str]
     best_model_filename: str
-    has_clash: bool
+    distance_clash_map: dict[float, bool]
 
 
 PreprocessingStructureDataCache: TypeAlias = dict[str, PreprocessingStructureData]

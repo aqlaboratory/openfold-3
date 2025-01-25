@@ -95,3 +95,36 @@ def coalign_atom_arrays(
         comobile_aligned.append(transformation.apply(comobile_chain))
 
     return struc.concatenate(comobile_aligned)
+
+
+def calculate_distance_clash_map(
+    query_atom_array: AtomArray,
+    target_atom_array: AtomArray,
+    distance_thresholds: list[float],
+) -> dict[float, bool]:
+    """Returns whether two AtomArrays have atoms within given distance thresholds.
+
+    Args:
+        query_atom_array (AtomArray):
+            First AtomArray to compare.
+        target_atom_array (AtomArray):
+            Second AtomArray to compare.
+        distance_thresholds (list[float]):
+            List of distance thresholds.
+
+    Returns:
+        dict[float, bool]:
+            Dictionary mapping distance thresholds to whether the two AtomArrays
+            have any atoms within the corresponding distance.
+    """
+
+    distance_clash_map = {}
+    for d in distance_thresholds:
+        atom_pair_idxs = get_query_interface_atom_pair_idxs(
+            query_atom_array=query_atom_array,
+            target_atom_array=target_atom_array,
+            distance_threshold=d,
+        )
+        distance_clash_map[d] = atom_pair_idxs.shape[0] != 0
+
+    return distance_clash_map

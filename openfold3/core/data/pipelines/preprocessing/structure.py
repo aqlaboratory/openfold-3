@@ -16,6 +16,7 @@ from tempfile import NamedTemporaryFile
 from typing import Literal
 
 import biotite.structure as struc
+import biotite.structure.io as strucio
 import boto3
 import numpy as np
 import pandas as pd
@@ -26,6 +27,7 @@ from tqdm import tqdm
 
 from openfold3.core.data.io.s3 import download_file_from_s3
 from openfold3.core.data.io.sequence.fasta import write_multichain_fasta
+from openfold3.core.data.io.structure.atom_array import write_atomarray_to_npz
 from openfold3.core.data.io.structure.cif import (
     SkippedStructure,
     parse_mmcif,
@@ -50,7 +52,10 @@ from openfold3.core.data.primitives.caches.format import (
 from openfold3.core.data.primitives.permutation.mol_labels import (
     assign_mol_permutation_ids,
 )
-from openfold3.core.data.primitives.structure.alignment import coalign_atom_arrays
+from openfold3.core.data.primitives.structure.alignment import (
+    calculate_distance_clash_map,
+    coalign_atom_arrays,
+)
 from openfold3.core.data.primitives.structure.cleanup import (
     canonicalize_atom_order,
     convert_MSE_to_MET,
@@ -1025,7 +1030,7 @@ def create_provisional_disordered_structure_data_entry(
         gdt=gdts[best_idx],
         chain_map=chain_map,
         best_model_filename=aln_filenames[best_idx],
-        has_clash=None,
+        distance_clash_map=None,
     )
 
 
@@ -1056,7 +1061,7 @@ class _DisorderedMetadataCacheBuilder:
                 token_count=None,
                 gdt=None,
                 chain_map=None,
-                has_clash=None,
+                distance_clash_map=None,
             )
 
             return pdb_id, failed_provisional_entry
@@ -1127,8 +1132,10 @@ def preprocess_disordered_structure_and_write_outputs_af3(
     pred_structures_directory: Path,
     gt_file_format: str,
     pred_file_format: str,
-    pocket_distance_threshold: float,
+    output_directory: Path,
     ccd: CIFFile,
+    pocket_distance_threshold: float,
+    clash_distance_thresholds: list[float],
 ):
     # Load GT and best GDT pred structures into AtomArrays
     gt_atom_array = parse_target_structure(
@@ -1151,6 +1158,7 @@ def preprocess_disordered_structure_and_write_outputs_af3(
     gt_atom_array = remove_covalent_nonprotein_chains(gt_atom_array)
 
     # Transfer annotations from GT protein to pred and remove unnecessary annotations
+    # TODO: expose annot arguments
     gt_atom_array_protein = gt_atom_array.molecule_type_id == MoleculeType.PROTEIN
     pred_atom_array_annotated = remove_transfer_annotations(
         target_atom_array=pred_atom_array,
@@ -1201,13 +1209,29 @@ def preprocess_disordered_structure_and_write_outputs_af3(
     chimeric_atom_array = struc.concatenate(
         [pred_atom_array_annotated, gt_atom_array_nonprotein_aligned]
     )
-    print(chimeric_atom_array)
-    # Calculate clashes
 
-    # Save structure
+    # Calculate clashes
+    distance_clash_map = calculate_distance_clash_map(
+        query_atom_array=chimeric_atom_array[
+            chimeric_atom_array.molecule_type_id == MoleculeType.PROTEIN
+        ],
+        target_atom_array=chimeric_atom_array[
+            chimeric_atom_array.molecule_type_id != MoleculeType.PROTEIN
+        ],
+        distance_thresholds=clash_distance_thresholds,
+    )
+
+    # Save structure as cif and npz
+    strucio.save_structure(
+        output_directory / f"{pdb_id}/{pdb_id}.cif",
+        chimeric_atom_array,
+    )
+    write_atomarray_to_npz(
+        chimeric_atom_array, output_directory / f"{pdb_id}/{pdb_id}.npz"
+    )
 
     # Return clash status
-    pass
+    return distance_clash_map
 
 
 class _AF3PreprocessingDisorderedWrapper:
