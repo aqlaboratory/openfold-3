@@ -190,7 +190,7 @@ class PreprocessingDataCache:
 
 @register_datacache
 @dataclass
-class DisorderedPreprocessingDataCache:
+class DisorderedPreprocessingDataCache(PreprocessingDataCache):
     """Complete data cache from preprocessing metadata_cache."""
 
     structure_data: DisorderedPreprocessingStructureDataCache
@@ -199,7 +199,7 @@ class DisorderedPreprocessingDataCache:
     # TODO: refactor the PreprocessingDataCache to be more general so that functions
     # like this can be mostly reused
     @classmethod
-    def from_json(cls, file: Path) -> PreprocessingDataCache:
+    def from_json(cls, file: Path) -> DisorderedPreprocessingDataCache:
         """Read the metadata cache created in preprocessing from a JSON file.
 
         Args:
@@ -312,6 +312,7 @@ class DisorderedPreprocessingDataCache:
         )
 
 
+# TODO: make categorical attributes like experimental method Enum
 @dataclass
 class PreprocessingStructureData:
     """Structure-wise data from preprocessing metadata_cache."""
