@@ -571,27 +571,33 @@ def remove_transfer_annotations(
         if annot in delete_annot_list:
             target_atom_array_annotated.del_annotation(annot)
 
-    # Add annotations that need transferring with defaults
+    # Add missing annotations that need transferring with defaults
     for annot, default_value in transfer_annot_dict.items():
-        target_atom_array_annotated.set_annotation(
-            annot, np.full(len(target_atom_array_annotated), default_value)
-        )
+        if annot not in target_atom_array_annotated.get_annotation_categories():
+            target_atom_array_annotated.set_annotation(
+                annot, np.full(len(target_atom_array_annotated), default_value)
+            )
 
     # Iterate over chains
     for source_chain_id, target_chain_id in chain_map.items():
-        # Subset to current chain
+        # Get current chain slice in copy and associated mask
         target_chain_mask = target_atom_array.label_asym_id == target_chain_id
         target_chain = target_atom_array_annotated[target_chain_mask]
+
+        # Get source chain slice and residue starts
         source_chain = source_atom_array[
             source_atom_array.label_asym_id == source_chain_id
         ]
+        source_chain_res_starts = struc.get_residue_starts(source_chain)
+
         # Transfer annotations
         for annot in transfer_annot_dict:
-            annot_update = struc.spread_residue_wise(
-                target_chain, getattr(source_chain, annot)
+            # Get residue-wise source annotations
+            source_annot_per_res = struc.spread_residue_wise(
+                target_chain, getattr(source_chain[source_chain_res_starts], annot)
             )
             getattr(target_atom_array_annotated, annot)[target_chain_mask] = (
-                annot_update
+                source_annot_per_res
             )
 
     return target_atom_array_annotated
