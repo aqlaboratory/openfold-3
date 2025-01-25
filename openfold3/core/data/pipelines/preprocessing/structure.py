@@ -1245,8 +1245,7 @@ def preprocess_disordered_structure_and_write_outputs_af3(
 
     # Calculate clashes
     distance_clash_map = calculate_distance_clash_map(
-        query_atom_array=chimeric_atom_array,
-        target_atom_array=chimeric_atom_array,
+        atom_array=chimeric_atom_array,
         distance_thresholds=clash_distance_thresholds,
     )
 
