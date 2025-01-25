@@ -12,9 +12,7 @@ from openfold3.core.data.primitives.caches.filtering import (
     get_all_cache_chains,
     logger,
 )
-from openfold3.core.data.primitives.caches.format import (
-    ClusteredDatasetCache,
-)
+from openfold3.core.data.primitives.caches.format import ClusteredDatasetCache
 from openfold3.core.data.resources.residues import MoleculeType
 
 

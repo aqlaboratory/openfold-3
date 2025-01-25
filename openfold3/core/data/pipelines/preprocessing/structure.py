@@ -6,8 +6,8 @@ procedures of different models.
 import json
 import logging
 import multiprocessing as mp
+import time
 import traceback
-from functools import wraps
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Literal
@@ -30,8 +30,15 @@ from openfold3.core.data.io.structure.mol import write_annotated_sdf
 from openfold3.core.data.io.structure.pdb import parse_protein_monomer_pdb_tmp
 from openfold3.core.data.io.utils import encode_numpy_types
 from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
-from openfold3.core.data.primitives.caches.format import ProteinMonomerDatasetCache
+from openfold3.core.data.primitives.caches.format import (
+    PreprocessingChainData,
+    ProteinMonomerDatasetCache,
+)
+from openfold3.core.data.primitives.permutation.mol_labels import (
+    assign_mol_permutation_ids,
+)
 from openfold3.core.data.primitives.structure.cleanup import (
+    canonicalize_atom_order,
     convert_MSE_to_MET,
     fix_arginine_naming,
     remove_chains_with_CA_gaps,
@@ -47,7 +54,8 @@ from openfold3.core.data.primitives.structure.cleanup import (
 )
 from openfold3.core.data.primitives.structure.component import (
     AnnotatedMol,
-    get_components,
+    assign_component_ids_from_metadata,
+    get_component_info,
     mol_from_atomarray,
     mol_from_ccd_entry,
 )
@@ -71,7 +79,10 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_release_date,
     get_resolution,
 )
-from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
+from openfold3.core.data.primitives.structure.tokenization import (
+    get_token_count,
+    tokenize_atom_array,
+)
 from openfold3.core.data.primitives.structure.unresolved import add_unresolved_atoms
 
 logger = logging.getLogger(__name__)
@@ -86,7 +97,10 @@ def _init_worker(profile_name: str = "openfold") -> None:
 
 
 def cleanup_structure_af3(
-    atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile
+    atom_array: AtomArray,
+    cif_data: CIFBlock,
+    ccd: CIFFile,
+    random_seed: int | None = None,
 ) -> AtomArray:
     """Cleans up a structure following the AlphaFold3 SI and formats it for training.
 
@@ -109,6 +123,8 @@ def cleanup_structure_af3(
             `metadata_extraction.get_cif_block`)
         ccd:
             CIFFile containing the parsed CCD (components.cif)
+        random_seed:
+            Random seed for reproducibility in large-assembly-subsetting.
 
     Returns:
         AtomArray with all cleaning steps applied
@@ -123,21 +139,27 @@ def cleanup_structure_af3(
     if get_experimental_method(cif_data) == "X-RAY DIFFRACTION":
         atom_array = remove_crystallization_aids(atom_array)
 
-    atom_array = remove_hydrogens(atom_array)  #
-    atom_array = remove_small_polymers(atom_array, cif_data, max_residues=3)
+    atom_array = remove_hydrogens(atom_array)
+    atom_array = remove_small_polymers(atom_array, max_residues=3)
     atom_array = remove_fully_unknown_polymers(atom_array)
     atom_array = remove_clashing_chains(
         atom_array, clash_distance=1.7, clash_percentage=0.3
     )
     atom_array = remove_non_CCD_atoms(atom_array, ccd)
+    atom_array = canonicalize_atom_order(atom_array, ccd)
     atom_array = remove_chains_with_CA_gaps(atom_array, distance_threshold=10.0)
 
+    # TODO: Could change this to use get_chain_count from Biotite which will be more
+    # robust for non-renumbered chains
     # Subset bioassemblies larger than 20 chains
     if len(np.unique(atom_array.chain_id)) > 20:
         # Tokenization is required for large-structure subsetting
         tokenize_atom_array(atom_array)
         atom_array = subset_large_structure(
-            atom_array=atom_array, n_chains=20, interface_distance_threshold=15.0
+            atom_array=atom_array,
+            n_chains=20,
+            interface_distance_threshold=15.0,
+            random_seed=random_seed,
         )
 
     ## Structure formatting
@@ -146,7 +168,7 @@ def cleanup_structure_af3(
 
     # Remove terminal atoms to ensure consistent atom count for standard tokens in the
     # model
-    atom_array = remove_std_residue_terminal_atoms(atom_array)  #
+    atom_array = remove_std_residue_terminal_atoms(atom_array)
 
     return atom_array
 
@@ -177,6 +199,8 @@ def extract_chain_and_interface_metadata_af3(
     # Get basic metadata
     metadata_dict["release_date"] = get_release_date(cif_data).strftime("%Y-%m-%d")
     metadata_dict["resolution"] = get_resolution(cif_data)
+    metadata_dict["experimental_method"] = get_experimental_method(cif_data)
+    metadata_dict["token_count"] = get_token_count(atom_array)
 
     # NOTE: This could be reduced to only the critical information, currently some
     # chain IDs are put in for easier manual interpretability
@@ -250,9 +274,11 @@ def extract_component_data_af3(
     def get_reference_molecule_metadata(
         mol: AnnotatedMol,
         conformer_strategy: Literal["default", "random_init", "use_fallback"],
+        residue_count: int,
     ) -> dict:
         """Convenience function to return the metadata for a reference molecule."""
         conf_metadata = {
+            "residue_count": residue_count,
             "conformer_gen_strategy": conformer_strategy,
         }
 
@@ -276,14 +302,21 @@ def extract_component_data_af3(
     reference_mol_metadata = {}
 
     # Get all different types of components
-    residue_components, std_ligands_to_chains, non_std_ligands_to_chains = (
-        get_components(atom_array)
-    )
+    (
+        residue_components,
+        std_ligands_to_chains,
+        non_std_ligands_to_chains,
+        non_std_ligands_to_rescount,
+    ) = get_component_info(atom_array)
 
     # Assign IDs to non-standard components based on the PDB ID and entity ID
     non_std_ligands_to_chains = {
         f"{pdb_id}_{entity}": chains
         for entity, chains in non_std_ligands_to_chains.items()
+    }
+    non_std_ligands_to_rescount = {
+        f"{pdb_id}_{entity}": rescount
+        for entity, rescount in non_std_ligands_to_rescount.items()
     }
 
     all_ligands_to_chains = {**std_ligands_to_chains, **non_std_ligands_to_chains}
@@ -328,9 +361,10 @@ def extract_component_data_af3(
     # Generate conformer metadata for all components and write SDF files with reference
     # conformer coordinates
     for mol_id, mol in all_component_mols.items():
+        residue_count = non_std_ligands_to_rescount.get(mol_id, 1)
         mol, conformer_strategy = resolve_and_format_fallback_conformer(mol)
         reference_mol_metadata[mol_id] = get_reference_molecule_metadata(
-            mol, conformer_strategy
+            mol, conformer_strategy, residue_count
         )
 
         # Write SDF file
@@ -345,9 +379,10 @@ def preprocess_structure_and_write_outputs_af3(
     ccd: CIFFile,
     out_dir: Path,
     reference_mol_out_dir: Path,
-    output_formats: list[Literal["cif", "bcif", "pkl"]],
+    output_formats: list[Literal["npz", "cif", "bcif", "pkl"]],
     max_polymer_chains: int | None = None,
     skip_components: set | SharedSet | None = None,
+    random_seed: int | None = None,
 ) -> tuple[dict, dict]:
     """Wrapper function to preprocess a single structure for the AF3 data pipeline.
 
@@ -366,15 +401,18 @@ def preprocess_structure_and_write_outputs_af3(
             Path to the output directory that reference molecule SDF files (specifying
             the molecular graph for each ligand as well as a fallback conformer for use
             in featurization) are written to.
+        output_formats:
+            What formats to write the output files to. Allowed values are "cif", "bcif",
+            "npz", and "pkl".
         max_polymer_chains:
             The maximum number of polymer chains in the first bioassembly after which a
             structure is skipped by the parser.
         skip_components:
             A set of components to skip, if any. Useful to avoid repeated processing of
             components e.g. by using a SharedSet.
-        write_additional_cifs:
-            Whether to additionally write normal .cif files on top of the binary .bcif
-            files, which can be helpful for manual inspection.
+        random_seed:
+            Random seed for reproducibility in large-assembly-subsetting.
+
 
     Returns:
         Tuple containing:
@@ -399,6 +437,9 @@ def preprocess_structure_and_write_outputs_af3(
                 - "fallback_conformer_pdb_id": The PDB ID of the fallback conformer
                 - "canonical_smiles": The canonical SMILES of the component
     """
+    # Log how long this is taking
+    start_time = time.perf_counter()
+
     # Parse the input CIF file
     parsed_mmcif = parse_mmcif(
         input_cif,
@@ -416,22 +457,22 @@ def preprocess_structure_and_write_outputs_af3(
 
     # Handle structures that got skipped due to max_polymer_chains
     if isinstance(parsed_mmcif, SkippedStructure):
-        logger.info(
-            f"Skipping structure with more than {max_polymer_chains} polymer chains."
-        )
-        n_polymer_chains = parsed_mmcif.n_polymer_chains
+        logger.info(f"Skipping structure {pdb_id}: {parsed_mmcif.reason}")
 
         return {
             pdb_id: {
                 "release_date": release_date,
-                "status": f"skipped: (n_chains: {n_polymer_chains})",
+                "status": f"skipped: {parsed_mmcif.reason}",
             }
         }, {}
     else:
         atom_array = parsed_mmcif.atom_array
 
     # Cleanup structure and extract metadata
-    atom_array = cleanup_structure_af3(atom_array, cif_data, ccd)
+    atom_array = cleanup_structure_af3(
+        atom_array=atom_array, cif_data=cif_data, ccd=ccd, random_seed=random_seed
+    )
+
     chain_int_metadata_dict = extract_chain_and_interface_metadata_af3(
         atom_array, cif_data
     )
@@ -456,8 +497,28 @@ def preprocess_structure_and_write_outputs_af3(
         }
     }
 
-    # Get canonicalized sequence for each chain (should match PDB SeqRes)
-    chain_to_canonical_seq = get_chain_to_canonical_seq_dict(atom_array, cif_data)
+    # TODO: Clean this up
+    # Set permutation labels
+    per_chain_metadata = {
+        chain_id: PreprocessingChainData(
+            label_asym_id=chain_data["label_asym_id"],
+            auth_asym_id=chain_data["auth_asym_id"],
+            entity_id=chain_data["entity_id"],
+            molecule_type=chain_data["molecule_type"],
+            reference_mol_id=chain_data.get("reference_mol_id"),
+        )
+        for chain_id, chain_data in chain_int_metadata_dict["chains"].items()
+    }
+    assign_component_ids_from_metadata(
+        atom_array, per_chain_metadata=per_chain_metadata
+    )
+    tokenize_atom_array(atom_array)
+    atom_array = assign_mol_permutation_ids(atom_array)
+
+    # Get canonicalized sequence for each chain
+    chain_to_canonical_seq = get_chain_to_canonical_seq_dict(
+        atom_array, cif_data, multi_letter_res_to_X=True, ccd=ccd
+    )
 
     # Write CIF and FASTA outputs
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -468,6 +529,10 @@ def preprocess_structure_and_write_outputs_af3(
 
     out_fasta_path = out_dir / f"{pdb_id}.fasta"
     write_multichain_fasta(out_fasta_path, chain_to_canonical_seq)
+
+    end_time = time.perf_counter()
+
+    logger.debug(f"Processing {pdb_id} took {end_time - start_time:.2f} seconds.")
 
     return structure_metadata_dict, ref_mol_metadata_dict
 
@@ -498,6 +563,8 @@ class _AF3PreprocessingWrapper:
         output_formats:
             What formats to write the output files to. Allowed values are "cif", "bcif",
             and "pkl".
+        random_seed:
+            Random seed for reproducibility in large-assembly-subsetting.
     """
 
     def __init__(
@@ -506,15 +573,16 @@ class _AF3PreprocessingWrapper:
         reference_mol_out_dir: Path,
         max_polymer_chains: int | None,
         skip_components: set | SharedSet | None,
-        output_formats: list[Literal["cif", "bcif", "pkl"]],
+        output_formats: list[Literal["npz", "cif", "bcif", "pkl"]],
+        random_seed: int | None = None,
     ):
         self.ccd = ccd
         self.reference_mol_out_dir = reference_mol_out_dir
         self.max_polymer_chains = max_polymer_chains
         self.skip_components = skip_components
         self.output_formats = output_formats
+        self.random_seed = random_seed
 
-    @wraps(preprocess_structure_and_write_outputs_af3)
     def __call__(self, paths: tuple[Path, Path]) -> tuple[dict, dict]:
         cif_file, out_dir = paths
 
@@ -529,6 +597,7 @@ class _AF3PreprocessingWrapper:
                     max_polymer_chains=self.max_polymer_chains,
                     skip_components=self.skip_components,
                     output_formats=self.output_formats,
+                    random_seed=self.random_seed,
                 )
             )
 
@@ -563,7 +632,8 @@ def preprocess_cif_dir_af3(
     max_polymer_chains: int | None = None,
     num_workers: int | None = None,
     chunksize: int = 20,
-    output_formats: list[Literal["cif", "bcif", "pkl"]] = False,
+    output_formats: list[Literal["npz", "cif", "bcif", "pkl"]] = False,
+    random_seed: int | None = None,
     early_stop: int | None = None,
 ) -> None:
     """Preprocesses a directory of PDB files following the AlphaFold3 SI.
@@ -589,8 +659,10 @@ def preprocess_cif_dir_af3(
         chunksize:
             Number of CIF files to process in each worker task.
         output_formats:
-            What formats to write the output files to. Allowed values are "cif", "bcif",
-            and "pkl".
+            What formats to write the output files to. Allowed values are "npz", "cif",
+            "bcif", and "pkl".
+        random_seed:
+            Random seed for reproducibility in large-assembly-subsetting.
         early_stop:
             Stop after processing this many CIFs. Only used for debugging.
     """
@@ -631,6 +703,7 @@ def preprocess_cif_dir_af3(
         max_polymer_chains=max_polymer_chains,
         skip_components=processed_mol_ids,
         output_formats=output_formats,
+        random_seed=random_seed,
     )
 
     def update_output_dicts(structure_metadata_dict: dict, ref_mol_metadata_dict: dict):
@@ -774,7 +847,6 @@ class _ProteinMonomerPreprocessingWrapper:
         self.structure_file_format = structure_file_format
         self.output_dir = output_dir
 
-    @wraps(preparse_monomer)
     def __call__(self, entry_id: str) -> None:
         try:
             preparse_monomer(

@@ -262,3 +262,21 @@ def tokenize_atom_array(atom_array: AtomArray):
     add_token_positions(atom_array)
 
     return None
+
+
+def get_token_count(atom_array: AtomArray) -> int:
+    """Get the number of tokens in the input atom array.
+
+    If the input atom array is not yet tokenized, the function will tokenize it.
+
+    Args:
+        atom_array (AtomArray):
+            AtomArray of the input assembly.
+
+    Returns:
+        int: Number of tokens in the input atom array.
+    """
+    if "token_id" not in atom_array.get_annotation_categories():
+        tokenize_atom_array(atom_array)
+
+    return len(np.unique(atom_array.token_id))
