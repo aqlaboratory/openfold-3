@@ -1198,7 +1198,7 @@ def preprocess_disordered_structure_and_write_outputs_af3(
         mobile_distance_atom_names=["N", "CA", "C"],
         alignment_mask_atom_names=["N", "CA", "C"],
     )
-    chimeric_atom_array = struc.stack(
+    chimeric_atom_array = struc.concatenate(
         [pred_atom_array_annotated, gt_atom_array_nonprotein_aligned]
     )
     print(chimeric_atom_array)

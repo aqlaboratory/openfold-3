@@ -60,7 +60,7 @@ def coalign_atom_arrays(
         )
 
         # Find associated mobile and fixed pocket residues
-        mobile_pocket_atoms = mobile_subset[atom_pair_idxs[:, 1]]
+        mobile_pocket_atoms = mobile_subset[np.unique(atom_pair_idxs[:, 1])]
         mobile_pocket_residue_start_atoms = mobile_pocket_atoms[
             struc.get_residue_starts(mobile_pocket_atoms)
         ]
@@ -94,4 +94,4 @@ def coalign_atom_arrays(
         # Apply transformation to the comobile chain
         comobile_aligned.append(transformation.apply(comobile_chain))
 
-    return struc.stack(comobile_aligned)
+    return struc.concatenate(comobile_aligned)
