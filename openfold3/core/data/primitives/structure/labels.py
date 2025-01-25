@@ -541,7 +541,8 @@ def remove_transfer_annotations(
     residues.
 
     IMPORTANT: This function currently only supports residue- and chain-level annotation
-    transfers.
+    transfers. The source-to-target chain mapping is assumed to match the label_asym_id
+    fields of the source (chain_map key) and target (chain_map value) AtomArrays.
 
     Args:
         target_atom_array (AtomArray):
@@ -565,12 +566,12 @@ def remove_transfer_annotations(
     """
     target_atom_array_annotated = target_atom_array.copy()
 
-    # Remove unnecessary annotations
+    # Remove annotations
     for annot in target_atom_array_annotated.get_annotation_categories():
         if annot in delete_annot_list:
             target_atom_array_annotated.del_annotation(annot)
 
-    # Add entity_id placeholder
+    # Add annotations that need transferring with defaults
     for annot, default_value in transfer_annot_dict.items():
         target_atom_array_annotated.set_annotation(
             annot, np.full(len(target_atom_array_annotated), default_value)
@@ -579,17 +580,18 @@ def remove_transfer_annotations(
     # Iterate over chains
     for source_chain_id, target_chain_id in chain_map.items():
         # Subset to current chain
-        target_chain = target_atom_array_annotated[
-            target_atom_array_annotated.label_asym_id == target_chain_id
-        ]
+        target_chain_mask = target_atom_array.label_asym_id == target_chain_id
+        target_chain = target_atom_array_annotated[target_chain_mask]
         source_chain = source_atom_array[
             source_atom_array.label_asym_id == source_chain_id
         ]
-
+        # Transfer annotations
         for annot in transfer_annot_dict:
-            target_chain.set_annotation(
-                annot,
-                struc.spread_residue_wise(target_chain, getattr(source_chain, annot)),
+            annot_update = struc.spread_residue_wise(
+                target_chain, getattr(source_chain, annot)
+            )
+            getattr(target_atom_array_annotated, annot)[target_chain_mask] = (
+                annot_update
             )
 
     return target_atom_array_annotated
