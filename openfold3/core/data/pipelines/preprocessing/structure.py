@@ -83,6 +83,7 @@ from openfold3.core.data.primitives.structure.labels import (
     get_chain_to_entity_dict,
     get_chain_to_molecule_type_dict,
     get_chain_to_pdb_chain_dict,
+    remove_transfer_annotations,
 )
 from openfold3.core.data.primitives.structure.metadata import (
     get_chain_to_canonical_seq_dict,
@@ -96,7 +97,6 @@ from openfold3.core.data.primitives.structure.tokenization import (
     get_token_count,
     tokenize_atom_array,
 )
-from openfold3.core.data.primitives.structure.transmutation import replace_coordinates
 from openfold3.core.data.primitives.structure.unresolved import add_unresolved_atoms
 from openfold3.core.data.resources.residues import MoleculeType
 
@@ -1005,6 +1005,13 @@ def create_provisional_disordered_structure_data_entry(
     # Find the one with the highest GDT
     best_idx = np.argmax(gdts)
 
+    # Process the chain mapping
+    chain_map_raw = ost_aln_data[best_idx]["chain_mapping"]
+    chain_map = {}
+    for gt_chain_id, model_chain_id in chain_map_raw.items():
+        # TODO: make sure we don't need the numerical portions of the GT chain ID
+        chain_map[gt_chain_id.split(".")[-1]] = model_chain_id
+
     # Add to the entry
     return DisorderedPreprocessingStructureData(
         status=structure_data_entry.status,
@@ -1014,7 +1021,7 @@ def create_provisional_disordered_structure_data_entry(
         interfaces=structure_data_entry.interfaces,
         token_count=structure_data_entry.token_count,
         gdt=gdts[best_idx],
-        chain_map=ost_aln_data[best_idx]["chain_mapping"],
+        chain_map=chain_map,
         best_model_filename=aln_filenames[best_idx],
         has_clash=None,
     )
@@ -1140,15 +1147,40 @@ def preprocess_disordered_structure_and_write_outputs_af3(
     # Detect non-protein chains covalently linked to a protein chain and remove
     gt_atom_array = remove_covalent_nonprotein_chains(gt_atom_array)
 
-    # Replace GT copy coordinates with non-aligned predicted coordinates
-    chimera_atom_array = replace_coordinates(
-        target_atom_array=gt_atom_array,
-        source_atom_array=pred_atom_array,
+    # Transfer annotations from GT protein to pred and remove unnecessary annotations
+    gt_atom_array_protein = gt_atom_array.molecule_type_id == MoleculeType.PROTEIN
+    pred_atom_array_annotated = remove_transfer_annotations(
+        target_atom_array=pred_atom_array,
+        source_atom_array=gt_atom_array_protein,
         chain_map=structure_data_entry.chain_map,
-        target_atom_mask=gt_atom_array.molecule_type_id == MoleculeType.PROTEIN,
-        source_atom_mask=pred_atom_array.molecule_type_id == MoleculeType.PROTEIN,
+        transfer_annot_dict={
+            "auth_asym_id": "",
+            "entity_id": -1,
+            "label_asym_id": "",
+            "res_id": -1,
+            "chain_id": "-1",
+        },
+        delete_annot_list=[
+            "auth_comp_id",
+            "auth_seq_id",
+            "component_id",
+            "mol_sym_token_index",
+            "mol_sym_id",
+            "label_atom_id",
+            "token_position",
+            "atom_id",
+            "auth_atom_id",
+            "mol_entity_id",
+            "sym_id",
+            "is_atomized",
+            "label_comp_id",
+            "label_seq_id",
+            "mol_sym_component_id",
+            "token_center_atom",
+            "token_id",
+        ],
     )
-    print(chimera_atom_array)
+    print(pred_atom_array_annotated)
 
     # iterate over non-protein chains and
     # - pocket align and apply transform

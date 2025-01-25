@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from typing import Literal
+from typing import Any, Literal
 
 import biotite.structure as struc
 import numpy as np
@@ -286,8 +286,7 @@ def assign_entity_ids(
             "PDB format is not yet supported for assigning entity IDs."
         )
     elif atom_array_source_format == "pdb_af2":
-        _, inverse_indices = np.unique(atom_array.chain_id, return_inverse=True)
-        atom_array.set_annotation("entity_id", inverse_indices)
+        pass
 
 
 def assign_molecule_type_ids(atom_array: AtomArray, cif_file: pdbx.CIFFile) -> None:
@@ -529,3 +528,68 @@ def set_residue_hetero_values(atom_array: AtomArray) -> None:
         | (rna_mask & in_standard_rna_residues)
         | (dna_mask & in_standard_dna_residues)
     ] = False
+
+
+def remove_transfer_annotations(
+    target_atom_array: AtomArray,
+    source_atom_array: AtomArray,
+    chain_map: dict[str, str],
+    transfer_annot_dict: dict[str, Any],
+    delete_annot_list: list[str],
+) -> AtomArray:
+    """Removes and transfers annotations between AtomArrays with identical chains and
+    residues.
+
+    IMPORTANT: This function currently only supports residue- and chain-level annotation
+    transfers.
+
+    Args:
+        target_atom_array (AtomArray):
+            Atom array from which to remove annotations and to which to transfer
+            annotations.
+        source_atom_array (AtomArray):
+            Atom array from which to transfer annotations.
+        chain_map (dict[str, str]):
+            A dictionary mapping source chain IDs to target chain IDs.
+        transfer_annot_dict (dict[str, Any]):
+            Dict of annotations to transfer from the source AtomArray to the target
+            AtomArray, mapping to default values to be used if the source AtomArray does
+            not contain the annotation.
+        delete_annot_list (list[str]):
+            List of annotations to remove from the target AtomArray.
+
+    Returns:
+        AtomArray:
+            AtomArray with annotations removed and transferred from the source
+            AtomArray.
+    """
+    target_atom_array_annotated = target_atom_array.copy()
+
+    # Remove unnecessary annotations
+    for annot in target_atom_array_annotated.get_annotation_categories():
+        if annot in delete_annot_list:
+            target_atom_array_annotated.del_annotation(annot)
+
+    # Add entity_id placeholder
+    for annot, default_value in transfer_annot_dict.items():
+        target_atom_array_annotated.set_annotation(
+            annot, np.full(len(target_atom_array_annotated), default_value)
+        )
+
+    # Iterate over chains
+    for source_chain_id, target_chain_id in chain_map.items():
+        # Subset to current chain
+        target_chain = target_atom_array_annotated[
+            target_atom_array_annotated.label_asym_id == target_chain_id
+        ]
+        source_chain = source_atom_array[
+            source_atom_array.label_asym_id == source_chain_id
+        ]
+
+        for annot in transfer_annot_dict:
+            target_chain.set_annotation(
+                annot,
+                struc.spread_residue_wise(target_chain, getattr(source_chain, annot)),
+            )
+
+    return target_atom_array_annotated
