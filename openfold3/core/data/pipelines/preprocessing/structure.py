@@ -8,12 +8,13 @@ procedures of different models.
 import json
 import logging
 import multiprocessing as mp
+import os
 import time
 import traceback
 from functools import wraps
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Literal
+from typing import Any, Literal
 
 import biotite.structure as struc
 import biotite.structure.io as strucio
@@ -922,6 +923,7 @@ def preparse_protein_monomer_structures(
 
 
 # ---- disordered PDB metadata cache pipelines ----
+# TODO: improve docstrings
 def find_parent_metadata_cache_subset(
     parent_metadata_cache: PreprocessingDataCache,
     gt_structures_directory: Path,
@@ -949,6 +951,7 @@ def find_parent_metadata_cache_subset(
         f"{len(parent_metadata_cache.structure_data)} entries."
     )
 
+    logger.info("1/5: Finding shared PDB IDs with all necessary data available.")
     # - structures available
     pred_pdb_ids = [i.stem for i in list(pred_structures_directory.iterdir())]
     gt_pdb_ids = [i.stem for i in list(gt_structures_directory.iterdir())]
@@ -964,22 +967,25 @@ def find_parent_metadata_cache_subset(
     )
 
     # - alignment successful
-    # TODO: remove once OST is integrated into this script
+    # TODO: set optional once OST is integrated into this script
     aln_pdb_ids = [i.stem for i in list(ost_aln_output_directory.iterdir())]
 
     shared_pdb_ids = sorted(set(shared_pdb_ids) & set(aln_pdb_ids))
     logger.info(
-        f"{len(shared_pdb_ids)} have precomputed alignments available in "
-        f"{ost_aln_output_directory}."
+        f"Out of the above, {len(shared_pdb_ids)} have precomputed alignments available"
+        f" in {ost_aln_output_directory}."
     )
 
     # - subset file
     if subset_file is not None:
         subset_pdb_ids = list(pd.read_csv(subset_file, header=None, sep="\t")[0])
         shared_pdb_ids = sorted(set(shared_pdb_ids) & set(subset_pdb_ids))
-        logger.info(f"{len(shared_pdb_ids)} are in the subset file {subset_file}.")
+        logger.info(
+            f"Out of the above, {len(shared_pdb_ids)} are in the subset "
+            f"file {subset_file}."
+        )
     else:
-        logger.info(f"No subset file, using all {len(shared_pdb_ids)} entries.")
+        logger.info(f"No subset file, using remaining {len(shared_pdb_ids)} entries.")
 
     return shared_pdb_ids
 
@@ -1035,16 +1041,30 @@ def create_provisional_disordered_structure_data_entry(
 
 
 class _DisorderedMetadataCacheBuilder:
-    def __init__(self, ost_aln_output_directory: Path, logger: logging.Logger):
+    def __init__(self, output_directory: Path, ost_aln_output_directory: Path):
+        self.output_directory = output_directory
         self.ost_aln_output_directory = ost_aln_output_directory
-        self.logger = logger
 
     @wraps(create_provisional_disordered_structure_data_entry)
     def __call__(
         self, input_data: tuple[str, PreprocessingStructureData]
     ) -> DisorderedPreprocessingStructureData:
         try:
+            # Setup worker logger
+            worker_logger = logging.getLogger(f"worker_{os.getpid()}")
+            worker_logger.setLevel(logging.INFO)
+            worker_logger.handlers = []
+            worker_logger.propagate = False
+            handler = logging.FileHandler(
+                self.output_directory
+                / f"worker_logs_provisional/worker_{os.getpid()}.log"
+            )
+            worker_logger.addHandler(handler)
+
             pdb_id, structure_data_entry = input_data
+
+            worker_logger.info(f"Processing {pdb_id}.")
+
             provisional_entry = create_provisional_disordered_structure_data_entry(
                 pdb_id, structure_data_entry, self.ost_aln_output_directory
             )
@@ -1072,9 +1092,10 @@ def build_provisional_disordered_metadata_cache(
     parent_metadata_cache: PreprocessingDataCache,
     pdb_id_list: list[str],
     ost_aln_output_directory: Path,
+    output_directory: Path,
     num_workers: int,
     chunksize: int,
-    logger: logging.Logger,
+    log_file: Path,
 ) -> DisorderedPreprocessingDataCache:
     """
     Creates the disorder metadata cache from a parent metadata cache.
@@ -1087,6 +1108,8 @@ def build_provisional_disordered_metadata_cache(
             A list of PDB IDs to subset the disordered metadata cache to.
         ost_aln_output_directory (Path):
             The directory where the OST structural alignment output files are stored.
+        output_directory (Path):
+            The output directory for the disordered metadata cache.
         num_workers (int):
             The number of workers to parallelize the structure data entry updates to.
         chunksize (int):
@@ -1100,7 +1123,9 @@ def build_provisional_disordered_metadata_cache(
 
     # Update the structure data
     structure_data = {}
-    wrapped_builder = _DisorderedMetadataCacheBuilder(ost_aln_output_directory, logger)
+    wrapped_builder = _DisorderedMetadataCacheBuilder(
+        output_directory, ost_aln_output_directory
+    )
     input_data = [
         (pdb_id, parent_metadata_cache.structure_data[pdb_id]) for pdb_id in pdb_id_list
     ]
@@ -1110,19 +1135,32 @@ def build_provisional_disordered_metadata_cache(
             pool.imap_unordered(
                 wrapped_builder,
                 input_data,
-                desc="1/x: Building provisional disordered metadata cache",
+                desc="2/5: Building provisional disordered metadata cache",
                 chunksize=chunksize,
             ),
             total=len(pdb_id_list),
         ):
             structure_data[pdb_id] = provisional_entry
 
-    provisional_metadata_cache = DisorderedPreprocessingDataCache(
+    # Collate logs
+    worker_log_directory = output_directory / "worker_logs_provisional"
+    with log_file.open("a") as out_file:
+        for worker_log in tqdm(
+            worker_log_directory.iterdir(),
+            desc="3/5: Collating provisional worker logs",
+            total=len(list(worker_log_directory.iterdir())),
+        ):
+            out_file.write(f"Log file: {worker_log.name}\n")
+            out_file.write(worker_log.read_text())
+            worker_log.unlink()
+
+        if not list(worker_log_directory.iterdir()):
+            worker_log_directory.rmdir()
+
+    return DisorderedPreprocessingDataCache(
         structure_data=structure_data,
         reference_molecule_data=parent_metadata_cache.reference_molecule_data,
     )
-
-    return provisional_metadata_cache
 
 
 def preprocess_disordered_structure_and_write_outputs_af3(
@@ -1136,8 +1174,10 @@ def preprocess_disordered_structure_and_write_outputs_af3(
     ccd: CIFFile,
     pocket_distance_threshold: float,
     clash_distance_thresholds: list[float],
-):
-    # Load GT and best GDT pred structures into AtomArrays
+    transfer_annot_dict: dict[str, Any],
+    delete_annot_list: list[str],
+) -> dict[float, bool]:
+    # Load GT and best GDT pred structures into AtomArrays and sanitize
     gt_atom_array = parse_target_structure(
         target_structures_directory=gt_structures_directory,
         pdb_id=pdb_id,
@@ -1164,34 +1204,9 @@ def preprocess_disordered_structure_and_write_outputs_af3(
         target_atom_array=pred_atom_array,
         source_atom_array=gt_atom_array_protein,
         chain_map=structure_data_entry.chain_map,
-        transfer_annot_dict={
-            "auth_asym_id": "",
-            "entity_id": -1,
-            "label_asym_id": "",
-            "res_id": -1,
-            "chain_id": "-1",
-        },
-        delete_annot_list=[
-            "auth_comp_id",
-            "auth_seq_id",
-            "component_id",
-            "mol_sym_token_index",
-            "mol_sym_id",
-            "label_atom_id",
-            "token_position",
-            "atom_id",
-            "auth_atom_id",
-            "mol_entity_id",
-            "sym_id",
-            "is_atomized",
-            "label_comp_id",
-            "label_seq_id",
-            "mol_sym_component_id",
-            "token_center_atom",
-            "token_id",
-        ],
+        transfer_annot_dict=transfer_annot_dict,
+        delete_annot_list=delete_annot_list,
     )
-    print(pred_atom_array_annotated)
 
     # Pocket align each GT non-protein chain to the predicted protein chains via
     # the GT protein chains
@@ -1237,23 +1252,152 @@ def preprocess_disordered_structure_and_write_outputs_af3(
 class _AF3PreprocessingDisorderedWrapper:
     def __init__(
         self,
-        logger: logging.Logger,
+        gt_structures_directory: Path,
+        pred_structures_directory: Path,
+        gt_file_format: str,
+        pred_file_format: str,
+        output_directory: Path,
+        ccd: CIFFile,
+        pocket_distance_threshold: float,
+        clash_distance_thresholds: list[float],
+        transfer_annot_dict: dict[str, Any],
+        delete_annot_list: list[str],
     ):
-        self.logger = logger
-        pass
+        self.gt_structures_directory = gt_structures_directory
+        self.pred_structures_directory = pred_structures_directory
+        self.gt_file_format = gt_file_format
+        self.pred_file_format = pred_file_format
+        self.output_directory = output_directory
+        self.ccd = ccd
+        self.pocket_distance_threshold = pocket_distance_threshold
+        self.clash_distance_thresholds = clash_distance_thresholds
+        self.transfer_annot_dict = transfer_annot_dict
+        self.delete_annot_list = delete_annot_list
 
     @wraps(preprocess_disordered_structure_and_write_outputs_af3)
-    def __call__(self, pdb_id) -> None:
+    def __call__(
+        self, input_data: tuple[str, DisorderedPreprocessingStructureData]
+    ) -> tuple[str, dict[float, bool] | None]:
         try:
-            pass
+            pdb_id, structure_data_entry = input_data
+            # Setup worker logger
+            worker_logger = logging.getLogger(f"worker_{os.getpid()}")
+            worker_logger.setLevel(logging.INFO)
+            worker_logger.handlers = []
+            worker_logger.propagate = False
+            handler = logging.FileHandler(
+                self.output_directory.parent / f"worker_logs/worker_{os.getpid()}.log"
+            )
+            worker_logger.addHandler(handler)
+
+            worker_logger.info(f"Processing {pdb_id}.")
+
+            distance_clash_map = preprocess_disordered_structure_and_write_outputs_af3(
+                pdb_id=pdb_id,
+                structure_data_entry=structure_data_entry,
+                gt_structures_directory=self.gt_structures_directory,
+                pred_structures_directory=self.pred_structures_directory,
+                gt_file_format=self.gt_file_format,
+                pred_file_format=self.pred_file_format,
+                output_directory=self.output_directory,
+                ccd=self.ccd,
+                pocket_distance_threshold=self.pocket_distance_threshold,
+                clash_distance_thresholds=self.clash_distance_thresholds,
+                transfer_annot_dict=self.transfer_annot_dict,
+                delete_annot_list=self.delete_annot_list,
+            )
+            return pdb_id, distance_clash_map
 
         except Exception as e:
             self.logger.info(f"Error processing {pdb_id}: {e}")
+            return pdb_id, None
 
 
-def preprocess_disordered_structures():
-    # parallel for loop using _AF3PreprocessingDisorderedWrapper
-    pass
+def preprocess_disordered_structures(
+    metadata_cache: DisorderedPreprocessingDataCache,
+    gt_structures_directory: Path,
+    pred_structures_directory: Path,
+    gt_file_format: str,
+    pred_file_format: str,
+    output_directory: Path,
+    ccd_file: Path,
+    pocket_distance_threshold: float,
+    clash_distance_thresholds: list[float],
+    transfer_annot_dict: dict[str, Any],
+    delete_annot_list: list[str],
+    num_workers: int,
+    chunksize: int,
+    log_file: Path,
+) -> DisorderedPreprocessingDataCache:
+    """Preprocesses AF2 PDB predictions following AF3 SI 2.5.2.3.
+
+    Args:
+        metadata_cache (DisorderedPreprocessingDataCache): _description_
+        gt_structures_directory (Path): _description_
+        pred_structures_directory (Path): _description_
+        gt_file_format (str): _description_
+        pred_file_format (str): _description_
+        output_directory (Path): _description_
+        ccd_file (Path): _description_
+        pocket_distance_threshold (float): _description_
+        clash_distance_thresholds (list[float]): _description_
+        transfer_annot_dict (dict[str, Any]): _description_
+        delete_annot_list (list[str]): _description_
+        num_workers (int): _description_
+        chunksize (int): _description_
+        log_file (Path): _description_
+
+    Returns:
+        DisorderedPreprocessingDataCache: _description_
+    """
+    # Preprocess entries and update distance_clash_map
+    input_data = [
+        (pdb_id, structure_data_entry)
+        for pdb_id, structure_data_entry in metadata_cache.structure_data.items()
+    ]
+    ccd = CIFFile.read(ccd_file)
+    wrapper_disordered_structure_processor = _AF3PreprocessingDisorderedWrapper(
+        gt_structures_directory=gt_structures_directory,
+        pred_structures_directory=pred_structures_directory,
+        gt_file_format=gt_file_format,
+        pred_file_format=pred_file_format,
+        output_directory=output_directory,
+        ccd=ccd,
+        pocket_distance_threshold=pocket_distance_threshold,
+        clash_distance_thresholds=clash_distance_thresholds,
+        transfer_annot_dict=transfer_annot_dict,
+        delete_annot_list=delete_annot_list,
+    )
+    with mp.Pool(num_workers) as pool:
+        for pdb_id, distance_clash_map in tqdm(
+            pool.imap_unordered(
+                wrapper_disordered_structure_processor,
+                input_data,
+                chunksize=chunksize,
+            ),
+            total=len(input_data),
+            desc="4/5: Processing disordered structures",
+        ):
+            metadata_cache.structure_data[
+                pdb_id
+            ].distance_clash_map = distance_clash_map
+
+    # Collate logs
+    worker_log_directory = output_directory / "worker_logs"
+    with log_file.open("a") as out_file:
+        for worker_log in tqdm(
+            worker_log_directory.iterdir(),
+            desc="5/5: Collating preprocessing worker logs",
+            total=len(list(worker_log_directory.iterdir())),
+        ):
+            out_file.write(f"Log file: {worker_log.name}\n")
+            out_file.write(worker_log.read_text())
+            worker_log.unlink()
+
+        if not list(worker_log_directory.iterdir()):
+            worker_log_directory.rmdir()
+
+    return metadata_cache
 
 
 def preprocess_pdb_disordered_af3(
@@ -1265,11 +1409,28 @@ def preprocess_pdb_disordered_af3(
     output_directory: Path,
     ost_aln_output_directory: Path,
     subset_file: Path | None,
+    ccd_file: Path,
+    pocket_distance_threshold: float,
+    clash_distance_thresholds: list[float],
+    transfer_annot_dict: dict[str, Any],
+    delete_annot_list: list[str],
     num_workers: int,
     chunksize: int,
-    logger: Path,
+    log_file: Path,
 ):
     """The full pipeline for creating the disordered metadata cache."""
+
+    # Configure the main process logger
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.INFO)  # Set the logging level for the file handler
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
     # Find subset parent metadata cache
     parent_metadata_cache = PreprocessingDataCache.from_json(metadata_cache_file)
     shared_pdb_ids = find_parent_metadata_cache_subset(
@@ -1288,14 +1449,29 @@ def preprocess_pdb_disordered_af3(
         ost_aln_output_directory=ost_aln_output_directory,
         num_workers=num_workers,
         chunksize=chunksize,
+        log_file=log_file,
     )
-
-    # Save provisional metadata cache
     provisional_metadata_cache.to_json(
         output_directory / "provisional_metadata_cache.json"
     )
 
     # Preprocess disordered structures and update metadata cache entries
-    preprocess_disordered_structures()
+    metadata_cache = preprocess_disordered_structures(
+        metadata_cache=provisional_metadata_cache,
+        gt_structures_directory=gt_structures_directory,
+        pred_structures_directory=pred_structures_directory,
+        gt_file_format=gt_file_format,
+        pred_file_format=pred_file_format,
+        output_directory=output_directory,
+        ccd_file=ccd_file,
+        pocket_distance_threshold=pocket_distance_threshold,
+        clash_distance_thresholds=clash_distance_thresholds,
+        transfer_annot_dict=transfer_annot_dict,
+        delete_annot_list=delete_annot_list,
+        num_workers=num_workers,
+        chunksize=chunksize,
+        log_file=log_file,
+    )
+    metadata_cache.to_json(output_directory / "metadata_cache.json")
 
-    # Save final disordered metadata cache
+    logger.info("Done.")

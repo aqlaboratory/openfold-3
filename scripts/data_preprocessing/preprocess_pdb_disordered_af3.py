@@ -1,7 +1,8 @@
 """Script for creating a metadata cache for the disordered distillation set."""
 
-import logging
+import json
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -117,6 +118,53 @@ from openfold3.core.data.pipelines.preprocessing.structure import (
     ),
 )
 @click.option(
+    "--ccd_file",
+    required=True,
+    help=("Path to a CCD file."),
+    type=click.Path(
+        file_okay=True,
+        dir_okay=False,
+        path_type=Path,
+    ),
+)
+@click.option(
+    "--pocket_distance_threshold",
+    required=True,
+    help=(
+        "The distance in A between any non-protein atom and protein backbone atom."
+        "below which a corresponding protein residue qualfies as a pocket residue."
+    ),
+    type=float,
+)
+@click.option(
+    "--clash_distance_thresholds",
+    required=True,
+    help=(
+        "Comma-delimited floats indicating distances below which protein-"
+        "non-protein atom pairs are considered to be clashing."
+    ),
+    type=str,
+)
+@click.option(
+    "--transfer_annot_dict",
+    required=True,
+    help=(
+        "A json string encoding a dict of annotations to transfer from the GT to "
+        "the predicted structure. Keys are annotation names, values are default "
+        "values to initialize the annotation before transfer."
+    ),
+    type=str,
+)
+@click.option(
+    "--delete_annot_list",
+    required=False,
+    help=(
+        "Comma-delimited list of annotations to delete from the predicted structure."
+    ),
+    type=str,
+    default="",
+)
+@click.option(
     "--num_workers",
     required=False,
     default=1,
@@ -149,6 +197,11 @@ def main(
     output_directory: Path,
     ost_aln_output_directory: Path,
     subset_file: Path,
+    ccd_file: Path,
+    pocket_distance_threshold: float,
+    clash_distance_thresholds: str,
+    transfer_annot_dict: str,
+    delete_annot_list: str,
     num_workers: int,
     chunksize: int,
     log_file: Path,
@@ -179,6 +232,20 @@ def main(
             used to create the disordered metadata cache. The input metadata cache is
             always subset to the set of PDB IDs for which a predicted structure can
             be found in the pred_structures_directory.
+        ccd_file (Path):
+            Path to a CCD file.
+        pocket_distance_threshold (float):
+            The distance in A between any non-protein atom and protein backbone atom
+            below which a corresponding protein residue qualfies as a pocket residue.
+        clash_distance_thresholds (str):
+            Comma-delimited floats indicating distances below which protein-
+            non-protein atom pairs are considered to be clashing.
+        transfer_annot_dict (str):
+            A json string encoding a dict of annotations to transfer from the GT to
+            the predicted structure. Keys are annotation names, values are default
+            values to initialize the annotation before transfer.
+        delete_annot_list (str):
+            Comma-delimited list of annotations to delete from the predicted structure.
         num_workers (int):
             Number of workers to use for parallel processing.
         chunksize (int):
@@ -186,16 +253,12 @@ def main(
         log_file (Path):
             A log file where the output logs are saved.
     """
-    # Configure the logger
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setLevel(logging.INFO)  # Set the logging level for the file handler
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    # Parse input args
+    clash_distance_thresholds, transfer_annot_dict, delete_annot_list = (
+        parse_input_args(
+            clash_distance_thresholds, transfer_annot_dict, delete_annot_list
+        )
     )
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
 
     preprocess_pdb_disordered_af3(
         metadata_cache_file=metadata_cache_file,
@@ -206,10 +269,44 @@ def main(
         output_directory=output_directory,
         ost_aln_output_directory=ost_aln_output_directory,
         subset_file=subset_file,
+        ccd_file=ccd_file,
+        pocket_distance_threshold=pocket_distance_threshold,
+        clash_distance_thresholds=clash_distance_thresholds,
+        transfer_annot_dict=transfer_annot_dict,
+        delete_annot_list=delete_annot_list,
         num_workers=num_workers,
         chunksize=chunksize,
-        logger=logger,
+        log_file=log_file,
     )
+
+
+def parse_input_args(
+    clash_distance_thresholds: str,
+    transfer_annot_dict: str,
+    delete_annot_list: str,
+) -> tuple[list[float], dict[str, Any], list[str]]:
+    """Parse input arguments from str to the appropriate data types."""
+    try:
+        clash_distance_thresholds = [
+            float(threshold.strip())
+            for threshold in clash_distance_thresholds.split(",")
+        ]
+    except Exception as e:
+        print(f"Invalid clash_distance_thresholds string: {e}")
+    try:
+        transfer_annot_dict = json.loads(transfer_annot_dict)
+    except json.JSONDecodeError:
+        print("Invalid transfer_annot_dict JSON string!")
+    try:
+        if delete_annot_list != "":
+            delete_annot_list = [
+                annot.strip() for annot in delete_annot_list.split(",")
+            ]
+        else:
+            delete_annot_list = []
+    except Exception as e:
+        print(f"Invalid delete_annot_list string: {e}")
+    return clash_distance_thresholds, transfer_annot_dict, delete_annot_list
 
 
 if __name__ == "__main__":
