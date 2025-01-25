@@ -1014,7 +1014,7 @@ def create_provisional_disordered_structure_data_entry(
     for idx, aln_filename in enumerate(aln_filenames):
         with open(ost_aln_output_directory / f"{pdb_id}/{aln_filename}.json") as f:
             ost_aln_data.append(json.load(f))
-            gdts[idx] = float(ost_aln_data["oligo_gdtts"])
+            gdts[idx] = float(ost_aln_data[idx]["oligo_gdtts"])
 
     # Find the one with the highest GDT
     best_idx = np.argmax(gdts)
@@ -1199,19 +1199,22 @@ def preprocess_disordered_structure_and_write_outputs_af3(
         pred_structures_directory
         / f"{pdb_id}/{structure_data_entry.best_model_filename}.{pred_file_format}"
     )
-    pred_atom_array = remove_hydrogens(pred_atom_array)
-    pred_atom_array = remove_std_residue_terminal_atoms(pred_atom_array)
 
-    # Sort atom order
+    # Sanitize GT atom array
+    gt_atom_array = remove_covalent_nonprotein_chains(gt_atom_array)
+
+    # Sanitize atom arrays
+    pred_atom_array = remove_hydrogens(pred_atom_array)
+    fix_arginine_naming(pred_atom_array)
     gt_atom_array = canonicalize_atom_order(gt_atom_array, ccd)
     pred_atom_array = canonicalize_atom_order(pred_atom_array, ccd)
-
-    # Detect non-protein chains covalently linked to a protein chain and remove
-    gt_atom_array = remove_covalent_nonprotein_chains(gt_atom_array)
+    pred_atom_array = remove_std_residue_terminal_atoms(pred_atom_array)
 
     # Transfer annotations from GT protein to pred and remove unnecessary annotations
     # TODO: expose annot arguments
-    gt_atom_array_protein = gt_atom_array.molecule_type_id == MoleculeType.PROTEIN
+    gt_atom_array_protein = gt_atom_array[
+        gt_atom_array.molecule_type_id == MoleculeType.PROTEIN
+    ]
     pred_atom_array_annotated = remove_transfer_annotations(
         target_atom_array=pred_atom_array,
         source_atom_array=gt_atom_array_protein,
@@ -1225,26 +1228,25 @@ def preprocess_disordered_structure_and_write_outputs_af3(
     gt_atom_array_nonprotein = gt_atom_array[
         gt_atom_array.molecule_type_id != MoleculeType.PROTEIN
     ]
-    gt_atom_array_nonprotein_aligned = coalign_atom_arrays(
-        fixed=pred_atom_array_annotated,
-        mobile=gt_atom_array_protein,
-        comobile=gt_atom_array_nonprotein,
-        distance_threshold=pocket_distance_threshold,
-        mobile_distance_atom_names=["N", "CA", "C"],
-        alignment_mask_atom_names=["N", "CA", "C"],
-    )
-    chimeric_atom_array = struc.concatenate(
-        [pred_atom_array_annotated, gt_atom_array_nonprotein_aligned]
-    )
+    if len(gt_atom_array_nonprotein) > 0:
+        gt_atom_array_nonprotein_aligned = coalign_atom_arrays(
+            fixed=pred_atom_array_annotated,
+            mobile=gt_atom_array_protein,
+            comobile=gt_atom_array_nonprotein,
+            distance_threshold=pocket_distance_threshold,
+            mobile_distance_atom_names=["N", "CA", "C"],
+            alignment_mask_atom_names=["N", "CA", "C"],
+        )
+        chimeric_atom_array = struc.concatenate(
+            [pred_atom_array_annotated, gt_atom_array_nonprotein_aligned]
+        )
+    else:
+        chimeric_atom_array = pred_atom_array_annotated
 
     # Calculate clashes
     distance_clash_map = calculate_distance_clash_map(
-        query_atom_array=chimeric_atom_array[
-            chimeric_atom_array.molecule_type_id == MoleculeType.PROTEIN
-        ],
-        target_atom_array=chimeric_atom_array[
-            chimeric_atom_array.molecule_type_id != MoleculeType.PROTEIN
-        ],
+        query_atom_array=chimeric_atom_array,
+        target_atom_array=chimeric_atom_array,
         distance_thresholds=clash_distance_thresholds,
     )
 

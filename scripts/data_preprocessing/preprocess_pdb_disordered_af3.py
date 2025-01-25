@@ -293,10 +293,12 @@ def parse_input_args(
         ]
     except Exception as e:
         print(f"Invalid clash_distance_thresholds string: {e}")
+        exit()
     try:
         transfer_annot_dict = json.loads(transfer_annot_dict)
     except json.JSONDecodeError:
         print("Invalid transfer_annot_dict JSON string!")
+        exit()
     try:
         if delete_annot_list != "":
             delete_annot_list = [
@@ -306,6 +308,7 @@ def parse_input_args(
             delete_annot_list = []
     except Exception as e:
         print(f"Invalid delete_annot_list string: {e}")
+        exit()
     return clash_distance_thresholds, transfer_annot_dict, delete_annot_list
 
 

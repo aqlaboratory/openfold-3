@@ -98,17 +98,16 @@ def coalign_atom_arrays(
 
 
 def calculate_distance_clash_map(
-    query_atom_array: AtomArray,
-    target_atom_array: AtomArray,
+    atom_array: AtomArray,
     distance_thresholds: list[float],
 ) -> dict[float, bool]:
-    """Returns whether two AtomArrays have atoms within given distance thresholds.
+    """Finds if an atom array has any chain pair within a list of distances.
+
+    Only checks for cross-chain clashes.
 
     Args:
-        query_atom_array (AtomArray):
-            First AtomArray to compare.
-        target_atom_array (AtomArray):
-            Second AtomArray to compare.
+        atom_array (AtomArray):
+            Atom array to check for clashes.
         distance_thresholds (list[float]):
             List of distance thresholds.
 
@@ -117,14 +116,30 @@ def calculate_distance_clash_map(
             Dictionary mapping distance thresholds to whether the two AtomArrays
             have any atoms within the corresponding distance.
     """
-
+    chain_ids = np.unique(atom_array.chain_id)
     distance_clash_map = {}
     for d in distance_thresholds:
-        atom_pair_idxs = get_query_interface_atom_pair_idxs(
-            query_atom_array=query_atom_array,
-            target_atom_array=target_atom_array,
-            distance_threshold=d,
-        )
-        distance_clash_map[d] = atom_pair_idxs.shape[0] != 0
+        # Monomers
+        if len(chain_ids) == 1:
+            distance_clash_map[d] = False
+
+        # Multimers
+        else:
+            for chain_id in chain_ids:
+                atom_pair_idxs = get_query_interface_atom_pair_idxs(
+                    query_atom_array=atom_array[atom_array.chain_id == chain_id],
+                    target_atom_array=atom_array[atom_array.chain_id != chain_id],
+                    distance_threshold=d,
+                )
+                # Check if any atom pairs were found at d
+                if atom_pair_idxs is None:
+                    is_clashing = False
+                else:
+                    is_clashing = atom_pair_idxs.shape[0] != 0
+                distance_clash_map[d] = is_clashing
+                if is_clashing:
+                    break
+                else:
+                    continue
 
     return distance_clash_map
