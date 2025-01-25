@@ -218,7 +218,7 @@ class DataModule(pl.LightningDataModule):
                 epoch_len=self.epoch_len,
                 num_epochs=self.num_epochs,
                 generator=self.generator,
-                next_dataset_indices = self.next_dataset_indices,
+                next_dataset_indices=self.next_dataset_indices,
             )
             self.datasets_by_mode[DatasetMode.train] = train_dataset
 

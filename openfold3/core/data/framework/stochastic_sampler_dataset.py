@@ -90,9 +90,7 @@ class SamplerDataset(Dataset):
         """
         if not self.indices:
             # This resampling should only be used for plightning training sanity check
-            logger.debug(
-                f"Resampling epoch in getitem(), {self.next_dataset_indices=}"
-            )
+            logger.debug(f"Resampling epoch in getitem(), {self.next_dataset_indices=}")
             self.resample_epoch()
 
         # Get the dataset-datapoint pair for the given index
