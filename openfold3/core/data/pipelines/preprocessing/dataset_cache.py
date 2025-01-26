@@ -66,6 +66,7 @@ def filter_structure_metadata_af3(
     max_release_date: datetime.date | str,
     min_release_date: datetime.date | str = None,
     max_resolution: float = 9.0,
+    ignore_nmr: bool = True,
     max_polymer_chains: int = 300,
     max_tokens: int | None = None,
 ) -> PreprocessingStructureDataCache:
@@ -104,7 +105,7 @@ def filter_structure_metadata_af3(
     # TODO: we need to catch NMR etc. here which don't have a defined resolution and
     # probably set resolution for them to zero
     filtered_cache = with_log(filter_by_resolution)(
-        filtered_cache, max_resolution, ignore_nmr=True
+        filtered_cache, max_resolution, ignore_nmr=ignore_nmr
     )
 
     filtered_cache = with_log(filter_by_release_date)(
