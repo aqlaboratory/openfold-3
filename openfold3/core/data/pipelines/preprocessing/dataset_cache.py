@@ -712,6 +712,10 @@ def create_pdb_val_dataset_cache_af3(
         multimer_structure_data=multimer_cache.structure_data,
     )
 
+    val_dataset_cache.structure_data = with_log(filter_only_ligand_ligand_metrics)(
+        val_dataset_cache.structure_data
+    )
+
     final_stats = get_validation_summary_stats(val_dataset_cache.structure_data)
 
     logger.info("Final cache statistics:")
