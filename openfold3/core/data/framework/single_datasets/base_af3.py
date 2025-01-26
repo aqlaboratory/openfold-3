@@ -1,4 +1,5 @@
 import json
+import logging
 from abc import ABC
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,8 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
 from openfold3.core.data.primitives.structure.tokenization import add_token_positions
+
+logger = logging.getLogger("__name__")
 
 
 # TODO: update docstring with inputs
@@ -272,6 +275,11 @@ class BaseAF3Dataset(SingleDataset, ABC):
             template_file_format=self.template_file_format,
             ccd=self.ccd,
         )
+
+        # Raise a warning message for structures where no template matches are found
+        if all(len(v) == 0 for v in template_slice_collection.template_slices.values()):
+            logger.warning(f"Found no templates for {pdb_id=}")
+            logger.warning(f"{template_slice_collection=}")
 
         template_features = featurize_template_structures_af3(
             template_slice_collection=template_slice_collection,
