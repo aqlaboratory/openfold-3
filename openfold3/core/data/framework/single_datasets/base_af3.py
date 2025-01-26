@@ -277,11 +277,6 @@ class BaseAF3Dataset(SingleDataset, ABC):
             ccd=self.ccd,
         )
 
-        # Raise a warning message for structures where no template matches are found
-        if all(len(v) == 0 for v in template_slice_collection.template_slices.values()):
-            logger.warning(f"Found no templates for {pdb_id=}")
-            logger.warning(f"{template_slice_collection=}")
-
         template_features = featurize_template_structures_af3(
             template_slice_collection=template_slice_collection,
             n_templates=self.template.n_templates,
