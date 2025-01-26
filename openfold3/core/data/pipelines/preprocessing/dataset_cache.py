@@ -35,6 +35,7 @@ from openfold3.core.data.primitives.caches.filtering import (
     filter_by_token_count,
     filter_cache_by_specified_interfaces,
     filter_cache_to_specified_chains,
+    filter_only_ligand_ligand_metrics,
     func_with_n_filtered_chain_log,
     get_validation_summary_stats,
     select_final_validation_data,
