@@ -251,7 +251,7 @@ def process_proteins(
     filtered = struct_array[struct_array.molecule_type_id == MoleculeType.PROTEIN]
 
     if len(filtered) == 0:
-        logging.debug(f"No protein chains found in pdb_id={pdb_id}")
+        logger.debug(f"No protein chains found in pdb_id={pdb_id}")
         return float("nan")
 
     # Set a default max_acc for fallback residues
@@ -270,7 +270,7 @@ def process_proteins(
             # Extend the list with RASA values for all unresolved residues in this chain
             unresolved_residues_rasa.extend(res_rasa[unresolved_residues])
         except Exception as e:
-            logging.warning(f"RASA computation failed for pdb_id={pdb_id}: {e}")
+            logger.warning(f"RASA computation failed for pdb_id={pdb_id}: {e}")
     if not unresolved_residues_rasa:
         return float("nan")
 
