@@ -101,7 +101,7 @@ class PreprocessingDataCache:
 
         for pdb_id, structure_data in metadata_cache_dict["structure_data"].items():
             status = structure_data["status"]
-
+            # TODO make categorical variables Enums
             if "skipped" in status:
                 release_date = structure_data["release_date"]
                 experimental_method = None
@@ -228,35 +228,38 @@ class DisorderedPreprocessingDataCache(PreprocessingDataCache):
             if "skipped" in status:
                 release_date = structure_data["release_date"]
                 resolution = None
+                experimental_method = None
                 chains = None
                 interfaces = None
                 token_count = None
                 gdt = None
                 chain_map = None
                 best_model_filename = None
-                has_clash = None
+                distance_clash_map = None
             elif status == "success":
                 release_date = structure_data["release_date"]
                 resolution = structure_data["resolution"]
+                experimental_method = structure_data["experimental_method"]
                 chains = structure_data["chains"]
                 interfaces = structure_data["interfaces"]
                 token_count = structure_data["token_count"]
                 gdt = structure_data["gdt"]
                 chain_map = structure_data["chain_map"]
                 best_model_filename = structure_data["best_model_filename"]
-                has_clash = structure_data["has_clash"]
+                distance_clash_map = structure_data["distance_clash_map"]
             # TODO: Release date should never be None with new version, fix this after
             # rerunning preprocessing
             elif status == "failed":
                 release_date = None
                 resolution = None
+                experimental_method = None
                 chains = None
                 interfaces = None
                 token_count = None
                 gdt = None
                 chain_map = None
                 best_model_filename = None
-                has_clash = None
+                distance_clash_map = None
             else:
                 raise ValueError(f"Unexpected status: {status}")
 
@@ -289,13 +292,14 @@ class DisorderedPreprocessingDataCache(PreprocessingDataCache):
                 status=status,
                 release_date=release_date,
                 resolution=resolution,
+                experimental_method=experimental_method,
                 chains=chain_data,
                 interfaces=interfaces,
                 token_count=token_count,
                 gdt=gdt,
                 chain_map=chain_map,
                 best_model_filename=best_model_filename,
-                distance_clash_map=has_clash,
+                distance_clash_map=distance_clash_map,
             )
 
         # Format the reference molecule data
@@ -902,6 +906,7 @@ if TYPE_CHECKING:
     )
     StructureDataCache: TypeAlias = (
         PreprocessingStructureDataCache
+        | DisorderedPreprocessingStructureDataCache
         | ClusteredDatasetStructureDataCache
         | ValClusteredDatasetStructureDataCache
         | ProteinMonomerStructureDataCache
