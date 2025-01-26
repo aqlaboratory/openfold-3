@@ -211,8 +211,8 @@ def express_coords_in_frames(
     a, b, c = phi
     w1 = a - b
     w2 = c - b
-    w1_norm = torch.sqrt(eps**2 + torch.sum(w1**2, dim=-1, keepdim=True))
-    w2_norm = torch.sqrt(eps**2 + torch.sum(w2**2, dim=-1, keepdim=True))
+    w1_norm = torch.sqrt(eps + torch.sum(w1**2, dim=-1, keepdim=True))
+    w2_norm = torch.sqrt(eps + torch.sum(w2**2, dim=-1, keepdim=True))
     w1 = w1 / w1_norm
     w2 = w2 / w2_norm
 
@@ -220,8 +220,8 @@ def express_coords_in_frames(
     # [*, N_token, 3]
     e1 = w1 + w2
     e2 = w2 - w1
-    e1_norm = torch.sqrt(eps**2 + torch.sum(e1**2, dim=-1, keepdim=True))
-    e2_norm = torch.sqrt(eps**2 + torch.sum(e2**2, dim=-1, keepdim=True))
+    e1_norm = torch.sqrt(eps + torch.sum(e1**2, dim=-1, keepdim=True))
+    e2_norm = torch.sqrt(eps + torch.sum(e2**2, dim=-1, keepdim=True))
     e1 = e1 / e1_norm
     e2 = e2 / e2_norm
 

@@ -592,6 +592,7 @@ class ProteinMonomerChainData:
 
     alignment_representative_id: str | None
     template_ids: list[str] | None
+    index: int
 
 
 # --- Interface data dataclasses ---
