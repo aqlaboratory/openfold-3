@@ -66,6 +66,8 @@ def convert_dataclass_to_dict(dataclass: Any) -> dict:
         dict:
             The datacache as a dictionary.
     """
+    from openfold3.core.data.primitives.caches.format import DataCacheType
+
     datacache_dict = asdict(dataclass)
 
     # Remove private fields
