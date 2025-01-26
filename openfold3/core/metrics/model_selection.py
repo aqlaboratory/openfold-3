@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 import torch
 
@@ -12,6 +13,7 @@ def compute_model_selection_metric(
     outputs: dict,
     metrics: dict,
     weights: dict,
+    pdb_id: Optional[str] = None,
     eps: float = 1e-8,
 ) -> dict:
     """
@@ -100,6 +102,12 @@ def compute_model_selection_metric(
         for metric_name in valid_metrics
         if not torch.isnan(final_metrics[metric_name]).any()
     ]
+
+    if not valid_metrics:
+        logger.warning(
+            f"No valid metrics found for model selection for PDB ID {pdb_id}"
+        )
+        return final_metrics
 
     total_weighted = 0.0
     sum_weights = 0.0

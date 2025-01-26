@@ -182,6 +182,7 @@ class AlphaFold3AllAtom(ModelRunner):
                 outputs=outputs,
                 metrics=metrics_per_sample,
                 weights=self.model_selection_weights,
+                pdb_id=batch["pdb_id"],
             )
 
             for metric_name in CORRELATION_METRICS:

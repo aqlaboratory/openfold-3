@@ -1184,6 +1184,9 @@ def get_final_atom_permutation_index(
             rmsd = torch.sqrt(dists_sq.sum(dim=-1) / n_resolved_atoms)
 
             # Get permutation that minimizes RMSD
+            check_out_of_bounds_indices(
+                indices=torch.argmin(rmsd), input_tensor=permutations
+            )
             best_permutation = permutations[torch.argmin(rmsd)]
 
             check_out_of_bounds_indices(
