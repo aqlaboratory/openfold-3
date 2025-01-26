@@ -11,8 +11,10 @@ from biotite.structure import AtomArray
 from openfold3.core.data.framework.single_datasets.abstract_single import (
     register_dataset,
 )
-from openfold3.core.data.framework.single_datasets.base_af3 import BaseAF3Dataset
-from openfold3.core.data.framework.single_datasets.pdb import is_invalid_feature_dict
+from openfold3.core.data.framework.single_datasets.base_af3 import (
+    BaseAF3Dataset,
+    is_invalid_feature_dict,
+)
 from openfold3.core.data.primitives.featurization.structure import (
     extract_starts_entities,
 )

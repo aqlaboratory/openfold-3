@@ -278,6 +278,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
         except Exception:
             logger.exception(f"Train step failed with pdb id {pdb_id}")
+            raise
 
         return loss
 
@@ -315,6 +316,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
         except Exception:
             logger.exception(f"Validation step failed with pdb id {pdb_id}")
+            raise
 
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         # TODO: Remove debug logic

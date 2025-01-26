@@ -251,7 +251,7 @@ def process_proteins(
     filtered = struct_array[struct_array.molecule_type_id == MoleculeType.PROTEIN]
 
     if len(filtered) == 0:
-        logging.warning(f"No protein chains found in pdb_id={pdb_id}")
+        logging.debug(f"No protein chains found in pdb_id={pdb_id}")
         return float("nan")
 
     # Set a default max_acc for fallback residues

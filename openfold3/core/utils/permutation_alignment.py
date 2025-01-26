@@ -22,6 +22,24 @@ from openfold3.core.utils.tensor_utils import tensor_tree_map
 logger = logging.getLogger(__name__)
 
 
+def check_out_of_bounds_indices(
+    indices: torch.Tensor, input_tensor: torch.Tensor, dim: int = 0
+):
+    """Checks if the indices are out of bounds.
+
+    Args:
+        indices: Indices to check
+        input_tensor: The tensor for indexing
+        dim: Dimension to check
+    """
+    clamped_indices = torch.clamp(
+        indices,
+        min=0,
+        max=input_tensor.shape[dim] - 1,
+    )
+    assert (indices == clamped_indices).all()
+
+
 @overload
 def split_feats_by_id(
     feats: torch.Tensor, id: torch.Tensor
@@ -1133,6 +1151,12 @@ def get_final_atom_permutation_index(
             # residues) skip the remaining computations
             if permutations.shape[0] == 1:
                 identity_permutation = permutations[0]
+
+                check_out_of_bounds_indices(
+                    indices=identity_permutation,
+                    input_tensor=gt_atom_idx_subset_conf,
+                )
+
                 permuted_atom_idxs.extend(
                     gt_atom_idx_subset_conf[identity_permutation].tolist()
                 )
@@ -1161,6 +1185,10 @@ def get_final_atom_permutation_index(
 
             # Get permutation that minimizes RMSD
             best_permutation = permutations[torch.argmin(rmsd)]
+
+            check_out_of_bounds_indices(
+                indices=best_permutation, input_tensor=gt_atom_idx_subset_conf
+            )
 
             # Append the global atom indices corresponding to this permutation
             permuted_atom_idxs.extend(

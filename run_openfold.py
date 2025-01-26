@@ -163,6 +163,11 @@ def main(args):
         os.system(f"{sys.executable} -m pip freeze > {freeze_path}")
         wandb_experiment.save(f"{freeze_path}")
 
+        runner_yaml_path = os.path.join(wandb_experiment.dir, "runner.json")
+        with open(runner_yaml_path, "w") as fp:
+            json.dump(runner_args.to_dict(), fp, indent=4)
+        wandb_experiment.save(runner_yaml_path)
+
         # Save data module config
         data_config_path = os.path.join(wandb_experiment.dir, "data_config.json")
         with open(data_config_path, "w") as fp:

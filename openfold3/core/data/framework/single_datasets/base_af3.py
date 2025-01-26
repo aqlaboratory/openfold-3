@@ -1,4 +1,6 @@
+import copy
 import json
+import logging
 from abc import ABC
 from pathlib import Path
 from typing import Any
@@ -7,6 +9,7 @@ import torch
 from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 
+from openfold3.core.data.framework.data_module import openfold_batch_collator
 from openfold3.core.data.framework.single_datasets.abstract_single import (
     SingleDataset,
     register_dataset,
@@ -42,6 +45,107 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
 from openfold3.core.data.primitives.structure.tokenization import add_token_positions
+from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
+from openfold3.core.utils.permutation_alignment import (
+    multi_chain_permutation_alignment,
+    naive_alignment,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# TODO: Remove debug logic
+def is_invalid_feature_dict(features: dict) -> bool:
+    """
+    Validate the feature dictionary for a single datapoint.
+    Do not fail early to log all potential errors.
+
+    Args:
+        features (dict):
+            Feature dictionary for a single datapoint
+
+    Returns:
+        skip (bool):
+            Whether the feature dictionary is invalid and should be skipped
+    """
+    skip = False
+    pdb_id = features["pdb_id"]
+
+    # Check that the sum of the number of atoms per token is equal to the
+    # number of atoms in the reference conformer
+    num_atoms_sum = torch.max(torch.sum(features["num_atoms_per_token"], dim=-1)).int()
+    num_ref_atoms = features["ref_pos"].shape[-2]
+    if num_atoms_sum != num_ref_atoms:
+        logger.warning(
+            f"Size mismatch {pdb_id} with {num_atoms_sum} vs {num_ref_atoms} atoms"
+        )
+        skip = True
+
+    # Check that for overlapping token indices, the total number of
+    # atoms in the ground truth is equal to the number of atoms in the
+    # reference conformer
+    gt_token_ids_atomized = broadcast_token_feat_to_atoms(
+        token_mask=features["ground_truth"]["token_mask"].bool(),
+        num_atoms_per_token=features["ground_truth"]["num_atoms_per_token"],
+        token_feat=features["ground_truth"]["token_index"],
+    )
+    atom_selection_mask = torch.isin(gt_token_ids_atomized, features["token_index"])
+    gt_atom_indices = torch.nonzero(atom_selection_mask, as_tuple=True)[0]
+    if gt_atom_indices.shape[0] != num_ref_atoms:
+        logger.warning(
+            f"Size mismatch between ground truth {gt_atom_indices.shape[0]} atoms vs "
+            f"crop {num_ref_atoms} atoms for the same token indices."
+        )
+        skip = True
+
+    # Check that the token indices in the crop is a subset of the ground truth
+    if not torch.isin(
+        features["token_index"], features["ground_truth"]["token_index"]
+    ).all():
+        logger.warning(f"Token index mismatch for ground truth vs featurized {pdb_id}")
+        skip = True
+
+    # Check that the crop has some resolved atoms
+    if not features["ground_truth"]["atom_resolved_mask"].any():
+        logger.warning(f"Skipping {pdb_id}: no resolved atoms")
+        skip = True
+
+    # Check that the ligand and atomized masks are consistent
+    if (features["is_ligand"] & ~features["is_atomized"]).any():
+        logger.warning(f"Skipping {pdb_id}: contains non-atomized ligands")
+        skip = True
+
+    # Check that the number of tokens per atom is less than the maximum expected
+    if (features["num_atoms_per_token"] > 23).any():
+        logger.warning(
+            f"Skipping {pdb_id}: token contains number of atoms > max expected (23)"
+        )
+        skip = True
+
+    # Check that all input features are finite
+    for k, v in features.items():
+        if isinstance(v, torch.Tensor) and not torch.isfinite(v).all():
+            logger.warning(f"Non-finite values in {pdb_id} for {k}")
+            skip = True
+        if isinstance(v, dict):
+            for i, j in v.items():
+                if isinstance(j, torch.Tensor) and not torch.isfinite(j).all():
+                    logger.warning(f"Non-finite values in {pdb_id} for {i}")
+                    skip = True
+
+    # Run the permutation alignment to skip over samples that may fail in the model
+    # This could throw an exception that is handled in the __getitem__
+    feats_perm = openfold_batch_collator([copy.deepcopy(features)])
+    multi_chain_permutation_alignment(
+        batch=feats_perm,
+        atom_positions_predicted=torch.randn_like(feats_perm["ref_pos"]),
+    )
+    naive_alignment(
+        batch=feats_perm,
+        atom_positions_predicted=torch.randn_like(feats_perm["ref_pos"]),
+    )
+
+    return skip
 
 
 # TODO: update docstring with inputs
