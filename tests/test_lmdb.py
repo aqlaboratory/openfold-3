@@ -18,6 +18,7 @@ TEST_DATASET_CONFIG = {
                 "0": {
                     "alignment_representative_id": "test_id0",
                     "template_ids": [],
+                    "index": 0,
                 },
             },
         },
@@ -26,6 +27,7 @@ TEST_DATASET_CONFIG = {
                 "0": {
                     "alignment_representative_id": "test_id1",
                     "template_ids": [],
+                    "index": 1,
                 },
             },
         },

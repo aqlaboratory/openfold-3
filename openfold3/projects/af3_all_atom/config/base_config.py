@@ -531,6 +531,8 @@ project_config = mlc.ConfigDict(
                         "w_chain": 0.5,
                         "w_interface": 1.0,
                     },
+                    # Whether dataset should be sampled in-order without replacement
+                    "sample_in_order": False,
                     # TODO: use in disordered PDB dataset, eventually move to yml
                     "disable_non_protein_diffusion_weights": False,
                 },

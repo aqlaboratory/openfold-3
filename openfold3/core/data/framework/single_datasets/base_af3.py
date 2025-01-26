@@ -72,6 +72,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
                 an example.
         """
         super().__init__()
+        self.name = dataset_config["name"]
 
         # Paths/IO
         self.target_structures_directory = dataset_config["dataset_paths"][

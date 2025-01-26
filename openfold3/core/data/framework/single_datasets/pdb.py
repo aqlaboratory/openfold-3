@@ -279,7 +279,7 @@ class WeightedPDBDataset(BaseAF3Dataset):
 
         Creates a Dataframe storing a flat list of chains and interfaces and
         corresponding datapoint probabilities. Used for mapping FROM the dataset_cache
-        in the StochasticSamplerDataset and TO the dataset_cache in the getitem."""
+        in the SamplerDataset and TO the dataset_cache in the getitem."""
         datapoint_collection = DatapointCollection.create_empty()
         for entry, entry_data in self.dataset_cache.structure_data.items():
             # Append chains

@@ -15,12 +15,12 @@ and highlight where you currently are in the process:
     preprocessed data -> parsed/processed data -> FeatureDict
 3. SingleDataset
     datapoints -> __getitem__ -> FeatureDict
-4. StochasticSamplerDataset (optional)
+4. SamplerDataset (optional)
     Sequence[SingleDataset] -> __getitem__ -> FeatureDict
 5. DataLoader
     FeatureDict -> batched data
 6. DataModule [YOU ARE HERE]
-    SingleDataset/StochasticSamplerDataset -> DataLoader
+    SingleDataset/SamplerDataset -> DataLoader
 7. ModelRunner
     batched data -> model
 """
@@ -49,11 +49,20 @@ from openfold3.core.data.framework.single_datasets.abstract_single import (
     SingleDataset,
 )
 from openfold3.core.data.framework.stochastic_sampler_dataset import (
-    StochasticSamplerDataset,
+    SamplerDataset,
 )
 from openfold3.core.utils.tensor_utils import dict_multimap
 
 _NUMPY_AVAILABLE = RequirementCache("numpy")
+
+
+class DatasetMode(enum.Enum):
+    """Enum for dataset modes."""
+
+    train = enum.auto()
+    validation = enum.auto()
+    test = enum.auto()
+    prediction = enum.auto()
 
 
 @dataclasses.dataclass
@@ -102,6 +111,10 @@ class MultiDatasetConfig:
             weights=apply_bool(self.weights, index),
         )
 
+    def get_config_for_mode(self, mode: DatasetMode) -> "MultiDatasetConfig":
+        datasets_stage_mask = [m == mode for m in self.modes]
+        return self.get_subset(datasets_stage_mask)
+
 
 @dataclasses.dataclass
 class DataModuleConfig:
@@ -116,22 +129,14 @@ class DataModuleConfig:
         _dict = self.__dict__.copy()
         datasets = []
         for d in _dict["datasets"]:
-            d.config.dataset_paths = {
+            new_d = d.copy_and_resolve_references()
+            new_d.config.dataset_paths = {
                 k: (str(v) if isinstance(v, Path) else v)
-                for k, v in d.config.dataset_paths.items()
+                for k, v in new_d.config.dataset_paths.items()
             }
-            datasets.append(d.to_dict())
+            datasets.append(new_d.to_dict())
         _dict["datasets"] = datasets
         return _dict
-
-
-class DatasetMode(enum.Enum):
-    """Enum for dataset modes."""
-
-    train = enum.auto()
-    validation = enum.auto()
-    test = enum.auto()
-    prediction = enum.auto()
 
 
 class DataModule(pl.LightningDataModule):
@@ -148,8 +153,17 @@ class DataModule(pl.LightningDataModule):
         self.num_epochs = data_config.num_epochs
 
         # Parse datasets
-        multi_dataset_config = self.parse_data_config(data_config.datasets)
+        self.multi_dataset_config = self.parse_data_config(data_config.datasets)
+        self._initialize_next_dataset_indices()
 
+    def _initialize_next_dataset_indices(self):
+        train_configs = self.multi_dataset_config.get_config_for_mode(DatasetMode.train)
+        self.next_dataset_indices = dict()
+        for cfg in train_configs.configs:
+            if cfg.custom.sample_in_order:
+                self.next_dataset_indices[cfg.name] = 0
+
+    def setup(self, stage=None):
         # Custom worker init function with manual data seed
         def worker_init_function_with_data_seed(
             worker_id: int, rank: Optional[int] = None
@@ -187,50 +201,48 @@ class DataModule(pl.LightningDataModule):
 
         self.worker_init_function_with_data_seed = worker_init_function_with_data_seed
 
+        self.datasets_by_mode = {k: [] for k in DatasetMode}
         # Initialize datasets
-        if DatasetMode.train in multi_dataset_config.modes:
-            # Initialize train datasets
-            train_datasets = self.init_datasets(multi_dataset_config, DatasetMode.train)
-            multi_dataset_config_train = multi_dataset_config.get_subset(
-                [mode == DatasetMode.train for mode in multi_dataset_config.modes]
+        if DatasetMode.train in self.multi_dataset_config.modes:
+            multi_dataset_config_train = self.multi_dataset_config.get_config_for_mode(
+                DatasetMode.train
             )
+            # Initialize train datasets
+            all_train_datasets = self.init_datasets(multi_dataset_config_train)
             self.generator = torch.Generator(device="cpu").manual_seed(self.data_seed)
 
             # Wrap train datasets in the sampler dataset class
-            self.train_dataset = StochasticSamplerDataset(
-                datasets=train_datasets,
+            train_dataset = SamplerDataset(
+                datasets=all_train_datasets,
                 dataset_probabilities=multi_dataset_config_train.weights,
                 epoch_len=self.epoch_len,
                 num_epochs=self.num_epochs,
                 generator=self.generator,
+                next_dataset_indices=self.next_dataset_indices,
             )
+            self.datasets_by_mode[DatasetMode.train] = train_dataset
 
-        if DatasetMode.validation in multi_dataset_config.modes:
-            multi_dataset_config_validation = multi_dataset_config.get_subset(
-                [mode == DatasetMode.validation for mode in multi_dataset_config.modes]
+        for dataset_mode in [
+            DatasetMode.validation,
+            DatasetMode.test,
+            DatasetMode.prediction,
+        ]:
+            multi_dataset_config_mode = self.multi_dataset_config.get_config_for_mode(
+                dataset_mode
             )
-            self.validation_dataset = self.init_datasets(
-                multi_dataset_config_validation, DatasetMode.validation
-            )[0]
-        # Dummy is needed as PLightning will still try to access the validation dataset.
-        else:
-            self.validation_dataset = []
+            mode_datasets = self.init_datasets(multi_dataset_config_mode)
 
-        if DatasetMode.test in multi_dataset_config.modes:
-            multi_dataset_config_test = multi_dataset_config.get_subset(
-                [mode == DatasetMode.test for mode in multi_dataset_config.modes]
-            )
-            self.test_dataset = self.init_datasets(
-                multi_dataset_config_test, DatasetMode.test
-            )[0]
+            if len(mode_datasets) > 1:
+                warnings.warn(
+                    f"Currently only one {dataset_mode} dataset is supported, but "
+                    f"{len(mode_datasets)} datasets were found. Using only the "
+                    "first one.",
+                    stacklevel=2,
+                )
 
-        if DatasetMode.prediction in multi_dataset_config.modes:
-            multi_dataset_config_prediction = multi_dataset_config.get_subset(
-                [mode == DatasetMode.prediction for mode in multi_dataset_config.modes]
+            self.datasets_by_mode[dataset_mode] = (
+                mode_datasets[0] if mode_datasets else []
             )
-            self.prediction_dataset = self.init_datasets(
-                multi_dataset_config_prediction, DatasetMode.prediction
-            )[0]
 
     @classmethod
     def parse_data_config(cls, data_config: list[ConfigDict]) -> MultiDatasetConfig:
@@ -278,19 +290,16 @@ class DataModule(pl.LightningDataModule):
             except ValueError as exc:
                 raise ValueError(f"Could not cast {key} to {cast_type}.") from exc
 
-        classes, modes, configs, weights = list(
-            zip(
-                *[
-                    (
-                        get_cast(dataset_entry, "class", str),
-                        DatasetMode[get_cast(dataset_entry, "mode", str)],
-                        dataset_entry.get("config", None),
-                        get_cast(dataset_entry, "weight", float),
-                    )
-                    for dataset_entry in data_config
-                ]
-            )
-        )
+        classes, modes, configs, weights = [], [], [], []
+        for dataset_entry in data_config:
+            classes.append(get_cast(dataset_entry, "class", str))
+            modes.append(DatasetMode[get_cast(dataset_entry, "mode", str)])
+            weights.append(get_cast(dataset_entry, "weight", float))
+
+            config = dataset_entry.get("config", dict())
+            config["name"] = dataset_entry["name"]
+            configs.append(config)
+
         multi_dataset_config = MultiDatasetConfig(
             classes=classes,
             modes=modes,
@@ -379,35 +388,14 @@ class DataModule(pl.LightningDataModule):
                 f"An unsupported dataset mode was found in data_config: {modes_unique}."
                 " Supported modes are: train, validation, test, prediction."
             )
-        # REMOVE THIS WITH ENUM
-        elif (len(modes_unique) == 1) & (
-            all(
-                [
-                    DatasetMode.train not in modes,
-                    DatasetMode.validation not in modes,
-                    DatasetMode.test not in modes,
-                    DatasetMode.prediction not in modes,
-                ]
-            )
-        ):
-            raise ValueError(
-                "An unsupported combination of dataset modes was found in"
-                f"data_config: {modes_unique}. The supported dataset"
-                f"combinations are: {supported_combinations}."
-            )
 
     @staticmethod
-    def init_datasets(
-        multi_dataset_config: MultiDatasetConfig,
-        type_to_init: DatasetMode,
-    ) -> list[SingleDataset]:
+    def init_datasets(multi_dataset_config: MultiDatasetConfig) -> list[SingleDataset]:
         """Initializes datasets.
 
         Args:
             multi_dataset_config (MultiDatasetConfig):
                 Parsed config of all input datasets.
-            type_to_init (DatasetType):
-                One of train, validation, test, prediction.
 
         Returns:
             list[Sequence[SingleDataset]]: List of initialized SingleDataset objects.
@@ -415,49 +403,25 @@ class DataModule(pl.LightningDataModule):
         # Note that the dataset config already contains the paths!
         datasets = [
             DATASET_REGISTRY[dataset_class](dataset_config)
-            for dataset_class, dataset_config, dataset_type in zip(
+            for dataset_class, dataset_config in zip(
                 multi_dataset_config.classes,
                 multi_dataset_config.configs,
-                multi_dataset_config.modes,
             )
-            if dataset_type == type_to_init
         ]
-
-        if (
-            type_to_init
-            in [DatasetMode.validation, DatasetMode.test, DatasetMode.prediction]
-        ) & (len(datasets) > 1):
-            datasets = datasets[:1]
-            warnings.warn(
-                f"Currently only one {type_to_init} dataset is supported, but "
-                f"{len(datasets)} datasets were found. Using only the "
-                "first one.",
-                stacklevel=2,
-            )
         return datasets
 
-    def generate_dataloader(self, stage: DatasetMode):
+    def generate_dataloader(self, mode: DatasetMode):
         """Wrap the appropriate dataset in a DataLoader and return it.
 
         Args:
-            stage (str):
+            mode (DatasetMode):
                 Mode of DataLoader to return, one of train, valid, test, predict.
 
         Returns:
             DataLoader: DataLoader object.
         """
-        dataset = (
-            self.train_dataset
-            if stage == DatasetMode.train
-            else self.validation_dataset
-            if stage == DatasetMode.validation
-            else self.test_dataset
-            if stage == DatasetMode.test
-            else self.prediction_dataset
-        )
-
         return DataLoader(
-            dataset=dataset,
+            dataset=self.datasets_by_mode[mode],
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             collate_fn=openfold_batch_collator,
@@ -496,6 +460,21 @@ class DataModule(pl.LightningDataModule):
             DataLoader: prediction dataloader.
         """
         return self.generate_dataloader(DatasetMode.prediction)
+
+    def state_dict(self):
+        state = {"next_dataset_indices": self.next_dataset_indices}
+        return state
+
+    def load_state_dict(self, state_dict: dict[str, Any]):
+        loaded_index_keys = state_dict["next_dataset_indices"].keys()
+        current_index_keys = self.next_dataset_indices.keys()
+        if set(loaded_index_keys) != set(current_index_keys):
+            raise ValueError(
+                "Datasets selected for in-order sampling do not match in"
+                "current configuration and checkpoint."
+                f"Current {current_index_keys} Checkpoint {loaded_index_keys}"
+            )
+        self.next_dataset_indices = state_dict["next_dataset_indices"]
 
 
 # TODO: Remove debug logic
