@@ -9,7 +9,7 @@ from openfold3.core.data.primitives.structure.interface import (
 )
 
 
-# TODO: improve docstring
+# TODO: improve docstring and refactor for generality
 def coalign_atom_arrays(
     fixed: AtomArray,
     mobile: AtomArray,

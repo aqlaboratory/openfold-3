@@ -1024,7 +1024,7 @@ def create_provisional_disordered_structure_data_entry(
     chain_map = {}
     for gt_chain_id, model_chain_id in chain_map_raw.items():
         # TODO: make sure we don't need the numerical portions of the GT chain ID
-        chain_map[gt_chain_id.split(".")[-1]] = model_chain_id
+        chain_map[gt_chain_id] = model_chain_id
 
     # Add to the entry
     return DisorderedPreprocessingStructureData(

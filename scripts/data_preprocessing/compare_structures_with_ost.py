@@ -25,7 +25,10 @@ from tqdm import tqdm
 @click.option(
     "--gt_structures_directory",
     required=True,
-    help="Flat directory of cif files of ground truth PDB structures.",
+    help=(
+        "Directory containing one subdir per PDB entry, with each subdir."
+        " containing one or multiple structure files of ground truth structures"
+    ),
     type=click.Path(
         exists=True,
         file_okay=False,
@@ -305,7 +308,7 @@ def compare_pred_to_gt(
             "-m",
             f"{model_file}",
             "-r",
-            f"{gt_structures_directory}/{pdb_id}.{gt_structure_file_format}",
+            f"{gt_structures_directory}/{pdb_id}/{pdb_id}.{gt_structure_file_format}",
             "-o",
             f"{alignment_output_directory}/{pdb_id}/{model_filename}.json",
             "-rf",

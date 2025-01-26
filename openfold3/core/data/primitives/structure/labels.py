@@ -585,9 +585,7 @@ def remove_transfer_annotations(
         target_chain = target_atom_array_annotated[target_chain_mask]
 
         # Get source chain slice and residue starts
-        source_chain = source_atom_array[
-            source_atom_array.label_asym_id == source_chain_id
-        ]
+        source_chain = source_atom_array[source_atom_array.chain_id == source_chain_id]
         source_chain_res_starts = struc.get_residue_starts(source_chain)
 
         # Transfer annotations
