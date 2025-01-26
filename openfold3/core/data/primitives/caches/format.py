@@ -61,8 +61,9 @@ def register_datacache(cls: DataCacheType) -> DataCacheType:
 
 # TODO: Actually update the preprocessing code to use this class, currently it's only
 # used in the training dataset logic
+# TODO: update names to reflect that these create the metadata caches
 # ==============================================================================
-# PREPROCESSING CACHE
+# PREPROCESSING CACHES
 # ==============================================================================
 # This is the cache that gets created by the preprocessing script, and is usually used
 # to create the other dataset caches for training / validation.
@@ -100,7 +101,7 @@ class PreprocessingDataCache:
 
         for pdb_id, structure_data in metadata_cache_dict["structure_data"].items():
             status = structure_data["status"]
-
+            # TODO make categorical variables Enums
             if "skipped" in status:
                 release_date = structure_data["release_date"]
                 experimental_method = None
@@ -187,6 +188,139 @@ class PreprocessingDataCache:
         write_datacache_to_json(self, file)
 
 
+@register_datacache
+@dataclass
+class DisorderedPreprocessingDataCache(PreprocessingDataCache):
+    """Complete data cache from preprocessing metadata_cache."""
+
+    structure_data: DisorderedPreprocessingStructureDataCache
+    reference_molecule_data: PreprocessingReferenceMoleculeCache
+
+    # TODO: refactor the PreprocessingDataCache to be more general so that functions
+    # like this can be mostly reused
+    @classmethod
+    def from_json(cls, file: Path) -> DisorderedPreprocessingDataCache:
+        """Read the metadata cache created in preprocessing from a JSON file.
+
+        Args:
+            file:
+                Path to the metadata cache JSON file.
+
+        Returns:
+            PreprocessingDataCache:
+                The metadata cache in a structured dataclass format.
+        """
+        # Load in dict format
+        metadata_cache_dict = json.loads(file.read_text())
+
+        # Remove _type field (already an internal private attribute so shouldn't be
+        # defined as an explicit field)
+        if "_type" in metadata_cache_dict:
+            # This is conditional for legacy compatibility, should be removed after
+            del metadata_cache_dict["_type"]
+
+        # Format the structure data
+        structure_data_cache = {}
+
+        for pdb_id, structure_data in metadata_cache_dict["structure_data"].items():
+            status = structure_data["status"]
+
+            if "skipped" in status:
+                release_date = structure_data["release_date"]
+                resolution = None
+                experimental_method = None
+                chains = None
+                interfaces = None
+                token_count = None
+                gdt = None
+                chain_map = None
+                transform_array = None
+                best_model_filename = None
+                distance_clash_map = None
+            elif status == "success":
+                release_date = structure_data["release_date"]
+                resolution = structure_data["resolution"]
+                experimental_method = structure_data["experimental_method"]
+                chains = structure_data["chains"]
+                interfaces = structure_data["interfaces"]
+                token_count = structure_data["token_count"]
+                gdt = structure_data["gdt"]
+                chain_map = structure_data["chain_map"]
+                transform_array = structure_data["transform"]
+                best_model_filename = structure_data["best_model_filename"]
+                distance_clash_map = structure_data["distance_clash_map"]
+            # TODO: Release date should never be None with new version, fix this after
+            # rerunning preprocessing
+            elif status == "failed":
+                release_date = None
+                resolution = None
+                experimental_method = None
+                chains = None
+                interfaces = None
+                token_count = None
+                gdt = None
+                chain_map = None
+                transform_array = None
+                best_model_filename = None
+                distance_clash_map = None
+            else:
+                raise ValueError(f"Unexpected status: {status}")
+
+            if release_date is not None:
+                release_date = datetime.strptime(release_date, "%Y-%m-%d").date()
+
+            if chains is not None:
+                chain_data = {}
+
+                for chain_id, per_chain_data in chains.items():
+                    molecule_type = MoleculeType[per_chain_data.pop("molecule_type")]
+
+                    # This is only set for ligand chains
+                    # TODO: this should be explicitly None after preprocessing refactor,
+                    # so if-condition should be removed
+                    if "reference_mol_id" in per_chain_data:
+                        reference_mol_id = per_chain_data.pop("reference_mol_id")
+                    else:
+                        reference_mol_id = None
+
+                    chain_data[chain_id] = PreprocessingChainData(
+                        molecule_type=molecule_type,
+                        reference_mol_id=reference_mol_id,
+                        **per_chain_data,
+                    )
+            else:
+                chain_data = None
+
+            structure_data_cache[pdb_id] = DisorderedPreprocessingStructureData(
+                status=status,
+                release_date=release_date,
+                resolution=resolution,
+                experimental_method=experimental_method,
+                chains=chain_data,
+                interfaces=interfaces,
+                token_count=token_count,
+                gdt=gdt,
+                chain_map=chain_map,
+                transform_array=transform_array,
+                best_model_filename=best_model_filename,
+                distance_clash_map=distance_clash_map,
+            )
+
+        # Format the reference molecule data
+        reference_molecule_data_cache = {}
+
+        for mol_id, mol_data in metadata_cache_dict["reference_molecule_data"].items():
+            reference_molecule_data_cache[mol_id] = PreprocessingReferenceMoleculeData(
+                **mol_data
+            )
+
+        return cls(
+            structure_data=structure_data_cache,
+            reference_molecule_data=reference_molecule_data_cache,
+        )
+
+
+# TODO: make categorical attributes like experimental method Enum
 @dataclass
 class PreprocessingStructureData:
     """Structure-wise data from preprocessing metadata_cache."""
@@ -200,8 +334,24 @@ class PreprocessingStructureData:
     token_count: int
 
 
+@dataclass
+class DisorderedPreprocessingStructureData(PreprocessingStructureData):
+    """Structure-wise data from preprocessing metadata_cache with disordered data."""
+
+    gdt: float
+    chain_map: dict[str, str]
+    transform_array: list[list[float]]
+    best_model_filename: str
+    distance_clash_map: dict[float, bool]
+
+
 PreprocessingStructureDataCache: TypeAlias = dict[str, PreprocessingStructureData]
 """Structure data cache from preprocessing metadata_cache."""
+
+DisorderedPreprocessingStructureDataCache: TypeAlias = dict[
+    str, DisorderedPreprocessingStructureData
+]
+"""Structure data cache from disordered preprocessing metadata_cache."""
 
 
 @dataclass
@@ -762,6 +912,7 @@ if TYPE_CHECKING:
     )
     StructureDataCache: TypeAlias = (
         PreprocessingStructureDataCache
+        | DisorderedPreprocessingStructureDataCache
         | ClusteredDatasetStructureDataCache
         | ValClusteredDatasetStructureDataCache
         | ProteinMonomerStructureDataCache

@@ -3,17 +3,25 @@ Centralized module for pre-assembled workflows corresponding to structure cleanu
 procedures of different models.
 """
 
+# TODO: organize this file so that we separate components for creating the metadata
+# cache for each dataset
 import json
 import logging
 import multiprocessing as mp
+import os
+import sys
 import time
 import traceback
+from functools import wraps
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Literal
+from typing import Any, Literal
 
+import biotite.structure as struc
+import biotite.structure.io as strucio
 import boto3
 import numpy as np
+import pandas as pd
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from rdkit import Chem
@@ -21,21 +29,35 @@ from tqdm import tqdm
 
 from openfold3.core.data.io.s3 import download_file_from_s3
 from openfold3.core.data.io.sequence.fasta import write_multichain_fasta
+from openfold3.core.data.io.structure.atom_array import write_atomarray_to_npz
 from openfold3.core.data.io.structure.cif import (
     SkippedStructure,
     parse_mmcif,
+    parse_target_structure,
     write_structure,
 )
 from openfold3.core.data.io.structure.mol import write_annotated_sdf
-from openfold3.core.data.io.structure.pdb import parse_protein_monomer_pdb_tmp
+from openfold3.core.data.io.structure.pdb import (
+    parse_pdb_af2,
+    parse_protein_monomer_pdb_tmp,
+)
 from openfold3.core.data.io.utils import encode_numpy_types
 from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
 from openfold3.core.data.primitives.caches.format import (
+    DisorderedPreprocessingDataCache,
+    DisorderedPreprocessingStructureData,
     PreprocessingChainData,
+    PreprocessingDataCache,
+    PreprocessingStructureData,
     ProteinMonomerDatasetCache,
 )
 from openfold3.core.data.primitives.permutation.mol_labels import (
     assign_mol_permutation_ids,
+)
+from openfold3.core.data.primitives.structure.alignment import (
+    calculate_distance_clash_map,
+    coalign_atom_arrays,
+    extend_chain_map_via_alignment,
 )
 from openfold3.core.data.primitives.structure.cleanup import (
     canonicalize_atom_order,
@@ -43,6 +65,7 @@ from openfold3.core.data.primitives.structure.cleanup import (
     fix_arginine_naming,
     remove_chains_with_CA_gaps,
     remove_clashing_chains,
+    remove_covalent_nonprotein_chains,
     remove_crystallization_aids,
     remove_fully_unknown_polymers,
     remove_hydrogens,
@@ -70,6 +93,7 @@ from openfold3.core.data.primitives.structure.labels import (
     get_chain_to_entity_dict,
     get_chain_to_molecule_type_dict,
     get_chain_to_pdb_chain_dict,
+    remove_transfer_annotations,
 )
 from openfold3.core.data.primitives.structure.metadata import (
     get_chain_to_canonical_seq_dict,
@@ -84,12 +108,14 @@ from openfold3.core.data.primitives.structure.tokenization import (
     tokenize_atom_array,
 )
 from openfold3.core.data.primitives.structure.unresolved import add_unresolved_atoms
+from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
 
 _worker_session = None
 
 
+# ---- Core PDB metadata cache pipelines ----
 def _init_worker(profile_name: str = "openfold") -> None:
     """Initialize the boto3 session in each worker."""
     global _worker_session
@@ -448,7 +474,7 @@ def preprocess_structure_and_write_outputs_af3(
         renumber_chain_ids=True,
         max_polymer_chains=max_polymer_chains,
     )
-    cif_file = parsed_mmcif.cif_file
+    cif_file = parsed_mmcif.structure_file
 
     # Basic structure-level metadata
     cif_data = get_cif_block(cif_file)
@@ -748,6 +774,7 @@ def preprocess_cif_dir_af3(
         json.dump(output_dict, f, indent=4, default=encode_numpy_types)
 
 
+# ---- protein monomer preprocessing pipelines ----
 # TODO: combine local and S3 preparsing
 class _WrapProcessMonomerDistillStructure:
     def __init__(self, s3_config: dict, output_dir: Path):
@@ -895,3 +922,601 @@ def preparse_protein_monomer_structures(
             desc="2/2: Pre-parsing monomer structures",
         ):
             pass
+
+
+# ---- disordered PDB metadata cache pipelines ----
+# TODO: improve docstrings
+def find_parent_metadata_cache_subset(
+    parent_metadata_cache: PreprocessingDataCache,
+    gt_structures_directory: Path,
+    pred_structures_directory: Path,
+    ost_aln_output_directory: Path,
+    subset_file: Path | None,
+    logger: logging.Logger,
+) -> list[str]:
+    """Finds the subset of PDB IDs that have all necessary data available.
+
+    Args:
+        parent_metadata_cache (PreprocessingDataCache): _description_
+        gt_structures_directory (Path): _description_
+        pred_structures_directory (Path): _description_
+        ost_aln_output_directory (Path): _description_
+        subset_file (Path | None): _description_
+        logger (logging.Logger): _description_
+
+    Returns:
+        list[str]: _description_
+    """
+
+    logger.info(
+        "Loaded parent metadata cache with "
+        f"{len(parent_metadata_cache.structure_data)} entries."
+    )
+
+    logger.info("1/6: Finding shared PDB IDs with all necessary data available.")
+    # - structures available
+    pred_pdb_ids = [i.stem for i in list(pred_structures_directory.iterdir())]
+    gt_pdb_ids = [i.stem for i in list(gt_structures_directory.iterdir())]
+
+    shared_pdb_ids = sorted(
+        set(pred_pdb_ids)
+        & set(gt_pdb_ids)
+        & set(parent_metadata_cache.structure_data.keys())
+    )
+    logger.info(
+        f"{len(shared_pdb_ids)} metadata keys have both GT and predicted structures "
+        f"in {gt_structures_directory} and {pred_structures_directory}, respectively."
+    )
+
+    # - alignment successful
+    # TODO: set optional once OST is integrated into this script
+    aln_pdb_ids = [i.stem for i in list(ost_aln_output_directory.iterdir())]
+
+    shared_pdb_ids = sorted(set(shared_pdb_ids) & set(aln_pdb_ids))
+    logger.info(
+        f"Out of the above, {len(shared_pdb_ids)} have precomputed alignments available"
+        f" in {ost_aln_output_directory}."
+    )
+
+    # - subset file
+    if subset_file is not None:
+        subset_pdb_ids = list(pd.read_csv(subset_file, header=None, sep="\t")[0])
+        shared_pdb_ids = sorted(set(shared_pdb_ids) & set(subset_pdb_ids))
+        logger.info(
+            f"Out of the above, {len(shared_pdb_ids)} are in the subset "
+            f"file {subset_file}."
+        )
+    else:
+        logger.info(f"No subset file, using remaining {len(shared_pdb_ids)} entries.")
+
+    return shared_pdb_ids
+
+
+def create_provisional_disordered_structure_data_entry(
+    pdb_id: str,
+    structure_data_entry: PreprocessingStructureData,
+    ost_aln_output_directory: Path,
+) -> DisorderedPreprocessingStructureData:
+    """Selects the model with the highest GDT to GT and creates its structure data field
+
+    Args:
+        pdb_id (str): _description_
+        structure_data_entry (PreprocessingStructureData): _description_
+        ost_aln_output_directory (Path): _description_
+
+    Returns:
+        DisorderedPreprocessingStructureData: _description_
+    """
+    # Parse the pred-GT results for all models
+    ost_aln_output_directory_i = ost_aln_output_directory / pdb_id
+    aln_filenames = [i.stem for i in list(ost_aln_output_directory_i.iterdir())]
+    ost_aln_data = []
+    gdts = np.zeros(len(aln_filenames))
+    for idx, aln_filename in enumerate(aln_filenames):
+        with open(ost_aln_output_directory / f"{pdb_id}/{aln_filename}.json") as f:
+            ost_aln_data.append(json.load(f))
+            gdts[idx] = float(ost_aln_data[idx]["oligo_gdtts"])
+
+    # Find the one with the highest GDT
+    best_idx = np.argmax(gdts)
+
+    # Add to the entry
+    return DisorderedPreprocessingStructureData(
+        status=structure_data_entry.status,
+        release_date=structure_data_entry.release_date,
+        experimental_method="N/A",
+        resolution=structure_data_entry.resolution,
+        chains=structure_data_entry.chains,
+        interfaces=structure_data_entry.interfaces,
+        token_count=structure_data_entry.token_count,
+        gdt=gdts[best_idx],
+        chain_map=ost_aln_data[best_idx]["chain_mapping"],
+        transform_array=ost_aln_data[best_idx]["transform"],
+        best_model_filename=aln_filenames[best_idx],
+        distance_clash_map=None,
+    )
+
+
+class _DisorderedMetadataCacheBuilder:
+    def __init__(self, output_directory: Path, ost_aln_output_directory: Path):
+        self.output_directory = output_directory
+        self.ost_aln_output_directory = ost_aln_output_directory
+
+    @wraps(create_provisional_disordered_structure_data_entry)
+    def __call__(
+        self, input_data: tuple[str, PreprocessingStructureData]
+    ) -> DisorderedPreprocessingStructureData:
+        try:
+            # Setup worker logger
+            worker_logger = logging.getLogger(f"worker_{os.getpid()}")
+            worker_logger.setLevel(logging.INFO)
+            worker_logger.handlers = []
+            worker_logger.propagate = False
+            handler = logging.FileHandler(
+                self.output_directory
+                / f"worker_logs_provisional/worker_{os.getpid()}.log"
+            )
+            worker_logger.addHandler(handler)
+
+            pdb_id, structure_data_entry = input_data
+
+            worker_logger.info(f"Processing {pdb_id}.")
+
+            provisional_entry = create_provisional_disordered_structure_data_entry(
+                pdb_id, structure_data_entry, self.ost_aln_output_directory
+            )
+            return pdb_id, provisional_entry
+        except Exception as e:
+            worker_logger.info(f"Error processing {pdb_id}: {e}")
+
+            worker_logger.error(
+                f"Error processing {pdb_id}:"
+                f"\n\nException:\n{str(e)}"
+                f"\n\nType:\n{type(e).__name__}"
+                f"\n\nTraceback:\n{traceback.format_exc()}"
+            )
+
+            failed_provisional_entry = DisorderedPreprocessingStructureData(
+                status="failed",
+                release_date=None,
+                experimental_method=None,
+                resolution=None,
+                chains=None,
+                interfaces=None,
+                token_count=None,
+                gdt=None,
+                chain_map=None,
+                transform_array=None,
+                best_model_filename=None,
+                distance_clash_map=None,
+            )
+
+            return pdb_id, failed_provisional_entry
+
+
+# TODO: add support for computing GDT with OST on the fly here
+def build_provisional_disordered_metadata_cache(
+    parent_metadata_cache: PreprocessingDataCache,
+    pdb_id_list: list[str],
+    ost_aln_output_directory: Path,
+    output_directory: Path,
+    num_workers: int,
+    chunksize: int,
+    log_file: Path,
+) -> DisorderedPreprocessingDataCache:
+    """
+    Creates the disorder metadata cache from a parent metadata cache.
+
+    Args:
+        parent_metadata_cache (PreprocessingDataCache):
+            The parent metadata cache from which to derive the disordered metadata
+            cache.
+        pdb_id_list (list[str]):
+            A list of PDB IDs to subset the disordered metadata cache to.
+        ost_aln_output_directory (Path):
+            The directory where the OST structural alignment output files are stored.
+        output_directory (Path):
+            The output directory for the disordered metadata cache.
+        num_workers (int):
+            The number of workers to parallelize the structure data entry updates to.
+        chunksize (int):
+            The chunksize for the parallelization.
+        logger (logging.Logger):
+            The logger object.
+
+    Returns (DisorderedPreprocessingDataCache):
+        The disordered metadata cache with populated gdt and chain_map fields.
+    """
+
+    # Update the structure data
+    structure_data = {}
+    wrapped_builder = _DisorderedMetadataCacheBuilder(
+        output_directory, ost_aln_output_directory
+    )
+    input_data = [
+        (pdb_id, parent_metadata_cache.structure_data[pdb_id]) for pdb_id in pdb_id_list
+    ]
+    worker_log_directory = output_directory / "worker_logs_provisional"
+    worker_log_directory.mkdir(exist_ok=True)
+
+    with mp.Pool(num_workers) as pool:
+        for pdb_id, provisional_entry in tqdm(
+            pool.imap_unordered(
+                wrapped_builder,
+                input_data,
+                chunksize=chunksize,
+            ),
+            total=len(pdb_id_list),
+            desc="2/6: Building provisional disordered metadata cache",
+        ):
+            structure_data[pdb_id] = provisional_entry
+
+    # Collate logs
+    with log_file.open("a") as out_file:
+        for worker_log in tqdm(
+            worker_log_directory.iterdir(),
+            desc="3/6: Collating provisional worker logs",
+            total=len(list(worker_log_directory.iterdir())),
+        ):
+            out_file.write(f"Log file: {worker_log.name}\n")
+            out_file.write(worker_log.read_text())
+            worker_log.unlink()
+
+        if not list(worker_log_directory.iterdir()):
+            worker_log_directory.rmdir()
+
+    return DisorderedPreprocessingDataCache(
+        structure_data=structure_data,
+        reference_molecule_data=parent_metadata_cache.reference_molecule_data,
+    )
+
+
+def preprocess_disordered_structure_and_write_outputs_af3(
+    pdb_id: str,
+    structure_data_entry: DisorderedPreprocessingStructureData,
+    gt_structures_directory: Path,
+    pred_structures_directory: Path,
+    gt_file_format: str,
+    pred_file_format: str,
+    output_directory: Path,
+    ccd: CIFFile,
+    pocket_distance_threshold: float,
+    clash_distance_thresholds: list[float],
+    transfer_annot_dict: dict[str, Any],
+    delete_annot_list: list[str],
+) -> tuple[dict[str, str], dict[float, bool]]:
+    # Load GT and best GDT pred structures into AtomArrays and sanitize
+    gt_atom_array = parse_target_structure(
+        target_structures_directory=gt_structures_directory,
+        pdb_id=pdb_id,
+        structure_format=gt_file_format,
+    )
+    _, pred_atom_array = parse_pdb_af2(
+        pred_structures_directory
+        / f"{pdb_id}/{structure_data_entry.best_model_filename}.{pred_file_format}"
+    )
+
+    # Sanitize GT atom array
+    gt_atom_array = remove_covalent_nonprotein_chains(gt_atom_array)
+
+    # Sanitize atom arrays
+    pred_atom_array = remove_hydrogens(pred_atom_array)
+    fix_arginine_naming(pred_atom_array)
+    gt_atom_array = canonicalize_atom_order(gt_atom_array, ccd)
+    pred_atom_array = canonicalize_atom_order(pred_atom_array, ccd)
+    pred_atom_array = remove_std_residue_terminal_atoms(pred_atom_array)
+
+    # Extend chain map if only partially aligned
+    gt_atom_array_protein = gt_atom_array[
+        gt_atom_array.molecule_type_id == MoleculeType.PROTEIN
+    ]
+    if len(structure_data_entry.chain_map) < len(
+        np.unique(gt_atom_array_protein.chain_id)
+    ):
+        structure_data_entry.chain_map = extend_chain_map_via_alignment(
+            target_atom_array=pred_atom_array,
+            source_atom_array=gt_atom_array_protein,
+            chain_map=structure_data_entry.chain_map,
+            transform_array=np.array(structure_data_entry.transform_array),
+        )
+
+    # Transfer annotations from GT protein to pred and remove unnecessary annotations
+    # TODO: expose annot arguments
+    pred_atom_array_annotated = remove_transfer_annotations(
+        target_atom_array=pred_atom_array,
+        source_atom_array=gt_atom_array_protein,
+        chain_map=structure_data_entry.chain_map,
+        transfer_annot_dict=transfer_annot_dict,
+        delete_annot_list=delete_annot_list,
+    )
+
+    # Pocket align each GT non-protein chain to the predicted protein chains via
+    # the GT protein chains
+    gt_atom_array_nonprotein = gt_atom_array[
+        gt_atom_array.molecule_type_id != MoleculeType.PROTEIN
+    ]
+    if len(gt_atom_array_nonprotein) > 0:
+        gt_atom_array_nonprotein_aligned = coalign_atom_arrays(
+            fixed=pred_atom_array_annotated,
+            mobile=gt_atom_array_protein,
+            comobile=gt_atom_array_nonprotein,
+            distance_threshold=pocket_distance_threshold,
+            mobile_distance_atom_names=["N", "CA", "C"],
+            alignment_mask_atom_names=["N", "CA", "C"],
+        )
+        chimeric_atom_array = struc.concatenate(
+            [pred_atom_array_annotated, gt_atom_array_nonprotein_aligned]
+        )
+    else:
+        chimeric_atom_array = pred_atom_array_annotated
+
+    # Calculate clashes
+    distance_clash_map = calculate_distance_clash_map(
+        atom_array=chimeric_atom_array,
+        distance_thresholds=clash_distance_thresholds,
+    )
+
+    # Save structure as cif and npz
+    strucio.save_structure(
+        output_directory / f"structures/{pdb_id}/{pdb_id}.cif",
+        chimeric_atom_array,
+    )
+    write_atomarray_to_npz(
+        chimeric_atom_array, output_directory / f"structures/{pdb_id}/{pdb_id}.npz"
+    )
+
+    # Return updated chain map and clash status
+    return structure_data_entry.chain_map, distance_clash_map
+
+
+class _AF3PreprocessingDisorderedWrapper:
+    def __init__(
+        self,
+        gt_structures_directory: Path,
+        pred_structures_directory: Path,
+        gt_file_format: str,
+        pred_file_format: str,
+        output_directory: Path,
+        ccd: CIFFile,
+        pocket_distance_threshold: float,
+        clash_distance_thresholds: list[float],
+        transfer_annot_dict: dict[str, Any],
+        delete_annot_list: list[str],
+    ):
+        self.gt_structures_directory = gt_structures_directory
+        self.pred_structures_directory = pred_structures_directory
+        self.gt_file_format = gt_file_format
+        self.pred_file_format = pred_file_format
+        self.output_directory = output_directory
+        self.ccd = ccd
+        self.pocket_distance_threshold = pocket_distance_threshold
+        self.clash_distance_thresholds = clash_distance_thresholds
+        self.transfer_annot_dict = transfer_annot_dict
+        self.delete_annot_list = delete_annot_list
+
+    @wraps(preprocess_disordered_structure_and_write_outputs_af3)
+    def __call__(
+        self, input_data: tuple[str, DisorderedPreprocessingStructureData]
+    ) -> tuple[str, dict[str, str] | None, dict[float, bool] | None]:
+        try:
+            pdb_id, structure_data_entry = input_data
+            # Setup worker logger
+            worker_logger = logging.getLogger(f"worker_{os.getpid()}")
+            worker_logger.setLevel(logging.INFO)
+            worker_logger.handlers = []
+            worker_logger.propagate = False
+            handler = logging.FileHandler(
+                self.output_directory / f"worker_logs/worker_{os.getpid()}.log"
+            )
+            worker_logger.addHandler(handler)
+
+            worker_logger.info(f"Processing {pdb_id}.")
+
+            chain_map, distance_clash_map = (
+                preprocess_disordered_structure_and_write_outputs_af3(
+                    pdb_id=pdb_id,
+                    structure_data_entry=structure_data_entry,
+                    gt_structures_directory=self.gt_structures_directory,
+                    pred_structures_directory=self.pred_structures_directory,
+                    gt_file_format=self.gt_file_format,
+                    pred_file_format=self.pred_file_format,
+                    output_directory=self.output_directory,
+                    ccd=self.ccd,
+                    pocket_distance_threshold=self.pocket_distance_threshold,
+                    clash_distance_thresholds=self.clash_distance_thresholds,
+                    transfer_annot_dict=self.transfer_annot_dict,
+                    delete_annot_list=self.delete_annot_list,
+                )
+            )
+            return pdb_id, chain_map, distance_clash_map
+
+        except Exception as e:
+            worker_logger.error(
+                f"Error processing {pdb_id}:"
+                f"\n\nException:\n{str(e)}"
+                f"\n\nType:\n{type(e).__name__}"
+                f"\n\nTraceback:\n{traceback.format_exc()}"
+            )
+            return pdb_id, None, None
+
+
+def preprocess_disordered_structures(
+    metadata_cache: DisorderedPreprocessingDataCache,
+    gt_structures_directory: Path,
+    pred_structures_directory: Path,
+    gt_file_format: str,
+    pred_file_format: str,
+    output_directory: Path,
+    ccd_file: Path,
+    pocket_distance_threshold: float,
+    clash_distance_thresholds: list[float],
+    transfer_annot_dict: dict[str, Any],
+    delete_annot_list: list[str],
+    num_workers: int,
+    chunksize: int,
+    log_file: Path,
+) -> DisorderedPreprocessingDataCache:
+    """Preprocesses AF2 PDB predictions following AF3 SI 2.5.2.3.
+
+    Args:
+        metadata_cache (DisorderedPreprocessingDataCache): _description_
+        gt_structures_directory (Path): _description_
+        pred_structures_directory (Path): _description_
+        gt_file_format (str): _description_
+        pred_file_format (str): _description_
+        output_directory (Path): _description_
+        ccd_file (Path): _description_
+        pocket_distance_threshold (float): _description_
+        clash_distance_thresholds (list[float]): _description_
+        transfer_annot_dict (dict[str, Any]): _description_
+        delete_annot_list (list[str]): _description_
+        num_workers (int): _description_
+        chunksize (int): _description_
+        log_file (Path): _description_
+
+    Returns:
+        DisorderedPreprocessingDataCache: _description_
+    """
+    # Get input data
+    input_data = [
+        (pdb_id, structure_data_entry)
+        for pdb_id, structure_data_entry in metadata_cache.structure_data.items()
+    ]
+    ccd = CIFFile.read(ccd_file)
+    worker_log_directory = output_directory / "worker_logs"
+    worker_log_directory.mkdir(exist_ok=True)
+    wrapper_disordered_structure_processor = _AF3PreprocessingDisorderedWrapper(
+        gt_structures_directory=gt_structures_directory,
+        pred_structures_directory=pred_structures_directory,
+        gt_file_format=gt_file_format,
+        pred_file_format=pred_file_format,
+        output_directory=output_directory,
+        ccd=ccd,
+        pocket_distance_threshold=pocket_distance_threshold,
+        clash_distance_thresholds=clash_distance_thresholds,
+        transfer_annot_dict=transfer_annot_dict,
+        delete_annot_list=delete_annot_list,
+    )
+
+    # Pre-create output directories
+    structures_output_directory = output_directory / "structures/"
+    structures_output_directory.mkdir(exist_ok=True)
+    for pdb_id, _ in tqdm(
+        input_data,
+        total=len(input_data),
+        desc="4/6: Creating structure data output directories",
+    ):
+        (structures_output_directory / pdb_id).mkdir(exist_ok=True)
+
+    # Preprocess entries and update distance_clash_map
+    with mp.Pool(num_workers) as pool:
+        for pdb_id, chain_map, distance_clash_map in tqdm(
+            pool.imap_unordered(
+                wrapper_disordered_structure_processor,
+                input_data,
+                chunksize=chunksize,
+            ),
+            total=len(input_data),
+            desc="5/6: Processing disordered structures",
+        ):
+            metadata_cache.structure_data[
+                pdb_id
+            ].distance_clash_map = distance_clash_map
+            metadata_cache.structure_data[pdb_id].chain_map = chain_map
+
+    # Collate logs
+    with log_file.open("a") as out_file:
+        for worker_log in tqdm(
+            worker_log_directory.iterdir(),
+            desc="6/6: Collating preprocessing worker logs",
+            total=len(list(worker_log_directory.iterdir())),
+        ):
+            out_file.write(f"Log file: {worker_log.name}\n")
+            out_file.write(worker_log.read_text())
+            worker_log.unlink()
+
+        if not list(worker_log_directory.iterdir()):
+            worker_log_directory.rmdir()
+
+    return metadata_cache
+
+
+def preprocess_pdb_disordered_af3(
+    metadata_cache_file: Path,
+    gt_structures_directory: Path,
+    pred_structures_directory: Path,
+    gt_file_format: str,
+    pred_file_format: str,
+    output_directory: Path,
+    ost_aln_output_directory: Path,
+    subset_file: Path | None,
+    ccd_file: Path,
+    pocket_distance_threshold: float,
+    clash_distance_thresholds: list[float],
+    transfer_annot_dict: dict[str, Any],
+    delete_annot_list: list[str],
+    num_workers: int,
+    chunksize: int,
+    log_file: Path,
+):
+    """The full pipeline for creating the disordered metadata cache."""
+
+    # Configure the main process logger
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.INFO)  # Set the logging level for the file handler
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setLevel(logging.INFO)
+    logger.addHandler(stream_handler)
+
+    # Find subset parent metadata cache
+    parent_metadata_cache = PreprocessingDataCache.from_json(metadata_cache_file)
+    shared_pdb_ids = find_parent_metadata_cache_subset(
+        parent_metadata_cache=parent_metadata_cache,
+        gt_structures_directory=gt_structures_directory,
+        pred_structures_directory=pred_structures_directory,
+        ost_aln_output_directory=ost_aln_output_directory,
+        subset_file=subset_file,
+        logger=logger,
+    )
+
+    # Build provisional metadata cache with GDT and chain_map
+    provisional_metadata_cache = build_provisional_disordered_metadata_cache(
+        parent_metadata_cache=parent_metadata_cache,
+        pdb_id_list=shared_pdb_ids,
+        ost_aln_output_directory=ost_aln_output_directory,
+        output_directory=output_directory,
+        num_workers=num_workers,
+        chunksize=chunksize,
+        log_file=log_file,
+    )
+    provisional_metadata_cache.to_json(
+        output_directory / "provisional_metadata_cache.json"
+    )
+
+    # Preprocess disordered structures and update metadata cache entries
+    metadata_cache = preprocess_disordered_structures(
+        metadata_cache=provisional_metadata_cache,
+        gt_structures_directory=gt_structures_directory,
+        pred_structures_directory=pred_structures_directory,
+        gt_file_format=gt_file_format,
+        pred_file_format=pred_file_format,
+        output_directory=output_directory,
+        ccd_file=ccd_file,
+        pocket_distance_threshold=pocket_distance_threshold,
+        clash_distance_thresholds=clash_distance_thresholds,
+        transfer_annot_dict=transfer_annot_dict,
+        delete_annot_list=delete_annot_list,
+        num_workers=num_workers,
+        chunksize=chunksize,
+        log_file=log_file,
+    )
+    metadata_cache.to_json(output_directory / "metadata_cache.json")
+
+    logger.info("Done.")

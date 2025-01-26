@@ -100,6 +100,7 @@ def weighted_rigid_align(
 def mse_loss(
     x: torch.Tensor,
     batch: dict,
+    loss_token_mask: torch.Tensor,
     dna_weight: float,
     rna_weight: float,
     ligand_weight: float,
@@ -113,6 +114,8 @@ def mse_loss(
             [*, N_atom, 3] Atom positions
         batch:
             Feature dictionary
+        loss_token_mask:
+            [*, N_tokens] token-wise mask indicating whether to apply loss
         dna_weight:
             Upweight factor for DNA atoms
         rna_weight:
@@ -151,13 +154,20 @@ def mse_loss(
         eps=eps,
     )
 
+    loss_atom_mask = broadcast_token_feat_to_atoms(
+        token_mask=batch["token_mask"],
+        num_atoms_per_token=batch["num_atoms_per_token"],
+        token_feat=loss_token_mask,
+    )
+    loss_atom_mask = loss_atom_mask * atom_mask_gt
+
     mse = (
         (1 / 3.0)
         * torch.sum(
-            torch.sum((x - x_gt_aligned) ** 2, dim=-1) * w * atom_mask_gt,
+            torch.sum((x - x_gt_aligned) ** 2, dim=-1) * w * loss_atom_mask,
             dim=-1,
         )
-        / (torch.sum(atom_mask_gt, dim=-1) + eps)
+        / (torch.sum(loss_atom_mask, dim=-1) + eps)
     )
 
     return mse
@@ -222,7 +232,9 @@ def bond_loss(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
     return loss
 
 
-def smooth_lddt_loss(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
+def smooth_lddt_loss(
+    x: torch.Tensor, batch: dict, loss_token_mask: torch.Tensor, eps: float
+) -> torch.Tensor:
     """
     Implements AF3 Algorithm 27.
 
@@ -231,6 +243,8 @@ def smooth_lddt_loss(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
             [*, N_atom, 3] Atom positions
         batch:
             Feature dictionary
+        loss_token_mask:
+            [*, N_tokens] token-wise mask indicating whether to apply loss
         eps:
             Small constant for stability
     Returns:
@@ -262,6 +276,12 @@ def smooth_lddt_loss(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
         num_atoms_per_token=batch["num_atoms_per_token"],
         token_feat=batch["is_dna"] + batch["is_rna"],
     )
+    loss_atom_mask = broadcast_token_feat_to_atoms(
+        token_mask=batch["token_mask"],
+        num_atoms_per_token=batch["num_atoms_per_token"],
+        token_feat=loss_token_mask,
+    )
+    loss_atom_mask = loss_atom_mask * atom_mask_gt
 
     # [*, N_atom, N_atom]
     c = (dx_gt < 30) * is_nucleotide[..., None] + (dx_gt < 15) * (
@@ -272,7 +292,9 @@ def smooth_lddt_loss(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
     mask = 1 - torch.eye(x.shape[-2], device=x.device, dtype=x.dtype).tile(
         (*x.shape[:-2], 1, 1)
     )
-    mask = mask * (atom_mask_gt[..., None] * atom_mask_gt[..., None, :])
+
+    mask = mask * (loss_atom_mask[..., None] * loss_atom_mask[..., None, :])
+
     ce_mean = torch.sum(c * e * mask, dim=(-1, -2)) / (
         torch.sum(mask, dim=(-1, -2)) + eps
     )
@@ -360,9 +382,20 @@ def diffusion_loss(
     bond_weight = loss_weights["bond"]
     smooth_lddt_weight = loss_weights["smooth_lddt"]
 
+    # Create a mask for non-protein tokens (used for PDB disordered set):
+    disable_non_protein_loss = loss_weights.get(
+        "disable_non_protein_diffusion_weights", None
+    )
+    loss_token_mask = (
+        batch["is_protein"]
+        if disable_non_protein_loss is not None and disable_non_protein_loss.any()
+        else torch.ones_like(batch["is_protein"])
+    )
+
     l_mse = mse_loss(
         x=x,
         batch=batch,
+        loss_token_mask=loss_token_mask,
         dna_weight=dna_weight,
         rna_weight=rna_weight,
         ligand_weight=ligand_weight,
@@ -380,7 +413,9 @@ def diffusion_loss(
             loss_breakdown["bond"] = l_bond.detach().clone().mean(dim=-1)
 
         if smooth_lddt_weight.any():
-            l_smooth_lddt = smooth_lddt_loss(x=x, batch=batch, eps=eps)
+            l_smooth_lddt = smooth_lddt_loss(
+                x=x, batch=batch, loss_token_mask=loss_token_mask, eps=eps
+            )
 
             # Mean over diffusion sample dimension
             loss_breakdown["smooth_lddt"] = l_smooth_lddt.detach().clone().mean(dim=-1)
@@ -400,7 +435,11 @@ def diffusion_loss(
             l_smooth_lddt = run_low_mem_loss_fn(
                 loss_fn=smooth_lddt_loss,
                 x=x,
-                kwargs={"batch": batch, "eps": eps},
+                kwargs={
+                    "batch": batch,
+                    "eps": eps,
+                    "loss_token_mask": loss_token_mask,
+                },
                 chunk_size=chunk_size,
             )
             loss_breakdown["smooth_lddt"] = l_smooth_lddt.detach().clone().mean(dim=-1)

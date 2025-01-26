@@ -533,7 +533,8 @@ project_config = mlc.ConfigDict(
                     },
                     # Whether dataset should be sampled in-order without replacement
                     "sample_in_order": False,
-                    # TODO: disordered flag goes here, eventually move to yml
+                    # TODO: use in disordered PDB dataset, eventually move to yml
+                    "disable_non_protein_diffusion_weights": False,
                 },
                 "dataset_paths": {
                     "alignments_directory": PLACEHOLDER_PATH,

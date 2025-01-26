@@ -5,7 +5,7 @@ from pathlib import Path
 import click
 
 from openfold3.core.data.io.s3 import parse_s3_config
-from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
+from openfold3.core.data.pipelines.preprocessing.caches.protein_monomer import (
     create_protein_monomer_dataset_cache_af3,
 )
 from openfold3.core.data.pipelines.preprocessing.structure import (

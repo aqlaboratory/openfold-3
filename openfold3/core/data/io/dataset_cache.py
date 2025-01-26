@@ -5,7 +5,7 @@ import re
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 import lmdb
 
@@ -66,6 +66,14 @@ def convert_dataclass_to_dict(dataclass: Any) -> dict:
         dict:
             The datacache as a dictionary.
     """
+    # TODO: reorganize cache format modules so that we can avoid circular import hacks
+    from openfold3.core.data.primitives.caches.format import (
+        DatasetCache,
+        PreprocessingDataCache,
+    )
+
+    DataCacheType: TypeAlias = PreprocessingDataCache | DatasetCache
+
     datacache_dict = asdict(dataclass)
 
     # Remove private fields

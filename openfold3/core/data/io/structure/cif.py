@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal, NamedTuple
 
 from biotite.structure import AtomArray, get_chain_count
-from biotite.structure.io import pdbx
+from biotite.structure.io import pdb, pdbx
 
 from openfold3.core.data.io.structure.atom_array import (
     read_atomarray_from_npz,
@@ -31,12 +31,12 @@ logger = logging.getLogger(__name__)
 
 
 class ParsedStructure(NamedTuple):
-    cif_file: pdbx.CIFFile
+    structure_file: pdbx.CIFFile | pdb.PDBFile
     atom_array: AtomArray | None
 
 
 class SkippedStructure(NamedTuple):
-    cif_file: pdbx.CIFFile
+    structure_file: pdbx.CIFFile | pdb.PDBFile
     reason: str
 
 
@@ -259,7 +259,7 @@ def parse_target_structure(
     pdb_id: str,
     structure_format: Literal["pkl", "npz"],
 ) -> AtomArray:
-    """Parses a target structure from a pickle file.
+    """Parses a preprocessed structure from a pickle or numpy array.
 
     Args:
         target_structures_directory (Path):
@@ -272,7 +272,7 @@ def parse_target_structure(
 
     Raises:
         ValueError:
-            If the structure format is not "pkl".
+            If the structure format is not "pkl" or "npz".
 
     Returns:
         AtomArray:

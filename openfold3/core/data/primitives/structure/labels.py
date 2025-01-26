@@ -1,5 +1,6 @@
 import logging
 from collections import defaultdict
+from typing import Any, Literal
 
 import biotite.structure as struc
 import numpy as np
@@ -198,6 +199,7 @@ def update_author_to_pdb_labels(
     atom_array: AtomArray,
     use_author_res_id_if_missing: bool = True,
     create_auth_label_annotations: bool = True,
+    atom_array_source_format: Literal["cif", "pdb", "pdb_af2"] = "cif",
 ) -> None:
     """Changes labels in an author-assigned PDB structure to PDB-assigned labels.
 
@@ -210,12 +212,15 @@ def update_author_to_pdb_labels(
         atom_array:
             AtomArray containing the structure to change labels in.
         keep_res_id_if_nan:
-            Whether to keep the author-assigned residue IDs if they are NaN in
-            the PDB labels. This is important for correct bond record parsing/writing in
+            Whether to keep the author-assigned residue IDs if they are NaN in the PDB
+            labels. This is important for correct bond record parsing/writing in
             Biotite. Defaults to True.
         auth_label_annotations:
             Whether to keep the original author-assigned labels as annotations in the
             AtomArray.
+        atom_array_source_format:
+            Whether the AtomArray was parsed from a CIF file, PDB file or a PDB file
+            predicted by AF2, required due to some fields missing from the PDB format.
 
     """
     if create_auth_label_annotations:
@@ -224,14 +229,29 @@ def update_author_to_pdb_labels(
         atom_array.set_annotation("auth_comp_id", atom_array.res_name)
         atom_array.set_annotation("auth_atom_id", atom_array.atom_name)
 
-    # Replace author-assigned IDs with PDB-assigned IDs
-    atom_array.chain_id = atom_array.label_asym_id
-    atom_array.res_name = atom_array.label_comp_id
-    atom_array.atom_name = atom_array.label_atom_id
+    if atom_array_source_format == "cif":
+        # Replace author-assigned IDs with PDB-assigned IDs if cif
+        atom_array.chain_id = atom_array.label_asym_id
+        atom_array.res_name = atom_array.label_comp_id
+        atom_array.atom_name = atom_array.label_atom_id
+    elif atom_array_source_format == "pdb":
+        raise NotImplementedError(
+            "PDB format is not yet supported for updating author-assigned labels."
+        )
+    elif atom_array_source_format == "pdb_af2":
+        # Add "label_" IDs if pdb
+        atom_array.set_annotation("label_asym_id", atom_array.chain_id)
+        atom_array.set_annotation("label_comp_id", atom_array.res_name)
+        atom_array.set_annotation("label_atom_id", atom_array.atom_name)
+    else:
+        raise ValueError(
+            "The AtomArray source format must be either 'cif', 'pdb' or 'pdb_af2'."
+        )
 
     # Set residue IDs to PDB-assigned IDs but fallback to author-assigned IDs if they
     # are not assigned (important for correct bond record parsing/writing)
-    if use_author_res_id_if_missing:
+    # TODO: check if this is necessary for 'pdb' format
+    if use_author_res_id_if_missing & (atom_array_source_format == "cif"):
         author_res_ids = atom_array.res_id
         pdb_res_ids = atom_array.label_seq_id
         merged_res_ids = np.where(
@@ -240,7 +260,10 @@ def update_author_to_pdb_labels(
         atom_array.res_id = merged_res_ids
 
 
-def assign_entity_ids(atom_array: AtomArray) -> None:
+def assign_entity_ids(
+    atom_array: AtomArray,
+    atom_array_source_format: Literal["cif", "pdb", "pdb_af2"] = "cif",
+) -> None:
     """Assigns entity IDs to the AtomArray
 
     Entity IDs are assigned to each chain in the AtomArray based on the
@@ -250,10 +273,20 @@ def assign_entity_ids(atom_array: AtomArray) -> None:
     Args:
         atom_array:
             AtomArray containing the structure to assign entity IDs to.
+        atom_array_source_format:
+            Whether the AtomArray was parsed from a CIF file, PDB file or a PDB file
+            predicted by AF2, required due to some fields missing from the PDB format.
     """
     # Cast entity IDs from string to int and shorten name
-    atom_array.set_annotation("entity_id", atom_array.label_entity_id.astype(int))
-    atom_array.del_annotation("label_entity_id")
+    if atom_array_source_format == "cif":
+        atom_array.set_annotation("entity_id", atom_array.label_entity_id.astype(int))
+        atom_array.del_annotation("label_entity_id")
+    elif atom_array_source_format == "pdb":
+        raise NotImplementedError(
+            "PDB format is not yet supported for assigning entity IDs."
+        )
+    elif atom_array_source_format == "pdb_af2":
+        pass
 
 
 def assign_molecule_type_ids(atom_array: AtomArray, cif_file: pdbx.CIFFile) -> None:
@@ -495,3 +528,74 @@ def set_residue_hetero_values(atom_array: AtomArray) -> None:
         | (rna_mask & in_standard_rna_residues)
         | (dna_mask & in_standard_dna_residues)
     ] = False
+
+
+def remove_transfer_annotations(
+    target_atom_array: AtomArray,
+    source_atom_array: AtomArray,
+    chain_map: dict[str, str],
+    transfer_annot_dict: dict[str, Any],
+    delete_annot_list: list[str],
+) -> AtomArray:
+    """Removes and transfers annotations between AtomArrays with identical chains and
+    residues.
+
+    IMPORTANT: This function currently only supports residue- and chain-level annotation
+    transfers. The source-to-target chain mapping is assumed to match the label_asym_id
+    fields of the source (chain_map key) and target (chain_map value) AtomArrays.
+
+    Args:
+        target_atom_array (AtomArray):
+            Atom array from which to remove annotations and to which to transfer
+            annotations.
+        source_atom_array (AtomArray):
+            Atom array from which to transfer annotations.
+        chain_map (dict[str, str]):
+            A dictionary mapping source chain IDs to target chain IDs.
+        transfer_annot_dict (dict[str, Any]):
+            Dict of annotations to transfer from the source AtomArray to the target
+            AtomArray, mapping to default values to be used if the source AtomArray does
+            not contain the annotation.
+        delete_annot_list (list[str]):
+            List of annotations to remove from the target AtomArray.
+
+    Returns:
+        AtomArray:
+            AtomArray with annotations removed and transferred from the source
+            AtomArray.
+    """
+    target_atom_array_annotated = target_atom_array.copy()
+
+    # Remove annotations
+    for annot in target_atom_array_annotated.get_annotation_categories():
+        if annot in delete_annot_list:
+            target_atom_array_annotated.del_annotation(annot)
+
+    # Add missing annotations that need transferring with defaults
+    for annot, default_value in transfer_annot_dict.items():
+        if annot not in target_atom_array_annotated.get_annotation_categories():
+            target_atom_array_annotated.set_annotation(
+                annot, np.full(len(target_atom_array_annotated), default_value)
+            )
+
+    # Iterate over chains
+    for source_chain_id, target_chain_id in chain_map.items():
+        # Get current chain slice in copy and associated mask
+        target_chain_mask = target_atom_array.label_asym_id == target_chain_id
+        target_chain = target_atom_array_annotated[target_chain_mask]
+
+        # Get source chain slice and residue starts
+        source_chain = source_atom_array[source_atom_array.chain_id == source_chain_id]
+        source_chain_res_starts = struc.get_residue_starts(source_chain)
+
+        # Transfer annotations
+        for annot in transfer_annot_dict:
+            # Get residue-wise source annotations
+            source_annot_per_res = struc.spread_residue_wise(
+                target_chain, getattr(source_chain[source_chain_res_starts], annot)
+            )
+            getattr(target_atom_array_annotated, annot)[target_chain_mask] = (
+                source_annot_per_res
+            )
+
+    return target_atom_array_annotated
