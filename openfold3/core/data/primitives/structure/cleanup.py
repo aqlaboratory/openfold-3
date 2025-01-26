@@ -10,6 +10,7 @@ from scipy.spatial.distance import cdist
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
+from openfold3.core.data.primitives.structure.component import find_cross_chain_bonds
 from openfold3.core.data.primitives.structure.interface import (
     chain_paired_interface_atom_iter,
     get_interface_token_center_atoms,
@@ -817,3 +818,45 @@ def filter_bonds(
     #         "Filtering bonds disconnected a molecule. This can result in unwanted"
     #         " behavior in the permutation alignment."
     #     )
+
+
+def remove_covalent_nonprotein_chains(atom_array: AtomArray) -> AtomArray:
+    """Removes non-protein chains covalently linked to protein chains.
+
+    Args:
+        atom_array (AtomArray):
+            AtomArray from which to remove non-protein chains covalently attached to
+            protein chains.
+
+    Returns:
+        AtomArray:
+            AtomArray with non-protein chains covalently attached to protein chains
+            removed.
+    """
+
+    # Get cross-chain bonds
+    cross_chain_bonds = find_cross_chain_bonds(atom_array)
+
+    # Exclude coordinate bonds
+    cross_chain_bonds_covalent = cross_chain_bonds[
+        (cross_chain_bonds[:, -1] != BondType.COORDINATION), :
+    ][:, :-1]
+
+    # Get molecule types of the atoms involved in the cross-chain bonds
+    cross_chain_bonds_covalent_mol_type = atom_array.molecule_type_id[
+        cross_chain_bonds_covalent
+    ]
+
+    # Find bonds that have exactly one protein atom
+    cross_chain_bonds_covalent_has_nonprotein = cross_chain_bonds_covalent[
+        (cross_chain_bonds_covalent_mol_type[:, 0] == MoleculeType.PROTEIN)
+        ^ (cross_chain_bonds_covalent_mol_type[:, 1] == MoleculeType.PROTEIN)
+    ]
+
+    # Get non-protein atom indices then covalent non-protein chain IDs
+    cross_chain_atom_nonprotein = cross_chain_bonds_covalent_has_nonprotein.ravel()[
+        cross_chain_bonds_covalent_mol_type.ravel() != MoleculeType.PROTEIN
+    ]
+    covalent_nonprotein_chain_ids = atom_array.chain_id[cross_chain_atom_nonprotein]
+
+    return atom_array[~np.isin(atom_array.chain_id, covalent_nonprotein_chain_ids)]

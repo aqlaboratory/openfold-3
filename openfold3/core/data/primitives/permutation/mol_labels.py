@@ -17,6 +17,7 @@ from openfold3.core.data.pipelines.sample_processing.conformer import (
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
+from openfold3.core.data.primitives.structure.component import find_cross_chain_bonds
 from openfold3.core.data.primitives.structure.conformer import renumber_permutations
 from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
@@ -97,13 +98,7 @@ def construct_coarse_molecule_graph(atom_array: AtomArray) -> nx.Graph:
         chain_id = chain.chain_id[0]
         g.add_node(f"chain: {chain_id}", node_repr=chain_repr)
 
-    all_bonds = atom_array.bonds.as_array()
-
-    chain_ids_atom_1 = atom_array.chain_id[all_bonds[:, 0]]
-    chain_ids_atom_2 = atom_array.chain_id[all_bonds[:, 1]]
-    cross_chain_selector = chain_ids_atom_1 != chain_ids_atom_2
-
-    cross_chain_bonds = all_bonds[cross_chain_selector]
+    cross_chain_bonds = find_cross_chain_bonds(atom_array)
 
     # Construct explicit labeled nodes for each bonded atom, because vf2pp doesn't
     # support edge-labels

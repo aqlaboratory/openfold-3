@@ -5,7 +5,7 @@ from typing import Literal
 
 import click
 
-from openfold3.core.data.pipelines.preprocessing.dataset_cache import (
+from openfold3.core.data.pipelines.preprocessing.caches.pdb_val import (
     create_pdb_val_dataset_cache_af3,
 )
 

@@ -16,6 +16,9 @@ from openfold3.core.data.framework.single_datasets.abstract_single import (
 from openfold3.core.data.framework.single_datasets.base_af3 import (
     BaseAF3Dataset,
 )
+from openfold3.core.data.pipelines.featurization.loss_weights import (
+    set_loss_weights_for_disordered_set,
+)
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.core.utils.atomize_utils import (
     broadcast_token_feat_to_atoms,
@@ -360,12 +363,40 @@ class WeightedPDBDataset(BaseAF3Dataset):
 
             except Exception as e:
                 tb = traceback.format_exc()
+                dataset_name = self.get_class_name()
                 logger.warning(
                     "-" * 40
                     + "\n"
-                    + f"Failed to process WeightedPDBDataset entry {pdb_id}: {str(e)}\n"
+                    + f"Failed to process {dataset_name} entry {pdb_id}: {str(e)}\n"
                     + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
                     + "-" * 40
                 )
                 index = random.randint(0, len(self) - 1)
                 return self.__getitem__(index)
+
+
+@register_dataset
+class DisorderedPDBDataset(WeightedPDBDataset):
+    """Implements a Dataset class for the Disordered PDB training dataset for AF3."""
+
+    def __init__(self, dataset_config: dict) -> None:
+        """Initializes a DisorderedPDBDataset.
+
+        Args:
+            dataset_config (dict):
+                Input config. See openfold3/examples/pdb_sample_dataset_config.yml for
+                an example.
+        """
+        super().__init__(dataset_config)
+        self.custom_settings = dataset_config["custom"]
+
+    def create_loss_features(self, pdb_id: str) -> dict:
+        """Creates the loss features for the disordered PDB set."""
+
+        loss_features = {}
+        loss_features["loss_weights"] = set_loss_weights_for_disordered_set(
+            self.loss,
+            self.dataset_cache.structure_data[pdb_id].resolution,
+            self.custom_settings,
+        )
+        return loss_features
