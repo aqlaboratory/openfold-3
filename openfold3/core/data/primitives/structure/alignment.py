@@ -9,6 +9,57 @@ from openfold3.core.data.primitives.structure.interface import (
 )
 
 
+# TODO add docstring and comments
+def extend_chain_map_via_alignment(
+    target_atom_array: AtomArray,
+    source_atom_array: AtomArray,
+    chain_map: dict[str, str],
+    transform_array: np.ndarray,
+):
+    affine_transformation = struc.AffineTransformation(
+        center_translation=np.zeros(3),
+        rotation=transform_array[:3, :3],
+        target_translation=transform_array[:3, 3],
+    )
+    unaligned_target_chain_ids = set(np.unique(target_atom_array.chain_id)) - set(
+        chain_map.values()
+    )
+    unaligned_source_chain_ids = set(np.unique(source_atom_array.chain_id)) - set(
+        chain_map.keys()
+    )
+    target_atom_array_aligned = affine_transformation.apply(target_atom_array)
+
+    chain_map_update = {}
+    for source_chain_id in unaligned_source_chain_ids:
+        source_chain = source_atom_array[source_atom_array.chain_id == source_chain_id]
+        source_backbone = source_chain[
+            np.isin(source_chain.atom_name, ["N", "CA", "C"])
+        ]
+        source_backbone_is_resolved = source_backbone.occupancy > 0
+        target_chain_id_to_rmsd = {}
+        for target_chain_id in unaligned_target_chain_ids.copy():
+            target_chain = target_atom_array_aligned[
+                target_atom_array_aligned.chain_id == target_chain_id
+            ]
+            target_backbone = target_chain[
+                np.isin(target_chain.atom_name, ["N", "CA", "C"])
+            ]
+            if len(source_backbone) == len(target_backbone):
+                target_chain_id_to_rmsd[target_chain_id] = struc.rmsd(
+                    source_backbone[source_backbone_is_resolved],
+                    target_backbone[source_backbone_is_resolved],
+                )
+
+        if len(target_chain_id_to_rmsd) > 0:
+            target_chain_id_match = min(
+                target_chain_id_to_rmsd, key=target_chain_id_to_rmsd.get
+            )
+            chain_map_update[source_chain_id] = target_chain_id_match
+            unaligned_target_chain_ids.remove(target_chain_id_match)
+
+    return {**chain_map, **chain_map_update}
+
+
 # TODO: improve docstring and refactor for generality
 def coalign_atom_arrays(
     fixed: AtomArray,

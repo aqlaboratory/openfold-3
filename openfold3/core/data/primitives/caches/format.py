@@ -234,6 +234,7 @@ class DisorderedPreprocessingDataCache(PreprocessingDataCache):
                 token_count = None
                 gdt = None
                 chain_map = None
+                transform_array = None
                 best_model_filename = None
                 distance_clash_map = None
             elif status == "success":
@@ -245,6 +246,7 @@ class DisorderedPreprocessingDataCache(PreprocessingDataCache):
                 token_count = structure_data["token_count"]
                 gdt = structure_data["gdt"]
                 chain_map = structure_data["chain_map"]
+                transform_array = structure_data["transform"]
                 best_model_filename = structure_data["best_model_filename"]
                 distance_clash_map = structure_data["distance_clash_map"]
             # TODO: Release date should never be None with new version, fix this after
@@ -258,6 +260,7 @@ class DisorderedPreprocessingDataCache(PreprocessingDataCache):
                 token_count = None
                 gdt = None
                 chain_map = None
+                transform_array = None
                 best_model_filename = None
                 distance_clash_map = None
             else:
@@ -298,6 +301,7 @@ class DisorderedPreprocessingDataCache(PreprocessingDataCache):
                 token_count=token_count,
                 gdt=gdt,
                 chain_map=chain_map,
+                transform_array=transform_array,
                 best_model_filename=best_model_filename,
                 distance_clash_map=distance_clash_map,
             )
@@ -336,6 +340,7 @@ class DisorderedPreprocessingStructureData(PreprocessingStructureData):
 
     gdt: float
     chain_map: dict[str, str]
+    transform_array: list[list[float]]
     best_model_filename: str
     distance_clash_map: dict[float, bool]
 

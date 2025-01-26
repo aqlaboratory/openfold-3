@@ -57,6 +57,7 @@ from openfold3.core.data.primitives.permutation.mol_labels import (
 from openfold3.core.data.primitives.structure.alignment import (
     calculate_distance_clash_map,
     coalign_atom_arrays,
+    extend_chain_map_via_alignment,
 )
 from openfold3.core.data.primitives.structure.cleanup import (
     canonicalize_atom_order,
@@ -1019,13 +1020,6 @@ def create_provisional_disordered_structure_data_entry(
     # Find the one with the highest GDT
     best_idx = np.argmax(gdts)
 
-    # Process the chain mapping
-    chain_map_raw = ost_aln_data[best_idx]["chain_mapping"]
-    chain_map = {}
-    for gt_chain_id, model_chain_id in chain_map_raw.items():
-        # TODO: make sure we don't need the numerical portions of the GT chain ID
-        chain_map[gt_chain_id] = model_chain_id
-
     # Add to the entry
     return DisorderedPreprocessingStructureData(
         status=structure_data_entry.status,
@@ -1036,7 +1030,8 @@ def create_provisional_disordered_structure_data_entry(
         interfaces=structure_data_entry.interfaces,
         token_count=structure_data_entry.token_count,
         gdt=gdts[best_idx],
-        chain_map=chain_map,
+        chain_map=ost_aln_data[best_idx]["chain_mapping"],
+        transform_array=ost_aln_data[best_idx]["transform"],
         best_model_filename=aln_filenames[best_idx],
         distance_clash_map=None,
     )
@@ -1091,6 +1086,7 @@ class _DisorderedMetadataCacheBuilder:
                 token_count=None,
                 gdt=None,
                 chain_map=None,
+                transform_array=None,
                 best_model_filename=None,
                 distance_clash_map=None,
             )
@@ -1188,7 +1184,7 @@ def preprocess_disordered_structure_and_write_outputs_af3(
     clash_distance_thresholds: list[float],
     transfer_annot_dict: dict[str, Any],
     delete_annot_list: list[str],
-) -> dict[float, bool]:
+) -> tuple[dict[str, str], dict[float, bool]]:
     # Load GT and best GDT pred structures into AtomArrays and sanitize
     gt_atom_array = parse_target_structure(
         target_structures_directory=gt_structures_directory,
@@ -1210,11 +1206,22 @@ def preprocess_disordered_structure_and_write_outputs_af3(
     pred_atom_array = canonicalize_atom_order(pred_atom_array, ccd)
     pred_atom_array = remove_std_residue_terminal_atoms(pred_atom_array)
 
-    # Transfer annotations from GT protein to pred and remove unnecessary annotations
-    # TODO: expose annot arguments
+    # Extend chain map if only partially aligned
     gt_atom_array_protein = gt_atom_array[
         gt_atom_array.molecule_type_id == MoleculeType.PROTEIN
     ]
+    if len(structure_data_entry.chain_map) < len(
+        np.unique(gt_atom_array_protein.chain_id)
+    ):
+        structure_data_entry.chain_map = extend_chain_map_via_alignment(
+            target_atom_array=pred_atom_array,
+            source_atom_array=gt_atom_array_protein,
+            chain_map=structure_data_entry.chain_map,
+            transform_array=np.array(structure_data_entry.transform_array),
+        )
+
+    # Transfer annotations from GT protein to pred and remove unnecessary annotations
+    # TODO: expose annot arguments
     pred_atom_array_annotated = remove_transfer_annotations(
         target_atom_array=pred_atom_array,
         source_atom_array=gt_atom_array_protein,
@@ -1258,8 +1265,8 @@ def preprocess_disordered_structure_and_write_outputs_af3(
         chimeric_atom_array, output_directory / f"structures/{pdb_id}/{pdb_id}.npz"
     )
 
-    # Return clash status
-    return distance_clash_map
+    # Return updated chain map and clash status
+    return structure_data_entry.chain_map, distance_clash_map
 
 
 class _AF3PreprocessingDisorderedWrapper:
@@ -1290,7 +1297,7 @@ class _AF3PreprocessingDisorderedWrapper:
     @wraps(preprocess_disordered_structure_and_write_outputs_af3)
     def __call__(
         self, input_data: tuple[str, DisorderedPreprocessingStructureData]
-    ) -> tuple[str, dict[float, bool] | None]:
+    ) -> tuple[str, dict[str, str] | None, dict[float, bool] | None]:
         try:
             pdb_id, structure_data_entry = input_data
             # Setup worker logger
@@ -1305,21 +1312,23 @@ class _AF3PreprocessingDisorderedWrapper:
 
             worker_logger.info(f"Processing {pdb_id}.")
 
-            distance_clash_map = preprocess_disordered_structure_and_write_outputs_af3(
-                pdb_id=pdb_id,
-                structure_data_entry=structure_data_entry,
-                gt_structures_directory=self.gt_structures_directory,
-                pred_structures_directory=self.pred_structures_directory,
-                gt_file_format=self.gt_file_format,
-                pred_file_format=self.pred_file_format,
-                output_directory=self.output_directory,
-                ccd=self.ccd,
-                pocket_distance_threshold=self.pocket_distance_threshold,
-                clash_distance_thresholds=self.clash_distance_thresholds,
-                transfer_annot_dict=self.transfer_annot_dict,
-                delete_annot_list=self.delete_annot_list,
+            chain_map, distance_clash_map = (
+                preprocess_disordered_structure_and_write_outputs_af3(
+                    pdb_id=pdb_id,
+                    structure_data_entry=structure_data_entry,
+                    gt_structures_directory=self.gt_structures_directory,
+                    pred_structures_directory=self.pred_structures_directory,
+                    gt_file_format=self.gt_file_format,
+                    pred_file_format=self.pred_file_format,
+                    output_directory=self.output_directory,
+                    ccd=self.ccd,
+                    pocket_distance_threshold=self.pocket_distance_threshold,
+                    clash_distance_thresholds=self.clash_distance_thresholds,
+                    transfer_annot_dict=self.transfer_annot_dict,
+                    delete_annot_list=self.delete_annot_list,
+                )
             )
-            return pdb_id, distance_clash_map
+            return pdb_id, chain_map, distance_clash_map
 
         except Exception as e:
             worker_logger.error(
@@ -1328,7 +1337,7 @@ class _AF3PreprocessingDisorderedWrapper:
                 f"\n\nType:\n{type(e).__name__}"
                 f"\n\nTraceback:\n{traceback.format_exc()}"
             )
-            return pdb_id, None
+            return pdb_id, None, None
 
 
 def preprocess_disordered_structures(
@@ -1401,7 +1410,7 @@ def preprocess_disordered_structures(
 
     # Preprocess entries and update distance_clash_map
     with mp.Pool(num_workers) as pool:
-        for pdb_id, distance_clash_map in tqdm(
+        for pdb_id, chain_map, distance_clash_map in tqdm(
             pool.imap_unordered(
                 wrapper_disordered_structure_processor,
                 input_data,
@@ -1413,6 +1422,7 @@ def preprocess_disordered_structures(
             metadata_cache.structure_data[
                 pdb_id
             ].distance_clash_map = distance_clash_map
+            metadata_cache.structure_data[pdb_id].chain_map = chain_map
 
     # Collate logs
     with log_file.open("a") as out_file:
