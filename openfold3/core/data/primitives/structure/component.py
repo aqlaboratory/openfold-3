@@ -494,6 +494,31 @@ def mol_from_atomarray(atom_array: AtomArray) -> AnnotatedMol:
     return mol
 
 
+# TODO: Better docstring
+def get_reference_molecule_metadata(
+    mol: AnnotatedMol,
+    conformer_strategy: Literal["default", "random_init", "use_fallback"],
+    residue_count: int,
+) -> dict:
+    """Convenience function to return the metadata for a reference molecule."""
+    conf_metadata = {
+        "residue_count": residue_count,
+        "conformer_gen_strategy": conformer_strategy,
+    }
+
+    if mol.HasProp("model_pdb_id"):
+        fallback_conformer_pdb_id = mol.GetProp("model_pdb_id")
+        if fallback_conformer_pdb_id == "?":
+            fallback_conformer_pdb_id = None
+    else:
+        fallback_conformer_pdb_id = None
+
+    conf_metadata["fallback_conformer_pdb_id"] = fallback_conformer_pdb_id
+    conf_metadata["canonical_smiles"] = Chem.MolToSmiles(mol)
+
+    return conf_metadata
+
+
 def component_iter_from_metadata(
     atom_array: AtomArray, per_chain_metadata: DatasetChainData
 ) -> Generator[AtomArray, None, None]:
