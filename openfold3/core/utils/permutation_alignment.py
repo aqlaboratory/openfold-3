@@ -1168,6 +1168,12 @@ def get_final_atom_permutation_index(
                 continue
 
             # Versions of the ground-truth positions for each permutation
+            check_out_of_bounds_indices(
+                indices=permutations, input_tensor=gt_positions_subset_conf
+            )
+            check_out_of_bounds_indices(
+                indices=permutations, input_tensor=gt_resolved_mask_subset_conf
+            )
             gt_positions_subset_conf_perm = gt_positions_subset_conf[permutations]
             gt_resolved_mask_subset_conf_perm = gt_resolved_mask_subset_conf[
                 permutations
