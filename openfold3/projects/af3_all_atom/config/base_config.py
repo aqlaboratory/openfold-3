@@ -86,7 +86,7 @@ project_config = mlc.ConfigDict(
                 "offload_inference": False,
                 "diffusion_training_enabled": diffusion_training_enabled,
                 "optimizer": {
-                    "use_deepspeed_adam": True,
+                    "use_deepspeed_adam": False,
                     "learning_rate": 1.8e-3,
                     "beta1": 0.9,
                     "beta2": 0.95,

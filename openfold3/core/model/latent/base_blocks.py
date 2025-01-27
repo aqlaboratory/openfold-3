@@ -446,14 +446,33 @@ class PairBlock(nn.Module):
             inplace_safe=inplace_safe,
         )
 
-        z = add(
-            z,
-            self.pair_transition(
+        # TODO: Find a better way to deal with this swiglu issue
+        no_batch_dims = len(z.shape[:-3])
+        if no_batch_dims > 1 and not torch.is_grad_enabled():
+            z_chunks = []
+            no_samples = z.shape[1]
+            for i in range(no_samples):
+                z_chunks.append(
+                    add(
+                        z[:, i],
+                        self.pair_transition(
+                            z[:, i],
+                            mask=pair_trans_mask[:, i],
+                            chunk_size=chunk_size,
+                        ),
+                        inplace=False,
+                    )
+                )
+            z = torch.stack(z_chunks, dim=1)
+        else:
+            z = add(
                 z,
-                mask=pair_trans_mask,
-                chunk_size=chunk_size,
-            ),
-            inplace=inplace_safe,
-        )
+                self.pair_transition(
+                    z,
+                    mask=pair_trans_mask,
+                    chunk_size=chunk_size,
+                ),
+                inplace=inplace_safe,
+            )
 
         return z
