@@ -1732,21 +1732,6 @@ def safe_multi_chain_permutation_alignment(
             ground_truth_features=new_gt_features, batch_dims=batch_dims
         )
 
-        # TODO: Remove this again, this is for sanity-checking
-        # Also run naive alignment so that we can measure the delta the permutation
-        # alignment makes
-        naive_gt_features = naive_alignment(
-            batch=per_sample_batch,
-            atom_positions_predicted=per_sample_atom_pos_pred,
-        )
-        naive_gt_features = format_output_gt_features(
-            ground_truth_features=naive_gt_features, batch_dims=batch_dims
-        )
-        new_gt_features["atom_positions_naive"] = naive_gt_features["atom_positions"]
-        new_gt_features["atom_resolved_mask_naive"] = naive_gt_features[
-            "atom_resolved_mask"
-        ]
-
     except Exception as e:
         logger.error(
             "Caught error during multi-chain permutation alignment, falling back to "
