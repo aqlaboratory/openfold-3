@@ -95,6 +95,7 @@ METRICS = [
     *LIGAND_METRICS,
     *DNA_METRICS,
     *RNA_METRICS,
+    "delta_permutation_drmsd_complex",
 ]
 
 ###################################
@@ -142,6 +143,7 @@ CORRELATION_METRICS = [
 ]
 
 METRICS_MAXIMIZE = [
+    "delta",
     "gdt",
     "lddt",
     "plddt",

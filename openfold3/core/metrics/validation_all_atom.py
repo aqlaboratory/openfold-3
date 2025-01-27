@@ -5,6 +5,7 @@ import torch
 
 from openfold3.core.metrics.confidence import compute_plddt
 from openfold3.core.metrics.rasa import compute_rasa_batch
+from openfold3.core.metrics.validation import drmsd as drmsd_full_complex
 from openfold3.core.metrics.validation import gdt_ha, gdt_ts, rmsd
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.geometry.kabsch_alignment import kabsch_align
@@ -1049,6 +1050,30 @@ def get_validation_lddt_metrics(
     return metrics
 
 
+def drmsd_permutation_comparison(
+    pred_coords: torch.Tensor,
+    gt_coords: torch.Tensor,
+    all_atom_mask: torch.Tensor,
+    gt_coords_naive: torch.Tensor,
+    all_atom_mask_naive: torch.Tensor,
+) -> dict[str, torch.Tensor]:
+    drmsd_naive = drmsd_full_complex(
+        structure_1=pred_coords,
+        structure_2=gt_coords_naive,
+        mask=all_atom_mask_naive,
+    )
+
+    drmsd_permuted = drmsd_full_complex(
+        structure_1=pred_coords,
+        structure_2=gt_coords,
+        mask=all_atom_mask,
+    )
+
+    drmsd_diff = drmsd_naive - drmsd_permuted
+
+    return {"delta_permutation_drmsd_complex": drmsd_diff}
+
+
 def get_metrics(
     batch,
     outputs,
@@ -1083,6 +1108,8 @@ def get_metrics(
     metrics = {}
 
     gt_coords = batch["ground_truth"]["atom_positions"]
+    gt_coords_naive = batch["ground_truth"]["atom_positions_naive"]
+
     pred_coords = outputs["atom_positions_predicted"]
 
     token_mask = batch["token_mask"]
@@ -1106,6 +1133,10 @@ def get_metrics(
 
     all_atom_mask = expand_sample_dim(
         batch["ground_truth"]["atom_resolved_mask"]
+    ).bool()
+
+    all_atom_mask_naive = expand_sample_dim(
+        batch["ground_truth"]["atom_resolved_mask_naive"]
     ).bool()
 
     # broadcast token level features to atom level features
@@ -1221,6 +1252,16 @@ def get_metrics(
             substrate="dna",
         )
         metrics = metrics | dna_validation_metrics
+
+    metrics.update(
+        drmsd_permutation_comparison(
+            pred_coords=pred_coords,
+            gt_coords=gt_coords,
+            all_atom_mask=all_atom_mask,
+            gt_coords_naive=gt_coords_naive,
+            all_atom_mask_naive=all_atom_mask_naive,
+        )
+    )
 
     if compute_extra_val_metrics:
         if torch.any(intra_filter_atomized):
