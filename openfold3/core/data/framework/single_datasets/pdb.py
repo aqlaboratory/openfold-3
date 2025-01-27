@@ -78,13 +78,6 @@ def is_invalid_feature_dict(features: dict) -> bool:
         )
         skip = True
 
-    # Check that the token indices in the crop is a subset of the ground truth
-    if not torch.isin(
-        features["token_index"], features["ground_truth"]["token_index"]
-    ).all():
-        logger.warning(f"Token index mismatch for ground truth vs featurized {pdb_id}")
-        skip = True
-
     # Check that the crop has some resolved atoms
     if not features["ground_truth"]["atom_resolved_mask"].any():
         logger.warning(f"Skipping {pdb_id}: no resolved atoms")
