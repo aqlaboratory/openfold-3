@@ -105,7 +105,7 @@ def compute_model_selection_metric(
 
     if not valid_metrics:
         logger.warning(
-            f"No valid metrics found for model selection for PDB ID {pdb_id}"
+            f"No valid metrics found for model selection for PDB ID {', '.join(pdb_id)}"
         )
         return final_metrics
 
