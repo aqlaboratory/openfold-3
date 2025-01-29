@@ -68,7 +68,7 @@ from openfold3.core.data.framework.data_module import (
 )
 from openfold3.core.data.framework.lightning_utils import _generate_seed_sequence
 from openfold3.core.data.framework.stochastic_sampler_dataset import (
-    StochasticSamplerDataset,
+    SamplerDataset,
 )
 from openfold3.core.data.primitives.quality_control.logging_datasets import (
     ConcatDataset,
@@ -348,7 +348,7 @@ def main(
     )
 
     if add_stochastic_sampling:
-        logging_dataset = StochasticSamplerDataset(
+        logging_dataset = SamplerDataset(
             datasets=datasets,
             dataset_probabilities=multi_dataset_config.weights,
             epoch_len=data_module_config.epoch_len,
