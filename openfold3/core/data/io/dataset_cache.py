@@ -196,3 +196,5 @@ def read_datacache(
             reference_molecule_data_encoding=reference_molecule_data_encoding,
         )
         return dataset_cache
+    else:
+        raise ValueError(f"Invalid datacache path: {datacache_path}")
