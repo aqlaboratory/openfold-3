@@ -162,6 +162,8 @@ def read_datacache(
     Returns:
         A fully instantiated DataCache of the appropriate type.
     """
+    if not isinstance(datacache_path, Path):
+        datacache_path = Path(datacache_path)
 
     # Determine the type of dataset cache first without reading the whole file
     if datacache_path.is_file():
