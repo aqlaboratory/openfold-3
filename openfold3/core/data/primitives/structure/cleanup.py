@@ -14,6 +14,7 @@ from openfold3.core.data.primitives.structure.component import find_cross_chain_
 from openfold3.core.data.primitives.structure.interface import (
     chain_paired_interface_atom_iter,
     get_interface_token_center_atoms,
+    get_query_interface_atom_pair_idxs,
 )
 from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
@@ -567,11 +568,61 @@ def remove_chains_with_CA_gaps(
     return atom_array
 
 
+def get_small_ligand_chain_ids(
+    atom_array: AtomArray,
+    max_atoms: int = 5,
+) -> np.ndarray:
+    """Returns chain IDs of small ligands
+
+    The "smallness" of a ligand is determined by the number of atoms it consists of.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to get the small ligand chain IDs from.
+        max_atoms:
+            Maximum number of atoms for a ligand to be considered small. Default is 5.
+
+    Returns:
+        Array of unique chain IDs of small ligands.
+    """
+    ligand_array = atom_array[atom_array.molecule_type_id == MoleculeType.LIGAND]
+    lig_chain_starts = struc.get_chain_starts(ligand_array, add_exclusive_stop=True)
+    lig_chain_sizes = np.diff(lig_chain_starts)
+    small_lig_chain_idxs = np.where(lig_chain_sizes <= max_atoms)[0]
+    small_lig_chain_ids = ligand_array[lig_chain_starts[small_lig_chain_idxs]].chain_id
+
+    # TODO: Dev-only, remove later
+    assert np.unique(small_lig_chain_ids).size == small_lig_chain_ids.size, (
+        "Small ligand chain IDs are not unique"
+    )
+
+    return small_lig_chain_ids
+
+
+def get_small_ligand_mask(
+    atom_array: AtomArray,
+    max_atoms: int = 5,
+) -> np.ndarray:
+    """Returns a mask for atoms in small ligands.
+
+    The "smallness" of a ligand is determined by the number of atoms it consists of.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to get the small ligand mask for.
+        max_atoms:
+            Maximum number of atoms for a ligand to be considered small. Default is 5.
+    """
+    small_lig_chain_ids = get_small_ligand_chain_ids(atom_array, max_atoms)
+    return np.isin(atom_array.chain_id, small_lig_chain_ids)
+
+
 @return_on_empty_atom_array
 def subset_large_structure(
     atom_array: AtomArray,
     n_chains: int = 20,
     interface_distance_threshold: float = 15.0,
+    except_small_ligands: bool = False,
     random_seed: int = None,
 ) -> AtomArray:
     """Subsets structures with too many chains to n chains
@@ -591,6 +642,12 @@ def subset_large_structure(
             Distance threshold in Å that an interface token center atom must have to any
             token center atom in another chain to be considered an interface token
             center atom
+        except_small_ligands:
+            If True, small ligands are not considered in the n_chains count. Instead,
+            the N closest non-small-ligand chains will be selected, and the small
+            ligands will be included based on proximity to the other chains in the
+            subset. Small ligands are defined as ligands with 5 or fewer atoms, and the
+            inclusion distance is set to 5 Å. Default is False.
         random_seed:
             Random seed for reproducibility. Default is None.
 
@@ -600,13 +657,25 @@ def subset_large_structure(
     if random_seed is not None:
         np.random.seed(random_seed)
 
+    # Keep pointer to unfiltered AtomArray
+    atom_array_orig = atom_array
+
+    if except_small_ligands:
+        print("Getting small ligand mask...")
+        small_ligand_mask = get_small_ligand_mask(atom_array)
+
+        # Remove small ligands from the AtomArray
+        atom_array = atom_array[~small_ligand_mask]
+
     # Select random interface token center atom
+    print("Getting interface token center atoms...")
     interface_token_center_atoms = get_interface_token_center_atoms(
         atom_array, distance_threshold=interface_distance_threshold
     )
     selected_atom = np.random.choice(interface_token_center_atoms)
 
     # Get distances of atom to all token center atoms
+    print("Calculating distances...")
     all_token_center_atoms = atom_array[atom_array.token_center_atom]
     dists_to_all_token_centers = cdist(
         selected_atom.coord.reshape(1, 3),
@@ -626,10 +695,41 @@ def subset_large_structure(
     closest_n_chain_ids_idxs = unique_chain_idxs_sorted[:n_chains]
     closest_n_chain_ids = chain_ids_sorted[closest_n_chain_ids_idxs]
 
-    # Subset atom array to the closest n chains
-    selected_chain_mask = np.isin(atom_array.chain_id, closest_n_chain_ids)
+    # Mask for the closest n chains
+    n_chain_mask = np.isin(atom_array_orig.chain_id, closest_n_chain_ids)
 
-    return atom_array[selected_chain_mask]
+    # Subset atom array to the closest n chains, and optionally add small ligands in
+    # proximity that were previously excluded
+    if except_small_ligands:
+        # Get the N-chain subset of the AtomArray
+        atom_array_subset = atom_array_orig[n_chain_mask]
+
+        # Get small ligands from original AtomArray
+        atom_array_small_lig = atom_array_orig[small_ligand_mask]
+        print("Finding proximal small ligands...")
+        _, proximal_small_lig_chains = get_query_interface_atom_pair_idxs(
+            query_atom_array=atom_array_small_lig,
+            target_atom_array=atom_array_subset,
+            distance_threshold=5.0,
+            return_chain_pairs=True,
+        )
+        print("Done finding proximal small ligands")
+
+        # Return directly if no small ligands are in proximity
+        if proximal_small_lig_chains is None:
+            return atom_array_subset
+        # Otherwise, include the small ligand chains in the final subset
+        else:
+            proximal_small_lig_chain_ids = np.unique(proximal_small_lig_chains[:, 0])
+            proximal_small_lig_mask = np.isin(
+                atom_array_orig.chain_id, proximal_small_lig_chain_ids
+            )
+            selected_chain_mask = n_chain_mask | proximal_small_lig_mask
+    else:
+        selected_chain_mask = n_chain_mask
+
+    print("Subsetting AtomArray...")
+    return atom_array_orig[selected_chain_mask]
 
 
 @return_on_empty_atom_array

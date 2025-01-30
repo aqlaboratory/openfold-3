@@ -63,6 +63,7 @@ from openfold3.core.data.primitives.structure.cleanup import (
     canonicalize_atom_order,
     convert_MSE_to_MET,
     fix_arginine_naming,
+    get_small_ligand_mask,
     remove_chains_with_CA_gaps,
     remove_clashing_chains,
     remove_covalent_nonprotein_chains,
@@ -122,10 +123,73 @@ def _init_worker(profile_name: str = "openfold") -> None:
     _worker_session = boto3.Session(profile_name=profile_name)
 
 
+def apply_chain_subsetting_af3(
+    atom_array: AtomArray,
+    apply_chain_subsetting_for_rna: bool,
+    except_small_ligands_from_chain_subset: bool,
+    random_seed: int | None,
+) -> AtomArray:
+    """
+    Applies the subsetting logic to 20 chains as described in AlphaFold3 SI 2.5.4, with
+    additional options to skip subsetting in RNA structures or exclude small ligands
+    from the 20-chain counter.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to subset.
+        cif_data:
+            Parsed mmCIF data (CIFBlock).
+        ccd:
+            CIFFile containing the parsed CCD (components.cif).
+        apply_chain_subsetting_for_rna:
+            If False and if the structure contains RNA, skip subsetting.
+        except_small_ligands_from_chain_subset:
+            If True, small ligands (fewer than 5 atoms) won't count toward the total
+            chain count for subsetting. Instead, they'll be included based on 5 Å
+            proximity to the selected 20 chains.
+        random_seed:
+            Random seed for reproducibility in large-assembly subsetting.
+
+    Returns:
+        AtomArray (potentially subsetted if chain count > 20).
+    """
+    apply_subsetting = True
+
+    # Skip if RNA found and apply_chain_subsetting_for_rna is False
+    if (
+        not apply_chain_subsetting_for_rna
+        and (atom_array.molecule_type == MoleculeType.RNA).any()
+    ):
+        logger.info("Skipping chain subsetting for RNA structure.")
+        apply_subsetting = False
+    else:
+        if except_small_ligands_from_chain_subset:
+            total_chain_count = np.unique(
+                atom_array[~get_small_ligand_mask(atom_array, max_atoms=5)].chain_id
+            )
+        else:
+            total_chain_count = np.unique(atom_array.chain_id)
+
+    # Subset assemblies larger than 20 chains
+    if apply_subsetting and (total_chain_count.size > 20):
+        tokenize_atom_array(atom_array)  # required for large-structure subsetting
+        atom_array = subset_large_structure(
+            atom_array=atom_array,
+            n_chains=20,
+            interface_distance_threshold=15.0,
+            except_small_ligands=except_small_ligands_from_chain_subset,
+            random_seed=random_seed,
+        )
+
+    return atom_array
+
+
 def cleanup_structure_af3(
     atom_array: AtomArray,
     cif_data: CIFBlock,
     ccd: CIFFile,
+    apply_chain_subsetting_for_rna: bool = True,
+    except_small_ligands_from_chain_subset: bool = False,
     random_seed: int | None = None,
 ) -> AtomArray:
     """Cleans up a structure following the AlphaFold3 SI and formats it for training.
@@ -175,18 +239,12 @@ def cleanup_structure_af3(
     atom_array = canonicalize_atom_order(atom_array, ccd)
     atom_array = remove_chains_with_CA_gaps(atom_array, distance_threshold=10.0)
 
-    # TODO: Could change this to use get_chain_count from Biotite which will be more
-    # robust for non-renumbered chains
-    # Subset bioassemblies larger than 20 chains
-    if len(np.unique(atom_array.chain_id)) > 20:
-        # Tokenization is required for large-structure subsetting
-        tokenize_atom_array(atom_array)
-        atom_array = subset_large_structure(
-            atom_array=atom_array,
-            n_chains=20,
-            interface_distance_threshold=15.0,
-            random_seed=random_seed,
-        )
+    atom_array = apply_chain_subsetting_af3(
+        atom_array=atom_array,
+        apply_chain_subsetting_for_rna=apply_chain_subsetting_for_rna,
+        except_small_ligands_from_chain_subset=except_small_ligands_from_chain_subset,
+        random_seed=random_seed,
+    )
 
     ## Structure formatting
     # Add unresolved atoms explicitly with NaN coordinates
@@ -407,6 +465,8 @@ def preprocess_structure_and_write_outputs_af3(
     reference_mol_out_dir: Path,
     output_formats: list[Literal["npz", "cif", "bcif", "pkl"]],
     max_polymer_chains: int | None = None,
+    apply_chain_subsetting_for_rna: bool = True,
+    except_small_ligands_from_chain_subset: bool = False,
     skip_components: set | SharedSet | None = None,
     random_seed: int | None = None,
 ) -> tuple[dict, dict]:
@@ -430,6 +490,12 @@ def preprocess_structure_and_write_outputs_af3(
         output_formats:
             What formats to write the output files to. Allowed values are "cif", "bcif",
             "npz", and "pkl".
+        apply_chain_subsetting_for_rna:
+            If False and if the structure contains RNA, skip 20-chain subsetting.
+        except_small_ligands_from_chain_subset:
+            If True, small ligands (fewer than 5 atoms) won't count toward the total
+            chain count for subsetting. Instead, they'll be included based on 5 Å
+            proximity to the selected 20 chains.
         max_polymer_chains:
             The maximum number of polymer chains in the first bioassembly after which a
             structure is skipped by the parser.
@@ -496,7 +562,12 @@ def preprocess_structure_and_write_outputs_af3(
 
     # Cleanup structure and extract metadata
     atom_array = cleanup_structure_af3(
-        atom_array=atom_array, cif_data=cif_data, ccd=ccd, random_seed=random_seed
+        atom_array=atom_array,
+        cif_data=cif_data,
+        ccd=ccd,
+        apply_chain_subsetting_for_rna=apply_chain_subsetting_for_rna,
+        except_small_ligands_from_chain_subset=except_small_ligands_from_chain_subset,
+        random_seed=random_seed,
     )
 
     chain_int_metadata_dict = extract_chain_and_interface_metadata_af3(
@@ -600,6 +671,8 @@ class _AF3PreprocessingWrapper:
         max_polymer_chains: int | None,
         skip_components: set | SharedSet | None,
         output_formats: list[Literal["npz", "cif", "bcif", "pkl"]],
+        apply_chain_subsetting_for_rna: bool = True,
+        except_small_ligands_from_chain_subset: bool = False,
         random_seed: int | None = None,
     ):
         self.ccd = ccd
@@ -607,6 +680,10 @@ class _AF3PreprocessingWrapper:
         self.max_polymer_chains = max_polymer_chains
         self.skip_components = skip_components
         self.output_formats = output_formats
+        self.apply_chain_subsetting_for_rna = apply_chain_subsetting_for_rna
+        self.except_small_ligands_from_chain_subset = (
+            except_small_ligands_from_chain_subset
+        )
         self.random_seed = random_seed
 
     def __call__(self, paths: tuple[Path, Path]) -> tuple[dict, dict]:
@@ -623,6 +700,8 @@ class _AF3PreprocessingWrapper:
                     max_polymer_chains=self.max_polymer_chains,
                     skip_components=self.skip_components,
                     output_formats=self.output_formats,
+                    apply_chain_subsetting_for_rna=self.apply_chain_subsetting_for_rna,
+                    except_small_ligands_from_chain_subset=self.except_small_ligands_from_chain_subset,
                     random_seed=self.random_seed,
                 )
             )
@@ -659,6 +738,8 @@ def preprocess_cif_dir_af3(
     num_workers: int | None = None,
     chunksize: int = 20,
     output_formats: list[Literal["npz", "cif", "bcif", "pkl"]] = False,
+    apply_chain_subsetting_for_rna: bool = True,
+    except_small_ligands_from_chain_subset: bool = False,
     random_seed: int | None = None,
     early_stop: int | None = None,
 ) -> None:
@@ -687,6 +768,12 @@ def preprocess_cif_dir_af3(
         output_formats:
             What formats to write the output files to. Allowed values are "npz", "cif",
             "bcif", and "pkl".
+        apply_chain_subsetting_for_rna:
+            If False and if the structure contains RNA, skip 20-chain subsetting.
+        except_small_ligands_from_chain_subset:
+            If True, small ligands (fewer than 5 atoms) won't count toward the total
+            chain count for subsetting. Instead, they'll be included based on 5 Å
+            proximity to the selected 20 chains.
         random_seed:
             Random seed for reproducibility in large-assembly-subsetting.
         early_stop:
@@ -729,6 +816,8 @@ def preprocess_cif_dir_af3(
         max_polymer_chains=max_polymer_chains,
         skip_components=processed_mol_ids,
         output_formats=output_formats,
+        apply_chain_subsetting_for_rna=apply_chain_subsetting_for_rna,
+        except_small_ligands_from_chain_subset=except_small_ligands_from_chain_subset,
         random_seed=random_seed,
     )
 
