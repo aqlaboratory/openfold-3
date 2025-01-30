@@ -403,7 +403,7 @@ class LoggingMixin:
             # Init line:
             line = "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t".format(
                 self.logger.extra["worker_id"],
-                self.datapoint_idx,
+                self.datapoint_index,
                 index,
                 self.wrapped_dataset_class,
                 pdb_id,

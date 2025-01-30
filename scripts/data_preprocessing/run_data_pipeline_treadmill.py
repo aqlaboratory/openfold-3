@@ -356,6 +356,7 @@ def main(
             generator=torch.Generator(device="cpu").manual_seed(
                 data_module_config.data_seed
             ),
+            next_dataset_indices={},
         )
     else:
         logging_dataset = ConcatDataset(datasets)
