@@ -594,24 +594,6 @@ def preprocess_structure_and_write_outputs_af3(
         }
     }
 
-    # TODO: Clean this up
-    # Set permutation labels
-    per_chain_metadata = {
-        chain_id: PreprocessingChainData(
-            label_asym_id=chain_data["label_asym_id"],
-            auth_asym_id=chain_data["auth_asym_id"],
-            entity_id=chain_data["entity_id"],
-            molecule_type=chain_data["molecule_type"],
-            reference_mol_id=chain_data.get("reference_mol_id"),
-        )
-        for chain_id, chain_data in chain_int_metadata_dict["chains"].items()
-    }
-    assign_component_ids_from_metadata(
-        atom_array, per_chain_metadata=per_chain_metadata
-    )
-    tokenize_atom_array(atom_array)
-    atom_array = assign_mol_permutation_ids(atom_array)
-
     # Get canonicalized sequence for each chain
     chain_to_canonical_seq = get_chain_to_canonical_seq_dict(
         atom_array, cif_data, multi_letter_res_to_X=True, ccd=ccd
