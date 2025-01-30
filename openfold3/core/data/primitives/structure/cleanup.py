@@ -661,21 +661,18 @@ def subset_large_structure(
     atom_array_orig = atom_array
 
     if except_small_ligands:
-        print("Getting small ligand mask...")
         small_ligand_mask = get_small_ligand_mask(atom_array)
 
         # Remove small ligands from the AtomArray
         atom_array = atom_array[~small_ligand_mask]
 
     # Select random interface token center atom
-    print("Getting interface token center atoms...")
     interface_token_center_atoms = get_interface_token_center_atoms(
         atom_array, distance_threshold=interface_distance_threshold
     )
     selected_atom = np.random.choice(interface_token_center_atoms)
 
     # Get distances of atom to all token center atoms
-    print("Calculating distances...")
     all_token_center_atoms = atom_array[atom_array.token_center_atom]
     dists_to_all_token_centers = cdist(
         selected_atom.coord.reshape(1, 3),
@@ -706,14 +703,12 @@ def subset_large_structure(
 
         # Get small ligands from original AtomArray
         atom_array_small_lig = atom_array_orig[small_ligand_mask]
-        print("Finding proximal small ligands...")
         _, proximal_small_lig_chains = get_query_interface_atom_pair_idxs(
             query_atom_array=atom_array_small_lig,
             target_atom_array=atom_array_subset,
             distance_threshold=5.0,
             return_chain_pairs=True,
         )
-        print("Done finding proximal small ligands")
 
         # Return directly if no small ligands are in proximity
         if proximal_small_lig_chains is None:
@@ -724,11 +719,11 @@ def subset_large_structure(
             proximal_small_lig_mask = np.isin(
                 atom_array_orig.chain_id, proximal_small_lig_chain_ids
             )
+            logger.debug(f"Adding {proximal_small_lig_mask.sum()} small ligand atoms.")
             selected_chain_mask = n_chain_mask | proximal_small_lig_mask
     else:
         selected_chain_mask = n_chain_mask
 
-    print("Subsetting AtomArray...")
     return atom_array_orig[selected_chain_mask]
 
 
