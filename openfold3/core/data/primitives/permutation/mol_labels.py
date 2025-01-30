@@ -533,7 +533,7 @@ def assign_mol_sym_component_ids(atom_array: AtomArray):
 
     for mol_array in mol_unique_instance_iter(atom_array):
         for id, component in enumerate(component_iter(mol_array), start=1):
-            atom_array.mol_sym_component_id[component._atom_idx] = id
+            atom_array.mol_sym_component_id[component.get_attr_view_("_atom_idx")] = id
 
     remove_atom_indices(atom_array)
 
@@ -723,8 +723,8 @@ def separate_cropped_and_gt(
         sym_component_id_to_required_gt_atoms = defaultdict(set)
         for sym_mol in mol_unique_instance_iter(entity_cropped):
             for component in component_iter(sym_mol):
-                absolute_component_id = component.component_id[0]
-                sym_component_id = component.mol_sym_component_id[0]
+                absolute_component_id = component.get_attr_view_("component_id")[0]
+                sym_component_id = component.get_attr_view_("mol_sym_component_id")[0]
 
                 # Symmetry-equivalent permutations from which the necessary ground-truth
                 # atoms can be concluded
@@ -757,7 +757,7 @@ def separate_cropped_and_gt(
         gt_mol_keep_atom_mask = []
 
         for gt_component in component_iter(sym_equivalent_gt_mol):
-            gt_sym_component_id = gt_component.mol_sym_component_id[0]
+            gt_sym_component_id = gt_component.get_attr_view_("mol_sym_component_id")[0]
 
             # If component is not in the crop at all, append all-False mask
             if gt_sym_component_id not in sym_component_id_to_required_gt_atoms:

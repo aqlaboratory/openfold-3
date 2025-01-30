@@ -1,5 +1,6 @@
 import logging
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import biotite.structure as struc
@@ -388,18 +389,19 @@ def uniquify_ids(ids: list[str]) -> list[str]:
 
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-unqual-atoms")
 def assign_uniquified_atom_names(atom_array: AtomArray) -> None:
+    """Assigns unique atom indices to symmetric mols."""
     assign_atom_indices(atom_array, label="_atom_idx_unqf_atoms")
     atom_array.set_annotation(
         "atom_name_unique", np.full(len(atom_array), fill_value="-", dtype=object)
     )
 
     for component in component_iter(atom_array):
-        atom_names = component.atom_name
+        atom_names = component.get_attr_view_("atom_name")
         atom_names_uniquified = uniquify_ids(atom_names)
 
-        atom_array.atom_name_unique[component._atom_idx_unqf_atoms] = (
-            atom_names_uniquified
-        )
+        atom_array.atom_name_unique[
+            component.get_attr_view_("_atom_idx_unqf_atoms")
+        ] = atom_names_uniquified
 
     atom_array.del_annotation("_atom_idx_unqf_atoms")
 
@@ -468,6 +470,21 @@ def get_component_starts(atom_array: AtomArray, add_exclusive_stop: bool = False
     return get_id_starts(atom_array, "component_id", add_exclusive_stop)
 
 
+@dataclass
+class AtomArrayView:
+    """Container to access underlying arrays holding AtomArray attributes."""
+
+    atom_array: AtomArray
+    indices: np.ndarray
+
+    def get_attr_view_(self, attr):
+        attr_array = self.atom_array.__getattr__(attr)
+        return attr_array[self.indices]
+
+    def __len__(self):
+        return len(self.indices)
+
+
 def component_iter(atom_array: AtomArray):
     """Iterates through components in an AtomArray.
 
@@ -476,12 +493,26 @@ def component_iter(atom_array: AtomArray):
             AtomArray of the target or ground truth structure
 
     Yields:
-        AtomArray:
-            AtomArray containing a single component.
+        AtomArrayView:
+            AtomArrayView for a single component.
     """
     component_starts = get_component_starts(atom_array, add_exclusive_stop=True)
     for start, stop in zip(component_starts[:-1], component_starts[1:]):
-        yield atom_array[start:stop]
+        yield AtomArrayView(atom_array, np.arange(start, stop))
+
+
+@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-comp-id-assign")
+def assign_component_ids_from_metadata(
+    atom_array: AtomArray, per_chain_metadata: dict[str, dict]
+) -> None:
+    atom_array.set_annotation(
+        "component_id", np.full(len(atom_array), fill_value=-1, dtype=int)
+    )
+
+    for id, component in enumerate(
+        component_iter_from_metadata(atom_array, per_chain_metadata), start=1
+    ):
+        component.component_id[:] = id
 
 
 def set_residue_hetero_values(atom_array: AtomArray) -> None:

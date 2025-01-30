@@ -87,8 +87,8 @@ def get_processed_reference_conformer(
             Identifier like CCD ID or custom ID labeling each unique molecule.
         mol (Mol):
             RDKit Mol object of the reference conformer instance.
-        mol_atom_array (AtomArray):
-            AtomArray of the target conformer instance to determine which atoms of the
+        mol_atom_array (AtomArrayView):
+            AtomArrayView of the target conformer instance to determine which atoms of the
             reference conformer are present in the structure.
         preferred_confgen_strategy (str):
             Preferred strategy for conformer generation. If the strategy is
@@ -111,7 +111,7 @@ def get_processed_reference_conformer(
     mol = Mol(mol)
 
     # Extract component ID
-    component_id = mol_atom_array.component_id[0]
+    component_id = mol_atom_array.get_attr_view_("component_id")[0]
 
     # Ensure mol has only one fallback conformer
     assert mol.GetNumConformers() == 1
@@ -121,7 +121,7 @@ def get_processed_reference_conformer(
     conf_atom_names = np.array(
         uniquify_ids([atom.GetProp("annot_atom_name") for atom in mol.GetAtoms()])
     )
-    gt_atom_names = mol_atom_array.atom_name_unique
+    gt_atom_names = mol_atom_array.get_attr_view_("atom_name_unique")
 
     # Reorder atoms if the name orders are different between the refence conformer and
     # mol atom array
@@ -140,7 +140,7 @@ def get_processed_reference_conformer(
     assert (conf_atom_names[in_gt_mask] == gt_atom_names).all()
 
     # Mask for atoms that are in the crop itself
-    in_crop_atom_names = gt_atom_names[mol_atom_array.crop_mask]
+    in_crop_atom_names = gt_atom_names[mol_atom_array.get_attr_view_("crop_mask")]
     in_crop_mask = np.isin(conf_atom_names, in_crop_atom_names)
 
     cropped_permutations = get_cropped_permutations(
@@ -241,17 +241,17 @@ def get_reference_conformer_data_af3(
     # Fill the list of processed reference conformers with all relevant information
     for component_array in component_iter(atom_array):
         # Skip if no atoms are in the crop
-        if not component_array.crop_mask.any():
+        if not component_array.get_attr_view_("crop_mask").any():
             continue
 
-        chain_id = component_array.chain_id[0]
+        chain_id = component_array.get_attr_view_("chain_id")[0]
 
         # Either get the reference molecule ID from the chain metadata (in case of a
         # ligand chain) or use the residue name (in case of a single component of a
         # biopolymer)
         ref_mol_id = getattr(per_chain_metadata[chain_id], "reference_mol_id", None)
         if ref_mol_id is None:
-            ref_mol_id = component_array.res_name[0]
+            ref_mol_id = component_array.get_attr_view_("res_name")[0]
 
         mol = read_single_annotated_sdf_cached(reference_mol_dir / f"{ref_mol_id}.sdf")
 
