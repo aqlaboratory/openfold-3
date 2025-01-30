@@ -207,6 +207,7 @@ class AlphaFold3AllAtom(ModelRunner):
         for loss_name, indiv_loss in loss_breakdown.items():
             metric_log_name = f"{phase}/{loss_name}"
             metric_epoch_name = f"{metric_log_name}_epoch" if train else metric_log_name
+            indiv_loss = indiv_loss.mean()
 
             # Update mean metrics for epoch logging
             self._update_epoch_metric(
