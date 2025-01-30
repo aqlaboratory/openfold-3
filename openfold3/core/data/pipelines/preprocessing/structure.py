@@ -46,13 +46,9 @@ from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
 from openfold3.core.data.primitives.caches.format import (
     DisorderedPreprocessingDataCache,
     DisorderedPreprocessingStructureData,
-    PreprocessingChainData,
     PreprocessingDataCache,
     PreprocessingStructureData,
     ProteinMonomerDatasetCache,
-)
-from openfold3.core.data.primitives.permutation.mol_labels import (
-    assign_mol_permutation_ids,
 )
 from openfold3.core.data.primitives.structure.alignment import (
     calculate_distance_clash_map,
@@ -78,7 +74,6 @@ from openfold3.core.data.primitives.structure.cleanup import (
 )
 from openfold3.core.data.primitives.structure.component import (
     AnnotatedMol,
-    assign_component_ids_from_metadata,
     get_component_info,
     mol_from_atomarray,
     mol_from_ccd_entry,
