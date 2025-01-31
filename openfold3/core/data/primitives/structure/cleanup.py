@@ -167,8 +167,6 @@ def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
     return atom_array
 
 
-# TODO: Could check if this would be faster using MoleculeType if it is present (could
-# make a use_moltype_annot: bool argument)
 def get_polymer_mask(atom_array):
     """Returns a mask of all standard polymer atoms in the AtomArray.
 
@@ -181,10 +179,10 @@ def get_polymer_mask(atom_array):
     Returns:
         Mask for all polymer atoms.
     """
-    prot_mask = struc.filter_polymer(atom_array, pol_type="peptide")
-    nuc_mask = struc.filter_polymer(atom_array, pol_type="nucleotide")
-
-    return prot_mask | nuc_mask
+    return np.isin(
+        atom_array.molecule_type_id,
+        [MoleculeType.PROTEIN, MoleculeType.DNA, MoleculeType.RNA],
+    )
 
 
 @return_on_empty_atom_array
