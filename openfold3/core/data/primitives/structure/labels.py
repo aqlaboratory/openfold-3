@@ -470,16 +470,36 @@ def get_component_starts(atom_array: AtomArray, add_exclusive_stop: bool = False
     return get_id_starts(atom_array, "component_id", add_exclusive_stop)
 
 
-@dataclass
 class AtomArrayView:
     """Container to access underlying arrays holding AtomArray attributes."""
 
-    atom_array: AtomArray
-    indices: np.ndarray
+    def __init__(self, atom_array: AtomArray, indices: np.ndarray):
+        self.atom_array = atom_array
+        self.indices = indices
 
-    def get_attr_view_(self, attr):
-        attr_array = self.atom_array.__getattr__(attr)
-        return attr_array[self.indices]
+    def __getattr__(self, attr):
+        """Returns the result of NumPy-indexing to the attribute of the AtomArray.
+
+        This will be a view for slice-like indexing and a copy for advanced indexing
+        (following NumPy rules). Note that "atom_array" and "indices" are special
+        attributes that are required for this class and should not exist in the parent
+        AtomArray.
+        """
+        if attr == "atom_array":
+            return self.atom_array
+        elif attr == "indices":
+            return self.indices
+        else:
+            return self.atom_array.__getattr__(attr)[self.indices]
+
+    def materialize(self) -> AtomArray:
+        """Creates a new AtomArray from the view.
+
+        Returns:
+            AtomArray:
+                AtomArray containing the data of the view.
+        """
+        return self.atom_array[self.indices]
 
     def __len__(self):
         return len(self.indices)
