@@ -72,40 +72,50 @@ def convert_MSE_to_MET(atom_array: AtomArray) -> None:
 
 
 @return_on_empty_atom_array
-def fix_single_arginine_naming(arg_atom_array: AtomArray) -> None:
-    """Resolves naming ambiguities for a single arginine residue
+def fix_arginine_naming(atom_array: AtomArray) -> AtomArray:
+    """Resolves naming ambiguities for all arginine residues in the AtomArray
 
-    This ensures that NH1 is always closer to CD than NH2, following 2.1 of the
+    Ensures that NH1 is always closer to CD than NH2, following 2.1 of the
     AlphaFold3 SI.
 
     Args:
-        arg_atom_array: AtomArray containing the arginine residue to fix.
-    """
-    nh1 = arg_atom_array[arg_atom_array.atom_name == "NH1"]
-    nh2 = arg_atom_array[arg_atom_array.atom_name == "NH2"]
-    cd = arg_atom_array[arg_atom_array.atom_name == "CD"]
-
-    # If NH2 is closer to CD than NH1, swap the names
-    if struc.distance(nh2, cd) < struc.distance(nh1, cd):
-        nh1.atom_name = ["NH2"]
-        nh2.atom_name = ["NH1"]
-
-
-@return_on_empty_atom_array
-def fix_arginine_naming(atom_array: AtomArray) -> None:
-    """Resolves naming ambiguities for all arginine residues in the AtomArray
-
-    (see fix_single_arginine_naming for more details)
-
-    Args:
         atom_array: AtomArray containing the structure to fix arginine residues in.
+
+    Returns:
+        AtomArray with arginine residue names fixed.
     """
+    assign_atom_indices(atom_array, label="_atom_idx_arginine_fix")
+
+    # Will build up the correct order of atom names in the final array
+    name_sort_idx = atom_array._atom_idx_arginine_fix.copy()
+
     arginines = atom_array.res_name == "ARG"
 
-    for arginine in struc.residue_iter(atom_array[arginines]):
-        fix_single_arginine_naming(arginine)
+    for arginine_view in residue_view_iter(atom_array[arginines]):
+        nh1_mask = arginine_view.atom_name == "NH1"
+        nh2_mask = arginine_view.atom_name == "NH2"
+        cd_mask = arginine_view.atom_name == "CD"
+
+        nh1_coord = arginine_view.coord[nh1_mask]
+        nh2_coord = arginine_view.coord[nh2_mask]
+        cd_coord = arginine_view.coord[cd_mask]
+
+        # If NH2 is closer to CD than NH1, swap the names
+        if struc.distance(nh2_coord, cd_coord) < struc.distance(nh1_coord, cd_coord):
+            nh1_idx = arginine_view._atom_idx_arginine_fix[nh1_mask]
+            nh2_idx = arginine_view._atom_idx_arginine_fix[nh2_mask]
+
+            name_sort_idx[nh1_idx] = nh2_idx
+            name_sort_idx[nh2_idx] = nh1_idx
+
+    # Apply the sorting index to the final atom names
+    atom_array.atom_name = atom_array.atom_name[name_sort_idx]
 
     logger.debug("Fixed arginine naming")
+
+    atom_array.del_annotation("_atom_idx_arginine_fix")
+
+    return atom_array
 
 
 @return_on_empty_atom_array
