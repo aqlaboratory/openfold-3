@@ -475,7 +475,7 @@ def get_component_starts(
 class AtomArrayView:
     """Container to access underlying arrays holding AtomArray attributes."""
 
-    def __init__(self, atom_array: AtomArray, indices: np.ndarray):
+    def __init__(self, atom_array: AtomArray, indices: [np.ndarray | slice]):
         self.atom_array = atom_array
         self.indices = indices
 
