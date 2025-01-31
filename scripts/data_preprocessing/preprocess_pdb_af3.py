@@ -69,7 +69,7 @@ from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif
     ),
 )
 @click.option(
-    "--ignore-small-ligands-in-subsetting",
+    "--except-small-ligands-from-chain-subset",
     is_flag=True,
     help=(
         "If this is set to True, small ligands will be ignored in the 20-chain counter "
