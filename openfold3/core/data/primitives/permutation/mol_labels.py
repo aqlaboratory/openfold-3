@@ -21,7 +21,7 @@ from openfold3.core.data.primitives.structure.component import find_cross_chain_
 from openfold3.core.data.primitives.structure.conformer import renumber_permutations
 from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
-    component_iter,
+    component_view_iter,
     get_token_starts,
     remove_atom_indices,
 )
@@ -532,8 +532,8 @@ def assign_mol_sym_component_ids(atom_array: AtomArray):
     )
 
     for mol_array in mol_unique_instance_iter(atom_array):
-        for id, component in enumerate(component_iter(mol_array), start=1):
-            atom_array.mol_sym_component_id[component._atom_idx] = id
+        for id, component_view in enumerate(component_view_iter(mol_array), start=1):
+            atom_array.mol_sym_component_id[component_view._atom_idx] = id
 
     remove_atom_indices(atom_array)
 
@@ -722,9 +722,9 @@ def separate_cropped_and_gt(
         # Get the exact symmetry-equivalent atom sets per component
         sym_component_id_to_required_gt_atoms = defaultdict(set)
         for sym_mol in mol_unique_instance_iter(entity_cropped):
-            for component in component_iter(sym_mol):
-                absolute_component_id = component.component_id[0]
-                sym_component_id = component.mol_sym_component_id[0]
+            for component_view in component_view_iter(sym_mol):
+                absolute_component_id = component_view.component_id[0]
+                sym_component_id = component_view.mol_sym_component_id[0]
 
                 # Symmetry-equivalent permutations from which the necessary ground-truth
                 # atoms can be concluded
@@ -756,12 +756,14 @@ def separate_cropped_and_gt(
         sym_equivalent_gt_mol = next(mol_unique_instance_iter(sym_equivalent_gt_mols))
         gt_mol_keep_atom_mask = []
 
-        for gt_component in component_iter(sym_equivalent_gt_mol):
-            gt_sym_component_id = gt_component.mol_sym_component_id[0]
+        for gt_component_view in component_view_iter(sym_equivalent_gt_mol):
+            gt_sym_component_id = gt_component_view.mol_sym_component_id[0]
 
             # If component is not in the crop at all, append all-False mask
             if gt_sym_component_id not in sym_component_id_to_required_gt_atoms:
-                gt_mol_keep_atom_mask.extend(np.zeros(len(gt_component), dtype=bool))
+                gt_mol_keep_atom_mask.extend(
+                    np.zeros(len(gt_component_view), dtype=bool)
+                )
                 continue
 
             # All atoms from this component that are required for symmetry permutations
@@ -770,7 +772,7 @@ def separate_cropped_and_gt(
             )
 
             # All atoms in the component
-            gt_component_relative_atom_indices = np.arange(len(gt_component))
+            gt_component_relative_atom_indices = np.arange(len(gt_component_view))
 
             # Subset to only required atoms
             relative_keep_atom_mask = np.isin(
