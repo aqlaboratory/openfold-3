@@ -504,7 +504,11 @@ class AtomArrayView:
         return self.atom_array[self.indices]
 
     def __len__(self):
-        return len(self.indices)
+        if isinstance(self.indices, slice):
+            start, stop, step = self.indices.indices(len(self.atom_array))
+            return len(range(start, stop, step))
+        else:
+            return len(self.indices)
 
 
 def component_view_iter(atom_array: AtomArray) -> Generator[AtomArrayView, None, None]:
