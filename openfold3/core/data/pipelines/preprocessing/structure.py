@@ -225,7 +225,7 @@ def cleanup_structure_af3(
 
     ## Structure cleanup
     convert_MSE_to_MET(atom_array)
-    fix_arginine_naming(atom_array)  #
+    atom_array = fix_arginine_naming(atom_array)
     atom_array = remove_waters(atom_array)
 
     if get_experimental_method(cif_data) == "X-RAY DIFFRACTION":
