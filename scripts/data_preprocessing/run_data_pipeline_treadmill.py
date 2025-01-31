@@ -220,6 +220,15 @@ np.set_printoptions(threshold=sys.maxsize)
         " the datasets will be concatenated."
     ),
 )
+@click.option(
+    "--remove-worker-files",
+    type=bool,
+    default=False,
+    help=(
+        "Whether to remove per-worker files. Error, atom array and feature files are "
+        "not deleted if true."
+    ),
+)
 def main(
     runner_yml_file: Path,
     seed: int,
@@ -237,6 +246,7 @@ def main(
     subset_to_examples: str,
     no_preferred_chain_or_interface: bool,
     add_stochastic_sampling: bool,
+    remove_worker_files: bool,
 ) -> None:
     """Main function for running the data pipeline treadmill.
 
@@ -289,6 +299,9 @@ def main(
             Whether to sample the datapoints with stochastic sampling. If multiple
             datasets are provided without sttochastic sampling enabled, the datasets
             will be concatenated.
+        remove_worker_files (bool):
+            Whether to remove per-worker files. Error, atom array and feature files are
+            not deleted if true.
 
     Raises:
         ValueError:
@@ -474,7 +487,8 @@ def main(
                     )
                     passed_ids_worker = set(df_worker[0].tolist())
                     all_passed_ids.update(passed_ids_worker)
-                    worker_compliance_file.unlink()
+                    if remove_worker_files:
+                        worker_compliance_file.unlink()
 
             pd.DataFrame({"passed_ids": list(all_passed_ids)}).to_csv(
                 log_output_directory / Path("passed_ids.tsv"),
@@ -498,7 +512,8 @@ def main(
                             ),
                         ]
                     )
-                    worker_extra_data_file.unlink()
+                    if remove_worker_files:
+                        worker_extra_data_file.unlink()
 
             # Save to single file or append to existing file
             full_extra_data_file = log_output_directory / Path(
@@ -524,7 +539,8 @@ def main(
                     df_all = pd.concat(
                         [df_all, parse_memory_profiler_log(worker_memory_file)]
                     )
-                    worker_memory_file.unlink()
+                    if remove_worker_files:
+                        worker_memory_file.unlink()
 
             full_worker_memory_file = log_output_directory / Path("memory_profile.tsv")
             df_all.to_csv(
@@ -542,7 +558,8 @@ def main(
                 worker_log = worker_dir / Path(f"worker_{worker_id}.log")
                 out_file.write(f"Log file: {worker_log.name}\n")
                 out_file.write(worker_log.read_text())
-                worker_log.unlink()
+                if remove_worker_files:
+                    worker_log.unlink()
                 if not any(worker_dir.iterdir()):
                     worker_dir.rmdir()
 
@@ -582,5 +599,3 @@ if __name__ == "__main__":
 # token budget - the number of re-crops and featurizations should be determined
 # dynamically and in a way that likely covers the entire structure but with a
 # maximun number of re-crops
-# 10. add weighted stochastic sampling
-# 11. add support for multiple datasets
