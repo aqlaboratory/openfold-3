@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
+from func_timeout import FunctionTimedOut, func_timeout
 from rdkit import Chem
 from tqdm import tqdm
 
@@ -153,7 +154,7 @@ def apply_chain_subsetting_af3(
     # Skip if RNA found and apply_chain_subsetting_for_rna is False
     if (
         not apply_chain_subsetting_for_rna
-        and (atom_array.molecule_type == MoleculeType.RNA).any()
+        and (atom_array.molecule_type_id == MoleculeType.RNA).any()
     ):
         logger.info("Skipping chain subsetting for RNA structure.")
         apply_subsetting = False
@@ -177,6 +178,12 @@ def apply_chain_subsetting_af3(
         )
 
     return atom_array
+
+
+class SkippedStructureError(Exception):
+    """Error raised when a structure is skipped during preprocessing."""
+
+    pass
 
 
 def cleanup_structure_af3(
@@ -233,6 +240,11 @@ def cleanup_structure_af3(
     atom_array = remove_non_CCD_atoms(atom_array, ccd)
     atom_array = canonicalize_atom_order(atom_array, ccd)
     atom_array = remove_chains_with_CA_gaps(atom_array, distance_threshold=10.0)
+
+    # TODO: This is a setting specific to this branch, remove later
+    if struc.get_chain_count(atom_array) == 20:
+        logger.info("Structure has exactly 20 chains, skipping structure.")
+        raise SkippedStructureError("Exactly 20 chains before subsetting.")
 
     atom_array = apply_chain_subsetting_af3(
         atom_array=atom_array,
@@ -556,14 +568,19 @@ def preprocess_structure_and_write_outputs_af3(
         atom_array = parsed_mmcif.atom_array
 
     # Cleanup structure and extract metadata
-    atom_array = cleanup_structure_af3(
-        atom_array=atom_array,
-        cif_data=cif_data,
-        ccd=ccd,
-        apply_chain_subsetting_for_rna=apply_chain_subsetting_for_rna,
-        except_small_ligands_from_chain_subset=except_small_ligands_from_chain_subset,
-        random_seed=random_seed,
-    )
+    try:
+        atom_array = cleanup_structure_af3(
+            atom_array=atom_array,
+            cif_data=cif_data,
+            ccd=ccd,
+            apply_chain_subsetting_for_rna=apply_chain_subsetting_for_rna,
+            except_small_ligands_from_chain_subset=except_small_ligands_from_chain_subset,
+            random_seed=random_seed,
+        )
+    except SkippedStructureError as e:
+        return {
+            pdb_id: {"release_date": release_date, "status": f"skipped: {str(e)}"}
+        }, {}
 
     chain_int_metadata_dict = extract_chain_and_interface_metadata_af3(
         atom_array, cif_data
@@ -667,9 +684,12 @@ class _AF3PreprocessingWrapper:
         cif_file, out_dir = paths
 
         logger.debug(f"Processing {cif_file.stem}")
-        try:
-            structure_metadata_dict, ref_mol_metadata_dict = (
-                preprocess_structure_and_write_outputs_af3(
+        try:            
+            # Give this a 10 minute timeout
+            structure_metadata_dict, ref_mol_metadata_dict = func_timeout(
+                timeout=3600,
+                func=preprocess_structure_and_write_outputs_af3,
+                kwargs=dict(
                     input_cif=cif_file,
                     out_dir=out_dir,
                     ccd=self.ccd,
@@ -680,7 +700,7 @@ class _AF3PreprocessingWrapper:
                     apply_chain_subsetting_for_rna=self.apply_chain_subsetting_for_rna,
                     except_small_ligands_from_chain_subset=self.except_small_ligands_from_chain_subset,
                     random_seed=self.random_seed,
-                )
+                ),
             )
 
             # Update the set of processed components in-place
@@ -690,7 +710,7 @@ class _AF3PreprocessingWrapper:
             logger.debug(f"Finished processing {cif_file.stem}")
             return structure_metadata_dict, ref_mol_metadata_dict
 
-        except Exception as e:
+        except (Exception, FunctionTimedOut) as e:
             tb = traceback.format_exc()  # Get the full traceback
             logger.warning(
                 "-" * 40
