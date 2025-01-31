@@ -36,7 +36,7 @@ def test_atom_array_mask_view(test_atom_array):
 
     # When the index used is not basic indexing, we get new arrays
     assert mask_view.chain_id.base is None
-    assert len(mask_view) == 4
+    assert len(mask_view) == 2
     np.testing.assert_equal(mask_view.chain_id, np.array(["A", "B"]))
 
     # If we materialize, we expect a new array
