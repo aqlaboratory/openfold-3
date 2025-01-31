@@ -177,7 +177,7 @@ def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
     return atom_array
 
 
-def get_polymer_mask(atom_array):
+def get_polymer_mask(atom_array, use_molecule_type_id=True):
     """Returns a mask of all standard polymer atoms in the AtomArray.
 
     Polymers here are defined as proteins and nucleic acids (no carbohydrates).
@@ -185,14 +185,30 @@ def get_polymer_mask(atom_array):
     Args:
         atom_array:
             AtomArray containing the structure to get the polymer mask for.
+        use_molecule_type_id:
+            Whether to use the molecule_type_id annotation to identify polymers, which
+            is faster, but requires the molecule_type_id annotation to be present. If
+            False, biotite's `filter_polymer` function is used to identify polymers.
 
     Returns:
         Mask for all polymer atoms.
     """
-    return np.isin(
-        atom_array.molecule_type_id,
-        [MoleculeType.PROTEIN, MoleculeType.DNA, MoleculeType.RNA],
-    )
+    if "molecule_type_id" not in atom_array.get_annotation_categories():
+        raise ValueError(
+            "AtomArray does not have molecule_type_id annotation. "
+            "Please run the `assign_molecule_type_ids` function first."
+        )
+
+    if use_molecule_type_id:
+        return np.isin(
+            atom_array.molecule_type_id,
+            [MoleculeType.PROTEIN, MoleculeType.DNA, MoleculeType.RNA],
+        )
+    else:
+        prot_mask = struc.filter_polymer(atom_array, pol_type="peptide")
+        nuc_mask = struc.filter_polymer(atom_array, pol_type="nucleotide")
+
+        return prot_mask | nuc_mask
 
 
 @return_on_empty_atom_array
