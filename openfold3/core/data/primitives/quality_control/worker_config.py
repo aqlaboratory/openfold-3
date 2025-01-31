@@ -76,6 +76,7 @@ def configure_extra_data_file(
     save_statistics: bool,
     log_runtimes: bool,
     log_output_directory: Path,
+    subset_to_unprocessed: bool,
 ) -> list[str]:
     """Configures the extra data file for the worker.
 
@@ -95,6 +96,8 @@ def configure_extra_data_file(
             Whether to log runtimes.
         log_output_directory (Path):
             Treadmill output directory.
+        subset_to_unprocessed (bool):
+            Whether to subset to unprocessed datapoints.
 
     Returns:
         list[str]:
@@ -108,6 +111,7 @@ def configure_extra_data_file(
             "datapoint-idx",
             "datapoint-idx-local",
             "dataset-type",
+            "dataset-name",
             "pdb-id",
             "chain-or-interface",
             "datapoint-probability",
@@ -180,7 +184,7 @@ def configure_extra_data_file(
             all_headers += F_NAME_ORDER
 
         full_extra_data_file = log_output_directory / Path("datapoint_statistics.tsv")
-        if full_extra_data_file.exists():
+        if full_extra_data_file.exists() & subset_to_unprocessed:
             worker_dataset.logger.info(
                 f"Parsing processed datapoints from {full_extra_data_file}."
             )
@@ -203,7 +207,7 @@ def configure_extra_data_file(
 
 
 def configure_compliance_log(
-    worker_dataset: Dataset, log_output_directory: Path
+    worker_dataset: Dataset, log_output_directory: Path, subset_to_unprocessed: bool
 ) -> list[str]:
     """Assigns a compliance log to the dataset of a given worker.
 
@@ -214,6 +218,8 @@ def configure_compliance_log(
             Worker-specific copy of the dataset.
         log_output_directory (Path):
             Treadmill output directory.
+        subset_to_unprocessed (bool):
+            Whether to subset to unprocessed datapoints.
 
     Returns:
         list[str]:
@@ -221,7 +227,7 @@ def configure_compliance_log(
     """
     compliance_file_path = log_output_directory / Path("passed_ids.tsv")
 
-    if compliance_file_path.exists():
+    if compliance_file_path.exists() & subset_to_unprocessed:
         worker_dataset.compliance_log = ComplianceLog.parse_compliance_file(
             compliance_file_path
         )

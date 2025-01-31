@@ -43,6 +43,7 @@ In addition, one can specify the following flags for extended functionality:
 - add_stochastic_sampling: samples the datapoints with stochastic sampling.
 """
 
+import json
 import os
 import random
 import sys
@@ -70,6 +71,7 @@ from openfold3.core.data.framework.lightning_utils import _generate_seed_sequenc
 from openfold3.core.data.framework.stochastic_sampler_dataset import (
     SamplerDataset,
 )
+from openfold3.core.data.io.utils import JsonStrOrFile
 from openfold3.core.data.primitives.quality_control.logging_datasets import (
     ConcatDataset,
     init_datasets_with_logging,
@@ -208,7 +210,10 @@ np.set_printoptions(threshold=sys.maxsize)
     "--no-preferred-chain-or-interface",
     type=bool,
     default=False,
-    help="Whether to log memory use of subpipelines during data processing.",
+    help=(
+        "Whether to disable reprocessing the same datapoint with different chain "
+        "or interface-biased crops."
+    ),
 )
 @click.option(
     "--add-stochastic-sampling",
@@ -229,6 +234,26 @@ np.set_printoptions(threshold=sys.maxsize)
         "not deleted if true."
     ),
 )
+@click.option(
+    "--subset-to-unprocessed",
+    type=bool,
+    default=False,
+    help=(
+        "Whether to subset to datapoints not yet processed when run-asserts or "
+        "save-statistics is true."
+    ),
+)
+@click.option(
+    "--next-dataset-indices",
+    type=JsonStrOrFile(),
+    default={},
+    help=(
+        "A json string or json file path containing a dictionary mapping dataset "
+        "names specified in the runner yml file to their last used indices "
+        "in the SamplerDataset to start/resume in-order iteration from."
+        "Only used if add_stochastic_sampling is True."
+    ),
+)
 def main(
     runner_yml_file: Path,
     seed: int,
@@ -247,6 +272,8 @@ def main(
     no_preferred_chain_or_interface: bool,
     add_stochastic_sampling: bool,
     remove_worker_files: bool,
+    subset_to_unprocessed: bool,
+    next_dataset_indices: dict[str, int],
 ) -> None:
     """Main function for running the data pipeline treadmill.
 
@@ -302,6 +329,13 @@ def main(
         remove_worker_files (bool):
             Whether to remove per-worker files. Error, atom array and feature files are
             not deleted if true.
+        subset_to_unprocessed (bool):
+            Whether to subset to datapoints not yet processed when run-asserts or
+            save-statistics is true.
+        next_dataset_indices (dict[str, int]):
+            A dictionary mapping dataset names specified in the runner yml file to their
+            last used indices in the SamplerDataset to start/resume in-order iteration
+            from. Only used if add_stochastic_sampling is True.
 
     Raises:
         ValueError:
@@ -369,7 +403,7 @@ def main(
             generator=torch.Generator(device="cpu").manual_seed(
                 data_module_config.data_seed
             ),
-            next_dataset_indices={},
+            next_dataset_indices=next_dataset_indices,
         )
     else:
         logging_dataset = ConcatDataset(datasets)
@@ -435,11 +469,14 @@ def main(
             save_statistics,
             log_runtimes,
             log_output_directory,
+            subset_to_unprocessed,
         )
 
         # Configure compliance file
         configured_attributes += configure_compliance_log(
-            worker_dataset, log_output_directory
+            worker_dataset,
+            log_output_directory,
+            subset_to_unprocessed,
         )
 
         # Configure context variables
@@ -469,7 +506,7 @@ def main(
     try:
         for _ in tqdm(
             data_loader,
-            desc="Iterating over WeightedPDBDataset",
+            desc="Iterating over datasets",
             total=len(logging_dataset),
         ):
             pass
@@ -550,6 +587,12 @@ def main(
                 header=not full_worker_memory_file.exists(),
                 mode="a",
             )
+        if add_stochastic_sampling:
+            # Save the next dataset indices
+            with open(
+                log_output_directory / Path("next_dataset_indices.json"), "w"
+            ) as f:
+                json.dump(logging_dataset.next_dataset_indices, f)
         # Collate logs
         combined_log = log_output_directory / Path("worker_logs.log")
         with combined_log.open("w") as out_file:

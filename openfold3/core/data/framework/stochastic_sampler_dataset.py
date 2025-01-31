@@ -27,6 +27,7 @@ and highlight where you currently are in the process:
     batched data -> model
 """
 
+# TODO: rename module from stochastic_sampler_dataset.py to sampler_dataset.py
 import logging
 from collections.abc import Sequence
 from typing import Any
