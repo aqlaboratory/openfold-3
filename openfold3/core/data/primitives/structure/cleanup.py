@@ -193,13 +193,14 @@ def get_polymer_mask(atom_array, use_molecule_type_id=True):
     Returns:
         Mask for all polymer atoms.
     """
-    if "molecule_type_id" not in atom_array.get_annotation_categories():
-        raise ValueError(
-            "AtomArray does not have molecule_type_id annotation. "
-            "Please run the `assign_molecule_type_ids` function first."
-        )
 
     if use_molecule_type_id:
+        if "molecule_type_id" not in atom_array.get_annotation_categories():
+            raise ValueError(
+                "AtomArray does not have molecule_type_id annotation. "
+                "Please run the `assign_molecule_type_ids` function first."
+            )
+
         return np.isin(
             atom_array.molecule_type_id,
             [MoleculeType.PROTEIN, MoleculeType.DNA, MoleculeType.RNA],
