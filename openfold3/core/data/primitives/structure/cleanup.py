@@ -564,7 +564,7 @@ def remove_chains_with_CA_gaps(
             Distance threshold in Angstrom. Defaults to 10.0.
     """
     protein_chain_ca = atom_array[
-        struc.filter_polymer(atom_array, pol_type="peptide")
+        (atom_array.molecule_type_id == MoleculeType.PROTEIN)
         & (atom_array.atom_name == "CA")
     ]
 
