@@ -16,8 +16,10 @@ from openfold3.core.data.primitives.structure.interface import (
     get_interface_token_center_atoms,
 )
 from openfold3.core.data.primitives.structure.labels import (
+    AtomArrayView,
     assign_atom_indices,
     remove_atom_indices,
+    residue_view_iter,
 )
 from openfold3.core.data.resources.lists import (
     CRYSTALLIZATION_AIDS,
@@ -396,12 +398,14 @@ def remove_clashing_chains(
     return atom_array
 
 
-def get_res_atoms_in_ccd_mask(res_atom_array: AtomArray, ccd: CIFFile) -> np.ndarray:
+def get_res_atoms_in_ccd_mask(
+    res_atom_array: AtomArray | AtomArrayView, ccd: CIFFile
+) -> np.ndarray:
     """Returns a mask for atoms in a residue that are present in the CCD
 
     Args:
         res_atom_array:
-            AtomArray containing the atoms of a single residue
+            AtomArray or AtomArrayView containing the atoms of a single residue
         ccd:
             CIFFile containing the parsed Chemical Component Dictionary (components.cif)
 
@@ -414,7 +418,7 @@ def get_res_atoms_in_ccd_mask(res_atom_array: AtomArray, ccd: CIFFile) -> np.nda
     # function returns an all-False mask which will effectively filter out the unknown
     # ligand.
     if res_name == "UNL":
-        return np.zeros(res_atom_array.array_length(), dtype=bool)
+        return np.zeros(len(res_atom_array), dtype=bool)
 
     allowed_atoms = ccd[res_name]["chem_comp_atom"]["atom_id"].as_array()
 
@@ -440,7 +444,7 @@ def remove_non_CCD_atoms(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
     """
     atom_masks_per_res = [
         get_res_atoms_in_ccd_mask(res_atom_array, ccd)
-        for res_atom_array in struc.residue_iter(atom_array)
+        for res_atom_array in residue_view_iter(atom_array)
     ]
 
     # Inclusion mask over all atoms
@@ -483,21 +487,23 @@ def canonicalize_atom_order(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
     # final operation
     resort_idx = np.full(atom_array.array_length(), -1, dtype=int)
 
-    for residue in struc.residue_iter(atom_array):
+    for residue_view in residue_view_iter(atom_array):
         # Get the reference atom order for the residue
-        res_name = residue.res_name[0]
+        res_name = residue_view.res_name[0]
         if res_name in res_name_to_ref_atoms:
             ref_atoms = res_name_to_ref_atoms[res_name]
         else:
             ref_atoms = get_ref_atoms(res_name)
             res_name_to_ref_atoms[res_name] = ref_atoms
 
-        old_atom_idx = residue._atom_idx_can_order
+        old_atom_idx = residue_view._atom_idx_can_order
 
         # Get the sorting index that will sort the residue's atoms to match the
         # reference order
-        idx_in_ref = np.array([ref_atoms.index(atom) for atom in residue.atom_name])
-        reordered_atom_idx = residue._atom_idx_can_order[np.argsort(idx_in_ref)]
+        idx_in_ref = np.array(
+            [ref_atoms.index(atom) for atom in residue_view.atom_name]
+        )
+        reordered_atom_idx = residue_view._atom_idx_can_order[np.argsort(idx_in_ref)]
 
         # TODO: Remove?
         if not np.array_equal(old_atom_idx, reordered_atom_idx):

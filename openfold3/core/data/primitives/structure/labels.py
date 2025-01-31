@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from dataclasses import dataclass
+from collections.abc import Generator
 from typing import Any, Literal
 
 import biotite.structure as struc
@@ -395,13 +395,13 @@ def assign_uniquified_atom_names(atom_array: AtomArray) -> None:
         "atom_name_unique", np.full(len(atom_array), fill_value="-", dtype=object)
     )
 
-    for component in component_iter(atom_array):
-        atom_names = component.get_attr_view_("atom_name")
+    for component_view in component_view_iter(atom_array):
+        atom_names = component_view.atom_name
         atom_names_uniquified = uniquify_ids(atom_names)
 
-        atom_array.atom_name_unique[
-            component.get_attr_view_("_atom_idx_unqf_atoms")
-        ] = atom_names_uniquified
+        atom_array.atom_name_unique[component_view._atom_idx_unqf_atoms] = (
+            atom_names_uniquified
+        )
 
     atom_array.del_annotation("_atom_idx_unqf_atoms")
 
@@ -453,7 +453,9 @@ def get_token_starts(
     return get_id_starts(atom_array, "token_id", add_exclusive_stop)
 
 
-def get_component_starts(atom_array: AtomArray, add_exclusive_stop: bool = False):
+def get_component_starts(
+    atom_array: AtomArray, add_exclusive_stop: bool = False
+) -> np.ndarray:
     """Gets the indices of the first atom of each component.
 
     Args:
@@ -505,12 +507,12 @@ class AtomArrayView:
         return len(self.indices)
 
 
-def component_iter(atom_array: AtomArray):
+def component_view_iter(atom_array: AtomArray) -> Generator[AtomArrayView, None, None]:
     """Iterates through components in an AtomArray.
 
     Args:
         atom_array (AtomArray):
-            AtomArray of the target or ground truth structure
+            AtomArray to return components for.
 
     Yields:
         AtomArrayView:
@@ -518,21 +520,39 @@ def component_iter(atom_array: AtomArray):
     """
     component_starts = get_component_starts(atom_array, add_exclusive_stop=True)
     for start, stop in zip(component_starts[:-1], component_starts[1:]):
-        yield AtomArrayView(atom_array, np.arange(start, stop))
+        yield AtomArrayView(atom_array, slice(start, stop))
 
 
-@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-comp-id-assign")
-def assign_component_ids_from_metadata(
-    atom_array: AtomArray, per_chain_metadata: dict[str, dict]
-) -> None:
-    atom_array.set_annotation(
-        "component_id", np.full(len(atom_array), fill_value=-1, dtype=int)
-    )
+def residue_view_iter(atom_array: AtomArray) -> Generator[AtomArrayView, None, None]:
+    """Iterates through residues in an AtomArray.
 
-    for id, component in enumerate(
-        component_iter_from_metadata(atom_array, per_chain_metadata), start=1
-    ):
-        component.component_id[:] = id
+    Args:
+        atom_array (AtomArray):
+            AtomArray to return residues for.
+
+    Yields:
+        AtomArrayView:
+            AtomArrayView for a single residue.
+    """
+    residue_starts = struc.get_residue_starts(atom_array, add_exclusive_stop=True)
+    for start, stop in zip(residue_starts[:-1], residue_starts[1:]):
+        yield AtomArrayView(atom_array, slice(start, stop))
+
+
+def chain_view_iter(atom_array: AtomArray) -> Generator[AtomArrayView, None, None]:
+    """Iterates through chains in an AtomArray.
+
+    Args:
+        atom_array (AtomArray):
+            AtomArray to return chains for.
+
+    Yields:
+        AtomArrayView:
+            AtomArrayView for a single chain.
+    """
+    chain_starts = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
+    for start, stop in zip(chain_starts[:-1], chain_starts[1:]):
+        yield AtomArrayView(atom_array, slice(start, stop))
 
 
 def set_residue_hetero_values(atom_array: AtomArray) -> None:
