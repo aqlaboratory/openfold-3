@@ -180,10 +180,10 @@ def get_polymer_mask(atom_array):
     Returns:
         Mask for all polymer atoms.
     """
-    prot_mask = struc.filter_polymer(atom_array, pol_type="peptide")
-    nuc_mask = struc.filter_polymer(atom_array, pol_type="nucleotide")
-
-    return prot_mask | nuc_mask
+    np.isin(
+        atom_array.molecule_type_id,
+        [MoleculeType.PROTEIN, MoleculeType.DNA, MoleculeType.RNA],
+    )
 
 
 @return_on_empty_atom_array
@@ -586,6 +586,10 @@ def get_small_ligand_chain_ids(
         Array of unique chain IDs of small ligands.
     """
     ligand_array = atom_array[atom_array.molecule_type_id == MoleculeType.LIGAND]
+
+    if len(ligand_array) == 0:
+        return np.array([])
+
     lig_chain_starts = struc.get_chain_starts(ligand_array, add_exclusive_stop=True)
     lig_chain_sizes = np.diff(lig_chain_starts)
     small_lig_chain_idxs = np.where(lig_chain_sizes <= max_atoms)[0]
