@@ -5,6 +5,7 @@ from enum import IntEnum
 import numpy as np
 
 
+# TODO: remove unused variables from this module
 # Molecule type used in tokenization
 class MoleculeType(IntEnum):
     PROTEIN = 0

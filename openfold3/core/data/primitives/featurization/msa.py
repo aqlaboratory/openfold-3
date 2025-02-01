@@ -11,10 +11,6 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
 )
 from openfold3.core.data.primitives.sequence.msa import MsaArray, MsaArrayCollection
 from openfold3.core.data.resources.residues import (
-    MOLECULE_TYPE_TO_ARGSORT_RESIDUES_1,
-    MOLECULE_TYPE_TO_RESIDUES_1,
-    MOLECULE_TYPE_TO_RESIDUES_POS,
-    MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_1,
     STANDARD_RESIDUES_WITH_GAP_1,
     MoleculeType,
     map_str_array_to_idx_array,
@@ -118,9 +114,9 @@ def calculate_row_counts(
 
 
 def calculate_profile(
-    msa_array: np.ndarray, mol_type: MoleculeType, chunk_size: int
+    msa_array: np.ndarray, molecule_type: MoleculeType, chunk_size: int
 ) -> np.ndarray:
-    """Calculates the fractions of residue occurences for each character for each column
+    """Calculates the fractions of residue occurences per character per column.
 
     Args:
         msa_col (np.ndarray):
@@ -133,48 +129,44 @@ def calculate_profile(
             The counts of residues in the column indexed by the
             STANDARD_RESIDUES_WITH_GAP_1 alphabet.
     """
-    n_col = msa_array.shape[1]
 
-    # Get correct sub-alphabet, unknown residuem and sort indices for the molecule type
-    mol_alphabet = MOLECULE_TYPE_TO_RESIDUES_1[mol_type]
-    mol_alphabet_sort_ids = MOLECULE_TYPE_TO_ARGSORT_RESIDUES_1[mol_type]
-    mol_alphabet_sorted = mol_alphabet[mol_alphabet_sort_ids]
-    res_unknown = MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_1[mol_type]
+    msa_index = map_str_array_to_idx_array(msa_array, molecule_type)
 
-    # Get unique residues and counts
-    res_full_alphabet_counts = np.zeros(
-        [n_col, len(STANDARD_RESIDUES_WITH_GAP_1)], dtype=int
-    )
-    for col_idx in range(n_col):
-        col = msa_array[:, col_idx]
-        res_unique, res_unique_counts = np.unique(col, return_counts=True, axis=0)
+    n_rows, n_cols = msa_index.shape
+    n_symbols = len(STANDARD_RESIDUES_WITH_GAP_1)
+    counts = np.zeros((n_cols, n_symbols), dtype=int)
+    col_start = 0
 
-        # Find which residues are in the molecule alphabet and counts for unknown
-        # residues
-        res_mol_alphabet_counts = np.zeros(len(mol_alphabet), dtype=int)
-        is_in_alphabet = np.isin(res_unique, mol_alphabet)
-        res_in_alphabet = res_unique[is_in_alphabet]
-        res_unknown_counts = res_unique_counts[~is_in_alphabet]
+    while col_start < n_cols:
+        col_end = min(col_start + chunk_size, n_cols)
+        msa_chunk = msa_index[:, col_start:col_end]
+        block_n_cols = col_end - col_start
+        # Flatten subarray (size = n_rows * block_n_cols)
+        val_indices = msa_chunk.ravel()  # row-major flatten by default
+        # Build local col_indices of the same flattened shape
+        col_indices_local = np.repeat(np.arange(block_n_cols), n_rows)
+        # Now each col in this chunk is offset from the "absolute" col_start, but for
+        # bincount we just care about "relative" indexing from 0...(block_n_cols-1). We
+        # combine into a single 1D array: offset + val Where offset = col_indices_local
+        # * n_symbols That ensures each column in the chunk has a distinct range in the
+        # output
+        to_count_local = col_indices_local * n_symbols + val_indices
 
-        # Get indices of residues in and missing from alphabet and "un-sort" them
-        id_res_in_alphabet = mol_alphabet_sort_ids[
-            np.searchsorted(mol_alphabet_sorted, res_in_alphabet)
-        ]
-        id_res_unknown = mol_alphabet_sort_ids[
-            np.searchsorted(mol_alphabet_sorted, res_unknown)
-        ]
-
-        # Assign counts to each character in the un-sorted alphabet
-        res_mol_alphabet_counts[id_res_in_alphabet] = res_unique_counts[is_in_alphabet]
-        res_mol_alphabet_counts[id_res_unknown] += np.sum(res_unknown_counts)
-
-        # Map molecule alphabet counts to the full residue alphabet
-        molecule_alphabet_indices = MOLECULE_TYPE_TO_RESIDUES_POS[mol_type]
-        res_full_alphabet_counts[col_idx, molecule_alphabet_indices] = (
-            res_mol_alphabet_counts
+        # Bincount for this chunk
+        # We'll have block_n_cols*n_symbols possible bins
+        chunk_counts_1d = np.bincount(
+            to_count_local, minlength=block_n_cols * n_symbols
         )
 
-    return res_full_alphabet_counts / msa_array.shape[0]
+        # Reshape into (block_n_cols, n_symbols)
+        chunk_counts_2d = chunk_counts_1d.reshape(block_n_cols, n_symbols)
+
+        # Accumulate into the global array
+        counts[col_start:col_end, :] += chunk_counts_2d
+
+        col_start = col_end
+
+    return counts / n_rows
 
 
 @log_runtime_memory(
