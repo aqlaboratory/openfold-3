@@ -175,6 +175,7 @@ def calculate_profile(
 def calculate_profile_del_mean(
     msa_array_collection: MsaArrayCollection,
     chain_id: str,
+    msa_profile_chunk_size: int = 1000,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Calculate the profile and mean deletion counts for a chain.
 
@@ -184,6 +185,8 @@ def calculate_profile_del_mean(
         chain_id (str):
             The chain ID of the chain to calculate the profile and mean deletion counts
             for.
+        msa_profile_chunk_size (int):
+            The number of columns to simultaneously calculate the MSA profile for.
 
     Returns:
         tuple[np.ndarray, np.ndarray]:
@@ -195,7 +198,7 @@ def calculate_profile_del_mean(
         profile = calculate_profile(
             msa_array_collection.chain_id_to_main_msa[chain_id].msa,
             MoleculeType[msa_array_collection.chain_id_to_mol_type[chain_id]],
-            chunk_size=1000,
+            chunk_size=msa_profile_chunk_size,
         )
         del_mean = np.mean(
             msa_array_collection.chain_id_to_main_msa[chain_id].deletion_matrix, axis=0
