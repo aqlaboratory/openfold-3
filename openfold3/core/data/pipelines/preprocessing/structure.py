@@ -25,7 +25,6 @@ import pandas as pd
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 from func_timeout import FunctionTimedOut, func_timeout
-from rdkit import Chem
 from tqdm import tqdm
 
 from openfold3.core.data.io.s3 import download_file_from_s3
@@ -74,8 +73,8 @@ from openfold3.core.data.primitives.structure.cleanup import (
     subset_large_structure,
 )
 from openfold3.core.data.primitives.structure.component import (
-    AnnotatedMol,
     get_component_info,
+    get_reference_molecule_metadata,
     mol_from_atomarray,
     mol_from_ccd_entry,
 )
@@ -361,30 +360,6 @@ def extract_component_data_af3(
                 - "fallback_conformer_pdb_id": The PDB ID of the fallback conformer
                 - "canonical_smiles": The canonical SMILES of the component
     """
-
-    def get_reference_molecule_metadata(
-        mol: AnnotatedMol,
-        conformer_strategy: Literal["default", "random_init", "use_fallback"],
-        residue_count: int,
-    ) -> dict:
-        """Convenience function to return the metadata for a reference molecule."""
-        conf_metadata = {
-            "residue_count": residue_count,
-            "conformer_gen_strategy": conformer_strategy,
-        }
-
-        if mol.HasProp("model_pdb_id"):
-            fallback_conformer_pdb_id = mol.GetProp("model_pdb_id")
-            if fallback_conformer_pdb_id == "?":
-                fallback_conformer_pdb_id = None
-        else:
-            fallback_conformer_pdb_id = None
-
-        conf_metadata["fallback_conformer_pdb_id"] = fallback_conformer_pdb_id
-        conf_metadata["canonical_smiles"] = Chem.MolToSmiles(mol)
-
-        return conf_metadata
-
     if skip_components is None:
         skip_components = set()
 
@@ -684,7 +659,7 @@ class _AF3PreprocessingWrapper:
         cif_file, out_dir = paths
 
         logger.debug(f"Processing {cif_file.stem}")
-        try:            
+        try:
             # Give this a 10 minute timeout
             structure_metadata_dict, ref_mol_metadata_dict = func_timeout(
                 timeout=3600,

@@ -30,6 +30,7 @@ from openfold3.core.data.primitives.caches.filtering import (
     filter_by_token_count,
     filter_cache_by_specified_interfaces,
     filter_cache_to_specified_chains,
+    filter_only_ligand_ligand_metrics,
     func_with_n_filtered_chain_log,
     get_validation_summary_stats,
     select_final_validation_data,
@@ -395,6 +396,10 @@ def create_pdb_val_dataset_cache_af3(
         unfiltered_cache=val_dataset_cache,
         monomer_structure_data=monomer_cache.structure_data,
         multimer_structure_data=multimer_cache.structure_data,
+    )
+
+    val_dataset_cache.structure_data = with_log(filter_only_ligand_ligand_metrics)(
+        val_dataset_cache.structure_data
     )
 
     final_stats = get_validation_summary_stats(val_dataset_cache.structure_data)

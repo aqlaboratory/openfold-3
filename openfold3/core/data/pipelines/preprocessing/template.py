@@ -2,7 +2,7 @@
 
 import multiprocessing as mp
 import os
-import pickle as pkl
+import random
 import traceback
 from datetime import datetime
 from functools import wraps
@@ -21,6 +21,7 @@ from openfold3.core.data.io.sequence.template import (
     parse_entry_chain_id,
     parse_hmmsearch_sto,
 )
+from openfold3.core.data.io.structure.atom_array import write_atomarray_to_npz
 from openfold3.core.data.io.structure.cif import _load_ciffile, parse_mmcif
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     PDB_ID,
@@ -1195,11 +1196,11 @@ def preprocess_template_structure_for_template(
             )
         if np.isin(chain_mol_type, moltypes_included).all():
             chains_included.append(chain_id)
-            with open(
-                template_assembly_directory / Path(f"{template_pdb_id}_{chain_id}.pkl"),
-                "wb",
-            ) as f:
-                pkl.dump(atom_array_chain, f)
+            write_atomarray_to_npz(
+                atom_array=atom_array_chain,
+                output_file=template_assembly_directory
+                / f"{template_pdb_id}_{chain_id}.npz",
+            )
 
     # Log as completed
     pid = os.getpid()
@@ -1352,6 +1353,10 @@ def preprocess_template_structures(
     template_pdb_ids = []
     for f in list(template_structures_directory.glob(f"*.{template_file_format}")):
         template_pdb_ids.append(f.stem.split(".")[0])
+
+    # Make sure there is no bias in ordering which could potentially affect
+    # preprocessing times
+    random.shuffle(template_pdb_ids)
     print(f"Found {len(template_pdb_ids)} template structures.")
 
     # Subset the template PDB IDs to only those that have not been preprocessed

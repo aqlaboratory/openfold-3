@@ -1490,3 +1490,60 @@ def select_final_validation_data(
                     structure_data_entry.chains[chain_id].use_metrics = True
 
     unfiltered_cache.structure_data = structure_data
+
+
+def filter_only_ligand_ligand_metrics(
+    structure_cache: ValidationDatasetStructureData,
+) -> ValidationDatasetStructureData:
+    """Filters out validation entries that only have metric-enabled lig-lig interfaces.
+
+    The model selection metric does not actually use ligand-ligand lDDTs, which can
+    result in an error when the only datapoints in the structure that are metric-enabled
+    are ligand-ligand interfaces. This function will find these cases and remove them
+    from the structure cache in-place.
+
+    Args:
+        structure_cache: ValidationDatasetStructureData
+            The structure cache to filter.
+
+    Returns:
+        ValidationDatasetStructureData:
+            The filtered structure cache.
+    """
+    entries_to_remove = set()
+
+    for entry_id, entry_data in structure_cache.items():
+        only_ligand_ligand_metrics = True
+
+        for interface_id, interface_data in entry_data.interfaces.items():
+            if interface_data.use_metrics:
+                interface_chains = interface_id.split("_")
+
+                chain_1_moltype = entry_data.chains[interface_chains[0]].molecule_type
+                chain_2_moltype = entry_data.chains[interface_chains[1]].molecule_type
+
+                # If a metric-enabled interface is found that is not ligand-ligand,
+                # break and set flag to False
+                if not (
+                    chain_1_moltype == MoleculeType.LIGAND
+                    and chain_2_moltype == MoleculeType.LIGAND
+                ):
+                    only_ligand_ligand_metrics = False
+                    break
+
+        # If any metric-enabled monomer is found, also set flag to False
+        for chain_data in entry_data.chains.values():
+            if chain_data.use_metrics:
+                only_ligand_ligand_metrics = False
+                break
+
+        if only_ligand_ligand_metrics:
+            entries_to_remove.add(entry_id)
+
+    new_structure_cache = {
+        entry_id: entry_data
+        for entry_id, entry_data in structure_cache.items()
+        if entry_id not in entries_to_remove
+    }
+
+    return new_structure_cache
