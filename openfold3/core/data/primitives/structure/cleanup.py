@@ -16,8 +16,10 @@ from openfold3.core.data.primitives.structure.interface import (
     get_interface_token_center_atoms,
 )
 from openfold3.core.data.primitives.structure.labels import (
+    AtomArrayView,
     assign_atom_indices,
     remove_atom_indices,
+    residue_view_iter,
 )
 from openfold3.core.data.resources.lists import (
     CRYSTALLIZATION_AIDS,
@@ -70,40 +72,50 @@ def convert_MSE_to_MET(atom_array: AtomArray) -> None:
 
 
 @return_on_empty_atom_array
-def fix_single_arginine_naming(arg_atom_array: AtomArray) -> None:
-    """Resolves naming ambiguities for a single arginine residue
+def fix_arginine_naming(atom_array: AtomArray) -> AtomArray:
+    """Resolves naming ambiguities for all arginine residues in the AtomArray
 
-    This ensures that NH1 is always closer to CD than NH2, following 2.1 of the
+    Ensures that NH1 is always closer to CD than NH2, following 2.1 of the
     AlphaFold3 SI.
 
     Args:
-        arg_atom_array: AtomArray containing the arginine residue to fix.
-    """
-    nh1 = arg_atom_array[arg_atom_array.atom_name == "NH1"]
-    nh2 = arg_atom_array[arg_atom_array.atom_name == "NH2"]
-    cd = arg_atom_array[arg_atom_array.atom_name == "CD"]
-
-    # If NH2 is closer to CD than NH1, swap the names
-    if struc.distance(nh2, cd) < struc.distance(nh1, cd):
-        nh1.atom_name = ["NH2"]
-        nh2.atom_name = ["NH1"]
-
-
-@return_on_empty_atom_array
-def fix_arginine_naming(atom_array: AtomArray) -> None:
-    """Resolves naming ambiguities for all arginine residues in the AtomArray
-
-    (see fix_single_arginine_naming for more details)
-
-    Args:
         atom_array: AtomArray containing the structure to fix arginine residues in.
+
+    Returns:
+        AtomArray with arginine residue names fixed.
     """
+    assign_atom_indices(atom_array, label="_atom_idx_arginine_fix")
+
+    # Will build up the correct order of atom names in the final array
+    name_sort_idx = atom_array._atom_idx_arginine_fix.copy()
+
     arginines = atom_array.res_name == "ARG"
 
-    for arginine in struc.residue_iter(atom_array[arginines]):
-        fix_single_arginine_naming(arginine)
+    for arginine_view in residue_view_iter(atom_array[arginines]):
+        nh1_mask = arginine_view.atom_name == "NH1"
+        nh2_mask = arginine_view.atom_name == "NH2"
+        cd_mask = arginine_view.atom_name == "CD"
+
+        nh1_coord = arginine_view.coord[nh1_mask]
+        nh2_coord = arginine_view.coord[nh2_mask]
+        cd_coord = arginine_view.coord[cd_mask]
+
+        # If NH2 is closer to CD than NH1, swap the names
+        if struc.distance(nh2_coord, cd_coord) < struc.distance(nh1_coord, cd_coord):
+            nh1_idx = arginine_view._atom_idx_arginine_fix[nh1_mask]
+            nh2_idx = arginine_view._atom_idx_arginine_fix[nh2_mask]
+
+            name_sort_idx[nh1_idx] = nh2_idx
+            name_sort_idx[nh2_idx] = nh1_idx
+
+    # Apply the sorting index to the final atom names
+    atom_array.atom_name = atom_array.atom_name[name_sort_idx]
 
     logger.debug("Fixed arginine naming")
+
+    atom_array.del_annotation("_atom_idx_arginine_fix")
+
+    return atom_array
 
 
 @return_on_empty_atom_array
@@ -165,9 +177,7 @@ def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
     return atom_array
 
 
-# TODO: Could check if this would be faster using MoleculeType if it is present (could
-# make a use_moltype_annot: bool argument)
-def get_polymer_mask(atom_array):
+def get_polymer_mask(atom_array, use_molecule_type_id=True):
     """Returns a mask of all standard polymer atoms in the AtomArray.
 
     Polymers here are defined as proteins and nucleic acids (no carbohydrates).
@@ -175,14 +185,31 @@ def get_polymer_mask(atom_array):
     Args:
         atom_array:
             AtomArray containing the structure to get the polymer mask for.
+        use_molecule_type_id:
+            Whether to use the molecule_type_id annotation to identify polymers, which
+            is faster, but requires the molecule_type_id annotation to be present. If
+            False, biotite's `filter_polymer` function is used to identify polymers.
 
     Returns:
         Mask for all polymer atoms.
     """
-    prot_mask = struc.filter_polymer(atom_array, pol_type="peptide")
-    nuc_mask = struc.filter_polymer(atom_array, pol_type="nucleotide")
 
-    return prot_mask | nuc_mask
+    if use_molecule_type_id:
+        if "molecule_type_id" not in atom_array.get_annotation_categories():
+            raise ValueError(
+                "AtomArray does not have molecule_type_id annotation. "
+                "Please run the `assign_molecule_type_ids` function first."
+            )
+
+        return np.isin(
+            atom_array.molecule_type_id,
+            [MoleculeType.PROTEIN, MoleculeType.DNA, MoleculeType.RNA],
+        )
+    else:
+        prot_mask = struc.filter_polymer(atom_array, pol_type="peptide")
+        nuc_mask = struc.filter_polymer(atom_array, pol_type="nucleotide")
+
+        return prot_mask | nuc_mask
 
 
 @return_on_empty_atom_array
@@ -396,12 +423,14 @@ def remove_clashing_chains(
     return atom_array
 
 
-def get_res_atoms_in_ccd_mask(res_atom_array: AtomArray, ccd: CIFFile) -> np.ndarray:
+def get_res_atoms_in_ccd_mask(
+    res_atom_array: AtomArray | AtomArrayView, ccd: CIFFile
+) -> np.ndarray:
     """Returns a mask for atoms in a residue that are present in the CCD
 
     Args:
         res_atom_array:
-            AtomArray containing the atoms of a single residue
+            AtomArray or AtomArrayView containing the atoms of a single residue
         ccd:
             CIFFile containing the parsed Chemical Component Dictionary (components.cif)
 
@@ -414,7 +443,7 @@ def get_res_atoms_in_ccd_mask(res_atom_array: AtomArray, ccd: CIFFile) -> np.nda
     # function returns an all-False mask which will effectively filter out the unknown
     # ligand.
     if res_name == "UNL":
-        return np.zeros(res_atom_array.array_length(), dtype=bool)
+        return np.zeros(len(res_atom_array), dtype=bool)
 
     allowed_atoms = ccd[res_name]["chem_comp_atom"]["atom_id"].as_array()
 
@@ -440,7 +469,7 @@ def remove_non_CCD_atoms(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
     """
     atom_masks_per_res = [
         get_res_atoms_in_ccd_mask(res_atom_array, ccd)
-        for res_atom_array in struc.residue_iter(atom_array)
+        for res_atom_array in residue_view_iter(atom_array)
     ]
 
     # Inclusion mask over all atoms
@@ -483,21 +512,23 @@ def canonicalize_atom_order(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
     # final operation
     resort_idx = np.full(atom_array.array_length(), -1, dtype=int)
 
-    for residue in struc.residue_iter(atom_array):
+    for residue_view in residue_view_iter(atom_array):
         # Get the reference atom order for the residue
-        res_name = residue.res_name[0]
+        res_name = residue_view.res_name[0]
         if res_name in res_name_to_ref_atoms:
             ref_atoms = res_name_to_ref_atoms[res_name]
         else:
             ref_atoms = get_ref_atoms(res_name)
             res_name_to_ref_atoms[res_name] = ref_atoms
 
-        old_atom_idx = residue._atom_idx_can_order
+        old_atom_idx = residue_view._atom_idx_can_order
 
         # Get the sorting index that will sort the residue's atoms to match the
         # reference order
-        idx_in_ref = np.array([ref_atoms.index(atom) for atom in residue.atom_name])
-        reordered_atom_idx = residue._atom_idx_can_order[np.argsort(idx_in_ref)]
+        idx_in_ref = np.array(
+            [ref_atoms.index(atom) for atom in residue_view.atom_name]
+        )
+        reordered_atom_idx = residue_view._atom_idx_can_order[np.argsort(idx_in_ref)]
 
         # TODO: Remove?
         if not np.array_equal(old_atom_idx, reordered_atom_idx):
@@ -532,7 +563,7 @@ def remove_chains_with_CA_gaps(
             Distance threshold in Angstrom. Defaults to 10.0.
     """
     protein_chain_ca = atom_array[
-        struc.filter_polymer(atom_array, pol_type="peptide")
+        (atom_array.molecule_type_id == MoleculeType.PROTEIN)
         & (atom_array.atom_name == "CA")
     ]
 

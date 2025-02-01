@@ -181,7 +181,9 @@ def parse_mmcif(
 
     # Check again if the structure has too many chains
     if max_polymer_chains is not None:
-        n_polymers = get_chain_count(atom_array[get_polymer_mask(atom_array)])
+        n_polymers = get_chain_count(
+            atom_array[get_polymer_mask(atom_array, use_molecule_type_id=False)]
+        )
 
         if n_polymers > max_polymer_chains:
             return SkippedStructure(cif_file, f"Too many polymer chains: {n_polymers}")
