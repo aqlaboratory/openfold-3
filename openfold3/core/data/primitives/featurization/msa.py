@@ -17,6 +17,7 @@ from openfold3.core.data.resources.residues import (
     MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_1,
     STANDARD_RESIDUES_WITH_GAP_1,
     MoleculeType,
+    map_str_array_to_idx_array,
 )
 
 
@@ -25,28 +26,32 @@ class MsaFeaturePrecursorAF3:
     """Class representing the fully processed MSA arrays of an assembly.
 
     Attributes:
-        msa (np.array):
+        msa (np.ndarray[str]):
             A 2D numpy array containing the aligned sequences.
-        deletion_matrix (np.array):
+        msa_index (np.ndarray[int]):
+            A 2D numpy array containing the position of the residues in the global
+            molecule alphabet of all molecule types, STANDARD_RESIDUES_WITH_GAP_1.
+        deletion_matrix (np.ndarray[int]):
             A 2D numpy array containing the cumulative deletion counts up to each
             position for each row in the MSA.
         n_rows_paired (int):
             Number of paired rows in the MSA array
-        msa_mask (np.array):
+        msa_mask (np.ndarray[int]):
             A 2D numpy array containing the mask for the MSA.
-        msa_profile (np.array):
+        msa_profile (np.ndarray[float]):
             A 2D numpy array containing the profile of the MSA.
-        deletion_mean (np.array):
+        deletion_mean (np.ndarray[float]):
             A 1D numpy array containing the mean deletion counts for each row in the
             MSA.
     """
 
     msa: np.ndarray[str]
+    msa_index: np.ndarray[int]
     deletion_matrix: np.ndarray[int]
     n_rows_paired: int
-    msa_mask: np.ndarray
-    msa_profile: np.ndarray
-    deletion_mean: np.ndarray
+    msa_mask: np.ndarray[int]
+    msa_profile: np.ndarray[float]
+    deletion_mean: np.ndarray[float]
 
 
 @dataclasses.dataclass(frozen=False)
@@ -112,10 +117,10 @@ def calculate_row_counts(
     )
 
 
-def calculate_profile_per_column(
-    msa_array: np.ndarray, mol_type: MoleculeType
+def calculate_profile(
+    msa_array: np.ndarray, mol_type: MoleculeType, chunk_size: int
 ) -> np.ndarray:
-    """Calculates the counts of residues in an MSA column.
+    """Calculates the fractions of residue occurences for each character for each column
 
     Args:
         msa_col (np.ndarray):
@@ -195,9 +200,10 @@ def calculate_profile_del_mean(
     # TODO this function is the main runtime bottleneck in the current data pipeline
     # add runtime optimizations
     if bool(msa_array_collection.row_counts["n_rows_main"][chain_id]):
-        profile = calculate_profile_per_column(
+        profile = calculate_profile(
             msa_array_collection.chain_id_to_main_msa[chain_id].msa,
             MoleculeType[msa_array_collection.chain_id_to_mol_type[chain_id]],
+            chunk_size=1000,
         )
         del_mean = np.mean(
             msa_array_collection.chain_id_to_main_msa[chain_id].deletion_matrix, axis=0
@@ -305,6 +311,7 @@ def map_msas_to_tokens(
     profile: np.ndarray[float],
     del_mean: np.ndarray[float],
     msa_token_mapper: MsaTokenMapper,
+    molecule_type: MoleculeType,
 ) -> None:
     """Maps the processed and stacked MSA array of chain to tokens.
 
@@ -324,6 +331,8 @@ def map_msas_to_tokens(
             This is calculated based on the uncropped main MSA only.
         msa_token_mapper (MsaTokenMapper):
             Token mapper for the chain.
+        molecule_type (MoleculeType):
+            The molecule type of the current chain.
     """
     # Unpack token mapper
     token_positions = msa_token_mapper.chain_token_positions
@@ -331,9 +340,11 @@ def map_msas_to_tokens(
 
     # Map MSA data to tokens
     # Expands column positions for atomized tokens
-    msa_feature_precursor.msa[:, token_positions] = msa_array_vstack.msa[
-        :, msa_column_positions
-    ]
+    msa_array = msa_array_vstack.msa[:, msa_column_positions]
+    msa_feature_precursor.msa[:, token_positions] = msa_array
+    msa_feature_precursor.msa_index[:, token_positions] = map_str_array_to_idx_array(
+        msa_array=msa_array, molecule_type=molecule_type
+    )
     msa_feature_precursor.deletion_matrix[:, token_positions] = (
         msa_array_vstack.deletion_matrix[:, msa_column_positions]
     )
@@ -381,6 +392,8 @@ def create_msa_feature_precursor_af3(
         # Pre-allocate feature precursor container
         msa_feature_precursor = MsaFeaturePrecursorAF3(
             msa=np.full([msa_array_collection.row_counts["n_rows"], token_budget], "-"),
+            msa_index=np.ones([msa_array_collection.row_counts["n_rows"], token_budget])
+            * np.where(np.array(STANDARD_RESIDUES_WITH_GAP_1) == "-")[0].item(),
             deletion_matrix=np.zeros(
                 [msa_array_collection.row_counts["n_rows"], token_budget]
             ),
@@ -409,18 +422,23 @@ def create_msa_feature_precursor_af3(
 
             # Map to tokens
             map_msas_to_tokens(
-                msa_feature_precursor,
-                msa_array_vstack,
-                msa_array_vstack_mask,
-                profile,
-                del_mean,
-                msa_token_mapper,
+                msa_feature_precursor=msa_feature_precursor,
+                msa_array_vstack=msa_array_vstack,
+                msa_array_vstack_mask=msa_array_vstack_mask,
+                profile=profile,
+                del_mean=del_mean,
+                msa_token_mapper=msa_token_mapper,
+                molecule_type=MoleculeType[
+                    msa_array_collection.chain_id_to_mol_type[chain_id]
+                ],
             )
 
     else:
         # When there are no protein or RNA chains
         msa_feature_precursor = MsaFeaturePrecursorAF3(
             msa=np.full([1, token_budget], "-"),
+            msa_index=np.ones([1, token_budget])
+            * np.where(np.array(STANDARD_RESIDUES_WITH_GAP_1) == "-")[0].item(),
             deletion_matrix=np.zeros([1, token_budget]),
             n_rows_paired=1,
             msa_mask=np.zeros([1, token_budget]),
