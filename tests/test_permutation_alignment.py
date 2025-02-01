@@ -1,10 +1,12 @@
 from pathlib import Path
 
+import biotite.structure as struc
 import numpy as np
 
 from openfold3.core.data.io.structure.atom_array import read_atomarray_from_npz
 from openfold3.core.data.primitives.permutation.mol_labels import (
     assign_mol_permutation_ids,
+    chain_connected_molecule_iter,
 )
 from tests.custom_assert_utils import assert_atomarray_equal
 
@@ -38,3 +40,38 @@ def test_mol_symmetry_id_assignment():
     assert np.array_equal(
         np.unique(np.diff(atom_array_out_test.token_id)), np.array([0, 1])
     )
+
+
+def test_chain_connected_molecule_iter():
+    """Checks that the chain-connected molecule iterator works as expected."""
+    # Create AtomArray with three chains
+    atom_array = struc.array(
+        [
+            struc.Atom([0, 0, 0], chain_id="A"),
+            struc.Atom([0, 0, 0], chain_id="A"),
+            struc.Atom([0, 0, 0], chain_id="A"),
+            struc.Atom([0, 0, 0], chain_id="B"),
+            struc.Atom([0, 0, 0], chain_id="B"),
+            struc.Atom([0, 0, 0], chain_id="C"),
+            struc.Atom([0, 0, 0], chain_id="C"),
+        ]
+    )
+
+    # Add only a single connection between A and B
+    atom_array.bonds = struc.BondList(7, np.array([(2, 3)]))
+
+    atom_array_original = atom_array.copy()
+
+    # Normal biotite molecule_iter returns 5 molecules
+    assert len(struc.get_molecule_indices(atom_array)) == 6
+
+    # Chain-connected molecule_iter should return chain-slices with A merged with B
+    expected_slices = [atom_array[0:5], atom_array[5:7]]
+
+    for mol_array, expected_array in zip(
+        chain_connected_molecule_iter(atom_array), expected_slices
+    ):
+        assert_atomarray_equal(mol_array, expected_array)
+
+    # Verify that original atom_array was unchanged
+    assert_atomarray_equal(atom_array, atom_array_original)
