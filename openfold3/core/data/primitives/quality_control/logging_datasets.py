@@ -9,13 +9,13 @@ Supported use cases:
 
 import bisect
 import logging
-import pickle as pkl
 import traceback
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any, TypeVar
 
 import biotite.structure as struc
+import biotite.structure.io as strucio
 import numpy as np
 import pandas as pd
 import torch
@@ -26,6 +26,7 @@ from openfold3.core.data.framework.data_module import DatasetMode, MultiDatasetC
 from openfold3.core.data.framework.single_datasets.abstract_single import (
     DATASET_REGISTRY,
 )
+from openfold3.core.data.io.structure.atom_array import write_atomarray_to_npz
 from openfold3.core.data.primitives.quality_control.asserts import ENSEMBLED_ASSERTS
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     F_NAME_ORDER,
@@ -309,10 +310,13 @@ class LoggingMixin:
             preferred_chain_or_interface
         )
         log_output_feat = self.get_worker_path(
-            subdirs=[pdb_id], fname=f"{chain_interface_str}_features.pkl"
+            subdirs=[pdb_id], fname=f"{chain_interface_str}_features.pt"
         )
         log_output_aa = self.get_worker_path(
-            subdirs=[pdb_id], fname=f"{chain_interface_str}_atom_array.pkl"
+            subdirs=[pdb_id], fname=f"{chain_interface_str}_atom_array.npz"
+        )
+        log_output_cif = self.get_worker_path(
+            subdirs=[pdb_id], fname=f"{chain_interface_str}_structure.cif"
         )
 
         if self.save_features is not False:
@@ -321,11 +325,11 @@ class LoggingMixin:
                 log_output_feat,
             )
         if (self.save_atom_array is not False) & (atom_array_cropped is not None):
-            with open(
-                log_output_aa,
-                "wb",
-            ) as f:
-                pkl.dump(atom_array_cropped, f)
+            write_atomarray_to_npz(atom_array_cropped, log_output_aa)
+            strucio.save_structure(
+                log_output_cif,
+                atom_array_cropped,
+            )
 
     def save_full_traceback_for_sample(self, e, pdb_id, preferred_chain_or_interface):
         """Saves the full traceback to for failed samples."""
