@@ -190,11 +190,11 @@ class AlphaFold3AllAtom(ModelRunner):
                 plddt_key = f"plddt_{molecule_type}"
                 lddt_key = f"lddt_intra_{molecule_type}"
 
-                plddt = metrics.get(plddt_key)
-                lddt = metrics.get(lddt_key)
+                plddt = metrics_per_sample.get(plddt_key)
+                lddt = metrics_per_sample.get(lddt_key)
 
                 if plddt is not None and lddt is not None:
-                    metrics[metric_name] = (lddt, plddt)
+                    metrics[metric_name] = (lddt.flatten(), plddt.flatten())
 
             logger.debug(
                 f"Validation sample {', '.join(batch['pdb_id'])} on rank "
