@@ -196,6 +196,12 @@ class AlphaFold3AllAtom(ModelRunner):
                 if plddt is not None and lddt is not None:
                     metrics[metric_name] = (lddt, plddt)
 
+            logger.debug(
+                f"Validation sample {', '.join(batch['pdb_id'])} on rank "
+                f"{self.global_rank} has the following metrics: "
+                f"{', '.join(list(metrics.keys()))}"
+            )
+
             return metrics
 
     def _log(self, loss_breakdown, batch, outputs, train=True):
