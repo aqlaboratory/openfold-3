@@ -99,7 +99,7 @@ def dict_map(fn, dic, leaf_type):
     return new_dict
 
 
-def tree_map(fn, tree, leaf_type):
+def tree_map(fn, tree, leaf_type, strict_type=True):
     if isinstance(tree, dict):
         return dict_map(fn, tree, leaf_type)
     elif isinstance(tree, list):
@@ -109,7 +109,11 @@ def tree_map(fn, tree, leaf_type):
     elif isinstance(tree, leaf_type):
         return fn(tree)
     else:
-        raise ValueError(f"Tree of type {type(tree)} not supported")
+        if strict_type:
+            raise ValueError(f"Tree of type {type(tree)} not supported")
+
+        # Skip over unsupported values if strict type checking is off
+        return tree
 
 
 tensor_tree_map = partial(tree_map, leaf_type=torch.Tensor)

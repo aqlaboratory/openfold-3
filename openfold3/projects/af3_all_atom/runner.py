@@ -1,6 +1,7 @@
 import importlib
 import itertools
 import logging
+from functools import partial
 from pathlib import Path
 
 import torch
@@ -20,7 +21,7 @@ from openfold3.core.metrics.validation_all_atom import (
 from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.atomize_utils import get_token_frame_atoms
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
-from openfold3.core.utils.tensor_utils import tensor_tree_map
+from openfold3.core.utils.tensor_utils import dict_multimap, tensor_tree_map
 from openfold3.projects.af3_all_atom.config.base_config import (
     model_selection_metric_weights_config,
     project_config,
@@ -172,11 +173,41 @@ class AlphaFold3AllAtom(ModelRunner):
             # TODO: Model selection - consider replacing this call directly with
             #  model selection call so that we have aggregated statistics of
             #  all the diffusion samples
-            metrics_per_sample = get_metrics(
-                batch,
-                outputs,
-                compute_extra_val_metrics=True,
+            num_samples = (
+                self.config.architecture.shared.diffusion.no_full_rollout_samples
             )
+            num_atoms = outputs["atom_positions_predicted"].shape[-2]
+            if num_samples > 1 and num_atoms > 18000:
+                metrics_per_sample = []
+                for idx in range(num_samples):
+
+                    def fetch_cur_sample(t):
+                        if t.shape[1] != num_atoms:
+                            return t
+                        return t[:, idx : idx + 1]  # noqa: B023
+
+                    cur_batch = tensor_tree_map(
+                        fetch_cur_sample, batch, strict_type=False
+                    )
+                    cur_outputs = tensor_tree_map(
+                        fetch_cur_sample, outputs, strict_type=False
+                    )
+                    metrics_per_sample.append(
+                        get_metrics(
+                            cur_batch,
+                            cur_outputs,
+                            compute_extra_val_metrics=True,
+                        )
+                    )
+                metrics_per_sample = dict_multimap(
+                    partial(torch.concat, dim=1), metrics_per_sample
+                )
+            else:
+                metrics_per_sample = get_metrics(
+                    batch,
+                    outputs,
+                    compute_extra_val_metrics=True,
+                )
 
             metrics = compute_model_selection_metric(
                 outputs=outputs,

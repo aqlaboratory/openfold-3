@@ -841,43 +841,6 @@ def get_full_complex_lddt(
     return out
 
 
-def get_per_sample_full_complex_lddt(
-    asym_id: torch.Tensor,
-    intra_filter_atomized: torch.Tensor,
-    pred_coords: torch.Tensor,
-    gt_coords: torch.Tensor,
-    all_atom_mask: torch.Tensor,
-) -> dict[str, torch.Tensor]:
-    """
-    Computes lddt for the full complex, subject to intra chain filters
-
-    Args:
-        asym_id: atomized asym_id feature [*, n_atom]
-        intra_mask_atomized:[*, n_atom] filter for intra chain computations
-        pred_coords: predicted coordinates [*, n_atom, 3]
-        gt_coords: gt coordinates [*, n_atom, 3]
-        all_atom_mask: atom mask [*, n_atom]
-    Returns:
-        out: dictionary containing validation metrics
-            'lddt_complex': full complex lddt score
-    """
-    chunks = []
-    for i in range(0, pred_coords.shape[-3], 1):
-        chunks.append(
-            get_full_complex_lddt(
-                asym_id=asym_id[:, i : i + 1],
-                intra_filter_atomized=intra_filter_atomized[:, i : i + 1],
-                pred_coords=pred_coords[:, i : i + 1],
-                gt_coords=gt_coords[:, i : i + 1],
-                all_atom_mask=all_atom_mask[:, i : i + 1],
-            )["lddt_intra_complex"]
-        )
-
-    out = {"lddt_intra_complex": torch.cat(chunks, dim=-1)}
-
-    return out
-
-
 def get_plddt_metrics(
     is_protein_atomized: torch.Tensor,
     is_ligand_atomized: torch.Tensor,
@@ -1261,7 +1224,7 @@ def get_metrics(
 
     if compute_extra_val_metrics:
         if torch.any(intra_filter_atomized):
-            full_complex_lddt_metrics = get_per_sample_full_complex_lddt(
+            full_complex_lddt_metrics = get_full_complex_lddt(
                 asym_id_atomized,
                 intra_filter_atomized,
                 pred_coords,
