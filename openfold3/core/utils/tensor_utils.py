@@ -88,24 +88,26 @@ def batched_gather(data, inds, dim=0, no_batch_dims=0):
 
 
 # With tree_map, a poor man's JAX tree_map
-def dict_map(fn, dic, leaf_type):
+def dict_map(fn, dic, leaf_type, strict_type=True):
     new_dict = {}
     for k, v in dic.items():
         if isinstance(v, dict):
-            new_dict[k] = dict_map(fn, v, leaf_type)
+            new_dict[k] = dict_map(fn, v, leaf_type, strict_type=strict_type)
         else:
-            new_dict[k] = tree_map(fn, v, leaf_type)
+            new_dict[k] = tree_map(fn, v, leaf_type, strict_type=strict_type)
 
     return new_dict
 
 
 def tree_map(fn, tree, leaf_type, strict_type=True):
     if isinstance(tree, dict):
-        return dict_map(fn, tree, leaf_type)
+        return dict_map(fn, tree, leaf_type, strict_type=strict_type)
     elif isinstance(tree, list):
-        return [tree_map(fn, x, leaf_type) for x in tree]
+        return [tree_map(fn, x, leaf_type, strict_type=strict_type) for x in tree]
     elif isinstance(tree, tuple):
-        return tuple([tree_map(fn, x, leaf_type) for x in tree])
+        return tuple(
+            [tree_map(fn, x, leaf_type, strict_type=strict_type) for x in tree]
+        )
     elif isinstance(tree, leaf_type):
         return fn(tree)
     else:

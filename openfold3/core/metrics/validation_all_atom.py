@@ -1302,8 +1302,9 @@ def get_metrics(
         )
         metrics = metrics | superimpose_metrics
 
-        # Compute RASA (Relative ASA) metric
-        metrics["rasa"] = compute_rasa_batch(batch, outputs)
+        if "atom_array" in batch:
+            # Compute RASA (Relative ASA) metric
+            metrics["rasa"] = compute_rasa_batch(batch, outputs)
 
     valid_metrics = {
         name: value for name, value in metrics.items() if value is not None

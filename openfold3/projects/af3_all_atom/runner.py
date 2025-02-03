@@ -182,7 +182,7 @@ class AlphaFold3AllAtom(ModelRunner):
                 for idx in range(num_samples):
 
                     def fetch_cur_sample(t):
-                        if t.shape[1] != num_atoms:
+                        if t.shape[1] != num_samples:
                             return t
                         return t[:, idx : idx + 1]  # noqa: B023
 
@@ -213,7 +213,7 @@ class AlphaFold3AllAtom(ModelRunner):
                 outputs=outputs,
                 metrics=metrics_per_sample,
                 weights=self.model_selection_weights,
-                pdb_id=batch["pdb_id"],
+                pdb_id=batch.get("pdb_id"),
             )
 
             for metric_name in CORRELATION_METRICS:
