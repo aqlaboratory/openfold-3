@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 import torch
-from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
+from torchmetrics import MeanMetric, MetricCollection
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.metrics.confidence import (
@@ -36,6 +36,7 @@ from openfold3.projects.af3_all_atom.constants import (
     VAL_LOSSES,
 )
 from openfold3.projects.af3_all_atom.model import AlphaFold3
+from openfold3.core.utils.pearsoncorr import PearsonCorrCoef
 from openfold3.projects.registry import register_project
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
@@ -158,7 +159,14 @@ class AlphaFold3AllAtom(ModelRunner):
         metric_value = (
             (metric_value,) if type(metric_value) is not tuple else metric_value
         )
+
         metric_obj.update(*metric_value)
+
+        if "lddt_plddt_rna" in metric_log_name:
+            logger.debug(
+                f"Updating {metric_log_name} with {metric_value} in rank {self.global_rank}"
+            )
+            logger.debug(f"{metric_obj.metric_state=}")
 
     def _get_metrics(self, batch, outputs, train=True) -> dict:
         with torch.no_grad():
@@ -189,10 +197,12 @@ class AlphaFold3AllAtom(ModelRunner):
                 plddt_key = f"plddt_{molecule_type}"
                 lddt_key = f"lddt_intra_{molecule_type}"
 
-                plddt = metrics.get(plddt_key)
-                lddt = metrics.get(lddt_key)
+                plddt = metrics_per_sample.get(plddt_key)
+                lddt = metrics_per_sample.get(lddt_key)
 
                 if plddt is not None and lddt is not None:
+                    plddt = plddt.reshape((-1, 1))
+                    lddt = lddt.reshape((-1, 1))
                     metrics[metric_name] = (lddt, plddt)
 
             return metrics
