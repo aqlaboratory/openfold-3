@@ -278,12 +278,12 @@ def get_protein_metrics(
     )
 
     intra_lddt, inter_lddt = lddt(
-        pred_protein_pair,
-        gt_protein_pair,
-        all_atom_mask_protein,
-        intra_mask_atomized_protein,
-        inter_mask_atomized_protein,
-        asym_id_protein,
+        pair_dist_pred_pos=pred_protein_pair,
+        pair_dist_gt_pos=gt_protein_pair,
+        all_atom_mask=all_atom_mask_protein,
+        intra_mask_filter=intra_mask_atomized_protein,
+        inter_mask_filter=inter_mask_atomized_protein,
+        asym_id=asym_id_protein,
         cutoff=15.0,
         eps=eps,
     )
@@ -291,18 +291,18 @@ def get_protein_metrics(
     out["lddt_inter_protein_protein"] = inter_lddt
 
     intra_drmsd, _ = drmsd(
-        gt_protein_pair,
-        pred_protein_pair,
-        all_atom_mask_protein,
-        asym_id_protein,
+        pair_dist_pred_pos=pred_protein_pair,
+        pair_dist_gt_pos=gt_protein_pair,
+        all_atom_mask=all_atom_mask_protein,
+        asym_id=asym_id_protein,
         eps=eps,
     )
     out["drmsd_intra_protein"] = intra_drmsd
 
     intra_clash, inter_clash = steric_clash(
-        pred_protein_pair,
-        all_atom_mask_protein,
-        asym_id_protein,
+        pred_pair=pred_protein_pair,
+        all_atom_mask=all_atom_mask_protein,
+        asym_id=asym_id_protein,
         threshold=1.1,
         eps=eps,
     )
@@ -402,12 +402,12 @@ def get_nucleic_acid_metrics(
     )
 
     intra_lddt, inter_lddt = lddt(
-        pred_na_pair,
-        gt_na_pair,
-        all_atom_mask_na,
-        intra_mask_atomized_na,
-        inter_mask_atomized_na,
-        asym_id_na,
+        pair_dist_pred_pos=pred_na_pair,
+        pair_dist_gt_pos=gt_na_pair,
+        all_atom_mask=all_atom_mask_na,
+        intra_mask_filter=intra_mask_atomized_na,
+        inter_mask_filter=inter_mask_atomized_na,
+        asym_id=asym_id_na,
         cutoff=30.0,
         eps=eps,
     )
@@ -415,17 +415,21 @@ def get_nucleic_acid_metrics(
     out["lddt_inter_" + substrate + "_" + substrate] = inter_lddt
 
     intra_drmsd, _ = drmsd(
-        pred_na_pair, gt_na_pair, all_atom_mask_na, asym_id_na, eps=eps
+        pair_dist_pred_pos=pred_na_pair,
+        pair_dist_gt_pos=gt_na_pair,
+        all_atom_mask=all_atom_mask_na,
+        asym_id=asym_id_na,
+        eps=eps,
     )
     out["drmsd_intra_" + substrate] = intra_drmsd
 
     intra_lddt_15, inter_lddt_15 = lddt(
-        pred_na_pair,
-        gt_na_pair,
-        all_atom_mask_na,
-        intra_mask_atomized_na,
-        inter_mask_atomized_na,
-        asym_id_na,
+        pair_dist_pred_pos=pred_na_pair,
+        pair_dist_gt_pos=gt_na_pair,
+        all_atom_mask=all_atom_mask_na,
+        intra_mask_filter=intra_mask_atomized_na,
+        inter_mask_filter=inter_mask_atomized_na,
+        asym_id=asym_id_na,
         cutoff=15.0,
         eps=eps,
     )
@@ -434,42 +438,45 @@ def get_nucleic_acid_metrics(
 
     # ilddt with protein
     inter_lddt_protein_na = interface_lddt(
-        pred_protein,
-        pred_na,
-        gt_protein,
-        gt_na,
-        all_atom_mask_protein,
-        all_atom_mask_na,
-        inter_filter_mask,
+        all_atom_pred_pos_1=pred_protein,
+        all_atom_pred_pos_2=pred_na,
+        all_atom_gt_pos_1=gt_protein,
+        all_atom_gt_pos_2=gt_na,
+        all_atom_mask1=all_atom_mask_protein,
+        all_atom_mask2=all_atom_mask_na,
+        filter_mask=inter_filter_mask,
         cutoff=30.0,
         eps=eps,
     )
     out["lddt_inter_protein_" + substrate] = inter_lddt_protein_na
 
     inter_lddt_protein_na_15 = interface_lddt(
-        pred_protein,
-        pred_na,
-        gt_protein,
-        gt_na,
-        all_atom_mask_protein,
-        all_atom_mask_na,
-        inter_filter_mask,
+        all_atom_pred_pos_1=pred_protein,
+        all_atom_pred_pos_2=pred_na,
+        all_atom_gt_pos_1=gt_protein,
+        all_atom_gt_pos_2=gt_na,
+        all_atom_mask1=all_atom_mask_protein,
+        all_atom_mask2=all_atom_mask_na,
+        filter_mask=inter_filter_mask,
         cutoff=15.0,
         eps=eps,
     )
     out["lddt_inter_protein_" + substrate + "_15"] = inter_lddt_protein_na_15
 
     intra_clash, inter_clash = steric_clash(
-        pred_na_pair, all_atom_mask_na, asym_id_na, threshold=1.1
+        pred_pair=pred_na_pair,
+        all_atom_mask=all_atom_mask_na,
+        asym_id=asym_id_na,
+        threshold=1.1,
     )
     out["clash_intra_" + substrate] = intra_clash
     out["clash_inter_" + substrate + "_" + substrate] = inter_clash
 
     interface_clash = interface_steric_clash(
-        pred_protein,
-        pred_na,
-        all_atom_mask_protein,
-        all_atom_mask_na,
+        pred_protein=pred_protein,
+        pred_substrate=pred_na,
+        all_atom_mask_protein=all_atom_mask_protein,
+        all_atom_mask_substrate=all_atom_mask_na,
         threshold=1.1,
         eps=eps,
     )
@@ -568,12 +575,12 @@ def get_ligand_metrics(
     )
 
     intra_lddt, inter_lddt = lddt(
-        pred_ligand_pair,
-        gt_ligand_pair,
-        all_atom_mask_ligand,
-        intra_mask_atomized_ligand,
-        inter_mask_atomized_ligand,
-        asym_id_ligand,
+        pair_dist_pred_pos=pred_ligand_pair,
+        pair_dist_gt_pos=gt_ligand_pair,
+        all_atom_mask=all_atom_mask_ligand,
+        intra_mask_filter=intra_mask_atomized_ligand,
+        inter_mask_filter=inter_mask_atomized_ligand,
+        asym_id=asym_id_ligand,
         cutoff=15.0,
         eps=eps,
     )
@@ -582,12 +589,12 @@ def get_ligand_metrics(
 
     # get tighter threshold lddts
     intra_lddt_uha, inter_lddt_uha = lddt(
-        pred_ligand_pair,
-        gt_ligand_pair,
-        all_atom_mask_ligand,
-        intra_mask_atomized_ligand,
-        inter_mask_atomized_ligand,
-        asym_id_ligand,
+        pair_dist_pred_pos=pred_ligand_pair,
+        pair_dist_gt_pos=gt_ligand_pair,
+        all_atom_mask=all_atom_mask_ligand,
+        intra_mask_filter=intra_mask_atomized_ligand,
+        inter_mask_filter=inter_mask_atomized_ligand,
+        asym_id=asym_id_ligand,
         threshold=[0.25, 0.5, 0.75, 1.0],
         cutoff=15.0,
         eps=eps,
@@ -597,34 +604,42 @@ def get_ligand_metrics(
 
     # ilddt with protein
     inter_lddt_protein_ligand = interface_lddt(
-        pred_protein,
-        pred_ligand,
-        gt_protein,
-        gt_ligand,
-        all_atom_mask_protein,
-        all_atom_mask_ligand,
-        inter_filter_mask,
+        all_atom_pred_pos_1=pred_protein,
+        all_atom_pred_pos_2=pred_ligand,
+        all_atom_gt_pos_1=gt_protein,
+        all_atom_gt_pos_2=gt_ligand,
+        all_atom_mask1=all_atom_mask_protein,
+        all_atom_mask2=all_atom_mask_ligand,
+        filter_mask=inter_filter_mask,
         cutoff=15.0,
         eps=eps,
     )
     out["lddt_inter_protein_ligand"] = inter_lddt_protein_ligand
 
     intra_drmsd, _ = drmsd(
-        pred_ligand_pair, gt_ligand_pair, all_atom_mask_ligand, asym_id_ligand, eps=eps
+        pair_dist_pred_pos=pred_ligand_pair,
+        pair_dist_gt_pos=gt_ligand_pair,
+        all_atom_mask=all_atom_mask_ligand,
+        asym_id=asym_id_ligand,
+        eps=eps,
     )
     out["drmsd_intra_ligand"] = intra_drmsd
 
     intra_clash, inter_clash = steric_clash(
-        pred_ligand_pair, all_atom_mask_ligand, asym_id_ligand, threshold=1.1, eps=eps
+        pred_pair=pred_ligand_pair,
+        all_atom_mask=all_atom_mask_ligand,
+        asym_id=asym_id_ligand,
+        threshold=1.1,
+        eps=eps,
     )
     out["clash_intra_ligand"] = intra_clash
     out["clash_inter_ligand_ligand"] = inter_clash
 
     interface_clash = interface_steric_clash(
-        pred_protein,
-        pred_ligand,
-        all_atom_mask_protein,
-        all_atom_mask_ligand,
+        pred_protein=pred_protein,
+        pred_substrate=pred_ligand,
+        all_atom_mask_protein=all_atom_mask_protein,
+        all_atom_mask_substrate=all_atom_mask_ligand,
         threshold=1.1,
         eps=eps,
     )
@@ -771,15 +786,15 @@ def get_superimpose_metrics(
     )
 
     out["gdt_ts"] = gdt_ts(
-        all_atom_pred_pos_aligned,
-        all_atom_gt_pos,
-        all_atom_mask,
+        p1=all_atom_pred_pos_aligned,
+        p2=all_atom_gt_pos,
+        mask=all_atom_mask,
     )
 
     out["gdt_ha"] = gdt_ha(
-        all_atom_pred_pos_aligned,
-        all_atom_gt_pos,
-        all_atom_mask,
+        p1=all_atom_pred_pos_aligned,
+        p2=all_atom_gt_pos,
+        mask=all_atom_mask,
     )
 
     return out
@@ -798,7 +813,7 @@ def get_full_complex_lddt(
 
     Args:
         asym_id: atomized asym_id feature [*, n_atom]
-        intra_mask_atomized:[*, n_atom] filter for intra chain computations
+        intra_filter_atomized:[*, n_atom] filter for intra chain computations
         pred_coords: predicted coordinates [*, n_atom, 3]
         gt_coords: gt coordinates [*, n_atom, 3]
         all_atom_mask: atom mask [*, n_atom]
@@ -827,12 +842,12 @@ def get_full_complex_lddt(
     ).to(asym_id.device)
 
     complex_lddt, _ = lddt(
-        gt_pair,
-        pred_pair,
-        all_atom_mask,
-        intra_filter_atomized,
-        inter_filter_atomized_zeros,
-        asym_id,
+        pair_dist_pred_pos=pred_pair,
+        pair_dist_gt_pos=gt_pair,
+        all_atom_mask=all_atom_mask,
+        intra_mask_filter=intra_filter_atomized,
+        inter_mask_filter=inter_filter_atomized_zeros,
+        asym_id=asym_id,
         eps=eps,
     )
 
@@ -963,13 +978,13 @@ def get_validation_lddt_metrics(
         ).reshape(inter_filter_atomized.shape[:-2] + (n_rna_atoms, n_ligand_atoms))
 
         lddt_inter_ligand_rna = interface_lddt(
-            pred_coords[is_rna_atomized].view(bs + (-1, 3)),
-            pred_coords[is_ligand_atomized].view(bs + (-1, 3)),
-            gt_coords[is_rna_atomized].view(bs + (-1, 3)),
-            gt_coords[is_ligand_atomized].view(bs + (-1, 3)),
-            all_atom_mask[is_rna_atomized].view(bs + (-1,)),
-            all_atom_mask[is_ligand_atomized].view(bs + (-1,)),
-            inter_filter_mask_rna_ligand,
+            all_atom_pred_pos_1=pred_coords[is_rna_atomized].view(bs + (-1, 3)),
+            all_atom_pred_pos_2=pred_coords[is_ligand_atomized].view(bs + (-1, 3)),
+            all_atom_gt_pos_1=gt_coords[is_rna_atomized].view(bs + (-1, 3)),
+            all_atom_gt_pos_2=gt_coords[is_ligand_atomized].view(bs + (-1, 3)),
+            all_atom_mask1=all_atom_mask[is_rna_atomized].view(bs + (-1,)),
+            all_atom_mask2=all_atom_mask[is_ligand_atomized].view(bs + (-1,)),
+            filter_mask=inter_filter_mask_rna_ligand,
             cutoff=30.0,
             eps=eps,
         )
@@ -987,13 +1002,13 @@ def get_validation_lddt_metrics(
         ).reshape(inter_filter_atomized.shape[:-2] + (n_dna_atoms, n_ligand_atoms))
 
         lddt_inter_ligand_dna = interface_lddt(
-            pred_coords[is_dna_atomized].view(bs + (-1, 3)),
-            pred_coords[is_ligand_atomized].view(bs + (-1, 3)),
-            gt_coords[is_dna_atomized].view(bs + (-1, 3)),
-            gt_coords[is_ligand_atomized].view(bs + (-1, 3)),
-            all_atom_mask[is_dna_atomized].view(bs + (-1,)),
-            all_atom_mask[is_ligand_atomized].view(bs + (-1,)),
-            inter_filter_mask_dna_ligand,
+            all_atom_pred_pos_1=pred_coords[is_dna_atomized].view(bs + (-1, 3)),
+            all_atom_pred_pos_2=pred_coords[is_ligand_atomized].view(bs + (-1, 3)),
+            all_atom_gt_pos_1=gt_coords[is_dna_atomized].view(bs + (-1, 3)),
+            all_atom_gt_pos_2=gt_coords[is_ligand_atomized].view(bs + (-1, 3)),
+            all_atom_mask1=all_atom_mask[is_dna_atomized].view(bs + (-1,)),
+            all_atom_mask2=all_atom_mask[is_ligand_atomized].view(bs + (-1,)),
+            filter_mask=inter_filter_mask_dna_ligand,
             cutoff=30.0,
             eps=eps,
         )
@@ -1035,12 +1050,12 @@ def get_validation_lddt_metrics(
         )
 
         lddt_intra_modified_residues, _ = lddt(
-            pred_mr_pair,
-            gt_mr_pair,
-            all_atom_mask[is_modified_residue_atomized].view(bs + (-1,)),
-            intra_mask_atomized_mr,
-            inter_mask_atomized_mr,
-            asym_id_atomized[is_modified_residue_atomized].view(bs + (-1,)),
+            pair_dist_pred_pos=pred_mr_pair,
+            pair_dist_gt_pos=gt_mr_pair,
+            all_atom_mask=all_atom_mask[is_modified_residue_atomized].view(bs + (-1,)),
+            intra_mask_filter=intra_mask_atomized_mr,
+            inter_mask_filter=inter_mask_atomized_mr,
+            asym_id=asym_id_atomized[is_modified_residue_atomized].view(bs + (-1,)),
             eps=eps,
         )
 
@@ -1110,33 +1125,53 @@ def get_metrics(
 
     # broadcast token level features to atom level features
     is_protein_atomized = expand_sample_dim(
-        broadcast_token_feat_to_atoms(token_mask, num_atoms_per_token, is_protein)
+        broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=is_protein,
+        )
     ).bool()
 
     is_ligand_atomized = expand_sample_dim(
         broadcast_token_feat_to_atoms(
-            token_mask, num_atoms_per_token, batch["is_ligand"]
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=batch["is_ligand"],
         )
     ).bool()
 
     is_rna_atomized = expand_sample_dim(
-        broadcast_token_feat_to_atoms(token_mask, num_atoms_per_token, is_rna)
+        broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=is_rna,
+        )
     ).bool()
 
     is_dna_atomized = expand_sample_dim(
-        broadcast_token_feat_to_atoms(token_mask, num_atoms_per_token, is_dna)
+        broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=is_dna,
+        )
     ).bool()
 
     is_modified_residue = batch["is_atomized"]
     is_modified_residue = is_modified_residue * (1 - batch["is_ligand"])
     is_modified_residue_atomized = expand_sample_dim(
         broadcast_token_feat_to_atoms(
-            token_mask, num_atoms_per_token, is_modified_residue
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=is_modified_residue,
         )
     ).bool()
 
     asym_id_atomized = expand_sample_dim(
-        broadcast_token_feat_to_atoms(token_mask, num_atoms_per_token, batch["asym_id"])
+        broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=batch["asym_id"],
+        )
     )
 
     # set up filters for validation metrics if present, otherwise pass ones
@@ -1147,7 +1182,9 @@ def get_metrics(
     )
 
     intra_filter_atomized = broadcast_token_feat_to_atoms(
-        token_mask, num_atoms_per_token, use_for_intra
+        token_mask=token_mask,
+        num_atoms_per_token=num_atoms_per_token,
+        token_feat=use_for_intra,
     )
     intra_filter_atomized = expand_sample_dim(intra_filter_atomized).bool()
 
@@ -1156,68 +1193,68 @@ def get_metrics(
     #  in the future.
     # convert use_for_inter: [*, n_token, n_token] into [*, n_atom, n_atom]
     inter_filter_atomized = broadcast_token_feat_to_atoms(
-        token_mask,
-        num_atoms_per_token,
-        use_for_inter,
+        token_mask=token_mask,
+        num_atoms_per_token=num_atoms_per_token,
+        token_feat=use_for_inter,
         token_dim=-2,
     )
     inter_filter_atomized = broadcast_token_feat_to_atoms(
-        token_mask,
-        num_atoms_per_token,
-        inter_filter_atomized.transpose(-1, -2),
+        token_mask=token_mask,
+        num_atoms_per_token=num_atoms_per_token,
+        token_feat=inter_filter_atomized.transpose(-1, -2),
         token_dim=-2,
     )
     inter_filter_atomized = inter_filter_atomized.transpose(-1, -2).bool()
 
     if torch.any(is_protein_atomized):
         protein_validation_metrics = get_protein_metrics(
-            is_protein_atomized,
-            asym_id_atomized,
-            intra_filter_atomized,
-            inter_filter_atomized,
-            pred_coords,
-            gt_coords,
-            all_atom_mask,
+            is_protein_atomized=is_protein_atomized,
+            asym_id=asym_id_atomized,
+            intra_mask_atomized=intra_filter_atomized,
+            inter_mask_atomized=inter_filter_atomized,
+            pred_coords=pred_coords,
+            gt_coords=gt_coords,
+            all_atom_mask=all_atom_mask,
         )
         metrics = metrics | protein_validation_metrics
 
     if torch.any(is_ligand_atomized):
         ligand_validation_metrics = get_ligand_metrics(
-            is_ligand_atomized,
-            asym_id_atomized,
-            intra_filter_atomized,
-            inter_filter_atomized,
-            pred_coords,
-            gt_coords,
-            all_atom_mask,
-            is_protein_atomized,
+            is_ligand_atomized=is_ligand_atomized,
+            asym_id=asym_id_atomized,
+            intra_mask_atomized=intra_filter_atomized,
+            inter_mask_atomized=inter_filter_atomized,
+            pred_coords=pred_coords,
+            gt_coords=gt_coords,
+            all_atom_mask=all_atom_mask,
+            is_protein_atomized=is_protein_atomized,
         )
         metrics = metrics | ligand_validation_metrics
 
     if torch.any(is_rna_atomized):
         rna_validation_metrics = get_nucleic_acid_metrics(
-            is_rna_atomized,
-            asym_id_atomized,
-            intra_filter_atomized,
-            inter_filter_atomized,
-            pred_coords,
-            gt_coords,
-            all_atom_mask,
-            is_protein_atomized,
+            is_nucleic_acid_atomized=is_rna_atomized,
+            asym_id=asym_id_atomized,
+            intra_mask_atomized=intra_filter_atomized,
+            inter_mask_atomized=inter_filter_atomized,
+            pred_coords=pred_coords,
+            gt_coords=gt_coords,
+            all_atom_mask=all_atom_mask,
+            is_protein_atomized=is_protein_atomized,
             substrate="rna",
         )
         metrics = metrics | rna_validation_metrics
 
     if torch.any(is_dna_atomized):
         dna_validation_metrics = get_nucleic_acid_metrics(
-            is_dna_atomized,
-            asym_id_atomized,
-            intra_filter_atomized,
-            inter_filter_atomized,
-            pred_coords,
-            gt_coords,
-            all_atom_mask,
-            is_protein_atomized,
+            is_nucleic_acid_atomized=is_dna_atomized,
+            asym_id=asym_id_atomized,
+            intra_mask_atomized=intra_filter_atomized,
+            inter_mask_atomized=inter_filter_atomized,
+            pred_coords=pred_coords,
+            gt_coords=gt_coords,
+            all_atom_mask=all_atom_mask,
+            is_protein_atomized=is_protein_atomized,
             substrate="dna",
         )
         metrics = metrics | dna_validation_metrics
@@ -1225,43 +1262,43 @@ def get_metrics(
     if compute_extra_val_metrics:
         if torch.any(intra_filter_atomized):
             full_complex_lddt_metrics = get_full_complex_lddt(
-                asym_id_atomized,
-                intra_filter_atomized,
-                pred_coords,
-                gt_coords,
-                all_atom_mask,
+                asym_id=asym_id_atomized,
+                intra_filter_atomized=intra_filter_atomized,
+                pred_coords=pred_coords,
+                gt_coords=gt_coords,
+                all_atom_mask=all_atom_mask,
             )
             metrics = metrics | full_complex_lddt_metrics
 
             plddt_logits = expand_sample_dim(outputs["plddt_logits"])
             plddt_metrics = get_plddt_metrics(
-                is_protein_atomized,
-                is_ligand_atomized,
-                is_rna_atomized,
-                is_dna_atomized,
-                intra_filter_atomized,
-                plddt_logits,
+                is_protein_atomized=is_protein_atomized,
+                is_ligand_atomized=is_ligand_atomized,
+                is_rna_atomized=is_rna_atomized,
+                is_dna_atomized=is_dna_atomized,
+                intra_filter_atomized=intra_filter_atomized,
+                plddt_logits=plddt_logits,
             )
             metrics = metrics | plddt_metrics
 
         extra_lddt = get_validation_lddt_metrics(
-            pred_coords,
-            gt_coords,
-            is_ligand_atomized,
-            is_rna_atomized,
-            is_dna_atomized,
-            is_modified_residue_atomized,
-            all_atom_mask,
-            asym_id_atomized,
-            intra_filter_atomized,
-            inter_filter_atomized,
+            pred_coords=pred_coords,
+            gt_coords=gt_coords,
+            is_ligand_atomized=is_ligand_atomized,
+            is_rna_atomized=is_rna_atomized,
+            is_dna_atomized=is_dna_atomized,
+            is_modified_residue_atomized=is_modified_residue_atomized,
+            all_atom_mask=all_atom_mask,
+            asym_id_atomized=asym_id_atomized,
+            intra_filter_atomized=intra_filter_atomized,
+            inter_filter_atomized=inter_filter_atomized,
         )
         metrics = metrics | extra_lddt
 
         superimpose_metrics = get_superimpose_metrics(
-            pred_coords,
-            gt_coords,
-            all_atom_mask,
+            all_atom_pred_pos=pred_coords,
+            all_atom_gt_pos=gt_coords,
+            all_atom_mask=all_atom_mask,
         )
         metrics = metrics | superimpose_metrics
 

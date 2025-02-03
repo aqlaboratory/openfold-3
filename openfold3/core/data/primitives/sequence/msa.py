@@ -1007,19 +1007,32 @@ def create_main(
                 for key, value in msa_array_collection.chain_id_to_rep_id.items()
                 if value not in seen and not seen.add(value)
             }
-            # Get set of paired rows and find unpaired rows not in this set
-            paired_row_set = {
-                tuple(i) for i in chain_id_to_paired_msa[rep_id_to_chain_id[rep_id]].msa
-            }
-            is_unique = ~np.array(
-                [tuple(row) in paired_row_set for row in main_msa_redundant]
+
+            # The relevant paired MSA for this representative
+            paired_arr = chain_id_to_paired_msa[rep_id_to_chain_id[rep_id]].msa
+            arr = main_msa_redundant
+
+            # 1) Convert each 2D array into a 1D "structured" view of type void This
+            #    way, each row is treated as one item.
+            arr_view = arr.view(np.dtype((np.void, arr.dtype.itemsize * arr.shape[1])))
+            paired_view = paired_arr.view(
+                np.dtype((np.void, paired_arr.dtype.itemsize * paired_arr.shape[1]))
             )
+
+            # 2) Vectorized membership check: is row in paired_msa? ~np.isin(...)
+            #    inverts the boolean array, so True => "unique" row
+            is_unique = np.squeeze(~np.isin(arr_view, paired_view), axis=-1)
+
+            # Apply filtering with the boolean mask
+            filtered_msa = main_msa_redundant[is_unique, :]
+            filtered_deletion = main_deletion_matrix_redundant[is_unique, :]
         else:
-            is_unique = np.ones(main_msa_redundant.shape[0], dtype=bool)
+            filtered_msa = main_msa_redundant
+            filtered_deletion = main_deletion_matrix_redundant
 
         rep_main_msas[rep_id] = MsaArray(
-            msa=main_msa_redundant[is_unique, :],
-            deletion_matrix=main_deletion_matrix_redundant[is_unique, :],
+            msa=filtered_msa,
+            deletion_matrix=filtered_deletion,
             metadata=pd.DataFrame(),
         )
 

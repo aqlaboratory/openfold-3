@@ -335,6 +335,7 @@ class WeightedPDBDataset(BaseAF3Dataset):
             )
             features = sample_data["features"]
             features["pdb_id"] = pdb_id
+            features["preferred_chain_or_interface"] = f"{preferred_chain_or_interface}"
             return features
         else:
             try:
@@ -353,6 +354,9 @@ class WeightedPDBDataset(BaseAF3Dataset):
                 features = sample_data["features"]
 
                 features["pdb_id"] = pdb_id
+                features["preferred_chain_or_interface"] = (
+                    f"{preferred_chain_or_interface}"
+                )
                 if is_invalid_feature_dict(features):
                     index = random.randint(0, len(self) - 1)
                     return self.__getitem__(index)
@@ -365,7 +369,8 @@ class WeightedPDBDataset(BaseAF3Dataset):
                 logger.warning(
                     "-" * 40
                     + "\n"
-                    + f"Failed to process {dataset_name} entry {pdb_id}: {str(e)}\n"
+                    + f"Failed to process {dataset_name} entry {pdb_id} with preferred"
+                    + f" chain or interface {preferred_chain_or_interface}: {str(e)}\n"
                     + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
                     + "-" * 40
                 )

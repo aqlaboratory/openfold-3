@@ -43,6 +43,7 @@ In addition, one can specify the following flags for extended functionality:
 - add_stochastic_sampling: samples the datapoints with stochastic sampling.
 """
 
+import json
 import os
 import random
 import sys
@@ -68,8 +69,9 @@ from openfold3.core.data.framework.data_module import (
 )
 from openfold3.core.data.framework.lightning_utils import _generate_seed_sequence
 from openfold3.core.data.framework.stochastic_sampler_dataset import (
-    StochasticSamplerDataset,
+    SamplerDataset,
 )
+from openfold3.core.data.io.utils import JsonStrOrFile
 from openfold3.core.data.primitives.quality_control.logging_datasets import (
     ConcatDataset,
     init_datasets_with_logging,
@@ -208,7 +210,10 @@ np.set_printoptions(threshold=sys.maxsize)
     "--no-preferred-chain-or-interface",
     type=bool,
     default=False,
-    help="Whether to log memory use of subpipelines during data processing.",
+    help=(
+        "Whether to disable reprocessing the same datapoint with different chain "
+        "or interface-biased crops."
+    ),
 )
 @click.option(
     "--add-stochastic-sampling",
@@ -218,6 +223,35 @@ np.set_printoptions(threshold=sys.maxsize)
         "Whether to sample the datapoints with stochastic sampling."
         " If multiple datasets are provided without sttochastic sampling enabled,"
         " the datasets will be concatenated."
+    ),
+)
+@click.option(
+    "--remove-worker-files",
+    type=bool,
+    default=False,
+    help=(
+        "Whether to remove per-worker files. Error, atom array and feature files are "
+        "not deleted if true."
+    ),
+)
+@click.option(
+    "--subset-to-unprocessed",
+    type=bool,
+    default=False,
+    help=(
+        "Whether to subset to datapoints not yet processed when run-asserts or "
+        "save-statistics is true."
+    ),
+)
+@click.option(
+    "--next-dataset-indices",
+    type=JsonStrOrFile(),
+    default={},
+    help=(
+        "A json string or json file path containing a dictionary mapping dataset "
+        "names specified in the runner yml file to their last used indices "
+        "in the SamplerDataset to start/resume in-order iteration from."
+        "Only used if add_stochastic_sampling is True."
     ),
 )
 def main(
@@ -237,6 +271,9 @@ def main(
     subset_to_examples: str,
     no_preferred_chain_or_interface: bool,
     add_stochastic_sampling: bool,
+    remove_worker_files: bool,
+    subset_to_unprocessed: bool,
+    next_dataset_indices: dict[str, int],
 ) -> None:
     """Main function for running the data pipeline treadmill.
 
@@ -289,6 +326,16 @@ def main(
             Whether to sample the datapoints with stochastic sampling. If multiple
             datasets are provided without sttochastic sampling enabled, the datasets
             will be concatenated.
+        remove_worker_files (bool):
+            Whether to remove per-worker files. Error, atom array and feature files are
+            not deleted if true.
+        subset_to_unprocessed (bool):
+            Whether to subset to datapoints not yet processed when run-asserts or
+            save-statistics is true.
+        next_dataset_indices (dict[str, int]):
+            A dictionary mapping dataset names specified in the runner yml file to their
+            last used indices in the SamplerDataset to start/resume in-order iteration
+            from. Only used if add_stochastic_sampling is True.
 
     Raises:
         ValueError:
@@ -348,7 +395,7 @@ def main(
     )
 
     if add_stochastic_sampling:
-        logging_dataset = StochasticSamplerDataset(
+        logging_dataset = SamplerDataset(
             datasets=datasets,
             dataset_probabilities=multi_dataset_config.weights,
             epoch_len=data_module_config.epoch_len,
@@ -356,6 +403,7 @@ def main(
             generator=torch.Generator(device="cpu").manual_seed(
                 data_module_config.data_seed
             ),
+            next_dataset_indices=next_dataset_indices,
         )
     else:
         logging_dataset = ConcatDataset(datasets)
@@ -421,11 +469,14 @@ def main(
             save_statistics,
             log_runtimes,
             log_output_directory,
+            subset_to_unprocessed,
         )
 
         # Configure compliance file
         configured_attributes += configure_compliance_log(
-            worker_dataset, log_output_directory
+            worker_dataset,
+            log_output_directory,
+            subset_to_unprocessed,
         )
 
         # Configure context variables
@@ -455,7 +506,7 @@ def main(
     try:
         for _ in tqdm(
             data_loader,
-            desc="Iterating over WeightedPDBDataset",
+            desc="Iterating over datasets",
             total=len(logging_dataset),
         ):
             pass
@@ -473,7 +524,8 @@ def main(
                     )
                     passed_ids_worker = set(df_worker[0].tolist())
                     all_passed_ids.update(passed_ids_worker)
-                    worker_compliance_file.unlink()
+                    if remove_worker_files:
+                        worker_compliance_file.unlink()
 
             pd.DataFrame({"passed_ids": list(all_passed_ids)}).to_csv(
                 log_output_directory / Path("passed_ids.tsv"),
@@ -497,7 +549,8 @@ def main(
                             ),
                         ]
                     )
-                    worker_extra_data_file.unlink()
+                    if remove_worker_files:
+                        worker_extra_data_file.unlink()
 
             # Save to single file or append to existing file
             full_extra_data_file = log_output_directory / Path(
@@ -523,7 +576,8 @@ def main(
                     df_all = pd.concat(
                         [df_all, parse_memory_profiler_log(worker_memory_file)]
                     )
-                    worker_memory_file.unlink()
+                    if remove_worker_files:
+                        worker_memory_file.unlink()
 
             full_worker_memory_file = log_output_directory / Path("memory_profile.tsv")
             df_all.to_csv(
@@ -533,6 +587,12 @@ def main(
                 header=not full_worker_memory_file.exists(),
                 mode="a",
             )
+        if add_stochastic_sampling:
+            # Save the next dataset indices
+            with open(
+                log_output_directory / Path("next_dataset_indices.json"), "w"
+            ) as f:
+                json.dump(logging_dataset.next_dataset_indices, f)
         # Collate logs
         combined_log = log_output_directory / Path("worker_logs.log")
         with combined_log.open("w") as out_file:
@@ -541,7 +601,8 @@ def main(
                 worker_log = worker_dir / Path(f"worker_{worker_id}.log")
                 out_file.write(f"Log file: {worker_log.name}\n")
                 out_file.write(worker_log.read_text())
-                worker_log.unlink()
+                if remove_worker_files:
+                    worker_log.unlink()
                 if not any(worker_dir.iterdir()):
                     worker_dir.rmdir()
 
@@ -581,5 +642,3 @@ if __name__ == "__main__":
 # token budget - the number of re-crops and featurizations should be determined
 # dynamically and in a way that likely covers the entire structure but with a
 # maximun number of re-crops
-# 10. add weighted stochastic sampling
-# 11. add support for multiple datasets
