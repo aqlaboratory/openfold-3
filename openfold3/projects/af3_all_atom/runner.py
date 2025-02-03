@@ -261,8 +261,10 @@ class AlphaFold3AllAtom(ModelRunner):
 
         # TODO: Remove debug logic
         pdb_id = ", ".join(batch.pop("pdb_id"))
+        preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
         logger.debug(
-            f"Started model forward pass for {pdb_id} on rank {self.global_rank} "
+            f"Started model forward pass for {pdb_id} with preferred chain or "
+            f"interface {preferred_chain_or_interface} on rank {self.global_rank} "
             f"step {self.global_step}"
         )
 
@@ -277,7 +279,10 @@ class AlphaFold3AllAtom(ModelRunner):
             self._log(loss_breakdown, batch, outputs)
 
         except Exception:
-            logger.exception(f"Train step failed with pdb id {pdb_id}")
+            logger.exception(
+                f"Train step failed with pdb id {pdb_id} with "
+                f"preferred chain or interface {preferred_chain_or_interface}"
+            )
 
         return loss
 
@@ -295,6 +300,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
         # TODO: Remove debug logic
         pdb_id = batch.pop("pdb_id")
+        preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
         atom_array = batch.pop("atom_array")
         logger.debug(
             f"Started validation for {', '.join(pdb_id)} on rank {self.global_rank} "
@@ -310,6 +316,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
             batch["atom_array"] = atom_array
             batch["pdb_id"] = pdb_id
+            batch["preferred_chain_or_interface"] = preferred_chain_or_interface
 
             self._log(loss_breakdown, batch, outputs, train=False)
 
@@ -319,6 +326,7 @@ class AlphaFold3AllAtom(ModelRunner):
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         # TODO: Remove debug logic
         pdb_id = batch.pop("pdb_id")
+        preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
         atom_array = batch.pop("atom_array") if "atom_array" in batch else None
 
         # This is to avoid slow loading for nested dicts in PL
@@ -330,6 +338,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
         batch = tensor_tree_map(to_device, batch)
         batch["pdb_id"] = pdb_id
+        batch["preferred_chain_or_interface"] = preferred_chain_or_interface
 
         # Add atom array back to the batch if we removed it earlier
         if atom_array:
