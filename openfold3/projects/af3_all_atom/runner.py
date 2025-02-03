@@ -1,7 +1,6 @@
 import importlib
 import itertools
 import logging
-from functools import partial
 from pathlib import Path
 
 import torch
@@ -21,7 +20,7 @@ from openfold3.core.metrics.validation_all_atom import (
 from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.atomize_utils import get_token_frame_atoms
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
-from openfold3.core.utils.tensor_utils import dict_multimap, tensor_tree_map
+from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects.af3_all_atom.config.base_config import (
     model_selection_metric_weights_config,
     project_config,
@@ -178,7 +177,7 @@ class AlphaFold3AllAtom(ModelRunner):
             )
             num_atoms = outputs["atom_positions_predicted"].shape[-2]
             if num_samples > 1 and num_atoms > 18000:
-                metrics_per_sample = []
+                metrics_per_sample_list = []
                 for idx in range(num_samples):
 
                     def fetch_cur_sample(t):
@@ -192,16 +191,31 @@ class AlphaFold3AllAtom(ModelRunner):
                     cur_outputs = tensor_tree_map(
                         fetch_cur_sample, outputs, strict_type=False
                     )
-                    metrics_per_sample.append(
+                    metrics_per_sample_list.append(
                         get_metrics(
                             cur_batch,
                             cur_outputs,
                             compute_extra_val_metrics=True,
                         )
                     )
-                metrics_per_sample = dict_multimap(
-                    partial(torch.concat, dim=1), metrics_per_sample
+
+                metrics_per_sample = {}
+                all_metric_keys = set().union(
+                    *(m.keys() for m in metrics_per_sample_list)
                 )
+                batch_dims = outputs["atom_positions_predicted"].shape[:-2]
+                for metric_name in all_metric_keys:
+                    metric_values = []
+                    for sample in metrics_per_sample_list:
+                        metric_values.append(
+                            sample.get(
+                                metric_name,
+                                torch.zeros(
+                                    batch_dims, device=self.device, dtype=self.dtype
+                                ),
+                            )
+                        )
+                    metrics_per_sample[metric_name] = torch.concat(metric_values, dim=1)
             else:
                 metrics_per_sample = get_metrics(
                     batch,
