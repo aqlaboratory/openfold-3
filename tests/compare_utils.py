@@ -28,6 +28,24 @@ def skip_unless_ds4s_installed():
         ds4s_is_installed, "Requires DeepSpeed with version ≥ 0.10.4"
     )
 
+def cuda_kernels_is_installed():
+    attn_core_is_installed = (
+        importlib.util.find_spec("attn_core_inplace_cuda") is not None
+    )
+    kernels_installed = attn_core_is_installed and (
+        importlib.util.find_spec("attention_core")
+        is not None
+    )
+    return kernels_installed
+
+
+def skip_unless_cuda_kernels_installed():
+    return unittest.skipUnless(
+        cuda_kernels_is_installed(), "Requires kernel installation"
+    )
+
+def skip_af2_test():
+    return unittest.skip("AF2 specific test")
 
 def skip_unless_flash_attn_installed():
     fa_is_installed = importlib.util.find_spec("flash_attn") is not None

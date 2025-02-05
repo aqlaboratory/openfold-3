@@ -53,6 +53,7 @@ class TestModel(unittest.TestCase):
                 cls.am_modules = alphafold.model.modules
                 cls.am_rigid = alphafold.model.r3
 
+    @compare_utils.skip_unless_cuda_kernels_installed()
     @compare_utils.skip_unless_cuda_available()
     def test_dry_run(self):
         n_seq = consts.n_seq

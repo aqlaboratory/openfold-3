@@ -25,8 +25,10 @@ from openfold3.core.utils.import_weights import (
 )
 from openfold3.projects import registry
 from tests.config import monomer_consts
+from tests import compare_utils
 
 
+@compare_utils.skip_af2_test()
 class TestImportWeights(unittest.TestCase):
     def test_import_jax_weights_(self):
         npz_path = (
