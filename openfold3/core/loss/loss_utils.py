@@ -149,7 +149,7 @@ def compute_renamed_ground_truth(
 
 def loss_masked_batch_mean(
     loss: torch.tensor,
-    weight: float,
+    weight: torch.tensor,
     apply_weight: bool,
     nan_zero_weights: bool = False,
     eps: float = 1e-10,
@@ -168,10 +168,11 @@ def loss_masked_batch_mean(
         nan_zero_weights:
             Whether to set the loss to nan if the weight is zero
         eps:
-            Small value to avoid division by ze
+            Small value to avoid division by zero
     Returns:
         [1] Masked mean of loss for a batch
     """
+    weight = weight.expand_as(loss)
     mask = weight > 0
 
     if nan_zero_weights:

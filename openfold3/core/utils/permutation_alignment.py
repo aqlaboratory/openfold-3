@@ -1761,7 +1761,12 @@ def safe_multi_chain_permutation_alignment(
             new_gt_features["atom_positions"] = torch.rand_like(
                 atom_positions_predicted
             )
-            new_gt_features["atom_resolved_mask"] = torch.ones_like(batch["atom_mask"])
+            atom_mask = batch["atom_mask"]
+            new_gt_features["atom_resolved_mask"] = torch.ones(
+                (*batch_dims, atom_mask.shape[-1]),
+                device=atom_mask.device,
+                dtype=atom_mask.dtype,
+            )
 
             # Disable all losses
             for loss_key, weights in batch["loss_weights"].items():
