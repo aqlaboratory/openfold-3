@@ -92,6 +92,7 @@ class ProteinMonomerDataset(BaseAF3Dataset):
 
             features = sample_data["features"]
             features["pdb_id"] = pdb_id
+            features["preferred_chain_or_interface"] = "none"
             return features
         else:
             try:
@@ -110,6 +111,7 @@ class ProteinMonomerDataset(BaseAF3Dataset):
                 features = sample_data["features"]
 
                 features["pdb_id"] = pdb_id
+                features["preferred_chain_or_interface"] = "none"
                 if is_invalid_feature_dict(features):
                     index = random.randint(0, len(self) - 1)
                     return self.__getitem__(index)
