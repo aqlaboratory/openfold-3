@@ -75,7 +75,7 @@ def lddt(
 
     # Normalize to get intra_lddt scores
     intra_score = None
-    if torch.any(intra_mask * dists_to_score):
+    if torch.any(intra_mask):
         intra_norm = 1.0 / (eps + torch.sum(dists_to_score * intra_mask, dim=(-1, -2)))
         intra_score = intra_norm * (
             torch.sum(dists_to_score * intra_mask * score, dim=(-1, -2))
@@ -827,8 +827,8 @@ def get_full_complex_lddt(
     ).to(asym_id.device)
 
     complex_lddt, _ = lddt(
-        pred_pair,
         gt_pair,
+        pred_pair,
         all_atom_mask,
         intra_filter_atomized,
         inter_filter_atomized_zeros,

@@ -20,17 +20,7 @@ from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModule
 from openfold3.projects import registry
-import rdkit
-import importlib
 
-if importlib.util.find_spec("deepspeed") is not None:
-    import deepspeed
-
-    # TODO: Resolve this
-    # This is a hack to prevent deepspeed from doing the triton matmul autotuning
-    # I'm not sure why it's doing this by default, but it's causing the tests to hang
-    deepspeed.HAS_TRITON = False
-    
 torch_versions = torch.__version__.split(".")
 torch_major_version = int(torch_versions[0])
 torch_minor_version = int(torch_versions[1])
@@ -87,7 +77,6 @@ def main(args):
 
     logging.info(f"Running with seed: {seed}")
     pl.seed_everything(seed, workers=True)
-    rdkit.rdBase.SeedRandomNumberGenerator(seed)
 
     project_entry = registry.get_project_entry(runner_args.project_type)
 
@@ -160,7 +149,6 @@ def main(args):
             # If DeepSpeed is enabled, these values will be passed to the DS config
             "gradient_clip_val": model_config.settings.gradient_clipping,
             "gradient_clip_algorithm": "norm",
-            'limit_val_batches': 4,
         }
     )
 
