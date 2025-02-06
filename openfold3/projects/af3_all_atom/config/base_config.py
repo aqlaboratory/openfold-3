@@ -338,6 +338,7 @@ project_config = mlc.ConfigDict(
                         "max_bin": 20.75,
                         "no_bin": 15,
                         "inf": inf,
+                        "per_sample_token_cutoff": 1500,
                         "linear_init_params": lin_init.pairformer_head_init,
                     },
                     "pae": {

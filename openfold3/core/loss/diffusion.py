@@ -449,7 +449,7 @@ def diffusion_loss(
     loss_breakdown = {
         f"{name}_loss": loss_masked_batch_mean(
             loss=loss,
-            weight=loss_weights[name],
+            weight=loss_weights[name].squeeze(-1),
             apply_weight=False,
             nan_zero_weights=True,
             eps=eps,
@@ -457,9 +457,9 @@ def diffusion_loss(
         for name, loss in loss_breakdown.items()
     }
 
-    l_mse = l_mse * mse_weight.unsqueeze(-1)
-    l_bond = l_bond * bond_weight.unsqueeze(-1)
-    l_smooth_lddt = l_smooth_lddt * smooth_lddt_weight.unsqueeze(-1)
+    l_mse = l_mse * mse_weight
+    l_bond = l_bond * bond_weight
+    l_smooth_lddt = l_smooth_lddt * smooth_lddt_weight
 
     # Note: Changed from SI, denominator (t + sigma_data) ** 2 changed
     #  to (t * sigma_data) ** 2.
@@ -472,7 +472,7 @@ def diffusion_loss(
     # Mean over batch dimension, only for samples with diffusion losses enabled
     mean_loss = loss_masked_batch_mean(
         loss=mean_loss,
-        weight=mse_weight,
+        weight=mse_weight.squeeze(-1),
         apply_weight=False,
         nan_zero_weights=False,
         eps=eps,

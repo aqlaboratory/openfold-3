@@ -384,6 +384,12 @@ def all_atom_plddt_loss(
     # Rep index is padded for shorter sequences, remove it match ground truth
     rep_index_unpadded = rep_index.long()[..., : atom_mask_shape[-1]]
 
+    # We need to expand the rep_index_unpadded to match the
+    # shape of (bs, n_samples, ...)
+    rep_index_unpadded = rep_index_unpadded.expand(
+        (*atom_mask_shape[:-1], rep_index_unpadded.shape[-1])
+    )
+
     atom_mask = torch.zeros(padded_atom_mask_shape, device=x.device, dtype=x.dtype)
     atom_mask = atom_mask.scatter_(
         index=rep_index_unpadded, src=torch.ones_like(atom_mask), dim=-1

@@ -31,7 +31,7 @@ from openfold3.core.utils.permutation_alignment import (
 logger = logging.getLogger(__name__)
 
 
-DEBUG_PDB_BLACKLIST = ["3e81", "6fg3", "6dra", "6dr2", "6dqj", "7lx0"]
+DEBUG_PDB_BLACKLIST = ["6fg3", "6dra", "6dr2", "6dqj", "7lx0"]
 
 
 # TODO: Remove debug logic

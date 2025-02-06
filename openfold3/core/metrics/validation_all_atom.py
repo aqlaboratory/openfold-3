@@ -74,12 +74,11 @@ def lddt(
     score = score / len(threshold)
 
     # Normalize to get intra_lddt scores
+    intra_mask = dists_to_score * intra_mask
     intra_score = None
     if torch.any(intra_mask):
-        intra_norm = 1.0 / (eps + torch.sum(dists_to_score * intra_mask, dim=(-1, -2)))
-        intra_score = intra_norm * (
-            torch.sum(dists_to_score * intra_mask * score, dim=(-1, -2))
-        )
+        intra_norm = 1.0 / (eps + torch.sum(intra_mask, dim=(-1, -2)))
+        intra_score = intra_norm * (torch.sum(intra_mask * score, dim=(-1, -2)))
 
     # inter_score only applies when there exist atom pairs with
     # different asym_id (inter_mask) and distance threshold (dists_to_score)
@@ -206,7 +205,7 @@ def drmsd(
     if torch.any(inter_mask):
         inter_drmsd = drmsd * inter_mask
         inter_drmsd = torch.sum(inter_drmsd, dim=(-1, -2))
-        n_inter = torch.sum(inter_mask * mask, dim=(-1, -2)) + eps
+        n_inter = torch.sum(inter_mask, dim=(-1, -2)) + eps
         inter_drmsd = inter_drmsd * (1 / n_inter)
         inter_drmsd = torch.sqrt(inter_drmsd)
 
