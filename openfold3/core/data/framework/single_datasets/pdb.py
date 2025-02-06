@@ -25,6 +25,7 @@ from openfold3.core.utils.atomize_utils import (
 )
 from openfold3.core.utils.permutation_alignment import (
     multi_chain_permutation_alignment,
+    naive_alignment,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,13 +78,6 @@ def is_invalid_feature_dict(features: dict) -> bool:
         )
         skip = True
 
-    # Check that the token indices in the crop is a subset of the ground truth
-    if not torch.isin(
-        features["token_index"], features["ground_truth"]["token_index"]
-    ).all():
-        logger.warning(f"Token index mismatch for ground truth vs featurized {pdb_id}")
-        skip = True
-
     # Check that the crop has some resolved atoms
     if not features["ground_truth"]["atom_resolved_mask"].any():
         logger.warning(f"Skipping {pdb_id}: no resolved atoms")
@@ -116,6 +110,10 @@ def is_invalid_feature_dict(features: dict) -> bool:
     # This could throw an exception that is handled in the __getitem__
     feats_perm = openfold_batch_collator([copy.deepcopy(features)])
     multi_chain_permutation_alignment(
+        batch=feats_perm,
+        atom_positions_predicted=torch.randn_like(feats_perm["ref_pos"]),
+    )
+    naive_alignment(
         batch=feats_perm,
         atom_positions_predicted=torch.randn_like(feats_perm["ref_pos"]),
     )

@@ -22,7 +22,6 @@ from openfold3.core.data.resources.residues import (
     MoleculeType,
     get_with_unknown_3_to_idx,
 )
-from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 
 
 def featurize_structure_af3(
@@ -55,28 +54,19 @@ def featurize_structure_af3(
     token_starts = token_starts_with_stop[:-1]
 
     features = {}
+
     # Indexing
-    features["residue_index"] = torch.tensor(
-        atom_array.res_id[token_starts], dtype=torch.int32
-    )
     features["token_index"] = torch.tensor(
         atom_array.token_id[token_starts], dtype=torch.int32
     )
-    features["asym_id"] = torch.tensor(
-        atom_array.chain_id[token_starts].astype(int), dtype=torch.int32
-    )
-    features["entity_id"] = torch.tensor(
-        atom_array.entity_id[token_starts], dtype=torch.int32
-    )
-    features["sym_id"] = torch.tensor(
-        create_sym_id(entity_ids, atom_array, token_starts), dtype=torch.int32
-    )
+
     restype_index = torch.tensor(
         get_with_unknown_3_to_idx(atom_array.res_name[token_starts]), dtype=torch.int64
     )
     features["restype"] = encode_one_hot(
         restype_index, len(STANDARD_RESIDUES_WITH_GAP_3)
     ).to(torch.int32)
+
     features["is_protein"] = torch.tensor(
         atom_array.molecule_type_id[token_starts] == MoleculeType.PROTEIN,
         dtype=torch.int32,
@@ -94,9 +84,8 @@ def featurize_structure_af3(
         dtype=torch.int32,
     )
 
-    # Bonds
-    features["token_bonds"] = create_token_bonds(
-        atom_array, features["token_index"].numpy()
+    features["is_atomized"] = torch.tensor(
+        atom_array.is_atomized[token_starts], dtype=torch.int32
     )
 
     # Masks
@@ -113,19 +102,8 @@ def featurize_structure_af3(
         dtype=torch.int32,
     )
 
-    features["is_atomized"] = torch.tensor(
-        atom_array.is_atomized[token_starts], dtype=torch.int32
-    )
-
-    features["atom_mask"] = broadcast_token_feat_to_atoms(
-        token_mask=features["token_mask"],
-        num_atoms_per_token=features["num_atoms_per_token"],
-        token_feat=features["token_mask"],
-    )
-
-    features["atom_to_token_index"] = create_atom_to_token_index(
-        token_mask=features["token_mask"],
-        num_atoms_per_token=features["num_atoms_per_token"],
+    features["atom_mask"] = torch.ones(
+        features["num_atoms_per_token"].sum(), dtype=torch.float32
     )
 
     # Permutation alignment helper labels
@@ -141,6 +119,32 @@ def featurize_structure_af3(
     features["mol_sym_component_id"] = torch.tensor(
         atom_array.mol_sym_component_id[token_starts], dtype=torch.int32
     )
+
+    if not is_gt:
+        # Indexing
+        features["residue_index"] = torch.tensor(
+            atom_array.res_id[token_starts], dtype=torch.int32
+        )
+        features["asym_id"] = torch.tensor(
+            atom_array.chain_id[token_starts].astype(int), dtype=torch.int32
+        )
+        features["entity_id"] = torch.tensor(
+            atom_array.entity_id[token_starts], dtype=torch.int32
+        )
+        features["sym_id"] = torch.tensor(
+            create_sym_id(entity_ids, atom_array, token_starts), dtype=torch.int32
+        )
+
+        # Bonds
+        features["token_bonds"] = create_token_bonds(
+            atom_array, features["token_index"].numpy()
+        )
+
+        # Atomization
+        features["atom_to_token_index"] = create_atom_to_token_index(
+            token_mask=features["token_mask"],
+            num_atoms_per_token=features["num_atoms_per_token"],
+        )
 
     # Ground-truth-specific features
     # TODO reorganize GT feature logic

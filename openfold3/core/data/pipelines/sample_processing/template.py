@@ -77,22 +77,23 @@ def process_template_structures_af3(
     for chain_id in protein_chain_ids:
         # Sample templates and fetch their data from the cache
         sampled_template_data = sample_templates(
-            assembly_data,
-            template_cache_directory,
-            n_templates,
-            take_top_k,
-            chain_id,
-            template_structure_array_directory,
+            assembly_data=assembly_data,
+            template_cache_directory=template_cache_directory,
+            n_templates=n_templates,
+            take_top_k=take_top_k,
+            chain_id=chain_id,
+            template_structure_array_directory=template_structure_array_directory,
+            template_file_format=template_file_format,
         )
 
         # Map token positions to template atom arrays
         template_slices[chain_id] = align_template_to_query(
-            sampled_template_data,
-            template_structures_directory,
-            template_structure_array_directory,
-            template_file_format,
-            ccd,
-            atom_array[atom_array.chain_id == chain_id],
+            sampled_template_data=sampled_template_data,
+            template_structures_directory=template_structures_directory,
+            template_structure_array_directory=template_structure_array_directory,
+            template_file_format=template_file_format,
+            ccd=ccd,
+            atom_array_query_chain=atom_array[atom_array.chain_id == chain_id],
         )
 
     return TemplateSliceCollection(template_slices=template_slices)

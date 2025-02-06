@@ -182,6 +182,7 @@ class AlphaFold3AllAtom(ModelRunner):
                 outputs=outputs,
                 metrics=metrics_per_sample,
                 weights=self.model_selection_weights,
+                pdb_id=batch["pdb_id"],
             )
 
             for metric_name in CORRELATION_METRICS:
@@ -195,6 +196,12 @@ class AlphaFold3AllAtom(ModelRunner):
                 if plddt is not None and lddt is not None:
                     metrics[metric_name] = (lddt, plddt)
 
+            logger.debug(
+                f"Validation sample {', '.join(batch['pdb_id'])} on rank "
+                f"{self.global_rank} has the following metrics: "
+                f"{', '.join(list(metrics.keys()))}"
+            )
+
             return metrics
 
     def _log(self, loss_breakdown, batch, outputs, train=True):
@@ -206,6 +213,9 @@ class AlphaFold3AllAtom(ModelRunner):
         for loss_name, indiv_loss in loss_breakdown.items():
             metric_log_name = f"{phase}/{loss_name}"
             metric_epoch_name = f"{metric_log_name}_epoch" if train else metric_log_name
+
+            # Mean over sample and batch dims
+            indiv_loss = indiv_loss.mean()
 
             # Update mean metrics for epoch logging
             self._update_epoch_metric(
@@ -283,6 +293,7 @@ class AlphaFold3AllAtom(ModelRunner):
                 f"Train step failed with pdb id {pdb_id} with "
                 f"preferred chain or interface {preferred_chain_or_interface}"
             )
+            raise
 
         return loss
 
@@ -322,6 +333,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
         except Exception:
             logger.exception(f"Validation step failed with pdb id {pdb_id}")
+            raise
 
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         # TODO: Remove debug logic
