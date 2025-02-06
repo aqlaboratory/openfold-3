@@ -1,4 +1,5 @@
-# This code is a modified version of the original code from the PyTorch Lightning library.
+# This code is a modified version of the original code from the PyTorch Lightning
+# library.
 
 from collections.abc import Sequence
 from typing import Any, Optional, Union
@@ -30,10 +31,12 @@ def _final_aggregation(
     counts: Tensor,
 ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
     """
-    Aggregates per-device statistics (means, variances, and covariance) into global statistics
-    using the parallel algorithm, filtering out devices with no samples.
+    Aggregates per-device statistics (means, variances, and covariance) into
+    global statistics using the parallel algorithm, filtering out devices
+    with no samples.
 
-    If no valid devices remain after filtering, a warning is issued and NaNs are returned.
+    If no valid devices remain after filtering, a warning is issued and NaNs
+    are returned.
 
     Args:
         means_x: 1-D tensor of x-means from each device.
@@ -44,7 +47,8 @@ def _final_aggregation(
         counts: 1-D tensor of sample counts from each device.
 
     Returns:
-        A tuple of aggregated statistics: (mean_x, mean_y, var_x, var_y, cov_xy, total_count)
+        A tuple of aggregated statistics:
+            (mean_x, mean_y, var_x, var_y, cov_xy, total_count)
     """
     # Filter out devices with zero samples.
     valid = counts > 0
@@ -100,18 +104,20 @@ class PearsonCorrCoef(Metric):
     .. math::
         P_{corr}(x,y) = \frac{cov(x,y)}{\sigma_x \sigma_y}
 
-    Where :math:`y` is a tensor of target values, and :math:`x` is a tensor of predictions.
+    Where :math:`y` is a tensor of target values, and :math:`x` is a tensor of
+    predictions.
 
     As input to ``forward`` and ``update`` the metric accepts the following input:
 
-    - ``preds`` (:class:`~torch.Tensor`): either single output float tensor with shape ``(N,)``
-      or multioutput float tensor of shape ``(N,d)``
-    - ``target`` (:class:`~torch.Tensor`): either single output tensor with shape ``(N,)``
-      or multioutput tensor of shape ``(N,d)``
+    - ``preds`` (:class:`~torch.Tensor`): either single output float tensor with
+        shape ``(N,)`` or multioutput float tensor of shape ``(N,d)``
+    - ``target`` (:class:`~torch.Tensor`): either single output tensor with
+        shape ``(N,)`` or multioutput tensor of shape ``(N,d)``
 
     As output of ``forward`` and ``compute`` the metric returns the following output:
 
-    - ``pearson`` (:class:`~torch.Tensor`): A tensor with the Pearson Correlation Coefficient
+    - ``pearson`` (:class:`~torch.Tensor`):
+        A tensor with the Pearson Correlation Coefficient
 
     Args:
         num_outputs: Number of outputs in multioutput setting
@@ -157,7 +163,8 @@ class PearsonCorrCoef(Metric):
         super().__init__(**kwargs)
         if not isinstance(num_outputs, int) and num_outputs < 1:
             raise ValueError(
-                "Expected argument `num_outputs` to be an int larger than 0, but got {num_outputs}"
+                "Expected argument `num_outputs` to be an int larger than 0, "
+                "but got {num_outputs}"
             )
         self.num_outputs = num_outputs
 
@@ -225,8 +232,9 @@ class PearsonCorrCoef(Metric):
         """Plot a single or multiple values from the metric.
 
         Args:
-            val: Either a single result from calling `metric.forward` or `metric.compute` or a list of these results.
-                If no value is provided, will automatically call `metric.compute` and plot that result.
+            val: Either a single result from calling `metric.forward` or
+                `metric.compute` or a list of these results. If no value is provided,
+                will automatically call `metric.compute` and plot that result.
             ax: An matplotlib axis object. If provided will add plot to that axis
 
         Returns:

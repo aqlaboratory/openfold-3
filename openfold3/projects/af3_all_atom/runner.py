@@ -14,6 +14,7 @@ from openfold3.core.metrics.confidence import (
     compute_weighted_ptm,
 )
 from openfold3.core.metrics.model_selection import compute_model_selection_metric
+from openfold3.core.metrics.pearsoncorr import PearsonCorrCoef
 from openfold3.core.metrics.validation_all_atom import (
     get_metrics,
 )
@@ -36,7 +37,6 @@ from openfold3.projects.af3_all_atom.constants import (
     VAL_LOSSES,
 )
 from openfold3.projects.af3_all_atom.model import AlphaFold3
-from openfold3.core.utils.pearsoncorr import PearsonCorrCoef
 from openfold3.projects.registry import register_project
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
@@ -161,12 +161,6 @@ class AlphaFold3AllAtom(ModelRunner):
         )
 
         metric_obj.update(*metric_value)
-
-        if "lddt_plddt_rna" in metric_log_name:
-            logger.debug(
-                f"Updating {metric_log_name} with {metric_value} in rank {self.global_rank}"
-            )
-            logger.debug(f"{metric_obj.metric_state=}")
 
     def _get_metrics(self, batch, outputs, train=True) -> dict:
         with torch.no_grad():
