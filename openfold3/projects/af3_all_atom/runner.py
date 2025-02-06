@@ -260,9 +260,6 @@ class AlphaFold3AllAtom(ModelRunner):
             metric_epoch_name = f"{metric_log_name}_epoch" if train else metric_log_name
             indiv_loss = indiv_loss.mean()
 
-            # Mean over sample and batch dims
-            indiv_loss = indiv_loss.mean()
-
             # Update mean metrics for epoch logging
             self._update_epoch_metric(
                 phase=phase,
