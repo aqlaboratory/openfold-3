@@ -38,6 +38,7 @@ class PairformerEmbedding(nn.Module):
         max_bin: float,
         no_bin: int,
         inf: float,
+        per_sample_token_cutoff: Optional[int] = None,
         linear_init_params: ConfigDict = lin_init.pairformer_head_init,
     ):
         """
@@ -58,6 +59,11 @@ class PairformerEmbedding(nn.Module):
                 Number of bins (15). ibid
             inf:
                 Inf (1e8). ibid
+            per_sample_token_cutoff:
+                Token limit after which PairFormer embedding will run per sample.
+                This is a memory optimization which is only used during
+                validation/inference and will depend on the number of samples
+                in the full rollout.
             linear_init_params:
                 Linear layer initialization parameters
         """
@@ -66,6 +72,7 @@ class PairformerEmbedding(nn.Module):
         self.max_bin = max_bin
         self.no_bin = no_bin
         self.inf = inf
+        self.per_sample_token_cutoff = per_sample_token_cutoff
 
         self.linear_i = Linear(c_s_input, c_z, **linear_init_params.linear_i)
         self.linear_j = Linear(c_s_input, c_z, **linear_init_params.linear_j)
@@ -226,13 +233,15 @@ class PairformerEmbedding(nn.Module):
         single_mask = single_mask.expand(*(zij.shape[:-3] + single_mask.shape[-1:]))
         pair_mask = pair_mask.expand(*(zij.shape[:-3] + pair_mask.shape[-2:]))
 
-        # TODO: Really clean up this hacky memory fix
+        # TODO: Determine if this is the best way to handle PairFormer
+        #  memory limits depending on the number of samples
         no_batch_dims = len(zij.shape[:-3])
         pairformer_per_sample = all(
             [
                 not torch.is_grad_enabled(),
                 no_batch_dims > 1,
-                zij.shape[-3] > 1500,
+                self.per_sample_token_cutoff is not None,
+                zij.shape[-3] > self.per_sample_token_cutoff,
             ]
         )
 
