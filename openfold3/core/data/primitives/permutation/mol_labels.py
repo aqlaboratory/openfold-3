@@ -8,7 +8,7 @@ from typing import NamedTuple
 
 import networkx as nx
 import numpy as np
-from biotite.structure import AtomArray, chain_iter, get_chain_starts
+from biotite.structure import AtomArray, BondList, chain_iter, get_chain_starts
 
 import openfold3.core.data.resources.patches as patch
 from openfold3.core.data.pipelines.sample_processing.conformer import (
@@ -21,7 +21,7 @@ from openfold3.core.data.primitives.structure.component import find_cross_chain_
 from openfold3.core.data.primitives.structure.conformer import renumber_permutations
 from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
-    component_iter,
+    component_view_iter,
     get_token_starts,
     remove_atom_indices,
 )
@@ -155,6 +155,45 @@ class PrecursorMolGroupID(NamedTuple):
     mol_len: int
 
 
+def chain_connected_molecule_iter(
+    atom_array: AtomArray,
+) -> Generator[AtomArray, None, None]:
+    """Similar to Biotite molecule_iter, but ensures that chains cannot be disconnected.
+
+    Args:
+        atom_array (AtomArray):
+            The atom array to iterate over.
+
+    Yields:
+        AtomArray:
+            AtomArray slice corresponding to a unique molecule.
+    """
+    # This creates a subarray that only copies the BondList but keeps pointers to the
+    # other annotations for efficiency
+    atom_array_pseudo_copy = atom_array[:]
+    n_atoms = len(atom_array)
+
+    # For every chain, connect an artificial root atom to every other atom in the chain
+    chain_starts = get_chain_starts(atom_array, add_exclusive_stop=True)
+    root_atoms = chain_starts[:-1]
+    root_atom_repeated = np.repeat(root_atoms, np.diff(chain_starts))
+
+    # Like [(0, 0), (0, 1), ..., (N, N), (N, N+1), ...]
+    root_atom_bond_pairs = np.column_stack((root_atom_repeated, np.arange(n_atoms)))
+
+    # Add the artificial bonds to the pseudo-copy, which will keep the original bond
+    # list unaffected
+    chain_connected_bond_list = BondList(n_atoms, bonds=root_atom_bond_pairs)
+    atom_array_pseudo_copy.bonds = atom_array_pseudo_copy.bonds.merge(
+        chain_connected_bond_list
+    )
+
+    # Yield molecule slices from the original AtomArray which won't have the
+    # pseudo-bonds added
+    for molecule_indices in patch.get_molecule_indices(atom_array_pseudo_copy):
+        yield atom_array[molecule_indices]
+
+
 def get_precursor_mol_groups(
     atom_array: AtomArray,
 ) -> dict[PrecursorMolGroupID, list[AtomArray]]:
@@ -164,6 +203,10 @@ def get_precursor_mol_groups(
     This is a precursor step to assigning molecular symmetry IDs, as molecules
     containing the same set of entity IDs and having the same number of atoms are very
     likely to be symmetry-equivalent.
+
+    Note that this uses Biotite's molecule detection, but additionally makes sure that
+    the same chain cannot be split into multiple molecules irregardless of whether it is
+    fully connected (which can rarely happen with bond parsing issues).
 
     Args:
         atom_array (AtomArray):
@@ -176,7 +219,7 @@ def get_precursor_mol_groups(
     """
     mol_groups = defaultdict(list)
 
-    for mol in patch.molecule_iter(atom_array):
+    for mol in chain_connected_molecule_iter(atom_array):
         entity_ids = tuple(np.unique(mol.entity_id))
         mol_len = len(mol)
         group_id = PrecursorMolGroupID(entity_ids, mol_len)
@@ -532,8 +575,8 @@ def assign_mol_sym_component_ids(atom_array: AtomArray):
     )
 
     for mol_array in mol_unique_instance_iter(atom_array):
-        for id, component in enumerate(component_iter(mol_array), start=1):
-            atom_array.mol_sym_component_id[component._atom_idx] = id
+        for id, component_view in enumerate(component_view_iter(mol_array), start=1):
+            atom_array.mol_sym_component_id[component_view._atom_idx] = id
 
     remove_atom_indices(atom_array)
 
@@ -722,9 +765,9 @@ def separate_cropped_and_gt(
         # Get the exact symmetry-equivalent atom sets per component
         sym_component_id_to_required_gt_atoms = defaultdict(set)
         for sym_mol in mol_unique_instance_iter(entity_cropped):
-            for component in component_iter(sym_mol):
-                absolute_component_id = component.component_id[0]
-                sym_component_id = component.mol_sym_component_id[0]
+            for component_view in component_view_iter(sym_mol):
+                absolute_component_id = component_view.component_id[0]
+                sym_component_id = component_view.mol_sym_component_id[0]
 
                 # Symmetry-equivalent permutations from which the necessary ground-truth
                 # atoms can be concluded
@@ -756,12 +799,14 @@ def separate_cropped_and_gt(
         sym_equivalent_gt_mol = next(mol_unique_instance_iter(sym_equivalent_gt_mols))
         gt_mol_keep_atom_mask = []
 
-        for gt_component in component_iter(sym_equivalent_gt_mol):
-            gt_sym_component_id = gt_component.mol_sym_component_id[0]
+        for gt_component_view in component_view_iter(sym_equivalent_gt_mol):
+            gt_sym_component_id = gt_component_view.mol_sym_component_id[0]
 
             # If component is not in the crop at all, append all-False mask
             if gt_sym_component_id not in sym_component_id_to_required_gt_atoms:
-                gt_mol_keep_atom_mask.extend(np.zeros(len(gt_component), dtype=bool))
+                gt_mol_keep_atom_mask.extend(
+                    np.zeros(len(gt_component_view), dtype=bool)
+                )
                 continue
 
             # All atoms from this component that are required for symmetry permutations
@@ -770,7 +815,7 @@ def separate_cropped_and_gt(
             )
 
             # All atoms in the component
-            gt_component_relative_atom_indices = np.arange(len(gt_component))
+            gt_component_relative_atom_indices = np.arange(len(gt_component_view))
 
             # Subset to only required atoms
             relative_keep_atom_mask = np.isin(

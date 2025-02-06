@@ -19,7 +19,12 @@ from openfold3.core.data.primitives.caches.format import DatasetChainData
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
-from openfold3.core.data.primitives.structure.labels import assign_atom_indices
+from openfold3.core.data.primitives.structure.labels import (
+    AtomArrayView,
+    assign_atom_indices,
+    chain_view_iter,
+    residue_view_iter,
+)
 from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
@@ -494,21 +499,22 @@ def mol_from_atomarray(atom_array: AtomArray) -> AnnotatedMol:
     return mol
 
 
-def component_iter_from_metadata(
+def component_view_iter_from_metadata(
     atom_array: AtomArray, per_chain_metadata: DatasetChainData
-) -> Generator[AtomArray, None, None]:
-    """Yields AtomArrays for each component in a structure."""
-    for chain_array in struc.chain_iter(atom_array):
-        chain_id = chain_array.chain_id[0]
+) -> Generator[AtomArrayView, None, None]:
+    """Yields AtomArrayView objects for each component in a structure."""
+    for chain_array_view in chain_view_iter(atom_array):
+        chain_id = chain_array_view.chain_id[0]
 
         ref_mol_id = getattr(per_chain_metadata[chain_id], "reference_mol_id", None)
 
         # Entire chain corresponds to a single reference molecule (e.g. a ligand chain)
         if ref_mol_id is not None:
-            yield chain_array
+            yield chain_array_view
         # Decompose the chain into individual residues and their reference molecules
         else:
-            yield from struc.residue_iter(chain_array)
+            chain_array = chain_array_view.materialize()
+            yield from residue_view_iter(chain_array)
 
 
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-comp-id-assign")
@@ -519,10 +525,10 @@ def assign_component_ids_from_metadata(
         "component_id", np.full(len(atom_array), fill_value=-1, dtype=int)
     )
 
-    for id, component in enumerate(
-        component_iter_from_metadata(atom_array, per_chain_metadata), start=1
+    for id, component_view in enumerate(
+        component_view_iter_from_metadata(atom_array, per_chain_metadata), start=1
     ):
-        component.component_id[:] = id
+        component_view.component_id[:] = id
 
 
 def get_ranking_fit(pdb_id):

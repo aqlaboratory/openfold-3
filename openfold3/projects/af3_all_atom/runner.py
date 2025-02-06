@@ -190,6 +190,7 @@ class AlphaFold3AllAtom(ModelRunner):
                 outputs=outputs,
                 metrics=metrics_per_sample,
                 weights=self.model_selection_weights,
+                pdb_id=batch["pdb_id"],
             )
 
             for metric_name in CORRELATION_METRICS:
@@ -205,6 +206,12 @@ class AlphaFold3AllAtom(ModelRunner):
                     lddt = lddt.reshape((-1, 1))
                     metrics[metric_name] = (lddt, plddt)
 
+            logger.debug(
+                f"Validation sample {', '.join(batch['pdb_id'])} on rank "
+                f"{self.global_rank} has the following metrics: "
+                f"{', '.join(list(metrics.keys()))}"
+            )
+
             return metrics
 
     def _log(self, loss_breakdown, batch, outputs, train=True):
@@ -216,6 +223,9 @@ class AlphaFold3AllAtom(ModelRunner):
         for loss_name, indiv_loss in loss_breakdown.items():
             metric_log_name = f"{phase}/{loss_name}"
             metric_epoch_name = f"{metric_log_name}_epoch" if train else metric_log_name
+
+            # Mean over sample and batch dims
+            indiv_loss = indiv_loss.mean()
 
             # Update mean metrics for epoch logging
             self._update_epoch_metric(
@@ -271,8 +281,10 @@ class AlphaFold3AllAtom(ModelRunner):
 
         # TODO: Remove debug logic
         pdb_id = ", ".join(batch.pop("pdb_id"))
+        preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
         logger.debug(
-            f"Started model forward pass for {pdb_id} on rank {self.global_rank} "
+            f"Started model forward pass for {pdb_id} with preferred chain or "
+            f"interface {preferred_chain_or_interface} on rank {self.global_rank} "
             f"step {self.global_step}"
         )
 
@@ -287,7 +299,11 @@ class AlphaFold3AllAtom(ModelRunner):
             self._log(loss_breakdown, batch, outputs)
 
         except Exception:
-            logger.exception(f"Train step failed with pdb id {pdb_id}")
+            logger.exception(
+                f"Train step failed with pdb id {pdb_id} with "
+                f"preferred chain or interface {preferred_chain_or_interface}"
+            )
+            raise
 
         return loss
 
@@ -305,6 +321,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
         # TODO: Remove debug logic
         pdb_id = batch.pop("pdb_id")
+        preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
         atom_array = batch.pop("atom_array")
         logger.debug(
             f"Started validation for {', '.join(pdb_id)} on rank {self.global_rank} "
@@ -320,15 +337,18 @@ class AlphaFold3AllAtom(ModelRunner):
 
             batch["atom_array"] = atom_array
             batch["pdb_id"] = pdb_id
+            batch["preferred_chain_or_interface"] = preferred_chain_or_interface
 
             self._log(loss_breakdown, batch, outputs, train=False)
 
         except Exception:
             logger.exception(f"Validation step failed with pdb id {pdb_id}")
+            raise
 
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         # TODO: Remove debug logic
         pdb_id = batch.pop("pdb_id")
+        preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
         atom_array = batch.pop("atom_array") if "atom_array" in batch else None
 
         # This is to avoid slow loading for nested dicts in PL
@@ -340,6 +360,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
         batch = tensor_tree_map(to_device, batch)
         batch["pdb_id"] = pdb_id
+        batch["preferred_chain_or_interface"] = preferred_chain_or_interface
 
         # Add atom array back to the batch if we removed it earlier
         if atom_array:
