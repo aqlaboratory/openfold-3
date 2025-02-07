@@ -1,6 +1,5 @@
-import os
-
 import importlib
+import os
 import pkgutil
 import sys
 import unittest
@@ -8,10 +7,8 @@ import unittest
 import numpy as np
 import torch
 
-from openfold.config import model_config
-from openfold.model.model import AlphaFold
-from openfold.utils.import_weights import import_jax_weights_
-
+from openfold3.core.utils.import_weights import import_jax_weights_
+from openfold3.projects import registry
 from tests.config import consts
 
 # Give JAX some GPU memory discipline
@@ -23,14 +20,23 @@ os.environ["JAX_PLATFORM_NAME"] = "gpu"
 
 def skip_unless_ds4s_installed():
     deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
-    ds4s_is_installed = deepspeed_is_installed and importlib.util.find_spec(
-        "deepspeed.ops.deepspeed4science") is not None
-    return unittest.skipUnless(ds4s_is_installed, "Requires DeepSpeed with version ≥ 0.10.4")
+    ds4s_is_installed = (
+        deepspeed_is_installed
+        and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
+    )
+    return unittest.skipUnless(
+        ds4s_is_installed, "Requires DeepSpeed with version ≥ 0.10.4"
+    )
 
 
 def skip_unless_flash_attn_installed():
     fa_is_installed = importlib.util.find_spec("flash_attn") is not None
     return unittest.skipUnless(fa_is_installed, "Requires Flash Attention")
+
+
+def skip_unless_triton_installed():
+    triton_is_installed = importlib.util.find_spec("triton") is not None
+    return unittest.skipUnless(triton_is_installed, "Requires Triton")
 
 
 def alphafold_is_installed():
@@ -39,6 +45,10 @@ def alphafold_is_installed():
 
 def skip_unless_alphafold_installed():
     return unittest.skipUnless(alphafold_is_installed(), "Requires AlphaFold")
+
+
+def skip_unless_cuda_available():
+    return unittest.skipUnless(torch.cuda.is_available(), "Requires GPU")
 
 
 def import_alphafold():
@@ -60,27 +70,34 @@ def import_alphafold():
 
 
 def get_alphafold_config():
-    config = alphafold.model.config.model_config(consts.model)  # noqa
+    config = alphafold.model.config.model_config(consts.model_preset)  # noqa
     config.model.global_config.deterministic = True
     return config
 
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
-_param_path = os.path.join(dir_path, "..", f"openfold/resources/params/params_{consts.model}.npz")
+_param_path = os.path.join(
+    dir_path, "..", f"openfold3/resources/params/params_{consts.model_preset}.npz"
+)
 _model = None
 
 
 def get_global_pretrained_openfold():
     global _model
     if _model is None:
-        _model = AlphaFold(model_config(consts.model))
+        project_entry = registry.get_project_entry(consts.model_name)
+        project_config = registry.make_config_with_presets(
+            project_entry, [consts.model_preset]
+        )
+        _lightning_module = project_entry.model_runner(project_config, _compile=False)
+        _model = _lightning_module.model
         _model = _model.eval()
         if not os.path.exists(_param_path):
             raise FileNotFoundError(
                 """Cannot load pretrained parameters. Make sure to run the 
                 installation script before running tests."""
             )
-        import_jax_weights_(_model, _param_path, version=consts.model)
+        import_jax_weights_(_model, _param_path, version=consts.model_preset)
         _model = _model.cuda()
 
     return _model
@@ -101,7 +118,7 @@ def _remove_key_prefix(d, prefix):
     for k, v in list(d.items()):
         if k.startswith(prefix):
             d.pop(k)
-            d[k[len(prefix):]] = v
+            d[k[len(prefix) :]] = v
 
 
 def fetch_alphafold_module_weights(weight_path):
@@ -115,10 +132,10 @@ def fetch_alphafold_module_weights(weight_path):
 
     try:
         params = alphafold.model.utils.flat_params_to_haiku(params)  # noqa
-    except:
+    except Exception as err:
         raise ImportError(
             "Make sure to call import_alphafold before running this function"
-        )
+        ) from err
     return params
 
 
@@ -127,7 +144,7 @@ def _assert_abs_diff_small_base(compare_func, expected, actual, eps):
     abs_diff = torch.abs(expected - actual)
     err = compare_func(abs_diff)
     zero_tensor = torch.tensor(0, dtype=err.dtype)
-    rtol = 1.6e-2 if err.dtype == torch.bfloat16 else 1.3e-6  
+    rtol = 1.6e-2 if err.dtype == torch.bfloat16 else 1.3e-6
     torch.testing.assert_close(err, zero_tensor, atol=eps, rtol=rtol)
 
 

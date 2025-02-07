@@ -13,31 +13,37 @@
 # limitations under the License.
 
 import os
-import torch
-import numpy as np
 import unittest
 from pathlib import Path
 
-from tests.config import consts
-from openfold.config import model_config
-from openfold.model.model import AlphaFold
-from openfold.utils.import_weights import import_jax_weights_, import_openfold_weights_
+import numpy as np
+import torch
+
+from openfold3.core.utils.import_weights import (
+    import_jax_weights_,
+    import_openfold_weights_,
+)
+from openfold3.projects import registry
+from tests.config import monomer_consts
 
 
 class TestImportWeights(unittest.TestCase):
     def test_import_jax_weights_(self):
-        npz_path = Path(__file__).parent.resolve() / f"../openfold/resources/params/params_{consts.model}.npz"
+        npz_path = (
+            Path(__file__).parent.resolve()
+            / f"../openfold3/resources/params/params_{monomer_consts.model_preset}.npz"
+        )
 
-        c = model_config(consts.model)
+        project_entry = registry.get_project_entry("af2_monomer")
+        c = registry.make_config_with_presets(
+            project_entry, [monomer_consts.model_preset]
+        )
         c.globals.blocks_per_ckpt = None
-        model = AlphaFold(c)
+
+        model = project_entry.model_runner(c, _compile=False).model
         model.eval()
 
-        import_jax_weights_(
-            model,
-            npz_path,
-            version=consts.model
-        )
+        import_jax_weights_(model, npz_path, version=monomer_consts.model_preset)
 
         data = np.load(npz_path)
         prefix = "alphafold/alphafold_iteration/"
@@ -46,9 +52,7 @@ class TestImportWeights(unittest.TestCase):
             # Normal linear weight
             (
                 torch.as_tensor(
-                    data[
-                        prefix + "structure_module/initial_projection//weights"
-                    ]
+                    data[prefix + "structure_module/initial_projection//weights"]
                 ).transpose(-1, -2),
                 model.structure_module.linear_in.weight,
             ),
@@ -78,17 +82,20 @@ class TestImportWeights(unittest.TestCase):
             self.assertTrue(torch.all(w_alpha == w_repro))
 
     def test_import_openfold_weights_(self):
-        model_name = 'initial_training'
-        pt_path = Path(__file__).parent.resolve() / f"../openfold/resources/openfold_params/{model_name}.pt"
+        model_name = "initial_training"
+        pt_path = (
+            Path(__file__).parent.resolve()
+            / f"../openfold3/resources/openfold_params/{model_name}.pt"
+        )
 
         if os.path.exists(pt_path):
-            c = model_config(model_name)
+            project_entry = registry.get_project_entry("af2_monomer")
+            c = registry.make_config_with_presets(project_entry, [model_name])
             c.globals.blocks_per_ckpt = None
-            model = AlphaFold(c)
+            model = project_entry.model_runner(c, _compile=False).model
             model.eval()
 
-            d = torch.load(pt_path)
-
+            d = torch.load(pt_path, weights_only=True)
             import_openfold_weights_(
                 model=model,
                 state_dict=d,

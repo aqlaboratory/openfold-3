@@ -1,0 +1,69 @@
+finetune1:
+  model:
+    settings:
+      model_selection_weight_scheme: fine_tuning
+    architecture:
+      shared:
+        diffusion:
+          no_samples: 32
+  dataset_config_template: 
+    config:
+      token_budget: 640
+  extra_configs:
+    loss_weight_modes:
+      default:
+        bond: 4.0
+        smooth_lddt: 0.0
+
+finetune2:
+  model:
+    settings:
+      model_selection_weight_scheme: fine_tuning
+    architecture:
+      shared:
+        diffusion:
+          no_samples: 32
+  dataset_config_template: 
+    config:
+      token_budget: 768
+  extra_configs: # updates base loss config
+    loss_weight_modes:
+      default:
+        bond: 4.0
+
+finetune3:
+  model:
+    settings:
+      diffusion_training_enabled: False
+      model_selection_weight_scheme: fine_tuning
+    architecture:
+      shared:
+        diffusion:
+          no_samples: 32
+      heads:
+        pae:
+          enabled: True
+        distogram:
+          enabled: False
+  extra_configs:
+    loss_weight_modes:
+      default:
+        mse: 0.0
+        smooth_lddt: 0.0
+        distogram: 0.0
+        pae: 1e-4
+
+train:
+  model:
+    settings:
+      blocks_per_ckpt: 1
+      ckpt_intermediate_steps: True
+      chunk_size: null
+      use_deepspeed_evo_attention: True
+
+predict:
+  model:
+    settings:
+      chunk_size: null
+      use_deepspeed_evo_attention: True
+      diffusion_training_enabled: False

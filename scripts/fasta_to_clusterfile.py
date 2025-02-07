@@ -4,6 +4,7 @@ sequence identity threshold using mmseqs2. The mmseqs2 flags are identical to
 what PDB officially uses to provide their official sequence clusters
 (https://github.com/soedinglab/MMseqs2/issues/452).
 """
+
 import shutil
 import subprocess
 from argparse import ArgumentParser
@@ -20,7 +21,7 @@ def reformat_cluster_file(cluster_file: Path, output_file: Path):
     cluster_to_chains = defaultdict(list)
 
     # extract all chains belonging to each cluster
-    with open(cluster_file, "r") as f:
+    with open(cluster_file) as f:
         for line in f:
             line = line.strip()
             cluster_name, chain_id = line.split()
@@ -84,21 +85,29 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser(
-        description=__doc__
-    )
+    parser = ArgumentParser(description=__doc__)
     parser.add_argument(
         "input_fasta",
         type=Path,
-        help="Input .fasta file. Sequence names should be in format >{PDB_ID}_{CHAIN_ID}",
+        help=(
+            "Input .fasta file. Sequence names should be in format >{PDB_ID}_{CHAIN_ID}"
+        ),
     )
     parser.add_argument(
         "output_file",
         type=Path,
-        help="Output file. Each line will contain a space-separated list of {PDB_ID}_{CHAIN_ID} belonging to the same cluster.",
+        help=(
+            "Output file. Each line will contain a space-separated list of "
+            "{PDB_ID}_{CHAIN_ID} belonging to the same cluster."
+        ),
     )
     parser.add_argument("mmseqs_binary_path", type=str, help="Path to mmseqs binary")
-    parser.add_argument("--seq-id", type=float, default=0.4, help="Sequence identity threshold for clustering.")
+    parser.add_argument(
+        "--seq-id",
+        type=float,
+        default=0.4,
+        help="Sequence identity threshold for clustering.",
+    )
 
     args = parser.parse_args()
 

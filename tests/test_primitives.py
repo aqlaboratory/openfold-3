@@ -12,30 +12,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
 import unittest
 
-from openfold.model.primitives import (
-    lecun_normal_init_,
-    Attention,
-)
+import torch
+
+import tests.compare_utils as compare_utils
+from openfold3.core.model.primitives.attention import Attention
+from openfold3.core.model.primitives.initialization import lecun_normal_init_
 from tests.config import consts
 from tests.data_utils import random_attention_inputs
 
 
 class TestLMA(unittest.TestCase):
+    @compare_utils.skip_unless_cuda_available()
     def test_lma_vs_attention(self):
         c_hidden = 32
         no_heads = 4
 
-        q, kv, _, biases = random_attention_inputs(batch_size=consts.batch_size,
-                                                   n_seq=consts.n_seq,
-                                                   n=2 ** 12,
-                                                   no_heads=no_heads,
-                                                   c_hidden=c_hidden)
+        q, kv, _, biases = random_attention_inputs(
+            batch_size=consts.batch_size,
+            n_seq=consts.n_seq,
+            n=2**12,
+            no_heads=no_heads,
+            c_hidden=c_hidden,
+        )
 
         a = Attention(
-            c_hidden, c_hidden, c_hidden, c_hidden, no_heads
+            c_hidden,
+            c_hidden,
+            c_hidden,
+            c_hidden,
+            no_heads,
         ).cuda()
 
         with torch.no_grad():
@@ -46,7 +53,7 @@ class TestLMA(unittest.TestCase):
             real = a(q, kv, biases=biases).cpu()
 
         err = torch.max(torch.abs(l - real))
-        self.assertTrue(err < consts.eps, f'Error: {err}')
+        self.assertTrue(err < consts.eps, f"Error: {err}")
 
 
 if __name__ == "__main__":

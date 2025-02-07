@@ -12,22 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
-import numpy as np
 import unittest
-from openfold.model.msa import (
-    MSARowAttentionWithPairBias,
+
+import numpy as np
+import torch
+
+import tests.compare_utils as compare_utils
+from openfold3.core.model.layers.msa import (
     MSAColumnAttention,
     MSAColumnGlobalAttention,
+    MSAPairWeightedAveraging,
+    MSARowAttentionWithPairBias,
 )
-from openfold.utils.tensor_utils import tree_map
-import tests.compare_utils as compare_utils
+from openfold3.core.utils.tensor_utils import tree_map
 from tests.config import consts
 
 if compare_utils.alphafold_is_installed():
     alphafold = compare_utils.import_alphafold()
-    import jax
     import haiku as hk
+    import jax
 
 
 class TestMSARowAttentionWithPairBias(unittest.TestCase):
@@ -41,7 +44,12 @@ class TestMSARowAttentionWithPairBias(unittest.TestCase):
         no_heads = 4
         chunk_size = None
 
-        mrapb = MSARowAttentionWithPairBias(c_m, c_z, c, no_heads)
+        mrapb = MSARowAttentionWithPairBias(
+            c_m,
+            c_z,
+            c,
+            no_heads,
+        )
 
         m = torch.rand((batch_size, n_seq, n_res, c_m))
         z = torch.rand((batch_size, n_res, n_res, c_z))
@@ -81,9 +89,7 @@ class TestMSARowAttentionWithPairBias(unittest.TestCase):
         )
         params = tree_map(lambda n: n[0], params, jax.Array)
 
-        out_gt = f.apply(
-            params, None, msa_act, msa_mask, pair_act
-        ).block_until_ready()
+        out_gt = f.apply(params, None, msa_act, msa_mask, pair_act).block_until_ready()
         out_gt = torch.as_tensor(np.array(out_gt))
 
         model = compare_utils.get_global_pretrained_openfold()
@@ -170,7 +176,11 @@ class TestMSAColumnGlobalAttention(unittest.TestCase):
         c = 44
         no_heads = 4
 
-        msagca = MSAColumnGlobalAttention(c_m, c, no_heads)
+        msagca = MSAColumnGlobalAttention(
+            c_m,
+            c,
+            no_heads,
+        )
 
         x = torch.rand((batch_size, n_seq, n_res, c_m))
 
@@ -214,7 +224,8 @@ class TestMSAColumnGlobalAttention(unittest.TestCase):
 
         model = compare_utils.get_global_pretrained_openfold()
         out_repro = (
-            model.extra_msa_stack.blocks[0].msa_att_col(
+            model.extra_msa_stack.blocks[0]
+            .msa_att_col(
                 torch.as_tensor(msa_act, dtype=torch.float32).cuda(),
                 chunk_size=4,
                 mask=torch.as_tensor(msa_mask, dtype=torch.float32).cuda(),
@@ -223,6 +234,33 @@ class TestMSAColumnGlobalAttention(unittest.TestCase):
         )
 
         compare_utils.assert_max_abs_diff_small(out_gt, out_repro, consts.eps)
+
+
+class TestMSAPairWeightedAveraging(unittest.TestCase):
+    def test_shape(self):
+        batch_size = consts.batch_size
+        n_seq = consts.n_seq
+        n_res = consts.n_res
+        c_m = consts.c_m
+        c_z = consts.c_z
+        c = 52
+        no_heads = 4
+
+        mrapb = MSAPairWeightedAveraging(
+            c_in=c_m,
+            c_hidden=c,
+            c_z=c_z,
+            no_heads=no_heads,
+        )
+
+        m = torch.rand((batch_size, n_seq, n_res, c_m))
+        z = torch.rand((batch_size, n_res, n_res, c_z))
+
+        shape_before = m.shape
+        m = mrapb(m, z=z, mask=None)
+        shape_after = m.shape
+
+        self.assertTrue(shape_before == shape_after)
 
 
 if __name__ == "__main__":
