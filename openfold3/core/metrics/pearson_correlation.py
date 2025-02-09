@@ -1,6 +1,7 @@
-# This code is a modified version of the original code from the PyTorch Lightning library that handles 
-# the computation of the Pearson correlation coefficient in a distributed setting when using multiple devices
-# and when some of the devices may have zero samples. The original code is available at:
+# This code is a modified version of the original code from the PyTorch Lightning
+# library that handles the computation of the Pearson correlation coefficient in a
+# distributed setting when using multiple devices and when some of the devices may
+# have zero samples. The original code is available at:
 # https://github.com/Lightning-AI/torchmetrics/blob/master/src/torchmetrics/regression/pearson.py
 
 import logging
@@ -23,10 +24,11 @@ def _final_aggregation(
     counts: Tensor,
 ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
     """
-    Aggregates per-device statistics (means, variances, and covariance) into global statistics
-    using the parallel algorithm, filtering out devices with no samples.
+    Aggregates per-device statistics (means, variances, and covariance) into global
+    statistics using the parallel algorithm, filtering out devices with no samples.
 
-    If no valid devices remain after filtering, a warning is issued and NaNs are returned.
+    If no valid devices remain after filtering, a warning is issued and NaNs
+    are returned.
 
     Args:
         means_x: 1-D tensor of x-means from each device.
@@ -37,7 +39,8 @@ def _final_aggregation(
         counts: 1-D tensor of sample counts from each device.
 
     Returns:
-        A tuple of aggregated statistics: (mean_x, mean_y, var_x, var_y, cov_xy, total_count)
+        A tuple of aggregated statistics:
+            (mean_x, mean_y, var_x, var_y, cov_xy, total_count)
     """
     # Filter out devices with zero samples.
     valid = counts > 0
