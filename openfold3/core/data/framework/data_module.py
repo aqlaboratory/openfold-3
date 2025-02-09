@@ -142,7 +142,9 @@ class DataModuleConfig:
 class DataModule(pl.LightningDataModule):
     """A LightningDataModule class for organizing Datasets and DataLoaders."""
 
-    def __init__(self, data_config: DataModuleConfig) -> None:
+    def __init__(
+        self, data_config: DataModuleConfig, world_size: Optional[int] = None
+    ) -> None:
         super().__init__()
 
         # Possibly initialize directly from DataModuleConfig
@@ -153,7 +155,9 @@ class DataModule(pl.LightningDataModule):
         self.num_epochs = data_config.num_epochs
 
         # Parse datasets
-        self.multi_dataset_config = self.parse_data_config(data_config.datasets)
+        self.multi_dataset_config = self.parse_data_config(
+            data_config.datasets, world_size=world_size
+        )
         self._initialize_next_dataset_indices()
 
     def _initialize_next_dataset_indices(self):
@@ -245,12 +249,16 @@ class DataModule(pl.LightningDataModule):
             )
 
     @classmethod
-    def parse_data_config(cls, data_config: list[ConfigDict]) -> MultiDatasetConfig:
+    def parse_data_config(
+        cls, data_config: list[ConfigDict], world_size: Optional[int] = None
+    ) -> MultiDatasetConfig:
         """Parses input data_config into separate lists.
 
         Args:
             data_config (list[dict]):
                 Input data configuration list of dataset dictionaries.
+            world_size (int, optional):
+                Number of GPUs being used. Defaults to None.
 
         Returns:
             MultiDatasetConfig:
@@ -298,6 +306,7 @@ class DataModule(pl.LightningDataModule):
 
             config = dataset_entry.get("config", dict())
             config["name"] = dataset_entry["name"]
+            config["world_size"] = world_size
             configs.append(config)
 
         multi_dataset_config = MultiDatasetConfig(

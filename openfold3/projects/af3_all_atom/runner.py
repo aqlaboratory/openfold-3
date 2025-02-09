@@ -214,16 +214,15 @@ class AlphaFold3AllAtom(ModelRunner):
             metric_log_name = f"{phase}/{loss_name}"
             metric_epoch_name = f"{metric_log_name}_epoch" if train else metric_log_name
 
-            # Mean over sample and batch dims
-            indiv_loss = indiv_loss.mean()
-
-            # Update mean metrics for epoch logging
-            self._update_epoch_metric(
-                phase=phase,
-                metric_log_name=metric_epoch_name,
-                metric_value=indiv_loss,
-                metric_collection=loss_collection,
-            )
+            is_repeated_sample = batch.get("repeated_sample")
+            if not is_repeated_sample:
+                # Update mean metrics for epoch logging
+                self._update_epoch_metric(
+                    phase=phase,
+                    metric_log_name=metric_epoch_name,
+                    metric_value=indiv_loss,
+                    metric_collection=loss_collection,
+                )
 
             # Only log steps for training
             # Ignore nan losses, where the loss was not applicable for the sample
@@ -241,13 +240,15 @@ class AlphaFold3AllAtom(ModelRunner):
         for metric_name, metric_value in metrics.items():
             metric_log_name = f"{phase}/{metric_name}"
 
-            # Update mean metrics for epoch logging
-            self._update_epoch_metric(
-                phase=phase,
-                metric_log_name=metric_log_name,
-                metric_value=metric_value,
-                metric_collection=metric_collection,
-            )
+            is_repeated_sample = batch.get("repeated_sample")
+            if not is_repeated_sample:
+                # Update mean metrics for epoch logging
+                self._update_epoch_metric(
+                    phase=phase,
+                    metric_log_name=metric_log_name,
+                    metric_value=metric_value,
+                    metric_collection=metric_collection,
+                )
 
             # TODO: Maybe remove this extra logging
             # Only log steps for training
@@ -315,7 +316,7 @@ class AlphaFold3AllAtom(ModelRunner):
         atom_array = batch.pop("atom_array")
         logger.debug(
             f"Started validation for {', '.join(pdb_id)} on rank {self.global_rank} "
-            f"step {self.global_step}"
+            f"step {self.global_step}, repeated: {batch.get('repeated_sample')}"
         )
 
         try:
