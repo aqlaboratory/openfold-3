@@ -214,9 +214,6 @@ class AlphaFold3AllAtom(ModelRunner):
             metric_log_name = f"{phase}/{loss_name}"
             metric_epoch_name = f"{metric_log_name}_epoch" if train else metric_log_name
 
-            # Mean over sample and batch dims
-            indiv_loss = indiv_loss.mean()
-
             # Update mean metrics for epoch logging
             self._update_epoch_metric(
                 phase=phase,
@@ -313,9 +310,11 @@ class AlphaFold3AllAtom(ModelRunner):
         pdb_id = batch.pop("pdb_id")
         preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
         atom_array = batch.pop("atom_array")
+
+        is_repeated_sample = batch.get("repeated_sample")
         logger.debug(
             f"Started validation for {', '.join(pdb_id)} on rank {self.global_rank} "
-            f"step {self.global_step}"
+            f"step {self.global_step}, repeated: {is_repeated_sample}"
         )
 
         try:
@@ -329,7 +328,8 @@ class AlphaFold3AllAtom(ModelRunner):
             batch["pdb_id"] = pdb_id
             batch["preferred_chain_or_interface"] = preferred_chain_or_interface
 
-            self._log(loss_breakdown, batch, outputs, train=False)
+            if not is_repeated_sample:
+                self._log(loss_breakdown, batch, outputs, train=False)
 
         except Exception:
             logger.exception(f"Validation step failed with pdb id {pdb_id}")
