@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 import torch
-from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
+from torchmetrics import MeanMetric, MetricCollection
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.metrics.confidence import (
@@ -14,6 +14,7 @@ from openfold3.core.metrics.confidence import (
     compute_weighted_ptm,
 )
 from openfold3.core.metrics.model_selection import compute_model_selection_metric
+from openfold3.core.metrics.pearson_correlation import ZeroSafePearsonCorrCoef
 from openfold3.core.metrics.validation_all_atom import (
     get_metrics,
 )
@@ -102,7 +103,7 @@ class AlphaFold3AllAtom(ModelRunner):
         }
         val_metrics.update(
             {
-                metric_name: PearsonCorrCoef(num_outputs=1)
+                metric_name: ZeroSafePearsonCorrCoef(num_outputs=1)
                 for metric_name in CORRELATION_METRICS
             }
         )
@@ -158,6 +159,7 @@ class AlphaFold3AllAtom(ModelRunner):
         metric_value = (
             (metric_value,) if type(metric_value) is not tuple else metric_value
         )
+
         metric_obj.update(*metric_value)
 
     def _get_metrics(self, batch, outputs, train=True) -> dict:
@@ -235,10 +237,12 @@ class AlphaFold3AllAtom(ModelRunner):
                 plddt_key = f"plddt_{molecule_type}"
                 lddt_key = f"lddt_intra_{molecule_type}"
 
-                plddt = metrics.get(plddt_key)
-                lddt = metrics.get(lddt_key)
+                plddt = metrics_per_sample.get(plddt_key)
+                lddt = metrics_per_sample.get(lddt_key)
 
                 if plddt is not None and lddt is not None:
+                    plddt = plddt.reshape((-1, 1))
+                    lddt = lddt.reshape((-1, 1))
                     metrics[metric_name] = (lddt, plddt)
 
             logger.debug(
@@ -258,7 +262,6 @@ class AlphaFold3AllAtom(ModelRunner):
         for loss_name, indiv_loss in loss_breakdown.items():
             metric_log_name = f"{phase}/{loss_name}"
             metric_epoch_name = f"{metric_log_name}_epoch" if train else metric_log_name
-            indiv_loss = indiv_loss.mean()
 
             # Update mean metrics for epoch logging
             self._update_epoch_metric(
@@ -356,9 +359,11 @@ class AlphaFold3AllAtom(ModelRunner):
         pdb_id = batch.pop("pdb_id")
         preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
         atom_array = batch.pop("atom_array")
+
+        is_repeated_sample = batch.get("repeated_sample")
         logger.debug(
             f"Started validation for {', '.join(pdb_id)} on rank {self.global_rank} "
-            f"step {self.global_step}"
+            f"step {self.global_step}, repeated: {is_repeated_sample}"
         )
 
         try:
@@ -372,7 +377,8 @@ class AlphaFold3AllAtom(ModelRunner):
             batch["pdb_id"] = pdb_id
             batch["preferred_chain_or_interface"] = preferred_chain_or_interface
 
-            self._log(loss_breakdown, batch, outputs, train=False)
+            if not is_repeated_sample:
+                self._log(loss_breakdown, batch, outputs, train=False)
 
         except Exception:
             logger.exception(f"Validation step failed with pdb id {pdb_id}")

@@ -78,9 +78,8 @@ def main(args):
         log_filepath = output_dir / "console_logs.log"
         logging.basicConfig(filename=log_filepath, level=log_level, filemode="w")
 
-    is_distributed = (
-        runner_args.get("num_gpus", 0) > 1 or runner_args.get("num_nodes", 1) > 1
-    )
+    world_size = runner_args.num_gpus * runner_args.pl_trainer.num_nodes
+    is_distributed = world_size > 1
 
     # Set seed
     seed = runner_args.get("seed")
@@ -112,7 +111,7 @@ def main(args):
         project_config,
     )
     _check_data_module_config(data_module_config)
-    lightning_data_module = DataModule(data_module_config)
+    lightning_data_module = DataModule(data_module_config, world_size=world_size)
 
     loggers = []
 
