@@ -37,6 +37,7 @@ from openfold3.projects.af3_all_atom.constants import (
     VAL_LOSSES,
 )
 from openfold3.projects.af3_all_atom.model import AlphaFold3
+from openfold3.core.utils.pearson_correlation import ZeroSafePearsonCorrCoef
 from openfold3.projects.registry import register_project
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
@@ -103,7 +104,7 @@ class AlphaFold3AllAtom(ModelRunner):
         }
         val_metrics.update(
             {
-                metric_name: PearsonCorrCoef(num_outputs=1)
+                metric_name: ZeroSafePearsonCorrCoef(num_outputs=1)
                 for metric_name in CORRELATION_METRICS
             }
         )
