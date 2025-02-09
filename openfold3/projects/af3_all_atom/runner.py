@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 import torch
-from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
+from torchmetrics import MeanMetric, MetricCollection
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.metrics.confidence import (
@@ -14,6 +14,7 @@ from openfold3.core.metrics.confidence import (
     compute_weighted_ptm,
 )
 from openfold3.core.metrics.model_selection import compute_model_selection_metric
+from openfold3.core.metrics.pearson_correlation import ZeroSafePearsonCorrCoef
 from openfold3.core.metrics.validation_all_atom import (
     get_metrics,
 )
@@ -102,7 +103,7 @@ class AlphaFold3AllAtom(ModelRunner):
         }
         val_metrics.update(
             {
-                metric_name: PearsonCorrCoef(num_outputs=1)
+                metric_name: ZeroSafePearsonCorrCoef(num_outputs=1)
                 for metric_name in CORRELATION_METRICS
             }
         )
@@ -158,6 +159,7 @@ class AlphaFold3AllAtom(ModelRunner):
         metric_value = (
             (metric_value,) if type(metric_value) is not tuple else metric_value
         )
+
         metric_obj.update(*metric_value)
 
     def _get_metrics(self, batch, outputs, train=True) -> dict:
@@ -190,10 +192,12 @@ class AlphaFold3AllAtom(ModelRunner):
                 plddt_key = f"plddt_{molecule_type}"
                 lddt_key = f"lddt_intra_{molecule_type}"
 
-                plddt = metrics.get(plddt_key)
-                lddt = metrics.get(lddt_key)
+                plddt = metrics_per_sample.get(plddt_key)
+                lddt = metrics_per_sample.get(lddt_key)
 
                 if plddt is not None and lddt is not None:
+                    plddt = plddt.reshape((-1, 1))
+                    lddt = lddt.reshape((-1, 1))
                     metrics[metric_name] = (lddt, plddt)
 
             logger.debug(
