@@ -81,6 +81,9 @@ class ValidationPDBDataset(BaseAF3Dataset):
             key=lambda x: self.dataset_cache.structure_data[x].token_count,
         )
 
+        # To avoid the default DistributedSampler behavior of repeating samples
+        # to match the world size, artificially inflate the dataset and flag the
+        # repeated samples so that they are ignored in the metrics.
         repeated_samples = [False] * len(pdb_ids)
         if self.world_size is not None:
             extra_samples = (
