@@ -214,15 +214,13 @@ class AlphaFold3AllAtom(ModelRunner):
             metric_log_name = f"{phase}/{loss_name}"
             metric_epoch_name = f"{metric_log_name}_epoch" if train else metric_log_name
 
-            is_repeated_sample = batch.get("repeated_sample")
-            if not is_repeated_sample:
-                # Update mean metrics for epoch logging
-                self._update_epoch_metric(
-                    phase=phase,
-                    metric_log_name=metric_epoch_name,
-                    metric_value=indiv_loss,
-                    metric_collection=loss_collection,
-                )
+            # Update mean metrics for epoch logging
+            self._update_epoch_metric(
+                phase=phase,
+                metric_log_name=metric_epoch_name,
+                metric_value=indiv_loss,
+                metric_collection=loss_collection,
+            )
 
             # Only log steps for training
             # Ignore nan losses, where the loss was not applicable for the sample
@@ -240,15 +238,13 @@ class AlphaFold3AllAtom(ModelRunner):
         for metric_name, metric_value in metrics.items():
             metric_log_name = f"{phase}/{metric_name}"
 
-            is_repeated_sample = batch.get("repeated_sample")
-            if not is_repeated_sample:
-                # Update mean metrics for epoch logging
-                self._update_epoch_metric(
-                    phase=phase,
-                    metric_log_name=metric_log_name,
-                    metric_value=metric_value,
-                    metric_collection=metric_collection,
-                )
+            # Update mean metrics for epoch logging
+            self._update_epoch_metric(
+                phase=phase,
+                metric_log_name=metric_log_name,
+                metric_value=metric_value,
+                metric_collection=metric_collection,
+            )
 
             # TODO: Maybe remove this extra logging
             # Only log steps for training
@@ -314,9 +310,11 @@ class AlphaFold3AllAtom(ModelRunner):
         pdb_id = batch.pop("pdb_id")
         preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
         atom_array = batch.pop("atom_array")
+
+        is_repeated_sample = batch.get("repeated_sample")
         logger.debug(
             f"Started validation for {', '.join(pdb_id)} on rank {self.global_rank} "
-            f"step {self.global_step}, repeated: {batch.get('repeated_sample')}"
+            f"step {self.global_step}, repeated: {is_repeated_sample}"
         )
 
         try:
@@ -330,7 +328,8 @@ class AlphaFold3AllAtom(ModelRunner):
             batch["pdb_id"] = pdb_id
             batch["preferred_chain_or_interface"] = preferred_chain_or_interface
 
-            self._log(loss_breakdown, batch, outputs, train=False)
+            if not is_repeated_sample:
+                self._log(loss_breakdown, batch, outputs, train=False)
 
         except Exception:
             logger.exception(f"Validation step failed with pdb id {pdb_id}")
