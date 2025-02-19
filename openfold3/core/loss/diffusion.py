@@ -52,6 +52,8 @@ def weighted_rigid_align(
     Returns:
         [*, N_atom, 3] Aligned atom positions
     """
+    atom_mask_gt = atom_mask_gt.bool()
+
     # Mean-centre positions
     w_mean = torch.sum(w * atom_mask_gt, dim=-1, keepdim=True) / (
         torch.sum(atom_mask_gt, dim=-1, keepdim=True) + eps
@@ -72,29 +74,32 @@ def weighted_rigid_align(
     H = H * w[..., None, None] * atom_mask_gt[..., None, None]
     H = torch.sum(H, dim=-3)
 
-    try:
-        # SVD (cast to float because doesn't work with bf16/fp16)
-        with torch.amp.autocast("cuda", dtype=torch.float32):
+    # SVD (cast to float because doesn't work with bf16/fp16)
+    dtype = x.dtype
+    with torch.amp.autocast("cuda", dtype=torch.float32):
+        try:
             U, _, V = torch.linalg.svd(H)
             dets = torch.linalg.det(U @ V)
 
-        # Remove reflection
-        F = torch.eye(3, device=x.device, dtype=x.dtype).tile((*H.shape[:-2], 1, 1))
-        F[..., -1, -1] = torch.sign(dets)
-        R = U @ F @ V
-    except Exception as e:
-        logger.warning(
-            f"Error in computing rotation matrix."
-            f"Matrix:\n{H}\nError: {e}\n"
-            "Returning identity matrix instead."
-        )
-        # Use identity rotation
-        R = torch.eye(3, device=x.device, dtype=x.dtype).tile((*H.shape[:-2], 1, 1))
+            # Remove reflection
+            F = torch.eye(3, device=U.device, dtype=U.dtype).tile((*H.shape[:-2], 1, 1))
+            F[..., -1, -1] = torch.sign(dets)
+            R = U @ F @ V
+        except Exception as e:
+            logger.warning(
+                f"Error in computing rotation matrix in weighted rigid align. "
+                f"Matrix:\n{H}\nError: {e}\n"
+                "Returning identity matrix instead."
+            )
+            # Use identity rotation
+            R = torch.eye(3, device=x.device, dtype=torch.float32).tile(
+                (*H.shape[:-2], 1, 1)
+            )
 
-    # Apply alignment
-    x_align = x @ R.transpose(-1, -2) + mu_gt[..., None, :]
+        # Apply alignment
+        x_align = x @ R.transpose(-1, -2) + mu_gt[..., None, :]
 
-    return x_align.detach()
+    return x_align.to(dtype=dtype).detach()
 
 
 def mse_loss(
@@ -158,7 +163,7 @@ def mse_loss(
         token_mask=batch["token_mask"],
         num_atoms_per_token=batch["num_atoms_per_token"],
         token_feat=loss_token_mask,
-    )
+    ).bool()
     loss_atom_mask = loss_atom_mask * atom_mask_gt
 
     mse = (
@@ -223,7 +228,7 @@ def bond_loss(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
     bond_mask = bond_mask.transpose(-1, -2)
 
     # Compute polymer-ligand bond loss
-    mask = bond_mask * (atom_mask_gt[..., None] * atom_mask_gt[..., None, :])
+    mask = (bond_mask * (atom_mask_gt[..., None] * atom_mask_gt[..., None, :])).bool()
 
     loss = torch.sum((dx - dx_gt) ** 2 * mask, dim=(-1, -2)) / (
         torch.sum(mask, dim=(-1, -2)) + eps
@@ -293,7 +298,7 @@ def smooth_lddt_loss(
         (*x.shape[:-2], 1, 1)
     )
 
-    mask = mask * (loss_atom_mask[..., None] * loss_atom_mask[..., None, :])
+    mask = (mask * (loss_atom_mask[..., None] * loss_atom_mask[..., None, :])).bool()
 
     ce_mean = torch.sum(c * e * mask, dim=(-1, -2)) / (
         torch.sum(mask, dim=(-1, -2)) + eps
