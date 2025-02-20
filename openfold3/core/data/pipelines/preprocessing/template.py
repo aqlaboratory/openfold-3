@@ -1072,10 +1072,14 @@ def filter_template_cache_af3(
             desc="3/3: Filtering template cache",
         ):
             # Update dataset cache with list of valid template representative IDs
-            for (pdb_id, chain_id), valid_template_list in valid_templates.items():
-                dataset_cache.structure_data[pdb_id].chains[
-                    chain_id
-                ].template_ids = valid_template_list
+            for grp in valid_templates.items():
+                try:
+                    (pdb_id, chain_id), valid_template_list = grp
+                    dataset_cache.structure_data[pdb_id].chains[
+                        chain_id
+                    ].template_ids = valid_template_list
+                except Exception as e:
+                    print(f"Failed to update dataset cache for {grp}: \n{e}\n")
 
             # if (idx + 1) % save_frequency == 0:
             #     with open(updated_dataset_cache_file, "w") as f:
