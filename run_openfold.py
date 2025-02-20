@@ -20,6 +20,9 @@ from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModule
 from openfold3.projects import registry
+from openfold3.projects.af3_all_atom.config.runner_file_checks import (
+    _check_data_module_config,
+)
 
 torch_versions = torch.__version__.split(".")
 torch_major_version = int(torch_versions[0])
@@ -63,12 +66,14 @@ def main(args):
 
     if runner_args.get("log_level"):
         log_level = runner_args.get("log_level").upper()
-        log_filepath = Path(runner_args.get("output_dir")) / "console_logs.log"
-        logging.basicConfig(filename=log_filepath, level=log_level)
 
-    is_distributed = (
-        runner_args.get("num_gpus", 0) > 1 or runner_args.get("num_nodes", 1) > 1
-    )
+        output_dir = Path(runner_args.get("output_dir"))
+        output_dir.mkdir(exist_ok=True)
+        log_filepath = output_dir / "console_logs.log"
+        logging.basicConfig(filename=log_filepath, level=log_level, filemode="w")
+
+    world_size = runner_args.num_gpus * runner_args.pl_trainer.num_nodes
+    is_distributed = world_size > 1
 
     # Set seed
     seed = runner_args.get("seed")
@@ -99,7 +104,8 @@ def main(args):
         dataset_config_builder,
         project_config,
     )
-    lightning_data_module = DataModule(data_module_config)
+    _check_data_module_config(data_module_config)
+    lightning_data_module = DataModule(data_module_config, world_size=world_size)
 
     loggers = []
 
@@ -162,6 +168,11 @@ def main(args):
         freeze_path = os.path.join(wandb_experiment.dir, "package_versions.txt")
         os.system(f"{sys.executable} -m pip freeze > {freeze_path}")
         wandb_experiment.save(f"{freeze_path}")
+
+        runner_yaml_path = os.path.join(wandb_experiment.dir, "runner.json")
+        with open(runner_yaml_path, "w") as fp:
+            json.dump(runner_args.to_dict(), fp, indent=4)
+        wandb_experiment.save(runner_yaml_path)
 
         # Save data module config
         data_config_path = os.path.join(wandb_experiment.dir, "data_config.json")

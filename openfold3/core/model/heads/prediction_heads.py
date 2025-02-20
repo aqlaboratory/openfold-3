@@ -38,6 +38,7 @@ class PairformerEmbedding(nn.Module):
         max_bin: float,
         no_bin: int,
         inf: float,
+        per_sample_token_cutoff: Optional[int] = None,
         linear_init_params: ConfigDict = lin_init.pairformer_head_init,
     ):
         """
@@ -58,6 +59,11 @@ class PairformerEmbedding(nn.Module):
                 Number of bins (15). ibid
             inf:
                 Inf (1e8). ibid
+            per_sample_token_cutoff:
+                Token limit after which PairFormer embedding will run per sample.
+                This is a memory optimization which is only used during
+                validation/inference and will depend on the number of samples
+                in the full rollout.
             linear_init_params:
                 Linear layer initialization parameters
         """
@@ -66,6 +72,7 @@ class PairformerEmbedding(nn.Module):
         self.max_bin = max_bin
         self.no_bin = no_bin
         self.inf = inf
+        self.per_sample_token_cutoff = per_sample_token_cutoff
 
         self.linear_i = Linear(c_s_input, c_z, **linear_init_params.linear_i)
         self.linear_j = Linear(c_s_input, c_z, **linear_init_params.linear_j)
@@ -74,6 +81,83 @@ class PairformerEmbedding(nn.Module):
             self.no_bin, c_z, **linear_init_params.linear_distance
         )
         self.pairformer_stack = PairFormerStack(**pairformer)
+
+    def per_sample_pairformer_emb(
+        self,
+        si: torch.Tensor,
+        zij: torch.Tensor,
+        single_mask: torch.Tensor,
+        pair_mask: torch.Tensor,
+        chunk_size: Optional[int] = None,
+        use_deepspeed_evo_attention: bool = False,
+        use_lma: bool = False,
+        inplace_safe: bool = False,
+        _mask_trans: bool = True,
+    ):
+        # PairFormer embedding
+        si_chunks = []
+        zij_chunks = []
+        no_samples = zij.shape[1]
+        for i in range(no_samples):
+            si_chunk, zij_chunk = self.pairformer_stack(
+                si[:, i],
+                zij[:, i],
+                single_mask[:, i],
+                pair_mask[:, i],
+                chunk_size=chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                _mask_trans=_mask_trans,
+            )
+
+            si_chunks.append(si_chunk)
+            zij_chunks.append(zij_chunk)
+
+        si = torch.stack(si_chunks, dim=1)
+        zij = torch.stack(zij_chunks, dim=1)
+
+        return si, zij
+
+    def pairformer_emb(
+        self,
+        si: torch.Tensor,
+        zij: torch.Tensor,
+        single_mask: torch.Tensor,
+        pair_mask: torch.Tensor,
+        chunk_size: Optional[int] = None,
+        use_deepspeed_evo_attention: bool = False,
+        use_lma: bool = False,
+        inplace_safe: bool = False,
+        _mask_trans: bool = True,
+    ):
+        # TODO: Make this less awkward, DS kernel has strict shape asserts
+        #  and expects batch and seq dims to exist, but no sample dim
+        batch_dims = si.shape[:-2]
+        if use_deepspeed_evo_attention:
+            si = si.reshape(-1, *si.shape[-2:])
+            zij = zij.reshape(-1, *zij.shape[-3:])
+            single_mask = single_mask.reshape(-1, single_mask.shape[-1])
+            pair_mask = pair_mask.reshape(-1, *pair_mask.shape[-2:])
+
+        # PairFormer embedding
+        si, zij = self.pairformer_stack(
+            si,
+            zij,
+            single_mask,
+            pair_mask,
+            chunk_size=chunk_size,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_lma=use_lma,
+            inplace_safe=inplace_safe,
+            _mask_trans=_mask_trans,
+        )
+
+        if use_deepspeed_evo_attention:
+            si = si.reshape(*batch_dims, *si.shape[-2:])
+            zij = zij.reshape(*batch_dims, *zij.shape[-3:])
+
+        return si, zij
 
     def forward(
         self,
@@ -149,31 +233,42 @@ class PairformerEmbedding(nn.Module):
         single_mask = single_mask.expand(*(zij.shape[:-3] + single_mask.shape[-1:]))
         pair_mask = pair_mask.expand(*(zij.shape[:-3] + pair_mask.shape[-2:]))
 
-        # TODO: Make this less awkward, DS kernel has strict shape asserts
-        #  and expects batch and seq dims to exist, but no sample dim
-        batch_dims = si.shape[:-2]
-        if use_deepspeed_evo_attention:
-            si = si.reshape(-1, *si.shape[-2:])
-            zij = zij.reshape(-1, *zij.shape[-3:])
-            single_mask = single_mask.reshape(-1, single_mask.shape[-1])
-            pair_mask = pair_mask.reshape(-1, *pair_mask.shape[-2:])
-
-        # PairFormer embedding
-        si, zij = self.pairformer_stack(
-            si,
-            zij,
-            single_mask,
-            pair_mask,
-            chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_lma=use_lma,
-            inplace_safe=inplace_safe,
-            _mask_trans=_mask_trans,
+        # TODO: Determine if this is the best way to handle PairFormer
+        #  memory limits depending on the number of samples
+        no_batch_dims = len(zij.shape[:-3])
+        pairformer_per_sample = all(
+            [
+                not torch.is_grad_enabled(),
+                no_batch_dims > 1,
+                self.per_sample_token_cutoff is not None,
+                zij.shape[-3] > self.per_sample_token_cutoff,
+            ]
         )
 
-        if use_deepspeed_evo_attention:
-            si = si.reshape(*batch_dims, *si.shape[-2:])
-            zij = zij.reshape(*batch_dims, *zij.shape[-3:])
+        if pairformer_per_sample:
+            si, zij = self.per_sample_pairformer_emb(
+                si=si,
+                zij=zij,
+                single_mask=single_mask,
+                pair_mask=pair_mask,
+                chunk_size=chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                _mask_trans=_mask_trans,
+            )
+        else:
+            si, zij = self.pairformer_emb(
+                si=si,
+                zij=zij,
+                single_mask=single_mask,
+                pair_mask=pair_mask,
+                chunk_size=chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                _mask_trans=_mask_trans,
+            )
 
         return si, zij
 

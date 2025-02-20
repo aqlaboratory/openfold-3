@@ -45,14 +45,13 @@ def create_sym_id(
             Array of sym_ids mapped to each token.
     """
     sym_id_per_chain = np.zeros_like(entity_ids_per_chain)
-    counter = 0
 
-    for i in range(1, len(entity_ids_per_chain)):
-        if entity_ids_per_chain[i] == entity_ids_per_chain[i - 1]:
-            counter += 1
-        else:
-            counter = 0
-        sym_id_per_chain[i] = counter
+    unique_entity_ids = np.unique(entity_ids_per_chain)
+    entity_id_to_counter = {entity_id: 0 for entity_id in unique_entity_ids}
+
+    for idx, i in enumerate(entity_ids_per_chain):
+        entity_id_to_counter[i] += 1
+        sym_id_per_chain[idx] = entity_id_to_counter[i]
 
     sym_id_per_atom = struc.spread_chain_wise(atom_array, sym_id_per_chain)
     return sym_id_per_atom[token_starts]

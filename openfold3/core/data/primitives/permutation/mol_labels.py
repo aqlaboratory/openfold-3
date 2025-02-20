@@ -8,7 +8,7 @@ from typing import NamedTuple
 
 import networkx as nx
 import numpy as np
-from biotite.structure import AtomArray, chain_iter, get_chain_starts
+from biotite.structure import AtomArray, BondList, chain_iter, get_chain_starts
 
 import openfold3.core.data.resources.patches as patch
 from openfold3.core.data.pipelines.sample_processing.conformer import (
@@ -155,6 +155,45 @@ class PrecursorMolGroupID(NamedTuple):
     mol_len: int
 
 
+def chain_connected_molecule_iter(
+    atom_array: AtomArray,
+) -> Generator[AtomArray, None, None]:
+    """Similar to Biotite molecule_iter, but ensures that chains cannot be disconnected.
+
+    Args:
+        atom_array (AtomArray):
+            The atom array to iterate over.
+
+    Yields:
+        AtomArray:
+            AtomArray slice corresponding to a unique molecule.
+    """
+    # This creates a subarray that only copies the BondList but keeps pointers to the
+    # other annotations for efficiency
+    atom_array_pseudo_copy = atom_array[:]
+    n_atoms = len(atom_array)
+
+    # For every chain, connect an artificial root atom to every other atom in the chain
+    chain_starts = get_chain_starts(atom_array, add_exclusive_stop=True)
+    root_atoms = chain_starts[:-1]
+    root_atom_repeated = np.repeat(root_atoms, np.diff(chain_starts))
+
+    # Like [(0, 0), (0, 1), ..., (N, N), (N, N+1), ...]
+    root_atom_bond_pairs = np.column_stack((root_atom_repeated, np.arange(n_atoms)))
+
+    # Add the artificial bonds to the pseudo-copy, which will keep the original bond
+    # list unaffected
+    chain_connected_bond_list = BondList(n_atoms, bonds=root_atom_bond_pairs)
+    atom_array_pseudo_copy.bonds = atom_array_pseudo_copy.bonds.merge(
+        chain_connected_bond_list
+    )
+
+    # Yield molecule slices from the original AtomArray which won't have the
+    # pseudo-bonds added
+    for molecule_indices in patch.get_molecule_indices(atom_array_pseudo_copy):
+        yield atom_array[molecule_indices]
+
+
 def get_precursor_mol_groups(
     atom_array: AtomArray,
 ) -> dict[PrecursorMolGroupID, list[AtomArray]]:
@@ -164,6 +203,10 @@ def get_precursor_mol_groups(
     This is a precursor step to assigning molecular symmetry IDs, as molecules
     containing the same set of entity IDs and having the same number of atoms are very
     likely to be symmetry-equivalent.
+
+    Note that this uses Biotite's molecule detection, but additionally makes sure that
+    the same chain cannot be split into multiple molecules irregardless of whether it is
+    fully connected (which can rarely happen with bond parsing issues).
 
     Args:
         atom_array (AtomArray):
@@ -176,7 +219,7 @@ def get_precursor_mol_groups(
     """
     mol_groups = defaultdict(list)
 
-    for mol in patch.molecule_iter(atom_array):
+    for mol in chain_connected_molecule_iter(atom_array):
         entity_ids = tuple(np.unique(mol.entity_id))
         mol_len = len(mol)
         group_id = PrecursorMolGroupID(entity_ids, mol_len)

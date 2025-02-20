@@ -475,7 +475,12 @@ def get_component_starts(
 class AtomArrayView:
     """Container to access underlying arrays holding AtomArray attributes."""
 
-    def __init__(self, atom_array: AtomArray, indices: np.ndarray):
+    def __init__(self, atom_array: AtomArray, indices: np.ndarray | slice):
+        if not isinstance(indices, (np.ndarray, slice)):
+            raise ValueError(
+                "The indices argument must be a NumPy array or a slice object."
+            )
+
         self.atom_array = atom_array
         self.indices = indices
 
@@ -508,7 +513,10 @@ class AtomArrayView:
             start, stop, step = self.indices.indices(len(self.atom_array))
             return len(range(start, stop, step))
         else:
-            return len(self.indices)
+            if self.indices.dtype == bool:
+                return np.count_nonzero(self.indices)
+            else:
+                return len(self.indices)
 
 
 def component_view_iter(atom_array: AtomArray) -> Generator[AtomArrayView, None, None]:

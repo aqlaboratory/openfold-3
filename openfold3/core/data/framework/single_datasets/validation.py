@@ -1,4 +1,5 @@
 import logging
+import math
 import random
 import traceback
 from typing import Optional
@@ -58,6 +59,8 @@ class ValidationPDBDataset(BaseAF3Dataset):
         """
         super().__init__(dataset_config)
 
+        self.world_size = dataset_config.get("world_size")
+
         # Dataset/datapoint cache
         self.create_datapoint_cache()
 
@@ -78,9 +81,21 @@ class ValidationPDBDataset(BaseAF3Dataset):
             key=lambda x: self.dataset_cache.structure_data[x].token_count,
         )
 
+        # To avoid the default DistributedSampler behavior of repeating samples
+        # to match the world size, artificially inflate the dataset and flag the
+        # repeated samples so that they are ignored in the metrics.
+        repeated_samples = [False] * len(pdb_ids)
+        if self.world_size is not None:
+            extra_samples = (
+                math.ceil(len(pdb_ids) / self.world_size) * self.world_size
+            ) - len(pdb_ids)
+            pdb_ids += pdb_ids[:extra_samples]
+            repeated_samples += [True] * extra_samples
+
         self.datapoint_cache = pd.DataFrame(
             {
                 "pdb_id": pdb_ids,
+                "repeated_sample": repeated_samples,
             }
         )
 
@@ -96,6 +111,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
         # Get PDB ID from the datapoint cache and the preferred chain/interface
         datapoint = self.datapoint_cache.iloc[index]
         pdb_id = datapoint["pdb_id"]
+        is_repeated_sample = datapoint["repeated_sample"]
 
         if not self.debug_mode:
             sample_data = self.create_all_features(
@@ -106,6 +122,11 @@ class ValidationPDBDataset(BaseAF3Dataset):
             )
             features = sample_data["features"]
             features["pdb_id"] = pdb_id
+            features["preferred_chain_or_interface"] = "none"
+            features["repeated_sample"] = torch.tensor(
+                [is_repeated_sample], dtype=torch.bool
+            )
+
             return features
 
         else:
@@ -119,10 +140,15 @@ class ValidationPDBDataset(BaseAF3Dataset):
 
                 features = sample_data["features"]
                 features["pdb_id"] = pdb_id
+                features["preferred_chain_or_interface"] = "none"
 
                 if is_invalid_feature_dict(features):
                     index = random.randint(0, len(self) - 1)
                     return self.__getitem__(index)
+
+                features["repeated_sample"] = torch.tensor(
+                    [is_repeated_sample], dtype=torch.bool
+                )
 
                 return features
 

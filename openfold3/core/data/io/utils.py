@@ -1,3 +1,7 @@
+import json
+from pathlib import Path
+
+import click
 import numpy as np
 
 
@@ -31,3 +35,22 @@ def is_intlike_string(value: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+class JsonStrOrFile(click.ParamType):
+    name = "path_or_json"
+
+    def convert(self, value, param, ctx):
+        if isinstance(value, Path):
+            return value
+
+        value = str(value)
+
+        try:
+            if value.startswith("{") or value.startswith("["):
+                return json.loads(value)
+        except json.JSONDecodeError:
+            self.fail(f"Invalid JSON string: {value}", param, ctx)
+
+        with open(value) as f:
+            return json.load(f)

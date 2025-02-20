@@ -102,6 +102,7 @@ class PreprocessingDataCache:
         structure_data_cache = {}
 
         for pdb_id, structure_data in metadata_cache_dict["structure_data"].items():
+            # TODO: add Enum-based status/datacache fields where applicable
             status = structure_data["status"]
             # TODO make categorical variables Enums
             if "skipped" in status:
@@ -248,7 +249,7 @@ class DisorderedPreprocessingDataCache(PreprocessingDataCache):
                 token_count = structure_data["token_count"]
                 gdt = structure_data["gdt"]
                 chain_map = structure_data["chain_map"]
-                transform_array = structure_data["transform"]
+                transform_array = structure_data["transform_array"]
                 best_model_filename = structure_data["best_model_filename"]
                 distance_clash_map = structure_data["distance_clash_map"]
             # TODO: Release date should never be None with new version, fix this after

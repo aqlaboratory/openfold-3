@@ -373,7 +373,7 @@ def all_atom_plddt_loss(
     # Construct atom mask for lddt computation
     # Note that additional dimension is padded and later removed for masked out atoms
     # [*, N_atom]
-    atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
+    atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"].bool()
     atom_mask_shape = list(atom_mask_gt.shape)
     padded_atom_mask_shape = list(atom_mask_shape)
     padded_atom_mask_shape[-1] = padded_atom_mask_shape[-1] + 1
@@ -381,6 +381,12 @@ def all_atom_plddt_loss(
     # TODO: Revisit this to see if this happens anywhere else
     # Rep index is padded for shorter sequences, remove it match ground truth
     rep_index_unpadded = rep_index.long()[..., : atom_mask_shape[-1]]
+
+    # We need to expand the rep_index_unpadded to match the
+    # shape of (bs, n_samples, ...)
+    rep_index_unpadded = rep_index_unpadded.expand(
+        (*atom_mask_shape[:-1], rep_index_unpadded.shape[-1])
+    )
 
     atom_mask = torch.zeros(padded_atom_mask_shape, device=x.device, dtype=x.dtype)
     atom_mask = atom_mask.scatter_(
@@ -393,7 +399,7 @@ def all_atom_plddt_loss(
     pair_atom_mask = atom_mask_gt[..., None] * atom_mask[..., None, :]
     pair_mask = (
         pair_mask * pair_atom_mask * (1.0 - torch.eye(n_atom, device=atom_mask.device))
-    )
+    ).bool()
 
     # Compute lddt
     # [*, N_atom]
@@ -499,7 +505,7 @@ def pae_loss(
     # Compute predicted alignment error
     pair_mask = (valid_frame_mask[..., None] * rep_atom_mask[..., None, :]) * (
         valid_frame_mask_gt[..., None] * rep_atom_mask_gt[..., None, :]
-    )
+    ).bool()
 
     errors = softmax_cross_entropy(logits, e_b)
 
@@ -565,7 +571,7 @@ def pde_loss(
     v_bins = bin_min + torch.arange(no_bins, device=e.device) * bin_size
     e_b = binned_one_hot(e, v_bins).to(dtype=e.dtype)
 
-    pair_mask = rep_atom_mask_gt[..., None] * rep_atom_mask_gt[..., None, :]
+    pair_mask = (rep_atom_mask_gt[..., None] * rep_atom_mask_gt[..., None, :]).bool()
 
     errors = softmax_cross_entropy(logits, e_b)
 
@@ -602,7 +608,7 @@ def all_atom_experimentally_resolved_loss(
     atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
     y_b = F.one_hot(atom_mask_gt.long(), num_classes=no_bins)
 
-    atom_mask = batch["atom_mask"]
+    atom_mask = batch["atom_mask"].bool()
 
     # Compute loss on experimentally resolved prediction
     errors = softmax_cross_entropy(logits, y_b)

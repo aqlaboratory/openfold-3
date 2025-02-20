@@ -22,6 +22,24 @@ from openfold3.core.utils.tensor_utils import tensor_tree_map
 logger = logging.getLogger(__name__)
 
 
+def check_out_of_bounds_indices(
+    indices: torch.Tensor, input_tensor: torch.Tensor, dim: int = 0
+):
+    """Checks if the indices are out of bounds.
+
+    Args:
+        indices: Indices to check
+        input_tensor: The tensor for indexing
+        dim: Dimension to check
+    """
+    clamped_indices = torch.clamp(
+        indices,
+        min=0,
+        max=input_tensor.shape[dim] - 1,
+    )
+    assert (indices == clamped_indices).all()
+
+
 @overload
 def split_feats_by_id(
     feats: torch.Tensor, id: torch.Tensor
@@ -1133,6 +1151,12 @@ def get_final_atom_permutation_index(
             # residues) skip the remaining computations
             if permutations.shape[0] == 1:
                 identity_permutation = permutations[0]
+
+                check_out_of_bounds_indices(
+                    indices=identity_permutation,
+                    input_tensor=gt_atom_idx_subset_conf,
+                )
+
                 permuted_atom_idxs.extend(
                     gt_atom_idx_subset_conf[identity_permutation].tolist()
                 )
@@ -1144,6 +1168,12 @@ def get_final_atom_permutation_index(
                 continue
 
             # Versions of the ground-truth positions for each permutation
+            check_out_of_bounds_indices(
+                indices=permutations, input_tensor=gt_positions_subset_conf
+            )
+            check_out_of_bounds_indices(
+                indices=permutations, input_tensor=gt_resolved_mask_subset_conf
+            )
             gt_positions_subset_conf_perm = gt_positions_subset_conf[permutations]
             gt_resolved_mask_subset_conf_perm = gt_resolved_mask_subset_conf[
                 permutations
@@ -1160,7 +1190,14 @@ def get_final_atom_permutation_index(
             rmsd = torch.sqrt(dists_sq.sum(dim=-1) / n_resolved_atoms)
 
             # Get permutation that minimizes RMSD
+            check_out_of_bounds_indices(
+                indices=torch.argmin(rmsd), input_tensor=permutations
+            )
             best_permutation = permutations[torch.argmin(rmsd)]
+
+            check_out_of_bounds_indices(
+                indices=best_permutation, input_tensor=gt_atom_idx_subset_conf
+            )
 
             # Append the global atom indices corresponding to this permutation
             permuted_atom_idxs.extend(
@@ -1694,6 +1731,7 @@ def safe_multi_chain_permutation_alignment(
         new_gt_features = format_output_gt_features(
             ground_truth_features=new_gt_features, batch_dims=batch_dims
         )
+
     except Exception as e:
         logger.error(
             "Caught error during multi-chain permutation alignment, falling back to "
@@ -1723,7 +1761,12 @@ def safe_multi_chain_permutation_alignment(
             new_gt_features["atom_positions"] = torch.rand_like(
                 atom_positions_predicted
             )
-            new_gt_features["atom_resolved_mask"] = torch.ones_like(batch["atom_mask"])
+            atom_mask = batch["atom_mask"]
+            new_gt_features["atom_resolved_mask"] = torch.ones(
+                (*batch_dims, atom_mask.shape[-1]),
+                device=atom_mask.device,
+                dtype=atom_mask.dtype,
+            )
 
             # Disable all losses
             for loss_key, weights in batch["loss_weights"].items():
