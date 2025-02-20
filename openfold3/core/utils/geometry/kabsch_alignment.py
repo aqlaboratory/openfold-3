@@ -46,10 +46,9 @@ def get_optimal_rotation_matrix(
     batch_dims = H.shape[:-2]
     original_dtype = H.dtype
 
-    try:
-        # This is necessary for bf16 training
-        with torch.amp.autocast("cuda", enabled=False):
-            # SVD (cast to float because doesn't work with fp16)
+    # This is necessary for bf16/fp16 training
+    with torch.amp.autocast("cuda", dtype=torch.float32):
+        try:
             U, _, Vt = torch.linalg.svd(H.float())
 
             V = Vt.transpose(-2, -1)
@@ -58,33 +57,27 @@ def get_optimal_rotation_matrix(
             # Determinants for reflection correction (should be either 1 or -1)
             dets = torch.det(V @ Ut)
 
-    # Fix for rare edge-cases
-    except Exception as e:
-        logger.warning(
-            f"Error in computing rotation matrix."
-            f"Matrix:\n{H}\nError: {e}\n"
-            "Returning identity matrix instead."
-        )
-        # Return identity rotation
-        R = torch.eye(3, device=mobile_positions.device, dtype=original_dtype).tile(
-            (*batch_dims, 1, 1)
-        )
-        return R
+            # Create correction tensor [*, 3, 3]
+            D = torch.eye(3, device=mobile_positions.device, dtype=V.dtype).tile(
+                (*batch_dims, 1, 1)
+            )
+            D[..., -1, -1] = torch.sign(dets)
 
-    # Cast back to original dtype
-    dets = dets.to(original_dtype)
-    V = V.to(original_dtype)
-    Ut = Ut.to(original_dtype)
+            R = V @ D @ Ut
 
-    # Create correction tensor [*, 3, 3]
-    D = torch.eye(3, device=mobile_positions.device, dtype=original_dtype).tile(
-        *batch_dims, 1, 1
-    )
-    D[..., -1, -1] = torch.sign(dets)
+        # Fix for rare edge-cases
+        except Exception as e:
+            logger.warning(
+                f"Error in computing rotation matrix."
+                f"Matrix:\n{H}\nError: {e}\n"
+                "Returning identity matrix instead."
+            )
+            # Return identity rotation
+            R = torch.eye(
+                3, device=mobile_positions.device, dtype=mobile_positions.dtype
+            ).tile((*batch_dims, 1, 1))
 
-    R = V @ D @ Ut
-
-    return R
+    return R.to(dtype=original_dtype)
 
 
 # NIT: Maybe a bit confusing that there is already a rotation_matrix.py but that one
