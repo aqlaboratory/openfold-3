@@ -1,6 +1,7 @@
 """Primitives for processing templates structures."""
 
 import dataclasses
+import logging
 import pickle as pkl
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,8 @@ from openfold3.core.data.primitives.structure.metadata import get_cif_block
 from openfold3.core.data.primitives.structure.unresolved import (
     add_unresolved_atoms,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(frozen=False)
@@ -108,6 +111,7 @@ def sample_templates(
     take_top_k: bool,
     chain_id: str,
     template_structure_array_directory: Path | None,
+    template_file_format: str,
 ) -> dict[str, TemplateCacheEntry] | dict[None]:
     """Samples templates to featurize for a given chain.
 
@@ -128,13 +132,19 @@ def sample_templates(
         template_structure_array_directory (Path | None):
             The directory where the preparsed and pre-processed template structure
             arrays are stored.
+        template_file_format (str):
+            The format of the template structures.
 
     Returns:
         dict[str, TemplateCacheEntry] | dict[None]:
             The sampled template data per chain given chain.
     """
     chain_data = assembly_data[chain_id]
-    template_ids = np.array(chain_data["template_ids"])
+    template_ids = chain_data["template_ids"]
+    if not template_ids:
+        return {}
+
+    template_ids = np.array(template_ids)
 
     # Subset the template IDs to only those that have a pre-parsed structure array
     # Some arrays may be missing due to preprocessing errors
@@ -143,10 +153,16 @@ def sample_templates(
         template_array_paths = []
         for template_id in template_ids:
             template_pdb_id = template_id.split("_")[0]
-            template_array_paths.append(
+            template_struct_path = (
                 template_structure_array_directory
-                / Path(f"{template_pdb_id}/{template_id}.pkl")
+                / f"{template_pdb_id}/{template_id}.{template_file_format}"
             )
+
+            if not template_struct_path.exists():
+                logger.warning(f"Template path does not exist: {template_struct_path}")
+
+            template_array_paths.append(template_struct_path)
+
         template_ids = template_ids[
             np.array([p.exists() for p in template_array_paths]).astype(bool)
         ]
@@ -263,27 +279,36 @@ def parse_template_structure(
             The cleaned up template atom array for the given chain.
     """
     # Parse template IDs
-    template_pdb_id, template_chain_id = template_pdb_chain_id.split("_")
+    pdb_id, chain_id = template_pdb_chain_id.split("_")
 
     # Parse the pre-parsed template structure array
     if template_structure_array_directory is not None:
-        with open(
+        template_structure_array_file = (
             template_structure_array_directory
-            / Path(f"{template_pdb_id}/{template_pdb_id}_{template_chain_id}.pkl"),
-            "rb",
-        ) as f:
-            atom_array_template_chain = pkl.load(f)
+            / f"{pdb_id}/{pdb_id}_{chain_id}.{template_file_format}"
+        )
+
+        if template_file_format == "pkl":
+            with open(template_structure_array_file, "rb") as f:
+                atom_array_template_chain = pkl.load(f)
+        elif template_file_format == "npz":
+            atom_array_template_chain = np.load(str(template_structure_array_file))
+        else:
+            raise ValueError(
+                f"Invalid template structure array format: {template_file_format}. "
+                "Only pickle or npz formats are supported."
+            )
+
     # Parse and clean the raw template structure file
     elif template_structures_directory is not None:
         # Parse the full template assembly and subset assembly to template chain
         cif_file, atom_array_template_assembly = parse_mmcif(
-            template_structures_directory
-            / Path(f"{template_pdb_id}.{template_file_format}")
+            template_structures_directory / Path(f"{pdb_id}.{template_file_format}")
         )
 
         # Clean up the template atom array and subset to the chosen template chain
         atom_array_template_chain = clean_template_atom_array(
-            atom_array_template_assembly, cif_file, template_chain_id, ccd
+            atom_array_template_assembly, cif_file, chain_id, ccd
         )
     else:
         raise ValueError(

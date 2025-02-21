@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 import torch
-from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
+from torchmetrics import MeanMetric, MetricCollection
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.metrics.confidence import (
@@ -14,6 +14,7 @@ from openfold3.core.metrics.confidence import (
     compute_weighted_ptm,
 )
 from openfold3.core.metrics.model_selection import compute_model_selection_metric
+from openfold3.core.metrics.pearson_correlation import ZeroSafePearsonCorrCoef
 from openfold3.core.metrics.validation_all_atom import (
     get_metrics,
 )
@@ -102,7 +103,7 @@ class AlphaFold3AllAtom(ModelRunner):
         }
         val_metrics.update(
             {
-                metric_name: PearsonCorrCoef(num_outputs=1)
+                metric_name: ZeroSafePearsonCorrCoef(num_outputs=1)
                 for metric_name in CORRELATION_METRICS
             }
         )
@@ -158,6 +159,7 @@ class AlphaFold3AllAtom(ModelRunner):
         metric_value = (
             (metric_value,) if type(metric_value) is not tuple else metric_value
         )
+
         metric_obj.update(*metric_value)
 
     def _get_metrics(self, batch, outputs, train=True) -> dict:
@@ -182,6 +184,7 @@ class AlphaFold3AllAtom(ModelRunner):
                 outputs=outputs,
                 metrics=metrics_per_sample,
                 weights=self.model_selection_weights,
+                pdb_id=batch["pdb_id"],
             )
 
             for metric_name in CORRELATION_METRICS:
@@ -189,11 +192,19 @@ class AlphaFold3AllAtom(ModelRunner):
                 plddt_key = f"plddt_{molecule_type}"
                 lddt_key = f"lddt_intra_{molecule_type}"
 
-                plddt = metrics.get(plddt_key)
-                lddt = metrics.get(lddt_key)
+                plddt = metrics_per_sample.get(plddt_key)
+                lddt = metrics_per_sample.get(lddt_key)
 
                 if plddt is not None and lddt is not None:
+                    plddt = plddt.reshape((-1, 1))
+                    lddt = lddt.reshape((-1, 1))
                     metrics[metric_name] = (lddt, plddt)
+
+            logger.debug(
+                f"Validation sample {', '.join(batch['pdb_id'])} on rank "
+                f"{self.global_rank} has the following metrics: "
+                f"{', '.join(list(metrics.keys()))}"
+            )
 
             return metrics
 
@@ -261,8 +272,10 @@ class AlphaFold3AllAtom(ModelRunner):
 
         # TODO: Remove debug logic
         pdb_id = ", ".join(batch.pop("pdb_id"))
+        preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
         logger.debug(
-            f"Started model forward pass for {pdb_id} on rank {self.global_rank} "
+            f"Started model forward pass for {pdb_id} with preferred chain or "
+            f"interface {preferred_chain_or_interface} on rank {self.global_rank} "
             f"step {self.global_step}"
         )
 
@@ -277,7 +290,11 @@ class AlphaFold3AllAtom(ModelRunner):
             self._log(loss_breakdown, batch, outputs)
 
         except Exception:
-            logger.exception(f"Train step failed with pdb id {pdb_id}")
+            logger.exception(
+                f"Train step failed with pdb id {pdb_id} with "
+                f"preferred chain or interface {preferred_chain_or_interface}"
+            )
+            raise
 
         return loss
 
@@ -295,10 +312,13 @@ class AlphaFold3AllAtom(ModelRunner):
 
         # TODO: Remove debug logic
         pdb_id = batch.pop("pdb_id")
+        preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
         atom_array = batch.pop("atom_array")
+
+        is_repeated_sample = batch.get("repeated_sample")
         logger.debug(
             f"Started validation for {', '.join(pdb_id)} on rank {self.global_rank} "
-            f"step {self.global_step}"
+            f"step {self.global_step}, repeated: {is_repeated_sample}"
         )
 
         try:
@@ -310,15 +330,19 @@ class AlphaFold3AllAtom(ModelRunner):
 
             batch["atom_array"] = atom_array
             batch["pdb_id"] = pdb_id
+            batch["preferred_chain_or_interface"] = preferred_chain_or_interface
 
-            self._log(loss_breakdown, batch, outputs, train=False)
+            if not is_repeated_sample:
+                self._log(loss_breakdown, batch, outputs, train=False)
 
         except Exception:
             logger.exception(f"Validation step failed with pdb id {pdb_id}")
+            raise
 
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         # TODO: Remove debug logic
         pdb_id = batch.pop("pdb_id")
+        preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
         atom_array = batch.pop("atom_array") if "atom_array" in batch else None
 
         # This is to avoid slow loading for nested dicts in PL
@@ -330,6 +354,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
         batch = tensor_tree_map(to_device, batch)
         batch["pdb_id"] = pdb_id
+        batch["preferred_chain_or_interface"] = preferred_chain_or_interface
 
         # Add atom array back to the batch if we removed it earlier
         if atom_array:

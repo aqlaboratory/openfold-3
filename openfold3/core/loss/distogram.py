@@ -118,8 +118,7 @@ def all_atom_distogram_loss(
     v_bins = bin_min + torch.arange(no_bins, device=d.device) * bin_size
     d_b = binned_one_hot(d, v_bins).to(dtype=d.dtype)
 
-    pair_mask = rep_atom_mask[..., None] * rep_atom_mask[..., None, :]
-
+    pair_mask = (rep_atom_mask[..., None] * rep_atom_mask[..., None, :]).bool()
     errors = softmax_cross_entropy(logits, d_b)
 
     # Compute distogram loss
