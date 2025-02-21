@@ -22,6 +22,7 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_chain_to_three_letter_codes_dict,
     get_entity_to_three_letter_codes_dict,
 )
+from openfold3.core.data.resources import patches
 from openfold3.core.data.resources.patches import construct_atom_array
 from openfold3.core.data.resources.residues import (
     STANDARD_NUCLEIC_ACID_RESIDUES,
@@ -36,14 +37,14 @@ logger = logging.getLogger(__name__)
 def update_bond_list(atom_array: AtomArray) -> None:
     """Updates the bond list of the AtomArray in-place with any missing bonds.
 
-    Runs biotite's `connect_via_residue_names` on the AtomArray and merges the result
-    with the already existing bond list.
+    Runs biotite's (more specifically, a patched version of) `connect_via_residue_names`
+    on the AtomArray and merges the result with the already existing bond list.
 
     Args:
         atom_array:
             AtomArray containing the structure to update the bond list for.
     """
-    bond_list_update = struc.connect_via_residue_names(atom_array)
+    bond_list_update = patches.connect_via_residue_names(atom_array)
     atom_array.bonds = atom_array.bonds.merge(bond_list_update)
 
 
@@ -306,7 +307,7 @@ def build_unresolved_polymer_segment(
 
     # build standard connectivities
     if add_bonds:
-        bond_list = struc.connect_via_residue_names(segment_atom_array)
+        bond_list = patches.connect_via_residue_names(segment_atom_array)
         segment_atom_array.bonds = bond_list
 
     return segment_atom_array
