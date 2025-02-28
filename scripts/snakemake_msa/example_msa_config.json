@@ -1,0 +1,12 @@
+{
+    "input_fasta":"test.fa",
+    "openfold_env":"/p/vast1/OpenFoldCollab/openfold-data/miniforge3/envs/openfold",
+    "databases":["uniref90", "uniprot", "mgnify", "cfdb"],
+    "base_database_path":"/p/vast1/OpenFoldCollab/openfold-data",
+    "output_directory":"msa_output",
+    "jackhmmer_output_format":"sto",
+    "jackhmmer_threads":4,
+    "hhblits_threads":16,
+    "tmpdir": "/tmp",
+    "run_template_search":true
+}

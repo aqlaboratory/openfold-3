@@ -1,0 +1,298 @@
+from pathlib import Path
+import random, string
+from Bio import SeqIO
+import subprocess as sp 
+import shutil
+from pathlib import Path 
+from typing import Set, List 
+
+
+
+def _keep_line(line: str, seqnames: Set[str]) -> bool:
+    """Function to decide which lines to keep."""
+    if not line.strip():
+        return True
+    if line.strip() == '//':  # End tag
+        return True
+    if line.startswith('# STOCKHOLM'):  # Start tag
+        return True
+    if line.startswith('#=GC RF'):  # Reference Annotation Line
+        return True
+    if line[:4] == '#=GS':  # Description lines - keep if sequence in list.
+        _, seqname, _ = line.split(maxsplit=2)
+        return seqname in seqnames
+    elif line.startswith('#'):  # Other markup - filter out
+        return False
+    else:  # Alignment data - keep if sequence in list.
+        seqname = line.partition(' ')[0]
+        return seqname in seqnames
+
+## this is pulled directly from the openfold1 repo instead 
+## of loading it, to reduce dependency burden.
+def truncate_stockholm_msa(stockholm_msa_path: str, max_sequences: int) -> str:
+    """Reads + truncates a Stockholm file while preventing excessive RAM usage."""
+    seqnames = set()
+    filtered_lines = []
+
+    with open(stockholm_msa_path) as f:
+        for line in f:
+            if line.strip() and not line.startswith(('#', '//')):
+                # Ignore blank lines, markup and end symbols - remainder are alignment
+                # sequence parts.
+                seqname = line.partition(' ')[0]
+                seqnames.add(seqname)
+                if len(seqnames) >= max_sequences:
+                    break
+
+        f.seek(0)
+        for line in f:
+            if _keep_line(line, seqnames):
+                filtered_lines.append(line)
+
+    return ''.join(filtered_lines)  
+
+
+def generate_rule_all(config: dict[[str, str]],databases:List[str], input_fasta: dict[[str, str]]) -> None:
+    output_directory = config["output_directory"]
+    assert config["jackhmmer_output_format"] in set({"sto", "a3m"}), "Output format must be one of [a3m, sto]"
+    ext = config["jackhmmer_output_format"]
+    outputs = []
+    for seqid in input_fasta.keys():
+        for db in databases:
+            if db in set(["uniref90", "uniref100", "uniprot", "mgnify"]):
+                outputs.append(
+                    f"{output_directory}/{seqid}/{db}_hits.{ext}"
+                )
+            elif db in set(["cfdb", "bfd"]):
+                outputs.append(
+                    f"{output_directory}/{seqid}/{db}_hits.a3m"
+                )
+    if config["run_template_search"]:
+        assert ext == "sto", "Must generate uniref90 MSAs in stockholm format for template search"
+        for seqid in input_fasta.keys():
+            outputs.append(
+                f"{output_directory}/{seqid}/hmm_output.sto"
+            )
+    return outputs
+    
+def run_jackhmmer(config: dict[[str, str]], wildcards: dict[[str, str]],input: dict[[str, str]], output: dict[[str, str]], resources: dict[[str, str]], threads:int) -> None:
+    ### Set up 
+    seqid = wildcards['seqid']
+    aa_sequence = input_fasta[seqid]
+    ## need to manually create tmp files. bc NamedTemporaryFile was giving me issues 
+    ### tmp fasta
+    alphanumeric = string.ascii_letters + string.digits
+    rng2 = ''.join(random.choice(alphanumeric) for i in range(16))
+    tmpfa = Path(f"{resources.tmpdir}/{seqid}_{rng2}.fa")
+    with open(tmpfa, "w+") as tmp:
+        tmp.write(f">{seqid}\n{aa_sequence}")
+        tmp.flush()
+    ### tmp msa
+    tmp_jackhmmer_path = Path(f"{resources.tmpdir}/{seqid}_{rng2}.sto")
+    ### possible outpaths by extenstion
+    outpath_sto = Path(output['msa_path']).with_suffix(".sto")
+    outpath_a3m = Path(output['msa_path']).with_suffix(".a3m")
+
+    cmd = f'''{JACKHMMER_BIN} \
+        -o /dev/null \
+        -A {tmp_jackhmmer_path} \
+        --noali \
+        -N 1 \
+        -E 0.0001 \
+        --incE 0.0001 \
+        --F1 0.0005 \
+        --F2 0.00005 \
+        --F3 0.0000005 \
+        --cpu {threads} \
+        {tmpfa} {input['db']}
+        '''
+    print(f"Running: {cmd}")
+    result = sp.run(cmd, shell=True, check=True)
+    ## truncate MSAs. Write to the same file, to make final copies over 
+    if wildcards['db'] in ["uniref90", "uniprot", "mgnify"]:
+        truncated_msa = truncate_stockholm_msa(tmp_jackhmmer_path, max_sequences = max_seq_map[wildcards['db']])
+        with open(tmp_jackhmmer_path, "w+") as ofl:
+            ofl.write(truncated_msa)
+    ### optionally convert to a3m
+    if ext == "a3m":
+        cmd = f"{REFORMAT_BIN} -l 30000 {tmp_jackhmmer_path} {outpath_a3m} > /dev/null 2>&1 "
+        sp.run(cmd, shell = True, check = True)
+    else:
+        shutil.copy(tmp_jackhmmer_path, outpath_sto)
+    
+    ## cleanup intermediate outputs
+    tmp_jackhmmer_path.unlink()
+    tmpfa.unlink()
+    return
+
+def run_hhblits(config: dict[[str, str]], wildcards: dict[[str, str]], output: dict[[str, str]], resources: dict[[str, str]], threads: int) -> None:
+    ## setup
+    seqid = wildcards['seqid']
+    aa_sequence = input_fasta[seqid]
+    base_db_path =  base_database_path
+    if db == "cfdb":
+            pfx="colabfold_envdb_2023_hh"
+    else:
+        pfx="bfd_metaclust_clu_complete_id30_c90_final_seq.sorted_opt"
+
+    ## need to manually create tmp files. bc NamedTemporaryFile was giving me issues 
+    ### tmp fasta
+    alphanumeric = string.ascii_letters + string.digits
+    rng2 = ''.join(random.choice(alphanumeric) for i in range(16))
+    tmpfa = Path(f"{resources.tmpdir}/{seqid}_{rng2}.fa")
+    with open(tmpfa, "w+") as tmp:
+        tmp.write(f">{seqid}\n{aa_sequence}")
+        tmp.flush()
+    
+    cmd = f'''{HHBLITS_BIN} \
+                 -i {tmpfa} \
+                -cpu {threads} \
+                -oa3m {output['msa_path']} \
+                -o /dev/null \
+                -n 3 \
+                -e 0.001 \
+                -realign_max 100000 \
+                -maxfilt 100000 \
+                -min_prefilter_hits 1000 \
+                -p 20 -Z 500 \
+                -d {base_db_path}/{wildcards["db"]}/{pfx} \
+                -d {base_db_path}/uniref30/UniRef30_2023_02  > /dev/null 2>&1 ## keep logfiles thin
+                '''
+    sp.run(cmd, shell=True, check = True)
+    tmpfa.unlink()
+    return
+
+
+def get_threads_from_db(db:str, config: dict[[str, str]]) -> str:
+    if db in ["cfdb", "bfd"]:
+        return config["hhblits_threads"]
+    else:
+        return config["jackhmmer_threads"]
+
+
+def get_db_path(db:str,config: dict[[str, str]]) -> str:
+    base_database_path = config["base_database_path"]
+    outpaths = []
+    if db in set(["uniref90", "uniref100", "uniprot", "mgnify"]):
+        outpaths.append(f"{base_database_path}/{db}/{db}.fasta")
+    elif db in set(["cfdb", "bfd", "uniref30"]):
+        if db == "cfdb":
+            pfx="colabfold_envdb_2023_hh"
+        elif db == "uniref30":
+            pfx ="UniRef30_2023_02"
+        elif db == "bfd":
+            pfx="bfd_metaclust_clu_complete_id30_c90_final_seq.sorted_opt"
+        else:
+            raise ValueError("Invalid database name ")
+        
+        subdbs=["a3m", "cs219", "hhm"]
+        stems=["ffdata", "ffindex"]
+        for sdb in subdbs:
+            for stem in stems:
+                outpaths.append(f"{base_database_path}/{db}/{pfx}_{sdb}.{stem}")
+    if len(outpaths) == 0:
+        raise ValueError(f"{db} not found ")
+    return outpaths
+        
+### setup and validate input databases 
+openfold_env = config["openfold_env"]
+databases = config["databases"]
+valid_databases = set(["uniref90", "cfdb","bfd", "uniref100", "uniprot", "mgnify"])
+base_database_path = config["base_database_path"]
+for db in databases:
+    assert db in valid_databases, f"Invalid database inputs. must be one of {valid_databases}"
+## for outputs
+output_directory = config["output_directory"]
+ext = config["jackhmmer_output_format"]
+## read in input fasta
+input_fasta = {}
+for i, record in enumerate(SeqIO.parse(config["input_fasta"], "fasta")):
+    input_fasta[record.id] = str(record.seq)
+
+
+JACKHMMER_BIN = f"{openfold_env}/bin/jackhmmer"
+HHBLITS_BIN = f"{openfold_env}/bin/hhblits"
+REFORMAT_BIN = f"{openfold_env}/scripts/reformat.pl"
+
+## calculate number of concurrent jobs
+max_seq_map = {
+    "uniref90":10000,
+    "uniprot":50000,
+    "mgnify": 5000
+}
+
+rule all:
+    input:
+        generate_rule_all(config, databases, input_fasta)
+
+
+
+rule run_alignment:
+    input:
+        db=lambda wildcards: get_db_path(wildcards['db'], config)
+    output:
+        msa_path = f"{output_directory}/{{seqid}}/{{db}}_hits.{ext}"
+    threads: lambda wildcards: get_threads_from_db(wildcards['db'], config)
+    resources:
+        tmpdir=config["tmpdir"]
+    run:
+        if wildcards['db'] in ["cfdb", "bfd"]:
+            run_hhblits(config, wildcards, output, resources, threads)
+        else:
+            run_jackhmmer(config, wildcards,input, output, resources, threads)
+
+
+rule run_template_search:
+    input:
+        db=f"{base_database_path}/pdb_seqres/pdb_seqres.txt",
+        uniref90_msa = f"{output_directory}/{{seqid}}/uniref90_hits.sto"
+    output:
+        template_hits = f"{output_directory}/{{seqid}}/hmm_output.sto"
+    threads: 4
+    params:
+        alnDir = lambda wildcards, input: str(Path(input.uniref90_msa).parent),
+        query_sequence = lambda wildcards: input_fasta[wildcards["seqid"]]
+    shell:
+        '''
+        alnDir={params.alnDir}
+        cd $alnDir
+        if [ -e "hmm_output.sto" ]; then
+            echo "file exists, skipping"
+            exit 0
+        fi
+
+        envDir={openfold_env}
+        binDir="$envDir/bin"
+        
+        ## guarantee that that the query sequence is in the alignment
+        ### generate the query sequence
+        mgyId=$(basename $alnDir)
+        echo ">$mgyId" > query.fa
+        echo "{params.query_sequence}" >> query.fa
+        seqlen=$(tail -n1 query.fa | awk '{{ print length($0) }}')
+        
+        ## build inital hmm output
+        $binDir/hmmbuild --hand  --amino output.hmm uniref90_hits.sto > /dev/null 2>&1
+        $binDir/hmmsearch --cpu 4 --noali --F1 0.1 --F2 0.1 --F3 0.1 -E 100 --incE 100 --domE 100 --incdomE 100 -A hmm_output_no_query.sto output.hmm {input.db} > /dev/null 2>&1
+
+
+        if [ ! -s "hmm_output_no_query.sto" ]; then
+            echo "no hits found"
+            rm -f output.hmm query.fa templates_with_query.fasta hmm_output_tmp.sto hmm_output_no_query.sto templates_no_query.tmp  hmm_output.tmp 
+            touch hmm_output.sto
+            touch EMPTY_TEMPLATE_OK
+            exit 0
+        fi
+
+        rm -f concat_cfdb_uniref100_filtered.sto
+
+        cat query.fa > templates_with_query.fasta
+        $binDir/esl-reformat -u fasta hmm_output_no_query.sto >> templates_with_query.fasta
+        $binDir/hmmalign -o hmm_output_tmp.sto output.hmm templates_with_query.fasta
+        echo "# STOCKHOLM 1.0" > hmm_output.sto
+        echo "" >> hmm_output.sto
+        echo "#=GS $mgyId/1-$seqlen     DE [subseq from] mol:protein length:$seqlen  UNKNOWN" >> hmm_output.sto
+        tail -n+3  hmm_output_tmp.sto >> hmm_output.sto
+
+        rm -f output.hmm query.fa templates_with_query.fasta hmm_output_tmp.sto hmm_output_no_query.sto templates_no_query.tmp  hmm_output.tmp
+        '''
