@@ -293,11 +293,12 @@ rule all:
 
 
 
+
 rule run_alignment:
     input:
         db=lambda wildcards: get_db_path(wildcards['db'], config)
     output:
-        msa_path = f"{output_directory}/{{seqid}}/{{db}}_hits.{ext}"
+        msa_path = f"{output_directory}/{{seqid}}/{{db}}_hits.{ext}" if db not in ["bfd", "cfdb"] else f"{output_directory}/{{seqid}}/{{db}}_hits.a3m"
     threads: lambda wildcards: get_threads_from_db(wildcards['db'], config)
     resources:
         tmpdir=config["tmpdir"]
