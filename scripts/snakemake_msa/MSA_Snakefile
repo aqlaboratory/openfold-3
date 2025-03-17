@@ -6,29 +6,27 @@ import shutil
 from pathlib import Path 
 from typing import Set, List 
 
+# utility functions to for operation on stockholm files
+## converts stockholm >  fasta 
+def ungap_sequences(stockholm_file, fasta_file):
+    # Read the alignment from the Stockholm file
+    alignment = AlignIO.read(stockholm_file, 'stockholm')
 
+    # Remove gaps from each sequence
+    ungapped_sequences = []
+    for record in alignment:
+        ungapped_seq = Seq(re.sub(r'[^A-Za-z]', '', str(record.seq)))
+        ungapped_record = SeqRecord(
+            ungapped_seq,
+            id=record.id,
+            description=""
+        )
+        ungapped_sequences.append(ungapped_record)
+    
+    with open(fasta_file, 'w') as output_handle:
+        SeqIO.write(ungapped_sequences, output_handle, 'fasta')
 
-def _keep_line(line: str, seqnames: Set[str]) -> bool:
-    """Function to decide which lines to keep."""
-    if not line.strip():
-        return True
-    if line.strip() == '//':  # End tag
-        return True
-    if line.startswith('# STOCKHOLM'):  # Start tag
-        return True
-    if line.startswith('#=GC RF'):  # Reference Annotation Line
-        return True
-    if line[:4] == '#=GS':  # Description lines - keep if sequence in list.
-        _, seqname, _ = line.split(maxsplit=2)
-        return seqname in seqnames
-    elif line.startswith('#'):  # Other markup - filter out
-        return False
-    else:  # Alignment data - keep if sequence in list.
-        seqname = line.partition(' ')[0]
-        return seqname in seqnames
-
-## this is pulled directly from the openfold1 repo instead 
-## of loading it, to reduce dependency burden.
+## truncate stockholm file to desired numver of sequences 
 def truncate_stockholm_msa(stockholm_msa_path: str, max_sequences: int) -> str:
     """Reads + truncates a Stockholm file while preventing excessive RAM usage."""
     seqnames = set()
@@ -50,31 +48,9 @@ def truncate_stockholm_msa(stockholm_msa_path: str, max_sequences: int) -> str:
                 filtered_lines.append(line)
 
     return ''.join(filtered_lines)  
-
-
-def generate_rule_all(config: dict[[str, str]],databases:List[str], input_fasta: dict[[str, str]]) -> None:
-    output_directory = config["output_directory"]
-    assert config["jackhmmer_output_format"] in set({"sto", "a3m"}), "Output format must be one of [a3m, sto]"
-    ext = config["jackhmmer_output_format"]
-    outputs = []
-    for seqid in input_fasta.keys():
-        for db in databases:
-            if db in set(["uniref90", "uniref100", "uniprot", "mgnify"]):
-                outputs.append(
-                    f"{output_directory}/{seqid}/{db}_hits.{ext}"
-                )
-            elif db in set(["cfdb", "bfd"]):
-                outputs.append(
-                    f"{output_directory}/{seqid}/{db}_hits.a3m"
-                )
-    if config["run_template_search"]:
-        assert ext == "sto", "Must generate uniref90 MSAs in stockholm format for template search"
-        for seqid in input_fasta.keys():
-            outputs.append(
-                f"{output_directory}/{seqid}/hmm_output.sto"
-            )
-    return outputs
     
+# main functions to run each alignment tool
+## jackhmmer alignments for uniref90, uniprot, and mgnify 
 def run_jackhmmer(config: dict[[str, str]], wildcards: dict[[str, str]],input: dict[[str, str]], output: dict[[str, str]], resources: dict[[str, str]], threads:int) -> None:
     ### Set up 
     seqid = wildcards['seqid']
@@ -125,6 +101,7 @@ def run_jackhmmer(config: dict[[str, str]], wildcards: dict[[str, str]],input: d
     tmpfa.unlink()
     return
 
+## hhblits alignments for BFD/ CFDB
 def run_hhblits(config: dict[[str, str]], wildcards: dict[[str, str]], output: dict[[str, str]], resources: dict[[str, str]], threads: int) -> None:
     ## setup
     seqid = wildcards['seqid']
@@ -162,6 +139,70 @@ def run_hhblits(config: dict[[str, str]], wildcards: dict[[str, str]], output: d
     tmpfa.unlink()
     return
 
+## run RNA alignments for rfam, rnacentral, and nucleotide collection 
+def run_nhmmer(config: dict[str, str], wildcards: dict[str, str],input: dict[str, str], output: dict[str, str], params:dict[str, str], resources: dict[str, str], threads:int):
+    ## write out temporary fasta 
+    seqid = wildcards['seqid']
+    nt_sequence = input_fasta[seqid]
+    alphanumeric = string.ascii_letters + string.digits
+    rng2 = ''.join(random.choice(alphanumeric) for i in range(16))
+    tmpfa = Path(f"{resources.tmpdir}/{seqid}_{rng2}.fa")
+    with open(tmpfa, "w+") as tmp:
+        tmp.write(f">{seqid}\n{nt_sequence}")
+        tmp.flush()
+    outdir = Path(params.outdir)
+    outdir.mkdir(exist_ok= True, parents=True)
+    ### build hmm for query sequence 
+    query_hmm_file = f"{outdir}/query.hmm"
+    hmmbuild_command = [
+            HMMBUILD_PATH,
+            "--rna",
+            query_hmm_file,
+            tmpfa
+        ]
+    sp.run(hmmbuild_command, check=True)
+
+    ## setup nhmmer flags and run using query hmm
+    nhmmer_flags = [
+        '-E', str(0.001),
+        '--incE', str(0.001),
+        '--rna',
+        '--watson',
+    ]
+
+    f3_thresh = 0.02 if len(nt_sequence) < 50 else 0.00005
+    nhmmer_flags.extend(['--F3', str(f3_thresh)])
+    out_file = f"{outdir}/{wildcards.db}_hits_raw.sto"
+    nhmmer_command = [
+                NHMMER_PATH,
+                *nhmmer_flags,
+                '-A', out_file,
+                tmpfa,
+                input["db"],
+            ]
+    sp.run(nhmmer_command, check=True)
+    
+    ## truncate output to maximum number of rows as specified in AF3 SI
+    reduced_out_file = f"{outdir}/{wildcards.db}_hits_reduced.sto"
+    truncated_msa = truncate_stockholm_msa(out_file, max_sequences = max_seq_map[wildcards['db']])
+    with open(reduced_out_file, "w+") as ofl:
+        ofl.write(truncated_msa)
+    
+
+    ## reformat alignment to include query sequence in alignment
+    hits_fasta = f"{outdir}/{wildcards.db}_hits_reduced.fa"
+    ungap_sequences(reduced_out_file, hits_fasta)
+    
+    realigned_out = f"{outdir}/{wildcards.db}_hits.sto"
+    hmmalign_command = [
+        HMMALIGN_PATH,
+        '-o', realigned_out,
+        query_hmm_file,
+        hits_fasta,
+    ]
+    sp.run(hmmalign_command, check=True)
+    
+
 
 def get_threads_from_db(db:str, config: dict[[str, str]]) -> str:
     if db in ["cfdb", "bfd"]:
@@ -194,6 +235,31 @@ def get_db_path(db:str,config: dict[[str, str]]) -> str:
         raise ValueError(f"{db} not found ")
     return outpaths
         
+
+def generate_rule_all(config: dict[[str, str]],databases:List[str], input_fasta: dict[[str, str]]) -> None:
+    output_directory = config["output_directory"]
+    assert config["jackhmmer_output_format"] in set({"sto", "a3m"}), "Output format must be one of [a3m, sto]"
+    ext = config["jackhmmer_output_format"]
+    outputs = []
+    for seqid in input_fasta.keys():
+        for db in databases:
+            if db in set(["uniref90", "uniref100", "uniprot", "mgnify"]):
+                outputs.append(
+                    f"{output_directory}/{seqid}/{db}_hits.{ext}"
+                )
+            elif db in set(["cfdb", "bfd"]):
+                outputs.append(
+                    f"{output_directory}/{seqid}/{db}_hits.a3m"
+                )
+    if config["run_template_search"]:
+        assert ext == "sto", "Must generate uniref90 MSAs in stockholm format for template search"
+        for seqid in input_fasta.keys():
+            outputs.append(
+                f"{output_directory}/{seqid}/hmm_output.sto"
+            )
+    return outputs
+
+
 ### setup and validate input databases 
 openfold_env = config["openfold_env"]
 databases = config["databases"]
