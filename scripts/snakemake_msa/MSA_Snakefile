@@ -26,7 +26,28 @@ def ungap_sequences(stockholm_file, fasta_file):
     with open(fasta_file, 'w') as output_handle:
         SeqIO.write(ungapped_sequences, output_handle, 'fasta')
 
+
+
 ## truncate stockholm file to desired numver of sequences 
+def _keep_line(line: str, seqnames: Set[str]) -> bool:
+    """Function to decide which lines to keep."""
+    if not line.strip():
+        return True
+    if line.strip() == '//':  # End tag
+        return True
+    if line.startswith('# STOCKHOLM'):  # Start tag
+        return True
+    if line.startswith('#=GC RF'):  # Reference Annotation Line
+        return True
+    if line[:4] == '#=GS':  # Description lines - keep if sequence in list.
+        _, seqname, _ = line.split(maxsplit=2)
+        return seqname in seqnames
+    elif line.startswith('#'):  # Other markup - filter out
+        return False
+    else:  # Alignment data - keep if sequence in list.
+        seqname = line.partition(' ')[0]
+        return seqname in seqnames
+
 def truncate_stockholm_msa(stockholm_msa_path: str, max_sequences: int) -> str:
     """Reads + truncates a Stockholm file while preventing excessive RAM usage."""
     seqnames = set()
@@ -290,7 +311,6 @@ max_seq_map = {
 rule all:
     input:
         generate_rule_all(config, databases, input_fasta)
-
 
 
 
