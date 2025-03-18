@@ -239,11 +239,6 @@ def cleanup_structure_af3(
     atom_array = canonicalize_atom_order(atom_array, ccd)
     atom_array = remove_chains_with_CA_gaps(atom_array, distance_threshold=10.0)
 
-    # TODO: This is a setting specific to this branch, remove later
-    if struc.get_chain_count(atom_array) == 20:
-        logger.info("Structure has exactly 20 chains, skipping structure.")
-        raise SkippedStructureError("Exactly 20 chains before subsetting.")
-
     atom_array = apply_chain_subsetting_af3(
         atom_array=atom_array,
         apply_chain_subsetting_for_rna=apply_chain_subsetting_for_rna,
