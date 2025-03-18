@@ -161,6 +161,11 @@ class ModelRunner(pl.LightningModule):
         """A helper method to manually specify the lr_step."""
         self.last_lr_step = lr_step
 
+    def on_validation_epoch_end(self):
+        # Restore the model weights to normal
+        self.model.load_state_dict(self.cached_weights)
+        self.cached_weights = None
+
     def _compute_validation_metrics(
         self, batch, outputs, superimposition_metrics=False
     ):

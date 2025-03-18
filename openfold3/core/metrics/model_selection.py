@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 import torch
 
@@ -12,8 +11,6 @@ logger = logging.getLogger(__name__)
 def compute_model_selection_metric(
     outputs: dict,
     metrics: dict,
-    weights: dict,
-    pdb_id: Optional[str] = None,
     eps: float = 1e-8,
 ) -> dict:
     """
@@ -93,28 +90,5 @@ def compute_model_selection_metric(
         final_metrics[metric_name] = 0.5 * (
             metrics_top_1[metric_name] + metric_best[metric_name]
         )
-
-    # Sum up the weighted metrics (shape: [bs])
-    # and then divide by the sum of weights (scalar).
-    valid_metrics = list(set(weights.keys()).intersection(final_metrics.keys()))
-    valid_metrics = [
-        metric_name
-        for metric_name in valid_metrics
-        if not torch.isnan(final_metrics[metric_name]).any()
-    ]
-
-    if not valid_metrics:
-        logger.warning(
-            f"No valid metrics found for model selection for PDB ID {', '.join(pdb_id)}"
-        )
-        return final_metrics
-
-    total_weighted = 0.0
-    sum_weights = 0.0
-    for metric_name in valid_metrics:
-        total_weighted += final_metrics[metric_name] * weights[metric_name]
-        sum_weights += weights[metric_name]
-
-    final_metrics["model_selection"] = total_weighted / sum_weights
 
     return final_metrics

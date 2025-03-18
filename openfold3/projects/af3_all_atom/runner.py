@@ -76,14 +76,14 @@ class AlphaFold3AllAtom(ModelRunner):
         #  Make consistent later
         # Initialize all training epoch metric objects
         train_losses = {
-            loss_name: MeanMetric(nan_strategy="ignore") for loss_name in TRAIN_LOSSES
+            loss_name: MeanMetric(nan_strategy="warn") for loss_name in TRAIN_LOSSES
         }
         self.train_losses = MetricCollection(
             train_losses, prefix="train/", postfix="_epoch"
         )
 
         train_metrics = {
-            metric_name: MeanMetric(nan_strategy="ignore") for metric_name in METRICS
+            metric_name: MeanMetric(nan_strategy="warn") for metric_name in METRICS
         }
 
         self.train_metrics = MetricCollection(train_metrics, prefix="train/")
@@ -93,12 +93,12 @@ class AlphaFold3AllAtom(ModelRunner):
 
         # Initialize all validation epoch metric objects
         val_losses = {
-            loss_name: MeanMetric(nan_strategy="ignore") for loss_name in VAL_LOSSES
+            loss_name: MeanMetric(nan_strategy="warn") for loss_name in VAL_LOSSES
         }
         self.val_losses = MetricCollection(val_losses, prefix="val/")
 
         val_metrics = {
-            metric_name: MeanMetric(nan_strategy="ignore")
+            metric_name: MeanMetric(nan_strategy="warn")
             for metric_name in VAL_LOGGED_METRICS
         }
         val_metrics.update(
@@ -183,8 +183,6 @@ class AlphaFold3AllAtom(ModelRunner):
             metrics = compute_model_selection_metric(
                 outputs=outputs,
                 metrics=metrics_per_sample,
-                weights=self.model_selection_weights,
-                pdb_id=batch["pdb_id"],
             )
 
             for metric_name in CORRELATION_METRICS:
@@ -227,8 +225,7 @@ class AlphaFold3AllAtom(ModelRunner):
             )
 
             # Only log steps for training
-            # Ignore nan losses, where the loss was not applicable for the sample
-            if train and not torch.isnan(indiv_loss):
+            if train:
                 self.log(
                     metric_log_name,
                     indiv_loss,
@@ -252,8 +249,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
             # TODO: Maybe remove this extra logging
             # Only log steps for training
-            # Ignore nan metric, where the metric was not applicable for the sample
-            if train and not torch.isnan(metric_value).any():
+            if train:
                 self.log(
                     f"{metric_log_name}_step",
                     metric_value,
@@ -392,24 +388,47 @@ class AlphaFold3AllAtom(ModelRunner):
                 f"{self.trainer.train_dataloader.dataset.indices=}"
             )
 
-    def _log_epoch_metrics(self, metrics: MetricCollection):
+    def _log_epoch_metrics(
+        self, metrics: MetricCollection, compute_model_selection: bool = False
+    ):
         """Log aggregated epoch metrics for training or validation.
 
         Args:
             metrics: MetricCollection object containing the metrics to log
         """
-        # Sync and reduce metrics across ranks
-        metrics_output = metrics.compute()
-        for name, result in metrics_output.items():
-            # Only log metrics that have been updated
-            if self.metric_enabled.get(name):
+        if not self.trainer.sanity_checking:
+            # Sync and reduce metrics across ranks
+            metrics_output = metrics.compute()
+            for name, result in metrics_output.items():
+                # Only log metrics that have been updated
+                if self.metric_enabled.get(name):
+                    self.log(
+                        name,
+                        result,
+                        on_step=False,
+                        on_epoch=True,
+                        logger=True,
+                        sync_dist=False,  # Already synced in compute()
+                    )
+
+            if compute_model_selection:
+                total_weighted = 0.0
+                sum_weights = 0.0
+                for metric_name, metric_weight in self.model_selection_weights.items():
+                    total_weighted += (
+                        metrics_output[f"val/{metric_name}"] * metric_weight
+                    )
+                    sum_weights += metric_weight
+
+                model_selection = total_weighted / sum_weights
+
                 self.log(
-                    name,
-                    result,
+                    "val/model_selection",
+                    model_selection,
                     on_step=False,
                     on_epoch=True,
                     logger=True,
-                    sync_dist=False,  # Already synced in compute()
+                    sync_dist=False,
                 )
 
         # Reset metrics for next epoch
@@ -422,9 +441,12 @@ class AlphaFold3AllAtom(ModelRunner):
 
     def on_validation_epoch_end(self):
         """Log aggregated epoch metrics for validation."""
-        if not self.trainer.sanity_checking:
-            self._log_epoch_metrics(metrics=self.val_losses)
-            self._log_epoch_metrics(metrics=self.val_metrics)
+        self._log_epoch_metrics(metrics=self.val_losses)
+        self._log_epoch_metrics(metrics=self.val_metrics, compute_model_selection=True)
+
+        # Restore the model weights to normal
+        self.model.load_state_dict(self.cached_weights)
+        self.cached_weights = None
 
     def configure_optimizers(
         self,
