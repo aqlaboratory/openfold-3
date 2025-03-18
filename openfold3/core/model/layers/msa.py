@@ -575,24 +575,62 @@ class MSAPairWeightedAveraging(nn.Module):
 
         self.sigmoid = nn.Sigmoid()
 
-    def _prep_bias(
+    def _prep_inputs(
         self,
+        m: torch.Tensor,
         z: torch.Tensor,
-        mask: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
     ) -> [torch.Tensor, torch.Tensor]:
+        if mask is None:
+            # [*, N_token, N_token]
+            mask = z.new_ones(
+                z.shape[:-1],
+            )
+
+        # [*, N_seq, N_token, C_m]
+        m = self.layer_norm_m(m)
+
         # [*, 1, 1, N_token, N_token]
         mask_bias = (self.inf * (mask - 1))[..., None, None, :, :]
 
-        # [*, N_res, N_res, C_z]
+        # [*, N_token, N_token, C_z]
         z = self.layer_norm_z(z)
 
-        # [*, N_res, N_res, no_heads]
+        # [*, N_token, N_token, no_heads]
         z = self.linear_z(z)
 
-        # [*, 1, no_heads, N_res, N_res]
+        # [*, 1, no_heads, N_token, N_token]
         z = permute_final_dims(z, (2, 0, 1)).unsqueeze(-4)
 
-        return z, mask_bias
+        z = z + mask_bias
+
+        return m, z
+
+    def _compute(self, m: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+        v = self.linear_v(m)
+
+        # [*, Q/K, H, C_hidden]
+        v = v.view(v.shape[:-1] + (self.no_heads, -1))
+
+        # [*, H, Q/K, C_hidden]
+        v = v.transpose(-2, -3)
+
+        if triton_is_installed and z.is_cuda:
+            o = fused_softmax(z)
+        else:
+            o = softmax_no_cast(z, -1)
+
+        # [*, Q, H, C_hidden]
+        o = torch.einsum("...hqk,...hkc->...qhc", o, v)
+
+        g = self.sigmoid(self.linear_g(m))
+
+        # [*, Q, H, C_hidden]
+        g = g.view(g.shape[:-1] + (self.no_heads, -1))
+
+        o = o * g
+
+        return o
 
     def forward(
         self,
@@ -611,37 +649,9 @@ class MSAPairWeightedAveraging(nn.Module):
                 [*, N_token, N_token] Pair mask
 
         """
-        if mask is None:
-            # [*, N_token, N_token]
-            mask = z.new_ones(
-                z.shape[:-1],
-            )
+        m, z = self._prep_inputs(m=m, z=z, mask=mask)
 
-        z, mask_bias = self._prep_bias(z=z, mask=mask)
-
-        m = self.layer_norm_m(m)
-        v = self.linear_v(m)
-
-        # [*, Q/K, H, C_hidden]
-        v = v.view(v.shape[:-1] + (self.no_heads, -1))
-
-        # [*, H, Q/K, C_hidden]
-        v = v.transpose(-2, -3)
-
-        z = z + mask_bias
-        if triton_is_installed and z.is_cuda:
-            a = fused_softmax(z)
-        else:
-            a = softmax_no_cast(z, -1)
-
-        # [*, Q, H, C_hidden]
-        a = torch.einsum("...hqk,...hkc->...qhc", a, v)
-
-        g = self.sigmoid(self.linear_g(m))
-
-        # [*, Q, H, C_hidden]
-        g = g.view(g.shape[:-1] + (self.no_heads, -1))
-        o = a * g
+        o = self._compute(m=m, z=z)
 
         # [*, Q, H * C_hidden]
         o = flatten_final_dims(o, 2)
