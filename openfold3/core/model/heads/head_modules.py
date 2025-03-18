@@ -25,7 +25,7 @@ from openfold3.core.model.heads.prediction_heads import (
     ExperimentallyResolvedHeadAllAtom,
     MaskedMSAHead,
     PairformerEmbedding,
-    PerResidueLDDAllAtom,
+    PerResidueLDDTAllAtom,
     PerResidueLDDTCaPredictor,
     PredictedAlignedErrorHead,
     PredictedDistanceErrorHead,
@@ -145,7 +145,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             **self.config["pde"],
         )
 
-        self.plddt = PerResidueLDDAllAtom(
+        self.plddt = PerResidueLDDTAllAtom(
             **self.config["lddt"],
         )
 

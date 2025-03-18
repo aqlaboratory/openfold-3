@@ -19,6 +19,7 @@ from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModule
+from openfold3.core.utils.precision_utils import AF3DeepSpeedPrecision
 from openfold3.projects import registry
 from openfold3.projects.af3_all_atom.config.runner_file_checks import (
     _check_data_module_config,
@@ -117,6 +118,9 @@ def main(args):
         strategy = DeepSpeedStrategy(
             config=runner_args.deepspeed_config_path,
             cluster_environment=cluster_environment,
+            precision_plugin=AF3DeepSpeedPrecision(
+                precision=runner_args.pl_trainer.precision
+            ),
         )
         if not model_config.settings.optimizer.use_deepspeed_adam:
             strategy.config["zero_force_ds_cpu_optimizer"] = False
