@@ -1286,6 +1286,24 @@ def update_gt_position_features(
         "atom_resolved_mask": gt_atom_resolved_mask_permuted,
     }
 
+    intra_filter_atomized = ground_truth_features.get("intra_filter_atomized")
+    if intra_filter_atomized:
+        intra_filter_atomized = permute_gt_atom_features(
+            [intra_filter_atomized], gt_atom_indexes
+        )[0]
+        updated_ground_truth_features["intra_filter_atomized"] = intra_filter_atomized
+
+    inter_filter_atomized = ground_truth_features.get("inter_filter_atomized")
+    if inter_filter_atomized:
+        inter_filter_atomized = permute_gt_atom_features(
+            [inter_filter_atomized], gt_atom_indexes
+        )[0]
+        inter_filter_atomized = permute_gt_atom_features(
+            [inter_filter_atomized.transpose(-1, -2)], gt_atom_indexes
+        )[0]
+        inter_filter_atomized = inter_filter_atomized.transpose(-1, -2)
+        updated_ground_truth_features["inter_filter_atomized"] = inter_filter_atomized
+
     return updated_ground_truth_features
 
 
