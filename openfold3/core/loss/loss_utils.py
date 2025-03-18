@@ -151,7 +151,6 @@ def loss_masked_batch_mean(
     loss: torch.tensor,
     weight: torch.tensor,
     apply_weight: bool,
-    nan_zero_weights: bool = False,
     eps: float = 1e-10,
 ) -> torch.Tensor:
     """
@@ -165,8 +164,6 @@ def loss_masked_batch_mean(
             [*, 1] Loss weights per batch to use as mask
         apply_weight:
             Whether to apply the weight to the loss
-        nan_zero_weights:
-            Whether to set the loss to nan if the weight is zero
         eps:
             Small value to avoid division by zero
     Returns:
@@ -175,35 +172,7 @@ def loss_masked_batch_mean(
     weight = weight.expand_as(loss)
     mask = weight > 0
 
-    if nan_zero_weights:
-        loss = torch.where(~mask, loss * torch.nan, loss)
-
     if apply_weight:
         loss = loss * weight
 
     return torch.sum(loss * mask) / (torch.sum(mask) + eps)
-
-
-def get_cumulative_loss_log_val(
-    loss: torch.tensor, loss_breakdown: dict
-) -> torch.Tensor:
-    """
-    Loss values are zeroed out for samples where losses do not apply, for example
-    confidence losses for distillation samples. This is done to ensure the number
-    of grads is the same per GPU. For logging purposes, the losses are set to nan
-    and ignored so that they are not included in the step or epoch metrics.
-
-    Args:
-        loss:
-            The loss value
-        loss_breakdown:
-            A dict of the losses that make up the total loss
-
-    Returns:
-        The detached loss value or nan if the loss is not valid for the sample
-    """
-    l_log = loss.detach().clone()
-    if torch.isnan(sum(loss_breakdown.values())):
-        return l_log.new_tensor(torch.nan)
-
-    return l_log
