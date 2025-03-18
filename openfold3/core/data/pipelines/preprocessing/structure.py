@@ -696,6 +696,7 @@ class _AF3PreprocessingWrapper:
 def preprocess_cif_dir_af3(
     cif_dir: Path,
     ccd_path: Path,
+    preprocessed_ccd_path: Path | None,
     out_dir: Path,
     max_polymer_chains: int | None = None,
     num_workers: int | None = None,
@@ -718,6 +719,12 @@ def preprocess_cif_dir_af3(
             Path to the directory containing the PDB files to preprocess.
         ccd_path:
             Path to the CCD file.
+        preprocessed_ccd_path:
+            Path to a .bcif CCD that has been preprocessed with biotite's setup_ccd.py
+            script, for usage with biotite's set_ccd_path. This can be used to make sure
+            that the CCD that is used in preprocessing perfectly matches a particular
+            CCD version, for example to match the version that the PDB was downloaded
+            with.
         out_dir:
             Path to the output directory.
         max_polymer_chains:
@@ -790,6 +797,12 @@ def preprocess_cif_dir_af3(
         output_dict["reference_molecule_data"].update(ref_mol_metadata_dict)
 
         processed_mol_ids.update(ref_mol_metadata_dict.keys())
+
+    # Pin the version of the CCD that perfectly matches our (now-outdated) version of
+    # the PDB
+    if preprocessed_ccd_path is not None:
+        struc.info.set_ccd_path(preprocessed_ccd_path)
+        logger.info("Set CCD path to preprocessed CCD file.")
 
     ## Preprocess all CIF files, cleaning up structures and writing out metadata
 

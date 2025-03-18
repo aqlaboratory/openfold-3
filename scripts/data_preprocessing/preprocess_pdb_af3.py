@@ -22,6 +22,18 @@ from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif
     help="Path to a Chemical Component Dictionary mmCIF file.",
 )
 @click.option(
+    "--preprocessed-ccd-path",
+    type=click.Path(exists=True, path_type=Path),
+    required=False,
+    help=(
+        "Path to a .bcif CCD that has been preprocessed with biotite's setup_ccd.py "
+        "script, for usage with biotite's set_ccd_path. This can be used to make sure "
+        "that the CCD that is used in preprocessing perfectly matches a particular CCD "
+        "version, for example to match the version that the PDB was downloaded with."
+    ),
+    default=None,
+)
+@click.option(
     "--out-dir",
     type=click.Path(exists=False, file_okay=False, dir_okay=True, path_type=Path),
     required=True,
@@ -98,6 +110,7 @@ from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif
 def main(
     cif_dir: Path,
     ccd_path: Path,
+    preprocessed_ccd_path: Path | None,
     out_dir: Path,
     output_format: list[Literal["npz", "cif", "bcif", "pkl"]],
     max_polymer_chains: int = 300,
@@ -122,6 +135,7 @@ def main(
     preprocess_cif_dir_af3(
         cif_dir=cif_dir,
         ccd_path=ccd_path,
+        preprocessed_ccd_path=preprocessed_ccd_path,
         out_dir=out_dir,
         max_polymer_chains=max_polymer_chains,
         num_workers=num_workers,
