@@ -14,14 +14,16 @@ def select_inter_filter_mask(
     inter_mask_atomized: torch.Tensor, mol_type_mask: torch.Tensor, out_shape: list
 ) -> torch.Tensor:
     """
-    Due to MAX INT limit with masked select, we need to select from the inter_mask_atomized
-    mask for each sample independently and then stack them together.
+    Due to MAX INT limit with masked select, we need to select from the
+    inter_mask_atomized mask for each sample independently and then stack
+    them together.
 
     Args:
         inter_mask_atomized:
             [*, N_atom, N_atom] Pairwise filter for inter-chain computations
         mol_type_mask:
-            [*, N_atom] Boolean mask for molecule type to select from inter_mask_atomized
+            [*, N_atom] Boolean mask for molecule type to select from
+            inter_mask_atomized
         out_shape:
             Shape of output tensor
     Returns:
