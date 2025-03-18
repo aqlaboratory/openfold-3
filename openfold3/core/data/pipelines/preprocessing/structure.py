@@ -24,7 +24,6 @@ import numpy as np
 import pandas as pd
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
-from func_timeout import FunctionTimedOut, func_timeout
 from tqdm import tqdm
 
 from openfold3.core.data.io.s3 import download_file_from_s3
@@ -660,11 +659,8 @@ class _AF3PreprocessingWrapper:
 
         logger.debug(f"Processing {cif_file.stem}")
         try:
-            # Give this a 10 minute timeout
-            structure_metadata_dict, ref_mol_metadata_dict = func_timeout(
-                timeout=3600,
-                func=preprocess_structure_and_write_outputs_af3,
-                kwargs=dict(
+            structure_metadata_dict, ref_mol_metadata_dict = (
+                preprocess_structure_and_write_outputs_af3(
                     input_cif=cif_file,
                     out_dir=out_dir,
                     ccd=self.ccd,
@@ -675,7 +671,7 @@ class _AF3PreprocessingWrapper:
                     apply_chain_subsetting_for_rna=self.apply_chain_subsetting_for_rna,
                     except_small_ligands_from_chain_subset=self.except_small_ligands_from_chain_subset,
                     random_seed=self.random_seed,
-                ),
+                )
             )
 
             # Update the set of processed components in-place
@@ -685,7 +681,7 @@ class _AF3PreprocessingWrapper:
             logger.debug(f"Finished processing {cif_file.stem}")
             return structure_metadata_dict, ref_mol_metadata_dict
 
-        except (Exception, FunctionTimedOut) as e:
+        except Exception as e:
             tb = traceback.format_exc()  # Get the full traceback
             logger.warning(
                 "-" * 40
