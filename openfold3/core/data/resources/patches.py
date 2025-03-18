@@ -99,10 +99,10 @@ _NUCLEIC_LINKS = ["RNA LINKING", "DNA LINKING"]
 
 def connect_via_residue_names(atoms, inter_residue=True, custom_bond_dict=None):
     """
-    IMPORTANT: This is a copy of Biotite's original connect_via_residue_names function
-    ported from Cython to Python, which makes use of the patched _connect_inter_residue
-    function, which had an issue coming from case-sensitivity of extracted link types
-    which could cause disconnected chains.
+    IMPORTANT: This is a copy of Biotite's original connect_via_residue_names function,
+    ported from Cython to Python. It uses the patched _connect_inter_residue function,
+    which previously had a case-sensitivity issue with extracted link types that could
+    cause disconnected chains.
 
     ================================================================================
     ORIGINAL DOCSTRING BELOW:
@@ -227,7 +227,7 @@ def connect_via_residue_names(atoms, inter_residue=True, custom_bond_dict=None):
 def _connect_inter_residue(atoms, residue_starts):
     """
     IMPORTANT: This is a copy of Biotite's original _connect_inter_residue function
-    ported from Cython to Python, patches an issue coming from case-sensitivity of
+    ported from Cython to Python, and patches an issue introduced by case-sensitivity of
     extracted link types which can cause disconnected chains.
 
     ================================================================================
