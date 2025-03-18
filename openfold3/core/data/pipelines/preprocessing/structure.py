@@ -760,14 +760,14 @@ def preprocess_cif_dir_af3(
     reference_mol_out_dir = out_dir / "reference_mols"
     reference_mol_out_dir.mkdir(parents=True, exist_ok=True)
 
-    cif_out_dir = out_dir / "cif_files"
-    cif_out_dir.mkdir(parents=True, exist_ok=True)
+    out_structure_dir = out_dir / "structure_files"
+    out_structure_dir.mkdir(parents=True, exist_ok=True)
 
     cif_output_dirs = []
 
     for cif_file in tqdm(cif_files):
         pdb_id = cif_file.stem
-        out_subdir = cif_out_dir / pdb_id
+        out_subdir = out_structure_dir / pdb_id
         cif_output_dirs.append(out_subdir)
 
     processed_mol_ids = SharedSet() if num_workers != 0 else set()
