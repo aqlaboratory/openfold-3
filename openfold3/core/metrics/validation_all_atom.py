@@ -1334,7 +1334,11 @@ def get_metrics(
 
         # Compute RASA (Relative ASA) metric
         if torch.any(is_protein_atomized):
-            metrics["rasa"] = compute_rasa_batch(batch, outputs)
+            rasa = compute_rasa_batch(batch, outputs)
+            # RASA is only computed for proteins with unresolved residues,
+            # otherwise NaN is returned
+            if not torch.isnan(rasa).any():
+                metrics["rasa"] = rasa
 
     valid_metrics = {
         name: value for name, value in metrics.items() if value is not None
