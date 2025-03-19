@@ -686,14 +686,14 @@ def maybe_precrop_chains(
         apply_precropping = False
     else:
         if permissive_small_ligands:
-            total_chain_count = np.unique(
-                atom_array[~get_small_ligand_mask(atom_array, max_atoms=5)].chain_id
+            total_chain_count = struc.get_chain_count(
+                atom_array[~get_small_ligand_mask(atom_array, max_atoms=5)]
             )
         else:
-            total_chain_count = np.unique(atom_array.chain_id)
+            total_chain_count = struc.get_chain_count(atom_array)
 
     # Precrop assemblies larger than 20 chains
-    if apply_precropping and (total_chain_count.size > 20):
+    if apply_precropping and (total_chain_count > n_chains):
         tokenize_atom_array(atom_array)
         atom_array = precrop_chains(
             atom_array=atom_array,
