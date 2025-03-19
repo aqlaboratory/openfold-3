@@ -424,11 +424,6 @@ class AlphaFold3AllAtom(ModelRunner):
                     )
 
             if compute_model_selection:
-                # Remove "val/" prefix from metric names
-                metrics_output = {
-                    k: v.split("/")[-1] for k, v in metrics_output.items()
-                }
-
                 model_selection = compute_final_model_selection_metric(
                     metrics=metrics_output,
                     model_selection_weights=self.model_selection_weights,

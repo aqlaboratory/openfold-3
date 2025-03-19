@@ -110,7 +110,7 @@ def compute_final_model_selection_metric(metrics: dict, model_selection_weights:
     total_weighted = 0.0
     sum_weights = 0.0
     for name, weight in model_selection_weights.items():
-        total_weighted += metrics[name] * weight
+        total_weighted += metrics[f"val/{name}"] * weight
         sum_weights += weight
 
     model_selection = total_weighted / sum_weights
