@@ -653,11 +653,11 @@ def get_small_ligand_mask(
 
 
 @return_on_empty_atom_array
-def subset_large_structure(
+def precrop_chains(
     atom_array: AtomArray,
     n_chains: int = 20,
     interface_distance_threshold: float = 15.0,
-    except_small_ligands: bool = False,
+    permissive_small_ligands: bool = False,
     random_seed: int = None,
 ) -> AtomArray:
     """Subsets structures with too many chains to n chains
@@ -677,7 +677,7 @@ def subset_large_structure(
             Distance threshold in Å that an interface token center atom must have to any
             token center atom in another chain to be considered an interface token
             center atom
-        except_small_ligands:
+        permissive_small_ligands:
             If True, small ligands are not considered in the n_chains count. Instead,
             the N closest non-small-ligand chains will be selected, and the small
             ligands will be included based on proximity to the other chains in the
@@ -695,7 +695,7 @@ def subset_large_structure(
     # Keep pointer to unfiltered AtomArray
     atom_array_orig = atom_array
 
-    if except_small_ligands:
+    if permissive_small_ligands:
         small_ligand_mask = get_small_ligand_mask(atom_array)
 
         # Remove small ligands from the AtomArray
@@ -732,7 +732,7 @@ def subset_large_structure(
 
     # Subset atom array to the closest n chains, and optionally add small ligands in
     # proximity that were previously excluded
-    if except_small_ligands:
+    if permissive_small_ligands:
         # Get the N-chain subset of the AtomArray
         atom_array_subset = atom_array_orig[n_chain_mask]
 

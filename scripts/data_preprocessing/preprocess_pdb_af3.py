@@ -74,19 +74,18 @@ from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif
     ),
 )
 @click.option(
-    "--disable-chain-subsetting-rna",
+    "--disable-rna-precropping",
     is_flag=True,
     help=(
-        "Whether to disable the 20-chain subsetting for structures that contain RNA."
+        "Whether to disable the N-chain precropping for structures that contain RNA."
     ),
 )
 @click.option(
-    "--except-small-ligands-from-chain-subset",
+    "--permissive-small-ligand-precropping",
     is_flag=True,
     help=(
-        "If this is set to True, small ligands will be ignored in the 20-chain counter "
-        "for the 20-chain subsetting, and included based on proximity to the selected "
-        "chains."
+        "If this is set to True, small ligands will be ignored in the N-chain counter "
+        "for precropping, and included based on proximity to the selected chains."
     ),
 )
 @click.option(
@@ -116,8 +115,8 @@ def main(
     max_polymer_chains: int = 300,
     num_workers: int | None = None,
     chunksize: int = 50,
-    disable_chain_subsetting_rna: bool = False,
-    except_small_ligands_from_chain_subset: bool = False,
+    disable_rna_precropping: bool = False,
+    permissive_small_ligand_precropping: bool = False,
     random_seed: int | None = None,
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
     early_stop: int | None = None,
@@ -141,8 +140,8 @@ def main(
         num_workers=num_workers,
         chunksize=chunksize,
         output_formats=output_format,
-        apply_chain_subsetting_for_rna=not disable_chain_subsetting_rna,
-        except_small_ligands_from_chain_subset=except_small_ligands_from_chain_subset,
+        disable_rna_precropping=disable_rna_precropping,
+        permissive_small_ligand_precropping=permissive_small_ligand_precropping,
         random_seed=random_seed,
         early_stop=early_stop,
     )
