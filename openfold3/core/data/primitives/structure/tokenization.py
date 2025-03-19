@@ -4,12 +4,12 @@ import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
 
-from openfold3.core.data.primitives.featurization.structure import get_token_starts
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
 from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
+    get_token_starts,
     remove_atom_indices,
 )
 from openfold3.core.data.resources.residues import (
