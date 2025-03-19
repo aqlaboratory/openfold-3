@@ -22,6 +22,7 @@ from openfold3.core.data.primitives.structure.labels import (
     remove_atom_indices,
     residue_view_iter,
 )
+from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
 from openfold3.core.data.resources.lists import (
     CRYSTALLIZATION_AIDS,
 )
@@ -654,18 +655,23 @@ def get_small_ligand_mask(
 
 def maybe_precrop_chains(
     atom_array: AtomArray,
+    n_chains: int = 20,
     disable_for_rna: bool = False,
     permissive_small_ligands: bool = True,
     random_seed: int | None = None,
 ) -> AtomArray:
-    """
-    Applies the precropping logic to 20 chains as described in AlphaFold3 SI 2.5.4, with
+    """Precrops assemblies meeting the criteria to N chains
+
+    Applies the precropping logic to N chains as described in AlphaFold3 SI 2.5.4, with
     additional options to skip precropping in RNA structures or exclude small ligands
-    from the 20-chain counter.
+    from the N-chain counter.
 
     Args:
         atom_array:
             AtomArray containing the structure to precrop.
+        n_chains:
+            Number of chains to keep in the precrop. If the structure has less than N
+            chains, all of them are kept. Default is 20.
         disable_for_rna:
             If True and if the structure contains RNA, skip the N-chain precropping.
         permissive_small_ligand_precropping:
@@ -676,7 +682,7 @@ def maybe_precrop_chains(
             Random seed for reproducibility
 
     Returns:
-        AtomArray (precropped to 20 chains if chain count > 20).
+        AtomArray (precropped to N chains if chain count > N).
     """
     apply_precropping = True
 
@@ -692,12 +698,12 @@ def maybe_precrop_chains(
         else:
             total_chain_count = struc.get_chain_count(atom_array)
 
-    # Precrop assemblies larger than 20 chains
+    # Precrop assemblies larger than N chains
     if apply_precropping and (total_chain_count > n_chains):
         tokenize_atom_array(atom_array)
         atom_array = precrop_chains(
             atom_array=atom_array,
-            n_chains=20,
+            n_chains=n_chains,
             interface_distance_threshold=15.0,
             permissive_small_ligands=permissive_small_ligands,
             random_seed=random_seed,
@@ -711,14 +717,14 @@ def precrop_chains(
     atom_array: AtomArray,
     n_chains: int = 20,
     interface_distance_threshold: float = 15.0,
-    permissive_small_ligands: bool = False,
+    permissive_small_ligands: bool = True,
     random_seed: int = None,
 ) -> AtomArray:
-    """Subsets structures with too many chains to n chains
+    """Subsets structures with too many chains to N chains
 
     Follows 2.5.4 of the AlphaFold3 SI. Will select a random interface token center atom
     and return the closest N chains based on minimum distances between any token center
-    atoms.
+    atoms, therefore acting as an initial fixed precropping of too-large assemblies.
 
     Requires the 'token_center_atom' annotation created by the tokenizer function.
 
@@ -726,7 +732,8 @@ def precrop_chains(
         atom_array:
             AtomArray containing the structure to subset
         n_chains:
-            Number of chains to keep in the subset
+            Number of chains to keep in the precrop. If the structure has less than N
+            chains, all of them are kept. Default is 20.
         interface_distance_threshold:
             Distance threshold in Å that an interface token center atom must have to any
             token center atom in another chain to be considered an interface token

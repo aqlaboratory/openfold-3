@@ -74,6 +74,15 @@ from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif
     ),
 )
 @click.option(
+    "--n-chains-precropping",
+    type=int,
+    default=20,
+    help=(
+        "The number of chains to keep in the precropping step. If the structure has "
+        "less than N chains, all of them are kept."
+    ),
+)
+@click.option(
     "--disable-rna-precropping",
     is_flag=True,
     help=(
@@ -115,6 +124,7 @@ def main(
     max_polymer_chains: int = 300,
     num_workers: int | None = None,
     chunksize: int = 50,
+    n_chains_precropping: int = 20,
     disable_rna_precropping: bool = False,
     permissive_small_ligand_precropping: bool = False,
     random_seed: int | None = None,
@@ -140,6 +150,7 @@ def main(
         num_workers=num_workers,
         chunksize=chunksize,
         output_formats=output_format,
+        n_chains_precropping=n_chains_precropping,
         disable_rna_precropping=disable_rna_precropping,
         permissive_small_ligand_precropping=permissive_small_ligand_precropping,
         random_seed=random_seed,

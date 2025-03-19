@@ -125,6 +125,7 @@ def cleanup_structure_af3(
     atom_array: AtomArray,
     cif_data: CIFBlock,
     ccd: CIFFile,
+    n_chains_precropping: int = 20,
     disable_rna_precropping: bool = False,
     permissive_small_ligand_precropping: bool = True,
     random_seed: int | None = None,
@@ -150,6 +151,9 @@ def cleanup_structure_af3(
             `metadata_extraction.get_cif_block`)
         ccd:
             CIFFile containing the parsed CCD (components.cif)
+        n_chains_precropping:
+            Number of chains to keep in the precropping step. If the structure has less
+            than N chains, all of them are kept. Default is 20.
         disable_rna_precropping:
             If True and if the structure contains RNA, skip the N-chain precropping.
         permissive_small_ligand_precropping:
@@ -184,8 +188,9 @@ def cleanup_structure_af3(
 
     atom_array = maybe_precrop_chains(
         atom_array=atom_array,
+        n_chains=n_chains_precropping,
         disable_for_rna=disable_rna_precropping,
-        permissive_small_ligand_precropping=permissive_small_ligand_precropping,
+        permissive_small_ligands=permissive_small_ligand_precropping,
         random_seed=random_seed,
     )
 
@@ -384,6 +389,7 @@ def preprocess_structure_and_write_outputs_af3(
     reference_mol_out_dir: Path,
     output_formats: list[Literal["npz", "cif", "bcif", "pkl"]],
     max_polymer_chains: int | None = None,
+    n_chains_precropping: int = 20,
     disable_rna_precropping: bool = False,
     permissive_small_ligand_precropping: bool = True,
     skip_components: set | SharedSet | None = None,
@@ -409,6 +415,9 @@ def preprocess_structure_and_write_outputs_af3(
         output_formats:
             What formats to write the output files to. Allowed values are "cif", "bcif",
             "npz", and "pkl".
+        n_chains_precropping:
+            Number of chains to keep in the precropping step. If the structure has less
+            than N chains, all of them are kept. Default is 20.
         disable_rna_precropping::
             If True and if the structure contains RNA, skip the N-chain precropping.
         permissive_small_ligand_precropping:
@@ -485,6 +494,7 @@ def preprocess_structure_and_write_outputs_af3(
             atom_array=atom_array,
             cif_data=cif_data,
             ccd=ccd,
+            n_chains_precropping=n_chains_precropping,
             disable_rna_precropping=disable_rna_precropping,
             permissive_small_ligand_precropping=permissive_small_ligand_precropping,
             random_seed=random_seed,
@@ -566,6 +576,9 @@ class _AF3PreprocessingWrapper:
         output_formats:
             What formats to write the output files to. Allowed values are "cif", "bcif",
             and "pkl".
+        n_chains_precropping:
+            Number of chains to keep in the precropping step. If the structure has less
+            than N chains, all of them are kept. Default is 20.
         disable_rna_precropping:
             If True and if the structure contains RNA, skip the N-chain precropping.
         permissive_small_ligand_precropping:
@@ -583,6 +596,7 @@ class _AF3PreprocessingWrapper:
         max_polymer_chains: int | None,
         skip_components: set | SharedSet | None,
         output_formats: list[Literal["npz", "cif", "bcif", "pkl"]],
+        n_chains_precropping: int = 20,
         disable_rna_precropping: bool = False,
         permissive_small_ligand_precropping: bool = True,
         random_seed: int | None = None,
@@ -592,6 +606,7 @@ class _AF3PreprocessingWrapper:
         self.max_polymer_chains = max_polymer_chains
         self.skip_components = skip_components
         self.output_formats = output_formats
+        self.n_chains_precropping = n_chains_precropping
         self.disable_rna_precropping = disable_rna_precropping
         self.permissive_small_ligand_precropping = permissive_small_ligand_precropping
         self.random_seed = random_seed
@@ -610,6 +625,7 @@ class _AF3PreprocessingWrapper:
                     max_polymer_chains=self.max_polymer_chains,
                     skip_components=self.skip_components,
                     output_formats=self.output_formats,
+                    n_chains_precropping=self.n_chains_precropping,
                     disable_rna_precropping=self.disable_rna_precropping,
                     permissive_small_ligand_precropping=self.permissive_small_ligand_precropping,
                     random_seed=self.random_seed,
@@ -649,6 +665,7 @@ def preprocess_cif_dir_af3(
     num_workers: int | None = None,
     chunksize: int = 20,
     output_formats: list[Literal["npz", "cif", "bcif", "pkl"]] = False,
+    n_chains_precropping: int = 20,
     disable_rna_precropping: bool = False,
     permissive_small_ligand_precropping: bool = True,
     random_seed: int | None = None,
@@ -685,12 +702,15 @@ def preprocess_cif_dir_af3(
         output_formats:
             What formats to write the output files to. Allowed values are "npz", "cif",
             "bcif", and "pkl".
+        n_chains_precropping:
+            Number of chains to keep in the precropping step. If the structure has less
+            than N chains, all of them are kept. Default is 20.
         disable_rna_precropping:
             If True and if the structure contains RNA, skip the N-chain precropping.
         permissive_small_ligand_precropping:
             If True, small ligands (fewer than 5 atoms) won't count toward the total
             chain count for precropping. Instead, they'll be included based on 5 Å
-            proximity to the selected 20 chains.
+            proximity to the selected N chains.
         random_seed:
             Random seed for reproducibility in precropping.
         early_stop:
@@ -733,6 +753,7 @@ def preprocess_cif_dir_af3(
         max_polymer_chains=max_polymer_chains,
         skip_components=processed_mol_ids,
         output_formats=output_formats,
+        n_chains_precropping=n_chains_precropping,
         disable_rna_precropping=disable_rna_precropping,
         permissive_small_ligand_precropping=permissive_small_ligand_precropping,
         random_seed=random_seed,
