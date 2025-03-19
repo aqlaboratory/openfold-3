@@ -1287,14 +1287,14 @@ def update_gt_position_features(
     }
 
     intra_filter_atomized = ground_truth_features.get("intra_filter_atomized")
-    if intra_filter_atomized:
+    if intra_filter_atomized is not None:
         intra_filter_atomized = permute_gt_atom_features(
             [intra_filter_atomized], gt_atom_indexes
         )[0]
         updated_ground_truth_features["intra_filter_atomized"] = intra_filter_atomized
 
     inter_filter_atomized = ground_truth_features.get("inter_filter_atomized")
-    if inter_filter_atomized:
+    if inter_filter_atomized is not None:
         inter_filter_atomized = permute_gt_atom_features(
             [inter_filter_atomized], gt_atom_indexes
         )[0]
