@@ -38,6 +38,10 @@ chunk_size = mlc.FieldReference(None, field_type=int)
 tune_chunk_size = mlc.FieldReference(True, field_type=bool)
 max_atoms_per_token = mlc.FieldReference(23, field_type=int)
 
+# Cutoffs for chunking ops per diffusion sample
+per_sample_token_cutoff = mlc.FieldReference(1500, field_type=int)
+per_sample_atom_cutoff = mlc.FieldReference(None, field_type=int)
+
 model_selection_metric_weights_config = mlc.FrozenConfigDict(
     {
         "initial_training": {
@@ -77,6 +81,8 @@ project_config = mlc.ConfigDict(
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "ckpt_intermediate_steps": ckpt_intermediate_steps,
                 "chunk_size": chunk_size,
+                "per_sample_token_cutoff": per_sample_token_cutoff,
+                "per_sample_atom_cutoff": per_sample_atom_cutoff,
                 # Use DeepSpeed memory-efficient attention kernel. Mutually
                 # exclusive with use_lma and use_flash.
                 "use_deepspeed_evo_attention": False,
@@ -338,7 +344,7 @@ project_config = mlc.ConfigDict(
                         "max_bin": 20.75,
                         "no_bin": 15,
                         "inf": inf,
-                        "per_sample_token_cutoff": 1500,
+                        "per_sample_token_cutoff": per_sample_token_cutoff,
                         "linear_init_params": lin_init.pairformer_head_init,
                     },
                     "pae": {
@@ -400,6 +406,7 @@ project_config = mlc.ConfigDict(
                             "bin_min": 0.0,
                             "bin_max": 32.0,
                         },
+                        "per_sample_atom_cutoff": per_sample_atom_cutoff,
                         "eps": eps,
                         "inf": inf,
                     },

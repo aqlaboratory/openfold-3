@@ -15,6 +15,7 @@
 """Confidence losses from predicted logits in the Confidence Module."""
 
 from functools import partial
+from typing import Optional
 
 import torch
 import torch.nn.functional as F
@@ -681,8 +682,9 @@ def confidence_loss(
     pde: dict,
     experimentally_resolved: dict,
     pae: dict,
-    eps: float,
-    inf: float,
+    per_sample_atom_cutoff: Optional[int] = None,
+    eps: float = 1e-8,
+    inf: float = 1e9,
     **kwargs,
 ) -> [torch.Tensor, dict]:
     """
@@ -712,6 +714,8 @@ def confidence_loss(
                 "no_bins": Number of bins
                 "bin_min": Minimum bin value
                 "bin_max": Maximum bin value
+        per_sample_atom_cutoff:
+            Atom seq len for which to start chunking all atom plddt
         eps:
             Small float for numerical stability
         inf:
@@ -727,9 +731,16 @@ def confidence_loss(
     # For more than one sample, calculate per-sample losses
     # This will happen in validation, where 5 samples are generated
     # for the rollout.
-    n_samples = output["atom_positions_predicted"].shape[-3]
-    n_atom = output["atom_positions_predicted"].shape[-2]
-    if n_samples > 1 and n_atom > 5e4:
+    num_samples = output["atom_positions_predicted"].shape[-3]
+    num_atoms = output["atom_positions_predicted"].shape[-2]
+    chunk_plddt = all(
+        [
+            num_samples > 1,
+            per_sample_atom_cutoff is not None,
+            num_atoms > per_sample_atom_cutoff,
+        ]
+    )
+    if chunk_plddt:
         l_plddt = per_sample_all_atom_plddt_loss(
             batch=batch,
             x=output["atom_positions_predicted"],

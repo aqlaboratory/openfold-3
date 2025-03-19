@@ -13,10 +13,14 @@ from openfold3.core.metrics.confidence import (
     compute_predicted_distance_error,
     compute_weighted_ptm,
 )
-from openfold3.core.metrics.model_selection import compute_model_selection_metric
+from openfold3.core.metrics.model_selection import (
+    compute_final_model_selection_metric,
+    compute_valid_model_selection_metrics,
+)
 from openfold3.core.metrics.pearson_correlation import ZeroSafePearsonCorrCoef
 from openfold3.core.metrics.validation_all_atom import (
     get_metrics,
+    get_metrics_chunked,
 )
 from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.atomize_utils import get_token_frame_atoms
@@ -171,53 +175,23 @@ class AlphaFold3AllAtom(ModelRunner):
                     compute_extra_val_metrics=False,
                 )
 
-            # TODO: Model selection - consider replacing this call directly with
-            #  model selection call so that we have aggregated statistics of
-            #  all the diffusion samples
             num_samples = (
                 self.config.architecture.shared.diffusion.no_full_rollout_samples
             )
             num_atoms = outputs["atom_positions_predicted"].shape[-2]
-            if num_samples > 1 and num_atoms > 5e4:
-                metrics_per_sample_list = []
-                for idx in range(num_samples):
-
-                    def fetch_cur_sample(t):
-                        if t.shape[1] != num_samples:
-                            return t
-                        return t[:, idx : idx + 1]  # noqa: B023
-
-                    cur_batch = tensor_tree_map(
-                        fetch_cur_sample, batch, strict_type=False
-                    )
-                    cur_outputs = tensor_tree_map(
-                        fetch_cur_sample, outputs, strict_type=False
-                    )
-                    metrics_per_sample_list.append(
-                        get_metrics(
-                            cur_batch,
-                            cur_outputs,
-                            compute_extra_val_metrics=True,
-                        )
-                    )
-
-                metrics_per_sample = {}
-                all_metric_keys = set().union(
-                    *(m.keys() for m in metrics_per_sample_list)
+            chunk_metrics_computation = all(
+                [
+                    num_samples > 1,
+                    self.config.settings.per_sample_atom_cutoff is not None,
+                    num_atoms > self.config.settings.per_sample_atom_cutoff,
+                ]
+            )
+            if chunk_metrics_computation:
+                metrics_per_sample = get_metrics_chunked(
+                    batch,
+                    outputs,
+                    compute_extra_val_metrics=True,
                 )
-                batch_dims = outputs["atom_positions_predicted"].shape[:-2]
-                for metric_name in all_metric_keys:
-                    metric_values = []
-                    for sample in metrics_per_sample_list:
-                        metric_values.append(
-                            sample.get(
-                                metric_name,
-                                torch.zeros(
-                                    batch_dims, device=self.device, dtype=self.dtype
-                                ),
-                            )
-                        )
-                    metrics_per_sample[metric_name] = torch.concat(metric_values, dim=1)
             else:
                 metrics_per_sample = get_metrics(
                     batch,
@@ -225,7 +199,7 @@ class AlphaFold3AllAtom(ModelRunner):
                     compute_extra_val_metrics=True,
                 )
 
-            metrics = compute_model_selection_metric(
+            metrics = compute_valid_model_selection_metrics(
                 outputs=outputs,
                 metrics=metrics_per_sample,
             )
@@ -242,12 +216,6 @@ class AlphaFold3AllAtom(ModelRunner):
                     plddt = plddt.reshape((-1, 1))
                     lddt = lddt.reshape((-1, 1))
                     metrics[metric_name] = (lddt, plddt)
-
-            logger.debug(
-                f"Validation sample {', '.join(batch['pdb_id'])} on rank "
-                f"{self.global_rank} has the following metrics: "
-                f"{', '.join(list(metrics.keys()))}"
-            )
 
             return metrics
 
@@ -457,15 +425,15 @@ class AlphaFold3AllAtom(ModelRunner):
                     )
 
             if compute_model_selection:
-                total_weighted = 0.0
-                sum_weights = 0.0
-                for metric_name, metric_weight in self.model_selection_weights.items():
-                    total_weighted += (
-                        metrics_output[f"val/{metric_name}"] * metric_weight
-                    )
-                    sum_weights += metric_weight
+                # Remove "val/" prefix from metric names
+                metrics_output = {
+                    k: v.split("/")[-1] for k, v in metrics_output.items()
+                }
 
-                model_selection = total_weighted / sum_weights
+                model_selection = compute_final_model_selection_metric(
+                    metrics=metrics_output,
+                    model_selection_weights=self.model_selection_weights,
+                )
 
                 self.log(
                     "val/model_selection",

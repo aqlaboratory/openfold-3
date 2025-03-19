@@ -8,6 +8,7 @@ from openfold3.core.metrics.rasa import compute_rasa_batch
 from openfold3.core.metrics.validation import gdt_ha, gdt_ts, rmsd
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.geometry.kabsch_alignment import kabsch_align
+from openfold3.core.utils.tensor_utils import tensor_tree_map
 
 
 def select_inter_filter_mask(
@@ -1345,3 +1346,65 @@ def get_metrics(
     }
 
     return valid_metrics
+
+
+def get_metrics_chunked(
+    batch,
+    outputs,
+    compute_extra_val_metrics=False,
+) -> dict[str, torch.Tensor]:
+    """
+    Compute validation metrics per predicted sample on all substrates
+
+    Args:
+        batch: ground truth and permutation applied features
+        outputs: model outputs
+        compute_extra_val_metrics: computes extra lddt metrics needed
+            for model selection
+    Returns:
+        metrics: dict containing validation metrics across all substrates
+
+    Note:
+        if no appropriate substrates, no corresponding metrics will be included
+    """
+    atom_positions_predicted = outputs["atom_positions_predicted"]
+    batch_dims = atom_positions_predicted.shape[:-2]
+    num_samples = batch_dims[-1]
+
+    metrics_per_sample_list = []
+    for idx in range(num_samples):
+
+        def fetch_cur_sample(t):
+            if t.shape[1] != num_samples:
+                return t
+            return t[:, idx : idx + 1]  # noqa: B023
+
+        cur_batch = tensor_tree_map(fetch_cur_sample, batch, strict_type=False)
+        cur_outputs = tensor_tree_map(fetch_cur_sample, outputs, strict_type=False)
+        metrics_per_sample_list.append(
+            get_metrics(
+                cur_batch,
+                cur_outputs,
+                compute_extra_val_metrics=compute_extra_val_metrics,
+            )
+        )
+
+    metrics_per_sample = {}
+    all_metric_keys = set().union(*(m.keys() for m in metrics_per_sample_list))
+
+    for metric_name in all_metric_keys:
+        metric_values = []
+        for sample in metrics_per_sample_list:
+            metric_values.append(
+                sample.get(
+                    metric_name,
+                    torch.zeros(
+                        batch_dims,
+                        device=atom_positions_predicted.device,
+                        dtype=atom_positions_predicted.dtype,
+                    ),
+                )
+            )
+        metrics_per_sample[metric_name] = torch.concat(metric_values, dim=1)
+
+    return metrics_per_sample
