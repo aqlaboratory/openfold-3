@@ -237,38 +237,43 @@ class NoisyPositionEmbedder(nn.Module):
 
         # Broadcast trunk single representation into atom single conditioning
         # [*, N_atom, c_atom]
-        sl_trunk = broadcast_token_feat_to_atoms(
+        si_trunk = broadcast_token_feat_to_atoms(
             token_mask=batch["token_mask"],
             num_atoms_per_token=batch["num_atoms_per_token"],
             token_feat=si_trunk,
             token_dim=-2,
         )
-        cl = cl + self.linear_s(self.layer_norm_s(sl_trunk))
+        cl = cl + self.linear_s(self.layer_norm_s(si_trunk))
 
         # Broadcast trunk pair representation into atom pair conditioning
-        # [*, N_atom, N_atom, c_atom_pair]
         zij_trunk = self.linear_z(self.layer_norm_z(zij_trunk))
-        zlj_trunk = broadcast_token_feat_to_atoms(
+
+        # z_lj: [*, N_atom, N_token, c_atom_pair]
+        zij_trunk = broadcast_token_feat_to_atoms(
             token_mask=batch["token_mask"],
             num_atoms_per_token=batch["num_atoms_per_token"],
             token_feat=zij_trunk,
             token_dim=-3,
         )
-        zlm_trunk = broadcast_token_feat_to_atoms(
+
+        # z_ml: [*, N_atom, N_atom, c_atom_pair]
+        zij_trunk = broadcast_token_feat_to_atoms(
             token_mask=batch["token_mask"],
             num_atoms_per_token=batch["num_atoms_per_token"],
-            token_feat=zlj_trunk.transpose(-2, -3),
+            token_feat=zij_trunk.transpose(-2, -3),
             token_dim=-3,
         )
-        zlm_trunk = zlm_trunk.transpose(-2, -3)
+
+        # z_lm: [*, N_atom, N_atom, c_atom_pair]
+        zij_trunk = zij_trunk.transpose(-2, -3)
 
         # [*, N_atom, N_atom, c_atom_pair] ->
         # [*, N_blocks, N_query, N_key, c_atom_pair]
-        zlm_trunk = convert_pair_rep_to_blocks(
-            plm=zlm_trunk, n_query=n_query, n_key=n_key
+        zij_trunk = convert_pair_rep_to_blocks(
+            plm=zij_trunk, n_query=n_query, n_key=n_key
         )
 
-        plm = plm + zlm_trunk
+        plm = plm + zij_trunk
 
         # Add noisy coordinate projection
         # [*, N_atom, c_atom]
@@ -462,6 +467,21 @@ class AtomAttentionEncoder(nn.Module):
                 n_query=self.n_query,
                 n_key=self.n_key,
             )
+
+        # TODO: Convert to this version for memory reasons.
+        #  Note that the l/m linear layers are reversed here, they should be renamed
+        #  Keeping it the same for now so that its compatible with previous checkpoints.
+        # cl_l, cl_m, atom_mask = convert_single_rep_to_blocks(
+        #     ql=cl,
+        #     n_query=self.n_query,
+        #     n_key=self.n_key,
+        #     atom_mask=batch["atom_mask"]
+        # )
+        #
+        # cl_lm = (
+        #     self.linear_m(self.relu(cl_l.unsqueeze(-2)))
+        #     + self.linear_l(self.relu(cl_m.unsqueeze(-3)))
+        # ) * atom_mask.unsqueeze(-1)
 
         # Add the combined single conditioning to the pair rep (line 13 - 14)
         cl_lm = self.linear_l(self.relu(cl.unsqueeze(-3))) + self.linear_m(

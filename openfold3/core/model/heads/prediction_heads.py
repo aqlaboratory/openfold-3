@@ -245,34 +245,32 @@ class PairformerEmbedding(nn.Module):
             ]
         )
 
-        in_dtype = si.dtype
-        with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
-            if pairformer_per_sample:
-                si, zij = self.per_sample_pairformer_emb(
-                    si=si,
-                    zij=zij,
-                    single_mask=single_mask,
-                    pair_mask=pair_mask,
-                    chunk_size=chunk_size,
-                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                    use_lma=use_lma,
-                    inplace_safe=inplace_safe,
-                    _mask_trans=_mask_trans,
-                )
-            else:
-                si, zij = self.pairformer_emb(
-                    si=si,
-                    zij=zij,
-                    single_mask=single_mask,
-                    pair_mask=pair_mask,
-                    chunk_size=chunk_size,
-                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                    use_lma=use_lma,
-                    inplace_safe=inplace_safe,
-                    _mask_trans=_mask_trans,
-                )
+        if pairformer_per_sample:
+            si, zij = self.per_sample_pairformer_emb(
+                si=si,
+                zij=zij,
+                single_mask=single_mask,
+                pair_mask=pair_mask,
+                chunk_size=chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                _mask_trans=_mask_trans,
+            )
+        else:
+            si, zij = self.pairformer_emb(
+                si=si,
+                zij=zij,
+                single_mask=single_mask,
+                pair_mask=pair_mask,
+                chunk_size=chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                _mask_trans=_mask_trans,
+            )
 
-        return si.to(dtype=in_dtype), zij.to(dtype=in_dtype)
+        return si, zij
 
 
 class PredictedAlignedErrorHead(nn.Module):

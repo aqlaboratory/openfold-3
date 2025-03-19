@@ -279,7 +279,10 @@ class AlphaFold3(nn.Module):
         )
 
         # Compute atom positions
-        with torch.no_grad():
+        with (
+            torch.no_grad(),
+            torch.amp.autocast(device_type="cuda", dtype=torch.float32),
+        ):
             noise_schedule = create_noise_schedule(
                 no_rollout_steps=no_rollout_steps,
                 **self.config.architecture.noise_schedule,
@@ -306,16 +309,21 @@ class AlphaFold3(nn.Module):
         }
 
         # Compute confidence logits
+        aux_heads_out = self.aux_heads(
+            batch=batch,
+            si_input=si_input,
+            output=output,
+            use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+            use_lma=self.settings.use_lma,
+            inplace_safe=inplace_safe,
+            _mask_trans=True,
+        )
+
         output.update(
-            self.aux_heads(
-                batch=batch,
-                si_input=si_input,
-                output=output,
-                use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-                use_lma=self.settings.use_lma,
-                inplace_safe=inplace_safe,
-                _mask_trans=True,
-            )
+            {
+                k: v.to(dtype=atom_positions_predicted.dtype)
+                for k, v in aux_heads_out.items()
+            }
         )
 
         return output
@@ -549,18 +557,18 @@ class AlphaFold3(nn.Module):
         batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
         batch["ref_space_uid_to_perm"] = ref_space_uid_to_perm
 
+        # Mini rollout
+        rollout_output = self._rollout(
+            batch=batch,
+            si_input=si_input,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+            inplace_safe=inplace_safe,
+        )
+
+        output.update(rollout_output)
+
         with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
-            # Mini rollout
-            rollout_output = self._rollout(
-                batch=batch,
-                si_input=si_input,
-                si_trunk=si_trunk,
-                zij_trunk=zij_trunk,
-                inplace_safe=inplace_safe,
-            )
-
-            output.update(rollout_output)
-
             # Apply permutation alignment for training and validation
             if "ground_truth" in batch:
                 # Update the ground-truth coordinates/mask in-place with the correct

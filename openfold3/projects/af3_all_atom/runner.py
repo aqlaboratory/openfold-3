@@ -179,13 +179,12 @@ class AlphaFold3AllAtom(ModelRunner):
                 self.config.architecture.shared.diffusion.no_full_rollout_samples
             )
             num_atoms = outputs["atom_positions_predicted"].shape[-2]
-            chunk_metrics_computation = all(
-                [
-                    num_samples > 1,
-                    self.config.settings.per_sample_atom_cutoff is not None,
-                    num_atoms > self.config.settings.per_sample_atom_cutoff,
-                ]
+            chunk_metrics_computation = (
+                num_samples > 1
+                and self.config.settings.per_sample_atom_cutoff is not None
+                and num_atoms > self.config.settings.per_sample_atom_cutoff
             )
+
             if chunk_metrics_computation:
                 metrics_per_sample = get_metrics_chunked(
                     batch,

@@ -733,13 +733,12 @@ def confidence_loss(
     # for the rollout.
     num_samples = output["atom_positions_predicted"].shape[-3]
     num_atoms = output["atom_positions_predicted"].shape[-2]
-    chunk_plddt = all(
-        [
-            num_samples > 1,
-            per_sample_atom_cutoff is not None,
-            num_atoms > per_sample_atom_cutoff,
-        ]
+    chunk_plddt = (
+        num_samples > 1
+        and per_sample_atom_cutoff is not None
+        and num_atoms > per_sample_atom_cutoff
     )
+
     if chunk_plddt:
         l_plddt = per_sample_all_atom_plddt_loss(
             batch=batch,
