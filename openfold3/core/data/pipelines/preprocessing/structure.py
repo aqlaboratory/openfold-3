@@ -58,8 +58,7 @@ from openfold3.core.data.primitives.structure.cleanup import (
     canonicalize_atom_order,
     convert_MSE_to_MET,
     fix_arginine_naming,
-    get_small_ligand_mask,
-    precrop_chains,
+    maybe_precrop_chains,
     remove_chains_with_CA_gaps,
     remove_clashing_chains,
     remove_covalent_nonprotein_chains,
@@ -100,7 +99,6 @@ from openfold3.core.data.primitives.structure.metadata import (
 )
 from openfold3.core.data.primitives.structure.tokenization import (
     get_token_count,
-    tokenize_atom_array,
 )
 from openfold3.core.data.primitives.structure.unresolved import add_unresolved_atoms
 from openfold3.core.data.resources.residues import MoleculeType
@@ -115,63 +113,6 @@ def _init_worker(profile_name: str = "openfold") -> None:
     """Initialize the boto3 session in each worker."""
     global _worker_session
     _worker_session = boto3.Session(profile_name=profile_name)
-
-
-def maybe_precrop_chains(
-    atom_array: AtomArray,
-    disable_for_rna: bool = False,
-    permissive_small_ligands: bool = True,
-    random_seed: int | None = None,
-) -> AtomArray:
-    """
-    Applies the precropping logic to 20 chains as described in AlphaFold3 SI 2.5.4, with
-    additional options to skip precropping in RNA structures or exclude small ligands
-    from the 20-chain counter.
-
-    Args:
-        atom_array:
-            AtomArray containing the structure to precrop.
-        disable_for_rna:
-            If True and if the structure contains RNA, skip the N-chain precropping.
-        permissive_small_ligand_precropping:
-            If True, small ligands (fewer than 5 atoms) won't count towards the total
-            chain count for precropping. Instead, they'll be included based on 5 Å
-            proximity to the selected N chains.
-        random_seed:
-            Random seed for reproducibility
-
-    Returns:
-        AtomArray (precropped to 20 chains if chain count > 20).
-    """
-    apply_precropping = True
-
-    # Skip if RNA found and disable_for_rna is True
-    if (
-        disable_for_rna
-        and (atom_array.molecule_type_id == MoleculeType.RNA).any()
-    ):
-        logger.info("Skipping precropping for RNA structure.")
-        apply_precropping = False
-    else:
-        if permissive_small_ligands:
-            total_chain_count = np.unique(
-                atom_array[~get_small_ligand_mask(atom_array, max_atoms=5)].chain_id
-            )
-        else:
-            total_chain_count = np.unique(atom_array.chain_id)
-
-    # Precrop assemblies larger than 20 chains
-    if apply_precropping and (total_chain_count.size > 20):
-        tokenize_atom_array(atom_array)
-        atom_array = precrop_chains(
-            atom_array=atom_array,
-            n_chains=20,
-            interface_distance_threshold=15.0,
-            permissive_small_ligands=permissive_small_ligands,
-            random_seed=random_seed,
-        )
-
-    return atom_array
 
 
 class SkippedStructureError(Exception):
@@ -652,9 +593,7 @@ class _AF3PreprocessingWrapper:
         self.skip_components = skip_components
         self.output_formats = output_formats
         self.disable_rna_precropping = disable_rna_precropping
-        self.permissive_small_ligand_precropping = (
-            permissive_small_ligand_precropping
-        )
+        self.permissive_small_ligand_precropping = permissive_small_ligand_precropping
         self.random_seed = random_seed
 
     def __call__(self, paths: tuple[Path, Path]) -> tuple[dict, dict]:
