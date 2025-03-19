@@ -21,6 +21,9 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
         n_atom = 4 * consts.n_res
         c_atom = 64
         c_atom_pair = 16
+        n_query = 32
+        n_key = 128
+        num_blocks = math.ceil(n_atom / n_query)
 
         embedder = RefAtomFeatureEmbedder(
             c_atom_ref=c_atom_ref.get(), c_atom=c_atom, c_atom_pair=c_atom_pair
@@ -35,16 +38,21 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
             "ref_space_uid": torch.zeros((batch_size, n_atom)),
         }
 
-        cl, plm = embedder(batch)
+        cl, plm = embedder(batch, n_query=n_query, n_key=n_key)
 
         self.assertTrue(cl.shape == (batch_size, n_atom, c_atom))
-        self.assertTrue(plm.shape == (batch_size, n_atom, n_atom, c_atom_pair))
+        self.assertTrue(
+            plm.shape == (batch_size, num_blocks, n_query, n_key, c_atom_pair)
+        )
 
     def test_with_n_sample_channel(self):
         batch_size = consts.batch_size
         n_atom = 4 * consts.n_res
         c_atom = 64
         c_atom_pair = 16
+        n_query = 32
+        n_key = 128
+        num_blocks = math.ceil(n_atom / n_query)
 
         embedder = RefAtomFeatureEmbedder(
             c_atom_ref=c_atom_ref.get(), c_atom=c_atom, c_atom_pair=c_atom_pair
@@ -59,10 +67,12 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
             "ref_space_uid": torch.zeros((batch_size, 1, n_atom)),
         }
 
-        cl, plm = embedder(batch)
+        cl, plm = embedder(batch, n_query=n_query, n_key=n_key)
 
         self.assertTrue(cl.shape == (batch_size, 1, n_atom, c_atom))
-        self.assertTrue(plm.shape == (batch_size, 1, n_atom, n_atom, c_atom_pair))
+        self.assertTrue(
+            plm.shape == (batch_size, 1, num_blocks, n_query, n_key, c_atom_pair)
+        )
 
 
 class TestNoisyPositionEmbedder(unittest.TestCase):
@@ -74,6 +84,9 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
         c_z = consts.c_z
         c_atom = 64
         c_atom_pair = 16
+        n_query = 32
+        n_key = 128
+        num_blocks = math.ceil(n_atom / n_query)
 
         embedder = NoisyPositionEmbedder(
             c_s=c_s,
@@ -83,7 +96,7 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
         )
 
         cl = torch.randn((batch_size, n_atom, c_atom))
-        plm = torch.randn((batch_size, n_atom, n_atom, c_atom_pair))
+        plm = torch.randn((batch_size, num_blocks, n_query, n_key, c_atom_pair))
         ql = torch.randn((batch_size, n_atom, c_atom))
 
         si_trunk = torch.randn((batch_size, n_token, c_s))
@@ -103,10 +116,14 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
             rl=rl,
+            n_query=n_query,
+            n_key=n_key,
         )
 
         self.assertTrue(cl.shape == (batch_size, n_atom, c_atom))
-        self.assertTrue(plm.shape == (batch_size, n_atom, n_atom, c_atom_pair))
+        self.assertTrue(
+            plm.shape == (batch_size, num_blocks, n_query, n_key, c_atom_pair)
+        )
         self.assertTrue(ql.shape == (batch_size, n_atom, c_atom))
 
     def test_with_n_sample_channel(self):
@@ -118,6 +135,9 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
         c_atom = 64
         c_atom_pair = 16
         n_sample = 3
+        n_query = 32
+        n_key = 128
+        num_blocks = math.ceil(n_atom / n_query)
 
         embedder = NoisyPositionEmbedder(
             c_s=c_s,
@@ -127,7 +147,7 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
         )
 
         cl = torch.randn((batch_size, 1, n_atom, c_atom))
-        plm = torch.randn((batch_size, 1, n_atom, n_atom, c_atom_pair))
+        plm = torch.randn((batch_size, 1, num_blocks, n_query, n_key, c_atom_pair))
         ql = torch.randn((batch_size, 1, n_atom, c_atom))
 
         si_trunk = torch.randn((batch_size, 1, n_token, c_s))
@@ -147,10 +167,14 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
             rl=rl,
+            n_query=n_query,
+            n_key=n_key,
         )
 
         self.assertTrue(cl.shape == (batch_size, 1, n_atom, c_atom))
-        self.assertTrue(plm.shape == (batch_size, 1, n_atom, n_atom, c_atom_pair))
+        self.assertTrue(
+            plm.shape == (batch_size, 1, num_blocks, n_query, n_key, c_atom_pair)
+        )
         self.assertTrue(ql.shape == (batch_size, n_sample, n_atom, c_atom))
 
 

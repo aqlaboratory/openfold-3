@@ -14,6 +14,8 @@
 
 """Confidence losses from predicted logits in the Confidence Module."""
 
+from functools import partial
+
 import torch
 import torch.nn.functional as F
 
@@ -31,7 +33,7 @@ from openfold3.core.utils.atomize_utils import (
     get_token_representative_atoms,
 )
 from openfold3.core.utils.rigid_utils import Rigid
-from openfold3.core.utils.tensor_utils import binned_one_hot
+from openfold3.core.utils.tensor_utils import binned_one_hot, tensor_tree_map
 
 ########################
 # AF2 Confidence Losses
@@ -426,6 +428,58 @@ def all_atom_plddt_loss(
     return l_plddt
 
 
+def per_sample_all_atom_plddt_loss(
+    batch: dict,
+    x: torch.Tensor,
+    logits: torch.Tensor,
+    no_bins: int,
+    bin_min: float,
+    bin_max: float,
+    eps: float,
+) -> torch.Tensor:
+    """
+    Compute loss per sample on predicted local distance difference test (pLDDT).
+
+    Args:
+        batch:
+            Feature dictionary
+        x:
+            [*, N_atom, 3] Predicted atom positions
+        logits:
+            [*, N_atom, no_bins] Predicted logits
+        no_bins:
+            Number of bins
+        bin_min:
+            Minimum bin value
+        bin_max:
+            Maximum bin value
+        eps:
+            Small float for numerical stability
+    Returns:
+        [*] Losses on pLDDT
+    """
+
+    all_atom_plddt_partial = partial(
+        all_atom_plddt_loss, no_bins=no_bins, bin_min=bin_min, bin_max=bin_max, eps=eps
+    )
+    chunks = []
+    for i in range(0, x.shape[-3], 1):
+
+        def index_batch(t: torch.Tensor):
+            no_samples = t.shape[1]
+            if no_samples == 1:
+                return t
+            return t[:, i : i + 1]  # noqa: B023
+
+        batch_chunk = tensor_tree_map(index_batch, batch)
+        x_chunk = x[:, i : i + 1]
+        logits_chunk = logits[:, i : i + 1]
+        l_chunk = all_atom_plddt_partial(batch_chunk, x_chunk, logits_chunk)
+        chunks.append(l_chunk)
+
+    return torch.cat(chunks, dim=-1)
+
+
 def pae_loss(
     batch: dict,
     x: torch.Tensor,
@@ -670,15 +724,31 @@ def confidence_loss(
     """
     loss_weights = batch["loss_weights"]
 
-    l_plddt = all_atom_plddt_loss(
-        batch=batch,
-        x=output["atom_positions_predicted"],
-        logits=output["plddt_logits"],
-        no_bins=plddt["no_bins"],
-        bin_min=plddt["bin_min"],
-        bin_max=plddt["bin_max"],
-        eps=eps,
-    )
+    # For more than one sample, calculate per-sample losses
+    # This will happen in validation, where 5 samples are generated
+    # for the rollout.
+    n_samples = output["atom_positions_predicted"].shape[-3]
+    n_atom = output["atom_positions_predicted"].shape[-2]
+    if n_samples > 1 and n_atom > 5e4:
+        l_plddt = per_sample_all_atom_plddt_loss(
+            batch=batch,
+            x=output["atom_positions_predicted"],
+            logits=output["plddt_logits"],
+            no_bins=plddt["no_bins"],
+            bin_min=plddt["bin_min"],
+            bin_max=plddt["bin_max"],
+            eps=eps,
+        )
+    else:
+        l_plddt = all_atom_plddt_loss(
+            batch=batch,
+            x=output["atom_positions_predicted"],
+            logits=output["plddt_logits"],
+            no_bins=plddt["no_bins"],
+            bin_min=plddt["bin_min"],
+            bin_max=plddt["bin_max"],
+            eps=eps,
+        )
 
     l_pde = pde_loss(
         batch=batch,

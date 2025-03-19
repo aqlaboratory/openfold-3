@@ -58,7 +58,13 @@ def _configure_wandb_logger(
     if is_mpi_rank_zero:
         wandb.run = wandb.init(**wandb_init_dict)
 
-    wandb_logger = WandbLogger(**wandb_init_dict, save_dir=output_dir, log_model=False)
+    run_offline = wandb_args.get("offline", False)
+    wandb_logger = WandbLogger(
+        **wandb_init_dict,
+        save_dir=output_dir,
+        log_model=False,
+        offline=run_offline,
+    )
     return wandb_logger
 
 

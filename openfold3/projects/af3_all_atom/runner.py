@@ -174,11 +174,56 @@ class AlphaFold3AllAtom(ModelRunner):
             # TODO: Model selection - consider replacing this call directly with
             #  model selection call so that we have aggregated statistics of
             #  all the diffusion samples
-            metrics_per_sample = get_metrics(
-                batch,
-                outputs,
-                compute_extra_val_metrics=True,
+            num_samples = (
+                self.config.architecture.shared.diffusion.no_full_rollout_samples
             )
+            num_atoms = outputs["atom_positions_predicted"].shape[-2]
+            if num_samples > 1 and num_atoms > 5e4:
+                metrics_per_sample_list = []
+                for idx in range(num_samples):
+
+                    def fetch_cur_sample(t):
+                        if t.shape[1] != num_samples:
+                            return t
+                        return t[:, idx : idx + 1]  # noqa: B023
+
+                    cur_batch = tensor_tree_map(
+                        fetch_cur_sample, batch, strict_type=False
+                    )
+                    cur_outputs = tensor_tree_map(
+                        fetch_cur_sample, outputs, strict_type=False
+                    )
+                    metrics_per_sample_list.append(
+                        get_metrics(
+                            cur_batch,
+                            cur_outputs,
+                            compute_extra_val_metrics=True,
+                        )
+                    )
+
+                metrics_per_sample = {}
+                all_metric_keys = set().union(
+                    *(m.keys() for m in metrics_per_sample_list)
+                )
+                batch_dims = outputs["atom_positions_predicted"].shape[:-2]
+                for metric_name in all_metric_keys:
+                    metric_values = []
+                    for sample in metrics_per_sample_list:
+                        metric_values.append(
+                            sample.get(
+                                metric_name,
+                                torch.zeros(
+                                    batch_dims, device=self.device, dtype=self.dtype
+                                ),
+                            )
+                        )
+                    metrics_per_sample[metric_name] = torch.concat(metric_values, dim=1)
+            else:
+                metrics_per_sample = get_metrics(
+                    batch,
+                    outputs,
+                    compute_extra_val_metrics=True,
+                )
 
             metrics = compute_model_selection_metric(
                 outputs=outputs,

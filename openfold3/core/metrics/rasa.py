@@ -317,8 +317,8 @@ def compute_rasa_batch(
         If any chain in the structure fails during RASA computation, a warning is logged
         and NaN is returned.
     """
+    pdb_ids = batch.get("pdb_id")
     struct_arrays = batch["atom_array"]
-    pdb_ids = batch["pdb_id"]
     atom_positions_predicted = outputs["atom_positions_predicted"]
 
     # (N_batch, N_samples, N_atoms, 3)
