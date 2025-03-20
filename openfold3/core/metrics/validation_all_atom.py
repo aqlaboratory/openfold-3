@@ -218,19 +218,26 @@ def drmsd(
     Note:
         returns None if inter_drmsd is invalid (ie. single chain)
     """
+    # Calculate squared distance differences
     drmsd = pair_dist_pred_pos - pair_dist_gt_pos
     drmsd = drmsd**2
 
-    # apply mask
+    # Apply mask and exclude diagonal
     mask = all_atom_mask[..., None] * all_atom_mask[..., None, :]
+    mask = mask * (1.0 - torch.eye(mask.shape[-1], device=all_atom_mask.device))
+
+    # Create intra and inter chain masks
     intra_mask = torch.where(asym_id[..., None] == asym_id[..., None, :], 1, 0).bool()
     inter_mask = ~intra_mask
 
-    intra_drmsd = drmsd * mask * intra_mask
-    intra_drmsd = torch.sum(intra_drmsd, dim=(-1, -2))
-    n_intra = torch.sum(intra_mask * mask, dim=(-1, -2)) + eps
-    intra_drmsd = intra_drmsd * (1 / n_intra)
-    intra_drmsd = torch.sqrt(intra_drmsd)
+    intra_drmsd = None
+    intra_mask = intra_mask * mask
+    if torch.any(intra_mask):
+        intra_drmsd = drmsd * intra_mask
+        intra_drmsd = torch.sum(intra_drmsd, dim=(-1, -2))
+        n_intra = torch.sum(intra_mask, dim=(-1, -2)) + eps
+        intra_drmsd = intra_drmsd * (1 / n_intra)
+        intra_drmsd = torch.sqrt(intra_drmsd)
 
     inter_drmsd = None
     inter_mask = inter_mask * mask
