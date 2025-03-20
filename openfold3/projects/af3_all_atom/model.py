@@ -119,6 +119,13 @@ class AlphaFold3(nn.Module):
             self.config.architecture.pairformer.blocks_per_ckpt
         )
 
+    @staticmethod
+    def clear_autocast_cache():
+        if torch.is_autocast_enabled():
+            # Sidestep AMP bug (PyTorch issue #65766)
+            # Use after no_grad sections just to be safe (i.e. after rollout)
+            torch.clear_autocast_cache()
+
     def run_trunk(
         self, batch: dict, num_cycles: int, inplace_safe: bool = False
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -164,9 +171,8 @@ class AlphaFold3(nn.Module):
             # Enable grad when we're training, only enable grad on the last cycle
             enable_grad = is_grad_enabled and is_final_iter
             with torch.set_grad_enabled(enable_grad):
-                if is_final_iter and torch.is_autocast_enabled():
-                    # Sidestep AMP bug (PyTorch issue #65766)
-                    torch.clear_autocast_cache()
+                if is_final_iter:
+                    self.clear_autocast_cache()
 
                 # [*, N_token, N_token, C_z]
                 z = z_init + self.linear_z(self.layer_norm_z(z))
@@ -302,29 +308,27 @@ class AlphaFold3(nn.Module):
                 _mask_trans=True,
             )
 
+        self.clear_autocast_cache()
+
         output = {
             "si_trunk": si_trunk,
             "zij_trunk": zij_trunk,
             "atom_positions_predicted": atom_positions_predicted,
         }
 
-        # Compute confidence logits
-        aux_heads_out = self.aux_heads(
-            batch=batch,
-            si_input=si_input,
-            output=output,
-            use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-            use_lma=self.settings.use_lma,
-            inplace_safe=inplace_safe,
-            _mask_trans=True,
-        )
-
-        output.update(
-            {
-                k: v.to(dtype=atom_positions_predicted.dtype)
-                for k, v in aux_heads_out.items()
-            }
-        )
+        with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+            # Compute confidence logits
+            output.update(
+                self.aux_heads(
+                    batch=batch,
+                    si_input=si_input,
+                    output=output,
+                    use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+                    use_lma=self.settings.use_lma,
+                    inplace_safe=inplace_safe,
+                    _mask_trans=True,
+                )
+            )
 
         return output
 
@@ -568,33 +572,33 @@ class AlphaFold3(nn.Module):
 
         output.update(rollout_output)
 
-        with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
-            # Apply permutation alignment for training and validation
-            if "ground_truth" in batch:
-                # Update the ground-truth coordinates/mask in-place with the correct
-                # permutation (and optionally disable losses in case of a
-                # critical error)
-                with torch.no_grad():
-                    safe_multi_chain_permutation_alignment(
-                        batch=batch,
-                        atom_positions_predicted=output["atom_positions_predicted"],
-                    )
+        # Apply permutation alignment for training and validation
+        if "ground_truth" in batch:
+            # Update the ground-truth coordinates/mask in-place with the correct
+            # permutation (and optionally disable losses in case of a
+            # critical error)
+            with (
+                torch.no_grad(),
+                torch.amp.autocast(device_type="cuda", dtype=torch.float32),
+            ):
+                safe_multi_chain_permutation_alignment(
+                    batch=batch,
+                    atom_positions_predicted=output["atom_positions_predicted"],
+                )
+
+            self.clear_autocast_cache()
 
             if self.training:  # noqa: SIM102
                 # Run training step (if necessary)
                 if self.settings.diffusion_training_enabled:
-                    if torch.is_autocast_enabled():
-                        # Sidestep AMP bug (PyTorch issue #65766)
-                        # Needed due to no_grad in _rollout
-                        torch.clear_autocast_cache()
+                    with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+                        diffusion_output = self._train_diffusion(
+                            batch=batch,
+                            si_input=si_input,
+                            si_trunk=si_trunk,
+                            zij_trunk=zij_trunk,
+                        )
 
-                    diffusion_output = self._train_diffusion(
-                        batch=batch,
-                        si_input=si_input,
-                        si_trunk=si_trunk,
-                        zij_trunk=zij_trunk,
-                    )
-
-                    output.update(diffusion_output)
+                        output.update(diffusion_output)
 
         return batch, output
