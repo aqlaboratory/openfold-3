@@ -283,7 +283,7 @@ def get_asym_id_to_canonical_seq_dict(
 
     # Create asym_id -> canonical sequence map
     return {
-        asym_id: entity_id_to_can_seq[entity_id]
+        asym_id: entity_id_to_can_seq[int(entity_id)]
         for asym_id, entity_id in asym_to_entity_dict.items()
     }
 
