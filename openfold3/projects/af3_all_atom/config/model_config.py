@@ -1,7 +1,5 @@
-from pathlib import Path
 
 import ml_collections as mlc
-from pydantic import BaseModel
 
 from openfold3.projects.af3_all_atom.config import (
     linear_init_config as lin_init,

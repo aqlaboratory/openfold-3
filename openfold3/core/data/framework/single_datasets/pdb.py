@@ -266,8 +266,8 @@ class WeightedPDBDataset(BaseAF3Dataset):
 
         # Dataset configuration
         self.apply_crop = True
-        self.crop = dataset_config["custom"]["crop"]
-        self.sample_weights = dataset_config["custom"]["sample_weights"]
+        self.crop = dataset_config["crop"]
+        self.sample_weights = dataset_config["sample_weights"]
 
         # Datapoint cache
         self.create_datapoint_cache()
@@ -391,7 +391,9 @@ class DisorderedPDBDataset(WeightedPDBDataset):
                 an example.
         """
         super().__init__(dataset_config)
-        self.custom_settings = dataset_config["custom"]
+        self.disable_non_protein_diffusion_weights = dataset_config[
+            "disable_non_protein_diffusion_weights"
+        ]
 
     def create_loss_features(self, pdb_id: str) -> dict:
         """Creates the loss features for the disordered PDB set."""
@@ -400,6 +402,6 @@ class DisorderedPDBDataset(WeightedPDBDataset):
         loss_features["loss_weights"] = set_loss_weights_for_disordered_set(
             self.loss,
             self.dataset_cache.structure_data[pdb_id].resolution,
-            self.custom_settings,
+            self.disable_non_protein_diffusion_weights,
         )
         return loss_features

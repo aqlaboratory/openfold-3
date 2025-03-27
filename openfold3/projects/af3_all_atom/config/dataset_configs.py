@@ -13,11 +13,12 @@ from pydantic import (
     model_validator,
 )
 from pydantic import ConfigDict as PydanticConfigDict
+
 from openfold3.projects.af3_all_atom.config.dataset_config_components import (
     CropSettings,
+    LossConfig,
     MSASettings,
     TemplateSettings,
-    LossConfig,
 )
 
 
@@ -166,24 +167,3 @@ class TrainingDatasetSpec(BaseModel):
 
         values["config"] = config_class(**config_data)
         return values
-
-
-# helper function for combining dataset configs:
-
-# TODO: Consider refactoring this to accept specific dicts / configs
-
-
-def combine_paths_with_configs(runner_args) -> list[TrainingDatasetSpec]:
-    """Merge the dataset paths with the dataset config section from the runner yaml"""
-    dataset_paths = runner_args.get("dataset_paths")
-    configs = []
-
-    dataset_specs = runner_args.get("dataset_configs")
-    for mode, ds_specs in dataset_specs.items():
-        for name, spec in ds_specs.items():
-            spec["name"] = name
-            spec["mode"] = mode
-            spec["config"]["dataset_paths"] = dataset_paths[name]
-            configs.append(TrainingDatasetSpec.model_validate(spec))
-
-    return configs
