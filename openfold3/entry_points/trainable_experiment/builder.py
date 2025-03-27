@@ -14,7 +14,7 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
-from openfold3.core.config import config_utils, registry_base
+from openfold3.core.config import registry_base
 from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
 from openfold3.projects import registry
 from openfold3.projects.af3_all_atom.config.runner_file_checks import (
@@ -24,17 +24,35 @@ from openfold3.projects.af3_all_atom.config.runner_file_checks import (
 logger = logging.getLogger(__name__)
 
 
-class ExperimentBuilder:
-    def __init__(self, runner_yaml: str | Path) -> None:
-        self.runner_args = ConfigDict(config_utils.load_yaml(runner_yaml))
+class TrainableExperimentBuilder:
+    """Builds and runs experiments based on a runner configuration.
+
+    This class handles setup of logging, random seed, WandB integration,
+    and constructs the required PyTorch Lightning components (model, data module,
+    trainer, etc.) for training, evaluation, testing, or prediction modes.
+    """
+
+    def __init__(self, runner_args: ConfigDict) -> None:
+        """Initialize the ExperimentBuilder with runner arguments.
+
+        Args:
+            runner_args: configuration for the experiment runner.
+        """
+        self.runner_args = runner_args
 
     def setup(self) -> None:
+        """Set up the experiment environment.
+
+        This includes configuring logging, setting the random seed,
+        and initializing WandB if enabled.
+        """
         self._setup_logger()
         self._set_random_seed()
         if self.use_wandb:
             self._wandb_setup()
 
     def _wandb_setup(self) -> None:
+        """Initialize WandB logging and store configuration files."""
         self.wandb = WandbHandler(
             self.runner_args.wandb,
             self.is_mpi_rank_zero,
@@ -47,6 +65,10 @@ class ExperimentBuilder:
         )
 
     def _setup_logger(self) -> None:
+        """Configure the logging settings.
+
+        Sets the log level and log file path based on runner arguments.
+        """
         log_level = self.runner_args.get("log_level")
         if log_level is None:
             return
@@ -60,6 +82,8 @@ class ExperimentBuilder:
         logging.basicConfig(filename=log_filepath, level=log_level, filemode="w")
 
     def _set_random_seed(self) -> None:
+        """Set the random seed for reproducibility."""
+
         seed = self.runner_args.get("seed")
         if seed is None and self.is_distributed:
             raise ValueError("For distributed training, seed must be specified")
@@ -73,6 +97,11 @@ class ExperimentBuilder:
         pl.seed_everything(seed, workers=True)
 
     def run(self):
+        """Run the experiment in the specified mode.
+
+        Depending on the mode (train, eval, test, predict), the corresponding
+        PyTorch Lightning method is invoked.
+        """
         mode = self.runner_args.mode
         # Run process appropriate process
         logging.info(f"Running {mode} mode.")
@@ -101,10 +130,18 @@ class ExperimentBuilder:
 
     @property
     def use_wandb(self):
+        """Determine if WandB should be used.
+
+        Returns:
+            True if WandB configuration is provided and either
+            not using MPI or is the MPI rank zero.
+        """
         return self.runner_args.wandb and (not self.is_mpi or self.is_mpi_rank_zero)
 
     @cached_property
     def output_dir(self) -> Path:
+        """Get or create the output directory."""
+
         output_dir = self.runner_args.get("output_dir")
         if output_dir is None:
             raise ValueError("output_dir must be specified in runner yaml")
@@ -117,18 +154,22 @@ class ExperimentBuilder:
 
     @property
     def world_size(self) -> int:
+        """Compute the world size based on GPUs and nodes."""
         return self.runner_args.num_gpus * self.runner_args.pl_trainer.num_nodes
 
     @property
     def is_distributed(self) -> bool:
+        """Check if the training is distributed using the world size."""
         return self.world_size > 1
 
     @property
     def project_entry(self) -> registry_base.ProjectEntry:
+        """Get the project entry from the registry."""
         return registry.get_project_entry(self.runner_args.project_type)
 
     @cached_property
     def project_config(self) -> ConfigDict:
+        """Generate and update the project configuration."""
         presets = self.runner_args.presets
         config_update = self.runner_args.get("config_update")
 
@@ -140,6 +181,7 @@ class ExperimentBuilder:
 
     @property
     def ckpt_path(self) -> str | None:
+        """Retrieve the checkpoint path if specified."""
         _ckpt_path = self.runner_args.get("restart_checkpoint_path")
         if _ckpt_path is not None and not isinstance(_ckpt_path, str):
             raise ValueError("restart_checkpoint_path must be a string.")
@@ -148,16 +190,19 @@ class ExperimentBuilder:
 
     @property
     def model_config(self) -> ConfigDict:
+        """Retrieve the model configuration."""
         return self.project_config.model
 
     @cached_property
     def lightning_module(self) -> pl.LightningModule:
+        """Instantiate and return the model."""
         return self.project_entry.model_runner(
             self.model_config, _compile=self.runner_args.compile
         )
 
     @cached_property
     def data_module_config(self) -> DataModuleConfig:
+        """Create and return the data module configuration."""
         dataset_config_builder = self.project_entry.dataset_config_builder
         return registry.make_dataset_module_config(
             self.runner_args,
@@ -167,30 +212,34 @@ class ExperimentBuilder:
 
     @cached_property
     def lightning_data_module(self) -> DataModule:
+        """Instantiate and return the dataset."""
         _check_data_module_config(self.data_module_config)
         return DataModule(self.data_module_config, world_size=self.world_size)
 
     @property
     def is_mpi(self) -> bool:
+        """Check if MPI plugin is enabled."""
         return self.runner_args.get("mpi_plugin")
 
     @property
     def cluster_environment(self) -> MPIEnvironment | None:
+        """Return the MPI cluster environment if enabled."""
         return MPIEnvironment() if self.is_mpi else None
 
     @cached_property
-    def use_deepspeed_adam(self) -> bool:
-        return self.model_config.settings.optimizer.use_deepspeed_adam
-
-    @cached_property
     def strategy(self) -> DDPStrategy | DeepSpeedStrategy | None:
+        """Determine and return the training strategy."""
         deepspeed_config_path = self.runner_args.get("deepspeed_config_path")
         if deepspeed_config_path is not None:
             _strategy = DeepSpeedStrategy(
                 config=deepspeed_config_path,
                 cluster_environment=self.cluster_environment,
             )
-            if not self.use_deepspeed_adam:
+
+            _use_deepspeed_adam = (
+                self.model_config.settings.optimizer.use_deepspeed_adam
+            )
+            if not _use_deepspeed_adam:
                 _strategy.config["zero_force_ds_cpu_optimizer"] = False
 
             return _strategy
@@ -205,10 +254,12 @@ class ExperimentBuilder:
 
     @property
     def is_mpi_rank_zero(self) -> bool:
+        """Check if the current process is rank zero in an MPI environment."""
         return self.is_mpi and self.cluster_environment.global_rank() == 0
 
     @cached_property
     def loggers(self):
+        """Retrieve the list of loggers to be used in the experiment."""
         _loggers = []
         if self.use_wandb:
             _loggers.append(self.wandb.logger)
@@ -216,6 +267,7 @@ class ExperimentBuilder:
 
     @cached_property
     def callbacks(self):
+        """Set up and return the list of training callbacks."""
         _callbacks = []
 
         _checkpoint = self.runner_args.get("checkpoint")
@@ -228,12 +280,9 @@ class ExperimentBuilder:
 
         return _callbacks
 
-    @property
-    def gradient_clip_val(self) -> float:
-        return self.model_config.settings.gradient_clipping
-
     @cached_property
     def trainer(self) -> pl.Trainer:
+        """Create and return the trainer instance."""
         trainer_args = self.runner_args.pl_trainer.to_dict()
         trainer_args.update(
             {
@@ -243,7 +292,7 @@ class ExperimentBuilder:
                 "logger": self.loggers,
                 "devices": self.runner_args.num_gpus,
                 # If DeepSpeed is enabled, these values will be passed to the DS config
-                "gradient_clip_val": self.gradient_clip_val,
+                "gradient_clip_val": self.model_config.settings.gradient_clipping,
                 "gradient_clip_algorithm": "norm",
             }
         )
@@ -252,18 +301,32 @@ class ExperimentBuilder:
 
 
 class WandbHandler:
+    """Handles WandB logger initialization and configuration storage.
+
+    This class is responsible for setting up the WandB logger and saving
+    the experiment configurations to WandB.
+    """
+
     def __init__(
         self,
         wandb_args: None | ConfigDict,
         is_mpi_rank_zero: bool,
         output_dir: Path,
     ):
+        """Initialize the WandbHandler.
+
+        Args:
+            wandb_args: The WandB related configuration.
+            is_mpi_rank_zero: True if the current process is rank zero in an MPI setup.
+            output_dir: The directory to store WandB files.
+        """
         self.wandb_args = wandb_args
         self.output_dir = output_dir
         self.is_mpi_rank_zero = is_mpi_rank_zero
+        self._logger = None
 
     def _init_logger(self) -> None:
-        """Configures wandb and wandb logger."""
+        """Initialize the wandb environment and create the WandbLogger."""
         if self.wandb_args is None:
             raise ValueError("wandb_args must be provided to use wandb logger")
 
@@ -295,8 +358,11 @@ class WandbHandler:
 
     @property
     def logger(self) -> WandbLogger:
-        if not hasattr(self, "_logger"):
+        """Return the WandB logger instance. The logger is initialized
+        on first access."""
+        if self._logger is None:
             self._init_logger()
+        assert self._logger is not None
         return self._logger
 
     def store_configs(
@@ -305,6 +371,18 @@ class WandbHandler:
         data_module_config: DataModuleConfig,
         model_config: ConfigDict,
     ) -> None:
+        """Store experiment configuration files to the WandB run directory.
+
+        This method saves the pip freeze output, runner configuration,
+        data module configuration, and model configuration as files in
+        the WandB run.
+
+        Args:
+            runner_args: The runner configuration.
+            data_module_config: The configuration for the data module.
+            model_config: The configuration for the model.
+        """
+
         wandb_experiment = self.logger.experiment
         # Save pip environment to wandb
         freeze_path = os.path.join(wandb_experiment.dir, "package_versions.txt")
