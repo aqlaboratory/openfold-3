@@ -22,12 +22,8 @@ from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.atomize_utils import get_token_frame_atoms
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.projects.af3_all_atom.config.base_config import (
+from openfold3.projects.af3_all_atom.config.model_config import (
     model_selection_metric_weights_config,
-    project_config,
-)
-from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
-    AF3DatasetConfigBuilder,
 )
 from openfold3.projects.af3_all_atom.constants import (
     CORRELATION_METRICS,
@@ -37,7 +33,6 @@ from openfold3.projects.af3_all_atom.constants import (
     VAL_LOSSES,
 )
 from openfold3.projects.af3_all_atom.model import AlphaFold3
-from openfold3.projects.registry import register_project
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
@@ -48,9 +43,9 @@ logger = logging.getLogger(__name__)
 REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_config.yml"
 
 
-@register_project(
-    "af3_all_atom", AF3DatasetConfigBuilder, project_config, REFERENCE_CONFIG_PATH
-)
+# @register_project(
+#     "af3_all_atom", AF3DatasetConfigBuilder, project_config, REFERENCE_CONFIG_PATH
+# )
 class AlphaFold3AllAtom(ModelRunner):
     def __init__(self, model_config, _compile=True):
         super().__init__(model_class=AlphaFold3, config=model_config, _compile=_compile)
