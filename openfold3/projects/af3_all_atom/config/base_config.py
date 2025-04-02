@@ -40,7 +40,7 @@ max_atoms_per_token = mlc.FieldReference(23, field_type=int)
 
 # Cutoffs for chunking ops per diffusion sample
 per_sample_token_cutoff = mlc.FieldReference(1500, field_type=int)
-per_sample_atom_cutoff = mlc.FieldReference(None, field_type=int)
+per_sample_atom_cutoff = mlc.FieldReference(20000, field_type=int)
 
 model_selection_metric_weights_config = mlc.FrozenConfigDict(
     {
@@ -78,18 +78,37 @@ project_config = mlc.ConfigDict(
     {
         "model": {
             "settings": {
+                "memory": {
+                    "train": {
+                        "msa_module": {
+                            "swiglu_chunk_token_cutoff": None,
+                            "swiglu_seq_chunk_size": None,
+                        },
+                    },
+                    "eval": {
+                        "msa_module": {
+                            "swiglu_chunk_token_cutoff": 1900,
+                            "swiglu_seq_chunk_size": 4000,
+                        },
+                        "per_sample_token_cutoff": per_sample_token_cutoff,
+                        "per_sample_atom_cutoff": per_sample_atom_cutoff,
+                        "offload_inference": {
+                            "enabled": False,
+                            "token_cutoff": None,
+                        },
+                    },
+                },
+                # TODO: Remove field ref, copy manually for global setting
+                #  to allow per-module overrides
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "ckpt_intermediate_steps": ckpt_intermediate_steps,
                 "chunk_size": chunk_size,
-                "per_sample_token_cutoff": per_sample_token_cutoff,
-                "per_sample_atom_cutoff": per_sample_atom_cutoff,
                 # Use DeepSpeed memory-efficient attention kernel. Mutually
                 # exclusive with use_lma and use_flash.
                 "use_deepspeed_evo_attention": False,
                 # Use Staats & Rabe's low-memory attention algorithm. Mutually
-                # exclusive with use_deepspeed_evo_attention and use_flash.
+                # exclusive with use_deepspeed_evo_attention.
                 "use_lma": False,
-                "offload_inference": False,
                 "diffusion_training_enabled": diffusion_training_enabled,
                 "optimizer": {
                     "use_deepspeed_adam": False,
@@ -204,7 +223,6 @@ project_config = mlc.ConfigDict(
                         "blocks_per_ckpt": blocks_per_ckpt,
                         "inf": inf,
                         "eps": eps,
-                        "transition_ckpt_chunk_size": None,
                         "linear_init_params": lin_init.msa_module_init,
                         "use_reentrant": False,
                         "clear_cache_between_blocks": False,

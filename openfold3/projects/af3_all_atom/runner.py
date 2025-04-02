@@ -181,8 +181,8 @@ class AlphaFold3AllAtom(ModelRunner):
             num_atoms = outputs["atom_positions_predicted"].shape[-2]
             chunk_metrics_computation = (
                 num_samples > 1
-                and self.config.settings.per_sample_atom_cutoff is not None
-                and num_atoms > self.config.settings.per_sample_atom_cutoff
+                and self.config.settings.memory.eval.per_sample_atom_cutoff is not None
+                and num_atoms > self.config.settings.memory.eval.per_sample_atom_cutoff
             )
 
             if chunk_metrics_computation:
