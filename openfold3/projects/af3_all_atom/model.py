@@ -161,6 +161,9 @@ class AlphaFold3(nn.Module):
             z:
                 [*, N_token, N_token, C_z] Pair representation
         """
+        mode_mem_settings = (
+            self.settings.memory.train if self.training else self.settings.memory.eval
+        )
         offload_inference = self._do_inference_offload(
             seq_len=batch["token_mask"].shape[-1]
         )
@@ -201,7 +204,7 @@ class AlphaFold3(nn.Module):
                         batch=batch,
                         z=z,
                         pair_mask=pair_mask,
-                        chunk_size=self.settings.chunk_size,
+                        chunk_size=mode_mem_settings.chunk_size,
                         _mask_trans=True,
                         use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
                         use_lma=self.settings.use_lma,
@@ -215,14 +218,11 @@ class AlphaFold3(nn.Module):
                 # Run MSA + pair embeddings through the MsaModule
                 # m: [*, N_seq, N_token, C_m]
                 # z: [*, N_token, N_token, C_z]
-                msa_mode_settings = (
-                    self.settings.memory.train.msa_module
-                    if self.training
-                    else self.settings.memory.eval.msa_module
+                swiglu_token_cutoff = (
+                    mode_mem_settings.msa_module.swiglu_chunk_token_cutoff
                 )
-                swiglu_token_cutoff = msa_mode_settings.swiglu_chunk_token_cutoff
                 transition_ckpt_chunk_size = (
-                    msa_mode_settings.swiglu_seq_chunk_size
+                    mode_mem_settings.msa_module.swiglu_seq_chunk_size
                     if swiglu_token_cutoff is None or swiglu_token_cutoff > m.shape[-2]
                     else None
                 )
@@ -233,7 +233,7 @@ class AlphaFold3(nn.Module):
                         input_tensors,
                         msa_mask=msa_mask.to(dtype=input_tensors[0].dtype),
                         pair_mask=pair_mask.to(dtype=input_tensors[1].dtype),
-                        chunk_size=self.settings.chunk_size,
+                        chunk_size=mode_mem_settings.chunk_size,
                         transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                         use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
                         use_lma=self.settings.use_lma,
@@ -247,7 +247,7 @@ class AlphaFold3(nn.Module):
                         z,
                         msa_mask=msa_mask.to(dtype=m.dtype),
                         pair_mask=pair_mask.to(dtype=z.dtype),
-                        chunk_size=self.settings.chunk_size,
+                        chunk_size=mode_mem_settings.chunk_size,
                         transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                         use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
                         use_lma=self.settings.use_lma,
@@ -263,7 +263,7 @@ class AlphaFold3(nn.Module):
                     z=z,
                     single_mask=token_mask.to(dtype=z.dtype),
                     pair_mask=pair_mask.to(dtype=s.dtype),
-                    chunk_size=self.settings.chunk_size,
+                    chunk_size=mode_mem_settings.chunk_size,
                     use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
                     use_lma=self.settings.use_lma,
                     inplace_safe=inplace_safe,

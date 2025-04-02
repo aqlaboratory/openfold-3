@@ -32,7 +32,10 @@ from ml_collections import ConfigDict
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
 from openfold3.core.model.primitives import LayerNorm, Linear
-from openfold3.core.utils.atom_attention_block_utils import convert_pair_rep_to_blocks
+from openfold3.core.utils.atom_attention_block_utils import (
+    convert_pair_rep_to_blocks,
+    convert_single_rep_to_blocks,
+)
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
     broadcast_token_feat_to_atoms,
@@ -468,28 +471,18 @@ class AtomAttentionEncoder(nn.Module):
                 n_key=self.n_key,
             )
 
+        # Add the combined single conditioning to the pair rep (line 13 - 14)
         # TODO: Convert to this version for memory reasons.
         #  Note that the l/m linear layers are reversed here, they should be renamed
         #  Keeping it the same for now so that its compatible with previous checkpoints.
-        # cl_l, cl_m, atom_mask = convert_single_rep_to_blocks(
-        #     ql=cl,
-        #     n_query=self.n_query,
-        #     n_key=self.n_key,
-        #     atom_mask=batch["atom_mask"]
-        # )
-        #
-        # cl_lm = (
-        #     self.linear_m(self.relu(cl_l.unsqueeze(-2)))
-        #     + self.linear_l(self.relu(cl_m.unsqueeze(-3)))
-        # ) * atom_mask.unsqueeze(-1)
+        cl_l, cl_m, atom_mask = convert_single_rep_to_blocks(
+            ql=cl, n_query=self.n_query, n_key=self.n_key, atom_mask=batch["atom_mask"]
+        )
 
-        # Add the combined single conditioning to the pair rep (line 13 - 14)
-        cl_lm = self.linear_l(self.relu(cl.unsqueeze(-3))) + self.linear_m(
-            self.relu(cl.unsqueeze(-2))
-        )
-        cl_lm = convert_pair_rep_to_blocks(
-            plm=cl_lm, n_query=self.n_query, n_key=self.n_key
-        )
+        cl_lm = (
+            self.linear_m(self.relu(cl_l.unsqueeze(-2)))
+            + self.linear_l(self.relu(cl_m.unsqueeze(-3)))
+        ) * atom_mask.unsqueeze(-1)
 
         # [*, N_blocks, N_query, N_key, c_atom_pair]
         plm = plm + cl_lm

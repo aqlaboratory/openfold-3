@@ -34,7 +34,6 @@ eps = mlc.FieldReference(1e-8, field_type=float)
 inf = mlc.FieldReference(1e9, field_type=float)
 blocks_per_ckpt = mlc.FieldReference(None, field_type=int)
 ckpt_intermediate_steps = mlc.FieldReference(False, field_type=bool)
-chunk_size = mlc.FieldReference(None, field_type=int)
 tune_chunk_size = mlc.FieldReference(True, field_type=bool)
 max_atoms_per_token = mlc.FieldReference(23, field_type=int)
 
@@ -80,12 +79,14 @@ project_config = mlc.ConfigDict(
             "settings": {
                 "memory": {
                     "train": {
+                        "chunk_size": None,
                         "msa_module": {
                             "swiglu_chunk_token_cutoff": None,
                             "swiglu_seq_chunk_size": None,
                         },
                     },
                     "eval": {
+                        "chunk_size": None,
                         "msa_module": {
                             "swiglu_chunk_token_cutoff": 1900,
                             "swiglu_seq_chunk_size": 4000,
@@ -102,7 +103,6 @@ project_config = mlc.ConfigDict(
                 #  to allow per-module overrides
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "ckpt_intermediate_steps": ckpt_intermediate_steps,
-                "chunk_size": chunk_size,
                 # Use DeepSpeed memory-efficient attention kernel. Mutually
                 # exclusive with use_lma and use_flash.
                 "use_deepspeed_evo_attention": False,

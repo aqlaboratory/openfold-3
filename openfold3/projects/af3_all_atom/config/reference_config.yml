@@ -58,12 +58,10 @@ train:
     settings:
       blocks_per_ckpt: 1
       ckpt_intermediate_steps: True
-      chunk_size: null
       use_deepspeed_evo_attention: True
 
 predict:
   model:
     settings:
-      chunk_size: null
       use_deepspeed_evo_attention: True
       diffusion_training_enabled: False
