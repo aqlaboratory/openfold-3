@@ -40,7 +40,7 @@ from lightning_fabric.utilities.rank_zero import (
     rank_zero_only,
 )
 from lightning_utilities.core.imports import RequirementCache
-# from ml_collections import ConfigDict
+
 from pydantic import BaseModel
 from torch.utils.data import DataLoader
 
@@ -157,9 +157,7 @@ class DataModule(pl.LightningDataModule):
         self.world_size = world_size
 
         # Parse datasets
-        self.multi_dataset_config = self.parse_data_config(
-            data_config.datasets, world_size=world_size
-        )
+        self.multi_dataset_config = self.parse_data_config(data_config.datasets)
         self._initialize_next_dataset_indices()
 
     def _initialize_next_dataset_indices(self):
@@ -253,16 +251,12 @@ class DataModule(pl.LightningDataModule):
             )
 
     @classmethod
-    def parse_data_config(
-        cls, data_config: list[BaseModel], world_size: Optional[int] = None
-    ) -> MultiDatasetConfig:
+    def parse_data_config(cls, data_config: list[BaseModel]) -> MultiDatasetConfig:
         """Parses input data_config into separate lists.
 
         Args:
             data_config (list[dict]):
                 Input data configuration list of dataset dictionaries.
-            world_size (int, optional):
-                Number of GPUs being used. Defaults to None.
 
         Returns:
             MultiDatasetConfig:
@@ -270,47 +264,12 @@ class DataModule(pl.LightningDataModule):
                 modes.
         """
 
-        def get_cast(
-            dictionary: Union[dict, BaseModel],
-            key: Union[str, int],
-            cast_type: type,
-            default: Any = None,
-        ) -> Any:
-            """Simultaneously try to get and try to cast a value from a dictionary.
-
-            Args:
-                dictionary (dict):
-                    Dictionary to get the value from.
-                key (Union[str, int]):
-                    Key to get the value from.
-                cast_type (type):
-                    Type to cast the value to.
-                default (Any, optional):
-                    Default value to return if key not available. Defaults to None.
-
-            Raises:
-                ValueError:
-                    If the value cannot be cast to the specified type.
-
-            Returns:
-                Any:
-                    Cast value or default.
-            """
-            value = dictionary.get(key, default)
-            try:
-                return cast_type(value) if value is not None else default
-            except ValueError as exc:
-                raise ValueError(f"Could not cast {key} to {cast_type}.") from exc
-
         classes, modes, configs, weights = [], [], [], []
         for dataset_entry in data_config:
-            # classes.append(get_cast(dataset_entry, "class", str))
-            # modes.append(DatasetMode[get_cast(dataset_entry, "mode", str)])
-            # weights.append(get_cast(dataset_entry, "weight", float))
-
-            config = dataset_entry.config.model_dump()
-            config["world_size"] = world_size
-            configs.append(config)
+            classes.append(dataset_entry.dataset_class)
+            modes.append(dataset_entry.mode)
+            weights.append(dataset_entry.weight)
+            configs.append(dataset_entry.config)
 
         multi_dataset_config = MultiDatasetConfig(
             classes=classes,
@@ -356,17 +315,18 @@ class DataModule(pl.LightningDataModule):
 
         # Check if provided crop weights sum to 1
         for idx, config_i in enumerate(train_dataset_config.configs):
-            config_i_crop_weights = config_i["custom"]["crop"]["crop_weights"]
+            config_i_crop_weights = config_i.crop.crop_weights.model_dump()
             if sum(config_i_crop_weights.values()) != 1:
                 warnings.warn(
                     f"Dataset {train_dataset_config.classes[idx]} crop weights do not "
                     "sum to 1. Normalizing weights.",
                     stacklevel=2,
                 )
-                train_dataset_config.configs[idx]["custom"]["crop"]["crop_weights"] = {
+                train_dataset_config.configs[idx].crop.crop_weights = {
                     key: value / sum(config_i_crop_weights.values())
                     for key, value in config_i_crop_weights.items()
                 }
+                print(f"{train_dataset_config.configs[idx].crop.crop_weights=}")
 
         # Check if provided dataset mode combination is valid
         modes = multi_dataset_config.modes
@@ -401,7 +361,6 @@ class DataModule(pl.LightningDataModule):
                 " Supported modes are: train, validation, test, prediction."
             )
 
-    @staticmethod
     def init_datasets(
         self, multi_dataset_config: MultiDatasetConfig, set_world_size: bool = False
     ) -> list[SingleDataset]:
