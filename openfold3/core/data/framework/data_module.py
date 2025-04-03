@@ -154,6 +154,7 @@ class DataModule(pl.LightningDataModule):
         self.data_seed = data_config.data_seed
         self.epoch_len = data_config.epoch_len
         self.num_epochs = data_config.num_epochs
+        self.world_size = world_size
 
         # Parse datasets
         self.multi_dataset_config = self.parse_data_config(
@@ -235,7 +236,9 @@ class DataModule(pl.LightningDataModule):
             multi_dataset_config_mode = self.multi_dataset_config.get_config_for_mode(
                 dataset_mode
             )
-            mode_datasets = self.init_datasets(multi_dataset_config_mode)
+            mode_datasets = self.init_datasets(
+                multi_dataset_config_mode, set_world_size=True
+            )
 
             if len(mode_datasets) > 1:
                 warnings.warn(
@@ -399,24 +402,32 @@ class DataModule(pl.LightningDataModule):
             )
 
     @staticmethod
-    def init_datasets(multi_dataset_config: MultiDatasetConfig) -> list[SingleDataset]:
+    def init_datasets(
+        self, multi_dataset_config: MultiDatasetConfig, set_world_size: bool = False
+    ) -> list[SingleDataset]:
         """Initializes datasets.
 
         Args:
             multi_dataset_config (MultiDatasetConfig):
                 Parsed config of all input datasets.
+            set_world_size: Whether to set the world size in the dataset initialization
 
         Returns:
             list[Sequence[SingleDataset]]: List of initialized SingleDataset objects.
         """
         # Note that the dataset config already contains the paths!
-        datasets = [
-            DATASET_REGISTRY[dataset_class](dataset_config)
-            for dataset_class, dataset_config in zip(
-                multi_dataset_config.classes,
-                multi_dataset_config.configs,
-            )
-        ]
+        datasets = []
+        for dataset_class, dataset_config in zip(
+            multi_dataset_config.classes,
+            multi_dataset_config.configs,
+        ):
+            if set_world_size:
+                dataset = DATASET_REGISTRY[dataset_class](
+                    dataset_config, self.world_size
+                )
+            else:
+                dataset = DATASET_REGISTRY[dataset_class](dataset_config)
+            datasets.append(dataset)
         return datasets
 
     def generate_dataloader(self, mode: DatasetMode):
