@@ -70,7 +70,7 @@ class AF3ProjectEntry:
     def combine_dataset_paths_with_configs(
         self, dataset_paths: dict, dataset_specs: dict
     ) -> list[TrainingDatasetSpec]:
-        """Merge the dataset paths with the dataset config section from the runner yaml"""
+        """Merge the dataset paths with the dataset specs."""
         configs = []
 
         for mode, ds_specs in dataset_specs.items():
