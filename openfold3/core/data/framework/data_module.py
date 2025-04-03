@@ -40,7 +40,8 @@ from lightning_fabric.utilities.rank_zero import (
     rank_zero_only,
 )
 from lightning_utilities.core.imports import RequirementCache
-from ml_collections import ConfigDict
+# from ml_collections import ConfigDict
+from pydantic import BaseModel
 from torch.utils.data import DataLoader
 
 from openfold3.core.data.framework.lightning_utils import _generate_seed_sequence
@@ -59,10 +60,10 @@ _NUMPY_AVAILABLE = RequirementCache("numpy")
 class DatasetMode(enum.Enum):
     """Enum for dataset modes."""
 
-    train = enum.auto()
-    validation = enum.auto()
-    test = enum.auto()
-    prediction = enum.auto()
+    train = "train" 
+    validation = "validation" 
+    test = "test" 
+    prediction = "prediction" 
 
 
 @dataclasses.dataclass
@@ -123,7 +124,7 @@ class DataModuleConfig:
     data_seed: int
     epoch_len: int
     num_epochs: int
-    datasets: list[ConfigDict]
+    datasets: list[dict]
 
     def to_dict(self):
         _dict = self.__dict__.copy()
@@ -164,7 +165,7 @@ class DataModule(pl.LightningDataModule):
         train_configs = self.multi_dataset_config.get_config_for_mode(DatasetMode.train)
         self.next_dataset_indices = dict()
         for cfg in train_configs.configs:
-            if cfg.custom.sample_in_order:
+            if cfg.sample_in_order:
                 self.next_dataset_indices[cfg.name] = 0
 
     def setup(self, stage=None):
@@ -250,7 +251,7 @@ class DataModule(pl.LightningDataModule):
 
     @classmethod
     def parse_data_config(
-        cls, data_config: list[ConfigDict], world_size: Optional[int] = None
+        cls, data_config: list[BaseModel], world_size: Optional[int] = None
     ) -> MultiDatasetConfig:
         """Parses input data_config into separate lists.
 
@@ -267,7 +268,7 @@ class DataModule(pl.LightningDataModule):
         """
 
         def get_cast(
-            dictionary: Union[dict, ConfigDict],
+            dictionary: Union[dict, BaseModel],
             key: Union[str, int],
             cast_type: type,
             default: Any = None,
@@ -300,12 +301,11 @@ class DataModule(pl.LightningDataModule):
 
         classes, modes, configs, weights = [], [], [], []
         for dataset_entry in data_config:
-            classes.append(get_cast(dataset_entry, "class", str))
-            modes.append(DatasetMode[get_cast(dataset_entry, "mode", str)])
-            weights.append(get_cast(dataset_entry, "weight", float))
+            # classes.append(get_cast(dataset_entry, "class", str))
+            # modes.append(DatasetMode[get_cast(dataset_entry, "mode", str)])
+            # weights.append(get_cast(dataset_entry, "weight", float))
 
-            config = dataset_entry.get("config", dict())
-            config["name"] = dataset_entry["name"]
+            config = dataset_entry.config.model_dump()
             config["world_size"] = world_size
             configs.append(config)
 
