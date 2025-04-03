@@ -40,7 +40,6 @@ from lightning_fabric.utilities.rank_zero import (
     rank_zero_only,
 )
 from lightning_utilities.core.imports import RequirementCache
-
 from pydantic import BaseModel
 from torch.utils.data import DataLoader
 

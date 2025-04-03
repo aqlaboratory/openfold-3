@@ -75,75 +75,68 @@ class BaseAF3Dataset(SingleDataset, ABC):
                 an example.
         """
         super().__init__()
-        self.name = dataset_config["name"]
+        self.name = dataset_config.name
 
         # Paths/IO
-        self.target_structures_directory = dataset_config["dataset_paths"][
-            "target_structures_directory"
-        ]
-        self.target_structure_file_format = str(
-            dataset_config["dataset_paths"]["target_structure_file_format"]
+        self.target_structures_directory = (
+            dataset_config.dataset_paths.target_structures_directory
         )
-        self.alignments_directory = dataset_config["dataset_paths"][
-            "alignments_directory"
-        ]
-        self.alignment_db_directory = dataset_config["dataset_paths"][
-            "alignment_db_directory"
-        ]
+        self.target_structure_file_format = (
+            dataset_config.dataset_paths.target_structure_file_format
+        )
+        self.alignments_directory = dataset_config.dataset_paths.alignments_directory
+        self.alignment_db_directory = (
+            dataset_config.dataset_paths.alignment_db_directory
+        )
         if self.alignment_db_directory is not None:
             with open(self.alignment_db_directory / Path("alignment_db.index")) as f:
                 self.alignment_index = json.load(f)
         else:
             self.alignment_index = None
-        self.alignment_array_directory = dataset_config["dataset_paths"][
-            "alignment_array_directory"
-        ]
-        self.template_cache_directory = dataset_config["dataset_paths"][
-            "template_cache_directory"
-        ]
-        self.template_structures_directory = dataset_config["dataset_paths"][
-            "template_structures_directory"
-        ]
-        self.template_structure_array_directory = dataset_config["dataset_paths"][
-            "template_structure_array_directory"
-        ]
-        self.template_file_format = str(
-            dataset_config["dataset_paths"]["template_file_format"]
+        self.alignment_array_directory = (
+            dataset_config.dataset_paths.alignment_array_directory
         )
-        self.reference_molecule_directory = dataset_config["dataset_paths"][
-            "reference_molecule_directory"
-        ]
+        self.template_cache_directory = (
+            dataset_config.dataset_paths.template_cache_directory
+        )
+        self.template_structures_directory = (
+            dataset_config.dataset_paths.template_structures_directory
+        )
+        self.template_structure_array_directory = (
+            dataset_config.dataset_paths.template_structure_array_directory
+        )
+        self.template_file_format = dataset_config.dataset_paths.template_file_format
+        self.reference_molecule_directory = (
+            dataset_config.dataset_paths.reference_molecule_directory
+        )
 
         # Dataset/datapoint cache
         # TODO: rename dataset_cache_file to dataset_cache_path to signal that it can be
         # a directory or a file
         # TODO: potentially expose the LMDB database encoding types
         self.dataset_cache = read_datacache(
-            dataset_config["dataset_paths"]["dataset_cache_file"]
+            dataset_config.dataset_paths.dataset_cache_file
         )
         self.datapoint_cache = {}
 
         # CCD - only used if template structures are not preprocessed
-        if (
-            dataset_config["dataset_paths"]["template_structure_array_directory"]
-            is not None
-        ):
+        if dataset_config.dataset_paths.template_structure_array_directory is not None:
             self.ccd = None
         else:
-            self.ccd = pdbx.CIFFile.read(dataset_config["dataset_paths"]["ccd_file"])
+            self.ccd = pdbx.CIFFile.read(dataset_config.dataset_paths.ccd_file)
 
         # Dataset configuration
         # n_tokens can be set in the getitem method separately for each sample using
         # the output of create_target_structure_features
         self.apply_crop = None
         self.crop = {}
-        self.loss = dataset_config["loss"]
-        self.msa = dataset_config["msa"]
-        self.template = dataset_config["template"]
+        self.loss = dataset_config.loss.model_dump()
+        self.msa = dataset_config.msa
+        self.template = dataset_config.template
 
         # Misc
         self.single_moltype = None
-        self.debug_mode = dataset_config["debug_mode"]
+        self.debug_mode = dataset_config.debug_mode
 
     def __post_init__(self):
         if self.apply_crop is None:
@@ -239,7 +232,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
             alignment_db_directory=self.alignment_db_directory,
             alignment_index=self.alignment_index,
             alignment_array_directory=self.alignment_array_directory,
-            max_seq_counts=self.msa.max_seq_counts,
+            max_seq_counts=self.msa.max_seq_counts.model_dump(),
             aln_order=self.msa.aln_order,
             max_rows_paired=self.msa.max_rows_paired,
             min_chains_paired_partial=self.msa.min_chains_paired_partial,
