@@ -3,7 +3,6 @@
 from pathlib import Path
 from typing import Annotated, Any, Optional, Union
 
-from openfold3.core.data.framework.data_module import DatasetMode
 from pydantic import (
     BaseModel,
     BeforeValidator,
@@ -15,6 +14,7 @@ from pydantic import (
 )
 from pydantic import ConfigDict as PydanticConfigDict
 
+from openfold3.core.data.framework.data_module import DatasetMode
 from openfold3.projects.af3_all_atom.config.dataset_config_components import (
     CropSettings,
     LossConfig,
@@ -38,6 +38,7 @@ DirectoryPathOrNone = Annotated[Optional[DirectoryPath], BeforeValidator(is_path
 
 class TrainingDatasetPaths(BaseModel):
     """Dataset paths used by each dataset."""
+
     dataset_cache_file: FilePath
     alignments_directory: DirectoryPathOrNone = None
     alignment_db_directory: DirectoryPathOrNone = None
@@ -54,21 +55,22 @@ class TrainingDatasetPaths(BaseModel):
 
 class DefaultDatasetConfigSection(BaseModel):
     """Base configuration settings for all atom datasets.
-    
+
     Datasets for this project are defined in
       `openfold3.core.data.framework.single_datasets`
-    
+
     This BaseModel only defines the "config" section for the dataset inputs.
     The full dataset class specification is provided in TrainingDatasetSpec,
-      and contains this BaseModel as a section. 
+      and contains this BaseModel as a section.
 
     A separate subclass is created for each dataset type below and
-    added to the DatasetConfigRegistry.  
+    added to the DatasetConfigRegistry.
         - WeightedPDBConfig
         - ProteinMonomerDistillationConfig
         - DisorderedPDBConfig
-        - ValidationPDBConfig 
+        - ValidationPDBConfig
     """
+
     model_config = PydanticConfigDict(extra="forbid")
     name: str
     debug_mode: bool = False
@@ -168,17 +170,18 @@ class ValidationPDBConfig(DefaultDatasetConfigSection):
 
 class TrainingDatasetSpec(BaseModel):
     """Full dataset specification for all atom style projects.
-    
-    A list of these configurations can be provided to 
+
+    A list of these configurations can be provided to
     `core.data.framework.data_module` to create
-    `torch.Datasets` needed for all atom training. 
-    
+    `torch.Datasets` needed for all atom training.
+
     The correct DatasetConfig to use for each dataset will be inferred
       from the `dataset_class` argument.
     """
+
     name: str
     dataset_class: str
-    mode: DatasetMode 
+    mode: DatasetMode
     weight: Optional[float] = None
     config: SerializeAsAny[BaseModel] = Field(
         default_factory=lambda: DefaultDatasetConfigSection
