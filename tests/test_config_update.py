@@ -8,6 +8,7 @@ from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry, Model
 
 class TestAF3ProjectConfigGeneration:
     def test_load_runner_arguments(self, tmp_path):
+        """Load a sample runner yaml with a model update and dataset section."""
         test_dummy_file = tmp_path / "test.json"
         test_dummy_file.write_text("test")
         test_yaml_str = textwrap.dedent(f"""\
@@ -100,6 +101,7 @@ class TestAF3ProjectConfigGeneration:
         assert model_config.architecture.shared.diffusion.no_samples == 32
 
     def test_bad_model_update_fails(self):
+        """Verify that a model update that has an invalid field is not allowed."""
         model_update = ModelUpdate(custom={"nonexistant_field": "bad"})
 
         project_entry = AF3ProjectEntry()

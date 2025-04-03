@@ -1,3 +1,11 @@
+"""Default settings for dataset configurations for all atom project
+
+The main sections of the dataset configuration are:
+- MSA processing 
+- Templates 
+- Crops
+- Loss
+"""
 from pydantic import BaseModel
 
 
@@ -15,6 +23,7 @@ class MSAMaxSeqCounts(BaseModel):
 
 
 class MSASettings(BaseModel):
+    """Settings for processing MSA features."""
     max_rows_paired: int = 8191
     max_rows: int = 16384
     subsample_with_bands: bool = False
@@ -42,6 +51,7 @@ class TemplateDistogramSettings(BaseModel):
 
 
 class TemplateSettings(BaseModel):
+    """Settings for processing Template features."""
     n_templates: int = 4
     take_top_k: bool = False
     distogram: TemplateDistogramSettings = TemplateDistogramSettings()
@@ -54,6 +64,7 @@ class CropWeights(BaseModel):
 
 
 class CropSettings(BaseModel):
+    """Settings for crop featurization."""
     token_budget: int = 384
     crop_weights: CropWeights = CropWeights()
 
@@ -70,6 +81,7 @@ class LossWeights(BaseModel):
 
 
 class LossConfig(BaseModel):
+    """Settings for loss weights."""
     min_resolution: float = 0.1
     max_resolution: float = 4.0
     confidence_loss_names: list[str] = [
