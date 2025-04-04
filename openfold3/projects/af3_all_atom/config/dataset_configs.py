@@ -52,6 +52,38 @@ class TrainingDatasetPaths(BaseModel):
     template_file_format: Optional[str] = None
     ccd_file: FilePathOrNone = None
 
+    @model_validator(mode="after")
+    def _validate_paths(self):
+        def _validate_exactly_one_path_exists(
+            group_name: str, path_values: list[Optional[Path]]
+        ):
+            which_paths_exist = [p != None for p in path_values]
+            if sum(which_paths_exist) != 1:
+                existing_paths = [
+                    p for p, b in zip(path_values, which_paths_exist) if b
+                ]
+                raise ValueError(
+                    f"Exactly one path in set of {group_name} should exist."
+                    f"Found {existing_paths} exist."
+                )
+
+        _validate_exactly_one_path_exists(
+            "alignment paths",
+            [
+                self.alignments_directory,
+                self.alignment_db_directory,
+                self.alignment_array_directory,
+            ],
+        )
+        _validate_exactly_one_path_exists(
+            "template_paths",
+            [
+                self.template_structures_directory,
+                self.template_structure_array_directory,
+            ],
+        )
+        return
+
 
 class DefaultDatasetConfigSection(BaseModel):
     """Base configuration settings for all atom datasets.

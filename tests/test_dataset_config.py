@@ -3,7 +3,7 @@ import textwrap
 import pytest  # noqa: F401  - used for pytest tmp fixture
 
 from openfold3.core.config import config_utils
-from openfold3.projects.af3_all_atom.config.dataset_configs import TrainingDatasetSpec
+from openfold3.projects.af3_all_atom.config.dataset_configs import (TrainingDatasetPaths, TrainingDatasetSpec)
 
 
 class TestAF3DatasetConfigConstruction:
@@ -30,6 +30,7 @@ class TestAF3DatasetConfigConstruction:
                     target_structures_directory: {tmp_path} 
                     reference_molecule_directory: {tmp_path}
                     template_cache_directory: {tmp_path} 
+                    template_structures_directory: {tmp_path} 
                     template_file_format: npz
                     ccd_file: None 
         """)
@@ -69,6 +70,7 @@ class TestAF3DatasetConfigConstruction:
                     "target_structure_file_format": "npz",
                     "reference_molecule_directory": tmp_path,
                     "template_cache_directory": tmp_path,
+                    "template_structures_directory": tmp_path,
                     "template_file_format": "npz",
                     "ccd_file": None,
                 },
@@ -76,7 +78,6 @@ class TestAF3DatasetConfigConstruction:
         }
         expected_dataset_config = TrainingDatasetSpec.model_validate(expected_fields)
         assert expected_dataset_config == actual_config
-        print(expected_dataset_config.config)
 
     def test_load_protein_monomer_dataset_config(self, tmp_path):
         test_dummy_file = tmp_path / "test.json"
@@ -88,13 +89,14 @@ class TestAF3DatasetConfigConstruction:
             weight: 0.5
             config:
                 dataset_paths:
-                    alignments_directory: None
+                    alignments_directory: none
                     alignment_array_directory: {tmp_path} 
                     dataset_cache_file: {test_dummy_file} 
                     target_structure_file_format: npz
                     target_structures_directory: {tmp_path} 
                     reference_molecule_directory: {tmp_path}
                     template_cache_directory: {tmp_path} 
+                    template_structures_directory: {tmp_path} 
                     template_file_format: npz
                     ccd_file: None 
         """)
@@ -120,13 +122,14 @@ class TestAF3DatasetConfigConstruction:
                     },
                 },
                 "dataset_paths": {
-                    "alignments_directory": None,
+                    "alignment_array_directory": tmp_path,
                     "dataset_cache_file": test_dummy_file,
                     "alignment_array_directory": tmp_path,
                     "target_structures_directory": tmp_path,
                     "target_structure_file_format": "npz",
                     "reference_molecule_directory": tmp_path,
                     "template_cache_directory": tmp_path,
+                    "template_structures_directory": tmp_path,
                     "template_file_format": "npz",
                     "ccd_file": None,
                 },
@@ -134,3 +137,31 @@ class TestAF3DatasetConfigConstruction:
         }
         expected_config = TrainingDatasetSpec.model_validate(expected_fields)
         assert expected_config == actual_config
+
+    def test_error_if_no_alignment_path_set(self, tmp_path):
+        test_dummy_file = tmp_path / "test.json"
+        test_dummy_file.write_text("test")
+        with pytest.raises(ValueError, match="Exactly one"):
+            TrainingDatasetPaths.model_validate({
+                "alignments_directory": None,
+                "alignment_db_directory": None,
+                "alignment_array_directory": None,
+                "dataset_cache_file": test_dummy_file, 
+                "target_structures_directory": tmp_path,
+                "target_structure_file_format": "npz",
+                "reference_molecule_directory": tmp_path,
+            })
+    
+    def test_error_if_two_alignment_paths_set(self, tmp_path):
+        test_dummy_file = tmp_path / "test.json"
+        test_dummy_file.write_text("test")
+        with pytest.raises(ValueError, match="Exactly one"):
+            TrainingDatasetPaths.model_validate({
+                "alignments_directory": tmp_path,
+                "alignment_db_directory": tmp_path,
+                "alignment_array_directory": None,
+                "dataset_cache_file": test_dummy_file, 
+                "target_structures_directory": tmp_path,
+                "target_structure_file_format": "npz",
+                "reference_molecule_directory": tmp_path,
+            })
