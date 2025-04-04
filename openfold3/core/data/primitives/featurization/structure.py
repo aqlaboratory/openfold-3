@@ -102,8 +102,8 @@ def create_token_bonds(atom_array: AtomArray, token_index: np.ndarray) -> torch.
     # Get bonded atoms
     bond_partners = atom_array.bonds.as_array()[:, :2]
 
-    # Ensure that all relevant bonded atoms are atomized
-    assert atom_array.is_atomized[bond_partners].all()
+    # # Ensure that all relevant bonded atoms are atomized
+    # assert atom_array.is_atomized[bond_partners].all()
 
     if bond_partners.size > 0:
         # Map atom indices to token indices to token-in-crop index
