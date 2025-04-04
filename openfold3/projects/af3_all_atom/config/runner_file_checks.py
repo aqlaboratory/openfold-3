@@ -17,6 +17,5 @@ def _check_data_module_config(data_module_config: DataModuleConfig):
     """Sanity checks for the data module config."""
     # Check dataset paths are valid for  key groups
     for dataset_cfg in data_module_config.datasets:
-
         # Check that deterministic sampling has been selected
         _check_protein_monomer_sampled_in_order(dataset_cfg)

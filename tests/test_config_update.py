@@ -96,7 +96,7 @@ class TestAF3ProjectConfigGeneration:
 
         assert model_config.settings.model_selection_weight_scheme == "fine_tuning"
         assert (
-            model_config.architecture.msa.msa_module.transition_ckpt_chunk_size == None
+            model_config.architecture.msa.msa_module.transition_ckpt_chunk_size is None
         )
         assert model_config.architecture.shared.diffusion.no_samples == 32
 

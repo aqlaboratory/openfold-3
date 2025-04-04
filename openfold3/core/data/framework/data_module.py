@@ -29,7 +29,6 @@ import dataclasses
 import enum
 import random
 import warnings
-from pathlib import Path
 from typing import Any, Optional, Union
 
 import pytorch_lightning as pl
@@ -59,10 +58,10 @@ _NUMPY_AVAILABLE = RequirementCache("numpy")
 class DatasetMode(enum.Enum):
     """Enum for dataset modes."""
 
-    train = "train" 
-    validation = "validation" 
-    test = "test" 
-    prediction = "prediction" 
+    train = "train"
+    validation = "validation"
+    test = "test"
+    prediction = "prediction"
 
 
 @dataclasses.dataclass

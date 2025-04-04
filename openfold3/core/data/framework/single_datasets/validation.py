@@ -49,7 +49,7 @@ def make_chain_pair_mask_padded(
 class ValidationPDBDataset(BaseAF3Dataset):
     """Validation Dataset class."""
 
-    def __init__(self, dataset_config: dict, world_size: Optional[int]=None) -> None:
+    def __init__(self, dataset_config: dict, world_size: Optional[int] = None) -> None:
         """Initializes a ValidationDataset.
 
         Args:
@@ -59,7 +59,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
         """
         super().__init__(dataset_config)
 
-        self.world_size = world_size 
+        self.world_size = world_size
 
         # Dataset/datapoint cache
         self.create_datapoint_cache()

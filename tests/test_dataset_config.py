@@ -3,7 +3,10 @@ import textwrap
 import pytest  # noqa: F401  - used for pytest tmp fixture
 
 from openfold3.core.config import config_utils
-from openfold3.projects.af3_all_atom.config.dataset_configs import (TrainingDatasetPaths, TrainingDatasetSpec)
+from openfold3.projects.af3_all_atom.config.dataset_configs import (
+    TrainingDatasetPaths,
+    TrainingDatasetSpec,
+)
 
 
 class TestAF3DatasetConfigConstruction:
@@ -142,26 +145,30 @@ class TestAF3DatasetConfigConstruction:
         test_dummy_file = tmp_path / "test.json"
         test_dummy_file.write_text("test")
         with pytest.raises(ValueError, match="Exactly one"):
-            TrainingDatasetPaths.model_validate({
-                "alignments_directory": None,
-                "alignment_db_directory": None,
-                "alignment_array_directory": None,
-                "dataset_cache_file": test_dummy_file, 
-                "target_structures_directory": tmp_path,
-                "target_structure_file_format": "npz",
-                "reference_molecule_directory": tmp_path,
-            })
-    
+            TrainingDatasetPaths.model_validate(
+                {
+                    "alignments_directory": None,
+                    "alignment_db_directory": None,
+                    "alignment_array_directory": None,
+                    "dataset_cache_file": test_dummy_file,
+                    "target_structures_directory": tmp_path,
+                    "target_structure_file_format": "npz",
+                    "reference_molecule_directory": tmp_path,
+                }
+            )
+
     def test_error_if_two_alignment_paths_set(self, tmp_path):
         test_dummy_file = tmp_path / "test.json"
         test_dummy_file.write_text("test")
         with pytest.raises(ValueError, match="Exactly one"):
-            TrainingDatasetPaths.model_validate({
-                "alignments_directory": tmp_path,
-                "alignment_db_directory": tmp_path,
-                "alignment_array_directory": None,
-                "dataset_cache_file": test_dummy_file, 
-                "target_structures_directory": tmp_path,
-                "target_structure_file_format": "npz",
-                "reference_molecule_directory": tmp_path,
-            })
+            TrainingDatasetPaths.model_validate(
+                {
+                    "alignments_directory": tmp_path,
+                    "alignment_db_directory": tmp_path,
+                    "alignment_array_directory": None,
+                    "dataset_cache_file": test_dummy_file,
+                    "target_structures_directory": tmp_path,
+                    "target_structure_file_format": "npz",
+                    "reference_molecule_directory": tmp_path,
+                }
+            )

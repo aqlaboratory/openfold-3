@@ -57,7 +57,7 @@ class TrainingDatasetPaths(BaseModel):
         def _validate_exactly_one_path_exists(
             group_name: str, path_values: list[Optional[Path]]
         ):
-            which_paths_exist = [p != None for p in path_values]
+            which_paths_exist = [p is not None for p in path_values]
             if sum(which_paths_exist) != 1:
                 existing_paths = [
                     p for p, b in zip(path_values, which_paths_exist) if b
@@ -125,7 +125,8 @@ class DatasetConfigRegistry:
         config_class = cls._registry.get(name)
         if not config_class:
             raise ValueError(
-                f"{name} was not found in the dataset registry, available config types are are {cls._registry.keys()}"
+                f"{name} was not found in the dataset registry," 
+                f"available config types are are {cls._registry.keys()}"
             )
         return config_class
 
