@@ -62,8 +62,6 @@ class AF3ProjectEntry:
     ) -> ConfigDict:
         """Returns a model config with updates applied."""
         model_config = self.get_model_config_with_presets(model_update.presets)
-        # print(f"{model_config}")
-        print(f"{model_update.custom=}")
         model_config.update(model_update.custom)
         return model_config
 

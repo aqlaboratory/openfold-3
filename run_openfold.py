@@ -18,11 +18,11 @@ from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
 from openfold3.core.config import config_utils
-from openfold3.core.data.framework.data_module import DataModule
-from openfold3.projects import registry
+from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
 from openfold3.projects.af3_all_atom.config.runner_file_checks import (
     _check_data_module_config,
 )
+from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry, ModelUpdate
 
 torch_versions = torch.__version__.split(".")
 torch_major_version = int(torch_versions[0])
@@ -83,26 +83,24 @@ def main(args):
     logging.info(f"Running with seed: {seed}")
     pl.seed_everything(seed, workers=True)
 
-    project_entry = registry.get_project_entry(runner_args.project_type)
-
-    project_config = registry.make_config_with_presets(
-        project_entry, runner_args.presets
-    )
-    if runner_args.get("config_update"):
-        project_config.update(runner_args.config_update)
+    project_entry = AF3ProjectEntry()
+    model_update = ModelUpdate.model_validate(runner_args.get("model_update").to_dict())
+    model_config = project_entry.get_model_config_with_update(model_update)
+    lightning_module = project_entry.runner(model_config, _compile=runner_args.compile)
 
     ckpt_path = runner_args.get("restart_checkpoint_path")
-
-    model_config = project_config.model
-    lightning_module = project_entry.model_runner(
-        model_config, _compile=runner_args.compile
+    dataset_specs = project_entry.combine_dataset_paths_with_configs(
+        runner_args.get("dataset_paths").to_dict(),
+        runner_args.get("dataset_configs").to_dict(),
     )
 
-    dataset_config_builder = project_entry.dataset_config_builder
-    data_module_config = registry.make_dataset_module_config(
-        runner_args,
-        dataset_config_builder,
-        project_config,
+    data_module_config = DataModuleConfig(
+        batch_size=runner_args.batch_size,
+        num_workers=runner_args.get("num_workers", 0),
+        data_seed=runner_args.get("data_seed", 42),
+        epoch_len=runner_args.get("epoch_len", 1),
+        num_epochs=runner_args.pl_trainer.get("max_epochs", 1000),  # PL default
+        datasets=dataset_specs,
     )
     _check_data_module_config(data_module_config)
     lightning_data_module = DataModule(data_module_config, world_size=world_size)
