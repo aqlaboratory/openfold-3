@@ -14,6 +14,7 @@
 
 import unittest
 
+from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
 import torch
 
 from openfold3.core.model.feature_embedders.input_embedders import (
@@ -126,9 +127,8 @@ class TestMSAModuleEmbedder(unittest.TestCase):
         c_s_input = c_token + 65
         one_hot_dim = 32
 
-        proj_entry = registry.get_project_entry("af3_all_atom")
-        af3_proj_config = proj_entry.get_config_with_preset()
-        af3_config = af3_proj_config.model
+        proj_entry = AF3ProjectEntry() 
+        af3_config = proj_entry.get_model_config_with_presets()
 
         msa_emb_config = af3_config.architecture.msa.msa_module_embedder
         msa_emb_config.update({"c_s_input": c_s_input})
