@@ -89,7 +89,7 @@ def create_token_bonds(atom_array: AtomArray, token_index: np.ndarray) -> torch.
     """
     # Fully subset bonds with strict defintion to only the ones in AF3 SI Table 5
     # "token_bonds"
-    filter_bonds(
+    atom_array = filter_bonds(
         atom_array=atom_array,
         bond_filter=BondFilter(
             keep_consecutive=False, restore_intra_component=False, restore_atomized=True
