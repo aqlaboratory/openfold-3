@@ -83,15 +83,7 @@ def process_target_structure_af3(
     # Remove bonds not following AF3 criteria, but keep intra-residue bonds and
     # consecutive inter-residue bonds for now (necessary for molecule detection in
     # permutation IDs)
-    filter_bonds(
-        atom_array=atom_array,
-        keep_consecutive=True,
-        keep_polymer_ligand=True,
-        keep_ligand_ligand=True,
-        remove_larger_than=2.4,
-        remove_metal_coordination=True,
-        mask_intra_component=True,
-    )
+    atom_array = filter_bonds(atom_array=atom_array)
 
     # Tokenize
     tokenize_atom_array(atom_array=atom_array)

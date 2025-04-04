@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 from functools import wraps
 
@@ -734,52 +735,100 @@ def remove_std_residue_terminal_atoms(atom_array: AtomArray) -> AtomArray:
     return atom_array
 
 
+@dataclasses.dataclass(frozen=False)
+class BondFilter:
+    """Class to store bond filter parameters.
+
+    The priority of the filters is as follows: keep_* < remove_* < restore_*
+    In detail:
+        1. the base boolean bond mask array is initialized as fully FALSE: all bonds
+        are to be removed.
+        2. keep_* filters are applied: sets the bond mask to TRUE for certain bonds.
+            2.1. add consecutive bonds from the same chain
+            2.2. add polymer-ligand bonds
+            2.3. add ligand-ligand bonds
+        3. remove_* filters are applied: sets the bond mask to FALSE for certain bonds.
+            3.1. remove bonds larger than a certain cutoff
+            3.2. remove metal-coordination bonds
+        4. restore_* filters are applied: sets the bond mask to TRUE for certain bonds.
+            4.1. restore bonds between atoms in the same chemical component
+            4.2. restore bonds between atoms that are labeled as belonging to an
+            atomized token
+
+    Attributes:
+        keep_consecutive (bool):
+            Whether to keep bonds between atoms not more than 1 residue apart and are in
+            the same chain. Default is True.
+        keep_polymer_ligand (bool):
+            Whether to keep polymer-ligand bonds. Default is True.
+        keep_ligand_ligand (bool):
+            Whether to keep ligand-ligand bonds. Default is True.
+        remove_larger_than (float):
+            Whether to remove any bond larger than this cutoff distance (in Å).
+            Overrides keep_* flags. Default is 2.4 Å.
+        remove_metal_coordination (bool):
+            Whether to remove any metal-coordination bonds. Overrides keep_* flags.
+            Default is True.
+        restore_intra_component (bool):
+            Whether to restore bonds within the same component. For example important
+            for ensuring that components are not disconnected before symmetry-labels are
+            assigned. Overrides remove_* flags. Default is True.
+        restore_atomized (bool):
+            Whether to restore bonds between atoms that belong to atomized tokens.
+            Requires the AtomArray to have the is_atomized annotation. Overrides
+            remove_* flags. Default is False.
+    """
+
+    keep_consecutive: bool = True
+    keep_polymer_ligand: bool = True
+    keep_ligand_ligand: bool = True
+    remove_larger_than: float = 2.4
+    remove_metal_coordination: bool = True
+    restore_intra_component: bool = True
+    restore_atomized: bool = False
+
+
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-filter-bonds")
 def filter_bonds(
     atom_array: AtomArray,
-    keep_consecutive: bool = True,
-    keep_polymer_ligand: bool = True,
-    keep_ligand_ligand: bool = True,
-    remove_larger_than: float = 2.4,
-    remove_metal_coordination: bool = True,
-    mask_intra_component: bool = True,
-) -> None:
-    """Filter bonds in an AtomArray
+    bond_filter: BondFilter | None = None,
+) -> AtomArray:
+    """Filter bonds in an AtomArray.
 
-    This function filters bonds based on AF3 SI Table 5 "token_bonds". It additionally
-    allows to keep bonds of consecutive residues as well as bonds within the same
-    residue, which can be necessary in the earlier stages of the sample processing
-    pipeline.
+    By default, this function keeps bonds between:
+        - atoms from consecutive residues in the same chain
+        - pairs of polymer-ligand atoms, except metal-coordination bonds
+        - pairs of ligand atoms, including metal-coordination bonds
+        - shorter than or equal to 2.4 Å
+        - between atoms in the same chemical component
+    and removes all other bonds.
 
     Args:
-        atom_array:
-            AtomArray containing the structure to filter the bonds for.
-        keep_consecutive:
-            Whether to keep bonds between atoms not more than 1 residue apart. Default
-            is True.
-        keep_polymer_ligand:
-            Whether to keep polymer-ligand bonds. Default is True.
-        keep_ligand_ligand:
-            Whether to keep ligand-ligand bonds. Default is True.
-        remove_larger_than:
-            Remove any bond larger than this cutoff distance (in Å). Default is 2.4 Å.
-        remove_metal_coordination:
-            Whether to remove any metal-coordination bonds. Default is True. Note that
-            this takes precedence over any of the keep_* options.
-        mask_intra_component:
-            Whether to mask all bonds within the same component from any filtering. This
-            overrules all previous filters. For example important for ensuring that
-            components are not disconnected before symmetry-labels are assigned. Default
-            is True.
+        atom_array (AtomArray):
+            The AtomArray to filter the bonds of.
+        bond_filter (BondFilter | None):
+            The BondFilter to use. If None, a default BondFilter is used. Default is
+            None.
+    Returns:
+        AtomArray:
+            AtomArray with filtered bond list.
+
+    Raises:
+        ValueError:
+            If the input atom_array does not have the is_atomized attribute and
+            bond_filter.restore_atomized is set to True.
     """
+    if bond_filter is None:
+        bond_filter = BondFilter()
+
     # initial_molecule_indices = get_molecule_indices(atom_array)
 
+    # 1. init bond partner array
     bond_partners = atom_array.bonds.as_array()[:, :2]
-
     valid_bonds_mask = np.zeros(len(bond_partners), dtype=bool)
 
-    # Keep bonds between atoms not more than 1 residue apart
-    if keep_consecutive:
+    # 2.1. Keep bonds between atoms not more than 1 residue apart
+    if bond_filter.keep_consecutive:
         bond_partner_res_ids = atom_array.res_id[bond_partners]
         bond_partner_chain_ids = atom_array.chain_id[bond_partners]
 
@@ -788,13 +837,14 @@ def filter_bonds(
 
         valid_bonds_mask[is_consecutive & is_same_chain] = True
 
-    if keep_polymer_ligand or keep_ligand_ligand:
+    # 2. molecule type filters
+    if bond_filter.keep_polymer_ligand or bond_filter.keep_ligand_ligand:
         bond_partner_moltypes = atom_array.molecule_type_id[bond_partners]
 
         is_ligand = np.isin(bond_partner_moltypes, [MoleculeType.LIGAND])
 
-        # Keep polymer-ligand bonds
-        if keep_polymer_ligand:
+        # 2.2. Keep polymer-ligand bonds
+        if bond_filter.keep_polymer_ligand:
             is_polymer = np.isin(
                 bond_partner_moltypes,
                 [MoleculeType.PROTEIN, MoleculeType.DNA, MoleculeType.RNA],
@@ -802,38 +852,58 @@ def filter_bonds(
             is_polymer_ligand = is_polymer.any(axis=1) & is_ligand.any(axis=1)
             valid_bonds_mask[is_polymer_ligand] = True
 
-        # Keep ligand-ligand bonds
-        if keep_ligand_ligand:
+        # 2.3. Keep ligand-ligand bonds
+        if bond_filter.keep_ligand_ligand:
             is_ligand_ligand = is_ligand.all(axis=1)
             valid_bonds_mask[is_ligand_ligand] = True
 
-    # Filter all current bonds to only keep those shorter than the cutoff
+    # 3.1. Remove bonds longer than the cutoff
     # TODO: check behavior if valid_bonds_mask is empty
     distances = index_distance(atom_array, bond_partners[valid_bonds_mask])
     valid_bonds_index = np.nonzero(valid_bonds_mask)[0]
     remove_index = valid_bonds_index[
-        (distances > remove_larger_than) & ~np.isnan(distances)
+        (distances > bond_filter.remove_larger_than) & ~np.isnan(distances)
     ]
     valid_bonds_mask[remove_index] = False
 
-    # Remove any metal-coordination bonds
-    if remove_metal_coordination:
+    # 3.2. Remove any metal-coordination bonds
+    if bond_filter.remove_metal_coordination:
         bond_types = atom_array.bonds.as_array()[:, 2]
         is_metal_coordination = bond_types == BondType.COORDINATION
 
         valid_bonds_mask[is_metal_coordination] = False
 
-    # If mask_intra_component is True, overrule all previous filters and keep all bonds
-    # within the same component to ensure it's not getting disconnected
-    if mask_intra_component:
+    # 4.1. Restore bonds between atoms within the same component to ensure it's not
+    # getting disconnected
+    if bond_filter.restore_intra_component:
+        if not hasattr(atom_array, "component_id"):
+            raise ValueError(
+                "The input atom_array must have the component_id attribute to restore "
+                "intra-component bonds. See the 'assign_component_ids_from_metadata' "
+                "function."
+            )
+
         bond_partner_component_id = atom_array.component_id[bond_partners]
         is_intra_component = np.diff(bond_partner_component_id, axis=1).squeeze() == 0
         valid_bonds_mask[is_intra_component] = True
 
+    # 4.2. Restore bonds between atoms that belong to atomized tokens
+    if bond_filter.restore_atomized:
+        if not hasattr(atom_array, "is_atomized"):
+            raise ValueError(
+                "The input atom_array must have the is_atomized attribute to restore "
+                "atomized bonds. See the 'tokenize_atom_array' function."
+            )
+
+        is_atomized_atomized = atom_array.is_atomized[bond_partners].all(axis=1)
+        valid_bonds_mask[is_atomized_atomized] = True
+
     new_bondlist = BondList(
         atom_count=len(atom_array), bonds=atom_array.bonds.as_array()[valid_bonds_mask]
     )
-    atom_array.bonds = new_bondlist
+
+    updated_atom_array = atom_array.copy()
+    updated_atom_array.bonds = new_bondlist
 
     # TODO: Revise this assert
     # final_molecule_indices = get_molecule_indices(atom_array)
@@ -849,6 +919,8 @@ def filter_bonds(
     #         "Filtering bonds disconnected a molecule. This can result in unwanted"
     #         " behavior in the permutation alignment."
     #     )
+
+    return updated_atom_array
 
 
 def remove_covalent_nonprotein_chains(atom_array: AtomArray) -> AtomArray:
