@@ -795,13 +795,13 @@ def filter_bonds(
 ) -> AtomArray:
     """Filter bonds in an AtomArray.
 
-    By default, this function keeps bonds between:
+    By default, this function removes all bonds except those between:
         - atoms from consecutive residues in the same chain
         - pairs of polymer-ligand atoms, except metal-coordination bonds
         - pairs of ligand atoms, including metal-coordination bonds
-        - shorter than or equal to 2.4 Å
-        - between atoms in the same chemical component
-    and removes all other bonds.
+        - atom pairs with an existing bond annotation that is shorter than or equal to
+        2.4 Å
+        - atoms in the same chemical component
 
     Args:
         atom_array (AtomArray):

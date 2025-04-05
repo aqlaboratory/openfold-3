@@ -115,7 +115,19 @@ NUCLEIC_ACID_PHOSPHATE_OXYGENS = ["OP1", "OP2", "OP3", "O1P", "O2P", "O3P"]
 TOKEN_CENTER_ATOMS = ["CA", "C1'"]
 
 # Main chain atoms - needed for modified residue tokenization
-NUCLEIC_ACID_MAIN_CHAIN_ATOMS = ["C3'", "C4'", "C5'", "O3'", "O5'", "P"]
+NUCLEIC_ACID_MAIN_CHAIN_ATOMS = [
+    "C1'",
+    "C2'",
+    "C3'",
+    "C4'",
+    "C5'",
+    "O3'",
+    "O4'",
+    "O5'",
+    "P",
+    "OP1",
+    "OP2",
+]
 PROTEIN_MAIN_CHAIN_ATOMS = ["N", "C", "CA", "O"]
 
 # Protein residue maps
