@@ -162,8 +162,7 @@ class TestConfidenceLoss(unittest.TestCase):
         n_atom = batch["ground_truth"]["atom_resolved_mask"].shape[1]
 
         proj_entry = AF3ProjectEntry() 
-        proj_config = proj_entry.get_model_config_with_presets()
-        config = proj_config.model
+        config = proj_entry.get_model_config_with_presets()
 
         no_bins_plddt = config.architecture.loss_module.confidence.plddt.no_bins
         no_bins_pae = config.architecture.loss_module.confidence.pae.no_bins

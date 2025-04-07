@@ -82,7 +82,7 @@ class TrainingDatasetPaths(BaseModel):
                 self.template_structure_array_directory,
             ],
         )
-        return
+        return self
 
 
 class DefaultDatasetConfigSection(BaseModel):
@@ -228,5 +228,5 @@ class TrainingDatasetSpec(BaseModel):
         config_data["name"] = values.get("name")
         values["mode"] = DatasetMode(values.get("mode"))
 
-        values["config"] = config_class(**config_data)
+        values["config"] = config_class.model_validate(config_data)
         return values

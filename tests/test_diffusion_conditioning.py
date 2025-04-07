@@ -15,7 +15,7 @@ class TestDiffusionConditioning(unittest.TestCase):
         c_s = consts.c_s
         c_z = consts.c_z
 
-        proj_entry = AF3ProjectEntry 
+        proj_entry = AF3ProjectEntry() 
         config = proj_entry.get_model_config_with_presets()
 
         diff_cond_config = config.architecture.diffusion_module.diffusion_conditioning
@@ -59,9 +59,8 @@ class TestDiffusionConditioning(unittest.TestCase):
         c_z = consts.c_z
         n_sample = 3
 
-        proj_entry = registry.get_project_entry("af3_all_atom")
-        proj_config = proj_entry.get_config_with_preset()
-        config = proj_config.model
+        proj_entry = AF3ProjectEntry() 
+        config = proj_entry.get_model_config_with_presets()
 
         diff_cond_config = config.architecture.diffusion_module.diffusion_conditioning
         diff_cond_config.update({"c_s": c_s, "c_s_input": c_s_input, "c_z": c_z})
@@ -107,9 +106,8 @@ class TestDiffusionConditioning(unittest.TestCase):
         c_s = consts.c_s
         c_z = consts.c_z
 
-        proj_entry = registry.get_project_entry("af3_all_atom")
-        proj_config = proj_entry.get_config_with_preset()
-        config = proj_config.model
+        proj_entry = AF3ProjectEntry() 
+        config = proj_entry.get_model_config_with_presets()
 
         diff_cond_config = config.architecture.diffusion_module.diffusion_conditioning
         diff_cond_config.update({"c_s": c_s, "c_s_input": c_s_input, "c_z": c_z})

@@ -27,7 +27,6 @@ from openfold3.core.model.latent.template_module import (
 from openfold3.core.model.layers.template_pointwise_attention import (
     TemplatePointwiseAttention,
 )
-from openfold3.projects import registry
 from tests.config import consts
 from tests.data_utils import random_asym_ids, random_template_feats
 
