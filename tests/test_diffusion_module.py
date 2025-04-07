@@ -124,8 +124,6 @@ class TestSampleDiffusion(unittest.TestCase):
         c_s_input = config.architecture.shared.c_s_input
         c_s = config.architecture.shared.c_s
         c_z = config.architecture.shared.c_z
-        config.architecture.shared.no_mini_rollout_steps = 2
-        config.architecture.shared.no_full_rollout_steps = 2
         no_rollout_samples = 5
 
         sample_config = config.architecture.sample_diffusion
@@ -148,8 +146,8 @@ class TestSampleDiffusion(unittest.TestCase):
 
         with torch.no_grad():
             noise_sched_config = config.architecture.noise_schedule
-            noise_sched_config.no_rollout_steps = 2
             noise_schedule = create_noise_schedule(
+                no_rollout_steps=2,
                 **noise_sched_config, dtype=si_input.dtype, device=si_input.device
             )
 
