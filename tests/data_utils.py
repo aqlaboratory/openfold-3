@@ -280,7 +280,7 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
     return features
 
 
-def create_atom_array_with_bondlist(
+def create_atomarray_with_bondlist(
     atoms: list[Atom], bondlist: BondList | np.ndarray
 ) -> AtomArray:
     """Convenience function to create an AtomArray with a BondList.
