@@ -8,7 +8,8 @@ import numpy as np
 import torch
 
 from openfold3.core.utils.import_weights import import_jax_weights_
-# from openfold3.projects import registry
+from openfold3.legacy.af2_monomer.project_entry import AF2MonomerProjectEntry
+from openfold3.legacy.af2_monomer.model import AlphaFold 
 from tests.config import consts
 
 # Give JAX some GPU memory discipline
@@ -16,6 +17,8 @@ from tests.config import consts
 # forces it to proactively free memory that it allocates)
 os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
 os.environ["JAX_PLATFORM_NAME"] = "gpu"
+# TODO: Replace this with commandline flag
+RUN_OF_TESTS = False 
 
 
 def skip_unless_ds4s_installed():
@@ -45,7 +48,7 @@ def skip_unless_cuda_kernels_installed():
     )
 
 def skip_of2_test():
-    return unittest.skip("OpenFold legacy model test")
+    return unittest.skipUnless(RUN_OF_TESTS, "OpenFold legacy model test")
 
 def skip_unless_flash_attn_installed():
     fa_is_installed = importlib.util.find_spec("flash_attn") is not None
@@ -103,13 +106,11 @@ _model = None
 def get_global_pretrained_openfold():
     global _model
     if _model is None:
-        project_entry = registry.get_project_entry(consts.model_name)
-        project_config = registry.make_config_with_presets(
-            project_entry, [consts.model_preset]
-        )
-        _lightning_module = project_entry.model_runner(project_config, _compile=False)
-        _model = _lightning_module.model
+        project_entry = AF2MonomerProjectEntry()
+        model_config = project_entry.get_config_with_presets([consts.model_preset])
+        _model = AlphaFold(model_config)
         _model = _model.eval()
+
         if not os.path.exists(_param_path):
             raise FileNotFoundError(
                 """Cannot load pretrained parameters. Make sure to run the 
