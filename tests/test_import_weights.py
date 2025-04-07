@@ -28,7 +28,7 @@ from tests.config import monomer_consts
 from tests import compare_utils
 
 
-@compare_utils.skip_af2_test()
+@compare_utils.skip_of2_test()
 class TestImportWeights(unittest.TestCase):
     def test_import_jax_weights_(self):
         npz_path = (

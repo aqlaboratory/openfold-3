@@ -308,7 +308,7 @@ class TestLoss(unittest.TestCase):
 
             self.assertTrue(torch.max(torch.abs(iptm_gt - iptm_repro)) < consts.eps)
     
-    @compare_utils.skip_af2_test()
+    @compare_utils.skip_of2_test()
     def test_find_structural_violations(self):
         n = consts.n_res
 

@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 from openfold3.core.utils.import_weights import import_jax_weights_
-from openfold3.projects import registry
+# from openfold3.projects import registry
 from tests.config import consts
 
 # Give JAX some GPU memory discipline
@@ -44,8 +44,8 @@ def skip_unless_cuda_kernels_installed():
         cuda_kernels_is_installed(), "Requires kernel installation"
     )
 
-def skip_af2_test():
-    return unittest.skip("AF2 specific test")
+def skip_of2_test():
+    return unittest.skip("OpenFold legacy model test")
 
 def skip_unless_flash_attn_installed():
     fa_is_installed = importlib.util.find_spec("flash_attn") is not None

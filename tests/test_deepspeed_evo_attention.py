@@ -40,7 +40,7 @@ from tests.data_utils import (
 
 @compare_utils.skip_unless_ds4s_installed()
 @compare_utils.skip_unless_cuda_available()
-@compare_utils.skip_af2_test()
+@compare_utils.skip_of2_test()
 class TestDeepSpeedKernel(unittest.TestCase):
     def compare_attention_types(self, use_flash=False):
         """Compare attention with and without using DeepSpeed Evoformer kernel."""

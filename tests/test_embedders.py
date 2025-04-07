@@ -32,11 +32,12 @@ from openfold3.core.model.feature_embedders.template_embedders import (
     TemplateSingleEmbedderMonomer,
     TemplateSingleEmbedderMultimer,
 )
-from openfold3.projects import registry
+from tests import compare_utils
 from tests.config import consts, monomer_consts, multimer_consts
 from tests.data_utils import random_af3_features, random_asym_ids, random_template_feats
 
 
+@compare_utils.skip_of2_test()
 class TestInputEmbedder(unittest.TestCase):
     def test_shape(self):
         c_z = 5
@@ -94,9 +95,8 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
-        af3_proj = registry.get_project_entry("af3_all_atom")
-        af3_proj_config = af3_proj.get_config_with_preset()
-        af3_config = af3_proj_config.model
+        proj_entry = AF3ProjectEntry() 
+        af3_config = proj_entry.get_model_config_with_presets()
 
         c_s_input = af3_config.architecture.input_embedder.c_s_input
         c_s = af3_config.architecture.input_embedder.c_s
@@ -218,6 +218,7 @@ class TestRecyclingEmbedder(unittest.TestCase):
         self.assertTrue(m_1.shape == (batch_size, n, c_m))
 
 
+@compare_utils.skip_of2_test()
 class TestTemplateSingleEmbedders(unittest.TestCase):
     def test_shape(self):
         batch_size = 4
@@ -260,7 +261,8 @@ class TestTemplateSingleEmbedders(unittest.TestCase):
 
 
 class TestTemplatePairEmbedders(unittest.TestCase):
-    def test_shape(self):
+    @compare_utils.skip_of2_test()
+    def test_af2_shape(self):
         batch_size = 2
         n_templ = 4
         n_res = 5
@@ -316,10 +318,9 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         batch_size = 2
         n_templ = 3
         n_token = 10
-
-        proj_entry = registry.get_project_entry("af3_all_atom")
-        af3_proj_config = proj_entry.get_config_with_preset()
-        af3_config = af3_proj_config.model
+        
+        proj_entry = AF3ProjectEntry() 
+        af3_config = proj_entry.get_model_config_with_presets()
 
         c_z = af3_config.architecture.template.template_pair_embedder.c_z
         c_t = af3_config.architecture.template.template_pair_embedder.c_out
