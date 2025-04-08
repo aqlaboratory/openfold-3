@@ -55,17 +55,13 @@ def tokenize_atom_array(atom_array: AtomArray):
         1. Get atoms in canonical residues in polymers
         2. Get atoms in small molecule ligands, non-canonical residues in polymers and
         amino acid or nucleotide small molecule ligands
-        3. Get atoms in canonical residues in polymer with covalent modifications or
-        non-canonical bonding pattern, i.e., those that are connected to:
-            3.1. a small molecule ligand
-            3.2. any atom of a non-canonical residue via a side chain atom
-            3.3. any OTHER residue via a bond involving a main-chain-
-            -non-main-chain atom pair
-            3.4. another canonical residue of a different molecule type
-            via a bond involving a main-chain--main-chain atom pair
-        4. Tokenize
-            - 2. per atom
-            - 3. per atom
+        3. Get atoms in canonical residues in polymer that are modified
+            We consider a residue to be modified if it is connected to any other residue
+            via a non-peptide bond for proteins or a non-phospho-diester bond for
+            nucleic acids.
+        4. Tokenize residues with any atoms from
+            - set 2. per atom
+            - set 3. per atom
             - the difference of sets 1.-3. per residue
 
     Args:
