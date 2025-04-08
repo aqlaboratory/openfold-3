@@ -10,6 +10,7 @@ if compare_utils.cuda_kernels_is_installed():
     from openfold3.core.kernels.cuda.attention_core import attention_core
     from openfold3.core.model.primitives.attention import _attention
 
+
 class TestAttentionCore(unittest.TestCase):
     @compare_utils.skip_unless_cuda_kernels_installed()
     @compare_utils.skip_unless_cuda_available()

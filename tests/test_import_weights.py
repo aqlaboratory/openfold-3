@@ -36,7 +36,7 @@ class TestImportWeights(unittest.TestCase):
             / f"../openfold3/resources/params/params_{monomer_consts.model_preset}.npz"
         )
 
-        project_entry = AF2MonomerProjectEntry() 
+        project_entry = AF2MonomerProjectEntry()
         c = project_entry.get_config_with_presets([monomer_consts.model_preset])
         c.globals.blocks_per_ckpt = None
 
@@ -89,7 +89,7 @@ class TestImportWeights(unittest.TestCase):
         )
 
         if os.path.exists(pt_path):
-            project_entry = AF2MonomerProjectEntry() 
+            project_entry = AF2MonomerProjectEntry()
             c = project_entry.get_config_with_presets()
             c.globals.blocks_per_ckpt = None
             model = project_entry.runner(c, _compile=False).model

@@ -216,7 +216,7 @@ class TestTemplateEmbedderAllAtom(unittest.TestCase):
         n_templ = 3
         n_token = 10
 
-        af3_proj_entry = AF3ProjectEntry() 
+        af3_proj_entry = AF3ProjectEntry()
         af3_config = af3_proj_entry.get_model_config_with_presets()
 
         c_z = af3_config.architecture.template.template_pair_embedder.c_z

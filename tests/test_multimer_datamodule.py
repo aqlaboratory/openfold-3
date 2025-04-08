@@ -23,7 +23,9 @@ from openfold3.core.data.legacy.data_modules import OpenFoldMultimerDataModule
 from openfold3.core.loss.loss_module import AlphaFoldLoss
 from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation_align
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.legacy.af2_multimer.config.base_config import config as af2_multimer_config
+from openfold3.legacy.af2_multimer.config.base_config import (
+    config as af2_multimer_config,
+)
 from tests.config import consts
 
 logger = logging.getLogger(__name__)
@@ -40,7 +42,7 @@ class TestMultimerDataModule(unittest.TestCase):
 
         use model_1_multimer_v3 for now
         """
-        self.config = af2_multimer_config() 
+        self.config = af2_multimer_config()
         self.data_module = OpenFoldMultimerDataModule(
             config=self.config.data,
             batch_seed=42,

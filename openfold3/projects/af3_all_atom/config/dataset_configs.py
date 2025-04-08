@@ -125,7 +125,7 @@ class DatasetConfigRegistry:
         config_class = cls._registry.get(name)
         if not config_class:
             raise ValueError(
-                f"{name} was not found in the dataset registry," 
+                f"{name} was not found in the dataset registry,"
                 f"available config types are are {cls._registry.keys()}"
             )
         return config_class

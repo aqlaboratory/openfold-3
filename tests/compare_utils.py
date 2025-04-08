@@ -9,7 +9,7 @@ import torch
 
 from openfold3.core.utils.import_weights import import_jax_weights_
 from openfold3.legacy.af2_monomer.project_entry import AF2MonomerProjectEntry
-from openfold3.legacy.af2_monomer.model import AlphaFold 
+from openfold3.legacy.af2_monomer.model import AlphaFold
 from tests.config import consts
 
 # Give JAX some GPU memory discipline
@@ -31,13 +31,13 @@ def skip_unless_ds4s_installed():
         ds4s_is_installed, "Requires DeepSpeed with version ≥ 0.10.4"
     )
 
+
 def cuda_kernels_is_installed():
     attn_core_is_installed = (
         importlib.util.find_spec("attn_core_inplace_cuda") is not None
     )
     kernels_installed = attn_core_is_installed and (
-        importlib.util.find_spec("attention_core")
-        is not None
+        importlib.util.find_spec("attention_core") is not None
     )
     return kernels_installed
 
@@ -47,8 +47,10 @@ def skip_unless_cuda_kernels_installed():
         cuda_kernels_is_installed(), "Requires kernel installation"
     )
 
+
 def skip_of2_test():
     return unittest.skipUnless(RUN_OF_TESTS, "OpenFold legacy model test")
+
 
 def skip_unless_flash_attn_installed():
     fa_is_installed = importlib.util.find_spec("flash_attn") is not None

@@ -13,11 +13,9 @@ from openfold3.legacy.af2_multimer.runner import AlphaFoldMultimer
 @dataclass
 class AF2MultimerProjectEntry:
     name = "af2_multimer"
-    model_config_base = multimer_config 
+    model_config_base = multimer_config
     runner = AlphaFoldMultimer
-    model_preset_yaml = (
-        "openfold3/legacy/af2_multimer/config/reference_config.yml"
-    )
+    model_preset_yaml = "openfold3/legacy/af2_multimer/config/reference_config.yml"
 
     def __post_init__(self):
         preset_dict = load_yaml(self.model_preset_yaml)
@@ -46,4 +44,4 @@ class AF2MultimerProjectEntry:
         else:
             for preset in presets:
                 config = self.update_config_with_preset(config, preset)
-        return config 
+        return config

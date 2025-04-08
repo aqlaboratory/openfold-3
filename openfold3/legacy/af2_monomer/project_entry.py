@@ -13,11 +13,9 @@ from openfold3.legacy.af2_monomer.runner import AlphaFoldMonomer
 @dataclass
 class AF2MonomerProjectEntry:
     name = "af2_monomer"
-    model_config_base = af2_config 
-    runner = AlphaFoldMonomer 
-    model_preset_yaml = (
-        "openfold3/legacy/af2_monomer/config/reference_config.yml"
-    )
+    model_config_base = af2_config
+    runner = AlphaFoldMonomer
+    model_preset_yaml = "openfold3/legacy/af2_monomer/config/reference_config.yml"
 
     def __post_init__(self):
         preset_dict = load_yaml(self.model_preset_yaml)
@@ -46,4 +44,4 @@ class AF2MonomerProjectEntry:
         else:
             for preset in presets:
                 config = self.update_config_with_preset(config, preset)
-        return config 
+        return config

@@ -48,7 +48,7 @@ class TestInputEmbedder(unittest.TestCase):
         n_res = 17
         n_clust = 19
 
-        monomer_project_entry = AF2MonomerProjectEntry() 
+        monomer_project_entry = AF2MonomerProjectEntry()
         config = monomer_project_entry.get_config_with_presets(
             [monomer_consts.model_preset]
         )
@@ -69,7 +69,7 @@ class TestInputEmbedder(unittest.TestCase):
         self.assertTrue(msa_emb.shape == (b, n_clust, n_res, c_m))
         self.assertTrue(pair_emb.shape == (b, n_res, n_res, c_z))
 
-        multimer_project_entry = AF2MultimerProjectEntry() 
+        multimer_project_entry = AF2MultimerProjectEntry()
         config = multimer_project_entry.get_config_with_presets(
             [multimer_consts.model_preset]
         )
@@ -97,7 +97,7 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
-        proj_entry = AF3ProjectEntry() 
+        proj_entry = AF3ProjectEntry()
         af3_config = proj_entry.get_model_config_with_presets()
 
         c_s_input = af3_config.architecture.input_embedder.c_s_input
@@ -129,7 +129,7 @@ class TestMSAModuleEmbedder(unittest.TestCase):
         c_s_input = c_token + 65
         one_hot_dim = 32
 
-        proj_entry = AF3ProjectEntry() 
+        proj_entry = AF3ProjectEntry()
         af3_config = proj_entry.get_model_config_with_presets()
 
         msa_emb_config = af3_config.architecture.msa.msa_module_embedder
@@ -227,10 +227,8 @@ class TestTemplateSingleEmbedders(unittest.TestCase):
         n_templ = 4
         n_res = 256
 
-        monomer_project_entry = AF2MonomerProjectEntry() 
-        c = monomer_project_entry.get_config_with_presets(
-            [monomer_consts.model_preset]
-        )
+        monomer_project_entry = AF2MonomerProjectEntry()
+        c = monomer_project_entry.get_config_with_presets([monomer_consts.model_preset])
         c_m = c.model.template.template_single_embedder.c_out
 
         batch = random_template_feats(n_templ, n_res, batch_size=batch_size)
@@ -245,7 +243,7 @@ class TestTemplateSingleEmbedders(unittest.TestCase):
 
         self.assertTrue(x.shape == (batch_size, n_templ, n_res, c_m))
 
-        multimer_project_entry = AF2MultimerProjectEntry() 
+        multimer_project_entry = AF2MultimerProjectEntry()
         c = multimer_project_entry.get_config_with_presets(
             [multimer_consts.model_preset]
         )
@@ -269,10 +267,8 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         n_templ = 4
         n_res = 5
 
-        monomer_project_entry = AF2MonomerProjectEntry() 
-        c = monomer_project_entry.get_config_with_presets(
-            [monomer_consts.model_preset]
-        )
+        monomer_project_entry = AF2MonomerProjectEntry()
+        c = monomer_project_entry.get_config_with_presets([monomer_consts.model_preset])
         c_t = c.model.template.template_pair_embedder.c_out
 
         batch = random_template_feats(n_templ, n_res, batch_size=batch_size)
@@ -290,7 +286,7 @@ class TestTemplatePairEmbedders(unittest.TestCase):
 
         self.assertTrue(x.shape == (batch_size, n_templ, n_res, n_res, c_t))
 
-        multimer_project_entry = AF2MultimerProjectEntry() 
+        multimer_project_entry = AF2MultimerProjectEntry()
         c = multimer_project_entry.get_config_with_presets(
             [multimer_consts.model_preset]
         )
@@ -321,8 +317,8 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         batch_size = 2
         n_templ = 3
         n_token = 10
-        
-        proj_entry = AF3ProjectEntry() 
+
+        proj_entry = AF3ProjectEntry()
         af3_config = proj_entry.get_model_config_with_presets()
 
         c_z = af3_config.architecture.template.template_pair_embedder.c_z

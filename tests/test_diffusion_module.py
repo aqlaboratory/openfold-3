@@ -32,7 +32,7 @@ class TestDiffusionModule(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
-        proj_entry = AF3ProjectEntry() 
+        proj_entry = AF3ProjectEntry()
         config = proj_entry.get_model_config_with_presets()
 
         c_s_input = config.architecture.shared.c_s_input
@@ -74,7 +74,7 @@ class TestDiffusionModule(unittest.TestCase):
         n_token = consts.n_res
         n_sample = 3
 
-        proj_entry = AF3ProjectEntry() 
+        proj_entry = AF3ProjectEntry()
         config = proj_entry.get_model_config_with_presets()
 
         c_s_input = config.architecture.shared.c_s_input
@@ -118,7 +118,7 @@ class TestSampleDiffusion(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
-        proj_entry = AF3ProjectEntry() 
+        proj_entry = AF3ProjectEntry()
         config = proj_entry.get_model_config_with_presets()
 
         c_s_input = config.architecture.shared.c_s_input
@@ -148,7 +148,9 @@ class TestSampleDiffusion(unittest.TestCase):
             noise_sched_config = config.architecture.noise_schedule
             noise_schedule = create_noise_schedule(
                 no_rollout_steps=2,
-                **noise_sched_config, dtype=si_input.dtype, device=si_input.device
+                **noise_sched_config,
+                dtype=si_input.dtype,
+                device=si_input.device,
             )
 
             xl = sd(
