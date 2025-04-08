@@ -129,6 +129,8 @@ NUCLEIC_ACID_MAIN_CHAIN_ATOMS = [
     "OP2",
 ]
 PROTEIN_MAIN_CHAIN_ATOMS = ["N", "C", "CA", "O"]
+PHOSPHODIESTER_BOND_ATOMS = ["P", "O3'", "O5'"]
+PEPTIDE_BOND_ATOMS = ["N", "C"]
 
 # Protein residue maps
 RESTYPE_1TO3 = {
