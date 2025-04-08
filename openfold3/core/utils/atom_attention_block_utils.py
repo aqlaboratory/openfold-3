@@ -206,7 +206,7 @@ def convert_single_rep_to_blocks(
     # Pad and convert ql to blocks of width n_query
     # [*, N_atom, c_atom] -> [*, N_blocks, N_query, c_atom]
     ql_query = torch.nn.functional.pad(ql, (0, 0, 0, pad_len_right_q), value=0.0)
-    ql_query = ql_query.view((*batch_dims, num_blocks, n_query, n_dim))
+    ql_query = ql_query.reshape((*batch_dims, num_blocks, n_query, n_dim))
 
     # Pad and convert ql to blocks of length n_key
     # [*, N_atom, c_atom] -> [*, N_blocks, N_key, c_atom]
@@ -228,7 +228,7 @@ def convert_single_rep_to_blocks(
         atom_mask_q = torch.nn.functional.pad(
             atom_mask, (0, pad_len_right_q), value=0.0
         )
-        atom_mask_q = atom_mask_q.view((*atom_mask.shape[:-1], num_blocks, n_query))
+        atom_mask_q = atom_mask_q.reshape((*atom_mask.shape[:-1], num_blocks, n_query))
 
         # Pad and convert atom mask to blocks of length n_key
         # [*, N_atom] -> [*, N_blocks, N_key]

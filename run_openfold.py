@@ -1,12 +1,12 @@
 # args TODO add license
 
-import argparse
 import json
 import logging
 import os
 import sys
 from pathlib import Path
 
+import click
 import pytorch_lightning as pl
 import torch
 import wandb
@@ -68,8 +68,28 @@ def _configure_wandb_logger(
     return wandb_logger
 
 
-def main(args):
-    runner_args = ConfigDict(config_utils.load_yaml(args.runner_yaml))
+@click.command()
+@click.option(
+    "--runner_yaml",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="Yaml that specifies model and dataset parameters, see examples/runner.yml",
+)
+@click.option("--seed", type=int, help="Initial seed for all processes")
+@click.option(
+    "--data_seed",
+    type=int,
+    help="Initial seed for data pipeline. Defaults to seed if not specified.",
+)
+def main(runner_yaml: Path, seed: int, data_seed: int):
+    runner_args = ConfigDict(config_utils.load_yaml(runner_yaml))
+
+    # If specified, add seeds to runner dict to save to wandb
+    if seed is not None:
+        runner_args["seed"] = seed
+
+    if data_seed is not None:
+        runner_args["data_seed"] = data_seed
 
     if runner_args.get("log_level"):
         log_level = runner_args.get("log_level").upper()
@@ -242,16 +262,4 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument(
-        "--runner_yaml",
-        type=str,
-        help=(
-            "Yaml that specifies model and dataset parameters, see examples/runner.yml"
-        ),
-    )
-
-    args = parser.parse_args()
-
-    main(args)
+    main()

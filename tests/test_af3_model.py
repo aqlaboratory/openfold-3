@@ -30,7 +30,6 @@ class TestAF3Model(unittest.TestCase):
         config = proj_config.model
 
         if train:
-            config.settings.chunk_size = None
             config.settings.blocks_per_ckpt = 1
             config.settings.ckpt_intermediate_steps = True
 
