@@ -130,8 +130,8 @@ def run_hhblits(config: dict[[str, str]], wildcards: dict[[str, str]], output: d
     seqid = wildcards['seqid']
     aa_sequence = input_fasta[seqid]
     base_db_path =  base_database_path
-    if db == "cfdb":
-            pfx="colabfold_envdb_2023_hh"
+    if wildcards["db"] == "cfdb":
+        pfx="colabfold_envdb_2023_hh"
     else:
         pfx="bfd_metaclust_clu_complete_id30_c90_final_seq.sorted_opt"
 
