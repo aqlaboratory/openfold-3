@@ -15,6 +15,7 @@
 
 """Main loss modules."""
 
+import math
 import logging
 
 import torch
@@ -215,12 +216,13 @@ class AlphaFold3Loss(nn.Module):
 
         loss_per_sample_list = []
         loss_breakdown_per_sample_list = []
-        for idx in range(num_samples):
+        for idx in range(math.prod(batch_dims)):
 
             def fetch_cur_sample(t):
-                if t.shape[1] != num_samples:
-                    return t
-                return t[:, idx : idx + 1]  # noqa: B023
+                feat_dims = t.shape[2:]
+                t = t.expand(-1, num_samples, *((-1,) * len(feat_dims)))
+                t = t.reshape(-1, *feat_dims)
+                return t[idx : idx + 1]  # noqa: B023
 
             cur_batch = tensor_tree_map(fetch_cur_sample, batch, strict_type=False)
             cur_output = tensor_tree_map(fetch_cur_sample, output, strict_type=False)

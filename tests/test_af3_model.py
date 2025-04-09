@@ -108,7 +108,7 @@ class TestAF3Model(unittest.TestCase):
         )
 
     def test_shape_small_fp32(self):
-        batch_size = 2
+        batch_size = consts.batch_size
         n_token = 18
         n_msa = 10
         n_templ = 3
