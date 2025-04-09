@@ -2,7 +2,6 @@ import math
 from typing import Optional
 
 import torch
-from pytorch_memlab import profile
 
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 
@@ -321,7 +320,6 @@ def convert_trunk_rep_to_blocks(
     return zij_trunk
 
 
-@profile
 def convert_trunk_rep_to_blocks_low_mem(
     batch: dict,
     zij_trunk: torch.Tensor,

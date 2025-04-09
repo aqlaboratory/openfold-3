@@ -40,6 +40,7 @@ max_atoms_per_token = mlc.FieldReference(23, field_type=int)
 # Cutoffs for chunking ops per diffusion sample
 per_sample_token_cutoff = mlc.FieldReference(1500, field_type=int)
 per_sample_atom_cutoff = mlc.FieldReference(20000, field_type=int)
+per_sample_confidence = mlc.FieldReference(False, field_type=bool)
 per_sample_val_loss = mlc.FieldReference(False, field_type=bool)
 
 model_selection_metric_weights_config = mlc.FrozenConfigDict(
@@ -94,6 +95,7 @@ project_config = mlc.ConfigDict(
                         },
                         "per_sample_token_cutoff": per_sample_token_cutoff,
                         "per_sample_atom_cutoff": per_sample_atom_cutoff,
+                        "per_sample_confidence": per_sample_confidence,
                         "per_sample_val_loss": per_sample_val_loss,
                         "offload_inference": {
                             "enabled": False,

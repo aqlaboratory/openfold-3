@@ -29,6 +29,10 @@ deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
     import deepspeed
 
+fa_is_installed = importlib.util.find_spec("flash_attn") is not None
+if fa_is_installed:
+    from flash_attn.ops.triton.layer_norm import layer_norm_fn
+
 
 class LayerNorm(nn.Module):
     """Basic LayerNorm layer with learnable scale and offset."""
@@ -62,26 +66,36 @@ class LayerNorm(nn.Module):
             deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
         )
 
+        use_fast_layer_norm = all([fa_is_installed, x.is_cuda, self.weight is not None])
+
         if d is torch.bfloat16 and not deepspeed_is_initialized:
             with torch.amp.autocast("cuda", enabled=False):
                 weight = self.weight.to(dtype=d) if self.weight is not None else None
                 bias = self.bias.to(dtype=d) if self.bias is not None else None
 
+                if use_fast_layer_norm:
+                    out = layer_norm_fn(x=x, weight=weight, bias=bias, eps=self.eps)
+                else:
+                    out = nn.functional.layer_norm(
+                        input=x,
+                        normalized_shape=self.c_in,
+                        weight=weight,
+                        bias=bias,
+                        eps=self.eps,
+                    )
+        else:
+            if use_fast_layer_norm:
+                out = layer_norm_fn(
+                    x=x, weight=self.weight, bias=self.bias, eps=self.eps
+                )
+            else:
                 out = nn.functional.layer_norm(
                     input=x,
                     normalized_shape=self.c_in,
-                    weight=weight,
-                    bias=bias,
+                    weight=self.weight,
+                    bias=self.bias,
                     eps=self.eps,
                 )
-        else:
-            out = nn.functional.layer_norm(
-                input=x,
-                normalized_shape=self.c_in,
-                weight=self.weight,
-                bias=self.bias,
-                eps=self.eps,
-            )
 
         return out
 
