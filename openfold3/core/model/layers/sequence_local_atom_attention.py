@@ -255,22 +255,9 @@ class NoisyPositionEmbedder(nn.Module):
         zij_trunk = self.linear_z(self.layer_norm_z(zij_trunk))
 
         if low_mem_broadcast:
-            zij_trunk_old = None
-            check_parity = batch["ref_pos"].shape[-2] <= 8000
-            if check_parity:
-                zij_trunk_old = convert_trunk_rep_to_blocks(
-                    batch=batch,
-                    zij_trunk=zij_trunk.detach().clone(),
-                    n_query=n_query,
-                    n_key=n_key,
-                )
-
             zij_trunk = convert_trunk_rep_to_blocks_low_mem(
                 batch=batch, zij_trunk=zij_trunk, n_query=n_query, n_key=n_key
             )
-
-            if check_parity:
-                assert torch.allclose(zij_trunk, zij_trunk_old)
         else:
             zij_trunk = convert_trunk_rep_to_blocks(
                 batch=batch, zij_trunk=zij_trunk, n_query=n_query, n_key=n_key
