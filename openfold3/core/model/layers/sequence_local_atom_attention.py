@@ -35,6 +35,8 @@ from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.atom_attention_block_utils import (
     convert_pair_rep_to_blocks,
     convert_single_rep_to_blocks,
+    convert_trunk_rep_to_blocks,
+    convert_trunk_rep_to_blocks_low_mem,
 )
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
@@ -203,6 +205,7 @@ class NoisyPositionEmbedder(nn.Module):
         rl: torch.Tensor,
         n_query: int,
         n_key: int,
+        low_mem_broadcast: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -251,30 +254,27 @@ class NoisyPositionEmbedder(nn.Module):
         # Broadcast trunk pair representation into atom pair conditioning
         zij_trunk = self.linear_z(self.layer_norm_z(zij_trunk))
 
-        # z_lj: [*, N_atom, N_token, c_atom_pair]
-        zij_trunk = broadcast_token_feat_to_atoms(
-            token_mask=batch["token_mask"],
-            num_atoms_per_token=batch["num_atoms_per_token"],
-            token_feat=zij_trunk,
-            token_dim=-3,
-        )
+        if low_mem_broadcast:
+            zij_trunk_old = None
+            check_parity = batch["ref_pos"].shape[-2] <= 8000
+            if check_parity:
+                zij_trunk_old = convert_trunk_rep_to_blocks(
+                    batch=batch,
+                    zij_trunk=zij_trunk.detach().clone(),
+                    n_query=n_query,
+                    n_key=n_key,
+                )
 
-        # z_ml: [*, N_atom, N_atom, c_atom_pair]
-        zij_trunk = broadcast_token_feat_to_atoms(
-            token_mask=batch["token_mask"],
-            num_atoms_per_token=batch["num_atoms_per_token"],
-            token_feat=zij_trunk.transpose(-2, -3),
-            token_dim=-3,
-        )
+            zij_trunk = convert_trunk_rep_to_blocks_low_mem(
+                batch=batch, zij_trunk=zij_trunk, n_query=n_query, n_key=n_key
+            )
 
-        # z_lm: [*, N_atom, N_atom, c_atom_pair]
-        zij_trunk = zij_trunk.transpose(-2, -3)
-
-        # [*, N_atom, N_atom, c_atom_pair] ->
-        # [*, N_blocks, N_query, N_key, c_atom_pair]
-        zij_trunk = convert_pair_rep_to_blocks(
-            plm=zij_trunk, n_query=n_query, n_key=n_key
-        )
+            if check_parity:
+                assert torch.allclose(zij_trunk, zij_trunk_old)
+        else:
+            zij_trunk = convert_trunk_rep_to_blocks(
+                batch=batch, zij_trunk=zij_trunk, n_query=n_query, n_key=n_key
+            )
 
         plm = plm + zij_trunk
 
@@ -469,6 +469,7 @@ class AtomAttentionEncoder(nn.Module):
                 rl=rl,
                 n_query=self.n_query,
                 n_key=self.n_key,
+                low_mem_broadcast=True,
             )
 
         # Add the combined single conditioning to the pair rep (line 13 - 14)

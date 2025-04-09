@@ -36,6 +36,7 @@ from openfold3.core.loss.structure import (
     supervised_chi_loss,
 )
 from openfold3.core.loss.violation import find_structural_violations, violation_loss
+from openfold3.core.utils.tensor_utils import dict_multimap, tensor_tree_map
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +161,7 @@ class AlphaFold3Loss(nn.Module):
         # Loss config
         self.config = config
 
-    def loss(self, batch, output, _return_breakdown=False):
+    def loss(self, batch, output):
         cum_loss = 0.0
         losses = {}
 
@@ -205,8 +206,38 @@ class AlphaFold3Loss(nn.Module):
 
         losses["loss"] = cum_loss.detach().clone()
 
-        if not _return_breakdown:
-            return cum_loss
+        return cum_loss, losses
+
+    def loss_chunked(self, batch, output, eps=1e-9):
+        atom_positions_predicted = output["atom_positions_predicted"]
+        batch_dims = atom_positions_predicted.shape[:-2]
+        num_samples = batch_dims[-1]
+
+        loss_per_sample_list = []
+        loss_breakdown_per_sample_list = []
+        for idx in range(num_samples):
+
+            def fetch_cur_sample(t):
+                if t.shape[1] != num_samples:
+                    return t
+                return t[:, idx : idx + 1]  # noqa: B023
+
+            cur_batch = tensor_tree_map(fetch_cur_sample, batch, strict_type=False)
+            cur_output = tensor_tree_map(fetch_cur_sample, output, strict_type=False)
+
+            loss_sample, loss_breakdown_sample = self.loss(
+                batch=cur_batch,
+                output=cur_output,
+            )
+            loss_per_sample_list.append(loss_sample)
+            loss_breakdown_per_sample_list.append(loss_breakdown_sample)
+
+        def accum_loss(l: list):
+            l = torch.stack(l)
+            return l.sum() / (l.shape[0] + eps)
+
+        cum_loss = accum_loss(loss_per_sample_list)
+        losses = dict_multimap(accum_loss, loss_breakdown_per_sample_list)
 
         return cum_loss, losses
 
@@ -226,9 +257,12 @@ class AlphaFold3Loss(nn.Module):
             cum_loss: Scalar tensor representing the total loss
             losses: Dict containing individual loss components
         """
-        if not _return_breakdown:
-            cum_loss = self.loss(batch, output, _return_breakdown)
-            return cum_loss
+        if not torch.is_grad_enabled() and self.config.per_sample_val_loss:
+            loss, loss_breakdown = self.loss_chunked(batch, output)
+        else:
+            loss, loss_breakdown = self.loss(batch, output)
 
-        cum_loss, losses = self.loss(batch, output, _return_breakdown)
-        return cum_loss, losses
+        if not _return_breakdown:
+            return loss
+
+        return loss, loss_breakdown
