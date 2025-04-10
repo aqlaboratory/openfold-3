@@ -391,9 +391,9 @@ class DisorderedPDBDataset(WeightedPDBDataset):
                 an example.
         """
         super().__init__(dataset_config)
-        self.disable_non_protein_diffusion_weights = dataset_config[
-            "disable_non_protein_diffusion_weights"
-        ]
+        self.disable_non_protein_diffusion_weights = (
+            dataset_config.disable_non_protein_diffusion_weights
+        )
 
     def create_loss_features(self, pdb_id: str) -> dict:
         """Creates the loss features for the disordered PDB set."""

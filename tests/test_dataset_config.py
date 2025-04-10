@@ -141,6 +141,55 @@ class TestAF3DatasetConfigConstruction:
         expected_config = TrainingDatasetSpec.model_validate(expected_fields)
         assert expected_config == actual_config
 
+    def test_load_disordered_pdb_dataset_config(self, tmp_path):
+        test_dummy_file = tmp_path / "test.json"
+        test_dummy_file.write_text("test")
+        test_yaml_str = textwrap.dedent(f"""\
+            name: dataset1
+            mode: train
+            dataset_class: DisorderedPDBDataset 
+            weight: 0.02
+            config:
+                dataset_paths:
+                    alignments_directory: none
+                    alignment_array_directory: {tmp_path} 
+                    dataset_cache_file: {test_dummy_file} 
+                    target_structure_file_format: npz
+                    target_structures_directory: {tmp_path} 
+                    reference_molecule_directory: {tmp_path}
+                    template_cache_directory: {tmp_path} 
+                    template_structures_directory: {tmp_path} 
+                    template_file_format: npz
+                    ccd_file: None 
+        """)
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
+        input_dict = config_utils.load_yaml(test_yaml_file)
+        actual_config = TrainingDatasetSpec.model_validate(input_dict)
+
+        expected_fields = {
+            "name": "dataset1",
+            "mode": "train",
+            "dataset_class": "DisorderedPDBDataset",
+            "weight": 0.02,
+            "config": {
+                "disable_non_protein_diffusion_weights": True,
+                "dataset_paths": {
+                    "alignment_array_directory": tmp_path,
+                    "dataset_cache_file": test_dummy_file,
+                    "target_structures_directory": tmp_path,
+                    "target_structure_file_format": "npz",
+                    "reference_molecule_directory": tmp_path,
+                    "template_cache_directory": tmp_path,
+                    "template_structures_directory": tmp_path,
+                    "template_file_format": "npz",
+                    "ccd_file": None,
+                },
+            },
+        }
+        expected_config = TrainingDatasetSpec.model_validate(expected_fields)
+        assert expected_config == actual_config
+
     def test_error_if_no_alignment_path_set(self, tmp_path):
         test_dummy_file = tmp_path / "test.json"
         test_dummy_file.write_text("test")
