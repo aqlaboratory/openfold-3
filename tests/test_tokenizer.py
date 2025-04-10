@@ -9,7 +9,7 @@ from tests.custom_assert_utils import assert_atomarray_equal
 TEST_DIR = Path("tests/test_data/tokenization")
 
 paths = []
-for id in ["1ema", "1pwc", "5sev", "5tdj", "6znc"]:
+for id in ["1ema", "1pwc", "5seb", "5tdj", "6znc"]:
     paths.append(
         (
             TEST_DIR / "inputs" / f"{id}_raw_bonds_unfiltered.npz",
