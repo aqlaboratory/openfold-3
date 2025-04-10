@@ -40,7 +40,6 @@ from tests.data_utils import (
 
 @compare_utils.skip_unless_ds4s_installed()
 @compare_utils.skip_unless_cuda_available()
-@compare_utils.skip_of2_test()
 class TestDeepSpeedKernel(unittest.TestCase):
     def compare_attention_types(self, use_flash=False):
         """Compare attention with and without using DeepSpeed Evoformer kernel."""
@@ -105,7 +104,7 @@ class TestDeepSpeedKernel(unittest.TestCase):
         no_heads = 4
         eps = consts.eps
 
-        q, kv, mask, biases = random_attention_inputs(
+        q, kv, _, biases = random_attention_inputs(
             batch_size=batch_size,
             n_seq=n_seq,
             n=n_res,
@@ -345,7 +344,6 @@ class TestDeepSpeedKernel(unittest.TestCase):
         batch["template_aatype"] = batch["template_aatype"].long()
         batch["extra_msa"] = batch["extra_msa"].long()
         batch["residx_atom37_to_atom14"] = batch["residx_atom37_to_atom14"].long()
-        # print(batch["target_feat"].shape)
         batch["target_feat"] = torch.nn.functional.one_hot(
             batch["aatype"], consts.msa_logits - 1
         ).to(torch.float32)
@@ -357,7 +355,7 @@ class TestDeepSpeedKernel(unittest.TestCase):
             return t.permute(*range(len(t.shape))[1:], 0)
 
         batch = tensor_tree_map(move_dim, batch)
-        with torch.no_grad(), torch.amp.autocast("cuda", dtype=torch.bfloat16):
+        with torch.no_grad(), torch.amp.autocast("cuda", dtype=torch.float32):
             model = compare_utils.get_global_pretrained_openfold()
             model.globals.use_deepspeed_evo_attention = False
             out_repro = model(batch)
