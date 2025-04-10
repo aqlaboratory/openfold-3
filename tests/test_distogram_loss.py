@@ -1,10 +1,10 @@
 import unittest
 
-from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
 import torch
 import torch.nn.functional as F
 
 from openfold3.core.loss.distogram import all_atom_distogram_loss
+from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
 
 
 class TestDistogramLoss(unittest.TestCase):

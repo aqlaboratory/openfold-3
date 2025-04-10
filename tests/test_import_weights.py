@@ -17,15 +17,15 @@ import unittest
 from pathlib import Path
 
 import numpy as np
-from openfold3.legacy.af2_monomer.project_entry import AF2MonomerProjectEntry
 import torch
 
 from openfold3.core.utils.import_weights import (
     import_jax_weights_,
     import_openfold_weights_,
 )
-from tests.config import monomer_consts
+from openfold3.legacy.af2_monomer.project_entry import AF2MonomerProjectEntry
 from tests import compare_utils
+from tests.config import monomer_consts
 
 
 @compare_utils.skip_of2_test()

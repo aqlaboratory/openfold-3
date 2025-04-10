@@ -14,9 +14,6 @@
 
 import unittest
 
-from openfold3.legacy.af2_monomer.project_entry import AF2MonomerProjectEntry
-from openfold3.legacy.af2_multimer.project_entry import AF2MultimerProjectEntry
-from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
 import torch
 
 from openfold3.core.model.feature_embedders.input_embedders import (
@@ -34,6 +31,9 @@ from openfold3.core.model.feature_embedders.template_embedders import (
     TemplateSingleEmbedderMonomer,
     TemplateSingleEmbedderMultimer,
 )
+from openfold3.legacy.af2_monomer.project_entry import AF2MonomerProjectEntry
+from openfold3.legacy.af2_multimer.project_entry import AF2MultimerProjectEntry
+from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
 from tests import compare_utils
 from tests.config import consts, monomer_consts, multimer_consts
 from tests.data_utils import random_af3_features, random_asym_ids, random_template_feats

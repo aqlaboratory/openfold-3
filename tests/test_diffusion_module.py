@@ -14,7 +14,6 @@
 
 import unittest
 
-from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
 import torch
 
 from openfold3.core.model.structure.diffusion_module import (
@@ -23,6 +22,7 @@ from openfold3.core.model.structure.diffusion_module import (
     create_noise_schedule,
 )
 from openfold3.core.utils.tensor_utils import tensor_tree_map
+from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
 from tests.config import consts
 from tests.data_utils import random_af3_features
 

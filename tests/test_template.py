@@ -16,7 +16,6 @@ import re
 import unittest
 
 import numpy as np
-from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
 import torch
 
 import tests.compare_utils as compare_utils
@@ -27,6 +26,7 @@ from openfold3.core.model.latent.template_module import (
 from openfold3.core.model.layers.template_pointwise_attention import (
     TemplatePointwiseAttention,
 )
+from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
 from tests.config import consts
 from tests.data_utils import random_asym_ids, random_template_feats
 

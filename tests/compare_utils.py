@@ -8,8 +8,8 @@ import numpy as np
 import torch
 
 from openfold3.core.utils.import_weights import import_jax_weights_
-from openfold3.legacy.af2_monomer.project_entry import AF2MonomerProjectEntry
 from openfold3.legacy.af2_monomer.model import AlphaFold
+from openfold3.legacy.af2_monomer.project_entry import AF2MonomerProjectEntry
 from tests.config import consts
 
 # Give JAX some GPU memory discipline
@@ -18,7 +18,7 @@ from tests.config import consts
 os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
 os.environ["JAX_PLATFORM_NAME"] = "gpu"
 # TODO: Replace this with commandline flag
-RUN_OF_TESTS = False 
+RUN_OF_TESTS = False
 
 
 def skip_unless_ds4s_installed():

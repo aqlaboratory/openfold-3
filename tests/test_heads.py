@@ -1,7 +1,6 @@
 import unittest
 
 import numpy as np
-from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
 import torch
 
 from openfold3.core.model.heads.head_modules import AuxiliaryHeadsAllAtom
@@ -16,6 +15,7 @@ from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.projects.af3_all_atom.config.model_config import (
     max_atoms_per_token,
 )
+from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
 from tests.config import consts
 from tests.data_utils import random_af3_features
 

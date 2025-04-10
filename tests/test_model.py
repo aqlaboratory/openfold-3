@@ -17,13 +17,13 @@ import unittest
 from pathlib import Path
 
 import numpy as np
-from openfold3.legacy.af2_monomer.project_entry import AF2MonomerProjectEntry
 import torch
 import torch.nn as nn
 
 import tests.compare_utils as compare_utils
 from openfold3.core.data.legacy import data_transforms
 from openfold3.core.utils.tensor_utils import tensor_tree_map
+from openfold3.legacy.af2_monomer.project_entry import AF2MonomerProjectEntry
 from tests.config import consts
 from tests.data_utils import (
     random_asym_ids,
