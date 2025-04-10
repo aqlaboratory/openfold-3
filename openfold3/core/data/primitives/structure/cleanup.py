@@ -891,7 +891,7 @@ def prefilter_bonds(
 def filter_fully_atomized_bonds(
     atom_array: AtomArray,
 ) -> AtomArray:
-    """Only retains bonds where both bond parters are atomized.
+    """Only retains bonds where both bond partners are atomized.
 
     Requires the `is_atomized` attribute to be set in the AtomArray (see
     `tokenize_atom_array`).
