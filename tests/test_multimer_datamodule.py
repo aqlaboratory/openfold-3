@@ -17,7 +17,6 @@ import os
 import shutil
 import unittest
 
-from openfold3.legacy.af2_multimer.project_entry import AF2MultimerProjectEntry
 import torch
 
 from openfold3.core.data.legacy.data_modules import OpenFoldMultimerDataModule
@@ -27,6 +26,7 @@ from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.legacy.af2_multimer.config.base_config import (
     config as af2_multimer_config,
 )
+from openfold3.legacy.af2_multimer.project_entry import AF2MultimerProjectEntry
 from tests.config import consts
 
 logger = logging.getLogger(__name__)

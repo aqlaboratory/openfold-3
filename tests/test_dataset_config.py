@@ -127,7 +127,6 @@ class TestAF3DatasetConfigConstruction:
                 "dataset_paths": {
                     "alignment_array_directory": tmp_path,
                     "dataset_cache_file": test_dummy_file,
-                    "alignment_array_directory": tmp_path,
                     "target_structures_directory": tmp_path,
                     "target_structure_file_format": "npz",
                     "reference_molecule_directory": tmp_path,
