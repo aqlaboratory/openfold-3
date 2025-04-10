@@ -37,6 +37,6 @@ def test_tokenizer(
     atom_array_in = read_atomarray_from_npz(input_atom_array_path)
     atom_array_out = read_atomarray_from_npz(precomputed_atom_array_path)
 
-    atom_array_out_test = tokenize_atom_array(atom_array_in)
+    tokenize_atom_array(atom_array_in)
 
-    assert_atomarray_equal(atom_array_out, atom_array_out_test)
+    assert_atomarray_equal(atom_array_out, atom_array_in)
