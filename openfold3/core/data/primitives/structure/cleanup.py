@@ -8,9 +8,6 @@ from biotite.structure import AtomArray, BondList, BondType, index_distance
 from biotite.structure.io.pdbx import CIFFile
 from scipy.spatial.distance import cdist
 
-from openfold3.core.data.primitives.quality_control.logging_utils import (
-    log_runtime_memory,
-)
 from openfold3.core.data.primitives.structure.component import find_cross_chain_bonds
 from openfold3.core.data.primitives.structure.interface import (
     chain_paired_interface_atom_iter,
@@ -788,139 +785,143 @@ class BondFilter:
     restore_atomized: bool = False
 
 
-@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-filter-bonds")
-def filter_bonds(
+def prefilter_bonds(
     atom_array: AtomArray,
-    bond_filter: BondFilter | None = None,
+    remove_inter_chain_dative: bool = True,
+    remove_inter_chain_poly_links: bool = True,
+    remove_intra_chain_poly_links: bool = True,
+    remove_longer_than: float | None = 2.4,
 ) -> AtomArray:
-    """Filter bonds in an AtomArray.
-
-    By default, this function removes all bonds except those between:
-        - atoms from consecutive residues in the same chain
-        - pairs of polymer-ligand atoms, except metal-coordination bonds
-        - pairs of ligand atoms, including metal-coordination bonds
-        - atom pairs with an existing bond annotation that is shorter than or equal to
-        2.4 Å
-        - atoms in the same chemical component
+    """Filters the BondList according to different criteria.
 
     Args:
         atom_array (AtomArray):
-            The AtomArray to filter the bonds of.
-        bond_filter (BondFilter | None):
-            The BondFilter to use. If None, a default BondFilter is used. Default is
-            None.
+            AtomArray to filter bonds for.
+        remove_inter_chain_dative (bool):
+            Whether to remove dative (biotite BondType.COORDINATION) bonds between
+            different chains. Default is True.
+        remove_inter_chain_poly_links (bool):
+            Whether to remove polymer-polymer bonds between different chains, such as
+            cross-chain disulfide bonds. Polymers are defined as the standard polymers
+            [protein, DNA, RNA] (not polymeric ligands). Default is True.
+        remove_intra_chain_poly_links (bool):
+            Whether to remove polymer-polymer bonds between non-consecutive residues in
+            the same chain, such as intra-chain disulfide bonds. Polymers are defined as
+            the standard polymers [protein, DNA, RNA] (not polymeric ligands). Default
+            is True.
+        remove_longer_than (float | None):
+            If not None, remove all bonds longer than this cutoff distance (in Å).
+            Default is 2.4 Å. If None, no bonds are removed by length.
+
     Returns:
         AtomArray:
             AtomArray with filtered bond list.
-
-    Raises:
-        ValueError:
-            If the input atom_array does not have the is_atomized attribute and
-            bond_filter.restore_atomized is set to True.
     """
-    if bond_filter is None:
-        bond_filter = BondFilter()
+    bondlist = atom_array.bonds.as_array()
+    bond_partners = bondlist[:, :2]
+    valid_bonds_mask = np.ones(len(bond_partners), dtype=bool)
 
-    # initial_molecule_indices = get_molecule_indices(atom_array)
-
-    # 1. init bond partner array
-    bond_partners = atom_array.bonds.as_array()[:, :2]
-    valid_bonds_mask = np.zeros(len(bond_partners), dtype=bool)
-
-    # 2.1. Keep bonds between atoms not more than 1 residue apart
-    if bond_filter.keep_consecutive:
-        bond_partner_res_ids = atom_array.res_id[bond_partners]
+    # Get inter-/intra-chain masks if required
+    if (
+        remove_inter_chain_dative
+        or remove_inter_chain_poly_links
+        or remove_intra_chain_poly_links
+    ):
         bond_partner_chain_ids = atom_array.chain_id[bond_partners]
 
-        is_consecutive = (np.abs(np.diff(bond_partner_res_ids, axis=1)) < 2).squeeze()
-        is_same_chain = bond_partner_chain_ids[:, 0] == bond_partner_chain_ids[:, 1]
+        is_inter_chain = bond_partner_chain_ids[:, 0] != bond_partner_chain_ids[:, 1]
+        is_intra_chain = ~is_inter_chain
 
-        valid_bonds_mask[is_consecutive & is_same_chain] = True
+    # Remove dative bonds between different chains
+    if remove_inter_chain_dative:
+        bond_types = bondlist[:, 2]
+        is_dative = bond_types == BondType.COORDINATION
 
-    # 2. molecule type filters
-    if bond_filter.keep_polymer_ligand or bond_filter.keep_ligand_ligand:
+        valid_bonds_mask[is_dative & is_inter_chain] = False
+
+    # Handle bonds between polymer residues
+    if remove_inter_chain_poly_links or remove_intra_chain_poly_links:
+        # Find polymer-polymer bonds
         bond_partner_moltypes = atom_array.molecule_type_id[bond_partners]
+        is_polymer = np.isin(
+            bond_partner_moltypes,
+            [MoleculeType.PROTEIN, MoleculeType.DNA, MoleculeType.RNA],
+        )
+        is_polymer_polymer = is_polymer.all(axis=1)
 
-        is_ligand = np.isin(bond_partner_moltypes, [MoleculeType.LIGAND])
+        # Remove inter-chain polymer-polymer bonds
+        if remove_inter_chain_poly_links:
+            valid_bonds_mask[is_polymer_polymer & is_inter_chain] = False
 
-        # 2.2. Keep polymer-ligand bonds
-        if bond_filter.keep_polymer_ligand:
-            is_polymer = np.isin(
-                bond_partner_moltypes,
-                [MoleculeType.PROTEIN, MoleculeType.DNA, MoleculeType.RNA],
-            )
-            is_polymer_ligand = is_polymer.any(axis=1) & is_ligand.any(axis=1)
-            valid_bonds_mask[is_polymer_ligand] = True
+        # Remove intra-chain polymer-polymer bonds between non-consecutive residues
+        if remove_intra_chain_poly_links:
+            bond_partner_res_ids = atom_array.res_id[bond_partners]
 
-        # 2.3. Keep ligand-ligand bonds
-        if bond_filter.keep_ligand_ligand:
-            is_ligand_ligand = is_ligand.all(axis=1)
-            valid_bonds_mask[is_ligand_ligand] = True
-
-    # 3.1. Remove bonds longer than the cutoff
-    # TODO: check behavior if valid_bonds_mask is empty
-    distances = index_distance(atom_array, bond_partners[valid_bonds_mask])
-    valid_bonds_index = np.nonzero(valid_bonds_mask)[0]
-    remove_index = valid_bonds_index[
-        (distances > bond_filter.remove_larger_than) & ~np.isnan(distances)
-    ]
-    valid_bonds_mask[remove_index] = False
-
-    # 3.2. Remove any metal-coordination bonds
-    if bond_filter.remove_metal_coordination:
-        bond_types = atom_array.bonds.as_array()[:, 2]
-        is_metal_coordination = bond_types == BondType.COORDINATION
-
-        valid_bonds_mask[is_metal_coordination] = False
-
-    # 4.1. Restore bonds between atoms within the same component to ensure it's not
-    # getting disconnected
-    if bond_filter.restore_intra_component:
-        if not hasattr(atom_array, "component_id"):
-            raise ValueError(
-                "The input atom_array must have the component_id attribute to restore "
-                "intra-component bonds. See the 'assign_component_ids_from_metadata' "
-                "function."
+            is_nonconsecutive = (
+                np.abs(bond_partner_res_ids[:, 0] - bond_partner_res_ids[:, 1]) > 1
             )
 
-        bond_partner_component_id = atom_array.component_id[bond_partners]
-        is_intra_component = np.diff(bond_partner_component_id, axis=1).squeeze() == 0
-        valid_bonds_mask[is_intra_component] = True
+            valid_bonds_mask[
+                is_polymer_polymer & is_intra_chain & is_nonconsecutive
+            ] = False
 
-    # 4.2. Restore bonds between atoms that belong to atomized tokens
-    if bond_filter.restore_atomized:
-        if not hasattr(atom_array, "is_atomized"):
-            raise ValueError(
-                "The input atom_array must have the is_atomized attribute to restore "
-                "atomized bonds. See the 'tokenize_atom_array' function."
-            )
+    # Remove bonds longer than the cutoff
+    if remove_longer_than is not None:
+        distances = index_distance(atom_array, bond_partners)
 
-        is_atomized_atomized = atom_array.is_atomized[bond_partners].all(axis=1)
-        valid_bonds_mask[is_atomized_atomized] = True
+        # Unresolved atoms will generate NaN distances, so we always keep their bonds as
+        # we don't know their bond lengths
+        valid_bonds_mask[(distances > remove_longer_than) & ~np.isnan(distances)] = (
+            False
+        )
 
+    # Exclude masked bonds from new BondList
     new_bondlist = BondList(
-        atom_count=len(atom_array), bonds=atom_array.bonds.as_array()[valid_bonds_mask]
+        atom_count=len(atom_array),
+        bonds=bondlist[valid_bonds_mask],
     )
 
-    updated_atom_array = atom_array.copy()
-    updated_atom_array.bonds = new_bondlist
+    # Create a new AtomArray with the filtered bond list
+    atom_array_filtered = atom_array.copy()
+    atom_array_filtered.bonds = new_bondlist
 
-    # TODO: Revise this assert
-    # final_molecule_indices = get_molecule_indices(atom_array)
+    return atom_array_filtered
 
-    # if not all(
-    #     np.array_equal(initial_mol_idx, final_mol_idx)
-    #     for initial_mol_idx, final_mol_idx in zip(
-    #         initial_molecule_indices, final_molecule_indices
-    #     )
-    # ):
-    #     # TODO: Make this ignore disulfide bonds?
-    #     logger.warning(
-    #         "Filtering bonds disconnected a molecule. This can result in unwanted"
-    #         " behavior in the permutation alignment."
-    #     )
 
-    return updated_atom_array
+def filter_fully_atomized_bonds(
+    atom_array: AtomArray,
+) -> AtomArray:
+    """Only retains bonds where both bond parters are atomized.
+
+    Requires the `is_atomized` attribute to be set in the AtomArray (see
+    `tokenize_atom_array`).
+    """
+    if "is_atomized" not in atom_array.get_annotation_categories():
+        raise ValueError(
+            "The input atom_array must have the is_atomized attribute to filter "
+            "atomized bonds. See the 'tokenize_atom_array' function."
+        )
+
+    # Get the bond list from the atom array
+    bondlist = atom_array.bonds.as_array()
+
+    # Get the bond partners
+    bond_partners = bondlist[:, :2]
+
+    # Create a mask for bonds where both partners are atomized
+    is_both_atomized = atom_array.is_atomized[bond_partners].all(axis=1)
+
+    # Create a new BondList with only the bonds that are both atomized
+    new_bondlist = BondList(
+        atom_count=len(atom_array),
+        bonds=bondlist[is_both_atomized],
+    )
+
+    # Create a new AtomArray with the filtered bond list
+    atom_array_filtered = atom_array.copy()
+    atom_array_filtered.bonds = new_bondlist
+
+    return atom_array_filtered
 
 
 def remove_covalent_nonprotein_chains(atom_array: AtomArray) -> AtomArray:
