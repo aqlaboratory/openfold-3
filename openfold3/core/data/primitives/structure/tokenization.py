@@ -15,8 +15,8 @@ from openfold3.core.data.primitives.structure.labels import (
     remove_residue_indices,
 )
 from openfold3.core.data.resources.residues import (
-    NUCLEIC_ACID_MAIN_CHAIN_ATOMS,
-    PROTEIN_MAIN_CHAIN_ATOMS,
+    PEPTIDE_BOND_ATOMS,
+    PHOSPHODIESTER_BOND_ATOMS,
     STANDARD_RESIDUES_3,
     TOKEN_CENTER_ATOMS,
     MoleculeType,
@@ -55,17 +55,13 @@ def tokenize_atom_array(atom_array: AtomArray):
         1. Get atoms in canonical residues in polymers
         2. Get atoms in small molecule ligands, non-canonical residues in polymers and
         amino acid or nucleotide small molecule ligands
-        3. Get atoms in canonical residues in polymer with covalent modifications or
-        non-canonical bonding pattern, i.e., those that are connected to:
-            3.1. a small molecule ligand
-            3.2. any atom of a non-canonical residue via a side chain atom
-            3.3. any OTHER residue via a bond involving a main-chain-
-            -non-main-chain atom pair
-            3.4. another canonical residue of a different molecule type
-            via a bond involving a main-chain--main-chain atom pair
-        4. Tokenize
-            - 2. per atom
-            - 3. per atom
+        3. Get atoms in canonical residues in polymer that are modified
+            We consider a residue to be modified if it is connected to any other residue
+            via a non-peptide bond for proteins or a non-phospho-diester bond for
+            nucleic acids.
+        4. Tokenize residues with any atoms from
+            - set 2. per atom
+            - set 3. per atom
             - the difference of sets 1.-3. per residue
 
     Args:
@@ -79,7 +75,7 @@ def tokenize_atom_array(atom_array: AtomArray):
     assign_residue_indices(atom_array)
 
     # 1. Find token start IDs of canonical residues in-polymer (CRP), excluding amino
-    # acid and nucleotide small molecule ligands
+    #    acid and nucleotide small molecule ligands
     is_l_atom = atom_array.molecule_type_id == MoleculeType.LIGAND
     is_cr_atom = np.isin(atom_array.res_name, STANDARD_RESIDUES_3)
     is_crp_atom = ~is_l_atom & is_cr_atom
@@ -89,107 +85,30 @@ def tokenize_atom_array(atom_array: AtomArray):
     )
 
     # 2. Find atom-token start ids: includes small molecule ligands, non-canonical
-    # residues and amino acid or nucleotide small molecule ligands
+    #    residues and amino acid or nucleotide small molecule ligands
     atom_token_start_ids = atom_array._atom_idx[~is_crp_atom]
 
-    # 3. Find covalently modified canonical residues in-polymer (CRP)
+    # 3. Find canonical residues in-polymer (CRP) bonded to other chemical species via
+    #    non-canonical bonds, i.e. via bonds that are not peptide or phospho-diester
     bonds = atom_array.bonds.as_array()[:, :2]
-
-    # 3.1. Connected to a small molecule ligand
-    is_atom_1_crp_atom = np.isin(bonds[:, 0], crp_atom_ids)
-    is_atom_2_crp_atom = np.isin(bonds[:, 1], crp_atom_ids)
-    has_one_crp_atom = is_atom_1_crp_atom ^ is_atom_2_crp_atom
-    has_l_atom = np.any(np.isin(bonds, atom_array._atom_idx[is_l_atom]), axis=1)
-    v1_crp_bonds = bonds[has_one_crp_atom & has_l_atom]
-
-    # 3.2. Connected to any atom of a non-canonical residue via a side chain atom
-    # > find side chain atoms in the bond list
-    atom_names = atom_array.atom_name
-    molecule_types = atom_array.molecule_type_id
-    is_side_chain_atom = (
-        ~np.isin(atom_names, NUCLEIC_ACID_MAIN_CHAIN_ATOMS)
-        & np.isin(molecule_types, [MoleculeType.RNA, MoleculeType.DNA])
-    ) | (
-        ~np.isin(atom_names, PROTEIN_MAIN_CHAIN_ATOMS)
-        & (molecule_types == MoleculeType.PROTEIN)
-    )
-    side_chain_atom_ids = atom_array._atom_idx[is_side_chain_atom]
-    is_atom_1_side_chain_atom = np.isin(bonds[:, 0], side_chain_atom_ids)
-    is_atom_2_side_chain_atom = np.isin(bonds[:, 1], side_chain_atom_ids)
-    # > find non-canonical residue in-polymer atoms in the bond list
-    is_ncrp_atom = ~is_l_atom & ~is_cr_atom
-    ncrp_atom_ids = atom_array._atom_idx[is_ncrp_atom]
-    is_atom_1_ncrp_atom = np.isin(bonds[:, 0], ncrp_atom_ids)
-    is_atom_2_ncrp_atom = np.isin(bonds[:, 1], ncrp_atom_ids)
-    # > find bonds between
-    # an atom in the side chain of a canonical residue in a polymer and
-    # an atom of a non-canonical residue in a polymer
-    v2_crp_bonds = bonds[
-        ((is_atom_1_crp_atom & is_atom_1_side_chain_atom) & is_atom_2_ncrp_atom)
-        | (is_atom_2_crp_atom & is_atom_2_side_chain_atom) & is_atom_1_ncrp_atom
-    ]
-
-    # 3.3. Connected to any OTHER residue via a bond involving a
-    # main-chain--non-main-chain atom pair
-    # > find main chain atoms in the bond list
-    is_main_chain_atom = (
-        np.isin(atom_names, NUCLEIC_ACID_MAIN_CHAIN_ATOMS)
-        & np.isin(molecule_types, [MoleculeType.RNA, MoleculeType.DNA])
-    ) | (
-        np.isin(atom_names, PROTEIN_MAIN_CHAIN_ATOMS)
-        & (molecule_types == MoleculeType.PROTEIN)
-    )
-    main_chain_atom_ids = atom_array._atom_idx[is_main_chain_atom]
-    is_atom_1_main_chain_atom = np.isin(bonds[:, 0], main_chain_atom_ids)
-    is_atom_2_main_chain_atom = np.isin(bonds[:, 1], main_chain_atom_ids)
     has_different_chain_id = (
         atom_array.chain_id[bonds[:, 0]] != atom_array.chain_id[bonds[:, 1]]
     )
     has_different_res_id = (
         atom_array.res_id[bonds[:, 0]] != atom_array.res_id[bonds[:, 1]]
     )
-    # > find bonds between
-    # an atom in the main chain of a canonical residue in a polymer and
-    # an atom not in the main chain of a residue in a polymer
-    # st. the two connected residues have different residue ids or chain ids
-    v3_crp_bonds = bonds[
+    not_peptide_bond = ~(
+        np.isin(atom_array.atom_name[bonds[:, 0]], PEPTIDE_BOND_ATOMS)
+        & np.isin(atom_array.atom_name[bonds[:, 1]], PEPTIDE_BOND_ATOMS)
+    )
+    not_phospho_diester_bond = ~(
+        np.isin(atom_array.atom_name[bonds[:, 0]], PHOSPHODIESTER_BOND_ATOMS)
+        & np.isin(atom_array.atom_name[bonds[:, 1]], PHOSPHODIESTER_BOND_ATOMS)
+    )
+    mod_crp_bonds = bonds[
         (has_different_chain_id | has_different_res_id)
-        & (
-            (
-                (is_atom_1_main_chain_atom & is_atom_1_crp_atom)
-                & ~is_atom_2_main_chain_atom
-            )
-            | (
-                (is_atom_2_main_chain_atom & is_atom_2_crp_atom)
-                & ~is_atom_1_main_chain_atom
-            )
-        )
+        & (not_peptide_bond & not_phospho_diester_bond)
     ]
-
-    # 3.4. Connected to another canonical residue of a different molecule type via a
-    # main-chain-- main-chain atom pair
-    has_different_molecule_type = (
-        atom_array.molecule_type_id[bonds[:, 0]]
-        != atom_array.molecule_type_id[bonds[:, 1]]
-    )
-    v4_crp_bonds = bonds[
-        has_different_molecule_type
-        & (
-            (is_atom_1_main_chain_atom & is_atom_1_crp_atom)
-            & (is_atom_2_main_chain_atom & is_atom_2_crp_atom)
-        )
-    ]
-
-    # Combine into all canonical residues in-polymer with a covalent modification
-    mod_crp_bonds = np.concatenate(
-        (
-            v1_crp_bonds,
-            v2_crp_bonds,
-            v3_crp_bonds,
-            v4_crp_bonds,
-        ),
-        axis=0,
-    )
 
     # Get corresponding canonical residue atoms
     mod_crp_atom_ids = np.unique(mod_crp_bonds[:, :2].flatten())
