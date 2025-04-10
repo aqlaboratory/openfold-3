@@ -82,10 +82,41 @@ class PairformerEmbedding(nn.Module):
         )
         self.pairformer_stack = PairFormerStack(**pairformer)
 
+    def embed_zij(
+        self,
+        si_input: torch.Tensor,
+        zij: torch.Tensor,
+        x_pred: torch.Tensor,
+    ):
+        # si projection to zij
+        zij = (
+            zij
+            + self.linear_i(si_input.unsqueeze(-2))
+            + self.linear_j(si_input.unsqueeze(-3))
+        )
+
+        # Embed pair distances of representative atoms
+        bins = torch.linspace(
+            self.min_bin, self.max_bin, self.no_bin, device=zij.device, dtype=zij.dtype
+        )
+        squared_bins = bins**2
+        upper = torch.cat(
+            [squared_bins[1:], squared_bins.new_tensor([self.inf])], dim=-1
+        )
+        dij = torch.sum(
+            (x_pred[..., None, :] - x_pred[..., None, :, :]) ** 2, dim=-1, keepdims=True
+        )
+        dij = ((dij > squared_bins) * (dij < upper)).type(x_pred.dtype)
+        zij = zij + self.linear_distance(dij)
+
+        return zij
+
     def per_sample_pairformer_emb(
         self,
+        si_input: torch.Tensor,
         si: torch.Tensor,
         zij: torch.Tensor,
+        x_pred: torch.Tensor,
         single_mask: torch.Tensor,
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
@@ -95,13 +126,18 @@ class PairformerEmbedding(nn.Module):
         _mask_trans: bool = True,
     ):
         # PairFormer embedding
-        si_chunks = []
-        zij_chunks = []
-        no_samples = zij.shape[1]
+        no_samples = x_pred.shape[-3]
+        si_out = torch.zeros_like(si)
+        zij_out = torch.zeros_like(zij.expand(*(x_pred.shape[:-2] + zij.shape[-3:])))
+
         for i in range(no_samples):
+            zij_sample = self.embed_zij(
+                si_input=si_input[:, 0], zij=zij[:, 0], x_pred=x_pred[:, i]
+            )
+
             si_chunk, zij_chunk = self.pairformer_stack(
                 si[:, i],
-                zij[:, i],
+                zij_sample,
                 single_mask[:, i],
                 pair_mask[:, i],
                 chunk_size=chunk_size,
@@ -111,18 +147,17 @@ class PairformerEmbedding(nn.Module):
                 _mask_trans=_mask_trans,
             )
 
-            si_chunks.append(si_chunk)
-            zij_chunks.append(zij_chunk)
+            si_out[:, i] = si_chunk.unsqueeze(1)
+            zij_out[:, i] = zij_chunk.unsqueeze(1)
 
-        si = torch.stack(si_chunks, dim=1)
-        zij = torch.stack(zij_chunks, dim=1)
-
-        return si, zij
+        return si_out, zij_out
 
     def pairformer_emb(
         self,
+        si_input: torch.Tensor,
         si: torch.Tensor,
         zij: torch.Tensor,
+        x_pred: torch.Tensor,
         single_mask: torch.Tensor,
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
@@ -131,6 +166,8 @@ class PairformerEmbedding(nn.Module):
         inplace_safe: bool = False,
         _mask_trans: bool = True,
     ):
+        zij = self.embed_zij(si_input=si_input, zij=zij, x_pred=x_pred)
+
         # TODO: Make this less awkward, DS kernel has strict shape asserts
         #  and expects batch and seq dims to exist, but no sample dim
         batch_dims = si.shape[:-2]
@@ -207,41 +244,20 @@ class PairformerEmbedding(nn.Module):
             zij:
                 [*, N_token, N_token, C_z] Updated pair representation
         """
-        # si projection to zij
-        zij = (
-            zij
-            + self.linear_i(si_input.unsqueeze(-2))
-            + self.linear_j(si_input.unsqueeze(-3))
-        )
-
-        # Embed pair distances of representative atoms
-        bins = torch.linspace(
-            self.min_bin, self.max_bin, self.no_bin, device=zij.device, dtype=zij.dtype
-        )
-        squared_bins = bins**2
-        upper = torch.cat(
-            [squared_bins[1:], squared_bins.new_tensor([self.inf])], dim=-1
-        )
-        dij = torch.sum(
-            (x_pred[..., None, :] - x_pred[..., None, :, :]) ** 2, dim=-1, keepdims=True
-        )
-        dij = ((dij > squared_bins) * (dij < upper)).type(x_pred.dtype)
-        zij = zij + self.linear_distance(dij)
-
         # Expand sample dimension
-        si = si.expand(*(zij.shape[:-3] + si.shape[-2:])).clone()
-        single_mask = single_mask.expand(*(zij.shape[:-3] + single_mask.shape[-1:]))
-        pair_mask = pair_mask.expand(*(zij.shape[:-3] + pair_mask.shape[-2:]))
+        si = si.expand(*(x_pred.shape[:-2] + si.shape[-2:])).clone()
+        single_mask = single_mask.expand(*(x_pred.shape[:-2] + single_mask.shape[-1:]))
+        pair_mask = pair_mask.expand(*(x_pred.shape[:-2] + pair_mask.shape[-2:]))
 
         # TODO: Determine if this is the best way to handle PairFormer
         #  memory limits depending on the number of samples
-        no_batch_dims = len(zij.shape[:-3])
+        num_samples = x_pred.shape[-3]
         pairformer_per_sample = all(
             [
                 not torch.is_grad_enabled(),
-                no_batch_dims > 1,
+                num_samples > 1,
                 self.per_sample_token_cutoff is not None,
-                zij.shape[-3] > self.per_sample_token_cutoff,
+                x_pred.shape[-2] > self.per_sample_token_cutoff,
             ]
         )
 
@@ -249,8 +265,10 @@ class PairformerEmbedding(nn.Module):
         with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
             if pairformer_per_sample:
                 si, zij = self.per_sample_pairformer_emb(
+                    si_input=si_input,
                     si=si,
                     zij=zij,
+                    x_pred=x_pred,
                     single_mask=single_mask,
                     pair_mask=pair_mask,
                     chunk_size=chunk_size,
@@ -261,8 +279,10 @@ class PairformerEmbedding(nn.Module):
                 )
             else:
                 si, zij = self.pairformer_emb(
+                    si_input=si_input,
                     si=si,
                     zij=zij,
+                    x_pred=x_pred,
                     single_mask=single_mask,
                     pair_mask=pair_mask,
                     chunk_size=chunk_size,

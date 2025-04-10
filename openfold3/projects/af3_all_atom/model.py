@@ -41,7 +41,7 @@ from openfold3.core.model.structure.diffusion_module import (
 from openfold3.core.utils.permutation_alignment import (
     safe_multi_chain_permutation_alignment,
 )
-from openfold3.core.utils.tensor_utils import add, dict_multimap, tensor_tree_map
+from openfold3.core.utils.tensor_utils import add, tensor_tree_map
 
 
 class AlphaFold3(nn.Module):
@@ -350,45 +350,10 @@ class AlphaFold3(nn.Module):
         mode_mem_settings = (
             self.settings.memory.train if self.training else self.settings.memory.eval
         )
-        per_sample_confidence = (
-            not torch.is_grad_enabled() and mode_mem_settings.per_sample_confidence
-        )
-
         with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
-            if per_sample_confidence:
-                num_samples = atom_positions_predicted.shape[-3]
-
-                aux_per_sample = []
-                for idx in range(num_samples):
-
-                    def fetch_cur_sample(t):
-                        if t.shape[1] != num_samples:
-                            return t
-                        return t[:, idx : idx + 1]  # noqa: B023
-
-                    cur_output = tensor_tree_map(
-                        fetch_cur_sample, output, strict_type=False
-                    )
-
-                    aux_per_sample.append(
-                        self.aux_heads(
-                            batch=batch,
-                            si_input=si_input,
-                            output=cur_output,
-                            chunk_size=mode_mem_settings.chunk_size,
-                            use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-                            use_lma=self.settings.use_lma,
-                            inplace_safe=inplace_safe,
-                            _mask_trans=True,
-                        )
-                    )
-
-                aux_out = dict_multimap(
-                    lambda x: torch.concat(x, dim=1), aux_per_sample
-                )
-
-            else:
-                aux_out = self.aux_heads(
+            # Compute confidence logits
+            output.update(
+                self.aux_heads(
                     batch=batch,
                     si_input=si_input,
                     output=output,
@@ -398,9 +363,7 @@ class AlphaFold3(nn.Module):
                     inplace_safe=inplace_safe,
                     _mask_trans=True,
                 )
-
-            # Compute confidence logits
-            output.update(aux_out)
+            )
 
         return output
 
