@@ -56,6 +56,7 @@ all_atoms=[
     Atom([0, 0, 0], chain_id="C", res_id=5, atom_name="backbone", molecule_type_id=DNA), # noqa: E501
     Atom([0, 0, 0], chain_id="C", res_id=5, atom_name="sidechain", molecule_type_id=DNA), # noqa: E501
 ]
+# fmt: on
 
 # - References for special bonds -
 
@@ -74,9 +75,7 @@ inter_chain_poly_link = (5, 12, BondType.SINGLE)
 # Chain C
 long_bond_2 = (9, 11, BondType.SINGLE)
 
-long_bond_set = {
-    intra_chain_long_dative, long_bond_2
-}
+long_bond_set = {intra_chain_long_dative, long_bond_2}
 
 # - Bond set -
 bond_set = set(
@@ -88,10 +87,8 @@ bond_set = set(
         (2, 3, BondType.SINGLE),
         (2, 4, BondType.SINGLE),
         (4, 5, BondType.SINGLE),
-
         # Chain B
         (7, 8, BondType.SINGLE),
-
         # Chain C
         (9, 10, BondType.SINGLE),
         long_bond_2,
@@ -102,21 +99,16 @@ bond_set = set(
         (15, 16, BondType.SINGLE),
         (15, 17, BondType.SINGLE),
         (17, 18, BondType.SINGLE),
-
         # -- Intra-chain dative bond --
         intra_chain_long_dative,
-
         # -- Inter-chain dative bond --
         inter_chain_dative,
-
         # -- Intra-chain nonconsecutive polymer crosslink --
         intra_chain_poly_link,
-
         # -- Inter-chain polymer crosslink --
         inter_chain_poly_link,
     )
 )
-# fmt: on
 
 # Sorting the bonds here is important for unit-test equivalence
 atom_array_filter_bonds = create_atomarray_with_bondlist(
