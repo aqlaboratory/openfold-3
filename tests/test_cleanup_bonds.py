@@ -388,8 +388,3 @@ def test_filter_fully_atomized_bonds(
         filtered_bondlist,
         atom_array_expected,
     )
-
-
-if __name__ == "__main__":
-    # Run the test cases
-    pytest.main([__file__])
