@@ -43,6 +43,87 @@ def add_token_positions(atom_array: AtomArray) -> None:
     atom_array.set_annotation("token_position", token_positions)
 
 
+def find_canonical_residue_in_polymer_start_ids(
+    atom_array: AtomArray, return_mask: bool = True
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+    """Finds atom IDs canonical residues in polymers.
+
+    Args:
+        atom_array (AtomArray):
+            AtomArray in which to find the starting atom IDs of canonical residues in
+            polymers.
+        return_mask (bool, optional):
+            Whether to return a mask indicating which atom belongs to a canonical
+            residue in a polymer. Defaults to True.
+
+    Returns:
+        np.ndarray | tuple[np.ndarray, np.ndarray]:
+            If return_mask is True, returns a tuple containing the starting atom IDs of
+            canonical residues in polymers and a mask indicating which atoms belong to
+            those residues. Otherwise, returns only the starting atom IDs.
+    """
+    is_l_atom = atom_array.molecule_type_id == MoleculeType.LIGAND
+    is_cr_atom = np.isin(atom_array.res_name, STANDARD_RESIDUES_3)
+    is_crp_atom = ~is_l_atom & is_cr_atom
+    crp_atom_ids = atom_array._atom_idx[is_crp_atom]
+    crp_token_start_ids = np.unique(
+        struc.get_residue_starts_for(atom_array, crp_atom_ids)
+    )
+    if return_mask:
+        return crp_token_start_ids, is_crp_atom
+    else:
+        return crp_token_start_ids
+
+
+def find_modified_residue_atom_ids(atom_array: AtomArray) -> np.ndarray:
+    """Finds the IDs of all atoms in modified residues.
+
+    A residue is considered modified if it is connected to any other residue via a
+    non-peptide bond or a non-phospho-diester bond.
+
+    Args:
+        atom_array (AtomArray):
+            AtomArray in which to find the atom IDs of modified residues.
+
+    Returns:
+        np.ndarray:
+            IDs of all atoms in modified residues.
+    """
+    bonds = atom_array.bonds.as_array()[:, :2]
+    has_different_chain_id = (
+        atom_array.chain_id[bonds[:, 0]] != atom_array.chain_id[bonds[:, 1]]
+    )
+    has_different_res_id = (
+        atom_array.res_id[bonds[:, 0]] != atom_array.res_id[bonds[:, 1]]
+    )
+    not_peptide_bond = ~(
+        np.isin(atom_array.atom_name[bonds[:, 0]], PEPTIDE_BOND_ATOMS)
+        & np.isin(atom_array.atom_name[bonds[:, 1]], PEPTIDE_BOND_ATOMS)
+    )
+    not_phospho_diester_bond = ~(
+        np.isin(atom_array.atom_name[bonds[:, 0]], PHOSPHODIESTER_BOND_ATOMS)
+        & np.isin(atom_array.atom_name[bonds[:, 1]], PHOSPHODIESTER_BOND_ATOMS)
+    )
+    mod_crp_bonds = bonds[
+        (has_different_chain_id | has_different_res_id)
+        & (not_peptide_bond & not_phospho_diester_bond)
+    ]
+
+    # Get corresponding canonical residue atoms
+    mod_crp_atom_ids = np.unique(mod_crp_bonds[:, :2].flatten())
+    mod_crp_atoms = atom_array[np.isin(atom_array._atom_idx, mod_crp_atom_ids)]
+
+    # Get corresponding canonical residue token starts
+    atomized_crp_token_ids = atom_array[
+        np.isin(
+            atom_array._residue_idx,
+            mod_crp_atoms._residue_idx,
+        )
+    ]._atom_idx
+
+    return atomized_crp_token_ids
+
+
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-token")
 def tokenize_atom_array(atom_array: AtomArray):
     """Creates token id, token center atom, and is_atomized annotations for atom array.
@@ -76,12 +157,8 @@ def tokenize_atom_array(atom_array: AtomArray):
 
     # 1. Find token start IDs of canonical residues in-polymer (CRP), excluding amino
     #    acid and nucleotide small molecule ligands
-    is_l_atom = atom_array.molecule_type_id == MoleculeType.LIGAND
-    is_cr_atom = np.isin(atom_array.res_name, STANDARD_RESIDUES_3)
-    is_crp_atom = ~is_l_atom & is_cr_atom
-    crp_atom_ids = atom_array._atom_idx[is_crp_atom]
-    crp_token_start_ids = np.unique(
-        struc.get_residue_starts_for(atom_array, crp_atom_ids)
+    crp_token_start_ids, is_crp_atom = find_canonical_residue_in_polymer_start_ids(
+        atom_array
     )
 
     # 2. Find atom-token start ids: includes small molecule ligands, non-canonical
@@ -90,37 +167,7 @@ def tokenize_atom_array(atom_array: AtomArray):
 
     # 3. Find canonical residues in-polymer (CRP) bonded to other chemical species via
     #    non-canonical bonds, i.e. via bonds that are not peptide or phospho-diester
-    bonds = atom_array.bonds.as_array()[:, :2]
-    has_different_chain_id = (
-        atom_array.chain_id[bonds[:, 0]] != atom_array.chain_id[bonds[:, 1]]
-    )
-    has_different_res_id = (
-        atom_array.res_id[bonds[:, 0]] != atom_array.res_id[bonds[:, 1]]
-    )
-    not_peptide_bond = ~(
-        np.isin(atom_array.atom_name[bonds[:, 0]], PEPTIDE_BOND_ATOMS)
-        & np.isin(atom_array.atom_name[bonds[:, 1]], PEPTIDE_BOND_ATOMS)
-    )
-    not_phospho_diester_bond = ~(
-        np.isin(atom_array.atom_name[bonds[:, 0]], PHOSPHODIESTER_BOND_ATOMS)
-        & np.isin(atom_array.atom_name[bonds[:, 1]], PHOSPHODIESTER_BOND_ATOMS)
-    )
-    mod_crp_bonds = bonds[
-        (has_different_chain_id | has_different_res_id)
-        & (not_peptide_bond & not_phospho_diester_bond)
-    ]
-
-    # Get corresponding canonical residue atoms
-    mod_crp_atom_ids = np.unique(mod_crp_bonds[:, :2].flatten())
-    mod_crp_atoms = atom_array[np.isin(atom_array._atom_idx, mod_crp_atom_ids)]
-
-    # Get corresponding canonical residue token starts
-    atomized_crp_token_ids = atom_array[
-        np.isin(
-            atom_array._residue_idx,
-            mod_crp_atoms._residue_idx,
-        )
-    ]._atom_idx
+    atomized_crp_token_ids = find_modified_residue_atom_ids(atom_array)
 
     # Remove the corresponding residue token start ids
     mod_crp_token_start_ids = np.unique(
