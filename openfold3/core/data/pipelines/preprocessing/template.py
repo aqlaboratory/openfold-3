@@ -849,7 +849,7 @@ def filter_template_cache_for_query(
     for template_id, template_date in ids_dates:
         # Apply release date filters
         if is_core_train:
-            if check_release_date_diff(
+            if not check_release_date_diff(
                 query_release_date=query_release_date,
                 template_release_date=template_date,
                 min_release_date_diff=min_release_date_diff,
@@ -857,7 +857,7 @@ def filter_template_cache_for_query(
                 data_log["n_dropped_due_to_release_date"] += 1
                 continue
         else:
-            if check_release_date_max(
+            if not check_release_date_max(
                 template_release_date=template_date, max_release_date=max_release_date
             ):
                 data_log["n_dropped_due_to_release_date"] += 1
