@@ -86,7 +86,7 @@ def tokenize_atom_array(atom_array: AtomArray):
 
     # 2. Find atom-token start ids: includes small molecule ligands, non-canonical
     #    residues and amino acid or nucleotide small molecule ligands
-    atom_token_start_ids = atom_array._atom_idx[~is_crp_atom]
+    atom_token_ids = atom_array._atom_idx[~is_crp_atom]
 
     # 3. Find canonical residues in-polymer (CRP) bonded to other chemical species via
     #    non-canonical bonds, i.e. via bonds that are not peptide or phospho-diester
@@ -115,7 +115,7 @@ def tokenize_atom_array(atom_array: AtomArray):
     mod_crp_atoms = atom_array[np.isin(atom_array._atom_idx, mod_crp_atom_ids)]
 
     # Get corresponding canonical residue token starts
-    atomized_crp_token_start_ids = atom_array[
+    atomized_crp_token_ids = atom_array[
         np.isin(
             atom_array._residue_idx,
             mod_crp_atoms._residue_idx,
@@ -124,7 +124,7 @@ def tokenize_atom_array(atom_array: AtomArray):
 
     # Remove the corresponding residue token start ids
     mod_crp_token_start_ids = np.unique(
-        struc.get_residue_starts_for(atom_array, atomized_crp_token_start_ids)
+        struc.get_residue_starts_for(atom_array, atomized_crp_token_ids)
     )
     crp_token_start_ids = crp_token_start_ids[
         ~np.isin(crp_token_start_ids, mod_crp_token_start_ids)
@@ -135,8 +135,8 @@ def tokenize_atom_array(atom_array: AtomArray):
         np.concatenate(
             [
                 crp_token_start_ids,
-                atom_token_start_ids,
-                atomized_crp_token_start_ids,
+                atom_token_ids,
+                atomized_crp_token_ids,
             ]
         )
     )
@@ -144,9 +144,7 @@ def tokenize_atom_array(atom_array: AtomArray):
     # Add is_atomized annotation
     n_atoms = len(atom_array)
     is_atomized = np.repeat(False, n_atoms)
-    is_atomized[
-        np.concatenate([atom_token_start_ids, atomized_crp_token_start_ids])
-    ] = True
+    is_atomized[np.concatenate([atom_token_ids, atomized_crp_token_ids])] = True
     atom_array.set_annotation("is_atomized", is_atomized)
 
     # Create token index
@@ -160,7 +158,7 @@ def tokenize_atom_array(atom_array: AtomArray):
         atom_array[is_crp_atom].atom_name, TOKEN_CENTER_ATOMS
     )
     # Edit token center atoms for covalently modified residues
-    token_center_atoms[atomized_crp_token_start_ids] = True
+    token_center_atoms[atomized_crp_token_ids] = True
     atom_array.set_annotation("token_center_atom", token_center_atoms)
 
     # Remove temporary atom & residue indices
