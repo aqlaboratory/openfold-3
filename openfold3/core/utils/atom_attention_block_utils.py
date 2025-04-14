@@ -272,7 +272,7 @@ def convert_single_rep_to_blocks(
     return ql_query, ql_key, atom_pair_mask
 
 
-def convert_trunk_rep_to_blocks(
+def _deprecated_convert_trunk_rep_to_blocks(
     batch: dict,
     zij_trunk: torch.Tensor,
     n_query: int,
@@ -320,7 +320,7 @@ def convert_trunk_rep_to_blocks(
     return zij_trunk
 
 
-def convert_trunk_rep_to_blocks_low_mem(
+def convert_trunk_rep_to_blocks(
     batch: dict,
     zij_trunk: torch.Tensor,
     n_query: int,
@@ -342,7 +342,8 @@ def convert_trunk_rep_to_blocks_low_mem(
         plm:
             [*, N_blocks, N_query, N_key, c_atom_pair] Atom pair conditioning
     """
-    # z_lj: [*, N_atom, N_token, c_atom_pair]
+    # Get atom_to_token_index to map each token to the corresponding
+    # number of atoms for broadcasting
     atom_to_token_index = batch["atom_to_token_index"]
 
     batch_dims = zij_trunk.shape[:-3]
@@ -353,19 +354,24 @@ def convert_trunk_rep_to_blocks_low_mem(
         n_atom=n_atom, n_query=n_query, n_key=n_key
     )
 
-    # Pad and convert plm to blocks of width n_query and length n_key
+    # Pad and convert atom_to_token_index to blocks of width n_query
     atom_to_token_index_q = torch.nn.functional.pad(
         atom_to_token_index, (0, pad_len_right_q), value=0.0
     )
 
+    # [*, N_atom] -> [*, N_blocks, N_query]
     atom_to_token_index_q = atom_to_token_index_q.reshape(
         (*batch_dims, num_blocks, n_query)
     )
 
+    # Expand zij to the number of blocks needed for indexing without allocating mem
+    # [*, N_blocks, N_token, N_token, c_atom_pair]
     zij_trunk = zij_trunk.unsqueeze(-4).expand(
         (*batch_dims, num_blocks, *zij_trunk.shape[-3:])
     )
 
+    # Aggregate blocked atom query dimension from tokens
+    # [*, N_blocks, N_query, N_token, c_atom_pair]
     zij_trunk = torch.gather(
         zij_trunk,
         dim=-3,
@@ -374,11 +380,12 @@ def convert_trunk_rep_to_blocks_low_mem(
         .long(),
     )
 
-    # Pad and convert plm to blocks of width n_query and length n_key
+    # Pad and convert plm to blocks of length n_key
     atom_to_token_index_k = torch.nn.functional.pad(
         atom_to_token_index, (pad_len_left_k, pad_len_right_k), value=0.0
     )
 
+    # [*, N_atom] -> [*, N_blocks, N_key]
     atom_to_token_index_k = convert_to_blocks_1d(
         x=atom_to_token_index_k,
         num_blocks=num_blocks,
@@ -387,6 +394,7 @@ def convert_trunk_rep_to_blocks_low_mem(
         dim=-1,
     )
 
+    # Aggregate blocked atom key dimension from tokens
     # [*, N_blocks, N_query, N_key, c_atom_pair]
     zij_trunk = torch.gather(
         zij_trunk,
@@ -396,6 +404,8 @@ def convert_trunk_rep_to_blocks_low_mem(
         .long(),
     )
 
+    # Compute atom pair mask for masking out padding
+    # Gather() will set the token at index 0 for all padding, we need to reset this
     atom_pair_mask = get_pair_atom_block_mask(
         atom_mask=batch["atom_mask"],
         n_blocks=num_blocks,
@@ -406,6 +416,7 @@ def convert_trunk_rep_to_blocks_low_mem(
         pad_len_right_k=pad_len_right_k,
     )
 
+    # Mask out padding
     zij_trunk = zij_trunk * atom_pair_mask.unsqueeze(-1)
 
     return zij_trunk

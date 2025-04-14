@@ -35,7 +35,6 @@ from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.atom_attention_block_utils import (
     convert_single_rep_to_blocks,
     convert_trunk_rep_to_blocks,
-    convert_trunk_rep_to_blocks_low_mem,
 )
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
@@ -207,7 +206,6 @@ class NoisyPositionEmbedder(nn.Module):
         rl: torch.Tensor,
         n_query: int,
         n_key: int,
-        low_mem_broadcast: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -256,14 +254,9 @@ class NoisyPositionEmbedder(nn.Module):
         # Broadcast trunk pair representation into atom pair conditioning
         zij_trunk = self.linear_z(self.layer_norm_z(zij_trunk))
 
-        if low_mem_broadcast:
-            zij_trunk = convert_trunk_rep_to_blocks_low_mem(
-                batch=batch, zij_trunk=zij_trunk, n_query=n_query, n_key=n_key
-            )
-        else:
-            zij_trunk = convert_trunk_rep_to_blocks(
-                batch=batch, zij_trunk=zij_trunk, n_query=n_query, n_key=n_key
-            )
+        zij_trunk = convert_trunk_rep_to_blocks(
+            batch=batch, zij_trunk=zij_trunk, n_query=n_query, n_key=n_key
+        )
 
         plm = plm + zij_trunk
 
@@ -458,7 +451,6 @@ class AtomAttentionEncoder(nn.Module):
                 rl=rl,
                 n_query=self.n_query,
                 n_key=self.n_key,
-                low_mem_broadcast=True,
             )
 
         # Add the combined single conditioning to the pair rep (line 13 - 14)
