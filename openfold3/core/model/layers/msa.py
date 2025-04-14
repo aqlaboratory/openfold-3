@@ -623,6 +623,9 @@ class MSAPairWeightedAveraging(nn.Module):
         # [*, Q, H, C_hidden]
         o = torch.einsum("...hqk,...hkc->...qhc", o, v)
 
+        return o
+
+    def _gating(self, m: torch.Tensor, o: torch.Tensor) -> torch.Tensor:
         g = self.sigmoid(self.linear_g(m))
 
         # [*, Q, H, C_hidden]
@@ -652,6 +655,7 @@ class MSAPairWeightedAveraging(nn.Module):
         m, z = self._prep_inputs(m=m, z=z, mask=mask)
 
         o = self._compute(m=m, z=z)
+        o = self._gating(m=m, o=o)
 
         # [*, Q, H * C_hidden]
         o = flatten_final_dims(o, 2)

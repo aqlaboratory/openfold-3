@@ -132,8 +132,8 @@ class RefAtomFeatureEmbedder(nn.Module):
         # Embed offsets
         # Convert all atom rep to block format ahead of time due to
         # reduce memory cost
-        # dl, dm: [*, N_blocks, N_query, 3], [*, N_blocks, key, 3]
-        # vl, vm: [*, N_blocks, N_query, 1], [*, N_blocks, key, 1]
+        # dl, dm: [*, N_blocks, N_query, 3], [*, N_blocks, N_key, 3]
+        # vl, vm: [*, N_blocks, N_query, 1], [*, N_blocks, N_key, 1]
         # atom_mask: [*, N_blocks, N_query, N_key]
         d_l, d_m, atom_mask = convert_single_rep_to_blocks(
             ql=batch["ref_pos"],
