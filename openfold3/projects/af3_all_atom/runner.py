@@ -199,6 +199,7 @@ class AlphaFold3AllAtom(ModelRunner):
                 )
 
             metrics = compute_valid_model_selection_metrics(
+                confidence_config=self.config.confidence,
                 outputs=outputs,
                 metrics=metrics_per_sample,
             )

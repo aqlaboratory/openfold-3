@@ -38,7 +38,6 @@ class PairformerEmbedding(nn.Module):
         max_bin: float,
         no_bin: int,
         inf: float,
-        per_sample_token_cutoff: Optional[int] = None,
         linear_init_params: ConfigDict = lin_init.pairformer_head_init,
     ):
         """
@@ -59,11 +58,6 @@ class PairformerEmbedding(nn.Module):
                 Number of bins (15). ibid
             inf:
                 Inf (1e8). ibid
-            per_sample_token_cutoff:
-                Token limit after which PairFormer embedding will run per sample.
-                This is a memory optimization which is only used during
-                validation/inference and will depend on the number of samples
-                in the full rollout.
             linear_init_params:
                 Linear layer initialization parameters
         """
@@ -72,7 +66,6 @@ class PairformerEmbedding(nn.Module):
         self.max_bin = max_bin
         self.no_bin = no_bin
         self.inf = inf
-        self.per_sample_token_cutoff = per_sample_token_cutoff
 
         self.linear_i = Linear(c_s_input, c_z, **linear_init_params.linear_i)
         self.linear_j = Linear(c_s_input, c_z, **linear_init_params.linear_j)
@@ -160,7 +153,6 @@ class PairformerEmbedding(nn.Module):
         x_pred: torch.Tensor,
         single_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
@@ -183,8 +175,6 @@ class PairformerEmbedding(nn.Module):
             zij,
             single_mask,
             pair_mask,
-            # chunk_size=chunk_size,
-            chunk_size=None,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
@@ -210,6 +200,7 @@ class PairformerEmbedding(nn.Module):
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
+        apply_per_sample: bool = False,
     ):
         """
         Args:
@@ -238,6 +229,12 @@ class PairformerEmbedding(nn.Module):
                 Whether inplace operations can be performed
             _mask_trans:
                 Whether to mask the output of the transition layers
+            apply_per_sample:
+                Run PairFormer embedding for each sample individually.
+                This is a memory optimization which is only used during
+                validation/inference and will depend on the number of samples
+                in the full rollout.
+
 
         Returns:
             si:
@@ -250,21 +247,9 @@ class PairformerEmbedding(nn.Module):
         single_mask = single_mask.expand(*(x_pred.shape[:-2] + single_mask.shape[-1:]))
         pair_mask = pair_mask.expand(*(x_pred.shape[:-2] + pair_mask.shape[-2:]))
 
-        # TODO: Determine if this is the best way to handle PairFormer
-        #  memory limits depending on the number of samples
-        num_samples = x_pred.shape[-3]
-        pairformer_per_sample = all(
-            [
-                not torch.is_grad_enabled(),
-                num_samples > 1,
-                self.per_sample_token_cutoff is not None,
-                x_pred.shape[-2] > self.per_sample_token_cutoff,
-            ]
-        )
-
         in_dtype = si.dtype
         with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
-            if pairformer_per_sample:
+            if apply_per_sample:
                 si, zij = self.per_sample_pairformer_emb(
                     si_input=si_input,
                     si=si,
@@ -279,6 +264,8 @@ class PairformerEmbedding(nn.Module):
                     _mask_trans=_mask_trans,
                 )
             else:
+                # TODO: Fix chunking issues with > 1 sample
+                #  Chunking disabled for now
                 si, zij = self.pairformer_emb(
                     si_input=si_input,
                     si=si,
@@ -286,7 +273,6 @@ class PairformerEmbedding(nn.Module):
                     x_pred=x_pred,
                     single_mask=single_mask,
                     pair_mask=pair_mask,
-                    chunk_size=chunk_size,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                     use_lma=use_lma,
                     inplace_safe=inplace_safe,
@@ -369,17 +355,43 @@ class PredictedDistanceErrorHead(nn.Module):
         self.layer_norm = LayerNorm(self.c_z)
         self.linear = Linear(self.c_z, self.c_out, **linear_init_params.linear)
 
-    def forward(self, zij):
+    def _compute_logits(self, zij: torch.Tensor):
+        return self.linear(self.layer_norm(zij))
+
+    def _chunk(
+        self,
+        zij: torch.Tensor,
+    ) -> torch.Tensor:
+        zij_out = torch.zeros(
+            (*zij.shape[:-1], self.c_out), device=zij.device, dtype=zij.dtype
+        )
+        no_samples = zij.shape[-4]
+        for i in range(no_samples):
+            zij_out[:, i] = self._compute_logits(zij[:, i : i + 1])
+
+        return zij_out
+
+    def forward(self, zij, apply_per_sample: bool = False):
         """
         Args:
             zij:
                 [*, N, N, C_z] Pair embedding
+            apply_per_sample:
+                Run PDE head for each sample individually.
+                This is a memory optimization which is only used during
+                validation/inference and will depend on the number of samples
+                in the full rollout.
         Returns:
             logits:
                 [*, N, N, C_out] Logits
         """
-        logits = self.linear(self.layer_norm(zij))
+        if apply_per_sample:
+            logits = self._chunk(zij=zij)
+        else:
+            logits = self._compute_logits(zij=zij)
+
         logits = logits + logits.transpose(-2, -3)
+
         return logits
 
 

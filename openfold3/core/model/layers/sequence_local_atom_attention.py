@@ -33,7 +33,6 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.atom_attention_block_utils import (
-    convert_pair_rep_to_blocks,
     convert_single_rep_to_blocks,
     convert_trunk_rep_to_blocks,
     convert_trunk_rep_to_blocks_low_mem,
@@ -131,24 +130,27 @@ class RefAtomFeatureEmbedder(nn.Module):
         )  # CONFIRM THIS FORMAT ONCE DATALOADER/FEATURIZER DONE
 
         # Embed offsets
-        # dlm: [*, N_atom, N_atom, 3]
-        # vlm: [*, N_atom, N_atom, 1]
-        dlm = batch["ref_pos"].unsqueeze(-2) - batch["ref_pos"].unsqueeze(-3)
-        vlm = (
-            (
-                batch["ref_space_uid"].unsqueeze(-2)
-                == batch["ref_space_uid"].unsqueeze(-1)
-            )
-            .unsqueeze(-1)
-            .to(dtype=dlm.dtype)
+        # Convert all atom rep to block format ahead of time due to
+        # reduce memory cost
+        # dl, dm: [*, N_blocks, N_query, 3], [*, N_blocks, key, 3]
+        # vl, vm: [*, N_blocks, N_query, 1], [*, N_blocks, key, 1]
+        # atom_mask: [*, N_blocks, N_query, N_key]
+        d_l, d_m, atom_mask = convert_single_rep_to_blocks(
+            ql=batch["ref_pos"],
+            n_query=n_query,
+            n_key=n_key,
+            atom_mask=batch["atom_mask"],
+        )
+        v_l, v_m, _ = convert_single_rep_to_blocks(
+            ql=batch["ref_space_uid"].unsqueeze(-1), n_query=n_query, n_key=n_key
         )
 
-        # Convert all atom pair rep to block format ahead of time due to
-        # reduce memory cost
         # dlm: [*, N_blocks, N_query, N_key, 3]
         # vlm: [*, N_blocks, N_query, N_key, 1]
-        dlm = convert_pair_rep_to_blocks(plm=dlm, n_query=n_query, n_key=n_key)
-        vlm = convert_pair_rep_to_blocks(plm=vlm, n_query=n_query, n_key=n_key)
+        dlm = (d_l.unsqueeze(-2) - d_m.unsqueeze(-3)) * atom_mask.unsqueeze(-1)
+        vlm = (v_l.unsqueeze(-2) == v_m.unsqueeze(-3)).to(
+            dtype=dlm.dtype
+        ) * atom_mask.unsqueeze(-1)
 
         plm = self.linear_ref_offset(dlm) * vlm
 
@@ -476,6 +478,8 @@ class AtomAttentionEncoder(nn.Module):
         plm = plm + cl_lm
 
         plm = plm + self.pair_mlp(plm)
+
+        plm = plm * atom_mask.unsqueeze(-1)
 
         return ql, cl, plm
 
