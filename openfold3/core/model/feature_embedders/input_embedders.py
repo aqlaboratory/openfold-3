@@ -612,12 +612,15 @@ class MSAModuleEmbedder(nn.Module):
         total_msa_seq = msa_feat.shape[feat_seq_dim]
         num_main_msa_seqs = total_msa_seq - num_paired_seqs
 
+        if num_main_msa_seqs == 0:
+            return msa_feat, msa_mask
+
         split_sections = [num_paired_seqs, num_main_msa_seqs]
 
-        uniprot_msa_feat, main_msa_feat = torch.split(
+        paired_msa_feat, main_msa_feat = torch.split(
             msa_feat, split_sections, dim=feat_seq_dim
         )
-        uniprot_msa_mask, main_msa_mask = torch.split(
+        paired_msa_mask, main_msa_mask = torch.split(
             msa_mask, split_sections, dim=mask_seq_dim
         )
 
@@ -681,10 +684,10 @@ class MSAModuleEmbedder(nn.Module):
 
         # Stack with the uniprot features and mask
         sampled_msa_feat = torch.cat(
-            [uniprot_msa_feat, sampled_main_msa_feat], dim=feat_seq_dim
+            [paired_msa_feat, sampled_main_msa_feat], dim=feat_seq_dim
         )
         sampled_msa_mask = torch.cat(
-            [uniprot_msa_mask, sampled_main_msa_mask], dim=mask_seq_dim
+            [paired_msa_mask, sampled_main_msa_mask], dim=mask_seq_dim
         )
 
         return sampled_msa_feat, sampled_msa_mask
