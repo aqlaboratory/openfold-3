@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import click
@@ -182,13 +183,9 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
     if runner_args.get("log_level"):
         log_level = runner_args.get("log_level").upper()
 
-        console_log_dir = (
-            wandb_logger.experiment.dir
-            if wandb_logger is not None
-            else runner_args.get("output_dir", Path.cwd())
-        )
+        console_log_dir = Path(runner_args.get("output_dir", Path.cwd())) / "logs"
+        console_log_dir = console_log_dir / datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        console_log_dir = Path(console_log_dir)
         console_log_dir.mkdir(exist_ok=True)
         log_filepath = console_log_dir / "console_logs.log"
 
