@@ -32,6 +32,8 @@ if torch_major_version > 1 or (torch_major_version == 1 and torch_minor_version 
     # Gives a large speedup on Ampere-class GPUs
     torch.set_float32_matmul_precision("high")
 
+logger = logging.getLogger(__name__)
+
 
 def _configure_wandb_logger(
     wandb_args: ConfigDict, is_mpi_rank_zero: bool, output_dir: str
@@ -89,6 +91,14 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
     if data_seed is not None:
         runner_args["data_seed"] = data_seed
 
+    if runner_args.get("log_level"):
+        log_level = runner_args.get("log_level").upper()
+
+        output_dir = Path(runner_args.get("output_dir"))
+        output_dir.mkdir(exist_ok=True)
+        log_filepath = output_dir / "console_logs.log"
+        logging.basicConfig(filename=log_filepath, level=log_level, filemode="a")
+
     world_size = runner_args.num_gpus * runner_args.pl_trainer.num_nodes
     is_distributed = world_size > 1
 
@@ -97,6 +107,7 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
     if seed is None and is_distributed:
         raise ValueError("For distributed training, seed must be specified")
 
+    logging.info(f"Running with seed: {seed}")
     pl.seed_everything(seed, workers=True)
 
     project_entry = registry.get_project_entry(runner_args.project_type)
@@ -179,21 +190,6 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
 
     trainer = pl.Trainer(**trainer_args)
 
-    if runner_args.get("log_level"):
-        log_level = runner_args.get("log_level").upper()
-
-        console_log_dir = Path(runner_args.get("output_dir", Path.cwd())) / "logs"
-        console_log_dir.mkdir(parents=True, exist_ok=True)
-
-        wandb_config = runner_args.get("wandb")
-        if wandb_config is not None and wandb_config.get("id") is not None:
-            log_filepath = console_log_dir / f"run_{wandb_config.id}"
-        else:
-            log_filepath = console_log_dir / "console.log"
-
-        click.echo(f"Writing {log_level} logs to {log_filepath}")
-        logging.basicConfig(filename=log_filepath, level=log_level, filemode="a")
-
     # Determine if running on rank zero process
     if wandb_logger is not None and trainer.global_rank == 0:
         wandb_experiment = wandb_logger.experiment
@@ -224,7 +220,6 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
 
     # Run process appropriate process
     logging.info(f"Running {runner_args.mode} mode.")
-
     # Training + validation / profiling
     if (runner_args.mode == "train") | (runner_args.mode == "profile"):
         if runner_args.mode == "profile":  # TODO Implement profiling
