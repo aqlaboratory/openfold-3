@@ -184,6 +184,15 @@ class TestAF3DatasetConfigConstruction:
                     "template_file_format": "npz",
                     "ccd_file": None,
                 },
+                "loss": {
+                    "loss_weights": {
+                        "bond_loss": 0.0,
+                        "mse": 4.0,
+                        "plddt": 0.0,
+                        "pae": 0.0,
+                        "pde": 0.0,
+                    },
+                },
             },
         }
         expected_config = TrainingDatasetSpec.model_validate(expected_fields)
