@@ -186,7 +186,7 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
         console_log_dir = Path(runner_args.get("output_dir", Path.cwd())) / "logs"
         console_log_dir = console_log_dir / datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        console_log_dir.mkdir(exist_ok=True)
+        console_log_dir.mkdir(parents=True, exist_ok=True)
         log_filepath = console_log_dir / "console_logs.log"
 
         click.echo(f"Writing {log_level} logs to {log_filepath}")
