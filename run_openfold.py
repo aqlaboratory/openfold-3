@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import click
@@ -184,10 +183,13 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
         log_level = runner_args.get("log_level").upper()
 
         console_log_dir = Path(runner_args.get("output_dir", Path.cwd())) / "logs"
-        console_log_dir = console_log_dir / datetime.now().strftime("%Y%m%d_%H%M%S")
-
         console_log_dir.mkdir(parents=True, exist_ok=True)
-        log_filepath = console_log_dir / "console_logs.log"
+
+        wandb_config = runner_args.get("wandb")
+        if wandb_config is not None and wandb_config.get("id") is not None:
+            log_filepath = console_log_dir / f"run_{wandb_config.id}"
+        else:
+            log_filepath = console_log_dir / "console.log"
 
         click.echo(f"Writing {log_level} logs to {log_filepath}")
         logging.basicConfig(filename=log_filepath, level=log_level, filemode="a")
