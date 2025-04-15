@@ -1,4 +1,3 @@
-
 import torch
 
 from openfold3.core.loss.loss_module import AlphaFoldLoss

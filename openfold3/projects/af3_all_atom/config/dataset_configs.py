@@ -194,6 +194,19 @@ class DisorderedPDBConfig(DefaultDatasetConfigSection):
     }
     crop: CropSettings = CropSettings()
     disable_non_protein_diffusion_weights: bool = True
+    loss: LossConfig = LossConfig(
+        loss_weights={
+            "bond": 0.0,
+            "smooth_lddt": 4.0,
+            "mse": 4.0,
+            "distogram": 3e-2,
+            "experimentally_resolved": 0.0,
+            # These losses are zero for distillation sets
+            "plddt": 0.0,
+            "pae": 0.0,
+            "pde": 0.0,
+        }
+    )
 
 
 @register_dataset_config("ValidationPDBDataset")
