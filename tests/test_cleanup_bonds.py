@@ -41,7 +41,7 @@ all_atoms=[
 
     # Ligand chain B
     Atom([0, 0, 0], chain_id="B", res_id=1, atom_name="ligand", molecule_type_id=LIGAND), # noqa: E501
-    Atom([0, 0, 2.41], chain_id="B", res_id=1, atom_name="ligand", molecule_type_id=LIGAND), # noqa: E501
+    Atom([0, 0, 0], chain_id="B", res_id=1, atom_name="ligand", molecule_type_id=LIGAND), # noqa: E501
     Atom([0, 0, 2.41], chain_id="B", res_id=1, atom_name="ligand", molecule_type_id=LIGAND), # noqa: E501
 
     # DNA chain C
@@ -61,10 +61,13 @@ all_atoms=[
 # - References for special bonds -
 
 # Chain B
-intra_chain_long_dative = (6, 7, BondType.COORDINATION)
+intra_chain_long_dative = (7, 8, BondType.COORDINATION)
 
-# Chain A to Chain B
+# Chain A to Chain B (dative)
 inter_chain_dative = (3, 6, BondType.COORDINATION)
+
+# Chain A to Chain B (standard) <- should not be removed
+inter_chain_standard = (2, 7, BondType.SINGLE)
 
 # Chain C
 intra_chain_poly_link = (14, 18, BondType.SINGLE)
@@ -88,7 +91,7 @@ bond_set = set(
         (2, 4, BondType.SINGLE),
         (4, 5, BondType.SINGLE),
         # Chain B
-        (7, 8, BondType.SINGLE),
+        (6, 7, BondType.SINGLE),
         # Chain C
         (9, 10, BondType.SINGLE),
         long_bond_2,
@@ -103,6 +106,8 @@ bond_set = set(
         intra_chain_long_dative,
         # -- Inter-chain dative bond --
         inter_chain_dative,
+        # -- Inter-chain standard bond --
+        inter_chain_standard,
         # -- Intra-chain nonconsecutive polymer crosslink --
         intra_chain_poly_link,
         # -- Inter-chain polymer crosslink --
@@ -376,3 +381,7 @@ def test_filter_fully_atomized_bonds(
         filtered_bondlist,
         atom_array_expected,
     )
+
+
+if __name__ == "__main__":
+    pytest.main([__file__])
