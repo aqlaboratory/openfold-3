@@ -177,7 +177,13 @@ def get_component_info(atom_array: AtomArray) -> PDBComponentInfo:
         # Asserts that all chains of the same entity have the exact same atoms in the
         # exact same order
         # TODO: improve atom expansion for non-standard ligands
-        assert len(chain_atom_names) == 1
+        if len(chain_atom_names) != 1:
+            raise ValueError(
+                f"Entity {entity_id} has different sets of atom names in "
+                f"different chains: {chain_atom_names}. "
+                "This may be due to the current lack of support for adding "
+                "unresolved atoms to multi-residue ligands."
+            )
 
     return PDBComponentInfo(
         residue_components=list(residue_components),

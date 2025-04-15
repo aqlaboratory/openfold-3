@@ -126,6 +126,68 @@ def get_chain_to_molecule_type_dict(atom_array: struc.AtomArray) -> dict[int, st
     }
 
 
+def get_residue_tuples(
+    atom_array: struc.AtomArray,
+    include_resname: bool = False,
+) -> list[tuple[str, int]]:
+    """Get a list of (chain_id, res_id) tuples for all residues in an AtomArray.
+
+    Args:
+        atom_array:
+            AtomArray containing the residues to get unique tuples for.
+        include_resname:
+            Whether to add the residue name to the tuple. Defaults to False. If True,
+            the tuple will be (chain_id, res_id, res_name).
+
+    Returns:
+        A list of (chain_id, res_id) tuples for unique residues in the AtomArray.
+    """
+    attrs_to_include = ["chain_id", "res_id"]
+
+    # Add other attributes if specified
+    if include_resname:
+        attrs_to_include.append("res_name")
+
+    residue_starts = struc.get_residue_starts(atom_array, add_exclusive_stop=False)
+
+    # Construct the list of residue tuples
+    residue_tuples = [
+        tuple(getattr(atom_array, attr)[residue_start] for attr in attrs_to_include)
+        for residue_start in residue_starts
+    ]
+
+    return residue_tuples
+
+
+def get_differing_chain_ids(
+    atom_array_1: AtomArray, atom_array_2: AtomArray
+) -> list[str]:
+    """Get a list of chain IDs that differ between two AtomArrays.
+
+    Computes the symmetric difference between the chain IDs of the two AtomArrays. E.g.:
+
+        chain_ids_1 = ["A", "B", "C"]
+        chain_ids_2 = ["A", "D", "E"]
+        get_differing_chain_ids(chain_ids_1, chain_ids_2) -> ["B", "C", "D", "E"]
+
+    Args:
+        atom_array_1:
+            First AtomArray to compare.
+        atom_array_2:
+            Second AtomArray to compare.
+
+    Returns:
+        A list of chain IDs that differ between the two AtomArrays.
+    """
+    differing_chain_ids = np.setxor1d(
+        atom_array_1.chain_id,
+        atom_array_2.chain_id,
+    )
+
+    # Chain IDs in this codebase are often numerical so sort them nicely.
+    return sorted(differing_chain_ids, key=lambda x: x.rjust(5, "0"))
+
+
 def assign_renumbered_chain_ids(
     atom_array: AtomArray, store_original_as: str | None = None
 ) -> None:
