@@ -22,12 +22,11 @@ from openfold3.core.data.resources.residues import (
     MoleculeType,
     get_with_unknown_3_to_idx,
 )
-from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 
 
 def featurize_structure_af3(
     atom_array: AtomArray,
-    token_budget: int,
+    n_tokens: int,
     token_dim_index_map: dict[str, int],
     is_gt: bool,
 ) -> dict[str, torch.Tensor]:
@@ -39,8 +38,8 @@ def featurize_structure_af3(
     Args:
         atom_array (AtomArray):
             AtomArray of the target or ground truth structure.
-        token_budget (int):
-            Crop size.
+        n_tokens (int):
+            Number of tokens in the target structure.
         token_dim_index_map (dict[str, int]):
             Mapping of feature names to the index of the token dimension.
         is_gt (bool):
@@ -55,28 +54,19 @@ def featurize_structure_af3(
     token_starts = token_starts_with_stop[:-1]
 
     features = {}
+
     # Indexing
-    features["residue_index"] = torch.tensor(
-        atom_array.res_id[token_starts], dtype=torch.int32
-    )
     features["token_index"] = torch.tensor(
         atom_array.token_id[token_starts], dtype=torch.int32
     )
-    features["asym_id"] = torch.tensor(
-        atom_array.chain_id[token_starts].astype(int), dtype=torch.int32
-    )
-    features["entity_id"] = torch.tensor(
-        atom_array.entity_id[token_starts], dtype=torch.int32
-    )
-    features["sym_id"] = torch.tensor(
-        create_sym_id(entity_ids, atom_array, token_starts), dtype=torch.int32
-    )
+
     restype_index = torch.tensor(
         get_with_unknown_3_to_idx(atom_array.res_name[token_starts]), dtype=torch.int64
     )
     features["restype"] = encode_one_hot(
         restype_index, len(STANDARD_RESIDUES_WITH_GAP_3)
     ).to(torch.int32)
+
     features["is_protein"] = torch.tensor(
         atom_array.molecule_type_id[token_starts] == MoleculeType.PROTEIN,
         dtype=torch.int32,
@@ -94,9 +84,8 @@ def featurize_structure_af3(
         dtype=torch.int32,
     )
 
-    # Bonds
-    features["token_bonds"] = create_token_bonds(
-        atom_array, features["token_index"].numpy()
+    features["is_atomized"] = torch.tensor(
+        atom_array.is_atomized[token_starts], dtype=torch.int32
     )
 
     # Masks
@@ -113,20 +102,49 @@ def featurize_structure_af3(
         dtype=torch.int32,
     )
 
-    features["is_atomized"] = torch.tensor(
-        atom_array.is_atomized[token_starts], dtype=torch.int32
+    features["atom_mask"] = torch.ones(
+        features["num_atoms_per_token"].sum(), dtype=torch.float32
     )
 
-    features["atom_mask"] = broadcast_token_feat_to_atoms(
-        token_mask=features["token_mask"],
-        num_atoms_per_token=features["num_atoms_per_token"],
-        token_feat=features["token_mask"],
+    # Permutation alignment helper labels
+    features["mol_entity_id"] = torch.tensor(
+        atom_array.mol_entity_id[token_starts], dtype=torch.int32
+    )
+    features["mol_sym_id"] = torch.tensor(
+        atom_array.mol_sym_id[token_starts], dtype=torch.int32
+    )
+    features["mol_sym_token_index"] = torch.tensor(
+        atom_array.mol_sym_token_index[token_starts], dtype=torch.int32
+    )
+    features["mol_sym_component_id"] = torch.tensor(
+        atom_array.mol_sym_component_id[token_starts], dtype=torch.int32
     )
 
-    features["atom_to_token_index"] = create_atom_to_token_index(
-        token_mask=features["token_mask"],
-        num_atoms_per_token=features["num_atoms_per_token"],
-    )
+    if not is_gt:
+        # Indexing
+        features["residue_index"] = torch.tensor(
+            atom_array.res_id[token_starts], dtype=torch.int32
+        )
+        features["asym_id"] = torch.tensor(
+            atom_array.chain_id[token_starts].astype(int), dtype=torch.int32
+        )
+        features["entity_id"] = torch.tensor(
+            atom_array.entity_id[token_starts], dtype=torch.int32
+        )
+        features["sym_id"] = torch.tensor(
+            create_sym_id(entity_ids, atom_array, token_starts), dtype=torch.int32
+        )
+
+        # Bonds
+        features["token_bonds"] = create_token_bonds(
+            atom_array, features["token_index"].numpy()
+        )
+
+        # Atomization
+        features["atom_to_token_index"] = create_atom_to_token_index(
+            token_mask=features["token_mask"],
+            num_atoms_per_token=features["num_atoms_per_token"],
+        )
 
     # Ground-truth-specific features
     # TODO reorganize GT feature logic
@@ -141,16 +159,14 @@ def featurize_structure_af3(
         )
 
     # Pad and return
-    return pad_token_dim(
-        features, token_budget, token_dim_index_map=token_dim_index_map
-    )
+    return pad_token_dim(features, n_tokens, token_dim_index_map=token_dim_index_map)
 
 
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-feat")
 def featurize_target_gt_structure_af3(
-    atom_array_cropped: AtomArray,
+    atom_array: AtomArray,
     atom_array_gt: AtomArray,
-    token_budget: int,
+    n_tokens: int,
 ) -> dict[str, Union[torch.Tensor, dict[str, torch.Tensor]]]:
     """Wraps featurize_structure_af3 for creating target AND gt structure features.
 
@@ -159,12 +175,12 @@ def featurize_target_gt_structure_af3(
     subdictionary under the 'ground_truth' key.
 
     Args:
-        atom_array_cropped (AtomArray):
-            AtomArray of the target structure.
+        atom_array (AtomArray):
+            AtomArray of the target structure. Cropped for training datasets.
         atom_array_gt (AtomArray):
             AtomArray of the duplicate-expanded ground truth structure.
-        token_budget (int):
-            Crop size.
+        n_tokens (int):
+            Number of tokens in the target structure.
 
     Returns:
         dict[str, Union[torch.Tensor, dict[str, torch.Tensor]]]:
@@ -187,15 +203,24 @@ def featurize_target_gt_structure_af3(
         "is_atomized": [-1],
         "start_atom_index": [-1],
         "token_mask": [-1],
+        "mol_entity_id": [-1],
+        "mol_sym_id": [-1],
+        "mol_sym_token_index": [-1],
+        "mol_sym_component_id": [-1],
     }
     features_target = featurize_structure_af3(
-        atom_array_cropped,
-        token_budget,
+        atom_array=atom_array,
+        n_tokens=n_tokens,
         token_dim_index_map=token_dim_index_map,
         is_gt=False,
     )
+
+    # TODO: Make token budget adjustment automatic for is_gt=True
     features_gt = featurize_structure_af3(
-        atom_array_gt, token_budget, token_dim_index_map=token_dim_index_map, is_gt=True
+        atom_array=atom_array_gt,
+        n_tokens=len(np.unique(atom_array_gt.token_id)),
+        token_dim_index_map=token_dim_index_map,
+        is_gt=True,
     )
     features_target["ground_truth"] = features_gt
     return features_target

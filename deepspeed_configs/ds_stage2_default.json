@@ -12,11 +12,7 @@
   },
   "zero_optimization": {
     "stage": 2,
-    "offload_optimizer": {
-      "device": "cpu"
-    },
     "overlap_comm": true,
-    "round_robin_gradients": true,
     "contiguous_gradients": true
   }
 }

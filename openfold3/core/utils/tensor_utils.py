@@ -17,6 +17,7 @@ from functools import partial
 
 import torch
 import torch.nn as nn
+from biotite.structure import AtomArray
 
 
 def add(m1, m2, inplace):
@@ -58,6 +59,8 @@ def dict_multimap(fn, dicts):
         all_v = [d[k] for d in dicts]
         if isinstance(v, dict):
             new_dict[k] = dict_multimap(fn, all_v)
+        elif isinstance(v, (AtomArray, str)):
+            new_dict[k] = all_v
         else:
             new_dict[k] = fn(all_v)
 
@@ -110,16 +113,3 @@ def tree_map(fn, tree, leaf_type):
 
 
 tensor_tree_map = partial(tree_map, leaf_type=torch.Tensor)
-
-
-def sparsify_tensor(
-    x: torch.Tensor, mask: torch.Tensor, block: int, batch_dims: tuple[int]
-) -> torch.Tensor:
-    """Convert a regular tensor to sparse format"""
-    block_bias = (
-        x.to_sparse_bsr((block, block)).values().reshape(*batch_dims, -1, block, block)
-    )
-    ret = torch.index_select(
-        block_bias, dim=-3, index=torch.nonzero(mask.flatten()).squeeze()
-    )
-    return ret

@@ -17,12 +17,12 @@ and highlight where you currently are in the process:
     preprocessed data -> parsed/processed data -> FeatureDict
 3. SingleDataset [YOU ARE HERE]
     datapoints -> __getitem__ -> FeatureDict
-4. StochasticSamplerDataset (optional)
+4. SamplerDataset (optional)
     Sequence[SingleDataset] -> __getitem__ -> FeatureDict
 5. DataLoader
     FeatureDict -> batched data
 6. DataModule
-    SingleDataset/StochasticSamplerDataset -> DataLoader
+    SingleDataset/SamplerDataset -> DataLoader
 7. ModelRunner
     batched data -> model
 """
@@ -78,6 +78,8 @@ class SingleDataset(ABC, Dataset):
         if not self.__class__._registered:
             raise DatasetNotRegisteredError(self.__class__.__name__)
 
+        self.datapoint_index = None
+
     def __post_init__(self) -> None:
         if self.dataset_cache is None:
             raise ValueError(
@@ -95,11 +97,15 @@ class SingleDataset(ABC, Dataset):
         """Returns the name of the class."""
         return self.__class__.__name__
 
+    def set_current_datapoint_index(self, index: int) -> None:
+        """Set the current datapoint index for logging purposes."""
+        self.datapoint_index = index
+
     @abstractmethod
     def __getitem__(self, index: int) -> dict[str, Union[torch.Tensor]]:
         """Getitem of a specific SingleDataset class.
 
-        Called by the DataLoader directly or indirectly via the StochasticSamplerDataset
+        Called by the DataLoader directly or indirectly via the SamplerDataset
         getitem method and indexes into the data cache. Implements a series of steps to
         process the raw data into intermediate arrays via pipelines from
         pipelines.sample_processing and tensorize these arrays to create tensors for the

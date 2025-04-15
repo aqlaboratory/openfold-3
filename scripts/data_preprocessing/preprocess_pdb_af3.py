@@ -7,6 +7,7 @@ import click
 from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif_dir_af3
 
 
+# TODO: rename to make it more clear this script is for metadata cache creation
 @click.command()
 @click.option(
     "--cif-dir",
@@ -52,13 +53,19 @@ from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif
 )
 @click.option(
     "--output-format",
-    type=click.Choice(["cif", "bcif", "pkl"]),
+    type=click.Choice(["npz", "cif", "bcif", "pkl"]),
     multiple=True,
     required=True,
     help=(
         "What output formats to write the structures to. "
-        "Can be 'cif', 'bcif', and 'pkl'."
+        "Can be 'npz', 'cif', 'bcif', and 'pkl'."
     ),
+)
+@click.option(
+    "--random-seed",
+    type=int,
+    default=None,
+    help="Seed for reproducibility in large-assembly subsetting.",
 )
 @click.option(
     "--log-level",
@@ -76,10 +83,11 @@ def main(
     cif_dir: Path,
     ccd_path: Path,
     out_dir: Path,
-    output_format: list[Literal["cif", "bcif", "pkl"]],
+    output_format: list[Literal["npz", "cif", "bcif", "pkl"]],
     max_polymer_chains: int = 300,
     num_workers: int | None = None,
     chunksize: int = 50,
+    random_seed: int | None = None,
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
     early_stop: int | None = None,
 ) -> None:
@@ -101,6 +109,7 @@ def main(
         num_workers=num_workers,
         chunksize=chunksize,
         output_formats=output_format,
+        random_seed=random_seed,
         early_stop=early_stop,
     )
 

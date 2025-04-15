@@ -657,7 +657,7 @@ def convert_deprecated_v1_keys(state_dict):
         if template_match:
             prefix = template_match.group(1)
             new_key = (
-                f'{prefix if prefix else ""}template_embedder.{template_match.group(4)}'
+                f"{prefix if prefix else ''}template_embedder.{template_match.group(4)}"
             )
 
         converted_state_dict[new_key] = value

@@ -7,17 +7,26 @@ Supported use cases:
 
 """
 
+import bisect
 import logging
-import pickle as pkl
 import traceback
+from collections.abc import Iterable, Sequence
 from pathlib import Path
+from typing import Any, TypeVar
 
 import biotite.structure as struc
+import biotite.structure.io as strucio
 import numpy as np
+import pandas as pd
 import torch
-from biotite.structure import AtomArray
+from torch.utils.data import Dataset, IterableDataset
+from typing_extensions import deprecated
 
-from openfold3.core.data.framework.single_datasets.pdb import WeightedPDBDataset
+from openfold3.core.data.framework.data_module import DatasetMode, MultiDatasetConfig
+from openfold3.core.data.framework.single_datasets.abstract_single import (
+    DATASET_REGISTRY,
+)
+from openfold3.core.data.io.structure.atom_array import write_atomarray_to_npz
 from openfold3.core.data.primitives.quality_control.asserts import ENSEMBLED_ASSERTS
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     F_NAME_ORDER,
@@ -33,12 +42,18 @@ from openfold3.core.data.resources.residues import (
 )
 
 
-class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
-    """Custom PDB dataset class with logging in the __getitem__."""
+def add_logging_to_dataset(dataset_cls):
+    class LoggedDataset(LoggingMixin, dataset_cls):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.wrapped_dataset_class = dataset_cls.__name__
 
+    return LoggedDataset
+
+
+class LoggingMixin:
     def __init__(
         self,
-        *args,
         run_asserts=None,
         save_features=None,
         save_atom_array=None,
@@ -47,9 +62,10 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         log_runtimes=None,
         log_memory=None,
         subset_to_examples=None,
+        no_preferred_chain_or_interface=None,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
         self.run_asserts = run_asserts
         self.save_features = save_features
         self.save_atom_array = save_atom_array
@@ -59,6 +75,9 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         self.log_memory = log_memory
         if subset_to_examples is not None and len(subset_to_examples) > 0:
             self.subset_examples(subset_to_examples)
+
+        if no_preferred_chain_or_interface:
+            self.remove_preferred_chain_or_interface()
         """
         The following attributes are set in the worker_init_function_with_logging
         on a per-worker basis:
@@ -69,6 +88,9 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
          - mem_token
          - mem_log_token
          - mem_func_token
+        The following attributes are set on a per-getitem-call basis inside the getitem
+        of the ConcatDataset or StochasticSamplerDataset:
+         - datapoint_idx
         """
 
     def __getitem__(
@@ -79,7 +101,11 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         # Get PDB ID from the datapoint cache and the preferred chain/interface
         datapoint = self.datapoint_cache.iloc[index]
         pdb_id = datapoint["pdb_id"]
-        preferred_chain_or_interface = datapoint["datapoint"]
+        preferred_chain_or_interface = datapoint.get(
+            "preferred_chain_or_interface", None
+        )
+        datapoint_probability = datapoint.get("datapoint_probabilities", None)
+        n_clust = datapoint.get("n_clust", None)
 
         # Set context variables and containers
         PDB_ID.set(pdb_id)
@@ -100,6 +126,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 pdb_id=pdb_id,
                 preferred_chain_or_interface=preferred_chain_or_interface,
                 return_atom_arrays=True,
+                return_crop_strategy=True,
             )
 
             # Fetch recorded runtimes
@@ -111,11 +138,12 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             # Save extra data
             if self.save_statistics:
                 self.save_data_statistics(
+                    index,
                     pdb_id,
                     preferred_chain_or_interface,
-                    sample_data["features"],
-                    sample_data["atom_array_cropped"],
-                    sample_data["atom_array"],
+                    datapoint_probability,
+                    n_clust,
+                    sample_data,
                     runtimes,
                 )
 
@@ -151,7 +179,7 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                     pdb_id,
                     preferred_chain_or_interface,
                     sample_data["features"],
-                    self.token_budget,
+                    self.n_tokens,
                     self.template.n_templates,
                 )
 
@@ -263,6 +291,11 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 
     @staticmethod
     def stringify_chain_interface(preferred_chain_or_interface: str | list[str]) -> str:
+        preferred_chain_or_interface = (
+            "nan"
+            if preferred_chain_or_interface is None
+            else preferred_chain_or_interface
+        )
         return (
             "-".join(preferred_chain_or_interface)
             if isinstance(preferred_chain_or_interface, list)
@@ -277,10 +310,13 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             preferred_chain_or_interface
         )
         log_output_feat = self.get_worker_path(
-            subdirs=[pdb_id], fname=f"{chain_interface_str}_features.pkl"
+            subdirs=[pdb_id], fname=f"{chain_interface_str}_features.pt"
         )
         log_output_aa = self.get_worker_path(
-            subdirs=[pdb_id], fname=f"{chain_interface_str}_atom_array.pkl"
+            subdirs=[pdb_id], fname=f"{chain_interface_str}_atom_array.npz"
+        )
+        log_output_cif = self.get_worker_path(
+            subdirs=[pdb_id], fname=f"{chain_interface_str}_structure.cif"
         )
 
         if self.save_features is not False:
@@ -289,11 +325,11 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                 log_output_feat,
             )
         if (self.save_atom_array is not False) & (atom_array_cropped is not None):
-            with open(
-                log_output_aa,
-                "wb",
-            ) as f:
-                pkl.dump(atom_array_cropped, f)
+            write_atomarray_to_npz(atom_array_cropped, log_output_aa)
+            strucio.save_structure(
+                log_output_cif,
+                atom_array_cropped,
+            )
 
     def save_full_traceback_for_sample(self, e, pdb_id, preferred_chain_or_interface):
         """Saves the full traceback to for failed samples."""
@@ -336,11 +372,12 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
 
     def save_data_statistics(
         self,
+        index: int,
         pdb_id: str,
         preferred_chain_or_interface: str | list[str],
-        features: dict[str, torch.Tensor],
-        atom_array_cropped: AtomArray | None,
-        atom_array: AtomArray,
+        datapoint_probability: float | None,
+        n_clust: int | None,
+        sample_data: dict[str, Any],
         runtimes: np.ndarray[str],
     ):
         """Saves additional data statistics.
@@ -353,6 +390,12 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         # TODO: add logic to jointly update the all_headers list in the logging_datasets
         # and the save_data_statistics method in the WeightedPDBDatasetWithLogging class
         if self.save_statistics:
+            # Unpack sample_data
+            features = sample_data["features"]
+            atom_array_cropped = sample_data["atom_array_cropped"]
+            atom_array = sample_data["atom_array"]
+            crop_strategy = sample_data["crop_strategy"]
+
             # Set worker output directory
             chain_interface_str = self.stringify_chain_interface(
                 preferred_chain_or_interface
@@ -362,7 +405,18 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
             )
 
             # Init line:
-            line = f"{pdb_id}\t{chain_interface_str}\t"
+            line = "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t".format(
+                self.logger.extra["worker_id"],
+                self.datapoint_index,
+                index,
+                self.wrapped_dataset_class,
+                self.name,
+                pdb_id,
+                chain_interface_str,
+                datapoint_probability,
+                n_clust,
+                crop_strategy,
+            )
 
             # Get per-molecule type atom arrays/residue starts
             atom_array_protein = atom_array[
@@ -526,8 +580,12 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
                     statistics += ["NaN"]
 
             # Entry metadata from dataset cache
-            statistics += [self.dataset_cache.structure_data[pdb_id].resolution]
-            statistics += [self.dataset_cache.structure_data[pdb_id].release_date]
+            statistics += [
+                getattr(self.dataset_cache.structure_data[pdb_id], "resolution", None)
+            ]
+            statistics += [
+                getattr(self.dataset_cache.structure_data[pdb_id], "release_date", None)
+            ]
 
             # sub-pipeline runtimes
             statistics += list(runtimes)
@@ -630,3 +688,181 @@ class WeightedPDBDatasetWithLogging(WeightedPDBDataset):
         self.datapoint_cache = self.datapoint_cache[
             self.datapoint_cache["pdb_id"].isin(subset_to_examples)
         ]
+
+    def remove_preferred_chain_or_interface(self) -> None:
+        """Removes a preferred chain or interface from the datapoint_cache."""
+
+        # Remove from datapoint_cache
+        unique_pdb_ids = sorted(set(self.datapoint_cache["pdb_id"]))
+        self.datapoint_cache = pd.DataFrame(
+            {
+                "pdb_id": unique_pdb_ids,
+                "datapoint": [None] * len(unique_pdb_ids),
+                "weight": [1] * len(unique_pdb_ids),
+            }
+        )
+
+
+_T_co = TypeVar("_T_co", covariant=True)
+
+
+class ConcatDataset(Dataset[_T_co]):
+    """Dataset as a concatenation of multiple datasets.
+
+    Taken from PyTorch's ConcatDataset implementation: https://github.com/pytorch/pytorch/blob/df458be4e5e96ce009ae1920da09a4095b34682e/torch/utils/data/dataset.py#L304
+    for extendable class definition.
+
+    Args:
+        datasets (sequence): List of datasets to be concatenated
+    """
+
+    datasets: list[Dataset[_T_co]]
+    cumulative_sizes: list[int]
+
+    @staticmethod
+    def cumsum(sequence):
+        r, s = [], 0
+        for e in sequence:
+            l = len(e)
+            r.append(l + s)
+            s += l
+        return r
+
+    def __init__(self, datasets: Iterable[Dataset]) -> None:
+        super().__init__()
+        self.datasets = list(datasets)
+        assert len(self.datasets) > 0, "datasets should not be an empty iterable"  # type: ignore[arg-type]
+        for d in self.datasets:
+            assert not isinstance(d, IterableDataset), (
+                "ConcatDataset does not support IterableDataset"
+            )
+        self.cumulative_sizes = self.cumsum(self.datasets)
+
+    def __len__(self):
+        return self.cumulative_sizes[-1]
+
+    def __getitem__(self, idx):
+        if idx < 0:
+            if -idx > len(self):
+                raise ValueError(
+                    "absolute value of index should not exceed dataset length"
+                )
+            idx = len(self) + idx
+        dataset_idx = bisect.bisect_right(self.cumulative_sizes, idx)
+        if dataset_idx == 0:
+            sample_idx = idx
+        else:
+            sample_idx = idx - self.cumulative_sizes[dataset_idx - 1]
+
+        # Set datapoint index in sampled dataset - used for logging in the treadmill
+        self.datasets[dataset_idx].datapoint_idx = idx
+
+        return self.datasets[dataset_idx][sample_idx]
+
+    @property
+    @deprecated(
+        "`cummulative_sizes` attribute is renamed to `cumulative_sizes`",
+        category=FutureWarning,
+    )
+    def cummulative_sizes(self):
+        return self.cumulative_sizes
+
+    def get_worker_path(self, subdirs: list[str] | None, fname: str) -> str:
+        """Get the worker-specific path for logging memory.
+
+        Note: this function only works if individual datasets passed to the
+        StochasticSamplerDataset were wrapped with the LoggingMixin.
+
+        Args:
+            subdirs (list[str] | None):
+                List of subdirectories to append to the path.
+            fname (str):
+                Filename to append to the path.
+        """
+        # Get the dataset-specific path
+        dataset_path = self.datasets[0].get_worker_path(subdirs=subdirs, fname=fname)
+
+        return dataset_path
+
+
+def init_datasets_with_logging(
+    multi_dataset_config: MultiDatasetConfig,
+    type_to_init: DatasetMode,
+    run_asserts: bool,
+    save_features: bool,
+    save_atom_array: bool,
+    save_full_traceback: bool,
+    save_statistics: bool,
+    log_runtimes: bool,
+    log_memory: bool,
+    subset_to_examples: list[str],
+    no_preferred_chain_or_interface: bool,
+) -> Sequence[Dataset]:
+    """Adds logging to the dataset classes and initializes them.
+
+    Same as DataModule.init_datasets() with added logging support
+    for each individual dataset.
+
+    Args:
+        multi_dataset_config (MultiDatasetConfig):
+            Nested dataset config dicts.
+        type_to_init (DatasetMode):
+            Dataset mode to initialize.
+        run_asserts (bool):
+            Whether to run asserts.
+        save_features (bool):
+            Whether to save the featuredict upon error.
+        save_atom_array (bool):
+            Whether to save the atom array upon error.
+        save_full_traceback (bool):
+            Whether to save the full traceback upon error.
+        save_statistics (bool):
+            Whether to save additional data statistics.
+        log_runtimes (bool):
+            Whether to log runtimes.
+        log_memory (bool):
+            Whether to log memory usage.
+        subset_to_examples (list[str]):
+            List of PDB IDs to subset the dataset_cache and datapoint_cache to.
+        no_preferred_chain_or_interface (bool):
+            Whether to remove the preferred chain or interface from the datapoint_cache.
+
+    Returns:
+        Sequence[Dataset]:
+            List of initialized datasets.
+    """
+    # Note that the dataset config already contains the paths!
+    if type_to_init is None:
+        types_to_init = [
+            DatasetMode.train,
+            DatasetMode.validation,
+            DatasetMode.test,
+            DatasetMode.prediction,
+        ]
+    else:
+        types_to_init = [type_to_init]
+    # TODO: add explicit for loop to make logic clearer
+    datasets = [
+        (
+            add_logging_to_dataset(DATASET_REGISTRY[dataset_class])(
+                run_asserts=run_asserts,
+                save_features=save_features,
+                save_atom_array=save_atom_array,
+                save_full_traceback=save_full_traceback,
+                save_statistics=save_statistics,
+                log_runtimes=log_runtimes,
+                log_memory=log_memory,
+                subset_to_examples=subset_to_examples,
+                no_preferred_chain_or_interface=no_preferred_chain_or_interface,
+                dataset_config=dataset_config,
+            )
+        )
+        for dataset_class, dataset_config, dataset_type in zip(
+            multi_dataset_config.classes,
+            multi_dataset_config.configs,
+            multi_dataset_config.modes,
+        )
+        if dataset_type in types_to_init
+    ]
+
+    return datasets

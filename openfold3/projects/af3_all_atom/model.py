@@ -38,8 +38,9 @@ from openfold3.core.model.structure.diffusion_module import (
     centre_random_augmentation,
     create_noise_schedule,
 )
-
-# from openfold3.core.utils.multi_chain_permutation import multi_chain_permutation_align
+from openfold3.core.utils.permutation_alignment import (
+    safe_multi_chain_permutation_alignment,
+)
 from openfold3.core.utils.tensor_utils import add, tensor_tree_map
 
 
@@ -142,7 +143,7 @@ class AlphaFold3(nn.Module):
         s_input, s_init, z_init = self.input_embedder(
             batch=batch,
             inplace_safe=inplace_safe,
-            use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+            use_high_precision_attention=True,
         )
 
         # s: [*, N_token, C_s]
@@ -264,12 +265,20 @@ class AlphaFold3(nn.Module):
             Output dictionary containing the predicted trunk embeddings,
             all-atom positions, and confidence/distogram head logits
         """
-        # Compute atom positions
+        # Determine number of rollout steps and samples depending on training/eval mode
         no_rollout_steps = (
             self.shared.diffusion.no_mini_rollout_steps
             if self.training
             else self.shared.diffusion.no_full_rollout_steps
         )
+
+        no_rollout_samples = (
+            self.shared.diffusion.no_mini_rollout_samples
+            if self.training
+            else self.shared.diffusion.no_full_rollout_samples
+        )
+
+        # Compute atom positions
         with torch.no_grad():
             noise_schedule = create_noise_schedule(
                 no_rollout_steps=no_rollout_steps,
@@ -284,6 +293,7 @@ class AlphaFold3(nn.Module):
                 si_trunk=si_trunk,
                 zij_trunk=zij_trunk,
                 noise_schedule=noise_schedule,
+                no_rollout_samples=no_rollout_samples,
                 chunk_size=self.settings.chunk_size,
                 use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
                 use_lma=self.settings.use_lma,
@@ -339,13 +349,6 @@ class AlphaFold3(nn.Module):
                 "atom_positions_diffusion" ([*, N_samples, N_atom, 3]):
                     Predicted atom positions
         """
-        # Expand sampling dimension
-        # Is this ideal?
-        si_input = si_input.unsqueeze(1)
-        si_trunk = si_trunk.unsqueeze(1)
-        zij_trunk = zij_trunk.unsqueeze(1)
-
-        batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
         xl_gt = batch["ground_truth"]["atom_positions"]
         atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
 
@@ -380,8 +383,7 @@ class AlphaFold3(nn.Module):
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
             chunk_size=self.settings.chunk_size,
-            use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-            use_lma=self.settings.use_lma,
+            use_high_precision_attention=True,
             _mask_trans=True,
         )
 
@@ -390,12 +392,9 @@ class AlphaFold3(nn.Module):
             "atom_positions_diffusion": xl,
         }
 
-        # Remove sample dimension
-        tensor_tree_map(lambda t: t.squeeze(1), batch)
-
         return output
 
-    def forward(self, batch: dict) -> [dict, dict]:
+    def forward(self, batch: dict) -> tuple[dict, dict]:
         """
         Args:
             batch:
@@ -555,6 +554,18 @@ class AlphaFold3(nn.Module):
             batch=batch, num_cycles=num_cycles, inplace_safe=inplace_safe
         )
 
+        # Expand sampling dimension for rollout and diffusion
+        si_input = si_input.unsqueeze(1)
+        si_trunk = si_trunk.unsqueeze(1)
+        zij_trunk = zij_trunk.unsqueeze(1)
+
+        # Expand sampling dimension for batch features
+        # Exclude ref_space_uid_to_perm feature since this
+        # does not have a proper batch dimension
+        ref_space_uid_to_perm = batch.pop("ref_space_uid_to_perm", None)
+        batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
+        batch["ref_space_uid_to_perm"] = ref_space_uid_to_perm
+
         # Mini rollout
         rollout_output = self._rollout(
             batch=batch,
@@ -566,16 +577,17 @@ class AlphaFold3(nn.Module):
 
         output.update(rollout_output)
 
-        if self.training:  # noqa: SIM102
-            # TODO: Add multi-chain permutation alignment here
-            #  Permutation code needs to be updated first
-            #  Needs to happen before losses and training diffusion step
-            #  New batch will include the cropped and assigned GT dict
-            # ground_truth = batch.pop("ground_truth")
-            # batch = multi_chain_permutation_align(
-            #     out=output, features=batch, ground_truth=ground_truth
-            # )
+        # Apply permutation alignment for training and validation
+        if "ground_truth" in batch:
+            # Update the ground-truth coordinates/mask in-place with the correct
+            # permutation (and optionally disable losses in case of a critical error)
+            with torch.no_grad():
+                safe_multi_chain_permutation_alignment(
+                    batch=batch,
+                    atom_positions_predicted=output["atom_positions_predicted"],
+                )
 
+        if self.training:  # noqa: SIM102
             # Run training step (if necessary)
             if self.settings.diffusion_training_enabled:
                 if torch.is_autocast_enabled():

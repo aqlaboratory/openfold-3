@@ -77,35 +77,43 @@ TEMPLATE_PROCESS_LOGGER = contextvars.ContextVar(
 # decorated with log_runtime_memory
 F_NAME_ORDER = [
     # top level function in the getitem
-    "runtime-create-all-features",
+    "runtime-create-all-features",  #
     # 2nd-level functions
-    "runtime-create-target-structure-features",
-    "runtime-create-msa-features",
+    "runtime-create-structure-features",  #
+    "runtime-create-msa-features",  #
     "runtime-create-template-features",
-    "runtime-create-ref-conf-features",
     # 3rd-level functions
-    "runtime-target-structure-proc",
-    "runtime-target-structure-feat",
+    "runtime-target-structure-proc",  #
+    "runtime-ref-conf-proc",  #
+    "runtime-separate-cropped-gt",  #
+    "runtime-add-token-pos",  #
+    "runtime-target-structure-feat",  #
+    "runtime-ref-conf-feat",  #
     "runtime-msa-proc",
     "runtime-msa-feat",
     "runtime-template-proc",
     "runtime-template-feat",
-    "runtime-ref-conf-proc",
-    "runtime-ref-conf-feat",
     # 4th-level functions
-    "runtime-target-structure-proc-parse",
-    "runtime-target-structure-proc-token",
-    "runtime-target-structure-proc-crop",
-    "runtime-target-structure-proc-expand",
+    # - structure
+    "runtime-target-structure-proc-parse",  #
+    "runtime-target-structure-proc-comp-id-assign",  #
+    "runtime-target-structure-proc-filter-bonds",  #
+    "runtime-target-structure-proc-token",  #
+    "runtime-target-structure-proc-crop",  #
+    "runtime-target-structure-proc-permutation-labels",  #
+    "runtime-target-structure-proc-unqual-atoms",  #
+    # - ref conf
+    "runtime-ref-conf-proc-fetch",  #
+    # - msa
     "runtime-msa-proc-parse",
     "runtime-msa-proc-create-query",
     "runtime-msa-proc-homo-mono",
     "runtime-msa-proc-create-paired",
     "runtime-msa-proc-create-main",
     "runtime-msa-feat-precursor",
+    # - template
     "runtime-template-proc-sample",
     "runtime-template-proc-align",
-    "runtime-ref-conf-proc-fetch",
     # 5th-level functions
     "runtime-msa-feat-precursor-rowcount",
     "runtime-msa-feat-precursor-profile-del-mean",
@@ -126,13 +134,21 @@ within other functions are indented. Starred functions are called multiple times
 single context. Double-starred functions are conditionally ran.
 
 runtime-create-all-features
-    runtime-create-target-structure-features
+    runtime-create-structure-features
         runtime-target-structure-proc
             runtime-target-structure-proc-parse
+            runtime-target-structure-proc-comp-id-assign
+            runtime-target-structure-proc-filter-bonds
             runtime-target-structure-proc-token
             runtime-target-structure-proc-crop
-            runtime-target-structure-proc-expand
+            runtime-target-structure-proc-permutation-labels
+            runtime-target-structure-proc-unqual-atoms
+        runtime-ref-conf-proc
+            runtime-ref-conf-proc-fetch (* per reference conformer)
+        runtime-separate-cropped-gt
+        runtime-add-token-pos
         runtime-target-structure-feat
+        runtime-ref-conf-feat
     runtime-create-msa-features
         runtime-msa-proc
             runtime-msa-proc-parse
@@ -156,10 +172,6 @@ runtime-create-all-features
                     runtime-template-proc-align-clean (* per chain per template, **)
                 runtime-template-proc-align-map" (* per chain per template)
         runtime-template-feat
-    runtime-create-ref-conf-features
-        runtime-ref-conf-proc
-            runtime-ref-conf-proc-fetch (* per reference conformer)
-        runtime-ref-conf-feat
 """
 
 

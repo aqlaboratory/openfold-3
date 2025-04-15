@@ -56,12 +56,11 @@ class TestDiffusionTransformer(unittest.TestCase):
         a = torch.rand((batch_size, n_res, c_a))
         s = torch.rand((batch_size, n_res, c_s))
         z = torch.rand((batch_size, n_res, n_res, c_z))
-        beta = torch.rand((batch_size, n_res, n_res))
         single_mask = torch.randint(0, 2, size=(batch_size, n_res))
 
         shape_a_before = a.shape
 
-        a = dt(a, s, z, mask=single_mask, beta=beta)
+        a = dt(a, s, z, mask=single_mask)
 
         self.assertTrue(a.shape == shape_a_before)
 

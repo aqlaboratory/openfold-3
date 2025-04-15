@@ -5,6 +5,8 @@ NUM_ATOMS = "num atoms placeholder"
 NUM_MSA_SEQ = "msa placeholder"
 NUM_TEMPLATES = "num templates placeholder"
 
+
+# TODO: Add new permutation features
 feature_dict = mlc.ConfigDict(
     {
         "feat": {
@@ -18,6 +20,7 @@ feature_dict = mlc.ConfigDict(
             "is_rna": [NUM_TOKENS],
             "is_dna": [NUM_TOKENS],
             "is_ligand": [NUM_TOKENS],
+            "is_atomized": [NUM_TOKENS],
             "ref_pos": [NUM_ATOMS, 3],
             "ref_mask": [NUM_ATOMS],
             "ref_element": [NUM_ATOMS, 128],
@@ -43,18 +46,30 @@ feature_dict = mlc.ConfigDict(
             "atom_to_token_index": [NUM_ATOMS],
             "msa_mask": [NUM_MSA_SEQ, NUM_TOKENS],
             "num_paired_seqs": [],
+            # Permutation alignment features
+            "mol_entity_id": [NUM_TOKENS],
+            "mol_sym_id": [NUM_TOKENS],
+            "mol_sym_token_index": [NUM_TOKENS],
+            "mol_sym_component_id": [NUM_TOKENS],
             "ground_truth": {
-                "residue_index": [NUM_TOKENS],
                 "token_index": [NUM_TOKENS],
-                "asym_id": [NUM_TOKENS],
-                "entity_id": [NUM_TOKENS],
+                "restype": [NUM_TOKENS, 32],
                 "is_protein": [NUM_TOKENS],
+                "is_rna": [NUM_TOKENS],
+                "is_dna": [NUM_TOKENS],
                 "is_ligand": [NUM_TOKENS],
-                "token_bonds": [NUM_TOKENS, NUM_TOKENS],
-                "num_atoms_per_token": [NUM_TOKENS],
+                "is_atomized": [NUM_TOKENS],
                 "token_mask": [NUM_TOKENS],
+                "num_atoms_per_token": [NUM_TOKENS],
+                "start_atom_index": [NUM_TOKENS],
+                "atom_mask": [NUM_ATOMS],
                 "atom_positions": [NUM_ATOMS, 3],
                 "atom_resolved_mask": [NUM_ATOMS],
+                # Permutation alignment features
+                "mol_entity_id": [NUM_TOKENS],
+                "mol_sym_id": [NUM_TOKENS],
+                "mol_sym_token_index": [NUM_TOKENS],
+                "mol_sym_component_id": [NUM_TOKENS],
             },
             "loss_weights": {
                 "bond": [],
@@ -65,6 +80,7 @@ feature_dict = mlc.ConfigDict(
                 "experimentally_resolved": [],
                 "pae": [],
                 "distogram": [],
+                "disable_non_protein_diffusion_weights": [],
             },
         },
     }

@@ -18,8 +18,6 @@ Embedders for input features. Includes InputEmbedders for monomer, multimer, sol
 and all-atom models. Also includes the RecyclingEmbedder and ExtraMSAEmbedder.
 """
 
-from typing import Optional
-
 import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
@@ -495,7 +493,7 @@ class InputEmbedderAllAtom(nn.Module):
         self,
         batch: dict,
         inplace_safe: bool = False,
-        use_deepspeed_evo_attention: Optional[bool] = False,
+        use_high_precision_attention: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -503,6 +501,8 @@ class InputEmbedderAllAtom(nn.Module):
                 Input feature dictionary
             inplace_safe:
                 Whether inplace operations can be performed
+            use_high_precision_attention:
+                Whether to run attention in high precision
         Returns:
             s_input:
                 [*, N_token, C_s_input] Single (input) representation
@@ -510,13 +510,11 @@ class InputEmbedderAllAtom(nn.Module):
                 [*, N_token, C_s] Single representation
             z:
                 [*, N_token, N_token, C_z] Pair representation
-            use_deepspeed_evo_attention:
-                Whether to use DeepSpeed Evo Attention kernel
         """
         a, _, _, _ = self.atom_attn_enc(
             batch=batch,
             atom_mask=batch["atom_mask"],
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_high_precision_attention=use_high_precision_attention,
         )
 
         # [*, N_token, C_s_input]

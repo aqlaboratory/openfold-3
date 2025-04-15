@@ -5,6 +5,7 @@ from enum import IntEnum
 import numpy as np
 
 
+# TODO: remove unused variables from this module
 # Molecule type used in tokenization
 class MoleculeType(IntEnum):
     PROTEIN = 0
@@ -145,7 +146,8 @@ RESTPYE_3TO1 = {v: k for k, v in RESTYPE_1TO3.items()}
 
 # One-hot residue mappings
 RESTYPE_INDEX_3 = {k: v for v, k in enumerate(STANDARD_RESIDUES_WITH_GAP_3)}
-RESTYPE_INDEX_1 = {k: v for v, k in enumerate(STANDARD_RESIDUES_WITH_GAP_1)}
+# No RESTYPE_INDEX_1 as we need to differentiate between overlapping 1-letter codes
+# for different molecule types
 
 # Molecule-type to residue mappings
 MOLECULE_TYPE_TO_RESIDUES_3 = {
@@ -162,11 +164,11 @@ MOLECULE_TYPE_TO_RESIDUES_1 = {
 }
 
 
-def get_mol_residue_index_mappings() -> tuple[dict, dict, dict]:
+def get_mol_residue_index_mappings() -> tuple[dict, dict, dict, dict]:
     """Get mappings from molecule type to residue indices.
 
     Returns:
-        tuple[dict, dict, dict]:
+        tuple[dict, dict, dict, dict]:
             Tuple containing
                 - Mapping for each molecule type from the molecule alphabet to the full
                   shared alphabet.
@@ -174,6 +176,8 @@ def get_mol_residue_index_mappings() -> tuple[dict, dict, dict]:
                   sorted 3-letter molecule alphabet.
                 - Mapping for each molecule type from the 1-letter molecule alphabet the
                   sorted 1-letter molecule alphabet.
+                - Mapping for each molecule type from the molecule alphabet to the full
+                    shared alphabet.
     """
     _prot_a_len = len(STANDARD_PROTEIN_RESIDUES_1)
     _rna_a_len = len(STANDARD_RNA_RESIDUES)
@@ -211,7 +215,14 @@ def get_mol_residue_index_mappings() -> tuple[dict, dict, dict]:
             ]
         ),
     }
-
+    molecule_type_to_residues_pos_map = {}
+    for moltype in MoleculeType:
+        residue_pos_map = {}
+        for residue, residue_idx in zip(
+            MOLECULE_TYPE_TO_RESIDUES_1[moltype], molecule_type_to_residues_pos[moltype]
+        ):
+            residue_pos_map[residue] = residue_idx
+        molecule_type_to_residues_pos_map[moltype] = residue_pos_map
     molecule_type_to_argsort_residues_3 = {
         k: np.argsort(v) for k, v in MOLECULE_TYPE_TO_RESIDUES_3.items()
     }
@@ -223,6 +234,7 @@ def get_mol_residue_index_mappings() -> tuple[dict, dict, dict]:
         molecule_type_to_residues_pos,
         molecule_type_to_argsort_residues_3,
         molecule_type_to_argsort_residues_1,
+        molecule_type_to_residues_pos_map,
     )
 
 
@@ -230,6 +242,7 @@ def get_mol_residue_index_mappings() -> tuple[dict, dict, dict]:
     MOLECULE_TYPE_TO_RESIDUES_POS,
     MOLECULE_TYPE_TO_ARGSORT_RESIDUES_3,
     MOLECULE_TYPE_TO_ARGSORT_RESIDUES_1,
+    MOLECULE_TYPE_TO_RESIDUES_POS_MAP,
 ) = get_mol_residue_index_mappings()
 MOLECULE_TYPE_TO_UKNOWN_RESIDUES_3 = {
     MoleculeType.PROTEIN: "UNK",
@@ -260,19 +273,47 @@ def get_with_unknown_3_to_idx(key: str) -> int:
     return RESTYPE_INDEX_3.get(key, RESTYPE_INDEX_3["UNK"])
 
 
-@np.vectorize
-def get_with_unknown_1_to_idx(key: str) -> int:
-    """Wraps a RESTYPE_INDEX_1 dictionary lookup with a default value of "UNK".
+# TODO: make a reusable primitive type for this function
+def map_str_array_to_idx_array(
+    msa_array: np.ndarray[str], molecule_type: MoleculeType
+) -> np.ndarray[int]:
+    """Creates an integer MSA array from a 1-character string MSA array.
+
+    The mapping is done onto the global molecule alphabet of all molecule types,
+    STANDARD_RESIDUES_WITH_GAP_1. Given that some characters in this alphabet are
+    repeated for different molecule types (A, C, G, N shared by RNA and PROTEIN),
+    the molecule_type argument is used to determine the correct mapping.
 
     Args:
-        key (str):
-            Key to look up in the dictionary.
+        msa_array (np.ndarray[str]):
+            String MSA array.
+        molecule_type (MoleculeType):
+            The molecule type of the MSA.
 
     Returns:
-        int:
-            Index of residue type.
+        np.ndarray[int]:
+            Integer MSA array.
     """
-    return RESTYPE_INDEX_1.get(key, RESTYPE_INDEX_1["X"])
+    # Create container with full gap indices
+    msa_idx = np.full(
+        msa_array.shape,
+        np.where(np.array(STANDARD_RESIDUES_WITH_GAP_1) == "-")[0].item(),
+        dtype=MOLECULE_TYPE_TO_RESIDUES_POS[molecule_type].dtype,
+    )
+    # For each residue in the molecule type's alphabet, replace the corresponding
+    # positions with their index
+    for residue, idx in MOLECULE_TYPE_TO_RESIDUES_POS_MAP[molecule_type].items():
+        # Replace all but the gap positions
+        if residue != "-":
+            msa_idx[msa_array == residue] = idx
+    # Replace positions not in the molecule type's alphabet with the unknown index
+    msa_idx[~np.isin(msa_array, MOLECULE_TYPE_TO_RESIDUES_1[molecule_type])] = (
+        MOLECULE_TYPE_TO_RESIDUES_POS_MAP[molecule_type][
+            MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_1[molecule_type]
+        ]
+    )
+
+    return msa_idx
 
 
 @np.vectorize
@@ -303,3 +344,101 @@ def get_with_unknown_1_to_3(key: str) -> str:
             1-letter residue array.
     """
     return RESTYPE_1TO3.get(key, RESTYPE_1TO3["X"])
+
+
+# Maximum accesible surface area for residues
+# The values are taken from https://github.com/biopython/biopython/blob/master/Bio/Data/PDBData.py
+RESIDUE_SASA_SCALES = {
+    # Ahmad: Ahmad et al. 2003 https://doi.org/10.1002/prot.10328
+    "Ahmad": {
+        "ALA": 110.2,
+        "ARG": 229.0,
+        "ASN": 146.4,
+        "ASP": 144.1,
+        "CYS": 140.4,
+        "GLN": 178.6,
+        "GLU": 174.7,
+        "GLY": 78.7,
+        "HIS": 181.9,
+        "ILE": 183.1,
+        "LEU": 164.0,
+        "LYS": 205.7,
+        "MET": 200.1,
+        "PHE": 200.7,
+        "PRO": 141.9,
+        "SER": 117.2,
+        "THR": 138.7,
+        "TRP": 240.5,
+        "TYR": 213.7,
+        "VAL": 153.7,
+    },
+    # Miller max acc: Miller et al. 1987 https://doi.org/10.1016/0022-2836(87)90038-6
+    "Miller": {
+        "ALA": 113.0,
+        "ARG": 241.0,
+        "ASN": 158.0,
+        "ASP": 151.0,
+        "CYS": 140.0,
+        "GLN": 189.0,
+        "GLU": 183.0,
+        "GLY": 85.0,
+        "HIS": 194.0,
+        "ILE": 182.0,
+        "LEU": 180.0,
+        "LYS": 211.0,
+        "MET": 204.0,
+        "PHE": 218.0,
+        "PRO": 143.0,
+        "SER": 122.0,
+        "THR": 146.0,
+        "TRP": 259.0,
+        "TYR": 229.0,
+        "VAL": 160.0,
+    },
+    # Sander: Sander & Rost 1994 https://doi.org/10.1002/prot.340200303
+    "Sander": {
+        "ALA": 106.0,
+        "ARG": 248.0,
+        "ASN": 157.0,
+        "ASP": 163.0,
+        "CYS": 135.0,
+        "GLN": 198.0,
+        "GLU": 194.0,
+        "GLY": 84.0,
+        "HIS": 184.0,
+        "ILE": 169.0,
+        "LEU": 164.0,
+        "LYS": 205.0,
+        "MET": 188.0,
+        "PHE": 197.0,
+        "PRO": 136.0,
+        "SER": 130.0,
+        "THR": 142.0,
+        "TRP": 227.0,
+        "TYR": 222.0,
+        "VAL": 142.0,
+    },
+    # Wilke: Tien et al. 2013 https://doi.org/10.1371/journal.pone.0080635
+    "Wilke": {
+        "ALA": 129.0,
+        "ARG": 274.0,
+        "ASN": 195.0,
+        "ASP": 193.0,
+        "CYS": 167.0,
+        "GLN": 225.0,
+        "GLU": 223.0,
+        "GLY": 104.0,
+        "HIS": 224.0,
+        "ILE": 197.0,
+        "LEU": 201.0,
+        "LYS": 236.0,
+        "MET": 224.0,
+        "PHE": 240.0,
+        "PRO": 159.0,
+        "SER": 155.0,
+        "THR": 172.0,
+        "TRP": 285.0,
+        "TYR": 263.0,
+        "VAL": 174.0,
+    },
+}

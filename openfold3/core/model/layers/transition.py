@@ -297,7 +297,7 @@ class SwiGLUTransition(nn.Module):
         # [*, N, 1]
         mask = mask.unsqueeze(-1)
 
-        if ckpt_chunk_size is not None and torch.is_grad_enabled():
+        if ckpt_chunk_size is not None:
             x = self._low_mem_ckpt_chunk(
                 x=x,
                 mask=mask,

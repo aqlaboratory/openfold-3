@@ -1,8 +1,9 @@
 """Util file for patching bugs in used packages."""
 
-import re
+from collections.abc import Generator
 
 import biotite.structure as struc
+import networkx as nx
 import numpy as np
 
 
@@ -42,25 +43,50 @@ def construct_atom_array(atoms: list[struc.Atom]) -> struc.AtomArray:
     return array
 
 
-def correct_cif_string(cif_str: str, ccd_id: str):
-    """Temporary fix for a current bug in Biotite CIFBlock.serialize()
+def get_molecule_indices(atom_array: struc.AtomArray) -> list[np.ndarray]:
+    """Alternative implementation of Biotite's get_molecule_indices.
 
-    Essentially adds back erroneously missing line-breaks between comments and data
-    blocks. Also adds the data block name as a header.
-
-    Args:
-        cif_str:
-            CIF string to fix.
-        ccd_id:
-            CCD ID of the component to extract.
-
-    Returns:
-        Fixed CIF string.
+    We are getting segfault errors on rare occasions when using Biotite's
+    get_molecule_indices function. This is a temporary alternative implementation that
+    should work the same way but is more robust.
     """
-    # Matches `#` or `#  #` followed by a character
-    pattern = r"(^#\s*#?\s*)(\S)"
+    # Currently only works with AtomArrays
+    if isinstance(atom_array, struc.AtomArray):
+        if atom_array.bonds is None:
+            raise ValueError("An associated BondList is required")
+        bonds = atom_array.bonds
+    else:
+        raise TypeError(f"Expected an 'AtomArray', not '{type(atom_array).__name__}'")
 
-    # Puts a newline between the two matched groups
-    fixed_str = re.sub(pattern, r"\1\n\2", cif_str, flags=re.MULTILINE)
+    g = bonds.as_graph()
 
-    return f"data_{ccd_id}\n{fixed_str}"
+    # Add any atoms that are not in the BondList as single-atom components
+    all_atoms = np.arange(len(atom_array))
+    atoms_in_graph = np.unique(list(g.nodes))
+    singleton_components = np.setdiff1d(all_atoms, atoms_in_graph)
+    singleton_components_formatted = [np.array([atom]) for atom in singleton_components]
+
+    # Add connected components and sort each by internal atom index
+    connected_components = nx.connected_components(g)
+    connected_components_formatted = [np.sort(list(c)) for c in connected_components]
+
+    # Combine indices and do outer sort on first atom index
+    all_components = singleton_components_formatted + connected_components_formatted
+    all_components_sorted = sorted(all_components, key=lambda x: x[0])
+
+    return all_components_sorted
+
+
+def molecule_iter(
+    atom_array: struc.AtomArray,
+) -> Generator[struc.AtomArray, None, None]:
+    """Alternative implementation of Biotite's molecule_iter.
+
+    We are getting segfault errors on rare occasions when using Biotite's molecule_iter
+    function. This is a temporary alternative implementation that should work the same
+    way but is more robust.
+    """
+    molecule_indices = get_molecule_indices(atom_array)
+
+    for indices in molecule_indices:
+        yield atom_array[indices]

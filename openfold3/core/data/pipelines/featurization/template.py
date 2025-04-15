@@ -30,7 +30,7 @@ def featurize_templates_dummy_af3(n_templ, n_token):
 def featurize_template_structures_af3(
     template_slice_collection: TemplateSliceCollection,
     n_templates: int,
-    token_budget: int,
+    n_tokens: int,
     min_bin: float,
     max_bin: float,
     n_bins: int,
@@ -56,8 +56,8 @@ def featurize_template_structures_af3(
             The collection of cropped template atom arrays per chain, per template.
         n_templates (int):
             Number of templates.
-        token_budget (int):
-            Crop size.
+        n_tokens (int):
+            Number of tokens in the target structure.
         min_bin (float):
             The minimum distance for the distogram bins.
         max_bin (float):
@@ -72,7 +72,7 @@ def featurize_template_structures_af3(
     template_feature_precursor = create_template_feature_precursor_af3(
         template_slice_collection,
         n_templates,
-        token_budget,
+        n_tokens,
     )
 
     features = {}

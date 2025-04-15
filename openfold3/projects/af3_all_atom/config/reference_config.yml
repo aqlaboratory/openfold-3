@@ -1,5 +1,7 @@
 finetune1:
   model:
+    settings:
+      model_selection_weight_scheme: fine_tuning
     architecture:
       shared:
         diffusion:
@@ -15,6 +17,8 @@ finetune1:
 
 finetune2:
   model:
+    settings:
+      model_selection_weight_scheme: fine_tuning
     architecture:
       shared:
         diffusion:
@@ -31,6 +35,7 @@ finetune3:
   model:
     settings:
       diffusion_training_enabled: False
+      model_selection_weight_scheme: fine_tuning
     architecture:
       shared:
         diffusion:
@@ -54,13 +59,11 @@ train:
       blocks_per_ckpt: 1
       ckpt_intermediate_steps: True
       chunk_size: null
-      use_block_sparse_attn: True
       use_deepspeed_evo_attention: True
 
 predict:
   model:
     settings:
       chunk_size: null
-      use_block_sparse_attn: True
       use_deepspeed_evo_attention: True
       diffusion_training_enabled: False

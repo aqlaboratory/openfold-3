@@ -135,9 +135,10 @@ def aggregate_atom_feat_to_tokens(
     # Mask out atoms that are not part of the structure
     # Padding value must be greater than the largest index so that it
     # is properly excluded from the aggregation
-    atom_to_token_index = atom_to_token_index * atom_mask + n_token * torch.ones_like(
-        atom_to_token_index
-    ) * (1 - atom_mask)
+    atom_to_token_index = (
+        atom_to_token_index * atom_mask.int()
+        + n_token * torch.ones_like(atom_to_token_index) * (1 - atom_mask.int())
+    )
 
     # Prepare atom to token index for aggregation
     # Check for broadcasting and repeat accordingly
@@ -241,6 +242,8 @@ def max_atom_per_token_masked_select(
     batch_dims = atom_feat.shape[:-2]
     c_out = atom_feat.shape[-1]
     max_atoms_in_batch = torch.max(torch.sum(max_atom_per_token_mask.int(), dim=-1))
+    atom_feat = atom_feat.view(-1, *atom_feat.shape[-2:])
+    max_atom_per_token_mask = max_atom_per_token_mask.repeat(atom_feat.shape[1], 1)
 
     def select_atoms(l: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         """
@@ -358,14 +361,21 @@ def get_token_center_atoms(batch: dict, x: torch.Tensor, atom_mask: torch.Tensor
         x,
         dim=-2,
         index=center_index.unsqueeze(-1)
-        .repeat(*((1,) * len(center_index.shape) + (3,)))
+        .expand(*(x.shape[:-2] + (center_index.shape[-1], 3)))
         .long(),
     )
 
     # Get center atom mask
     # [*, N_token]
     center_atom_mask = (
-        torch.gather(atom_mask, dim=-1, index=center_index.long()) * batch["token_mask"]
+        torch.gather(
+            atom_mask,
+            dim=-1,
+            index=center_index.expand(
+                *(atom_mask.shape[:-1] + (center_index.shape[-1],))
+            ).long(),
+        )
+        * batch["token_mask"]
     ) * token_atom_mask
 
     return center_x, center_atom_mask
@@ -459,14 +469,21 @@ def get_token_representative_atoms(
         x,
         dim=-2,
         index=rep_index.unsqueeze(-1)
-        .repeat(*((1,) * len(rep_index.shape) + (3,)))
+        .expand(*(x.shape[:-2] + (rep_index.shape[-1], 3)))
         .long(),
     )
 
     # Get representative atom mask
     # [*, N_token]
     rep_atom_mask = (
-        torch.gather(atom_mask, dim=-1, index=rep_index.long()) * batch["token_mask"]
+        torch.gather(
+            atom_mask,
+            dim=-1,
+            index=rep_index.expand(
+                *(atom_mask.shape[:-1] + (rep_index.shape[-1],))
+            ).long(),
+        )
+        * batch["token_mask"]
     ) * token_atom_mask
 
     return rep_x, rep_atom_mask
@@ -606,14 +623,29 @@ def get_token_frame_atoms(
                     dim=-2,
                     index=frame_atoms[key]["index"]
                     .unsqueeze(-1)
-                    .repeat(*((1,) * len(frame_atoms[key]["index"].shape) + (3,)))
+                    .expand(*(x.shape[:-2] + (frame_atoms[key]["index"].shape[-1], 3)))
                     .long(),
                 ),
                 "asym_id": torch.gather(
-                    atom_asym_id, dim=-1, index=frame_atoms[key]["index"].long()
+                    atom_asym_id,
+                    dim=-1,
+                    index=frame_atoms[key]["index"]
+                    .expand(
+                        *(
+                            atom_asym_id.shape[:-1]
+                            + (frame_atoms[key]["index"].shape[-1],)
+                        )
+                    )
+                    .long(),
                 ),
                 "atom_mask": torch.gather(
-                    atom_mask, dim=-1, index=frame_atoms[key]["index"].long()
+                    atom_mask,
+                    dim=-1,
+                    index=frame_atoms[key]["index"]
+                    .expand(
+                        *(atom_mask.shape[:-1] + (frame_atoms[key]["index"].shape[-1],))
+                    )
+                    .long(),
                 )
                 * batch["token_mask"]
                 * frame_atoms[key]["token_atom_mask"],

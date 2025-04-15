@@ -1,12 +1,12 @@
 """Sample processing pipelines for templates."""
 
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFFile
 
-from openfold3.core.data.primitives.caches.format import DatasetCache
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
@@ -24,8 +24,7 @@ def process_template_structures_af3(
     n_templates: int,
     take_top_k: bool,
     template_cache_directory: Path,
-    dataset_cache: DatasetCache,
-    pdb_id: str,
+    assembly_data: dict[str, dict[str, Any]],
     template_structures_directory: Path | None,
     template_structure_array_directory: Path | None,
     template_file_format: str,
@@ -48,10 +47,9 @@ def process_template_structures_af3(
             Whether to take the top K templates (True) or sample randomly (False).
         template_cache_directory (Path):
             The directory where the template cache is stored.
-        dataset_cache (dict):
-            The dataset cache.
-        pdb_id (str):
-            The PDB ID of the target structure.
+        assembly_data (dict[str, dict[str, Any]]):
+            Dict containing the alignment representatives and template IDs for each
+            chain.
         template_structures_directory (Path | None):
             The directory where the template structures are stored.
         template_structure_array_directory (Path | None):
@@ -79,23 +77,23 @@ def process_template_structures_af3(
     for chain_id in protein_chain_ids:
         # Sample templates and fetch their data from the cache
         sampled_template_data = sample_templates(
-            dataset_cache,
-            template_cache_directory,
-            n_templates,
-            take_top_k,
-            pdb_id,
-            chain_id,
-            template_structure_array_directory,
+            assembly_data=assembly_data,
+            template_cache_directory=template_cache_directory,
+            n_templates=n_templates,
+            take_top_k=take_top_k,
+            chain_id=chain_id,
+            template_structure_array_directory=template_structure_array_directory,
+            template_file_format=template_file_format,
         )
 
         # Map token positions to template atom arrays
         template_slices[chain_id] = align_template_to_query(
-            sampled_template_data,
-            template_structures_directory,
-            template_structure_array_directory,
-            template_file_format,
-            ccd,
-            atom_array[atom_array.chain_id == chain_id],
+            sampled_template_data=sampled_template_data,
+            template_structures_directory=template_structures_directory,
+            template_structure_array_directory=template_structure_array_directory,
+            template_file_format=template_file_format,
+            ccd=ccd,
+            atom_array_query_chain=atom_array[atom_array.chain_id == chain_id],
         )
 
     return TemplateSliceCollection(template_slices=template_slices)

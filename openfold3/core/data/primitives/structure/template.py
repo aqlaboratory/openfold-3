@@ -1,8 +1,10 @@
 """Primitives for processing templates structures."""
 
 import dataclasses
+import logging
 import pickle as pkl
 from pathlib import Path
+from typing import Any
 
 import biotite.structure as struc
 import numpy as np
@@ -10,7 +12,6 @@ from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFFile
 
 from openfold3.core.data.io.structure.cif import parse_mmcif
-from openfold3.core.data.primitives.caches.format import DatasetCache
 from openfold3.core.data.primitives.featurization.structure import get_token_starts
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
@@ -24,6 +25,8 @@ from openfold3.core.data.primitives.structure.metadata import get_cif_block
 from openfold3.core.data.primitives.structure.unresolved import (
     add_unresolved_atoms,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(frozen=False)
@@ -102,41 +105,46 @@ def get_query_structure_res_ids(atom_array_cropped_chain: AtomArray) -> np.ndarr
 
 @log_runtime_memory(runtime_dict_key="runtime-template-proc-sample", multicall=True)
 def sample_templates(
-    dataset_cache: DatasetCache,
+    assembly_data: dict[str, dict[str, Any]],
     template_cache_directory: Path,
     n_templates: int,
     take_top_k: bool,
-    pdb_id: str,
     chain_id: str,
     template_structure_array_directory: Path | None,
+    template_file_format: str,
 ) -> dict[str, TemplateCacheEntry] | dict[None]:
     """Samples templates to featurize for a given chain.
 
     Follows the logic in section 2.4 of the AF3 SI.
 
     Args:
-        dataset_cache (dict):
-            The dataset cache.
+        assembly_data (dict[str, dict[str, Any]]):
+            Dict containing the alignment representatives and template IDs for each
+            chain.
         template_cache_directory (Path):
             The directory where the template cache is stored.
         n_templates (int):
             The max number of templates to sample for each chain.
         take_top_k (bool):
             Whether to take the top K templates (True) or sample randomly (False).
-        pdb_id (str):
-            The PDB ID of the query structure.
         chain_id (str):
             The chain ID for which to sample the templates.
         template_structure_array_directory (Path | None):
             The directory where the preparsed and pre-processed template structure
             arrays are stored.
+        template_file_format (str):
+            The format of the template structures.
 
     Returns:
         dict[str, TemplateCacheEntry] | dict[None]:
             The sampled template data per chain given chain.
     """
-    chain_data = dataset_cache.structure_data[pdb_id].chains[chain_id]
-    template_ids = np.array(chain_data.template_ids)
+    chain_data = assembly_data[chain_id]
+    template_ids = chain_data["template_ids"]
+    if not template_ids:
+        return {}
+
+    template_ids = np.array(template_ids)
 
     # Subset the template IDs to only those that have a pre-parsed structure array
     # Some arrays may be missing due to preprocessing errors
@@ -145,10 +153,16 @@ def sample_templates(
         template_array_paths = []
         for template_id in template_ids:
             template_pdb_id = template_id.split("_")[0]
-            template_array_paths.append(
+            template_struct_path = (
                 template_structure_array_directory
-                / Path(f"{template_pdb_id}/{template_id}.pkl")
+                / f"{template_pdb_id}/{template_id}.{template_file_format}"
             )
+
+            if not template_struct_path.exists():
+                logger.warning(f"Template path does not exist: {template_struct_path}")
+
+            template_array_paths.append(template_struct_path)
+
         template_ids = template_ids[
             np.array([p.exists() for p in template_array_paths]).astype(bool)
         ]
@@ -165,7 +179,7 @@ def sample_templates(
 
     if k > 0:
         # Load template cache numpy file
-        template_file_name = chain_data.alignment_representative_id + ".npz"
+        template_file_name = chain_data["alignment_representative_id"] + ".npz"
         template_cache = np.load(
             template_cache_directory / Path(template_file_name), allow_pickle=True
         )
@@ -265,27 +279,36 @@ def parse_template_structure(
             The cleaned up template atom array for the given chain.
     """
     # Parse template IDs
-    template_pdb_id, template_chain_id = template_pdb_chain_id.split("_")
+    pdb_id, chain_id = template_pdb_chain_id.split("_")
 
     # Parse the pre-parsed template structure array
     if template_structure_array_directory is not None:
-        with open(
+        template_structure_array_file = (
             template_structure_array_directory
-            / Path(f"{template_pdb_id}/{template_pdb_id}_{template_chain_id}.pkl"),
-            "rb",
-        ) as f:
-            atom_array_template_chain = pkl.load(f)
+            / f"{pdb_id}/{pdb_id}_{chain_id}.{template_file_format}"
+        )
+
+        if template_file_format == "pkl":
+            with open(template_structure_array_file, "rb") as f:
+                atom_array_template_chain = pkl.load(f)
+        elif template_file_format == "npz":
+            atom_array_template_chain = np.load(str(template_structure_array_file))
+        else:
+            raise ValueError(
+                f"Invalid template structure array format: {template_file_format}. "
+                "Only pickle or npz formats are supported."
+            )
+
     # Parse and clean the raw template structure file
     elif template_structures_directory is not None:
         # Parse the full template assembly and subset assembly to template chain
         cif_file, atom_array_template_assembly = parse_mmcif(
-            template_structures_directory
-            / Path(f"{template_pdb_id}.{template_file_format}")
+            template_structures_directory / Path(f"{pdb_id}.{template_file_format}")
         )
 
         # Clean up the template atom array and subset to the chosen template chain
         atom_array_template_chain = clean_template_atom_array(
-            atom_array_template_assembly, cif_file, template_chain_id, ccd
+            atom_array_template_assembly, cif_file, chain_id, ccd
         )
     else:
         raise ValueError(
@@ -394,12 +417,16 @@ def map_token_pos_to_template_residues(
     # Skip template if query and template are still misaligned, this can happen due to
     # unhandled multi-occupancy residues or author annotation errors
     # TODO: add fixes and logging for these cases
-    if struc.get_residue_starts(atom_array_cropped_template).shape != repeats.shape:
+    has_multioccupancy_residue = (
+        struc.get_residue_starts(atom_array_cropped_template).shape != repeats.shape
+    )
+    if has_multioccupancy_residue:
         template_slice = TemplateSlice(
             atom_array=AtomArray(0),
             query_token_positions=np.array([]),
             template_residue_repeats=np.array([]),
         )
+
     else:
         # Add token position annotation to template atom array mapping to the crop
         template_slice = TemplateSlice(

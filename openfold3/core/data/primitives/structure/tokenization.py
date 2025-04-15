@@ -21,6 +21,7 @@ from openfold3.core.data.resources.residues import (
 )
 
 
+@log_runtime_memory(runtime_dict_key="runtime-add-token-pos")
 def add_token_positions(atom_array: AtomArray) -> None:
     """Adds token_position annotation to the input atom array.
 
@@ -47,29 +48,6 @@ def tokenize_atom_array(atom_array: AtomArray):
     Tokenizes the input atom array according to section 2.6. in the AF3 SI. The
     tokenization is added to the input atom array as a 'token_id' annotation alongside
     'token_center_atom' and 'is_atomized' annotations.
-
-    High-level logic of the tokenizer:
-        1. Get set of standard polymer residues
-        2. Create list of token start indices for all standard residues
-        3. Find bonds (atom pair) where at least one atom is coming a standard residue
-           (st-(n)st)
-        4. Subset bonds
-            a. from 3. -> covalent bonds with at least one heteroatom
-            b. from 3. -> covalent bonds between residues in different chains
-            c. from 3. -> covalent bonds between side chains of residues in the same
-               chain
-        5. Get list of non-heteroatoms in any bond from step 4.a.-4.c.
-        6. Get the start indices of residues containing any non-heteroatom from step 5
-        7. Remove start indices of step 6 from the list of start indices of step 2
-        8. Get the set of atoms that are not part of standard residues (includes both
-            "ligands" and non-standard residues) 9. Combine indices for the following:
-            a. residue start indices of standard residues that are not atomized (step 7)
-            b. atom indices that are not part of standard residues (step 8) c. atom
-            indices of standard residues that are atomized (step 6)
-        10. Create is_atomized annotation from steps 9.b. and 9.c.
-        11. Create token_id annotation per-residue from step 9.a. and per atom from
-            steps 9.b. and 9.c. 12. Create token_center_atom annotation per-residue from
-            step 9.a. and per atom from steps 9.b. and 9.c.
 
     High-level logic of the tokenizer:
         1. Get set of standard polymer residues
@@ -261,3 +239,21 @@ def tokenize_atom_array(atom_array: AtomArray):
     add_token_positions(atom_array)
 
     return None
+
+
+def get_token_count(atom_array: AtomArray) -> int:
+    """Get the number of tokens in the input atom array.
+
+    If the input atom array is not yet tokenized, the function will tokenize it.
+
+    Args:
+        atom_array (AtomArray):
+            AtomArray of the input assembly.
+
+    Returns:
+        int: Number of tokens in the input atom array.
+    """
+    if "token_id" not in atom_array.get_annotation_categories():
+        tokenize_atom_array(atom_array)
+
+    return len(np.unique(atom_array.token_id))

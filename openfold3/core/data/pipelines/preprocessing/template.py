@@ -15,8 +15,12 @@ from biotite.structure.io import pdbx
 from biotite.structure.io.pdbx import CIFFile
 from tqdm import tqdm
 
-from openfold3.core.data.io.dataset_cache import read_datacache
-from openfold3.core.data.io.sequence.template import parse_hmmsearch_sto
+from openfold3.core.data.io.dataset_cache import read_datacache, write_datacache_to_json
+from openfold3.core.data.io.s3 import open_local_or_s3
+from openfold3.core.data.io.sequence.template import (
+    parse_entry_chain_id,
+    parse_hmmsearch_sto,
+)
 from openfold3.core.data.io.structure.cif import _load_ciffile, parse_mmcif
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     PDB_ID,
@@ -45,6 +49,7 @@ from openfold3.core.data.resources.residues import (
 )
 
 
+# TODO: rename variables to be PDB-agnostic
 # --- Template alignment preprocessing ---
 # Step 1/3: Create sequence cache for template structures
 def create_seq_cache_for_template(
@@ -134,7 +139,7 @@ class _AF3TemplateSequenceCacheConstructor:
             )
         except Exception as e:
             TEMPLATE_PROCESS_LOGGER.get().info(
-                "Failed to process template " f"{template_pdb_id}:\n{e}\n"
+                f"Failed to process template {template_pdb_id}:\n{e}\n"
             )
 
 
@@ -201,16 +206,20 @@ def create_template_seq_cache_af3(
             pass
 
 
+# TODO: clean up this function!
 # Step 2/3: Create template cache for query chains
 def create_template_cache_for_query(
     query_pdb_chain_id: str,
+    rep_pdb_chain_id: str,
     template_alignment_file: Path,
     template_structures_directory: Path,
     template_cache_directory: Path,
     query_structures_directory: Path,
     max_templates_construct: int,
+    query_structures_filename: str,
     query_file_format: str,
-    template_file_format: str,
+    query_seq_load_logic: str,
+    s3_client_config: dict | None,
 ) -> None:
     """Creates a json cache of filtered template hits for a query.
 
@@ -220,16 +229,15 @@ def create_template_cache_for_query(
 
     Note that a template is skipped if:
         - no CIF file is provided for the QUERY against which the template was aligned;
-        the PDB IDs of the QUERY need to match between the alignment and the CIF file
-        - there is a mismatch between the author chain IDs for the QUERY against which
-        the template was aligned AND the sequence provided in the alignment file cannot
-        be remapped to an exact subsequence of any chains in the QUERY CIF file
-        - no CIF file is provided for the TEMPLATE; the PDB IDs of the TEMPLATE need to
-        match between the alignment and the CIF file
-        - there is a mismatch between the author chain IDs for the TEMPLATE AND the
-        sequence provided in the alignment file cannot be remapped to an exact
-        subsequence of any chains in the TEMPLATE CIF file
-        - the sequence of the template does not pass the AF3 sequence filters
+        the PDB IDs of the QUERY need to match between the alignment and the CIF file -
+        there is a mismatch between the author chain IDs for the QUERY against which the
+        template was aligned AND the sequence provided in the alignment file cannot be
+        remapped to an exact subsequence of any chains in the QUERY CIF file - no CIF
+        file is provided for the TEMPLATE; the PDB IDs of the TEMPLATE need to match
+        between the alignment and the CIF file - there is a mismatch between the author
+        chain IDs for the TEMPLATE AND the sequence provided in the alignment file
+        cannot be remapped to an exact subsequence of any chains in the TEMPLATE CIF
+        file - the sequence of the template does not pass the AF3 sequence filters
 
     Another note: the template alignment is parsed from the directory indicated by the
     representative ID of a query chain, whereas the query structure is parsed using the
@@ -241,6 +249,8 @@ def create_template_cache_for_query(
     Args:
         query_pdb_chain_id (str):
             The PDB ID and chain ID of the query chain.
+        rep_pdb_chain_id (str):
+            The PDB ID and chain ID of the representative chain for the query chain.
         template_alignment_file (Path):
             Path to the template alignment stockholm file. Currently only the output of
             hmmsearch is accepted.
@@ -251,16 +261,23 @@ def create_template_cache_for_query(
         template_cache_directory (Path):
             Path to directory where the template cache will be saved for the query.
         query_structures_directory (Path):
-            Path to the directory containing query structures in mmCIF format. The
-            PDB IDs of the query CIF files need to match the PDB IDs for the query (1st
-            row) in the alignment file for it to have any templates.
+            Path to the directory containing query structures in mmCIF format. The PDB
+            IDs of the query CIF files need to match the PDB IDs for the query (1st row)
+            in the alignment file for it to have any templates.
         max_templates_construct (int):
             Maximum number of templates to keep per query chain during template cache
             construction.
+        query_structures_filename (str):
+            Name of the query structure file within each query structure subdirectory.
+            Uses the the subdir name if set to "None".
         query_file_format (str):
             File format of the query structures.
-        template_file_format (str):
-            File format of the template structures.
+        query_seq_load_logic (str):
+            Whether to derive the structure-associated query sequence from a structure
+            file or a preprocessed fasta file. Should be one of "structure" or "fasta".
+        s3_client_config (dict | None):
+            Configuration for the S3 client. Should contain the profile name for the S3
+            client.
     """
     template_process_logger = TEMPLATE_PROCESS_LOGGER.get()
 
@@ -278,16 +295,20 @@ def create_template_cache_for_query(
         "n_template_chain_match": 0,
         "n_valid_templates_prefilter": 0,
     }
+    if s3_client_config is not None:
+        profile = s3_client_config["profile"]
+    else:
+        profile = None
 
     # Parse alignment
     try:
-        with open(template_alignment_file) as f:
+        with open_local_or_s3(template_alignment_file, profile=profile, mode="r") as f:
             hits = parse_hmmsearch_sto(f.read())
     except Exception as e:
         template_process_logger.info(
-            "Failed to parse alignment file, skipping. Make sure that"
-            " an hmmsearch output globally aligned with hmmalign was provided. "
-            f"\nError: \n{e}\nTraceback: \n{traceback.format_exc()}"
+            f"Failed to parse alignment file {template_alignment_file}, skipping. Make"
+            " sure that an hmmsearch output globally aligned with hmmalign was "
+            f"provided. \nError: \n{e}\nTraceback: \n{traceback.format_exc()}"
         )
         data_log_to_tsv(
             data_log,
@@ -300,9 +321,9 @@ def create_template_cache_for_query(
 
     # Filter queries
     query = hits[0]
-    query_pdb_id, query_chain_id = query_pdb_chain_id.split("_")
-    query_pdb_id_t, query_chain_id_t = query.name.split("_")
-    template_cache_path_rep = template_cache_directory / Path(f"{query.name}.npz")
+    query_pdb_id, query_chain_id = parse_entry_chain_id(query_pdb_chain_id)
+    query_pdb_id_t, query_chain_id_t = parse_entry_chain_id(query.name)
+    template_cache_path_rep = template_cache_directory / Path(f"{rep_pdb_chain_id}.npz")
     if template_cache_path_rep.exists():
         template_process_logger.info(
             f"Template cache for {query.name} already exists. Skipping templates for "
@@ -319,11 +340,20 @@ def create_template_cache_for_query(
     # the query and all its templates are skipped if the structure identified by the PDB
     # ID of the first hit in the alignments file is not provided in
     # query_structures_directory
-    qp = query_structures_directory / Path(f"{query_pdb_id}.{query_file_format}")
-    if not (qp).exists():
+    query_structures_filename = (
+        query_pdb_id
+        if query_structures_filename == "None"
+        else query_structures_filename
+    )
+    qp = query_structures_directory / Path(
+        f"{query_structures_filename}.{query_file_format}"
+    )
+    # Currently only checking existence of local files
+    if (not str(qp).startswith("s3:/")) and (not (qp).exists()):
         template_process_logger.info(
-            f"Query .cif structure {query_pdb_id} not found in "
-            f"{query_structures_directory}. Skipping templates for this structure."
+            f"Query .{query_file_format} structure {query_structures_filename} not "
+            f"found in  {query_structures_directory}. Skipping templates for this "
+            "structure."
         )
         data_log_to_tsv(
             data_log,
@@ -334,12 +364,17 @@ def create_template_cache_for_query(
     data_log["query_cif_exists"] = True
     # 2. Parse query chain and sequence
     # the query and all its templates are skipped if its HMM sequence cannot be mapped
-    # exactly to a subsequence of the MATCHING chain in the CIF file provided in
+    # exactly to a subsequence of the MATCHING chain in the CIF/PDB file provided in
     # query_structures_directory (no chain/sequence remapping is done)
-    # !!! Note that the chain ID-sequence map for this step is derived from the
-    # preprocessed fasta file, not from the CIF file
     if match_query_chain_and_sequence(
-        query_structures_directory, query, query_pdb_id, query_chain_id
+        query_structures_directory,
+        query,
+        query_pdb_id,
+        query_chain_id,
+        query_seq_load_logic,
+        query_file_format,
+        query_structures_filename,
+        s3_profile=profile,
     ):
         template_process_logger.info(
             f"The query sequences in the structure (query {query_pdb_id} chain "
@@ -485,12 +520,14 @@ class _AF3TemplateCacheConstructor:
         template_cache_directory: Path,
         query_structures_directory: Path,
         max_templates_construct: int,
+        query_structures_filename: str,
         query_file_format: str,
-        template_file_format: str,
+        query_seq_load_logic: str,
         log_level: str,
         log_to_file: bool,
         log_to_console: bool,
         log_dir: Path,
+        s3_client_config: dict | None,
     ) -> None:
         """Wrapper class for creating the template cache.
 
@@ -518,16 +555,22 @@ class _AF3TemplateCacheConstructor:
             max_templates_construct (int):
                 Maximum number of templates to keep per query chain during template
                 cache construction.
+            query_structures_filename (str):
+                Name of the query structure file within each query structure
+                subdirectory. Uses the the subdir name if set to "None".
             query_file_format (str):
                 File format of the query structures.
-            template_file_format (str):
-                File format of the template structures.
+            query_seq_load_logic (str):
+                Whether to load the query sequence from the structure file or a
+                preprocessed fasta file. Should be one of "structure" or "fasta".
             log_level (str):
                 Log level for the logger.
             log_to_file (bool):
                 Whether to log to file.
             log_dir (Path):
                 Directory where the log file will be saved.
+            s3_client_config (dict | None):
+                Configuration for the S3 client.
 
         """
         self.template_alignment_directory = template_alignment_directory
@@ -536,12 +579,14 @@ class _AF3TemplateCacheConstructor:
         self.template_cache_directory = template_cache_directory
         self.query_structures_directory = query_structures_directory
         self.max_templates_construct = max_templates_construct
+        self.query_structures_filename = query_structures_filename
         self.query_file_format = query_file_format
-        self.template_file_format = template_file_format
+        self.query_seq_load_logic = query_seq_load_logic
         self.log_level = log_level
         self.log_to_file = log_to_file
         self.log_to_console = log_to_console
         self.log_dir = log_dir
+        self.s3_client_config = s3_client_config
 
     @wraps(create_template_cache_for_query)
     def __call__(self, input: _TemplateQueryEntry) -> None:
@@ -562,26 +607,29 @@ class _AF3TemplateCacheConstructor:
                 input.rep_pdb_chain_id,
             )
             query_pdb_id = query_pdb_chain_id.split("_")[0]
-
+            template_alignment_file = (
+                self.template_alignment_directory
+                / Path(rep_pdb_chain_id)
+                / self.template_alignment_filename
+            )
             # Create template cache for query
             create_template_cache_for_query(
                 query_pdb_chain_id=query_pdb_chain_id,
-                template_alignment_file=(
-                    self.template_alignment_directory
-                    / Path(rep_pdb_chain_id)
-                    / self.template_alignment_filename
-                ),
+                rep_pdb_chain_id=rep_pdb_chain_id,
+                template_alignment_file=template_alignment_file,
                 template_structures_directory=self.template_structures_directory,
                 template_cache_directory=self.template_cache_directory,
                 query_structures_directory=self.query_structures_directory
                 / Path(query_pdb_id),
                 max_templates_construct=self.max_templates_construct,
+                query_structures_filename=self.query_structures_filename,
                 query_file_format=self.query_file_format,
-                template_file_format=self.template_file_format,
+                query_seq_load_logic=self.query_seq_load_logic,
+                s3_client_config=self.s3_client_config,
             )
         except Exception as e:
             TEMPLATE_PROCESS_LOGGER.get().info(
-                "Failed to process templates for query " f"{query_pdb_chain_id}:\n{e}\n"
+                f"Failed to process templates for query {query_pdb_chain_id}:\n{e}\n"
             )
 
 
@@ -593,13 +641,16 @@ def create_template_cache_af3(
     template_cache_directory: Path,
     query_structures_directory: Path,
     max_templates_construct: int,
+    query_structures_filename: str,
     query_file_format: str,
-    template_file_format: str,
+    query_seq_load_logic: str,
+    single_moltype: str | None,
     num_workers: int,
     log_level: str,
     log_to_file: bool,
     log_to_console: bool,
     log_dir: Path,
+    s3_client_config: dict | None,
 ) -> None:
     """Creates the full template cache for all query chains.
 
@@ -623,10 +674,18 @@ def create_template_cache_af3(
         max_templates_construct (int):
             Maximum number of templates to keep per query chain during template cache
             construction.
+        query_structures_filename (str):
+            Name of the query structure file within each query structure subdirectory.
+            Uses the the subdir name if set to "None".
         query_file_format (str):
             File format of the query structures.
-        template_file_format (str):
-            File format of the template structures.
+        query_seq_load_logic (str):
+            Whether to load the query sequence from the structure file or a preprocessed
+            fasta file. Should be one of "structure" or "fasta".
+        single_moltype (str | None):
+            Constant molecule type to use if the dataset contains only a single molecule
+            type and the dataset cache does not contain per-chain molecule type field.
+            If None, the molecule type is inferred from the dataset cache.
         num_workers (int):
             Number of workers to use for multiprocessing.
         log_level (str):
@@ -637,17 +696,19 @@ def create_template_cache_af3(
             Whether to log to console.
         log_dir (Path):
             Directory where the log file will be saved.
+        s3_client_config (dict | None):
+            Configuration for the S3 client.
     """
     log_dir.mkdir(parents=True, exist_ok=True)
     template_cache_directory.mkdir(parents=True, exist_ok=True)
     (template_cache_directory.parent / Path("data_log")).mkdir(
         parents=True, exist_ok=True
     )
-
     # Parse list of chains from metadata cache
     dataset_cache = read_datacache(dataset_cache_file)
-    template_query_iterator = parse_representatives(dataset_cache, True).entries
-
+    template_query_iterator = parse_representatives(
+        dataset_cache, True, single_moltype
+    ).entries
     # Create template cache for each query chain
     wrapped_template_cache_constructor = _AF3TemplateCacheConstructor(
         template_alignment_directory,
@@ -656,12 +717,14 @@ def create_template_cache_af3(
         template_cache_directory,
         query_structures_directory,
         max_templates_construct,
+        query_structures_filename,
         query_file_format,
-        template_file_format,
+        query_seq_load_logic,
         log_level,
         log_to_file,
         log_to_console,
         log_dir,
+        s3_client_config,
     )
     with mp.Pool(num_workers) as pool:
         for _ in tqdm(
@@ -785,7 +848,7 @@ def filter_template_cache_for_query(
     for template_id, template_date in ids_dates:
         # Apply release date filters
         if is_core_train:
-            if check_release_date_diff(
+            if not check_release_date_diff(
                 query_release_date=query_release_date,
                 template_release_date=template_date,
                 min_release_date_diff=min_release_date_diff,
@@ -793,7 +856,7 @@ def filter_template_cache_for_query(
                 data_log["n_dropped_due_to_release_date"] += 1
                 continue
         else:
-            if check_release_date_max(
+            if not check_release_date_max(
                 template_release_date=template_date, max_release_date=max_release_date
             ):
                 data_log["n_dropped_due_to_release_date"] += 1
@@ -907,7 +970,7 @@ class _AF3TemplateCacheFilter:
         except Exception as e:
             if self.is_core_train:
                 TEMPLATE_PROCESS_LOGGER.get().info(
-                    "Failed to filter templates for query " f"{input[0][0]}: \n{e}\n"
+                    f"Failed to filter templates for query {input[0][0]}: \n{e}\n"
                 )
                 return {input[0][0]: []}
             else:
@@ -930,6 +993,7 @@ def filter_template_cache_af3(
     updated_dataset_cache_file: Path,
     template_cache_directory: Path,
     max_templates_filter: int,
+    single_moltype: str | None,
     is_core_train: bool,
     num_workers: int,
     log_level: str,
@@ -951,6 +1015,10 @@ def filter_template_cache_af3(
             Path to the directory containing template cache jsons per chain.
         max_templates_filter (int):
             Maximum number of templates to keep per query chain.
+        single_moltype (str | None):
+            Constant molecule type to use if the dataset contains only a single molecule
+            type and the dataset cache does not contain per-chain molecule type field.
+            If None, the molecule type is inferred from the dataset cache.
         is_core_train (bool):
             Whether the dataset is core train or not.
         num_workers (int):
@@ -974,7 +1042,7 @@ def filter_template_cache_af3(
     # Parse list of chains from metadata cache
     dataset_cache = read_datacache(dataset_cache_file)
     template_query_iterator = parse_representatives(
-        dataset_cache, is_core_train
+        dataset_cache, is_core_train, single_moltype
     ).entries
     data_iterator_len = len(template_query_iterator)
 
@@ -1013,7 +1081,7 @@ def filter_template_cache_af3(
             #         json.dump(dataset_cache, f, indent=4)
 
     # Save final complete dataset cache
-    dataset_cache.to_json(updated_dataset_cache_file)
+    write_datacache_to_json(dataset_cache, updated_dataset_cache_file)
 
     # Collate data logs
     collate_data_logs(template_cache_directory, "full_data_log_filtered_cache.tsv")
@@ -1217,7 +1285,7 @@ class _AF3TemplateStructurePreprocessor:
                 log_dir=self.log_dir,
             )
             TEMPLATE_PROCESS_LOGGER.get().info(
-                "Successfully preprocessed template structure " f"{template_pdb_id}."
+                f"Successfully preprocessed template structure {template_pdb_id}."
             )
         except Exception as e:
             TEMPLATE_PROCESS_LOGGER.get().info(

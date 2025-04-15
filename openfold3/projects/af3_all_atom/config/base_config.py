@@ -7,6 +7,7 @@ from openfold3.projects.af3_all_atom.config import (
 )
 
 PLACEHOLDER_PATH = Path("placeholder/path")
+PLACEHOLDER_FORMAT = "placeholder_format"
 
 # Hidden dimensions
 c_s = mlc.FieldReference(384, field_type=int)
@@ -24,14 +25,9 @@ c_s_input = mlc.FieldReference(c_token_embedder + 65, field_type=int)
 sigma_data = mlc.FieldReference(16, field_type=int)
 max_relative_idx = mlc.FieldReference(32, field_type=int)
 max_relative_chain = mlc.FieldReference(2, field_type=int)
-no_samples = mlc.FieldReference(48, field_type=int)
-no_mini_rollout_steps = mlc.FieldReference(20, field_type=int)
-no_full_rollout_steps = mlc.FieldReference(200, field_type=int)
 diffusion_training_enabled = mlc.FieldReference(True, field_type=bool)
 n_query = mlc.FieldReference(32, field_type=int)
 n_key = mlc.FieldReference(128, field_type=int)
-use_block_sparse_attn = mlc.FieldReference(False, field_type=bool)
-block_size = mlc.FieldReference(16, field_type=int)
 
 # templates_enabled = mlc.FieldReference(True, field_type=bool)
 eps = mlc.FieldReference(1e-8, field_type=float)
@@ -42,6 +38,37 @@ chunk_size = mlc.FieldReference(None, field_type=int)
 tune_chunk_size = mlc.FieldReference(True, field_type=bool)
 max_atoms_per_token = mlc.FieldReference(23, field_type=int)
 
+model_selection_metric_weights_config = mlc.FrozenConfigDict(
+    {
+        "initial_training": {
+            "lddt_intra_modified_residues": 10.0,
+            "lddt_inter_ligand_rna": 5.0,
+            "lddt_inter_ligand_dna": 5.0,
+            "lddt_intra_protein": 20.0,
+            "lddt_intra_ligand": 20.0,
+            "lddt_intra_dna": 4.0,
+            "lddt_intra_rna": 16.0,
+            "lddt_inter_protein_protein": 20.0,
+            "lddt_inter_protein_ligand": 10.0,
+            "lddt_inter_protein_dna": 10.0,
+            "lddt_inter_protein_rna": 10.0,
+            "rasa": 10.0,
+        },
+        "fine_tuning": {
+            "lddt_inter_ligand_rna": 2.0,
+            "lddt_inter_ligand_dna": 5.0,
+            "lddt_intra_protein": 20.0,
+            "lddt_intra_ligand": 20.0,
+            "lddt_intra_dna": 4.0,
+            "lddt_intra_rna": 16.0,
+            "lddt_inter_protein_protein": 20.0,
+            "lddt_inter_protein_ligand": 10.0,
+            "lddt_inter_protein_dna": 10.0,
+            "lddt_inter_protein_rna": 2.0,
+            "rasa": 10.0,
+        },
+    }
+)
 
 project_config = mlc.ConfigDict(
     {
@@ -50,7 +77,6 @@ project_config = mlc.ConfigDict(
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "ckpt_intermediate_steps": ckpt_intermediate_steps,
                 "chunk_size": chunk_size,
-                "use_block_sparse_attn": use_block_sparse_attn,
                 # Use DeepSpeed memory-efficient attention kernel. Mutually
                 # exclusive with use_lma and use_flash.
                 "use_deepspeed_evo_attention": False,
@@ -60,7 +86,7 @@ project_config = mlc.ConfigDict(
                 "offload_inference": False,
                 "diffusion_training_enabled": diffusion_training_enabled,
                 "optimizer": {
-                    "use_deepspeed_adam": True,
+                    "use_deepspeed_adam": False,
                     "learning_rate": 1.8e-3,
                     "beta1": 0.9,
                     "beta2": 0.95,
@@ -68,6 +94,7 @@ project_config = mlc.ConfigDict(
                 },
                 "ema": {"decay": 0.999},
                 "gradient_clipping": 10.0,
+                "model_selection_weight_scheme": "initial_training",
             },
             "architecture": {
                 "shared": {
@@ -77,9 +104,11 @@ project_config = mlc.ConfigDict(
                     "max_cycles": 4,
                     "diffusion": {
                         "sigma_data": sigma_data,
-                        "no_samples": no_samples,
-                        "no_mini_rollout_steps": no_mini_rollout_steps,
-                        "no_full_rollout_steps": no_full_rollout_steps,
+                        "no_samples": 48,
+                        "no_mini_rollout_samples": 1,
+                        "no_full_rollout_samples": 5,
+                        "no_mini_rollout_steps": 20,
+                        "no_full_rollout_steps": 200,
                     },
                 },
                 "input_embedder": {
@@ -104,8 +133,6 @@ project_config = mlc.ConfigDict(
                         "n_query": n_query,
                         "n_key": n_key,
                         "use_ada_layer_norm": True,
-                        "use_block_sparse_attn": use_block_sparse_attn,
-                        "block_size": block_size,
                         "blocks_per_ckpt": blocks_per_ckpt,
                         "ckpt_intermediate_steps": ckpt_intermediate_steps,
                         "inf": inf,
@@ -231,8 +258,6 @@ project_config = mlc.ConfigDict(
                         "n_query": n_query,
                         "n_key": n_key,
                         "use_ada_layer_norm": True,
-                        "use_block_sparse_attn": use_block_sparse_attn,
-                        "block_size": block_size,
                         "blocks_per_ckpt": blocks_per_ckpt,
                         "ckpt_intermediate_steps": ckpt_intermediate_steps,
                         "inf": inf,
@@ -248,8 +273,8 @@ project_config = mlc.ConfigDict(
                         "no_blocks": 24,
                         "n_transition": 2,
                         "use_ada_layer_norm": True,
-                        "use_block_sparse_attn": False,
-                        "block_size": None,
+                        "n_query": None,
+                        "n_key": None,
                         "inf": inf,
                         "blocks_per_ckpt": blocks_per_ckpt,
                         "linear_init_params": lin_init.diffusion_transformer_init,
@@ -266,8 +291,6 @@ project_config = mlc.ConfigDict(
                         "n_query": n_query,
                         "n_key": n_key,
                         "use_ada_layer_norm": True,
-                        "use_block_sparse_attn": use_block_sparse_attn,
-                        "block_size": block_size,
                         "blocks_per_ckpt": blocks_per_ckpt,
                         "inf": inf,
                         "linear_init_params": lin_init.atom_att_dec_init,
@@ -315,6 +338,7 @@ project_config = mlc.ConfigDict(
                         "max_bin": 20.75,
                         "no_bin": 15,
                         "inf": inf,
+                        "per_sample_token_cutoff": 1500,
                         "linear_init_params": lin_init.pairformer_head_init,
                     },
                     "pae": {
@@ -375,7 +399,6 @@ project_config = mlc.ConfigDict(
                             "no_bins": 64,
                             "bin_min": 0.0,
                             "bin_max": 32.0,
-                            "weight": 0.0,
                         },
                         "eps": eps,
                         "inf": inf,
@@ -429,12 +452,8 @@ project_config = mlc.ConfigDict(
             "weight": 0.0,
             "config": {
                 "loss_weight_mode": "default",
-                "token_budget": 384,
-                "crop_weights": {
-                    "contiguous": 0.2,
-                    "spatial": 0.4,
-                    "spatial_interface": 0.4,
-                },
+                # TODO: remove this flag once debug logic is gone
+                "debug_mode": True,
                 "msa": {
                     "max_rows_paired": 8191,
                     "max_rows": 16384,
@@ -452,6 +471,7 @@ project_config = mlc.ConfigDict(
                         "rfam_hits": 10000,
                         "rnacentral_hits": 10000,
                         "nt_hits": 10000,
+                        "concat_cfdb_uniref100_filtered": 10000000,
                     },
                     "aln_order": [
                         "uniref90_hits",
@@ -462,6 +482,7 @@ project_config = mlc.ConfigDict(
                         "rfam_hits",
                         "rnacentral_hits",
                         "nt_hits",
+                        "concat_cfdb_uniref100_filtered",
                     ],
                 },
                 "template": {
@@ -493,10 +514,33 @@ project_config = mlc.ConfigDict(
                         "pde": 1e-4,
                     },
                 },
-                "custom": {},
+                "custom": {
+                    # TODO: use in runner yml for every training dataset
+                    "crop": {
+                        "token_budget": 384,
+                        "crop_weights": {
+                            "contiguous": 0.2,
+                            "spatial": 0.4,
+                            "spatial_interface": 0.4,
+                        },
+                    },
+                    # TODO: use in weightedPDB/disordered PDB runner yml
+                    "sample_weights": {
+                        "a_prot": 3.0,
+                        "a_nuc": 3.0,
+                        "a_ligand": 1.0,
+                        "w_chain": 0.5,
+                        "w_interface": 1.0,
+                    },
+                    # Whether dataset should be sampled in-order without replacement
+                    "sample_in_order": False,
+                    # TODO: use in disordered PDB dataset, eventually move to yml
+                    "disable_non_protein_diffusion_weights": False,
+                },
                 "dataset_paths": {
                     "alignments_directory": PLACEHOLDER_PATH,
                     "target_structures_directory": PLACEHOLDER_PATH,
+                    "target_structure_file_format": PLACEHOLDER_FORMAT,
                     "alignment_db_directory": PLACEHOLDER_PATH,
                     "alignment_array_directory": PLACEHOLDER_PATH,
                     "dataset_cache_file": PLACEHOLDER_PATH,
@@ -504,7 +548,7 @@ project_config = mlc.ConfigDict(
                     "template_cache_directory": PLACEHOLDER_PATH,
                     "template_structures_directory": PLACEHOLDER_PATH,
                     "template_structure_array_directory": PLACEHOLDER_PATH,
-                    "template_file_format": PLACEHOLDER_PATH,
+                    "template_file_format": PLACEHOLDER_FORMAT,
                     "ccd_file": PLACEHOLDER_PATH,
                 },
             },

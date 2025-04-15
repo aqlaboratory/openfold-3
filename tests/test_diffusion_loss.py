@@ -109,18 +109,36 @@ class TestDiffusionLoss(unittest.TestCase):
             xl=batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1)),
             atom_mask=batch["ground_truth"]["atom_resolved_mask"],
         )
+        all_ones_mask = torch.ones_like(batch["is_protein"])
 
-        mse = mse_loss(
+        mse_unmasked = mse_loss(
             x=x,
             batch=batch,
+            loss_token_mask=all_ones_mask,
             dna_weight=dna_weight,
             rna_weight=rna_weight,
             ligand_weight=ligand_weight,
             eps=consts.eps,
         )
 
-        self.assertTrue(mse.shape == (batch_size, n_sample))
-        self.assertTrue((mse < 1e-5).all())
+        self.assertTrue(mse_unmasked.shape == (batch_size, n_sample))
+        self.assertTrue((mse_unmasked < 1e-5).all())
+
+        # Check when token mask has some zeros
+        mostly_zeros_mask = torch.zeros_like(batch["is_protein"])
+        mostly_zeros_mask[:, :2] = 1
+
+        mse_masked = mse_loss(
+            x=x,
+            batch=batch,
+            loss_token_mask=mostly_zeros_mask,
+            dna_weight=dna_weight,
+            rna_weight=rna_weight,
+            ligand_weight=ligand_weight,
+            eps=consts.eps,
+        )
+        assert torch.equal(torch.nonzero(mse_masked), torch.nonzero(mostly_zeros_mask))
+        assert torch.all(torch.not_equal(mse_masked, mse_unmasked))
 
     def test_bond_loss(self):
         n_sample = 2
@@ -149,7 +167,10 @@ class TestDiffusionLoss(unittest.TestCase):
             atom_mask=batch["ground_truth"]["atom_resolved_mask"],
         )
 
-        loss = smooth_lddt_loss(x=x, batch=batch, eps=1e-8)
+        all_ones_mask = torch.ones_like(batch["is_protein"])
+        loss = smooth_lddt_loss(
+            x=x, batch=batch, loss_token_mask=all_ones_mask, eps=1e-8
+        )
 
         gt_loss = 1 - 0.25 * (
             torch.sigmoid(torch.Tensor([0.5]))
@@ -162,11 +183,20 @@ class TestDiffusionLoss(unittest.TestCase):
         self.assertTrue(loss.shape == (batch_size, n_sample))
         self.assertTrue((torch.abs(loss - gt_loss) < 1e-5).all())
 
-    def test_diffusion_loss(self):
+        # Check when token mask has some zeros
+        mostly_zeros_mask = torch.zeros_like(batch["is_protein"])
+        mostly_zeros_mask[:, :2] = 1
+        loss_masked = smooth_lddt_loss(
+            x=x, batch=batch, loss_token_mask=mostly_zeros_mask, eps=1e-8
+        )
+
+        assert torch.equal(torch.nonzero(loss_masked), torch.nonzero(mostly_zeros_mask))
+        assert torch.all(torch.not_equal(loss_masked, loss))
+
+    def _test_diffusion_loss(self, batch):
         n_sample = 2
         sigma_data = 16
 
-        batch = self.setup_features()
         batch_size = batch["ground_truth"]["atom_resolved_mask"].shape[0]
 
         x = centre_random_augmentation(
@@ -187,6 +217,17 @@ class TestDiffusionLoss(unittest.TestCase):
 
         self.assertTrue(loss.shape == ())
         self.assertTrue((torch.abs(loss - gt_loss) < 1e-5).all())
+
+    def test_diffusion_loss_without_disordered_flag(self):
+        batch = self.setup_features()
+        self._test_diffusion_loss(batch)
+
+    def test_diffusion_loss_with_disordered_flag(self):
+        batch = self.setup_features()
+        batch["loss_weights"]["disable_non_protein_diffusion_weights"] = torch.tensor(
+            [True], dtype=torch.bool
+        )
+        self._test_diffusion_loss(batch)
 
 
 if __name__ == "__main__":

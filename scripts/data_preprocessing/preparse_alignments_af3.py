@@ -144,7 +144,7 @@ class _MsaPreparser:
                 rep_pdb_chain_id,
             )
         except Exception as e:
-            print("Failed to preparse MSAs for chain " f"{rep_pdb_chain_id}:\n{e}\n")
+            print(f"Failed to preparse MSAs for chain {rep_pdb_chain_id}:\n{e}\n")
 
 
 if __name__ == "__main__":

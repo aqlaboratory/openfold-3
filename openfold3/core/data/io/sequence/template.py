@@ -70,6 +70,30 @@ class TemplateHit(NamedTuple):
     e_value: float | None
 
 
+def parse_entry_chain_id(entry_chain_id: str) -> tuple[str, str]:
+    """Extracts the chain ID from a query entry.
+
+    Assumes the format ENTRY_CHAIN or ENTRY. If ENTRY, the chain ID is assumed to be 1.
+
+    Args:
+        entry_chain_id (str):
+            The entry-chain ID string.
+
+    Returns:
+        tuple[str, str]:
+            The entry-chain ID tuple.
+    """
+    entry_chain_id_list = entry_chain_id.split("_")
+    if len(entry_chain_id_list) == 1:
+        return entry_chain_id_list[0], "1"
+    elif len(entry_chain_id_list) == 2:
+        return entry_chain_id_list[0], entry_chain_id_list[1]
+    else:
+        raise ValueError(
+            "Invalid entry-chain ID format. Must be 'ENTRY' or 'ENTRY_CHAIN'."
+        )
+
+
 def _get_indices(sequence: str, start: int) -> list[int]:
     """Returns an index encoding of the aligned sequence starting at the given index.
 
@@ -129,7 +153,7 @@ def _parse_hmmsearch_description(description: str, index: int) -> HitMetadata:
         desc = " ".join(desc_split[1:])
 
     # Parse the PDB ID, chain ID and start index
-    pdb_id, chain_id = pdb_chain_id.split("_")
+    pdb_id, chain_id = parse_entry_chain_id(pdb_chain_id)
     if index == 0:
         start_index = 1
     else:

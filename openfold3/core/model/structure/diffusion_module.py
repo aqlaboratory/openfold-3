@@ -59,21 +59,25 @@ def centre_random_augmentation(
     Returns:
         Updated atom position with random global rotation and translation
     """
-    rots = sample_rotations(shape=xl.shape[:-2], dtype=xl.dtype, device=xl.device)
+    dtype = xl.dtype
+    with torch.amp.autocast("cuda", dtype=torch.float32):
+        rots = sample_rotations(shape=xl.shape[:-2], dtype=xl.dtype, device=xl.device)
 
-    trans = scale_trans * torch.randn(
-        (*xl.shape[:-2], 3), dtype=xl.dtype, device=xl.device
-    )
+        trans = scale_trans * torch.randn(
+            (*xl.shape[:-2], 3), dtype=xl.dtype, device=xl.device
+        )
 
-    mean_xl = torch.sum(
-        xl * atom_mask[..., None],
-        dim=-2,
-        keepdim=True,
-    ) / torch.sum(atom_mask[..., None], dim=-2, keepdim=True)
+        mean_xl = torch.sum(
+            xl * atom_mask[..., None],
+            dim=-2,
+            keepdim=True,
+        ) / torch.sum(atom_mask[..., None], dim=-2, keepdim=True)
 
-    # center coordinates
-    pos_centered = xl - mean_xl
-    return pos_centered @ rots.transpose(-1, -2) + trans[..., None, :]
+        # center coordinates
+        pos_centered = xl - mean_xl
+        pos_out = pos_centered @ rots.transpose(-1, -2) + trans[..., None, :]
+
+    return pos_out.to(dtype=dtype)
 
 
 # Move this somewhere else?
@@ -173,6 +177,7 @@ class DiffusionModule(nn.Module):
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
+        use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
     ) -> torch.Tensor:
         """
@@ -199,6 +204,8 @@ class DiffusionModule(nn.Module):
                 Whether to use DeepSpeed Evo Attention kernel
             use_lma:
                 Whether to use LMA
+            use_high_precision_attention:
+                Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
         Returns:
@@ -215,9 +222,9 @@ class DiffusionModule(nn.Module):
             atom_mask=atom_mask,
             rl=rl_noisy,
             si_trunk=si_trunk,
-            zij_trunk=zij_trunk,
+            zij_trunk=zij,  # Use conditioned trunk representation
             chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_high_precision_attention=use_high_precision_attention,
         )
 
         ai = ai + self.linear_s(self.layer_norm_s(si))
@@ -230,6 +237,7 @@ class DiffusionModule(nn.Module):
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_lma=use_lma,
+            use_high_precision_attention=use_high_precision_attention,
             _mask_trans=_mask_trans,
         )
 
@@ -243,7 +251,7 @@ class DiffusionModule(nn.Module):
             cl=cl,
             plm=plm,
             chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_high_precision_attention=use_high_precision_attention,
         )
 
         xl_out = (
@@ -299,9 +307,11 @@ class SampleDiffusion(nn.Module):
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
         noise_schedule: torch.Tensor,
+        no_rollout_samples: int,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
+        use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
     ) -> torch.Tensor:
         """
@@ -316,21 +326,28 @@ class SampleDiffusion(nn.Module):
                 [*, N_token, N_token, c_z] Pair representation
             noise_schedule:
                 [no_rollout_steps] Noise schedule
+            no_rollout_samples:
+                [no_rollout_samples] Number of samples to generate for rollout
             chunk_size:
                 Inference-time subbatch size
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
             use_lma:
                 Whether to use LMA
+            use_high_precision_attention:
+                Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
         Returns:
             [*, N_atom, 3] Sampled atom positions
         """
         atom_mask = batch["atom_mask"]
+        batch_dim, num_atoms = atom_mask.shape[0], atom_mask.shape[-1]
 
         xl = noise_schedule[0] * torch.randn(
-            (*atom_mask.shape, 3), device=atom_mask.device, dtype=atom_mask.dtype
+            (batch_dim, no_rollout_samples, num_atoms, 3),
+            device=atom_mask.device,
+            dtype=atom_mask.dtype,
         )
 
         for tau, c_tau in enumerate(noise_schedule[1:]):
@@ -360,6 +377,7 @@ class SampleDiffusion(nn.Module):
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
+                use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,
             )
 

@@ -7,6 +7,9 @@ import numpy as np
 from biotite.structure import Atom, AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
 
+from openfold3.core.data.primitives.structure.component import (
+    get_covalent_component_chain_ids,
+)
 from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
     remove_atom_indices,
@@ -537,13 +540,19 @@ def add_unresolved_polymer_residues(
 
 # NIT: This could be split up into multiple functions
 def add_unresolved_atoms_within_residue(
-    atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile
+    atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile, add_terminal: bool = False
 ) -> AtomArray:
     """Adds atoms for residues that are partially resolved.
 
     While add_unresolved_polymer_residues adds entire missing residues in cases like
     chain breaks, or missing sequence starts/ends, this function adds missing atoms
     within residues that are partially resolved.
+
+    NOTE: For now, this function skips adding unresolved atoms for covalently connected
+    components such as ligands bound to a polymer or multi-residue ligands (like
+    glycans). This is because it is challenging to infer which atom is not present due
+    to the covalent connection and which atom is truly missing (and leaving-atom
+    annotations are ambiguous). This should be addressed in a future version.
 
     Args:
         atom_array:
@@ -555,6 +564,10 @@ def add_unresolved_atoms_within_residue(
         ccd:
             Parsed Chemical Component Dictionary (CCD) containing the residue
             information.
+        add_terminal:
+            Whether to consider missing terminal atoms as unresolved, which are the OXT
+            for protein chains and the phosphodiester leaving oxygen for nucleic acid
+            chains. Defaults to False.
 
     Returns:
         AtomArray:
@@ -599,23 +612,23 @@ def add_unresolved_atoms_within_residue(
     std_protein_residues = set(STANDARD_PROTEIN_RESIDUES_3)
     std_na_residues = set(STANDARD_NUCLEIC_ACID_RESIDUES)
 
+    covalent_ligand_chain_ids = get_covalent_component_chain_ids(atom_array)
+
     missing_atom_list = []
 
     for chain in struc.chain_iter(extended_atom_array):
         chain_id = chain.chain_id[0]
 
+        # TODO: Add logic for correctly inferring unobserved atoms also in covalent
+        # ligands
+        if chain_id in covalent_ligand_chain_ids:
+            continue
+
         (chain_molecule_type_id,) = np.unique(chain.molecule_type_id)
         chain_molecule_type = MoleculeType(chain_molecule_type_id)
 
-        is_ligand = chain_molecule_type == MoleculeType.LIGAND
         is_protein = chain_molecule_type == MoleculeType.PROTEIN
         is_nucleic_acid = chain_molecule_type in (MoleculeType.RNA, MoleculeType.DNA)
-
-        # TODO: add logic for correctly inferring unobserved atoms also in covalent
-        # ligands
-        # Skip covalently connected ligand chains
-        if (struc.get_residue_count(chain) > 1) & is_ligand:
-            continue
 
         # Find unresolved atoms for all residues in each chain
         for residue in struc.residue_iter(chain):
@@ -629,7 +642,11 @@ def add_unresolved_atoms_within_residue(
             all_atom_elements = ccd[res_name]["chem_comp_atom"][
                 "type_symbol"
             ].as_array()
-            all_atoms_no_h = all_atoms[all_atom_elements != "H"].tolist()
+            required_atoms = all_atoms[all_atom_elements != "H"].tolist()
+
+            # Record the original required atom before the leaving-atom subsetting logic
+            # for a later assert
+            required_atoms_with_terminal = required_atoms.copy()
 
             # General metadata for atoms
             atom_ids_to_elements = get_ccd_atom_id_to_element_dict(ccd[res_name])
@@ -640,82 +657,83 @@ def add_unresolved_atoms_within_residue(
                 is_first_residue = res_id == 1
                 is_last_residue = res_id == chain_to_seqlen[chain_id]
 
-                # Handle terminal atom inclusion or exclusion
-                if is_protein and not is_last_residue:
+                # Don't add OXT if it's not a terminal residue or adding terminal atoms
+                # is disabled in general
+                if (is_protein and "OXT" in required_atoms) and (
+                    not is_last_residue or not add_terminal
+                ):
                     if res_name not in std_protein_residues:
                         logger.debug(
                             "Adding unresolved atoms within protein chain for non-"
                             f"standard protein residue: {res_name}"
                         )
-                    # If amino acid is mid-sequence, skip terminal oxygen
-                    if "OXT" in all_atoms_no_h:
-                        all_atoms_no_h.remove("OXT")
+
+                    required_atoms.remove("OXT")
 
                 # Find the "leaving oxygen" for the phosphate group which is displaced
-                # during phosphodiester bond formation and should not be considered a
-                # missing atom
-                elif is_nucleic_acid and not is_first_residue:
-                    atom_pairs_to_bonds = get_ccd_atom_pair_to_bond_dict(ccd[res_name])
-
+                # during phosphodiester bond formation, but do not be consider it a
+                # missing atom for the first residue or if terminal atoms are disabled
+                elif is_nucleic_acid and (not is_first_residue or not add_terminal):
                     if res_name not in std_na_residues:
                         logger.debug(
                             "Adding unresolved atoms within NA chain for non-standard "
                             f"NA residue: {res_name}"
                         )
 
+                    if "OP3" in required_atoms and "OP3" not in resolved_atom_set:
+                        leaving_oxygen = "OP3"
+                    elif "O3P" in required_atoms and "O3P" not in resolved_atom_set:
+                        leaving_oxygen = "O3P"
                     # Usually, the "leaving oxygen" for the phosphate group is OP3/O3P,
                     # but in some cases it can be another oxygen which we need to
                     # identify
-                    op3_present = "OP3" in resolved_atom_set
-                    o3p_present = "O3P" in resolved_atom_set
-                    if op3_present or o3p_present:
+                    else:
                         p_bonded_oxygens = set()
                         elsewhere_bonded_oxygens = set()
 
+                        atom_pairs_to_bonds = get_ccd_atom_pair_to_bond_dict(
+                            ccd[res_name]
+                        )
                         for bond_pair in atom_pairs_to_bonds:
                             atom_1 = bond_pair[0]
                             atom_2 = bond_pair[1]
 
-                            if atom_ids_to_elements[atom_1] == "O":
+                            # Search for patterns of bonded oxygens
+                            for atom_oxygen, atom_other in zip(
+                                (atom_1, atom_2), (atom_2, atom_1)
+                            ):
+                                # Skip if not an oxygen
+                                if atom_ids_to_elements[atom_oxygen] != "O":
+                                    continue
                                 # The "leaving oxygen" should be absent from the
                                 # structure
-                                if atom_1 in resolved_atom_set:
+                                if atom_oxygen in resolved_atom_set:
                                     continue
 
-                                if atom_2 == "P":
-                                    p_bonded_oxygens.add(atom_1)
-                                elif atom_ids_to_elements[atom_2] not in ("H", "D"):
-                                    elsewhere_bonded_oxygens.add(atom_1)
-
-                            if atom_ids_to_elements[atom_2] == "O":
-                                # The "leaving oxygen" should be absent from the
-                                # structure
-                                if atom_2 in resolved_atom_set:
-                                    continue
-
-                                if atom_1 == "P":
-                                    p_bonded_oxygens.add(atom_2)
-                                elif atom_ids_to_elements[atom_1] not in ("H", "D"):
-                                    elsewhere_bonded_oxygens.add(atom_2)
+                                if atom_other == "P":
+                                    p_bonded_oxygens.add(atom_oxygen)
+                                elif atom_ids_to_elements[atom_other] not in ("H", "D"):
+                                    elsewhere_bonded_oxygens.add(atom_oxygen)
 
                         # Oxygens connected to the canonical phosphate "P" but no other
                         # atom qualify as the leaving atom (logic is not perfect but
                         # should cover the majority of cases), so pick arbitrary one
-                        leaving_oxygen = next(
-                            iter(p_bonded_oxygens - elsewhere_bonded_oxygens)
-                        )
-                    else:
-                        # For normal nucleic acids, the leaving oxygen is always OP3
-                        leaving_oxygen = "OP3"
+                        try:
+                            leaving_oxygen = next(
+                                iter(p_bonded_oxygens - elsewhere_bonded_oxygens)
+                            )
+                        except StopIteration:
+                            logger.warning(f"No leaving oxygen found for {res_name}.")
+                            leaving_oxygen = None
 
                     # Remove the leaving oxygen from the list of unresolved atoms to not
                     # add it back in
-                    if leaving_oxygen in all_atoms_no_h:
-                        all_atoms_no_h.remove(leaving_oxygen)
+                    if leaving_oxygen in required_atoms:
+                        required_atoms.remove(leaving_oxygen)
 
-            assert resolved_atom_set.issubset(all_atoms_no_h)  # TODO: remove
+            assert resolved_atom_set.issubset(required_atoms_with_terminal)
 
-            unresolved_atom_set = set(all_atoms_no_h) - resolved_atom_set
+            unresolved_atom_set = set(required_atoms) - resolved_atom_set
 
             # Skip if all atoms are resolved
             if len(unresolved_atom_set) == 0:
@@ -744,7 +762,7 @@ def add_unresolved_atoms_within_residue(
             residue_first_atom_idx = residue._atom_idx[0]
 
             for atom_idx, atom_name in enumerate(
-                all_atoms_no_h, start=residue_first_atom_idx
+                required_atoms, start=residue_first_atom_idx
             ):
                 if atom_name in resolved_atom_set:
                     residue._atom_idx[next(residue_atom_selection_iter)] = atom_idx
@@ -812,7 +830,9 @@ def add_unresolved_atoms_within_residue(
     return extended_atom_array
 
 
-def add_unresolved_atoms(atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile):
+def add_unresolved_atoms(
+    atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile, add_terminal: bool = False
+) -> AtomArray:
     """Adds missing atoms within residues and missing residues to the AtomArray.
 
     This function augments the given `AtomArray` by adding any missing atoms within
@@ -830,6 +850,10 @@ def add_unresolved_atoms(atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile
             `metadata_extraction.get_cif_block`).
         ccd:
             Parsed Chemical Component Dictionary (CCD) containing residue information.
+        add_terminal:
+            Whether to consider missing terminal atoms as unresolved, which are the OXT
+            for protein chains and the phosphodiester leaving oxygen for nucleic acid
+            chains. Defaults to False.
 
     Returns:
         AtomArray:
@@ -846,11 +870,13 @@ def add_unresolved_atoms(atom_array: AtomArray, cif_data: CIFBlock, ccd: CIFFile
           inter-residue bonds for the added atoms and residues.
     """
     # Add missing atoms within residues
-    extended_atom_array = add_unresolved_atoms_within_residue(atom_array, cif_data, ccd)
+    extended_atom_array = add_unresolved_atoms_within_residue(
+        atom_array=atom_array, cif_data=cif_data, ccd=ccd, add_terminal=add_terminal
+    )
 
     # Add missing residues
     extended_atom_array = add_unresolved_polymer_residues(
-        extended_atom_array, cif_data, ccd
+        atom_array=extended_atom_array, cif_data=cif_data, ccd=ccd
     )
 
     return extended_atom_array

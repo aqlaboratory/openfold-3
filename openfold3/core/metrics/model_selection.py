@@ -1,260 +1,120 @@
+import logging
+from typing import Optional
+
 import torch
 
-from openfold3.core.metrics.validation_all_atom import (
-    get_validation_metrics,
-    interface_lddt,
-    lddt,
-)
-from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
+from openfold3.core.metrics.confidence import compute_predicted_distance_error
+from openfold3.projects.af3_all_atom.constants import METRICS_MAXIMIZE, METRICS_MINIMIZE
+
+logger = logging.getLogger(__name__)
 
 
-# TODO: This seems like it has a high degree of redundancy with the validation metrics
-# -> should improve that
-def model_selection_metric(
-    batch: dict,
+def compute_model_selection_metric(
     outputs: dict,
+    metrics: dict,
     weights: dict,
-):
+    pdb_id: Optional[str] = None,
+    eps: float = 1e-8,
+) -> dict:
     """
     Implements Model Selection (Section 5.7.3) LDDT metrics computation
 
     Args:
-            batch: Updated batch dictionary post permutation alignment
-            output: Output dictionary
+        outputs: Output dictionary from the model.
+        weights: Dict of weights for each metric to compute a weighted average.
+        eps: Small value to avoid division by zero.
+
     Returns:
-            metrics: Dictionary containing lddts of following keys:
-                    'lddt_inter_protein_protein': Protein-protein interface LDDT
-                    'lddt_inter_protein_dna': DNA-protein interface LDDT
-                    'lddt_inter_protein_rna': Protein-RNA interface LDDT
-                    'lddt_inter_ligand_dna': DNA-ligand interface LDDT
-                    'lddt_inter_protein_ligand': Ligand-protein interface LDDT
-                    'lddt_inter_ligand_rna': Ligand-RNA interface LDDT
-                    'lddt_intra_protein': Protein intra-chain LDDT
-                    'lddt_intra_dna': DNA intra-chain LDDT
-                    'lddt_intra_rna': RNA intra-chain LDDT
-                    'lddt_intra_ligand': Ligand intra-chain LDDT
-                    'lddt_intra_modified_residues':Modified residue intra-chain LDDT
-
-            with [bs, n_samples] shape for all metrics
-
-    Note:
-            In the case where no valid atom_type is available, metric dict doesn't
-            contain the key.
+        metrics: Dictionary containing:
+            - Keys for various LDDT metrics (e.g., 'lddt_inter_protein_protein',
+              'lddt_intra_ligand', etc.), each with shape [batch_size].
+            - "model_selection_metric" with shape [batch_size], representing
+              the final weighted model-selection metric.
     """
-    metrics = {}
+    device = outputs["pde_logits"].device
 
-    gt_coords = batch["ground_truth"]["atom_positions"]
-    pred_coords = outputs["x_pred"]
-    all_atom_mask = batch["ref_mask"]
-    token_mask = batch["token_mask"]
-    num_atoms_per_token = batch["num_atoms_per_token"]
-    bs = pred_coords.shape[:-2]
+    # Compute pde (predicted distance error)
+    pde = compute_predicted_distance_error(
+        outputs["pde_logits"].detach(), max_bin=31, no_bins=64
+    )["predicted_distance_error"]
 
-    # getting rid of modified residues
-    is_protein = batch["is_protein"]
-    is_rna = batch["is_rna"]
-    is_dna = batch["is_dna"]
-    not_atomized = 1 - batch["is_atomized"]
+    # Compute distogram-based contact probabilities (pij)
+    # distogram_logits shape: [bs, n_samples, n_tokens, n_tokens, 38]
+    distogram_logits = outputs["distogram_logits"].detach()
+    distogram_bins = torch.linspace(2, 22, 65, device=device)
+    distogram_bins_8A = distogram_bins <= 8.0  # boolean mask for bins <= 8 Å
+    distogram_bins_8A = distogram_bins_8A[1:]  # exclude the first bin (2 Å)
 
-    is_protein = is_protein * not_atomized
-    is_rna = is_rna * not_atomized
-    is_dna = is_dna * not_atomized
+    # Probability of contact between tokens i and j (sum over bins <= 8 Å)
+    # pij shape: [bs, n_samples, n_tokens, n_tokens]
+    pij = torch.sum(distogram_logits[..., distogram_bins_8A], dim=-1)
 
-    # broadcast token level features to atom level features
-    is_protein_atomized = broadcast_token_feat_to_atoms(
-        token_mask, num_atoms_per_token, is_protein
-    )
-    is_ligand_atomized = broadcast_token_feat_to_atoms(
-        token_mask, num_atoms_per_token, batch["is_ligand"]
-    )
-    is_rna_atomized = broadcast_token_feat_to_atoms(
-        token_mask, num_atoms_per_token, is_rna
-    )
-    is_dna_atomized = broadcast_token_feat_to_atoms(
-        token_mask, num_atoms_per_token, is_dna
-    )
-    asym_id_atomized = broadcast_token_feat_to_atoms(
-        token_mask, num_atoms_per_token, batch["asym_id"]
-    )
+    # Global pde: weighted by contact probability pij
+    # weighted_pde shape: [bs, n_samples]
+    weighted_pde = torch.sum(pij * pde, dim=[-2, -1])
+    sum_pij = torch.sum(pij, dim=[-2, -1]) + eps  # avoid division by zero
+    # global_pde shape: [bs, n_samples]
+    global_pde = weighted_pde / sum_pij
 
-    # get metrics
-    protein_validation_metrics = get_validation_metrics(
-        is_protein_atomized,
-        asym_id_atomized,
-        pred_coords,
-        gt_coords,
-        all_atom_mask,
-        is_protein_atomized,
-        substrate="protein",
-        is_nucleic_acid=False,
-    )
-    metrics = metrics | protein_validation_metrics
+    # Find the top-1 sample per batch based on global pde
+    # top1_global_pde shape: [bs]
+    top1_global_pde = torch.argmax(global_pde, dim=1)
 
-    ligand_validation_metrics = get_validation_metrics(
-        is_ligand_atomized,
-        asym_id_atomized,
-        pred_coords,
-        gt_coords,
-        all_atom_mask,
-        is_protein_atomized,
-        substrate="ligand",
-        is_nucleic_acid=False,
-    )
-    metrics = metrics | ligand_validation_metrics
+    # Select the top-1 metric values (across the sample dimension) per batch
+    metrics_top_1 = {}
+    for metric_name, metric_values in metrics.items():
+        # metric_values shape: [bs, n_samples]
+        # Index each batch by the top-1 sample
+        batch_indices = torch.arange(metric_values.shape[0], device=device)
+        metrics_top_1[metric_name] = metric_values[batch_indices, top1_global_pde]
 
-    rna_validation_metrics = get_validation_metrics(
-        is_rna_atomized,
-        asym_id_atomized,
-        pred_coords,
-        gt_coords,
-        all_atom_mask,
-        is_protein_atomized,
-        substrate="rna",
-        is_nucleic_acid=True,
-    )
-    metrics = metrics | rna_validation_metrics
+    # Compute the best metric value (top) across all samples per batch
+    # (referred to as "metric_top_5" in the original AF3, though it's just max/min
+    # based on the metric type)
+    metric_best = {}
+    for metric_name, metric_values in metrics.items():
+        # Take the best across the sample dimension => shape [bs]
+        metric_type = metric_name.split("_")[0]
+        if metric_type in METRICS_MAXIMIZE:
+            best_metric_sample = torch.max(metric_values, dim=1)[0]
+        elif metric_type in METRICS_MINIMIZE:
+            best_metric_sample = torch.min(metric_values, dim=1)[0]
+        else:
+            raise ValueError(
+                f"Please specify whether metric should be maximized "
+                f"or minimized in the METRICS_MAX or METRICS_MIN "
+                f"constants: {metric_name}"
+            )
+        metric_best[metric_name] = best_metric_sample
 
-    dna_validation_metrics = get_validation_metrics(
-        is_dna_atomized,
-        asym_id_atomized,
-        pred_coords,
-        gt_coords,
-        all_atom_mask,
-        is_protein_atomized,
-        substrate="dna",
-        is_nucleic_acid=True,
-    )
-    metrics = metrics | dna_validation_metrics
-
-    # remaining LDDTs
-    # interLDDT: ligand_dna
-    if torch.any(is_ligand_atomized) and torch.any(is_dna_atomized):
-        metrics.update(
-            {
-                "lddt_inter_ligand_dna": interface_lddt(
-                    pred_coords[is_ligand_atomized.bool()].view((bs) + (-1, 3)),
-                    pred_coords[is_dna_atomized.bool()].view((bs) + (-1, 3)),
-                    gt_coords[is_ligand_atomized.bool()].view((bs) + (-1,)),
-                    gt_coords[is_dna_atomized.bool()].view((bs) + (-1,)),
-                    all_atom_mask[is_ligand_atomized.bool()].view((bs) + (-1,)),
-                    all_atom_mask[is_dna_atomized.bool()].view((bs) + (-1,)),
-                    cutoff=30.0,
-                )
-            }
+    # Combine top-1 and top-max metrics by arithmetic mean
+    final_metrics = {}
+    for metric_name in metrics_top_1:
+        final_metrics[metric_name] = 0.5 * (
+            metrics_top_1[metric_name] + metric_best[metric_name]
         )
 
-    # interLDDT: ligand_rna
-    if torch.any(is_ligand_atomized) and torch.any(is_rna_atomized):
-        metrics.update(
-            {
-                "lddt_inter_ligand_rna": interface_lddt(
-                    pred_coords[is_ligand_atomized.bool()].view((bs) + (-1, 3)),
-                    pred_coords[is_rna_atomized.bool()].view((bs) + (-1, 3)),
-                    gt_coords[is_ligand_atomized.bool()].view((bs) + (-1,)),
-                    gt_coords[is_rna_atomized.bool()].view((bs) + (-1,)),
-                    all_atom_mask[is_ligand_atomized.bool()].view((bs) + (-1,)),
-                    all_atom_mask[is_rna_atomized.bool()].view((bs) + (-1,)),
-                    cutoff=30.0,
-                )
-            }
+    # Sum up the weighted metrics (shape: [bs])
+    # and then divide by the sum of weights (scalar).
+    valid_metrics = list(set(weights.keys()).intersection(final_metrics.keys()))
+    valid_metrics = [
+        metric_name
+        for metric_name in valid_metrics
+        if not torch.isnan(final_metrics[metric_name]).any()
+    ]
+
+    if not valid_metrics:
+        logger.warning(
+            f"No valid metrics found for model selection for PDB ID {', '.join(pdb_id)}"
         )
+        return final_metrics
 
-    # intraLDDT: modified_residues
-    is_modified_res = batch["is_atomized"]
-    is_modified_res = is_modified_res * (1 - batch["is_ligand"])
-    if is_modified_res:
-        is_modified_res_atomized = broadcast_token_feat_to_atoms(
-            token_mask, num_atoms_per_token, is_modified_res
-        )
+    total_weighted = 0.0
+    sum_weights = 0.0
+    for metric_name in valid_metrics:
+        total_weighted += final_metrics[metric_name] * weights[metric_name]
+        sum_weights += weights[metric_name]
 
-        pred_mr = pred_coords[is_modified_res_atomized.bool()].view((bs) + (-1, 3))
-        gt_mr = gt_coords[is_modified_res_atomized.bool()].view((bs) + (-1, 3))
-        all_atom_mask_mr = all_atom_mask[is_modified_res_atomized.bool()].view(
-            (bs) + (-1,)
-        )
-        asym_id_atomized_mr = asym_id_atomized[is_modified_res_atomized.bool()].view(
-            (bs) + (-1,)
-        )
-        pred_mr_pair = torch.cdist(pred_mr, pred_mr)
-        gt_mr_pair = torch.cdist(gt_mr, gt_mr)
+    final_metrics["model_selection"] = total_weighted / sum_weights
 
-        intra_mod_res_lddt, _ = lddt(
-            pred_mr_pair, gt_mr_pair, all_atom_mask_mr, asym_id_atomized_mr
-        )
-
-        metrics.update({"lddt_intra_modified_residues": intra_mod_res_lddt})
-    # Here we suppose that we only have a batch of size 1.
-    # compute the PDE for each sample:
-    PDE = outputs["confidence_scores"]["PDE"][0]  # [N_samples, N_token, N_token, 1]
-    distogram_logits = outputs["distogram_logits"][
-        0
-    ]  # [N_samples, N_token, N_token, 38]
-
-    # distogram_bins are divided into 38 bins between 3.25 and 50.75 Angstroms
-    distogram_bins = torch.linspace(3.25, 50.75, 38)
-    # get the distogram bins corresponding to distance <= 8 Angstroms
-    distogram_bins_8A = torch.where(distogram_bins <= 8)[0]
-
-    # probability of contact between token i and token j
-    pij = torch.sum(
-        distogram_logits[:, :, :, distogram_bins_8A], dim=-1
-    )  # [N_samples, N_token, N_token]
-
-    # global PDE
-    global_PDE = torch.average(PDE, dim=0, weights=pij)
-
-    # get top1 global PDE
-    top1_global_PDE = torch.argmax(global_PDE, dim=-1)
-
-    metrics_top_1 = {
-        metric: value[top1_global_PDE] for metric, value in metrics.items()
-    }
-
-    # best value for each metric across all the samples
-    metric_top_5 = {
-        metric: torch.max(value, dim=0)[0] for metric, value in metrics.items()
-    }
-
-    # arithmetic mean of the metrics from metrics_top_1 and metric_top_5
-    metrics = {
-        metric: (metrics_top_1[metric] + metric_top_5[metric]) / 2
-        for metric in metrics_top_1
-    }
-    model_selection_metric = sum(
-        [metrics[metric] * weights[metric] for metric in metrics]
-    )
-
-    sum_weights = sum(weights[metric] for metric in metrics)
-
-    metrics["model_selection_metric"] = model_selection_metric / sum_weights
-
-    return metrics
-
-
-# probably should be in config
-initial_training_weights = {
-    "lddt_intra_modified_residues": 10.0,
-    "lddt_inter_ligand_rna": 5.0,
-    "lddt_inter_ligand_dna": 5.0,
-    "lddt_intra_protein": 20.0,
-    "lddt_intra_ligand": 20.0,
-    "lddt_intra_dna": 4.0,
-    "lddt_intra_rna": 16.0,
-    "lddt_inter_protein_protein": 20.0,
-    "lddt_inter_protein_ligand": 10.0,
-    "lddt_inter_protein_dna": 10.0,
-    "lddt_inter_protein_rna": 10.0,
-}
-
-initial_training_weights = {
-    "lddt_inter_ligand_rna": 2.0,
-    "lddt_inter_ligand_dna": 5.0,
-    "lddt_intra_protein": 20.0,
-    "lddt_intra_ligand": 20.0,
-    "lddt_intra_dna": 4.0,
-    "lddt_intra_rna": 16.0,
-    "lddt_inter_protein_protein": 20.0,
-    "lddt_inter_protein_ligand": 10.0,
-    "lddt_inter_protein_dna": 10.0,
-    "lddt_inter_protein_rna": 2.0,
-}
+    return final_metrics

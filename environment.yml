@@ -28,14 +28,19 @@ dependencies:
   - aria2
   - git
   - ruff>=0.5.0
-  - biotite
-  - rdkit
+  - biotite==1.1.0
+  - rdkit==2024.09.4
+  - mmseqs2==15.6f452
   - bioconda::hmmer
   - bioconda::hhsuite
   - bioconda::kalign2
   - pytorch::pytorch=2.4
   - pytorch::pytorch-cuda=12.1
   - memory_profiler==0.61.0
+  - func_timeout
+  - boto3
+  - conda-forge::python-lmdb
+  - conda-forge::ijson
   - pip:
       - mpi4py==3.1.5
       - deepspeed==0.14.5

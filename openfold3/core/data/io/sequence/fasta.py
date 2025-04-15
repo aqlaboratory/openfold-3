@@ -1,11 +1,14 @@
 """This module contains IO functions for reading and writing fasta files."""
 
 import contextlib
+import logging
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 
 def read_multichain_fasta(input_path: Path) -> dict[str, str]:
@@ -67,7 +70,13 @@ def consolidate_preprocessed_fastas(preprocessed_dir: Path) -> dict[str, str]:
     # Function to read FASTA for a single directory
     def process_pdb_dir(pdb_dir: Path):
         pdb_id = pdb_dir.name
-        chain_id_to_seq = read_multichain_fasta(pdb_dir / f"{pdb_id}.fasta")
+        fasta_path = pdb_dir / f"{pdb_id}.fasta"
+
+        if not fasta_path.exists():
+            logger.warning(f"FASTA file not found for {pdb_id}")
+            return {}
+
+        chain_id_to_seq = read_multichain_fasta(fasta_path)
         return {
             f"{pdb_id}_{chain_id}": seq for chain_id, seq in chain_id_to_seq.items()
         }
@@ -94,6 +103,7 @@ def consolidate_preprocessed_fastas(preprocessed_dir: Path) -> dict[str, str]:
 def write_multichain_fasta(
     output_path: Path,
     id_to_sequence: dict[str, str],
+    sort: bool = False,
 ) -> Path:
     """Writes a FASTA file from a dictionary of IDs to sequences.
 
@@ -104,12 +114,17 @@ def write_multichain_fasta(
     Args:
         output_path:
             Path to write the FASTA file to.
-        chain_to_sequence:
+        id_to_sequence:
             Dictionary mapping IDs to sequences.
+        sort:
+            Whether to sort by ID before writing. Defaults to False.
 
     Returns:
         Path to the written FASTA file.
     """
+    if sort:
+        id_to_sequence = dict(sorted(id_to_sequence.items()))
+
     with open(output_path, "w") as file:
         file.writelines(f">{id_}\n{seq}\n" for id_, seq in id_to_sequence.items())
 

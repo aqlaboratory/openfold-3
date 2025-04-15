@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import sys
+from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
@@ -19,6 +20,9 @@ from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModule
 from openfold3.projects import registry
+from openfold3.projects.af3_all_atom.config.runner_file_checks import (
+    _check_data_module_config,
+)
 
 torch_versions = torch.__version__.split(".")
 torch_major_version = int(torch_versions[0])
@@ -26,6 +30,8 @@ torch_minor_version = int(torch_versions[1])
 if torch_major_version > 1 or (torch_major_version == 1 and torch_minor_version >= 12):
     # Gives a large speedup on Ampere-class GPUs
     torch.set_float32_matmul_precision("high")
+
+logger = logging.getLogger(__name__)
 
 
 def _configure_wandb_logger(
@@ -58,9 +64,16 @@ def _configure_wandb_logger(
 def main(args):
     runner_args = ConfigDict(config_utils.load_yaml(args.runner_yaml))
 
-    is_distributed = (
-        runner_args.get("num_gpus", 0) > 1 or runner_args.get("num_nodes", 1) > 1
-    )
+    if runner_args.get("log_level"):
+        log_level = runner_args.get("log_level").upper()
+
+        output_dir = Path(runner_args.get("output_dir"))
+        output_dir.mkdir(exist_ok=True)
+        log_filepath = output_dir / "console_logs.log"
+        logging.basicConfig(filename=log_filepath, level=log_level, filemode="w")
+
+    world_size = runner_args.num_gpus * runner_args.pl_trainer.num_nodes
+    is_distributed = world_size > 1
 
     # Set seed
     seed = runner_args.get("seed")
@@ -91,7 +104,8 @@ def main(args):
         dataset_config_builder,
         project_config,
     )
-    lightning_data_module = DataModule(data_module_config)
+    _check_data_module_config(data_module_config)
+    lightning_data_module = DataModule(data_module_config, world_size=world_size)
 
     loggers = []
 
@@ -155,6 +169,11 @@ def main(args):
         os.system(f"{sys.executable} -m pip freeze > {freeze_path}")
         wandb_experiment.save(f"{freeze_path}")
 
+        runner_yaml_path = os.path.join(wandb_experiment.dir, "runner.json")
+        with open(runner_yaml_path, "w") as fp:
+            json.dump(runner_args.to_dict(), fp, indent=4)
+        wandb_experiment.save(runner_yaml_path)
+
         # Save data module config
         data_config_path = os.path.join(wandb_experiment.dir, "data_config.json")
         with open(data_config_path, "w") as fp:
@@ -181,6 +200,15 @@ def main(args):
                 datamodule=lightning_data_module,
                 ckpt_path=ckpt_path,
             )
+
+    # Validation
+    elif runner_args.mode == "eval":
+        trainer.validate(
+            model=lightning_module,
+            datamodule=lightning_data_module,
+            ckpt_path=ckpt_path,
+        )
+
     # Testing
     elif runner_args.mode == "test":
         trainer.test(
@@ -188,6 +216,7 @@ def main(args):
             datamodule=lightning_data_module,
             ckpt_path=ckpt_path,
         )
+
     # Prediction == inference
     elif runner_args.mode == "predict":
         trainer.predict(
@@ -209,8 +238,7 @@ if __name__ == "__main__":
         "--runner_yaml",
         type=str,
         help=(
-            "Yaml that specifies model and dataset parameters,"
-            "see examples/runner.yml"
+            "Yaml that specifies model and dataset parameters, see examples/runner.yml"
         ),
     )
 

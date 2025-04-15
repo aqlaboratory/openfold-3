@@ -40,7 +40,7 @@ class AF3TemplateFeaturePrecursor:
 def create_template_feature_precursor_af3(
     template_slice_collection: TemplateSliceCollection,
     n_templates: int,
-    token_budget: int,
+    n_tokens: int,
 ) -> AF3TemplateFeaturePrecursor:
     """Generates set of precursor features for AF3 template feature generation.
 
@@ -49,58 +49,89 @@ def create_template_feature_precursor_af3(
             The collection of cropped template atom arrays per chain, per template.
         n_templates (int):
             Number of templates.
-        token_budget (int):
-            Crop size.
+        n_tokens (int):
+            Number of tokens in the target structure.
 
     Returns:
         AF3TemplateFeaturePrecursor:
             The precursor features for AF3 template feature generation. Includes
             residue names, pseudo beta atom coordinates, and N, CA, C atom coordinates.
     """
-    res_names = np.full((n_templates, token_budget), "GAP", dtype=np.dtype("U3"))
-    pseudo_beta_atom_coords = np.full(
-        (n_templates, token_budget, 3), np.nan, dtype=float
-    )
-    frame_atom_coords = np.full((n_templates, token_budget, 3, 3), np.nan, dtype=float)
+    res_names = np.full((n_templates, n_tokens), "GAP", dtype=np.dtype("U3"))
+    pseudo_beta_atom_coords = np.full((n_templates, n_tokens, 3), np.nan, dtype=float)
+    frame_atom_coords = np.full((n_templates, n_tokens, 3, 3), np.nan, dtype=float)
 
     # Iterate over chains then templates per chain
     for _, template_slices in template_slice_collection.template_slices.items():
-        for template_idx, template_slice in enumerate(template_slices):
-            # Unpack template slice
-            template_atom_array = template_slice.atom_array
-            template_residue_repeats = template_slice.template_residue_repeats
-            query_token_positions = template_slice.query_token_positions
-            residue_starts = struc.get_residue_starts(template_atom_array)
+        template_idx = 0
+        for template_slice in template_slices:
+            # TODO add support for these cases below Skip templates that fail to be
+            # featurized these will be templates with composite residues like 4v2r
+            # residue 195
+            try:
+                # Unpack template slice
+                template_atom_array = template_slice.atom_array
+                template_residue_repeats = template_slice.template_residue_repeats
+                query_token_positions = template_slice.query_token_positions
+                residue_starts = struc.get_residue_starts(template_atom_array)
 
-            # Residue names and unmask corresponding tokens/template positions
-            res_names[template_idx, query_token_positions] = np.repeat(
-                template_atom_array[residue_starts].res_name, template_residue_repeats
-            )
+                # Residue names and unmask corresponding tokens/template positions
+                res_names[template_idx, query_token_positions] = np.repeat(
+                    template_atom_array[residue_starts].res_name,
+                    template_residue_repeats,
+                )
 
-            # Pseudo beta atom coordinates
-            is_gly = template_atom_array.res_name == "GLY"
-            is_ca = template_atom_array.atom_name == "CA"
-            is_cb = template_atom_array.atom_name == "CB"
-            is_pseudo_beta_atom = (is_gly & is_ca) | (~is_gly & is_cb)
-            pseudo_beta_atom_coords[template_idx, query_token_positions, :] = np.repeat(
-                template_atom_array[is_pseudo_beta_atom].coord,
-                template_residue_repeats,
-                axis=0,
-            )
+                # Pseudo beta atom coordinates
+                is_gly = template_atom_array.res_name == "GLY"
+                is_ca = template_atom_array.atom_name == "CA"
+                is_cb = template_atom_array.atom_name == "CB"
+                is_pseudo_beta_atom = (is_gly & is_ca) | (~is_gly & is_cb)
 
-            # Frame (N, CA, C) atom coordinates
-            is_n = template_atom_array.atom_name == "N"
-            is_ca = template_atom_array.atom_name == "CA"
-            is_c = template_atom_array.atom_name == "C"
-            frame_atom_coords[template_idx, query_token_positions, 0, :] = np.repeat(
-                template_atom_array[is_n].coord, template_residue_repeats, axis=0
-            )
-            frame_atom_coords[template_idx, query_token_positions, 1, :] = np.repeat(
-                template_atom_array[is_ca].coord, template_residue_repeats, axis=0
-            )
-            frame_atom_coords[template_idx, query_token_positions, 2, :] = np.repeat(
-                template_atom_array[is_c].coord, template_residue_repeats, axis=0
-            )
+                # Skip templates that have non-canonical residues with "non-canonical
+                # C-beta atoms" or missing C-beta atoms
+                # TODO: add handling for these
+                # cases to be able to include them or skip them in a way that allows for
+                # retaining the correct number of sampled templates
+                if sum(is_pseudo_beta_atom) != len(residue_starts):
+                    continue
+
+                pseudo_beta_atom_coords[template_idx, query_token_positions, :] = (
+                    np.repeat(
+                        template_atom_array[is_pseudo_beta_atom].coord,
+                        template_residue_repeats,
+                        axis=0,
+                    )
+                )
+
+                # Frame (N, CA, C) atom coordinates
+                is_n = template_atom_array.atom_name == "N"
+                is_ca = template_atom_array.atom_name == "CA"
+                is_c = template_atom_array.atom_name == "C"
+                frame_atom_coords[template_idx, query_token_positions, 0, :] = (
+                    np.repeat(
+                        template_atom_array[is_n].coord,
+                        template_residue_repeats,
+                        axis=0,
+                    )
+                )
+                frame_atom_coords[template_idx, query_token_positions, 1, :] = (
+                    np.repeat(
+                        template_atom_array[is_ca].coord,
+                        template_residue_repeats,
+                        axis=0,
+                    )
+                )
+                frame_atom_coords[template_idx, query_token_positions, 2, :] = (
+                    np.repeat(
+                        template_atom_array[is_c].coord,
+                        template_residue_repeats,
+                        axis=0,
+                    )
+                )
+
+                template_idx += 1
+            except Exception as _:
+                continue
 
     return AF3TemplateFeaturePrecursor(
         res_names=res_names,

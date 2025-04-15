@@ -64,9 +64,9 @@ def assert_num_atom_per_token(features, token_budget):
         : start_atom_index_from_broadcast_unpadded.shape[0]
     ] = start_atom_index_from_broadcast_unpadded
 
-    assert torch.all(
-        start_atom_index_from_broadcast == features["start_atom_index"]
-    ), "Mismatch in number of atoms per token from broadcasting."
+    assert torch.all(start_atom_index_from_broadcast == features["start_atom_index"]), (
+        "Mismatch in number of atoms per token from broadcasting."
+    )
 
 
 def assert_max_23_atoms_per_token(features):
@@ -123,9 +123,9 @@ def assert_resid_asym_refuid_match(features):
     ref_space_uid_pos = torch.where(torch.diff(features["ref_space_uid"]) > 0)
     result_tensor_pos = torch.where(torch.diff(result_tensor) > 0)
 
-    assert (
-        torch.isin(ref_space_uid_pos[0], result_tensor_pos[0]).all()
-    ), "Mismatch between changing positions of ref_space_uid and atom-broadcasted "
+    assert torch.isin(ref_space_uid_pos[0], result_tensor_pos[0]).all(), (
+        "Mismatch between changing positions of ref_space_uid and atom-broadcasted "
+    )
     "residue_index-asym_id tuples."
 
 
@@ -165,9 +165,9 @@ def assert_no_identical_ref_pos(features):
     ]
     secondary_sort = ref_pos_regular[ref_pos_regular[:, 1].argsort(dim=0, stable=False)]
     primary_sort = secondary_sort[secondary_sort[:, 0].argsort(dim=0, stable=True)]
-    assert torch.all(
-        ~(torch.diff(primary_sort, dim=0) == 0).all(dim=1)
-    ), "Found identical ref_pos coordinates."
+    assert torch.all(~(torch.diff(primary_sort, dim=0) == 0).all(dim=1)), (
+        "Found identical ref_pos coordinates."
+    )
 
 
 def assert_no_all_zero_idxs(features):
@@ -201,31 +201,31 @@ def assert_gt_crop_slice(features):
     )
 
     for k in FEATURE_CORE_DTYPES:
-        assert (
-            features["ground_truth"][k][is_gt_in_crop] == features[k]
-        ).all(), f"GT feature '{k}' does not match cropped feature."
+        assert (features["ground_truth"][k][is_gt_in_crop] == features[k]).all(), (
+            f"GT feature '{k}' does not match cropped feature."
+        )
 
 
 def assert_shape(features, token_budget, n_templates):
     """Asserts the shape of the features."""
     for k, v in FULL_TOKEN_DIM_INDEX_MAP.items():
         for i in v:
-            assert (
-                features[k].shape[i] == token_budget
-            ), f"Token shape mismatch for key '{k}'."
+            assert features[k].shape[i] == token_budget, (
+                f"Token shape mismatch for key '{k}'."
+            )
     for k, v in FULL_MSA_DIM_INDEX_MAP.items():
         for i in v:
             assert features[k].shape[i] <= 16384, f"MSA shape '{k}' larger than 16384."
     for k, v in FULL_TEMPLATE_DIM_INDEX_MAP.items():
         for i in v:
-            assert (
-                features[k].shape[i] == n_templates
-            ), f"Template shape '{k}' shape mismatch."
+            assert features[k].shape[i] == n_templates, (
+                f"Template shape '{k}' shape mismatch."
+            )
     for k, v in FULL_OTHER_DIM_INDEX_MAP.items():
         for i in v:
-            assert (
-                features[k].shape[i] == FULL_OTHER_DIM_SIZE_MAP[k][i]
-            ), f"Other shape '{k}' shape mismatch."
+            assert features[k].shape[i] == FULL_OTHER_DIM_SIZE_MAP[k][i], (
+                f"Other shape '{k}' shape mismatch."
+            )
 
 
 def assert_dtype(features):
@@ -233,13 +233,13 @@ def assert_dtype(features):
     for k, v in (FEATURE_CORE_DTYPES | FEATURE_OTHER_DTYPES).items():
         assert features[k].dtype == v, f"Cropped feature '{k}' dtype mismatch."
     for k, v in (FEATURE_CORE_DTYPES | FEATURE_GT_DTYPES).items():
-        assert (
-            features["ground_truth"][k].dtype == v
-        ), f"GT feature '{k}' dtype mismatch."
+        assert features["ground_truth"][k].dtype == v, (
+            f"GT feature '{k}' dtype mismatch."
+        )
     for k, v in FEATURE_LOSS_DTYPES.items():
-        assert (
-            features["loss_weights"][k].dtype == v
-        ), f"Loss feature '{k}' dtype mismatch."
+        assert features["loss_weights"][k].dtype == v, (
+            f"Loss feature '{k}' dtype mismatch."
+        )
 
 
 def assert_resid_same_in_tokenid(features):
@@ -247,20 +247,20 @@ def assert_resid_same_in_tokenid(features):
     residue_index_pos = torch.where(torch.diff(features["residue_index"]) > 0)
     token_index_pos = torch.where(torch.diff(features["token_index"]) > 0)
 
-    assert torch.isin(
-        residue_index_pos, token_index_pos
-    ).all(), "Found residue indices that change within tokens."
+    assert torch.isin(residue_index_pos, token_index_pos).all(), (
+        "Found residue indices that change within tokens."
+    )
 
 
 def assert_all_unk_atomized(features):
     """Asserts that all tokens with unknown residue type are atomized."""
     is_unknown = features["restype"][:, 20] == 1
-    assert (
-        features["is_atomized"][is_unknown] == 1
-    ).all(), "Found unknown residue tokens that are not atomized."
-    assert (
-        features["ground_truth"]["is_atomized"][is_unknown] == 1
-    ).all(), "Found unknown GT residue tokens that are not atomized."
+    assert (features["is_atomized"][is_unknown] == 1).all(), (
+        "Found unknown residue tokens that are not atomized."
+    )
+    assert (features["ground_truth"]["is_atomized"][is_unknown] == 1).all(), (
+        "Found unknown GT residue tokens that are not atomized."
+    )
 
 
 def assert_token_bonds_atomized(features):
@@ -274,9 +274,9 @@ def assert_token_bonds_atomized(features):
     )[0]
     is_atomized_pos = torch.where(features["is_atomized"] == 1)[0]
 
-    assert torch.isin(
-        has_token_bonds_pos, is_atomized_pos
-    ).all(), "Found unatomized tokens with token_bonds."
+    assert torch.isin(has_token_bonds_pos, is_atomized_pos).all(), (
+        "Found unatomized tokens with token_bonds."
+    )
 
 
 def assert_profile_sum(features):

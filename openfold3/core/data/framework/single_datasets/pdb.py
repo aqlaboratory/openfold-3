@@ -1,47 +1,124 @@
+import copy
 import dataclasses
-import json
+import logging
+import random
+import traceback
 from collections import Counter
 from enum import IntEnum
-from pathlib import Path
-from typing import Union
 
 import pandas as pd
 import torch
-from biotite.structure import AtomArray
-from biotite.structure.io import pdbx
 
-from openfold3.core.data.framework.single_datasets.abstract_single_dataset import (
-    SingleDataset,
+from openfold3.core.data.framework.data_module import openfold_batch_collator
+from openfold3.core.data.framework.single_datasets.abstract_single import (
     register_dataset,
 )
-from openfold3.core.data.io.dataset_cache import read_datacache
-from openfold3.core.data.pipelines.featurization.conformer import (
-    featurize_ref_conformers_af3,
+from openfold3.core.data.framework.single_datasets.base_af3 import (
+    BaseAF3Dataset,
 )
-from openfold3.core.data.pipelines.featurization.loss_weights import set_loss_weights
-from openfold3.core.data.pipelines.featurization.msa import featurize_msa_af3
-from openfold3.core.data.pipelines.featurization.structure import (
-    featurize_target_gt_structure_af3,
-)
-from openfold3.core.data.pipelines.featurization.template import (
-    featurize_template_structures_af3,
-)
-from openfold3.core.data.pipelines.sample_processing.conformer import (
-    get_ref_conformer_data_af3,
-)
-from openfold3.core.data.pipelines.sample_processing.msa import (
-    process_msas_af3,
-)
-from openfold3.core.data.pipelines.sample_processing.structure import (
-    process_target_structure_af3,
-)
-from openfold3.core.data.pipelines.sample_processing.template import (
-    process_template_structures_af3,
-)
-from openfold3.core.data.primitives.quality_control.logging_utils import (
-    log_runtime_memory,
+from openfold3.core.data.pipelines.featurization.loss_weights import (
+    set_loss_weights_for_disordered_set,
 )
 from openfold3.core.data.resources.residues import MoleculeType
+from openfold3.core.utils.atomize_utils import (
+    broadcast_token_feat_to_atoms,
+)
+from openfold3.core.utils.permutation_alignment import (
+    multi_chain_permutation_alignment,
+    naive_alignment,
+)
+
+logger = logging.getLogger(__name__)
+
+
+DEBUG_PDB_BLACKLIST = ["6fg3", "6dra", "6dr2", "6dqj", "7lx0"]
+
+
+# TODO: Remove debug logic
+def is_invalid_feature_dict(features: dict) -> bool:
+    """
+    Validate the feature dictionary for a single datapoint.
+    Do not fail early to log all potential errors.
+
+    Args:
+        features (dict):
+            Feature dictionary for a single datapoint
+
+    Returns:
+        skip (bool):
+            Whether the feature dictionary is invalid and should be skipped
+    """
+    skip = False
+    pdb_id = features["pdb_id"]
+
+    # Check that the sum of the number of atoms per token is equal to the
+    # number of atoms in the reference conformer
+    num_atoms_sum = torch.max(torch.sum(features["num_atoms_per_token"], dim=-1)).int()
+    num_ref_atoms = features["ref_pos"].shape[-2]
+    if num_atoms_sum != num_ref_atoms:
+        logger.warning(
+            f"Size mismatch {pdb_id} with {num_atoms_sum} vs {num_ref_atoms} atoms"
+        )
+        skip = True
+
+    # Check that for overlapping token indices, the total number of
+    # atoms in the ground truth is equal to the number of atoms in the
+    # reference conformer
+    gt_token_ids_atomized = broadcast_token_feat_to_atoms(
+        token_mask=features["ground_truth"]["token_mask"].bool(),
+        num_atoms_per_token=features["ground_truth"]["num_atoms_per_token"],
+        token_feat=features["ground_truth"]["token_index"],
+    )
+    atom_selection_mask = torch.isin(gt_token_ids_atomized, features["token_index"])
+    gt_atom_indices = torch.nonzero(atom_selection_mask, as_tuple=True)[0]
+    if gt_atom_indices.shape[0] != num_ref_atoms:
+        logger.warning(
+            f"Size mismatch between ground truth {gt_atom_indices.shape[0]} atoms vs "
+            f"crop {num_ref_atoms} atoms for the same token indices."
+        )
+        skip = True
+
+    # Check that the crop has some resolved atoms
+    if not features["ground_truth"]["atom_resolved_mask"].any():
+        logger.warning(f"Skipping {pdb_id}: no resolved atoms")
+        skip = True
+
+    # Check that the ligand and atomized masks are consistent
+    if (features["is_ligand"] & ~features["is_atomized"]).any():
+        logger.warning(f"Skipping {pdb_id}: contains non-atomized ligands")
+        skip = True
+
+    # Check that the number of tokens per atom is less than the maximum expected
+    if (features["num_atoms_per_token"] > 23).any():
+        logger.warning(
+            f"Skipping {pdb_id}: token contains number of atoms > max expected (23)"
+        )
+        skip = True
+
+    # Check that all input features are finite
+    for k, v in features.items():
+        if isinstance(v, torch.Tensor) and not torch.isfinite(v).all():
+            logger.warning(f"Non-finite values in {pdb_id} for {k}")
+            skip = True
+        if isinstance(v, dict):
+            for i, j in v.items():
+                if isinstance(j, torch.Tensor) and not torch.isfinite(j).all():
+                    logger.warning(f"Non-finite values in {pdb_id} for {i}")
+                    skip = True
+
+    # Run the permutation alignment to skip over samples that may fail in the model
+    # This could throw an exception that is handled in the __getitem__
+    feats_perm = openfold_batch_collator([copy.deepcopy(features)])
+    multi_chain_permutation_alignment(
+        batch=feats_perm,
+        atom_positions_predicted=torch.randn_like(feats_perm["ref_pos"]),
+    )
+    naive_alignment(
+        batch=feats_perm,
+        atom_positions_predicted=torch.randn_like(feats_perm["ref_pos"]),
+    )
+
+    return skip
 
 
 class DatapointType(IntEnum):
@@ -54,7 +131,7 @@ class DatapointCollection:
     """Dataclass to tally chain/interface properties."""
 
     pdb_id: list[str]
-    datapoint: list[Union[int, tuple[int, int]]]
+    datapoint: list[str | tuple[str, str]]
     n_prot: list[int]
     n_nuc: list[int]
     n_ligand: list[int]
@@ -78,8 +155,8 @@ class DatapointCollection:
     def append(
         self,
         pdb_id: str,
-        datapoint: Union[int, tuple[int, int]],
-        moltypes: Union[str, tuple[str, str]],
+        datapoint: str | tuple[str, str],
+        moltypes: str | tuple[str, str],
         type: DatapointType,
         n_clust: int,
     ) -> None:
@@ -88,9 +165,9 @@ class DatapointCollection:
         Args:
             pdb_id (str):
                 PDB ID.
-            datapoint (Union[int, tuple[int, int]]):
+            datapoint (int | tuple[int, int]):
                 Chain or interface ID.
-            moltypes (Union[str, tuple[str, str]]):
+            moltypes (str | tuple[str, str]):
                 Molecule types in the datapoint.
             type (DatapointType):
                 Datapoint type. One of chain or interface.
@@ -106,13 +183,11 @@ class DatapointCollection:
         self.type.append(type)
         self.n_clust.append(n_clust)
 
-    def count_moltypes(
-        self, moltypes: Union[str, tuple[str, str]]
-    ) -> tuple[int, int, int]:
+    def count_moltypes(self, moltypes: str | tuple[str, str]) -> tuple[int, int, int]:
         """Count the number of molecule types.
 
         Args:
-            moltypes (Union[str, tuple[str, str]]):
+            moltypes (str | tuple[str, str]):
                 Molecule type of the chain or types of the interface datapoint.
 
         Returns:
@@ -137,7 +212,7 @@ class DatapointCollection:
         self.metadata = pd.DataFrame(
             {
                 "pdb_id": self.pdb_id,
-                "datapoint": self.datapoint,
+                "preferred_chain_or_interface": self.datapoint,
                 "n_prot": self.n_prot,
                 "n_nuc": self.n_nuc,
                 "n_ligand": self.n_ligand,
@@ -146,30 +221,37 @@ class DatapointCollection:
             }
         )
 
-    def create_datapoint_cache(self) -> pd.DataFrame:
+    def create_datapoint_cache(self, sample_weights) -> pd.DataFrame:
         """Creates the datapoint_cache with chain/interface probabilities."""
-        datapoint_type_weigth = {DatapointType.CHAIN: 0.5, DatapointType.INTERFACE: 1}
-        a_prot = 3
-        a_nuc = 3
-        a_ligand = 1
+        datapoint_type_weight = {
+            DatapointType.CHAIN: sample_weights["w_chain"],
+            DatapointType.INTERFACE: sample_weights["w_interface"],
+        }
 
         def calculate_datapoint_probability(row):
             """Algorithm 1. from Section 2.5.1 of the AF3 SI."""
-            return (datapoint_type_weigth[row["type"]] / row["n_clust"]) * (
-                a_prot * row["n_prot"]
-                + a_nuc * row["n_nuc"]
-                + a_ligand * row["n_ligand"]
+            return (datapoint_type_weight[row["type"]] / row["n_clust"]) * (
+                sample_weights["a_prot"] * row["n_prot"]
+                + sample_weights["a_nuc"] * row["n_nuc"]
+                + sample_weights["a_ligand"] * row["n_ligand"]
             )
 
-        self.metadata["weight"] = self.metadata.apply(
+        self.metadata["datapoint_probabilities"] = self.metadata.apply(
             calculate_datapoint_probability, axis=1
         )
 
-        return self.metadata[["pdb_id", "datapoint", "weight"]]
+        return self.metadata[
+            [
+                "pdb_id",
+                "preferred_chain_or_interface",
+                "datapoint_probabilities",
+                "n_clust",
+            ]
+        ]
 
 
 @register_dataset
-class WeightedPDBDataset(SingleDataset):
+class WeightedPDBDataset(BaseAF3Dataset):
     """Implements a Dataset class for the Weighted PDB training dataset for AF3."""
 
     def __init__(self, dataset_config: dict) -> None:
@@ -180,72 +262,22 @@ class WeightedPDBDataset(SingleDataset):
                 Input config. See openfold3/examples/pdb_sample_dataset_config.yml for
                 an example.
         """
-        super().__init__()
-
-        # Paths/IO
-        self.target_structures_directory = dataset_config["dataset_paths"][
-            "target_structures_directory"
-        ]
-        self.alignments_directory = dataset_config["dataset_paths"][
-            "alignments_directory"
-        ]
-        self.alignment_db_directory = dataset_config["dataset_paths"][
-            "alignment_db_directory"
-        ]
-        if self.alignment_db_directory is not None:
-            with open(self.alignment_db_directory / Path("alignment_db.index")) as f:
-                self.alignment_index = json.load(f)
-        else:
-            self.alignment_index = None
-        self.alignment_array_directory = dataset_config["dataset_paths"][
-            "alignment_array_directory"
-        ]
-        self.template_cache_directory = dataset_config["dataset_paths"][
-            "template_cache_directory"
-        ]
-        self.template_structures_directory = dataset_config["dataset_paths"][
-            "template_structures_directory"
-        ]
-        self.template_structure_array_directory = dataset_config["dataset_paths"][
-            "template_structure_array_directory"
-        ]
-        self.template_file_format = dataset_config["dataset_paths"][
-            "template_file_format"
-        ]
-        self.reference_molecule_directory = dataset_config["dataset_paths"][
-            "reference_molecule_directory"
-        ]
-
-        # Dataset/datapoint cache
-        self.datapoint_cache = {}
-        self.dataset_cache = read_datacache(
-            dataset_config["dataset_paths"]["dataset_cache_file"]
-        )
-        self.create_datapoint_cache()
-        self.datapoint_probabilities = self.datapoint_cache["weight"].to_numpy()
-
-        # CCD - only used if template structures are not preprocessed
-        if (
-            dataset_config["dataset_paths"]["template_structure_array_directory"]
-            is not None
-        ):
-            self.ccd = None
-        else:
-            self.ccd = pdbx.CIFFile.read(dataset_config["dataset_paths"]["ccd_file"])
+        super().__init__(dataset_config)
 
         # Dataset configuration
-        self.crop_weights = dataset_config["crop_weights"]
-        self.token_budget = dataset_config["token_budget"]
-        self.loss_settings = dataset_config["loss"]
-        self.msa = dataset_config["msa"]
-        self.template = dataset_config["template"]
+        self.apply_crop = True
+        self.crop = dataset_config["custom"]["crop"]
+        self.sample_weights = dataset_config["custom"]["sample_weights"]
+
+        # Datapoint cache
+        self.create_datapoint_cache()
 
     def create_datapoint_cache(self) -> None:
         """Creates the datapoint_cache with chain/interface probabilities.
 
         Creates a Dataframe storing a flat list of chains and interfaces and
-        correspoinding datapoint probabilities. Used for mapping FROM the dataset_cache
-        in the StochasticSamplerDataset and TO the dataset_cache in the getitem."""
+        corresponding datapoint probabilities. Used for mapping FROM the dataset_cache
+        in the SamplerDataset and TO the dataset_cache in the getitem."""
         datapoint_collection = DatapointCollection.create_empty()
         for entry, entry_data in self.dataset_cache.structure_data.items():
             # Append chains
@@ -275,11 +307,13 @@ class WeightedPDBDataset(SingleDataset):
                 )
 
         datapoint_collection.convert_to_dataframe()
-        self.datapoint_cache = datapoint_collection.create_datapoint_cache()
+        self.datapoint_cache = datapoint_collection.create_datapoint_cache(
+            self.sample_weights
+        )
 
     def __getitem__(
         self, index: int
-    ) -> dict[str : Union[torch.Tensor, dict[str, torch.Tensor]]]:
+    ) -> dict[str : torch.Tensor | dict[str, torch.Tensor]]:
         """Returns a single datapoint from the dataset.
 
         Note: The data pipeline is modularized at the getitem level to enable
@@ -289,185 +323,83 @@ class WeightedPDBDataset(SingleDataset):
         # Get PDB ID from the datapoint cache and the preferred chain/interface
         datapoint = self.datapoint_cache.iloc[index]
         pdb_id = datapoint["pdb_id"]
-        preferred_chain_or_interface = datapoint["datapoint"]
-        sample_data = self.create_all_features(
-            pdb_id=pdb_id,
-            preferred_chain_or_interface=preferred_chain_or_interface,
-            return_atom_arrays=False,
-        )
-        return sample_data["features"]
+        preferred_chain_or_interface = datapoint["preferred_chain_or_interface"]
 
-    @log_runtime_memory(runtime_dict_key="runtime-create-target-structure-features")
-    def create_target_structure_features(
-        self, pdb_id: str, preferred_chain_or_interface: str, return_atom_arrays: bool
-    ) -> tuple[dict, AtomArray | torch.Tensor]:
-        """Creates the target structure features."""
+        # TODO: Remove debug logic
+        if not self.debug_mode:
+            sample_data = self.create_all_features(
+                pdb_id=pdb_id,
+                preferred_chain_or_interface=preferred_chain_or_interface,
+                return_atom_arrays=False,
+                return_crop_strategy=False,
+            )
+            features = sample_data["features"]
+            features["pdb_id"] = pdb_id
+            features["preferred_chain_or_interface"] = f"{preferred_chain_or_interface}"
+            return features
+        else:
+            try:
+                if pdb_id in DEBUG_PDB_BLACKLIST:
+                    logger.warning(f"Skipping blacklisted pdb id {pdb_id}")
+                    index = random.randint(0, len(self) - 1)
+                    return self.__getitem__(index)
 
-        # Target structure and duplicate-expanded GT structure features
-        target_structure_data = process_target_structure_af3(
-            target_structures_directory=self.target_structures_directory,
-            pdb_id=pdb_id,
-            crop_weights=self.crop_weights,
-            token_budget=self.token_budget,
-            preferred_chain_or_interface=preferred_chain_or_interface,
-            structure_format="pkl",
-            return_full_atom_array=return_atom_arrays,
-        )
-        # NOTE that for now we avoid the need for permutation alignment by providing the
-        # cropped atom array as the ground truth atom array
-        # target_structure_features.update(
-        #     featurize_target_gt_structure_af3(
-        #         target_structure_data["atom_array_cropped"],
-        #         target_structure_data["atom_array_gt"],
-        #         self.token_budget
-        #     )
-        # )
-        target_structure_features = featurize_target_gt_structure_af3(
-            target_structure_data["atom_array_cropped"],
-            target_structure_data["atom_array_cropped"],
-            self.token_budget,
-        )
-        target_structure_data["target_structure_features"] = target_structure_features
-        return target_structure_data
+                sample_data = self.create_all_features(
+                    pdb_id=pdb_id,
+                    preferred_chain_or_interface=preferred_chain_or_interface,
+                    return_atom_arrays=False,
+                    return_crop_strategy=False,
+                )
 
-    @log_runtime_memory(runtime_dict_key="runtime-create-msa-features")
-    def create_msa_features(self, pdb_id: str, atom_array_cropped: AtomArray) -> dict:
-        """Creates the MSA features."""
+                features = sample_data["features"]
 
-        msa_array_collection = process_msas_af3(
-            pdb_id=pdb_id,
-            atom_array=atom_array_cropped,
-            dataset_cache=self.dataset_cache,
-            alignments_directory=self.alignments_directory,
-            alignment_db_directory=self.alignment_db_directory,
-            alignment_index=self.alignment_index,
-            alignment_array_directory=self.alignment_array_directory,
-            max_seq_counts=self.msa.max_seq_counts,
-            aln_order=self.msa.aln_order,
-            max_rows_paired=self.msa.max_rows_paired,
-            min_chains_paired_partial=self.msa.min_chains_paired_partial,
-            pairing_mask_keys=self.msa.pairing_mask_keys,
-            moltypes=self.msa.moltypes,
-        )
-        msa_features = featurize_msa_af3(
-            atom_array=atom_array_cropped,
-            msa_array_collection=msa_array_collection,
-            max_rows=self.msa.max_rows,
-            max_rows_paired=self.msa.max_rows_paired,
-            token_budget=self.token_budget,
-            subsample_with_bands=self.msa.subsample_with_bands,
-        )
+                features["pdb_id"] = pdb_id
+                features["preferred_chain_or_interface"] = (
+                    f"{preferred_chain_or_interface}"
+                )
+                if is_invalid_feature_dict(features):
+                    index = random.randint(0, len(self) - 1)
+                    return self.__getitem__(index)
 
-        return msa_features
+                return features
 
-    @log_runtime_memory(runtime_dict_key="runtime-create-template-features")
-    def create_template_features(
-        self, pdb_id: str, atom_array_cropped: AtomArray
-    ) -> dict:
-        """Creates the template features."""
+            except Exception as e:
+                tb = traceback.format_exc()
+                dataset_name = self.get_class_name()
+                logger.warning(
+                    "-" * 40
+                    + "\n"
+                    + f"Failed to process {dataset_name} entry {pdb_id} with preferred"
+                    + f" chain or interface {preferred_chain_or_interface}: {str(e)}\n"
+                    + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
+                    + "-" * 40
+                )
+                index = random.randint(0, len(self) - 1)
+                return self.__getitem__(index)
 
-        template_slice_collection = process_template_structures_af3(
-            atom_array=atom_array_cropped,
-            n_templates=self.template.n_templates,
-            take_top_k=False,
-            template_cache_directory=self.template_cache_directory,
-            dataset_cache=self.dataset_cache,
-            pdb_id=pdb_id,
-            template_structures_directory=self.template_structures_directory,
-            template_structure_array_directory=self.template_structure_array_directory,
-            template_file_format=self.template_file_format,
-            ccd=self.ccd,
-        )
 
-        template_features = featurize_template_structures_af3(
-            template_slice_collection=template_slice_collection,
-            n_templates=self.template.n_templates,
-            token_budget=self.token_budget,
-            min_bin=self.template.distogram.min_bin,
-            max_bin=self.template.distogram.max_bin,
-            n_bins=self.template.distogram.n_bins,
-        )
+@register_dataset
+class DisorderedPDBDataset(WeightedPDBDataset):
+    """Implements a Dataset class for the Disordered PDB training dataset for AF3."""
 
-        return template_features
+    def __init__(self, dataset_config: dict) -> None:
+        """Initializes a DisorderedPDBDataset.
 
-    @log_runtime_memory(runtime_dict_key="runtime-create-ref-conformer-features")
-    def create_ref_conformer_features(
-        self, pdb_id: str, atom_array_cropped: AtomArray
-    ) -> dict:
-        """Creates the reference conformer features."""
-
-        processed_reference_molecules = get_ref_conformer_data_af3(
-            atom_array=atom_array_cropped,
-            per_chain_metadata=self.dataset_cache.structure_data[pdb_id].chains,
-            reference_mol_metadata=self.dataset_cache.reference_molecule_data,
-            reference_mol_dir=self.reference_molecule_directory,
-        )
-        reference_conformer_features = featurize_ref_conformers_af3(
-            processed_reference_molecules
-        )
-
-        return reference_conformer_features
+        Args:
+            dataset_config (dict):
+                Input config. See openfold3/examples/pdb_sample_dataset_config.yml for
+                an example.
+        """
+        super().__init__(dataset_config)
+        self.custom_settings = dataset_config["custom"]
 
     def create_loss_features(self, pdb_id: str) -> dict:
-        """Creates the loss features."""
+        """Creates the loss features for the disordered PDB set."""
 
         loss_features = {}
-        loss_features["loss_weights"] = set_loss_weights(
-            self.loss_settings,
+        loss_features["loss_weights"] = set_loss_weights_for_disordered_set(
+            self.loss,
             self.dataset_cache.structure_data[pdb_id].resolution,
+            self.custom_settings,
         )
         return loss_features
-
-    @log_runtime_memory(runtime_dict_key="runtime-create-all-features")
-    def create_all_features(
-        self,
-        pdb_id: str,
-        preferred_chain_or_interface: str,
-        return_atom_arrays: bool,
-    ) -> dict:
-        """Creates all features for a single datapoint."""
-
-        sample_data = {"features": {}}
-
-        # Target structure features
-        target_structure_data = self.create_target_structure_features(
-            pdb_id, preferred_chain_or_interface, return_atom_arrays
-        )
-        sample_data["features"].update(
-            target_structure_data["target_structure_features"]
-        )
-
-        # MSA features
-        msa_features = self.create_msa_features(
-            pdb_id,
-            target_structure_data["atom_array_cropped"],
-        )
-        sample_data["features"].update(msa_features)
-
-        # Template features
-        template_features = self.create_template_features(
-            pdb_id, target_structure_data["atom_array_cropped"]
-        )
-        sample_data["features"].update(template_features)
-
-        # Reference conformer features
-        reference_conformer_features = self.create_ref_conformer_features(
-            pdb_id, target_structure_data["atom_array_cropped"]
-        )
-        sample_data["features"].update(reference_conformer_features)
-
-        # Loss switches
-        loss_features = self.create_loss_features(pdb_id)
-        sample_data["features"].update(loss_features)
-
-        if return_atom_arrays:
-            sample_data["atom_array"] = target_structure_data["atom_array"]
-            sample_data["atom_array_gt"] = target_structure_data["atom_array_gt"]
-            sample_data["atom_array_cropped"] = target_structure_data[
-                "atom_array_cropped"
-            ]
-
-        return sample_data
-
-    def __len__(self):
-        return len(self.datapoint_cache)

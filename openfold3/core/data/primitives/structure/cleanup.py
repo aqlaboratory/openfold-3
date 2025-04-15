@@ -3,20 +3,23 @@ from functools import wraps
 
 import biotite.structure as struc
 import numpy as np
-from biotite.structure import AtomArray
-from biotite.structure.io.pdbx import CIFBlock, CIFFile
+from biotite.structure import AtomArray, BondList, BondType, index_distance
+from biotite.structure.io.pdbx import CIFFile
 from scipy.spatial.distance import cdist
 
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
+from openfold3.core.data.primitives.structure.component import find_cross_chain_bonds
 from openfold3.core.data.primitives.structure.interface import (
     chain_paired_interface_atom_iter,
     get_interface_token_center_atoms,
 )
 from openfold3.core.data.primitives.structure.labels import (
+    AtomArrayView,
     assign_atom_indices,
     remove_atom_indices,
-)
-from openfold3.core.data.primitives.structure.metadata import (
-    get_chain_to_canonical_seq_dict,
+    residue_view_iter,
 )
 from openfold3.core.data.resources.lists import (
     CRYSTALLIZATION_AIDS,
@@ -64,42 +67,55 @@ def convert_MSE_to_MET(atom_array: AtomArray) -> None:
     atom_array.element[mse_selenium_atoms] = "S"
     atom_array.atom_name[mse_selenium_atoms] = "SD"
 
+    # Set hetero to False for new MET residues
+    atom_array.hetero[mse_residues] = False
+
 
 @return_on_empty_atom_array
-def fix_single_arginine_naming(arg_atom_array: AtomArray) -> None:
-    """Resolves naming ambiguities for a single arginine residue
+def fix_arginine_naming(atom_array: AtomArray) -> AtomArray:
+    """Resolves naming ambiguities for all arginine residues in the AtomArray
 
-    This ensures that NH1 is always closer to CD than NH2, following 2.1 of the
+    Ensures that NH1 is always closer to CD than NH2, following 2.1 of the
     AlphaFold3 SI.
 
     Args:
-        arg_atom_array: AtomArray containing the arginine residue to fix.
-    """
-    nh1 = arg_atom_array[arg_atom_array.atom_name == "NH1"]
-    nh2 = arg_atom_array[arg_atom_array.atom_name == "NH2"]
-    cd = arg_atom_array[arg_atom_array.atom_name == "CD"]
-
-    # If NH2 is closer to CD than NH1, swap the names
-    if struc.distance(nh2, cd) < struc.distance(nh1, cd):
-        nh1.atom_name = ["NH2"]
-        nh2.atom_name = ["NH1"]
-
-
-@return_on_empty_atom_array
-def fix_arginine_naming(atom_array: AtomArray) -> None:
-    """Resolves naming ambiguities for all arginine residues in the AtomArray
-
-    (see fix_single_arginine_naming for more details)
-
-    Args:
         atom_array: AtomArray containing the structure to fix arginine residues in.
+
+    Returns:
+        AtomArray with arginine residue names fixed.
     """
+    assign_atom_indices(atom_array, label="_atom_idx_arginine_fix")
+
+    # Will build up the correct order of atom names in the final array
+    name_sort_idx = atom_array._atom_idx_arginine_fix.copy()
+
     arginines = atom_array.res_name == "ARG"
 
-    for arginine in struc.residue_iter(atom_array[arginines]):
-        fix_single_arginine_naming(arginine)
+    for arginine_view in residue_view_iter(atom_array[arginines]):
+        nh1_mask = arginine_view.atom_name == "NH1"
+        nh2_mask = arginine_view.atom_name == "NH2"
+        cd_mask = arginine_view.atom_name == "CD"
+
+        nh1_coord = arginine_view.coord[nh1_mask]
+        nh2_coord = arginine_view.coord[nh2_mask]
+        cd_coord = arginine_view.coord[cd_mask]
+
+        # If NH2 is closer to CD than NH1, swap the names
+        if struc.distance(nh2_coord, cd_coord) < struc.distance(nh1_coord, cd_coord):
+            nh1_idx = arginine_view._atom_idx_arginine_fix[nh1_mask]
+            nh2_idx = arginine_view._atom_idx_arginine_fix[nh2_mask]
+
+            name_sort_idx[nh1_idx] = nh2_idx
+            name_sort_idx[nh2_idx] = nh1_idx
+
+    # Apply the sorting index to the final atom names
+    atom_array.atom_name = atom_array.atom_name[name_sort_idx]
 
     logger.debug("Fixed arginine naming")
+
+    atom_array.del_annotation("_atom_idx_arginine_fix")
+
+    return atom_array
 
 
 @return_on_empty_atom_array
@@ -161,14 +177,47 @@ def remove_hydrogens(atom_array: AtomArray) -> AtomArray:
     return atom_array
 
 
+def get_polymer_mask(atom_array, use_molecule_type_id=True):
+    """Returns a mask of all standard polymer atoms in the AtomArray.
+
+    Polymers here are defined as proteins and nucleic acids (no carbohydrates).
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to get the polymer mask for.
+        use_molecule_type_id:
+            Whether to use the molecule_type_id annotation to identify polymers, which
+            is faster, but requires the molecule_type_id annotation to be present. If
+            False, biotite's `filter_polymer` function is used to identify polymers.
+
+    Returns:
+        Mask for all polymer atoms.
+    """
+
+    if use_molecule_type_id:
+        if "molecule_type_id" not in atom_array.get_annotation_categories():
+            raise ValueError(
+                "AtomArray does not have molecule_type_id annotation. "
+                "Please run the `assign_molecule_type_ids` function first."
+            )
+
+        return np.isin(
+            atom_array.molecule_type_id,
+            [MoleculeType.PROTEIN, MoleculeType.DNA, MoleculeType.RNA],
+        )
+    else:
+        prot_mask = struc.filter_polymer(atom_array, pol_type="peptide")
+        nuc_mask = struc.filter_polymer(atom_array, pol_type="nucleotide")
+
+        return prot_mask | nuc_mask
+
+
 @return_on_empty_atom_array
-def remove_small_polymers(
-    atom_array: AtomArray, cif_data: CIFBlock, max_residues: int = 3
-) -> AtomArray:
+def remove_small_polymers(atom_array: AtomArray, max_residues: int = 3) -> AtomArray:
     """Removes small polymer chains from the AtomArray
 
     Follows 2.5.4 of the AlphaFold3 SI and removes all polymer chains with up to
-    max_residues residues. We consider proteins and nucleic acids as polymers.
+    max_residues resolved residues. We consider proteins and nucleic acids as polymers.
 
     Args:
         atom_array:
@@ -177,13 +226,23 @@ def remove_small_polymers(
             Maximum number of residues for a polymer chain to be considered as small.
 
     Returns:
-        AtomArray with all polymer chains with fewer than min_residues residues removed.
+        AtomArray with all polymer chains with up to max_residues residues removed.
     """
-    chain_to_seq = get_chain_to_canonical_seq_dict(atom_array, cif_data)
+    polymer_mask = get_polymer_mask(atom_array)
+
+    resolved_mask = atom_array.occupancy > 0.0
+
+    # Get only resolved polymer residues
+    resolved_poly_array = atom_array[polymer_mask & resolved_mask]
+
+    # Identify too-small polymers
     small_polymer_chains = [
-        chain for chain, seq in chain_to_seq.items() if len(seq) <= max_residues
+        chain_arr.chain_id[0]
+        for chain_arr in struc.chain_iter(resolved_poly_array)
+        if struc.get_residue_count(chain_arr) <= max_residues
     ]
 
+    # Remove small polymer chains
     for chain_id in small_polymer_chains:
         atom_array = remove_chain_and_attached_ligands(atom_array, chain_id)
         logger.debug(f"Removed small polymer chain {chain_id}")
@@ -204,15 +263,11 @@ def remove_fully_unknown_polymers(atom_array: AtomArray) -> AtomArray:
         AtomArray with all polymer chains containing only unknown residues removed.
     """
     # Masks for standard polymers
-    proteins = struc.filter_polymer(atom_array, pol_type="peptide")
-    nucleic_acids = struc.filter_polymer(atom_array, pol_type="nucleotide")
-
-    # Combine to get mask for all polymers
-    polymers = proteins | nucleic_acids
+    polymer_mask = get_polymer_mask(atom_array)
 
     atom_array_filtered = atom_array
 
-    for chain in struc.chain_iter(atom_array[polymers]):
+    for chain in struc.chain_iter(atom_array[polymer_mask]):
         # Explicit single-element unpacking (will fail if >1 chain_id)
         (chain_id,) = np.unique(chain.chain_id)
 
@@ -247,14 +302,14 @@ def remove_chain_and_attached_ligands(
     Returns:
         AtomArray with the specified chain and all attached covalent ligands removed
     """
-    # Assign temporary helper indices
-    assign_atom_indices(atom_array)
-
     chain_mask = atom_array.chain_id == chain_id
 
     # If the chain itself is a hetero-chain, only remove the chain
     if np.all(atom_array.hetero[chain_mask]):
         return atom_array[~chain_mask]
+
+    # Assign temporary helper indices
+    assign_atom_indices(atom_array)
 
     # Remove everything but the particular chain and all ligands, so that when we search
     # for connected atoms to the chain we will only find the directly connected ligands
@@ -368,12 +423,14 @@ def remove_clashing_chains(
     return atom_array
 
 
-def get_res_atoms_in_ccd_mask(res_atom_array: AtomArray, ccd: CIFFile) -> np.ndarray:
+def get_res_atoms_in_ccd_mask(
+    res_atom_array: AtomArray | AtomArrayView, ccd: CIFFile
+) -> np.ndarray:
     """Returns a mask for atoms in a residue that are present in the CCD
 
     Args:
         res_atom_array:
-            AtomArray containing the atoms of a single residue
+            AtomArray or AtomArrayView containing the atoms of a single residue
         ccd:
             CIFFile containing the parsed Chemical Component Dictionary (components.cif)
 
@@ -386,7 +443,7 @@ def get_res_atoms_in_ccd_mask(res_atom_array: AtomArray, ccd: CIFFile) -> np.nda
     # function returns an all-False mask which will effectively filter out the unknown
     # ligand.
     if res_name == "UNL":
-        return np.zeros(res_atom_array.array_length(), dtype=bool)
+        return np.zeros(len(res_atom_array), dtype=bool)
 
     allowed_atoms = ccd[res_name]["chem_comp_atom"]["atom_id"].as_array()
 
@@ -412,13 +469,82 @@ def remove_non_CCD_atoms(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
     """
     atom_masks_per_res = [
         get_res_atoms_in_ccd_mask(res_atom_array, ccd)
-        for res_atom_array in struc.residue_iter(atom_array)
+        for res_atom_array in residue_view_iter(atom_array)
     ]
 
     # Inclusion mask over all atoms
     atom_mask = np.concatenate(atom_masks_per_res)
 
     return atom_array[atom_mask]
+
+
+@return_on_empty_atom_array
+def canonicalize_atom_order(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
+    """Canonicalizes the order of atoms in the AtomArray by the CCD order.
+
+    This function sorts the atoms in the AtomArray based on the order of atoms for the
+    corresponding residue in the Chemical Component Dictionary (CCD). This is necessary
+    for downstream functionalities that expect atoms across equivalent residues to
+    perfectly match, such as the permutation alignment.
+
+    Args:
+        atom_array (AtomArray):
+            AtomArray containing the structure to canonicalize the atom order for.
+        ccd (CIFFile):
+            A parsed CIFFile containing the Chemical Component Dictionary
+            (components.cif).
+
+    Returns:
+        AtomArray with the atoms sorted in the canonical CCD order.
+    """
+
+    def get_ref_atoms(res_name):
+        """Convenience function that gets the reference atom names in CCD order."""
+        return ccd[res_name]["chem_comp_atom"]["atom_id"].as_array().tolist()
+
+    # Fetches the CCD atoms for each residue name as a list
+    res_name_to_ref_atoms = {}
+
+    # Track original order
+    assign_atom_indices(atom_array, label="_atom_idx_can_order")
+
+    # Create a resorting index that will be populated to sort the entire AtomArray in a
+    # final operation
+    resort_idx = np.full(atom_array.array_length(), -1, dtype=int)
+
+    for residue_view in residue_view_iter(atom_array):
+        # Get the reference atom order for the residue
+        res_name = residue_view.res_name[0]
+        if res_name in res_name_to_ref_atoms:
+            ref_atoms = res_name_to_ref_atoms[res_name]
+        else:
+            ref_atoms = get_ref_atoms(res_name)
+            res_name_to_ref_atoms[res_name] = ref_atoms
+
+        old_atom_idx = residue_view._atom_idx_can_order
+
+        # Get the sorting index that will sort the residue's atoms to match the
+        # reference order
+        idx_in_ref = np.array(
+            [ref_atoms.index(atom) for atom in residue_view.atom_name]
+        )
+        reordered_atom_idx = residue_view._atom_idx_can_order[np.argsort(idx_in_ref)]
+
+        # TODO: Remove?
+        if not np.array_equal(old_atom_idx, reordered_atom_idx):
+            logger.debug(f"Residue {res_name} was reordered")
+
+        resort_idx[old_atom_idx] = reordered_atom_idx
+
+    assert np.all(resort_idx != -1), "Not all atoms were reordered"
+
+    # Apply the sorting index to the entire AtomArray
+    atom_array = atom_array[resort_idx]
+
+    # Clean up temporary indices
+    atom_array.del_annotation("_atom_idx_can_order")
+
+    return atom_array
 
 
 @return_on_empty_atom_array
@@ -437,7 +563,7 @@ def remove_chains_with_CA_gaps(
             Distance threshold in Angstrom. Defaults to 10.0.
     """
     protein_chain_ca = atom_array[
-        struc.filter_polymer(atom_array, pol_type="peptide")
+        (atom_array.molecule_type_id == MoleculeType.PROTEIN)
         & (atom_array.atom_name == "CA")
     ]
 
@@ -477,6 +603,7 @@ def subset_large_structure(
     atom_array: AtomArray,
     n_chains: int = 20,
     interface_distance_threshold: float = 15.0,
+    random_seed: int = None,
 ) -> AtomArray:
     """Subsets structures with too many chains to n chains
 
@@ -495,10 +622,15 @@ def subset_large_structure(
             Distance threshold in Å that an interface token center atom must have to any
             token center atom in another chain to be considered an interface token
             center atom
+        random_seed:
+            Random seed for reproducibility. Default is None.
 
     Returns:
         AtomArray with the closest n_chains based on token center atom distances
     """
+    if random_seed is not None:
+        np.random.seed(random_seed)
+
     # Select random interface token center atom
     interface_token_center_atoms = get_interface_token_center_atoms(
         atom_array, distance_threshold=interface_distance_threshold
@@ -600,3 +732,162 @@ def remove_std_residue_terminal_atoms(atom_array: AtomArray) -> AtomArray:
     logger.debug(f"Removed {terminal_atom_mask.sum()} terminal atoms")
 
     return atom_array
+
+
+@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-filter-bonds")
+def filter_bonds(
+    atom_array: AtomArray,
+    keep_consecutive: bool = True,
+    keep_polymer_ligand: bool = True,
+    keep_ligand_ligand: bool = True,
+    remove_larger_than: float = 2.4,
+    remove_metal_coordination: bool = True,
+    mask_intra_component: bool = True,
+) -> None:
+    """Filter bonds in an AtomArray
+
+    This function filters bonds based on AF3 SI Table 5 "token_bonds". It additionally
+    allows to keep bonds of consecutive residues as well as bonds within the same
+    residue, which can be necessary in the earlier stages of the sample processing
+    pipeline.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to filter the bonds for.
+        keep_consecutive:
+            Whether to keep bonds between atoms not more than 1 residue apart. Default
+            is True.
+        keep_polymer_ligand:
+            Whether to keep polymer-ligand bonds. Default is True.
+        keep_ligand_ligand:
+            Whether to keep ligand-ligand bonds. Default is True.
+        remove_larger_than:
+            Remove any bond larger than this cutoff distance (in Å). Default is 2.4 Å.
+        remove_metal_coordination:
+            Whether to remove any metal-coordination bonds. Default is True. Note that
+            this takes precedence over any of the keep_* options.
+        mask_intra_component:
+            Whether to mask all bonds within the same component from any filtering. This
+            overrules all previous filters. For example important for ensuring that
+            components are not disconnected before symmetry-labels are assigned. Default
+            is True.
+    """
+    # initial_molecule_indices = get_molecule_indices(atom_array)
+
+    bond_partners = atom_array.bonds.as_array()[:, :2]
+
+    valid_bonds_mask = np.zeros(len(bond_partners), dtype=bool)
+
+    # Keep bonds between atoms not more than 1 residue apart
+    if keep_consecutive:
+        bond_partner_res_ids = atom_array.res_id[bond_partners]
+        bond_partner_chain_ids = atom_array.chain_id[bond_partners]
+
+        is_consecutive = (np.abs(np.diff(bond_partner_res_ids, axis=1)) < 2).squeeze()
+        is_same_chain = bond_partner_chain_ids[:, 0] == bond_partner_chain_ids[:, 1]
+
+        valid_bonds_mask[is_consecutive & is_same_chain] = True
+
+    if keep_polymer_ligand or keep_ligand_ligand:
+        bond_partner_moltypes = atom_array.molecule_type_id[bond_partners]
+
+        is_ligand = np.isin(bond_partner_moltypes, [MoleculeType.LIGAND])
+
+        # Keep polymer-ligand bonds
+        if keep_polymer_ligand:
+            is_polymer = np.isin(
+                bond_partner_moltypes,
+                [MoleculeType.PROTEIN, MoleculeType.DNA, MoleculeType.RNA],
+            )
+            is_polymer_ligand = is_polymer.any(axis=1) & is_ligand.any(axis=1)
+            valid_bonds_mask[is_polymer_ligand] = True
+
+        # Keep ligand-ligand bonds
+        if keep_ligand_ligand:
+            is_ligand_ligand = is_ligand.all(axis=1)
+            valid_bonds_mask[is_ligand_ligand] = True
+
+    # Filter all current bonds to only keep those shorter than the cutoff
+    # TODO: check behavior if valid_bonds_mask is empty
+    distances = index_distance(atom_array, bond_partners[valid_bonds_mask])
+    valid_bonds_index = np.nonzero(valid_bonds_mask)[0]
+    remove_index = valid_bonds_index[
+        (distances > remove_larger_than) & ~np.isnan(distances)
+    ]
+    valid_bonds_mask[remove_index] = False
+
+    # Remove any metal-coordination bonds
+    if remove_metal_coordination:
+        bond_types = atom_array.bonds.as_array()[:, 2]
+        is_metal_coordination = bond_types == BondType.COORDINATION
+
+        valid_bonds_mask[is_metal_coordination] = False
+
+    # If mask_intra_component is True, overrule all previous filters and keep all bonds
+    # within the same component to ensure it's not getting disconnected
+    if mask_intra_component:
+        bond_partner_component_id = atom_array.component_id[bond_partners]
+        is_intra_component = np.diff(bond_partner_component_id, axis=1).squeeze() == 0
+        valid_bonds_mask[is_intra_component] = True
+
+    new_bondlist = BondList(
+        atom_count=len(atom_array), bonds=atom_array.bonds.as_array()[valid_bonds_mask]
+    )
+    atom_array.bonds = new_bondlist
+
+    # TODO: Revise this assert
+    # final_molecule_indices = get_molecule_indices(atom_array)
+
+    # if not all(
+    #     np.array_equal(initial_mol_idx, final_mol_idx)
+    #     for initial_mol_idx, final_mol_idx in zip(
+    #         initial_molecule_indices, final_molecule_indices
+    #     )
+    # ):
+    #     # TODO: Make this ignore disulfide bonds?
+    #     logger.warning(
+    #         "Filtering bonds disconnected a molecule. This can result in unwanted"
+    #         " behavior in the permutation alignment."
+    #     )
+
+
+def remove_covalent_nonprotein_chains(atom_array: AtomArray) -> AtomArray:
+    """Removes non-protein chains covalently linked to protein chains.
+
+    Args:
+        atom_array (AtomArray):
+            AtomArray from which to remove non-protein chains covalently attached to
+            protein chains.
+
+    Returns:
+        AtomArray:
+            AtomArray with non-protein chains covalently attached to protein chains
+            removed.
+    """
+
+    # Get cross-chain bonds
+    cross_chain_bonds = find_cross_chain_bonds(atom_array)
+
+    # Exclude coordinate bonds
+    cross_chain_bonds_covalent = cross_chain_bonds[
+        (cross_chain_bonds[:, -1] != BondType.COORDINATION), :
+    ][:, :-1]
+
+    # Get molecule types of the atoms involved in the cross-chain bonds
+    cross_chain_bonds_covalent_mol_type = atom_array.molecule_type_id[
+        cross_chain_bonds_covalent
+    ]
+
+    # Find bonds that have exactly one protein atom
+    cross_chain_bonds_covalent_has_nonprotein = cross_chain_bonds_covalent[
+        (cross_chain_bonds_covalent_mol_type[:, 0] == MoleculeType.PROTEIN)
+        ^ (cross_chain_bonds_covalent_mol_type[:, 1] == MoleculeType.PROTEIN)
+    ]
+
+    # Get non-protein atom indices then covalent non-protein chain IDs
+    cross_chain_atom_nonprotein = cross_chain_bonds_covalent_has_nonprotein.ravel()[
+        cross_chain_bonds_covalent_mol_type.ravel() != MoleculeType.PROTEIN
+    ]
+    covalent_nonprotein_chain_ids = atom_array.chain_id[cross_chain_atom_nonprotein]
+
+    return atom_array[~np.isin(atom_array.chain_id, covalent_nonprotein_chain_ids)]

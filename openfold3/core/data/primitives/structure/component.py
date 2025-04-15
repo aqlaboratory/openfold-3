@@ -1,12 +1,13 @@
 # TODO: note in module level docstrings that nothing here supports hydrogens
 import logging
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Generator, Iterable
 from typing import NamedTuple, TypeAlias
 
 import biotite.structure as struc
 import gemmi
 import numpy as np
+import requests
 from biotite.structure import AtomArray, BondType
 from biotite.structure.io.pdbx import CIFFile
 from pdbeccdutils.core import ccd_reader
@@ -14,7 +15,16 @@ from pdbeccdutils.core.ccd_reader import Component
 from rdkit import Chem
 from rdkit.Chem import AllChem, Mol
 
-from openfold3.core.data.resources.patches import correct_cif_string
+from openfold3.core.data.primitives.caches.format import DatasetChainData
+from openfold3.core.data.primitives.quality_control.logging_utils import (
+    log_runtime_memory,
+)
+from openfold3.core.data.primitives.structure.labels import (
+    AtomArrayView,
+    assign_atom_indices,
+    chain_view_iter,
+    residue_view_iter,
+)
 from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
@@ -48,24 +58,28 @@ bondtype_conversion = {
 }
 
 
-class PDBComponents(NamedTuple):
+class PDBComponentInfo(NamedTuple):
     """Named tuple grouping all the molecular components of a PDB structure.
 
     residue_components:
         List of all 3-letter codes of residues that are part of a polymer chain.
-    standard_ligands:
+    standard_ligands_to_chains:
         Dictionary mapping each unique ligand 3-letter code to the list of respective
         chain IDs
-    non_standard_ligands:
+    non_standard_ligands_to_chains:
         Dictionary mapping each unique non-standard ligand entity ID to the list of
         respective chain IDs. A non-standard ligand can generally be any ligand not
         directly mapping to a CCD code, which in this case are usually covalently
         connected multi-component ligands like glycans or certain BIRDs.
+    non_standard_ligands_to_rescount:
+        Dictionary mapping each unique non-standard ligand entity ID to the number of
+        residues it consists of.
     """
 
     residue_components: list[str]
-    standard_ligands: dict[str, list[str]]
-    non_standard_ligands: dict[int, list[str]]
+    standard_ligands_to_chains: dict[str, list[str]]
+    non_standard_ligands_to_chains: dict[int, list[str]]
+    non_standard_ligands_to_rescount: dict[int, int]
 
 
 def set_atomwise_annotation(
@@ -103,7 +117,7 @@ def set_atomwise_annotation(
     return mol
 
 
-def get_components(atom_array: AtomArray) -> PDBComponents:
+def get_component_info(atom_array: AtomArray) -> PDBComponentInfo:
     """Extracts all unique components from an AtomArray.
 
     Standard residue and ligand components correspond to molecular building blocks of
@@ -126,6 +140,7 @@ def get_components(atom_array: AtomArray) -> PDBComponents:
     residue_components = set()
     standard_ligands_to_chain = defaultdict(list)
     non_standard_ligands_to_chain = defaultdict(list)
+    non_standard_ligands_to_rescount = defaultdict(int)
 
     ligand_filter = atom_array.molecule_type_id == MoleculeType.LIGAND
 
@@ -140,13 +155,15 @@ def get_components(atom_array: AtomArray) -> PDBComponents:
             chain_id = ligand_chain.chain_id[0].item()
 
             # Append standard single-residue ligand
-            if struc.get_residue_count(ligand_chain) == 1:
+            residue_count = struc.get_residue_count(ligand_chain)
+            if residue_count == 1:
                 ccd_id = ligand_chain.res_name[0].item()
                 standard_ligands_to_chain[ccd_id].append(chain_id)
             # Append non-standard multi-residue ligand
             else:
                 entity_id = ligand_chain.entity_id[0].item()
                 non_standard_ligands_to_chain[entity_id].append(chain_id)
+                non_standard_ligands_to_rescount[entity_id] = residue_count
 
     # TODO: remove later
     # Check that all ligands of the same entity have the same atoms
@@ -162,11 +179,67 @@ def get_components(atom_array: AtomArray) -> PDBComponents:
         # TODO: improve atom expansion for non-standard ligands
         assert len(chain_atom_names) == 1
 
-    return PDBComponents(
+    return PDBComponentInfo(
         residue_components=list(residue_components),
-        standard_ligands=dict(standard_ligands_to_chain),
-        non_standard_ligands=dict(non_standard_ligands_to_chain),
+        standard_ligands_to_chains=dict(standard_ligands_to_chain),
+        non_standard_ligands_to_chains=dict(non_standard_ligands_to_chain),
+        non_standard_ligands_to_rescount=non_standard_ligands_to_rescount,
     )
+
+
+def get_covalent_component_chain_ids(atom_array: AtomArray) -> list[str]:
+    """Gets all the chains in an AtomArray that represent covalent components.
+
+    A covalent component is a ligand that is either covalently bonded to another chain
+    or consists of multiple residues covalently connected to each other. Note that this
+    ignores metal coordination bonds.
+
+    Args:
+        atom_array:
+            AtomArray containing the chains to check.
+
+    Returns:
+        List of chain IDs that represent covalent components.
+    """
+    # First check if there even are any ligands
+    lig_mask = atom_array.molecule_type_id == MoleculeType.LIGAND
+    if not np.any(lig_mask):
+        return []
+
+    assign_atom_indices(atom_array, label="_atom_idx_coval_comp")
+    bond_list = atom_array.bonds.as_array()
+
+    # Filter out metal coordination bonds
+    bond_list = bond_list[bond_list[:, 2] != BondType.COORDINATION]
+
+    ligand_chain_ids = struc.get_chains(atom_array[lig_mask])
+    ligand_chains = atom_array[np.isin(atom_array.chain_id, ligand_chain_ids)]
+
+    covalent_component_chains = []
+
+    # Get all chains that have at least one covalent bond
+    for chain in struc.chain_iter(ligand_chains):
+        chain_id = chain.chain_id[0].item()
+
+        if struc.get_residue_count(chain) > 1:
+            # Multi-residue ligand
+            covalent_component_chains.append(chain_id)
+            continue
+
+        chain_bonds = bond_list[
+            np.isin(bond_list[:, 0], chain._atom_idx_coval_comp)
+            | np.isin(bond_list[:, 1], chain._atom_idx_coval_comp)
+        ]
+
+        # Check if any bond is cross-chain
+        bond_chain_ids = atom_array.chain_id[chain_bonds[:, :2]]
+
+        if np.any(bond_chain_ids[:, 0] != bond_chain_ids[:, 1]):
+            covalent_component_chains.append(chain_id)
+
+    atom_array.del_annotation("_atom_idx_coval-comp")
+
+    return covalent_component_chains
 
 
 def pdbeccdutils_component_from_ccd(ccd_id: str, ccd: CIFFile) -> Component:
@@ -186,8 +259,8 @@ def pdbeccdutils_component_from_ccd(ccd_id: str, ccd: CIFFile) -> Component:
         pdbeccdutils Component object representing the CCD entry.
     """
     cif_block = ccd[ccd_id]
+    cif_block.name = ccd_id
     cif_str = cif_block.serialize()
-    cif_str = correct_cif_string(cif_str, ccd_id)
 
     # Manually recreate ccd_reader.read_pdb_cif_file but using a string instead of
     # file-path input
@@ -372,7 +445,8 @@ def mol_from_atomarray(atom_array: AtomArray) -> AnnotatedMol:
     mol.BeginBatchEdit()
 
     # Add all atoms from the AtomArray
-    for atom in atom_array:
+    conf = Chem.Conformer(atom_array.array_length())
+    for idx, atom in enumerate(atom_array):
         element = atom.element.capitalize()
         atomic_number = PERIODIC_TABLE.GetAtomicNumber(element)
 
@@ -383,6 +457,12 @@ def mol_from_atomarray(atom_array: AtomArray) -> AnnotatedMol:
         new_atom.SetFormalCharge(int(atom.charge.item()))
 
         mol.AddAtom(Chem.Atom(new_atom))
+
+        # Set atom coordinates to the ones from the AtomArray for stereochemistry
+        # detection later
+        conf.SetAtomPosition(idx, atom.coord.tolist())
+
+    mol.AddConformer(conf)
 
     # Form bonds based on the parsed BondList
     for atom_1, atom_2, bond_type_id in atom_array.bonds.as_array():
@@ -407,7 +487,122 @@ def mol_from_atomarray(atom_array: AtomArray) -> AnnotatedMol:
 
     Chem.AssignStereochemistryFrom3D(mol)
 
+    # Remove conformer again to ensure that no information can leak from the
+    # ground-truth
+    assert len(mol.GetConformers()) == 1
+    mol.RemoveConformer(0)
+    assert len(mol.GetConformers()) == 0
+
     # Add original atom IDs as properties
     mol = set_atomwise_annotation(mol, "atom_name", atom_array.atom_name)
 
     return mol
+
+
+def component_view_iter_from_metadata(
+    atom_array: AtomArray, per_chain_metadata: DatasetChainData
+) -> Generator[AtomArrayView, None, None]:
+    """Yields AtomArrayView objects for each component in a structure."""
+    for chain_array_view in chain_view_iter(atom_array):
+        chain_id = chain_array_view.chain_id[0]
+
+        ref_mol_id = getattr(per_chain_metadata[chain_id], "reference_mol_id", None)
+
+        # Entire chain corresponds to a single reference molecule (e.g. a ligand chain)
+        if ref_mol_id is not None:
+            yield chain_array_view
+        # Decompose the chain into individual residues and their reference molecules
+        else:
+            chain_array = chain_array_view.materialize()
+            yield from residue_view_iter(chain_array)
+
+
+@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-comp-id-assign")
+def assign_component_ids_from_metadata(
+    atom_array: AtomArray, per_chain_metadata: dict[str, dict]
+) -> None:
+    atom_array.set_annotation(
+        "component_id", np.full(len(atom_array), fill_value=-1, dtype=int)
+    )
+
+    for id, component_view in enumerate(
+        component_view_iter_from_metadata(atom_array, per_chain_metadata), start=1
+    ):
+        component_view.component_id[:] = id
+
+
+def get_ranking_fit(pdb_id):
+    url = "https://data.rcsb.org/graphql"  # RCSB PDB's GraphQL API endpoint
+
+    # Define the query as a multi-line string with a variable for pdb_id
+    query = """
+    query GetRankingFit($pdb_id: String!) {
+    entry(entry_id: $pdb_id) {
+        nonpolymer_entities {
+        rcsb_nonpolymer_entity_container_identifiers {
+            nonpolymer_comp_id
+        }
+        nonpolymer_entity_instances {
+            rcsb_id
+            rcsb_nonpolymer_instance_validation_score {
+            ranking_model_fit
+            }
+        }
+        }
+    }
+    }
+    """
+
+    # Prepare the request with the pdb_id as a variable
+    variables = {"pdb_id": pdb_id}
+
+    # Make the request to the GraphQL endpoint using the variables
+    response = requests.post(url, json={"query": query, "variables": variables})
+
+    # Make the request to the GraphQL endpoint
+    # response = requests.post(url, json={"query": query})
+
+    # Check if the request was successful
+    if response.status_code == 200:
+        # Parse the JSON response
+        data = response.json()
+        extracted_data = {}
+
+        # Loop through each nonpolymer entity and its instances
+        if data["data"]["entry"]["nonpolymer_entities"]:
+            for entity in data["data"]["entry"]["nonpolymer_entities"]:
+                for instance in entity["nonpolymer_entity_instances"]:
+                    rcsb_id = instance["rcsb_id"]
+                    ranking_model_fit = instance[
+                        "rcsb_nonpolymer_instance_validation_score"
+                    ][0]["ranking_model_fit"]
+                    extracted_data[rcsb_id] = ranking_model_fit
+            data = extracted_data
+        else:
+            data = {}
+    else:
+        data = {}
+
+    return data
+
+
+# TODO: find better place for this function
+def find_cross_chain_bonds(atom_array: AtomArray) -> np.ndarray:
+    """Finds all bonds between atoms in different chains.
+
+    Args:
+        atom_array (AtomArray):
+            The atom array to search for cross-chain bonds.
+
+    Returns:
+        np.ndarray:
+            A 2D array of shape (n_cross_chain_bonds, 3) where each row corresponds to a
+            bond between atoms in different chains. The columns are (atom_1_idx,
+            atom_2_idx, bond_type).
+    """
+    all_bonds = atom_array.bonds.as_array()
+    chain_ids_atom_1 = atom_array.chain_id[all_bonds[:, 0]]
+    chain_ids_atom_2 = atom_array.chain_id[all_bonds[:, 1]]
+    cross_chain_selector = chain_ids_atom_1 != chain_ids_atom_2
+
+    return all_bonds[cross_chain_selector]
