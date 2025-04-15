@@ -1,4 +1,3 @@
-import dataclasses
 import logging
 from functools import wraps
 
@@ -732,59 +731,6 @@ def remove_std_residue_terminal_atoms(atom_array: AtomArray) -> AtomArray:
     return atom_array
 
 
-@dataclasses.dataclass(frozen=False)
-class BondFilter:
-    """Class to store bond filter parameters.
-
-    The priority of the filters is as follows: keep_* < remove_* < restore_*
-    In detail:
-        1. the base boolean bond mask array is initialized as fully FALSE: all bonds
-        are to be removed.
-        2. keep_* filters are applied: sets the bond mask to TRUE for certain bonds.
-            2.1. add consecutive bonds from the same chain
-            2.2. add polymer-ligand bonds
-            2.3. add ligand-ligand bonds
-        3. remove_* filters are applied: sets the bond mask to FALSE for certain bonds.
-            3.1. remove bonds larger than a certain cutoff
-            3.2. remove metal-coordination bonds
-        4. restore_* filters are applied: sets the bond mask to TRUE for certain bonds.
-            4.1. restore bonds between atoms in the same chemical component
-            4.2. restore bonds between atoms that are labeled as belonging to an
-            atomized token
-
-    Attributes:
-        keep_consecutive (bool):
-            Whether to keep bonds between atoms not more than 1 residue apart and are in
-            the same chain. Default is True.
-        keep_polymer_ligand (bool):
-            Whether to keep polymer-ligand bonds. Default is True.
-        keep_ligand_ligand (bool):
-            Whether to keep ligand-ligand bonds. Default is True.
-        remove_larger_than (float):
-            Whether to remove any bond larger than this cutoff distance (in Å).
-            Overrides keep_* flags. Default is 2.4 Å.
-        remove_metal_coordination (bool):
-            Whether to remove any metal-coordination bonds. Overrides keep_* flags.
-            Default is True.
-        restore_intra_component (bool):
-            Whether to restore bonds within the same component. For example important
-            for ensuring that components are not disconnected before symmetry-labels are
-            assigned. Overrides remove_* flags. Default is True.
-        restore_atomized (bool):
-            Whether to restore bonds between atoms that belong to atomized tokens.
-            Requires the AtomArray to have the is_atomized annotation. Overrides
-            remove_* flags. Default is False.
-    """
-
-    keep_consecutive: bool = True
-    keep_polymer_ligand: bool = True
-    keep_ligand_ligand: bool = True
-    remove_larger_than: float = 2.4
-    remove_metal_coordination: bool = True
-    restore_intra_component: bool = True
-    restore_atomized: bool = False
-
-
 def prefilter_bonds(
     atom_array: AtomArray,
     remove_inter_chain_dative: bool = True,
@@ -891,7 +837,7 @@ def prefilter_bonds(
 def filter_fully_atomized_bonds(
     atom_array: AtomArray,
 ) -> AtomArray:
-    """Only retains bonds where both bond parters are atomized.
+    """Only retains bonds where both bond partners are atomized.
 
     Requires the `is_atomized` attribute to be set in the AtomArray (see
     `tokenize_atom_array`).

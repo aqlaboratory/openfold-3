@@ -56,6 +56,7 @@ all_atoms=[
     Atom([0, 0, 0], chain_id="C", res_id=5, atom_name="backbone", molecule_type_id=DNA), # noqa: E501
     Atom([0, 0, 0], chain_id="C", res_id=5, atom_name="sidechain", molecule_type_id=DNA), # noqa: E501
 ]
+# fmt: on
 
 # - References for special bonds -
 
@@ -74,9 +75,7 @@ inter_chain_poly_link = (5, 12, BondType.SINGLE)
 # Chain C
 long_bond_2 = (9, 11, BondType.SINGLE)
 
-long_bond_set = {
-    intra_chain_long_dative, long_bond_2
-}
+long_bond_set = {intra_chain_long_dative, long_bond_2}
 
 # - Bond set -
 bond_set = set(
@@ -88,10 +87,8 @@ bond_set = set(
         (2, 3, BondType.SINGLE),
         (2, 4, BondType.SINGLE),
         (4, 5, BondType.SINGLE),
-
         # Chain B
         (7, 8, BondType.SINGLE),
-
         # Chain C
         (9, 10, BondType.SINGLE),
         long_bond_2,
@@ -102,21 +99,16 @@ bond_set = set(
         (15, 16, BondType.SINGLE),
         (15, 17, BondType.SINGLE),
         (17, 18, BondType.SINGLE),
-
         # -- Intra-chain dative bond --
         intra_chain_long_dative,
-
         # -- Inter-chain dative bond --
         inter_chain_dative,
-
         # -- Intra-chain nonconsecutive polymer crosslink --
         intra_chain_poly_link,
-
         # -- Inter-chain polymer crosslink --
         inter_chain_poly_link,
     )
 )
-# fmt: on
 
 # Sorting the bonds here is important for unit-test equivalence
 atom_array_filter_bonds = create_atomarray_with_bondlist(
@@ -183,69 +175,62 @@ case_only_longer_than_bond_array = np.array(sorted(case_only_longer_than))
 
 
 @pytest.mark.parametrize(
-    [
-        "atom_array",
-        "remove_inter_chain_dative",
-        "remove_inter_chain_poly_links",
-        "remove_intra_chain_poly_links",
-        "remove_longer_than",
-        "expected_bondlist",
-    ],
+    "params",
     [
         # All True
-        (
-            atom_array_filter_bonds,
-            True,
-            True,
-            True,
-            2.4,
-            case_all_true_bond_array,
-        ),
+        {
+            "atom_array": atom_array_filter_bonds,
+            "remove_inter_chain_dative": True,
+            "remove_inter_chain_poly_links": True,
+            "remove_intra_chain_poly_links": True,
+            "remove_longer_than": 2.4,
+            "expected_bondlist": case_all_true_bond_array,
+        },
         # All False
-        (
-            atom_array_filter_bonds,
-            False,
-            False,
-            False,
-            None,
-            case_all_false_bond_array,
-        ),
+        {
+            "atom_array": atom_array_filter_bonds,
+            "remove_inter_chain_dative": False,
+            "remove_inter_chain_poly_links": False,
+            "remove_intra_chain_poly_links": False,
+            "remove_longer_than": None,
+            "expected_bondlist": case_all_false_bond_array,
+        },
         # Only remove inter-chain dative
-        (
-            atom_array_filter_bonds,
-            True,
-            False,
-            False,
-            None,
-            case_only_inter_chain_dative_bond_array,
-        ),
+        {
+            "atom_array": atom_array_filter_bonds,
+            "remove_inter_chain_dative": True,
+            "remove_inter_chain_poly_links": False,
+            "remove_intra_chain_poly_links": False,
+            "remove_longer_than": None,
+            "expected_bondlist": case_only_inter_chain_dative_bond_array,
+        },
         # Only remove inter-chain polymer links
-        (
-            atom_array_filter_bonds,
-            False,
-            True,
-            False,
-            None,
-            case_only_inter_chain_poly_links_bond_array,
-        ),
+        {
+            "atom_array": atom_array_filter_bonds,
+            "remove_inter_chain_dative": False,
+            "remove_inter_chain_poly_links": True,
+            "remove_intra_chain_poly_links": False,
+            "remove_longer_than": None,
+            "expected_bondlist": case_only_inter_chain_poly_links_bond_array,
+        },
         # Only remove intra-chain polymer links
-        (
-            atom_array_filter_bonds,
-            False,
-            False,
-            True,
-            None,
-            case_only_intra_chain_poly_links_bond_array,
-        ),
+        {
+            "atom_array": atom_array_filter_bonds,
+            "remove_inter_chain_dative": False,
+            "remove_inter_chain_poly_links": False,
+            "remove_intra_chain_poly_links": True,
+            "remove_longer_than": None,
+            "expected_bondlist": case_only_intra_chain_poly_links_bond_array,
+        },
         # Only remove longer than 2.4
-        (
-            atom_array_filter_bonds,
-            False,
-            False,
-            False,
-            2.4,
-            case_only_longer_than_bond_array,
-        ),
+        {
+            "atom_array": atom_array_filter_bonds,
+            "remove_inter_chain_dative": False,
+            "remove_inter_chain_poly_links": False,
+            "remove_intra_chain_poly_links": False,
+            "remove_longer_than": 2.4,
+            "expected_bondlist": case_only_longer_than_bond_array,
+        },
     ],
     ids=[
         "all_true",
@@ -256,33 +241,28 @@ case_only_longer_than_bond_array = np.array(sorted(case_only_longer_than))
         "only_rm_longer_than_2.4",
     ],
 )
-def test_prefilter_bonds(
-    atom_array: AtomArray,
-    remove_inter_chain_dative: bool,
-    remove_inter_chain_poly_links: bool,
-    remove_intra_chain_poly_links: bool,
-    remove_longer_than: float | None,
-    expected_bondlist: BondList | np.ndarray,
-):
+def test_prefilter_bonds(params):
     """Tests whether the bond prefiltering works as expected."""
 
     # Create a copy of the atom array to avoid modifying the original
-    atom_array_expected = atom_array.copy()
+    atom_array = params["atom_array"]
+    expected_atom_array = atom_array.copy()
+    expected_bondlist = params["expected_bondlist"]
 
     # Set the expected bond list
-    atom_array_expected.bonds = BondList(len(atom_array_expected), expected_bondlist)
+    expected_atom_array.bonds = BondList(len(expected_atom_array), expected_bondlist)
 
     atom_array_filtered = prefilter_bonds(
         atom_array=atom_array,
-        remove_inter_chain_dative=remove_inter_chain_dative,
-        remove_inter_chain_poly_links=remove_inter_chain_poly_links,
-        remove_intra_chain_poly_links=remove_intra_chain_poly_links,
-        remove_longer_than=remove_longer_than,
+        remove_inter_chain_dative=params["remove_inter_chain_dative"],
+        remove_inter_chain_poly_links=params["remove_inter_chain_poly_links"],
+        remove_intra_chain_poly_links=params["remove_intra_chain_poly_links"],
+        remove_longer_than=params["remove_longer_than"],
     )
 
     assert_atomarray_equal(
         atom_array_filtered,
-        atom_array_expected,
+        expected_atom_array,
     )
 
 
@@ -396,8 +376,3 @@ def test_filter_fully_atomized_bonds(
         filtered_bondlist,
         atom_array_expected,
     )
-
-
-if __name__ == "__main__":
-    # Run the test cases
-    pytest.main([__file__])
