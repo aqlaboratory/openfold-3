@@ -554,8 +554,8 @@ def remove_non_CCD_atoms(atom_array: AtomArray, ccd: CIFFile) -> AtomArray:
         AtomArray with all atoms not present in the CCD removed
     """
     atom_masks_per_res = [
-        get_res_atoms_in_ccd_mask(res_atom_array, ccd)
-        for res_atom_array in residue_view_iter(atom_array)
+        get_res_atoms_in_ccd_mask(residue_view, ccd)
+        for residue_view in residue_view_iter(atom_array)
     ]
 
     # Inclusion mask over all atoms
