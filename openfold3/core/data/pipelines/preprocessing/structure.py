@@ -857,6 +857,7 @@ def preprocess_cif_dir_af3(
 
 # ---- protein monomer preprocessing pipelines ----
 # TODO: combine local and S3 preparsing
+# TODO: Add docstrings for these
 class _WrapProcessMonomerDistillStructure:
     def __init__(self, s3_config: dict, output_dir: Path):
         self.s3_config = s3_config
