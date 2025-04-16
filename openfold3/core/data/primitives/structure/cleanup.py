@@ -188,7 +188,7 @@ def remove_crystallization_aids(
         atom_array:
             AtomArray containing the structure to remove crystallization aids from.
         ccd_codes:
-            List of 3-letter codes for crystallization aids to remove.
+            List of 3-letter codes of crystallization aids to remove (e.g. "SO4").
 
     Returns:
         AtomArray with crystallization aids removed.
