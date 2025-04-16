@@ -16,6 +16,7 @@ from random import randint
 
 import numpy as np
 import torch
+from biotite.structure import Atom, AtomArray, BondList, array
 from scipy.spatial.transform import Rotation
 
 from openfold3.core.data.primitives.featurization.structure import (
@@ -277,3 +278,28 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
         ).int()
 
     return features
+
+
+def create_atomarray_with_bondlist(
+    atoms: list[Atom], bondlist: BondList | np.ndarray
+) -> AtomArray:
+    """Convenience function to create an AtomArray with a BondList.
+
+    Args:
+        atoms (list[Atom]):
+            List of atoms to put in the AtomArray.
+        bondlist (BondList | np.ndarray):
+            BondList or numpy array. The numpy array has to be a valid input to
+            biotite's BondList.
+
+    Returns:
+        AtomArray:
+            AtomArray containing the atoms and BondList.
+    """
+    atom_array = array(atoms)
+
+    if isinstance(bondlist, np.ndarray):
+        bondlist = BondList(len(atom_array), bondlist)
+    atom_array.bonds = bondlist
+
+    return atom_array
