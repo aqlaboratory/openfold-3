@@ -21,7 +21,10 @@ from openfold3.core.utils.logging_utils import ContextInjectingFilter
     "--ccd-path",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     required=True,
-    help="Path to a Chemical Component Dictionary mmCIF file.",
+    help=(
+        "Path to a Chemical Component Dictionary mmCIF file. This sets the CCD that is "
+        "used by OF3 processing functions."
+    ),
 )
 @click.option(
     "--biotite-ccd-path",
@@ -29,9 +32,10 @@ from openfold3.core.utils.logging_utils import ContextInjectingFilter
     required=False,
     help=(
         "Path to a .bcif CCD that has been preprocessed with biotite's setup_ccd.py "
-        "script, for usage with biotite's set_ccd_path. This can be used to make sure "
-        "that the CCD that is used in preprocessing perfectly matches a particular CCD "
-        "version, for example to match the version that the PDB was downloaded with."
+        "script, for usage with biotite's set_ccd_path. This will be used to set the "
+        "internal CCD of Biotite itself for functions where it is not exposed, such as"
+        " `connect_via_residue_names`. If not specified, Biotite's default CCD will be"
+        " used which might have slight mismatches with older PDB snapshots."
     ),
     default=None,
 )
