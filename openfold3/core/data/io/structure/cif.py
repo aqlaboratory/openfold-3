@@ -129,7 +129,7 @@ def parse_mmcif(
     cif_file = _load_ciffile(file_path)
     cif_data = get_cif_block(cif_file)
 
-    # Try predetermining if the structure has too many chains
+    # Try predetermining from the CIF metadata if the structure has too many chains
     if max_polymer_chains is not None:
         n_polymers = get_first_bioassembly_polymer_count(cif_data)
 
