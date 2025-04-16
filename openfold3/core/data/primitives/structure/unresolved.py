@@ -327,8 +327,37 @@ def append_unresolved_segment(
 
     This function creates an appropriate unresolved polymer segment, then appends it to
     the end of the AtomArray. The atom indices in the AtomArray are updated to reflect
-    the eventual order of atoms, so that a final sorting operation after addition of all
-    the segments can put all atoms in the correct order.
+    the eventual order of atoms, so that, after multiple calls to this function when all
+    segments are added, one final sorting operation on the atom index can return the
+    final AtomArray.
+
+    For example, let's consider the following AtomArray consisting of two segments A and
+    B:
+
+    A A A B B B
+    1 2 3 4 5 6
+
+    If we want to insert a segment C with 3 atoms between A and B, this function will
+    give an output that has the following intermediate form:
+
+    A A A B B B C C C
+    1 2 3 7 8 9 4 5 6
+
+    Sorting the AtomArray by internal atom index will then result in the correct final
+    AtomArray:
+
+    A A A C C C B B B
+    1 2 3 4 5 6 7 8 9
+
+    The reason why it is most efficient to build up segments by appending them to the
+    end first with multiple calls to this function, followed by a final sort, is that
+    Biotite does not directly allow for insertions into AtomArrays. They are only
+    possible via slicing and concatenation like this:
+
+    atom_array_A + atom_array_C + atom_array_B
+
+    However, this does not preserve any previous bonds between the A and B segments,
+    which is solved by appending to the end and reordering.
 
     Args:
         atom_array:
