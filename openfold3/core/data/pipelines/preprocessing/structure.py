@@ -518,6 +518,14 @@ def preprocess_structure_and_write_outputs_af3(
             pdb_id: {"release_date": release_date, "status": f"skipped: {str(e)}"}
         }, {}
 
+    if len(atom_array) == 0:
+        return {
+            pdb_id: {
+                "release_date": release_date,
+                "status": "skipped: no atoms left after cleanup",
+            }
+        }, {}
+
     chain_int_metadata_dict = extract_chain_and_interface_metadata_af3(
         atom_array, cif_data
     )
