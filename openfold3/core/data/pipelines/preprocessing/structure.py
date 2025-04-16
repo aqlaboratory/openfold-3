@@ -59,6 +59,7 @@ from openfold3.core.data.primitives.structure.cleanup import (
     convert_MSE_to_MET,
     fix_arginine_naming,
     maybe_precrop_chains,
+    prefilter_bonds,
     remove_chains_with_CA_gaps,
     remove_clashing_chains,
     remove_covalent_nonprotein_chains,
@@ -189,6 +190,14 @@ def cleanup_structure_af3(
     atom_array = remove_non_CCD_atoms(atom_array, ccd)
     atom_array = canonicalize_atom_order(atom_array, ccd)
     atom_array = remove_chains_with_CA_gaps(atom_array, distance_threshold=10.0)
+
+    atom_array = prefilter_bonds(
+        atom_array,
+        remove_inter_chain_dative=True,
+        remove_inter_chain_poly_links=True,
+        remove_intra_chain_poly_links=True,
+        remove_longer_than=2.4,
+    )
 
     atom_array = maybe_precrop_chains(
         atom_array=atom_array,

@@ -21,6 +21,7 @@ from openfold3.core.data.primitives.structure.interface import (
 from openfold3.core.data.primitives.structure.labels import (
     AtomArrayView,
     assign_atom_indices,
+    get_bond_atom_tuples,
     get_differing_chain_ids,
     get_residue_tuples,
     remove_atom_indices,
@@ -1119,6 +1120,17 @@ def prefilter_bonds(
         AtomArray:
             AtomArray with filtered bond list.
     """
+
+    def log_removed_bonds(removal_mask: np.ndarray, bond_name: str):
+        """Convenience function to log any removed atoms on each step."""
+        if np.any(removal_mask):
+            bond_atom_tuples = get_bond_atom_tuples(
+                atom_array, bond_partners[removal_mask], include_resname=True
+            )
+            logger.info(
+                f"Removed {len(bond_atom_tuples)} {bond_name} bonds: {bond_atom_tuples}"
+            )
+
     bondlist = atom_array.bonds.as_array()
     bond_partners = bondlist[:, :2]
     valid_bonds_mask = np.ones(len(bond_partners), dtype=bool)
@@ -1139,7 +1151,11 @@ def prefilter_bonds(
         bond_types = bondlist[:, 2]
         is_dative = bond_types == BondType.COORDINATION
 
-        valid_bonds_mask[is_dative & is_inter_chain] = False
+        inter_chain_dative_mask = is_dative & is_inter_chain
+        valid_bonds_mask[inter_chain_dative_mask] = False
+
+        # Log removed bonds
+        log_removed_bonds(inter_chain_dative_mask, "inter-chain dative")
 
     # Handle bonds between polymer residues
     if remove_inter_chain_poly_links or remove_intra_chain_poly_links:
@@ -1153,7 +1169,11 @@ def prefilter_bonds(
 
         # Remove inter-chain polymer-polymer bonds
         if remove_inter_chain_poly_links:
-            valid_bonds_mask[is_polymer_polymer & is_inter_chain] = False
+            inter_chain_poly_link_mask = is_polymer_polymer & is_inter_chain
+            valid_bonds_mask[inter_chain_poly_link_mask] = False
+
+            # Log removed bonds
+            log_removed_bonds(inter_chain_poly_link_mask, "inter-chain polymer-polymer")
 
         # Remove intra-chain polymer-polymer bonds between non-consecutive residues
         if remove_intra_chain_poly_links:
@@ -1163,9 +1183,16 @@ def prefilter_bonds(
                 np.abs(bond_partner_res_ids[:, 0] - bond_partner_res_ids[:, 1]) > 1
             )
 
-            valid_bonds_mask[
+            non_consecutive_intra_chain_poly_link_mask = (
                 is_polymer_polymer & is_intra_chain & is_nonconsecutive
-            ] = False
+            )
+            valid_bonds_mask[non_consecutive_intra_chain_poly_link_mask] = False
+
+            # Log removed bonds
+            log_removed_bonds(
+                non_consecutive_intra_chain_poly_link_mask,
+                "non-consecutive intra-chain polymer-polymer",
+            )
 
     # Remove bonds longer than the cutoff
     if remove_longer_than is not None:
@@ -1173,9 +1200,11 @@ def prefilter_bonds(
 
         # Unresolved atoms will generate NaN distances, so we always keep their bonds as
         # we don't know their bond lengths
-        valid_bonds_mask[(distances > remove_longer_than) & ~np.isnan(distances)] = (
-            False
-        )
+        long_bond_mask = (distances > remove_longer_than) & ~np.isnan(distances)
+        valid_bonds_mask[long_bond_mask] = False
+
+        # Log removed bonds
+        log_removed_bonds(long_bond_mask, f"too-long (>{remove_longer_than} Å)")
 
     # Exclude masked bonds from new BondList
     new_bondlist = BondList(

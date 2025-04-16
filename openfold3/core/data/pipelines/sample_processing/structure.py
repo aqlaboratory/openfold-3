@@ -14,7 +14,6 @@ from openfold3.core.data.primitives.permutation.mol_labels import (
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
-from openfold3.core.data.primitives.structure.cleanup import prefilter_bonds
 from openfold3.core.data.primitives.structure.component import (
     assign_component_ids_from_metadata,
 )
@@ -79,17 +78,6 @@ def process_target_structure_af3(
 
     # Mark individual components (which get unique conformers)
     assign_component_ids_from_metadata(atom_array, per_chain_metadata)
-
-    # Remove metal-coordination bonds between chains, as well as non-adjacent
-    # cross-links between polymer residues and too-long bonds. Note that
-    # create_token_bonds will perform additional bond subsetting downstream.
-    atom_array = prefilter_bonds(
-        atom_array,
-        remove_inter_chain_dative=True,
-        remove_inter_chain_poly_links=True,
-        remove_intra_chain_poly_links=True,
-        remove_longer_than=2.4,
-    )
 
     # Tokenize
     tokenize_atom_array(atom_array=atom_array)
