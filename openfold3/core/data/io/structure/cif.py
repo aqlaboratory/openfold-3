@@ -15,7 +15,10 @@ from openfold3.core.data.io.structure.atom_array import (
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
-from openfold3.core.data.primitives.structure.cleanup import get_polymer_mask
+from openfold3.core.data.primitives.structure.cleanup import (
+    convert_intra_residue_dative_to_single,
+    get_polymer_mask,
+)
 from openfold3.core.data.primitives.structure.labels import (
     assign_entity_ids,
     assign_molecule_type_ids,
@@ -248,9 +251,19 @@ def write_structure(
     else:
         raise NotImplementedError("Only .cif, .bcif, and .pkl formats are supported")
 
-    pdbx.set_structure(
-        cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
-    )
+    try:
+        pdbx.set_structure(
+            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
+        )
+    except KeyError:
+        logger.warning(
+            "KeyError while writing structure to CIF file. Retrying with intra-residue "
+            "COORDINATION bonds set to SINGLE."
+        )
+        atom_array = convert_intra_residue_dative_to_single(atom_array)
+        pdbx.set_structure(
+            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
+        )
 
     cif_file.write(output_path)
 

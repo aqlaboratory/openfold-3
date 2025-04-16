@@ -1047,6 +1047,45 @@ def remove_std_residue_terminal_atoms(atom_array: AtomArray) -> AtomArray:
             f"{edited_residues}."
         )
 
+    return atom_array
+
+
+def convert_intra_residue_dative_to_single(atom_array: AtomArray):
+    """Convert intra-residue dative bonds to single bonds.
+
+    This can be required when used with biotite's set_structure function, which does not
+    currently support writing out intra-residue COORDINATION bonds.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to convert intra-residue dative bonds
+            for.
+
+    Returns:
+        Copy of the AtomArray with intra-residue dative bonds converted to single bonds.
+    """
+    # Copy AtomArray
+    atom_array = atom_array.copy()
+
+    bondlist_arr = atom_array.bonds.as_array()
+
+    resid_starts_1, resid_starts_2 = (
+        struc.get_residue_starts_for(atom_array, bondlist_arr[:, :2].flatten())
+        .reshape(-1, 2)
+        .T
+    )
+
+    # Identify intra-residue and dative bonds
+    is_intra_residue = resid_starts_1 == resid_starts_2
+    is_dative = bondlist_arr[:, 2] == BondType.COORDINATION
+    is_intra_residue_dative = is_intra_residue & is_dative
+
+    # Convert intra-residue dative bonds to single bonds
+    bondlist_arr[is_intra_residue_dative, 2] = BondType.SINGLE
+
+    # Set the new BondList and return
+    new_bondlist = BondList(atom_count=len(atom_array), bonds=bondlist_arr)
+    atom_array.bonds = new_bondlist
 
     return atom_array
 
