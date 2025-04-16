@@ -576,14 +576,14 @@ class _AF3PreprocessingWrapper:
     """Wrapper class that fills in all the constant arguments and adds logging.
 
     This wrapper around `preprocess_structure_and_write_outputs_af3` is needed for
-    multiprocessing, so that we can pass the constant arguments in a convenient way
+    multiprocessing, so that we can pass the constant arguments in a convenient way,
     catch any errors that would crash the workers, and change the function call to
-    accept a single Iterable. In addition, the wrapper updates the set passed to
-    skip_components in-place after the function completion, so that this information is
-    immediately available to other workers when passing a SharedSet.
+    accept a single Iterable. In addition, the wrapper updates the SharedSet that is
+    passed to skip_components in-place after the function completion, so that this
+    information is immediately available to other workers.
 
-    The wrapper is written as a class object because multiprocessing doesn't support
-    decorator-like nested functions.
+    The wrapper is written as a callable class object instead of a function, because
+    multiprocessing doesn't support decorator-like nested functions.
 
     Attributes:
         ccd:
