@@ -24,7 +24,7 @@ from openfold3.core.utils.logging_utils import ContextInjectingFilter
     help="Path to a Chemical Component Dictionary mmCIF file.",
 )
 @click.option(
-    "--preprocessed-ccd-path",
+    "--biotite-ccd-path",
     type=click.Path(exists=True, path_type=Path),
     required=False,
     help=(
