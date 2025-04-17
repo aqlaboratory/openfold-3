@@ -178,7 +178,7 @@ def tokenize_atom_array(atom_array: AtomArray):
     ]
 
     # Combine all token start ids
-    all_token_start_ids = np.sort(
+    all_token_start_ids = np.unique(
         np.concatenate(
             [
                 crp_token_start_ids,
