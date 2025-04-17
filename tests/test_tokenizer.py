@@ -9,7 +9,8 @@ from tests.custom_assert_utils import assert_atomarray_equal
 TEST_DIR = Path("tests/test_data/tokenization")
 
 paths = []
-for id in ["1ema", "1pwc", "5seb", "5tdj", "6znc"]:
+ids = ["1ema", "1pwc", "5seb", "5tdj", "6znc"]
+for id in ids:
     paths.append(
         (
             TEST_DIR / "inputs" / f"{id}_raw_bonds_unfiltered.npz",
@@ -21,6 +22,7 @@ for id in ["1ema", "1pwc", "5seb", "5tdj", "6znc"]:
 @pytest.mark.parametrize(
     "input_atom_array_path, precomputed_atom_array_path",
     paths,
+    ids=ids,
 )
 def test_tokenizer(
     input_atom_array_path: Path,
