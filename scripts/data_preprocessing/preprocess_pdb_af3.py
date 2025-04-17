@@ -80,7 +80,7 @@ from openfold3.core.utils.logging_utils import ContextInjectingFilter
     ),
 )
 @click.option(
-    "--n-chains-precropping",
+    "--precrop-n-chains",
     type=int,
     default=20,
     help=(
@@ -89,18 +89,20 @@ from openfold3.core.utils.logging_utils import ContextInjectingFilter
     ),
 )
 @click.option(
-    "--disable-rna-precropping",
-    is_flag=True,
+    "--precrop-ignore-ligands-below",
+    type=float,
+    default=6,
     help=(
-        "Whether to disable the N-chain precropping for structures that contain RNA."
+        "Ligand chains with fewer atoms than this value will be ignored in the N-chain "
+        "counter for precropping, and included based on proximity to the selected "
+        "chains. Set this to inf to ignore all ligands from the chain budget."
     ),
 )
 @click.option(
-    "--permissive-small-ligand-precropping",
+    "--precrop-disable-rna",
     is_flag=True,
     help=(
-        "If this is set to True, small ligands will be ignored in the N-chain counter "
-        "for precropping, and included based on proximity to the selected chains."
+        "Whether to disable the N-chain precropping for structures that contain RNA."
     ),
 )
 @click.option(
@@ -130,9 +132,9 @@ def main(
     max_polymer_chains: int = 1000,
     num_workers: int | None = None,
     chunksize: int = 50,
-    n_chains_precropping: int = 20,
-    disable_rna_precropping: bool = False,
-    permissive_small_ligand_precropping: bool = False,
+    precrop_n_chains: int = 20,
+    precrop_disable_rna: bool = False,
+    precrop_ignore_ligands_below: int = 6,
     random_seed: int | None = None,
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
     early_stop: int | None = None,
@@ -143,6 +145,10 @@ def main(
     metadata JSON and individual FASTA files for all structures.
     """
     # TODO: Add better docstring
+
+    # Casting this to int if it is one is cleaner
+    if precrop_ignore_ligands_below.is_integer():
+        precrop_ignore_ligands_below = int(precrop_ignore_ligands_below)
 
     log_level = getattr(logging, log_level.upper())
     log_file = out_dir / "preprocess_pdb_af3.log"
@@ -195,9 +201,9 @@ def main(
             num_workers=num_workers,
             chunksize=chunksize,
             output_formats=output_format,
-            n_chains_precropping=n_chains_precropping,
-            disable_rna_precropping=disable_rna_precropping,
-            permissive_small_ligand_precropping=permissive_small_ligand_precropping,
+            precrop_n_chains=precrop_n_chains,
+            precrop_disable_rna=precrop_disable_rna,
+            precrop_ignore_ligands_below=precrop_ignore_ligands_below,
             random_seed=random_seed,
             log_queue=log_queue,
             log_level=log_level,
