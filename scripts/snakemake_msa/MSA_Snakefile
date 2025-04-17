@@ -10,7 +10,7 @@ from Bio.Seq import Seq
 import re
 # utility functions to for operation on stockholm files
 ## converts stockholm >  fasta 
-def ungap_sequences(stockholm_file, fasta_file):
+def ungap_sequences(stockholm_file,query_seq_string,  fasta_file):
     # Read the alignment from the Stockholm file
     alignment = AlignIO.read(stockholm_file, 'stockholm')
 
@@ -26,6 +26,7 @@ def ungap_sequences(stockholm_file, fasta_file):
         ungapped_sequences.append(ungapped_record)
     
     with open(fasta_file, 'w') as output_handle:
+        output_handle.write(query_seq_string)
         SeqIO.write(ungapped_sequences, output_handle, 'fasta')
 
 
@@ -186,15 +187,6 @@ def run_nhmmer(config: dict[str, str], wildcards: dict[str, str],input: dict[str
         tmp.write(f">{seqid}\n{nt_sequence}")
         tmp.flush()
 
-    ### build hmm for query sequence 
-    
-    hmmbuild_command = [
-            HMMBUILD_BIN,
-            "--rna",
-            query_hmm_file,
-            tmpfa
-        ]
-    sp.run(hmmbuild_command, check=True, stdout=log_file, stderr=log_file)
 
     ## setup nhmmer flags and run using query hmm
     nhmmer_flags = [
@@ -238,7 +230,9 @@ def run_nhmmer(config: dict[str, str], wildcards: dict[str, str],input: dict[str
     
 
     ## reformat alignment to include query sequence in alignment
-    ungap_sequences(str(reduced_out_file), hits_fasta)
+    ungap_sequences(str(reduced_out_file), f">{seqid}\n{nt_sequence}\n", hits_fasta)
+
+    
     hmmalign_command = [
         HMMALIGN_BIN,
         '-o', str(realigned_out),
@@ -252,7 +246,6 @@ def run_nhmmer(config: dict[str, str], wildcards: dict[str, str],input: dict[str
     out_file.unlink(missing_ok = True)
     reduced_out_file.unlink(missing_ok = True)
     hits_fasta.unlink(missing_ok=True)
-    query_hmm_file.unlink(missing_ok = True)
     return
 
 def get_threads_from_db(db:str, config: dict[[str, str]]) -> str:
@@ -363,7 +356,8 @@ rule all:
 
 rule run_alignment:
     input:
-        db=lambda wildcards: get_db_path(wildcards['db'], config)
+        db=lambda wildcards: get_db_path(wildcards['db'], config), 
+        hmm = lambda wildcards: f"{output_directory}/{{seqid}}/query.hmm" if wildcards.db in ["rfam", "nucleotide_collection", "rnacentral"] else []
     output:
         msa_path = f"{output_directory}/{{seqid}}/{{db}}_hits.{{ext}}" 
     threads: lambda wildcards: get_threads_from_db(wildcards['db'], config)
@@ -376,6 +370,36 @@ rule run_alignment:
             run_nhmmer(config, wildcards, input, output, resources, threads)
         else:
             run_jackhmmer(config, wildcards,input, output, resources, threads)
+
+
+rule build_rna_hmm:
+    output:
+        hmm = temp(f"{output_directory}/{{seqid}}/query.hmm")
+    run:
+        ### build hmm for query sequence 
+        log_file = sp.DEVNULL
+        seqid = wildcards['seqid']
+        nt_sequence = input_fasta[seqid]
+        
+        alphanumeric = string.ascii_letters + string.digits
+        rng2 = ''.join(random.choice(alphanumeric) for i in range(16))
+        
+        outdir = Path(output["hmm"]).parent
+        outdir.mkdir(exist_ok= True, parents=True)
+        query_hmm_file = Path(f"{outdir}/query.hmm")
+
+        tmpfa = Path(f"{resources.tmpdir}/{seqid}_{rng2}.fa")
+        with open(tmpfa, "w+") as tmp:
+            tmp.write(f">{seqid}\n{nt_sequence}")
+            tmp.flush()
+        hmmbuild_command = [
+                    HMMBUILD_BIN,
+                    "--rna",
+                    query_hmm_file,
+                    tmpfa
+                ]
+        sp.run(hmmbuild_command, check=True, stdout=log_file, stderr=log_file)
+
 
 
 rule run_template_search:
