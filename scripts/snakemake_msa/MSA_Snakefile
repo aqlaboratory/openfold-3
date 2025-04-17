@@ -29,6 +29,18 @@ def ungap_sequences(stockholm_file,query_seq_string,  fasta_file):
         output_handle.write(query_seq_string)
         SeqIO.write(ungapped_sequences, output_handle, 'fasta')
 
+def sanitize_rna_sequence(seq:str):
+    """
+    ensure sequence is always upper case, and only has cannonical nucleotides
+    Anything not cannonical set to N
+    """
+    chars = []
+    nucleotides = {"A", "G", "C", "U", "N"}
+    for c in seq.upper():
+        if c not in nucleotides:
+            c = "N"
+        chars.append(c)
+    return "".join(chars)
 
 
 ## truncate stockholm file to desired numver of sequences 
@@ -169,7 +181,7 @@ def run_nhmmer(config: dict[str, str], wildcards: dict[str, str],input: dict[str
     ## setup inputs and outputs
     log_file = sp.DEVNULL
     seqid = wildcards['seqid']
-    nt_sequence = input_fasta[seqid]
+    nt_sequence = sanitize_rna_sequence(input_fasta[seqid])
     
     alphanumeric = string.ascii_letters + string.digits
     rng2 = ''.join(random.choice(alphanumeric) for i in range(16))
@@ -379,7 +391,7 @@ rule build_rna_hmm:
         ### build hmm for query sequence 
         log_file = sp.DEVNULL
         seqid = wildcards['seqid']
-        nt_sequence = input_fasta[seqid]
+        nt_sequence = sanitize_rna_sequence(input_fasta[seqid])
         
         alphanumeric = string.ascii_letters + string.digits
         rng2 = ''.join(random.choice(alphanumeric) for i in range(16))
