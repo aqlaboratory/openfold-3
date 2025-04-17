@@ -11,7 +11,12 @@ from biotite.structure.io.pdbx import BinaryCIFFile, CIFBlock, CIFFile
 from openfold3.core.data.primitives.structure.labels import (
     get_chain_to_entity_dict,
 )
-from openfold3.core.data.resources.residues import STANDARD_PROTEIN_RESIDUES_1
+from openfold3.core.data.resources.residues import (
+    CHEM_COMP_TYPE_TO_MOLECULE_TYPE,
+    STANDARD_PROTEIN_RESIDUES_1,
+    STANDARD_RNA_RESIDUES,
+    MoleculeType,
+)
 
 
 def get_pdb_id(cif_file: CIFFile, format: Literal["upper", "lower"] = "lower") -> str:
