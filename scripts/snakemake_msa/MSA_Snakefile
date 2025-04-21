@@ -181,8 +181,9 @@ def run_nhmmer(config: dict[str, str], wildcards: dict[str, str],input: dict[str
     ## setup inputs and outputs
     log_file = sp.DEVNULL
     seqid = wildcards['seqid']
-    nt_sequence = sanitize_rna_sequence(input_fasta[seqid])
-    
+    gt_rna_sequence = input_fasta[seqid]
+    sani_rna_sequence = sanitize_rna_sequence(gt_rna_sequence)
+    gt_rna_sequence = sani_rna_sequence
     alphanumeric = string.ascii_letters + string.digits
     rng2 = ''.join(random.choice(alphanumeric) for i in range(16))
     
@@ -196,7 +197,7 @@ def run_nhmmer(config: dict[str, str], wildcards: dict[str, str],input: dict[str
     hits_fasta = Path(f"{outdir}/{wildcards.db}_hits_reduced.fa")
     realigned_out = Path(f"{outdir}/{wildcards.db}_hits.sto")
     with open(tmpfa, "w+") as tmp:
-        tmp.write(f">{seqid}\n{nt_sequence}")
+        tmp.write(f">{seqid}\n{sani_rna_sequence}\n")
         tmp.flush()
 
 
@@ -208,7 +209,7 @@ def run_nhmmer(config: dict[str, str], wildcards: dict[str, str],input: dict[str
         '--watson',
     ]
 
-    f3_thresh = 0.02 if len(nt_sequence) < 50 else 0.00005
+    f3_thresh = 0.02 if len(sani_rna_sequence) < 50 else 0.00005
     nhmmer_flags.extend(['--F3', str(f3_thresh)])
     ## write inital stockholm to local tmp storage - these can get large and so 
     ## writing to local storage preserves the filesystem at scale 
@@ -229,7 +230,7 @@ def run_nhmmer(config: dict[str, str], wildcards: dict[str, str],input: dict[str
         with open(realigned_out, "w+") as f:
             f.write("# STOCKHOLM 1.0\n")
             f.write(f"#=GF SQ 1\n")
-            f.write(f"{seqid} {nt_sequence}\n")
+            f.write(f"{seqid} {gt_rna_sequence}\n")
             f.write(f"#=GS {seqid} AC {seqid}\n")
             f.write(f"#=GS {seqid} DE {seqid}\n")
             f.write("//\n")
@@ -242,7 +243,7 @@ def run_nhmmer(config: dict[str, str], wildcards: dict[str, str],input: dict[str
     
 
     ## reformat alignment to include query sequence in alignment
-    ungap_sequences(str(reduced_out_file), f">{seqid}\n{nt_sequence}\n", hits_fasta)
+    ungap_sequences(str(reduced_out_file), f">{seqid}\n{gt_rna_sequence}\n", hits_fasta)
 
     
     hmmalign_command = [
@@ -386,12 +387,13 @@ rule run_alignment:
 
 rule build_rna_hmm:
     output:
-        hmm = temp(f"{output_directory}/{{seqid}}/query.hmm")
+        hmm = f"{output_directory}/{{seqid}}/query.hmm"
     run:
         ### build hmm for query sequence 
         log_file = sp.DEVNULL
         seqid = wildcards['seqid']
-        nt_sequence = sanitize_rna_sequence(input_fasta[seqid])
+        gt_rna_sequence = input_fasta[seqid]
+        sani_rna_sequence = sanitize_rna_sequence(gt_rna_sequence)
         
         alphanumeric = string.ascii_letters + string.digits
         rng2 = ''.join(random.choice(alphanumeric) for i in range(16))
@@ -402,7 +404,7 @@ rule build_rna_hmm:
 
         tmpfa = Path(f"{resources.tmpdir}/{seqid}_{rng2}.fa")
         with open(tmpfa, "w+") as tmp:
-            tmp.write(f">{seqid}\n{nt_sequence}")
+            tmp.write(f">{seqid}\n{sani_rna_sequence}")
             tmp.flush()
         hmmbuild_command = [
                     HMMBUILD_BIN,
