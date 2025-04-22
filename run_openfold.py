@@ -97,7 +97,7 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
         output_dir = Path(runner_args.get("output_dir"))
         output_dir.mkdir(exist_ok=True)
         log_filepath = output_dir / "console_logs.log"
-        logging.basicConfig(filename=log_filepath, level=log_level, filemode="w")
+        logging.basicConfig(filename=log_filepath, level=log_level, filemode="a")
 
     world_size = runner_args.num_gpus * runner_args.pl_trainer.num_nodes
     is_distributed = world_size > 1
