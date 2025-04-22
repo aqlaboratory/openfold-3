@@ -655,7 +655,7 @@ class MSAPairWeightedAveraging(nn.Module):
                 z=z_in,
             )
 
-        inputs = {"m": m, "z": z}
+        inputs = {"m_in": m, "z_in": z}
 
         fn = partial(fn)
 
