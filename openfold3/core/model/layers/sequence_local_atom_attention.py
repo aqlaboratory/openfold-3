@@ -33,8 +33,8 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.atom_attention_block_utils import (
-    convert_pair_rep_to_blocks,
     convert_single_rep_to_blocks,
+    convert_trunk_pair_rep_to_blocks,
 )
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
@@ -129,24 +129,27 @@ class RefAtomFeatureEmbedder(nn.Module):
         )  # CONFIRM THIS FORMAT ONCE DATALOADER/FEATURIZER DONE
 
         # Embed offsets
-        # dlm: [*, N_atom, N_atom, 3]
-        # vlm: [*, N_atom, N_atom, 1]
-        dlm = batch["ref_pos"].unsqueeze(-2) - batch["ref_pos"].unsqueeze(-3)
-        vlm = (
-            (
-                batch["ref_space_uid"].unsqueeze(-2)
-                == batch["ref_space_uid"].unsqueeze(-1)
-            )
-            .unsqueeze(-1)
-            .to(dtype=dlm.dtype)
+        # Convert all atom rep to block format ahead of time due to
+        # reduce memory cost
+        # dl, dm: [*, N_blocks, N_query, 3], [*, N_blocks, N_key, 3]
+        # vl, vm: [*, N_blocks, N_query, 1], [*, N_blocks, N_key, 1]
+        # atom_mask: [*, N_blocks, N_query, N_key]
+        d_l, d_m, atom_mask = convert_single_rep_to_blocks(
+            ql=batch["ref_pos"],
+            n_query=n_query,
+            n_key=n_key,
+            atom_mask=batch["atom_mask"],
+        )
+        v_l, v_m, _ = convert_single_rep_to_blocks(
+            ql=batch["ref_space_uid"].unsqueeze(-1), n_query=n_query, n_key=n_key
         )
 
-        # Convert all atom pair rep to block format ahead of time due to
-        # reduce memory cost
         # dlm: [*, N_blocks, N_query, N_key, 3]
         # vlm: [*, N_blocks, N_query, N_key, 1]
-        dlm = convert_pair_rep_to_blocks(plm=dlm, n_query=n_query, n_key=n_key)
-        vlm = convert_pair_rep_to_blocks(plm=vlm, n_query=n_query, n_key=n_key)
+        dlm = (d_l.unsqueeze(-2) - d_m.unsqueeze(-3)) * atom_mask.unsqueeze(-1)
+        vlm = (v_l.unsqueeze(-2) == v_m.unsqueeze(-3)).to(
+            dtype=dlm.dtype
+        ) * atom_mask.unsqueeze(-1)
 
         plm = self.linear_ref_offset(dlm) * vlm
 
@@ -251,29 +254,8 @@ class NoisyPositionEmbedder(nn.Module):
         # Broadcast trunk pair representation into atom pair conditioning
         zij_trunk = self.linear_z(self.layer_norm_z(zij_trunk))
 
-        # z_lj: [*, N_atom, N_token, c_atom_pair]
-        zij_trunk = broadcast_token_feat_to_atoms(
-            token_mask=batch["token_mask"],
-            num_atoms_per_token=batch["num_atoms_per_token"],
-            token_feat=zij_trunk,
-            token_dim=-3,
-        )
-
-        # z_ml: [*, N_atom, N_atom, c_atom_pair]
-        zij_trunk = broadcast_token_feat_to_atoms(
-            token_mask=batch["token_mask"],
-            num_atoms_per_token=batch["num_atoms_per_token"],
-            token_feat=zij_trunk.transpose(-2, -3),
-            token_dim=-3,
-        )
-
-        # z_lm: [*, N_atom, N_atom, c_atom_pair]
-        zij_trunk = zij_trunk.transpose(-2, -3)
-
-        # [*, N_atom, N_atom, c_atom_pair] ->
-        # [*, N_blocks, N_query, N_key, c_atom_pair]
-        zij_trunk = convert_pair_rep_to_blocks(
-            plm=zij_trunk, n_query=n_query, n_key=n_key
+        zij_trunk = convert_trunk_pair_rep_to_blocks(
+            batch=batch, zij_trunk=zij_trunk, n_query=n_query, n_key=n_key
         )
 
         plm = plm + zij_trunk
@@ -472,22 +454,23 @@ class AtomAttentionEncoder(nn.Module):
             )
 
         # Add the combined single conditioning to the pair rep (line 13 - 14)
-        # TODO: Convert to this version for memory reasons.
-        #  Note that the l/m linear layers are reversed here, they should be renamed
-        #  Keeping it the same for now so that its compatible with previous checkpoints.
         cl_l, cl_m, atom_mask = convert_single_rep_to_blocks(
             ql=cl, n_query=self.n_query, n_key=self.n_key, atom_mask=batch["atom_mask"]
         )
 
+        # Note to devs: in previous checkpoints before v13, linear_l and linear_m
+        #  were reversed. Changed it for consistent naming.
         cl_lm = (
-            self.linear_m(self.relu(cl_l.unsqueeze(-2)))
-            + self.linear_l(self.relu(cl_m.unsqueeze(-3)))
+            self.linear_l(self.relu(cl_l.unsqueeze(-2)))
+            + self.linear_m(self.relu(cl_m.unsqueeze(-3)))
         ) * atom_mask.unsqueeze(-1)
 
         # [*, N_blocks, N_query, N_key, c_atom_pair]
         plm = plm + cl_lm
 
         plm = plm + self.pair_mlp(plm)
+
+        plm = plm * atom_mask.unsqueeze(-1)
 
         return ql, cl, plm
 
