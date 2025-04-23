@@ -34,7 +34,7 @@ from openfold3.core.model.layers.diffusion_transformer import DiffusionTransform
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.atom_attention_block_utils import (
     convert_single_rep_to_blocks,
-    convert_trunk_rep_to_blocks,
+    convert_trunk_pair_rep_to_blocks,
 )
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
@@ -254,7 +254,7 @@ class NoisyPositionEmbedder(nn.Module):
         # Broadcast trunk pair representation into atom pair conditioning
         zij_trunk = self.linear_z(self.layer_norm_z(zij_trunk))
 
-        zij_trunk = convert_trunk_rep_to_blocks(
+        zij_trunk = convert_trunk_pair_rep_to_blocks(
             batch=batch, zij_trunk=zij_trunk, n_query=n_query, n_key=n_key
         )
 
@@ -454,16 +454,15 @@ class AtomAttentionEncoder(nn.Module):
             )
 
         # Add the combined single conditioning to the pair rep (line 13 - 14)
-        # TODO: Convert to this version for memory reasons.
-        #  Note that the l/m linear layers are reversed here, they should be renamed
-        #  Keeping it the same for now so that its compatible with previous checkpoints.
         cl_l, cl_m, atom_mask = convert_single_rep_to_blocks(
             ql=cl, n_query=self.n_query, n_key=self.n_key, atom_mask=batch["atom_mask"]
         )
 
+        # Note to devs: in previous checkpoints before v13, linear_l and linear_m
+        #  were reversed. Changed it for consistent naming.
         cl_lm = (
-            self.linear_m(self.relu(cl_l.unsqueeze(-2)))
-            + self.linear_l(self.relu(cl_m.unsqueeze(-3)))
+            self.linear_l(self.relu(cl_l.unsqueeze(-2)))
+            + self.linear_m(self.relu(cl_m.unsqueeze(-3)))
         ) * atom_mask.unsqueeze(-1)
 
         # [*, N_blocks, N_query, N_key, c_atom_pair]

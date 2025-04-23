@@ -463,6 +463,8 @@ def per_sample_all_atom_plddt_loss(
     all_atom_plddt_partial = partial(
         all_atom_plddt_loss, no_bins=no_bins, bin_min=bin_min, bin_max=bin_max, eps=eps
     )
+
+    # Chunk over the sample dimension
     chunks = []
     for i in range(0, x.shape[-3], 1):
 

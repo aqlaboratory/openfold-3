@@ -272,7 +272,7 @@ def convert_single_rep_to_blocks(
     return ql_query, ql_key, atom_pair_mask
 
 
-def _deprecated_convert_trunk_rep_to_blocks(
+def _deprecated_convert_trunk_pair_rep_to_blocks(
     batch: dict,
     zij_trunk: torch.Tensor,
     n_query: int,
@@ -320,7 +320,7 @@ def _deprecated_convert_trunk_rep_to_blocks(
     return zij_trunk
 
 
-def convert_trunk_rep_to_blocks(
+def convert_trunk_pair_rep_to_blocks(
     batch: dict,
     zij_trunk: torch.Tensor,
     n_query: int,

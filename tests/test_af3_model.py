@@ -3,6 +3,7 @@ import unittest
 import torch
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
+from openfold3.core.utils.precision_utils import AF3DeepSpeedPrecision
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects import registry
 from openfold3.projects.af3_all_atom.runner import AlphaFold3AllAtom
@@ -32,6 +33,8 @@ class TestAF3Model(unittest.TestCase):
         if train:
             config.settings.blocks_per_ckpt = 1
             config.settings.ckpt_intermediate_steps = True
+        else:
+            config.settings.memory.eval.chunk_size = 4
 
         if reduce_model_size:
             # To avoid memory issues in CI
@@ -51,6 +54,9 @@ class TestAF3Model(unittest.TestCase):
             n_templ=n_templ,
             is_eval=(not train),
         )
+
+        precision = "32-true" if dtype == torch.float32 else "bf16-mixed"
+        batch = AF3DeepSpeedPrecision(precision=precision).convert_input(batch)
 
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
         num_rollout_samples = (

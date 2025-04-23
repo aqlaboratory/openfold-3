@@ -471,7 +471,7 @@ class DataModule(pl.LightningDataModule):
         return state
 
     def load_state_dict(self, state_dict: dict[str, Any]):
-        if DatasetMode.train not in self.multi_dataset_config.modes:
+        if not self.next_dataset_indices:
             return
 
         loaded_index_keys = state_dict["next_dataset_indices"].keys()

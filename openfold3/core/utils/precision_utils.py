@@ -32,10 +32,23 @@ def is_fp16_enabled():
 
 
 class AF3DeepSpeedPrecision(DeepSpeedPrecision):
+    """Precision plugin to selectively convert inputs to the desired precision."""
+
     def __init__(self, precision: _PRECISION_INPUT) -> None:
         super().__init__(precision=precision)
 
     def convert_input(self, data: Any) -> Any:
+        """
+        Converts input data to the desired precision.
+        The ground truth and reference conformer features will not be cast
+        to a lower precision in order to avoid truncating atom coordinates.
+
+        Args:
+            data: Input feature dictionary
+
+        Returns:
+            data: Converted input feature dictionary with the desired precision
+        """
         ground_truth = data.pop("ground_truth", None)
         ref_conformer_feats = {k: v for k, v in data.items() if k.startswith("ref_")}
 

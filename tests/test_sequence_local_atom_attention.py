@@ -18,25 +18,25 @@ from tests.data_utils import random_af3_features
 class TestRefAtomFeatureEmbedder(unittest.TestCase):
     def test_without_n_sample_channel(self):
         batch_size = consts.batch_size
-        n_atom = 4 * consts.n_res
         c_atom = 64
         c_atom_pair = 16
         n_query = 32
         n_key = 128
-        num_blocks = math.ceil(n_atom / n_query)
 
         embedder = RefAtomFeatureEmbedder(
             c_atom_ref=c_atom_ref.get(), c_atom=c_atom, c_atom_pair=c_atom_pair
         )
 
-        batch = {
-            "ref_pos": torch.randn((batch_size, n_atom, 3)),
-            "ref_mask": torch.ones((batch_size, n_atom)),
-            "ref_element": torch.ones((batch_size, n_atom, 119)),
-            "ref_charge": torch.ones((batch_size, n_atom)),
-            "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)),
-            "ref_space_uid": torch.zeros((batch_size, n_atom)),
-        }
+        batch = random_af3_features(
+            batch_size=batch_size,
+            n_token=consts.n_res,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
+            is_eval=False,
+        )
+
+        n_atom = batch["ref_pos"].shape[-2]
+        num_blocks = math.ceil(n_atom / n_query)
 
         cl, plm = embedder(batch, n_query=n_query, n_key=n_key)
 
@@ -47,25 +47,27 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
 
     def test_with_n_sample_channel(self):
         batch_size = consts.batch_size
-        n_atom = 4 * consts.n_res
         c_atom = 64
         c_atom_pair = 16
         n_query = 32
         n_key = 128
-        num_blocks = math.ceil(n_atom / n_query)
 
         embedder = RefAtomFeatureEmbedder(
             c_atom_ref=c_atom_ref.get(), c_atom=c_atom, c_atom_pair=c_atom_pair
         )
 
-        batch = {
-            "ref_pos": torch.randn((batch_size, 1, n_atom, 3)),
-            "ref_mask": torch.ones((batch_size, 1, n_atom)),
-            "ref_element": torch.ones((batch_size, 1, n_atom, 119)),
-            "ref_charge": torch.ones((batch_size, 1, n_atom)),
-            "ref_atom_name_chars": torch.ones((batch_size, 1, n_atom, 4, 64)),
-            "ref_space_uid": torch.zeros((batch_size, 1, n_atom)),
-        }
+        batch = random_af3_features(
+            batch_size=batch_size,
+            n_token=consts.n_res,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
+            is_eval=False,
+        )
+
+        batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
+
+        n_atom = batch["ref_pos"].shape[-2]
+        num_blocks = math.ceil(n_atom / n_query)
 
         cl, plm = embedder(batch, n_query=n_query, n_key=n_key)
 
@@ -79,14 +81,12 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
     def test_without_n_sample_channel(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
-        n_atom = 4 * consts.n_res
         c_s = consts.c_s
         c_z = consts.c_z
         c_atom = 64
         c_atom_pair = 16
         n_query = 32
         n_key = 128
-        num_blocks = math.ceil(n_atom / n_query)
 
         embedder = NoisyPositionEmbedder(
             c_s=c_s,
@@ -95,6 +95,17 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
             c_atom_pair=c_atom_pair,
         )
 
+        batch = random_af3_features(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
+            is_eval=False,
+        )
+
+        n_atom = batch["ref_pos"].shape[-2]
+        num_blocks = math.ceil(n_atom / n_query)
+
         cl = torch.randn((batch_size, n_atom, c_atom))
         plm = torch.randn((batch_size, num_blocks, n_query, n_key, c_atom_pair))
         ql = torch.randn((batch_size, n_atom, c_atom))
@@ -102,11 +113,6 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
         si_trunk = torch.randn((batch_size, n_token, c_s))
         zij_trunk = torch.randn((batch_size, n_token, n_token, c_z))
         rl = torch.randn((batch_size, n_atom, 3))
-
-        batch = {
-            "token_mask": torch.ones((batch_size, n_token)),
-            "num_atoms_per_token": torch.ones((batch_size, n_token)) * 4,
-        }
 
         cl, plm, ql = embedder(
             batch=batch,
@@ -129,7 +135,6 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
     def test_with_n_sample_channel(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
-        n_atom = 4 * consts.n_res
         c_s = consts.c_s
         c_z = consts.c_z
         c_atom = 64
@@ -137,7 +142,6 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
         n_sample = 3
         n_query = 32
         n_key = 128
-        num_blocks = math.ceil(n_atom / n_query)
 
         embedder = NoisyPositionEmbedder(
             c_s=c_s,
@@ -146,6 +150,19 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
             c_atom_pair=c_atom_pair,
         )
 
+        batch = random_af3_features(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
+            is_eval=False,
+        )
+
+        batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
+
+        n_atom = batch["ref_pos"].shape[-2]
+        num_blocks = math.ceil(n_atom / n_query)
+
         cl = torch.randn((batch_size, 1, n_atom, c_atom))
         plm = torch.randn((batch_size, 1, num_blocks, n_query, n_key, c_atom_pair))
         ql = torch.randn((batch_size, 1, n_atom, c_atom))
@@ -153,11 +170,6 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
         si_trunk = torch.randn((batch_size, 1, n_token, c_s))
         zij_trunk = torch.randn((batch_size, 1, n_token, n_token, c_z))
         rl = torch.randn((batch_size, n_sample, n_atom, 3))
-
-        batch = {
-            "token_mask": torch.ones((batch_size, 1, n_token)),
-            "num_atoms_per_token": torch.ones((batch_size, 1, n_token)) * 4,
-        }
 
         cl, plm, ql = embedder(
             batch=batch,
@@ -216,7 +228,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
             n_templ=consts.n_templ,
         )
 
-        n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
+        n_atom = batch["ref_pos"].shape[-2]
 
         num_blocks = math.ceil(n_atom / n_query)
 
@@ -275,7 +287,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
 
         batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
 
-        n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
+        n_atom = batch["ref_pos"].shape[-2]
         num_blocks = math.ceil(n_atom / n_query)
 
         atom_mask = torch.ones((batch_size, 1, n_atom))
@@ -335,7 +347,7 @@ class TestAtomAttentionDecoder(unittest.TestCase):
             n_templ=consts.n_templ,
         )
 
-        n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
+        n_atom = batch["ref_pos"].shape[-2]
         num_blocks = math.ceil(n_atom / n_query)
 
         atom_mask = torch.ones((batch_size, n_atom))
@@ -388,7 +400,7 @@ class TestAtomAttentionDecoder(unittest.TestCase):
 
         batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
 
-        n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
+        n_atom = batch["ref_pos"].shape[-2]
         num_blocks = math.ceil(n_atom / n_query)
 
         atom_mask = torch.ones((batch_size, 1, n_atom))

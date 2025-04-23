@@ -324,7 +324,7 @@ class AlphaFold3AllAtom(ModelRunner):
         preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
         atom_array = batch.pop("atom_array")
 
-        is_repeated_sample = batch.get("repeated_sample")
+        is_repeated_sample = batch.get("repeated_sample").item()
         logger.debug(
             f"Started validation for {', '.join(pdb_id)} on rank {self.global_rank} "
             f"step {self.global_step}, repeated: {is_repeated_sample}"
@@ -345,7 +345,7 @@ class AlphaFold3AllAtom(ModelRunner):
                 self._log(loss_breakdown, batch, outputs, train=False)
 
         except Exception:
-            logger.exception(f"Validation step failed with pdb id {pdb_id}")
+            logger.exception(f"Validation step failed with pdb id {', '.join(pdb_id)}")
             raise
 
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
