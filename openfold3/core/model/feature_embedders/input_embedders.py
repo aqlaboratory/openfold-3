@@ -511,11 +511,14 @@ class InputEmbedderAllAtom(nn.Module):
             z:
                 [*, N_token, N_token, C_z] Pair representation
         """
-        a, _, _, _ = self.atom_attn_enc(
-            batch=batch,
-            atom_mask=batch["atom_mask"],
-            use_high_precision_attention=use_high_precision_attention,
-        )
+        with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+            a, _, _, _ = self.atom_attn_enc(
+                batch=batch,
+                atom_mask=batch["atom_mask"],
+                use_high_precision_attention=use_high_precision_attention,
+            )
+
+        a = a.to(dtype=self.linear_s.weight.dtype)
 
         # [*, N_token, C_s_input]
         s_input = torch.cat(

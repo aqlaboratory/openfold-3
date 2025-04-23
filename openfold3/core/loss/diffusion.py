@@ -451,16 +451,15 @@ def diffusion_loss(
 
     # Mean over batch dimension for individual losses
     # Mask out samples where the loss is disabled
-    loss_breakdown = {
-        f"{name}_loss": loss_masked_batch_mean(
-            loss=loss,
-            weight=loss_weights[name].squeeze(-1),
-            apply_weight=False,
-            nan_zero_weights=True,
-            eps=eps,
-        )
-        for name, loss in loss_breakdown.items()
-    }
+    valid_loss_breakdown = {}
+    for name, loss in loss_breakdown.items():
+        if loss_weights[name].any():
+            valid_loss_breakdown[f"{name}_loss"] = loss_masked_batch_mean(
+                loss=loss,
+                weight=loss_weights[name].squeeze(-1),
+                apply_weight=False,
+                eps=eps,
+            )
 
     l_mse = l_mse * mse_weight
     l_bond = l_bond * bond_weight
@@ -479,8 +478,7 @@ def diffusion_loss(
         loss=mean_loss,
         weight=mse_weight.squeeze(-1),
         apply_weight=False,
-        nan_zero_weights=False,
         eps=eps,
     )
 
-    return mean_loss, loss_breakdown
+    return mean_loss, valid_loss_breakdown

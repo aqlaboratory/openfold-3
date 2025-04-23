@@ -140,9 +140,6 @@ def featurize_reference_conformers_af3(
     )
     ref_space_uid = torch.tensor(ref_space_uid, dtype=torch.int32)
 
-    # This will get padded with 0s in the batch collator
-    atom_pad_mask = torch.ones_like(ref_mask, dtype=torch.bool)
-
     return {
         "ref_pos": ref_pos,
         "ref_mask": ref_mask,
@@ -151,5 +148,4 @@ def featurize_reference_conformers_af3(
         "ref_atom_name_chars": ref_atom_name_chars,
         "ref_space_uid": ref_space_uid,
         "ref_space_uid_to_perm": ref_space_uid_to_perm,
-        "atom_pad_mask": atom_pad_mask,
     }

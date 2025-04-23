@@ -204,6 +204,7 @@ class DataModule(pl.LightningDataModule):
                 )  # numpy takes 32-bit seed only
 
         self.worker_init_function_with_data_seed = worker_init_function_with_data_seed
+        self.generator = torch.Generator(device="cpu").manual_seed(self.data_seed)
 
         self.datasets_by_mode = {k: [] for k in DatasetMode}
         # Initialize datasets
@@ -213,7 +214,6 @@ class DataModule(pl.LightningDataModule):
             )
             # Initialize train datasets
             all_train_datasets = self.init_datasets(multi_dataset_config_train)
-            self.generator = torch.Generator(device="cpu").manual_seed(self.data_seed)
 
             # Wrap train datasets in the sampler dataset class
             train_dataset = SamplerDataset(
@@ -377,6 +377,7 @@ class DataModule(pl.LightningDataModule):
         supported_combinations = [
             {DatasetMode.train},
             {DatasetMode.train, DatasetMode.validation},
+            {DatasetMode.validation},
             {DatasetMode.test},
             {DatasetMode.prediction},
         ]
@@ -386,11 +387,6 @@ class DataModule(pl.LightningDataModule):
                 "An unsupported combination of dataset modes was found in"
                 f"data_config: {modes_unique}. The supported dataset"
                 f"combinations are: {supported_combinations}."
-            )
-        if modes_unique == {DatasetMode.validation}:
-            raise ValueError(
-                "Validation dataset(s) were provided without any training datasets."
-                f"The supported dataset combinations are: {supported_combinations}."
             )
         elif any([type_ not in supported_types for type_ in modes_unique]):
             raise ValueError(
@@ -475,6 +471,9 @@ class DataModule(pl.LightningDataModule):
         return state
 
     def load_state_dict(self, state_dict: dict[str, Any]):
+        if not self.next_dataset_indices:
+            return
+
         loaded_index_keys = state_dict["next_dataset_indices"].keys()
         current_index_keys = self.next_dataset_indices.keys()
         if set(loaded_index_keys) != set(current_index_keys):
