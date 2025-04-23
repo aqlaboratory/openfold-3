@@ -33,6 +33,8 @@ class TestAF3Model(unittest.TestCase):
         if train:
             config.settings.blocks_per_ckpt = 1
             config.settings.ckpt_intermediate_steps = True
+        else:
+            config.settings.memory.eval.chunk_size = 4
 
         if reduce_model_size:
             # To avoid memory issues in CI
@@ -43,6 +45,7 @@ class TestAF3Model(unittest.TestCase):
         config.architecture.loss_module.diffusion.chunk_size = 16
 
         af3 = AlphaFold3AllAtom(config, _compile=False).to(device=device, dtype=dtype)
+        af3_loss = AlphaFold3Loss(config=config.architecture.loss_module)
 
         batch = random_af3_features(
             batch_size=batch_size,
@@ -56,6 +59,11 @@ class TestAF3Model(unittest.TestCase):
         batch = AF3DeepSpeedPrecision(precision=precision).convert_input(batch)
 
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
+        num_rollout_samples = (
+            config.architecture.shared.diffusion.no_mini_rollout_samples
+            if train
+            else config.architecture.shared.diffusion.no_full_rollout_samples
+        )
 
         def to_device(t):
             return t.to(device=torch.device(device))
@@ -63,8 +71,6 @@ class TestAF3Model(unittest.TestCase):
         batch = tensor_tree_map(to_device, batch)
 
         if train:
-            af3_loss = AlphaFold3Loss(config=config.architecture.loss_module)
-
             batch, outputs = af3(batch=batch)
 
             loss, loss_breakdown = af3_loss(
@@ -90,15 +96,16 @@ class TestAF3Model(unittest.TestCase):
             assert "use_for_inter_validation" in batch
 
             with torch.no_grad():
-                _, outputs = af3(batch=batch)
+                batch, outputs = af3(batch=batch)
+
+                loss, loss_breakdown = af3_loss(
+                    batch=batch, output=outputs, _return_breakdown=True
+                )
+
+                assert loss.shape == ()
 
             atom_positions_predicted = outputs["atom_positions_predicted"]
 
-        num_rollout_samples = (
-            config.architecture.shared.diffusion.no_mini_rollout_samples
-            if train
-            else config.architecture.shared.diffusion.no_full_rollout_samples
-        )
         assert atom_positions_predicted.shape == (
             batch_size,
             num_rollout_samples,
