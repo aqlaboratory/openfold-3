@@ -271,9 +271,11 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
     }
 
     if is_eval:
-        features["use_for_intra_validation"] = torch.ones(batch_size, n_token).int()
-        features["use_for_inter_validation"] = torch.ones(
-            batch_size, n_token, n_token
+        features["ground_truth"]["intra_filter_atomized"] = torch.ones(
+            batch_size, n_atom
+        ).int()
+        features["ground_truth"]["inter_filter_atomized"] = torch.ones(
+            batch_size, n_atom, n_atom
         ).int()
 
     return features

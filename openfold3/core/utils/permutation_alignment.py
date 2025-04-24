@@ -1786,6 +1786,18 @@ def safe_multi_chain_permutation_alignment(
                 dtype=atom_positions_predicted.dtype,
             )
 
+            intra_filter_atomized = batch["ground_truth"].get("intra_filter_atomized")
+            if intra_filter_atomized is not None:
+                new_gt_features["intra_filter_atomized"] = intra_filter_atomized.expand(
+                    -1, batch_dims[-1], *((-1,) * len(intra_filter_atomized.shape[2:]))
+                )
+
+            inter_filter_atomized = batch["ground_truth"].get("inter_filter_atomized")
+            if inter_filter_atomized is not None:
+                new_gt_features["inter_filter_atomized"] = inter_filter_atomized.expand(
+                    -1, batch_dims[-1], *((-1,) * len(inter_filter_atomized.shape[2:]))
+                )
+
             # Disable all losses
             for loss_key, weights in batch["loss_weights"].items():
                 batch["loss_weights"][loss_key] = torch.zeros_like(weights)
