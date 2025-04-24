@@ -1173,9 +1173,10 @@ def get_metrics(
     is_rna = is_rna * not_modified_res
     is_dna = is_dna * not_modified_res
 
-    # TODO: Update in metrics PR, temporary fix to handle more than one sample
-    #  from the rollout output
     def expand_sample_dim(t: torch.tensor) -> torch.tensor:
+        if t.shape[1] == no_samples:
+            return t
+
         feat_dims = t.shape[2:]
         t = t.expand(-1, no_samples, *((-1,) * len(feat_dims)))
         return t
@@ -1237,11 +1238,13 @@ def get_metrics(
 
     # set up filters for validation metrics if present, otherwise pass ones
     intra_filter_atomized = batch["ground_truth"].get(
-        "intra_filter_atomized", atom_padding_mask
+        "intra_filter_atomized", expand_sample_dim(atom_padding_mask)
     )
     inter_filter_atomized = batch["ground_truth"].get(
         "inter_filter_atomized",
-        atom_padding_mask[..., None] * atom_padding_mask[..., None, :],
+        expand_sample_dim(
+            atom_padding_mask[..., None] * atom_padding_mask[..., None, :]
+        ),
     )
 
     if torch.any(is_protein_atomized):
@@ -1361,7 +1364,11 @@ def get_metrics_chunked(
     compute_extra_val_metrics=False,
 ) -> dict[str, torch.Tensor]:
     """
-    Compute validation metrics per predicted sample on all substrates
+    Compute validation metrics per predicted sample on all substrates.
+    If a metric is valid for some samples and not others, it will be masked
+    to zero as in the batched version get_metrics(). For example, for
+    interface lDDts with ions, it's often the case that some samples do not
+    pass the thresholds, thus making the lDDt for that sample zero.
 
     Args:
         batch: ground truth and permutation applied features
@@ -1406,7 +1413,7 @@ def get_metrics_chunked(
                 sample.get(
                     metric_name,
                     torch.zeros(
-                        batch_dims,
+                        (*batch_dims[:-1], 1),
                         device=atom_positions_predicted.device,
                         dtype=atom_positions_predicted.dtype,
                     ),

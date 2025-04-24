@@ -31,7 +31,7 @@ def is_fp16_enabled():
     return fp16_enabled
 
 
-class AF3DeepSpeedPrecision(DeepSpeedPrecision):
+class OF3DeepSpeedPrecision(DeepSpeedPrecision):
     """Precision plugin to selectively convert inputs to the desired precision."""
 
     def __init__(self, precision: _PRECISION_INPUT) -> None:
