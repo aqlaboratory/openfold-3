@@ -1,3 +1,5 @@
+# TODO: IMPORTANT: This file is currently broken for certain cache generation scripts
+# because of the if TYPE_CHECKING logic. This should be fixed soon!
 from __future__ import annotations
 
 import json
@@ -9,8 +11,6 @@ from typing import TYPE_CHECKING, Literal, TypeAlias, TypeVar
 import lmdb
 
 from openfold3.core.data.resources.residues import MoleculeType
-
-TYPE_CHECKING = True
 
 if TYPE_CHECKING:
     from openfold3.core.data.primitives.caches.lmdb import LMDBDict
@@ -676,8 +676,6 @@ class DatasetReferenceMoleculeData:
     set_fallback_to_nan: bool
 
 
-TYPE_CHECKING = True
-
 # Reference molecule data should be the same for all datasets so we provide it here as a
 # general type.
 if TYPE_CHECKING:
@@ -810,9 +808,6 @@ class ProteinMonomerStructureData:
 
     chains: dict[str, ProteinMonomerChainData]
 
-
-# TODO: THIS IS A TEMPORARY FIX
-TYPE_CHECKING = True
 
 if TYPE_CHECKING:
     ClusteredDatasetStructureDataCache: TypeAlias = DictOrLMDBDict[
