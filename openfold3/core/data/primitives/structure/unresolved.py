@@ -433,7 +433,7 @@ def append_unresolved_segment(
     segment_start = segment.res_id[0]
     segment_end = segment.res_id[-1]
     logger.info(
-        f"Added unresolved segment: chain_id={reference_atom.chain_id[0]}, "
+        f"Added unresolved segment: chain_id={reference_atom.chain_id}, "
         f"span={segment_start}-{segment_end}, type={segment_type}"
     )
 
