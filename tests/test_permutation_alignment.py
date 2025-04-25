@@ -1,19 +1,13 @@
-import random
-from collections import defaultdict
-from copy import deepcopy
 from pathlib import Path
 
 import biotite.structure as struc
 import numpy as np
-import torch
 
 from openfold3.core.data.io.structure.atom_array import read_atomarray_from_npz
 from openfold3.core.data.primitives.permutation.mol_labels import (
     assign_mol_permutation_ids,
     chain_connected_molecule_iter,
 )
-from openfold3.core.data.resources.residues import RESTYPE_INDEX_3
-from openfold3.core.utils.permutation_alignment import multi_chain_permutation_alignment
 from tests.custom_assert_utils import assert_atomarray_equal
 
 TEST_DIR = Path("tests/test_data/permutation_alignment")
