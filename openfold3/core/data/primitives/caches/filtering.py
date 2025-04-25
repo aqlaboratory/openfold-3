@@ -6,6 +6,7 @@ import random
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
 from typing import NamedTuple, Union
@@ -13,7 +14,9 @@ from typing import NamedTuple, Union
 import requests
 from tqdm import tqdm
 
+from openfold3.core.data.io.dataset_cache import read_datacache
 from openfold3.core.data.io.sequence.fasta import (
+    consolidate_preprocessed_fastas,
     read_multichain_fasta,
 )
 from openfold3.core.data.primitives.caches.format import (
@@ -614,6 +617,142 @@ def get_all_cache_chains(
                 all_chains.add(f"{pdb_id}_{chain_id}")
 
     return all_chains
+
+
+def filter_id_to_seq_by_cache(
+    structure_cache: StructureDataCache,
+    id_to_seq: dict[str, str],
+) -> dict[str, str]:
+    """Filters id_to_seq dictionary to only chains present in the cache.
+
+    Args:
+        structure_cache:
+            The structure_cache to filter by.
+        id_to_seq:
+            The dictionary to filter.
+
+    Returns:
+        The subset id_to_seq dictionary such that it only contains chains present in the
+        input structure cache.
+    """
+    all_chains = get_all_cache_chains(structure_cache)
+
+    filtered_id_to_seq = {
+        datapoint_id: seq
+        for datapoint_id, seq in id_to_seq.items()
+        if datapoint_id in all_chains
+    }
+
+    return filtered_id_to_seq
+
+
+def add_numerical_suffix_to_pdb_keys(
+    input_dict: dict, index: int, digits: int = 4
+) -> dict:
+    """Adds numerical suffixes to PDB-ID keys in training_cache and id_to_seq.
+
+    E.g.:
+    4h1w -> 4h1w0001
+    5sgz_1 -> 5sgz0001_1
+
+    Args:
+        input_dict (dict):
+            The input dictionary to modify. Keys should follow the format (PDB-ID) or
+            (PDB-ID_CHAIN-ID).
+        index (int):
+            The index to append to the keys.
+        digits (int):
+            The number of digits to use for the index. Default is 4.
+
+    Returns:
+        dict:
+            The modified dictionary with updated keys.
+    """
+    output_dict = {}
+
+    for key, value in input_dict.items():
+        # Check if the key is a PDB-ID
+        if "_" in key:
+            pdb_id, chain_id = key.split("_")
+            new_key = f"{pdb_id}{index:0{digits}}_{chain_id}"
+        else:
+            new_key = f"{key}{index:0{digits}}"
+
+        # Add the new key-value pair to the output dictionary
+        output_dict[new_key] = value
+
+    return output_dict
+
+
+def consolidate_training_set_data(
+    training_cache_paths: list[Path],
+    preprocessed_dirs: list[Path],
+) -> tuple[ClusteredDatasetCache, dict[str, str]]:
+    """Consolidates the training set data from multiple sources into a single cache.
+
+    Args:
+        training_cache_paths (list[Path]):
+            A list of paths to the training dataset caches.
+        preprocessed_dirs (list[Path]):
+            A list of paths to the directories containing preprocessed mmCIF files.
+
+    Returns:
+        tuple[ClusteredDatasetCache, dict[str, str]]:
+            A tuple containing the consolidated training dataset cache and a dictionary
+            mapping PDB-chain IDs to sequences.
+    """
+    first_training_cache_path = training_cache_paths[0]
+
+    # Read in first training cache
+    logger.info(f"Reading in training cache {first_training_cache_path}...")
+    first_training_cache = read_datacache(first_training_cache_path)
+
+    # Set joint training cache to first cache to instantiate all the other fields, but
+    # clear structure data (will be populated in loop)
+    training_cache_joint = replace(first_training_cache, structure_data={})
+
+    id_to_seq_joint = {}
+
+    # Read in and join the data
+    for i, (
+        training_cache_path,
+        preprocessed_dir,
+    ) in enumerate(zip(training_cache_paths, preprocessed_dirs), start=1):
+        if i == 1:
+            # Can avoid reading this twice
+            training_cache = first_training_cache
+        else:
+            logger.info(f"Reading in training cache {training_cache_path}...")
+
+            # Read in next training cache
+            training_cache = read_datacache(training_cache_path)
+
+        # Read in next preprocessed directory
+        id_to_seq = consolidate_preprocessed_fastas(preprocessed_dir)
+
+        # Subset id_to_seq to only chains that are actually in the cache
+        id_to_seq = filter_id_to_seq_by_cache(training_cache.structure_data, id_to_seq)
+
+        # Uniquify IDs for structure data. Ligand IDs in reference_molecule_data are not
+        # uniquified as their relevant metadata (which for this is only the SMILES
+        # string) is not expected to change between training caches. Therefore they can
+        # directly use a dict update without worrying about overwriting complementary
+        # information.
+        training_cache.structure_data = add_numerical_suffix_to_pdb_keys(
+            training_cache.structure_data, i
+        )
+
+        # Unify IDs for id_to_seq
+        id_to_seq = add_numerical_suffix_to_pdb_keys(id_to_seq, i)
+
+        # Merge the caches and id_to_seq dictionaries
+        training_cache_joint.structure_data.update(training_cache.structure_data)
+        training_cache_joint.reference_molecule_data.update(
+            training_cache.reference_molecule_data
+        )
+        id_to_seq_joint.update(id_to_seq)
+
+    return training_cache_joint, id_to_seq_joint
 
 
 def get_mol_id_to_smiles(
