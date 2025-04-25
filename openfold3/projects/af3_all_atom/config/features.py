@@ -70,6 +70,8 @@ feature_dict = mlc.ConfigDict(
                 "mol_sym_id": [NUM_TOKENS],
                 "mol_sym_token_index": [NUM_TOKENS],
                 "mol_sym_component_id": [NUM_TOKENS],
+                "intra_filter_atomized": [NUM_ATOMS],  # Validation only
+                "inter_filter_atomized": [NUM_ATOMS, NUM_ATOMS],  # Validation only
             },
             "loss_weights": {
                 "bond": [],

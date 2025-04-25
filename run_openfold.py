@@ -1,12 +1,12 @@
 # args TODO add license
 
-import argparse
 import json
 import logging
 import os
 import sys
 from pathlib import Path
 
+import click
 import pytorch_lightning as pl
 import torch
 import wandb
@@ -19,6 +19,7 @@ from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModule
+from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.projects import registry
 from openfold3.projects.af3_all_atom.config.runner_file_checks import (
     _check_data_module_config,
@@ -57,12 +58,38 @@ def _configure_wandb_logger(
     if is_mpi_rank_zero:
         wandb.run = wandb.init(**wandb_init_dict)
 
-    wandb_logger = WandbLogger(**wandb_init_dict, save_dir=output_dir, log_model=False)
+    run_offline = wandb_args.get("offline", False)
+    wandb_logger = WandbLogger(
+        **wandb_init_dict,
+        save_dir=output_dir,
+        log_model=False,
+        offline=run_offline,
+    )
     return wandb_logger
 
 
-def main(args):
-    runner_args = ConfigDict(config_utils.load_yaml(args.runner_yaml))
+@click.command()
+@click.option(
+    "--runner_yaml",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="Yaml that specifies model and dataset parameters, see examples/runner.yml",
+)
+@click.option("--seed", type=int, help="Initial seed for all processes")
+@click.option(
+    "--data_seed",
+    type=int,
+    help="Initial seed for data pipeline. Defaults to seed if not specified.",
+)
+def main(runner_yaml: Path, seed: int, data_seed: int):
+    runner_args = ConfigDict(config_utils.load_yaml(runner_yaml))
+
+    # If specified, add seeds to runner dict to save to wandb
+    if seed is not None:
+        runner_args["seed"] = seed
+
+    if data_seed is not None:
+        runner_args["data_seed"] = data_seed
 
     if runner_args.get("log_level"):
         log_level = runner_args.get("log_level").upper()
@@ -70,7 +97,7 @@ def main(args):
         output_dir = Path(runner_args.get("output_dir"))
         output_dir.mkdir(exist_ok=True)
         log_filepath = output_dir / "console_logs.log"
-        logging.basicConfig(filename=log_filepath, level=log_level, filemode="w")
+        logging.basicConfig(filename=log_filepath, level=log_level, filemode="a")
 
     world_size = runner_args.num_gpus * runner_args.pl_trainer.num_nodes
     is_distributed = world_size > 1
@@ -117,6 +144,9 @@ def main(args):
         strategy = DeepSpeedStrategy(
             config=runner_args.deepspeed_config_path,
             cluster_environment=cluster_environment,
+            precision_plugin=OF3DeepSpeedPrecision(
+                precision=runner_args.pl_trainer.precision
+            ),
         )
         if not model_config.settings.optimizer.use_deepspeed_adam:
             strategy.config["zero_force_ds_cpu_optimizer"] = False
@@ -232,16 +262,4 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument(
-        "--runner_yaml",
-        type=str,
-        help=(
-            "Yaml that specifies model and dataset parameters, see examples/runner.yml"
-        ),
-    )
-
-    args = parser.parse_args()
-
-    main(args)
+    main()

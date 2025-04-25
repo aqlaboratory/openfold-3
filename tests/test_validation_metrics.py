@@ -7,6 +7,8 @@ import torch
 from openfold3.core.metrics.validation import gdt_ha, gdt_ts, rmsd
 from openfold3.core.metrics.validation_all_atom import (
     drmsd,
+    get_metrics,
+    get_metrics_chunked,
     get_superimpose_metrics,
     interface_lddt,
     lddt,
@@ -16,7 +18,9 @@ from openfold3.core.utils.geometry.kabsch_alignment import (
     get_optimal_transformation,
     kabsch_align,
 )
+from openfold3.core.utils.tensor_utils import tensor_tree_map
 from tests.config import consts
+from tests.data_utils import random_af3_features
 
 
 def random_rotation_translation(structure, factor=100.0):
@@ -343,6 +347,48 @@ class TestGetSuperimposeMetrics(unittest.TestCase):
         exp_shape = (batch_size,)
         for _, v in out.items():
             np.testing.assert_equal(v.shape, exp_shape)
+
+
+class TestAllMetrics(unittest.TestCase):
+    def test_all_metrics(self):
+        no_samples = 5
+
+        batch = random_af3_features(
+            batch_size=consts.batch_size,
+            n_token=consts.n_res,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
+            is_eval=True,
+        )
+
+        def expand_sample_dim(t: torch.tensor) -> torch.tensor:
+            feat_dims = t.shape[2:]
+            t = t.expand(-1, no_samples, *((-1,) * len(feat_dims)))
+            return t
+
+        batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
+        batch["ground_truth"] = tensor_tree_map(
+            expand_sample_dim, batch["ground_truth"]
+        )
+
+        n_atom = batch["ref_pos"].shape[-2]
+        outputs = {
+            "atom_positions_predicted": torch.randn(
+                consts.batch_size, no_samples, n_atom, 3
+            )
+        }
+
+        # Set extra metrics to False for now in order to skip RASA (needs atom array)
+        metrics = get_metrics(batch, outputs, compute_extra_val_metrics=False)
+        metrics_chunked = get_metrics_chunked(
+            batch, outputs, compute_extra_val_metrics=False
+        )
+
+        for name, value in metrics.items():
+            chunked_value = metrics_chunked[name]
+            assert value.shape == (consts.batch_size, no_samples)
+            assert chunked_value.shape == (consts.batch_size, no_samples)
+            assert torch.allclose(value, chunked_value)
 
 
 if __name__ == "__main__":

@@ -265,7 +265,7 @@ class AttentionPairBias(nn.Module):
 
             # Convert back to unpadded and flattened atom representation
             # [*, N_blocks, N_query, c_atom] -> [*, N_atom, c_atom]
-            a = a.view((*batch_dims, -1, n_dim))[..., :n_atom, :]
+            a = a.reshape((*batch_dims, -1, n_dim))[..., :n_atom, :]
         else:
             biases = self._prep_bias(a=a, z=z, mask=mask)
 

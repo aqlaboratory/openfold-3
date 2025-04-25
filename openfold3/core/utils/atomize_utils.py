@@ -167,9 +167,11 @@ def aggregate_atom_feat_to_tokens(
     # Compute number of atoms (non-masked) per token
     token_num_atoms = torch.zeros(
         (*batch_dims, n_token + 1), device=atom_feat.device, dtype=atom_feat.dtype
-    ).scatter_add_(index=atom_to_token_index.long(), src=atom_mask, dim=-1)[
-        ..., :n_token
-    ]
+    ).scatter_add_(
+        index=atom_to_token_index.long(),
+        src=atom_mask.to(dtype=atom_feat.dtype),
+        dim=-1,
+    )[..., :n_token]
 
     # Compute mean token-level feature
     token_feat = token_feat / (

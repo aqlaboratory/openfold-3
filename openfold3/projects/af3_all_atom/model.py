@@ -119,6 +119,27 @@ class AlphaFold3(nn.Module):
             self.config.architecture.pairformer.blocks_per_ckpt
         )
 
+    def _do_inference_offload(self, seq_len: int) -> bool:
+        if self.training:
+            return False
+
+        offload_settings = self.settings.memory.eval.offload_inference
+
+        is_within_cutoff = (
+            offload_settings.token_cutoff is None
+            or offload_settings.token_cutoff > seq_len
+        )
+        offload_inference = offload_settings.enabled and is_within_cutoff
+
+        return offload_inference
+
+    @staticmethod
+    def clear_autocast_cache():
+        if torch.is_autocast_enabled():
+            # Sidestep AMP bug (PyTorch issue #65766)
+            # Use after no_grad sections just to be safe (i.e. after rollout)
+            torch.clear_autocast_cache()
+
     def run_trunk(
         self, batch: dict, num_cycles: int, inplace_safe: bool = False
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -140,6 +161,13 @@ class AlphaFold3(nn.Module):
             z:
                 [*, N_token, N_token, C_z] Pair representation
         """
+        mode_mem_settings = (
+            self.settings.memory.train if self.training else self.settings.memory.eval
+        )
+        offload_inference = self._do_inference_offload(
+            seq_len=batch["token_mask"].shape[-1]
+        )
+
         s_input, s_init, z_init = self.input_embedder(
             batch=batch,
             inplace_safe=inplace_safe,
@@ -164,9 +192,8 @@ class AlphaFold3(nn.Module):
             # Enable grad when we're training, only enable grad on the last cycle
             enable_grad = is_grad_enabled and is_final_iter
             with torch.set_grad_enabled(enable_grad):
-                if is_final_iter and torch.is_autocast_enabled():
-                    # Sidestep AMP bug (PyTorch issue #65766)
-                    torch.clear_autocast_cache()
+                if is_final_iter:
+                    self.clear_autocast_cache()
 
                 # [*, N_token, N_token, C_z]
                 z = z_init + self.linear_z(self.layer_norm_z(z))
@@ -177,7 +204,7 @@ class AlphaFold3(nn.Module):
                         batch=batch,
                         z=z,
                         pair_mask=pair_mask,
-                        chunk_size=self.settings.chunk_size,
+                        chunk_size=mode_mem_settings.chunk_size,
                         _mask_trans=True,
                         use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
                         use_lma=self.settings.use_lma,
@@ -191,14 +218,23 @@ class AlphaFold3(nn.Module):
                 # Run MSA + pair embeddings through the MsaModule
                 # m: [*, N_seq, N_token, C_m]
                 # z: [*, N_token, N_token, C_z]
-                if self.settings.offload_inference:
+                swiglu_token_cutoff = (
+                    mode_mem_settings.msa_module.swiglu_chunk_token_cutoff
+                )
+                transition_ckpt_chunk_size = (
+                    mode_mem_settings.msa_module.swiglu_seq_chunk_size
+                    if swiglu_token_cutoff is None or swiglu_token_cutoff > m.shape[-2]
+                    else None
+                )
+                if offload_inference:
                     input_tensors = [m, z]
                     del m, z
                     z = self.msa_module.forward_offload(
                         input_tensors,
                         msa_mask=msa_mask.to(dtype=input_tensors[0].dtype),
                         pair_mask=pair_mask.to(dtype=input_tensors[1].dtype),
-                        chunk_size=self.settings.chunk_size,
+                        chunk_size=mode_mem_settings.chunk_size,
+                        transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                         use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
                         use_lma=self.settings.use_lma,
                         _mask_trans=True,
@@ -211,7 +247,8 @@ class AlphaFold3(nn.Module):
                         z,
                         msa_mask=msa_mask.to(dtype=m.dtype),
                         pair_mask=pair_mask.to(dtype=z.dtype),
-                        chunk_size=self.settings.chunk_size,
+                        chunk_size=mode_mem_settings.chunk_size,
+                        transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                         use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
                         use_lma=self.settings.use_lma,
                         inplace_safe=inplace_safe,
@@ -226,7 +263,7 @@ class AlphaFold3(nn.Module):
                     z=z,
                     single_mask=token_mask.to(dtype=z.dtype),
                     pair_mask=pair_mask.to(dtype=s.dtype),
-                    chunk_size=self.settings.chunk_size,
+                    chunk_size=mode_mem_settings.chunk_size,
                     use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
                     use_lma=self.settings.use_lma,
                     inplace_safe=inplace_safe,
@@ -279,7 +316,10 @@ class AlphaFold3(nn.Module):
         )
 
         # Compute atom positions
-        with torch.no_grad():
+        with (
+            torch.no_grad(),
+            torch.amp.autocast(device_type="cuda", dtype=torch.float32),
+        ):
             noise_schedule = create_noise_schedule(
                 no_rollout_steps=no_rollout_steps,
                 **self.config.architecture.noise_schedule,
@@ -294,11 +334,12 @@ class AlphaFold3(nn.Module):
                 zij_trunk=zij_trunk,
                 noise_schedule=noise_schedule,
                 no_rollout_samples=no_rollout_samples,
-                chunk_size=self.settings.chunk_size,
                 use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
                 use_lma=self.settings.use_lma,
                 _mask_trans=True,
             )
+
+        self.clear_autocast_cache()
 
         output = {
             "si_trunk": si_trunk,
@@ -306,19 +347,19 @@ class AlphaFold3(nn.Module):
             "atom_positions_predicted": atom_positions_predicted,
         }
 
-        # Compute confidence logits
-        output.update(
-            self.aux_heads(
-                batch=batch,
-                si_input=si_input,
-                output=output,
-                chunk_size=self.settings.chunk_size,
-                use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-                use_lma=self.settings.use_lma,
-                inplace_safe=inplace_safe,
-                _mask_trans=True,
+        with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+            # Compute confidence logits
+            output.update(
+                self.aux_heads(
+                    batch=batch,
+                    si_input=si_input,
+                    output=output,
+                    use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
+                    use_lma=self.settings.use_lma,
+                    inplace_safe=inplace_safe,
+                    _mask_trans=True,
+                )
             )
-        )
 
         return output
 
@@ -382,7 +423,6 @@ class AlphaFold3(nn.Module):
             si_input=si_input,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
-            chunk_size=self.settings.chunk_size,
             use_high_precision_attention=True,
             _mask_trans=True,
         )
@@ -523,20 +563,6 @@ class AlphaFold3(nn.Module):
                     Training only, predicted atom positions
 
         """
-        # This needs to be done manually for DDP/DeepSpeed's sake
-        dtype = (
-            torch.get_autocast_dtype("cuda")
-            if torch.is_autocast_enabled()
-            else next(self.parameters()).dtype
-        )
-
-        def to_dtype(t: torch.Tensor):
-            if t.dtype == torch.float32:
-                return t.to(dtype=dtype)
-            return t
-
-        batch = tensor_tree_map(to_dtype, batch)
-
         # Controls whether the model uses in-place operations throughout
         # The dual condition accounts for activation checkpoints
         inplace_safe = not (self.training or torch.is_grad_enabled())
@@ -580,28 +606,30 @@ class AlphaFold3(nn.Module):
         # Apply permutation alignment for training and validation
         if "ground_truth" in batch:
             # Update the ground-truth coordinates/mask in-place with the correct
-            # permutation (and optionally disable losses in case of a critical error)
-            with torch.no_grad():
+            # permutation (and optionally disable losses in case of a
+            # critical error)
+            with (
+                torch.no_grad(),
+                torch.amp.autocast(device_type="cuda", dtype=torch.float32),
+            ):
                 safe_multi_chain_permutation_alignment(
                     batch=batch,
                     atom_positions_predicted=output["atom_positions_predicted"],
                 )
 
-        if self.training:  # noqa: SIM102
-            # Run training step (if necessary)
-            if self.settings.diffusion_training_enabled:
-                if torch.is_autocast_enabled():
-                    # Sidestep AMP bug (PyTorch issue #65766)
-                    # Needed due to no_grad in _rollout
-                    torch.clear_autocast_cache()
+            self.clear_autocast_cache()
 
-                diffusion_output = self._train_diffusion(
-                    batch=batch,
-                    si_input=si_input,
-                    si_trunk=si_trunk,
-                    zij_trunk=zij_trunk,
-                )
+            if self.training:  # noqa: SIM102
+                # Run training step (if necessary)
+                if self.settings.diffusion_training_enabled:
+                    with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+                        diffusion_output = self._train_diffusion(
+                            batch=batch,
+                            si_input=si_input,
+                            si_trunk=si_trunk,
+                            zij_trunk=zij_trunk,
+                        )
 
-                output.update(diffusion_output)
+                        output.update(diffusion_output)
 
         return batch, output
