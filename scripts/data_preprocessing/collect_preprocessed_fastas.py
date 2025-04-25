@@ -75,7 +75,7 @@ def main(preprocessed_dir: Path, out_file: Path, uniquify: bool = False):
         molecule_type_str = MoleculeType(chain_data.molecule_type).name
 
         header = (
-            f">{pdb_id}, renum_asym={chain_id}, auth_asym={chain_data.auth_asym_id}, "
+            f"{pdb_id}, renum_asym={chain_id}, auth_asym={chain_data.auth_asym_id}, "
             f"label_asym={chain_data.label_asym_id}, "
             f"mol_type={molecule_type_str}, date={entry_data.release_date}"
         )
