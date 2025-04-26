@@ -142,7 +142,9 @@ class DataModuleConfig:
 class DataModule(pl.LightningDataModule):
     """A LightningDataModule class for organizing Datasets and DataLoaders."""
 
-    def __init__(self, data_config: DataModuleConfig) -> None:
+    def __init__(
+        self, data_config: DataModuleConfig, world_size: Optional[int] = None
+    ) -> None:
         super().__init__()
 
         # Possibly initialize directly from DataModuleConfig
@@ -153,7 +155,9 @@ class DataModule(pl.LightningDataModule):
         self.num_epochs = data_config.num_epochs
 
         # Parse datasets
-        self.multi_dataset_config = self.parse_data_config(data_config.datasets)
+        self.multi_dataset_config = self.parse_data_config(
+            data_config.datasets, world_size=world_size
+        )
         self._initialize_next_dataset_indices()
 
     def _initialize_next_dataset_indices(self):
@@ -200,6 +204,7 @@ class DataModule(pl.LightningDataModule):
                 )  # numpy takes 32-bit seed only
 
         self.worker_init_function_with_data_seed = worker_init_function_with_data_seed
+        self.generator = torch.Generator(device="cpu").manual_seed(self.data_seed)
 
         self.datasets_by_mode = {k: [] for k in DatasetMode}
         # Initialize datasets
@@ -209,7 +214,6 @@ class DataModule(pl.LightningDataModule):
             )
             # Initialize train datasets
             all_train_datasets = self.init_datasets(multi_dataset_config_train)
-            self.generator = torch.Generator(device="cpu").manual_seed(self.data_seed)
 
             # Wrap train datasets in the sampler dataset class
             train_dataset = SamplerDataset(
@@ -245,12 +249,16 @@ class DataModule(pl.LightningDataModule):
             )
 
     @classmethod
-    def parse_data_config(cls, data_config: list[ConfigDict]) -> MultiDatasetConfig:
+    def parse_data_config(
+        cls, data_config: list[ConfigDict], world_size: Optional[int] = None
+    ) -> MultiDatasetConfig:
         """Parses input data_config into separate lists.
 
         Args:
             data_config (list[dict]):
                 Input data configuration list of dataset dictionaries.
+            world_size (int, optional):
+                Number of GPUs being used. Defaults to None.
 
         Returns:
             MultiDatasetConfig:
@@ -298,6 +306,7 @@ class DataModule(pl.LightningDataModule):
 
             config = dataset_entry.get("config", dict())
             config["name"] = dataset_entry["name"]
+            config["world_size"] = world_size
             configs.append(config)
 
         multi_dataset_config = MultiDatasetConfig(
@@ -368,6 +377,7 @@ class DataModule(pl.LightningDataModule):
         supported_combinations = [
             {DatasetMode.train},
             {DatasetMode.train, DatasetMode.validation},
+            {DatasetMode.validation},
             {DatasetMode.test},
             {DatasetMode.prediction},
         ]
@@ -377,11 +387,6 @@ class DataModule(pl.LightningDataModule):
                 "An unsupported combination of dataset modes was found in"
                 f"data_config: {modes_unique}. The supported dataset"
                 f"combinations are: {supported_combinations}."
-            )
-        if modes_unique == {DatasetMode.validation}:
-            raise ValueError(
-                "Validation dataset(s) were provided without any training datasets."
-                f"The supported dataset combinations are: {supported_combinations}."
             )
         elif any([type_ not in supported_types for type_ in modes_unique]):
             raise ValueError(
@@ -466,6 +471,9 @@ class DataModule(pl.LightningDataModule):
         return state
 
     def load_state_dict(self, state_dict: dict[str, Any]):
+        if not self.next_dataset_indices:
+            return
+
         loaded_index_keys = state_dict["next_dataset_indices"].keys()
         current_index_keys = self.next_dataset_indices.keys()
         if set(loaded_index_keys) != set(current_index_keys):

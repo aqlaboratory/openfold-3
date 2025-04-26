@@ -24,7 +24,6 @@ import numpy as np
 import pandas as pd
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFBlock, CIFFile
-from rdkit import Chem
 from tqdm import tqdm
 
 from openfold3.core.data.io.s3 import download_file_from_s3
@@ -46,13 +45,9 @@ from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
 from openfold3.core.data.primitives.caches.format import (
     DisorderedPreprocessingDataCache,
     DisorderedPreprocessingStructureData,
-    PreprocessingChainData,
     PreprocessingDataCache,
     PreprocessingStructureData,
     ProteinMonomerDatasetCache,
-)
-from openfold3.core.data.primitives.permutation.mol_labels import (
-    assign_mol_permutation_ids,
 )
 from openfold3.core.data.primitives.structure.alignment import (
     calculate_distance_clash_map,
@@ -63,6 +58,8 @@ from openfold3.core.data.primitives.structure.cleanup import (
     canonicalize_atom_order,
     convert_MSE_to_MET,
     fix_arginine_naming,
+    maybe_precrop_chains,
+    prefilter_bonds,
     remove_chains_with_CA_gaps,
     remove_clashing_chains,
     remove_covalent_nonprotein_chains,
@@ -73,12 +70,10 @@ from openfold3.core.data.primitives.structure.cleanup import (
     remove_small_polymers,
     remove_std_residue_terminal_atoms,
     remove_waters,
-    subset_large_structure,
 )
 from openfold3.core.data.primitives.structure.component import (
-    AnnotatedMol,
-    assign_component_ids_from_metadata,
     get_component_info,
+    get_reference_molecule_metadata,
     mol_from_atomarray,
     mol_from_ccd_entry,
 )
@@ -105,10 +100,13 @@ from openfold3.core.data.primitives.structure.metadata import (
 )
 from openfold3.core.data.primitives.structure.tokenization import (
     get_token_count,
-    tokenize_atom_array,
 )
 from openfold3.core.data.primitives.structure.unresolved import add_unresolved_atoms
 from openfold3.core.data.resources.residues import MoleculeType
+from openfold3.core.utils.logging_utils import (
+    set_log_context,
+    setup_worker_logging,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -122,10 +120,19 @@ def _init_worker(profile_name: str = "openfold") -> None:
     _worker_session = boto3.Session(profile_name=profile_name)
 
 
+class SkippedStructureError(Exception):
+    """Error raised when a structure is skipped during preprocessing."""
+
+    pass
+
+
 def cleanup_structure_af3(
     atom_array: AtomArray,
     cif_data: CIFBlock,
     ccd: CIFFile,
+    precrop_n_chains: int = 20,
+    precrop_disable_rna: bool = False,
+    precrop_ignore_ligands_below: int | float = 6,
     random_seed: int | None = None,
 ) -> AtomArray:
     """Cleans up a structure following the AlphaFold3 SI and formats it for training.
@@ -149,8 +156,18 @@ def cleanup_structure_af3(
             `metadata_extraction.get_cif_block`)
         ccd:
             CIFFile containing the parsed CCD (components.cif)
+        precrop_n_chains:
+            Number of chains to keep in the precropping step. If the structure has less
+            than N chains, all of them are kept. Default is 20.
+        precrop_disable_rna:
+            If True and if the structure contains RNA, skip the N-chain precropping.
+        precrop_ignore_ligands_below:
+            Ligand chains with fewer atoms than this value will be ignored in the
+            N-chain counter for precropping, and included based on proximity to the
+            selected chains. Set this to inf to ignore all ligands from the chain
+            budget.
         random_seed:
-            Random seed for reproducibility in large-assembly-subsetting.
+            Random seed for reproducibility in precropping.
 
     Returns:
         AtomArray with all cleaning steps applied
@@ -175,18 +192,21 @@ def cleanup_structure_af3(
     atom_array = canonicalize_atom_order(atom_array, ccd)
     atom_array = remove_chains_with_CA_gaps(atom_array, distance_threshold=10.0)
 
-    # TODO: Could change this to use get_chain_count from Biotite which will be more
-    # robust for non-renumbered chains
-    # Subset bioassemblies larger than 20 chains
-    if len(np.unique(atom_array.chain_id)) > 20:
-        # Tokenization is required for large-structure subsetting
-        tokenize_atom_array(atom_array)
-        atom_array = subset_large_structure(
-            atom_array=atom_array,
-            n_chains=20,
-            interface_distance_threshold=15.0,
-            random_seed=random_seed,
-        )
+    atom_array = prefilter_bonds(
+        atom_array,
+        remove_inter_chain_dative=True,
+        remove_inter_chain_poly_links=True,
+        remove_intra_chain_poly_links=True,
+        remove_longer_than=2.4,
+    )
+
+    atom_array = maybe_precrop_chains(
+        atom_array=atom_array,
+        n_chains=precrop_n_chains,
+        disable_for_rna=precrop_disable_rna,
+        ignore_ligands_below=precrop_ignore_ligands_below,
+        random_seed=random_seed,
+    )
 
     ## Structure formatting
     # Add unresolved atoms explicitly with NaN coordinates
@@ -296,30 +316,6 @@ def extract_component_data_af3(
                 - "fallback_conformer_pdb_id": The PDB ID of the fallback conformer
                 - "canonical_smiles": The canonical SMILES of the component
     """
-
-    def get_reference_molecule_metadata(
-        mol: AnnotatedMol,
-        conformer_strategy: Literal["default", "random_init", "use_fallback"],
-        residue_count: int,
-    ) -> dict:
-        """Convenience function to return the metadata for a reference molecule."""
-        conf_metadata = {
-            "residue_count": residue_count,
-            "conformer_gen_strategy": conformer_strategy,
-        }
-
-        if mol.HasProp("model_pdb_id"):
-            fallback_conformer_pdb_id = mol.GetProp("model_pdb_id")
-            if fallback_conformer_pdb_id == "?":
-                fallback_conformer_pdb_id = None
-        else:
-            fallback_conformer_pdb_id = None
-
-        conf_metadata["fallback_conformer_pdb_id"] = fallback_conformer_pdb_id
-        conf_metadata["canonical_smiles"] = Chem.MolToSmiles(mol)
-
-        return conf_metadata
-
     if skip_components is None:
         skip_components = set()
 
@@ -407,6 +403,9 @@ def preprocess_structure_and_write_outputs_af3(
     reference_mol_out_dir: Path,
     output_formats: list[Literal["npz", "cif", "bcif", "pkl"]],
     max_polymer_chains: int | None = None,
+    precrop_n_chains: int = 20,
+    precrop_disable_rna: bool = False,
+    precrop_ignore_ligands_below: int | float = 6,
     skip_components: set | SharedSet | None = None,
     random_seed: int | None = None,
 ) -> tuple[dict, dict]:
@@ -430,6 +429,16 @@ def preprocess_structure_and_write_outputs_af3(
         output_formats:
             What formats to write the output files to. Allowed values are "cif", "bcif",
             "npz", and "pkl".
+        precrop_n_chains:
+            Number of chains to keep in the precropping step. If the structure has less
+            than N chains, all of them are kept. Default is 20.
+        precrop_disable_rna:
+            If True and if the structure contains RNA, skip the N-chain precropping.
+        precrop_ignore_ligands_below:
+            Ligand chains with fewer atoms than this value will be ignored in the
+            N-chain counter for precropping, and included based on proximity to the
+            selected chains. Set this to inf to ignore all ligands from the chain
+            budget.
         max_polymer_chains:
             The maximum number of polymer chains in the first bioassembly after which a
             structure is skipped by the parser.
@@ -437,7 +446,7 @@ def preprocess_structure_and_write_outputs_af3(
             A set of components to skip, if any. Useful to avoid repeated processing of
             components e.g. by using a SharedSet.
         random_seed:
-            Random seed for reproducibility in large-assembly-subsetting.
+            Random seed for reproducibility in precropping.
 
 
     Returns:
@@ -494,10 +503,39 @@ def preprocess_structure_and_write_outputs_af3(
     else:
         atom_array = parsed_mmcif.atom_array
 
+    # Log new chain-ID mapping (makes spot-checking from the logs easier)
+    chain_starts = struc.get_chain_starts(atom_array)
+    chain_to_pdb_chain = {
+        pdb_chain_id: new_chain_id
+        for pdb_chain_id, new_chain_id in zip(
+            atom_array.label_asym_id[chain_starts], atom_array.chain_id[chain_starts]
+        )
+    }
+    logger.info(f"label_asym_id to new chain_id mapping: {chain_to_pdb_chain}")
+
     # Cleanup structure and extract metadata
-    atom_array = cleanup_structure_af3(
-        atom_array=atom_array, cif_data=cif_data, ccd=ccd, random_seed=random_seed
-    )
+    try:
+        atom_array = cleanup_structure_af3(
+            atom_array=atom_array,
+            cif_data=cif_data,
+            ccd=ccd,
+            precrop_n_chains=precrop_n_chains,
+            precrop_disable_rna=precrop_disable_rna,
+            precrop_ignore_ligands_below=precrop_ignore_ligands_below,
+            random_seed=random_seed,
+        )
+    except SkippedStructureError as e:
+        return {
+            pdb_id: {"release_date": release_date, "status": f"skipped: {str(e)}"}
+        }, {}
+
+    if len(atom_array) == 0:
+        return {
+            pdb_id: {
+                "release_date": release_date,
+                "status": "skipped: no atoms left after cleanup",
+            }
+        }, {}
 
     chain_int_metadata_dict = extract_chain_and_interface_metadata_af3(
         atom_array, cif_data
@@ -523,24 +561,6 @@ def preprocess_structure_and_write_outputs_af3(
         }
     }
 
-    # TODO: Clean this up
-    # Set permutation labels
-    per_chain_metadata = {
-        chain_id: PreprocessingChainData(
-            label_asym_id=chain_data["label_asym_id"],
-            auth_asym_id=chain_data["auth_asym_id"],
-            entity_id=chain_data["entity_id"],
-            molecule_type=chain_data["molecule_type"],
-            reference_mol_id=chain_data.get("reference_mol_id"),
-        )
-        for chain_id, chain_data in chain_int_metadata_dict["chains"].items()
-    }
-    assign_component_ids_from_metadata(
-        atom_array, per_chain_metadata=per_chain_metadata
-    )
-    tokenize_atom_array(atom_array)
-    atom_array = assign_mol_permutation_ids(atom_array)
-
     # Get canonicalized sequence for each chain
     chain_to_canonical_seq = get_chain_to_canonical_seq_dict(
         atom_array, cif_data, multi_letter_res_to_X=True, ccd=ccd
@@ -558,7 +578,7 @@ def preprocess_structure_and_write_outputs_af3(
 
     end_time = time.perf_counter()
 
-    logger.debug(f"Processing {pdb_id} took {end_time - start_time:.2f} seconds.")
+    logger.debug(f"Processing took {end_time - start_time:.2f} seconds.")
 
     return structure_metadata_dict, ref_mol_metadata_dict
 
@@ -567,14 +587,14 @@ class _AF3PreprocessingWrapper:
     """Wrapper class that fills in all the constant arguments and adds logging.
 
     This wrapper around `preprocess_structure_and_write_outputs_af3` is needed for
-    multiprocessing, so that we can pass the constant arguments in a convenient way
+    multiprocessing, so that we can pass the constant arguments in a convenient way,
     catch any errors that would crash the workers, and change the function call to
-    accept a single Iterable. In addition, the wrapper updates the set passed to
-    skip_components in-place after the function completion, so that this information is
-    immediately available to other workers when passing a SharedSet.
+    accept a single Iterable. In addition, the wrapper updates the SharedSet that is
+    passed to skip_components in-place after the function completion, so that this
+    information is immediately available to other workers.
 
-    The wrapper is written as a class object because multiprocessing doesn't support
-    decorator-like nested functions.
+    The wrapper is written as a callable class object instead of a function, because
+    multiprocessing doesn't support decorator-like nested functions.
 
     Attributes:
         ccd:
@@ -589,8 +609,18 @@ class _AF3PreprocessingWrapper:
         output_formats:
             What formats to write the output files to. Allowed values are "cif", "bcif",
             and "pkl".
+        precrop_n_chains:
+            Number of chains to keep in the precropping step. If the structure has less
+            than N chains, all of them are kept. Default is 20.
+        precrop_disable_rna:
+            If True and if the structure contains RNA, skip the N-chain precropping.
+        precrop_ignore_ligands_below:
+            Ligand chains with fewer atoms than this value will be ignored in the
+            N-chain counter for precropping, and included based on proximity to the
+            selected chains. Set this to inf to ignore all ligands from the chain
+            budget.
         random_seed:
-            Random seed for reproducibility in large-assembly-subsetting.
+            Random seed for reproducibility in precropping.
     """
 
     def __init__(
@@ -600,6 +630,9 @@ class _AF3PreprocessingWrapper:
         max_polymer_chains: int | None,
         skip_components: set | SharedSet | None,
         output_formats: list[Literal["npz", "cif", "bcif", "pkl"]],
+        precrop_n_chains: int = 20,
+        precrop_disable_rna: bool = False,
+        precrop_ignore_ligands_below: int | float = 6,
         random_seed: int | None = None,
     ):
         self.ccd = ccd
@@ -607,59 +640,76 @@ class _AF3PreprocessingWrapper:
         self.max_polymer_chains = max_polymer_chains
         self.skip_components = skip_components
         self.output_formats = output_formats
+        self.precrop_n_chains = precrop_n_chains
+        self.precrop_disable_rna = precrop_disable_rna
+        self.precrop_ignore_ligands_below = precrop_ignore_ligands_below
         self.random_seed = random_seed
 
     def __call__(self, paths: tuple[Path, Path]) -> tuple[dict, dict]:
         cif_file, out_dir = paths
 
-        logger.debug(f"Processing {cif_file.stem}")
-        try:
-            structure_metadata_dict, ref_mol_metadata_dict = (
-                preprocess_structure_and_write_outputs_af3(
-                    input_cif=cif_file,
-                    out_dir=out_dir,
-                    ccd=self.ccd,
-                    reference_mol_out_dir=self.reference_mol_out_dir,
-                    max_polymer_chains=self.max_polymer_chains,
-                    skip_components=self.skip_components,
-                    output_formats=self.output_formats,
-                    random_seed=self.random_seed,
+        pdb_id = cif_file.stem
+
+        # This exposes the current PDB-ID to the log formatter
+        with set_log_context({"pdb_id": pdb_id}):
+            logger.debug(f"Processing {cif_file.stem}")
+
+            try:
+                structure_metadata_dict, ref_mol_metadata_dict = (
+                    preprocess_structure_and_write_outputs_af3(
+                        input_cif=cif_file,
+                        out_dir=out_dir,
+                        ccd=self.ccd,
+                        reference_mol_out_dir=self.reference_mol_out_dir,
+                        max_polymer_chains=self.max_polymer_chains,
+                        skip_components=self.skip_components,
+                        output_formats=self.output_formats,
+                        precrop_n_chains=self.precrop_n_chains,
+                        precrop_disable_rna=self.precrop_disable_rna,
+                        precrop_ignore_ligands_below=self.precrop_ignore_ligands_below,
+                        random_seed=self.random_seed,
+                    )
                 )
-            )
 
-            # Update the set of processed components in-place
-            processed_mols = set(ref_mol_metadata_dict.keys())
-            self.skip_components.update(processed_mols)
+                # Update the set of processed components in-place
+                processed_mols = set(ref_mol_metadata_dict.keys())
+                self.skip_components.update(processed_mols)
 
-            logger.debug(f"Finished processing {cif_file.stem}")
-            return structure_metadata_dict, ref_mol_metadata_dict
+                logger.debug(f"Finished processing {cif_file.stem}")
 
-        except Exception as e:
-            tb = traceback.format_exc()  # Get the full traceback
-            logger.warning(
-                "-" * 40
-                + "\n"
-                + f"Failed to process {cif_file.stem}: {str(e)}\n"
-                + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
-                + "-" * 40
-            )
-            pdb_id = cif_file.stem
+                return structure_metadata_dict, ref_mol_metadata_dict
 
-            output_dict = {pdb_id: {"status": "failed"}}
-            empty_conformer_dict = {}
+            except Exception as e:
+                tb = traceback.format_exc()  # Get the full traceback
+                logger.warning(
+                    "-" * 40
+                    + "\n"
+                    + f"Failed to process {pdb_id}: {str(e)}\n"
+                    + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
+                    + "-" * 40
+                )
 
-            return output_dict, empty_conformer_dict
+                output_dict = {pdb_id: {"status": "failed"}}
+                empty_conformer_dict = {}
+
+                return output_dict, empty_conformer_dict
 
 
 def preprocess_cif_dir_af3(
     cif_dir: Path,
     ccd_path: Path,
+    biotite_ccd_path: Path | None,
     out_dir: Path,
     max_polymer_chains: int | None = None,
     num_workers: int | None = None,
     chunksize: int = 20,
     output_formats: list[Literal["npz", "cif", "bcif", "pkl"]] = False,
+    precrop_n_chains: int = 20,
+    precrop_disable_rna: bool = False,
+    precrop_ignore_ligands_below: int | float = 6,
     random_seed: int | None = None,
+    log_queue: mp.queues.Queue | None = None,
+    log_level: int = logging.WARNING,
     early_stop: int | None = None,
 ) -> None:
     """Preprocesses a directory of PDB files following the AlphaFold3 SI.
@@ -674,6 +724,12 @@ def preprocess_cif_dir_af3(
             Path to the directory containing the PDB files to preprocess.
         ccd_path:
             Path to the CCD file.
+        biotite_ccd_path:
+            Path to a .bcif CCD that has been preprocessed with biotite's setup_ccd.py
+            script, for usage with biotite's set_ccd_path. This can be used to make sure
+            that the CCD that is used in preprocessing perfectly matches a particular
+            CCD version, for example to match the version that the PDB was downloaded
+            with.
         out_dir:
             Path to the output directory.
         max_polymer_chains:
@@ -687,8 +743,22 @@ def preprocess_cif_dir_af3(
         output_formats:
             What formats to write the output files to. Allowed values are "npz", "cif",
             "bcif", and "pkl".
+        precrop_n_chains:
+            Number of chains to keep in the precropping step. If the structure has less
+            than N chains, all of them are kept. Default is 20.
+        precrop_disable_rna:
+            If True and if the structure contains RNA, skip the N-chain precropping.
+        precrop_ignore_ligands_below:
+            Ligand chains with fewer atoms than this value will be ignored in the
+            N-chain counter for precropping, and included based on proximity to the
+            selected chains. Set this to inf to ignore all ligands from the chain
+            budget.
         random_seed:
-            Random seed for reproducibility in large-assembly-subsetting.
+            Random seed for reproducibility in precropping.
+        log_queue:
+            A multiprocessing queue for logging. Required if num_workers > 0.
+        log_level:
+            The logging level to use for the workers. Default is WARNING.
         early_stop:
             Stop after processing this many CIFs. Only used for debugging.
     """
@@ -696,7 +766,9 @@ def preprocess_cif_dir_af3(
     ccd = CIFFile.read(ccd_path)
 
     logger.debug("Reading CIF files")
-    cif_files = [file for file in tqdm(cif_dir.glob("*.cif"))]
+    cif_files = [
+        file for file in tqdm(cif_dir.glob("*.cif"), desc="Scanning CIF files")
+    ]
 
     if early_stop is not None:
         cif_files = cif_files[:early_stop]
@@ -710,14 +782,14 @@ def preprocess_cif_dir_af3(
     reference_mol_out_dir = out_dir / "reference_mols"
     reference_mol_out_dir.mkdir(parents=True, exist_ok=True)
 
-    cif_out_dir = out_dir / "cif_files"
-    cif_out_dir.mkdir(parents=True, exist_ok=True)
+    out_structure_dir = out_dir / "structure_files"
+    out_structure_dir.mkdir(parents=True, exist_ok=True)
 
     cif_output_dirs = []
 
-    for cif_file in tqdm(cif_files):
+    for cif_file in tqdm(cif_files, desc="Resolving output directories"):
         pdb_id = cif_file.stem
-        out_subdir = cif_out_dir / pdb_id
+        out_subdir = out_structure_dir / pdb_id
         cif_output_dirs.append(out_subdir)
 
     processed_mol_ids = SharedSet() if num_workers != 0 else set()
@@ -729,6 +801,9 @@ def preprocess_cif_dir_af3(
         max_polymer_chains=max_polymer_chains,
         skip_components=processed_mol_ids,
         output_formats=output_formats,
+        precrop_n_chains=precrop_n_chains,
+        precrop_disable_rna=precrop_disable_rna,
+        precrop_ignore_ligands_below=precrop_ignore_ligands_below,
         random_seed=random_seed,
     )
 
@@ -738,6 +813,12 @@ def preprocess_cif_dir_af3(
         output_dict["reference_molecule_data"].update(ref_mol_metadata_dict)
 
         processed_mol_ids.update(ref_mol_metadata_dict.keys())
+
+    # Pin the version of the CCD that perfectly matches our (now-outdated) version of
+    # the PDB
+    if biotite_ccd_path is not None:
+        struc.info.set_ccd_path(biotite_ccd_path)
+        logger.info("Set CCD path to preprocessed CCD file.")
 
     ## Preprocess all CIF files, cleaning up structures and writing out metadata
 
@@ -751,7 +832,18 @@ def preprocess_cif_dir_af3(
             update_output_dicts(structure_metadata_dict, ref_mol_metadata_dict)
 
     else:
-        with mp.Pool(num_workers) as pool:
+        # Check that logging queue is present
+        if log_queue is None:
+            raise ValueError(
+                "Multiprocessing should be used with a logging queue specified."
+            )
+
+        # Process all structures in parallel
+        with mp.Pool(
+            num_workers,
+            initializer=setup_worker_logging,
+            initargs=(log_queue, "openfold3", log_level, ["pdb_id"]),
+        ) as pool:
             for i, (structure_metadata_dict, ref_mol_metadata_dict) in enumerate(
                 tqdm(
                     pool.imap_unordered(
@@ -760,6 +852,8 @@ def preprocess_cif_dir_af3(
                         chunksize=chunksize,
                     ),
                     total=len(cif_files),
+                    desc="Processing structures",
+                    unit="structure",
                 )
             ):
                 update_output_dicts(structure_metadata_dict, ref_mol_metadata_dict)
@@ -776,6 +870,7 @@ def preprocess_cif_dir_af3(
 
 # ---- protein monomer preprocessing pipelines ----
 # TODO: combine local and S3 preparsing
+# TODO: Add docstrings for these
 class _WrapProcessMonomerDistillStructure:
     def __init__(self, s3_config: dict, output_dir: Path):
         self.s3_config = s3_config

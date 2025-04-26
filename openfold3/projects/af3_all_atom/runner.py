@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 import torch
-from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
+from torchmetrics import MeanMetric, MetricCollection
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.metrics.confidence import (
@@ -13,9 +13,14 @@ from openfold3.core.metrics.confidence import (
     compute_predicted_distance_error,
     compute_weighted_ptm,
 )
-from openfold3.core.metrics.model_selection import compute_model_selection_metric
+from openfold3.core.metrics.model_selection import (
+    compute_final_model_selection_metric,
+    compute_valid_model_selection_metrics,
+)
+from openfold3.core.metrics.pearson_correlation import ZeroSafePearsonCorrCoef
 from openfold3.core.metrics.validation_all_atom import (
     get_metrics,
+    get_metrics_chunked,
 )
 from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.atomize_utils import get_token_frame_atoms
@@ -75,14 +80,14 @@ class AlphaFold3AllAtom(ModelRunner):
         #  Make consistent later
         # Initialize all training epoch metric objects
         train_losses = {
-            loss_name: MeanMetric(nan_strategy="ignore") for loss_name in TRAIN_LOSSES
+            loss_name: MeanMetric(nan_strategy="warn") for loss_name in TRAIN_LOSSES
         }
         self.train_losses = MetricCollection(
             train_losses, prefix="train/", postfix="_epoch"
         )
 
         train_metrics = {
-            metric_name: MeanMetric(nan_strategy="ignore") for metric_name in METRICS
+            metric_name: MeanMetric(nan_strategy="warn") for metric_name in METRICS
         }
 
         self.train_metrics = MetricCollection(train_metrics, prefix="train/")
@@ -92,17 +97,17 @@ class AlphaFold3AllAtom(ModelRunner):
 
         # Initialize all validation epoch metric objects
         val_losses = {
-            loss_name: MeanMetric(nan_strategy="ignore") for loss_name in VAL_LOSSES
+            loss_name: MeanMetric(nan_strategy="warn") for loss_name in VAL_LOSSES
         }
         self.val_losses = MetricCollection(val_losses, prefix="val/")
 
         val_metrics = {
-            metric_name: MeanMetric(nan_strategy="ignore")
+            metric_name: MeanMetric(nan_strategy="warn")
             for metric_name in VAL_LOGGED_METRICS
         }
         val_metrics.update(
             {
-                metric_name: PearsonCorrCoef(num_outputs=1)
+                metric_name: ZeroSafePearsonCorrCoef(num_outputs=1)
                 for metric_name in CORRELATION_METRICS
             }
         )
@@ -158,6 +163,7 @@ class AlphaFold3AllAtom(ModelRunner):
         metric_value = (
             (metric_value,) if type(metric_value) is not tuple else metric_value
         )
+
         metric_obj.update(*metric_value)
 
     def _get_metrics(self, batch, outputs, train=True) -> dict:
@@ -169,20 +175,32 @@ class AlphaFold3AllAtom(ModelRunner):
                     compute_extra_val_metrics=False,
                 )
 
-            # TODO: Model selection - consider replacing this call directly with
-            #  model selection call so that we have aggregated statistics of
-            #  all the diffusion samples
-            metrics_per_sample = get_metrics(
-                batch,
-                outputs,
-                compute_extra_val_metrics=True,
+            num_samples = (
+                self.config.architecture.shared.diffusion.no_full_rollout_samples
+            )
+            num_atoms = outputs["atom_positions_predicted"].shape[-2]
+            chunk_metrics_computation = (
+                num_samples > 1
+                and self.config.settings.memory.eval.per_sample_atom_cutoff is not None
+                and num_atoms > self.config.settings.memory.eval.per_sample_atom_cutoff
             )
 
-            metrics = compute_model_selection_metric(
+            if chunk_metrics_computation:
+                metrics_per_sample = get_metrics_chunked(
+                    batch,
+                    outputs,
+                    compute_extra_val_metrics=True,
+                )
+            else:
+                metrics_per_sample = get_metrics(
+                    batch,
+                    outputs,
+                    compute_extra_val_metrics=True,
+                )
+
+            metrics = compute_valid_model_selection_metrics(
                 outputs=outputs,
                 metrics=metrics_per_sample,
-                weights=self.model_selection_weights,
-                pdb_id=batch["pdb_id"],
             )
 
             for metric_name in CORRELATION_METRICS:
@@ -190,17 +208,13 @@ class AlphaFold3AllAtom(ModelRunner):
                 plddt_key = f"plddt_{molecule_type}"
                 lddt_key = f"lddt_intra_{molecule_type}"
 
-                plddt = metrics.get(plddt_key)
-                lddt = metrics.get(lddt_key)
+                plddt = metrics_per_sample.get(plddt_key)
+                lddt = metrics_per_sample.get(lddt_key)
 
                 if plddt is not None and lddt is not None:
+                    plddt = plddt.reshape((-1, 1))
+                    lddt = lddt.reshape((-1, 1))
                     metrics[metric_name] = (lddt, plddt)
-
-            logger.debug(
-                f"Validation sample {', '.join(batch['pdb_id'])} on rank "
-                f"{self.global_rank} has the following metrics: "
-                f"{', '.join(list(metrics.keys()))}"
-            )
 
             return metrics
 
@@ -214,9 +228,6 @@ class AlphaFold3AllAtom(ModelRunner):
             metric_log_name = f"{phase}/{loss_name}"
             metric_epoch_name = f"{metric_log_name}_epoch" if train else metric_log_name
 
-            # Mean over sample and batch dims
-            indiv_loss = indiv_loss.mean()
-
             # Update mean metrics for epoch logging
             self._update_epoch_metric(
                 phase=phase,
@@ -226,8 +237,7 @@ class AlphaFold3AllAtom(ModelRunner):
             )
 
             # Only log steps for training
-            # Ignore nan losses, where the loss was not applicable for the sample
-            if train and not torch.isnan(indiv_loss):
+            if train:
                 self.log(
                     metric_log_name,
                     indiv_loss,
@@ -251,8 +261,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
             # TODO: Maybe remove this extra logging
             # Only log steps for training
-            # Ignore nan metric, where the metric was not applicable for the sample
-            if train and not torch.isnan(metric_value).any():
+            if train:
                 self.log(
                     f"{metric_log_name}_step",
                     metric_value,
@@ -313,9 +322,11 @@ class AlphaFold3AllAtom(ModelRunner):
         pdb_id = batch.pop("pdb_id")
         preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
         atom_array = batch.pop("atom_array")
+
+        is_repeated_sample = batch.get("repeated_sample").item()
         logger.debug(
             f"Started validation for {', '.join(pdb_id)} on rank {self.global_rank} "
-            f"step {self.global_step}"
+            f"step {self.global_step}, repeated: {is_repeated_sample}"
         )
 
         try:
@@ -329,10 +340,11 @@ class AlphaFold3AllAtom(ModelRunner):
             batch["pdb_id"] = pdb_id
             batch["preferred_chain_or_interface"] = preferred_chain_or_interface
 
-            self._log(loss_breakdown, batch, outputs, train=False)
+            if not is_repeated_sample:
+                self._log(loss_breakdown, batch, outputs, train=False)
 
         except Exception:
-            logger.exception(f"Validation step failed with pdb id {pdb_id}")
+            logger.exception(f"Validation step failed with pdb id {', '.join(pdb_id)}")
             raise
 
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
@@ -388,24 +400,42 @@ class AlphaFold3AllAtom(ModelRunner):
                 f"{self.trainer.train_dataloader.dataset.indices=}"
             )
 
-    def _log_epoch_metrics(self, metrics: MetricCollection):
+    def _log_epoch_metrics(
+        self, metrics: MetricCollection, compute_model_selection: bool = False
+    ):
         """Log aggregated epoch metrics for training or validation.
 
         Args:
             metrics: MetricCollection object containing the metrics to log
         """
-        # Sync and reduce metrics across ranks
-        metrics_output = metrics.compute()
-        for name, result in metrics_output.items():
-            # Only log metrics that have been updated
-            if self.metric_enabled.get(name):
+        if not self.trainer.sanity_checking:
+            # Sync and reduce metrics across ranks
+            metrics_output = metrics.compute()
+            for name, result in metrics_output.items():
+                # Only log metrics that have been updated
+                if self.metric_enabled.get(name):
+                    self.log(
+                        name,
+                        result,
+                        on_step=False,
+                        on_epoch=True,
+                        logger=True,
+                        sync_dist=False,  # Already synced in compute()
+                    )
+
+            if compute_model_selection:
+                model_selection = compute_final_model_selection_metric(
+                    metrics=metrics_output,
+                    model_selection_weights=self.model_selection_weights,
+                )
+
                 self.log(
-                    name,
-                    result,
+                    "val/model_selection",
+                    model_selection,
                     on_step=False,
                     on_epoch=True,
                     logger=True,
-                    sync_dist=False,  # Already synced in compute()
+                    sync_dist=False,
                 )
 
         # Reset metrics for next epoch
@@ -418,9 +448,12 @@ class AlphaFold3AllAtom(ModelRunner):
 
     def on_validation_epoch_end(self):
         """Log aggregated epoch metrics for validation."""
-        if not self.trainer.sanity_checking:
-            self._log_epoch_metrics(metrics=self.val_losses)
-            self._log_epoch_metrics(metrics=self.val_metrics)
+        self._log_epoch_metrics(metrics=self.val_losses)
+        self._log_epoch_metrics(metrics=self.val_metrics, compute_model_selection=True)
+
+        # Restore the model weights to normal
+        self.model.load_state_dict(self.cached_weights)
+        self.cached_weights = None
 
     def configure_optimizers(
         self,

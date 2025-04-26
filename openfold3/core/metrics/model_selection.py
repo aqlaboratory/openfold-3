@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 import torch
 
@@ -9,27 +8,24 @@ from openfold3.projects.af3_all_atom.constants import METRICS_MAXIMIZE, METRICS_
 logger = logging.getLogger(__name__)
 
 
-def compute_model_selection_metric(
+def compute_valid_model_selection_metrics(
     outputs: dict,
     metrics: dict,
-    weights: dict,
-    pdb_id: Optional[str] = None,
     eps: float = 1e-8,
 ) -> dict:
     """
     Implements Model Selection (Section 5.7.3) LDDT metrics computation
 
     Args:
-        outputs: Output dictionary from the model.
-        weights: Dict of weights for each metric to compute a weighted average.
-        eps: Small value to avoid division by zero.
+        outputs: Output dictionary from the model
+        metrics: Dict of metrics for all rollout samples
+        eps: Small value to avoid division by zero
 
     Returns:
-        metrics: Dictionary containing:
-            - Keys for various LDDT metrics (e.g., 'lddt_inter_protein_protein',
-              'lddt_intra_ligand', etc.), each with shape [batch_size].
-            - "model_selection_metric" with shape [batch_size], representing
-              the final weighted model-selection metric.
+        final_metrics:
+            Dictionary containing keys for various LDDT metrics
+            (e.g., 'lddt_inter_protein_protein', lddt_intra_ligand', etc.),
+            each with shape [batch_size].
     """
     device = outputs["pde_logits"].device
 
@@ -94,27 +90,29 @@ def compute_model_selection_metric(
             metrics_top_1[metric_name] + metric_best[metric_name]
         )
 
-    # Sum up the weighted metrics (shape: [bs])
-    # and then divide by the sum of weights (scalar).
-    valid_metrics = list(set(weights.keys()).intersection(final_metrics.keys()))
-    valid_metrics = [
-        metric_name
-        for metric_name in valid_metrics
-        if not torch.isnan(final_metrics[metric_name]).any()
-    ]
+    return final_metrics
 
-    if not valid_metrics:
-        logger.warning(
-            f"No valid metrics found for model selection for PDB ID {', '.join(pdb_id)}"
-        )
-        return final_metrics
 
+def compute_final_model_selection_metric(metrics: dict, model_selection_weights: dict):
+    """
+    Computes aggregated model selection metric.
+
+    Args:
+        metrics:
+            Dict of aggregated metrics for all targets
+        model_selection_weights:
+            Dict of weights for each metric to compute a weighted average
+
+    Returns:
+        model_selection: The final weighted model-selection metric
+
+    """
     total_weighted = 0.0
     sum_weights = 0.0
-    for metric_name in valid_metrics:
-        total_weighted += final_metrics[metric_name] * weights[metric_name]
-        sum_weights += weights[metric_name]
+    for name, weight in model_selection_weights.items():
+        total_weighted += metrics[f"val/{name}"] * weight
+        sum_weights += weight
 
-    final_metrics["model_selection"] = total_weighted / sum_weights
+    model_selection = total_weighted / sum_weights
 
-    return final_metrics
+    return model_selection

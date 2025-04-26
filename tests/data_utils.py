@@ -16,6 +16,7 @@ from random import randint
 
 import numpy as np
 import torch
+from biotite.structure import Atom, AtomArray, BondList, array
 from scipy.spatial.transform import Rotation
 
 from openfold3.core.data.primitives.featurization.structure import (
@@ -221,7 +222,7 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
         "ref_element": torch.ones((batch_size, n_atom, 119)).int(),
         "ref_charge": torch.ones((batch_size, n_atom)).float(),
         "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)).int(),
-        "ref_space_uid": torch.zeros((batch_size, n_atom)).int(),
+        "ref_space_uid": atom_to_token_index.unsqueeze(0).repeat((batch_size, 1)),
         # MSA features
         "msa": torch.ones((batch_size, n_msa, n_token, 32)).int(),
         "has_deletion": torch.ones((batch_size, n_msa, n_token)).float(),
@@ -271,9 +272,36 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
     }
 
     if is_eval:
-        features["use_for_intra_validation"] = torch.ones(batch_size, n_token).int()
-        features["use_for_inter_validation"] = torch.ones(
-            batch_size, n_token, n_token
+        features["ground_truth"]["intra_filter_atomized"] = torch.ones(
+            batch_size, n_atom
+        ).int()
+        features["ground_truth"]["inter_filter_atomized"] = torch.ones(
+            batch_size, n_atom, n_atom
         ).int()
 
     return features
+
+
+def create_atomarray_with_bondlist(
+    atoms: list[Atom], bondlist: BondList | np.ndarray
+) -> AtomArray:
+    """Convenience function to create an AtomArray with a BondList.
+
+    Args:
+        atoms (list[Atom]):
+            List of atoms to put in the AtomArray.
+        bondlist (BondList | np.ndarray):
+            BondList or numpy array. The numpy array has to be a valid input to
+            biotite's BondList.
+
+    Returns:
+        AtomArray:
+            AtomArray containing the atoms and BondList.
+    """
+    atom_array = array(atoms)
+
+    if isinstance(bondlist, np.ndarray):
+        bondlist = BondList(len(atom_array), bondlist)
+    atom_array.bonds = bondlist
+
+    return atom_array

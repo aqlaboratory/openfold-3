@@ -130,7 +130,6 @@ VAL_EXTRA_METRICS = [
 VAL_LOGGED_METRICS = [
     *METRICS,
     *VAL_EXTRA_METRICS,
-    "model_selection",
 ]
 
 CORRELATION_METRICS = [

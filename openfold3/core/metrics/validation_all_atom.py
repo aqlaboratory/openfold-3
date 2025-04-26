@@ -8,6 +8,38 @@ from openfold3.core.metrics.rasa import compute_rasa_batch
 from openfold3.core.metrics.validation import gdt_ha, gdt_ts, rmsd
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.geometry.kabsch_alignment import kabsch_align
+from openfold3.core.utils.tensor_utils import tensor_tree_map
+
+
+def select_inter_filter_mask(
+    inter_mask_atomized: torch.Tensor, mol_type_mask: torch.Tensor, out_shape: list
+) -> torch.Tensor:
+    """
+    Due to MAX INT limit with masked select, we need to select from the
+    inter_mask_atomized mask for each sample independently and then stack
+    them together.
+
+    Args:
+        inter_mask_atomized:
+            [*, N_atom, N_atom] Pairwise filter for inter-chain computations
+        mol_type_mask:
+            [*, N_atom] Boolean mask for molecule type to select from
+            inter_mask_atomized
+        out_shape:
+            Shape of output tensor
+    Returns:
+        Inter-chain mask per sample filtered by molecule type
+    """
+    n_samples = inter_mask_atomized.shape[-3]
+
+    inter_mask_filtered = []
+    for i in range(n_samples):
+        inter_mask_filtered_chunk = torch.masked_select(
+            inter_mask_atomized[:, i], mol_type_mask[:, i]
+        ).reshape(out_shape)
+        inter_mask_filtered.append(inter_mask_filtered_chunk)
+
+    return torch.stack(inter_mask_filtered, dim=-3)
 
 
 def lddt(
@@ -186,19 +218,26 @@ def drmsd(
     Note:
         returns None if inter_drmsd is invalid (ie. single chain)
     """
+    # Calculate squared distance differences
     drmsd = pair_dist_pred_pos - pair_dist_gt_pos
     drmsd = drmsd**2
 
-    # apply mask
+    # Apply mask and exclude diagonal
     mask = all_atom_mask[..., None] * all_atom_mask[..., None, :]
+    mask = mask * (1.0 - torch.eye(mask.shape[-1], device=all_atom_mask.device))
+
+    # Create intra and inter chain masks
     intra_mask = torch.where(asym_id[..., None] == asym_id[..., None, :], 1, 0).bool()
     inter_mask = ~intra_mask
 
-    intra_drmsd = drmsd * mask * intra_mask
-    intra_drmsd = torch.sum(intra_drmsd, dim=(-1, -2))
-    n_intra = torch.sum(intra_mask * mask, dim=(-1, -2)) + eps
-    intra_drmsd = intra_drmsd * (1 / n_intra)
-    intra_drmsd = torch.sqrt(intra_drmsd)
+    intra_drmsd = None
+    intra_mask = intra_mask * mask
+    if torch.any(intra_mask):
+        intra_drmsd = drmsd * intra_mask
+        intra_drmsd = torch.sum(intra_drmsd, dim=(-1, -2))
+        n_intra = torch.sum(intra_mask, dim=(-1, -2)) + eps
+        intra_drmsd = intra_drmsd * (1 / n_intra)
+        intra_drmsd = torch.sqrt(intra_drmsd)
 
     inter_drmsd = None
     inter_mask = inter_mask * mask
@@ -260,9 +299,12 @@ def get_protein_metrics(
     )  # (1, n_protein, n_protein)
 
     n_protein_atoms = all_atom_mask_protein.shape[-1]
-    inter_mask_atomized_protein = torch.masked_select(
-        inter_mask_atomized, is_protein_atomized_pair[:, :1]
-    ).reshape(inter_mask_atomized.shape[:-2] + (n_protein_atoms, n_protein_atoms))
+
+    inter_mask_atomized_protein = select_inter_filter_mask(
+        inter_mask_atomized=inter_mask_atomized,
+        mol_type_mask=is_protein_atomized_pair,
+        out_shape=(bs[:-1] + (n_protein_atoms, n_protein_atoms)),
+    )
 
     # (bs,(n_sample), n_prot, n_prot)
     gt_protein_pair = torch.sqrt(
@@ -376,21 +418,26 @@ def get_nucleic_acid_metrics(
     is_nucleic_acid_atomized_pair = (
         is_nucleic_acid_atomized[..., None] * is_nucleic_acid_atomized[..., None, :]
     )
+
     n_nucleic_acid_atoms = all_atom_mask_na.shape[-1]
-    inter_mask_atomized_na = torch.masked_select(
-        inter_mask_atomized, is_nucleic_acid_atomized_pair[:, :1]
-    ).reshape(
-        inter_mask_atomized.shape[:-2] + (n_nucleic_acid_atoms, n_nucleic_acid_atoms)
+
+    inter_mask_atomized_na = select_inter_filter_mask(
+        inter_mask_atomized=inter_mask_atomized,
+        mol_type_mask=is_nucleic_acid_atomized_pair,
+        out_shape=(bs[:-1] + (n_nucleic_acid_atoms, n_nucleic_acid_atoms)),
     )
 
     # Apply protein x na masks to select protein - na interactions
     is_protein_na_pair = (
         is_protein_atomized[..., None] * is_nucleic_acid_atomized[..., None, :]
     )
+
     n_protein_atoms = all_atom_mask_protein.shape[-1]
-    inter_filter_mask = torch.masked_select(
-        inter_mask_atomized, is_protein_na_pair[:, :1]
-    ).reshape(inter_mask_atomized.shape[:-2] + (n_protein_atoms, n_nucleic_acid_atoms))
+    inter_filter_mask = select_inter_filter_mask(
+        inter_mask_atomized=inter_mask_atomized,
+        mol_type_mask=is_protein_na_pair,
+        out_shape=(bs[:-1] + (n_protein_atoms, n_nucleic_acid_atoms)),
+    )
 
     # (bs,(n_sample), n_na, n_na)
     gt_na_pair = torch.sqrt(
@@ -547,19 +594,26 @@ def get_ligand_metrics(
     is_ligand_atomized_pair = (
         is_ligand_atomized[..., None] * is_ligand_atomized[..., None, :]
     )
+
     n_ligand_atoms = all_atom_mask_ligand.shape[-1]
-    inter_mask_atomized_ligand = torch.masked_select(
-        inter_mask_atomized, is_ligand_atomized_pair[:, :1]
-    ).reshape(inter_mask_atomized.shape[:-2] + (n_ligand_atoms, n_ligand_atoms))
+
+    inter_mask_atomized_ligand = select_inter_filter_mask(
+        inter_mask_atomized=inter_mask_atomized,
+        mol_type_mask=is_ligand_atomized_pair,
+        out_shape=(bs[:-1] + (n_ligand_atoms, n_ligand_atoms)),
+    )
 
     # Apply protein x na masks to select protein - na interactions
     is_protein_ligand_pair = (
         is_protein_atomized[..., None] * is_ligand_atomized[..., None, :]
     )
+
     n_protein_atoms = all_atom_mask_protein.shape[-1]
-    inter_filter_mask = torch.masked_select(
-        inter_mask_atomized, is_protein_ligand_pair[:, :1]
-    ).reshape(inter_mask_atomized.shape[:-2] + (n_protein_atoms, n_ligand_atoms))
+    inter_filter_mask = select_inter_filter_mask(
+        inter_mask_atomized=inter_mask_atomized,
+        mol_type_mask=is_protein_ligand_pair,
+        out_shape=(bs[:-1] + (n_protein_atoms, n_ligand_atoms)),
+    )
 
     # (bs,(n_sample), n_lig, n_lig)
     gt_ligand_pair = torch.sqrt(
@@ -972,9 +1026,12 @@ def get_validation_lddt_metrics(
 
         n_rna_atoms = torch.max(torch.sum(is_rna_atomized, dim=-1))
         n_ligand_atoms = torch.max(torch.sum(is_ligand_atomized, dim=-1))
-        inter_filter_mask_rna_ligand = torch.masked_select(
-            inter_filter_atomized, is_rna_ligand_pair[:, :1]
-        ).reshape(inter_filter_atomized.shape[:-2] + (n_rna_atoms, n_ligand_atoms))
+
+        inter_filter_mask_rna_ligand = select_inter_filter_mask(
+            inter_mask_atomized=inter_filter_atomized,
+            mol_type_mask=is_rna_ligand_pair,
+            out_shape=(bs[:-1] + (n_rna_atoms, n_ligand_atoms)),
+        )
 
         lddt_inter_ligand_rna = interface_lddt(
             all_atom_pred_pos_1=pred_coords[is_rna_atomized].view(bs + (-1, 3)),
@@ -996,9 +1053,11 @@ def get_validation_lddt_metrics(
 
         n_dna_atoms = torch.max(torch.sum(is_dna_atomized, dim=-1))
         n_ligand_atoms = torch.max(torch.sum(is_ligand_atomized, dim=-1))
-        inter_filter_mask_dna_ligand = torch.masked_select(
-            inter_filter_atomized, is_dna_ligand_pair[:, :1]
-        ).reshape(inter_filter_atomized.shape[:-2] + (n_dna_atoms, n_ligand_atoms))
+        inter_filter_mask_dna_ligand = select_inter_filter_mask(
+            inter_mask_atomized=inter_filter_atomized,
+            mol_type_mask=is_dna_ligand_pair,
+            out_shape=(bs[:-1] + (n_dna_atoms, n_ligand_atoms)),
+        )
 
         lddt_inter_ligand_dna = interface_lddt(
             all_atom_pred_pos_1=pred_coords[is_dna_atomized].view(bs + (-1, 3)),
@@ -1028,9 +1087,11 @@ def get_validation_lddt_metrics(
         )
 
         n_mr_atoms = torch.max(torch.sum(is_modified_residue_atomized, dim=-1))
-        inter_mask_atomized_mr = torch.masked_select(
-            inter_filter_atomized, is_mr_atomized_pair[:, :1]
-        ).reshape(inter_filter_atomized.shape[:-2] + (n_mr_atoms, n_mr_atoms))
+        inter_mask_atomized_mr = select_inter_filter_mask(
+            inter_mask_atomized=inter_filter_atomized,
+            mol_type_mask=is_mr_atomized_pair,
+            out_shape=(bs[:-1] + (n_mr_atoms, n_mr_atoms)),
+        )
 
         pred_mr_pair = torch.sqrt(
             eps
@@ -1100,6 +1161,7 @@ def get_metrics(
     pred_coords = outputs["atom_positions_predicted"]
 
     token_mask = batch["token_mask"]
+    atom_padding_mask = batch["atom_mask"]
     num_atoms_per_token = batch["num_atoms_per_token"]
     no_samples = pred_coords.shape[1]
     # getting rid of modified residues
@@ -1111,9 +1173,10 @@ def get_metrics(
     is_rna = is_rna * not_modified_res
     is_dna = is_dna * not_modified_res
 
-    # TODO: Update in metrics PR, temporary fix to handle more than one sample
-    #  from the rollout output
     def expand_sample_dim(t: torch.tensor) -> torch.tensor:
+        if t.shape[1] == no_samples:
+            return t
+
         feat_dims = t.shape[2:]
         t = t.expand(-1, no_samples, *((-1,) * len(feat_dims)))
         return t
@@ -1174,36 +1237,15 @@ def get_metrics(
     )
 
     # set up filters for validation metrics if present, otherwise pass ones
-    use_for_intra = batch.get("use_for_intra_validation", token_mask)
-    use_for_inter = batch.get(
-        "use_for_inter_validation",
-        token_mask[..., None] * token_mask[..., None, :],
+    intra_filter_atomized = batch["ground_truth"].get(
+        "intra_filter_atomized", expand_sample_dim(atom_padding_mask)
     )
-
-    intra_filter_atomized = broadcast_token_feat_to_atoms(
-        token_mask=token_mask,
-        num_atoms_per_token=num_atoms_per_token,
-        token_feat=use_for_intra,
+    inter_filter_atomized = batch["ground_truth"].get(
+        "inter_filter_atomized",
+        expand_sample_dim(
+            atom_padding_mask[..., None] * atom_padding_mask[..., None, :]
+        ),
     )
-    intra_filter_atomized = expand_sample_dim(intra_filter_atomized).bool()
-
-    # TODO: This mask is not broadcasted in the sample dimensions due to
-    #  max int size threshold in masked select. Make mask dims more consistent
-    #  in the future.
-    # convert use_for_inter: [*, n_token, n_token] into [*, n_atom, n_atom]
-    inter_filter_atomized = broadcast_token_feat_to_atoms(
-        token_mask=token_mask,
-        num_atoms_per_token=num_atoms_per_token,
-        token_feat=use_for_inter,
-        token_dim=-2,
-    )
-    inter_filter_atomized = broadcast_token_feat_to_atoms(
-        token_mask=token_mask,
-        num_atoms_per_token=num_atoms_per_token,
-        token_feat=inter_filter_atomized.transpose(-1, -2),
-        token_dim=-2,
-    )
-    inter_filter_atomized = inter_filter_atomized.transpose(-1, -2).bool()
 
     if torch.any(is_protein_atomized):
         protein_validation_metrics = get_protein_metrics(
@@ -1302,10 +1344,81 @@ def get_metrics(
         metrics = metrics | superimpose_metrics
 
         # Compute RASA (Relative ASA) metric
-        metrics["rasa"] = compute_rasa_batch(batch, outputs)
+        if torch.any(is_protein_atomized):
+            rasa = compute_rasa_batch(batch, outputs)
+            # RASA is only computed for proteins with unresolved residues,
+            # otherwise NaN is returned
+            if not torch.isnan(rasa).any():
+                metrics["rasa"] = rasa
 
     valid_metrics = {
         name: value for name, value in metrics.items() if value is not None
     }
 
     return valid_metrics
+
+
+def get_metrics_chunked(
+    batch,
+    outputs,
+    compute_extra_val_metrics=False,
+) -> dict[str, torch.Tensor]:
+    """
+    Compute validation metrics per predicted sample on all substrates.
+    If a metric is valid for some samples and not others, it will be masked
+    to zero as in the batched version get_metrics(). For example, for
+    interface lDDts with ions, it's often the case that some samples do not
+    pass the thresholds, thus making the lDDt for that sample zero.
+
+    Args:
+        batch: ground truth and permutation applied features
+        outputs: model outputs
+        compute_extra_val_metrics: computes extra lddt metrics needed
+            for model selection
+    Returns:
+        metrics: dict containing validation metrics across all substrates
+
+    Note:
+        if no appropriate substrates, no corresponding metrics will be included
+    """
+    atom_positions_predicted = outputs["atom_positions_predicted"]
+    batch_dims = atom_positions_predicted.shape[:-2]
+    num_samples = batch_dims[-1]
+
+    metrics_per_sample_list = []
+    for idx in range(num_samples):
+
+        def fetch_cur_sample(t):
+            if t.shape[1] != num_samples:
+                return t
+            return t[:, idx : idx + 1]  # noqa: B023
+
+        cur_batch = tensor_tree_map(fetch_cur_sample, batch, strict_type=False)
+        cur_outputs = tensor_tree_map(fetch_cur_sample, outputs, strict_type=False)
+        metrics_per_sample_list.append(
+            get_metrics(
+                cur_batch,
+                cur_outputs,
+                compute_extra_val_metrics=compute_extra_val_metrics,
+            )
+        )
+
+    metrics_per_sample = {}
+    all_metric_keys = set().union(*(m.keys() for m in metrics_per_sample_list))
+
+    for metric_name in all_metric_keys:
+        metric_values = []
+        for sample in metrics_per_sample_list:
+            metric_values.append(
+                sample.get(
+                    metric_name,
+                    torch.zeros(
+                        (*batch_dims[:-1], 1),
+                        device=atom_positions_predicted.device,
+                        dtype=atom_positions_predicted.dtype,
+                    ),
+                )
+            )
+        metrics_per_sample[metric_name] = torch.concat(metric_values, dim=1)
+
+    return metrics_per_sample
