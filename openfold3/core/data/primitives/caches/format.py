@@ -728,8 +728,8 @@ class ValidationDatasetChainData(ClusteredDatasetChainData):
             Whether the chain has low-homology with the training data (see AF3 SI 5.8).
         metric_eligible (bool):
             Whether the chain is eligible for validation metrics (in our validation set
-            this is a mix between low-homology and filtering based on the SI Table 9+10
-            blacklists).
+            this is a mix between low-homology and filtering based on the SI Tables
+            9+10+12 blacklists).
         use_metrics (bool):
             Whether validation metrics should be calculated for this chain (see AF3 SI
             5.8).

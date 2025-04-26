@@ -41,6 +41,7 @@ from openfold3.core.data.primitives.caches.format import (
 )
 from openfold3.core.data.resources.lists import (
     CRYSTALLIZATION_AIDS,
+    IONS,
     LIGAND_EXCLUSION_LIST,
 )
 from openfold3.core.data.resources.residues import MoleculeType
@@ -49,7 +50,11 @@ logger = logging.getLogger(__name__)
 
 
 # Ligands to exclude for metric calculation
-JOINT_LIGAND_EXCLUSION_SET = set(CRYSTALLIZATION_AIDS) | set(LIGAND_EXCLUSION_LIST)
+JOINT_LIGAND_EXCLUSION_SET = {
+    *CRYSTALLIZATION_AIDS,
+    *LIGAND_EXCLUSION_LIST,
+    *IONS,
+}
 
 
 def func_with_n_filtered_chain_log(
@@ -1361,7 +1366,7 @@ def check_chain_metric_eligibility(
             The chain data for the particular chain to check.
         lig_exclusion_list (Container[str]):
             A list of ligands to exclude from validation metrics. Default is
-            JOINT_LIGAND_EXCLUSION_SET, which is a merge of the SI Tables 9 and 10.
+            JOINT_LIGAND_EXCLUSION_SET, which is a merge of the SI Tables 9, 10, and 12.
 
     Returns:
         bool:
@@ -1470,7 +1475,7 @@ def assign_metric_eligibility_labels(
             The minimum ranking model fit for ligands to be included. Default is 0.5.
         lig_exclusion_list (Container[str]):
             A list of ligands to exclude from validation metrics. Default is
-            JOINT_LIGAND_EXCLUSION_SET, which is a merge of the SI Tables 9 and 10.
+            JOINT_LIGAND_EXCLUSION_SET, which is a merge of the SI Tables 9, 10, and 12.
 
     Returns:
         None, the cache is updated in-place.
