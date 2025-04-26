@@ -20,16 +20,21 @@ from openfold3.core.data.primitives.caches.clustering import (
     add_cluster_data,
 )
 from openfold3.core.data.primitives.caches.filtering import (
+    JOINT_LIGAND_EXCLUSION_SET,
     ChainDataPoint,
     InterfaceDataPoint,
     add_and_filter_alignment_representatives,
     add_ligand_data_to_monomer_cache,
-    assign_interface_metric_eligibility_labels,
     assign_ligand_model_fits,
+    assign_metric_eligibility_labels,
     build_provisional_clustered_val_dataset_cache,
+    consolidate_training_set_data,
     filter_by_token_count,
     filter_cache_by_specified_interfaces,
     filter_cache_to_specified_chains,
+    filter_chains_by_metric_eligibility,
+    filter_id_to_seq_by_cache,
+    filter_only_ligand_ligand_metrics,
     func_with_n_filtered_chain_log,
     get_validation_summary_stats,
     select_final_validation_data,
@@ -38,7 +43,6 @@ from openfold3.core.data.primitives.caches.filtering import (
     subsample_interfaces_per_cluster,
 )
 from openfold3.core.data.primitives.caches.format import (
-    ClusteredDatasetCache,
     PreprocessingDataCache,
     ValidationDatasetCache,
 )
@@ -148,6 +152,11 @@ def select_multimer_cache(
         random_seed=random_seed,
     )
 
+    # Don't need all chains anymore here, so remove chains that are not metric-eligible
+    filtered_cache.structure_data = filter_chains_by_metric_eligibility(
+        filtered_cache.structure_data
+    )
+
     # Filter by token count
     filtered_cache.structure_data = filter_by_token_count(
         filtered_cache.structure_data, max_token_count
@@ -223,7 +232,7 @@ def select_monomer_cache(
             if structure_data.chains[chain_id].low_homology:
                 keep_chain_datapoints.add(ChainDataPoint(pdb_id, chain_id))
 
-    # Filter the cache to only contain the specified chains
+    # Filter the cache to only contain the specified polymer chains
     logger.info("Filtering cache by specified chains.")
     filter_cache_to_specified_chains(filtered_cache, keep_chain_datapoints)
 
@@ -257,9 +266,10 @@ def select_monomer_cache(
 # TODO: Could expose more arguments?
 # TODO: Add docstring!
 def create_pdb_val_dataset_cache_af3(
-    train_cache_path: Path,
     metadata_cache_path: Path,
     preprocessed_dir: Path,
+    train_cache_paths: list[Path],
+    train_preprocessed_dirs: list[Path],
     alignment_representatives_fasta: Path,
     output_path: Path,
     dataset_name: str,
@@ -282,7 +292,7 @@ def create_pdb_val_dataset_cache_af3(
     # refactoring later
     # Read in FASTAs of all sequences in the training set
     logger.info("Scanning FASTA directories...")
-    id_to_sequence = consolidate_preprocessed_fastas(preprocessed_dir)
+    val_id_to_sequence = consolidate_preprocessed_fastas(preprocessed_dir)
 
     # Get a mapping of PDB IDs to release dates before any filtering is done
     pdb_id_to_release_date = {}
@@ -316,7 +326,7 @@ def create_pdb_val_dataset_cache_af3(
                 add_and_filter_alignment_representatives
             )(
                 structure_cache=val_dataset_cache.structure_data,
-                query_chain_to_seq=id_to_sequence,
+                query_chain_to_seq=val_id_to_sequence,
                 alignment_representatives_fasta=alignment_representatives_fasta,
                 return_no_repr=True,
             )
@@ -338,19 +348,30 @@ def create_pdb_val_dataset_cache_af3(
         else:
             structure_data = with_log(add_and_filter_alignment_representatives)(
                 structure_cache=val_dataset_cache.structure_data,
-                query_chain_to_seq=id_to_sequence,
+                query_chain_to_seq=val_id_to_sequence,
                 alignment_representatives_fasta=alignment_representatives_fasta,
                 return_no_repr=False,
             )
 
         val_dataset_cache.structure_data = structure_data
 
-    # Load the training cache which we need for homology comparisons
-    train_dataset_cache = ClusteredDatasetCache.from_json(train_cache_path)
+    # Subset dictionary to only chains included in the validation cache
+    val_id_to_sequence = filter_id_to_seq_by_cache(
+        val_dataset_cache.structure_data, val_id_to_sequence
+    )
+
+    # Create a joint cache out of all the training caches that need to be used for the
+    # homology assignment
+    joint_train_dataset_cache, joint_train_id_to_sequence = (
+        consolidate_training_set_data(
+            training_cache_paths=train_cache_paths,
+            preprocessed_dirs=train_preprocessed_dirs,
+        )
+    )
 
     # TODO: This is a temporary solution, MoleculeType should be parsed as a class
     # natively
-    for structure_data in train_dataset_cache.structure_data.values():
+    for structure_data in joint_train_dataset_cache.structure_data.values():
         for chain_data in structure_data.chains.values():
             chain_data.molecule_type = MoleculeType[chain_data.molecule_type]
 
@@ -361,22 +382,24 @@ def create_pdb_val_dataset_cache_af3(
     # Set low_homology attributes for all chains and interfaces
     assign_homology_labels(
         val_dataset_cache=val_dataset_cache,
-        train_dataset_cache=train_dataset_cache,
-        id_to_sequence=id_to_sequence,
+        train_dataset_cache=joint_train_dataset_cache,
+        val_id_to_sequence=val_id_to_sequence,
+        train_id_to_sequence=joint_train_id_to_sequence,
         seq_identity_threshold=seq_identity_threshold,
         tanimoto_threshold=tanimoto_threshold,
     )
 
     # Set metric_eligible attributes for all interfaces
-    assign_interface_metric_eligibility_labels(
+    assign_metric_eligibility_labels(
         val_dataset_cache=val_dataset_cache,
         min_ranking_model_fit=ranking_fit_threshold,
+        lig_exclusion_list=JOINT_LIGAND_EXCLUSION_SET,
     )
 
     # Build a validation dataset cache corresponding to the multimer set in SI 5.8
     multimer_cache = select_multimer_cache(
         val_dataset_cache=val_dataset_cache,
-        id_to_sequence=id_to_sequence,
+        id_to_sequence=val_id_to_sequence,
         max_token_count=max_tokens_final,
         random_seed=random_seed,
     )
@@ -384,7 +407,7 @@ def create_pdb_val_dataset_cache_af3(
     # Build a validation dataset cache corresponding to the monomer set in SI 5.8
     monomer_cache = select_monomer_cache(
         val_dataset_cache=val_dataset_cache,
-        id_to_sequence=id_to_sequence,
+        id_to_sequence=val_id_to_sequence,
         max_token_count=max_tokens_final,
         random_seed=random_seed,
     )
@@ -395,6 +418,10 @@ def create_pdb_val_dataset_cache_af3(
         unfiltered_cache=val_dataset_cache,
         monomer_structure_data=monomer_cache.structure_data,
         multimer_structure_data=multimer_cache.structure_data,
+    )
+
+    val_dataset_cache.structure_data = with_log(filter_only_ligand_ligand_metrics)(
+        val_dataset_cache.structure_data
     )
 
     final_stats = get_validation_summary_stats(val_dataset_cache.structure_data)

@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 import biotite.structure as struc
 import numpy as np
-from biotite.structure import AtomArray
+from biotite.structure import AtomArray, BondList
 from biotite.structure.io import pdbx
 
 from openfold3.core.data.primitives.quality_control.logging_utils import (
@@ -126,6 +126,133 @@ def get_chain_to_molecule_type_dict(atom_array: struc.AtomArray) -> dict[int, st
     }
 
 
+def get_residue_tuples(
+    atom_array: struc.AtomArray,
+    include_resname: bool = False,
+) -> list[tuple[str, int]] | list[tuple[str, int, str]]:
+    """Get a list of (chain_id, res_id) tuples for all residues in an AtomArray.
+
+    Args:
+        atom_array:
+            AtomArray containing the residues to get unique tuples for.
+        include_resname:
+            Whether to add the residue name to the tuple. Defaults to False. If True,
+            the tuple will be (chain_id, res_id, res_name).
+
+    Returns:
+        A list of (chain_id, res_id) tuples for unique residues in the AtomArray, or
+        (chain_id, res_id, res_name) tuples if include_resname is True.
+    """
+    attrs_to_include = ["chain_id", "res_id"]
+
+    # Add other attributes if specified
+    if include_resname:
+        attrs_to_include.append("res_name")
+
+    residue_starts = struc.get_residue_starts(atom_array, add_exclusive_stop=False)
+
+    # Construct the list of residue tuples
+    residue_tuples = [
+        tuple(getattr(atom_array, attr)[residue_start] for attr in attrs_to_include)
+        for residue_start in residue_starts
+    ]
+
+    return residue_tuples
+
+
+def get_bond_atom_tuples(
+    atom_array: AtomArray, bonds: BondList | np.ndarray, include_resname: bool = False
+) -> (
+    list[tuple[tuple[str, int, str], tuple[str, int, str]]]
+    | list[tuple[tuple[str, int, str, str], tuple[str, int, str, str]]]
+):
+    """Get a list of (chain_id, res_id, atom_name) tuples for all bonds in an AtomArray.
+
+    Args:
+        atom_array:
+            AtomArray that the bonds belong to.
+        bonds:
+            BondList, or array where the first two columns contain the indices of the
+            bonded atoms.
+        include_resname:
+            Whether to add the residue name to the tuple. Defaults to False. If True,
+            the tuple will be (chain_id, res_id, res_name, atom_name).
+
+    Returns:
+        A list of pairwise (chain_id, res_id, atom_name) tuples for the atom pairs in
+        all bonds in the AtomArray, or (chain_id, res_id, res_name, atom_name) tuples if
+        include_resname is True.
+    """
+    # Get the indices of the bonded atoms
+    if isinstance(bonds, BondList):
+        atom_indices = bonds.as_array()[:, :2]
+    else:
+        atom_indices = bonds
+
+    attrs_to_include = ["chain_id", "res_id", "atom_name"]
+
+    if include_resname:
+        attrs_to_include.insert(2, "res_name")
+
+    # These will be filled with a list of all values per attribute, e.g. the first entry
+    # of atom_1_attr_lists will be a list with the chain IDs of all atoms that appear
+    # first in the bond list, while atom_2_attr_lists will be the equivalent for the
+    # second atom in the bond list.
+    atom_1_attr_lists = []
+    atom_2_attr_lists = []
+
+    for attr in attrs_to_include:
+        joint_attr_array = getattr(atom_array, attr)[atom_indices]
+        atom_1_attr_lists.append(joint_attr_array[:, 0].tolist())
+        atom_2_attr_lists.append(joint_attr_array[:, 1].tolist())
+
+    num_bonds = atom_indices.shape[0]
+    num_attrs = len(attrs_to_include)
+
+    # Reformat to a list of tuples
+    bond_atom_tuples = [
+        (
+            # Tuple for first bond partner
+            tuple(atom_1_attr_lists[j][i] for j in range(num_attrs)),
+            # Tuple for second bond partner
+            tuple(atom_2_attr_lists[j][i] for j in range(num_attrs)),
+        )
+        # Iterate over all bonds
+        for i in range(num_bonds)
+    ]
+
+    return bond_atom_tuples
+
+
+def get_differing_chain_ids(
+    atom_array_1: AtomArray, atom_array_2: AtomArray
+) -> list[str]:
+    """Get a list of chain IDs that differ between two AtomArrays.
+
+    Computes the symmetric difference between the chain IDs of the two AtomArrays. E.g.:
+
+        chain_ids_1 = ["A", "B", "C"]
+        chain_ids_2 = ["A", "D", "E"]
+        get_differing_chain_ids(chain_ids_1, chain_ids_2) -> ["B", "C", "D", "E"]
+
+    Args:
+        atom_array_1:
+            First AtomArray to compare.
+        atom_array_2:
+            Second AtomArray to compare.
+
+    Returns:
+        A list of chain IDs that differ between the two AtomArrays.
+    """
+    differing_chain_ids = np.setxor1d(
+        atom_array_1.chain_id,
+        atom_array_2.chain_id,
+    )
+
+    # Chain IDs in this codebase are often numerical so sort them nicely.
+    return sorted(differing_chain_ids, key=lambda x: x.rjust(5, "0"))
+
+
 def assign_renumbered_chain_ids(
     atom_array: AtomArray, store_original_as: str | None = None
 ) -> None:
@@ -171,8 +298,9 @@ def assign_atom_indices(
             AtomArray containing the structure to assign atom indices to.
         label:
             Name of the annotation field to store the atom indices in. Defaults to
-            "_atom_idx". Useful to avoid attribute clashes if a function is called on an
-            AtomArray that already has an "_atom_idx" field.
+            "_atom_idx". It is a good practice to set this to something custom per
+            function, as this avoids attribute clashes if the function is called within
+            a parent function that has already set an _atom_idx.
         overwrite:
             Whether to overwrite an existing annotation field with the same name.
             Defaults to False.
