@@ -4,6 +4,7 @@ import functools
 import logging
 import random
 from collections import defaultdict
+from collections.abc import Container
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import replace
@@ -38,9 +39,17 @@ from openfold3.core.data.primitives.caches.format import (
     ValidationDatasetReferenceMoleculeData,
     ValidationDatasetStructureData,
 )
+from openfold3.core.data.resources.lists import (
+    CRYSTALLIZATION_AIDS,
+    LIGAND_EXCLUSION_LIST,
+)
 from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
+
+
+# Ligands to exclude for metric calculation
+JOINT_LIGAND_EXCLUSION_SET = set(CRYSTALLIZATION_AIDS) | set(LIGAND_EXCLUSION_LIST)
 
 
 def func_with_n_filtered_chain_log(
@@ -386,9 +395,11 @@ def build_provisional_clustered_val_dataset_cache(
                 template_ids=None,
                 cluster_id=None,
                 cluster_size=None,
+                metric_eligible=None,
                 low_homology=None,
                 use_metrics=False,
                 ranking_model_fit=None,
+                source_subset="base",
             )
 
         # Add interface cluster data with dummy values
@@ -402,6 +413,7 @@ def build_provisional_clustered_val_dataset_cache(
                 low_homology=None,
                 metric_eligible=None,
                 use_metrics=False,
+                source_subset="base",
             )
 
     # Create reference molecule data with set_fallback_to_nan=False everywhere (for now)
@@ -1111,7 +1123,7 @@ def filter_cache_to_specified_chains(
             del structure_data.chains[chain_id]
 
         # Set interfaces to empty dict
-        structure_data.interfaces = dict()
+        structure_data.interfaces.clear()
 
 
 def subsample_chains_by_type(
@@ -1335,11 +1347,46 @@ def subsample_interfaces_by_type(
     )
 
 
+def check_chain_metric_eligibility(
+    chain_data: ValidationDatasetChainData,
+    lig_exclusion_list: Container[str],
+) -> bool:
+    """Decides whether a chain is eligible for validation metric inclusion.
+
+    Deviating slightly from SI 5.8, we check that a chain has low-homology but also that
+    it is not in an exclusion list of ligands that we don't want to measure metrics for.
+
+    Args:
+        chain_data (ValClusteredDatasetChainData):
+            The chain data for the particular chain to check.
+        lig_exclusion_list (Container[str]):
+            A list of ligands to exclude from validation metrics. Default is
+            JOINT_LIGAND_EXCLUSION_SET, which is a merge of the SI Tables 9 and 10.
+
+    Returns:
+        bool:
+            Whether the interface is eligible for validation metric inclusion.
+    """
+    # Not low-homology chains are never eligible
+    if not chain_data.low_homology:
+        return False
+
+    # Ligands need to also not be in the exclusion list
+    if (  # noqa: SIM103
+        chain_data.molecule_type == MoleculeType.LIGAND
+        and chain_data.reference_mol_id in lig_exclusion_list
+    ):
+        return False
+
+    return True
+
+
 def check_interface_metric_eligibility(
     interface_id: str,
     interface_data: ValidationDatasetInterfaceData,
     chain_dict: dict[str, ValidationDatasetChainData],
     reference_mol_dict: ValidationDatasetReferenceMoleculeData,
+    lig_exclusion_list: Container[str] = JOINT_LIGAND_EXCLUSION_SET,
     min_ranking_model_fit: float = 0.5,
 ) -> bool:
     """Decides whether an interface is eligible for validation metric inclusion.
@@ -1376,6 +1423,10 @@ def check_interface_metric_eligibility(
         chain_data = chain_dict[chain_id]
 
         if chain_data.molecule_type == MoleculeType.LIGAND:
+            # Check that ligand is not in exclusion list
+            if chain_data.reference_mol_id in lig_exclusion_list:
+                return False
+
             # Check that fit is above threshold
             if chain_data.ranking_model_fit < min_ranking_model_fit:
                 return False
@@ -1388,14 +1439,15 @@ def check_interface_metric_eligibility(
     return True
 
 
-def assign_interface_metric_eligibility_labels(
+def assign_metric_eligibility_labels(
     val_dataset_cache: ValidationDatasetCache,
     min_ranking_model_fit: float = 0.5,
+    lig_exclusion_list=JOINT_LIGAND_EXCLUSION_SET,
 ) -> None:
     """Sets the metric_eligible attribute for all interfaces in the cache.
 
-    This function will set the metric_eligible attribute for all interfaces in the
-    cache. Following SI 5.8, we define interface metric eligibility as:
+    This function will set the metric_eligible attribute for all chains and interfaces
+    in the cache. Following SI 5.8, we define interface metric eligibility as:
 
     - The interface has low-homology to the training set
     - If the interface contains ligands, then all ligands have a residue count of 1 and
@@ -1404,22 +1456,39 @@ def assign_interface_metric_eligibility_labels(
     While SI 5.8 is ambiguous about this, we effectively apply those criteria not only
     to the multimer set but also any ligand-containing interface in the monomer set.
 
+    For the chain metric eligibility, we only check for low-homology following SI 5.8,
+    but add an additional check that excludes ligand based on an exclusion list. A chain
+    is therefore metric-eligible if:
+
+    - The chain has low-homology to the training set
+    - The chain is not a ligand in the ligand exclusion list
+
     Args:
         val_dataset_cache (ValClusteredDatasetCache):
             The cache to assign metric eligibility labels to.
         min_ranking_model_fit (float):
             The minimum ranking model fit for ligands to be included. Default is 0.5.
+        lig_exclusion_list (Container[str]):
+            A list of ligands to exclude from validation metrics. Default is
+            JOINT_LIGAND_EXCLUSION_SET, which is a merge of the SI Tables 9 and 10.
 
     Returns:
         None, the cache is updated in-place.
     """
     for structure_data in val_dataset_cache.structure_data.values():
+        for chain_data in structure_data.chains.values():
+            chain_data.metric_eligible = check_chain_metric_eligibility(
+                chain_data=chain_data,
+                lig_exclusion_list=lig_exclusion_list,
+            )
+
         for interface_id, interface_data in structure_data.interfaces.items():
             interface_data.metric_eligible = check_interface_metric_eligibility(
                 interface_id=interface_id,
                 interface_data=interface_data,
                 chain_dict=structure_data.chains,
                 reference_mol_dict=val_dataset_cache.reference_molecule_data,
+                lig_exclusion_list=lig_exclusion_list,
                 min_ranking_model_fit=min_ranking_model_fit,
             )
 
@@ -1515,9 +1584,8 @@ def add_ligand_data_to_monomer_cache(
     """Expands the validation monomer set with valid ligand chains and interfaces.
 
     Following AF3 SI 5.8, this function will add back ligand chains and interfaces to
-    the monomer set. Ligand chains are included if the ligand is low-homology, and
-    ligand interfaces are included if they are low-homology and the ligand is
-    single-residue and has a ranking model fit above a certain threshold.
+    the monomer set. Ligand chains and interfaces are included if they were marked as
+    metric-eligible (low-homology plus additional criteria).
 
     Args:
         unfiltered_cache: ValClusteredDatasetCache
@@ -1550,7 +1618,7 @@ def add_ligand_data_to_monomer_cache(
         for chain_id, chain_data in target_chain_data.items():
             if (
                 chain_data.molecule_type == MoleculeType.LIGAND
-                and chain_data.low_homology
+                and chain_data.metric_eligible
             ):
                 monomer_structure_data[pdb_id].chains[chain_id] = deepcopy(chain_data)
 
@@ -1569,6 +1637,24 @@ def add_ligand_data_to_monomer_cache(
                 monomer_structure_data[pdb_id].interfaces[interface_id] = deepcopy(
                     interface_data
                 )
+
+
+def filter_chains_by_metric_eligibility(
+    structure_data: ValidationDatasetStructureData,
+) -> ValidationDatasetStructureData:
+    """Only retains chains that are metric-eligible in the cache."""
+
+    structure_data = deepcopy(structure_data)
+
+    for structure_data_entry in structure_data.values():
+        # Remove chains that are not metric-eligible
+        structure_data_entry.chains = {
+            chain_id: chain_data
+            for chain_id, chain_data in structure_data_entry.chains.items()
+            if chain_data.metric_eligible
+        }
+
+    return structure_data
 
 
 def select_final_validation_data(
@@ -1608,25 +1694,30 @@ def select_final_validation_data(
     structure_data = {pdb_id: structure_data[pdb_id] for pdb_id in relevant_pdb_ids}
 
     for pdb_id, structure_data_entry in structure_data.items():
-        # All monomer chains/interfaces are already valid for metric inclusion
-        if pdb_id in monomer_structure_data:
-            for chain_id in monomer_structure_data[pdb_id].chains:
+        # Go through the monomer and multimer sets sequentially
+        for set_name, set_structure_data in zip(
+            ("monomer", "multimer"),
+            (
+                monomer_structure_data,
+                multimer_structure_data,
+            ),
+        ):
+            if pdb_id not in set_structure_data:
+                continue
+
+            # Activate metrics for all chains in the monomer/multimer sets
+            for chain_id in set_structure_data[pdb_id].chains:
                 structure_data_entry.chains[chain_id].use_metrics = True
 
-            for interface_id in monomer_structure_data[pdb_id].interfaces:
+                # Add this for logging purposes
+                structure_data_entry.chains[chain_id].source_subset = set_name
+
+            # Activate metrics for all interfaces in the monomer/multimer sets
+            for interface_id in set_structure_data[pdb_id].interfaces:
                 structure_data_entry.interfaces[interface_id].use_metrics = True
 
-        # Multimer interfaces are all valid for metric inclusion but chains may not be
-        # (because low-homology for interfaces is based on co-occurrence of two chains
-        # so they could have high-homology individually)
-        if pdb_id in multimer_structure_data:
-            for interface_id in multimer_structure_data[pdb_id].interfaces:
-                structure_data_entry.interfaces[interface_id].use_metrics = True
-
-            for chain_id in multimer_structure_data[pdb_id].chains:
-                # Extra low-homology check
-                if multimer_structure_data[pdb_id].chains[chain_id].low_homology:
-                    structure_data_entry.chains[chain_id].use_metrics = True
+                # Add this for logging purposes
+                structure_data_entry.interfaces[interface_id].source_subset = set_name
 
     unfiltered_cache.structure_data = structure_data
 

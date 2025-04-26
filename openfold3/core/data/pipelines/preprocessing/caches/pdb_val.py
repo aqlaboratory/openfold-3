@@ -20,17 +20,19 @@ from openfold3.core.data.primitives.caches.clustering import (
     add_cluster_data,
 )
 from openfold3.core.data.primitives.caches.filtering import (
+    JOINT_LIGAND_EXCLUSION_SET,
     ChainDataPoint,
     InterfaceDataPoint,
     add_and_filter_alignment_representatives,
     add_ligand_data_to_monomer_cache,
-    assign_interface_metric_eligibility_labels,
     assign_ligand_model_fits,
+    assign_metric_eligibility_labels,
     build_provisional_clustered_val_dataset_cache,
     consolidate_training_set_data,
     filter_by_token_count,
     filter_cache_by_specified_interfaces,
     filter_cache_to_specified_chains,
+    filter_chains_by_metric_eligibility,
     filter_id_to_seq_by_cache,
     filter_only_ligand_ligand_metrics,
     func_with_n_filtered_chain_log,
@@ -150,6 +152,11 @@ def select_multimer_cache(
         random_seed=random_seed,
     )
 
+    # Don't need all chains anymore here, so remove chains that are not metric-eligible
+    filtered_cache.structure_data = filter_chains_by_metric_eligibility(
+        filtered_cache.structure_data
+    )
+
     # Filter by token count
     filtered_cache.structure_data = filter_by_token_count(
         filtered_cache.structure_data, max_token_count
@@ -225,7 +232,7 @@ def select_monomer_cache(
             if structure_data.chains[chain_id].low_homology:
                 keep_chain_datapoints.add(ChainDataPoint(pdb_id, chain_id))
 
-    # Filter the cache to only contain the specified chains
+    # Filter the cache to only contain the specified polymer chains
     logger.info("Filtering cache by specified chains.")
     filter_cache_to_specified_chains(filtered_cache, keep_chain_datapoints)
 
@@ -383,9 +390,10 @@ def create_pdb_val_dataset_cache_af3(
     )
 
     # Set metric_eligible attributes for all interfaces
-    assign_interface_metric_eligibility_labels(
+    assign_metric_eligibility_labels(
         val_dataset_cache=val_dataset_cache,
         min_ranking_model_fit=ranking_fit_threshold,
+        lig_exclusion_list=JOINT_LIGAND_EXCLUSION_SET,
     )
 
     # Build a validation dataset cache corresponding to the multimer set in SI 5.8
