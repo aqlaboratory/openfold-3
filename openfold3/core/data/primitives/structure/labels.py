@@ -196,6 +196,33 @@ def remove_atom_indices(atom_array: AtomArray) -> None:
     atom_array.del_annotation("_atom_idx")
 
 
+def assign_residue_indices(
+    atom_array: AtomArray, label: str = "_residue_idx", overwrite: bool = False
+) -> None:
+    if label in atom_array.get_annotation_categories() and not overwrite:
+        raise ValueError(f"Annotation field '{label}' already exists in AtomArray.")
+    else:
+        atom_array.set_annotation(
+            label,
+            struc.spread_residue_wise(
+                atom_array, np.arange(struc.get_residue_count(atom_array))
+            ),
+        )
+
+
+def remove_residue_indices(atom_array: AtomArray) -> None:
+    """Removes residue indices from the AtomArray
+
+    Deletes the "_residue_idx" field from the AtomArray. This is meant to be used after
+    temporary residue indices are no longer needed. Also see `assign_residue_indices`.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to remove residue indices from.
+    """
+    atom_array.del_annotation("_residue_idx")
+
+
 def update_author_to_pdb_labels(
     atom_array: AtomArray,
     use_author_res_id_if_missing: bool = True,

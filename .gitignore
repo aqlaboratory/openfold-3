@@ -8,5 +8,5 @@ dist
 
 # files from script downloads
 openfold3/resources/
-tests/test_data/
+tests/test_data/sample_feats.pickle
 cutlass/

@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from biotite.structure import AtomArray
 
-from openfold3.core.data.primitives.structure.cleanup import filter_bonds
+from openfold3.core.data.primitives.structure.cleanup import filter_fully_atomized_bonds
 from openfold3.core.data.primitives.structure.labels import get_token_starts
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 
@@ -89,14 +89,8 @@ def create_token_bonds(atom_array: AtomArray, token_index: np.ndarray) -> torch.
     """
     # Fully subset bonds with strict defintion to only the ones in AF3 SI Table 5
     # "token_bonds"
-    filter_bonds(
-        atom_array=atom_array,
-        keep_consecutive=False,
-        keep_polymer_ligand=True,
-        keep_ligand_ligand=True,
-        remove_larger_than=2.4,
-        remove_metal_coordination=True,
-        mask_intra_component=False,
+    atom_array = filter_fully_atomized_bonds(
+        atom_array,
     )
 
     # Initialize N_token x N_token bond matrix
@@ -104,9 +98,6 @@ def create_token_bonds(atom_array: AtomArray, token_index: np.ndarray) -> torch.
 
     # Get bonded atoms
     bond_partners = atom_array.bonds.as_array()[:, :2]
-
-    # Ensure that all relevant bonded atoms are atomized
-    assert atom_array.is_atomized[bond_partners].all()
 
     if bond_partners.size > 0:
         # Map atom indices to token indices to token-in-crop index
