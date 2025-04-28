@@ -146,39 +146,32 @@ class TestAF3Model:
     @pytest.mark.parametrize(
         "dtype", [torch.float32, torch.bfloat16], ids=lambda d: f"dtype={d}"
     )
-    def test_shape_small_kernels(self, dtype):
+    @pytest.mark.parametrize(
+        "model_phase", ["train", "eval"], ids=lambda p: f"model={p}"
+    )
+    def test_shape_small_kernels(self, dtype, model_phase):
         batch_size = consts.batch_size
         n_token = 18
         n_msa = 10
         n_templ = 3
 
         # Train
+        is_train = model_phase == "train"
         self.run_model(
             batch_size=batch_size,
             n_token=n_token,
             n_msa=n_msa,
             n_templ=n_templ,
             dtype=dtype,
-            train=True,
+            train=is_train,
             reduce_model_size=True,
             use_deepspeed_evo_attention=True,
         )
 
-        # Eval
-        self.run_model(
-            batch_size=batch_size,
-            n_token=n_token,
-            n_msa=n_msa,
-            n_templ=n_templ,
-            dtype=dtype,
-            train=False,
-            reduce_model_size=True,
-            use_deepspeed_evo_attention=True,
-        )
 
-    @pytest.mark.skip(
-        reason="Manually enable this for now, will add flag to run slow tests later."
-    )
+    # @pytest.mark.skip(
+    #     reason="Manually enable this for now, will add flag to run slow tests later."
+    # )
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
     @pytest.mark.parametrize(
