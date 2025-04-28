@@ -1,5 +1,4 @@
-import unittest
-
+import pytest
 import torch
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
@@ -12,7 +11,7 @@ from tests.config import consts
 from tests.data_utils import random_af3_features
 
 
-class TestAF3Model(unittest.TestCase):
+class TestAF3Model:
     def run_model(
         self,
         batch_size,
@@ -144,63 +143,64 @@ class TestAF3Model(unittest.TestCase):
 
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
-    def test_shape_small_kernels(self):
+    @pytest.mark.parametrize(
+        "dtype", [torch.float32, torch.bfloat16], ids=lambda d: f"dtype={d}"
+    )
+    def test_shape_small_kernels(self, dtype):
         batch_size = consts.batch_size
         n_token = 18
         n_msa = 10
         n_templ = 3
 
-        for dtype in [torch.float32, torch.bfloat16]:
-            # Train
-            self.run_model(
-                batch_size=batch_size,
-                n_token=n_token,
-                n_msa=n_msa,
-                n_templ=n_templ,
-                dtype=dtype,
-                train=True,
-                reduce_model_size=True,
-                use_deepspeed_evo_attention=True,
-            )
+        # Train
+        self.run_model(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=n_msa,
+            n_templ=n_templ,
+            dtype=dtype,
+            train=True,
+            reduce_model_size=True,
+            use_deepspeed_evo_attention=True,
+        )
 
-            # Eval
-            self.run_model(
-                batch_size=batch_size,
-                n_token=n_token,
-                n_msa=n_msa,
-                n_templ=n_templ,
-                dtype=dtype,
-                train=False,
-                reduce_model_size=True,
-                use_deepspeed_evo_attention=True,
-            )
+        # Eval
+        self.run_model(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=n_msa,
+            n_templ=n_templ,
+            dtype=dtype,
+            train=False,
+            reduce_model_size=True,
+            use_deepspeed_evo_attention=True,
+        )
 
-    @unittest.skip(
-        "Manually enable this for now, will add flag to run slow tests later."
+    @pytest.mark.skip(
+        reason="Manually enable this for now, will add flag to run slow tests later."
     )
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
-    def test_shape_large_eval(self):
+    @pytest.mark.parametrize(
+        "dtype", [torch.float32, torch.bfloat16], ids=lambda d: f"dtype={d}"
+    )
+    def test_shape_large_eval(self, dtype):
         batch_size = 1
         n_token = 384
         n_msa = 16384
         n_templ = 4
 
-        for dtype in [torch.float32, torch.bfloat16]:
-            self.run_model(
-                batch_size=batch_size,
-                n_token=n_token,
-                n_msa=n_msa,
-                n_templ=n_templ,
-                dtype=dtype,
-                train=False,
-                reduce_model_size=False,
-                use_deepspeed_evo_attention=True,
-            )
+        self.run_model(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=n_msa,
+            n_templ=n_templ,
+            dtype=dtype,
+            train=False,
+            reduce_model_size=False,
+            use_deepspeed_evo_attention=True,
+        )
 
-    # @unittest.skip(
-    # "Manually enable this for now, will add flag to run slow tests later."
-    # )
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
     def test_shape_large_bf16_train(self):
@@ -219,7 +219,3 @@ class TestAF3Model(unittest.TestCase):
             reduce_model_size=False,
             use_deepspeed_evo_attention=True,
         )
-
-
-if __name__ == "__main__":
-    unittest.main()
