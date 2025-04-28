@@ -136,6 +136,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         super().__init__()
         self.config = config
         self.max_atoms_per_token = config.max_atoms_per_token
+        self.per_sample_token_cutoff = config.per_sample_token_cutoff
 
         self.pairformer_embedding = PairformerEmbedding(
             **self.config["pairformer_embedding"],
@@ -248,6 +249,18 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             batch=batch, x=atom_positions_predicted, atom_mask=batch["atom_mask"]
         )
 
+        # TODO: Determine if this is the best way to handle PairFormer
+        #  memory limits depending on the number of samples
+        num_samples = repr_x_pred.shape[-3]
+        apply_per_sample = all(
+            [
+                not torch.is_grad_enabled(),
+                num_samples > 1,
+                self.per_sample_token_cutoff is not None,
+                repr_x_pred.shape[-2] > self.per_sample_token_cutoff,
+            ]
+        )
+
         # Embed trunk outputs
         si, zij = self.pairformer_embedding(
             si_input=si_input,
@@ -261,6 +274,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
+            apply_per_sample=apply_per_sample,
         )
 
         # Get atom mask padded to MAX_ATOMS_PER_TOKEN
@@ -282,7 +296,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         )
         aux_out["experimentally_resolved_logits"] = experimentally_resolved_logits
 
-        aux_out["pde_logits"] = self.pde(zij)
+        aux_out["pde_logits"] = self.pde(zij, apply_per_sample=apply_per_sample)
 
         if self.config.pae.enabled:
             aux_out["pae_logits"] = self.pae(zij)

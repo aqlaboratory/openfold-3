@@ -40,6 +40,7 @@ max_atoms_per_token = mlc.FieldReference(23, field_type=int)
 # Cutoffs for chunking ops per diffusion sample
 per_sample_token_cutoff = mlc.FieldReference(1500, field_type=int)
 per_sample_atom_cutoff = mlc.FieldReference(20000, field_type=int)
+per_sample_val_loss = mlc.FieldReference(False, field_type=bool)
 
 model_selection_metric_weights_config = mlc.FrozenConfigDict(
     {
@@ -93,6 +94,7 @@ project_config = mlc.ConfigDict(
                         },
                         "per_sample_token_cutoff": per_sample_token_cutoff,
                         "per_sample_atom_cutoff": per_sample_atom_cutoff,
+                        "per_sample_val_loss": per_sample_val_loss,
                         "offload_inference": {
                             "enabled": False,
                             "token_cutoff": None,
@@ -335,6 +337,7 @@ project_config = mlc.ConfigDict(
                 },
                 "heads": {
                     "max_atoms_per_token": max_atoms_per_token,
+                    "per_sample_token_cutoff": per_sample_token_cutoff,
                     "pairformer_embedding": {
                         "pairformer": {
                             "c_s": c_s,
@@ -362,7 +365,6 @@ project_config = mlc.ConfigDict(
                         "max_bin": 20.75,
                         "no_bin": 15,
                         "inf": inf,
-                        "per_sample_token_cutoff": per_sample_token_cutoff,
                         "linear_init_params": lin_init.pairformer_head_init,
                     },
                     "pae": {
@@ -396,6 +398,7 @@ project_config = mlc.ConfigDict(
                     },
                 },
                 "loss_module": {
+                    "per_sample_val_loss": per_sample_val_loss,
                     "confidence_loss_names": [
                         "plddt",
                         "pde",
@@ -445,6 +448,7 @@ project_config = mlc.ConfigDict(
                 },
             },
             "confidence": {
+                "per_sample_atom_cutoff": per_sample_atom_cutoff,
                 "pde": {
                     "max_bin": 31,
                     "no_bins": 64,
