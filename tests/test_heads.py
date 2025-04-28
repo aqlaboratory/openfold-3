@@ -7,7 +7,7 @@ from openfold3.core.model.heads.head_modules import AuxiliaryHeadsAllAtom
 from openfold3.core.model.heads.prediction_heads import (
     ExperimentallyResolvedHeadAllAtom,
     PairformerEmbedding,
-    PerResidueLDDAllAtom,
+    PerResidueLDDTAllAtom,
     PredictedAlignedErrorHead,
     PredictedDistanceErrorHead,
 )
@@ -59,7 +59,7 @@ class TestPLDDTHead(unittest.TestCase):
         c_s = consts.c_s
         c_out = 50
 
-        plddt_head = PerResidueLDDAllAtom(
+        plddt_head = PerResidueLDDTAllAtom(
             c_s, c_out, max_atoms_per_token=max_atoms_per_token.get()
         )
 

@@ -29,16 +29,26 @@ def read_multichain_fasta(input_path: Path) -> dict[str, str]:
         Dictionary mapping chain IDs to sequences.
     """
     chain_to_sequence = {}
+    line_count = 0
+
     with open(input_path) as file, contextlib.suppress(StopIteration):
         while True:
             chain = next(file)
-            assert chain.startswith(">"), "Invalid FASTA format"
+            line_count += 1
+            assert chain.startswith(">"), f"Invalid FASTA format on line {line_count}"
             chain = chain.replace(">", "").strip()
 
             seq = next(file).strip()
-            assert not seq.startswith(">"), "Invalid FASTA format"
+            line_count += 1
+            assert not seq.startswith(">"), f"Invalid FASTA format on line {line_count}"
 
-            chain_to_sequence[chain] = seq
+            if chain in chain_to_sequence:
+                logger.warning(
+                    f"Duplicate header {chain} in line {line_count - 1}, skipping."
+                )
+                continue
+            else:
+                chain_to_sequence[chain] = seq
 
     return chain_to_sequence
 

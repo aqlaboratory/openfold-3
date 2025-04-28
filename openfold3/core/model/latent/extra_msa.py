@@ -97,6 +97,7 @@ class ExtraMSABlock(MSABlock):
         msa_mask: torch.Tensor,
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
+        transition_ckpt_chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
         use_flash: bool = False,
@@ -180,6 +181,7 @@ class ExtraMSABlock(MSABlock):
                     m,
                     mask=msa_mask,
                     chunk_size=chunk_size,
+                    ckpt_chunk_size=transition_ckpt_chunk_size,
                 ),
                 inplace=inplace_safe,
             )

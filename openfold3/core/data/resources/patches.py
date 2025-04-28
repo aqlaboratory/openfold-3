@@ -5,6 +5,7 @@ from collections.abc import Generator
 import biotite.structure as struc
 import networkx as nx
 import numpy as np
+from biotite.structure.info import link_type
 
 
 def construct_atom_array(atoms: list[struc.Atom]) -> struc.AtomArray:
@@ -90,3 +91,230 @@ def molecule_iter(
 
     for indices in molecule_indices:
         yield atom_array[indices]
+
+
+_PEPTIDE_LINKS = ["PEPTIDE LINKING", "L-PEPTIDE LINKING", "D-PEPTIDE LINKING"]
+_NUCLEIC_LINKS = ["RNA LINKING", "DNA LINKING"]
+
+
+def connect_via_residue_names(atoms, inter_residue=True, custom_bond_dict=None):
+    """
+    IMPORTANT: This is a copy of Biotite's original connect_via_residue_names function,
+    ported from Cython to Python. It uses the patched _connect_inter_residue function,
+    which previously had a case-sensitivity issue with extracted link types that could
+    cause disconnected chains.
+
+    ================================================================================
+    ORIGINAL DOCSTRING BELOW:
+    ================================================================================
+
+
+    connect_via_residue_names(atoms, atom_mask=None, inter_residue=True)
+
+    Create a :class:`BondList` for a given atom array (stack), based on the deposited
+    bonds for each residue in the RCSB ``components.cif`` dataset.
+
+    Bonds between two adjacent residues are created for the atoms expected to connect
+    these residues, i.e. ``'C'`` and ``'N'`` for peptides and ``"O3'"`` and ``'P'`` for
+    nucleotides.
+
+    Parameters
+    ----------
+    atoms : AtomArray, shape=(n,) or AtomArrayStack, shape=(m,n)
+        The structure to create the :class:`BondList` for.
+    inter_residue : bool, optional
+        If true, connections between consecutive amino acids and nucleotides are also
+        added.
+    custom_bond_dict : dict (str -> dict ((str, str) -> int)), optional
+        A dictionary of dictionaries: The outer dictionary maps residue names to inner
+        dictionaries. The inner dictionary maps tuples of two atom names to their
+        respective :class:`BondType` (represented as integer). If given, these bonds are
+        used instead of the bonds read from ``components.cif``.
+
+    Returns
+    -------
+    BondList
+        The created bond list. No bonds are added for residues that are not found in
+        ``components.cif``.
+
+    See also
+    --------
+    connect_via_distances
+
+    Notes
+    -----
+    This method can only find bonds for residues in the RCSB *Chemical Component
+    Dictionary*, unless `custom_bond_dict` is set. Although this includes most molecules
+    one encounters, this will fail for exotic molecules, e.g. specialized inhibitors.
+
+    .. currentmodule:: biotite.structure.info
+
+    To supplement `custom_bond_dict` with bonds for residues from the *Chemical
+    Component Dictionary*  you can use :meth:`bonds_in_residue()`.
+
+    >>> import pprint
+    >>> custom_bond_dict = {
+    ...     "XYZ": {
+    ...         ("A", "B"): BondType.SINGLE,
+    ...         ("B", "C"): BondType.SINGLE
+    ...     }
+    ... }
+    >>> # Supplement with bonds for common residues
+    >>> custom_bond_dict["ALA"] = bonds_in_residue("ALA")
+    >>> pp = pprint.PrettyPrinter(width=40)
+    >>> pp.pprint(custom_bond_dict)
+    {'ALA': {('C', 'O'): <BondType.DOUBLE: 2>,
+             ('C', 'OXT'): <BondType.SINGLE: 1>,
+             ('CA', 'C'): <BondType.SINGLE: 1>,
+             ('CA', 'CB'): <BondType.SINGLE: 1>,
+             ('CA', 'HA'): <BondType.SINGLE: 1>,
+             ('CB', 'HB1'): <BondType.SINGLE: 1>,
+             ('CB', 'HB2'): <BondType.SINGLE: 1>,
+             ('CB', 'HB3'): <BondType.SINGLE: 1>,
+             ('N', 'CA'): <BondType.SINGLE: 1>,
+             ('N', 'H'): <BondType.SINGLE: 1>,
+             ('N', 'H2'): <BondType.SINGLE: 1>,
+             ('OXT', 'HXT'): <BondType.SINGLE: 1>},
+     'XYZ': {('A', 'B'): <BondType.SINGLE: 1>,
+             ('B', 'C'): <BondType.SINGLE: 1>}}
+
+    """
+    bonds = []
+    atom_names = atoms.atom_name
+    res_names = atoms.res_name
+
+    residue_starts = struc.get_residue_starts(atoms, add_exclusive_stop=True)
+    # Omit exclusive stop in 'residue_starts'
+    for res_i in range(len(residue_starts) - 1):
+        curr_start_i = residue_starts[res_i]
+        next_start_i = residue_starts[res_i + 1]
+
+        if custom_bond_dict is None:
+            bond_dict_for_res = struc.info.bonds_in_residue(res_names[curr_start_i])
+        else:
+            bond_dict_for_res = custom_bond_dict.get(res_names[curr_start_i], {})
+
+        atom_names_in_res = atom_names[curr_start_i:next_start_i]
+        for (atom_name1, atom_name2), bond_type in bond_dict_for_res.items():
+            atom_indices1 = np.where(atom_names_in_res == atom_name1)[0].astype(
+                np.int64, copy=False
+            )
+            atom_indices2 = np.where(atom_names_in_res == atom_name2)[0].astype(
+                np.int64, copy=False
+            )
+            # In rare cases the same atom name may appear multiple times
+            # (e.g. in altlocs)
+            # -> create all possible bond combinations
+            for i in range(atom_indices1.shape[0]):
+                for j in range(atom_indices2.shape[0]):
+                    bonds.append(
+                        (
+                            curr_start_i + atom_indices1[i],
+                            curr_start_i + atom_indices2[j],
+                            bond_type,
+                        )
+                    )
+
+    bond_list = struc.bonds.BondList(atoms.array_length(), np.array(bonds))
+
+    if inter_residue:
+        inter_bonds = _connect_inter_residue(atoms, residue_starts)
+        return bond_list.merge(inter_bonds)
+    else:
+        return bond_list
+
+
+def _connect_inter_residue(atoms, residue_starts):
+    """
+    IMPORTANT: This is a copy of Biotite's original _connect_inter_residue function
+    ported from Cython to Python, and patches an issue introduced by case-sensitivity of
+    extracted link types which can cause disconnected chains.
+
+    ================================================================================
+    ORIGINAL DOCSTRING BELOW:
+    ================================================================================
+
+    Create a :class:`BondList` containing the bonds between adjacent
+    amino acid or nucleotide residues.
+
+    Parameters
+    ----------
+    atoms : AtomArray or AtomArrayStack
+        The structure to create the :class:`BondList` for.
+    residue_starts : ndarray, dtype=int
+        Return value of
+        ``get_residue_starts(atoms, add_exclusive_stop=True)``.
+
+    Returns
+    -------
+    BondList
+        A bond list containing all inter residue bonds.
+    """
+    bonds = []
+    atom_names = atoms.atom_name
+    res_names = atoms.res_name
+    res_ids = atoms.res_id
+    chain_ids = atoms.chain_id
+
+    # Iterate over all starts excluding:
+    #   - the last residue and
+    #   - exclusive end index of 'atoms'
+    for i in range(len(residue_starts) - 2):
+        curr_start_i = residue_starts[i]
+        next_start_i = residue_starts[i + 1]
+        after_next_start_i = residue_starts[i + 2]
+
+        # Check if the current and next residue is in the same chain
+        if chain_ids[next_start_i] != chain_ids[curr_start_i]:
+            continue
+        # Check if the current and next residue
+        # have consecutive residue IDs
+        # (Same residue ID is also possible if insertion code is used)
+        if res_ids[next_start_i] - res_ids[curr_start_i] > 1:
+            continue
+
+        # Get link type for this residue from RCSB components.cif
+        curr_link = link_type(res_names[curr_start_i]).upper()  # FIX IS HERE
+        next_link = link_type(res_names[next_start_i]).upper()  # FIX IS HERE
+
+        if curr_link in _PEPTIDE_LINKS and next_link in _PEPTIDE_LINKS:
+            curr_connect_atom_name = "C"
+            next_connect_atom_name = "N"
+        elif curr_link in _NUCLEIC_LINKS and next_link in _NUCLEIC_LINKS:
+            curr_connect_atom_name = "O3'"
+            next_connect_atom_name = "P"
+        else:
+            # Create no bond if the connection types of consecutive
+            # residues are not compatible
+            continue
+
+        # Index in atom array for atom name in current residue
+        # Addition of 'curr_start_i' is necessary, as only a slice of
+        # 'atom_names' is taken, beginning at 'curr_start_i'
+        curr_connect_indices = (
+            curr_start_i
+            + np.where(atom_names[curr_start_i:next_start_i] == curr_connect_atom_name)[
+                0
+            ]
+        )
+        # Index in atom array for atom name in next residue
+        next_connect_indices = (
+            next_start_i
+            + np.where(
+                atom_names[next_start_i:after_next_start_i] == next_connect_atom_name
+            )[0]
+        )
+        if len(curr_connect_indices) == 0 or len(next_connect_indices) == 0:
+            # The connector atoms are not found in the adjacent residues
+            # -> skip this bond
+            continue
+
+        bonds.append(
+            (
+                curr_connect_indices[0],
+                next_connect_indices[0],
+                struc.bonds.BondType.SINGLE,
+            )
+        )
+
+    return struc.bonds.BondList(atoms.array_length(), np.array(bonds, dtype=np.uint32))

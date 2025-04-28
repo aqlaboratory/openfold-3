@@ -135,6 +135,11 @@ class TestMSAModuleEmbedder(unittest.TestCase):
         msa_emb_config = af3_config.architecture.msa.msa_module_embedder
         msa_emb_config.update({"c_s_input": c_s_input})
 
+        batch_asym_ids = [
+            torch.as_tensor(random_asym_ids(n_token)) for _ in range(batch_size)
+        ]
+        batch_asym_ids = torch.stack(batch_asym_ids)
+
         batch = {
             "msa": torch.rand((batch_size, n_total_msa_seq, n_token, one_hot_dim)),
             "has_deletion": torch.ones((batch_size, n_total_msa_seq, n_token)),
@@ -143,6 +148,7 @@ class TestMSAModuleEmbedder(unittest.TestCase):
             "num_paired_seqs": torch.randint(
                 low=n_total_msa_seq // 4, high=n_total_msa_seq // 2, size=(batch_size,)
             ),
+            "asym_id": batch_asym_ids,
         }
 
         s_input = torch.rand(batch_size, n_token, c_s_input)
@@ -153,10 +159,10 @@ class TestMSAModuleEmbedder(unittest.TestCase):
         n_sampled_seqs = msa.shape[-3]
 
         # Check that the number of sampled sequences is between the number of
-        # uniprot seqs and the total number of sequences
+        # uniprot seqs and the total number of sequences for each sample in the batch
         max_paired_seqs = torch.max(batch["num_paired_seqs"])
         self.assertTrue(
-            (n_sampled_seqs > max_paired_seqs) & (n_sampled_seqs < n_total_msa_seq)
+            (n_sampled_seqs > max_paired_seqs) & (n_sampled_seqs <= n_total_msa_seq)
         )
         self.assertTrue(
             msa.shape == (batch_size, n_sampled_seqs, n_token, msa_emb_config.c_m)

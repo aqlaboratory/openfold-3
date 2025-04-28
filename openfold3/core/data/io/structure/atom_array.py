@@ -39,19 +39,22 @@ def write_atomarray_to_npz(
         np.savez(output_file, **npz_dict)
 
 
-def read_atomarray_from_npz(input_file: Path):
+def read_atomarray_from_npz(input_file: Path, allow_pickle=False) -> AtomArray:
     """Reads an AtomArray from npz format.
 
     Args:
         input_file (Path):
             .npz file containing annotation-values pairs which the AtomArray is created
             from.
+        allow_pickle (bool):
+            Whether to allow loading pickled objects. Can be necessary if the saved
+            AtomArray contained object-type annotations. Defaults to False.
 
     Returns:
         AtomArray object
     """
 
-    npz_obj = np.load(input_file)
+    npz_obj = np.load(input_file, allow_pickle=allow_pickle)
 
     # Initialize empty atom array
     n_atoms = npz_obj["coord"].shape[0]
