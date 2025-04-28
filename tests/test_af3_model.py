@@ -111,32 +111,23 @@ class TestAF3Model:
             3,
         )
 
-    def test_shape_small_fp32(self):
+    @pytest.mark.parametrize(
+        "model_phase", ["train", "eval"], ids=lambda p: f"model={p}"
+    )
+    def test_shape_small_fp32(self, model_phase):
         batch_size = consts.batch_size
         n_token = 18
         n_msa = 10
         n_templ = 3
 
-        # Train
+        is_train = model_phase == "train"
         self.run_model(
             batch_size=batch_size,
             n_token=n_token,
             n_msa=n_msa,
             n_templ=n_templ,
             dtype=torch.float32,
-            train=True,
-            reduce_model_size=True,
-            use_deepspeed_evo_attention=False,
-        )
-
-        # Eval
-        self.run_model(
-            batch_size=batch_size,
-            n_token=n_token,
-            n_msa=n_msa,
-            n_templ=n_templ,
-            dtype=torch.float32,
-            train=False,
+            train=is_train,
             reduce_model_size=True,
             use_deepspeed_evo_attention=False,
         )
@@ -155,7 +146,6 @@ class TestAF3Model:
         n_msa = 10
         n_templ = 3
 
-        # Train
         is_train = model_phase == "train"
         self.run_model(
             batch_size=batch_size,
