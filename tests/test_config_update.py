@@ -95,10 +95,10 @@ class TestAF3ProjectConfigGeneration:
         model_config = project_entry.get_model_config_with_update(model_update)
 
         assert model_config.settings.model_selection_weight_scheme == "fine_tuning"
-        assert (
-            model_config.architecture.msa.msa_module.transition_ckpt_chunk_size is None
-        )
         assert model_config.architecture.shared.diffusion.no_samples == 32
+        # Check that default default settings are not overwritten
+        # See openfold3.projects.of3_all_atom.config.model_config
+        assert model_config.settings.memory.eval.per_sample_token_cutoff == 1500
 
     def test_bad_model_update_fails(self):
         """Verify that a model update that has an invalid field is not allowed."""
