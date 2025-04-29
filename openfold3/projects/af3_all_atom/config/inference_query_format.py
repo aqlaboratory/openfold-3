@@ -46,15 +46,23 @@ class Bond(NamedTuple):
 class Chain(BaseModel):
     molecule_type: Annotated[MoleculeType, BeforeValidator(_convert_molecule_type)]
     chain_ids: Annotated[list[str], BeforeValidator(_ensure_list)]
-    sequence: str
+    sequence: Optional[str] = None
+    smiles: Optional[str] = None
+    ccd_codes: Optional[Annotated[list[str], BeforeValidator(_ensure_list)]] = None
     # Msa definition
     use_msas: bool = True
     unpaired_msa_file_paths: Optional[list[FilePath]] = None
-    paired_msa_file_path: Optional[FilePath] = None
+    paired_msa_file_path: Optional[
+        Annotated[list[FilePath], BeforeValidator(_ensure_list)]
+    ] = None
     # # Template definition
     # use_templates: bool = False
     # templates: ...
     sdf_file_path: Optional[FilePath] = None
+
+    # TODO(jennifer): Add validations to this class 
+    # - if molecule type is protien / dna / rna - must specify sequence
+    # - if molecule type is ligand - either ccd or smiles needs to be specifified
 
 
 class Query(BaseModel):
@@ -64,6 +72,6 @@ class Query(BaseModel):
 
 class InferenceQuerySet(BaseModel):
     seeds: list[int] = [42]
-    queries: list[Query]
-    ccd_file_path: FilePathOrNone
-    msa_directory_path: DirectoryPathOrNone
+    queries: dict[str, Query]
+    ccd_file_path: FilePathOrNone = None
+    msa_directory_path: DirectoryPathOrNone = None
