@@ -33,8 +33,6 @@ class TestAF3Model(unittest.TestCase):
         if train:
             config.settings.blocks_per_ckpt = 1
             config.settings.ckpt_intermediate_steps = True
-        else:
-            config.settings.memory.eval.chunk_size = 4
 
         if reduce_model_size:
             # To avoid memory issues in CI
@@ -176,9 +174,6 @@ class TestAF3Model(unittest.TestCase):
                 use_deepspeed_evo_attention=True,
             )
 
-    @unittest.skip(
-        "Manually enable this for now, will add flag to run slow tests later."
-    )
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
     def test_shape_large_eval(self):
@@ -199,9 +194,6 @@ class TestAF3Model(unittest.TestCase):
                 use_deepspeed_evo_attention=True,
             )
 
-    # @unittest.skip(
-    # "Manually enable this for now, will add flag to run slow tests later."
-    # )
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
     def test_shape_large_bf16_train(self):
