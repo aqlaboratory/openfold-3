@@ -176,9 +176,6 @@ class TestAF3Model(unittest.TestCase):
                 use_deepspeed_evo_attention=True,
             )
 
-    @unittest.skip(
-        "Manually enable this for now, will add flag to run slow tests later."
-    )
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
     def test_shape_large_eval(self):
@@ -199,9 +196,6 @@ class TestAF3Model(unittest.TestCase):
                 use_deepspeed_evo_attention=True,
             )
 
-    # @unittest.skip(
-    # "Manually enable this for now, will add flag to run slow tests later."
-    # )
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
     def test_shape_large_bf16_train(self):
