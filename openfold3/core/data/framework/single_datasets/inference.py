@@ -39,13 +39,20 @@ logger = logging.getLogger("__name__")
 # TODO: Replace these with actual appropriate implementations
 def atom_array_from_query(*args, **kwargs) -> AtomArray: ...
 
+
 def preprocess_atom_array(*args, **kwargs) -> AtomArray: ...
+
 
 def get_reference_conformer_data_inference_af3(*args, **kwargs) -> list: ...
 
+
 def process_msas_inference_af3(*args, **kwargs): ...
 
+
 def process_template_structures_inference_af3(*args, **kwargs): ...
+
+
+def do_seeding(seed: int): ...
 
 
 # TODO: update docstring with inputs
@@ -68,7 +75,7 @@ class InferenceDataset(Dataset):
 
         # TODO: Any seeding configuration like in the old InferenceDataset could go here
         ...
-        
+
         # TODO: Any other settings, e.g. from dataset_config, could go here
         ...
 
@@ -100,14 +107,14 @@ class InferenceDataset(Dataset):
         atom_array: AtomArray,
     ) -> tuple[dict, AtomArray | torch.Tensor]:
         """Creates the target structure features."""
-        
+
         # Preprocess the raw AtomArray and add required IDs (e.g. do tokenization, add
         # component_id, token_position, ...)
         atom_array = preprocess_atom_array(
             atom_array=atom_array,
         )
         self.n_tokens = get_token_count(atom_array)
-        
+
         # Set up the RDKit mols and conformers for everything in the query
         processed_reference_molecules = get_reference_conformer_data_inference_af3(
             atom_array=atom_array, query_data=query
@@ -146,7 +153,6 @@ class InferenceDataset(Dataset):
         }
 
         return structure_features
-
 
     @log_runtime_memory(runtime_dict_key="runtime-create-msa-features")
     def create_msa_features(self, atom_array: AtomArray, *args, **kwargs) -> dict:
@@ -222,7 +228,6 @@ class InferenceDataset(Dataset):
 
         return template_features
 
-
     @log_runtime_memory(runtime_dict_key="runtime-create-all-features")
     def create_all_features(
         self,
@@ -231,16 +236,14 @@ class InferenceDataset(Dataset):
         """Creates all features for a single datapoint."""
 
         features = {}
-        
+
         # Create initial AtomArray from query entry
         # NOTE: We could elevate this outside of the feature creation if we want, or we
         # could also make it part of create_structure_features. It initially felt like
         # this deserves an elevated role because the AtomArray is a central object to
         # all functions, but then what we actually use later is the preprocessed
         # AtomArray coming out of create_structure_features anyways.
-        raw_atom_array = atom_array_from_query(
-            query
-        )
+        raw_atom_array = atom_array_from_query(query)
 
         # Target structure and conformer features
         structure_features = self.create_structure_features(
@@ -248,7 +251,7 @@ class InferenceDataset(Dataset):
             atom_array=raw_atom_array,
         )
         features.update(structure_features)
-        
+
         # Obtain the preprocessed AtomArray with all the additional necessary IDs
         # NOTE: Would be a bit cleaner to return the AtomArray as an elevated key in
         # sample_data outside of the regular features, but not sure if this would make
@@ -260,7 +263,8 @@ class InferenceDataset(Dataset):
 
         # MSA features
         msa_features = self.create_msa_features(
-            preprocessed_atom_array, ...,
+            preprocessed_atom_array,
+            ...,
         )
         features.update(msa_features)
 
@@ -270,7 +274,6 @@ class InferenceDataset(Dataset):
 
         return features
 
-
     def __getitem__(
         self, index: int
     ) -> dict[str : torch.Tensor | dict[str, torch.Tensor]]:
@@ -279,14 +282,14 @@ class InferenceDataset(Dataset):
         query_id = datapoint["query_id"]
         query = self.query_cache[query_id]
         seed = datapoint["seed"]
-        
+
         # TODO: Any particular seeding code could go here, e.g. seed_everything(seed).
         # See old inference dataset draft.
-        ...
-        
+        do_seeding(seed)  # Added this to avoid Ruff complaint
+
         # TODO: Could wrap this in try/except
         features = self.create_all_features(query)
-        
+
         return features
 
     def __len__(self):
