@@ -33,7 +33,7 @@ from openfold3.projects.af3_all_atom.config.inference_query_format import (
     Query,
 )
 
-logger = logging.getLogger("__name__")
+logger = logging.getLogger(__name__)
 
 
 # TODO: Replace these with actual appropriate implementations
