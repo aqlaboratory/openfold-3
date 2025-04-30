@@ -300,15 +300,11 @@ def parse_target_structure(
     """
     if use_s3_monomer_format:
         target_file = (
-            target_structures_directory
-            / Path(pdb_id)
-            / Path(f"structure.{structure_format}")
+            target_structures_directory / pdb_id / f"structure.{structure_format}"
         )
     else:
         target_file = (
-            target_structures_directory
-            / Path(pdb_id)
-            / Path(f"{pdb_id}.{structure_format}")
+            target_structures_directory / pdb_id / f"{pdb_id}.{structure_format}"
         )
 
     if structure_format == "pkl":

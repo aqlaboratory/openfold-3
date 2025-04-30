@@ -113,13 +113,11 @@ class BaseAF3Dataset(SingleDataset, ABC):
         self.reference_molecule_directory = dataset_config["dataset_paths"][
             "reference_molecule_directory"
         ]
-        ## VS: not the cleanest solution but retains backwards compatibility
-        if "use_s3_monomer_format" in dataset_config["dataset_paths"]:
-            self.use_s3_monomer_format = dataset_config["dataset_paths"][
-                "use_s3_monomer_format"
-            ]
-        else:
-            self.use_s3_monomer_format = False
+
+        # VS: not the cleanest solution but retains backwards compatibility
+        self.use_s3_monomer_format = dataset_config["dataset_paths"].get(
+            "use_s3_monomer_format", False
+        )
 
         # Dataset/datapoint cache
         # TODO: rename dataset_cache_file to dataset_cache_path to signal that it can be

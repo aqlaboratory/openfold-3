@@ -186,12 +186,15 @@ def sample_templates(
         # Load template cache numpy file
         if use_s3_monomer_format:
             template_file_name = (
-                f"{chain_data['alignment_representative_id']}" + "/template.npz"
+                Path(chain_data["alignment_representative_id"]) / "template.npz"
             )
         else:
-            template_file_name = chain_data["alignment_representative_id"] + ".npz"
+            template_file_name = Path(
+                chain_data["alignment_representative_id"]
+            ).with_suffix(".npz")
+
         template_cache = np.load(
-            template_cache_directory / Path(template_file_name), allow_pickle=True
+            template_cache_directory / template_file_name, allow_pickle=True
         )
 
         # Unpack into dict

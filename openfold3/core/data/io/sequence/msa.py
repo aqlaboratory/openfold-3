@@ -299,12 +299,12 @@ def parse_msas_preparsed(
     # Parse npz file of the representative
     if use_s3_monomer_format:
         pre_parsed_msas = np.load(
-            folder_path / Path(rep_id) / Path("alignment.npz"),
+            folder_path / rep_id / "alignment.npz",
             allow_pickle=True,
         )
     else:
         pre_parsed_msas = np.load(
-            folder_path / Path(f"{rep_id}.npz"),
+            folder_path / f"{rep_id}.npz",
             allow_pickle=True,
         )
 
