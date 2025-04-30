@@ -114,6 +114,11 @@ class BaseAF3Dataset(SingleDataset, ABC):
             "reference_molecule_directory"
         ]
 
+        # VS: not the cleanest solution but retains backwards compatibility
+        self.use_s3_monomer_format = dataset_config["dataset_paths"].get(
+            "use_s3_monomer_format", False
+        )
+
         # Dataset/datapoint cache
         # TODO: rename dataset_cache_file to dataset_cache_path to signal that it can be
         # a directory or a file
@@ -171,6 +176,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
             preferred_chain_or_interface=preferred_chain_or_interface,
             structure_format=self.target_structure_file_format,
             per_chain_metadata=self.dataset_cache.structure_data[pdb_id].chains,
+            use_s3_monomer_format=self.use_s3_monomer_format,
         )
 
         # Processed reference conformers
@@ -245,6 +251,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
             min_chains_paired_partial=self.msa.min_chains_paired_partial,
             pairing_mask_keys=self.msa.pairing_mask_keys,
             moltypes=self.msa.moltypes,
+            use_s3_monomer_format=self.use_s3_monomer_format,
         )
         msa_features = featurize_msa_af3(
             atom_array=atom_array,
@@ -275,6 +282,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
             template_structure_array_directory=self.template_structure_array_directory,
             template_file_format=self.template_file_format,
             ccd=self.ccd,
+            use_s3_monomer_format=self.use_s3_monomer_format,
         )
 
         template_features = featurize_template_structures_af3(
