@@ -186,7 +186,7 @@ def sample_templates(
         # Load template cache numpy file
         if use_s3_monomer_format:
             template_file_name = (
-                f'{chain_data["alignment_representative_id"]}' + "/template.npz"
+                f"{chain_data['alignment_representative_id']}" + "/template.npz"
             )
         else:
             template_file_name = chain_data["alignment_representative_id"] + ".npz"

@@ -322,9 +322,9 @@ def map_str_array_to_idx_array(
             msa_idx[msa_array == residue] = idx
     # Replace positions not in the molecule type's alphabet with the unknown index
     msa_idx[~np.isin(msa_array, MOLECULE_TYPE_TO_RESIDUES_1[molecule_type])] = (
-        MOLECULE_TYPE_TO_RESIDUES_POS_MAP[
-            molecule_type
-        ][MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_1[molecule_type]]
+        MOLECULE_TYPE_TO_RESIDUES_POS_MAP[molecule_type][
+            MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_1[molecule_type]
+        ]
     )
 
     return msa_idx
