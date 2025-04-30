@@ -77,9 +77,10 @@ class DefaultDatasetConfigBuilder:
     def _get_sanitized_paths(self, dataset_paths: mlc.ConfigDict):
         input_paths = {}
         for name, value in dataset_paths.iteritems():
+            # Check if the value is Path or has an accepted string/bool/None value
             if value in ["none", "None", None]:
                 input_paths[name] = None
-            elif name.endswith("_file_format"):
+            elif name.endswith("_format"):
                 input_paths[name] = value
             else:
                 input_paths[name] = Path(value)
