@@ -159,6 +159,7 @@ class InferenceDataset(Dataset):
         """Creates the MSA features."""
         # NOTE: Only here for avoiding invalid syntax highlighting, but this will likely
         # not be an argument in the future
+        # TODO: add the updated MSA pipeline here
         pdb_id = None
 
         # TODO: Implement a custom inference-adjusted function that returns
@@ -197,6 +198,7 @@ class InferenceDataset(Dataset):
         """Creates the template features."""
         # NOTE: Only here for avoiding invalid syntax highlighting, but this will likely
         # not be an argument in the future
+        # TODO: add the updated template pipeline here
         pdb_id = None
 
         # TODO: Implement a custom inference-adjusted function that returns
