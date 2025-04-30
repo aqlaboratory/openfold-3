@@ -60,7 +60,7 @@ class Chain(BaseModel):
     # templates: ...
     sdf_file_path: Optional[FilePath] = None
 
-    # TODO(jennifer): Add validations to this class 
+    # TODO(jennifer): Add validations to this class
     # - if molecule type is protien / dna / rna - must specify sequence
     # - if molecule type is ligand - either ccd or smiles needs to be specifified
 

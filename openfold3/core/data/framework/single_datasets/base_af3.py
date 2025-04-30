@@ -44,7 +44,7 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
 )
 from openfold3.core.data.primitives.structure.tokenization import add_token_positions
 
-logger = logging.getLogger("__name__")
+logger = logging.getLogger(__name__)
 
 
 # TODO: update docstring with inputs
