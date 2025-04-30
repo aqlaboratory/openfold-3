@@ -291,6 +291,29 @@ class MsaArray:
             "metadata": np.array(self.metadata),
         }
 
+    def subset(self, row_mask: np.ndarray[bool]) -> MsaArray:
+        """Subsets the MsaArray based on a boolean mask.
+
+        Args:
+            row_mask (np.ndarray[bool]):
+                Boolean mask to subset the MSA array.
+
+        Returns:
+            MsaArray:
+                A new MsaArray object containing the subsetted MSA arrays.
+        """
+        msa = self.msa[row_mask, :]
+        deletion_matrix = self.deletion_matrix[row_mask, :]
+        if isinstance(self.metadata, pd.DataFrame):
+            metadata = self.metadata[row_mask]
+        else:
+            ## is python list
+            metadata = [
+                self.metadata[i] for i in range(len(self.metadata)) if row_mask[i]
+            ]
+
+        return MsaArray(msa=msa, deletion_matrix=deletion_matrix, metadata=metadata)
+
 
 @dataclasses.dataclass(frozen=False)
 class MsaArrayCollection:
