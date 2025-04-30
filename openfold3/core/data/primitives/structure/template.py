@@ -112,6 +112,7 @@ def sample_templates(
     chain_id: str,
     template_structure_array_directory: Path | None,
     template_file_format: str,
+    use_s3_monomer_format: bool = False,
 ) -> dict[str, TemplateCacheEntry] | dict[None]:
     """Samples templates to featurize for a given chain.
 
@@ -134,6 +135,10 @@ def sample_templates(
             arrays are stored.
         template_file_format (str):
             The format of the template structures.
+        use_s3_monomer_format (bool):
+            Whether template cache filepath is expected to be in the s3 monomer
+            format: <aln_dir>/<mgy_id>/template.npz
+
 
     Returns:
         dict[str, TemplateCacheEntry] | dict[None]:
@@ -179,7 +184,12 @@ def sample_templates(
 
     if k > 0:
         # Load template cache numpy file
-        template_file_name = chain_data["alignment_representative_id"] + ".npz"
+        if use_s3_monomer_format:
+            template_file_name = (
+                f'{chain_data["alignment_representative_id"]}' + "/template.npz"
+            )
+        else:
+            template_file_name = chain_data["alignment_representative_id"] + ".npz"
         template_cache = np.load(
             template_cache_directory / Path(template_file_name), allow_pickle=True
         )

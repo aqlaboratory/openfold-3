@@ -23,9 +23,9 @@ class SequenceDataset:
             fasta_str = infile.read()
             sequences, labels = parsers.parse_fasta(fasta_str)
 
-        assert len(set(labels)) == len(labels), (
-            "Sequence labels need to be unique. Duplicates found!"
-        )
+        assert len(set(labels)) == len(
+            labels
+        ), "Sequence labels need to be unique. Duplicates found!"
 
         return cls(labels, sequences)
 

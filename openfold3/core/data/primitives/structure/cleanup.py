@@ -750,9 +750,9 @@ def get_small_ligand_chain_ids(
     small_lig_chain_ids = ligand_array[lig_chain_starts[small_lig_chain_idxs]].chain_id
 
     # TODO: Dev-only, remove later
-    assert np.unique(small_lig_chain_ids).size == small_lig_chain_ids.size, (
-        "Small ligand chain IDs are not unique"
-    )
+    assert (
+        np.unique(small_lig_chain_ids).size == small_lig_chain_ids.size
+    ), "Small ligand chain IDs are not unique"
 
     return small_lig_chain_ids
 

@@ -275,6 +275,7 @@ def parse_target_structure(
     target_structures_directory: Path,
     pdb_id: str,
     structure_format: Literal["pkl", "npz"],
+    use_s3_monomer_format: bool = False,
 ) -> AtomArray:
     """Parses a preprocessed structure from a pickle or numpy array.
 
@@ -286,7 +287,9 @@ def parse_target_structure(
         structure_format (str):
             File extension of the target structure. Only "pkl" and "npz" are currently
             supported.
-
+        use_s3_monomer_format (bool):
+            Whether input filepath is expected to be in the s3 monomer
+            format: <struc_dir>/<mgy_id>/structure.npz
     Raises:
         ValueError:
             If the structure format is not "pkl" or "npz".
@@ -295,7 +298,18 @@ def parse_target_structure(
         AtomArray:
             AtomArray of the target structure.
     """
-    target_file = target_structures_directory / pdb_id / f"{pdb_id}.{structure_format}"
+    if use_s3_monomer_format:
+        target_file = (
+            target_structures_directory
+            / Path(pdb_id)
+            / Path(f"structure.{structure_format}")
+        )
+    else:
+        target_file = (
+            target_structures_directory
+            / Path(pdb_id)
+            / Path(f"{pdb_id}.{structure_format}")
+        )
 
     if structure_format == "pkl":
         with open(target_file, "rb") as f:

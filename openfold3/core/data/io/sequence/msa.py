@@ -277,6 +277,7 @@ def parse_msas_alignment_database(
 def parse_msas_preparsed(
     folder_path: Path,
     rep_id: str,
+    use_s3_monomer_format: bool = False,
 ) -> dict[str, MsaArray]:
     """Parses a pre-parsed .npz file into a dictionary of Msa objects.
 
@@ -287,16 +288,25 @@ def parse_msas_preparsed(
             Path to the folder containing the pre-parsed npz files.
         rep_id (str):
             The representative ID of the chain.
+        use_s3_monomer_format (bool):
+            Whether input filepath is expected to be in the s3 monomer
+            format: <aln_dir>/<mgy_id>/alignment.npz
 
     Returns:
         dict[str, MsaArray]:
             A dict containing the parsed MSAs.
     """
     # Parse npz file of the representative
-    pre_parsed_msas = np.load(
-        folder_path / Path(f"{rep_id}.npz"),
-        allow_pickle=True,
-    )
+    if use_s3_monomer_format:
+        pre_parsed_msas = np.load(
+            folder_path / Path(rep_id) / Path("alignment.npz"),
+            allow_pickle=True,
+        )
+    else:
+        pre_parsed_msas = np.load(
+            folder_path / Path(f"{rep_id}.npz"),
+            allow_pickle=True,
+        )
 
     # Unpack the pre-parsed MSA arrays into a dict of MsaArrays
     msas = {}
@@ -320,6 +330,7 @@ def parse_msas_sample(
     alignment_index: dict | None,
     alignment_array_directory: Path | None,
     max_seq_counts: dict[str, int] | None,
+    use_s3_monomer_format: bool = False,
 ) -> MsaArrayCollection:
     """Parses MSA(s) for a training sample.
 
@@ -355,7 +366,9 @@ def parse_msas_sample(
             Dictionary mapping filename strings (without extension) to the max number of
             sequences to parse from the corresponding MSA file. Only alignment files
             whose names are keys in this dict will be parsed.
-
+        use_s3_monomer_format (bool):
+            Whether input data is expected to be in the s3 monomer
+            format: <aln_dir>/<mgy_id>/alignment.npz
     Returns:
         MsaArrayCollection:
             A collection of Msa objects and chain IDs for a single sample.
@@ -392,6 +405,7 @@ def parse_msas_sample(
                 representative_msas[rep_id] = parse_msas_preparsed(
                     folder_path=alignment_array_directory,
                     rep_id=rep_id,
+                    use_s3_monomer_format=use_s3_monomer_format,
                 )
             elif alignment_db_directory is not None:
                 representative_msas[rep_id] = parse_msas_alignment_database(
