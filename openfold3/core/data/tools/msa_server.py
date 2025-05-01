@@ -5,8 +5,8 @@ import os
 import random
 import tarfile
 import time
+from enum import IntEnum
 from pathlib import Path
-from typing import Optional
 
 import requests
 from tqdm import tqdm
@@ -19,47 +19,60 @@ TQDM_BAR_FORMAT = (
 )
 
 
-### This function is copied directly from the colabfold codebase:
-### https://github.com/sokrypton/ColabFold/blob/main/colabfold/colabfold.py
-### with a few minor modifications.
+class MsaServerPairingStrategy(IntEnum):
+    """Enum for MSA server pairing strategy."""
+
+    GREEDY = 0
+    COMPLETE = 1
+
+    def __str__(self) -> str:
+        return self.name.lower()
+
+
 def query_msa_server(
     x: list[str],
-    prefix: str,
-    use_env: bool = True,
-    use_filter: bool = True,
+    prefix: Path,
+    user_agent: str,
     use_templates: bool = False,
-    filter: Optional[bool] = None,
     use_pairing: bool = False,
     pairing_strategy: str = "greedy",
+    use_env: bool = True,
+    use_filter: bool = True,
+    filter: bool | None = None,
     host_url: str = "https://api.colabfold.com",
-    user_agent: str = "openfold/1.0.0 vss2134@cumc.columbia.edu",
-) -> tuple[list[str], list[str]]:
-    """_summary_
+) -> list[str] | tuple[list[str], list[str]]:
+    """Queries the colabfold MSA server with a list of sequences to compute MSAs.
+
+    Adapted from Colabfold run_mmseqs2 https://github.com/sokrypton/ColabFold/blob/main/colabfold/colabfold.py#L69
 
     Args:
-        x (List[str]): list of amino acid sequences to run
-        prefix (str): output directory to save the results
-        use_env (bool, optional): Whether to align against env db(BFD/cfdb)
-            Defaults to True.
-        use_filter (bool, optional): Whether to apply diversity filter.
-            Defaults to True.
-        use_templates (bool, optional): Whether to run template search.
-            Defaults to False.
-        filter (Optional[bool], optional): Legacy option to enable diversity filter.
-            Defaults to None.
-        use_pairing (bool, optional): Whether to generate a single paired MSA
-            Defaults to False.
-        pairing_strategy (str, optional): Pairing method, one of ["complete", "greedy"].
-            For pairing of more than 2 chains, "complete" requires a taxonomic group to
-            be present in all chains, where greedy requires it to be in only 2
-        host_url (_type_, optional): host url for MSA server.
-            Defaults to "https://api.colabfold.com".
-        user_agent (str, optional): User associated with API call.
-            Defaults to "openfold/1.0.0 vss2134@cumc.columbia.edu".
+        x (list[str]):
+            List of amino acid sequences to query the MSA server with.
+        prefix (Path):
+            Output directory to save the results to.
+        user_agent (str):
+            User associated with API call.
+        use_templates (bool, optional):
+            Whether to run template search. Defaults to False.
+        use_pairing (bool, optional):
+            Whether to generate a single paired MSA Defaults to False.
+        pairing_strategy (str, optional):
+            Pairing method, one of ["complete", "greedy"]. For pairing of more than 2
+            chains, "complete" requires a taxonomic group to be present in all chains,
+            where greedy requires it to be in only 2
+        use_env (bool, optional):
+            Whether to align against env db(BFD/cfdb) Defaults to True.
+        use_filter (bool, optional):
+            Whether to apply diversity filter. Defaults to True.
+        filter (bool | None, optional):
+            Legacy option to enable diversity filter. Defaults to None.
+        host_url (str, optional):
+            host url for MSA server. Defaults to "https://api.colabfold.com".
 
     Returns:
-        Tuple[List[str], List[str]]: A tuple containing the list of MSA lines
-            and the list of template paths
+        list[str] | tuple[list[str], list[str]]:
+            List of MSA strings in a3m format, one per query sequence. If use_templates
+            is True, also returns a list of template paths for each sequence.
     """
 
     submission_endpoint = "ticket/pair" if use_pairing else "ticket/msa"
@@ -174,45 +187,47 @@ def query_msa_server(
         with open(path, "wb") as out:
             out.write(res.content)
 
-    # process input x
     seqs = [x] if isinstance(x, str) else x
 
-    # compatibility to old option
+    # Compatibility to old option
     if filter is not None:
         use_filter = filter
 
-    # setup mode
+    # Setup mode
     if use_filter:
         mode = "env" if use_env else "all"
     else:
         mode = "env-nofilter" if use_env else "nofilter"
-
+    # TODO move to config construction
+    pairing_strategy = MsaServerPairingStrategy[pairing_strategy.upper()]
     if use_pairing:
         use_templates = False
         mode = ""
         # greedy is default, complete was the previous behavior
-        if pairing_strategy == "greedy":
+        if pairing_strategy == MsaServerPairingStrategy.GREEDY:
             mode = "pairgreedy"
-        elif pairing_strategy == "complete":
+        elif pairing_strategy == MsaServerPairingStrategy.COMPLETE:
             mode = "paircomplete"
         if use_env:
             mode = mode + "-env"
 
-    ## VS: put everything in the same folder
+    # Put everything in the same dir
     path = f"{prefix}"
     if not os.path.isdir(path):
         os.mkdir(path)
 
-    # call mmseqs2 api
+    # Call mmseqs2 api
     tar_gz_file = f"{path}/out.tar.gz"
     N, REDO = 101, True
 
-    # deduplicate and keep track of order
+    # Deduplicate and keep track of order
     seqs_unique = []
-    # TODO this might be slow for large sets
+    # TODO this might be slow for large sets - see unpaired MSA deduplication code for a
+    # faster option
     [seqs_unique.append(x) for x in seqs if x not in seqs_unique]
     Ms = [N + seqs_unique.index(seq) for seq in seqs]
-    # lets do it!
+
+    # Run query
     if not os.path.isfile(tar_gz_file):
         TIME_ESTIMATE = 150 * len(seqs_unique)
         with tqdm(total=TIME_ESTIMATE, bar_format=TQDM_BAR_FORMAT) as pbar:
@@ -224,7 +239,6 @@ def query_msa_server(
                 while out["status"] in ["UNKNOWN", "RATELIMIT"]:
                     sleep_time = 5 + random.randint(0, 5)
                     logger.error(f"Sleeping for {sleep_time}s. Reason: {out['status']}")
-                    # resubmit
                     time.sleep(sleep_time)
                     out = submit(seqs_unique, mode, N)
 
@@ -241,7 +255,7 @@ def query_msa_server(
                         "Please try again in a few minutes."
                     )
 
-                # wait for job to finish
+                # Wait for job to finish
                 ID, TIME = out["id"], 0
                 pbar.set_description(out["status"])
                 while out["status"] in ["UNKNOWN", "RUNNING", "PENDING"]:
@@ -253,10 +267,6 @@ def query_msa_server(
                     if out["status"] == "RUNNING":
                         TIME += t
                         pbar.update(n=t)
-                    # if TIME > 900 and out["status"] != "COMPLETE":
-                    #  # something failed on the server side, need to resubmit
-                    #  N += 1
-                    #  break
 
                 if out["status"] == "COMPLETE":
                     if TIME < TIME_ESTIMATE:
@@ -274,7 +284,7 @@ def query_msa_server(
             # Download results
             download(ID, tar_gz_file)
 
-    # prep list of a3m files
+    # Prepare list of a3m files
     if use_pairing:
         a3m_files = [f"{path}/pair.a3m"]
     else:
@@ -282,24 +292,22 @@ def query_msa_server(
         if use_env:
             a3m_files.append(f"{path}/bfd.mgnify30.metaeuk30.smag30.a3m")
 
-    # extract a3m files
+    # Extract a3m files
     if any(not os.path.isfile(a3m_file) for a3m_file in a3m_files):
         with tarfile.open(tar_gz_file) as tar_gz:
             tar_gz.extractall(path)
 
-    # templates
+    # Process templates
     if use_templates:
         templates = {}
-        # print("seq\tpdb\tcid\tevalue")
-        for line in open(f"{path}/pdb70.m8"):  # noqa: SIM115
-            p = line.rstrip().split()
-            M, pdb, qid, e_value = p[0], p[1], p[2], p[10]  # noqa: F841
-            M = int(M)
-            if M not in templates:
-                templates[M] = []
-            templates[M].append(pdb)
-            # if len(templates[M]) <= 20:
-            #  print(f"{int(M)-N}\t{pdb}\t{qid}\t{e_value}")
+        with open(f"{path}/pdb70.m8") as f:
+            for line in f:
+                p = line.rstrip().split()
+                M, pdb, _, _ = p[0], p[1], p[2], p[10] # M, pdb, qid, e_value
+                M = int(M)
+                if M not in templates:
+                    templates[M] = []
+                templates[M].append(pdb)
 
         template_paths = {}
         for k, TMPL in templates.items():
@@ -343,23 +351,22 @@ def query_msa_server(
                     f.write("")
             template_paths[k] = TMPL_PATH
 
-    # gather a3m lines
+    # Gather a3m lines
     a3m_lines = {}
     for a3m_file in a3m_files:
         update_M, M = True, None
-        for line in open(a3m_file):  # noqa: SIM115
-            if len(line) > 0:
-                if "\x00" in line:
-                    line = line.replace("\x00", "")
-                    update_M = True
-                if line.startswith(">") and update_M:
-                    M = int(line[1:].rstrip())
-                    update_M = False
-                    if M not in a3m_lines:
-                        a3m_lines[M] = []
-                a3m_lines[M].append(line)
-
-    # return results
+        with open(a3m_file) as f:
+            for line in f:
+                if len(line) > 0:
+                    if "\x00" in line:
+                        line = line.replace("\x00", "")
+                        update_M = True
+                    if line.startswith(">") and update_M:
+                        M = int(line[1:].rstrip())
+                        update_M = False
+                        if M not in a3m_lines:
+                            a3m_lines[M] = []
+                    a3m_lines[M].append(line)
 
     a3m_lines = ["".join(a3m_lines[n]) for n in Ms]
 
@@ -368,7 +375,6 @@ def query_msa_server(
         for n in Ms:
             if n not in template_paths:
                 template_paths_.append(None)
-                # print(f"{n-N}\tno_templates_found")
             else:
                 template_paths_.append(template_paths[n])
         template_paths = template_paths_
