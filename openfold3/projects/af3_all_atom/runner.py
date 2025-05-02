@@ -546,3 +546,52 @@ class AlphaFold3AllAtom(ModelRunner):
             confidence_scores.update(ptm_scores)
 
         return confidence_scores
+
+    def predict_step(self, batch, batch_idx):
+        # At the start of inference, load the EMA weights
+        if self.cached_weights is None:
+            # model.state_dict() contains references to model weights rather
+            # than copies. Therefore, we need to clone them before calling
+            # load_state_dict().
+            def clone_param(t):
+                return t.detach().clone()
+
+            self.cached_weights = tensor_tree_map(clone_param, self.model.state_dict())
+            self.model.load_state_dict(self.ema.state_dict()["params"])
+
+        query_id = batch.pop("query_id")
+        atom_array = batch.pop("atom_array")
+        _ = batch.pop("preferred_chain_or_interface")
+
+        seed = batch.pop("seed")
+        self.reseed(seed[0])  # TODO: assuming we have bs = 1 for now, later we'd
+
+        # Probably need to change the logic
+        logger.debug(
+            f"Started inference for {', '.join(query_id)} on rank {self.global_rank} "
+            f"step {self.global_step}"
+        )
+        try:
+            batch, outputs = self(batch)
+
+            _, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
+
+            batch["atom_array"] = atom_array
+            batch["query_id"] = query_id
+            batch["seed"] = seed
+
+            # Compute metrics:
+            metrics = self._get_metrics(batch, outputs, train=False)
+
+            outputs["metrics"] = metrics
+            outputs["losses"] = loss_breakdown
+
+            # Generate confidence scores
+            confidence_scores = self._compute_confidence_scores(batch, outputs)
+            outputs["confidence_scores"] = confidence_scores
+
+            return (batch, outputs)
+
+        except Exception:
+            logger.exception(f"Inference step failed with pdb id {', '.join(query_id)}")
+            raise
