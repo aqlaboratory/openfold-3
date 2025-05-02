@@ -21,6 +21,7 @@ from openfold3.projects.af3_all_atom.config.dataset_config_components import (
     MSASettings,
     TemplateSettings,
 )
+from openfold3.projects.af3_all_atom.config.inference_query_format import InferenceQuerySet
 
 
 def is_path_none(value: Optional[Union[str, Path]]) -> Optional[Path]:
@@ -243,3 +244,20 @@ class TrainingDatasetSpec(BaseModel):
 
         values["config"] = config_class.model_validate(config_data)
         return values
+
+
+class InferenceConfig(BaseModel):
+    """Configuration section for Inference Datasets"""
+    query_set: InferenceQuerySet 
+    seeds: list[int] = [42]
+    msa: MSASettings = MSASettings()
+    template: TemplateSettings = TemplateSettings()
+
+
+class InferenceDatasetSpec(BaseModel):
+    """Full specification for inference dataset to be passed into DataModule"""
+    name: str = "inference"
+    dataset_class: str = "InferenceDataset" 
+    mode: DatasetMode = DatasetMode.prediction
+    weight: Optional[float] = None
+    config: InferenceConfig
