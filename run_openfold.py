@@ -172,10 +172,9 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
 
     if runner_args.get("log_lr") and wandb_logger is not None:
         callbacks.append(LearningRateMonitor(logging_interval="step"))
-    
+
     if runner_args.mode == "predict":
         callbacks.append(OF3OutputWriter(runner_args.output_dir))
-
 
     trainer_args = runner_args.pl_trainer.to_dict()
     trainer_args.update(
