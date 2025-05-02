@@ -59,25 +59,23 @@ def centre_random_augmentation(
     Returns:
         Updated atom position with random global rotation and translation
     """
-    dtype = xl.dtype
-    with torch.amp.autocast("cuda", dtype=torch.float32):
-        rots = sample_rotations(shape=xl.shape[:-2], dtype=xl.dtype, device=xl.device)
+    rots = sample_rotations(shape=xl.shape[:-2], dtype=xl.dtype, device=xl.device)
 
-        trans = scale_trans * torch.randn(
-            (*xl.shape[:-2], 3), dtype=xl.dtype, device=xl.device
-        )
+    trans = scale_trans * torch.randn(
+        (*xl.shape[:-2], 3), dtype=xl.dtype, device=xl.device
+    )
 
-        mean_xl = torch.sum(
-            xl * atom_mask[..., None],
-            dim=-2,
-            keepdim=True,
-        ) / torch.sum(atom_mask[..., None], dim=-2, keepdim=True)
+    mean_xl = torch.sum(
+        xl * atom_mask[..., None],
+        dim=-2,
+        keepdim=True,
+    ) / torch.sum(atom_mask[..., None], dim=-2, keepdim=True)
 
-        # center coordinates
-        pos_centered = xl - mean_xl
-        pos_out = pos_centered @ rots.transpose(-1, -2) + trans[..., None, :]
+    # center coordinates
+    pos_centered = xl - mean_xl
+    pos_out = pos_centered @ rots.transpose(-1, -2) + trans[..., None, :]
 
-    return pos_out.to(dtype=dtype)
+    return pos_out
 
 
 # Move this somewhere else?

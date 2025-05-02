@@ -372,7 +372,7 @@ def extract_component_data_af3(
     for mol_id in non_std_ligand_ids:
         # Compute molecule by arbitrarily taking the first chain (all should be the same
         # if entity ID is the same)
-        entity_id = int(mol_id.split("_")[1])
+        entity_id = int(mol_id.split("_")[-1])
         entity_atom_array = atom_array[atom_array.entity_id == entity_id]
         first_ligand = entity_atom_array[
             entity_atom_array.chain_id == all_ligands_to_chains[mol_id][0]
