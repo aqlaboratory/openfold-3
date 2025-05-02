@@ -19,6 +19,7 @@ from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
+from openfold3.core.runners.writer import OF3OutputWriter
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.projects.af3_all_atom.config.runner_file_checks import (
     _check_data_module_config,
@@ -171,6 +172,10 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
 
     if runner_args.get("log_lr") and wandb_logger is not None:
         callbacks.append(LearningRateMonitor(logging_interval="step"))
+    
+    if runner_args.mode == "predict":
+        callbacks.append(OF3OutputWriter(runner_args.output_dir))
+
 
     trainer_args = runner_args.pl_trainer.to_dict()
     trainer_args.update(
