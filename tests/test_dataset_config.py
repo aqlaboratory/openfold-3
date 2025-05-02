@@ -3,10 +3,12 @@ import textwrap
 import pytest  # noqa: F401  - used for pytest tmp fixture
 
 from openfold3.core.config import config_utils
+from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
 from openfold3.projects.af3_all_atom.config.dataset_configs import (
     TrainingDatasetPaths,
     TrainingDatasetSpec,
 )
+from openfold3.projects.af3_all_atom.config.inference_query_format import InferenceQuerySet
 
 
 class TestAF3DatasetConfigConstruction:
@@ -229,3 +231,59 @@ class TestAF3DatasetConfigConstruction:
                     "reference_molecule_directory": tmp_path,
                 }
             )
+
+class TestInferenceConfigConstruction:
+
+    def test_inference_config(self, tmp_path):
+        inference_set = InferenceQuerySet.model_validate(
+    {
+        "queries": {
+            "query_1": {
+                "chains": [
+                    {
+                        "molecule_type": "protein",
+                        "chain_ids": "A",
+                        "sequence": "PVLSCGEWQCL",  # insert sequence for MCL-1
+                        "use_msas": True,
+                        "unpaired_msa_file_paths": ["/tmp/path"],
+                        "paired_msa_file_path": "/tmp/path",
+                        "sdf_file_path": None,
+                    },
+                    {
+                        "molecule_type": "ligand",
+                        "chain_ids": ["F", "G", "H"],
+                        "ccd_codes": "ATP",
+                    },
+                    {
+                        "molecule_type": "ligand",
+                        "chain_ids": "Z",
+                        "smiles": "CC(=O)OC1C[NH+]2CCC1CC2",
+                    },
+                ],
+            },
+        },
+    }
+)
+
+    # dummy inference dataset
+    # overwrite create_all_features method
+
+    # test code with datamodule:
+    inference_spec = ...
+    dataset_specs = [inference_spec]
+
+    data_config = DataModuleConfig(
+        batch_size=1,
+        num_workers=10,
+        data_seed=123,
+        epoch_len=1,
+        num_epochs=1,
+        datasets=dataset_specs,
+    )
+    data_module = DataModule(data_config)
+
+    data_module.setup()
+    dataloader = data_module.predict_dataloader()
+
+    it = iter(dataloader)
+    next(it)
