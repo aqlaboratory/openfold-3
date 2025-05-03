@@ -2,8 +2,12 @@
 Inference class template for first inference pipeline prototype.
 """
 
+import itertools
 import logging
+import math
+from typing import Optional
 
+import pandas as pd
 import torch
 from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
@@ -23,7 +27,6 @@ from openfold3.core.data.primitives.structure.tokenization import (
     get_token_count,
 )
 from openfold3.projects.af3_all_atom.config.inference_query_format import (
-    InferenceQuerySet,
     Query,
 )
 
@@ -51,31 +54,34 @@ def do_seeding(seed: int): ...
 
 # NOTE: This is not subclassing SingleDataset for now and has no support for dataset
 # registries
+# TODO: Maybe register dataset?
 class InferenceDataset(Dataset):
     """Dataset class for running inference on a set of queries."""
 
     # TODO: Can accept a dataset_config here if we want
-    def __init__(self, query_set: InferenceQuerySet) -> None:
+    def __init__(self, dataset_config, world_size: Optional[int] = None) -> None:
         """Initializes the InferenceDataset."""
         super().__init__()
 
-        self._query_set = query_set
+        self.query_set = dataset_config.query_set
 
         # TODO: Any seeding configuration like in the old InferenceDataset could go here
         ...
+        self.seeds: list = dataset_config.seeds
+        self.world_size = world_size
 
         # TODO: Any other settings, e.g. from dataset_config, could go here
         ...
 
-        self.query_cache = query_set.queries
+        self.query_cache = self.query_set.queries
 
         # Expose for notation convenience (not actually used for now)
-        self._msa_directory_path = query_set.msa_directory_path
+        self._msa_directory_path = self.query_set.msa_directory_path
 
         # Parse CCD
-        if query_set.ccd_file_path is not None:
+        if self.query_set.ccd_file_path is not None:
             logger.debug("Parsing CCD file.")
-            self.ccd = pdbx.CIFFile.read(query_set.ccd_file_path)
+            self.ccd = pdbx.CIFFile.read(self.query_set.ccd_file_path)
             logger.debug("Done parsing CCD file.")
 
         # Create individual datapoint cache (allows rerunning the same query with
@@ -84,7 +90,31 @@ class InferenceDataset(Dataset):
 
     # TODO: Will pair datapoints with seeds and handle any required sorting (e.g. by
     # token_count)
-    def create_datapoint_cache(self) -> None: ...
+    def create_datapoint_cache(self) -> None:
+        qids = self.query_cache.keys()
+        qid_values, seed_values = zip(
+            *[(q, s) for q, s in itertools.product(qids, self.seeds)]
+        )
+
+        # To avoid the default DistributedSampler behavior of repeating samples
+        # to match the world size, artificially inflate the dataset and flag the
+        # repeated samples so that they are ignored in the metrics.
+        repeated_samples = [False] * len(qid_values)
+        if self.world_size is not None:
+            extra_samples = (
+                math.ceil(len(qid_values) / self.world_size) * self.world_size
+            ) - len(qid_values)
+            qid_values += qid_values[:extra_samples]
+            seed_values += seed_values[:extra_samples]
+            repeated_samples += [True] * extra_samples
+
+        self.datapoint_cache = pd.DataFrame(
+            {
+                "query_id": qid_values,
+                "seed": seed_values,
+                "repeated_sample": repeated_samples,
+            }
+        )
 
     def get_atom_array(self, query: Query) -> AtomArray:
         """Creates a preprocessed AtomArray from the query."""

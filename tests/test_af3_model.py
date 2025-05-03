@@ -31,8 +31,6 @@ class TestAF3Model:
         if train:
             config.settings.blocks_per_ckpt = 1
             config.settings.ckpt_intermediate_steps = True
-        else:
-            config.settings.memory.eval.chunk_size = 4
 
         if reduce_model_size:
             # To avoid memory issues in CI
