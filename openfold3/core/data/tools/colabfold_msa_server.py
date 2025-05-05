@@ -1,15 +1,22 @@
-import glob
 import json
 import logging
 import os
 import random
 import tarfile
 import time
+from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
 
+import numpy as np
 import requests
 from tqdm import tqdm
+
+from openfold3.core.data.io.sequence.msa import parse_a3m
+from openfold3.core.data.resources.residues import MoleculeType
+from openfold3.projects.af3_all_atom.config.inference_query_format import (
+    InferenceQuerySet,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +36,16 @@ class MsaServerPairingStrategy(IntEnum):
         return self.name.lower()
 
 
-def query_msa_server(
+"""
+TODOS:
+- clear up all other TODOs
+- add docstrings/typehints
+- add tests
+- add code that adds paths to the query cache for each chains MSA
+"""
+
+
+def query_colabfold_msa_server(
     x: list[str],
     prefix: Path,
     user_agent: str,
@@ -41,7 +57,7 @@ def query_msa_server(
     filter: bool | None = None,
     host_url: str = "https://api.colabfold.com",
 ) -> list[str] | tuple[list[str], list[str]]:
-    """Queries the colabfold MSA server with a list of sequences to compute MSAs.
+    """Submints a single query to the colabfold MSA server.
 
     Adapted from Colabfold run_mmseqs2 https://github.com/sokrypton/ColabFold/blob/main/colabfold/colabfold.py#L69
 
@@ -53,7 +69,8 @@ def query_msa_server(
         user_agent (str):
             User associated with API call.
         use_templates (bool, optional):
-            Whether to run template search. Defaults to False.
+            Whether to run template search. Defaults to False. If use_pairing is True,
+            this internally gets set to False.
         use_pairing (bool, optional):
             Whether to generate a single paired MSA Defaults to False.
         pairing_strategy (str, optional):
@@ -303,7 +320,7 @@ def query_msa_server(
         with open(f"{path}/pdb70.m8") as f:
             for line in f:
                 p = line.rstrip().split()
-                M, pdb, _, _ = p[0], p[1], p[2], p[10] # M, pdb, qid, e_value
+                M, pdb, _, _ = p[0], p[1], p[2], p[10]  # M, pdb, qid, e_value
                 M = int(M)
                 if M not in templates:
                     templates[M] = []
@@ -351,6 +368,14 @@ def query_msa_server(
                     f.write("")
             template_paths[k] = TMPL_PATH
 
+        template_paths_ = []
+        for n in Ms:
+            if n not in template_paths:
+                template_paths_.append(None)
+            else:
+                template_paths_.append(template_paths[n])
+        template_paths = template_paths_
+
     # Gather a3m lines
     a3m_lines = {}
     for a3m_file in a3m_files:
@@ -370,149 +395,304 @@ def query_msa_server(
 
     a3m_lines = ["".join(a3m_lines[n]) for n in Ms]
 
-    if use_templates:
-        template_paths_ = []
-        for n in Ms:
-            if n not in template_paths:
-                template_paths_.append(None)
-            else:
-                template_paths_.append(template_paths[n])
-        template_paths = template_paths_
-
     return (a3m_lines, template_paths) if use_templates else a3m_lines
 
 
-def run_alignments_msaserver(
-    seq_dict: dict[str, str],
-    structure_id: str,
-    output_directory: Path,
-    use_templates: bool,
-    prelim_dataset_cache: dict,
-) -> None:
-    """Run alignments using the colabfold MSA server
+# TODO rename
+@dataclass
+class ColabFoldInputData:
+    """_summary_
+
+    Attributes:
+        seq_to_rep_id (dict[str, str]): _description_
+        rep_id_to_seq (dict[str, str]): _description_
+        chain_id_to_rep_id (dict[str, str]): _description_
+        query_name_to_complex_id (dict[str, str]): _description_
+        complex_ids (set[str]): _description_
+        seqs (list[str]): _description_
+        rep_ids (list[str]): _description_
+    """
+
+    seq_to_rep_id: dict[str, str] = field(default_factory=dict)
+    rep_id_to_seq: dict[str, str] = field(default_factory=dict)
+    chain_id_to_rep_id: dict[str, str] = field(default_factory=dict)
+    query_name_to_complex_id: dict[str, str] = field(default_factory=dict)
+    complex_ids: set[str] = field(default_factory=set)
+    seqs: list[str] = field(default_factory=list)
+    rep_ids: list[str] = field(default_factory=list)
+
+
+def collect_colabfold_msa_data(
+    inference_set: InferenceQuerySet,
+) -> ColabFoldInputData:
+    """_summary_
 
     Args:
-        seq_dict (dict[str, str]): A dictionary of that maps representative ID
-            to amino acid sequence
-        structure_id (str): The ID of the structure. This is used to create the
-            output directory and to update the dataset cache accordingly
-        output_directory (Path): Root Path to save the output files. Assumed to be the
-            name of the structure. chain MSAs will be written to separate output
-            directories ie path/to/<pdb_id>/msas/chain_1/...
-        use_templates (bool): Whether or not to run template search
-        prelim_dataset_cache (dict): A dictionary containing the dataset cache
-            for the structure. This function will only update the "chain" field of the
-            dataset cache
-    Notes:
-    - parsing templates to structures arrays not implemented
-    - need to update the dataset cache to use the appropriate cache Class
-    - optionally silence msa server logger.
+        inference_set (InferenceQuerySet): _description_
+
+    Raises:
+        RuntimeError: _description_
+        RuntimeError: _description_
+        RuntimeError: _description_
+
+    Returns:
+        InferenceQueryCacheMsaData: _description_
     """
-    ## generate representative mapping
-    useq2repr = {}
-    repr2useq = {}
-    chainid2repr = {}
-    for rep_id, seq in seq_dict.items():
-        if seq not in useq2repr:
-            useq2repr[seq] = rep_id
-            repr2useq[rep_id] = seq
-            chainid2repr[rep_id] = rep_id
-        else:
-            chainid2repr[rep_id] = useq2repr[seq]
 
-    output_directory = (
-        output_directory / structure_id
-    )  ## only ever handling data from one structure at a time
-    (output_directory / "msas").mkdir(parents=True, exist_ok=True)
-    ## run msa server
-    ### if more than 1 unique chain, run in paired mode.
-    if len(repr2useq.keys()) > 1:
-        _ = query_msa_server(
-            list(repr2useq.values()),
-            f"{output_directory}/msas",
-            use_pairing=True,
-            pairing_strategy="greedy",
-            use_templates=False,
-        )
-        ## delete extra files since we write both paired and unpaired MSAs
-        ## to the same output directory for now.
-        Path(f"{output_directory}/msas/out.tar.gz").unlink(missing_ok=True)
-        Path(f"{output_directory}/msas/pair.sh").unlink(missing_ok=True)
-    ## generate MSAs for each chain
-    ### Note that alignmetns for each are written to the same
-    ### file and are separated by a null character.
-    msa_lines_unpaired, template_path = query_msa_server(
-        list(repr2useq.values()),
-        f"{output_directory}/msas",
-        use_pairing=False,
-        use_templates=use_templates,
-    )
-    # template path will contain None for chains w/o templates
-    template_path = [p for p in template_path if p is not None]
-    ## mmseqs uses an internal numbering scheme for sequences -
-    # we need to map this back to the original chain IDs
-    mmseqs_cid2repr = {}
-    repr2mmseqs_cid = {}
-    for alignment in msa_lines_unpaired:
-        alignment = alignment.split("\n")
-        mmseqs_chain_id, chain_aaseq = alignment[:2]
-        for repr_id, aa_seq in repr2useq.items():
-            if aa_seq == chain_aaseq:
-                mmseqs_chain_id = mmseqs_chain_id.strip(">")
-                mmseqs_cid2repr[mmseqs_chain_id] = repr_id
-                repr2mmseqs_cid[repr_id] = mmseqs_chain_id
-                break
-        else:
-            ## This should never happen
-            raise ValueError(
-                "Unable to match mmseqs assigned chain ID to original chain ID"
+    colabfold_mapper = ColabFoldInputData()
+    # Get unique set of sequences for unpaired MSAs
+    for query_name, query in inference_set.queries.items():
+        # TODO: potentialy change, could move to pydantic model validation
+        if "-" in query_name:
+            raise RuntimeError(
+                f"Query name {query_name} contains a dash '-', which is not allowed."
             )
-    ## parse the returned templates
-    ### NOTE: Currently we just take all templates returned by the server in any order.
-    ### In the case where the number of templates returned is larger than the max
-    ### number of templates we want to use, we should implement a strategy to select
-    ### the top N templates. Evalues/seq id is available in the returned pdb70.m8 file
-    repr2templates = {rep_id: [] for rep_id in repr2useq}
-    all_template_paths = []
-    for tpath in template_path:
-        tpath = Path(tpath)
-        mmseqs_cid = tpath.name.split("_")[-1]
-        template_hits = glob.glob(f"{tpath}/*.cif")
-        repr2templates[mmseqs_cid2repr[mmseqs_cid]] = [
-            Path(th).stem for th in template_hits
-        ]
-        all_template_paths.extend(template_hits)
-    ## create a new folder for templates and move the cif files there
-    template_dir = output_directory / "templates"
-    template_dir.mkdir(exist_ok=True)
-    for tpath in all_template_paths:
-        tpath = Path(tpath)
-        tpath.replace(template_dir / tpath.name)  ## only need unique set of templates
 
-    ## delete the template directories
-    for tpath in template_path:
-        tpath = Path(tpath)
-        for f in tpath.glob("*"):
-            f.unlink()
-        tpath.rmdir()
+        chain_ids_seen = set()
+        rep_ids_query = []
 
-    ## TODO: parse templates to structure arrays
+        for chain in query.chains:
+            if chain.molecule_type == MoleculeType.PROTEIN:
+                seq = chain.sequence
+                chain_ids = []
+                for chain_id in chain.chain_ids:
+                    chain_id = str(chain_id)
 
-    ## update the dataset cache with the new chain information
+                    # TODO: potentialy change, could move to pydantic model validation
+                    if "-" in chain_id:
+                        raise RuntimeError(
+                            f"Chain ID {chain_id} contains a dash '-', which is not "
+                            "allowed."
+                        )
 
-    dataset_cache = {}
-    for chain_id in chainid2repr:
-        repr_id = chainid2repr[chain_id]
-        templates = repr2templates[repr_id]
-        dataset_cache[chain_id] = {
-            "chain_id": chain_id,
-            "alignment_representative_id": repr2mmseqs_cid[repr_id],
-            "template_ids": templates,
-            "molecule_type": "PROTEIN",
-        }
-    prelim_dataset_cache["structure_data"]["chains"].update(dataset_cache)
-    ## write the dataset cache to file
-    with open(output_directory / "dataset_cache.json", "w") as f:
-        json.dump(prelim_dataset_cache, f, indent=4)
+                    chain_ids.append(f"{query_name}-{chain_id}")
 
-    return
+                # Make sure there are no duplicates in the chain IDs across chains of
+                # the same query TODO: could move to pydantic model validation
+                if len(set(chain_ids) & chain_ids_seen) > 0:
+                    raise RuntimeError(
+                        f"Duplicate chain IDs found in query {query_name}: "
+                        f"{chain.chain_ids}"
+                    )
+
+                chain_ids_seen.update(chain_ids)
+
+                # Collect mapping data and sequences for unpaired MSAs
+                if seq not in colabfold_mapper.seq_to_rep_id:
+                    colabfold_mapper.seq_to_rep_id[seq] = chain_ids[0]
+                    colabfold_mapper.rep_id_to_seq[chain_ids[0]] = seq
+                    colabfold_mapper.chain_id_to_rep_id[chain_ids[0]] = chain_ids[0]
+                    colabfold_mapper.seqs.append(seq)
+                    colabfold_mapper.rep_ids.append(chain_ids[0])
+                else:
+                    for chain_id in chain_ids:
+                        colabfold_mapper.chain_id_to_rep_id[chain_id] = (
+                            colabfold_mapper.seq_to_rep_id[seq]
+                        )
+
+                # Collect paired MSA data
+                for chain_id in chain_ids:
+                    rep_ids_query.append(colabfold_mapper.chain_id_to_rep_id[chain_id])
+
+        # Only do pairing if number of unique protein sequences is > 1
+        if len(set(rep_ids_query)) > 1:
+            # TODO: potentially replace complex ID with a hash of the sequence as can
+            # get unwieldy for very large complexes
+            complex_id = "--".join(sorted(rep_ids_query))
+            if complex_id not in colabfold_mapper.complex_ids:
+                colabfold_mapper.complex_ids.add(complex_id)
+            colabfold_mapper.query_name_to_complex_id[query_name] = complex_id
+    return colabfold_mapper
+
+
+def save_colabfold_mappings(
+    colabfold_msa_input: ColabFoldInputData, output_directory: Path
+) -> None:
+    """_summary_
+
+    Args:
+        colabfold_msa_input (InferenceQueryCacheMsaData): _description_
+        output_directory (Path): _description_
+    """
+
+    mapping_files_directory_path = output_directory / "mappings"
+    mapping_files_directory_path.mkdir(parents=True, exist_ok=True)
+    for mapping_name, mapping in zip(
+        [
+            "seq_to_rep_id",
+            "rep_id_to_seq",
+            "chain_id_to_rep_id",
+            "query_name_to_complex_id",
+        ],
+        [
+            colabfold_msa_input.seq_to_rep_id,
+            colabfold_msa_input.rep_id_to_seq,
+            colabfold_msa_input.chain_id_to_rep_id,
+            colabfold_msa_input.query_name_to_complex_id,
+        ],
+    ):
+        mapping_file_path = mapping_files_directory_path / f"{mapping_name}.json"
+        with open(mapping_file_path, "w") as f:
+            json.dump(mapping, f, indent=4)
+    with open(mapping_files_directory_path / "README.md", "w") as f:
+        f.write(
+            "# Mapping files\n"
+            "These files contain mappings between the following entities:\n"
+            "  query_name: name of the query complex in the input query cache\n"
+            "  chain_id: a (query_name, chain identifier) tuple, indicating a unique "
+            "instantiation of a protein chain.\n"
+            "  rep_id: a chain_id associated with a unique protein sequence, selected "
+            "upon first occurrence of that specific sequence; all subsequent chain_ids"
+            " with the same sequence will have this chain_id as the representative\n"
+            "  seq: the actual protein sequence\n"
+            "  complex_id: an identifier associated with a unique SET of protein"
+            " sequences in the same query, consisting of the sorted representative IDs"
+            " of ALL chains in the complex; only used for queries with more than 2 "
+            "unique protein sequences\n"
+        )
+
+
+class ColabFoldQueryRunner:
+    """_summary_
+
+    Attributes:
+        input_data (InferenceQueryCacheMsaData): _description_
+        output_directory (Path): _description_
+        user_agent (str): _description_
+    """
+
+    def __init__(
+        self, input_data: ColabFoldInputData, output_directory: Path, user_agent: str
+    ):
+        """_summary_
+
+        Args:
+            input_data (InferenceQueryCacheMsaData): _description_
+            output_directory (Path): _description_
+            user_agent (str): _description_
+        """
+        self.input_data = input_data
+        self.output_directory = output_directory
+        self.user_agent = user_agent
+        self.output_directory.mkdir(parents=True, exist_ok=True)
+        for subdir in ["raw", "unpaired", "paired"]:
+            (self.output_directory / subdir).mkdir(parents=True, exist_ok=True)
+            if subdir == "raw":
+                for subsubdir in ["unpaired", "paired"]:
+                    (self.output_directory / subdir / subsubdir).mkdir(
+                        parents=True, exist_ok=True
+                    )
+
+    def __call__(self):
+        # Run unpaired and paired queries
+        self.query_format_unpaired()
+        self.query_format_paired()
+
+    def query_format_unpaired(self):
+        """_summary_"""
+        # Submit query for unpaired MSAs
+        # TODO: add template alignments fetching code here by setting use_templates=True
+        # TODO: replace prints with proper logging
+        print(
+            f"Submitting {len(self.input_data.seqs)} sequences to the Colabfold MSA"
+            " server for unpaired MSAs..."
+        )
+        # TODO: chunking
+        # TODO: warn if too many sequences maybe?
+        a3m_lines_unpaired = query_colabfold_msa_server(
+            self.input_data.seqs,
+            prefix=self.output_directory / "raw/unpaired",
+            use_templates=False,
+            use_pairing=False,
+            user_agent=self.user_agent,
+        )
+
+        unpaired_alignments_path = self.output_directory / "unpaired"
+        unpaired_alignments_path.mkdir(parents=True, exist_ok=True)
+
+        for rep_id, aln in zip(self.input_data.rep_ids, a3m_lines_unpaired):
+            rep_dir = unpaired_alignments_path / rep_id
+            rep_dir.mkdir(parents=True, exist_ok=True)
+
+            # TODO: add code for which format to save the MSA in
+            # If save as a3m...
+            a3m_file = rep_dir / "colabfold_unpaired.a3m"
+            with open(a3m_file, "w") as f:
+                f.write(aln)
+
+            # If save as npz...
+            npz_file = rep_dir / "colabfold_unpaired.npz"
+            npz_object = parse_a3m(aln)
+            np.savez_compressed(npz_file, npz_object)
+
+    def query_format_paired(self):
+        """_summary_"""
+        paired_alignments_directory = self.output_directory / "paired"
+        paired_alignments_directory.mkdir(parents=True, exist_ok=True)
+        # Submit queries for paired MSAs
+        print(
+            f"Submitting {len(self.input_data.complex_ids)} paired MSA queries to the"
+            " Colabfold MSA server..."
+        )
+        for complex_id in tqdm(
+            self.input_data.complex_ids,
+            total=len(self.input_data.complex_ids),
+            desc="Computing paired MSAs",
+        ):
+            # Get the representative IDs for the query
+            rep_ids_query = complex_id.split("--")
+
+            # Get the representative sequences for the query
+            seqs_query = [
+                self.input_data.rep_id_to_seq[rep_id] for rep_id in rep_ids_query
+            ]
+
+            # Submit the query to the Colabfold MSA server
+            (self.output_directory / "raw/paired").mkdir(parents=True, exist_ok=True)
+            a3m_lines_paired = query_colabfold_msa_server(
+                seqs_query,
+                prefix=self.output_directory / f"raw/paired/{complex_id}",
+                use_templates=False,
+                use_pairing=True,
+                user_agent=self.user_agent,
+            )
+
+            # TODO: process the returned MSAs - save per representative ID
+            complex_directory = paired_alignments_directory / complex_id
+            for rep_id, aln in zip(rep_ids_query, a3m_lines_paired):
+                rep_directory = complex_directory / rep_id
+                rep_directory.mkdir(parents=True, exist_ok=True)
+
+                # If save as a3m...
+                a3m_file = rep_directory / "colabfold_paired.a3m"
+                with open(a3m_file, "w") as f:
+                    f.write(aln)
+
+                # If save as npz...
+                npz_file = rep_directory / "colabfold_paired.npz"
+                npz_object = parse_a3m(aln)
+                np.savez_compressed(npz_file, npz_object)
+
+    def cleanup(self):
+        """_summary_"""
+        # TODO add code to optionally clean up the raw MSA files
+
+
+def preprocess_colabfold_msas(
+    inference_set: InferenceQuerySet,
+    output_directory: Path,
+    user_agent: str,
+):
+    # Gather MSA data
+    colabfold_input_data = collect_colabfold_msa_data(inference_set)
+
+    # Save mappings to file
+    save_colabfold_mappings(colabfold_input_data, output_directory)
+
+    # Run batch queries for unpaired and paired MSAs
+    colabfold_query_runner = ColabFoldQueryRunner(
+        input_data=colabfold_input_data,
+        output_directory=output_directory,
+        user_agent=user_agent,
+    )
+    colabfold_query_runner()
