@@ -296,7 +296,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         )
         aux_out["experimentally_resolved_logits"] = experimentally_resolved_logits
 
-        aux_out["pde_logits"] = self.pde(zij, apply_per_sample=apply_per_sample)
+        aux_out["pde_logits"] = self.pde(zij)
 
         if self.config.pae.enabled:
             aux_out["pae_logits"] = self.pae(zij)

@@ -32,26 +32,10 @@ def compute_valid_model_selection_metrics(
     """
     device = outputs["pde_logits"].device
 
-    num_atoms = outputs["atom_positions_predicted"].shape[-2]
-    chunk_computation = (
-        confidence_config.per_sample_atom_cutoff is not None
-        and num_atoms > confidence_config.per_sample_atom_cutoff
-    )
-
     # Compute pde (predicted distance error)
-    pde_logits = outputs["pde_logits"].detach()
-    if chunk_computation:
-        pde = torch.zeros(
-            pde_logits.shape[:-1], device=pde_logits.device, dtype=pde_logits.dtype
-        )
-        for i in range(pde_logits.shape[-4]):
-            pde[..., i, :, :] = compute_predicted_distance_error(
-                pde_logits[..., i : i + 1, :, :, :], **confidence_config.pde
-            )["predicted_distance_error"]
-    else:
-        pde = compute_predicted_distance_error(pde_logits, **confidence_config.pde)[
-            "predicted_distance_error"
-        ]
+    pde = compute_predicted_distance_error(
+        outputs["pde_logits"].detach(), **confidence_config.pde
+    )["predicted_distance_error"]
 
     # Compute distogram-based contact probabilities (pij)
     # distogram_logits shape: [bs, n_samples, n_tokens, n_tokens, 38]

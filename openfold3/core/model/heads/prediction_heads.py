@@ -106,10 +106,8 @@ class PairformerEmbedding(nn.Module):
 
     def per_sample_pairformer_emb(
         self,
-        si_input: torch.Tensor,
         si: torch.Tensor,
         zij: torch.Tensor,
-        x_pred: torch.Tensor,
         single_mask: torch.Tensor,
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
@@ -119,20 +117,16 @@ class PairformerEmbedding(nn.Module):
         _mask_trans: bool = True,
     ):
         # PairFormer embedding
-        no_samples = x_pred.shape[-3]
+        no_samples = zij.shape[-4]
         si_out = torch.zeros_like(si)
-        zij_out = torch.zeros_like(zij.expand(*(x_pred.shape[:-2] + zij.shape[-3:])))
+        zij_out = torch.zeros_like(zij)
 
         for i in range(no_samples):
-            zij_sample = self.embed_zij(
-                si_input=si_input[:, 0], zij=zij[:, 0], x_pred=x_pred[:, i]
-            )
-
             si_chunk, zij_chunk = self.pairformer_stack(
-                si[:, i],
-                zij_sample,
-                single_mask[:, i],
-                pair_mask[:, i],
+                si[..., i : i + 1, :, :],
+                zij[..., i : i + 1, :, :, :],
+                single_mask[..., i : i + 1, :],
+                pair_mask[..., i : i + 1, :, :],
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
@@ -140,17 +134,15 @@ class PairformerEmbedding(nn.Module):
                 _mask_trans=_mask_trans,
             )
 
-            si_out[:, i] = si_chunk.unsqueeze(1)
-            zij_out[:, i] = zij_chunk.unsqueeze(1)
+            si_out[..., i : i + 1, :, :] = si_chunk
+            zij_out[:, i : i + 1, :, :, :] = zij_chunk
 
         return si_out, zij_out
 
     def pairformer_emb(
         self,
-        si_input: torch.Tensor,
         si: torch.Tensor,
         zij: torch.Tensor,
-        x_pred: torch.Tensor,
         single_mask: torch.Tensor,
         pair_mask: torch.Tensor,
         use_deepspeed_evo_attention: bool = False,
@@ -158,8 +150,6 @@ class PairformerEmbedding(nn.Module):
         inplace_safe: bool = False,
         _mask_trans: bool = True,
     ):
-        zij = self.embed_zij(si_input=si_input, zij=zij, x_pred=x_pred)
-
         # TODO: Make this less awkward, DS kernel has strict shape asserts
         #  and expects batch and seq dims to exist, but no sample dim
         batch_dims = si.shape[:-2]
@@ -242,6 +232,9 @@ class PairformerEmbedding(nn.Module):
             zij:
                 [*, N_token, N_token, C_z] Updated pair representation
         """
+        # Embed pair rep with single rep and pairwise distances
+        zij = self.embed_zij(si_input=si_input, zij=zij, x_pred=x_pred)
+
         # Expand sample dimension
         si = si.expand(*(x_pred.shape[:-2] + si.shape[-2:])).clone()
         single_mask = single_mask.expand(*(x_pred.shape[:-2] + single_mask.shape[-1:]))
@@ -251,10 +244,8 @@ class PairformerEmbedding(nn.Module):
         with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
             if apply_per_sample:
                 si, zij = self.per_sample_pairformer_emb(
-                    si_input=si_input,
                     si=si,
                     zij=zij,
-                    x_pred=x_pred,
                     single_mask=single_mask,
                     pair_mask=pair_mask,
                     chunk_size=chunk_size,
@@ -267,10 +258,8 @@ class PairformerEmbedding(nn.Module):
                 # TODO: Fix chunking issues with > 1 sample
                 #  Chunking disabled for now
                 si, zij = self.pairformer_emb(
-                    si_input=si_input,
                     si=si,
                     zij=zij,
-                    x_pred=x_pred,
                     single_mask=single_mask,
                     pair_mask=pair_mask,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
@@ -355,43 +344,17 @@ class PredictedDistanceErrorHead(nn.Module):
         self.layer_norm = LayerNorm(self.c_z)
         self.linear = Linear(self.c_z, self.c_out, **linear_init_params.linear)
 
-    def _compute_logits(self, zij: torch.Tensor):
-        return self.linear(self.layer_norm(zij))
-
-    def _chunk(
-        self,
-        zij: torch.Tensor,
-    ) -> torch.Tensor:
-        zij_out = torch.zeros(
-            (*zij.shape[:-1], self.c_out), device=zij.device, dtype=zij.dtype
-        )
-        no_samples = zij.shape[-4]
-        for i in range(no_samples):
-            zij_out[:, i] = self._compute_logits(zij[:, i : i + 1])
-
-        return zij_out
-
-    def forward(self, zij, apply_per_sample: bool = False):
+    def forward(self, zij):
         """
         Args:
             zij:
                 [*, N, N, C_z] Pair embedding
-            apply_per_sample:
-                Run PDE head for each sample individually.
-                This is a memory optimization which is only used during
-                validation/inference and will depend on the number of samples
-                in the full rollout.
         Returns:
             logits:
                 [*, N, N, C_out] Logits
         """
-        if apply_per_sample:
-            logits = self._chunk(zij=zij)
-        else:
-            logits = self._compute_logits(zij=zij)
-
+        logits = self.linear(self.layer_norm(zij))
         logits = logits + logits.transpose(-2, -3)
-
         return logits
 
 
