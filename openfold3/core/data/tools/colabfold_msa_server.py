@@ -467,12 +467,12 @@ class ColabFoldMapper:
 
 
 def collect_colabfold_msa_data(
-    inference_set: InferenceQuerySet,
+    inference_query_set: InferenceQuerySet,
 ) -> ColabFoldMapper:
     """_summary_
 
     Args:
-        inference_set (InferenceQuerySet): _description_
+        inference_query_set (InferenceQuerySet): _description_
 
     Raises:
         RuntimeError: _description_
@@ -485,7 +485,7 @@ def collect_colabfold_msa_data(
 
     colabfold_mapper = ColabFoldMapper()
     # Get unique set of sequences for unpaired MSAs
-    for query_name, query in inference_set.queries.items():
+    for query_name, query in inference_query_set.queries.items():
         chain_ids_seen = set()
         rep_ids_query = []
 
@@ -527,7 +527,7 @@ def collect_colabfold_msa_data(
 
         # Only do pairing if number of unique protein sequences is > 1
         if len(set(rep_ids_query)) > 1:
-            complex_id = ComplexID(*sorted(rep_ids_query, key=lambda c: c.stringify()))
+            complex_id = ComplexID(*sorted(rep_ids_query, key=lambda c: str(c)))
             if complex_id not in colabfold_mapper.complex_ids:
                 colabfold_mapper.complex_ids.add(complex_id)
             colabfold_mapper.query_name_to_complex_id[query_name] = complex_id
@@ -636,7 +636,7 @@ class ColabFoldQueryRunner:
         unpaired_alignments_path.mkdir(parents=True, exist_ok=True)
 
         for rep_id, aln in zip(self.colabfold_mapper.rep_ids, a3m_lines_unpaired):
-            rep_dir = unpaired_alignments_path / rep_id.stringify()
+            rep_dir = unpaired_alignments_path / str(rep_id)
             rep_dir.mkdir(parents=True, exist_ok=True)
 
             # TODO: add code for which format to save the MSA in
@@ -673,16 +673,16 @@ class ColabFoldQueryRunner:
             (self.output_directory / "raw/paired").mkdir(parents=True, exist_ok=True)
             a3m_lines_paired = query_colabfold_msa_server(
                 seqs_query,
-                prefix=self.output_directory / f"raw/paired/{complex_id.stringify()}",
+                prefix=self.output_directory / f"raw/paired/{complex_id}",
                 use_templates=False,
                 use_pairing=True,
                 user_agent=self.user_agent,
             )
 
             # TODO: process the returned MSAs - save per representative ID
-            complex_directory = paired_alignments_directory / complex_id.stringify()
+            complex_directory = paired_alignments_directory / str(complex_id)
             for rep_id, aln in zip(complex_id, a3m_lines_paired):
-                rep_directory = complex_directory / rep_id.stringify()
+                rep_directory = complex_directory / str(rep_id)
                 rep_directory.mkdir(parents=True, exist_ok=True)
 
                 # If save as a3m...
@@ -700,22 +700,66 @@ class ColabFoldQueryRunner:
         # TODO add code to optionally clean up the raw MSA files
 
 
-# TODO use pydantic object as inputs
-def preprocess_colabfold_msas(
-    inference_set: InferenceQuerySet,
+def add_msa_paths_to_iqs(
+    inference_query_set: InferenceQuerySet,
+    colabfold_mapper: ColabFoldMapper,
     output_directory: Path,
-    user_agent: str,
-    save_mappings: bool = False,
-):
+) -> InferenceQuerySet:
     """_summary_
 
     Args:
-        inference_set (InferenceQuerySet): _description_
+        inference_query_set (InferenceQuerySet): _description_
+        colabfold_mapper (ColabFoldMapper): _description_
+        output_directory (Path): _description_
+
+    Returns:
+        InferenceQuerySet: _description_
+    """
+    for query_name, query in inference_query_set.queries.items():
+        for chain in query.chains:
+            if chain.molecule_type == MoleculeType.PROTEIN:
+                # Add unpaired MSA file paths to the chain field
+                rep_id = colabfold_mapper.chain_id_to_rep_id[
+                    ChainID(query_name, chain.chain_ids[0])
+                ]
+                unpaired_msa_file_path = (
+                    output_directory
+                    / "unpaired"
+                    / str(rep_id)
+                    / "colabfold_unpaired.npz"
+                )
+                chain.unpaired_msa_file_paths = [unpaired_msa_file_path]
+                # Add paired MSA file paths to the chain field
+                if query_name in colabfold_mapper.query_name_to_complex_id:
+                    complex_id = colabfold_mapper.query_name_to_complex_id[query_name]
+                    paired_msa_file_path = (
+                        output_directory
+                        / "paired"
+                        / str(complex_id)
+                        / str(rep_id)
+                        / "colabfold_paired.npz"
+                    )
+                    chain.paired_msa_file_path = [paired_msa_file_path]
+
+    return inference_query_set
+
+
+# TODO use pydantic object as input
+def preprocess_colabfold_msas(
+    inference_query_set: InferenceQuerySet,
+    output_directory: Path,
+    user_agent: str,
+    save_mappings: bool = False,
+) -> InferenceQuerySet:
+    """_summary_
+
+    Args:
+        inference_query_set (InferenceQuerySet): _description_
         output_directory (Path): _description_
         user_agent (str): _description_
     """
     # Gather MSA data
-    colabfold_mapper = collect_colabfold_msa_data(inference_set)
+    colabfold_mapper = collect_colabfold_msa_data(inference_query_set)
 
     # Save mappings to file
     if save_mappings:
@@ -731,3 +775,10 @@ def preprocess_colabfold_msas(
     colabfold_query_runner.query_format_paired()
 
     # Add paths to the IQS
+    inference_query_set = add_msa_paths_to_iqs(
+        inference_query_set=inference_query_set,
+        colabfold_mapper=colabfold_mapper,
+        output_directory=output_directory,
+    )
+
+    return inference_query_set
