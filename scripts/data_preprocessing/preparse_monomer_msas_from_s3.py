@@ -108,7 +108,7 @@ def preparse_msas(
     rep_pdb_chain_id: str,
 ) -> None:
     msas = parse_msas_direct(
-        folder_path=alignments_directory / Path(rep_pdb_chain_id),
+        input_path=alignments_directory / Path(rep_pdb_chain_id),
         max_seq_counts=max_seq_counts,
     )
     alignment_array_directory.mkdir(parents=True, exist_ok=True)

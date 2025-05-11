@@ -139,6 +139,22 @@ def process_msas_af3(
     return msa_array_collection
 
 
+# TODO modularize and refactor to share common code with process_msas_af3
+# def process_msas_af3_inference_tmp():
+
+#     # Parse MSAs
+
+#     # Create query
+
+#     # Create paired
+
+#     # Create main
+
+#     # Set state processed
+
+#     return msa_array_collection
+
+
 # def process_msas_msaserver(
 #     alignments_directory: Path, assembly_data: dict[str, dict[str, Any]]
 # ) -> MsaArrayCollection:

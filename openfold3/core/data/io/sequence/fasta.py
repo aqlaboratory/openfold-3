@@ -11,7 +11,7 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 
-def read_multichain_fasta(input_path: Path) -> dict[str, str]:
+def get_chain_id_to_seq_from_fasta(input_path: Path) -> dict[str, str]:
     """Reads a FASTA file into a dictionary of chain IDs to sequences.
 
     The input FASTA should follow the format:
@@ -86,7 +86,7 @@ def consolidate_preprocessed_fastas(preprocessed_dir: Path) -> dict[str, str]:
             logger.warning(f"FASTA file not found for {pdb_id}")
             return {}
 
-        chain_id_to_seq = read_multichain_fasta(fasta_path)
+        chain_id_to_seq = get_chain_id_to_seq_from_fasta(fasta_path)
         return {
             f"{pdb_id}_{chain_id}": seq for chain_id, seq in chain_id_to_seq.items()
         }

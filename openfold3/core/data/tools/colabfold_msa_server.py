@@ -434,7 +434,9 @@ class ComplexID(tuple[ChainID, ...]):
         return super().__iter__()
 
     def stringify(
-        self, inner_delimiter: str = "-", outer_delimiter: str = ".", sort: bool = False
+        self,
+        inner_delimiter: str = "-",
+        outer_delimiter: str = ".",
     ) -> str:
         return outer_delimiter.join(c.stringify(inner_delimiter) for c in self)
 
@@ -646,9 +648,12 @@ class ColabFoldQueryRunner:
                 f.write(aln)
 
             # If save as npz...
-            npz_file = rep_dir / "colabfold_unpaired.npz"
-            npz_object = parse_a3m(aln)
-            np.savez_compressed(npz_file, npz_object)
+            npz_file = Path(f"{rep_dir}.npz")
+            msas = {"colabfold_unpaired": parse_a3m(aln)}
+            msas_preparsed = {}
+            for k, v in msas.items():
+                msas_preparsed[k] = v.to_dict()
+            np.savez_compressed(npz_file, **msas_preparsed)
 
     def query_format_paired(self):
         """_summary_"""
@@ -682,18 +687,21 @@ class ColabFoldQueryRunner:
             # TODO: process the returned MSAs - save per representative ID
             complex_directory = paired_alignments_directory / str(complex_id)
             for rep_id, aln in zip(complex_id, a3m_lines_paired):
-                rep_directory = complex_directory / str(rep_id)
-                rep_directory.mkdir(parents=True, exist_ok=True)
+                rep_dir = complex_directory / str(rep_id)
+                rep_dir.mkdir(parents=True, exist_ok=True)
 
                 # If save as a3m...
-                a3m_file = rep_directory / "colabfold_paired.a3m"
+                a3m_file = rep_dir / "colabfold_paired.a3m"
                 with open(a3m_file, "w") as f:
                     f.write(aln)
 
                 # If save as npz...
-                npz_file = rep_directory / "colabfold_paired.npz"
-                npz_object = parse_a3m(aln)
-                np.savez_compressed(npz_file, npz_object)
+                npz_file = Path(f"{rep_dir}.npz")
+                msas = {"colabfold_paired": parse_a3m(aln)}
+                msas_preparsed = {}
+                for k, v in msas.items():
+                    msas_preparsed[k] = v.to_dict()
+                np.savez_compressed(npz_file, **msas_preparsed)
 
     def cleanup(self):
         """_summary_"""
@@ -723,10 +731,7 @@ def add_msa_paths_to_iqs(
                     ChainID(query_name, chain.chain_ids[0])
                 ]
                 unpaired_msa_file_path = (
-                    output_directory
-                    / "unpaired"
-                    / str(rep_id)
-                    / "colabfold_unpaired.npz"
+                    output_directory / "unpaired" / f"{str(rep_id)}.npz"
                 )
                 chain.unpaired_msa_file_paths = [unpaired_msa_file_path]
                 # Add paired MSA file paths to the chain field
@@ -736,8 +741,7 @@ def add_msa_paths_to_iqs(
                         output_directory
                         / "paired"
                         / str(complex_id)
-                        / str(rep_id)
-                        / "colabfold_paired.npz"
+                        / f"{str(rep_id)}.npz"
                     )
                     chain.paired_msa_file_path = [paired_msa_file_path]
 

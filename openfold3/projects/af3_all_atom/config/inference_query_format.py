@@ -29,6 +29,14 @@ def _convert_molecule_type(value: Any) -> Any:
                 f"Found invalid {value=} for molecule type, skipping this example."
             )
             return None
+    elif isinstance(value, int):
+        try:
+            return MoleculeType(value)
+        except ValueError:
+            logging.warning(
+                f"Found invalid {value=} for molecule type, skipping this example."
+            )
+            return None
 
 
 # Definition for Bonds
