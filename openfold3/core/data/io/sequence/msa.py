@@ -451,68 +451,130 @@ def parse_msas_sample(
         chain_id_to_mol_type=chain_id_to_mol_type,
     )
     msa_array_collection.set_state_parsed(
-        rep_id_to_msa=rep_id_to_msa, rep_id_to_query_seq=rep_id_to_query_seq
+        rep_id_to_unpaired_msa=rep_id_to_msa, rep_id_to_query_seq=rep_id_to_query_seq
     )
     return msa_array_collection
 
 
+# TODO: modularize and reduce code duplication with parse_msas_sample
 def parse_msas_sample_inference(
     assembly_data: dict[str, dict[str, Any]],
     moltypes: list[str],
     max_seq_counts: dict[str, int] | None,
 ) -> MsaArrayCollection:
-    # Map chain IDs to representative IDs (using unique filepaths) and molecule types
-    # combined from above with subsetting to any that needs MSAs
+    # Create maps
     chain_id_to_rep_id, chain_id_to_mol_type = {}, {}
-    rep_id_to_unpaired_msa_paths, _ = {}, {}  # for rep_id_to_paired_msa_paths
+    rep_id_to_main_msa_paths, rep_id_to_paired_msa_paths = {}, {}
     for chain_id, chain_data in assembly_data.items():
         if chain_data["molecule_type"] in moltypes:
-            # use first msa path hashed as the representative ID - unpaired
-            unpaired_msa_file_paths = sorted(chain_data["unpaired_msa_file_paths"])
-            # TODO: there is an issue with this if the user provides the same file path
-            # to different chains in the first place but different file paths otherwise
-            rep_id = hash(str(unpaired_msa_file_paths[0]))
-            chain_id_to_rep_id[chain_id] = rep_id
-            chain_id_to_mol_type[chain_id] = chain_data["molecule_type"]
-            if rep_id not in rep_id_to_unpaired_msa_paths:
-                rep_id_to_unpaired_msa_paths[rep_id] = unpaired_msa_file_paths
-
-    # Parse MSAs for each representative ID
-    rep_id_to_msa, rep_id_to_query_seq = {}, {}
-    if len(chain_id_to_rep_id) > 0:
-        # Parse MSAs for each representative ID
-        # This requires parsing MSAs for duplicate chains only once
-        representative_chain_ids = sorted(set(chain_id_to_rep_id.values()))
-        representative_msas = {}
-        for rep_id in representative_chain_ids:
-            # Determine the appropriate parser based on the file type TODO: the issue
-            # here is that we don't expect the user to have a consolidated dir of MSAs
-            # so we can't rely on the logic from above using
-            # alignments_directory/alignment_db_directory/alignment_array_directory
-            if rep_id_to_unpaired_msa_paths[rep_id][0].suffix == ".npz":
-                chain_msa_parser = parse_msas_preparsed
-            elif rep_id_to_unpaired_msa_paths[rep_id][0].suffix in [".sto", ".a3m"]:
-                chain_msa_parser = partial(
-                    parse_msas_direct,
-                    max_seq_counts=max_seq_counts,
-                )
-            else:
-                raise ValueError(
-                    "Unsupported file type "
-                    f"{rep_id_to_unpaired_msa_paths[rep_id][0].suffix} for "
-                    f"representative ID {rep_id}"
-                )
-
-            # Parse MSAs into a dict of MsaArrays
-            representative_msas[rep_id] = chain_msa_parser(
-                input_path=rep_id_to_unpaired_msa_paths[rep_id],
+            main_msa_file_paths = (
+                sorted(chain_data["main_msa_file_paths"])
+                if chain_data["main_msa_file_paths"]
+                else []
+            )
+            paired_msa_file_paths = (
+                sorted(chain_data["paired_msa_file_paths"])
+                if chain_data["paired_msa_file_paths"]
+                else []
             )
 
-        # Pull out the query sequence from the first row of the first MSA of each chain
-        for rep_id, all_msas_per_chain in representative_msas.items():
-            rep_id_to_msa[rep_id] = all_msas_per_chain
-            example_msa = all_msas_per_chain[sorted(all_msas_per_chain.keys())[0]].msa
-            rep_id_to_query_seq[rep_id] = example_msa[0, :][np.newaxis, :]
+            # Fetch representative ID
+            rep_ids = set()
+            # from paired if no main MSAs
+            paths = (
+                main_msa_file_paths
+                if len(main_msa_file_paths) > 0
+                else paired_msa_file_paths
+            )
+            for msa_file_path in paths:
+                if msa_file_path.is_dir() or msa_file_path.suffix == ".npz":
+                    rep_ids.add(msa_file_path.stem)
+                elif msa_file_path.suffix in [".sto", ".a3m"]:
+                    rep_ids.add(msa_file_path.parent.stem)
+
+            rep_id = sorted(rep_ids)[0]
+
+            if len(rep_ids) > 0:
+                warnings.warn(
+                    f"Found multiple representative IDs {rep_ids} for chain ID "
+                    f"{chain_id}. Only the first representative ID will be used:"
+                    f" {rep_id}.",
+                    stacklevel=2,
+                )
+
+            chain_id_to_rep_id[chain_id] = rep_id
+            chain_id_to_mol_type[chain_id] = chain_data["molecule_type"]
+            if rep_id not in rep_id_to_main_msa_paths:
+                rep_id_to_main_msa_paths[rep_id] = main_msa_file_paths
+            if rep_id not in rep_id_to_paired_msa_paths:
+                rep_id_to_paired_msa_paths[rep_id] = paired_msa_file_paths
+
+    # Parse MSAs for each representative ID
+    if len(chain_id_to_rep_id) > 0:
+        # Parse MSAs for each representative
+        representative_chain_ids = sorted(set(chain_id_to_rep_id.values()))
+        rep_id_to_query_seq, rep_id_to_main_msa, rep_id_to_paired_msa = {}, {}, {}
+        for rep_id in representative_chain_ids:
+            # Parse main MSAs
+            if rep_id in rep_id_to_main_msa_paths:
+                example_path = rep_id_to_main_msa_paths[rep_id][0]
+                if example_path.is_dir() or (example_path.suffix in [".sto", ".a3m"]):
+                    chain_msa_parser = partial(
+                        parse_msas_direct,
+                        max_seq_counts=max_seq_counts,
+                    )
+                elif example_path.suffix == ".npz":
+                    chain_msa_parser = parse_msas_preparsed
+                else:
+                    raise ValueError(
+                        f"Unsupported MSA path found {example_path}. Needs to be one "
+                        "of the following: \n"
+                        " - an .a3m or .sto file \n"
+                        " - a directory containing .a3m or .sto files \n"
+                        " - a .npz file \n"
+                    )
+
+                # Parse MSAs into a dict of MsaArrays
+                all_msas_per_chain = chain_msa_parser(
+                    input_path=rep_id_to_main_msa_paths[rep_id],
+                )
+                rep_id_to_main_msa[rep_id] = all_msas_per_chain
+
+                # Create query sequence from the first row
+                rep_id_to_query_seq[rep_id] = all_msas_per_chain[
+                    sorted(all_msas_per_chain.keys())[0]
+                ].msa[0, :][np.newaxis, :]
+
+            # Parse paired MSAs
+            if rep_id in rep_id_to_paired_msa_paths:
+                example_path = rep_id_to_paired_msa_paths[rep_id][0]
+                if example_path.is_dir() or (example_path.suffix in [".sto", ".a3m"]):
+                    chain_msa_parser = partial(
+                        parse_msas_direct,
+                        max_seq_counts=max_seq_counts,
+                    )
+                elif example_path.suffix == ".npz":
+                    chain_msa_parser = parse_msas_preparsed
+                else:
+                    raise ValueError(
+                        f"Unsupported MSA path found {example_path}. Needs to be one "
+                        "of the following: \n"
+                        " - an .a3m or .sto file \n"
+                        " - a directory containing .a3m or .sto files \n"
+                        " - a .npz file \n"
+                    )
+
+                # Parse MSAs into a dict of MsaArrays
+                all_msas_per_chain = chain_msa_parser(
+                    input_path=rep_id_to_paired_msa_paths[rep_id],
+                )
+                rep_id_to_paired_msa[rep_id] = all_msas_per_chain
+
+                if rep_id not in rep_id_to_query_seq:
+                    # Create query sequence from the first row
+                    rep_id_to_query_seq[rep_id] = all_msas_per_chain[
+                        sorted(all_msas_per_chain.keys())[0]
+                    ].msa[0, :][np.newaxis, :]
 
     # Set msa collection to parsed, will be empty if no protein or RNA chains
     msa_array_collection = MsaArrayCollection(
@@ -520,6 +582,8 @@ def parse_msas_sample_inference(
         chain_id_to_mol_type=chain_id_to_mol_type,
     )
     msa_array_collection.set_state_parsed(
-        rep_id_to_msa=rep_id_to_msa, rep_id_to_query_seq=rep_id_to_query_seq
+        rep_id_to_query_seq=rep_id_to_query_seq,
+        rep_id_to_paired_msa=rep_id_to_paired_msa,
+        rep_id_to_main_msa=rep_id_to_main_msa,
     )
     return msa_array_collection

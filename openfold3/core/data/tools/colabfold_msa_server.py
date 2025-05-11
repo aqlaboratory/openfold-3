@@ -241,7 +241,7 @@ def query_colabfold_msa_server(
 
     # Deduplicate and keep track of order
     seqs_unique = []
-    # TODO this might be slow for large sets - see unpaired MSA deduplication code for a
+    # TODO this might be slow for large sets - see main MSA deduplication code for a
     # faster option
     [seqs_unique.append(x) for x in seqs if x not in seqs_unique]
     Ms = [N + seqs_unique.index(seq) for seq in seqs]
@@ -486,7 +486,7 @@ def collect_colabfold_msa_data(
     """
 
     colabfold_mapper = ColabFoldMapper()
-    # Get unique set of sequences for unpaired MSAs
+    # Get unique set of sequences for main MSAs
     for query_name, query in inference_query_set.queries.items():
         chain_ids_seen = set()
         rep_ids_query = []
@@ -510,11 +510,12 @@ def collect_colabfold_msa_data(
 
                 chain_ids_seen.update(chain_ids)
 
-                # Collect mapping data and sequences for unpaired MSAs
+                # Collect mapping data and sequences for main MSAs
                 if seq not in colabfold_mapper.seq_to_rep_id:
                     colabfold_mapper.seq_to_rep_id[seq] = chain_ids[0]
                     colabfold_mapper.rep_id_to_seq[chain_ids[0]] = seq
-                    colabfold_mapper.chain_id_to_rep_id[chain_ids[0]] = chain_ids[0]
+                    for chain_id in chain_ids:
+                        colabfold_mapper.chain_id_to_rep_id[chain_id] = chain_ids[0]
                     colabfold_mapper.seqs.append(seq)
                     colabfold_mapper.rep_ids.append(chain_ids[0])
                 else:
@@ -607,49 +608,49 @@ class ColabFoldQueryRunner:
         self.output_directory = output_directory
         self.user_agent = user_agent
         self.output_directory.mkdir(parents=True, exist_ok=True)
-        for subdir in ["raw", "unpaired", "paired"]:
+        for subdir in ["raw", "main", "paired"]:
             (self.output_directory / subdir).mkdir(parents=True, exist_ok=True)
             if subdir == "raw":
-                for subsubdir in ["unpaired", "paired"]:
+                for subsubdir in ["main", "paired"]:
                     (self.output_directory / subdir / subsubdir).mkdir(
                         parents=True, exist_ok=True
                     )
 
-    def query_format_unpaired(self):
+    def query_format_main(self):
         """_summary_"""
-        # Submit query for unpaired MSAs
+        # Submit query for main MSAs
         # TODO: add template alignments fetching code here by setting use_templates=True
         # TODO: replace prints with proper logging
         print(
             f"Submitting {len(self.colabfold_mapper.seqs)} sequences to the Colabfold"
-            " MSA server for unpaired MSAs..."
+            " MSA server for main MSAs..."
         )
         # TODO: chunking
         # TODO: warn if too many sequences maybe?
-        a3m_lines_unpaired = query_colabfold_msa_server(
+        a3m_lines_main = query_colabfold_msa_server(
             self.colabfold_mapper.seqs,
-            prefix=self.output_directory / "raw/unpaired",
+            prefix=self.output_directory / "raw/main",
             use_templates=False,
             use_pairing=False,
             user_agent=self.user_agent,
         )
 
-        unpaired_alignments_path = self.output_directory / "unpaired"
-        unpaired_alignments_path.mkdir(parents=True, exist_ok=True)
+        main_alignments_path = self.output_directory / "main"
+        main_alignments_path.mkdir(parents=True, exist_ok=True)
 
-        for rep_id, aln in zip(self.colabfold_mapper.rep_ids, a3m_lines_unpaired):
-            rep_dir = unpaired_alignments_path / str(rep_id)
+        for rep_id, aln in zip(self.colabfold_mapper.rep_ids, a3m_lines_main):
+            rep_dir = main_alignments_path / str(rep_id)
             rep_dir.mkdir(parents=True, exist_ok=True)
 
             # TODO: add code for which format to save the MSA in
             # If save as a3m...
-            a3m_file = rep_dir / "colabfold_unpaired.a3m"
+            a3m_file = rep_dir / "colabfold_main.a3m"
             with open(a3m_file, "w") as f:
                 f.write(aln)
 
             # If save as npz...
             npz_file = Path(f"{rep_dir}.npz")
-            msas = {"colabfold_unpaired": parse_a3m(aln)}
+            msas = {"colabfold_main": parse_a3m(aln)}
             msas_preparsed = {}
             for k, v in msas.items():
                 msas_preparsed[k] = v.to_dict()
@@ -726,24 +727,22 @@ def add_msa_paths_to_iqs(
     for query_name, query in inference_query_set.queries.items():
         for chain in query.chains:
             if chain.molecule_type == MoleculeType.PROTEIN:
-                # Add unpaired MSA file paths to the chain field
+                # Add main MSA file paths to the chain field
                 rep_id = colabfold_mapper.chain_id_to_rep_id[
                     ChainID(query_name, chain.chain_ids[0])
                 ]
-                unpaired_msa_file_path = (
-                    output_directory / "unpaired" / f"{str(rep_id)}.npz"
-                )
-                chain.unpaired_msa_file_paths = [unpaired_msa_file_path]
+                main_msa_file_path = output_directory / "main" / f"{str(rep_id)}.npz"
+                chain.main_msa_file_paths = [main_msa_file_path]
                 # Add paired MSA file paths to the chain field
                 if query_name in colabfold_mapper.query_name_to_complex_id:
                     complex_id = colabfold_mapper.query_name_to_complex_id[query_name]
-                    paired_msa_file_path = (
+                    paired_msa_file_paths = (
                         output_directory
                         / "paired"
                         / str(complex_id)
                         / f"{str(rep_id)}.npz"
                     )
-                    chain.paired_msa_file_path = [paired_msa_file_path]
+                    chain.paired_msa_file_paths = [paired_msa_file_paths]
 
     return inference_query_set
 
@@ -769,13 +768,13 @@ def preprocess_colabfold_msas(
     if save_mappings:
         save_colabfold_mappings(colabfold_mapper, output_directory)
 
-    # Run batch queries for unpaired and paired MSAs
+    # Run batch queries for main and paired MSAs
     colabfold_query_runner = ColabFoldQueryRunner(
         colabfold_mapper=colabfold_mapper,
         output_directory=output_directory,
         user_agent=user_agent,
     )
-    colabfold_query_runner.query_format_unpaired()
+    colabfold_query_runner.query_format_main()
     colabfold_query_runner.query_format_paired()
 
     # Add paths to the IQS

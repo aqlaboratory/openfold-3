@@ -59,10 +59,12 @@ class Chain(BaseModel):
     ccd_codes: Optional[Annotated[list[str], BeforeValidator(_ensure_list)]] = None
     # Msa definition
     use_msas: bool = True
-    unpaired_msa_file_paths: Optional[list[FilePath]] = None
-    paired_msa_file_path: Optional[
+    use_paired_msas: bool = True
+    use_main_msas: bool = True
+    paired_msa_file_paths: Optional[
         Annotated[list[FilePath], BeforeValidator(_ensure_list)]
     ] = None
+    main_msa_file_paths: Optional[list[FilePath]] = None
     # # Template definition
     # use_templates: bool = False
     # templates: ...

@@ -321,13 +321,13 @@ class MsaArrayCollection:
 
     This class can be in one of three states:
         1.) parsed state:
-            attributes rep_id_to_msa and rep_id_to_query_seq populated after parsing and
-            chain_id_to_query_seq, chain_id_to_paired_msa, chain_id_to_main_msa
-            unpopulated.
+            attributes rep_id_to_query_seq, rep_id_to_paired_msa and rep_id_to_main_msa
+            populated after parsing and chain_id_to_query_seq, chain_id_to_paired_msa,
+            chain_id_to_main_msa unpopulated.
         2.) processed state:
-            attributes rep_id_to_msa and rep_id_to_query_seq unpopulated and
-            chain_id_to_query_seq, chain_id_to_paired_msa, chain_id_to_main_msa
-            populated after processing.
+            attributes rep_id_to_query_seq, rep_id_to_paired_msa and rep_id_to_main_msa
+            unpopulated and chain_id_to_query_seq, chain_id_to_paired_msa,
+            chain_id_to_main_msa populated after processing.
         3.) prefeaturized state:
             Processed state with the attribute row_counts also populated.
 
@@ -338,11 +338,14 @@ class MsaArrayCollection:
         _state (str):
             The state of the MsaArrayCollection object. Can be one of "init", "parsed",
             "processed", or "prefeaturized".
-        rep_id_to_msa (dict[str, dict[str, MsaArray]]):
-            Dictionary mapping representative chain IDs to dictionaries of Msa objects.
         rep_id_to_query_seq (dict[str, np.ndarray[str]]):
             Dictionary mapping representative chain IDs to numpy arrays of their
             corresponding query sequences.
+        rep_id_to_paired_msa (dict[str, MsaArray] | None):
+            Dictionary mapping representative chain IDs to Msa objects containing paired
+            MSA data. Only used if precomputed paired MSAs are provided.
+        rep_id_to_main_msa (dict[str, dict[str, MsaArray]]):
+            Dictionary mapping representative chain IDs to dictionaries of Msa objects.
         chain_id_to_query_seq (dict[str, MsaArray]):
             Dictionary mapping chain IDs to Msa objects containing query sequence data.
         chain_id_to_paired_msa (dict[str, MsaArray]):
@@ -362,16 +365,16 @@ class MsaArrayCollection:
     # Core attributes
     chain_id_to_rep_id: dict[str, str]
     chain_id_to_mol_type: dict[str, str]
-    row_counts: dict[str, int | dict[str, int]] = dataclasses.field(
-        default_factory=dict
-    )
     _state: str = "init"
 
     # State parsed attributes
-    rep_id_to_msa: dict[str, dict[str, MsaArray]] = dataclasses.field(
+    rep_id_to_query_seq: dict[str, np.ndarray[str]] = dataclasses.field(
         default_factory=dict
     )
-    rep_id_to_query_seq: dict[str, np.ndarray[str]] = dataclasses.field(
+    rep_id_to_paired_msa: dict[str, MsaArray] | None = dataclasses.field(
+        default_factory=dict
+    )
+    rep_id_to_main_msa: dict[str, dict[str, MsaArray]] = dataclasses.field(
         default_factory=dict
     )
 
@@ -382,11 +385,19 @@ class MsaArrayCollection:
     )
     chain_id_to_main_msa: dict[str, MsaArray] = dataclasses.field(default_factory=dict)
 
-    def set_state_parsed(self, rep_id_to_msa, rep_id_to_query_seq):
+    # Prefeaturized attributes
+    row_counts: dict[str, int | dict[str, int]] = dataclasses.field(
+        default_factory=dict
+    )
+
+    def set_state_parsed(
+        self, rep_id_to_query_seq, rep_id_to_paired_msa=None, rep_id_to_main_msa=None
+    ):
         """Set the state to parsed."""
         self._state = "parsed"
-        self.rep_id_to_msa = rep_id_to_msa
         self.rep_id_to_query_seq = rep_id_to_query_seq
+        self.rep_id_to_paired_msa = rep_id_to_paired_msa if rep_id_to_paired_msa else {}
+        self.rep_id_to_main_msa = rep_id_to_main_msa if rep_id_to_main_msa else {}
         self.chain_id_to_query_seq = {}
         self.chain_id_to_paired_msa = {}
         self.chain_id_to_main_msa = {}
@@ -399,8 +410,9 @@ class MsaArrayCollection:
         self.chain_id_to_query_seq = chain_id_to_query_seq
         self.chain_id_to_paired_msa = chain_id_to_paired_msa
         self.chain_id_to_main_msa = chain_id_to_main_msa
-        self.rep_id_to_msa = {}
         self.rep_id_to_query_seq = {}
+        self.rep_id_to_paired_msa = {}
+        self.rep_id_to_main_msa = {}
 
     def set_state_prefeaturized(self, n_rows, n_rows_paired_cropped, n_rows_main):
         """Set the state to prefeaturized."""
@@ -485,7 +497,7 @@ def extract_uniprot_hits(
         for chain_id, rep_id in msa_array_collection.chain_id_to_rep_id.items()
         if msa_array_collection.chain_id_to_mol_type[chain_id] == "PROTEIN"
     )
-    rep_ids = msa_array_collection.rep_id_to_msa.keys()
+    rep_ids = msa_array_collection.rep_id_to_main_msa.keys()
 
     # Get uniprot hits, exclude MSAs only with query
     uniprot_hits = {}
@@ -493,7 +505,7 @@ def extract_uniprot_hits(
         if rep_id not in protein_rep_ids:
             continue
 
-        rep_msa_map_per_chain = msa_array_collection.rep_id_to_msa[rep_id]
+        rep_msa_map_per_chain = msa_array_collection.rep_id_to_main_msa[rep_id]
         uniprot_msa = (
             rep_msa_map_per_chain.get("uniprot_hits")
             if "uniprot_hits" in rep_msa_map_per_chain
@@ -1008,8 +1020,8 @@ def create_main(
     """
     # Iterate over representatives
     rep_main_msas = {}
-    for rep_id, chain_data in msa_array_collection.rep_id_to_msa.items():
-        chain_data = msa_array_collection.rep_id_to_msa[rep_id]
+    for rep_id, chain_data in msa_array_collection.rep_id_to_main_msa.items():
+        chain_data = msa_array_collection.rep_id_to_main_msa[rep_id]
 
         # Get MSAs forming the main MSA and deletion matrices from all non-UniProt MSAs
         main_msa_redundant = np.concatenate(
