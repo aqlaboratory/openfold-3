@@ -494,7 +494,7 @@ def parse_msas_sample_inference(
 
             rep_id = sorted(rep_ids)[0]
 
-            if len(rep_ids) > 0:
+            if len(rep_ids) > 1:
                 warnings.warn(
                     f"Found multiple representative IDs {rep_ids} for chain ID "
                     f"{chain_id}. Only the first representative ID will be used:"
