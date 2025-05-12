@@ -4,6 +4,7 @@ import os
 import random
 import tarfile
 import time
+import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import IntEnum
@@ -732,7 +733,15 @@ def add_msa_paths_to_iqs(
                     ChainID(query_name, chain.chain_ids[0])
                 ]
                 main_msa_file_path = output_directory / "main" / f"{str(rep_id)}.npz"
+                if chain.main_msa_file_paths is not None:
+                    warnings.warn(
+                        f"Query {query_name} chain {chain} already has "
+                        "main_msa_file_paths set. These are now overwritten "
+                        "with path(s) to the ColabFold MSAs.",
+                        stacklevel=2,
+                    )
                 chain.main_msa_file_paths = [main_msa_file_path]
+
                 # Add paired MSA file paths to the chain field
                 if query_name in colabfold_mapper.query_name_to_complex_id:
                     complex_id = colabfold_mapper.query_name_to_complex_id[query_name]
@@ -742,6 +751,13 @@ def add_msa_paths_to_iqs(
                         / str(complex_id)
                         / f"{str(rep_id)}.npz"
                     )
+                    if chain.paired_msa_file_paths is not None:
+                        warnings.warn(
+                            f"Query {query_name} chain {chain} already has "
+                            "paired_msa_file_paths set. These are now "
+                            "overwritten with path(s) to the ColabFold MSAs.",
+                            stacklevel=2,
+                        )
                     chain.paired_msa_file_paths = [paired_msa_file_paths]
 
     return inference_query_set

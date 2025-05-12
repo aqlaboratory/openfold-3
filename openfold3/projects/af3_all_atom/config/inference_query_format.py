@@ -1,7 +1,7 @@
 import logging
 from typing import Annotated, Any, NamedTuple, Optional
 
-from pydantic import BaseModel, BeforeValidator, FilePath
+from pydantic import BaseModel, BeforeValidator, DirectoryPath, FilePath
 
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.af3_all_atom.config.dataset_configs import (
@@ -62,9 +62,9 @@ class Chain(BaseModel):
     use_paired_msas: bool = True
     use_main_msas: bool = True
     paired_msa_file_paths: Optional[
-        Annotated[list[FilePath], BeforeValidator(_ensure_list)]
+        Annotated[list[FilePath | DirectoryPath], BeforeValidator(_ensure_list)]
     ] = None
-    main_msa_file_paths: Optional[list[FilePath]] = None
+    main_msa_file_paths: Optional[list[FilePath | DirectoryPath]] = None
     # # Template definition
     # use_templates: bool = False
     # templates: ...

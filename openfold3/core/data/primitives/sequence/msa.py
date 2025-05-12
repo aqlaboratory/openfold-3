@@ -9,6 +9,10 @@ from collections import defaultdict, deque
 import numpy as np
 import pandas as pd
 
+from openfold3.core.data.pipelines.sample_processing.format import (
+    MainMsaConstructorConfig,
+    PairedMsaConstructorConfig,
+)
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
@@ -1077,3 +1081,51 @@ def create_main(
         main_msas[chain_id] = rep_main_msas[rep_id]
 
     return main_msas
+
+
+class QuerySeqConstructor:
+    def __init__(self):
+        pass
+
+    def forward(self, msa_collection: MsaArrayCollection):
+        return create_query_seqs(msa_collection=msa_collection)
+
+    def __call__(self):
+        return self.forward()
+
+
+class PairedMsaConstructor:
+    def __init__(self, config: PairedMsaConstructorConfig):
+        self.max_rows_paired = config.max_rows_paired
+        self.min_chains_paired_partial = config.min_chains_paired_partial
+        self.pairing_mask_keys = config.pairing_mask_keys
+
+    def forward(self, msa_collection: MsaArrayCollection):
+        return create_paired(
+            msa_collection=msa_collection,
+            max_rows_paired=self.max_rows_paired,
+            min_chains_paired_partial=self.min_chains_paired_partial,
+            pairing_mask_keys=self.pairing_mask_keys,
+        )
+
+    def __call__(self):
+        return self.forward()
+
+
+class MainMsaConstructor:
+    def __init__(self, config: MainMsaConstructorConfig):
+        self.aln_order = config.aln_order
+
+    def forward(
+        self,
+        msa_array_collection: MsaArrayCollection,
+        chain_id_to_paired_msa: dict[str, MsaArray],
+    ):
+        return create_main(
+            msa_array_collection=msa_array_collection,
+            chain_id_to_paired_msa=chain_id_to_paired_msa,
+            aln_order=self.aln_order,
+        )
+
+    def __call__(self):
+        return self.forward()
