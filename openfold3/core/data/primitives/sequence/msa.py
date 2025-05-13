@@ -10,8 +10,8 @@ import numpy as np
 import pandas as pd
 
 from openfold3.core.data.pipelines.sample_processing.format import (
-    MainMsaConstructorConfig,
-    PairedMsaConstructorConfig,
+    MainMsaProcessorConfig,
+    PairedMsaProcessorConfig,
 )
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
@@ -1052,14 +1052,14 @@ def create_main(
             arr = main_msa_redundant
 
             # 1) Convert each 2D array into a 1D "structured" view of type void This
-            #    way, each row is treated as one item.
+            # way, each row is treated as one item.
             arr_view = arr.view(np.dtype((np.void, arr.dtype.itemsize * arr.shape[1])))
             paired_view = paired_arr.view(
                 np.dtype((np.void, paired_arr.dtype.itemsize * paired_arr.shape[1]))
             )
 
             # 2) Vectorized membership check: is row in paired_msa? ~np.isin(...)
-            #    inverts the boolean array, so True => "unique" row
+            # inverts the boolean array, so True -> "unique" row
             is_unique = np.squeeze(~np.isin(arr_view, paired_view), axis=-1)
 
             # Apply filtering with the boolean mask
@@ -1083,7 +1083,8 @@ def create_main(
     return main_msas
 
 
-class QuerySeqConstructor:
+# TODO: do we actually want these to also be class-based?
+class QuerySeqProcessor:
     def __init__(self):
         pass
 
@@ -1094,8 +1095,8 @@ class QuerySeqConstructor:
         return self.forward()
 
 
-class PairedMsaConstructor:
-    def __init__(self, config: PairedMsaConstructorConfig):
+class PairedMsaProcessor:
+    def __init__(self, config: PairedMsaProcessorConfig):
         self.max_rows_paired = config.max_rows_paired
         self.min_chains_paired_partial = config.min_chains_paired_partial
         self.pairing_mask_keys = config.pairing_mask_keys
@@ -1112,8 +1113,8 @@ class PairedMsaConstructor:
         return self.forward()
 
 
-class MainMsaConstructor:
-    def __init__(self, config: MainMsaConstructorConfig):
+class MainMsaProcessor:
+    def __init__(self, config: MainMsaProcessorConfig):
         self.aln_order = config.aln_order
 
     def forward(
