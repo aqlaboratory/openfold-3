@@ -915,6 +915,24 @@ def map_to_paired_msa_per_chain(
     return paired_msa_per_chain
 
 
+def expand_paired_msas(msa_collection: MsaArrayCollection) -> dict[int, MsaArray]:
+    """Expands the paired msas and deletion matrices from representatives to chains.
+
+    Args:
+        msa_collection (MsaArrayCollection):
+            A collection of Msa objects and chain IDs for a single sample.
+
+    Returns:
+        dict[int, MsaArray]:
+            Dict of MsaArray objects containing the paired msas and deletion matrix
+            for each chain, indexed by chain id.
+    """
+    return {
+        k: msa_collection.rep_id_to_paired_msa[v]
+        for (k, v) in msa_collection.chain_id_to_rep_id.items()
+    }
+
+
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-paired")
 def create_paired(
     msa_array_collection: MsaArrayCollection,
@@ -984,15 +1002,17 @@ def create_paired(
         species,
     )
 
-    # Expand paired MSAs across all chains
-    chain_id_to_paired_msa = {}
-    for chain_id, rep_id in msa_array_collection.chain_id_to_rep_id.items():
-        rep_paired_msa = paired_msa_per_chain[rep_id]
-        chain_id_to_paired_msa[chain_id] = MsaArray(
-            msa=rep_paired_msa.msa,
-            deletion_matrix=rep_paired_msa.deletion_matrix,
-            metadata=pd.DataFrame(),
-        )
+    # Expand paired MSAs across all chains TODO test
+    msa_array_collection.rep_id_to_paired_msa = paired_msa_per_chain
+    chain_id_to_paired_msa = expand_paired_msas(msa_array_collection)
+    # chain_id_to_paired_msa = {}
+    # for chain_id, rep_id in msa_array_collection.chain_id_to_rep_id.items():
+    #     rep_paired_msa = paired_msa_per_chain[rep_id]
+    #     chain_id_to_paired_msa[chain_id] = MsaArray(
+    #         msa=rep_paired_msa.msa,
+    #         deletion_matrix=rep_paired_msa.deletion_matrix,
+    #         metadata=pd.DataFrame(),
+    #     )
 
     return chain_id_to_paired_msa
 

@@ -28,6 +28,7 @@ from openfold3.core.data.primitives.sequence.msa import (
     create_main,
     create_paired,
     create_query_seqs,
+    expand_paired_msas,
     find_monomer_homomer,
 )
 
@@ -317,8 +318,11 @@ class MsaSampleProcessorInference(MsaSampleProcessor):
             & input.use_msas
             & input.use_paired_msas
         ):
-            # Determine whether to do pairing
-            if not find_monomer_homomer(msa_array_collection):
+            # Use precomputed paired MSAs
+            if len(msa_array_collection.rep_id_to_paired_msa) > 0:
+                chain_id_to_paired_msa = expand_paired_msas(msa_array_collection)
+            # Pair online from main MSAs
+            elif not find_monomer_homomer(msa_array_collection):
                 # Create paired UniProt MSA arrays
                 chain_id_to_paired_msa = self.paired_msa_processor(
                     msa_array_collection=msa_array_collection,
