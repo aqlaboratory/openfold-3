@@ -12,6 +12,8 @@ from openfold3.core.data.io.sequence.msa import (
 )
 from openfold3.core.data.pipelines.sample_processing.format import (
     MsaSampleProcessorConfig,
+    MsaSampleProcessorInput,
+    MsaSampleProcessorInputInference,
     MsaSampleProcessorInputTrain,
 )
 from openfold3.core.data.primitives.quality_control.logging_utils import (
@@ -30,6 +32,8 @@ from openfold3.core.data.primitives.sequence.msa import (
 )
 
 
+# Functional MSA processing pipeline for training - TMP, to be replaced by the
+# MSASampleProcessorTrain
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc")
 def process_msas_af3(
     atom_array: AtomArray,
@@ -161,14 +165,56 @@ class MsaSampleProcessor:
         self.paired_msa_processor = PairedMsaProcessor(config.paired_msa_processor)
         self.main_msa_processor = MainMsaProcessor(config.main_msa_processor)
 
-    def forward(self, input: MsaSampleProcessorInputTrain) -> MsaArrayCollection:
+    def create_query_seq(
+        self,
+        input: MsaSampleProcessorInput | None = None,
+        msa_array_collection: MsaArrayCollection | None = None,
+    ) -> None:
+        raise NotImplementedError(
+            "You are trying to use the MsaSampleProcessor directly. Subclass it and "
+            "implement create_query_seq, paired_msa_processor and main_msa_processor "
+            "methods to use it."
+        )
+
+    def create_paired_msa(
+        self,
+        input: MsaSampleProcessorInput | None = None,
+        msa_array_collection: MsaArrayCollection | None = None,
+    ) -> None:
+        raise NotImplementedError(
+            "You are trying to use the MsaSampleProcessor directly. Subclass it and "
+            "implement create_query_seq, paired_msa_processor and main_msa_processor "
+            "methods to use it."
+        )
+
+    def create_main_msa(
+        self,
+        input: MsaSampleProcessorInput | None = None,
+        msa_array_collection: MsaArrayCollection | None = None,
+        chain_id_to_paired_msa: dict[str, MsaArray] | None = None,
+    ) -> None:
+        raise NotImplementedError(
+            "You are trying to use the MsaSampleProcessor directly. Subclass it and "
+            "implement create_query_seq, paired_msa_processor and main_msa_processor "
+            "methods to use it."
+        )
+
+    def forward(self, input: MsaSampleProcessorInput) -> MsaArrayCollection:
         # Parse MSAs
         msa_array_collection = self.msa_sample_parser(input=input)
 
         # Create dicts with the processed query, paired and main MSA data per chain
-        chain_id_to_query_seq = self.create_query_seq(msa_array_collection)
-        chain_id_to_paired_msa = self.create_paired_msa(msa_array_collection)
-        chain_id_to_main_msa = self.create_main_msa(msa_array_collection)
+        chain_id_to_query_seq = self.create_query_seq(
+            input=input, msa_array_collection=msa_array_collection
+        )
+        chain_id_to_paired_msa = self.create_paired_msa(
+            input=input, msa_array_collection=msa_array_collection
+        )
+        chain_id_to_main_msa = self.create_main_msa(
+            input=input,
+            msa_array_collection=msa_array_collection,
+            chain_id_to_paired_msa=chain_id_to_paired_msa,
+        )
 
         # Update MsaArrayCollection with processed MSA data
         msa_array_collection.set_state_processed(
@@ -179,7 +225,7 @@ class MsaSampleProcessor:
 
         return msa_array_collection
 
-    def __call__(self, input: MsaSampleProcessorInputTrain) -> MsaArrayCollection:
+    def __call__(self, input: MsaSampleProcessorInput) -> MsaArrayCollection:
         return self.forward(input=input)
 
 
@@ -188,10 +234,13 @@ class MsaSampleProcessorTrain(MsaSampleProcessor):
     """Pipeline for MSA sample processing for training."""
 
     def __init__(self, config: MsaSampleProcessorConfig):
+        super().__init__(config=config)
         self.msa_sample_parser = MsaSampleParserTrain(config=config.sample_parser)
 
     def create_query_seq(
-        self, msa_array_collection: MsaArrayCollection
+        self,
+        input: MsaSampleProcessorInputTrain,
+        msa_array_collection: MsaArrayCollection,
     ) -> dict[str, MsaArray]:
         """Create query sequences from MSA arrays."""
         if len(msa_array_collection.rep_id_to_query_seq) > 0:
@@ -201,7 +250,9 @@ class MsaSampleProcessorTrain(MsaSampleProcessor):
         return chain_id_to_query_seq
 
     def create_paired_msa(
-        self, msa_array_collection: MsaArrayCollection
+        self,
+        input: MsaSampleProcessorInputTrain,
+        msa_array_collection: MsaArrayCollection,
     ) -> dict[str, MsaArray]:
         """Create paired MSAs from MSA arrays."""
         if len(msa_array_collection.rep_id_to_query_seq) > 0:
@@ -219,6 +270,7 @@ class MsaSampleProcessorTrain(MsaSampleProcessor):
 
     def create_main_msa(
         self,
+        input: MsaSampleProcessorInputTrain,
         msa_array_collection: MsaArrayCollection,
         chain_id_to_paired_msa: dict[str, MsaArray],
     ) -> dict[str, MsaArray]:
@@ -238,7 +290,65 @@ class MsaSampleProcessorInference(MsaSampleProcessor):
     """Pipeline for MSA sample processing for inference."""
 
     def __init__(self, config):
+        super().__init__(config=config)
         self.msa_sample_parser = MsaSampleParserInference(config=config.sample_parser)
+
+    def create_query_seq(
+        self,
+        input: MsaSampleProcessorInputInference,
+        msa_array_collection: MsaArrayCollection,
+    ) -> dict[str, MsaArray]:
+        """Create query sequences from MSA arrays."""
+        if (len(msa_array_collection.rep_id_to_query_seq) > 0) & input.use_msas:
+            chain_id_to_query_seq = self.query_seq_processor(msa_array_collection)
+        else:
+            chain_id_to_query_seq = {}
+        return chain_id_to_query_seq
+
+    # TODO: refactor to accept precomputed paired MSAs
+    def create_paired_msa(
+        self,
+        input: MsaSampleProcessorInputInference,
+        msa_array_collection: MsaArrayCollection,
+    ) -> dict[str, MsaArray]:
+        """Create paired MSAs from MSA arrays."""
+        if (
+            (len(msa_array_collection.rep_id_to_query_seq) > 0)
+            & input.use_msas
+            & input.use_paired_msas
+        ):
+            # Determine whether to do pairing
+            if not find_monomer_homomer(msa_array_collection):
+                # Create paired UniProt MSA arrays
+                chain_id_to_paired_msa = self.paired_msa_processor(
+                    msa_array_collection=msa_array_collection,
+                )
+            else:
+                chain_id_to_paired_msa = {}
+        else:
+            chain_id_to_paired_msa = {}
+        return chain_id_to_paired_msa
+
+    def create_main_msa(
+        self,
+        input: MsaSampleProcessorInputInference,
+        msa_array_collection: MsaArrayCollection,
+        chain_id_to_paired_msa: dict[str, MsaArray],
+    ) -> dict[str, MsaArray]:
+        """Create main MSAs from MSA arrays."""
+        if (
+            (len(msa_array_collection.rep_id_to_query_seq) > 0)
+            & input.use_msas
+            & input.use_main_msas
+        ):
+            # Create main MSA arrays
+            chain_id_to_main_msa = self.main_msa_processor(
+                msa_array_collection=msa_array_collection,
+                chain_id_to_paired_msa=chain_id_to_paired_msa,
+            )
+        else:
+            chain_id_to_main_msa = {}
+        return chain_id_to_main_msa
 
 
 # def process_msas_msaserver(

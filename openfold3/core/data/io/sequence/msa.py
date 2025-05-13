@@ -596,7 +596,6 @@ def parse_msas_sample_inference(
     return msa_array_collection
 
 
-# TODO: this is not completely resolved yet
 class MsaSampleParser:
     """Base MSA sample parser class"""
 
@@ -615,13 +614,13 @@ class MsaSampleParser:
     def create_maps(self) -> None:
         raise NotImplementedError(
             "You are trying to use the MsaSampleParser directly. Subclass it and "
-            "implement a create_maps and parse_msas to use it."
+            "implement create_maps and parse_msas methods to use it."
         )
 
     def parse_msas(self) -> None:
         raise NotImplementedError(
             "You are trying to use the MsaSampleParser directly. Subclass it and "
-            "implement a create_maps and parse_msas to use it."
+            "implement create_maps and parse_msas methods to use it."
         )
 
     def create_msa_array_collection(self) -> MsaArrayCollection:
@@ -657,20 +656,8 @@ class MsaSampleParserTrain(MsaSampleParser):
     """Training MSA sample parser class"""
 
     def create_maps(self, input: MsaSampleProcessorInputTrain) -> None:
-        """_summary_
-
-        Updates the following attributes:
-            - chain_id_to_rep_id: dict
-                Maps chain IDs to representative IDs.
-            - chain_id_to_mol_type: dict
-                Maps chain IDs to molecule types.
-            - rep_id_to_main_msa_paths: dict
-                Maps representative IDs to main MSA file paths.
-            - rep_id_to_paired_msa_paths: dict
-                Maps representative IDs to paired MSA file paths.
-        """
         # Create maps
-        for chain_id, chain_data in input.msa_data.items():
+        for chain_id, chain_data in input.msa_chain_data.items():
             if chain_data.molecule_type in self.config.moltypes:
                 self.chain_id_to_rep_id[chain_id] = (
                     chain_data.alignment_representative_id
@@ -726,7 +713,7 @@ class MsaSampleParserInference(MsaSampleParser):
                 Maps representative IDs to paired MSA file paths.
         """
         # Create maps
-        for chain_id, chain_data in input.msa_data.items():
+        for chain_id, chain_data in input.msa_chain_data.items():
             if chain_data.molecule_type in self.config.moltypes:
                 main_msa_file_paths = (
                     sorted(chain_data.main_msa_file_paths)

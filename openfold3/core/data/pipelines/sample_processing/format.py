@@ -54,9 +54,6 @@ class MsaChainDataInference(BaseModel):
     molecule_type: MoleculeType
     paired_msa_file_paths: list[Path]
     main_msa_file_paths: list[Path]
-    use_msas: bool
-    use_paired_msas: bool
-    use_main_msas: bool
 
 
 class MsaSampleProcessorInputTrain(BaseModel):
@@ -93,6 +90,9 @@ class MsaSampleProcessorInputInference(BaseModel):
     """Dict-based expanded view of inference_query_format.query containing MSA data."""
 
     msa_chain_data: dict[str, MsaChainDataInference]
+    use_msas: bool
+    use_paired_msas: bool
+    use_main_msas: bool
 
     @classmethod
     def create(cls, inference_query: Query):
@@ -107,4 +107,14 @@ class MsaSampleProcessorInputInference(BaseModel):
                     use_paired_msas=chain.use_paired_msas,
                     use_main_msas=chain.use_main_msas,
                 )
-        return cls(msa_chain_data=msa_chain_data)
+        return cls(
+            msa_chain_data=msa_chain_data,
+            use_msas=inference_query.use_msas,
+            use_paired_msas=inference_query.use_paired_msas,
+            use_main_msas=inference_query.use_main_msas,
+        )
+
+
+MsaSampleProcessorInput = (
+    MsaSampleProcessorInputTrain | MsaSampleProcessorInputInference
+)

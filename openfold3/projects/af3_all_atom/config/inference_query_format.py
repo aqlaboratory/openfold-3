@@ -58,25 +58,25 @@ class Chain(BaseModel):
     smiles: Optional[str] = None
     ccd_codes: Optional[Annotated[list[str], BeforeValidator(_ensure_list)]] = None
     # Msa definition
-    use_msas: bool = True
-    use_paired_msas: bool = True
-    use_main_msas: bool = True
     paired_msa_file_paths: Optional[
         Annotated[list[FilePath | DirectoryPath], BeforeValidator(_ensure_list)]
     ] = None
     main_msa_file_paths: Optional[list[FilePath | DirectoryPath]] = None
     # # Template definition
-    # use_templates: bool = False
     # templates: ...
     sdf_file_path: Optional[FilePath] = None
 
     # TODO(jennifer): Add validations to this class
-    # - if molecule type is protien / dna / rna - must specify sequence
+    # - if molecule type is protein / dna / rna - must specify sequence
     # - if molecule type is ligand - either ccd or smiles needs to be specifified
 
 
 class Query(BaseModel):
     chains: list[Chain]
+    use_msas: bool = True
+    use_paired_msas: bool = True
+    use_main_msas: bool = True
+    # use_templates: bool = False
     covalent_bonds: Optional[list[Bond]] = None
 
 
