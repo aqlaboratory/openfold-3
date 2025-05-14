@@ -5,16 +5,16 @@ from typing import Any
 
 from biotite.structure import AtomArray
 
-from openfold3.core.data.io.sequence.msa import (
-    MsaSampleParserInference,
-    MsaSampleParserTrain,
-    parse_msas_sample,
-)
-from openfold3.core.data.pipelines.sample_processing.format import (
+from openfold3.core.data.format.msa_sample_processing import (
     MsaSampleProcessorConfig,
     MsaSampleProcessorInput,
     MsaSampleProcessorInputInference,
     MsaSampleProcessorInputTrain,
+)
+from openfold3.core.data.io.sequence.msa import (
+    MsaSampleParserInference,
+    MsaSampleParserTrain,
+    parse_msas_sample,
 )
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
@@ -290,7 +290,7 @@ class MsaSampleProcessorTrain(MsaSampleProcessor):
 class MsaSampleProcessorInference(MsaSampleProcessor):
     """Pipeline for MSA sample processing for inference."""
 
-    def __init__(self, config):
+    def __init__(self, config: MsaSampleProcessorConfig):
         super().__init__(config=config)
         self.msa_sample_parser = MsaSampleParserInference(config=config.sample_parser)
 
@@ -306,7 +306,6 @@ class MsaSampleProcessorInference(MsaSampleProcessor):
             chain_id_to_query_seq = {}
         return chain_id_to_query_seq
 
-    # TODO: refactor to accept precomputed paired MSAs
     def create_paired_msa(
         self,
         input: MsaSampleProcessorInputInference,
@@ -353,115 +352,3 @@ class MsaSampleProcessorInference(MsaSampleProcessor):
         else:
             chain_id_to_main_msa = {}
         return chain_id_to_main_msa
-
-
-# def process_msas_msaserver(
-#     alignments_directory: Path, assembly_data: dict[str, dict[str, Any]]
-# ) -> MsaArrayCollection:
-#     """Read in the output of the MSA server and prep
-
-#     Args:
-#         alignments_directory (Path | None): path to the msa directory generated
-#             by the MSA server, ie path/to/{structure_id}/msas
-#         assembly_data (dict[str, dict[str, Any]]): dict that
-#             maps chain ID to relevant data for the chain:
-#                 - `chain_id` (str): The chain ID.
-#                 - `molecule_type` (str): The molecule type.
-#                 - `alignment_representative_id` (str): The
-#                   representative chain ID for the alignment.
-
-#     Notes:
-#     - Right now only support reading the direct output of the
-#       MSA server function within the repo, so all we need for
-#       input is the msa directory.
-#     - pairing and squaring off happens externally so no need to do it
-#       here can can treat the paired MSA as just another MSA from a db
-
-#     TODO:
-#      - use existing key for chain identifier instead of `chain_id`
-#      - add truncation/max seq count logic
-#     """
-#     # cache output so we dont need to recompute
-#     cached_output = alignments_directory / "cached_output.pkl"
-#     if cached_output.exists():
-#         with open(cached_output, "rb") as f:
-#             msa_array_collection = pickle.load(f)
-#         return msa_array_collection
-
-#     ## setup mappings
-#     chainid2reprid = {
-#         v["chain_id"]: v["alignment_representative_id"] for
-# v in assembly_data.values()
-#     }
-#     chainid2moltype = {
-#         v["chain_id"]: v["molecule_type"] for v in assembly_data.values()
-#     }
-#     ## create MsaArrayCollection
-#     msa_array_collection = MsaArrayCollection(
-#         chain_id_to_rep_id=chainid2reprid, chain_id_to_mol_type=chainid2moltype
-#     )
-
-#     unique_representatives = list(set(chainid2reprid.values()))
-#     load_paired = len(unique_representatives) > 1
-#     ## hardcoding filenames for now since this is only going to support the direct
-#     ## output of the MSA server
-#     ### load paired and main msas - Note that mmseqs a3m are multi sample
-#     ### so the output of parse_mmseqs_a3m is {chain_id: MsaArray},
-#     ### as opposed to parse_a3m
-#     if load_paired:
-#         ### parse MSAs, returning mapping of mmseqs_chainid <> msa
-#         with open(alignments_directory / "pair.a3m") as infl:
-#             paired_mmseqs_chainid2msa = parse_mmseqs_a3m(infl.read())
-#     else:
-#         paired_mmseqs_chainid2msa = {}
-
-#     with open(alignments_directory / "uniref.a3m") as infl:
-#         uniref_mmseqs_chainid2msa = parse_mmseqs_a3m(infl.read())
-#     with open(alignments_directory / "bfd.mgnify30.metaeuk30.smag30.a3m") as infl:
-#         bfd_mmseqs_chainid2msa = parse_mmseqs_a3m(infl.read())
-
-#     ## deduplicate main MSAs if paired and generate representative<>MSA mappings
-#     reprid2_mainmsa_deduped = {}
-#     reprid2_query_seq = {}
-#     for repr_id in unique_representatives:
-#         msa_uniref = uniref_mmseqs_chainid2msa[repr_id]
-#         msa_bfd = bfd_mmseqs_chainid2msa[repr_id]
-#         reprid2_query_seq[repr_id] = uniref_mmseqs_chainid2msa[repr_id].msa[0, :][
-#             np.newaxis, :
-#         ]
-#         if load_paired:  # if paired, deduplicate
-#             msa_paired = paired_mmseqs_chainid2msa[repr_id]
-#             ids_uniref = np.array(msa_uniref.metadata)
-#             ids_bfd = np.array(msa_bfd.metadata)
-#             ids_paired = np.array(msa_paired.metadata)
-#             msa_uniref_dedup = msa_uniref.subset(
-#                 np.isin(ids_uniref, ids_paired, invert=True)
-#             )
-#             msa_bfd_dedup = msa_bfd.subset(np.isin(ids_bfd, ids_paired, invert=True))
-#         else:
-#             msa_uniref_dedup = msa_uniref
-#             msa_bfd_dedup = msa_bfd
-
-#         msa_main = msa_uniref_dedup.concatenate(msa_bfd_dedup, axis=0)
-#         reprid2_mainmsa_deduped[repr_id] = msa_main
-
-#     ## make chain<>MSA mappings
-#     chainid2msa_main = {}
-#     chainid2msa_paired = {}
-#     chainid2query_seq = {}
-#     for chain_id, repr_id in chainid2reprid.items():
-#         chainid2msa_main[chain_id] = reprid2_mainmsa_deduped[repr_id]
-#         chainid2query_seq[chain_id] = reprid2_query_seq[repr_id]
-#         if load_paired:
-#             chainid2msa_paired[chain_id] = paired_mmseqs_chainid2msa[repr_id]
-
-#     ## finalize MsaArrayCollection
-#     msa_array_collection.set_state_processed(
-#         chain_id_to_query_seq=chainid2query_seq,
-#         chain_id_to_paired_msa=chainid2msa_paired,
-#         chain_id_to_main_msa=chainid2msa_main,
-#     )
-#     ## save output so we dont need to recompute
-#     with open(cached_output, "wb") as f:
-#         pickle.dump(msa_array_collection, f)
-#     return msa_array_collection

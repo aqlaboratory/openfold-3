@@ -9,7 +9,7 @@ from collections import defaultdict, deque
 import numpy as np
 import pandas as pd
 
-from openfold3.core.data.pipelines.sample_processing.format import (
+from openfold3.core.data.format.msa_sample_processing import (
     MainMsaProcessorConfig,
     PairedMsaProcessorConfig,
 )

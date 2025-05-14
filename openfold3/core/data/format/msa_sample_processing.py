@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from openfold3.core.data.primitives.caches.format import DatasetChainData
+if TYPE_CHECKING:
+    from openfold3.core.data.primitives.caches.format import DatasetChainData
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.af3_all_atom.config.inference_query_format import Query
 

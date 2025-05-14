@@ -1,11 +1,10 @@
 """ """
 
 from pathlib import Path
-from typing import Annotated, Any, Optional, Union
+from typing import Any, Optional
 
 from pydantic import (
     BaseModel,
-    BeforeValidator,
     DirectoryPath,
     Field,
     FilePath,
@@ -14,6 +13,10 @@ from pydantic import (
 )
 from pydantic import ConfigDict as PydanticConfigDict
 
+from openfold3.core.data.format.dataset_configs import (
+    DirectoryPathOrNone,
+    FilePathOrNone,
+)
 from openfold3.core.data.framework.data_module import DatasetMode
 from openfold3.projects.af3_all_atom.config.dataset_config_components import (
     CropSettings,
@@ -21,19 +24,6 @@ from openfold3.projects.af3_all_atom.config.dataset_config_components import (
     MSASettings,
     TemplateSettings,
 )
-
-
-def is_path_none(value: Optional[Union[str, Path]]) -> Optional[Path]:
-    if isinstance(value, Path):
-        return value
-    elif value is None or value.lower() in ["none", "null"]:
-        return None
-    else:
-        return Path(value)
-
-
-FilePathOrNone = Annotated[Optional[FilePath], BeforeValidator(is_path_none)]
-DirectoryPathOrNone = Annotated[Optional[DirectoryPath], BeforeValidator(is_path_none)]
 
 
 class TrainingDatasetPaths(BaseModel):

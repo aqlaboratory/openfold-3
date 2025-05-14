@@ -12,12 +12,12 @@ from typing import Any
 import numpy as np
 from biotite.structure import AtomArray
 
-from openfold3.core.data.io.sequence.fasta import parse_fasta
-from openfold3.core.data.pipelines.sample_processing.format import (
+from openfold3.core.data.format.msa_sample_processing import (
     MsaSampleParserConfig,
     MsaSampleProcessorInputInference,
     MsaSampleProcessorInputTrain,
 )
+from openfold3.core.data.io.sequence.fasta import parse_fasta
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )

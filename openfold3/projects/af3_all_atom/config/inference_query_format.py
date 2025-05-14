@@ -3,11 +3,11 @@ from typing import Annotated, Any, NamedTuple, Optional
 
 from pydantic import BaseModel, BeforeValidator, DirectoryPath, FilePath
 
-from openfold3.core.data.resources.residues import MoleculeType
-from openfold3.projects.af3_all_atom.config.dataset_configs import (
+from openfold3.core.data.format.dataset_configs import (
     DirectoryPathOrNone,
     FilePathOrNone,
 )
+from openfold3.core.data.resources.residues import MoleculeType
 
 
 def _ensure_list(value: Any) -> Any:
