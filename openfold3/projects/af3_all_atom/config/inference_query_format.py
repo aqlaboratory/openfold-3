@@ -7,15 +7,8 @@ from openfold3.core.data.format.dataset_configs import (
     DirectoryPathOrNone,
     FilePathOrNone,
 )
+from openfold3.core.data.format.inference_query import _ensure_list
 from openfold3.core.data.resources.residues import MoleculeType
-
-
-def _ensure_list(value: Any) -> Any:
-    if not isinstance(value, list):
-        logging.info("Single value: {value} will be converted to a list")
-        return [value]
-    else:
-        return value
 
 
 def _convert_molecule_type(value: Any) -> Any:
