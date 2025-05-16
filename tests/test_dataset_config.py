@@ -284,9 +284,9 @@ class TestInferenceConfigConstruction:
         data_module = DataModule(data_config)
 
         data_module.setup()
-        _ = data_module.predict_dataloader() 
+        _ = data_module.predict_dataloader()
 
-        # Option: Test feature generation once create_features is written 
+        # Option: Test feature generation once create_features is written
         # Would require a real msa file
         # it = iter(dataloader)
         # next(it)
