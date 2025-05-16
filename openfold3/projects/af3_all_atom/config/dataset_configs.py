@@ -1,11 +1,10 @@
 """ """
 
 from pathlib import Path
-from typing import Annotated, Any, Optional, Union
+from typing import Any, Optional
 
 from pydantic import (
     BaseModel,
-    BeforeValidator,
     DirectoryPath,
     Field,
     FilePath,
@@ -14,27 +13,15 @@ from pydantic import (
 )
 from pydantic import ConfigDict as PydanticConfigDict
 
+from openfold3.core.config.path_definitions import DirectoryPathOrNone, FilePathOrNone
 from openfold3.core.data.framework.data_module import DatasetMode
+from openfold3.core.data.framework.inference_query_format import InferenceQuerySet
 from openfold3.projects.af3_all_atom.config.dataset_config_components import (
     CropSettings,
     LossConfig,
     MSASettings,
     TemplateSettings,
 )
-from openfold3.projects.af3_all_atom.config.inference_query_format import InferenceQuerySet
-
-
-def is_path_none(value: Optional[Union[str, Path]]) -> Optional[Path]:
-    if isinstance(value, Path):
-        return value
-    elif value is None or value.lower() in ["none", "null"]:
-        return None
-    else:
-        return Path(value)
-
-
-FilePathOrNone = Annotated[Optional[FilePath], BeforeValidator(is_path_none)]
-DirectoryPathOrNone = Annotated[Optional[DirectoryPath], BeforeValidator(is_path_none)]
 
 
 class TrainingDatasetPaths(BaseModel):
@@ -248,7 +235,8 @@ class TrainingDatasetSpec(BaseModel):
 
 class InferenceConfig(BaseModel):
     """Configuration section for Inference Datasets"""
-    query_set: InferenceQuerySet 
+
+    query_set: InferenceQuerySet
     seeds: list[int] = [42]
     msa: MSASettings = MSASettings()
     template: TemplateSettings = TemplateSettings()
@@ -256,8 +244,9 @@ class InferenceConfig(BaseModel):
 
 class InferenceDatasetSpec(BaseModel):
     """Full specification for inference dataset to be passed into DataModule"""
+
     name: str = "inference"
-    dataset_class: str = "InferenceDataset" 
+    dataset_class: str = "InferenceDataset"
     mode: DatasetMode = DatasetMode.prediction
     weight: Optional[float] = None
     config: InferenceConfig

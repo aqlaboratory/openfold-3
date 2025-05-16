@@ -4,11 +4,13 @@ import pytest  # noqa: F401  - used for pytest tmp fixture
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
+from openfold3.core.data.framework.inference_query_format import InferenceQuerySet
 from openfold3.projects.af3_all_atom.config.dataset_configs import (
+    InferenceConfig,
+    InferenceDatasetSpec,
     TrainingDatasetPaths,
     TrainingDatasetSpec,
 )
-from openfold3.projects.af3_all_atom.config.inference_query_format import InferenceQuerySet
 
 
 class TestAF3DatasetConfigConstruction:
@@ -232,58 +234,59 @@ class TestAF3DatasetConfigConstruction:
                 }
             )
 
+
 class TestInferenceConfigConstruction:
-
-    def test_inference_config(self, tmp_path):
+    def test_inference_config_loading(self, tmp_path):
+        dummy_msa_file = tmp_path / "msa.sto"
+        dummy_msa_file.write_text("test")
         inference_set = InferenceQuerySet.model_validate(
-    {
-        "queries": {
-            "query_1": {
-                "chains": [
-                    {
-                        "molecule_type": "protein",
-                        "chain_ids": "A",
-                        "sequence": "PVLSCGEWQCL",  # insert sequence for MCL-1
-                        "use_msas": True,
-                        "unpaired_msa_file_paths": ["/tmp/path"],
-                        "paired_msa_file_path": "/tmp/path",
-                        "sdf_file_path": None,
+            {
+                "queries": {
+                    "query_1": {
+                        "chains": [
+                            {
+                                "molecule_type": "protein",
+                                "chain_ids": "A",
+                                "sequence": "PVLSCGEWQCL",  # insert sequence for MCL-1
+                                "use_msas": True,
+                                "unpaired_msa_file_paths": [dummy_msa_file],
+                                "paired_msa_file_path": None,
+                                "sdf_file_path": None,
+                            },
+                            {
+                                "molecule_type": "ligand",
+                                "chain_ids": ["F", "G", "H"],
+                                "ccd_codes": "ATP",
+                            },
+                            {
+                                "molecule_type": "ligand",
+                                "chain_ids": "Z",
+                                "smiles": "CC(=O)OC1C[NH+]2CCC1CC2",
+                            },
+                        ],
                     },
-                    {
-                        "molecule_type": "ligand",
-                        "chain_ids": ["F", "G", "H"],
-                        "ccd_codes": "ATP",
-                    },
-                    {
-                        "molecule_type": "ligand",
-                        "chain_ids": "Z",
-                        "smiles": "CC(=O)OC1C[NH+]2CCC1CC2",
-                    },
-                ],
-            },
-        },
-    }
-)
+                },
+            }
+        )
 
-    # dummy inference dataset
-    # overwrite create_all_features method
+        inference_config = InferenceConfig(query_set=inference_set)
+        inference_spec = InferenceDatasetSpec(config=inference_config)
+        dataset_specs = [inference_spec]
 
-    # test code with datamodule:
-    inference_spec = ...
-    dataset_specs = [inference_spec]
+        data_config = DataModuleConfig(
+            batch_size=1,
+            num_workers=10,
+            data_seed=123,
+            epoch_len=1,
+            num_epochs=1,
+            datasets=dataset_specs,
+        )
+        data_module = DataModule(data_config)
 
-    data_config = DataModuleConfig(
-        batch_size=1,
-        num_workers=10,
-        data_seed=123,
-        epoch_len=1,
-        num_epochs=1,
-        datasets=dataset_specs,
-    )
-    data_module = DataModule(data_config)
+        data_module.setup()
+        dataloader = data_module.predict_dataloader()
 
-    data_module.setup()
-    dataloader = data_module.predict_dataloader()
-
-    it = iter(dataloader)
-    next(it)
+        # Option: Test feature generation once create_features is written 
+        # Would require a real msa file
+        # it = iter(dataloader)
+        # next(it)
