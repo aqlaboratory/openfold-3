@@ -5,9 +5,9 @@ model_1:
     predict: 
       max_extra_msa: 5120
     common:
-      reduce_max_clusters_by_max_templates": true
+      reduce_msa_clusters_by_max_templates: true
       use_templates: true
-      use_template_torsion_angles": true
+      use_template_torsion_angles: true
   model:
     template:
       enabled: true
@@ -15,9 +15,9 @@ model_1:
 model_2:
   data:
     common:
-      reduce_max_clusters_by_max_templates": true
+      reduce_msa_clusters_by_max_templates: true
       use_templates: true
-      use_template_torsion_angles": true
+      use_template_torsion_angles: true
   model:
     template:
       enabled: true
@@ -54,9 +54,9 @@ model_1_ptm:
     predict: 
       max_extra_msa: 5120
     common:
-      reduce_max_clusters_by_max_templates": true
+      reduce_msa_clusters_by_max_templates: true
       use_templates: true
-      use_template_torsion_angles": true
+      use_template_torsion_angles: true
   model:
     template:
       enabled: true
@@ -70,9 +70,9 @@ model_1_ptm:
 model_2_ptm:
   data:
     common:
-      reduce_max_clusters_by_max_templates": true
+      reduce_msa_clusters_by_max_templates: true
       use_templates: true
-      use_template_torsion_angles": true
+      use_template_torsion_angles: true
   model:
     template:
       enabled: true

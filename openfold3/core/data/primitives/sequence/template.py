@@ -478,17 +478,17 @@ def check_release_date_diff(
 
     Returns:
         bool:
-            Whether the release date difference is less than the minimum
-            required.
+            Whether the release date difference in days is equal to or greater than the
+            minimum required.
     """
-    return (query_release_date - template_release_date).days < min_release_date_diff
+    return (query_release_date - template_release_date).days >= min_release_date_diff
 
 
 def check_release_date_max(
     template_release_date: datetime,
     max_release_date: datetime,
 ) -> bool:
-    """Calc if the release date is before the maximum allowed release date.
+    """Calculates if the release date is before the maximum allowed release date.
 
     As per AF3 SI Section 2.4. Used for distillation and inference sets.
 

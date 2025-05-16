@@ -11,7 +11,12 @@ from biotite.structure.io.pdbx import BinaryCIFFile, CIFBlock, CIFFile
 from openfold3.core.data.primitives.structure.labels import (
     get_chain_to_entity_dict,
 )
-from openfold3.core.data.resources.residues import STANDARD_PROTEIN_RESIDUES_1
+from openfold3.core.data.resources.residues import (
+    CHEM_COMP_TYPE_TO_MOLECULE_TYPE,
+    STANDARD_PROTEIN_RESIDUES_1,
+    STANDARD_RNA_RESIDUES,
+    MoleculeType,
+)
 
 
 def get_pdb_id(cif_file: CIFFile, format: Literal["upper", "lower"] = "lower") -> str:
@@ -181,10 +186,11 @@ def get_entity_to_canonical_seq_dict(
         unique_3l = set(entity_to_3l_dict[entity])
 
         # If there is any multi-letter residue, rebuild the sequence using the
-        # CCD-one-letter-codes, setting everything not in the standard 20 AA to 'X'
+        # CCD-one-letter-codes, setting everything not in the standard one-letter codes
+        # to 'X'.
         # NOTE: Technically this could also respect parent ID annotations for
         # non-standard AA to cast less residues to 'X', but we go with a simpler
-        # approach given that multi-letter residues are rare
+        # approach for now, given that multi-letter residues are rare.
         if any(
             len(ccd[three_letter]["chem_comp"]["one_letter_code"].as_item()) > 1
             for three_letter in unique_3l
@@ -194,10 +200,24 @@ def get_entity_to_canonical_seq_dict(
             for three_letter in entity_to_3l_dict[entity]:
                 one_letter = ccd[three_letter]["chem_comp"]["one_letter_code"].as_item()
 
-                # Set to 'X' if not a standard AA
-                one_letter = (
-                    one_letter if one_letter in STANDARD_PROTEIN_RESIDUES_1 else "X"
+                # "+" Is an allowed character according to
+                # https://mmcif.wwpdb.org/dictionaries/mmcif_std.dic/Items/_chem_comp.one_letter_code.html
+                one_letter = one_letter.replace("+", "")
+
+                # Find the standard one-letter code set for this molecule type (RNA set
+                # is also used for DNA because they share the same one-letter codes)
+                chem_comp_type = (
+                    ccd[three_letter]["chem_comp"]["type"].as_item().upper()
                 )
+                molecule_type = CHEM_COMP_TYPE_TO_MOLECULE_TYPE[chem_comp_type]
+                ref_one_letter_codes = (
+                    STANDARD_PROTEIN_RESIDUES_1
+                    if molecule_type == MoleculeType.PROTEIN
+                    else STANDARD_RNA_RESIDUES
+                )
+
+                # Set to 'X' if not a standard AA
+                one_letter = one_letter if one_letter in ref_one_letter_codes else "X"
 
                 new_seq.append(one_letter)
 
@@ -283,7 +303,7 @@ def get_asym_id_to_canonical_seq_dict(
 
     # Create asym_id -> canonical sequence map
     return {
-        asym_id: entity_id_to_can_seq[entity_id]
+        asym_id: entity_id_to_can_seq[int(entity_id)]
         for asym_id, entity_id in asym_to_entity_dict.items()
     }
 

@@ -1,202 +1,292 @@
 import textwrap
-from pathlib import Path
 
-import ml_collections as mlc
 import pytest  # noqa: F401  - used for pytest tmp fixture
 
-from openfold3.core.config import config_utils, dataset_config_builder
-from openfold3.projects.af3_all_atom.config import (
-    dataset_config_builder as af3_dataset_config_builder,
+from openfold3.core.config import config_utils
+from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
+from openfold3.core.data.framework.inference_query_format import InferenceQuerySet
+from openfold3.projects.af3_all_atom.config.dataset_configs import (
+    InferenceConfig,
+    InferenceDatasetSpec,
+    TrainingDatasetPaths,
+    TrainingDatasetSpec,
 )
 
-PLACEHOLDER_PATH = Path("/path/placeholder")
 
-DUMMY_PROJECT_CONFIG = mlc.ConfigDict(
-    {
-        "model": "placeholder_configs",
-        "dataset_config_template": {
-            "name": "placeholder name",
-            "class": "placeholder class",
-            "mode": "placeholder mode",
+class TestAF3DatasetConfigConstruction:
+    def test_load_pdb_weighted_config(self, tmp_path):
+        test_dummy_file = tmp_path / "test.json"
+        test_dummy_file.write_text("test")
+        test_yaml_str = textwrap.dedent(f"""\
+            name: dataset1
+            mode: train
+            dataset_class: WeightedPDBDataset
+            weight: 0.37
+            config:
+                crop:
+                    token_budget: 10
+                    crop_weights:
+                        contiguous: 0.33
+                        spatial: 0.33
+                        spatial_interface: 0.33
+                dataset_paths:
+                    alignments_directory: None 
+                    alignment_array_directory: {tmp_path} 
+                    dataset_cache_file: {test_dummy_file} 
+                    target_structure_file_format: npz
+                    target_structures_directory: {tmp_path} 
+                    reference_molecule_directory: {tmp_path}
+                    template_cache_directory: {tmp_path} 
+                    template_structures_directory: {tmp_path} 
+                    template_file_format: npz
+                    ccd_file: None 
+        """)
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
+
+        input_dict = config_utils.load_yaml(test_yaml_file)
+        actual_config = TrainingDatasetSpec.model_validate(input_dict)
+        expected_fields = {
+            "name": "dataset1",
+            "mode": "train",
+            "dataset_class": "WeightedPDBDataset",
+            "weight": 0.37,
             "config": {
-                "token_budget": 17,
+                "crop": {
+                    # based on yaml specified settings
+                    "token_budget": 10,
+                    "crop_weights": {
+                        "contiguous": 0.33,
+                        "spatial": 0.33,
+                        "spatial_interface": 0.33,
+                    },
+                    # based on default dataset settings
+                    "sample_weights": {
+                        "a_prot": 3.0,
+                        "a_nuc": 3.0,
+                        "a_ligand": 1.0,
+                        "w_chain": 0.5,
+                        "w_interface": 1.0,
+                    },
+                },
                 "dataset_paths": {
-                    "alignments": PLACEHOLDER_PATH,
-                    "targets": PLACEHOLDER_PATH,
+                    "alignments_directory": None,
+                    "dataset_cache_file": test_dummy_file,
+                    "alignment_array_directory": tmp_path,
+                    "target_structures_directory": tmp_path,
+                    "target_structure_file_format": "npz",
+                    "reference_molecule_directory": tmp_path,
+                    "template_cache_directory": tmp_path,
+                    "template_structures_directory": tmp_path,
+                    "template_file_format": "npz",
+                    "ccd_file": None,
                 },
             },
-        },
-    }
-)
+        }
+        expected_dataset_config = TrainingDatasetSpec.model_validate(expected_fields)
+        assert expected_dataset_config == actual_config
 
-DUMMY_AF3_PROJECT_CONFIG = mlc.ConfigDict(
-    {
-        "model": "placeholder_configs",
-        "dataset_config_template": {
-            "name": "placeholder name",
-            "class": "placeholder class",
-            "mode": "placeholder mode",
+    def test_load_protein_monomer_dataset_config(self, tmp_path):
+        test_dummy_file = tmp_path / "test.json"
+        test_dummy_file.write_text("test")
+        test_yaml_str = textwrap.dedent(f"""\
+            name: dataset1
+            mode: train
+            dataset_class: ProteinMonomerDistillationDataset 
+            weight: 0.5
+            config:
+                dataset_paths:
+                    alignments_directory: none
+                    alignment_array_directory: {tmp_path} 
+                    dataset_cache_file: {test_dummy_file} 
+                    target_structure_file_format: npz
+                    target_structures_directory: {tmp_path} 
+                    reference_molecule_directory: {tmp_path}
+                    template_cache_directory: {tmp_path} 
+                    template_structures_directory: {tmp_path} 
+                    template_file_format: npz
+                    ccd_file: None 
+        """)
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
+        input_dict = config_utils.load_yaml(test_yaml_file)
+        actual_config = TrainingDatasetSpec.model_validate(input_dict)
+
+        expected_fields = {
+            "name": "dataset1",
+            "mode": "train",
+            "dataset_class": "ProteinMonomerDistillationDataset",
+            "weight": 0.5,
             "config": {
-                "token_budget": 17,
-                "dataset_paths": {
-                    "alignments": PLACEHOLDER_PATH,
-                    "targets": PLACEHOLDER_PATH,
-                },
-                "loss_weight_mode": "default",
+                # Verify that custom loss weights for protein monomer are supported
                 "loss": {
                     "loss_weights": {
-                        "distogram": 0.0,
-                        "mse": 0.0,
+                        "bond_loss": 0.0,
+                        "mse": 4.0,
+                        "plddt": 0.0,
+                        "pae": 0.0,
+                        "pde": 0.0,
+                    },
+                },
+                "dataset_paths": {
+                    "alignment_array_directory": tmp_path,
+                    "dataset_cache_file": test_dummy_file,
+                    "target_structures_directory": tmp_path,
+                    "target_structure_file_format": "npz",
+                    "reference_molecule_directory": tmp_path,
+                    "template_cache_directory": tmp_path,
+                    "template_structures_directory": tmp_path,
+                    "template_file_format": "npz",
+                    "ccd_file": None,
+                },
+            },
+        }
+        expected_config = TrainingDatasetSpec.model_validate(expected_fields)
+        assert expected_config == actual_config
+
+    def test_load_disordered_pdb_dataset_config(self, tmp_path):
+        test_dummy_file = tmp_path / "test.json"
+        test_dummy_file.write_text("test")
+        test_yaml_str = textwrap.dedent(f"""\
+            name: dataset1
+            mode: train
+            dataset_class: DisorderedPDBDataset 
+            weight: 0.02
+            config:
+                dataset_paths:
+                    alignments_directory: none
+                    alignment_array_directory: {tmp_path} 
+                    dataset_cache_file: {test_dummy_file} 
+                    target_structure_file_format: npz
+                    target_structures_directory: {tmp_path} 
+                    reference_molecule_directory: {tmp_path}
+                    template_cache_directory: {tmp_path} 
+                    template_structures_directory: {tmp_path} 
+                    template_file_format: npz
+                    ccd_file: None 
+        """)
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
+        input_dict = config_utils.load_yaml(test_yaml_file)
+        actual_config = TrainingDatasetSpec.model_validate(input_dict)
+
+        expected_fields = {
+            "name": "dataset1",
+            "mode": "train",
+            "dataset_class": "DisorderedPDBDataset",
+            "weight": 0.02,
+            "config": {
+                "disable_non_protein_diffusion_weights": True,
+                "dataset_paths": {
+                    "alignment_array_directory": tmp_path,
+                    "dataset_cache_file": test_dummy_file,
+                    "target_structures_directory": tmp_path,
+                    "target_structure_file_format": "npz",
+                    "reference_molecule_directory": tmp_path,
+                    "template_cache_directory": tmp_path,
+                    "template_structures_directory": tmp_path,
+                    "template_file_format": "npz",
+                    "ccd_file": None,
+                },
+                "loss": {
+                    "loss_weights": {
+                        "bond_loss": 0.0,
+                        "mse": 4.0,
+                        "plddt": 0.0,
+                        "pae": 0.0,
+                        "pde": 0.0,
                     },
                 },
             },
-        },
-        "extra_configs": {
-            "loss_weight_modes": {
-                "default": {
-                    "distogram": 3e-2,
-                    "mse": 4.0,
-                },
-                "custom": {
-                    "self_distillation": {
-                        "mse": 0.5,
+        }
+        expected_config = TrainingDatasetSpec.model_validate(expected_fields)
+        assert expected_config == actual_config
+
+    def test_error_if_no_alignment_path_set(self, tmp_path):
+        test_dummy_file = tmp_path / "test.json"
+        test_dummy_file.write_text("test")
+        with pytest.raises(ValueError, match="Exactly one"):
+            TrainingDatasetPaths.model_validate(
+                {
+                    "alignments_directory": None,
+                    "alignment_db_directory": None,
+                    "alignment_array_directory": None,
+                    "dataset_cache_file": test_dummy_file,
+                    "target_structures_directory": tmp_path,
+                    "target_structure_file_format": "npz",
+                    "reference_molecule_directory": tmp_path,
+                }
+            )
+
+    def test_error_if_two_alignment_paths_set(self, tmp_path):
+        test_dummy_file = tmp_path / "test.json"
+        test_dummy_file.write_text("test")
+        with pytest.raises(ValueError, match="Exactly one"):
+            TrainingDatasetPaths.model_validate(
+                {
+                    "alignments_directory": tmp_path,
+                    "alignment_db_directory": tmp_path,
+                    "alignment_array_directory": None,
+                    "dataset_cache_file": test_dummy_file,
+                    "target_structures_directory": tmp_path,
+                    "target_structure_file_format": "npz",
+                    "reference_molecule_directory": tmp_path,
+                }
+            )
+
+
+class TestInferenceConfigConstruction:
+    def test_inference_config_loading(self, tmp_path):
+        dummy_msa_file = tmp_path / "msa.sto"
+        dummy_msa_file.write_text("test")
+        inference_set = InferenceQuerySet.model_validate(
+            {
+                "queries": {
+                    "query_1": {
+                        "chains": [
+                            {
+                                "molecule_type": "protein",
+                                "chain_ids": "A",
+                                "sequence": "PVLSCGEWQCL",  # insert sequence for MCL-1
+                                "use_msas": True,
+                                "unpaired_msa_file_paths": [dummy_msa_file],
+                                "paired_msa_file_path": None,
+                                "sdf_file_path": None,
+                            },
+                            {
+                                "molecule_type": "ligand",
+                                "chain_ids": ["F", "G", "H"],
+                                "ccd_codes": "ATP",
+                            },
+                            {
+                                "molecule_type": "ligand",
+                                "chain_ids": "Z",
+                                "smiles": "CC(=O)OC1C[NH+]2CCC1CC2",
+                            },
+                        ],
                     },
                 },
-            },
-        },
-    }
-)
-
-
-class TestDefaultDatasetConfigConstruction:
-    def test_default_dataset_config_construction(self, tmp_path):
-        test_yaml_str = textwrap.dedent("""\
-        dataset_paths: 
-            dataset1:
-                alignments: /dataset1/alignments
-                targets: /dataset1/mmcifs
-            dataset2:
-                alignments: /dataset2/alignments
-                targets: /dataset2/mmcifs
-
-        dataset_configs:
-            train:
-                dataset1:
-                    class: TrainDataset 
-                    weight: 1.0 
-            validation:
-                dataset2:
-                    class: ValidationDataset
-                    config:
-                        token_budget: 13
-        """)
-        test_yaml_file = tmp_path / "runner.yml"
-        with open(test_yaml_file, "w") as f:
-            f.write(test_yaml_str)
-
-        runner_args = mlc.ConfigDict(config_utils.load_yaml(test_yaml_file))
-
-        dataset_configs = []
-        for mode, input_dataset_configs in runner_args.dataset_configs.items():
-            for name, dataset_specs in input_dataset_configs.items():
-                builder = dataset_config_builder.DefaultDatasetConfigBuilder(
-                    DUMMY_PROJECT_CONFIG
-                )
-                dataset_specific_paths = runner_args.dataset_paths[name]
-                dataset_config = builder.get_custom_config(
-                    name, mode, dataset_specs, dataset_specific_paths
-                )
-                dataset_configs.append(dataset_config)
-
-        assert len(dataset_configs) == 2
-
-        # TODO: Implement a full comparison of the expected configdicts
-        if dataset_configs[0].name == "dataset1":
-            dataset_1_cfg, dataset_2_cfg = dataset_configs[0], dataset_configs[1]
-        elif dataset_configs[1].name == "dataset1":
-            dataset_1_cfg, dataset_2_cfg = dataset_configs[1], dataset_configs[0]
-
-        assert dataset_1_cfg.config.dataset_paths.alignments == Path(
-            "/dataset1/alignments"
+            }
         )
-        assert dataset_1_cfg.config.dataset_paths.targets == Path("/dataset1/mmcifs")
-        assert dataset_1_cfg["class"] == "TrainDataset"
-        assert dataset_1_cfg.mode == "train"
-        assert dataset_1_cfg.weight == 1.0
-        assert dataset_1_cfg.config.token_budget == 17
 
-        assert dataset_2_cfg.config.dataset_paths.alignments == Path(
-            "/dataset2/alignments"
+        inference_config = InferenceConfig(query_set=inference_set)
+        inference_spec = InferenceDatasetSpec(config=inference_config)
+        dataset_specs = [inference_spec]
+
+        data_config = DataModuleConfig(
+            batch_size=1,
+            num_workers=10,
+            data_seed=123,
+            epoch_len=1,
+            num_epochs=1,
+            datasets=dataset_specs,
         )
-        assert dataset_2_cfg.config.dataset_paths.targets == Path("/dataset2/mmcifs")
-        assert dataset_2_cfg["class"] == "ValidationDataset"
-        assert dataset_2_cfg.mode == "validation"
-        assert dataset_2_cfg.get("weight") is None
-        assert dataset_2_cfg.config.token_budget == 13, "Fails token budget overwrite"
+        data_module = DataModule(data_config)
 
-    def test_af3_dataset_loss_config_construction(self, tmp_path):
-        test_yaml_str = textwrap.dedent("""\
-        dataset_paths: 
-            dataset1:
-                alignments: /dataset1/alignments
-                targets: /dataset1/mmcifs
-            dataset2:
-                alignments: /dataset2/alignments
-                targets: /dataset2/mmcifs
+        data_module.setup()
+        _ = data_module.predict_dataloader()
 
-        dataset_configs:
-            train:
-                dataset1:
-                    class: TrainDataset 
-                    weight: 1.0
-                    config:
-                        loss_weight_mode: default
-            validation:
-                dataset2:
-                    class: ValidationDataset
-                    config:
-                        loss_weight_mode: self_distillation
-        """)
-        test_yaml_file = tmp_path / "runner.yml"
-        with open(test_yaml_file, "w") as f:
-            f.write(test_yaml_str)
-
-        runner_args = mlc.ConfigDict(config_utils.load_yaml(test_yaml_file))
-
-        dataset_configs = []
-        for mode, input_dataset_configs in runner_args.dataset_configs.items():
-            for name, dataset_specs in input_dataset_configs.items():
-                builder = af3_dataset_config_builder.AF3DatasetConfigBuilder(
-                    DUMMY_AF3_PROJECT_CONFIG
-                )
-                dataset_specific_paths = runner_args.dataset_paths[name]
-                dataset_config = builder.get_custom_config(
-                    name, mode, dataset_specs, dataset_specific_paths
-                )
-                dataset_configs.append(dataset_config)
-
-        assert len(dataset_configs) == 2
-
-        dataset_1_cfg = dataset_configs[0]
-        dataset_2_cfg = dataset_configs[1]
-
-        print(dataset_2_cfg)
-        print(dataset_1_cfg)
-
-        assert dataset_1_cfg.config.dataset_paths.alignments == Path(
-            "/dataset1/alignments"
-        )
-        assert dataset_1_cfg.config.dataset_paths.targets == Path("/dataset1/mmcifs")
-        assert dataset_1_cfg["class"] == "TrainDataset"
-        assert dataset_1_cfg.weight == 1.0
-        assert dataset_1_cfg.config.loss.loss_weights.distogram == 3e-2
-        assert dataset_1_cfg.config.loss.loss_weights.mse == 4.0
-
-        assert dataset_2_cfg.config.dataset_paths.alignments == Path(
-            "/dataset2/alignments"
-        )
-        assert dataset_2_cfg.config.dataset_paths.targets == Path("/dataset2/mmcifs")
-        assert dataset_2_cfg["class"] == "ValidationDataset"
-        assert dataset_2_cfg.get("weight") is None
-        assert dataset_2_cfg.config.loss.loss_weights.distogram == 3e-2
-        assert dataset_2_cfg.config.loss.loss_weights.mse == 0.5
+        # Option: Test feature generation once create_features is written
+        # Would require a real msa file
+        # it = iter(dataloader)
+        # next(it)

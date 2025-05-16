@@ -64,9 +64,9 @@ def process_msas_af3(
             alignment_db_directory is provided.
         alignment_array_directory (Path | None):
             The path to the directory containing the preprocessed alignment arrays.
-        max_seq_counts (int | float):
-            Max number of sequences to keep from each parsed MSA. Also used to determine
-            which MSAs to parse from each chain directory.
+        max_seq_counts (dict):
+            Dict of max number of sequences to keep from each parsed MSA. Also used to
+            determine which MSAs to parse from each chain directory.
         aln_order (list[str]):
             A list of strings matching the alignment file names, indicating the order in
             which they should be concatenated to form the main MSA.

@@ -243,7 +243,8 @@ def run_mmseqs_search(
 def get_polymer_chain_to_homolog_chains(
     val_dataset_cache: ClusteredDatasetCache,
     train_dataset_cache: ClusteredDatasetCache,
-    id_to_sequence: dict[str, str],
+    val_id_to_sequence: dict[str, str],
+    train_id_to_sequence: dict[str, str],
     min_sequence_identity: float = 0.4,
 ) -> dict[str, set[str]]:
     """Maps protein/nucleic-acid validation chains to homologous training chains.
@@ -257,9 +258,10 @@ def get_polymer_chain_to_homolog_chains(
             Validation dataset cache.
         train_dataset_cache (ClusteredDatasetCache):
             Training dataset cache.
-        id_to_sequence (Dict[str, str]):
-            Mapping of all preprocessed PDB-chain-IDs to sequences (should include both
-            training and validation).
+        val_id_to_sequence (Dict[str, str]):
+            Mapping of {PDB-ID_chain-ID: sequence} for chains in the validation cache.
+        train_id_to_sequence (Dict[str, str]):
+            Mapping of {PDB-ID_chain-ID: sequence} for chains in the training cache.
         min_sequence_identity (float):
             Minimum sequence identity for a hit to be considered homologous.
 
@@ -281,6 +283,7 @@ def get_polymer_chain_to_homolog_chains(
         (MoleculeType.PROTEIN,),
         (MoleculeType.DNA, MoleculeType.RNA),
     ):
+        # Only get chains that have that molecule type
         val_chains = get_all_cache_chains(
             val_structure_cache, restrict_to_molecule_types=molecule_types
         )
@@ -288,8 +291,8 @@ def get_polymer_chain_to_homolog_chains(
             train_structure_cache, restrict_to_molecule_types=molecule_types
         )
 
-        val_id_to_sequence = {k: id_to_sequence[k] for k in val_chains}
-        train_id_to_sequence = {k: id_to_sequence[k] for k in train_chains}
+        val_id_to_sequence_mol = {k: val_id_to_sequence[k] for k in val_chains}
+        train_id_to_sequence_mol = {k: train_id_to_sequence[k] for k in train_chains}
 
         if molecule_types == (MoleculeType.PROTEIN,):
             logger.info("Running MMseqs2 search for protein chains.")
@@ -300,8 +303,8 @@ def get_polymer_chain_to_homolog_chains(
 
         chain_to_homologs.update(
             run_mmseqs_search(
-                query_id_to_sequence=val_id_to_sequence,
-                target_id_to_sequence=train_id_to_sequence,
+                query_id_to_sequence=val_id_to_sequence_mol,
+                target_id_to_sequence=train_id_to_sequence_mol,
                 min_sequence_identity=min_sequence_identity,
                 dbtype=db_type,
             )
@@ -313,7 +316,8 @@ def get_polymer_chain_to_homolog_chains(
 def assign_homology_labels(
     val_dataset_cache: ValidationDatasetCache,
     train_dataset_cache: ClusteredDatasetCache,
-    id_to_sequence: dict[str, str],
+    val_id_to_sequence: dict[str, str],
+    train_id_to_sequence: dict[str, str],
     seq_identity_threshold: float = 0.4,
     tanimoto_threshold: float = 0.85,
 ) -> ValidationDatasetCache:
@@ -331,9 +335,10 @@ def assign_homology_labels(
             Validation dataset cache.
         train_dataset_cache (ClusteredDatasetCache):
             Training dataset cache.
-        id_to_sequence (Dict[str, str]):
-            Mapping of all preprocessed PDB-chain-IDs to sequences (should include both
-            training and validation).
+        val_id_to_sequence (Dict[str, str]):
+            Mapping of {PDB-ID_chain-ID: sequence} for chains in the validation cache.
+        train_id_to_sequence (Dict[str, str]):
+            Mapping of {PDB-ID_chain-ID: sequence} for chains in the training cache.
         seq_identity_threshold (float):
             Minimum sequence identity for a hit to be considered homologous.
         tanimoto_threshold (float):
@@ -370,7 +375,8 @@ def assign_homology_labels(
     val_chain_to_homologs = get_polymer_chain_to_homolog_chains(
         val_dataset_cache=val_dataset_cache,
         train_dataset_cache=train_dataset_cache,
-        id_to_sequence=id_to_sequence,
+        val_id_to_sequence=val_id_to_sequence,
+        train_id_to_sequence=train_id_to_sequence,
         min_sequence_identity=seq_identity_threshold,
     )
 

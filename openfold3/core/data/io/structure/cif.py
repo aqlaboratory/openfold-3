@@ -15,7 +15,10 @@ from openfold3.core.data.io.structure.atom_array import (
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
-from openfold3.core.data.primitives.structure.cleanup import get_polymer_mask
+from openfold3.core.data.primitives.structure.cleanup import (
+    convert_intra_residue_dative_to_single,
+    get_polymer_mask,
+)
 from openfold3.core.data.primitives.structure.labels import (
     assign_entity_ids,
     assign_molecule_type_ids,
@@ -126,7 +129,7 @@ def parse_mmcif(
     cif_file = _load_ciffile(file_path)
     cif_data = get_cif_block(cif_file)
 
-    # Try predetermining if the structure has too many chains
+    # Try predetermining from the CIF metadata if the structure has too many chains
     if max_polymer_chains is not None:
         n_polymers = get_first_bioassembly_polymer_count(cif_data)
 
@@ -179,32 +182,34 @@ def parse_mmcif(
             **parser_args,
         )
 
-    # Check again if the structure has too many chains
-    if max_polymer_chains is not None:
-        n_polymers = get_chain_count(
-            atom_array[get_polymer_mask(atom_array, use_molecule_type_id=False)]
-        )
-
-        if n_polymers > max_polymer_chains:
-            return SkippedStructure(cif_file, f"Too many polymer chains: {n_polymers}")
-
     # Skip structures where all atoms have zero occupancy
     if skip_all_zero_occ and atom_array.occupancy.sum() == 0:
-        return SkippedStructure(cif_file, "All atoms have zero occupancy")
+        return SkippedStructure(cif_file, "All atoms have zero occupancy.")
 
-    # Replace author-assigned IDs with PDB-assigned IDs
-    update_author_to_pdb_labels(atom_array)
+    # Replace author-assigned IDs with PDB-assigned IDs, but transfer over author
+    # residue IDs where necessary (see function documentation)
+    update_author_to_pdb_labels(atom_array, use_author_res_id_if_missing=True)
 
     # Add entity IDs
     assign_entity_ids(atom_array)
-
-    # Add molecule types for convenience
-    assign_molecule_type_ids(atom_array, cif_file)
 
     # Renumber chain IDs from 1 to avoid duplicate chain labels after bioassembly
     # expansion
     if renumber_chain_ids:
         assign_renumbered_chain_ids(atom_array)
+
+    # Add IDs for major molecular types (PROTEIN, DNA, RNA, LIGAND)
+    assign_molecule_type_ids(atom_array, cif_file)
+
+    # Check again if the structure has too many chains based on the actual structure to
+    # not only rely on earlier metadata annotation, which may not always be complete.
+    if max_polymer_chains is not None:
+        n_polymers = get_chain_count(
+            atom_array[get_polymer_mask(atom_array, use_molecule_type_id=True)]
+        )
+
+        if n_polymers > max_polymer_chains:
+            return SkippedStructure(cif_file, f"Too many polymer chains: {n_polymers}")
 
     return ParsedStructure(cif_file, atom_array)
 
@@ -248,9 +253,19 @@ def write_structure(
     else:
         raise NotImplementedError("Only .cif, .bcif, and .pkl formats are supported")
 
-    pdbx.set_structure(
-        cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
-    )
+    try:
+        pdbx.set_structure(
+            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
+        )
+    except KeyError:
+        logger.warning(
+            "KeyError while writing structure to CIF file. Retrying with intra-residue "
+            "COORDINATION bonds set to SINGLE."
+        )
+        atom_array = convert_intra_residue_dative_to_single(atom_array)
+        pdbx.set_structure(
+            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
+        )
 
     cif_file.write(output_path)
 

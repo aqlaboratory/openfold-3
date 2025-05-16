@@ -1,17 +1,17 @@
-import unittest
-
+import pytest
 import torch
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
+from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.projects import registry
+from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
 from openfold3.projects.af3_all_atom.runner import AlphaFold3AllAtom
 from tests import compare_utils
 from tests.config import consts
 from tests.data_utils import random_af3_features
 
 
-class TestAF3Model(unittest.TestCase):
+class TestAF3Model:
     def run_model(
         self,
         batch_size,
@@ -25,12 +25,10 @@ class TestAF3Model(unittest.TestCase):
     ):
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        proj_entry = registry.get_project_entry("af3_all_atom")
-        proj_config = proj_entry.get_config_with_preset()
-        config = proj_config.model
+        project_entry = AF3ProjectEntry()
+        config = project_entry.get_model_config_with_presets()
 
         if train:
-            config.settings.chunk_size = None
             config.settings.blocks_per_ckpt = 1
             config.settings.ckpt_intermediate_steps = True
 
@@ -43,6 +41,7 @@ class TestAF3Model(unittest.TestCase):
         config.architecture.loss_module.diffusion.chunk_size = 16
 
         af3 = AlphaFold3AllAtom(config, _compile=False).to(device=device, dtype=dtype)
+        af3_loss = AlphaFold3Loss(config=config.architecture.loss_module)
 
         batch = random_af3_features(
             batch_size=batch_size,
@@ -52,7 +51,15 @@ class TestAF3Model(unittest.TestCase):
             is_eval=(not train),
         )
 
+        precision = "32-true" if dtype == torch.float32 else "bf16-mixed"
+        batch = OF3DeepSpeedPrecision(precision=precision).convert_input(batch)
+
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
+        num_rollout_samples = (
+            config.architecture.shared.diffusion.no_mini_rollout_samples
+            if train
+            else config.architecture.shared.diffusion.no_full_rollout_samples
+        )
 
         def to_device(t):
             return t.to(device=torch.device(device))
@@ -60,8 +67,6 @@ class TestAF3Model(unittest.TestCase):
         batch = tensor_tree_map(to_device, batch)
 
         if train:
-            af3_loss = AlphaFold3Loss(config=config.architecture.loss_module)
-
             batch, outputs = af3(batch=batch)
 
             loss, loss_breakdown = af3_loss(
@@ -83,19 +88,20 @@ class TestAF3Model(unittest.TestCase):
             af3.eval()
 
             # filters used by validation metrics
-            assert "use_for_intra_validation" in batch
-            assert "use_for_inter_validation" in batch
+            assert "intra_filter_atomized" in batch["ground_truth"]
+            assert "inter_filter_atomized" in batch["ground_truth"]
 
             with torch.no_grad():
-                _, outputs = af3(batch=batch)
+                batch, outputs = af3(batch=batch)
+
+                loss, loss_breakdown = af3_loss(
+                    batch=batch, output=outputs, _return_breakdown=True
+                )
+
+                assert loss.shape == ()
 
             atom_positions_predicted = outputs["atom_positions_predicted"]
 
-        num_rollout_samples = (
-            config.architecture.shared.diffusion.no_mini_rollout_samples
-            if train
-            else config.architecture.shared.diffusion.no_full_rollout_samples
-        )
         assert atom_positions_predicted.shape == (
             batch_size,
             num_rollout_samples,
@@ -103,95 +109,78 @@ class TestAF3Model(unittest.TestCase):
             3,
         )
 
-    def test_shape_small_fp32(self):
+    @pytest.mark.parametrize(
+        "model_phase", ["train", "eval"], ids=lambda p: f"model={p}"
+    )
+    def test_shape_small_fp32(self, model_phase):
         batch_size = consts.batch_size
         n_token = 18
         n_msa = 10
         n_templ = 3
 
-        # Train
+        is_train = model_phase == "train"
         self.run_model(
             batch_size=batch_size,
             n_token=n_token,
             n_msa=n_msa,
             n_templ=n_templ,
             dtype=torch.float32,
-            train=True,
-            reduce_model_size=True,
-            use_deepspeed_evo_attention=False,
-        )
-
-        # Eval
-        self.run_model(
-            batch_size=batch_size,
-            n_token=n_token,
-            n_msa=n_msa,
-            n_templ=n_templ,
-            dtype=torch.float32,
-            train=False,
+            train=is_train,
             reduce_model_size=True,
             use_deepspeed_evo_attention=False,
         )
 
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
-    def test_shape_small_kernels(self):
+    @pytest.mark.parametrize(
+        "dtype", [torch.float32, torch.bfloat16], ids=lambda d: f"dtype={d}"
+    )
+    @pytest.mark.parametrize(
+        "model_phase", ["train", "eval"], ids=lambda p: f"model={p}"
+    )
+    def test_shape_small_kernels(self, dtype, model_phase):
         batch_size = consts.batch_size
         n_token = 18
         n_msa = 10
         n_templ = 3
 
-        for dtype in [torch.float32, torch.bfloat16]:
-            # Train
-            self.run_model(
-                batch_size=batch_size,
-                n_token=n_token,
-                n_msa=n_msa,
-                n_templ=n_templ,
-                dtype=dtype,
-                train=True,
-                reduce_model_size=True,
-                use_deepspeed_evo_attention=True,
-            )
+        is_train = model_phase == "train"
+        self.run_model(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=n_msa,
+            n_templ=n_templ,
+            dtype=dtype,
+            train=is_train,
+            reduce_model_size=True,
+            use_deepspeed_evo_attention=True,
+        )
 
-            # Eval
-            self.run_model(
-                batch_size=batch_size,
-                n_token=n_token,
-                n_msa=n_msa,
-                n_templ=n_templ,
-                dtype=dtype,
-                train=False,
-                reduce_model_size=True,
-                use_deepspeed_evo_attention=True,
-            )
-
-    @unittest.skip(
-        "Manually enable this for now, will add flag to run slow tests later."
+    @pytest.mark.skip(
+        reason="Manually enable this for now, will add flag to run slow tests later."
     )
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
-    def test_shape_large_eval(self):
+    @pytest.mark.parametrize(
+        "dtype", [torch.float32, torch.bfloat16], ids=lambda d: f"dtype={d}"
+    )
+    def test_shape_large_eval(self, dtype):
         batch_size = 1
         n_token = 384
         n_msa = 16384
         n_templ = 4
 
-        for dtype in [torch.float32, torch.bfloat16]:
-            self.run_model(
-                batch_size=batch_size,
-                n_token=n_token,
-                n_msa=n_msa,
-                n_templ=n_templ,
-                dtype=dtype,
-                train=False,
-                reduce_model_size=False,
-                use_deepspeed_evo_attention=True,
-            )
+        self.run_model(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=n_msa,
+            n_templ=n_templ,
+            dtype=dtype,
+            train=False,
+            reduce_model_size=False,
+            use_deepspeed_evo_attention=True,
+        )
 
-    # @unittest.skip(
-    # "Manually enable this for now, will add flag to run slow tests later."
-    # )
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
     def test_shape_large_bf16_train(self):
@@ -210,7 +199,3 @@ class TestAF3Model(unittest.TestCase):
             reduce_model_size=False,
             use_deepspeed_evo_attention=True,
         )
-
-
-if __name__ == "__main__":
-    unittest.main()

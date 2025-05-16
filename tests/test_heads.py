@@ -7,15 +7,15 @@ from openfold3.core.model.heads.head_modules import AuxiliaryHeadsAllAtom
 from openfold3.core.model.heads.prediction_heads import (
     ExperimentallyResolvedHeadAllAtom,
     PairformerEmbedding,
-    PerResidueLDDAllAtom,
+    PerResidueLDDTAllAtom,
     PredictedAlignedErrorHead,
     PredictedDistanceErrorHead,
 )
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
-from openfold3.projects import registry
-from openfold3.projects.af3_all_atom.config.base_config import (
+from openfold3.projects.af3_all_atom.config.model_config import (
     max_atoms_per_token,
 )
+from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
 from tests.config import consts
 from tests.data_utils import random_af3_features
 
@@ -59,7 +59,7 @@ class TestPLDDTHead(unittest.TestCase):
         c_s = consts.c_s
         c_out = 50
 
-        plddt_head = PerResidueLDDAllAtom(
+        plddt_head = PerResidueLDDTAllAtom(
             c_s, c_out, max_atoms_per_token=max_atoms_per_token.get()
         )
 
@@ -119,9 +119,8 @@ class TestPairformerEmbedding(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
-        proj_entry = registry.get_project_entry("af3_all_atom")
-        proj_config = proj_entry.get_config_with_preset()
-        config = proj_config.model
+        proj_entry = AF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
 
         c_s_input = config.architecture.shared.c_s_input
         c_s = config.architecture.shared.c_s
@@ -169,9 +168,8 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         n_msa = 10
         n_templ = 3
 
-        proj_entry = registry.get_project_entry("af3_all_atom")
-        proj_config = proj_entry.get_config_with_preset()
-        config = proj_config.model
+        proj_entry = AF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
 
         c_s_input = config.architecture.shared.c_s_input
         c_s = config.architecture.shared.c_s
