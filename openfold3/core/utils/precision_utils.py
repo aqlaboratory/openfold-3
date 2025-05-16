@@ -50,6 +50,7 @@ class OF3DeepSpeedPrecision(DeepSpeedPrecision):
             data: Converted input feature dictionary with the desired precision
         """
         ground_truth = data.pop("ground_truth", None)
+        loss_weights = data.pop("loss_weights", None)
         ref_conformer_feats = {k: v for k, v in data.items() if k.startswith("ref_")}
 
         data = apply_to_collection(
@@ -63,5 +64,8 @@ class OF3DeepSpeedPrecision(DeepSpeedPrecision):
 
         if ground_truth is not None:
             data["ground_truth"] = ground_truth
+
+        if loss_weights is not None:
+            data["loss_weights"] = loss_weights
 
         return data

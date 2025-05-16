@@ -322,41 +322,20 @@ class RelposAllAtom(nn.Module):
 
     def __init__(
         self,
-        c_z: int,
         max_relative_idx: int,
         max_relative_chain: int,
-        linear_init_params: ConfigDict = lin_init.relpos_emb_init,
     ):
         """
         Args:
-            c_z:
-                Pair embedding dimension
             max_relative_idx:
                 Maximum relative position and token indices clipped
             max_relative_chain:
                 Maximum relative chain indices clipped
-            linear_init_params:
-                Linear layer initialization parameters
         """
         super().__init__()
 
         self.max_relative_idx = max_relative_idx
         self.max_relative_chain = max_relative_chain
-
-        num_rel_pos_bins = 2 * max_relative_idx + 2
-        num_rel_token_bins = 2 * max_relative_idx + 2
-        num_rel_chain_bins = 2 * max_relative_chain + 2
-        num_same_entity_features = 1
-        self.num_dims = (
-            num_rel_pos_bins
-            + num_rel_token_bins
-            + num_rel_chain_bins
-            + num_same_entity_features
-        )
-
-        self.linear_relpos = Linear(
-            self.num_dims, c_z, **linear_init_params.linear_relpos
-        )
 
     @staticmethod
     def relpos(
@@ -423,11 +402,9 @@ class RelposAllAtom(nn.Module):
 
         same_entity = same_entity[..., None].to(dtype=rel_pos.dtype)
 
-        rel_feat = torch.cat([rel_pos, rel_token, same_entity, rel_chain], dim=-1).to(
-            self.linear_relpos.weight.dtype
-        )
+        rel_feat = torch.cat([rel_pos, rel_token, same_entity, rel_chain], dim=-1)
 
-        return self.linear_relpos(rel_feat)
+        return rel_feat
 
 
 class InputEmbedderAllAtom(nn.Module):
@@ -478,10 +455,23 @@ class InputEmbedderAllAtom(nn.Module):
         self.linear_z_j = Linear(c_s_input, c_z, **linear_init_params.linear_z_j)
 
         self.relpos = RelposAllAtom(
-            c_z=c_z,
             max_relative_idx=max_relative_idx,
             max_relative_chain=max_relative_chain,
-            linear_init_params=linear_init_params.relpos_emb,
+        )
+
+        num_rel_pos_bins = 2 * max_relative_idx + 2
+        num_rel_token_bins = 2 * max_relative_idx + 2
+        num_rel_chain_bins = 2 * max_relative_chain + 2
+        num_same_entity_features = 1
+        num_relpos_dims = (
+            num_rel_pos_bins
+            + num_rel_token_bins
+            + num_rel_chain_bins
+            + num_same_entity_features
+        )
+
+        self.linear_relpos = Linear(
+            num_relpos_dims, c_z, **linear_init_params.linear_relpos
         )
 
         # Expecting binary feature "token_bonds" of shape [*, N_token, N_token, 1]
@@ -541,9 +531,11 @@ class InputEmbedderAllAtom(nn.Module):
         )
 
         # [*, N_token, N_token, C_z]
-        z = self.relpos(batch)
-        z = add(z, s_input_emb_i[..., None, :], inplace=inplace_safe)
-        z = add(z, s_input_emb_j[..., None, :, :], inplace=inplace_safe)
+        z = s_input_emb_i[..., None, :] + s_input_emb_j[..., None, :, :]
+
+        relpos_emb = self.linear_relpos(self.relpos(batch).to(dtype=z.dtype))
+        z = add(z, relpos_emb, inplace=inplace_safe)
+
         z = add(z, token_bonds_emb, inplace=inplace_safe)
 
         return s_input, s, z

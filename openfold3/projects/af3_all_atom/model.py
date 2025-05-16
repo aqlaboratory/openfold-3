@@ -414,6 +414,7 @@ class AlphaFold3(nn.Module):
 
         # Sample atom positions
         xl_noisy = xl_gt + noise
+        xl_noisy = xl_noisy * atom_mask_gt.unsqueeze(-1)
 
         token_mask = batch["token_mask"]
 

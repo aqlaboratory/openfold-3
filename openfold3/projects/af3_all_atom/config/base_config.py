@@ -173,14 +173,14 @@ project_config = mlc.ConfigDict(
                     "c_z": c_z,
                     "linear_init_param": lin_init.templ_module_init,
                     "template_pair_embedder": {
-                        "c_in": 108,
-                        "c_z": c_z,
+                        "c_in": c_z,
+                        "c_dgram": 39,
+                        "c_aatype": 32,
                         "c_out": c_t,
                         "linear_init_params": lin_init.templ_pair_feat_emb_init,
                     },
                     "template_pair_stack": {
                         "c_t": c_t,
-                        # TODO: Do we use pairformer attn params?
                         # DISCREPANCY: c_hidden_tri_att here is given in the supplement
                         # as 64. In the code, it's 16.
                         "c_hidden_tri_att": 16,
