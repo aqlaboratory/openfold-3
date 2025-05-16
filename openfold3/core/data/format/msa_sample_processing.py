@@ -7,6 +7,7 @@ from pydantic import BaseModel, BeforeValidator, DirectoryPath, FilePath
 
 if TYPE_CHECKING:
     from openfold3.core.data.primitives.caches.format import DatasetChainData
+from openfold3.core.data.format.dataset_configs import _convert_molecule_type
 from openfold3.core.data.format.inference_query import _ensure_list
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.af3_all_atom.config.inference_query_format import Query
@@ -15,7 +16,7 @@ from openfold3.projects.af3_all_atom.config.inference_query_format import Query
 # MSA sample parser configs
 class MsaSampleParserConfig(BaseModel):
     max_seq_counts: dict[str, int | float]
-    moltypes: list[str]
+    moltypes: list[Annotated[MoleculeType, BeforeValidator(_convert_molecule_type)]]
 
 
 class MsaSampleParserConfigTrain(MsaSampleParserConfig):
@@ -51,7 +52,7 @@ class MsaSampleProcessorConfig(BaseModel):
 
 # MSA sample processor input configs
 class MsaChainDataTrain(BaseModel):
-    molecule_type: MoleculeType
+    molecule_type: Annotated[MoleculeType, BeforeValidator(_convert_molecule_type)]
     alignment_representative_id: str
 
 

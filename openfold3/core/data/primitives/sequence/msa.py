@@ -433,7 +433,7 @@ def find_monomer_homomer(msa_array_collection: MsaArrayCollection) -> bool:
     """Determines if the sample is a monomer or homomer.
 
     Args:
-        msa_collection (MsaCollection):
+        msa_array_collection (MsaCollection):
             A collection of Msa objects and chain IDs for a single sample.
 
     Returns:
@@ -456,11 +456,11 @@ def find_monomer_homomer(msa_array_collection: MsaArrayCollection) -> bool:
 
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-query")
-def create_query_seqs(msa_collection: MsaArrayCollection) -> dict[int, MsaArray]:
+def create_query_seqs(msa_array_collection: MsaArrayCollection) -> dict[int, MsaArray]:
     """Extracts and expands the query sequences and deletion matrices.
 
     Args:
-        msa_collection (MsaArrayCollection):
+        msa_array_collection (MsaArrayCollection):
             A collection of Msa objects and chain IDs for a single sample.
 
     Returns:
@@ -470,13 +470,13 @@ def create_query_seqs(msa_collection: MsaArrayCollection) -> dict[int, MsaArray]
     """
     return {
         k: MsaArray(
-            msa=msa_collection.rep_id_to_query_seq[v],
+            msa=msa_array_collection.rep_id_to_query_seq[v],
             deletion_matrix=np.zeros(
-                msa_collection.rep_id_to_query_seq[v].shape, dtype=int
+                msa_array_collection.rep_id_to_query_seq[v].shape, dtype=int
             ),
             metadata=pd.DataFrame(),
         )
-        for (k, v) in msa_collection.chain_id_to_rep_id.items()
+        for (k, v) in msa_array_collection.chain_id_to_rep_id.items()
     }
 
 
@@ -814,7 +814,7 @@ def map_to_paired_msa_per_chain(
     """Maps paired species indices to MSA rows i.e. seqences.
 
     Args:
-        msa_collection (MsaArrayCollection):
+        msa_array_collection (MsaArrayCollection):
             A collection of Msa objects and chain IDs for a single sample.
         uniprot_hits (dict[str, MsaArray]):
             Dict mapping chain IDs to Msa objects containing UniProt MSAs.
@@ -915,11 +915,11 @@ def map_to_paired_msa_per_chain(
     return paired_msa_per_chain
 
 
-def expand_paired_msas(msa_collection: MsaArrayCollection) -> dict[int, MsaArray]:
+def expand_paired_msas(msa_array_collection: MsaArrayCollection) -> dict[int, MsaArray]:
     """Expands the paired msas and deletion matrices from representatives to chains.
 
     Args:
-        msa_collection (MsaArrayCollection):
+        msa_array_collection (MsaArrayCollection):
             A collection of Msa objects and chain IDs for a single sample.
 
     Returns:
@@ -928,8 +928,8 @@ def expand_paired_msas(msa_collection: MsaArrayCollection) -> dict[int, MsaArray
             for each chain, indexed by chain id.
     """
     return {
-        k: msa_collection.rep_id_to_paired_msa[v]
-        for (k, v) in msa_collection.chain_id_to_rep_id.items()
+        k: msa_array_collection.rep_id_to_paired_msa[v]
+        for (k, v) in msa_array_collection.chain_id_to_rep_id.items()
     }
 
 
@@ -950,7 +950,7 @@ def create_paired(
     Also crops the paired MSA.
 
     Args:
-        msa_collection (MsaArrayCollection):
+        msa_array_collection (MsaArrayCollection):
             A collection of Msa objects and chain IDs for a single sample.
         max_rows_paired (int):
             The maximum number of rows to keep from the paired rows.
@@ -1029,7 +1029,7 @@ def create_main(
     present in the cropped paired MSA of the corresponding chain.
 
     Args:
-        msa_collection (MsaArrayCollection):
+        msa_array_collection (MsaArrayCollection):
             A collection of MsaArrays and chain IDs for a single sample.
         chain_id_to_paired_msa (dict[str, MsaArray]):
             Dict of paired Msa objects per chain.
@@ -1108,11 +1108,11 @@ class QuerySeqProcessor:
     def __init__(self):
         pass
 
-    def forward(self, msa_collection: MsaArrayCollection):
-        return create_query_seqs(msa_collection=msa_collection)
+    def forward(self, msa_array_collection: MsaArrayCollection) -> dict[int, MsaArray]:
+        return create_query_seqs(msa_array_collection=msa_array_collection)
 
-    def __call__(self):
-        return self.forward()
+    def __call__(self, msa_array_collection: MsaArrayCollection) -> dict[int, MsaArray]:
+        return self.forward(msa_array_collection=msa_array_collection)
 
 
 class PairedMsaProcessor:
@@ -1121,16 +1121,16 @@ class PairedMsaProcessor:
         self.min_chains_paired_partial = config.min_chains_paired_partial
         self.pairing_mask_keys = config.pairing_mask_keys
 
-    def forward(self, msa_collection: MsaArrayCollection):
+    def forward(self, msa_array_collection: MsaArrayCollection) -> dict[str, MsaArray]:
         return create_paired(
-            msa_collection=msa_collection,
+            msa_array_collection=msa_array_collection,
             max_rows_paired=self.max_rows_paired,
             min_chains_paired_partial=self.min_chains_paired_partial,
             pairing_mask_keys=self.pairing_mask_keys,
         )
 
-    def __call__(self):
-        return self.forward()
+    def __call__(self, msa_array_collection: MsaArrayCollection) -> dict[str, MsaArray]:
+        return self.forward(msa_array_collection=msa_array_collection)
 
 
 class MainMsaProcessor:
@@ -1148,5 +1148,12 @@ class MainMsaProcessor:
             aln_order=self.aln_order,
         )
 
-    def __call__(self):
-        return self.forward()
+    def __call__(
+        self,
+        msa_array_collection: MsaArrayCollection,
+        chain_id_to_paired_msa: dict[str, MsaArray],
+    ) -> dict[str, MsaArray]:
+        return self.forward(
+            msa_array_collection=msa_array_collection,
+            chain_id_to_paired_msa=chain_id_to_paired_msa,
+        )

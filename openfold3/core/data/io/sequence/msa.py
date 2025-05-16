@@ -648,8 +648,8 @@ class MsaSampleParser:
         # Collect data into MsaArrayCollection
         return self.create_msa_array_collection()
 
-    def __call__(self):
-        return self.forward()
+    def __call__(self, input: MsaSampleProcessorInputInference) -> MsaArrayCollection:
+        return self.forward(input=input)
 
 
 class MsaSampleParserTrain(MsaSampleParser):
@@ -714,6 +714,8 @@ class MsaSampleParserInference(MsaSampleParser):
         """
         # Create maps
         for chain_id, chain_data in input.msa_chain_data.items():
+            print(chain_data.molecule_type)
+            print(self.config.moltypes)
             if chain_data.molecule_type in self.config.moltypes:
                 main_msa_file_paths = (
                     sorted(chain_data.main_msa_file_paths)
@@ -752,10 +754,19 @@ class MsaSampleParserInference(MsaSampleParser):
 
                 self.chain_id_to_rep_id[chain_id] = rep_id
                 self.chain_id_to_mol_type[chain_id] = chain_data.molecule_type
-                if rep_id not in self.rep_id_to_main_msa_paths:
+                if (rep_id not in self.rep_id_to_main_msa_paths) & (
+                    len(main_msa_file_paths) > 0
+                ):
                     self.rep_id_to_main_msa_paths[rep_id] = main_msa_file_paths
-                if rep_id not in self.rep_id_to_paired_msa_paths:
+                if (rep_id not in self.rep_id_to_paired_msa_paths) & (
+                    len(paired_msa_file_paths) > 0
+                ):
                     self.rep_id_to_paired_msa_paths[rep_id] = paired_msa_file_paths
+
+        print(self.chain_id_to_rep_id)
+        print(self.chain_id_to_mol_type)
+        print(self.rep_id_to_main_msa_paths)
+        print(self.rep_id_to_paired_msa_paths)
 
     def parse_msas(self) -> None:
         """_summary_
@@ -841,3 +852,7 @@ class MsaSampleParserInference(MsaSampleParser):
                         self.rep_id_to_query_seq[rep_id] = all_msas_per_chain[
                             sorted(all_msas_per_chain.keys())[0]
                         ].msa[0, :][np.newaxis, :]
+
+        print(self.rep_id_to_query_seq)
+        print(self.rep_id_to_main_msa)
+        print(self.rep_id_to_paired_msa)

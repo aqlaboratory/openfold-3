@@ -12,6 +12,7 @@ from openfold3.core.data.format.msa_sample_processing import (
     MsaSampleProcessorInputTrain,
 )
 from openfold3.core.data.io.sequence.msa import (
+    MsaSampleParser,
     MsaSampleParserInference,
     MsaSampleParserTrain,
     parse_msas_sample,
@@ -161,10 +162,12 @@ class MsaSampleProcessor:
 
     def __init__(self, config: MsaSampleProcessorConfig):
         self.config = config
-        self.msa_sample_parser = None  # implement in child classes
+        self.msa_sample_parser = MsaSampleParser(config=config.sample_parser)
         self.query_seq_processor = QuerySeqProcessor()
-        self.paired_msa_processor = PairedMsaProcessor(config.paired_msa_processor)
-        self.main_msa_processor = MainMsaProcessor(config.main_msa_processor)
+        self.paired_msa_processor = PairedMsaProcessor(
+            config=config.paired_msa_processor
+        )
+        self.main_msa_processor = MainMsaProcessor(config=config.main_msa_processor)
 
     def create_query_seq(
         self,
@@ -245,7 +248,9 @@ class MsaSampleProcessorTrain(MsaSampleProcessor):
     ) -> dict[str, MsaArray]:
         """Create query sequences from MSA arrays."""
         if len(msa_array_collection.rep_id_to_query_seq) > 0:
-            chain_id_to_query_seq = self.query_seq_processor(msa_array_collection)
+            chain_id_to_query_seq = self.query_seq_processor(
+                msa_array_collection=msa_array_collection
+            )
         else:
             chain_id_to_query_seq = {}
         return chain_id_to_query_seq
@@ -301,7 +306,9 @@ class MsaSampleProcessorInference(MsaSampleProcessor):
     ) -> dict[str, MsaArray]:
         """Create query sequences from MSA arrays."""
         if (len(msa_array_collection.rep_id_to_query_seq) > 0) & input.use_msas:
-            chain_id_to_query_seq = self.query_seq_processor(msa_array_collection)
+            chain_id_to_query_seq = self.query_seq_processor(
+                msa_array_collection=msa_array_collection
+            )
         else:
             chain_id_to_query_seq = {}
         return chain_id_to_query_seq
@@ -319,7 +326,9 @@ class MsaSampleProcessorInference(MsaSampleProcessor):
         ):
             # Use precomputed paired MSAs
             if len(msa_array_collection.rep_id_to_paired_msa) > 0:
-                chain_id_to_paired_msa = expand_paired_msas(msa_array_collection)
+                chain_id_to_paired_msa = expand_paired_msas(
+                    msa_array_collection=msa_array_collection
+                )
             # Pair online from main MSAs
             elif not find_monomer_homomer(msa_array_collection):
                 # Create paired UniProt MSA arrays
