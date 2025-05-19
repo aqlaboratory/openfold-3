@@ -9,7 +9,7 @@ from collections import defaultdict, deque
 import numpy as np
 import pandas as pd
 
-from openfold3.core.data.format.msa_sample_processing import (
+from openfold3.core.data.format.msa import (
     MainMsaProcessorConfig,
     PairedMsaProcessorConfig,
 )
@@ -368,7 +368,7 @@ class MsaArrayCollection:
 
     # Core attributes
     chain_id_to_rep_id: dict[str, str]
-    chain_id_to_mol_type: dict[str, str]
+    chain_id_to_mol_type: dict[str, str]  # TODO convert to dict[str, MoleculeType]
     _state: str = "init"
 
     # State parsed attributes

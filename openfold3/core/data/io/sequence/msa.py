@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 from biotite.structure import AtomArray
 
-from openfold3.core.data.format.msa_sample_processing import (
+from openfold3.core.data.format.msa import (
     MsaSampleParserConfig,
     MsaSampleProcessorInputInference,
     MsaSampleProcessorInputTrain,

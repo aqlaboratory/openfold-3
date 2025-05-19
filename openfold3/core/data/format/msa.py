@@ -125,3 +125,26 @@ class MsaSampleProcessorInputInference(BaseModel):
 MsaSampleProcessorInput = (
     MsaSampleProcessorInputTrain | MsaSampleProcessorInputInference
 )
+
+
+# MSA featurization configs
+class MsaFeaturizerOF3Config(BaseModel):
+    max_rows: int
+    max_rows_paired: int
+    n_tokens: int
+    subsample_with_bands: bool
+
+    @classmethod
+    def create(
+        cls,
+        max_rows: int,
+        max_rows_paired: int,
+        n_tokens: int,
+        subsample_with_bands: bool,
+    ):
+        return cls(
+            max_rows=max_rows,
+            max_rows_paired=max_rows_paired,
+            n_tokens=n_tokens,
+            subsample_with_bands=subsample_with_bands,
+        )

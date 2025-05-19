@@ -248,6 +248,7 @@ def query_colabfold_msa_server(
     Ms = [N + seqs_unique.index(seq) for seq in seqs]
 
     # Run query
+    # TODO add warning or msg if using existing files
     if not os.path.isfile(tar_gz_file):
         TIME_ESTIMATE = 150 * len(seqs_unique)
         with tqdm(total=TIME_ESTIMATE, bar_format=TQDM_BAR_FORMAT) as pbar:

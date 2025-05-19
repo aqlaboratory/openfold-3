@@ -3,7 +3,9 @@
 import torch
 from biotite.structure import AtomArray
 
+from openfold3.core.data.format.msa import MsaFeaturizerOF3Config
 from openfold3.core.data.primitives.featurization.msa import (
+    MsaFeaturePrecursorAF3,
     create_msa_feature_precursor_af3,
 )
 from openfold3.core.data.primitives.featurization.structure import (
@@ -51,14 +53,13 @@ def featurize_msa_af3(
         dict[str, torch.Tensor]:
             Dictionary of MSA features.
     """
-    # Create MsaFeaturePrecursorAF3 <- MSA-to-token mapping and subsampling logic goes
-    # here, so [:max_rows, :] should be removed from below
+    # Create MsaFeaturePrecursorAF3
     msa_feature_precursor = create_msa_feature_precursor_af3(
         atom_array=atom_array,
         msa_array_collection=msa_array_collection,
         max_rows=max_rows,
         max_rows_paired=max_rows_paired,
-        token_budget=n_tokens,
+        n_tokens=n_tokens,
     )
 
     if subsample_with_bands:
@@ -93,3 +94,115 @@ def featurize_msa_af3(
     )
 
     return features
+
+
+class MsaFeaturizerOF3:
+    """Featurizer for MSAs."""
+
+    def __init__(
+        self,
+        config: MsaFeaturizerOF3Config,
+    ):
+        self.max_rows = config.max_rows
+        self.max_rows_paired = config.max_rows_paired
+        self.n_tokens = config.n_tokens
+        self.subsample_with_bands = config.subsample_with_bands
+
+    def create_feature_precursor(
+        self,
+        atom_array: AtomArray,
+        msa_array_collection: MsaArrayCollection,
+    ) -> dict[str, torch.Tensor]:
+        """Create feature precursor for MSAs.
+
+        Args:
+            atom_array (AtomArray):
+                Target structure atom array.
+            msa_array_collection (MsaArrayCollection):
+                Collection of processed MSA arrays.
+
+        Returns:
+            dict[str, torch.Tensor]:
+                Dictionary of MSA features.
+        """
+        return create_msa_feature_precursor_af3(
+            atom_array=atom_array,
+            msa_array_collection=msa_array_collection,
+            max_rows=self.max_rows,
+            max_rows_paired=self.max_rows_paired,
+            n_tokens=self.n_tokens,
+        )
+
+    def create_features(
+        self, msa_feature_precursor: MsaFeaturePrecursorAF3
+    ) -> dict[str, torch.Tensor]:
+        """Create features from MSA feature precursor.
+
+        Args:
+            msa_feature_precursor (MsaFeaturePrecursorAF3):
+                MSA feature precursor.
+
+        Returns:
+            dict[str, torch.Tensor]:
+                Dictionary of MSA features.
+        """
+
+        if self.subsample_with_bands:
+            raise NotImplementedError("Subsampling with bands is not implemented yet.")
+
+        features = {}
+        features["msa"] = encode_one_hot(
+            torch.tensor(msa_feature_precursor.msa_index, dtype=torch.int64),
+            len(STANDARD_RESIDUES_WITH_GAP_1),
+        ).to(torch.int32)
+        deletion_matrix = torch.tensor(
+            msa_feature_precursor.deletion_matrix, dtype=torch.int64
+        )
+        features["has_deletion"] = (deletion_matrix != 0).to(torch.float32)
+        features["deletion_value"] = torch.atan(deletion_matrix / 3.0) * (
+            2.0 / torch.acos(torch.zeros(1, device=deletion_matrix.device)) * 2
+        ).to(torch.float32)
+        features["deletion_mean"] = torch.tensor(
+            msa_feature_precursor.deletion_mean, dtype=torch.float32
+        )
+        features["profile"] = torch.tensor(
+            msa_feature_precursor.msa_profile, dtype=torch.float32
+        )
+
+        features["num_paired_seqs"] = torch.tensor(
+            [msa_feature_precursor.n_rows_paired], dtype=torch.int32
+        )
+
+        features["msa_mask"] = torch.tensor(
+            msa_feature_precursor.msa_mask, dtype=torch.float32
+        )
+
+        return features
+
+    def forward(
+        self,
+        atom_array: AtomArray,
+        msa_array_collection: MsaArrayCollection,
+    ) -> dict[str, torch.Tensor]:
+        """Featurize MSAs.
+
+        Args:
+            atom_array (AtomArray):
+                Target structure atom array.
+            msa_array_collection (MsaArrayCollection):
+                Collection of processed MSA arrays.
+
+        Returns:
+            dict[str, torch.Tensor]:
+                Dictionary of MSA features.
+        """
+        msa_feature_precursor = self.create_feature_precursor(
+            atom_array=atom_array,
+            msa_array_collection=msa_array_collection,
+        )
+        return self.create_features(msa_feature_precursor)
+
+    def __call__(
+        self, atom_array: AtomArray, msa_array_collection: MsaArrayCollection
+    ) -> dict[str, torch.Tensor]:
+        return self.forward(atom_array, msa_array_collection)
