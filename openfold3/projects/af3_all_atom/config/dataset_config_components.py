@@ -10,6 +10,8 @@ The main sections of the dataset configuration are:
 from pydantic import BaseModel
 
 
+# TODO: this will need to allow for arbitrary key: seq count pairs as users may have
+# files with different names from the defaults
 class MSAMaxSeqCounts(BaseModel):
     uniref90_hits: int = 10000
     uniprot_hits: int = 50000
