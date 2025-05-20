@@ -3,6 +3,7 @@ import textwrap
 import pytest  # noqa: F401  - used for pytest tmp fixture
 
 from openfold3.core.config import config_utils
+from openfold3.entry_points.validator import DataModuleArgs
 from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry, ModelUpdate
 
 
@@ -12,6 +13,9 @@ class TestAF3ProjectConfigGeneration:
         test_dummy_file = tmp_path / "test.json"
         test_dummy_file.write_text("test")
         test_yaml_str = textwrap.dedent(f"""\
+            data_module_args:
+                data_seed: 114
+                                        
             model_update:
                 presets:
                     - train
@@ -79,9 +83,15 @@ class TestAF3ProjectConfigGeneration:
         runner_args = config_utils.load_yaml(test_yaml_file)
         project_entry = AF3ProjectEntry()
 
-        dataset_specs = project_entry.combine_dataset_paths_with_configs(
-            runner_args.get("dataset_paths"), runner_args.get("dataset_configs")
-        )
+        data_module_config = DataModuleArgs.from_dataset_paths_and_configs(
+            runner_args.get("dataset_configs"),
+            runner_args.get("dataset_paths"),
+            **runner_args.get("data_module_args", {}),
+        ).to_data_module_config()
+
+        assert data_module_config.data_seed == 114
+
+        dataset_specs = data_module_config.datasets
         assert len(dataset_specs) == 2
         assert dataset_specs[0].dataset_class == "WeightedPDBDataset"
         assert dataset_specs[1].dataset_class == "ValidationPDBDataset"

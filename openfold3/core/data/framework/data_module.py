@@ -39,7 +39,7 @@ from lightning_fabric.utilities.rank_zero import (
     rank_zero_only,
 )
 from lightning_utilities.core.imports import RequirementCache
-from pydantic import BaseModel
+from pydantic import BaseModel, SerializeAsAny
 from torch.utils.data import DataLoader
 
 from openfold3.core.data.framework.lightning_utils import _generate_seed_sequence
@@ -115,22 +115,13 @@ class MultiDatasetConfig:
         return self.get_subset(datasets_stage_mask)
 
 
-@dataclasses.dataclass
-class DataModuleConfig:
-    batch_size: int
-    num_workers: int
-    data_seed: int
-    epoch_len: int
-    num_epochs: int
-    datasets: list[dict]
-
-    def to_dict(self):
-        _dict = self.__dict__.copy()
-        datasets = []
-        for d in _dict["datasets"]:
-            datasets.append(d.model_dump())
-        _dict["datasets"] = datasets
-        return _dict
+class DataModuleConfig(BaseModel):
+    datasets: list[SerializeAsAny[BaseModel]]
+    batch_size: int = 1
+    num_workers: int = 0
+    data_seed: int = 42
+    epoch_len: int = 1
+    num_epochs: int = 1000  # PL default
 
 
 class DataModule(pl.LightningDataModule):
@@ -244,7 +235,7 @@ class DataModule(pl.LightningDataModule):
             )
 
     @classmethod
-    def parse_data_config(cls, data_config: list[BaseModel]) -> MultiDatasetConfig:
+    def parse_data_config(cls, data_config: list[dict]) -> MultiDatasetConfig:
         """Parses input data_config into separate lists.
 
         Args:

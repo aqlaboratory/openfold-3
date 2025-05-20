@@ -274,12 +274,10 @@ class TestInferenceConfigConstruction:
         dataset_specs = [inference_spec]
 
         data_config = DataModuleConfig(
+            datasets=dataset_specs,
             batch_size=1,
-            num_workers=10,
-            data_seed=123,
             epoch_len=1,
             num_epochs=1,
-            datasets=dataset_specs,
         )
         data_module = DataModule(data_config)
 
