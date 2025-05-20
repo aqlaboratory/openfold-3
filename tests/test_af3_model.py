@@ -39,7 +39,12 @@ class TestAF3Model(unittest.TestCase):
             config.architecture.pairformer.no_blocks = 4
             config.architecture.diffusion_module.diffusion_transformer.no_blocks = 4
 
-        config.settings.use_deepspeed_evo_attention = use_deepspeed_evo_attention
+        config.settings.memory.train.use_deepspeed_evo_attention = (
+            use_deepspeed_evo_attention
+        )
+        config.settings.memory.eval.use_deepspeed_evo_attention = (
+            use_deepspeed_evo_attention
+        )
         config.architecture.loss_module.diffusion.chunk_size = 16
 
         af3 = AlphaFold3AllAtom(config, _compile=False).to(device=device, dtype=dtype)

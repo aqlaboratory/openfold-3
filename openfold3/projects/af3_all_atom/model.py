@@ -206,8 +206,8 @@ class AlphaFold3(nn.Module):
                         pair_mask=pair_mask,
                         chunk_size=mode_mem_settings.chunk_size,
                         _mask_trans=True,
-                        use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-                        use_lma=self.settings.use_lma,
+                        use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                        use_lma=mode_mem_settings.use_lma,
                         inplace_safe=inplace_safe,
                     ),
                     inplace=inplace_safe,
@@ -235,8 +235,8 @@ class AlphaFold3(nn.Module):
                         pair_mask=pair_mask.to(dtype=input_tensors[1].dtype),
                         chunk_size=mode_mem_settings.chunk_size,
                         transition_ckpt_chunk_size=transition_ckpt_chunk_size,
-                        use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-                        use_lma=self.settings.use_lma,
+                        use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                        use_lma=mode_mem_settings.use_lma,
                         _mask_trans=True,
                     )
 
@@ -249,8 +249,8 @@ class AlphaFold3(nn.Module):
                         pair_mask=pair_mask.to(dtype=z.dtype),
                         chunk_size=mode_mem_settings.chunk_size,
                         transition_ckpt_chunk_size=transition_ckpt_chunk_size,
-                        use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-                        use_lma=self.settings.use_lma,
+                        use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                        use_lma=mode_mem_settings.use_lma,
                         inplace_safe=inplace_safe,
                         _mask_trans=True,
                     )
@@ -264,8 +264,8 @@ class AlphaFold3(nn.Module):
                     single_mask=token_mask.to(dtype=z.dtype),
                     pair_mask=pair_mask.to(dtype=s.dtype),
                     chunk_size=mode_mem_settings.chunk_size,
-                    use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-                    use_lma=self.settings.use_lma,
+                    use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                    use_lma=mode_mem_settings.use_lma,
                     inplace_safe=inplace_safe,
                     _mask_trans=True,
                 )
@@ -303,6 +303,10 @@ class AlphaFold3(nn.Module):
             all-atom positions, and confidence/distogram head logits
         """
         # Determine number of rollout steps and samples depending on training/eval mode
+        mode_mem_settings = (
+            self.settings.memory.train if self.training else self.settings.memory.eval
+        )
+
         no_rollout_steps = (
             self.shared.diffusion.no_mini_rollout_steps
             if self.training
@@ -334,8 +338,8 @@ class AlphaFold3(nn.Module):
                 zij_trunk=zij_trunk,
                 noise_schedule=noise_schedule,
                 no_rollout_samples=no_rollout_samples,
-                use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-                use_lma=self.settings.use_lma,
+                use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                use_lma=mode_mem_settings.use_lma,
                 _mask_trans=True,
             )
 
@@ -347,9 +351,6 @@ class AlphaFold3(nn.Module):
             "atom_positions_predicted": atom_positions_predicted,
         }
 
-        mode_mem_settings = (
-            self.settings.memory.train if self.training else self.settings.memory.eval
-        )
         with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
             # Compute confidence logits
             output.update(
@@ -358,8 +359,8 @@ class AlphaFold3(nn.Module):
                     si_input=si_input,
                     output=output,
                     chunk_size=mode_mem_settings.chunk_size,
-                    use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-                    use_lma=self.settings.use_lma,
+                    use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                    use_lma=mode_mem_settings.use_lma,
                     inplace_safe=inplace_safe,
                     _mask_trans=True,
                 )
