@@ -1,9 +1,15 @@
+import json
+import logging
+import os
+import sys
 from abc import ABC, abstractmethod
 from functools import cached_property
-import logging
+from pathlib import Path
 
-import pytorch_lightning as pl
 import ml_collections as mlc
+import pytorch_lightning as pl
+import wandb
+from pydantic import BaseModel
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
@@ -11,26 +17,23 @@ from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
 from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
+from openfold3.core.runners.writer import OF3OutputWriter
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.entry_points.validator import (
-    DataModuleArgs,
-    ExperimentRunnerSettings,
+    ExperimentConfig,
+    TrainingExperimentConfig,
 )
-from openfold3.projects.af3_all_atom.config.dataset_configs import (
-    InferenceConfig,
-    InferenceDatasetSpec,
-)
+from openfold3.projects.af3_all_atom.config.dataset_configs import TrainingDatasetSpec
 from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
 
 
 class ExperimentRunner(ABC):
     """Abstract class for experiments"""
 
-    def __init__(self, experiment_config: ExperimentRunnerSettings):
+    def __init__(self, experiment_config: ExperimentConfig):
         self.mode = experiment_config.mode
         self.output_dir = experiment_config.output_dir
         self.deepspeed_config_path = experiment_config.deepspeed_config_path
-        # this section should include arguments for strategy
         self.pl_trainer_args = experiment_config.pl_trainer_args
         self.mpi_plugin = experiment_config.mpi_plugin
         self.compile = experiment_config.compile
@@ -64,23 +67,30 @@ class ExperimentRunner(ABC):
     @cached_property
     def lightning_module(self) -> pl.LightningModule:
         """Instantiate and return the model."""
-        return self.project_entry.model_runner(self.model_config, _compile=self.compile)
+        return self.project_entry.runner(self.model_config, _compile=self.compile)
 
     @cached_property
+    def output_dir(self) -> Path:
+        """Get or create the output directory."""
+        self.output_dir.mkdir(exist_ok=True, parents=True)
+        return self.output_dir
+
+    @cached_property
+    @abstractmethod
     def ckpt_path(self) -> str | None:
         """Get the checkpoint path for the model."""
         pass
 
     @property
     @abstractmethod
-    def data_module_args(self) -> DataModuleConfig:
+    def data_module_config(self) -> DataModuleConfig:
         """Construct arguments for the data_module."""
         pass
 
     @cached_property
     def lightning_data_module(self):
         return DataModule(
-            DataModuleConfig.model_validate(self.data_module_args),
+            self.data_module_config,
             world_size=self.world_size,
         )
 
@@ -136,6 +146,14 @@ class ExperimentRunner(ABC):
                 _strategy.config["zero_force_ds_cpu_optimizer"] = False
 
             return _strategy
+
+        if self.is_distributed:
+            return DDPStrategy(
+                find_unused_parameters=False,
+                cluster_environment=self.cluster_environment,
+            )
+
+        return None
 
     ###############
     # Logging and Callbacks
@@ -211,17 +229,18 @@ class ExperimentRunner(ABC):
 class TrainingExperimentRunner(ExperimentRunner):
     """Training experiment builder."""
 
-    def __init__(self, experiment_config):
+    def __init__(self, experiment_config: TrainingExperimentConfig):
         super().__init__(experiment_config)
 
         # set up of data module args
+        self.experiment_config = experiment_config
         self.seed = experiment_config.seed
         self.data_seed = experiment_config.data_seed
         self.restart_checkpoint_path = experiment_config.restart_checkpoint_path
         self.dataset_paths = experiment_config.dataset_paths
         self.dataset_configs = experiment_config.dataset_configs
-        self.wandb_config = experiment_config.wandb_config
-        self.log_level = experiment_config.log_level
+        self.data_module_args = experiment_config.data_module_args
+        self.logging_config = experiment_config.logging_config
 
     def setup(self) -> None:
         """Set up the experiment environment.
@@ -236,11 +255,28 @@ class TrainingExperimentRunner(ExperimentRunner):
 
     @cached_property
     def data_module_config(self) -> DataModuleConfig:
-        return DataModuleArgs.from_dataset_paths_and_configs(
-            self.dataset_configs,
-            self.dataset_paths,
-            **self.data_module_args,
-        ).to_data_module_config()
+        """Make a DataModuleConfig from self.dataset_paths and self.dataset_configs."""
+        cfgs = []
+        for mode, ds_specs in self.dataset_configs.items():
+            for name, spec in ds_specs.items():
+                spec["name"] = name
+                spec["mode"] = mode
+                spec["config"]["dataset_paths"] = self.dataset_paths[name]
+
+                cfgs.append(TrainingDatasetSpec.model_validate(spec))
+
+        return DataModuleConfig(
+            datasets=cfgs,
+            batch_size=self.data_module_args.batch_size,
+            data_seed=self.data_module_args.data_seed,
+            num_workers=self.data_module_args.num_workers,
+            epoch_len=self.data_module_args.epoch_len,
+            num_epochs=self.data_module_args.num_epochs,
+        )
+
+    @cached_property
+    def ckpt_path(self) -> Path | None:
+        return self.restart_checkpoint_path
 
     @property
     def use_wandb(self):
@@ -250,37 +286,29 @@ class TrainingExperimentRunner(ExperimentRunner):
             True if WandB configuration is provided and either
             not using MPI or is the MPI rank zero.
         """
-        return self.wandb_config and (not self.is_mpi or self.is_mpi_rank_zero)
+        return self.logging_config.wandb_config and (
+            not self.is_mpi or self.is_mpi_rank_zero
+        )
 
     def _wandb_setup(self) -> None:
         """Initialize WandB logging and store configuration files."""
         self.wandb = WandbHandler(
-            self.wandb_config,
+            self.logging_config.wandb_config,
             self.is_mpi_rank_zero,
             self.output_dir,
         )
         self.wandb.store_configs(
-            self.runner_args,
+            self.experiment_config,
             self.data_module_config,
             self.model_config,
         )
-
-    @property
-    def use_wandb(self):
-        """Determine if WandB should be used.
-
-        Returns:
-            True if WandB configuration is provided and either
-            not using MPI or is the MPI rank zero.
-        """
-        return self.wandb_config and (not self.is_mpi or self.is_mpi_rank_zero)
 
     def _setup_logger(self) -> None:
         """Configure the logging settings.
 
         Sets the log level and log file path based on runner arguments.
         """
-        log_level = self.log_level
+        log_level = self.logging_config.log_level
         if log_level is None:
             return
 
@@ -320,12 +348,12 @@ class TrainingExperimentRunner(ExperimentRunner):
         """Set up and return the list of training callbacks."""
         _callbacks = []
 
-        _checkpoint = self.runner_args.get("checkpoint")
+        _checkpoint = self.logging_config.checkpoint_config
         if _checkpoint is not None:
-            _callbacks.append(ModelCheckpoint(**_checkpoint.to_dict()))
+            _callbacks.append(ModelCheckpoint(**_checkpoint.model_dump()))
 
-        _log_lr = self.runner_args.get("log_lr")
-        if _log_lr is not None and self.use_wandb:
+        _log_lr = self.logging_config.log_lr
+        if _log_lr and self.use_wandb:
             _callbacks.append(LearningRateMonitor(logging_interval="step"))
 
         return _callbacks
@@ -343,7 +371,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.dataset_configs = experiment_config.dataset_configs
 
         # model path
-        self.checkpoint_path = self.inference_settings.checkpoint_path
+        self.checkpoint_path = self.experiment_config.inference_ckpt_path
 
         # do we include args for msa handling here? Should be processed separately
 
@@ -363,7 +391,7 @@ class WandbHandler:
 
     def __init__(
         self,
-        wandb_args: None | ConfigDict,
+        wandb_args: BaseModel | None,
         is_mpi_rank_zero: bool,
         output_dir: Path,
     ):
@@ -421,9 +449,9 @@ class WandbHandler:
 
     def store_configs(
         self,
-        runner_args: ConfigDict,
+        runner_args: TrainingExperimentConfig,
         data_module_config: DataModuleConfig,
-        model_config: ConfigDict,
+        model_config: mlc.ConfigDict,
     ) -> None:
         """Store experiment configuration files to the WandB run directory.
 
@@ -446,11 +474,11 @@ class WandbHandler:
         # user given runner yaml
         runner_yaml_path = os.path.join(wandb_experiment.dir, "runner.json")
         with open(runner_yaml_path, "w") as fp:
-            json.dump(runner_args.to_dict(), fp, indent=4)
+            fp.write(runner_args.model_dump_json(indent=4))
         wandb_experiment.save(runner_yaml_path)
 
         # save the deepspeed config if it exists
-        if runner_args.get("deepspeed_config_path"):
+        if runner_args.deepspeed_config_path:
             wandb_experiment.save(runner_args.deepspeed_config_path)
 
         # Save data module config
