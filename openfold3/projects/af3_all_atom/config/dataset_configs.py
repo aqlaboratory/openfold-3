@@ -13,7 +13,7 @@ from pydantic import (
 )
 from pydantic import ConfigDict as PydanticConfigDict
 
-from openfold3.core.data.format.dataset_configs import (
+from openfold3.core.config.config_utils import (
     DirectoryPathOrNone,
     FilePathOrNone,
 )

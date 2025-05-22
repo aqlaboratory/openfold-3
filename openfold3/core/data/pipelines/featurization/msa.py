@@ -2,8 +2,8 @@
 
 import torch
 from biotite.structure import AtomArray
+from pydantic import BaseModel
 
-from openfold3.core.data.format.msa import MsaFeaturizerOF3Config
 from openfold3.core.data.primitives.featurization.msa import (
     MsaFeaturePrecursorAF3,
     create_msa_feature_precursor_af3,
@@ -94,6 +94,28 @@ def featurize_msa_af3(
     )
 
     return features
+
+
+class MsaFeaturizerOF3Config(BaseModel):
+    max_rows: int
+    max_rows_paired: int
+    n_tokens: int
+    subsample_with_bands: bool
+
+    @classmethod
+    def create(
+        cls,
+        max_rows: int,
+        max_rows_paired: int,
+        n_tokens: int,
+        subsample_with_bands: bool,
+    ):
+        return cls(
+            max_rows=max_rows,
+            max_rows_paired=max_rows_paired,
+            n_tokens=n_tokens,
+            subsample_with_bands=subsample_with_bands,
+        )
 
 
 class MsaFeaturizerOF3:

@@ -6,7 +6,7 @@ from typing import Any
 
 from biotite.structure import AtomArray
 
-from openfold3.core.data.format.msa import (
+from openfold3.core.config.msa_pipeline_configs import (
     MsaSampleProcessorConfig,
     MsaSampleProcessorInput,
     MsaSampleProcessorInputInference,

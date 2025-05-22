@@ -2,12 +2,12 @@ from typing import Annotated, NamedTuple, Optional
 
 from pydantic import BaseModel, BeforeValidator, DirectoryPath, FilePath
 
-from openfold3.core.data.format.dataset_configs import (
+from openfold3.core.config.config_utils import (
     DirectoryPathOrNone,
     FilePathOrNone,
     _convert_molecule_type,
+    _ensure_list,
 )
-from openfold3.core.data.format.inference_query import _ensure_list
 from openfold3.core.data.resources.residues import MoleculeType
 
 

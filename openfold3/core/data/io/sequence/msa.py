@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 from biotite.structure import AtomArray
 
-from openfold3.core.data.format.msa import (
+from openfold3.core.config.msa_pipeline_configs import (
     MsaSampleParserConfig,
     MsaSampleProcessorInputInference,
     MsaSampleProcessorInputTrain,
@@ -711,8 +711,6 @@ class MsaSampleParserInference(MsaSampleParser):
         """
         # Create maps
         for chain_id, chain_data in input.msa_chain_data.items():
-            print(chain_data.molecule_type)
-            print(self.config.moltypes)
             if chain_data.molecule_type in self.config.moltypes:
                 main_msa_file_paths = (
                     sorted(chain_data.main_msa_file_paths)
@@ -759,11 +757,6 @@ class MsaSampleParserInference(MsaSampleParser):
                     len(paired_msa_file_paths) > 0
                 ):
                     self.rep_id_to_paired_msa_paths[rep_id] = paired_msa_file_paths
-
-        print(self.chain_id_to_rep_id)
-        print(self.chain_id_to_mol_type)
-        print(self.rep_id_to_main_msa_paths)
-        print(self.rep_id_to_paired_msa_paths)
 
     def parse_msas(self) -> None:
         """_summary_
@@ -849,7 +842,3 @@ class MsaSampleParserInference(MsaSampleParser):
                         self.rep_id_to_query_seq[rep_id] = all_msas_per_chain[
                             sorted(all_msas_per_chain.keys())[0]
                         ].msa[0, :][np.newaxis, :]
-
-        print(self.rep_id_to_query_seq)
-        print(self.rep_id_to_main_msa)
-        print(self.rep_id_to_paired_msa)

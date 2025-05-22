@@ -1,20 +1,15 @@
-from __future__ import annotations
-
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
 from pydantic import BaseModel, BeforeValidator, DirectoryPath, FilePath
 
-if TYPE_CHECKING:
-    from openfold3.core.data.primitives.caches.format import DatasetChainData
-from openfold3.core.data.format.dataset_configs import _convert_molecule_type
-from openfold3.core.data.format.inference_query import _ensure_list
+from openfold3.core.config.config_utils import _convert_molecule_type, _ensure_list
+from openfold3.core.data.primitives.caches.format import DatasetChainData
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.af3_all_atom.config.inference_query_format import Query
 
 
-# MSA sample parser configs
 class MsaSampleParserConfig(BaseModel):
     max_seq_counts: dict[str, int | float]
     moltypes: list[Annotated[MoleculeType, BeforeValidator(_convert_molecule_type)]]
@@ -28,10 +23,6 @@ class MsaSampleParserConfigTrain(MsaSampleParserConfig):
 
 
 MsaSampleParserConfigInference = MsaSampleParserConfig
-
-# MSA sample processor configs
-# class QuerySeqProcessorConfig(BaseModel):
-#     pass
 
 
 class PairedMsaProcessorConfig(BaseModel):
@@ -127,26 +118,3 @@ class MsaSampleProcessorInputInference(BaseModel):
 MsaSampleProcessorInput = (
     MsaSampleProcessorInputTrain | MsaSampleProcessorInputInference
 )
-
-
-# MSA featurization configs
-class MsaFeaturizerOF3Config(BaseModel):
-    max_rows: int
-    max_rows_paired: int
-    n_tokens: int
-    subsample_with_bands: bool
-
-    @classmethod
-    def create(
-        cls,
-        max_rows: int,
-        max_rows_paired: int,
-        n_tokens: int,
-        subsample_with_bands: bool,
-    ):
-        return cls(
-            max_rows=max_rows,
-            max_rows_paired=max_rows_paired,
-            n_tokens=n_tokens,
-            subsample_with_bands=subsample_with_bands,
-        )
