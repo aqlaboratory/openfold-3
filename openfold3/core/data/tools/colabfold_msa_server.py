@@ -39,15 +39,6 @@ class MsaServerPairingStrategy(IntEnum):
         return self.name.lower()
 
 
-"""
-TODOS:
-- clear up all other TODOs
-- add docstrings/typehints
-- add tests
-- add code that adds paths to the query cache for each chains MSA
-"""
-
-
 def query_colabfold_msa_server(
     x: list[str],
     prefix: Path,

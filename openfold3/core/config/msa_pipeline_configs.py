@@ -1,10 +1,13 @@
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Annotated
 
 from pydantic import BaseModel, BeforeValidator, DirectoryPath, FilePath
 
-from openfold3.core.config.config_utils import _convert_molecule_type, _ensure_list
+from openfold3.core.config.config_utils import (
+    DirectoryPathOrNone,
+    _convert_molecule_type,
+    _ensure_list,
+)
 from openfold3.core.data.primitives.caches.format import DatasetChainData
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.af3_all_atom.config.inference_query_format import Query
@@ -20,10 +23,10 @@ class MsaSampleParserConfig(BaseModel):
 class MsaSampleParserConfigTrain(MsaSampleParserConfig):
     """Training config for the MSA parser class."""
 
-    alignment_array_directory: Path | None
-    alignment_db_directory: Path | None
+    alignment_array_directory: DirectoryPathOrNone
+    alignment_db_directory: DirectoryPathOrNone
     alignment_index: dict | None
-    alignments_directory: Path | None
+    alignments_directory: DirectoryPathOrNone
 
 
 # Type alias for the inference MSA sample parser config
