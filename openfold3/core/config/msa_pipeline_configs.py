@@ -11,21 +11,28 @@ from openfold3.projects.af3_all_atom.config.inference_query_format import Query
 
 
 class MsaSampleParserConfig(BaseModel):
+    """Base config for the MSA parser class."""
+
     max_seq_counts: dict[str, int | float]
     moltypes: list[Annotated[MoleculeType, BeforeValidator(_convert_molecule_type)]]
 
 
 class MsaSampleParserConfigTrain(MsaSampleParserConfig):
+    """Training config for the MSA parser class."""
+
     alignment_array_directory: Path | None
     alignment_db_directory: Path | None
     alignment_index: dict | None
     alignments_directory: Path | None
 
 
+# Type alias for the inference MSA sample parser config
 MsaSampleParserConfigInference = MsaSampleParserConfig
 
 
 class PairedMsaProcessorConfig(BaseModel):
+    """Config for the paired MSA processor class."""
+
     max_rows_paired: int
     min_chains_paired_partial: int
     pairing_mask_keys: list[str]
@@ -33,10 +40,15 @@ class PairedMsaProcessorConfig(BaseModel):
 
 
 class MainMsaProcessorConfig(BaseModel):
+    """Config for the main MSA processor class."""
+
     aln_order: list[str]
 
 
 class MsaSampleProcessorConfig(BaseModel):
+    """Config for the whole MSA sample processor class running the sample processing
+    subpipeline."""
+
     sample_parser: MsaSampleParserConfig
     # query_seq_processor: QuerySeqProcessorConfig
     paired_msa_processor: PairedMsaProcessorConfig
@@ -45,11 +57,15 @@ class MsaSampleProcessorConfig(BaseModel):
 
 # MSA sample processor input configs
 class MsaChainDataTrain(BaseModel):
+    """Training input for a single chain in the MSA sample processor pipeline."""
+
     molecule_type: Annotated[MoleculeType, BeforeValidator(_convert_molecule_type)]
     alignment_representative_id: str
 
 
 class MsaChainDataInference(BaseModel):
+    """Inference input for a single chain in the MSA sample processor pipeline."""
+
     molecule_type: MoleculeType
     paired_msa_file_paths: (
         Annotated[list[FilePath | DirectoryPath], BeforeValidator(_ensure_list)] | None
@@ -115,6 +131,7 @@ class MsaSampleProcessorInputInference(BaseModel):
         )
 
 
+# Type alias for shared MSA sample processor input
 MsaSampleProcessorInput = (
     MsaSampleProcessorInputTrain | MsaSampleProcessorInputInference
 )
