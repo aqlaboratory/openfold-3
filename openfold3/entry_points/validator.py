@@ -6,6 +6,7 @@ from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.path_definitions import FilePathOrNone
 from openfold3.projects.af3_all_atom.config.dataset_configs import (
+    InferenceDatasetConfigKwargs,
     TrainingDatasetPaths,
 )
 from openfold3.projects.af3_all_atom.project_entry import ModelUpdate
@@ -73,7 +74,6 @@ class ExperimentConfig(BaseModel):
 class TrainingExperimentConfig(ExperimentConfig):
     seed: int = 42
     data_seed: int = 1234
-    num_workers: int = 0
     epoch_len: int = 2
     restart_checkpoint_path: FilePathOrNone = None
 
@@ -82,3 +82,13 @@ class TrainingExperimentConfig(ExperimentConfig):
     dataset_paths: dict[str, TrainingDatasetPaths]
     dataset_configs: dict[str, Any]
     data_module_args: DataModuleArgs = DataModuleArgs()
+
+
+class InferenceExperimentConfig(ExperimentConfig):
+    query_json: Path
+    seeds: list[int] = [42]
+    inference_ckpt_path: Path
+
+    model_update: ModelUpdate = ModelUpdate(presets=["predict"])
+    data_module_args: DataModuleArgs = DataModuleArgs()
+    dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()

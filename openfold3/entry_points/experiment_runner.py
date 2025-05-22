@@ -23,7 +23,11 @@ from openfold3.entry_points.validator import (
     ExperimentConfig,
     TrainingExperimentConfig,
 )
-from openfold3.projects.af3_all_atom.config.dataset_configs import TrainingDatasetSpec
+from openfold3.projects.af3_all_atom.config.dataset_configs import (
+    InferenceConfig,
+    InferenceDatasetSpec,
+    TrainingDatasetSpec,
+)
 from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
 
 
@@ -265,14 +269,7 @@ class TrainingExperimentRunner(ExperimentRunner):
 
                 cfgs.append(TrainingDatasetSpec.model_validate(spec))
 
-        return DataModuleConfig(
-            datasets=cfgs,
-            batch_size=self.data_module_args.batch_size,
-            data_seed=self.data_module_args.data_seed,
-            num_workers=self.data_module_args.num_workers,
-            epoch_len=self.data_module_args.epoch_len,
-            num_epochs=self.data_module_args.num_epochs,
-        )
+        return DataModuleConfig(datasets=cfgs, **self.data_module_args.model_dump())
 
     @cached_property
     def ckpt_path(self) -> Path | None:
@@ -365,21 +362,39 @@ class InferenceExperimentRunner(ExperimentRunner):
     def __init__(self, experiment_config, inference_query_set):
         super().__init__(experiment_config)
 
-        # set up of data module args
         self.inference_query_set = inference_query_set
-        self.dataset_paths = experiment_config.dataset_paths
-        self.dataset_configs = experiment_config.dataset_configs
+        self.experiment_config = experiment_config
 
         # model path
-        self.checkpoint_path = self.experiment_config.inference_ckpt_path
+        self.dastaset_config_kwargs = experiment_config.dataset_config_kwargs
+        self.inference_ckpt_path = experiment_config.inference_ckpt_path
+        self.data_module_args = experiment_config.data_module_args
 
         # do we include args for msa handling here? Should be processed separately
 
     @cached_property
     def callbacks(self):
-        """Set up and return the list of training callbacks."""
+        """Set up prediction writer callback."""
         _callbacks = [OF3OutputWriter(self.output_dir)]
         return _callbacks
+
+    @cached_property
+    def data_module_config(self):
+        inference_config = InferenceConfig(
+            query_set=self.inference_query_set,
+            seeds=self.experiment_config.seeds,
+            msa=self.dastaset_config_kwargs.msa,
+            template=self.dastaset_config_kwargs.template,
+        )
+        inference_spec = InferenceDatasetSpec(config=inference_config)
+        return DataModuleConfig(
+            datasets=[inference_spec], **self.data_module_args.model_dump()
+        )
+
+    @cached_property
+    def ckpt_path(self):
+        """Get the checkpoint path for the model."""
+        return self.inference_ckpt_path
 
 
 class WandbHandler:

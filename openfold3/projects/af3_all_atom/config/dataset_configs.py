@@ -233,6 +233,13 @@ class TrainingDatasetSpec(BaseModel):
         return values
 
 
+class InferenceDatasetConfigKwargs(BaseModel):
+    """Class to hold msa and temlpate kwargs for inference pipeline"""
+
+    msa: MSASettings = MSASettings()
+    template: TemplateSettings = TemplateSettings()
+
+
 class InferenceConfig(BaseModel):
     """Configuration section for Inference Datasets"""
 
