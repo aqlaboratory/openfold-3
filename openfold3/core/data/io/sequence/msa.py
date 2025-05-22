@@ -636,7 +636,7 @@ class MsaSampleParser:
         )
         return msa_array_collection
 
-    def forward(self, input: MsaSampleProcessorInputInference) -> MsaArrayCollection:
+    def __call__(self, input: MsaSampleProcessorInputInference) -> MsaArrayCollection:
         self.empty_attributes()
 
         # Create maps between chain IDs, representative IDs, molecule types
@@ -647,9 +647,6 @@ class MsaSampleParser:
 
         # Collect data into MsaArrayCollection
         return self.create_msa_array_collection()
-
-    def __call__(self, input: MsaSampleProcessorInputInference) -> MsaArrayCollection:
-        return self.forward(input=input)
 
 
 class MsaSampleParserTrain(MsaSampleParser):

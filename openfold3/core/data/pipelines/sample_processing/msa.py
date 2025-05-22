@@ -1,5 +1,6 @@
 """This module contains SampleProcessingPipelines for MSA features."""
 
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -21,11 +22,8 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
 from openfold3.core.data.primitives.sequence.msa import (
-    MainMsaProcessor,
     MsaArray,
     MsaArrayCollection,
-    PairedMsaProcessor,
-    QuerySeqProcessor,
     create_main,
     create_paired,
     create_query_seqs,
@@ -163,11 +161,13 @@ class MsaSampleProcessor:
     def __init__(self, config: MsaSampleProcessorConfig):
         self.config = config
         self.msa_sample_parser = MsaSampleParser(config=config.sample_parser)
-        self.query_seq_processor = QuerySeqProcessor()
-        self.paired_msa_processor = PairedMsaProcessor(
-            config=config.paired_msa_processor
+        self.query_seq_processor = create_query_seqs
+        self.paired_msa_processor = partial(
+            create_paired, **config.paired_msa_processor.model_dump()
         )
-        self.main_msa_processor = MainMsaProcessor(config=config.main_msa_processor)
+        self.main_msa_processor = partial(
+            create_main, **config.main_msa_processor.model_dump()
+        )
 
     def create_query_seq(
         self,
@@ -203,7 +203,7 @@ class MsaSampleProcessor:
             "methods to use it."
         )
 
-    def forward(self, input: MsaSampleProcessorInput) -> MsaArrayCollection:
+    def __call__(self, input: MsaSampleProcessorInput) -> MsaArrayCollection:
         # Parse MSAs
         msa_array_collection = self.msa_sample_parser(input=input)
 
@@ -228,9 +228,6 @@ class MsaSampleProcessor:
         )
 
         return msa_array_collection
-
-    def __call__(self, input: MsaSampleProcessorInput) -> MsaArrayCollection:
-        return self.forward(input=input)
 
 
 # TODO: test

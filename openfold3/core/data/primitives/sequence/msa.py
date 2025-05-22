@@ -11,10 +11,6 @@ from functools import partial
 import numpy as np
 import pandas as pd
 
-from openfold3.core.data.format.msa import (
-    MainMsaProcessorConfig,
-    PairedMsaProcessorConfig,
-)
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
@@ -1210,61 +1206,3 @@ def create_main(
         main_msas[chain_id] = rep_main_msas[rep_id]
 
     return main_msas
-
-
-# TODO: do we actually want these to also be class-based?
-class QuerySeqProcessor:
-    def __init__(self):
-        pass
-
-    def forward(self, msa_array_collection: MsaArrayCollection) -> dict[int, MsaArray]:
-        return create_query_seqs(msa_array_collection=msa_array_collection)
-
-    def __call__(self, msa_array_collection: MsaArrayCollection) -> dict[int, MsaArray]:
-        return self.forward(msa_array_collection=msa_array_collection)
-
-
-class PairedMsaProcessor:
-    def __init__(self, config: PairedMsaProcessorConfig):
-        self.max_rows_paired = config.max_rows_paired
-        self.min_chains_paired_partial = config.min_chains_paired_partial
-        self.pairing_mask_keys = config.pairing_mask_keys
-        self.msas_to_pair = config.msas_to_pair
-
-    def forward(self, msa_array_collection: MsaArrayCollection) -> dict[str, MsaArray]:
-        return create_paired(
-            msa_array_collection=msa_array_collection,
-            max_rows_paired=self.max_rows_paired,
-            min_chains_paired_partial=self.min_chains_paired_partial,
-            pairing_mask_keys=self.pairing_mask_keys,
-            msas_to_pair=self.msas_to_pair,
-        )
-
-    def __call__(self, msa_array_collection: MsaArrayCollection) -> dict[str, MsaArray]:
-        return self.forward(msa_array_collection=msa_array_collection)
-
-
-class MainMsaProcessor:
-    def __init__(self, config: MainMsaProcessorConfig):
-        self.aln_order = config.aln_order
-
-    def forward(
-        self,
-        msa_array_collection: MsaArrayCollection,
-        chain_id_to_paired_msa: dict[str, MsaArray],
-    ):
-        return create_main(
-            msa_array_collection=msa_array_collection,
-            chain_id_to_paired_msa=chain_id_to_paired_msa,
-            aln_order=self.aln_order,
-        )
-
-    def __call__(
-        self,
-        msa_array_collection: MsaArrayCollection,
-        chain_id_to_paired_msa: dict[str, MsaArray],
-    ) -> dict[str, MsaArray]:
-        return self.forward(
-            msa_array_collection=msa_array_collection,
-            chain_id_to_paired_msa=chain_id_to_paired_msa,
-        )
