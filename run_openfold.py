@@ -59,7 +59,9 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
     )
 
     # overwrite seed defaults if provided:
-    expt_config.experiment_settings.seed = seed if seed else expt_config.experiment_settings.seed
+    expt_config.experiment_settings.seed = (
+        seed if seed else expt_config.experiment_settings.seed
+    )
     expt_config.data_module_args.data_seed = (
         data_seed if data_seed else expt_config.data_module_args.data_seed
     )

@@ -315,10 +315,6 @@ class TrainingExperimentRunner(ExperimentRunner):
         if log_level is None:
             return
 
-        VALID_LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-        if not isinstance(log_level, str) or log_level.upper() not in VALID_LOG_LEVELS:
-            raise ValueError(f"log_level must be one of {VALID_LOG_LEVELS}")
-
         log_level = log_level.upper()
         log_filepath = self.output_dir / "console_logs.log"
         logging.basicConfig(filename=log_filepath, level=log_level, filemode="w")
@@ -401,6 +397,10 @@ class InferenceExperimentRunner(ExperimentRunner):
     def ckpt_path(self):
         """Get the checkpoint path for the model."""
         return self.inference_ckpt_path
+
+    def make_msa_config(self):
+        """Create configurations for perform MSA alignments, if selected"""
+        pass
 
 
 class WandbHandler:

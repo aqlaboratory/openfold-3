@@ -1,7 +1,8 @@
+import random
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.path_definitions import FilePathOrNone
@@ -30,7 +31,7 @@ class WandbConfig(BaseModel):
 
 class LoggingConfig(BaseModel):
     log_lr: bool = True
-    log_level: str | None = None
+    log_level: Literal["debug", "info", "warning", "error"] | None = None
     wandb_config: WandbConfig | None = None
 
 
@@ -66,13 +67,14 @@ class PlTrainerArgs(BaseModel):
 class ExperimentSettings(BaseModel):
     """General settings for all experiments"""
 
-    mode: str  # must be train or predict
+    mode: Literal["train", "predict"]
     output_dir: Path
 
 
 class TrainingExperimentSettings(ExperimentSettings):
     """General settings specific for training experiments"""
 
+    mode: Literal["train", "predict"] = "train"
     seed: int = 42
     restart_checkpoint_path: FilePathOrNone = None
 
@@ -80,9 +82,28 @@ class TrainingExperimentSettings(ExperimentSettings):
 class InferenceExperimentSettings(ExperimentSettings):
     """General settings specific for training experiments"""
 
+    mode: Literal["train", "predict"] = "predict"
     query_json: Path
-    seeds: list[int] = [42]
     inference_ckpt_path: Path
+    seeds: int | list[int] = [42]
+    num_seeds: int | None = None
+
+    @model_validator(mode="after")
+    def generate_seeds(cls, model):
+        """Creates a list of seeds if a list of seeds is not provided."""
+        if isinstance(model.seeds, list):
+            pass
+        elif isinstance(model.seeds, int):
+            if model.num_seeds is None:
+                raise ValueError(
+                    "num_seeds must be provided when seeds is a single int"
+                )
+            random.seed(model.seeds)
+            model.seeds = [random.randint(0, 2**32 - 1) for _ in range(model.num_seeds)]
+        elif model.seeds is None:
+            raise ValueError("seeds must be provided (either int or list[int])")
+
+        return model
 
 
 class ExperimentConfig(BaseModel):
