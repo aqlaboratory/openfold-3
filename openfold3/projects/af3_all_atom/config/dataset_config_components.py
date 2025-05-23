@@ -7,7 +7,12 @@ The main sections of the dataset configuration are:
 - Loss
 """
 
-from pydantic import BaseModel
+from typing import Annotated
+
+from pydantic import BaseModel, BeforeValidator
+
+from openfold3.core.config.config_utils import _convert_molecule_type
+from openfold3.core.data.resources.residues import MoleculeType
 
 
 # TODO: this will need to allow for arbitrary key: seq count pairs as users may have
@@ -33,8 +38,12 @@ class MSASettings(BaseModel):
     subsample_with_bands: bool = False
     min_chains_paired_partial: int = 2
     pairing_mask_keys: list[str] = ["shared_by_two", "less_than_600"]
-    moltypes: list[str] = ["PROTEIN", "RNA"]
+    moltypes: Annotated[list[MoleculeType], BeforeValidator(_convert_molecule_type)] = [
+        "PROTEIN",
+        "RNA",
+    ]
     max_seq_counts: MSAMaxSeqCounts = MSAMaxSeqCounts()
+    msas_to_pair: list[str] = ["uniprot_hits", "uniprot"]
     aln_order: list = [
         "uniref90_hits",
         "bfd_uniclust_hits",

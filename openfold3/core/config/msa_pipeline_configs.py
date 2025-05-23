@@ -1,61 +1,14 @@
-from collections.abc import Sequence
 from typing import Annotated
 
 from pydantic import BaseModel, BeforeValidator, DirectoryPath, FilePath
 
 from openfold3.core.config.config_utils import (
-    DirectoryPathOrNone,
     _convert_molecule_type,
     _ensure_list,
 )
 from openfold3.core.data.primitives.caches.format import DatasetChainData
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.af3_all_atom.config.inference_query_format import Query
-
-
-class MsaSampleParserConfig(BaseModel):
-    """Base config for the MSA parser class."""
-
-    max_seq_counts: dict[str, int | float]
-    moltypes: list[Annotated[MoleculeType, BeforeValidator(_convert_molecule_type)]]
-
-
-class MsaSampleParserConfigTrain(MsaSampleParserConfig):
-    """Training config for the MSA parser class."""
-
-    alignment_array_directory: DirectoryPathOrNone
-    alignment_db_directory: DirectoryPathOrNone
-    alignment_index: dict | None
-    alignments_directory: DirectoryPathOrNone
-
-
-# Type alias for the inference MSA sample parser config
-MsaSampleParserConfigInference = MsaSampleParserConfig
-
-
-class PairedMsaProcessorConfig(BaseModel):
-    """Config for the paired MSA processor class."""
-
-    max_rows_paired: int
-    min_chains_paired_partial: int
-    pairing_mask_keys: list[str]
-    msas_to_pair: Sequence[str]
-
-
-class MainMsaProcessorConfig(BaseModel):
-    """Config for the main MSA processor class."""
-
-    aln_order: list[str]
-
-
-class MsaSampleProcessorConfig(BaseModel):
-    """Config for the whole MSA sample processor class running the sample processing
-    subpipeline."""
-
-    sample_parser: MsaSampleParserConfig
-    # query_seq_processor: QuerySeqProcessorConfig
-    paired_msa_processor: PairedMsaProcessorConfig
-    main_msa_processor: MainMsaProcessorConfig
 
 
 # MSA sample processor input configs
@@ -84,7 +37,7 @@ class MsaSampleProcessorInputTrain(BaseModel):
     msa_chain_data: dict[str, MsaChainDataTrain]
 
     @classmethod
-    def create(
+    def create_from_cache(
         cls,
         dataset_cache_entry: DatasetChainData,
         default_moltype: MoleculeType | None = None,
@@ -117,7 +70,7 @@ class MsaSampleProcessorInputInference(BaseModel):
     use_main_msas: bool
 
     @classmethod
-    def create(cls, inference_query: Query):
+    def create_from_iqs(cls, inference_query: Query):
         msa_chain_data = {}
         for chain in inference_query.chains:
             for chain_id in chain.chain_ids:

@@ -869,7 +869,7 @@ def preprocess_colabfold_msas(
             pre-parsed:
                 output_directory/paired/<complex_id>/<representative_id>.npz
 
-    Inferece query set update:
+    Inference query set update:
         By default, uses the npz file paths if available, otherwise uses the a3m file
         paths.
     """

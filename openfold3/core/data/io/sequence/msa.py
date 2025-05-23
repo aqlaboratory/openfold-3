@@ -12,8 +12,8 @@ from typing import Any
 import numpy as np
 from biotite.structure import AtomArray
 
+from openfold3.core.config.config_utils import DirectoryPathOrNone
 from openfold3.core.config.msa_pipeline_configs import (
-    MsaSampleParserConfig,
     MsaSampleProcessorInputInference,
     MsaSampleProcessorInputTrain,
 )
@@ -26,6 +26,7 @@ from openfold3.core.data.primitives.sequence.msa import (
     MsaArrayCollection,
 )
 from openfold3.core.data.resources.residues import MoleculeType
+from openfold3.projects.af3_all_atom.config.dataset_config_components import MSASettings
 
 
 def _dirpath_to_filepaths(input_path: Path | list[Path]) -> list[Path]:
@@ -616,10 +617,11 @@ def parse_msas_sample_inference(
     return msa_array_collection
 
 
-class MsaSampleParser:
-    """Base MSA sample parser class"""
+class MsaSampleParserMapper:
+    """Data class to hold mappings between chain IDs, representative IDs, and MSA
+    objects for MSA parsing."""
 
-    _map_attrs = [
+    map_keys: tuple = (
         "chain_id_to_rep_id",
         "chain_id_to_mol_type",
         "rep_id_to_main_msa_paths",
@@ -627,16 +629,29 @@ class MsaSampleParser:
         "rep_id_to_query_seq",
         "rep_id_to_main_msa",
         "rep_id_to_paired_msa",
-    ]
+    )
 
-    def __init__(self, config: MsaSampleParserConfig):
-        self.config = config
-        for name in self._map_attrs:
+    def __init__(self) -> None:
+        for name in self.map_keys:
             setattr(self, name, {})
 
-    def empty_attributes(self) -> None:
-        for name in self._map_attrs:
-            getattr(self, name).clear()
+
+class MsaSampleParser:
+    """Base MSA sample parser class"""
+
+    def __init__(
+        self,
+        config: MSASettings,
+        alignment_array_directory: DirectoryPathOrNone = None,
+        alignment_db_directory: DirectoryPathOrNone = None,
+        alignment_index: dict | None = None,
+        alignments_directory: DirectoryPathOrNone = None,
+    ):
+        self.config = config
+        self.alignment_array_directory = alignment_array_directory
+        self.alignment_db_directory = alignment_db_directory
+        self.alignment_index = alignment_index
+        self.alignments_directory = alignments_directory
 
     def create_maps(self) -> None:
         raise NotImplementedError(
@@ -650,59 +665,80 @@ class MsaSampleParser:
             "implement create_maps and parse_msas methods to use it."
         )
 
-    def create_msa_array_collection(self) -> MsaArrayCollection:
+    def create_msa_array_collection(
+        self, maps: MsaSampleParserMapper
+    ) -> MsaArrayCollection:
         # Set msa collection to parsed, will be empty if no protein or RNA chains
         msa_array_collection = MsaArrayCollection(
-            chain_id_to_rep_id=self.chain_id_to_rep_id,
-            chain_id_to_mol_type=self.chain_id_to_mol_type,
+            chain_id_to_rep_id=maps.chain_id_to_rep_id,
+            chain_id_to_mol_type=maps.chain_id_to_mol_type,
         )
         msa_array_collection.set_state_parsed(
-            rep_id_to_query_seq=self.rep_id_to_query_seq,
-            rep_id_to_paired_msa=self.rep_id_to_paired_msa,
-            rep_id_to_main_msa=self.rep_id_to_main_msa,
+            rep_id_to_query_seq=maps.rep_id_to_query_seq,
+            rep_id_to_paired_msa=maps.rep_id_to_paired_msa,
+            rep_id_to_main_msa=maps.rep_id_to_main_msa,
         )
         return msa_array_collection
 
     def __call__(self, input: MsaSampleProcessorInputInference) -> MsaArrayCollection:
-        self.empty_attributes()
-
         # Create maps between chain IDs, representative IDs, molecule types
-        self.create_maps(input=input)
+        maps = self.create_maps(input=input)
 
         # Parse MSAs for each representative ID
-        self.parse_msas()
+        self.parse_msas(maps=maps)
 
         # Collect data into MsaArrayCollection
-        return self.create_msa_array_collection()
+        msa_array_collection = self.create_msa_array_collection(maps)
+
+        return msa_array_collection
 
 
 class MsaSampleParserTrain(MsaSampleParser):
     """Training MSA sample parser class"""
 
-    def create_maps(self, input: MsaSampleProcessorInputTrain) -> None:
-        # Create maps
+    def create_maps(self, input: MsaSampleProcessorInputTrain) -> MsaSampleParserMapper:
+        """Populates the chain_id_to_rep_id and chain_id_to_mol_type maps.
+
+        Updates the following attributes:
+            - chain_id_to_rep_id: dict
+                Maps chain IDs to representative IDs.
+            - chain_id_to_mol_type: dict
+                Maps chain IDs to molecule types."""
+        maps = MsaSampleParserMapper()
         for chain_id, chain_data in input.msa_chain_data.items():
             if chain_data.molecule_type in self.config.moltypes:
-                self.chain_id_to_rep_id[chain_id] = (
+                maps.chain_id_to_rep_id[chain_id] = (
                     chain_data.alignment_representative_id
                 )
-                self.chain_id_to_mol_type[chain_id] = chain_data.molecule_type
+                maps.chain_id_to_mol_type[chain_id] = chain_data.molecule_type
+        return maps
 
-    def parse_msas(self) -> None:
+    def parse_msas(self, maps: MsaSampleParserMapper) -> MsaSampleParserMapper:
+        """Parses MSAs for each representative chain.
+
+
+        Updates the following attributes:
+            - rep_id_to_query_seq: dict
+                Maps representative IDs to query sequences.
+            - rep_id_to_main_msa: dict
+                Maps representative IDs to main MSA objects.
+            - rep_id_to_paired_msa: dict
+                Maps representative IDs to paired MSA objects.
+        """
         # Parse MSAs for each representative ID
-        if len(self.chain_id_to_rep_id) > 0:
+        if len(maps.chain_id_to_rep_id) > 0:
             # Parse MSAs for each representative ID
-            representative_chain_ids = sorted(set(self.chain_id_to_rep_id.values()))
+            representative_chain_ids = sorted(set(maps.chain_id_to_rep_id.values()))
             for rep_id in representative_chain_ids:
-                if self.config.alignment_array_directory is not None:
+                if self.alignment_array_directory is not None:
                     file_list = _filepath_to_list(
-                        self.config.alignment_array_directory / f"{rep_id}.npz"
+                        self.alignment_array_directory / f"{rep_id}.npz"
                     )
                     all_msas_per_chain = parse_msas_preparsed(file_list=file_list)
-                elif self.config.alignment_db_directory is not None:
+                elif self.alignment_db_directory is not None:
                     all_msas_per_chain = parse_msas_alignment_database(
-                        alignment_index_entry=self.config.alignment_index[rep_id],
-                        alignment_database_path=self.config.alignment_db_directory,
+                        alignment_index_entry=self.alignment_index[rep_id],
+                        alignment_database_path=self.alignment_db_directory,
                         max_seq_counts=self.config.max_seq_counts,
                     )
                 else:
@@ -713,21 +749,25 @@ class MsaSampleParserTrain(MsaSampleParser):
                         file_list=file_list,
                         max_seq_counts=self.config.max_seq_counts,
                     )
-                self.rep_id_to_main_msa[rep_id] = all_msas_per_chain
+                maps.rep_id_to_main_msa[rep_id] = all_msas_per_chain
 
                 # Create query sequence from the first row
-                self.rep_id_to_query_seq[rep_id] = all_msas_per_chain[
+                maps.rep_id_to_query_seq[rep_id] = all_msas_per_chain[
                     sorted(all_msas_per_chain.keys())[0]
                 ].msa[0, :][np.newaxis, :]
 
             # Parsing precomputed paired MSAs is not currently supported for training
 
+        return maps
+
 
 class MsaSampleParserInference(MsaSampleParser):
     """Inference MSA sample parser class"""
 
-    def create_maps(self, input: MsaSampleProcessorInputInference) -> None:
-        """_summary_
+    def create_maps(
+        self, input: MsaSampleProcessorInputInference
+    ) -> MsaSampleParserMapper:
+        """Creates maps between chain IDs, representative IDs, and molecule types.
 
         Updates the following attributes:
             - chain_id_to_rep_id: dict
@@ -740,6 +780,7 @@ class MsaSampleParserInference(MsaSampleParser):
                 Maps representative IDs to paired MSA file paths.
         """
         # Create maps
+        maps = MsaSampleParserMapper()
         for chain_id, chain_data in input.msa_chain_data.items():
             if chain_data.molecule_type in self.config.moltypes:
                 main_msa_file_paths = (
@@ -777,19 +818,21 @@ class MsaSampleParserInference(MsaSampleParser):
                         stacklevel=2,
                     )
 
-                self.chain_id_to_rep_id[chain_id] = rep_id
-                self.chain_id_to_mol_type[chain_id] = chain_data.molecule_type
-                if (rep_id not in self.rep_id_to_main_msa_paths) & (
+                maps.chain_id_to_rep_id[chain_id] = rep_id
+                maps.chain_id_to_mol_type[chain_id] = chain_data.molecule_type
+                if (rep_id not in maps.rep_id_to_main_msa_paths) & (
                     len(main_msa_file_paths) > 0
                 ):
-                    self.rep_id_to_main_msa_paths[rep_id] = main_msa_file_paths
-                if (rep_id not in self.rep_id_to_paired_msa_paths) & (
+                    maps.rep_id_to_main_msa_paths[rep_id] = main_msa_file_paths
+                if (rep_id not in maps.rep_id_to_paired_msa_paths) & (
                     len(paired_msa_file_paths) > 0
                 ):
-                    self.rep_id_to_paired_msa_paths[rep_id] = paired_msa_file_paths
+                    maps.rep_id_to_paired_msa_paths[rep_id] = paired_msa_file_paths
 
-    def parse_msas(self) -> None:
-        """_summary_
+        return maps
+
+    def parse_msas(self, maps: MsaSampleParserMapper) -> MsaSampleParserMapper:
+        """Parses MSAs for each representative chain and representative chain set.
 
         Updates the following attributes:
             - rep_id_to_query_seq: dict
@@ -800,22 +843,23 @@ class MsaSampleParserInference(MsaSampleParser):
                 Maps representative IDs to paired MSA objects.
 
         Raises:
-            ValueError: _description_
-            ValueError: _description_
+            ValueError:
+                If the MSA file paths are not in the expected format or if the MSA
+                file paths are not supported.
         """
 
-        if len(self.chain_id_to_rep_id) > 0:
+        if len(maps.chain_id_to_rep_id) > 0:
             # Parse MSAs for each representative
-            representative_chain_ids = sorted(set(self.chain_id_to_rep_id.values()))
+            representative_chain_ids = sorted(set(maps.chain_id_to_rep_id.values()))
             for rep_id in representative_chain_ids:
                 # Parse main MSAs
-                if rep_id in self.rep_id_to_main_msa_paths:
-                    example_path = self.rep_id_to_main_msa_paths[rep_id][0]
+                if rep_id in maps.rep_id_to_main_msa_paths:
+                    example_path = maps.rep_id_to_main_msa_paths[rep_id][0]
                     if example_path.is_dir() or (
                         example_path.suffix in [".sto", ".a3m"]
                     ):
                         file_list = _dirpath_to_filepaths(
-                            self.rep_id_to_main_msa_paths[rep_id],
+                            maps.rep_id_to_main_msa_paths[rep_id],
                         )
                         chain_msa_parser = partial(
                             parse_msas_direct,
@@ -823,7 +867,7 @@ class MsaSampleParserInference(MsaSampleParser):
                         )
                     elif example_path.suffix == ".npz":
                         file_list = _filepath_to_list(
-                            self.rep_id_to_main_msa_paths[rep_id]
+                            maps.rep_id_to_main_msa_paths[rep_id]
                         )
                         chain_msa_parser = parse_msas_preparsed
                     else:
@@ -837,21 +881,21 @@ class MsaSampleParserInference(MsaSampleParser):
 
                     # Parse MSAs into a dict of MsaArrays
                     all_msas_per_chain = chain_msa_parser(file_list=file_list)
-                    self.rep_id_to_main_msa[rep_id] = all_msas_per_chain
+                    maps.rep_id_to_main_msa[rep_id] = all_msas_per_chain
 
                     # Create query sequence from the first row
-                    self.rep_id_to_query_seq[rep_id] = all_msas_per_chain[
+                    maps.rep_id_to_query_seq[rep_id] = all_msas_per_chain[
                         sorted(all_msas_per_chain.keys())[0]
                     ].msa[0, :][np.newaxis, :]
 
                 # Parse paired MSAs
-                if rep_id in self.rep_id_to_paired_msa_paths:
-                    example_path = self.rep_id_to_paired_msa_paths[rep_id][0]
+                if rep_id in maps.rep_id_to_paired_msa_paths:
+                    example_path = maps.rep_id_to_paired_msa_paths[rep_id][0]
                     if example_path.is_dir() or (
                         example_path.suffix in [".sto", ".a3m"]
                     ):
                         file_list = _dirpath_to_filepaths(
-                            self.rep_id_to_paired_msa_paths[rep_id],
+                            maps.rep_id_to_paired_msa_paths[rep_id],
                         )
                         chain_msa_parser = partial(
                             parse_msas_direct,
@@ -859,7 +903,7 @@ class MsaSampleParserInference(MsaSampleParser):
                         )
                     elif example_path.suffix == ".npz":
                         file_list = _filepath_to_list(
-                            self.rep_id_to_paired_msa_paths[rep_id]
+                            maps.rep_id_to_paired_msa_paths[rep_id]
                         )
                         chain_msa_parser = parse_msas_preparsed
                     else:
@@ -873,10 +917,12 @@ class MsaSampleParserInference(MsaSampleParser):
 
                     # Parse MSAs into a dict of MsaArrays
                     all_msas_per_chain = chain_msa_parser(file_list=file_list)
-                    self.rep_id_to_paired_msa[rep_id] = all_msas_per_chain
+                    maps.rep_id_to_paired_msa[rep_id] = all_msas_per_chain
 
-                    if rep_id not in self.rep_id_to_query_seq:
+                    if rep_id not in maps.rep_id_to_query_seq:
                         # Create query sequence from the first row
-                        self.rep_id_to_query_seq[rep_id] = all_msas_per_chain[
+                        maps.rep_id_to_query_seq[rep_id] = all_msas_per_chain[
                             sorted(all_msas_per_chain.keys())[0]
                         ].msa[0, :][np.newaxis, :]
+
+        return maps

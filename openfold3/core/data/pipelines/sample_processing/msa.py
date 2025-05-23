@@ -7,7 +7,6 @@ from typing import Any
 from biotite.structure import AtomArray
 
 from openfold3.core.config.msa_pipeline_configs import (
-    MsaSampleProcessorConfig,
     MsaSampleProcessorInput,
     MsaSampleProcessorInputInference,
     MsaSampleProcessorInputTrain,
@@ -30,6 +29,7 @@ from openfold3.core.data.primitives.sequence.msa import (
     expand_paired_msas,
     find_monomer_homomer,
 )
+from openfold3.projects.af3_all_atom.config.dataset_config_components import MSASettings
 
 
 # Functional MSA processing pipeline for training - TMP, to be replaced by the
@@ -158,16 +158,18 @@ def process_msas_af3(
 class MsaSampleProcessor:
     """Base class for MSA sample processing."""
 
-    def __init__(self, config: MsaSampleProcessorConfig):
+    def __init__(self, config: MSASettings):
         self.config = config
-        self.msa_sample_parser = MsaSampleParser(config=config.sample_parser)
+        self.msa_sample_parser = MsaSampleParser(config=config)
         self.query_seq_processor = create_query_seqs
         self.paired_msa_processor = partial(
-            create_paired, **config.paired_msa_processor.model_dump()
+            create_paired,
+            max_rows_paired=config.max_rows_paired,
+            min_chains_paired_partial=config.min_chains_paired_partial,
+            pairing_mask_keys=config.pairing_mask_keys,
+            msas_to_pair=config.msas_to_pair,
         )
-        self.main_msa_processor = partial(
-            create_main, **config.main_msa_processor.model_dump()
-        )
+        self.main_msa_processor = partial(create_main, aln_order=config.aln_order)
 
     def create_query_seq(
         self,
@@ -234,7 +236,7 @@ class MsaSampleProcessor:
 class MsaSampleProcessorTrain(MsaSampleProcessor):
     """Pipeline for MSA sample processing for training."""
 
-    def __init__(self, config: MsaSampleProcessorConfig):
+    def __init__(self, config: MSASettings):
         super().__init__(config=config)
         self.msa_sample_parser = MsaSampleParserTrain(config=config.sample_parser)
 
@@ -292,9 +294,9 @@ class MsaSampleProcessorTrain(MsaSampleProcessor):
 class MsaSampleProcessorInference(MsaSampleProcessor):
     """Pipeline for MSA sample processing for inference."""
 
-    def __init__(self, config: MsaSampleProcessorConfig):
+    def __init__(self, config: MSASettings):
         super().__init__(config=config)
-        self.msa_sample_parser = MsaSampleParserInference(config=config.sample_parser)
+        self.msa_sample_parser = MsaSampleParserInference(config=config)
 
     def create_query_seq(
         self,
