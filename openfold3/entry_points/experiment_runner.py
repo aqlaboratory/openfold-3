@@ -35,16 +35,14 @@ class ExperimentRunner(ABC):
     """Abstract class for experiments"""
 
     def __init__(self, experiment_config: ExperimentConfig):
-        self.mode = experiment_config.mode
-        self.output_dir = experiment_config.output_dir
-        self.deepspeed_config_path = experiment_config.deepspeed_config_path
+        self.mode = experiment_config.experiment_settings.mode
+        self.output_dir = experiment_config.experiment_settings.output_dir
         self.pl_trainer_args = experiment_config.pl_trainer_args
-        self.mpi_plugin = experiment_config.mpi_plugin
-        self.compile = experiment_config.compile
-        self.num_gpus = experiment_config.num_gpus
+        self.deepspeed_config_path = self.pl_trainer_args.deepspeed_config_path
 
         # typical model update config
         self.model_update = experiment_config.model_update
+        self.compile = self.model_update.compile
 
     @abstractmethod
     def setup(self) -> None:
@@ -102,6 +100,11 @@ class ExperimentRunner(ABC):
     # Distributed properties
     ###############
     @cached_property
+    def num_gpus(self) -> int:
+        """Retrieves the number of nodes available for training."""
+        return self.pl_trainer_args.devices
+
+    @cached_property
     def num_nodes(self) -> int:
         """Retrieves the number of nodes available for training."""
         return self.pl_trainer_args.num_nodes
@@ -119,7 +122,7 @@ class ExperimentRunner(ABC):
     @property
     def is_mpi(self) -> bool:
         """Check if MPI plugin is enabled."""
-        return self.mpi_plugin
+        return self.pl_trainer_args.mpi_plugin
 
     @property
     def is_mpi_rank_zero(self) -> bool:
@@ -182,14 +185,15 @@ class ExperimentRunner(ABC):
     @cached_property
     def trainer(self) -> pl.Trainer:
         """Create and return the trainer instance."""
-        trainer_args = self.pl_trainer_args.model_dump()
+        trainer_args = self.pl_trainer_args.model_dump(
+            exclude={"deepspeed_config_path", "mpi_plugin"}
+        )
         trainer_args.update(
             {
                 "default_root_dir": self.output_dir,
                 "strategy": self.strategy,
                 "callbacks": self.callbacks,
                 "logger": self.loggers,
-                "devices": self.num_gpus,
                 # If DeepSpeed is enabled, these values will be passed to the DS config
                 "gradient_clip_val": self.model_config.settings.gradient_clipping,
                 "gradient_clip_algorithm": "norm",
@@ -238,13 +242,15 @@ class TrainingExperimentRunner(ExperimentRunner):
 
         # set up of data module args
         self.experiment_config = experiment_config
-        self.seed = experiment_config.seed
-        self.data_seed = experiment_config.data_seed
-        self.restart_checkpoint_path = experiment_config.restart_checkpoint_path
+        self.seed = experiment_config.experiment_settings.seed
+        self.restart_checkpoint_path = (
+            experiment_config.experiment_settings.restart_checkpoint_path
+        )
         self.dataset_paths = experiment_config.dataset_paths
         self.dataset_configs = experiment_config.dataset_configs
         self.data_module_args = experiment_config.data_module_args
         self.logging_config = experiment_config.logging_config
+        self.checkpoint_config = experiment_config.checkpoint_config
 
     def setup(self) -> None:
         """Set up the experiment environment.
@@ -345,7 +351,7 @@ class TrainingExperimentRunner(ExperimentRunner):
         """Set up and return the list of training callbacks."""
         _callbacks = []
 
-        _checkpoint = self.logging_config.checkpoint_config
+        _checkpoint = self.checkpoint_config
         if _checkpoint is not None:
             _callbacks.append(ModelCheckpoint(**_checkpoint.model_dump()))
 

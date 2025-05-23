@@ -1,10 +1,8 @@
-mode: train
-seed: 42
-data_seed: 1234 
-num_gpus: 4
-output_dir: ../test_train_output
-deepspeed_config_path: ./deepspeed_configs/ds_stage2_default_offload.json
-restart_checkpoint_path: last
+experiment_settings:
+  mode: train
+  output_dir: ../test_train_output
+  seed: 42
+  restart_checkpoint_path: last
 
 data_module_args:
   batch_size: 1
@@ -17,6 +15,7 @@ pl_trainer_args:
   precision: bf16-mixed
   max_epochs: 2
   log_every_n_steps: 2
+  deepspeed_config_path: ./deepspeed_configs/ds_stage2_default_offload.json
 
 model_update:
   presets: 
@@ -27,17 +26,18 @@ model_update:
 
 logging:
   log_lr: False
-  checkpoint:
-    every_n_epochs: 1
-    auto_insert_metric_name: false
-    save_last: true
-    save_top_k: -1
   wandb:
     id: some_id   # Remove if no id present 
     project: PROJECT_NAME 
     entity: YOUR_USERNAME
     group: GROUP_NAME
     experiment_name: EXPERIMENT_NAME
+  
+checkpoint:
+  every_n_epochs: 1
+  auto_insert_metric_name: false
+  save_last: true
+  save_top_k: -1
 
 # This section specifies paths for training datasets
 dataset_paths:

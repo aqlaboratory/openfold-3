@@ -14,6 +14,7 @@ from openfold3.projects.af3_all_atom.runner import AlphaFold3AllAtom
 class ModelUpdate(BaseModel):
     presets: list[str] = []
     custom: dict = {}
+    compile: bool = False
 
 
 @dataclass
