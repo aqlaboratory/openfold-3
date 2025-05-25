@@ -18,6 +18,7 @@ from openfold3.core.config.config_utils import (
     FilePathOrNone,
 )
 from openfold3.core.data.framework.data_module import DatasetMode
+from openfold3.core.data.framework.inference_query_format import InferenceQuerySet
 from openfold3.projects.af3_all_atom.config.dataset_config_components import (
     CropSettings,
     LossConfig,
@@ -233,3 +234,22 @@ class TrainingDatasetSpec(BaseModel):
 
         values["config"] = config_class.model_validate(config_data)
         return values
+
+
+class InferenceConfig(BaseModel):
+    """Configuration section for Inference Datasets"""
+
+    query_set: InferenceQuerySet
+    seeds: list[int] = [42]
+    msa: MSASettings = MSASettings()
+    template: TemplateSettings = TemplateSettings()
+
+
+class InferenceDatasetSpec(BaseModel):
+    """Full specification for inference dataset to be passed into DataModule"""
+
+    name: str = "inference"
+    dataset_class: str = "InferenceDataset"
+    mode: DatasetMode = DatasetMode.prediction
+    weight: Optional[float] = None
+    config: InferenceConfig

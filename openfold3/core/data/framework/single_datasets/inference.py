@@ -13,6 +13,12 @@ from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 from torch.utils.data import Dataset
 
+from openfold3.core.data.framework.inference_query_format import (
+    Query,
+)
+from openfold3.core.data.framework.single_datasets.abstract_single import (
+    register_dataset,
+)
 from openfold3.core.data.pipelines.featurization.conformer import (
     featurize_reference_conformers_af3,
 )
@@ -25,9 +31,6 @@ from openfold3.core.data.pipelines.featurization.template import (
 )
 from openfold3.core.data.primitives.structure.tokenization import (
     get_token_count,
-)
-from openfold3.projects.af3_all_atom.config.inference_query_format import (
-    Query,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,6 +58,7 @@ def do_seeding(seed: int): ...
 # NOTE: This is not subclassing SingleDataset for now and has no support for dataset
 # registries
 # TODO: Maybe register dataset?
+@register_dataset
 class InferenceDataset(Dataset):
     """Dataset class for running inference on a set of queries."""
 

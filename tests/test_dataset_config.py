@@ -3,7 +3,11 @@ import textwrap
 import pytest  # noqa: F401  - used for pytest tmp fixture
 
 from openfold3.core.config import config_utils
+from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
+from openfold3.core.data.framework.inference_query_format import InferenceQuerySet
 from openfold3.projects.af3_all_atom.config.dataset_configs import (
+    InferenceConfig,
+    InferenceDatasetSpec,
     TrainingDatasetPaths,
     TrainingDatasetSpec,
 )
@@ -229,3 +233,60 @@ class TestAF3DatasetConfigConstruction:
                     "reference_molecule_directory": tmp_path,
                 }
             )
+
+
+class TestInferenceConfigConstruction:
+    def test_inference_config_loading(self, tmp_path):
+        dummy_msa_file = tmp_path / "msa.sto"
+        dummy_msa_file.write_text("test")
+        inference_set = InferenceQuerySet.model_validate(
+            {
+                "queries": {
+                    "query_1": {
+                        "chains": [
+                            {
+                                "molecule_type": "protein",
+                                "chain_ids": "A",
+                                "sequence": "PVLSCGEWQCL",  # insert sequence for MCL-1
+                                "use_msas": True,
+                                "unpaired_msa_file_paths": [dummy_msa_file],
+                                "paired_msa_file_path": None,
+                                "sdf_file_path": None,
+                            },
+                            {
+                                "molecule_type": "ligand",
+                                "chain_ids": ["F", "G", "H"],
+                                "ccd_codes": "ATP",
+                            },
+                            {
+                                "molecule_type": "ligand",
+                                "chain_ids": "Z",
+                                "smiles": "CC(=O)OC1C[NH+]2CCC1CC2",
+                            },
+                        ],
+                    },
+                },
+            }
+        )
+
+        inference_config = InferenceConfig(query_set=inference_set)
+        inference_spec = InferenceDatasetSpec(config=inference_config)
+        dataset_specs = [inference_spec]
+
+        data_config = DataModuleConfig(
+            batch_size=1,
+            num_workers=10,
+            data_seed=123,
+            epoch_len=1,
+            num_epochs=1,
+            datasets=dataset_specs,
+        )
+        data_module = DataModule(data_config)
+
+        data_module.setup()
+        _ = data_module.predict_dataloader()
+
+        # Option: Test feature generation once create_features is written
+        # Would require a real msa file
+        # it = iter(dataloader)
+        # next(it)
