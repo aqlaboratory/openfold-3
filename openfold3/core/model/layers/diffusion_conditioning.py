@@ -3,13 +3,11 @@ from ml_collections import ConfigDict
 from torch import nn
 
 import openfold3.core.config.default_linear_init_config as lin_init
-from openfold3.core.model.feature_embedders.input_embedders import (
-    FourierEmbedding,
-    RelposAllAtom,
-)
+from openfold3.core.model.feature_embedders.input_embedders import FourierEmbedding
 from openfold3.core.model.layers.transition import SwiGLUTransition
 from openfold3.core.model.primitives.linear import Linear
 from openfold3.core.model.primitives.normalization import LayerNorm
+from openfold3.core.utils.relpos import relpos_complex
 
 
 class DiffusionConditioning(nn.Module):
@@ -53,12 +51,9 @@ class DiffusionConditioning(nn.Module):
         self.c_s = c_s
         self.c_z = c_z
         self.c_fourier_emb = c_fourier_emb
+        self.max_relative_idx = max_relative_idx
+        self.max_relative_chain = max_relative_chain
         self.sigma_data = sigma_data
-
-        self.relpos = RelposAllAtom(
-            max_relative_idx=max_relative_idx,
-            max_relative_chain=max_relative_chain,
-        )
 
         num_rel_pos_bins = 2 * max_relative_idx + 2
         num_rel_token_bins = 2 * max_relative_idx + 2
@@ -140,7 +135,11 @@ class DiffusionConditioning(nn.Module):
         pair_token_mask = token_mask.unsqueeze(-1) * token_mask.unsqueeze(-2)
 
         # Pair conditioning
-        relpos_zij = self.relpos(batch).to(dtype=zij_trunk.dtype)
+        relpos_zij = relpos_complex(
+            batch=batch,
+            max_relative_idx=self.max_relative_idx,
+            max_relative_chain=self.max_relative_chain,
+        ).to(dtype=zij_trunk.dtype)
         zij = torch.cat([zij_trunk, relpos_zij], dim=-1)
         zij = self.linear_z(self.layer_norm_z(zij))
         for l in self.transition_z:
