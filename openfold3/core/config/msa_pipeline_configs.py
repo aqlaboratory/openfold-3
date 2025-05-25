@@ -37,7 +37,7 @@ class MsaSampleProcessorInputTrain(BaseModel):
     msa_chain_data: dict[str, MsaChainDataTrain]
 
     @classmethod
-    def create_from_cache(
+    def create_from_dataset_cache_entry(
         cls,
         dataset_cache_entry: DatasetChainData,
         default_moltype: MoleculeType | None = None,
@@ -70,7 +70,7 @@ class MsaSampleProcessorInputInference(BaseModel):
     use_main_msas: bool
 
     @classmethod
-    def create_from_iqs(cls, inference_query: Query):
+    def create_from_inference_query_entry(cls, inference_query: Query):
         msa_chain_data = {}
         for chain in inference_query.chains:
             for chain_id in chain.chain_ids:

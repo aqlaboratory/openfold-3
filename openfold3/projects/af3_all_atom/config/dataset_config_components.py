@@ -9,25 +9,27 @@ The main sections of the dataset configuration are:
 
 from typing import Annotated
 
-from pydantic import BaseModel, BeforeValidator
+from pydantic import BaseModel, BeforeValidator, Field
 
 from openfold3.core.config.config_utils import _convert_molecule_type
 from openfold3.core.data.resources.residues import MoleculeType
 
 
-# TODO: this will need to allow for arbitrary key: seq count pairs as users may have
-# files with different names from the defaults
 class MSAMaxSeqCounts(BaseModel):
-    uniref90_hits: int = 10000
-    uniprot_hits: int = 50000
-    bfd_uniclust_hits: int = 10000000
-    bfd_uniref_hits: int = 10000000
-    cfdb_uniref30: int = 10000000
-    mgnify_hits: int = 5000
-    rfam_hits: int = 10000
-    rnacentral_hits: int = 10000
-    nt_hits: int = 10000
-    concat_cfdb_uniref100_filtered: int = 10000000
+    counts: dict[str, int] = Field(
+        default_factory=lambda: {
+            "uniref90_hits": 10_000,
+            "uniprot_hits": 50_000,
+            "bfd_uniclust_hits": 10_000_000,
+            "bfd_uniref_hits": 10_000_000,
+            "cfdb_uniref30": 10_000_000,
+            "mgnify_hits": 5_000,
+            "rfam_hits": 10_000,
+            "rnacentral_hits": 10_000,
+            "nt_hits": 10_000,
+            "concat_cfdb_uniref100_filtered": 10_000_000,
+        }
+    )
 
 
 class MSASettings(BaseModel):
