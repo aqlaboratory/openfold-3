@@ -50,7 +50,7 @@ class AttentionPairBias(nn.Module):
         use_ada_layer_norm: bool = False,
         gating: bool = True,
         inf=1e9,
-        linear_init_params: ConfigDict = lin_init.att_pair_bias_init,
+        linear_init_params: Optional[ConfigDict] = None,
     ):
         """
         Args:
@@ -85,6 +85,14 @@ class AttentionPairBias(nn.Module):
         self.inf = inf
 
         self.use_ada_layer_norm = use_ada_layer_norm
+
+        if linear_init_params is None:
+            linear_init_params = (
+                lin_init.diffusion_att_pair_bias_init
+                if self.use_ada_layer_norm
+                else lin_init.att_pair_bias_init
+            )
+
         if self.use_ada_layer_norm:
             self.layer_norm_a = AdaLN(
                 c_a=self.c_q, c_s=self.c_s, linear_init_params=linear_init_params.ada_ln
@@ -241,7 +249,7 @@ class CrossAttentionPairBias(nn.Module):
         n_key: Optional[int] = None,
         gating: bool = True,
         inf=1e9,
-        linear_init_params: ConfigDict = lin_init.att_pair_bias_init,
+        linear_init_params: Optional[ConfigDict] = None,
     ):
         """
         Args:
@@ -284,6 +292,13 @@ class CrossAttentionPairBias(nn.Module):
         self.use_ada_layer_norm = use_ada_layer_norm
         self.n_query = n_query
         self.n_key = n_key
+
+        if linear_init_params is None:
+            linear_init_params = (
+                lin_init.diffusion_att_pair_bias_init
+                if self.use_ada_layer_norm
+                else lin_init.att_pair_bias_init
+            )
 
         if self.use_ada_layer_norm:
             self.layer_norm_a_q = AdaLN(
