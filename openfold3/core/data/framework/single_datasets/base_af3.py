@@ -232,7 +232,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
             alignment_db_directory=self.alignment_db_directory,
             alignment_index=self.alignment_index,
             alignment_array_directory=self.alignment_array_directory,
-            max_seq_counts=self.msa.max_seq_counts.model_dump(),
+            max_seq_counts=self.msa.max_seq_counts,
             aln_order=self.msa.aln_order,
             max_rows_paired=self.msa.max_rows_paired,
             min_chains_paired_partial=self.msa.min_chains_paired_partial,
