@@ -24,7 +24,7 @@ from openfold3.entry_points.validator import (
     TrainingExperimentConfig,
 )
 from openfold3.projects.af3_all_atom.config.dataset_configs import (
-    InferenceConfig,
+    InferenceJobConfig,
     InferenceDatasetSpec,
     TrainingDatasetSpec,
 )
@@ -135,7 +135,7 @@ class ExperimentRunner(ABC):
         return MPIEnvironment() if self.is_mpi else None
 
     @cached_property
-    def strategy(self) -> DDPStrategy | DeepSpeedStrategy | None:
+    def strategy(self) -> DDPStrategy | DeepSpeedStrategy | str:
         """Determine and return the training strategy."""
         if self.deepspeed_config_path is not None:
             _strategy = DeepSpeedStrategy(
@@ -160,7 +160,7 @@ class ExperimentRunner(ABC):
                 cluster_environment=self.cluster_environment,
             )
 
-        return None
+        return "auto"
 
     ###############
     # Logging and Callbacks
@@ -368,7 +368,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.experiment_config = experiment_config
 
         # model path
-        self.dastaset_config_kwargs = experiment_config.dataset_config_kwargs
+        self.dataset_config_kwargs = experiment_config.dataset_config_kwargs
         self.inference_ckpt_path = experiment_config.inference_ckpt_path
         self.data_module_args = experiment_config.data_module_args
 
@@ -382,11 +382,11 @@ class InferenceExperimentRunner(ExperimentRunner):
 
     @cached_property
     def data_module_config(self):
-        inference_config = InferenceConfig(
+        inference_config = InferenceJobConfig(
             query_set=self.inference_query_set,
             seeds=self.experiment_config.seeds,
-            msa=self.dastaset_config_kwargs.msa,
-            template=self.dastaset_config_kwargs.template,
+            msa=self.dataset_config_kwargs.msa,
+            template=self.dataset_config_kwargs.template,
         )
         inference_spec = InferenceDatasetSpec(config=inference_config)
         return DataModuleConfig(
