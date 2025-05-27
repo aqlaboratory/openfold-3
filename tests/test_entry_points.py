@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import ml_collections as mlc
+from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry, ModelUpdate
 import pytest
 from pytorch_lightning.loggers import WandbLogger
 
@@ -31,6 +32,20 @@ class TestTrainingExperiment:
         test_dummy_file.write_text("test")
 
         test_yaml_str = textwrap.dedent(f"""\
+            data_module_args:
+                data_seed: 114
+                                        
+            model_update:
+                presets:
+                    - train
+                custom:
+                    settings:
+                        model_selection_weight_scheme: fine_tuning
+                    architecture:
+                        shared:
+                            diffusion:
+                                no_samples: 32
+                                        
             dataset_configs:
                 train:
                     weighted-pdb:
@@ -91,8 +106,22 @@ class TestTrainingExperiment:
         expt_runner.setup()
         return expt_runner
 
+    def test_model_config_update(self, expt_runner):
+        assert (
+            expt_runner.model_config.settings.model_selection_weight_scheme
+            == "fine_tuning"
+        )
+        assert expt_runner.model_config.architecture.shared.diffusion.no_samples == 32
+        # Check that default default settings are not overwritten
+        # See openfold3.projects.of3_all_atom.config.model_config
+        assert (
+            expt_runner.model_config.settings.memory.eval.per_sample_token_cutoff
+            == 1500
+        )
+
     def test_model(self, expt_runner):
         # Check model creation
+
         assert expt_runner.lightning_module.model
         assert (
             expt_runner.lightning_module.model.aux_heads.distogram.linear.in_features
@@ -101,9 +130,25 @@ class TestTrainingExperiment:
 
     def test_data_module(self, expt_runner):
         # Check data_module creation
+        assert expt_runner.data_module_config.data_seed == 114
+
         assert len(expt_runner.data_module_config.datasets) == 2
         assert expt_runner.data_module_config.datasets[0].name == "weighted-pdb"
         assert expt_runner.data_module_config.datasets[1].name == "val-weighted-pdb"
+
+        weighted_pdb_spec = expt_runner.data_module_config.datasets[0]
+        assert weighted_pdb_spec.weight == 1
+        assert weighted_pdb_spec.config.crop.token_budget == 640
+
+
+class TestModelUpdate:
+    def test_bad_model_update_fails(self):
+        """Verify that a model update that has an invalid field is not allowed."""
+        model_update = ModelUpdate(custom={"nonexistant_field": "bad"})
+        project_entry = AF3ProjectEntry()
+
+        with pytest.raises(KeyError, match="config is locked"):
+            project_entry.get_model_config_with_update(model_update)
 
 
 class DummyWandbExperiment:
