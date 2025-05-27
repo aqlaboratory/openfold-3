@@ -13,14 +13,16 @@ from pydantic import (
 )
 from pydantic import ConfigDict as PydanticConfigDict
 
-from openfold3.core.config.path_definitions import DirectoryPathOrNone, FilePathOrNone
+from openfold3.core.config.config_utils import DirectoryPathOrNone, FilePathOrNone
 from openfold3.core.data.framework.data_module import DatasetMode, DatasetSpec
-from openfold3.core.data.framework.inference_query_format import InferenceQuerySet
 from openfold3.projects.af3_all_atom.config.dataset_config_components import (
     CropSettings,
     LossConfig,
     MSASettings,
     TemplateSettings,
+)
+from openfold3.projects.af3_all_atom.config.inference_query_format import (
+    InferenceQuerySet,
 )
 
 

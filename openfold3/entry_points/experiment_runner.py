@@ -24,8 +24,8 @@ from openfold3.entry_points.validator import (
     TrainingExperimentConfig,
 )
 from openfold3.projects.af3_all_atom.config.dataset_configs import (
-    InferenceJobConfig,
     InferenceDatasetSpec,
+    InferenceJobConfig,
     TrainingDatasetSpec,
 )
 from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry

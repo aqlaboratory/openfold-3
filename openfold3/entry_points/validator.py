@@ -5,7 +5,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
-from openfold3.core.config.path_definitions import FilePathOrNone
+from openfold3.core.config.config_utils import FilePathOrNone
 from openfold3.projects.af3_all_atom.config.dataset_configs import (
     InferenceDatasetConfigKwargs,
     TrainingDatasetPaths,
