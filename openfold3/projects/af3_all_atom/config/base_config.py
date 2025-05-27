@@ -335,6 +335,7 @@ project_config = mlc.ConfigDict(
                 },
                 "heads": {
                     "max_atoms_per_token": max_atoms_per_token,
+                    "per_sample_token_cutoff": per_sample_token_cutoff,
                     "pairformer_embedding": {
                         "pairformer": {
                             "c_s": c_s,
@@ -362,7 +363,6 @@ project_config = mlc.ConfigDict(
                         "max_bin": 20.75,
                         "no_bin": 15,
                         "inf": inf,
-                        "per_sample_token_cutoff": per_sample_token_cutoff,
                         "linear_init_params": lin_init.pairformer_head_init,
                     },
                     "pae": {
@@ -445,6 +445,7 @@ project_config = mlc.ConfigDict(
                 },
             },
             "confidence": {
+                "per_sample_atom_cutoff": per_sample_atom_cutoff,
                 "pde": {
                     "max_bin": 31,
                     "no_bins": 64,
