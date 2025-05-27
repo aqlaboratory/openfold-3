@@ -77,6 +77,7 @@ class TrainingExperimentSettings(ExperimentSettings):
     mode: Literal["train", "predict"] = "train"
     seed: int = 42
     restart_checkpoint_path: FilePathOrNone = None
+    output_dir: Path = Path("./train_output")
 
 
 class InferenceExperimentSettings(ExperimentSettings):
@@ -87,6 +88,7 @@ class InferenceExperimentSettings(ExperimentSettings):
     inference_ckpt_path: Path
     seeds: int | list[int] = [42]
     num_seeds: int | None = None
+    output_dir: Path = Path("./inference_output")
 
     @model_validator(mode="after")
     def generate_seeds(cls, model):
@@ -110,19 +112,21 @@ class ExperimentConfig(BaseModel):
     """Base set of arguments expected for all experiments"""
 
     experiment_settings: ExperimentSettings
-    pl_trainer_args: PlTrainerArgs
+    pl_trainer_args: PlTrainerArgs = PlTrainerArgs()
     model_update: ModelUpdate
 
 
 class TrainingExperimentConfig(ExperimentConfig):
     """Training experiment config"""
 
-    experiment_settings: TrainingExperimentSettings
+    # required arguments for training experiment
+    dataset_paths: dict[str, TrainingDatasetPaths]
+    dataset_configs: dict[str, Any]
+
+    experiment_settings: TrainingExperimentSettings = TrainingExperimentSettings()
     logging_config: LoggingConfig = LoggingConfig()
     checkpoint_config: CheckpointConfig = CheckpointConfig()
     model_update: ModelUpdate = ModelUpdate(presets=["train"])
-    dataset_paths: dict[str, TrainingDatasetPaths]
-    dataset_configs: dict[str, Any]
     data_module_args: DataModuleArgs = DataModuleArgs()
 
 

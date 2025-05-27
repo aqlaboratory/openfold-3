@@ -2,218 +2,108 @@ import json
 import os
 import shutil
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytorch_lightning as pl
-from ml_collections import ConfigDict
+import ml_collections as mlc
+import pytest
 from pytorch_lightning.loggers import WandbLogger
 
-import openfold3
 from openfold3.core.config import config_utils
-from openfold3.entry_points.trainable_experiment.builder import (
-    TrainableExperimentBuilder,
+from openfold3.core.data.framework.data_module import DataModuleConfig
+from openfold3.entry_points.experiment_runner import (
+    TrainingExperimentRunner,
     WandbHandler,
 )
-from openfold3.entry_points.trainable_experiment.validator import (
-    TrainableExperimentConfig,
+from openfold3.entry_points.validator import (
+    TrainingExperimentConfig,
+    WandbConfig,
 )
 
-MODULE_PATH = "openfold3.entry_points.trainable_experiment.builder"
 
-EXAMPLES_PATH = Path(openfold3.__file__).parent / "examples"
+class TestTrainingExperiment:
+    @pytest.fixture
+    def expt_runner(self, tmp_path):
+        """Minimal runner yaml containing only dataset configs."""
+        test_dummy_file = tmp_path / "test.json"
+        test_dummy_file.write_text("test")
 
+        test_yaml_str = textwrap.dedent(f"""\
+            dataset_configs:
+                train:
+                    weighted-pdb:
+                        dataset_class: WeightedPDBDataset 
+                        weight: 1 
+                        config:
+                            debug_mode: true
+                            crop:
+                                token_budget: 640 
+                            loss:
+                                bond: 4.0
+                                smooth_lddt: 0.0
 
-class DummyTrainer:
-    def __init__(self):
-        self.called_method = None
+                validation:
+                    val-weighted-pdb:
+                        dataset_class: ValidationPDBDataset
+                        config:
+                            template:
+                                n_templates: 4
 
-    def fit(self, model, datamodule, ckpt_path):
-        self.called_method = "fit"
+            dataset_paths:
+                weighted-pdb:
+                    alignments_directory: null
+                    alignment_db_directory: null
+                    alignment_array_directory: {tmp_path} 
+                    target_structures_directory: {tmp_path} 
+                    target_structure_file_format: npz
+                    dataset_cache_file: {test_dummy_file} 
+                    reference_molecule_directory: {tmp_path} 
+                    template_cache_directory: {tmp_path} 
+                    template_structure_array_directory: {tmp_path} 
+                    template_structures_directory: null
+                    template_file_format: pkl
+                    ccd_file: null
 
-    def validate(self, model, datamodule, ckpt_path):
-        self.called_method = "validate"
+                val-weighted-pdb:
+                    alignments_directory: null
+                    alignment_db_directory: null
+                    alignment_array_directory: {tmp_path} 
+                    target_structures_directory: {tmp_path}
+                    target_structure_file_format: npz
+                    dataset_cache_file: {test_dummy_file} 
+                    reference_molecule_directory: {tmp_path} 
+                    template_cache_directory: {tmp_path} 
+                    template_structure_array_directory: {tmp_path} 
+                    template_structures_directory: null
+                    template_file_format: pkl
+                    ccd_file: null
+                """)
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
 
-    def test(self, model, datamodule, ckpt_path):
-        self.called_method = "test"
-
-    def predict(self, model, datamodule, ckpt_path):
-        self.called_method = "predict"
-
-
-class TestTrainableExperimentBuilder(unittest.TestCase):
-    def setUp(self):
-        # Create a temporary directory to act as the output_dir.
-        self.temp_dir = tempfile.mkdtemp()
-        self.runner_args = ConfigDict(
-            {
-                "wandb": None,
-                "log_level": "DEBUG",
-                "seed": 42,
-                "output_dir": self.temp_dir,
-                "mode": "train",
-                "num_gpus": 1,
-                "pl_trainer": ConfigDict({"num_nodes": 1, "max_epochs": 1}),
-                "project_type": "dummy_project",
-                "presets": [],
-                "config_update": None,
-                "restart_checkpoint_path": None,
-                "deepspeed_config_path": None,
-                "checkpoint": None,
-                "log_lr": None,
-                "mpi_plugin": False,
-                "compile": False,
-            }
+        expt_config = TrainingExperimentConfig.model_validate(
+            config_utils.load_yaml(test_yaml_file)
         )
 
-        patcher1 = patch(MODULE_PATH + ".registry.get_project_entry")
-        self.mock_get_project_entry = patcher1.start()
-        self.addCleanup(patcher1.stop)
+        expt_runner = TrainingExperimentRunner(expt_config)
+        expt_runner.setup()
+        return expt_runner
 
-        dummy_project_entry = MagicMock()
-        dummy_project_entry.model_runner.return_value = MagicMock(
-            spec=pl.LightningModule
+    def test_model(self, expt_runner):
+        # Check model creation
+        assert expt_runner.lightning_module.model
+        assert (
+            expt_runner.lightning_module.model.aux_heads.distogram.linear.in_features
+            == 128
         )
-        dummy_project_entry.dataset_config_builder = MagicMock(return_value={})
-        self.mock_get_project_entry.return_value = dummy_project_entry
 
-        patcher2 = patch(
-            MODULE_PATH + ".registry.make_config_with_presets",
-            return_value=ConfigDict(
-                {
-                    "model": ConfigDict(
-                        {
-                            "settings": {
-                                "gradient_clipping": 0.5,
-                                "optimizer": {"use_deepspeed_adam": True},
-                            }
-                        }
-                    )
-                }
-            ),
-        )
-        self.mock_make_config = patcher2.start()
-        self.addCleanup(patcher2.stop)
-
-        patcher3 = patch(
-            MODULE_PATH + ".registry.make_dataset_module_config",
-            return_value=MagicMock(),
-        )
-        self.mock_make_dataset_module_config = patcher3.start()
-        self.addCleanup(patcher3.stop)
-
-        patcher4 = patch(MODULE_PATH + "._check_data_module_config", lambda x: None)
-        self.mock_check_data_module_config = patcher4.start()
-        self.addCleanup(patcher4.stop)
-
-    def tearDown(self):
-        shutil.rmtree(self.temp_dir)
-
-    def test_output_dir_creation(self):
-        builder = TrainableExperimentBuilder(self.runner_args)
-        output_dir = builder.output_dir
-        self.assertTrue(output_dir.exists())
-        self.assertEqual(output_dir, Path(self.temp_dir))
-
-    def test_invalid_log_level(self):
-        self.runner_args.log_level = "invalid"
-        builder = TrainableExperimentBuilder(self.runner_args)
-        with self.assertRaises(ValueError):
-            builder._setup_logger()
-
-    def test_set_random_seed_distributed_without_seed(self):
-        self.runner_args.seed = None
-        self.runner_args.num_gpus = 2  # Distributed training.
-        self.runner_args.pl_trainer.num_nodes = 2
-        builder = TrainableExperimentBuilder(self.runner_args)
-        with self.assertRaises(ValueError):
-            builder._set_random_seed()
-
-    def test_set_random_seed_with_non_int(self):
-        del (
-            self.runner_args.seed
-        )  # I need to delete it otherwise i cannot set up as not a string
-        self.runner_args.seed = "not_an_int"
-        builder = TrainableExperimentBuilder(self.runner_args)
-        with self.assertRaises(ValueError):
-            builder._set_random_seed()
-
-    @patch(MODULE_PATH + ".TrainableExperimentBuilder.trainer", new=DummyTrainer())
-    @patch(
-        MODULE_PATH + ".TrainableExperimentBuilder.lightning_module", new=MagicMock()
-    )
-    @patch(
-        MODULE_PATH + ".TrainableExperimentBuilder.lightning_data_module",
-        new=MagicMock(),
-    )
-    @patch(MODULE_PATH + ".TrainableExperimentBuilder.ckpt_path", new=None)
-    def test_run_modes(self):
-        builder = TrainableExperimentBuilder(self.runner_args)
-        patched_trainer = builder.trainer
-
-        for mode, expected_method in [
-            ("train", "fit"),
-            ("eval", "validate"),
-            ("test", "test"),
-            ("predict", "predict"),
-        ]:
-            self.runner_args.mode = mode
-            patched_trainer.called_method = None
-            builder.run()
-            self.assertEqual(
-                patched_trainer.called_method,
-                expected_method,
-                f"Mode {mode} should call {expected_method}",
-            )
-
-        # Test invalid mode.
-        self.runner_args.mode = "invalid_mode"
-        with self.assertRaises(ValueError):
-            builder.run()
-
-    def test_is_distributed(self):
-        builder = TrainableExperimentBuilder(self.runner_args)
-        self.assertFalse(builder.is_distributed)
-
-        self.runner_args.num_gpus = 2
-        self.runner_args.pl_trainer.num_nodes = 2
-        builder = TrainableExperimentBuilder(self.runner_args)
-        self.assertTrue(builder.is_distributed)
-
-    def test_ckpt_path_property(self):
-        builder = TrainableExperimentBuilder(self.runner_args)
-        self.assertIsNone(builder.ckpt_path)
-
-        # When a checkpoint path is provided.
-        self.runner_args.restart_checkpoint_path = "dummy_checkpoint.ckpt"
-        builder = TrainableExperimentBuilder(self.runner_args)
-        self.assertEqual(builder.ckpt_path, "dummy_checkpoint.ckpt")
-
-    def test_strategy_deepspeed(self):
-        self.runner_args.deepspeed_config_path = "dummy_deepspeed_config.json"
-        with patch(
-            MODULE_PATH + ".DeepSpeedStrategy", return_value=MagicMock()
-        ) as mock_deepspeed_strategy:
-            strategy = TrainableExperimentBuilder(self.runner_args).strategy
-            self.assertIs(strategy, mock_deepspeed_strategy.return_value)
-            mock_deepspeed_strategy.assert_called_once()
-
-    def test_strategy_ddp(self):
-        self.runner_args.deepspeed_config_path = None
-        self.runner_args.num_gpus = 2
-        self.runner_args.pl_trainer.num_nodes = 1
-        builder = TrainableExperimentBuilder(self.runner_args)
-        strategy = builder.strategy
-        from pytorch_lightning.strategies import DDPStrategy
-
-        self.assertIsInstance(strategy, DDPStrategy)
-
-    def test_is_mpi_and_cluster_environment(self):
-        self.runner_args.mpi_plugin = True
-        builder = TrainableExperimentBuilder(self.runner_args)
-        self.assertTrue(builder.is_mpi)
-        self.assertIsNotNone(builder.cluster_environment)
+    def test_data_module(self, expt_runner):
+        # Check data_module creation
+        assert len(expt_runner.data_module_config.datasets) == 2
+        assert expt_runner.data_module_config.datasets[0].name == "weighted-pdb"
+        assert expt_runner.data_module_config.datasets[1].name == "val-weighted-pdb"
 
 
 class DummyWandbExperiment:
@@ -233,7 +123,7 @@ class DummyWandbLogger:
 class TestWandbHandler(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
-        self.wandb_args = ConfigDict(
+        self.wandb_args = WandbConfig.model_validate(
             {
                 "project": "test_project",
                 "entity": "test_entity",
@@ -273,9 +163,11 @@ class TestWandbHandler(unittest.TestCase):
         )
 
         # Create dummy configuration objects with a to_dict() method.
-        dummy_runner_args = ConfigDict({"key": "value"})
-        dummy_data_module_config = ConfigDict({"data": 123})
-        dummy_model_config = ConfigDict({"model": "dummy"})
+        dummy_runner_args = TrainingExperimentConfig(
+            dataset_configs={}, dataset_paths={}
+        )
+        dummy_data_module_config = DataModuleConfig(datasets=[])
+        dummy_model_config = mlc.ConfigDict({"model": "dummy"})
 
         # Set up a dummy experiment with our temporary directory.
         dummy_experiment = DummyWandbExperiment(self.temp_dir)
@@ -305,21 +197,8 @@ class TestWandbHandler(unittest.TestCase):
             with open(fpath) as f:
                 data = json.load(f)
                 if fpath.endswith("runner.json"):
-                    self.assertEqual(data, dummy_runner_args.to_dict())
+                    self.assertEqual(data, dummy_runner_args.model_dump(mode="json"))
                 elif fpath.endswith("data_config.json"):
-                    self.assertEqual(data, dummy_data_module_config.to_dict())
+                    self.assertEqual(data, dummy_data_module_config.model_dump())
                 elif fpath.endswith("model_config.json"):
                     self.assertEqual(data, dummy_model_config.to_dict())
-
-
-class TestTrainableExperimentValidator(unittest.TestCase):
-    def setUp(self):
-        self.examples_file = list(EXAMPLES_PATH.glob("*.yml"))
-
-    def test_validate(self):
-        for fname in self.examples_file:
-            raw_args = config_utils.load_yaml(fname)
-            try:
-                TrainableExperimentConfig(**raw_args)
-            except Exception:
-                self.fail(f"Validation failed for {fname}")

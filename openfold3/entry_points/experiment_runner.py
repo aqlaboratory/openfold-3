@@ -433,8 +433,6 @@ class WandbHandler:
         if self.wandb_args is None:
             raise ValueError("wandb_args must be provided to use wandb logger")
 
-        wandb_id = self.wandb_args.id if hasattr(self.wandb_args, "id") else None
-
         wandb_init_dict = dict(
             project=self.wandb_args.project,
             entity=self.wandb_args.entity,
@@ -443,7 +441,7 @@ class WandbHandler:
             dir=self.output_dir,
             resume="allow",
             reinit=True,
-            id=wandb_id,
+            id=self.wandb_args.id,
         )
 
         # Only initialize wandb for rank zero worker (MPI env), or else
@@ -451,12 +449,10 @@ class WandbHandler:
         if self.is_mpi_rank_zero:
             wandb.run = wandb.init(**wandb_init_dict)
 
-        run_offline = self.wandb_args.get("offline", False)
         self._logger = WandbLogger(
             **wandb_init_dict,
             save_dir=self.output_dir,
             log_model=False,
-            offline=run_offline,
         )
 
     @property
@@ -499,8 +495,8 @@ class WandbHandler:
         wandb_experiment.save(runner_yaml_path)
 
         # save the deepspeed config if it exists
-        if runner_args.deepspeed_config_path:
-            wandb_experiment.save(runner_args.deepspeed_config_path)
+        if runner_args.pl_trainer_args.deepspeed_config_path:
+            wandb_experiment.save(runner_args.pl_trainer_args.deepspeed_config_path)
 
         # Save data module config
         data_config_path = os.path.join(wandb_experiment.dir, "data_config.json")
