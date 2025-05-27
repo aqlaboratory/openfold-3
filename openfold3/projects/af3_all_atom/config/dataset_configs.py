@@ -1,4 +1,18 @@
-""" """
+"""
+Dataset configuration for all atom project.
+
+Each dataset has a base DatasetConfig section, which includes:
+- dataset_cache_path (train) or inference_query_set (inference): Collection or Path to
+    a collection containing the dataset's contents
+- Settings for the pytorch.Dataset construction
+    e.g. MSASettings, TemplateSettings
+    For training datasets, this also includes LossConfig and CropSettings.
+
+The DatasetConfig is wrapped in a DatasetSpec model, which contains additional fields:
+    `name`, `dataset_class`, `mode`, and `weight`.
+These fields are parsed by the DataModule to create the appropriate Dataset class.
+
+"""
 
 from pathlib import Path
 from typing import Any, Optional
