@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Annotated, Any, Optional, Union
 
 import yaml
-from pydantic import BeforeValidator, DirectoryPath, FilePath
+from pydantic import (
+    BeforeValidator,
+    DirectoryPath,
+    FilePath,
+)
 
 from openfold3.core.data.resources.residues import MoleculeType
 
@@ -31,6 +35,14 @@ def load_json(path: Union[Path, str]) -> dict[str, Any]:
     return json_dict
 
 
+def _ensure_list(value: Any) -> Any:
+    if not isinstance(value, list):
+        logging.info("Single value: {value} will be converted to a list")
+        return [value]
+    else:
+        return value
+
+
 def _convert_molecule_type(value: Any) -> Any:
     if isinstance(value, MoleculeType):
         return value
@@ -42,16 +54,6 @@ def _convert_molecule_type(value: Any) -> Any:
                 f"Found invalid {value=} for molecule type, skipping this example."
             )
             return None
-    elif isinstance(value, int):
-        try:
-            return MoleculeType(value)
-        except ValueError:
-            logging.warning(
-                f"Found invalid {value=} for molecule type, skipping this example."
-            )
-            return None
-    elif isinstance(value, list):
-        return [_convert_molecule_type(v) for v in value]
 
 
 def is_path_none(value: Optional[Union[str, Path]]) -> Optional[Path]:
@@ -65,11 +67,3 @@ def is_path_none(value: Optional[Union[str, Path]]) -> Optional[Path]:
 
 FilePathOrNone = Annotated[Optional[FilePath], BeforeValidator(is_path_none)]
 DirectoryPathOrNone = Annotated[Optional[DirectoryPath], BeforeValidator(is_path_none)]
-
-
-def _ensure_list(value: Any) -> Any:
-    if not isinstance(value, list):
-        logging.info(f"Single value: {value} will be converted to a list")
-        return [value]
-    else:
-        return value

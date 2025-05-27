@@ -13,17 +13,16 @@ from pydantic import (
 )
 from pydantic import ConfigDict as PydanticConfigDict
 
-from openfold3.core.config.config_utils import (
-    DirectoryPathOrNone,
-    FilePathOrNone,
-)
-from openfold3.core.data.framework.data_module import DatasetMode
-from openfold3.core.data.framework.inference_query_format import InferenceQuerySet
+from openfold3.core.config.config_utils import DirectoryPathOrNone, FilePathOrNone
+from openfold3.core.data.framework.data_module import DatasetMode, DatasetSpec
 from openfold3.projects.af3_all_atom.config.dataset_config_components import (
     CropSettings,
     LossConfig,
     MSASettings,
     TemplateSettings,
+)
+from openfold3.projects.af3_all_atom.config.inference_query_format import (
+    InferenceQuerySet,
 )
 
 
@@ -205,7 +204,7 @@ class ValidationPDBConfig(DefaultDatasetConfigSection):
     template: TemplateSettings = TemplateSettings(take_top_k=True)
 
 
-class TrainingDatasetSpec(BaseModel):
+class TrainingDatasetSpec(DatasetSpec):
     """Full dataset specification for all atom style projects.
 
     A list of these configurations can be provided to
@@ -236,7 +235,14 @@ class TrainingDatasetSpec(BaseModel):
         return values
 
 
-class InferenceConfig(BaseModel):
+class InferenceDatasetConfigKwargs(BaseModel):
+    """Class to hold msa and temlpate kwargs for inference pipeline"""
+
+    msa: MSASettings = MSASettings()
+    template: TemplateSettings = TemplateSettings()
+
+
+class InferenceJobConfig(BaseModel):
     """Configuration section for Inference Datasets"""
 
     query_set: InferenceQuerySet
@@ -245,11 +251,11 @@ class InferenceConfig(BaseModel):
     template: TemplateSettings = TemplateSettings()
 
 
-class InferenceDatasetSpec(BaseModel):
+class InferenceDatasetSpec(DatasetSpec):
     """Full specification for inference dataset to be passed into DataModule"""
 
     name: str = "inference"
     dataset_class: str = "InferenceDataset"
     mode: DatasetMode = DatasetMode.prediction
     weight: Optional[float] = None
-    config: InferenceConfig
+    config: InferenceJobConfig
