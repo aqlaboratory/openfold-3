@@ -453,11 +453,14 @@ class DataModule(pl.LightningDataModule):
         self.next_dataset_indices = state_dict["next_dataset_indices"]
 
 
-# TODO: Remove debug logic
+# TODO: Remove debug logic and improve handlingi of training only features
 def openfold_batch_collator(samples: list[dict[str, torch.Tensor]]):
     """Collates a list of samples into a batch."""
 
-    pdb_ids = [s.pop("pdb_id") for s in samples]
+    has_pdb_id = "pdb_id" in samples[0]
+
+    if has_pdb_id:
+        pdb_ids = [s.pop("pdb_id") for s in samples]
 
     def pad_feat_fn(values: list[torch.Tensor]) -> torch.Tensor:
         """
@@ -471,15 +474,20 @@ def openfold_batch_collator(samples: list[dict[str, torch.Tensor]]):
 
     # The ligand permutation mappings are a special feature and need to be handled
     # separately
-    ref_space_uid_to_perm_dicts = []
-    for sample in samples:
-        ref_space_uid_to_perm_dicts.append(sample.pop("ref_space_uid_to_perm"))
+    has_ref_space_uid_to_perm = "ref_space_uid_to_perm" in samples[0]
+
+    if has_ref_space_uid_to_perm:
+        ref_space_uid_to_perm_dicts = []
+        for sample in samples:
+            ref_space_uid_to_perm_dicts.append(sample.pop("ref_space_uid_to_perm"))
 
     samples = dict_multimap(pad_feat_fn, samples)
 
     # Add the ref_space_uid_to_perm back to the samples
-    samples["ref_space_uid_to_perm"] = ref_space_uid_to_perm_dicts
+    if has_ref_space_uid_to_perm:
+        samples["ref_space_uid_to_perm"] = ref_space_uid_to_perm_dicts
 
-    samples["pdb_id"] = pdb_ids
+    if has_pdb_id:
+        samples["pdb_id"] = pdb_ids
 
     return samples
