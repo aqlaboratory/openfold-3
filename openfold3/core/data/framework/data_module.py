@@ -64,6 +64,20 @@ class DatasetMode(enum.Enum):
     prediction = "prediction"
 
 
+class DatasetSpec(BaseModel):
+    """Dataset specification provided to initialize datasets in the DataModule.
+
+    The DataModule accepts list of these configurations to create
+    `torch.Datasets` for pl.Trainer.
+    """
+
+    name: str
+    dataset_class: str
+    mode: DatasetMode
+    weight: Optional[float] = None
+    config: SerializeAsAny[BaseModel] = SerializeAsAny()
+
+
 @dataclasses.dataclass
 class MultiDatasetConfig:
     """Dataclass for storing dataset configurations.
