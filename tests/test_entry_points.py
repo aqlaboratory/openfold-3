@@ -8,7 +8,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import ml_collections as mlc
-from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry, ModelUpdate
 import pytest
 from pytorch_lightning.loggers import WandbLogger
 
@@ -22,6 +21,7 @@ from openfold3.entry_points.validator import (
     TrainingExperimentConfig,
     WandbConfig,
 )
+from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry, ModelUpdate
 
 
 class TestTrainingExperiment:
