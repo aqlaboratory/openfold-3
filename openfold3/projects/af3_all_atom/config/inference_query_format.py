@@ -1,34 +1,14 @@
-import logging
-from typing import Annotated, Any, NamedTuple, Optional
+from typing import Annotated, NamedTuple, Optional
 
 from pydantic import BaseModel, BeforeValidator, FilePath
 
-from openfold3.core.data.resources.residues import MoleculeType
-from openfold3.projects.af3_all_atom.config.dataset_configs import (
+from openfold3.core.config.config_utils import (
     DirectoryPathOrNone,
     FilePathOrNone,
+    _convert_molecule_type,
+    _ensure_list,
 )
-
-
-def _ensure_list(value: Any) -> Any:
-    if not isinstance(value, list):
-        logging.info("Single value: {value} will be converted to a list")
-        return [value]
-    else:
-        return value
-
-
-def _convert_molecule_type(value: Any) -> Any:
-    if isinstance(value, MoleculeType):
-        return value
-    elif isinstance(value, str):
-        try:
-            return MoleculeType[value.upper()]
-        except KeyError:
-            logging.warning(
-                f"Found invalid {value=} for molecule type, skipping this example."
-            )
-            return None
+from openfold3.core.data.resources.residues import MoleculeType
 
 
 # Definition for Bonds
