@@ -80,6 +80,12 @@ project_config = mlc.ConfigDict(
                 "memory": {
                     "train": {
                         "chunk_size": None,
+                        # Use DeepSpeed memory-efficient attention kernel. Mutually
+                        # exclusive with use_lma and use_flash.
+                        "use_deepspeed_evo_attention": False,
+                        # Use Staats & Rabe's low-memory attention algorithm. Mutually
+                        # exclusive with use_deepspeed_evo_attention.
+                        "use_lma": False,
                         "msa_module": {
                             "swiglu_chunk_token_cutoff": None,
                             "swiglu_seq_chunk_size": None,
@@ -87,6 +93,8 @@ project_config = mlc.ConfigDict(
                     },
                     "eval": {
                         "chunk_size": None,
+                        "use_deepspeed_evo_attention": True,
+                        "use_lma": False,
                         "msa_module": {
                             "swiglu_chunk_token_cutoff": None,
                             "swiglu_seq_chunk_size": None,
@@ -103,12 +111,6 @@ project_config = mlc.ConfigDict(
                 #  to allow per-module overrides
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "ckpt_intermediate_steps": ckpt_intermediate_steps,
-                # Use DeepSpeed memory-efficient attention kernel. Mutually
-                # exclusive with use_lma and use_flash.
-                "use_deepspeed_evo_attention": False,
-                # Use Staats & Rabe's low-memory attention algorithm. Mutually
-                # exclusive with use_deepspeed_evo_attention.
-                "use_lma": False,
                 "diffusion_training_enabled": diffusion_training_enabled,
                 "optimizer": {
                     "use_deepspeed_adam": False,
@@ -178,7 +180,6 @@ project_config = mlc.ConfigDict(
                     },
                     "template_pair_stack": {
                         "c_t": c_t,
-                        # TODO: Do we use pairformer attn params?
                         # DISCREPANCY: c_hidden_tri_att here is given in the supplement
                         # as 64. In the code, it's 16.
                         "c_hidden_tri_att": 16,
