@@ -237,7 +237,7 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
         ).float(),
         "template_distogram": torch.ones(
             (batch_size, n_templ, n_token, n_token, 39)
-        ).int(),
+        ).float(),
         "template_unit_vector": torch.ones(
             (batch_size, n_templ, n_token, n_token, 3)
         ).float(),

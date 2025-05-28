@@ -76,20 +76,32 @@ class ValidationPDBDataset(BaseAF3Dataset):
         """
         # Order by token count so that the run times are more consistent across GPUs
         pdb_ids = list(self.dataset_cache.structure_data.keys())
+
+        def null_safe_token_count(x):
+            token_count = self.dataset_cache.structure_data[x].token_count
+            return token_count if token_count is not None else 0
+
         pdb_ids = sorted(
             pdb_ids,
-            key=lambda x: self.dataset_cache.structure_data[x].token_count,
+            key=null_safe_token_count,
         )
 
         # To avoid the default DistributedSampler behavior of repeating samples
         # to match the world size, artificially inflate the dataset and flag the
         # repeated samples so that they are ignored in the metrics.
-        repeated_samples = [False] * len(pdb_ids)
+        num_samples = len(pdb_ids)
+        repeated_samples = [False] * num_samples
         if self.world_size is not None:
             extra_samples = (
-                math.ceil(len(pdb_ids) / self.world_size) * self.world_size
-            ) - len(pdb_ids)
-            pdb_ids += pdb_ids[:extra_samples]
+                math.ceil(num_samples / self.world_size) * self.world_size
+            ) - num_samples
+            if num_samples < self.world_size:
+                num_repeats = math.ceil(self.world_size / num_samples)
+                pdb_ids *= num_repeats
+                pdb_ids = pdb_ids[: self.world_size]
+            else:
+                pdb_ids += pdb_ids[:extra_samples]
+
             repeated_samples += [True] * extra_samples
 
         self.datapoint_cache = pd.DataFrame(

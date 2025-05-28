@@ -2,9 +2,7 @@ train:
   settings:
     blocks_per_ckpt: 1
     ckpt_intermediate_steps: True
-    use_deepspeed_evo_attention: True
 
 predict:
   settings:
-    use_deepspeed_evo_attention: True
     diffusion_training_enabled: False

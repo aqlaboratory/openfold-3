@@ -466,16 +466,7 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         self.layer_norm_z = LayerNorm(c_z)
         self.linear_z = Linear(c_z, c_out, **linear_init_params.linear_z)
 
-    def forward(self, batch, z):
-        """
-        Args:
-            batch:
-                Input template feature dictionary
-            z:
-                Pair embedding
-        Returns:
-            # [*, N_templ, N_token, N_token, C_out] Template pair feature embedding
-        """
+    def _embed_feats(self, batch: dict):
         # [*, N_token, N_token]
         multichain_pair_mask = (
             batch["asym_id"][..., None] * batch["asym_id"][..., None, :]
@@ -514,7 +505,24 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         a = a * multichain_pair_mask[..., None, :, :, None]
         a = torch.concat([a, template_restype_ti, template_restype_tj], dim=-1)
 
-        # [*, N_templ, N_token, N_token, C_out]
-        v = self.linear_z(self.layer_norm_z(z))[..., None, :, :, :] + self.linear_a(a)
+        a = self.linear_a(a)
 
-        return v
+        return a
+
+    def forward(self, batch, z):
+        """
+        Args:
+            batch:
+                Input template feature dictionary
+            z:
+                Pair embedding
+        Returns:
+            # [*, N_templ, N_token, N_token, C_out] Template pair feature embedding
+        """
+        a = self._embed_feats(batch=batch)
+
+        # [*, N_templ, N_token, N_token, C_out]
+        z = self.linear_z(self.layer_norm_z(z))
+        z = z[..., None, :, :, :] + a
+
+        return z
