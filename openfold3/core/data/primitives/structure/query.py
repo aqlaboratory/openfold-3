@@ -147,7 +147,7 @@ def processed_reference_molecule_from_mol(
     # Assume all atoms are in the structure if no special mask is given
     if atom_mask is None:
         atom_mask = np.ones(mol.GetNumAtoms(), dtype=bool)
-    
+
     # Set atom names if provided, otherwise renumber to C1, C2, N1, N2, etc.
     if atom_names is not None:
         mol = set_atomwise_annotation(mol, "atom_name", atom_names)
@@ -155,7 +155,7 @@ def processed_reference_molecule_from_mol(
         elements = [atom.GetSymbol() for atom in mol.GetAtoms()]
         atom_names = struc.create_atom_names(elements)
         mol = set_atomwise_annotation(mol, "atom_name", atom_names)
-    
+
     # This is a different mask only required for fallback conformers in the training
     # script where some coordinates are not defined
     mol = set_atomwise_annotation(mol, "used_atom_mask", [True] * mol.GetNumAtoms())

@@ -134,7 +134,7 @@ class InferenceDataset(Dataset):
         self, query: Query
     ) -> StructureWithReferenceMolecules:
         """Creates a preprocessed AtomArray and reference molecules from the query.
-        
+
         Parses the Query object into a full AtomArray and processed reference molecules
         (RDKit mol objects with atom names and computed conformers) matching the
         molecule components in the query. The returned AtomArray follows the chain IDs
@@ -148,7 +148,7 @@ class InferenceDataset(Dataset):
         Additionally, this method adds tokenization information (token IDs) and token
         positions to the AtomArray, which are required by other functions in the
         featurization pipeline.
-        
+
         Args:
             query (Query):
                 The Query object containing the chains to construct the structure from.
