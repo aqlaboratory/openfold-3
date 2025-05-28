@@ -167,7 +167,9 @@ class InferenceDataset(Dataset):
         tokenize_atom_array(atom_array)
         add_token_positions(atom_array)
 
-        return atom_array, processed_reference_molecules
+        return StructureWithReferenceMolecules(
+            atom_array, processed_reference_molecules
+        )
 
     def create_structure_features(
         self,
@@ -279,10 +281,10 @@ class InferenceDataset(Dataset):
         features = {}
 
         # Create initial AtomArray and ReferenceMolecules from query entry
-        structure_objs = self.get_structure_with_ref_mols(
+        structure_with_ref_mols = self.get_structure_with_ref_mols(
             query=query,
         )
-        preprocessed_atom_array, processed_reference_molecules = structure_objs
+        preprocessed_atom_array, processed_reference_molecules = structure_with_ref_mols
 
         self.n_tokens = get_token_count(preprocessed_atom_array)
 
