@@ -181,11 +181,13 @@ class InferenceDataset(Dataset):
             n_tokens=self.n_tokens,
             token_dim_index_map=TOKEN_DIM_INDEX_MAP,
             is_gt=False,
+            add_perm_features=False,
         )
 
         # Compute reference conformer features
         reference_conformer_features = featurize_reference_conformers_af3(
-            processed_ref_mol_list=processed_reference_molecules
+            processed_ref_mol_list=processed_reference_molecules,
+            add_ref_space_uid_to_perm=False,
         )
 
         # Wrap up features
