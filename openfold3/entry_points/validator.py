@@ -84,8 +84,6 @@ class InferenceExperimentSettings(ExperimentSettings):
     """General settings specific for training experiments"""
 
     mode: Literal["train", "predict"] = "predict"
-    query_json: Path
-    inference_ckpt_path: Path
     seeds: int | list[int] = [42]
     num_seeds: int | None = None
     output_dir: Path = Path("./inference_output")
@@ -133,8 +131,11 @@ class TrainingExperimentConfig(ExperimentConfig):
 class InferenceExperimentConfig(ExperimentConfig):
     """Inference experiment config"""
 
+    query_json: Path
+    inference_ckpt_path: Path
+
     # TODO: Add MSA configuration settings
-    experiment_settings: InferenceExperimentSettings
+    experiment_settings: InferenceExperimentSettings = InferenceExperimentSettings()
     model_update: ModelUpdate = ModelUpdate(presets=["predict"])
     data_module_args: DataModuleArgs = DataModuleArgs()
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()

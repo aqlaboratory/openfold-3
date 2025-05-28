@@ -18,9 +18,17 @@ import click
 import torch
 
 from openfold3.core.config import config_utils
-from openfold3.entry_points.experiment_runner import TrainingExperimentRunner
+from openfold3.core.data.tools.colabfold_msa_server import preprocess_colabfold_msas
+from openfold3.entry_points.experiment_runner import (
+    InferenceExperimentRunner,
+    TrainingExperimentRunner,
+)
 from openfold3.entry_points.validator import (
+    InferenceExperimentConfig,
     TrainingExperimentConfig,
+)
+from openfold3.projects.af3_all_atom.config.inference_query_format import (
+    InferenceQuerySet,
 )
 
 torch_versions = torch.__version__.split(".")
@@ -79,6 +87,15 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
     help="Json containing the queries for prediction.",
 )
 @click.option(
+    "--inference_ckpt_path",
+    type=click.Path(exists=True, file_okay=True, dir_okay=True, path_type=Path),
+    required=False,
+    default=Path(
+        "/pscratch/sd/j/jnwei22/checkpoints_32nodes/78zhsyf7_33_5_export.ckpt/converted.ckpt.pt"
+    ),
+    help="Path for model checkpoint to be used for inference",
+)
+@click.option(
     "--runner_yaml",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     required=False,
@@ -91,35 +108,44 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
     help="Use ColabFold MSA server to perform alignments.",
 )
 @click.option(
-    "--inference_ckpt_path",
-    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    "--output_dir",
+    type=click.Path(exists=True, file_okay=True, dir_okay=True, path_type=Path),
     required=False,
-    help="Path for model checkpoint to be used for inference",
+    help="Output directory for writing results",
 )
 def predict(
     query_json: Path,
+    inference_ckpt_path: Path,
     runner_yaml: Path | None = None,
     use_msa_server: bool = True,
-    inference_ckpt_path: Path | None = None,
+    output_dir: Path | None = None,
 ):
-    raise NotImplementedError("Prediction is not implemented yet.")
-    # Command line args should be used to overwrite the InferenceExperimentConfig
-    # exp_config = apply_command_line_args(
-    #    runner_yaml, query_json, use_msa_server, inference_ckpt_path
-    # )
+    """Perform inference on a set of queries defined in the query_json."""
+    runner_args = config_utils.load_yaml(runner_yaml) if runner_yaml else dict()
+    expt_config = InferenceExperimentConfig(
+        query_json=query_json, inference_ckpt_path=inference_ckpt_path, **runner_args
+    )
+    if output_dir:
+        expt_config.experiment_settings.output_dir = output_dir
 
     # Load inference query set
-    # query_set = InferenceQuerySet.from_json(exp_config.query_json)
+    query_set = InferenceQuerySet.from_json(expt_config.query_json)
 
     # Perform MSA computation if selected
     #  update query_set with MSA paths
-    # if use_msa_server:
-    #     run_msa_server(inference_query_set)
+    if use_msa_server:
+        query_set = preprocess_colabfold_msas(
+            inference_query_set=query_set,
+            output_directory=expt_config.experiment_settings.output_dir,
+            msa_file_format="npz",
+            user_agent="openfold",
+            save_mappings=False,
+        )
 
     # Run the forward pass
-    # expt_runner = InferenceExperimentRunner(expt_config, query_set)
-    # expt_runner.setup()
-    # expt_runner.run()
+    expt_runner = InferenceExperimentRunner(expt_config, query_set)
+    expt_runner.setup()
+    expt_runner.run()
 
     # Optionally run post-processing of structures
 
