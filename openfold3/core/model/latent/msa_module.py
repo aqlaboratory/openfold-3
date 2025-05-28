@@ -188,6 +188,7 @@ class MSAModuleBlock(MSABlock):
                         m,
                         z=z,
                         mask=pair_mask,
+                        chunk_size=chunk_size,
                     )
                 ),
                 inplace=inplace_safe,
