@@ -16,6 +16,9 @@ from torch.utils.data import Dataset
 from openfold3.core.data.framework.single_datasets.abstract_single import (
     register_dataset,
 )
+from openfold3.core.data.framework.single_datasets.dataset_utils import (
+    pad_to_world_size,
+)
 from openfold3.core.data.pipelines.featurization.conformer import (
     featurize_reference_conformers_af3,
 )
@@ -92,33 +95,20 @@ class InferenceDataset(Dataset):
         # different seeds)
         self.create_datapoint_cache()
 
-    # TODO: Will pair datapoints with seeds and handle any required sorting (e.g. by
-    # token_count)
+    # TODO: Consider sorting the datapoints by token_count
     def create_datapoint_cache(self) -> None:
         qids = self.query_cache.keys()
         qid_values, seed_values = zip(
             *[(q, s) for q, s in itertools.product(qids, self.seeds)]
         )
 
-        # To avoid the default DistributedSampler behavior of repeating samples
-        # to match the world size, artificially inflate the dataset and flag the
-        # repeated samples so that they are ignored in the metrics.
-        repeated_samples = [False] * len(qid_values)
-        if self.world_size is not None:
-            extra_samples = (
-                math.ceil(len(qid_values) / self.world_size) * self.world_size
-            ) - len(qid_values)
-            qid_values += qid_values[:extra_samples]
-            seed_values += seed_values[:extra_samples]
-            repeated_samples += [True] * extra_samples
-
-        self.datapoint_cache = pd.DataFrame(
+        _datapoint_cache = pd.DataFrame(
             {
                 "query_id": qid_values,
                 "seed": seed_values,
-                "repeated_sample": repeated_samples,
             }
         )
+        self.datapoint_cache = pad_to_world_size(_datapoint_cache, self.world_size)
 
     def get_atom_array(self, query: Query) -> AtomArray:
         """Creates a preprocessed AtomArray from the query."""
