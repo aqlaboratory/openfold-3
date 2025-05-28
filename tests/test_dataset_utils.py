@@ -1,8 +1,9 @@
 import pandas as pd
+import pytest
+
 from openfold3.core.data.framework.single_datasets.dataset_utils import (
     pad_to_world_size,
 )
-import pytest
 
 fewer_examples_than_world_size = {
     "label": "fewer_examples_than_world_size",
