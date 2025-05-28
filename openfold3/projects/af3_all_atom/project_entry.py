@@ -7,14 +7,14 @@ from ml_collections import ConfigDict
 from pydantic import BaseModel
 
 from openfold3.core.config.config_utils import load_yaml
-from openfold3.projects.af3_all_atom.config.dataset_configs import TrainingDatasetSpec
 from openfold3.projects.af3_all_atom.config.model_config import model_config
 from openfold3.projects.af3_all_atom.runner import AlphaFold3AllAtom
 
 
 class ModelUpdate(BaseModel):
     presets: list[str] = []
-    custom: dict
+    custom: dict = {}
+    compile: bool = False
 
 
 @dataclass
@@ -22,7 +22,6 @@ class AF3ProjectEntry:
     name = "af3_all_atom"
     model_config_base = model_config
     runner = AlphaFold3AllAtom
-    dataset_spec = TrainingDatasetSpec
     model_preset_yaml = (
         "openfold3/projects/af3_all_atom/config/model_setting_presets.yml"
     )
@@ -64,19 +63,3 @@ class AF3ProjectEntry:
         model_config = self.get_model_config_with_presets(model_update.presets)
         model_config.update(model_update.custom)
         return model_config
-
-    def combine_dataset_paths_with_configs(
-        self, dataset_paths: dict, dataset_specs: dict
-    ) -> list[TrainingDatasetSpec]:
-        """Merge the dataset paths with the dataset specs."""
-        configs = []
-
-        for mode, ds_specs in dataset_specs.items():
-            for name, spec in ds_specs.items():
-                spec["name"] = name
-                spec["mode"] = mode
-                spec["config"]["dataset_paths"] = dataset_paths[name]
-
-                configs.append(self.dataset_spec.model_validate(spec))
-
-        return configs

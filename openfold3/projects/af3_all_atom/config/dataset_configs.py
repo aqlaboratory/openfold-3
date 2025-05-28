@@ -1,11 +1,10 @@
 """ """
 
 from pathlib import Path
-from typing import Annotated, Any, Optional, Union
+from typing import Any, Optional
 
 from pydantic import (
     BaseModel,
-    BeforeValidator,
     DirectoryPath,
     Field,
     FilePath,
@@ -14,26 +13,17 @@ from pydantic import (
 )
 from pydantic import ConfigDict as PydanticConfigDict
 
-from openfold3.core.data.framework.data_module import DatasetMode
+from openfold3.core.config.config_utils import DirectoryPathOrNone, FilePathOrNone
+from openfold3.core.data.framework.data_module import DatasetMode, DatasetSpec
 from openfold3.projects.af3_all_atom.config.dataset_config_components import (
     CropSettings,
     LossConfig,
     MSASettings,
     TemplateSettings,
 )
-
-
-def is_path_none(value: Optional[Union[str, Path]]) -> Optional[Path]:
-    if isinstance(value, Path):
-        return value
-    elif value is None or value.lower() in ["none", "null"]:
-        return None
-    else:
-        return Path(value)
-
-
-FilePathOrNone = Annotated[Optional[FilePath], BeforeValidator(is_path_none)]
-DirectoryPathOrNone = Annotated[Optional[DirectoryPath], BeforeValidator(is_path_none)]
+from openfold3.projects.af3_all_atom.config.inference_query_format import (
+    InferenceQuerySet,
+)
 
 
 class TrainingDatasetPaths(BaseModel):
@@ -214,7 +204,7 @@ class ValidationPDBConfig(DefaultDatasetConfigSection):
     template: TemplateSettings = TemplateSettings(take_top_k=True)
 
 
-class TrainingDatasetSpec(BaseModel):
+class TrainingDatasetSpec(DatasetSpec):
     """Full dataset specification for all atom style projects.
 
     A list of these configurations can be provided to
@@ -243,3 +233,29 @@ class TrainingDatasetSpec(BaseModel):
 
         values["config"] = config_class.model_validate(config_data)
         return values
+
+
+class InferenceDatasetConfigKwargs(BaseModel):
+    """Class to hold msa and temlpate kwargs for inference pipeline"""
+
+    msa: MSASettings = MSASettings()
+    template: TemplateSettings = TemplateSettings()
+
+
+class InferenceJobConfig(BaseModel):
+    """Configuration section for Inference Datasets"""
+
+    query_set: InferenceQuerySet
+    seeds: list[int] = [42]
+    msa: MSASettings = MSASettings()
+    template: TemplateSettings = TemplateSettings()
+
+
+class InferenceDatasetSpec(DatasetSpec):
+    """Full specification for inference dataset to be passed into DataModule"""
+
+    name: str = "inference"
+    dataset_class: str = "InferenceDataset"
+    mode: DatasetMode = DatasetMode.prediction
+    weight: Optional[float] = None
+    config: InferenceJobConfig
