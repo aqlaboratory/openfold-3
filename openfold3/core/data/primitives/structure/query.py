@@ -5,6 +5,7 @@ molecules.
 
 import logging
 from collections.abc import Container, Iterable
+from functools import lru_cache
 from typing import NamedTuple
 
 import biotite.structure as struc
@@ -50,13 +51,17 @@ class StructureWithReferenceMolecules(NamedTuple):
     processed_reference_mols: list[ProcessedReferenceMolecule]
 
 
+get_residue_cached = lru_cache(maxsize=500)(struc.info.residue)
+"""Cached residue information retrieval from Biotite to speed up preprocessing."""
+
+
 def atom_array_from_ccd_code(
     ccd_code: str,
     chain_id: str,
     res_id: int = 1,
     molecule_type: MoleculeType | None = None,
 ) -> AtomArray:
-    res_array = struc.info.residue(ccd_code)
+    res_array = get_residue_cached(ccd_code)
     res_array = remove_hydrogens(res_array)
 
     res_array.res_id[:] = res_id
