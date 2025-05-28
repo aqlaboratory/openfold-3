@@ -115,14 +115,12 @@ def processed_reference_molecule_from_atom_array(
     return processed_reference_molecule_from_mol(
         mol=mol,
         atom_mask=atom_mask,
-        mol_id=atom_array.res_name[0],
     )
 
 
 def processed_reference_molecule_from_mol(
     mol: Chem.Mol,
     atom_mask: np.ndarray | None = None,
-    mol_id: str = "LIG",
 ) -> ProcessedReferenceMolecule:
     # Assume all atoms are in the structure if no special mask is given
     if atom_mask is None:
@@ -133,7 +131,6 @@ def processed_reference_molecule_from_mol(
     assert conf_id == 0
 
     return ProcessedReferenceMolecule(
-        mol_id=mol_id,
         mol=mol,
         in_crop_mask=atom_mask,
         permutations=None,
@@ -215,18 +212,16 @@ def structure_with_ref_mol_from_mol(
     mol: Chem.Mol,
     chain_id: str,
     atom_mask: np.ndarray | None = None,
-    mol_id: str = "LIG",
+    res_name: str = "LIG",
 ) -> StructureWithReferenceMolecules:
     # Build the ligand molecule
-    proc_ref_mol = processed_reference_molecule_from_mol(
-        mol, atom_mask=atom_mask, mol_id=mol_id
-    )
+    proc_ref_mol = processed_reference_molecule_from_mol(mol, atom_mask=atom_mask)
 
     # Get the processed mol that now will have a computed conformer
     mol = proc_ref_mol.mol
 
     # Convert to AtomArray
-    atom_array = atom_array_from_mol(mol, chain_id=chain_id, res_name=mol_id)
+    atom_array = atom_array_from_mol(mol, chain_id=chain_id, res_name=res_name)
 
     # Force coordinates to 0 for consistency
     atom_array.coord[:] = 0.0
@@ -262,7 +257,7 @@ def structure_with_ref_mol_from_ccd_code(
 def structure_with_ref_mol_from_smiles(
     smiles: str,
     chain_id: str,
-    mol_id: str = "LIG",
+    res_name: str = "LIG",
 ) -> StructureWithReferenceMolecules:
     """Creates a single AtomArray and processed ref molecule from a SMILES string.
 
@@ -271,8 +266,8 @@ def structure_with_ref_mol_from_smiles(
             The SMILES string of the molecule to create.
         chain_id (str):
             The chain ID to assign to the created AtomArray.
-        mol_id (str):
-            The ID of the molecule, used for naming in the processed reference molecule.
+        res_name (str):
+            The residue name to assign to the created AtomArray. Defaults to "LIG".
     """
     mol = Chem.MolFromSmiles(smiles)
 
@@ -287,8 +282,7 @@ def structure_with_ref_mol_from_smiles(
     return structure_with_ref_mol_from_mol(
         mol,
         chain_id=chain_id,
-        atom_mask=None,
-        mol_id=mol_id,
+        res_name=res_name,
     )
 
 
@@ -353,7 +347,7 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
                             structure_with_ref_mol_from_smiles(
                                 smiles=chain.smiles,
                                 chain_id=chain_id,
-                                mol_id=f"LIG-{unnamed_lig_entity_count}",
+                                res_name=f"LIG-{unnamed_lig_entity_count}",
                             )
                         )
 
