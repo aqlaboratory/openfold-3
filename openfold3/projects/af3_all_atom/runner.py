@@ -5,6 +5,7 @@ from pathlib import Path
 
 import torch
 from torchmetrics import MeanMetric, MetricCollection
+import pytorch_lightning as pl
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.metrics.confidence import (
@@ -64,6 +65,9 @@ class AlphaFold3AllAtom(ModelRunner):
         self._setup_train_metrics()
         self._setup_val_metrics()
         self._init_metric_enabled_tracker()
+
+    def reseed(self, seed):
+        pl.seed_everything(seed)
 
     def _setup_train_metrics(self):
         """Set up training loss and metric collection objects."""
@@ -342,8 +346,13 @@ class AlphaFold3AllAtom(ModelRunner):
 
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         # TODO: Remove debug logic
-        pdb_id = batch.pop("pdb_id")
-        preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
+        pdb_id = batch.pop("pdb_id") if "pdb_id" in batch else None
+        query_id = batch.pop("query_id") if "query_id" in batch else None
+        preferred_chain_or_interface = (
+            batch.pop("preferred_chain_or_interface")
+            if "preferred_chain_or_interface" in batch
+            else None
+        )
         atom_array = batch.pop("atom_array") if "atom_array" in batch else None
 
         # This is to avoid slow loading for nested dicts in PL
@@ -354,8 +363,12 @@ class AlphaFold3AllAtom(ModelRunner):
             return t.to(device=device, non_blocking=True)
 
         batch = tensor_tree_map(to_device, batch)
-        batch["pdb_id"] = pdb_id
-        batch["preferred_chain_or_interface"] = preferred_chain_or_interface
+        if pdb_id:
+            batch["pdb_id"] = pdb_id
+        if query_id:
+            batch["query_id"] = query_id
+        if preferred_chain_or_interface:
+            batch["preferred_chain_or_interface"] = preferred_chain_or_interface
 
         # Add atom array back to the batch if we removed it earlier
         if atom_array:
@@ -559,7 +572,6 @@ class AlphaFold3AllAtom(ModelRunner):
 
         query_id = batch.pop("query_id")
         atom_array = batch.pop("atom_array")
-        _ = batch.pop("preferred_chain_or_interface")
 
         seed = batch.pop("seed")
         self.reseed(seed[0])  # TODO: assuming we have bs = 1 for now, later we'd

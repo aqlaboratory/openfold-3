@@ -1,6 +1,12 @@
 from typing import Annotated, NamedTuple, Optional
 
-from pydantic import BaseModel, BeforeValidator, DirectoryPath, FilePath
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    DirectoryPath,
+    FilePath,
+    field_serializer,
+)
 
 from openfold3.core.config.config_utils import (
     DirectoryPathOrNone,
@@ -38,6 +44,10 @@ class Chain(BaseModel):
     # templates: ...
     sdf_file_path: Optional[FilePath] = None
 
+    @field_serializer("molecule_type")
+    def serialize_enum_name(self, v: MoleculeType, _info):
+        return v.name
+
     # TODO(jennifer): Add validations to this class
     # - if molecule type is protein / dna / rna - must specify sequence
     # - if molecule type is ligand - either ccd or smiles needs to be specifified
@@ -57,3 +67,10 @@ class InferenceQuerySet(BaseModel):
     queries: dict[str, Query]
     ccd_file_path: FilePathOrNone = None
     msa_directory_path: DirectoryPathOrNone = None
+
+    @classmethod
+    def from_json(cls, json_path: FilePath) -> "InferenceQuerySet":
+        """Load InferenceQuerySet from a JSON file."""
+        with open(json_path) as f:
+            data = f.read()
+        return cls.model_validate_json(data)

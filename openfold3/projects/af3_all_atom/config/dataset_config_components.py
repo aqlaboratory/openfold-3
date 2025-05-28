@@ -14,7 +14,6 @@ from pydantic import BaseModel, BeforeValidator
 from openfold3.core.config.config_utils import _convert_molecule_type
 from openfold3.core.data.resources.residues import MoleculeType
 
-
 # TODO: this will need to allow for arbitrary key: seq count pairs as users may have
 # files with different names from the defaults
 
