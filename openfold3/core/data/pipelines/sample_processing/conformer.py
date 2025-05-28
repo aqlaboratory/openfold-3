@@ -2,7 +2,7 @@ import contextlib
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 import numpy as np
 from biotite.structure import AtomArray
@@ -64,9 +64,11 @@ class ProcessedReferenceMolecule:
 
     mol_id: str
     mol: Mol
-    component_id: int
     in_crop_mask: np.ndarray[bool]
-    permutations: list[np.ndarray[int]]
+
+    # TODO: make optional in inference
+    component_id: Optional[int] = None
+    permutations: Optional[list[np.ndarray[int]]] = None
 
 
 @log_runtime_memory(runtime_dict_key="runtime-ref-conf-proc-fetch", multicall=True)
