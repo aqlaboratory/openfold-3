@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import platform
 import re
 import resource
 import time
@@ -17,7 +18,7 @@ from openfold3.core.utils.import_weights import (
     import_jax_weights_,
     import_openfold_weights_,
 )
-from openfold3.projects.af2_monomer.model import AlphaFold
+from openfold3.legacy.af2_monomer.model import AlphaFold
 
 logging.basicConfig()
 logger = logging.getLogger(__file__)
@@ -291,6 +292,15 @@ def relax_protein(
 
 def set_ulimits():
     """Set ulimits for the process"""
+
+    # TODO: Do this for now since this may fail on non-Linux systems,
+    #  i.e. when running unit tests locally on a macOS machine.
+    if platform.system() != "Linux":
+        logger.info(
+            f"Operating system is {platform.system()}, not Linux. "
+            f"Skipping ulimit adjustments."
+        )
+        return
 
     # Set the maximum number of open files to a high value
     # This is more than is needed,
