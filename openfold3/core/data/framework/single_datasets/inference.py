@@ -24,13 +24,23 @@ from openfold3.core.data.pipelines.featurization.conformer import (
 )
 from openfold3.core.data.pipelines.featurization.msa import featurize_msa_af3
 from openfold3.core.data.pipelines.featurization.structure import (
-    featurize_target_gt_structure_af3,
+    TOKEN_DIM_INDEX_MAP,
+    featurize_structure_af3,
 )
 from openfold3.core.data.pipelines.featurization.template import (
     featurize_template_structures_af3,
 )
+from openfold3.core.data.pipelines.sample_processing.conformer import (
+    ProcessedReferenceMolecule,
+)
+from openfold3.core.data.primitives.structure.query import (
+    StructureWithReferenceMolecules,
+    structure_with_ref_mols_from_query,
+)
 from openfold3.core.data.primitives.structure.tokenization import (
+    add_token_positions,
     get_token_count,
+    tokenize_atom_array,
 )
 from openfold3.projects.af3_all_atom.config.inference_query_format import (
     Query,
@@ -110,35 +120,33 @@ class InferenceDataset(Dataset):
         )
         self.datapoint_cache = pad_to_world_size(_datapoint_cache, self.world_size)
 
-    def get_atom_array(self, query: Query) -> AtomArray:
-        """Creates a preprocessed AtomArray from the query."""
-        # Creates a vanilla AtomArray without any additional custom IDs
-        raw_atom_array = atom_array_from_query(query)
+    def get_structure_with_ref_mols(
+        self, query: Query
+    ) -> StructureWithReferenceMolecules:
+        """Creates preprocessed AtomArray and reference molecules from the query."""
+        # Gets AtomArray and processed reference molecules with conformers
+        atom_array, processed_reference_molecules = structure_with_ref_mols_from_query(
+            query=query,
+        )
 
-        # Preprocess the raw AtomArray and add required IDs (e.g. do tokenization, add
-        # component_id, token_position, ...)
-        atom_array = preprocess_atom_array(raw_atom_array)
+        # Add token-related IDs
+        tokenize_atom_array(atom_array)
+        add_token_positions(atom_array)
 
-        return atom_array
+        return atom_array, processed_reference_molecules
 
     def create_structure_features(
         self,
-        query: Query,
         atom_array: AtomArray,
+        processed_reference_molecules: list[ProcessedReferenceMolecule],
     ) -> dict[str, torch.Tensor]:
         """Creates the target structure features."""
 
-        # TODO: Set up the RDKit mols and conformers for everything in the query
-        processed_reference_molecules = get_reference_conformer_data_inference_af3(
-            atom_array=atom_array, query_chains=query.chains
-        )
-
-        # TODO: Elevate token_dim_index_map to an importable variable and call
-        # featurize_structure_af3 directly here
-        target_structure_features = featurize_target_gt_structure_af3(
+        target_structure_features = featurize_structure_af3(
             atom_array=atom_array,
-            atom_array_gt=None,
             n_tokens=self.n_tokens,
+            token_dim_index_map=TOKEN_DIM_INDEX_MAP,
+            is_gt=False,
         )
 
         # Compute reference conformer features
@@ -236,8 +244,12 @@ class InferenceDataset(Dataset):
 
         features = {}
 
-        # Create initial AtomArray from query entry
-        preprocessed_atom_array = self.get_atom_array(query)
+        # Create initial AtomArray and ReferenceMolecules from query entry
+        structure_objs = self.get_structure_with_ref_mols(
+            query=query,
+        )
+        preprocessed_atom_array, processed_reference_molecules = structure_objs
+
         self.n_tokens = get_token_count(preprocessed_atom_array)
 
         # TODO: At some point, think about a cleaner way to pass this through the model
@@ -246,8 +258,8 @@ class InferenceDataset(Dataset):
 
         # Target structure and conformer features
         structure_features = self.create_structure_features(
-            query=query,
             atom_array=preprocessed_atom_array,
+            processed_reference_molecules=processed_reference_molecules,
         )
         features.update(structure_features)
 
