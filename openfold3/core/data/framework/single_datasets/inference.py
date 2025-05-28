@@ -133,7 +133,31 @@ class InferenceDataset(Dataset):
     def get_structure_with_ref_mols(
         self, query: Query
     ) -> StructureWithReferenceMolecules:
-        """Creates preprocessed AtomArray and reference molecules from the query."""
+        """Creates a preprocessed AtomArray and reference molecules from the query.
+        
+        Parses the Query object into a full AtomArray and processed reference molecules
+        (RDKit mol objects with atom names and computed conformers) matching the
+        molecule components in the query. The returned AtomArray follows the chain IDs
+        given in the Query object. If a chain specifies multiple chain IDs, repeated
+        identical chains with those IDs will be constructed and given the same entity
+        ID. Residue names will be inferred from the sequence or CCD codes. If a ligand
+        is specified through a SMILES string, it will be named as "LIG-X", where X
+        starts at 1 and is incremented for each unnamed ligand entity found in the
+        Query.
+
+        Additionally, this method adds tokenization information (token IDs) and token
+        positions to the AtomArray, which are required by other functions in the
+        featurization pipeline.
+        
+        Args:
+            query (Query):
+                The Query object containing the chains to construct the structure from.
+
+        Returns:
+            StructureWithReferenceMolecules:
+                A named tuple containing the tokenized AtomArray and a list of processed
+                reference molecules.
+        """
         # Gets AtomArray and processed reference molecules with conformers
         atom_array, processed_reference_molecules = structure_with_ref_mols_from_query(
             query=query,
