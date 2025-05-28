@@ -19,6 +19,7 @@ from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
 from openfold3.core.runners.writer import OF3OutputWriter
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
+from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.entry_points.validator import (
     ExperimentConfig,
     TrainingExperimentConfig,
@@ -44,14 +45,15 @@ class ExperimentRunner(ABC):
         self.model_update = experiment_config.model_update
         self.compile = self.model_update.compile
 
-    @abstractmethod
     def setup(self) -> None:
         """Set up the experiment environment.
 
         This includes configuring logging, setting the random seed,
         and initializing WandB if enabled.
         """
-        pass
+
+        # Set resource limits
+        set_ulimits()
 
     ###############
     # Model and dataset setup
@@ -258,6 +260,7 @@ class TrainingExperimentRunner(ExperimentRunner):
         This includes configuring logging, setting the random seed,
         and initializing WandB if enabled.
         """
+        super().setup()
         self._setup_logger()
         self._set_random_seed()
         if self.use_wandb:
@@ -373,6 +376,10 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.data_module_args = experiment_config.data_module_args
 
         # do we include args for msa handling here? Should be processed separately
+
+    def setup(self) -> None:
+        """Set up the experiment environment."""
+        super().setup()
 
     @cached_property
     def callbacks(self):
