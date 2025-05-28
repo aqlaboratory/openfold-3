@@ -4,7 +4,7 @@ molecules.
 """
 
 import logging
-from collections.abc import Container, Iterable
+from collections.abc import Iterable
 from functools import lru_cache
 from typing import NamedTuple
 
@@ -61,12 +61,27 @@ def atom_array_from_ccd_code(
     res_id: int = 1,
     molecule_type: MoleculeType | None = None,
 ) -> AtomArray:
+    """Creates an AtomArray from a CCD code.
+
+    Fetches the residue information from Biotite and constructs an AtomArray with the
+    specified chain ID, residue ID, and molecule type.
+
+    Args:
+        ccd_code (str):
+            The CCD code of the residue to create the AtomArray from.
+        chain_id (str):
+            The chain ID to assign to the created AtomArray.
+        res_id (int):
+            The residue ID to assign to the created AtomArray. Defaults to 1.
+        molecule_type (MoleculeType | None):
+            The MoleculeType of the molecule. If None, no molecule type annotation will
+            be set. Defaults to None.
+    """
     res_array = get_residue_cached(ccd_code)
     res_array = remove_hydrogens(res_array)
 
     res_array.res_id[:] = res_id
     res_array.chain_id[:] = chain_id
-    res_array.set_annotation("res_name", np.repeat(ccd_code, len(res_array)))
 
     if molecule_type is not None:
         res_array.set_annotation(
@@ -77,8 +92,35 @@ def atom_array_from_ccd_code(
 
 
 def atom_array_from_mol(
-    mol: Chem.Mol, chain_id: str, res_id: int = 1, res_name: str = "LIG"
+    mol: Chem.Mol,
+    atom_names: Iterable[str],
+    chain_id: str,
+    molecule_type: MoleculeType = MoleculeType.LIGAND,
+    res_id: int = 1,
+    res_name: str = "LIG",
 ) -> AtomArray:
+    """Creates an AtomArray from an RDKit mol object.
+
+    Args:
+        mol (Chem.Mol):
+            The RDKit molecule to create the AtomArray from.
+        atom_names (Iterable[str]):
+            Iterable of atom names to set in the AtomArray.
+        chain_id (str):
+            The chain ID to assign to the created AtomArray.
+        molecule_type (MoleculeType):
+            The MoleculeType of the molecule. Defaults to MoleculeType.LIGAND.
+        res_id (int):
+            The residue ID to assign to the created AtomArray. Defaults to 1.
+        res_name (str):
+            The residue name to assign to the created AtomArray. Defaults to "LIG".
+
+    Returns:
+        AtomArray:
+            An AtomArray containing the atoms from the RDKit mol with the specified atom
+            names, chain ID, residue ID, and residue name, and molecule type. The order
+            of atoms in the AtomArray will match the order of atom names provided.
+    """
     atom_array = from_mol(mol, conformer_id=0, add_hydrogen=False)
 
     # Set global annotations
@@ -86,25 +128,38 @@ def atom_array_from_mol(
     atom_array.hetero[:] = True
     atom_array.res_id[:] = res_id
     atom_array.set_annotation(
-        "molecule_type_id", np.repeat(MoleculeType.LIGAND, len(atom_array))
+        "molecule_type_id", np.repeat(molecule_type, len(atom_array))
     )
 
     # Set specific annotations
     atom_array.set_annotation("res_name", np.repeat(res_name, len(atom_array)))
-    atom_array.set_annotation(
-        "atom_name", [atom.GetProp("annot_atom_name") for atom in mol.GetAtoms()]
-    )
+    atom_array.set_annotation("atom_name", atom_names)
 
     return atom_array
 
 
 def processed_reference_molecule_from_atom_array(
     atom_array: struc.AtomArray,
-    atoms_to_mask: Container[str] = None,
+    atoms_to_mask: Iterable[str] = None,
 ) -> ProcessedReferenceMolecule:
     """Creates a processed reference molecule from an AtomArray.
 
-    atom_array
+    Args:
+        atom_array (struc.AtomArray):
+            The AtomArray to create the processed reference molecule from. Atom names of
+            the processed reference molecule will be set to the atom names of the
+            AtomArray.
+        atoms_to_mask (Iterable[str] | None):
+            Optional iterable of atom names to mask in the processed reference molecule.
+            If provided, these atoms will not be included in the final structure, but
+            will still be part of the RDKit mol object to retain chemical validity and
+            generate the correct conformer. If None, which is the default, no atoms will
+            be masked.
+
+    Returns:
+        ProcessedReferenceMolecule:
+            A processed reference molecule containing the RDKit mol with a computed
+            conformer and the atom mask.
     """
     # Mask certain atoms that should not be present in the final structure
     if atoms_to_mask is not None:
@@ -134,7 +189,7 @@ def processed_reference_molecule_from_mol(
     Args:
         mol (Chem.Mol):
             The RDKit molecule to create the processed reference molecule from.
-        atom_names (Container[str] | None):
+        atom_names (Iterable[str] | None):
             Optional atom names to set for the atoms in the RDKit mol. If None, the atom
             names will be set to a simple pattern like C1, C2, N1, N2, etc.
         atom_mask (np.ndarray | None):
@@ -218,10 +273,7 @@ def structure_with_ref_mols_from_sequence(
     atom_array = None
     processed_reference_mols = []
 
-    # TODO: Remove this
-    from tqdm import tqdm
-
-    for res_id, resname_1 in enumerate(tqdm(sequence), start=1):
+    for res_id, resname_1 in enumerate(sequence, start=1):
         # Get 3-letter code of the residue
         if resname_1 not in resname_1_to_3:
             logger.warning(
@@ -300,8 +352,13 @@ def structure_with_ref_mol_from_mol(
     # Get the processed mol that now will have a computed conformer
     mol = proc_ref_mol.mol
 
+    # Retrieve atom names from special annotation in the reference mol
+    atom_names = [atom.GetProp("annot_atom_name") for atom in mol.GetAtoms()]
+
     # Convert to AtomArray
-    atom_array = atom_array_from_mol(mol, chain_id=chain_id, res_name=res_name)
+    atom_array = atom_array_from_mol(
+        mol, atom_names=atom_names, chain_id=chain_id, res_name=res_name
+    )
 
     # Force coordinates to 0 for consistency
     atom_array.coord[:] = 0.0
@@ -486,7 +543,8 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
         if chain_is_unnamed_lig_entity:
             unnamed_lig_entity_count += 1
 
-        # Assume that each new set of chains represents a different entity
+        # Each entry in `query.chains` defines a new entity. If an entry has multiple
+        # chains, they will all have the same entity ID.
         entity_id += 1
 
     # Force coordinates to 0 for consistency
