@@ -34,6 +34,22 @@ from openfold3.projects.af3_all_atom.config.inference_query_format import Query
 logger = logging.getLogger(__name__)
 
 
+class StructureWithReferenceMolecules(NamedTuple):
+    """Central object required for structure feature-creation in inference.
+
+    Attributes:
+        atom_array (struc.AtomArray):
+            AtomArray parsed from the input Query for which coordinates will be
+            predicted.
+        processed_reference_mols (list[ProcessedReferenceMolecule]):
+            List of processed reference molecules (RDKit mol objects with atom names and
+            computed conformers) that are required for feature construction.
+    """
+
+    atom_array: struc.AtomArray
+    processed_reference_mols: list[ProcessedReferenceMolecule]
+
+
 def atom_array_from_ccd_code(
     ccd_code: str,
     chain_id: str,
@@ -124,25 +140,10 @@ def processed_reference_molecule_from_mol(
     )
 
 
-class StructureWithReferenceMolecules(NamedTuple):
-    """Central object required for structure feature-creation in inference.
-
-    Attributes:
-        atom_array (struc.AtomArray):
-            AtomArray parsed from the input Query for which coordinates will be
-            predicted.
-        processed_reference_mols (list[ProcessedReferenceMolecule]):
-            List of processed reference molecules (RDKit mol objects with atom names and
-            computed conformers) that are required for feature construction.
-    """
-
-    atom_array: struc.AtomArray
-    processed_reference_mols: list[ProcessedReferenceMolecule]
-
-
 def structure_with_ref_mols_from_sequence(
     sequence: str, poly_type: MoleculeType, chain_id: str
 ) -> StructureWithReferenceMolecules:
+    # Figure out 3-letter code mapping and unknown residue identifier
     if poly_type == MoleculeType.PROTEIN:
         resname_1_to_3 = PROTEIN_RESTYPE_1TO3
         unk_res = MOLECULE_TYPE_TO_UKNOWN_RESIDUES_3[MoleculeType.PROTEIN]
@@ -329,51 +330,58 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
         chain_is_unnamed_lig_entity = False
 
         for chain_id in chain.chain_ids:
-            # Build polymeric part
-            if chain.molecule_type in (
-                MoleculeType.PROTEIN,
-                MoleculeType.DNA,
-                MoleculeType.RNA,
-            ):
-                # Create atom array from sequence
-                segment_atom_array, segment_ref_mols = (
-                    structure_with_ref_mols_from_sequence(
-                        sequence=chain.sequence,
-                        poly_type=chain.molecule_type,
-                        chain_id=chain_id,
-                    )
-                )
-
-            elif chain.molecule_type == MoleculeType.LIGAND:
-                if chain.smiles is not None:
-                    # Mark that this is an unnamed ligand (important for tracking
-                    # number)
-                    chain_is_unnamed_lig_entity = True
-
+            match chain.molecule_type:
+                # Build polymeric part
+                case MoleculeType.PROTEIN | MoleculeType.DNA | MoleculeType.RNA:
+                    # Create atom array from sequence
                     segment_atom_array, segment_ref_mols = (
-                        structure_with_ref_mol_from_smiles(
-                            smiles=chain.smiles,
+                        structure_with_ref_mols_from_sequence(
+                            sequence=chain.sequence,
+                            poly_type=chain.molecule_type,
                             chain_id=chain_id,
-                            mol_id=f"LIG-{unnamed_lig_entity_count}",
                         )
                     )
 
-                elif chain.ccd_codes is not None or chain.sdf_file_path is not None:
-                    # TODO: add multi-residue ligand support
-                    if len(chain.ccd_codes) > 1:
+                case MoleculeType.LIGAND:
+                    # Build ligand from SMILES
+                    if chain.smiles is not None:
+                        # Mark that this is an unnamed ligand (important for tracking
+                        # number)
+                        chain_is_unnamed_lig_entity = True
+
+                        segment_atom_array, segment_ref_mols = (
+                            structure_with_ref_mol_from_smiles(
+                                smiles=chain.smiles,
+                                chain_id=chain_id,
+                                mol_id=f"LIG-{unnamed_lig_entity_count}",
+                            )
+                        )
+
+                    # Build ligand from CCD code
+                    elif chain.ccd_codes is not None:
+                        # TODO: add multi-residue ligand support
+                        if len(chain.ccd_codes) > 1:
+                            raise NotImplementedError(
+                                "Multiple CCD codes for a single chain are not yet "
+                                "supported."
+                            )
+
+                        segment_atom_array, segment_ref_mols = (
+                            structure_with_ref_mol_from_ccd_code(
+                                ccd_code=chain.ccd_codes[0],
+                                chain_id=chain_id,
+                            )
+                        )
+
+                    # Build ligand from SDF file
+                    elif chain.sdf_file_path is not None:
+                        # TODO: add SDF support
                         raise NotImplementedError(
-                            "Multiple CCD codes for a single chain are not yet "
-                            "supported."
+                            "SDF format for ligands is not yet supported."
                         )
 
-                    segment_atom_array, segment_ref_mols = (
-                        structure_with_ref_mol_from_ccd_code(
-                            ccd_code=chain.ccd_codes[0],
-                            chain_id=chain_id,
-                        )
-                    )
-                else:
-                    raise ValueError("No valid molecule specification found.")
+                    else:
+                        raise ValueError("No valid molecule specification found.")
 
             # Add processed reference molecules
             processed_reference_mols.extend(segment_ref_mols)
