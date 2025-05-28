@@ -49,10 +49,10 @@ class ProcessedReferenceMolecule:
                     Atom names
                 - "annot_used_atom_mask":
                     Mask for atoms that are not NaN in the conformer.
-        component_id (int):
-            Original component ID in the cropped AtomArray.
         in_crop_mask (np.ndarray[np.bool]):
             Mask for atoms that are within the current cropped crop's AtomArray.
+        component_id (int):
+            Original component ID in the cropped AtomArray.
         permutations (list[np.ndarray[np.int]]):
             List of symmetry-equivalent atom permutations for the reference conformer,
             adjusted to only map to in-crop atoms, and only draw from the pool of atoms
