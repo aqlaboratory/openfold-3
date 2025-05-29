@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 from pathlib import Path
 
 import numpy as np
@@ -12,69 +11,65 @@ from pytorch_lightning.callbacks import BasePredictionWriter
 
 from openfold3.core.data.io.structure.cif import write_structure
 
-
-def write_confidence_scores(confidence_scores: dict, output_path: Path, sample: int):
-    """Writes confidence scores to disk"""
-    # Convert tensors to lists
-    json_compatible_dict = {
-        key: value[sample].tolist()
-        if isinstance(value, torch.Tensor) and len(value.shape) > 1
-        else value
-        for key, value in confidence_scores.items()
-    }
-    write_json(json_compatible_dict, output_path)
-
-
-def write_json(json_dict: dict, output_path: Path):
-    """Writes a dictionary to disk in JSON format"""
-    # only write if the file does not exist
-    if not output_path.exists():
-        with open(output_path, "w") as f:
-            json.dump(json_dict, f)
-
-
-def write_structure_prediction(
-    seed: int,
-    atom_array: structure.AtomArray,
-    predicted_coords: np.ndarray,
-    pdb_id: str,
-    output_dir: Path,
-    atom_unresolved_mask: np.ndarray = None,
-):
-    """Writes predicted coordinates to atom_array and writes mmcif file to disk"""
-    status = "predicted"
-
-    # Overwrite coordinates in atom_array
-    for sample in range(predicted_coords.shape[0]):
-        atom_array.coord = predicted_coords[sample]
-        if atom_unresolved_mask is not None:
-            atom_array.occupancy = atom_unresolved_mask[sample]
-            atom_array_only_resolved = atom_array[atom_array.occupancy != 0]
-            status = "ground_truth"
-
-        output_path = (
-            Path(output_dir)
-            / pdb_id
-            / f"model_{seed}"
-            / f"{pdb_id}_{status}_seed_{seed}_sample_{sample + 1}.cif"
-        )
-
-        os.makedirs(output_path.parent, exist_ok=True)
-
-        # Write the output file
-        logging.info(f"Writing predicted structure for {pdb_id} to {output_path}")
-        if status == "predicted":
-            write_structure(atom_array, output_path, include_bonds=True)
-        else:
-            write_structure(atom_array_only_resolved, output_path, include_bonds=True)
+logger = logging.getLogger(__name__)
 
 
 class OF3OutputWriter(BasePredictionWriter):
     """Callback for writing AF3 predicted structure and confidence outputs"""
 
-    def __init__(self, output_dir):
+    def __init__(self, output_dir, structure_format, full_confidence_out_format):
         super().__init__(write_interval="batch")
         self.output_dir = output_dir
+        self.structure_format = structure_format
+        self.full_confidence_format = full_confidence_out_format
+
+    @staticmethod
+    def write_structure_prediction(
+        atom_array: structure.AtomArray,
+        predicted_coords: np.ndarray,
+        plddt: np.ndarray,
+        output_file: Path,
+    ):
+        """Writes predicted coordinates to atom_array and writes mmcif file to disk.
+
+        pLDDT scores are written to the B-factor column of the output file.
+        """
+
+        # Set coordinates and plddt scores
+        atom_array.coord = predicted_coords
+        atom_array.set_annotation("b_factor", plddt)
+
+        # Write the output file
+        logger.info(f"Writing predicted structure to {output_file}")
+        write_structure(atom_array, output_file, include_bonds=True)
+
+    def write_confidence_scores(self, confidence_scores: dict, output_prefix: Path):
+        """Writes confidence scores to disk"""
+        plddt = confidence_scores["plddt"]
+        pde = confidence_scores["predicted_distance_error"]
+        gpde = confidence_scores["global_predicted_distance_error"]
+
+        # Single-valued aggregated confidence scores
+        aggregated_confidence_scores = {
+            "avg_plddt": torch.mean(plddt).item(),
+            "gpde": gpde,
+        }
+        out_file_agg = output_prefix / "confidences_aggregated.json"
+        out_file_agg.write_text(json.dumps(aggregated_confidence_scores, indent=4))
+
+        # Full confience scores
+        full_confidence_scores = {"plddt": plddt, "pde": pde}
+        out_fmt = self.full_confidence_format
+        out_file_full = output_prefix / "confidences" / f".{out_fmt}"
+
+        if out_fmt == "json":
+            out_file_full.write_text(
+                json.dumps(
+                    full_confidence_scores, indent=4, default=lambda x: x.tolist()
+                )
+            )
+        elif out_fmt == "npz":
+            np.savez_compressed(out_file_full, **full_confidence_scores)
 
     def on_predict_batch_end(
         self,
@@ -91,82 +86,48 @@ class OF3OutputWriter(BasePredictionWriter):
         batch, outputs = outputs
         confidence_scores = outputs["confidence_scores"]
 
-        for i in range(len(batch["atom_array"])):
-            seed = batch["seed"][i]
-            pdb_id = batch["pdb_id"][i]
+        batch_size = len(batch["atom_array"])
+        sample_size = outputs["atom_positions_predicted"].shape[1]
 
-            # write losses
-            losses = outputs.pop("losses")
-            losses = {key: value.item() for key, value in losses.items()}
+        # Iterate over all predictions in the batch
+        for b in range(batch_size):
+            seed = batch["seed"][b]
+            query_id = batch["query_id"][b]
 
-            atom_array = batch["atom_array"][i]
-            predicted_coords = (
-                outputs["atom_positions_predicted"][i].cpu().float().numpy()
+            output_subdir = Path(self.output_dir) / query_id / f"seed_{seed}"
+
+            # Extract attributes for the current batch
+            atom_array_batch = batch["atom_array"][b]
+            predicted_coords_batch = (
+                outputs["atom_positions_predicted"][b].cpu().float().numpy()
             )
-
-            confidence_scores_bs = {
-                key: value[i].cpu().float() if len(value.shape) > 1 else value.item()
+            confidence_scores_batch = {
+                key: value[b].cpu().float() if len(value.shape) > 1 else value
                 for key, value in confidence_scores.items()
             }
-            metrics_sample = {
-                key: value[i].cpu().float().tolist()
-                if len(value.shape) > 1
-                else value[i].item()
-                for key, value in outputs["metrics"].items()
-            }
-            # TODO: UPDATE THIS WHEN WE HAVE THE CONFIDENCE SCORES: pTM, Sample Ranking
-            # NOW ONLY KEEP PLDDT SCORES
-            confidence_scores_sample = {"plddt": confidence_scores_bs["plddt"]}
 
-            write_structure_prediction(
-                seed,
-                atom_array,
-                predicted_coords,
-                pdb_id,
-                self.output_dir,
-            )
-            write_structure_prediction(
-                seed,
-                atom_array,
-                batch["ground_truth"]["atom_positions"][i].cpu().float().numpy(),
-                pdb_id,
-                self.output_dir,
-                atom_unresolved_mask=batch["ground_truth"]["atom_resolved_mask"][i]
-                .cpu()
-                .float()
-                .numpy(),
-            )
+            # Iterate over all diffusion samples
+            for s in range(sample_size):
+                file_prefix = output_subdir / f"{query_id}_seed_{seed}_sample_{s + 1}"
 
-            for sample in range(predicted_coords.shape[0]):
-                confidence_filename = (
-                    f"{pdb_id}_predicted_seed_{seed}_sample_"
-                    f"{sample + 1}_confidence_scores.json"
-                )
-                output_confidence_path = (
-                    Path(
-                        self.output_dir,
-                    )
-                    / pdb_id
-                    / f"model_{seed}"
-                    / confidence_filename
-                )
-                write_confidence_scores(
-                    confidence_scores_sample, output_confidence_path, sample
+                confidence_scores_sample = {
+                    key: value[s] if len(value.shape) > 1 else value.item()
+                    for key, value in confidence_scores_batch.items()
+                }
+
+                predicted_coords_sample = predicted_coords_batch[s]
+
+                # Save predicted structure
+                structure_file = file_prefix / f"_model.{self.structure_format}"
+                self.write_structure_prediction(
+                    atom_array=atom_array_batch,
+                    predicted_coords=predicted_coords_sample,
+                    plddt=confidence_scores_sample["plddt"],
+                    output_file=structure_file,
                 )
 
-            output_metrics = (
-                Path(self.output_dir)
-                / pdb_id
-                / f"model_{seed}"
-                / f"{pdb_id}_predicted_seed_{seed}_metrics.json"
-            )
-            write_json(metrics_sample, output_metrics)
-
-            output_losses = (
-                Path(self.output_dir)
-                / pdb_id
-                / f"model_{seed}"
-                / f"{pdb_id}_predicted_seed_{seed}_losses.json"
-            )
-
-            write_json(losses, output_losses)
+                # Save confidence metrics
+                self.write_confidence_scores(
+                    confidence_scores=confidence_scores_sample,
+                    file_prefix=file_prefix,
+                )
