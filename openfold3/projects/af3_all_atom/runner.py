@@ -569,7 +569,7 @@ class AlphaFold3AllAtom(ModelRunner):
         _ = batch.pop("preferred_chain_or_interface")
 
         seed = batch.pop("seed")
-        self.reseed(seed[0])  # TODO: assuming we have bs = 1 for now, later we'd
+        self.reseed(seed[0])  # TODO: assuming we have bs = 1 for now
 
         # Probably need to change the logic
         logger.debug(
@@ -579,17 +579,9 @@ class AlphaFold3AllAtom(ModelRunner):
         try:
             batch, outputs = self(batch)
 
-            _, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
-
             batch["atom_array"] = atom_array
             batch["query_id"] = query_id
             batch["seed"] = seed
-
-            # Compute metrics:
-            metrics = self._get_metrics(batch, outputs, train=False)
-
-            outputs["metrics"] = metrics
-            outputs["losses"] = loss_breakdown
 
             # Generate confidence scores
             confidence_scores = self._compute_confidence_scores(batch, outputs)
@@ -598,5 +590,7 @@ class AlphaFold3AllAtom(ModelRunner):
             return (batch, outputs)
 
         except Exception:
-            logger.exception(f"Inference step failed with pdb id {', '.join(query_id)}")
+            logger.exception(
+                f"Inference step failed with query id {', '.join(query_id)}"
+            )
             raise
