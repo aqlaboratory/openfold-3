@@ -5,7 +5,7 @@ channels:
   - pytorch
   - nvidia
 dependencies:
-  - python=3.11
+  - python=3.10
   - setuptools
   - pip
   - openmm
@@ -28,7 +28,7 @@ dependencies:
   - aria2
   - git
   - ruff>=0.5.0
-  - biotite
+  - biotite==1.2.0
   - rdkit==2025.03.1
   - mmseqs2==15.6f452
   - bioconda::hmmer
