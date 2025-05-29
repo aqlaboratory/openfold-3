@@ -8,6 +8,7 @@ from torchmetrics import MeanMetric, MetricCollection
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.metrics.confidence import (
+    compute_global_predicted_distance_error,
     compute_plddt,
     compute_predicted_aligned_error,
     compute_predicted_distance_error,
@@ -516,6 +517,12 @@ class AlphaFold3AllAtom(ModelRunner):
             compute_predicted_distance_error(
                 outputs["pde_logits"],
                 **self.config.confidence.pde,
+            )
+        )
+        confidence_scores["global_predicted_distance_error"] = (
+            compute_global_predicted_distance_error(
+                pde=confidence_scores["predicted_distance_error"],
+                distogram_probs=torch.softmax(outputs["distogram_logits"], dim=-1),
             )
         )
 

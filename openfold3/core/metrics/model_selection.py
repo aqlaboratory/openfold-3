@@ -3,7 +3,10 @@ import logging
 import torch
 from ml_collections import ConfigDict
 
-from openfold3.core.metrics.confidence import compute_predicted_distance_error
+from openfold3.core.metrics.confidence import (
+    compute_global_predicted_distance_error,
+    compute_predicted_distance_error,
+)
 from openfold3.projects.af3_all_atom.constants import METRICS_MAXIMIZE, METRICS_MINIMIZE
 
 logger = logging.getLogger(__name__)
@@ -40,20 +43,12 @@ def compute_valid_model_selection_metrics(
     # Compute distogram-based contact probabilities (pij)
     # distogram_logits shape: [bs, n_samples, n_tokens, n_tokens, 38]
     distogram_logits = outputs["distogram_logits"].detach()
-    distogram_bins = torch.linspace(2, 22, 65, device=device)
-    distogram_bins_8A = distogram_bins <= 8.0  # boolean mask for bins <= 8 Å
-    distogram_bins_8A = distogram_bins_8A[1:]  # exclude the first bin (2 Å)
+    distogram_probs = torch.softmax(distogram_logits, dim=-1)
 
-    # Probability of contact between tokens i and j (sum over bins <= 8 Å)
-    # pij shape: [bs, n_samples, n_tokens, n_tokens]
-    pij = torch.sum(distogram_logits[..., distogram_bins_8A], dim=-1)
-
-    # Global pde: weighted by contact probability pij
-    # weighted_pde shape: [bs, n_samples]
-    weighted_pde = torch.sum(pij * pde, dim=[-2, -1])
-    sum_pij = torch.sum(pij, dim=[-2, -1]) + eps  # avoid division by zero
-    # global_pde shape: [bs, n_samples]
-    global_pde = weighted_pde / sum_pij
+    global_pde = compute_global_predicted_distance_error(
+        pde=pde,
+        distogram_probs=distogram_probs,
+    )
 
     # Find the top-1 sample per batch based on global pde
     # top1_global_pde shape: [bs]
