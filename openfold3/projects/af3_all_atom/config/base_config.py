@@ -447,8 +447,8 @@ project_config = mlc.ConfigDict(
                     },
                     "distogram": {
                         "no_bins": 64,
-                        "bin_min": 2.3125,
-                        "bin_max": 21.6875,
+                        "bin_min": 2,
+                        "bin_max": 22,
                         "eps": eps,
                     },
                 },
@@ -462,6 +462,10 @@ project_config = mlc.ConfigDict(
                 "pae": {
                     "max_bin": 31,
                     "no_bins": 64,
+                },
+                "distogram": {
+                    "min_bin": 2,
+                    "max_bin": 22,
                 },
                 "ptm": {
                     "max_bin": 31,
