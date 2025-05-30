@@ -447,8 +447,8 @@ project_config = mlc.ConfigDict(
                     },
                     "distogram": {
                         "no_bins": 64,
-                        "bin_min": 2,
-                        "bin_max": 22,
+                        "bin_min": 2.3125,
+                        "bin_max": 21.6875,
                         "eps": eps,
                     },
                 },
