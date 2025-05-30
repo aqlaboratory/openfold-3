@@ -105,6 +105,32 @@ def compute_predicted_distance_error(
     }
 
 
+def compute_global_predicted_distance_error(
+    pde: torch.Tensor,
+    distogram_probs: torch.Tensor,
+    eps: float = 1e-8,
+) -> torch.Tensor:
+    """Computes the gPDE metric as defined in AF3 SI 5.7 (16)"""
+    device = pde.device
+    n_bins = distogram_probs.shape[-1]
+    # Bins range from 2 to 22 Å
+    distogram_bin_ends = torch.linspace(2, 22, n_bins + 1, device=device)[1:]
+    distogram_bins_8A = distogram_bin_ends <= 8.0  # boolean mask for bins <= 8 Å
+
+    # Probability of contact between tokens i and j (sum over bins <= 8 Å)
+    # pij shape: [bs, n_samples, n_tokens, n_tokens]
+    pij = torch.sum(distogram_probs[..., distogram_bins_8A], dim=-1)
+
+    # Global pde: weighted by contact probability pij
+    # weighted_pde shape: [bs, n_samples]
+    weighted_pde = torch.sum(pij * pde, dim=[-2, -1])
+    sum_pij = torch.sum(pij, dim=[-2, -1]) + eps  # avoid division by zero
+    # global_pde shape: [bs, n_samples]
+    global_pde = weighted_pde / sum_pij
+
+    return global_pde
+
+
 def compute_ptm(
     logits: torch.Tensor,
     asym_id: Optional[torch.Tensor] = None,

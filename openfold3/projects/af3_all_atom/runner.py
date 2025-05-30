@@ -9,6 +9,7 @@ from torchmetrics import MeanMetric, MetricCollection
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.metrics.confidence import (
+    compute_global_predicted_distance_error,
     compute_plddt,
     compute_predicted_aligned_error,
     compute_predicted_distance_error,
@@ -532,6 +533,12 @@ class AlphaFold3AllAtom(ModelRunner):
                 **self.config.confidence.pde,
             )
         )
+        confidence_scores["global_predicted_distance_error"] = (
+            compute_global_predicted_distance_error(
+                pde=confidence_scores["predicted_distance_error"],
+                distogram_probs=torch.softmax(outputs["distogram_logits"], dim=-1),
+            )
+        )
 
         if self.config.architecture.heads.pae.enabled:
             confidence_scores.update(
@@ -575,7 +582,7 @@ class AlphaFold3AllAtom(ModelRunner):
         atom_array = batch.pop("atom_array")
 
         seed = batch.pop("seed")
-        self.reseed(seed[0])  # TODO: assuming we have bs = 1 for now, later we'd
+        self.reseed(seed[0])  # TODO: assuming we have bs = 1 for now
 
         # Probably need to change the logic
         logger.debug(
@@ -596,5 +603,7 @@ class AlphaFold3AllAtom(ModelRunner):
             return (batch, outputs)
 
         except Exception:
-            logger.exception(f"Inference step failed with pdb id {', '.join(query_id)}")
+            logger.exception(
+                f"Inference step failed with query id {', '.join(query_id)}"
+            )
             raise
