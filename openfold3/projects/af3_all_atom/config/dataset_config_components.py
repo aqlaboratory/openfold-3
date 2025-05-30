@@ -41,8 +41,8 @@ class MSASettings(BaseModel):
     min_chains_paired_partial: int = 2
     pairing_mask_keys: list[str] = ["shared_by_two", "less_than_600"]
     moltypes: Annotated[list[MoleculeType], BeforeValidator(_convert_molecule_type)] = [
-        "PROTEIN",
-        "RNA",
+        MoleculeType.PROTEIN,
+        MoleculeType.RNA,
     ]
     max_seq_counts: MSAMaxSeqCounts = MSAMaxSeqCounts()
     msas_to_pair: list[str] = ["uniprot_hits", "uniprot"]

@@ -14,6 +14,7 @@ import pandas as pd
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
+from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
 
@@ -538,7 +539,7 @@ def find_monomer_homomer(msa_array_collection: MsaArrayCollection) -> bool:
     chain_id_to_rep_id = {
         chain_id: rep_id
         for chain_id, rep_id in msa_array_collection.chain_id_to_rep_id.items()
-        if msa_array_collection.chain_id_to_mol_type[chain_id] == "PROTEIN"
+        if msa_array_collection.chain_id_to_mol_type[chain_id] == MoleculeType.PROTEIN
     }
     chain_ids, representative_chain_ids = (
         list(chain_id_to_rep_id.keys()),
@@ -603,7 +604,7 @@ def extract_alignments_to_pair(
     protein_rep_ids = set(
         rep_id
         for chain_id, rep_id in msa_array_collection.chain_id_to_rep_id.items()
-        if msa_array_collection.chain_id_to_mol_type[chain_id] == "PROTEIN"
+        if msa_array_collection.chain_id_to_mol_type[chain_id] == MoleculeType.PROTEIN
     )
     rep_ids = msa_array_collection.rep_id_to_main_msa.keys()
 
