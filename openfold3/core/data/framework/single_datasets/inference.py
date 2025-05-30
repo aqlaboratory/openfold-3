@@ -43,6 +43,7 @@ from openfold3.core.data.primitives.structure.query import (
     StructureWithReferenceMolecules,
     structure_with_ref_mols_from_query,
 )
+from openfold3.core.data.primitives.structure.template import TemplateSliceCollection
 from openfold3.core.data.primitives.structure.tokenization import (
     add_token_positions,
     get_token_count,
@@ -55,27 +56,6 @@ from openfold3.projects.af3_all_atom.config.inference_query_format import (
 logger = logging.getLogger(__name__)
 
 
-# TODO: Replace these with actual appropriate implementations
-def atom_array_from_query(*args, **kwargs) -> AtomArray: ...
-
-
-def preprocess_atom_array(*args, **kwargs) -> AtomArray: ...
-
-
-def get_reference_conformer_data_inference_af3(*args, **kwargs) -> list: ...
-
-
-def process_template_structures_inference_af3(*args, **kwargs): ...
-
-
-def do_seeding(seed: int): ...
-
-
-# NOTE: This is not subclassing SingleDataset for now and has no support for dataset
-# registries
-# TODO: Maybe register dataset?
-
-
 @register_dataset
 class InferenceDataset(Dataset):
     """Dataset class for running inference on a set of queries."""
@@ -86,20 +66,15 @@ class InferenceDataset(Dataset):
         super().__init__()
 
         self.query_set = dataset_config.query_set
+        self.query_cache = self.query_set.queries
 
-        # TODO: Any seeding configuration like in the old InferenceDataset could go here
-        ...
         self.seeds: list = dataset_config.seeds
         self.world_size = world_size
-
-        # TODO: Any other settings, e.g. from dataset_config, could go here
-        ...
-
-        self.query_cache = self.query_set.queries
 
         # Expose for notation convenience (not actually used for now)
         self._msa_directory_path = self.query_set.msa_directory_path
         self.msa_settings = dataset_config.msa
+        self.template_settings = dataset_config.template
 
         self.msa_sample_processor_inference = MsaSampleProcessorInference(
             config=self.msa_settings
@@ -194,10 +169,7 @@ class InferenceDataset(Dataset):
         )
 
         # Wrap up features
-        structure_features = {
-            "target_structure_features": target_structure_features,
-            "reference_conformer_features": reference_conformer_features,
-        }
+        structure_features = target_structure_features | reference_conformer_features
 
         return structure_features
 
@@ -228,36 +200,17 @@ class InferenceDataset(Dataset):
         self, atom_array: AtomArray, n_tokens: int, *args, **kwargs
     ) -> dict:
         """Creates the template features."""
-        # NOTE: Only here for avoiding invalid syntax highlighting, but this will likely
-        # not be an argument in the future
-        # TODO: add the updated template pipeline here
-        pdb_id = None
-
         # TODO: Implement a custom inference-adjusted function that returns
         # template_slice_collection
-        template_slice_collection = process_template_structures_inference_af3(
-            atom_array=atom_array,
-            n_templates=self.template.n_templates,
-            take_top_k=self.template.take_top_k,
-            template_cache_directory=self.template_cache_directory,
-            assembly_data=self.fetch_fields_for_chains(
-                pdb_id=pdb_id,
-                fields=["alignment_representative_id", "template_ids"],
-                defaults=[None, []],
-            ),
-            template_structures_directory=self.template_structures_directory,
-            template_structure_array_directory=self.template_structure_array_directory,
-            template_file_format=self.template_file_format,
-            ccd=self.ccd,
-        )
+        template_slice_collection = TemplateSliceCollection(template_slices=dict())
 
         template_features = featurize_template_structures_af3(
             template_slice_collection=template_slice_collection,
-            n_templates=self.template.n_templates,
+            n_templates=self.template_settings.n_templates,
             n_tokens=n_tokens,
-            min_bin=self.template.distogram.min_bin,
-            max_bin=self.template.distogram.max_bin,
-            n_bins=self.template.distogram.n_bins,
+            min_bin=self.template_settings.distogram.min_bin,
+            max_bin=self.template_settings.distogram.max_bin,
+            n_bins=self.template_settings.distogram.n_bins,
         )
 
         return template_features
@@ -271,10 +224,10 @@ class InferenceDataset(Dataset):
         features = {}
 
         # Create initial AtomArray and ReferenceMolecules from query entry
-        structure_with_ref_mols = self.get_structure_with_ref_mols(
+        structure_objs = self.get_structure_with_ref_mols(
             query=query,
         )
-        preprocessed_atom_array, processed_reference_molecules = structure_with_ref_mols
+        preprocessed_atom_array, processed_reference_molecules = structure_objs
 
         # TODO: At some point, think about a cleaner way to pass this through the model
         # runner than as a pseudo-feature
@@ -311,10 +264,6 @@ class InferenceDataset(Dataset):
         query_id = datapoint["query_id"]
         query = self.query_cache[query_id]
         seed = datapoint["seed"]
-
-        # TODO: Any particular seeding code could go here, e.g. seed_everything(seed).
-        # See old inference dataset draft.
-        do_seeding(seed)  # Added this to avoid Ruff complaint
 
         # TODO: Could wrap this in try/except
         features = self.create_all_features(query)

@@ -3,9 +3,9 @@ import itertools
 import logging
 from pathlib import Path
 
+import pytorch_lightning as pl
 import torch
 from torchmetrics import MeanMetric, MetricCollection
-import pytorch_lightning as pl
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.metrics.confidence import (
@@ -363,6 +363,7 @@ class AlphaFold3AllAtom(ModelRunner):
             return t.to(device=device, non_blocking=True)
 
         batch = tensor_tree_map(to_device, batch)
+
         if pdb_id:
             batch["pdb_id"] = pdb_id
         if query_id:
@@ -584,17 +585,9 @@ class AlphaFold3AllAtom(ModelRunner):
         try:
             batch, outputs = self(batch)
 
-            _, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
-
             batch["atom_array"] = atom_array
             batch["query_id"] = query_id
             batch["seed"] = seed
-
-            # Compute metrics:
-            metrics = self._get_metrics(batch, outputs, train=False)
-
-            outputs["metrics"] = metrics
-            outputs["losses"] = loss_breakdown
 
             # Generate confidence scores
             confidence_scores = self._compute_confidence_scores(batch, outputs)

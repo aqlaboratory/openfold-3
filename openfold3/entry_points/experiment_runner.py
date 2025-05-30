@@ -375,8 +375,6 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.data_module_args = experiment_config.data_module_args
         self.seeds = experiment_config.experiment_settings.seeds
 
-        # do we include args for msa handling here? Should be processed separately
-
     def setup(self) -> None:
         """Set up the experiment environment."""
         super().setup()

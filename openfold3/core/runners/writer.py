@@ -93,11 +93,7 @@ class OF3OutputWriter(BasePredictionWriter):
 
         for i in range(len(batch["atom_array"])):
             seed = batch["seed"][i]
-            pdb_id = batch["pdb_id"][i]
-
-            # write losses
-            losses = outputs.pop("losses")
-            losses = {key: value.item() for key, value in losses.items()}
+            pdb_id = batch["query_id"][i]
 
             atom_array = batch["atom_array"][i]
             predicted_coords = (
@@ -108,12 +104,7 @@ class OF3OutputWriter(BasePredictionWriter):
                 key: value[i].cpu().float() if len(value.shape) > 1 else value.item()
                 for key, value in confidence_scores.items()
             }
-            metrics_sample = {
-                key: value[i].cpu().float().tolist()
-                if len(value.shape) > 1
-                else value[i].item()
-                for key, value in outputs["metrics"].items()
-            }
+
             # TODO: UPDATE THIS WHEN WE HAVE THE CONFIDENCE SCORES: pTM, Sample Ranking
             # NOW ONLY KEEP PLDDT SCORES
             confidence_scores_sample = {"plddt": confidence_scores_bs["plddt"]}
@@ -124,17 +115,6 @@ class OF3OutputWriter(BasePredictionWriter):
                 predicted_coords,
                 pdb_id,
                 self.output_dir,
-            )
-            write_structure_prediction(
-                seed,
-                atom_array,
-                batch["ground_truth"]["atom_positions"][i].cpu().float().numpy(),
-                pdb_id,
-                self.output_dir,
-                atom_unresolved_mask=batch["ground_truth"]["atom_resolved_mask"][i]
-                .cpu()
-                .float()
-                .numpy(),
             )
 
             for sample in range(predicted_coords.shape[0]):
@@ -153,20 +133,3 @@ class OF3OutputWriter(BasePredictionWriter):
                 write_confidence_scores(
                     confidence_scores_sample, output_confidence_path, sample
                 )
-
-            output_metrics = (
-                Path(self.output_dir)
-                / pdb_id
-                / f"model_{seed}"
-                / f"{pdb_id}_predicted_seed_{seed}_metrics.json"
-            )
-            write_json(metrics_sample, output_metrics)
-
-            output_losses = (
-                Path(self.output_dir)
-                / pdb_id
-                / f"model_{seed}"
-                / f"{pdb_id}_predicted_seed_{seed}_losses.json"
-            )
-
-            write_json(losses, output_losses)
