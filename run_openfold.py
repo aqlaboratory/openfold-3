@@ -144,26 +144,10 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
     if runner_args.get("config_update"):
         project_config.update(runner_args.config_update)
 
-    ckpt_path = runner_args.get("restart_checkpoint_path")
-
     model_config = project_config.model
     lightning_module = project_entry.model_runner(
         model_config, _compile=runner_args.compile
     )
-
-    if ckpt_path:
-        if ckpt_path == "last":
-            restore_path = (
-                Path(runner_args.output_dir)
-                / runner_args.wandb.project
-                / runner_args.wandb.id
-                / "checkpoints"
-                / "last.ckpt"
-            )
-            logging.info(f"Restoring last lr step from {restore_path}")
-        else:
-            restore_path = Path(ckpt_path)
-        restore_lr_step(restore_path, lightning_module)
 
     dataset_config_builder = project_entry.dataset_config_builder
     data_module_config = registry.make_dataset_module_config(
@@ -229,6 +213,36 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
     )
 
     trainer = pl.Trainer(**trainer_args)
+
+    ckpt_path = runner_args.get("restart_checkpoint_path")
+    weights_only_path = runner_args.get("weights_only_checkpoint_path")
+    if ckpt_path:
+        if ckpt_path == "last":
+            restore_path = (
+                Path(runner_args.output_dir)
+                / runner_args.wandb.project
+                / runner_args.wandb.id
+                / "checkpoints"
+                / "last.ckpt"
+            )
+            logging.info(f"Restoring last lr step from {restore_path}")
+        else:
+            restore_path = Path(ckpt_path)
+
+        if restore_path.exists():
+            restore_lr_step(restore_path, lightning_module)
+        elif weights_only_path:
+            ckpt_path = None
+            logging.warning(f"Restoring weights from {weights_only_path}")
+            ckpt_dict = torch.load(weights_only_path)
+            lightning_module.model.load_state_dict(ckpt_dict["state_dict"])
+            lightning_module.ema.load_state_dict(ckpt_dict["ema"])
+
+            logging.warning(f"Restoring last lr step from {restore_path}")
+            restore_lr_step(restore_path, lightning_module)
+
+            logging.warning(f"Restoring datamodule state from {restore_path}")
+            lightning_data_module.load_state_dict(ckpt_dict["DataModule"])
 
     # Determine if running on rank zero process
     if wandb_logger is not None and trainer.global_rank == 0:
