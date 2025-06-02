@@ -10,6 +10,7 @@ import click
 import pytorch_lightning as pl
 import torch
 import wandb
+from deepspeed.utils import zero_to_fp32
 from ml_collections import ConfigDict
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
@@ -68,6 +69,31 @@ def _configure_wandb_logger(
     return wandb_logger
 
 
+def get_model_state_dict_from_ds_checkpoint(checkpoint_dir):
+    latest_path = os.path.join(checkpoint_dir, "latest")
+    if os.path.isfile(latest_path):
+        with open(latest_path) as fd:
+            tag = fd.read().strip()
+    else:
+        raise ValueError(f"Unable to find 'latest' file at {latest_path}")
+
+    ds_checkpoint_dir = os.path.join(checkpoint_dir, tag)
+    _DS_CHECKPOINT_VERSION = 2  # based on manual parsing of checkpoint files
+    state_file = zero_to_fp32.get_model_state_file(
+        ds_checkpoint_dir, _DS_CHECKPOINT_VERSION
+    )
+    return torch.load(state_file)
+
+
+def restore_lr_step(ckpt_path: Path, lightning_module: pl.LightningModule):
+    if ckpt_path.is_dir():
+        sd = get_model_state_dict_from_ds_checkpoint(str(ckpt_path))
+    else:
+        sd = torch.load(str(ckpt_path))
+    last_global_step = int(sd["global_step"])
+    lightning_module.resume_last_lr_step(last_global_step)
+
+
 @click.command()
 @click.option(
     "--runner_yaml",
@@ -124,6 +150,20 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
     lightning_module = project_entry.model_runner(
         model_config, _compile=runner_args.compile
     )
+
+    if ckpt_path:
+        if ckpt_path == "last":
+            restore_path = (
+                Path(runner_args.output_dir)
+                / runner_args.wandb.project
+                / runner_args.wandb.id
+                / "checkpoints"
+                / "last.ckpt"
+            )
+            logging.info(f"Restoring last lr step from {restore_path}")
+        else:
+            restore_path = Path(ckpt_path)
+        restore_lr_step(restore_path, lightning_module)
 
     dataset_config_builder = project_entry.dataset_config_builder
     data_module_config = registry.make_dataset_module_config(
