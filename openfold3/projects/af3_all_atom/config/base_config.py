@@ -125,6 +125,13 @@ project_config = mlc.ConfigDict(
                     "beta2": 0.95,
                     "eps": 1e-8,
                 },
+                "lr_scheduler": {
+                    "base_lr": 0.0,
+                    "warmup_no_steps": 1000,
+                    "start_decay_after_n_steps": 50000,
+                    "decay_every_n_steps": 50000,
+                    "decay_factor": 0.95,
+                },
                 "ema": {"decay": 0.999},
                 "gradient_clipping": 10.0,
                 "model_selection_weight_scheme": "initial_training",
