@@ -25,7 +25,6 @@ from openfold3.projects import registry
 from openfold3.projects.af3_all_atom.config.runner_file_checks import (
     _check_data_module_config,
 )
-from openfold3.projects.af3_all_atom.runner import AlphaFold3AllAtom
 
 torch_versions = torch.__version__.split(".")
 torch_major_version = int(torch_versions[0])
@@ -235,16 +234,22 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
             restore_lr_step(ckpt_path=restore_path, lightning_module=lightning_module)
         elif weights_only_path:
             ckpt_path = None
+
+            ckpt_dict = torch.load(weights_only_path)
+
             logging.warning(f"Restoring weights from {weights_only_path}")
-            lightning_module = AlphaFold3AllAtom.load_from_checkpoint(weights_only_path)
+            lightning_module.load_state_dict(ckpt_dict["state_dict"])
+            lightning_module.ema.load_state_dict(ckpt_dict["ema"])
 
             restore_lr_step(
                 ckpt_path=Path(weights_only_path), lightning_module=lightning_module
             )
 
-            ckpt_dict = torch.load(weights_only_path)
             logging.warning(f"Restoring datamodule state from {weights_only_path}")
             lightning_data_module.load_state_dict(ckpt_dict["DataModule"])
+
+            logging.warning("Restoring fit loop counters")
+            trainer.fit_loop.load_state_dict(ckpt_dict["loops"]["fit_loop"])
 
     # Determine if running on rank zero process
     if wandb_logger is not None and trainer.global_rank == 0:
