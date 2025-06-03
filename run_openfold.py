@@ -25,6 +25,7 @@ from openfold3.projects import registry
 from openfold3.projects.af3_all_atom.config.runner_file_checks import (
     _check_data_module_config,
 )
+from openfold3.projects.af3_all_atom.runner import AlphaFold3AllAtom
 
 torch_versions = torch.__version__.split(".")
 torch_major_version = int(torch_versions[0])
@@ -91,6 +92,8 @@ def restore_lr_step(ckpt_path: Path, lightning_module: pl.LightningModule):
     else:
         sd = torch.load(str(ckpt_path))
     last_global_step = int(sd["global_step"])
+
+    logging.warning(f"Restoring last lr step {last_global_step} from {ckpt_path}")
     lightning_module.resume_last_lr_step(last_global_step)
 
 
@@ -225,23 +228,22 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
                 / "checkpoints"
                 / "last.ckpt"
             )
-            logging.info(f"Restoring last lr step from {restore_path}")
         else:
             restore_path = Path(ckpt_path)
 
         if restore_path.exists():
-            restore_lr_step(restore_path, lightning_module)
+            restore_lr_step(ckpt_path=restore_path, lightning_module=lightning_module)
         elif weights_only_path:
             ckpt_path = None
             logging.warning(f"Restoring weights from {weights_only_path}")
+            lightning_module = AlphaFold3AllAtom.load_from_checkpoint(weights_only_path)
+
+            restore_lr_step(
+                ckpt_path=Path(weights_only_path), lightning_module=lightning_module
+            )
+
             ckpt_dict = torch.load(weights_only_path)
-            lightning_module.model.load_state_dict(ckpt_dict["state_dict"])
-            lightning_module.ema.load_state_dict(ckpt_dict["ema"])
-
-            logging.warning(f"Restoring last lr step from {restore_path}")
-            restore_lr_step(restore_path, lightning_module)
-
-            logging.warning(f"Restoring datamodule state from {restore_path}")
+            logging.warning(f"Restoring datamodule state from {weights_only_path}")
             lightning_data_module.load_state_dict(ckpt_dict["DataModule"])
 
     # Determine if running on rank zero process
