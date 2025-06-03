@@ -1,0 +1,13 @@
+{
+	"queries":{
+		"single_chain_query":{
+			"chains": [
+				{
+					"molecule_type": "protein",
+					"chain_ids": "A",
+					"sequence": "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG"
+				}
+			]
+		}
+	}
+}

@@ -1,0 +1,13 @@
+{
+	"queries":{
+		"leucine_zipper": {
+			"chains": [
+				{
+					"molecule_type": "protein",
+					"chain_ids": ["A", "B"],
+					"sequence": "XRMKQLEDKVEELLSKNYHLENEVARLKKLVGER"
+				}
+			]
+		}
+	}
+}

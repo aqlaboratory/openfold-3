@@ -1,0 +1,23 @@
+{
+	"queries":{
+		"mcl1": { 
+			"chains": [
+				{
+					"molecule_type": "protein",
+					"chain_ids": ["A", "B", "C", "D"],
+					"sequence": "GDDELYRQSLEIISRYLREQATGAKDTKPMGRSGATSRKALETLRRVGDGVQRNHETAFQGMLRKLDIKNEDDVKSLSRVMIHVFSDGVTNWGRIVTLISFGAFVAKHLKTINQESCIEPLAESITDVLVRTKRDWLVKQRGWDGFVEFFHVEDLEGG"
+				},
+				{
+					"molecule_type": "ligand",
+					"chain_ids": ["F", "G", "H"],
+					"ccd_codes": "ATP"
+				},
+				{
+					"molecule_type": "ligand",
+					"chain_ids": "Z",
+					"smiles": "CC(=O)OC1C[NH+]2CCC1CC2"
+				}
+			]
+		}
+	}
+}
