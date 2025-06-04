@@ -64,6 +64,11 @@ class PlTrainerArgs(BaseModel):
     mpi_plugin: bool = False
 
 
+class OutputWritingSettings(BaseModel):
+    structure_format: Literal["pdb", "cif"] = "cif"
+    full_confidence_output_format: Literal["json", "npz"] = "json"
+
+
 class ExperimentSettings(BaseModel):
     """General settings for all experiments"""
 
@@ -139,3 +144,4 @@ class InferenceExperimentConfig(ExperimentConfig):
     model_update: ModelUpdate = ModelUpdate(presets=["predict"])
     data_module_args: DataModuleArgs = DataModuleArgs()
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
+    output_writer_settings: OutputWritingSettings = OutputWritingSettings()

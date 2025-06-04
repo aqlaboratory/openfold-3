@@ -374,6 +374,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.inference_ckpt_path = experiment_config.inference_ckpt_path
         self.data_module_args = experiment_config.data_module_args
         self.seeds = experiment_config.experiment_settings.seeds
+        self.output_writer_settings = experiment_config.output_writer_settings
 
     def setup(self) -> None:
         """Set up the experiment environment."""
@@ -382,7 +383,9 @@ class InferenceExperimentRunner(ExperimentRunner):
     @cached_property
     def callbacks(self):
         """Set up prediction writer callback."""
-        _callbacks = [OF3OutputWriter(self.output_dir)]
+        _callbacks = [
+            OF3OutputWriter(self.output_dir, **self.output_writer_settings.model_dump())
+        ]
         return _callbacks
 
     @cached_property

@@ -1,4 +1,7 @@
 import numpy as np
+import json
+from pathlib import Path
+
 import pytest  # noqa: F401  - used for pytest tmp fixture
 from biotite import structure
 from biotite.structure.io import pdb, pdbx
@@ -32,7 +35,7 @@ class TestPredictionWriter:
         output_writer = OF3OutputWriter(
             output_dir=tmp_path,
             structure_format=structure_format,
-            full_confidence_out_format="json",
+            full_confidence_output_format="json",
         )
         tmp_file = tmp_path / f"TEST.{structure_format}"
         output_writer.write_structure_prediction(
@@ -49,3 +52,59 @@ class TestPredictionWriter:
 
         parsed_coords = parsed_structure.coord[0]
         np.testing.assert_array_equal(parsed_coords, new_coords, strict=False)
+
+    @pytest.mark.parametrize(
+        "output_fmt",
+        ["json", "npz"],
+        ids=lambda x: x,
+    )
+    def test_written_confidence_scores(self, tmp_path, output_fmt):
+        n_tokens = 3
+        n_atoms = 5
+        confidence_scores = {
+            "plddt": np.random.uniform(size=n_atoms),
+            "distance_confidence_probs": np.random.uniform(
+                size=(n_tokens, n_tokens, 64)
+            ),
+            "predicted_distance_error": np.random.uniform(size=(n_tokens, n_tokens)),
+            "max_predicted_distance_error": np.float32(15.2),
+            "global_predicted_distance_error": np.float32(16.2),
+        }
+
+        writer = OF3OutputWriter(
+            output_dir=tmp_path,
+            structure_format="pdb",
+            full_confidence_output_format=output_fmt,
+        )
+        output_prefix = tmp_path / f"test_"
+        writer.write_confidence_scores(confidence_scores, output_prefix)
+
+        # Check aggregated confidence scores
+        expected_agg_scores = {
+            "avg_plddt": np.mean(confidence_scores["plddt"]),
+            "gpde": confidence_scores["global_predicted_distance_error"],
+        }
+        out_file_agg = Path(f"{output_prefix}_confidences_aggregated.json")
+        actual_agg_scores = json.loads(out_file_agg.read_text())
+        assert expected_agg_scores == actual_agg_scores
+
+        # Check full confidence scores:
+        expected_full_scores = {
+            "plddt": confidence_scores["plddt"],
+            "pde": confidence_scores["predicted_distance_error"],
+        }
+        out_file_full = Path(f"{output_prefix}_confidences.{output_fmt}")
+        match output_fmt:
+            case "json":
+                actual_full_scores = json.loads(out_file_full.read_text())
+                actual_full_scores = {
+                    k: np.array(v) for k, v in actual_full_scores.items()
+                }
+            case "npz":
+                actual_full_scores = np.load(out_file_full)
+
+        for k in expected_full_scores:
+            assert k in actual_full_scores, f"Key {k} not found in actual scores"
+            np.testing.assert_array_equal(
+                expected_full_scores[k], actual_full_scores[k]
+            )

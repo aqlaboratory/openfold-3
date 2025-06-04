@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal, NamedTuple
 
 from biotite.structure import AtomArray, get_chain_count
-from biotite.structure.io import pdb, pdbx
+from biotite.structure.io import pdb, pdbx, save_structure
 
 from openfold3.core.data.io.structure.atom_array import (
     read_atomarray_from_npz,
@@ -287,9 +287,7 @@ def write_structure(
             file_obj.write(output_path)
 
         case ".pdb":
-            pdb_file = pdb.PDBFile()
-            pdb.set_structure(pdb_file, atom_array)
-            pdb_file.write(output_path)
+            save_structure(output_path, atom_array)
 
         case _:
             raise NotImplementedError(
