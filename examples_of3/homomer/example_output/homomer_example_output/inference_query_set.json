@@ -1,0 +1,31 @@
+{
+    "seeds": [
+        42
+    ],
+    "queries": {
+        "leucine_zipper": {
+            "chains": [
+                {
+                    "molecule_type": "PROTEIN",
+                    "chain_ids": [
+                        "A",
+                        "B"
+                    ],
+                    "sequence": "XRMKQLEDKVEELLSKNYHLENEVARLKKLVGER",
+                    "smiles": null,
+                    "ccd_codes": null,
+                    "paired_msa_file_paths": null,
+                    "main_msa_file_paths": [
+                        "inference_output/main/leucine_zipper-A.npz"
+                    ],
+                    "sdf_file_path": null
+                }
+            ],
+            "use_msas": true,
+            "use_paired_msas": true,
+            "use_main_msas": true,
+            "covalent_bonds": null
+        }
+    },
+    "ccd_file_path": null
+}
