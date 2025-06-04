@@ -90,9 +90,6 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
     "--inference_ckpt_path",
     type=click.Path(exists=True, file_okay=True, dir_okay=True, path_type=Path),
     required=False,
-    default=Path(
-        "/pscratch/sd/j/jnwei22/checkpoints_32nodes/78zhsyf7_33_5_export.ckpt/converted.ckpt.pt"
-    ),
     help="Path for model checkpoint to be used for inference",
 )
 @click.option(
@@ -137,10 +134,10 @@ def predict(
         query_set = preprocess_colabfold_msas(
             inference_query_set=query_set,
             output_directory=expt_config.experiment_settings.output_dir,
-            msa_file_format="npz",
-            user_agent="openfold",
-            save_mappings=False,
+            server_settings=expt_config.msa_server_settings,
         )
+    else:
+        logger.warning("MSA server is not used. Generating predictions without msas.")
 
     # Run the forward pass
     expt_runner = InferenceExperimentRunner(expt_config, query_set)

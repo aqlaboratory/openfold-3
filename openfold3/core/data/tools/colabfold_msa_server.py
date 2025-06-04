@@ -9,10 +9,12 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 import numpy as np
 import requests
+from pydantic import BaseModel
+from pydantic_core import Url
 from tqdm import tqdm
 
 from openfold3.core.data.io.sequence.msa import parse_a3m
@@ -622,6 +624,7 @@ class ColabFoldQueryRunner:
         output_directory: Path,
         msa_file_format: str | list[str],
         user_agent: str,
+        host_url: str = "https://api.colabfold.com",
     ):
         self.colabfold_mapper = colabfold_mapper
         self.output_directory = output_directory
@@ -630,6 +633,7 @@ class ColabFoldQueryRunner:
         )
         self.user_agent = user_agent
         self.output_directory.mkdir(parents=True, exist_ok=True)
+        self.host_url = host_url
         for subdir in ["raw", "main", "paired"]:
             (self.output_directory / subdir).mkdir(parents=True, exist_ok=True)
             if subdir == "raw":
@@ -655,6 +659,7 @@ class ColabFoldQueryRunner:
             use_templates=False,
             use_pairing=False,
             user_agent=self.user_agent,
+            host_url=self.host_url,
         )
 
         main_alignments_path = self.output_directory / "main"
@@ -662,11 +667,11 @@ class ColabFoldQueryRunner:
 
         for rep_id, aln in zip(self.colabfold_mapper.rep_ids, a3m_lines_main):
             rep_dir = main_alignments_path / str(rep_id)
-            rep_dir.mkdir(parents=True, exist_ok=True)
 
             # TODO: add code for which format to save the MSA in
             # If save as a3m...
             if "a3m" in self.msa_file_format:
+                rep_dir.mkdir(parents=True, exist_ok=True)
                 a3m_file = rep_dir / "colabfold_main.a3m"
                 with open(a3m_file, "w") as f:
                     f.write(aln)
@@ -707,16 +712,17 @@ class ColabFoldQueryRunner:
                 use_templates=False,
                 use_pairing=True,
                 user_agent=self.user_agent,
+                host_url=self.host_url,
             )
 
             # TODO: process the returned MSAs - save per representative ID
             complex_directory = paired_alignments_directory / str(complex_id)
             for rep_id, aln in zip(complex_id, a3m_lines_paired):
                 rep_dir = complex_directory / str(rep_id)
-                rep_dir.mkdir(parents=True, exist_ok=True)
 
                 # If save as a3m...
                 if "a3m" in self.msa_file_format:
+                    rep_dir.mkdir(parents=True, exist_ok=True)
                     a3m_file = rep_dir / "colabfold_paired.a3m"
                     with open(a3m_file, "w") as f:
                         f.write(aln)
@@ -810,13 +816,22 @@ def add_msa_paths_to_iqs(
     return inference_query_set
 
 
+class MsaServerSettings(BaseModel):
+    """Settings to run ColabFold MSA server.
+
+    See preprocess_colabfold_msas for details on the parameters"""
+
+    msa_file_format: Literal["npz", "a3m"] = "npz"
+    user_agent: str = "openfold"
+    server_url: Url = Url("https://api.colabfold.com")
+    save_mappings: bool = False
+
+
 # TODO use pydantic object as input
 def preprocess_colabfold_msas(
     inference_query_set: InferenceQuerySet,
     output_directory: Path,
-    msa_file_format: str,
-    user_agent: str,
-    save_mappings: bool = False,
+    server_settings: MsaServerSettings,
 ) -> InferenceQuerySet:
     """Gathers sequences, runs the ColabFold MSA server queries, updates MSA paths.
 
@@ -825,14 +840,15 @@ def preprocess_colabfold_msas(
             The inference query set containing the queries and chains.
         output_directory (Path):
             The output directory to save the results to.
-        msa_file_format (str):
-            The format of the MSA files to save. Can be "a3m" (unprocessed MSAs for
-            inspectable but slower parsing) or "npz" (processed MSAs for faster
-            parsing).
-        user_agent (str):
-            The user agent to use for the API calls.
-        save_mappings (bool, optional):
-            Whether to save the mappings to JSON files. Defaults to False.
+        server settings: pydantic model with server settings, contains:
+            msa_file_format (str):
+                The format of the MSA files to save.
+                Can be "a3m" (unprocessed MSAs for inspectable but slower parsing)
+                or "npz" (processed MSAs for faster parsing).
+            user_agent (str):
+                The user agent to use for the API calls.
+            save_mappings (bool, optional):
+                Whether to save the mappings to JSON files. Defaults to False.
 
     Returns:
         InferenceQuerySet:
@@ -877,15 +893,16 @@ def preprocess_colabfold_msas(
     colabfold_mapper = collect_colabfold_msa_data(inference_query_set)
 
     # Save mappings to file
-    if save_mappings:
+    if server_settings.save_mappings:
         save_colabfold_mappings(colabfold_mapper, output_directory)
 
     # Run batch queries for main and paired MSAs
     colabfold_query_runner = ColabFoldQueryRunner(
         colabfold_mapper=colabfold_mapper,
         output_directory=output_directory,
-        msa_file_format=msa_file_format,
-        user_agent=user_agent,
+        msa_file_format=server_settings.msa_file_format,
+        user_agent=server_settings.user_agent,
+        host_url=server_settings.server_url,
     )
     colabfold_query_runner.query_format_main()
     colabfold_query_runner.query_format_paired()

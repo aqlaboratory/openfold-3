@@ -379,6 +379,7 @@ class InferenceExperimentRunner(ExperimentRunner):
     def setup(self) -> None:
         """Set up the experiment environment."""
         super().setup()
+        self._log_inference_query_set()
 
     @cached_property
     def callbacks(self):
@@ -406,9 +407,11 @@ class InferenceExperimentRunner(ExperimentRunner):
         """Get the checkpoint path for the model."""
         return self.inference_ckpt_path
 
-    def make_msa_config(self):
-        """Create configurations for perform MSA alignments, if selected"""
-        pass
+    def _log_inference_query_set(self):
+        """Record the inference query set used for prediction"""
+        log_path = self.output_dir / "inference_query_set.json"
+        with open(log_path, "w") as fp:
+            fp.write(self.inference_query_set.model_dump_json(indent=4))
 
 
 class WandbHandler:

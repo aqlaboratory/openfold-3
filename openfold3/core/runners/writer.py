@@ -65,10 +65,6 @@ class OF3OutputWriter(BasePredictionWriter):
         self, confidence_scores: dict[str, np.ndarray], output_prefix: Path
     ):
         """Writes confidence scores to disk"""
-        for k, v in confidence_scores.items():
-            print(k, type(v))
-            if isinstance(v, np.ndarray):
-                print(v.shape, v.dtype)
         plddt = confidence_scores["plddt"]
         pde = confidence_scores["predicted_distance_error"]
         gpde = confidence_scores["global_predicted_distance_error"]
