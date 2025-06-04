@@ -717,6 +717,7 @@ class ColabFoldQueryRunner:
 
             # TODO: process the returned MSAs - save per representative ID
             complex_directory = paired_alignments_directory / str(complex_id)
+            complex_directory.mkdir(parents=True, exist_ok=True)
             for rep_id, aln in zip(complex_id, a3m_lines_paired):
                 rep_dir = complex_directory / str(rep_id)
 
