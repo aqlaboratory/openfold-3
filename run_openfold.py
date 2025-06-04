@@ -10,6 +10,7 @@ import click
 import pytorch_lightning as pl
 import torch
 import wandb
+from deepspeed.utils import zero_to_fp32
 from ml_collections import ConfigDict
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
@@ -68,6 +69,33 @@ def _configure_wandb_logger(
     return wandb_logger
 
 
+def get_model_state_dict_from_ds_checkpoint(checkpoint_dir):
+    latest_path = os.path.join(checkpoint_dir, "latest")
+    if os.path.isfile(latest_path):
+        with open(latest_path) as fd:
+            tag = fd.read().strip()
+    else:
+        raise ValueError(f"Unable to find 'latest' file at {latest_path}")
+
+    ds_checkpoint_dir = os.path.join(checkpoint_dir, tag)
+    _DS_CHECKPOINT_VERSION = 2  # based on manual parsing of checkpoint files
+    state_file = zero_to_fp32.get_model_state_file(
+        ds_checkpoint_dir, _DS_CHECKPOINT_VERSION
+    )
+    return torch.load(state_file)
+
+
+def restore_lr_step(ckpt_path: Path, lightning_module: pl.LightningModule):
+    if ckpt_path.is_dir():
+        sd = get_model_state_dict_from_ds_checkpoint(str(ckpt_path))
+    else:
+        sd = torch.load(str(ckpt_path))
+    last_global_step = int(sd["global_step"])
+
+    logging.warning(f"Restoring last lr step {last_global_step} from {ckpt_path}")
+    lightning_module.resume_last_lr_step(last_global_step)
+
+
 @click.command()
 @click.option(
     "--runner_yaml",
@@ -117,8 +145,6 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
     )
     if runner_args.get("config_update"):
         project_config.update(runner_args.config_update)
-
-    ckpt_path = runner_args.get("restart_checkpoint_path")
 
     model_config = project_config.model
     lightning_module = project_entry.model_runner(
@@ -189,6 +215,41 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
     )
 
     trainer = pl.Trainer(**trainer_args)
+
+    ckpt_path = runner_args.get("restart_checkpoint_path")
+    weights_only_path = runner_args.get("weights_only_checkpoint_path")
+    if ckpt_path:
+        if ckpt_path == "last":
+            restore_path = (
+                Path(runner_args.output_dir)
+                / runner_args.wandb.project
+                / runner_args.wandb.id
+                / "checkpoints"
+                / "last.ckpt"
+            )
+        else:
+            restore_path = Path(ckpt_path)
+
+        if restore_path.exists():
+            restore_lr_step(ckpt_path=restore_path, lightning_module=lightning_module)
+        elif weights_only_path:
+            ckpt_path = None
+
+            ckpt_dict = torch.load(weights_only_path)
+
+            logging.warning(f"Restoring weights from {weights_only_path}")
+            lightning_module.load_state_dict(ckpt_dict["state_dict"])
+            lightning_module.ema.load_state_dict(ckpt_dict["ema"])
+
+            restore_lr_step(
+                ckpt_path=Path(weights_only_path), lightning_module=lightning_module
+            )
+
+            logging.warning(f"Restoring datamodule state from {weights_only_path}")
+            lightning_data_module.load_state_dict(ckpt_dict["DataModule"])
+
+            logging.warning("Restoring fit loop counters")
+            trainer.fit_loop.load_state_dict(ckpt_dict["loops"]["fit_loop"])
 
     # Determine if running on rank zero process
     if wandb_logger is not None and trainer.global_rank == 0:
