@@ -563,6 +563,7 @@ class AtomAttentionEncoder(nn.Module):
             atom_mask,
             self.linear_q(ql),
             -2,
+            "mean",
         )
         ai = checkpoint_section(
             fn=aggregate_atom_feat_to_tokens,
