@@ -9,7 +9,6 @@ from pydantic import (
 )
 
 from openfold3.core.config.config_utils import (
-    DirectoryPathOrNone,
     FilePathOrNone,
     _convert_molecule_type,
     _ensure_list,
@@ -66,7 +65,7 @@ class InferenceQuerySet(BaseModel):
     seeds: list[int] = [42]
     queries: dict[str, Query]
     ccd_file_path: FilePathOrNone = None
-    msa_directory_path: DirectoryPathOrNone = None
+    # msa_directory_path: DirectoryPathOrNone = None  # not yet supported
 
     @classmethod
     def from_json(cls, json_path: FilePath) -> "InferenceQuerySet":

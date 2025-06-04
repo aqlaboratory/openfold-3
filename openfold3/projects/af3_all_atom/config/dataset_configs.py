@@ -261,11 +261,9 @@ class InferenceJobConfig(BaseModel):
 
     query_set: InferenceQuerySet
     seeds: list[int] = [42]
-    msa: MSASettings = (
-        MSASettings(
-            aln_order=["colabfold_main"],
-            max_seq_counts={"colabfold_main": 16384, "colabfold_paired": 8192},
-        ),
+    msa: MSASettings = MSASettings(
+        aln_order=["colabfold_main"],
+        max_seq_counts={"colabfold_main": 16384, "colabfold_paired": 8192},
     )
     template: TemplateSettings = TemplateSettings()
 

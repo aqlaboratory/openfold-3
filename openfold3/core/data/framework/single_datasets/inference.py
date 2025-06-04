@@ -71,8 +71,6 @@ class InferenceDataset(Dataset):
         self.seeds: list = dataset_config.seeds
         self.world_size = world_size
 
-        # Expose for notation convenience (not actually used for now)
-        self._msa_directory_path = self.query_set.msa_directory_path
         self.msa_settings = dataset_config.msa
         self.template_settings = dataset_config.template
 

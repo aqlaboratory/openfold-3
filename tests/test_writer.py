@@ -1,7 +1,7 @@
-import numpy as np
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest  # noqa: F401  - used for pytest tmp fixture
 from biotite import structure
 from biotite.structure.io import pdb, pdbx
@@ -76,7 +76,7 @@ class TestPredictionWriter:
             structure_format="pdb",
             full_confidence_output_format=output_fmt,
         )
-        output_prefix = tmp_path / f"test_"
+        output_prefix = tmp_path / "test_"
         writer.write_confidence_scores(confidence_scores, output_prefix)
 
         # Check aggregated confidence scores
