@@ -61,5 +61,15 @@ class AF3ProjectEntry:
     ) -> ConfigDict:
         """Returns a model config with updates applied."""
         model_config = self.get_model_config_with_presets(model_update.presets)
-        model_config.update(model_update.custom)
+        try:
+            model_config.update(model_update.custom)
+        except ValueError as e:
+            # Handle case where the argument is passed as a flattened dict
+            # N.B. if the update is a mixture of flattened key and non-flattened dicts,
+            #   the non-flattened dict may override the whole ConfigDict
+            if "dots in field names" in str(e):
+                model_config.update_from_flattened_dict(model_update.custom)
+            else:
+                raise e
+
         return model_config

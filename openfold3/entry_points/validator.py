@@ -86,6 +86,11 @@ class TrainingExperimentSettings(ExperimentSettings):
     output_dir: Path = Path("./train_output")
 
 
+def generate_seeds(start_seed, num_seeds):
+    random.seed(start_seed)
+    return [random.randint(0, 2**32 - 1) for _ in range(num_seeds)]
+
+
 class InferenceExperimentSettings(ExperimentSettings):
     """General settings specific for training experiments"""
 
@@ -104,8 +109,7 @@ class InferenceExperimentSettings(ExperimentSettings):
                 raise ValueError(
                     "num_seeds must be provided when seeds is a single int"
                 )
-            random.seed(model.seeds)
-            model.seeds = [random.randint(0, 2**32 - 1) for _ in range(model.num_seeds)]
+            generate_seeds(model.seeds, model.num_seeds)
         elif model.seeds is None:
             raise ValueError("seeds must be provided (either int or list[int])")
 
