@@ -68,7 +68,7 @@ class AlphaFold3(nn.Module):
         )
 
         self.layer_norm_z = LayerNorm(self.shared.c_z)
-        self.linear_z = Linear(self.shared.c_z, self.shared.c_z, bias=False)
+        self.linear_z = Linear(self.shared.c_z, self.shared.c_z, bias=False, init="final")
 
         self.template_embedder = TemplateEmbedderAllAtom(
             config=self.config.architecture.template
@@ -80,7 +80,7 @@ class AlphaFold3(nn.Module):
         self.msa_module = MSAModuleStack(**self.config.architecture.msa.msa_module)
 
         self.layer_norm_s = LayerNorm(self.shared.c_s)
-        self.linear_s = Linear(self.shared.c_s, self.shared.c_s, bias=False)
+        self.linear_s = Linear(self.shared.c_s, self.shared.c_s, bias=False, init="final")
 
         self.pairformer_stack = PairFormerStack(**self.config.architecture.pairformer)
 
