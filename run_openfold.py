@@ -123,7 +123,7 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
 )
 @click.option(
     "--output_dir",
-    type=click.Path(exists=True, file_okay=True, dir_okay=True, path_type=Path),
+    type=click.Path(exists=False, file_okay=True, dir_okay=True, path_type=Path),
     required=False,
     help="Output directory for writing results",
 )
@@ -143,6 +143,7 @@ def predict(
         query_json=query_json, inference_ckpt_path=inference_ckpt_path, **runner_args
     )
     if output_dir:
+        output_dir.mkdir(exist_ok=True, parents=True)
         expt_config.experiment_settings.output_dir = output_dir
 
     # Overwrite number of diffusion samples in model update section

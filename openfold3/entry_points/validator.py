@@ -2,7 +2,7 @@ import random
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, DirectoryPath, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import FilePathOrNone
@@ -74,7 +74,13 @@ class ExperimentSettings(BaseModel):
     """General settings for all experiments"""
 
     mode: Literal["train", "predict"]
-    output_dir: Path
+    output_dir: DirectoryPath
+
+    @model_validator(mode="after")
+    def create_output_dir(cls, model):
+        if not model.output_dir.exists():
+            model.output_dir.mkdir(parents=True, exist_ok=True)
+        return model
 
 
 class TrainingExperimentSettings(ExperimentSettings):
@@ -83,7 +89,7 @@ class TrainingExperimentSettings(ExperimentSettings):
     mode: Literal["train", "predict"] = "train"
     seed: int = 42
     restart_checkpoint_path: FilePathOrNone = None
-    output_dir: Path = Path("./train_output")
+    output_dir: DirectoryPath = Path("./train_output")
 
 
 def generate_seeds(start_seed, num_seeds):
@@ -97,7 +103,7 @@ class InferenceExperimentSettings(ExperimentSettings):
     mode: Literal["train", "predict"] = "predict"
     seeds: int | list[int] = [42]
     num_seeds: int | None = None
-    output_dir: Path = Path("./inference_output")
+    output_dir: DirectoryPath = Path("./inference_output")
 
     @model_validator(mode="after")
     def generate_seeds(cls, model):
