@@ -13,10 +13,8 @@ python run_openfold.py predict --runner_yaml=examples/inference_new.yml
 
 import logging
 from pathlib import Path
-from re import I
 
 import click
-from scipy.__config__ import show
 import torch
 
 from openfold3.core.config import config_utils
