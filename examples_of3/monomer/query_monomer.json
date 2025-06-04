@@ -1,6 +1,6 @@
 {
-	"queries":{
-		"single_chain_query":{
+	"queries": {
+		"ubiquitin": {
 			"chains": [
 				{
 					"molecule_type": "protein",
