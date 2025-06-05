@@ -15,35 +15,24 @@ The OpenFold3 inference pipeline takes a single JSON file as input, specifying t
 }
 ```
 
-*Required and Optional Fields*
+**Required and Optional Fields**
 
-```queries``` (dict, required)
-A dictionary containing one or more prediction targets. Each entry defines a single query (e.g., a protein or protein complex). The keys (e.g., ```query_1```, ```query_2```, ...) uniquely identify each query and are used to name the corresponding output files.
+- ```queries``` (dict, required): A dictionary containing one or more prediction targets. Each entry defines a single query (e.g., a protein or protein complex). The keys (e.g., ```query_1```, ```query_2```, ...): uniquely identify each query and are used to name the corresponding output files.
     - For large-scale runs, keys can be automatically generated if omitted.
     - If `n` queries are specified and `m` seeds are provided (see below), the model will perform `n × m` independent inference runs.
 
-
-```ccd_file_path``` (str, optional, default = null)
-Path to a [Chemical Component Dictionary (CCD)]() mmCIF file containing definitions for any custom ligands used across queries.
-
+- `ccd_file_path (str, optional, default = None)`: Path to a [Chemical Component Dictionary (CCD)]() mmCIF file containing definitions for any custom ligands used across queries.
     - All custom ligands for all queries must be included in a single CCD file.
     - Ligand definitions must match the three-letter chemical component IDs used in the input query definitions.
 
+- `msa_directory_path (str, optional, default = None)`: Path to a directory containing precomputed multiple sequence alignments (MSAs).
+    - **Note**: This is reserved for future versions. The current implementation only supports online MSA generation via the MMseqs2 server.
 
-```msa_directory_path``` (str, optional, default = null)
-Path to a directory containing precomputed multiple sequence alignments (MSAs).
-
-- **Note**: This is reserved for future versions. The current implementation only supports online MSA generation via the MMseqs2 server.
-
-
-```seeds``` (list of int, optional, default = null)
-Specifies the exact random seeds to use for stochastic components of the inference process (e.g., dropout, sampling).
+- `seeds (list of int, optional, default = None)`: Specifies the exact random seeds to use for stochastic components of the inference process (e.g., dropout, sampling).
     - If provided, the model will run once per seed for each query.
     - Mutually exclusive with `num_seeds`.
 
-
-```num_seeds``` (int, optional, default = null)
-Alternative to `seeds`. Specifies the number of random seeds to automatically generate.
+- `num_seeds (int, optional, default = None)`: Alternative to `seeds`. Specifies the number of random seeds to automatically generate.
     - Internally, seeds are sampled deterministically from a fixed global seed to ensure reproducibility.
     - Mutually exclusive with seeds.
 
@@ -67,26 +56,11 @@ Each query entry is a dictionary with the following structure:
 
 #### Fields
 
-```chains``` (list of dict, required)
-A list of chain definitions, where each sub-dictionary specifies one chain in the assembly.
+-`chains (list of dict, required)`: A list of chain definitions, where each sub-dictionary specifies one chain in the assembly. See Section 2.1 for a full breakdown of chain-level fields.
 
-See Section 2.1 for a full breakdown of chain-level fields.
+-`covalent_bonds (list of list, optional, default = None)`: A list of atom pairs across chains between which covalent bonds should be enforced in the predicted structure. Each sublist should define one covalent bond (e.g., ```[{"chain": "A", "residue": 42, "atom": "SG"}, {"chain": "B", "residue": 17, "atom": "SG"}]```).Useful for modeling disulfide bridges or engineered cross-links. See Section 2.2 for formatting details.
 
-```covalent_bonds``` (list of list, optional, default = null)
-A list of atom pairs across chains between which covalent bonds should be enforced in the predicted structure.
-
-Each sublist should define one covalent bond (e.g., ```[{"chain": "A", "residue": 42, "atom": "SG"}, {"chain": "B", "residue": 17, "atom": "SG"}]```).
-
-Useful for modeling disulfide bridges or engineered cross-links.
-
-See Section 2.2 for formatting details.
-
-```paired_msa_file_path``` (str, optional, default = null)
-Path to a precomputed paired MSA for the entire assembly.
-
-Mutually exclusive with providing paired MSAs at the chain level (i.e., in individual chains entries).
-
-When provided, overrides any paired MSAs defined per chain.
+- `paired_msa_file_path (str, optional, default = None)`: Path to a precomputed paired MSA for the entire assembly. Mutually exclusive with providing paired MSAs at the chain level (i.e., in individual chains entries). When provided, overrides any paired MSAs defined per chain.
 
 
 ### 2.1. Chains
@@ -111,31 +85,31 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
   "use_templates": true
 }
 
-- ```molecule_type``` (str, required): Must be "protein".
+- `molecule_type (str, required)`: Must be "protein".
 
-- ```chain_ids``` (str | list[str], required): One or more identifiers for this chain. Used to map sequences to structure outputs.
+- `chain_ids (str | list[str], required)`: One or more identifiers for this chain. Used to map sequences to structure outputs.
 
-- ```sequence``` (str, required): Amino acid sequence (1-letter codes), supporting standard residues, X (unknown), and U (selenocysteine).
+- `sequence (str, required)`: Amino acid sequence (1-letter codes), supporting standard residues, X (unknown), and U (selenocysteine).
 
-- ```non_canonical_residues``` (dict, optional): Maps residue positions to CCD codes for non-canonical residues.
+- `non_canonical_residues (dict, optional)`: Maps residue positions to CCD codes for non-canonical residues.
 
-- ```use_msas``` (bool, optional, default = true): Enables MSA usage. If false, a single-row MSA is constructed from the query sequence only.
+- `use_msas (bool, optional, default = true)`: Enables MSA usage. If false, a single-row MSA is constructed from the query sequence only.
 
-- ```use_main_msas``` (bool, optional, default = true): Controls whether to use unpaired MSAs.
+- `use_main_msas (bool, optional, default = true)`: Controls whether to use unpaired MSAs.
 
     - For monomers or homomers, disabling this results in using only the single sequence.
 
-- ```use_paired_msas``` (bool, optional, default = true): Controls use of explicitly paired MSAs.
+- `use_paired_msas (bool, optional, default = true)`: Controls use of explicitly paired MSAs.
 
     - For heteromers, paired alignments across chains are used if available.
 
     - For homomers, main MSAs are internally concatenated and treated as implicitly paired.
 
-- ```main_msa_file_paths``` (str | list[str], optional): Path(s) to main MSAs (.sto, .a3m, or .npz).
+- `main_msa_file_paths (str | list[str], optional)`: Path(s) to main MSAs (.sto, .a3m, or .npz).
 
-- ```paired_msa_file_paths``` (str | list[str], optional): Path(s) to paired MSAs.
+- `paired_msa_file_paths (str | list[str], optional)`: Path(s) to paired MSAs.
 
-- ```use_templates``` (bool, optional, default = true): Enables use of structural templates.
+- `use_templates (bool, optional, default = true)`: Enables use of structural templates.
 
 
 #### RNA Chains
@@ -154,13 +128,13 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
 }
 ```
 
-- ```molecule_type``` (str, required): Must be "rna".
+- `molecule_type (str, required)`: Must be "rna".
 
-- ```chain_ids```, sequence, and non_canonical_residues: Same as for proteins.
+- `chain_ids`, `sequence`, and `non_canonical_residues`: Same as for proteins.
 
-- ```use_msas```, use_main_msas, use_paired_msas: Behave the same as for proteins.
+- `use_msas`, `use_main_msas,` `use_paired_msas`: Behave the same as for proteins.
 
-- ```main_msa_file_paths```, paired_msa_file_paths: Path(s) to MSA files.
+- `main_msa_file_paths`, `paired_msa_file_paths`: Path(s) to MSA files.
 
 
 #### DNA Chains
@@ -171,13 +145,13 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
   "sequence": "GACCTCT",
   "non_canonical_residues": { "1": "6OG", "2": "6MA" }
 }
-```molecule_type``` (str, required): Must be "dna".
+- `molecule_type` (str, required): Must be "dna".
 
-```chain_ids``` and ```sequence```: As above.
+- `chain_ids` and `sequence`: As above.
 
-```non_canonical_residues``` (dict, optional): Maps positions to modified base codes.
+- `non_canonical_residues (dict, optional)`: Maps positions to modified base codes.
 
-```sdf_file_path (str, optional)```: Path to a structural definition of the DNA if needed for non-standard constructs.
+- `sdf_file_path (str, optional)`: Path to a structural definition of the DNA if needed for non-standard constructs.
 
 
 #### Small Molecule / Ligand Chains
@@ -201,17 +175,17 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     [[2, "O4"], [3, "C1"]]
   ]
 }
-```molecule_type``` (str, required): Must be "ligand".
+- `molecule_type (str, required)`: Must be "ligand".
 
-```chain_ids``` (str | list[str], required): Identifiers for the ligand chain(s).
+- `chain_ids (str | list[str], required)`: Identifiers for the ligand chain(s).
 
-```smiles``` (str, required if ccd_codes not given): Canonical SMILES string of the ligand.
+- `smiles (str, required if ccd_codes not given)`: Canonical SMILES string of the ligand.
 
-```ccd_codes``` (str | list[str], required if smiles not given): One or more three-letter CCD codes for the ligand components. Used for glycans or multi-residue ligands.
+- `ccd_codes (str | list[str], required if smiles not given)`: One or more three-letter CCD codes for the ligand components. Used for glycans or multi-residue ligands.
 
-```covalent_bond``` (list, optional): Only valid when using ccd_codes. Specifies covalent bonds between components, useful for branched polymers or glycans.
+- `covalent_bond (list, optional)`: Only valid when using ccd_codes. Specifies covalent bonds between components, useful for branched polymers or glycans.
 
-```sdf_file_path``` (str, optional): Optional SDF structure file for precise geometry specification.
+- `sdf_file_path (str, optional)`: Optional SDF structure file for precise geometry specification.
 
 Note: smiles and ccd_codes are mutually exclusive — exactly one must be provided.
 
