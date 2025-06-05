@@ -45,5 +45,4 @@ dependencies:
       - deepspeed==0.14.5
       - dm-tree==0.1.6
       - git+https://github.com/NVIDIA/dllogger.git
-      - flash-attn==2.6.0.post1
       - pdbeccdutils
