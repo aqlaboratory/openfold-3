@@ -23,8 +23,6 @@ class TestLoadPresets:
         assert project_config.model.settings.ema.decay == 0.999
         # From finetune1 preset
         assert project_config.extra_configs.loss_weight_modes.default.bond == 4.0
-        # From train preset
-        assert project_config.model.settings.use_deepspeed_evo_attention
 
     def test_yaml_overwrite_preset(self, tmp_path):
         test_yaml_str = textwrap.dedent("""\

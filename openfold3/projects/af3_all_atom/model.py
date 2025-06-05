@@ -124,6 +124,18 @@ class AlphaFold3(nn.Module):
             self.config.architecture.pairformer.blocks_per_ckpt
         )
 
+    def _get_mode_mem_settings(self):
+        """
+        Get the memory settings for the current mode (training or evaluation).
+
+        Returns:
+            mode_mem_settings: Dict of memory settings
+        """
+        mode_mem_settings = (
+            self.settings.memory.train if self.training else self.settings.memory.eval
+        )
+        return mode_mem_settings
+
     def _do_inference_offload(self, seq_len: int) -> bool:
         if self.training:
             return False
@@ -166,9 +178,8 @@ class AlphaFold3(nn.Module):
             z:
                 [*, N_token, N_token, C_z] Pair representation
         """
-        mode_mem_settings = (
-            self.settings.memory.train if self.training else self.settings.memory.eval
-        )
+        mode_mem_settings = self._get_mode_mem_settings()
+
         offload_inference = self._do_inference_offload(
             seq_len=batch["token_mask"].shape[-1]
         )
@@ -307,6 +318,8 @@ class AlphaFold3(nn.Module):
             Output dictionary containing the predicted trunk embeddings,
             all-atom positions, and confidence/distogram head logits
         """
+        mode_mem_settings = self._get_mode_mem_settings()
+
         # Determine number of rollout steps and samples depending on training/eval mode
         mode_mem_settings = (
             self.settings.memory.train if self.training else self.settings.memory.eval

@@ -252,13 +252,11 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         # TODO: Determine if this is the best way to handle PairFormer
         #  memory limits depending on the number of samples
         num_samples = repr_x_pred.shape[-3]
-        apply_per_sample = all(
-            [
-                not torch.is_grad_enabled(),
-                num_samples > 1,
-                self.per_sample_token_cutoff is not None,
-                repr_x_pred.shape[-2] > self.per_sample_token_cutoff,
-            ]
+        apply_per_sample = (
+            not torch.is_grad_enabled()
+            and num_samples > 1
+            and self.per_sample_token_cutoff is not None
+            and repr_x_pred.shape[-2] > self.per_sample_token_cutoff
         )
 
         # Embed trunk outputs

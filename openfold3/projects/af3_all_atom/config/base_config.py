@@ -94,11 +94,7 @@ project_config = mlc.ConfigDict(
                     },
                     "eval": {
                         "chunk_size": None,
-                        # Use DeepSpeed memory-efficient attention kernel. Mutually
-                        # exclusive with use_lma and use_flash.
                         "use_deepspeed_evo_attention": True,
-                        # Use Staats & Rabe's low-memory attention algorithm. Mutually
-                        # exclusive with use_deepspeed_evo_attention.
                         "use_lma": False,
                         "msa_module": {
                             "swiglu_chunk_token_cutoff": None,

@@ -57,6 +57,7 @@ train:
   model:
     settings:
       blocks_per_ckpt: 1
+      ckpt_intermediate_steps: True
 
 predict:
   model:
