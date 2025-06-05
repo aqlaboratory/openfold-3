@@ -119,6 +119,18 @@ class AlphaFold3(nn.Module):
             self.config.architecture.pairformer.blocks_per_ckpt
         )
 
+    def _get_mode_mem_settings(self):
+        """
+        Get the memory settings for the current mode (training or evaluation).
+
+        Returns:
+            mode_mem_settings: Dict of memory settings
+        """
+        mode_mem_settings = (
+            self.settings.memory.train if self.training else self.settings.memory.eval
+        )
+        return mode_mem_settings
+
     def _do_inference_offload(self, seq_len: int) -> bool:
         if self.training:
             return False
@@ -161,9 +173,8 @@ class AlphaFold3(nn.Module):
             z:
                 [*, N_token, N_token, C_z] Pair representation
         """
-        mode_mem_settings = (
-            self.settings.memory.train if self.training else self.settings.memory.eval
-        )
+        mode_mem_settings = self._get_mode_mem_settings()
+
         offload_inference = self._do_inference_offload(
             seq_len=batch["token_mask"].shape[-1]
         )
@@ -206,8 +217,8 @@ class AlphaFold3(nn.Module):
                         pair_mask=pair_mask,
                         chunk_size=mode_mem_settings.chunk_size,
                         _mask_trans=True,
-                        use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-                        use_lma=self.settings.use_lma,
+                        use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                        use_lma=mode_mem_settings.use_lma,
                         inplace_safe=inplace_safe,
                     ),
                     inplace=inplace_safe,
@@ -235,8 +246,8 @@ class AlphaFold3(nn.Module):
                         pair_mask=pair_mask.to(dtype=input_tensors[1].dtype),
                         chunk_size=mode_mem_settings.chunk_size,
                         transition_ckpt_chunk_size=transition_ckpt_chunk_size,
-                        use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-                        use_lma=self.settings.use_lma,
+                        use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                        use_lma=mode_mem_settings.use_lma,
                         _mask_trans=True,
                     )
 
@@ -249,8 +260,8 @@ class AlphaFold3(nn.Module):
                         pair_mask=pair_mask.to(dtype=z.dtype),
                         chunk_size=mode_mem_settings.chunk_size,
                         transition_ckpt_chunk_size=transition_ckpt_chunk_size,
-                        use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-                        use_lma=self.settings.use_lma,
+                        use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                        use_lma=mode_mem_settings.use_lma,
                         inplace_safe=inplace_safe,
                         _mask_trans=True,
                     )
@@ -264,8 +275,8 @@ class AlphaFold3(nn.Module):
                     single_mask=token_mask.to(dtype=z.dtype),
                     pair_mask=pair_mask.to(dtype=s.dtype),
                     chunk_size=mode_mem_settings.chunk_size,
-                    use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-                    use_lma=self.settings.use_lma,
+                    use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                    use_lma=mode_mem_settings.use_lma,
                     inplace_safe=inplace_safe,
                     _mask_trans=True,
                 )
@@ -302,6 +313,8 @@ class AlphaFold3(nn.Module):
             Output dictionary containing the predicted trunk embeddings,
             all-atom positions, and confidence/distogram head logits
         """
+        mode_mem_settings = self._get_mode_mem_settings()
+
         # Determine number of rollout steps and samples depending on training/eval mode
         no_rollout_steps = (
             self.shared.diffusion.no_mini_rollout_steps
@@ -334,8 +347,8 @@ class AlphaFold3(nn.Module):
                 zij_trunk=zij_trunk,
                 noise_schedule=noise_schedule,
                 no_rollout_samples=no_rollout_samples,
-                use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-                use_lma=self.settings.use_lma,
+                use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                use_lma=mode_mem_settings.use_lma,
                 _mask_trans=True,
             )
 
@@ -358,8 +371,8 @@ class AlphaFold3(nn.Module):
                     si_input=si_input,
                     output=output,
                     chunk_size=mode_mem_settings.chunk_size,
-                    use_deepspeed_evo_attention=self.settings.use_deepspeed_evo_attention,
-                    use_lma=self.settings.use_lma,
+                    use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                    use_lma=mode_mem_settings.use_lma,
                     inplace_safe=inplace_safe,
                     _mask_trans=True,
                 )
