@@ -1,5 +1,5 @@
 import math
-from typing import Optional
+from typing import Literal, Optional
 
 import torch
 
@@ -104,10 +104,11 @@ def aggregate_atom_feat_to_tokens(
     atom_mask: torch.Tensor,
     atom_feat: torch.Tensor,
     atom_dim: Optional[int] = -1,
+    aggregate_fn: Literal["mean", "sum"] = "mean",
     eps: float = 1e-9,
 ):
     """
-    Aggregate atom-level features to token-level features with mean aggregation.
+    Aggregate atom-level features to token-level features with mean or sum aggregation.
 
     Args:
         token_mask:
@@ -120,6 +121,9 @@ def aggregate_atom_feat_to_tokens(
             [*, N_atom, *feat_dims] Atom-level features
         atom_dim:
             Atom dimension
+        aggregate_fn:
+            Function to aggregate atom features into tokens. Possible values are
+            "mean" and "sum", where mean is the default.
         eps:
             Small float for numerical stability
     Returns:
@@ -152,6 +156,9 @@ def aggregate_atom_feat_to_tokens(
             *atom_to_token_index.shape + (1,) * len(feat_dims)
         ).repeat(*((1,) * (len(batch_dims) - 1) + (batch_n_repeat,) + (1,) + feat_dims))
 
+    if aggregate_fn not in ["mean", "sum"]:
+        raise ValueError(f"Invalid aggregation function: {aggregate_fn}")
+
     # Compute summed token-level feature
     token_feat = torch.zeros(
         (*feat_batch_dims, n_token + 1, *feat_dims),
@@ -164,19 +171,20 @@ def aggregate_atom_feat_to_tokens(
         ..., :n_token, :
     ].reshape((*feat_batch_dims, n_token, *feat_dims))
 
-    # Compute number of atoms (non-masked) per token
-    token_num_atoms = torch.zeros(
-        (*batch_dims, n_token + 1), device=atom_feat.device, dtype=atom_feat.dtype
-    ).scatter_add_(
-        index=atom_to_token_index.long(),
-        src=atom_mask.to(dtype=atom_feat.dtype),
-        dim=-1,
-    )[..., :n_token]
-
     # Compute mean token-level feature
-    token_feat = token_feat / (
-        token_num_atoms.reshape(token_num_atoms.shape + (1,) * len(feat_dims)) + eps
-    )
+    if aggregate_fn == "mean":
+        # Compute number of atoms (non-masked) per token
+        token_num_atoms = torch.zeros(
+            (*batch_dims, n_token + 1), device=atom_feat.device, dtype=atom_feat.dtype
+        ).scatter_add_(
+            index=atom_to_token_index.long(),
+            src=atom_mask.to(dtype=atom_feat.dtype),
+            dim=-1,
+        )[..., :n_token]
+
+        token_feat = token_feat / (
+            token_num_atoms.reshape(token_num_atoms.shape + (1,) * len(feat_dims)) + eps
+        )
 
     return token_feat
 

@@ -219,7 +219,7 @@ class TestTemplateEmbedderAllAtom(unittest.TestCase):
         af3_proj_entry = AF3ProjectEntry()
         af3_config = af3_proj_entry.get_model_config_with_presets()
 
-        c_z = af3_config.architecture.template.template_pair_embedder.c_z
+        c_in = af3_config.architecture.template.template_pair_embedder.c_in
 
         embedder = TemplateEmbedderAllAtom(af3_config.architecture.template)
 
@@ -237,12 +237,12 @@ class TestTemplateEmbedderAllAtom(unittest.TestCase):
             ),
         }
 
-        z = torch.ones((batch_size, n_token, n_token, c_z))
+        z = torch.ones((batch_size, n_token, n_token, c_in))
         pair_mask = torch.randint(0, 2, size=(batch_size, n_token, n_token))
 
         t = embedder(batch=batch, z=z, pair_mask=pair_mask, chunk_size=None)
 
-        self.assertTrue(t.shape == (batch_size, n_token, n_token, c_z))
+        self.assertTrue(t.shape == (batch_size, n_token, n_token, c_in))
 
 
 class Template(unittest.TestCase):

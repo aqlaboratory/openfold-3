@@ -30,6 +30,7 @@ from openfold3.core.np.token_atom_constants import (
     TOKEN_TYPES,
     TOKEN_TYPES_WITH_GAP,
 )
+from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from tests.config import consts
 
 
@@ -188,6 +189,13 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
     token_mask = torch.ones(n_token).float()
     atom_mask = torch.ones(n_atom).float()
 
+    rand_token_mask = torch.randint(0, 2, (n_token,)).float()
+    atom_resolved_mask = broadcast_token_feat_to_atoms(
+        token_mask=token_mask,
+        num_atoms_per_token=num_atoms_per_token,
+        token_feat=rand_token_mask,
+    )
+
     atom_to_token_index = create_atom_to_token_index(
         token_mask=token_mask,
         num_atoms_per_token=num_atoms_per_token,
@@ -257,7 +265,9 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
         ),
         "ground_truth": {
             "atom_positions": torch.randn((batch_size, n_atom, 3)).float(),
-            "atom_resolved_mask": torch.ones((batch_size, n_atom)).float(),
+            "atom_resolved_mask": atom_resolved_mask.unsqueeze(0).repeat(
+                (batch_size, 1)
+            ),
         },
         "loss_weights": {
             "bond": torch.Tensor([0.0]).repeat(batch_size),

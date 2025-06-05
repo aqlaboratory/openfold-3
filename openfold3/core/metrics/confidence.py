@@ -108,13 +108,16 @@ def compute_predicted_distance_error(
 def compute_global_predicted_distance_error(
     pde: torch.Tensor,
     distogram_probs: torch.Tensor,
+    min_bin: int = 2,
+    max_bin: int = 22,
     eps: float = 1e-8,
 ) -> torch.Tensor:
     """Computes the gPDE metric as defined in AF3 SI 5.7 (16)"""
     device = pde.device
     n_bins = distogram_probs.shape[-1]
+
     # Bins range from 2 to 22 Å
-    distogram_bin_ends = torch.linspace(2, 22, n_bins + 1, device=device)[1:]
+    distogram_bin_ends = torch.linspace(min_bin, max_bin, n_bins + 1, device=device)[1:]
     distogram_bins_8A = distogram_bin_ends <= 8.0  # boolean mask for bins <= 8 Å
 
     # Probability of contact between tokens i and j (sum over bins <= 8 Å)

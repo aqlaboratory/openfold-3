@@ -37,7 +37,9 @@ def compute_valid_model_selection_metrics(
 
     # Compute pde (predicted distance error)
     pde = compute_predicted_distance_error(
-        outputs["pde_logits"].detach(), **confidence_config.pde
+        logits=outputs["pde_logits"].detach(),
+        max_bin=confidence_config.pde.max_bin,
+        no_bins=confidence_config.pde.no_bins,
     )["predicted_distance_error"]
 
     # Compute distogram-based contact probabilities (pij)
@@ -48,6 +50,8 @@ def compute_valid_model_selection_metrics(
     global_pde = compute_global_predicted_distance_error(
         pde=pde,
         distogram_probs=distogram_probs,
+        min_bin=confidence_config.distogram.min_bin,
+        max_bin=confidence_config.distogram.max_bin,
     )
 
     # Find the top-1 sample per batch based on global pde

@@ -69,9 +69,15 @@ class RefAtomFeatureEmbedder(nn.Module):
                 Linear layer initialization parameters
         """
         super().__init__()
-        self.linear_feats = Linear(
-            c_atom_ref, c_atom, **linear_init_params.linear_feats
+        # Ref conformer feats
+        self.linear_ref_pos = Linear(3, c_atom, **linear_init_params.linear_feats)
+        self.linear_ref_charge = Linear(1, c_atom, **linear_init_params.linear_feats)
+        self.linear_ref_mask = Linear(1, c_atom, **linear_init_params.linear_feats)
+        self.linear_ref_element = Linear(119, c_atom, **linear_init_params.linear_feats)
+        self.linear_ref_atom_chars = Linear(
+            256, c_atom, **linear_init_params.linear_feats
         )
+
         self.linear_ref_offset = Linear(
             3, c_atom_pair, **linear_init_params.linear_ref_offset
         )
@@ -113,20 +119,19 @@ class RefAtomFeatureEmbedder(nn.Module):
             plm:
                 [*, N_blocks, N_query, N_key, c_atom_pair] Atom pair conditioning
         """
+        dtype = batch["ref_pos"].dtype
+
         # Embed atom features
         # [*, N_atom, c_atom]
-        cl = self.linear_feats(
-            torch.cat(
-                [
-                    batch["ref_pos"],
-                    batch["ref_charge"].unsqueeze(-1),
-                    batch["ref_mask"].unsqueeze(-1),
-                    batch["ref_element"],
-                    batch["ref_atom_name_chars"].flatten(start_dim=-2),
-                ],
-                dim=-1,
-            )
-        )  # CONFIRM THIS FORMAT ONCE DATALOADER/FEATURIZER DONE
+        cl = self.linear_ref_pos(batch["ref_pos"])
+        cl = cl + self.linear_ref_charge(
+            torch.arcsinh(batch["ref_charge"].unsqueeze(-1))
+        )
+        cl = cl + self.linear_ref_mask(batch["ref_mask"].unsqueeze(-1).to(dtype=dtype))
+        cl = cl + self.linear_ref_element(batch["ref_element"].to(dtype=dtype))
+        cl = cl + self.linear_ref_atom_chars(
+            batch["ref_atom_name_chars"].flatten(start_dim=-2).to(dtype=dtype)
+        )
 
         # Embed offsets
         # Convert all atom rep to block format ahead of time due to
@@ -189,9 +194,9 @@ class NoisyPositionEmbedder(nn.Module):
                 Linear layer initialization parameters
         """
         super().__init__()
-        self.layer_norm_s = LayerNorm(c_s)
+        self.layer_norm_s = LayerNorm(c_s, create_offset=False)
         self.linear_s = Linear(c_s, c_atom, **linear_init_params.linear_s)
-        self.layer_norm_z = LayerNorm(c_z)
+        self.layer_norm_z = LayerNorm(c_z, create_offset=False)
         self.linear_z = Linear(c_z, c_atom_pair, **linear_init_params.linear_z)
         self.linear_r = Linear(3, c_atom, **linear_init_params.linear_r)
 
@@ -370,11 +375,11 @@ class AtomAttentionEncoder(nn.Module):
 
         self.pair_mlp = nn.Sequential(
             nn.ReLU(),
-            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp),
+            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp_1),
             nn.ReLU(),
-            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp),
+            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp_2),
             nn.ReLU(),
-            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp),
+            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp_3),
         )
 
         self.atom_transformer = DiffusionTransformer(
@@ -558,6 +563,7 @@ class AtomAttentionEncoder(nn.Module):
             atom_mask,
             self.linear_q(ql),
             -2,
+            "mean",
         )
         ai = checkpoint_section(
             fn=aggregate_atom_feat_to_tokens,
@@ -648,7 +654,7 @@ class AtomAttentionDecoder(nn.Module):
             use_reentrant=use_reentrant,
         )
 
-        self.layer_norm = LayerNorm(c_in=c_atom)
+        self.layer_norm = LayerNorm(c_in=c_atom, create_offset=False)
         self.linear_q_out = Linear(c_atom, 3, **linear_init_params.linear_q_out)
 
     def forward(
