@@ -187,6 +187,9 @@ def featurize_target_gt_structure_af3(
             Target and ground truth features. Ground truth features are nested
             in a subdictionary under the 'ground_truth' key.
     """
+    # TODO: Elevate this to an importable module-level constant
+    # TODO: In the future, we should try to get rid of the need for padding in
+    # featurization as the batch collator should handle this automatically.
     token_dim_index_map = {
         "residue_index": [-1],
         "token_index": [-1],

@@ -1,67 +1,43 @@
-mode: train
-# Can be found in
-# of3/model_implementations/<model_name>/configs/reference_config.yml 
-# only one preset allowed for now
+experiment_settings:
+  mode: train
+  output_dir: ../test_train_output
+  seed: 42
+  restart_checkpoint_path: last
 
-# General run settings
-seed: 42
-data_seed: 1234
+data_module_args:
+  batch_size: 1
+  data_seed: 1234
+  num_workers: 16
+  epoch_len: 4
 
-num_gpus: 1
-batch_size: 1
-num_workers: 16
-epoch_len: 100
-max_epochs: -1
-output_dir: ../test_train_output
-deepspeed_config_path: ./deepspeed_configs/ds_stage2_default_offload.json
-mpi_plugin: false
-log_lr : true
-compile : true
-
-# Checkpoint settings
-restart_checkpoint_path: last
-checkpoint:
-  every_n_epochs: 1
-  auto_insert_metric_name: false
-  save_last: true
-  save_top_k: -1
-
-# All fields here must match pl.Trainer kwargs
-pl_trainer:
+pl_trainer_args:
   num_nodes: 1
-  precision: bf16
-  max_epochs: 1
-  log_every_n_steps: 25
+  precision: bf16-mixed
+  max_epochs: 2
+  log_every_n_steps: 2
+  deepspeed_config_path: ./deepspeed_configs/ds_stage2_default_offload.json
 
-# Include to use wandb logging 
-wandb:
-  id: some_id   # Remove if no id present 
-  project: PROJECT_NAME 
-  entity: YOUR_USERNAME
-  group: GROUP_NAME
-  experiment_name: EXPERIMENT_NAME
-
-# This section makes updates to the model config
-# Uses of3.projects.af3_all_atom.ModelUpdate base class 
 model_update:
   presets: 
     - train 
   custom:
     settings:
       ckpt_intermediate_steps: true
-      use_deepspeed_evo_attention: true
-      optimizer:
-        use_deepspeed_adam: true
-    architecture:
-      msa:
-        msa_module:
-          transition_ckpt_chunk_size: 4000
-      loss_module:
-        diffusion:
-          chunk_size: 4
-      heads:
-        pairformer_embedding:
-          per_sample_token_cutoff: 750
+
+logging:
+  log_lr: False
+  wandb:
+    id: some_id   # Remove if no id present 
+    project: PROJECT_NAME 
+    entity: YOUR_USERNAME
+    group: GROUP_NAME
+    experiment_name: EXPERIMENT_NAME
+  
+checkpoint:
+  every_n_epochs: 1
+  auto_insert_metric_name: false
+  save_last: true
+  save_top_k: -1
 
 # This section specifies paths for training datasets
 dataset_paths:
@@ -78,6 +54,7 @@ dataset_paths:
     template_structures_directory: none
     template_file_format: "pkl"
     ccd_file: /<PDB_PATH>/ccd_file
+
   short-monomer-distillation:
     alignments_directory: none 
     alignment_db_directory: none 
@@ -104,6 +81,7 @@ dataset_configs:
             contiguous: 0.2
             spatial: 0.4
             spatial_interface: 0.4
+
     short-monomer-distillation:
       dataset_class: ProteinMonomerDistillationDataset      
       weight: 0.2
