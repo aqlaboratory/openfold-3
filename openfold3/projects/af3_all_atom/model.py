@@ -360,9 +360,6 @@ class AlphaFold3(nn.Module):
             "atom_positions_predicted": atom_positions_predicted,
         }
 
-        mode_mem_settings = (
-            self.settings.memory.train if self.training else self.settings.memory.eval
-        )
         with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
             # Compute confidence logits
             output.update(
