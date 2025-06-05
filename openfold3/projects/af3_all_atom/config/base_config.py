@@ -119,6 +119,13 @@ project_config = mlc.ConfigDict(
                     "beta2": 0.95,
                     "eps": 1e-8,
                 },
+                "lr_scheduler": {
+                    "base_lr": 0.0,
+                    "warmup_no_steps": 1000,
+                    "start_decay_after_n_steps": 50000,
+                    "decay_every_n_steps": 50000,
+                    "decay_factor": 0.95,
+                },
                 "ema": {"decay": 0.999},
                 "gradient_clipping": 10.0,
                 "model_selection_weight_scheme": "initial_training",
@@ -173,8 +180,9 @@ project_config = mlc.ConfigDict(
                     "c_z": c_z,
                     "linear_init_param": lin_init.templ_module_init,
                     "template_pair_embedder": {
-                        "c_in": 108,
-                        "c_z": c_z,
+                        "c_in": c_z,
+                        "c_dgram": 39,
+                        "c_aatype": 32,
                         "c_out": c_t,
                         "linear_init_params": lin_init.templ_pair_feat_emb_init,
                     },
@@ -361,8 +369,8 @@ project_config = mlc.ConfigDict(
                         "c_s_input": c_s_input,
                         "c_z": c_z,
                         "min_bin": 3.25,
-                        "max_bin": 20.75,
-                        "no_bin": 15,
+                        "max_bin": 50.75,
+                        "no_bin": 39,
                         "inf": inf,
                         "linear_init_params": lin_init.pairformer_head_init,
                     },
@@ -454,6 +462,10 @@ project_config = mlc.ConfigDict(
                 "pae": {
                     "max_bin": 31,
                     "no_bins": 64,
+                },
+                "distogram": {
+                    "min_bin": 2,
+                    "max_bin": 22,
                 },
                 "ptm": {
                     "max_bin": 31,

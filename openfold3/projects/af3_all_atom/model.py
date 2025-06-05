@@ -38,6 +38,7 @@ from openfold3.core.model.structure.diffusion_module import (
     centre_random_augmentation,
     create_noise_schedule,
 )
+from openfold3.core.utils.atomize_utils import aggregate_atom_feat_to_tokens
 from openfold3.core.utils.permutation_alignment import (
     safe_multi_chain_permutation_alignment,
 )
@@ -67,7 +68,9 @@ class AlphaFold3(nn.Module):
         )
 
         self.layer_norm_z = LayerNorm(self.shared.c_z)
-        self.linear_z = Linear(self.shared.c_z, self.shared.c_z, bias=False)
+        self.linear_z = Linear(
+            self.shared.c_z, self.shared.c_z, bias=False, init="final"
+        )
 
         self.template_embedder = TemplateEmbedderAllAtom(
             config=self.config.architecture.template
@@ -79,7 +82,9 @@ class AlphaFold3(nn.Module):
         self.msa_module = MSAModuleStack(**self.config.architecture.msa.msa_module)
 
         self.layer_norm_s = LayerNorm(self.shared.c_s)
-        self.linear_s = Linear(self.shared.c_s, self.shared.c_s, bias=False)
+        self.linear_s = Linear(
+            self.shared.c_s, self.shared.c_s, bias=False, init="final"
+        )
 
         self.pairformer_stack = PairFormerStack(**self.config.architecture.pairformer)
 
@@ -316,6 +321,10 @@ class AlphaFold3(nn.Module):
         mode_mem_settings = self._get_mode_mem_settings()
 
         # Determine number of rollout steps and samples depending on training/eval mode
+        mode_mem_settings = (
+            self.settings.memory.train if self.training else self.settings.memory.eval
+        )
+
         no_rollout_steps = (
             self.shared.diffusion.no_mini_rollout_steps
             if self.training
@@ -424,8 +433,22 @@ class AlphaFold3(nn.Module):
 
         # Sample atom positions
         xl_noisy = xl_gt + noise
+        xl_noisy = xl_noisy * atom_mask_gt.unsqueeze(-1)
 
-        token_mask = batch["token_mask"]
+        # Unresolved atoms are masked out for the training diffusion step
+        # Token mask used in the diffusion transformer needs to match the atom mask,
+        # where fully unresolved residues and unresolved ligands / modified residues
+        # tokenized per atom are excluded from the computation.
+        agg_atom_mask = aggregate_atom_feat_to_tokens(
+            token_mask=batch["token_mask"],
+            atom_to_token_index=batch["atom_to_token_index"],
+            atom_mask=batch["atom_mask"],
+            atom_feat=atom_mask_gt.bool(),
+            atom_dim=-1,
+            aggregate_fn="sum",
+        )
+
+        token_mask = (agg_atom_mask > 0).to(dtype=atom_mask_gt.dtype)
 
         # Run diffusion module
         xl = self.diffusion_module(

@@ -328,7 +328,7 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         af3_proj_config = proj_entry.get_config_with_preset()
         af3_config = af3_proj_config.model
 
-        c_z = af3_config.architecture.template.template_pair_embedder.c_z
+        c_in = af3_config.architecture.template.template_pair_embedder.c_in
         c_t = af3_config.architecture.template.template_pair_embedder.c_out
 
         tpe = TemplatePairEmbedderAllAtom(
@@ -348,7 +348,7 @@ class TestTemplatePairEmbedders(unittest.TestCase):
             ),
         }
 
-        z = torch.ones((batch_size, n_token, n_token, c_z))
+        z = torch.ones((batch_size, n_token, n_token, c_in))
 
         emb = tpe(batch, z)
 
