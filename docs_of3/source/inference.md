@@ -13,7 +13,8 @@ This guide covers how to use OpenFold3 to make structure predictions.
 
 - OpenFold3's built-in MSA generation pipeline
 - Custom user-provided MSAs
-- Covalentky bound ligands
+- Nucleic acids
+- Covalently bound ligands
 
 These features will be fully integrated into the inference workflow in the final codebase release.
 
