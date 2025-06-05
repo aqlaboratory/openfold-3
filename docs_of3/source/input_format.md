@@ -1,7 +1,7 @@
 # OpenFold3 Input Format
 
 ## 1. High-level Structure
-The OpenFold3 inference pipeline takes a single JSON file as input, specifying the data and options required for structure prediction. An example of the top-level structure of this input file is shown below:
+The OpenFold3 inference pipeline takes a single JSON file as input, specifying the data and options required for structure prediction. This file can define multiple prediction targets (`queries`), which can be proteins, including individual protein chains and complexes, nucleic acids, and ligands. An example of the top-level structure of this input file is shown below:
 
 ```
 {
@@ -15,20 +15,19 @@ The OpenFold3 inference pipeline takes a single JSON file as input, specifying t
 }
 ```
 
-Required and Optional Fields
+*Required and Optional Fields*
 
 ```queries``` (dict, required)
 A dictionary containing one or more prediction targets. Each entry defines a single query (e.g., a protein or protein complex). The keys (e.g., ```query_1```, ```query_2```, ...) uniquely identify each query and are used to name the corresponding output files.
-
-- For large-scale runs, keys can be automatically generated if omitted.
-- If n queries are specified and m seeds are provided (see below), the model will perform n × m independent inference runs.
+    - For large-scale runs, keys can be automatically generated if omitted.
+    - If `n` queries are specified and `m` seeds are provided (see below), the model will perform `n × m` independent inference runs.
 
 
 ```ccd_file_path``` (str, optional, default = null)
-Path to a [Chemical Component Dictionary (CCD)](https://chatgpt.com/c/683e74fd-cb64-8006-ab73-4e40a3989391#:~:text=to%20a%20Chemical-,Component,-Dictionary%20(CCD)) mmCIF file containing definitions for any custom ligands used across queries.
+Path to a [Chemical Component Dictionary (CCD)]() mmCIF file containing definitions for any custom ligands used across queries.
 
-- All custom ligands for all queries must be included in a single CCD file.
-- Ligand definitions must match the three-letter chemical component IDs used in the input query definitions.
+    - All custom ligands for all queries must be included in a single CCD file.
+    - Ligand definitions must match the three-letter chemical component IDs used in the input query definitions.
 
 
 ```msa_directory_path``` (str, optional, default = null)
@@ -39,16 +38,14 @@ Path to a directory containing precomputed multiple sequence alignments (MSAs).
 
 ```seeds``` (list of int, optional, default = null)
 Specifies the exact random seeds to use for stochastic components of the inference process (e.g., dropout, sampling).
-
-- If provided, the model will run once per seed for each query.
-- Mutually exclusive with num_seeds.
+    - If provided, the model will run once per seed for each query.
+    - Mutually exclusive with `num_seeds`.
 
 
 ```num_seeds``` (int, optional, default = null)
-Alternative to seeds. Specifies the number of random seeds to automatically generate.
-
-- Internally, seeds are sampled deterministically from a fixed global seed to ensure reproducibility.
-- Mutually exclusive with seeds.
+Alternative to `seeds`. Specifies the number of random seeds to automatically generate.
+    - Internally, seeds are sampled deterministically from a fixed global seed to ensure reproducibility.
+    - Mutually exclusive with seeds.
 
 If neither ```seeds``` nor ```num_seeds``` is provided, a single deterministic run will be performed per query using a default seed.
 
