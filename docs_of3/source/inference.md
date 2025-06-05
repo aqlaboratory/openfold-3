@@ -48,59 +48,77 @@ The following command performs model inference using the MMseqs server for MSA g
 
 ```
 python run_openfold predict \
-    --use_msa_server \
     --query_json /path/to/inference/query.json \
-    --output_dir /path/output \
 	--inference_ckpt_path /path/inference.ckpt
+    --use_msa_server \
+    --output_dir /path/output \
 ```
 
 **Required arguments:**
-- `--use_msa_server`: Use MMseqs server to create alignments.
-- `--query_json`: JSON file of input data, containing the sequence(s) to predict.
-- `--output_dir`: Specify the output directory.
-- `--inference_ckpt_path`: Path to the model weights.
+- `--query_json (Path)`: Path to the JSON file specifying input sequences to predict and metadata.
+
+- `--inference_ckpt_path (Path)`: Path to the model checkpoint.
+
+- `--use_msa_server (bool, default = True)`: Use ColabFold MSA server to create alignments. This is required in the current preliminary inference release.
+
+
+### Optional Inference Arguments
+
+These flags allow you to customize the inference workflow:
+
+- `--runner_yaml (Path)`: YAML config specifying model and data parameters. For full control over settings, edit this file directly. Example: [runner.yml](examples/runner.yml).
+
+- `--output_dir (Path)`: Directory where outputs will be written. Defaults to `test_train_output/`
+
+- `--num_diffusion_samples (int, default = None)`: Number of diffusion samples per query. If unspecified, defaults to 5 diffusion samples.
+
+- `--num_model_seeds (int, default = None)`: Number of model seeds to use per query. If unspecified, defaults to one seed (42).
+
+As for all OpenFold3 parameters, `num_diffusion_samples` and `num_model_seeds` can both also be updated directed via `runner.yml`.
 
 
 ### Model Outputs
 
-#### For single & multiple identical protein chains:
-The expected output contents are as follows:
-- `query.json`
-- `output/`:
-    - `<protein_name>/`
-        - `seed/`
-    - `main/`
-        - `protein_msa.npz`
-    - `raw/`
-        - `main/`
-            - `bfd.mgnify30.metaeuk30.smag30`
-            - `msa.sh`
-            - `out.tar.gz`
-            - `pdb70.m8`
-            - `uniref.a3m`
-    - `inference_query_set.json`
+OpenFold3's output format currently follows the structure used by the ColabFold server. During processing, chain IDs are internally mapped to standardized identifiers, then re-mapped back to the original query IDs in the final outputs.
 
-where:
-- `<protein_name>/seed/`
-- `main/`
-- `raw/`
-- `inference_query_set.json`
+For each unique chain, a single MSA is generated and saved as an `.npz` file. If a chain appears multiple times across different queries, it is deduplicated — the MSA will be stored under the name of its first occurrence.
 
-#### For distinct protein chains (multimers)
-For multimers, the output directory will additionally contain a `paired` MSA directory, containing the MSA for the distinct single protein chains.
-As an example, the output directory for the [deoxy human hemoglobin](examples_of3/multimer), which comprises two distinct chains `A` and `B`, e.g , the output will be as follows: 
+Each query results in an output directory with one subfolder per seed. A `main` directory stores MSAs and processed input features; a `raw` directory contains raw alignment and template search outputs.
 
-- `query.json`
-- `output/`:
-    - `hemoglobin>/`
-    - `main/`
-    - `raw/`
-    - `paired/`
-        - `chainA.chainA.chainB.chainB/`
-            - `chainA.npz`
-            - `chainB.npz`
-    - `inference_query_set.json`
+#### Example Output Structure (Single-chain, single seed)
 
+See [Monomer Output Example](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/monomer) for full details.
 
+```
+query.json
+<output_directory_path>
+ ├── <protein.
+	 └── seed_42
+ ├── main
+	 └── <protein_msa>.npz
+└──  raw
+	 └── main
+	     ├── bfd.mgnify30.metaeuk30.smag30
+	     ├── msa.sh
+	     ├── out.tar.gz
+	     ├── pdb70.m8
+         ├── uniref.a3m
+         └── templates_101
+             ├── 1dlr.cif
+             ├── 1dr5.cif
+             ├── pdb70_cs219.ffdata
+             ├── pdb70_cs219.ffindex --> pdb70_a3m.ffindex
+             ├── pdb70_a3m.ffdata
+             └── pdb70_a3m.ffindex
+```
 
-### Changing Default Inference Workflow
+#### Paired MSA outputs
+When the input contains multiple distinct chains, additional paired alignment files are generated under a `paired/` directory. </br>
+See the [Multimer Output Example](examples_of3/multimer) for a complete case.
+
+```
+paired
+ ├── pair.a3m
+ ├── pair.sh
+ └── out.tar.gz
+```
