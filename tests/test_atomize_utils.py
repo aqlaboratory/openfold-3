@@ -327,6 +327,8 @@ class TestAggregateAtomFeatToTokens(unittest.TestCase):
             atom_to_token_index=atom_to_token_index,
             atom_mask=atom_mask,
             atom_feat=atom_feat,
+            atom_dim=-1,
+            aggregate_fn="mean",
             eps=1e-9,
         )
 
@@ -339,6 +341,8 @@ class TestAggregateAtomFeatToTokens(unittest.TestCase):
             atom_to_token_index=atom_to_token_index,
             atom_mask=atom_mask,
             atom_feat=atom_feat,
+            atom_dim=-1,
+            aggregate_fn="mean",
             eps=1e-9,
         )
 
@@ -370,6 +374,8 @@ class TestAggregateAtomFeatToTokens(unittest.TestCase):
             atom_to_token_index=atom_to_token_index,
             atom_mask=atom_mask,
             atom_feat=atom_feat,
+            atom_dim=-1,
+            aggregate_fn="mean",
             eps=1e-9,
         )
 
@@ -393,6 +399,7 @@ class TestAggregateAtomFeatToTokens(unittest.TestCase):
             atom_mask=atom_mask,
             atom_feat=atom_feat,
             atom_dim=-2,
+            aggregate_fn="mean",
             eps=1e-9,
         )
 

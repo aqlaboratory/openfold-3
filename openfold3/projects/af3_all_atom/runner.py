@@ -448,17 +448,13 @@ class AlphaFold3AllAtom(ModelRunner):
         self.model.load_state_dict(self.cached_weights)
         self.cached_weights = None
 
-    def configure_optimizers(
-        self,
-        learning_rate: float = 1.8e-3,
-    ) -> dict:
-        # Ignored as long as a DeepSpeed optimizer is configured
+    def configure_optimizers(self) -> dict:
         optimizer_config = self.config.settings.optimizer
 
         if deepspeed_is_installed and optimizer_config.use_deepspeed_adam:
             optimizer = DeepSpeedCPUAdam(
                 self.parameters(),
-                lr=learning_rate,
+                lr=optimizer_config.learning_rate,
                 betas=(optimizer_config.beta1, optimizer_config.beta2),
                 eps=optimizer_config.eps,
                 adamw_mode=False,
@@ -466,7 +462,7 @@ class AlphaFold3AllAtom(ModelRunner):
         else:
             optimizer = torch.optim.Adam(
                 self.model.parameters(),
-                lr=learning_rate,
+                lr=optimizer_config.learning_rate,
                 betas=(optimizer_config.beta1, optimizer_config.beta2),
                 eps=optimizer_config.eps,
             )
@@ -474,10 +470,17 @@ class AlphaFold3AllAtom(ModelRunner):
         if self.last_lr_step != -1:
             for group in optimizer.param_groups:
                 if "initial_lr" not in group:
-                    group["initial_lr"] = learning_rate
+                    group["initial_lr"] = optimizer_config.learning_rate
 
+        lr_sched_config = self.config.settings.lr_scheduler
         lr_scheduler = AlphaFoldLRScheduler(
-            optimizer, last_epoch=self.last_lr_step, max_lr=learning_rate
+            optimizer,
+            last_epoch=self.last_lr_step,
+            base_lr=lr_sched_config.base_lr,
+            max_lr=optimizer_config.learning_rate,
+            warmup_no_steps=lr_sched_config.warmup_no_steps,
+            start_decay_after_n_steps=lr_sched_config.start_decay_after_n_steps,
+            decay_factor=lr_sched_config.decay_factor,
         )
 
         return {
