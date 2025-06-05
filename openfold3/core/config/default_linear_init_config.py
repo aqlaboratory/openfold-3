@@ -30,10 +30,10 @@ ada_ln_init = ConfigDict(
 # AF3
 mha_init = ConfigDict(
     {
-        "linear_q": {"bias": False, "init": "glorot"},
-        "linear_k": {"bias": False, "init": "glorot"},
-        "linear_v": {"bias": False, "init": "glorot"},
-        "linear_g": {"bias": False, "init": "final"},
+        "linear_q": {"bias": False, "init": "default"},
+        "linear_k": {"bias": False, "init": "default"},
+        "linear_v": {"bias": False, "init": "default"},
+        "linear_g": {"bias": False, "init": "gating"},
         "linear_o": {"bias": False, "init": "final"},
     }
 )
@@ -41,18 +41,29 @@ mha_init = ConfigDict(
 # AF3
 att_pair_bias_mha_init = ConfigDict(
     {
-        "linear_q": {"bias": True, "init": "glorot"},
-        "linear_k": {"bias": False, "init": "glorot"},
-        "linear_v": {"bias": False, "init": "glorot"},
-        "linear_g": {"bias": False, "init": "final"},
+        "linear_q": {"bias": True, "init": "default"},
+        "linear_k": {"bias": False, "init": "default"},
+        "linear_v": {"bias": False, "init": "default"},
+        "linear_g": {"bias": False, "init": "gating"},
         "linear_o": {"bias": False, "init": "final"},
+    }
+)
+
+# AF3
+att_pair_bias_mha_ada_init = ConfigDict(
+    {
+        "linear_q": {"bias": True, "init": "default"},
+        "linear_k": {"bias": False, "init": "default"},
+        "linear_v": {"bias": False, "init": "default"},
+        "linear_g": {"bias": False, "init": "gating"},
+        "linear_o": {"bias": False, "init": "default"},
     }
 )
 
 # AF3
 mha_bias_init = ConfigDict(
     {
-        "linear_z": {"bias": False, "init": "normal"},
+        "linear_z": {"bias": False, "init": "default"},
         "mha": mha_init,
     }
 )
@@ -64,10 +75,20 @@ mha_bias_init = ConfigDict(
 # AF3
 att_pair_bias_init = ConfigDict(
     {
+        "linear_z": {"bias": False, "init": "default"},
+        "layer_norm_z": {"create_offset": True},
+        "mha": att_pair_bias_mha_init,
+    }
+)
+
+# AF3
+diffusion_att_pair_bias_init = ConfigDict(
+    {
         "ada_ln": ada_ln_init,
         "linear_ada_out": {"bias": True, "init": "gating_ada_zero"},
-        "linear_z": {"bias": False, "init": "normal"},
-        "mha": att_pair_bias_mha_init,
+        "linear_z": {"bias": False, "init": "default"},
+        "layer_norm_z": {"create_offset": False},
+        "mha": att_pair_bias_mha_ada_init,
     }
 )
 
@@ -114,10 +135,10 @@ msa_global_att_init = ConfigDict({"mha": mha_init})
 # AF3
 msa_pair_avg_init = ConfigDict(
     {
-        "linear_z": {"bias": False, "init": "normal"},
-        "linear_v": {"bias": False, "init": "glorot"},
-        "linear_o": {"bias": False, "init": "final"},
+        "linear_z": {"bias": False, "init": "default"},
+        "linear_v": {"bias": False, "init": "default"},
         "linear_g": {"bias": False, "init": "gating"},
+        "linear_o": {"bias": False, "init": "final"},
     }
 )
 
@@ -145,14 +166,14 @@ cond_transition_init = ConfigDict(
         "ada_ln": ada_ln_init,
         "swiglu": swiglu_init,
         "linear_g": {"bias": True, "init": "gating_ada_zero"},
-        "linear_out": {"bias": False, "init": "final"},
+        "linear_out": {"bias": False, "init": "default"},
     }
 )
 
 # AF3
 diffusion_transformer_init = ConfigDict(
     {
-        "att_pair_bias": att_pair_bias_init,
+        "att_pair_bias": diffusion_att_pair_bias_init,
         "cond_transition": cond_transition_init,
     }
 )
@@ -170,8 +191,8 @@ ref_atom_emb_init = ConfigDict(
 # AF3
 noisy_pos_emb_init = ConfigDict(
     {
-        "linear_s": {"bias": False, "init": "default"},
-        "linear_z": {"bias": False, "init": "default"},
+        "linear_s": {"bias": False, "init": "final"},
+        "linear_z": {"bias": False, "init": "final"},
         "linear_r": {"bias": False, "init": "default"},
     }
 )
@@ -181,11 +202,13 @@ atom_att_enc_init = ConfigDict(
     {
         "ref_atom_emb": ref_atom_emb_init,
         "noisy_pos_emb": noisy_pos_emb_init,
-        "linear_l": {"bias": False, "init": "relu"},
-        "linear_m": {"bias": False, "init": "relu"},
-        "pair_mlp": {"bias": False, "init": "relu"},
+        "linear_l": {"bias": False, "init": "default"},
+        "linear_m": {"bias": False, "init": "default"},
+        "pair_mlp_1": {"bias": False, "init": "relu"},
+        "pair_mlp_2": {"bias": False, "init": "relu"},
+        "pair_mlp_3": {"bias": False, "init": "final"},
         "diffusion_transformer": diffusion_transformer_init,
-        "linear_q": {"bias": False, "init": "relu"},
+        "linear_q": {"bias": False, "init": "default"},
     }
 )
 
@@ -199,12 +222,8 @@ atom_att_dec_init = ConfigDict(
 )
 
 # AF3
-relpos_emb_init = ConfigDict({"linear_relpos": {"bias": False, "init": "default"}})
-
-# AF3
 diffusion_cond_init = ConfigDict(
     {
-        "relpos_emb": relpos_emb_init,
         "linear_z": {"bias": False, "init": "default"},
         "transition_z": swiglu_transition_init,
         "linear_s": {"bias": False, "init": "default"},
@@ -256,7 +275,7 @@ all_atom_input_emb_init = ConfigDict(
         "linear_s": {"bias": False, "init": "default"},
         "linear_z_i": {"bias": False, "init": "default"},
         "linear_z_j": {"bias": False, "init": "default"},
-        "relpos_emb": relpos_emb_init,
+        "linear_relpos": {"bias": False, "init": "default"},
         "linear_token_bonds": {"bias": False, "init": "default"},
     }
 )
@@ -516,6 +535,6 @@ multimer_structure_module_init = ConfigDict(
 # AF3
 diffusion_module_init = ConfigDict(
     {
-        "linear_s": {"bias": False, "init": "default"},
+        "linear_s": {"bias": False, "init": "final"},
     }
 )
