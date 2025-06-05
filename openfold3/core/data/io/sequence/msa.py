@@ -815,6 +815,19 @@ class MsaSampleParserInference(MsaSampleParser):
                     if len(main_msa_file_paths) > 0
                     else paired_msa_file_paths
                 )
+
+                if len(paths) == 0:
+                    warnings.warn(
+                        (
+                            f"Expected MSA file for chain {chain_id} of type "
+                            f"{chain_data.molecule_type.name} in query "
+                            f"{input.query_name}, but no MSA files found. No MSA "
+                            "features will be computed for this chain."
+                        ),
+                        stacklevel=2,
+                    )
+                    continue
+
                 for msa_file_path in paths:
                     if msa_file_path.is_dir() or msa_file_path.suffix == ".npz":
                         rep_ids.add(msa_file_path.stem)

@@ -28,6 +28,7 @@ class MSAMaxSeqCounts(BaseModel):
             "rnacentral_hits": 10_000,
             "nt_hits": 10_000,
             "concat_cfdb_uniref100_filtered": 10_000_000,
+            "colabfold_main": 16_384,
         }
     )
 
@@ -56,7 +57,9 @@ class MSASettings(BaseModel):
         "rnacentral_hits",
         "nt_hits",
         "concat_cfdb_uniref100_filtered",
+        "colabfold_main",
     ]
+    paired_msa_order: list = ["colabfold_paired"]
 
 
 class TemplateDistogramSettings(BaseModel):

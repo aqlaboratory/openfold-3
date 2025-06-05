@@ -1,4 +1,4 @@
-from typing import Annotated, NamedTuple
+from typing import Annotated, Any, NamedTuple
 
 from pydantic import BaseModel, BeforeValidator, DirectoryPath, FilePath
 
@@ -44,6 +44,7 @@ class Chain(BaseModel):
 
 
 class Query(BaseModel):
+    query_name: str | None = None
     chains: list[Chain]
     use_msas: bool = True
     use_paired_msas: bool = True
@@ -57,3 +58,7 @@ class InferenceQuerySet(BaseModel):
     queries: dict[str, Query]
     ccd_file_path: FilePathOrNone = None
     msa_directory_path: DirectoryPathOrNone = None
+
+    def model_post_init(self, __context: Any) -> None:
+        for name, query in self.queries.items():
+            query.query_name = name

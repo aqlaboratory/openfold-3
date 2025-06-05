@@ -25,8 +25,8 @@ from openfold3.core.data.primitives.sequence.msa import (
     MsaArrayCollection,
     create_main,
     create_paired,
+    create_paired_from_preprocessed,
     create_query_seqs,
-    expand_paired_msas,
     find_monomer_homomer,
 )
 from openfold3.projects.af3_all_atom.config.dataset_config_components import MSASettings
@@ -324,9 +324,12 @@ class MsaSampleProcessorInference(MsaSampleProcessor):
             & input.use_paired_msas
         ):
             # Use precomputed paired MSAs
+            # TODO modularize better
             if len(msa_array_collection.rep_id_to_paired_msa) > 0:
-                chain_id_to_paired_msa = expand_paired_msas(
-                    msa_array_collection=msa_array_collection
+                chain_id_to_paired_msa = create_paired_from_preprocessed(
+                    msa_array_collection=msa_array_collection,
+                    max_rows_paired=self.config.max_rows_paired,
+                    paired_msa_order=self.config.paired_msa_order,
                 )
             # Pair online from main MSAs
             elif not find_monomer_homomer(msa_array_collection):

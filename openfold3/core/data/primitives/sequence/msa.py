@@ -1123,6 +1123,49 @@ def create_paired(
     return chain_id_to_paired_msa
 
 
+# TODO improve integration with existing create paired function
+def create_paired_from_preprocessed(
+    msa_array_collection: MsaArrayCollection,
+    max_rows_paired: int,
+    paired_msa_order: list[str],
+) -> dict[str, MsaArray]:
+    """Creates per-chain paired MSA arrays in the expected format from precomputed
+    paired MSAs.
+
+    Args:
+        msa_array_collection (MsaArrayCollection):
+            A collection of Msa objects and chain IDs for a single sample.
+        max_rows_paired (int):
+            The maximum number of rows to keep from the paired rows.
+        paired_msa_order (list[str]):
+            The order in which to concatenate the paired MSA arrays vertically if
+            multiple are provided. Alignments not in this list are not added to the
+            paired MSA stack.
+
+    Returns:
+        dict[str, MsaArray]: _description_
+    """
+
+    # Process precomputed paired MSAs
+    processed_prepaired_msas = {}
+    for rep_id, paired_msa_dict in msa_array_collection.rep_id_to_paired_msa.items():
+        # Flatten
+        prepaired_msa = MsaArray.multi_concatenate(
+            [
+                paired_msa_dict[paired_msa_key]
+                for paired_msa_key in paired_msa_order
+                if paired_msa_key in paired_msa_dict
+            ]
+        )
+        # Crop
+        processed_prepaired_msas[rep_id] = prepaired_msa.truncate(max_rows_paired)
+
+    msa_array_collection.rep_id_to_paired_msa = processed_prepaired_msas
+
+    # Map to per-chain
+    return expand_paired_msas(msa_array_collection=msa_array_collection)
+
+
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-main")
 def create_main(
     msa_array_collection: MsaArrayCollection,

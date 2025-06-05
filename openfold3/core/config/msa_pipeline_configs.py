@@ -64,6 +64,7 @@ class MsaSampleProcessorInputTrain(BaseModel):
 class MsaSampleProcessorInputInference(BaseModel):
     """Dict-based expanded view of inference_query_format.query containing MSA data."""
 
+    query_name: str | None = None
     msa_chain_data: dict[str, MsaChainDataInference]
     use_msas: bool
     use_paired_msas: bool
@@ -80,6 +81,7 @@ class MsaSampleProcessorInputInference(BaseModel):
                     main_msa_file_paths=chain.main_msa_file_paths,
                 )
         return cls(
+            query_name=inference_query.query_name,
             msa_chain_data=msa_chain_data,
             use_msas=inference_query.use_msas,
             use_paired_msas=inference_query.use_paired_msas,
