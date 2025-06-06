@@ -662,11 +662,11 @@ class ColabFoldQueryRunner:
 
         for rep_id, aln in zip(self.colabfold_mapper.rep_ids, a3m_lines_main):
             rep_dir = main_alignments_path / str(rep_id)
-            rep_dir.mkdir(parents=True, exist_ok=True)
 
             # TODO: add code for which format to save the MSA in
             # If save as a3m...
             if "a3m" in self.msa_file_format:
+                rep_dir.mkdir(parents=True, exist_ok=True)
                 a3m_file = rep_dir / "colabfold_main.a3m"
                 with open(a3m_file, "w") as f:
                     f.write(aln)

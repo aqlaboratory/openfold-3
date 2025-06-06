@@ -99,23 +99,7 @@ def featurize_msa_af3(
 class MsaFeaturizerOF3Config(BaseModel):
     max_rows: int
     max_rows_paired: int
-    n_tokens: int
     subsample_with_bands: bool
-
-    @classmethod
-    def create(
-        cls,
-        max_rows: int,
-        max_rows_paired: int,
-        n_tokens: int,
-        subsample_with_bands: bool,
-    ):
-        return cls(
-            max_rows=max_rows,
-            max_rows_paired=max_rows_paired,
-            n_tokens=n_tokens,
-            subsample_with_bands=subsample_with_bands,
-        )
 
 
 class MsaFeaturizerOF3:
@@ -127,7 +111,6 @@ class MsaFeaturizerOF3:
     ):
         self.max_rows = config.max_rows
         self.max_rows_paired = config.max_rows_paired
-        self.n_tokens = config.n_tokens
         self.subsample_with_bands = config.subsample_with_bands
 
     def create_feature_precursor(
@@ -152,7 +135,6 @@ class MsaFeaturizerOF3:
             msa_array_collection=msa_array_collection,
             max_rows=self.max_rows,
             max_rows_paired=self.max_rows_paired,
-            n_tokens=self.n_tokens,
         )
 
     def create_features(
