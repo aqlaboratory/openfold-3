@@ -1,3 +1,43 @@
+[build-system]
+requires = ["setuptools", "pip", "torch", "numpy"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openfold3"
+version = "0.1.0"
+dependencies = [
+  "torch",
+  "pytorch-lightning",
+  "numpy",
+  "pandas",
+  "PyYAML",
+  "requests",
+  "scipy",
+  "tqdm",
+  "typing-extensions",
+  "wandb",
+  "ml-collections",
+  "mkl",
+  "aria2",
+  "biotite",#>=1.1.0",
+  "rdkit",
+  "boto3",
+  "memory_profiler",
+  "func_timeout",
+  "lmdb",
+  "ijson",
+]
+description = "A PyTorch reimplementation of DeepMind's AlphaFold 2 & 3"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+]
+
+
 [tool.ruff]
 line-length = 88
 exclude = [
