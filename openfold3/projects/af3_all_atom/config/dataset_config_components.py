@@ -9,13 +9,10 @@ The main sections of the dataset configuration are:
 
 from typing import Annotated
 
-from pydantic import BaseModel, BeforeValidator
+from pydantic import BaseModel, BeforeValidator, Field
 
 from openfold3.core.config.config_utils import _convert_molecule_type
 from openfold3.core.data.resources.residues import MoleculeType
-
-# TODO: this will need to allow for arbitrary key: seq count pairs as users may have
-# files with different names from the defaults
 
 
 class MSASettings(BaseModel):
@@ -27,8 +24,8 @@ class MSASettings(BaseModel):
     min_chains_paired_partial: int = 2
     pairing_mask_keys: list[str] = ["shared_by_two", "less_than_600"]
     moltypes: Annotated[list[MoleculeType], BeforeValidator(_convert_molecule_type)] = [
-        "PROTEIN",
-        "RNA",
+        MoleculeType.PROTEIN,
+        MoleculeType.RNA,
     ]
     max_seq_counts: dict = {
         "uniref90_hits": 10000,
@@ -53,7 +50,9 @@ class MSASettings(BaseModel):
         "rnacentral_hits",
         "nt_hits",
         "concat_cfdb_uniref100_filtered",
+        "colabfold_main",
     ]
+    paired_msa_order: list = ["colabfold_paired"]
 
 
 class TemplateDistogramSettings(BaseModel):

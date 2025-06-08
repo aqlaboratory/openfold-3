@@ -1,4 +1,4 @@
-from typing import Annotated, NamedTuple, Optional
+from typing import Annotated, Any, NamedTuple
 
 from pydantic import (
     BaseModel,
@@ -31,17 +31,21 @@ class Bond(NamedTuple):
 class Chain(BaseModel):
     molecule_type: Annotated[MoleculeType, BeforeValidator(_convert_molecule_type)]
     chain_ids: Annotated[list[str], BeforeValidator(_ensure_list)]
-    sequence: Optional[str] = None
-    smiles: Optional[str] = None
-    ccd_codes: Optional[Annotated[list[str], BeforeValidator(_ensure_list)]] = None
+    sequence: str | None = None
+    smiles: str | None = None
+    ccd_codes: Annotated[list[str], BeforeValidator(_ensure_list)] | None = None
     # Msa definition
-    paired_msa_file_paths: Optional[
-        Annotated[list[FilePath | DirectoryPath], BeforeValidator(_ensure_list)]
-    ] = None
-    main_msa_file_paths: Optional[list[FilePath | DirectoryPath]] = None
+    paired_msa_file_paths: (
+        Annotated[list[FilePath | DirectoryPath], BeforeValidator(_ensure_list)] | None
+    ) = None
+    main_msa_file_paths: list[FilePath | DirectoryPath] | None = None
     # # Template definition
     # templates: ...
-    sdf_file_path: Optional[FilePath] = None
+    sdf_file_path: FilePath | None = None
+
+    @field_serializer("molecule_type")
+    def serialize_enum_name(self, v: MoleculeType, _info):
+        return v.name
 
     @field_serializer("molecule_type")
     def serialize_enum_name(self, v: MoleculeType, _info):
@@ -53,12 +57,13 @@ class Chain(BaseModel):
 
 
 class Query(BaseModel):
+    query_name: str | None = None
     chains: list[Chain]
     use_msas: bool = True
     use_paired_msas: bool = True
     use_main_msas: bool = True
     # use_templates: bool = False
-    covalent_bonds: Optional[list[Bond]] = None
+    covalent_bonds: list[Bond] | None = None
 
 
 class InferenceQuerySet(BaseModel):
@@ -73,3 +78,7 @@ class InferenceQuerySet(BaseModel):
         with open(json_path) as f:
             data = f.read()
         return cls.model_validate_json(data)
+
+    def model_post_init(self, __context: Any) -> None:
+        for name, query in self.queries.items():
+            query.query_name = name

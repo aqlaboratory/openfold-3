@@ -29,27 +29,38 @@ from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.af3_all_atom.config.dataset_config_components import MSASettings
 
 
-def _dirpath_to_filepaths(input_path: Path | list[Path]) -> list[Path]:
-    """Converts a DirPath to a list of FilePaths if it is not already a list."""
-    if isinstance(input_path, Path) & input_path.is_dir():
-        return list(input_path.iterdir())
-    elif isinstance(input_path, Path) & input_path.is_file():
+def standardize_filepaths(input_path: Path | list[Path]) -> list[Path]:
+    """Standardizes and expands input paths.
+
+    Converts
+        - a directory path to a list of file paths the directory contains
+        - a file path to a list containing the file path itself
+        - a list of directory paths to a list of file paths the directories contain
+          at depth=1
+        - a list of file paths to a list of file paths
+    """
+    # DirPath -> [FilePaths]
+    if isinstance(input_path, Path) and input_path.is_dir():
+        return [p for p in list(input_path.iterdir()) if p.is_file()]
+    # FilePath -> [FilePath]
+    elif isinstance(input_path, Path) and input_path.is_file():
         return [input_path]
+    # [DirPaths, FilePaths] -> [FilePaths]
     elif isinstance(input_path, list):
-        return input_path
+        input_path_files = []
+        for p in input_path:
+            if p.is_file():
+                input_path_files.append(p)
+            elif p.is_dir():
+                input_path_files.extend(
+                    [p_i for p_i in list(p.iterdir()) if p_i.is_file()]
+                )
+        return input_path_files
     else:
         raise ValueError(
-            f"Input path {input_path} must be a Path to a file, a directory or a list ."
-            f"of file Paths but got {type(input_path)}"
+            f"Input path {input_path} must be a Path to a file, a directory or a list "
+            f"of file/directory Paths but got {type(input_path)}: {input_path}."
         )
-
-
-def _filepath_to_list(input_path: Path) -> list[Path]:
-    """Converts a FilePath to a list of FilePaths if it is not already a list."""
-    if isinstance(input_path, Path):
-        return [input_path]
-    elif isinstance(input_path, list):
-        return input_path
 
 
 def _msa_list_to_np(msa: Sequence[str]) -> np.array:
@@ -444,7 +455,7 @@ def parse_msas_sample(
         representative_msas = {}
         for rep_id in representative_chain_ids:
             if alignment_array_directory is not None:
-                file_list = _filepath_to_list(
+                file_list = standardize_filepaths(
                     alignment_array_directory / f"{rep_id}.npz"
                 )
                 representative_msas[rep_id] = parse_msas_preparsed(
@@ -457,7 +468,7 @@ def parse_msas_sample(
                     max_seq_counts=max_seq_counts,
                 )
             else:
-                file_list = _dirpath_to_filepaths(alignments_directory / Path(rep_id))
+                file_list = standardize_filepaths(alignments_directory / Path(rep_id))
                 representative_msas[rep_id] = parse_msas_direct(
                     file_list=file_list,
                     max_seq_counts=max_seq_counts,
@@ -543,7 +554,7 @@ def parse_msas_sample_inference(
             if rep_id in rep_id_to_main_msa_paths:
                 example_path = rep_id_to_main_msa_paths[rep_id][0]
                 if example_path.is_dir() or (example_path.suffix in [".sto", ".a3m"]):
-                    file_list = _dirpath_to_filepaths(
+                    file_list = standardize_filepaths(
                         rep_id_to_main_msa_paths[rep_id],
                     )
                     chain_msa_parser = partial(
@@ -551,7 +562,7 @@ def parse_msas_sample_inference(
                         max_seq_counts=max_seq_counts,
                     )
                 elif example_path.suffix == ".npz":
-                    file_list = _filepath_to_list(rep_id_to_main_msa_paths[rep_id])
+                    file_list = standardize_filepaths(rep_id_to_main_msa_paths[rep_id])
                     chain_msa_parser = parse_msas_preparsed
                 else:
                     raise ValueError(
@@ -575,7 +586,7 @@ def parse_msas_sample_inference(
             if rep_id in rep_id_to_paired_msa_paths:
                 example_path = rep_id_to_paired_msa_paths[rep_id][0]
                 if example_path.is_dir() or (example_path.suffix in [".sto", ".a3m"]):
-                    file_list = _dirpath_to_filepaths(
+                    file_list = standardize_filepaths(
                         rep_id_to_paired_msa_paths[rep_id]
                     )
                     chain_msa_parser = partial(
@@ -583,7 +594,9 @@ def parse_msas_sample_inference(
                         max_seq_counts=max_seq_counts,
                     )
                 elif example_path.suffix == ".npz":
-                    file_list = _filepath_to_list(rep_id_to_paired_msa_paths[rep_id])
+                    file_list = standardize_filepaths(
+                        rep_id_to_paired_msa_paths[rep_id]
+                    )
                     chain_msa_parser = parse_msas_preparsed
                 else:
                     raise ValueError(
@@ -731,7 +744,7 @@ class MsaSampleParserTrain(MsaSampleParser):
             representative_chain_ids = sorted(set(maps.chain_id_to_rep_id.values()))
             for rep_id in representative_chain_ids:
                 if self.alignment_array_directory is not None:
-                    file_list = _filepath_to_list(
+                    file_list = standardize_filepaths(
                         self.alignment_array_directory / f"{rep_id}.npz"
                     )
                     all_msas_per_chain = parse_msas_preparsed(file_list=file_list)
@@ -739,15 +752,15 @@ class MsaSampleParserTrain(MsaSampleParser):
                     all_msas_per_chain = parse_msas_alignment_database(
                         alignment_index_entry=self.alignment_index[rep_id],
                         alignment_database_path=self.alignment_db_directory,
-                        max_seq_counts=self.config.max_seq_counts,
+                        max_seq_counts=self.config.max_seq_counts.counts,
                     )
                 else:
-                    file_list = _dirpath_to_filepaths(
+                    file_list = standardize_filepaths(
                         self.config.alignments_directory / Path(rep_id)
                     )
                     all_msas_per_chain = parse_msas_direct(
                         file_list=file_list,
-                        max_seq_counts=self.config.max_seq_counts,
+                        max_seq_counts=self.config.max_seq_counts.counts,
                     )
                 maps.rep_id_to_main_msa[rep_id] = all_msas_per_chain
 
@@ -802,6 +815,19 @@ class MsaSampleParserInference(MsaSampleParser):
                     if len(main_msa_file_paths) > 0
                     else paired_msa_file_paths
                 )
+
+                if len(paths) == 0:
+                    warnings.warn(
+                        (
+                            f"Expected MSA file for chain {chain_id} of type "
+                            f"{chain_data.molecule_type.name} in query "
+                            f"{input.query_name}, but no MSA files found. No MSA "
+                            "features will be computed for this chain."
+                        ),
+                        stacklevel=2,
+                    )
+                    continue
+
                 for msa_file_path in paths:
                     if msa_file_path.is_dir() or msa_file_path.suffix == ".npz":
                         rep_ids.add(msa_file_path.stem)
@@ -858,15 +884,15 @@ class MsaSampleParserInference(MsaSampleParser):
                     if example_path.is_dir() or (
                         example_path.suffix in [".sto", ".a3m"]
                     ):
-                        file_list = _dirpath_to_filepaths(
+                        file_list = standardize_filepaths(
                             maps.rep_id_to_main_msa_paths[rep_id],
                         )
                         chain_msa_parser = partial(
                             parse_msas_direct,
-                            max_seq_counts=self.config.max_seq_counts,
+                            max_seq_counts=self.config.max_seq_counts.counts,
                         )
                     elif example_path.suffix == ".npz":
-                        file_list = _filepath_to_list(
+                        file_list = standardize_filepaths(
                             maps.rep_id_to_main_msa_paths[rep_id]
                         )
                         chain_msa_parser = parse_msas_preparsed
@@ -894,15 +920,15 @@ class MsaSampleParserInference(MsaSampleParser):
                     if example_path.is_dir() or (
                         example_path.suffix in [".sto", ".a3m"]
                     ):
-                        file_list = _dirpath_to_filepaths(
+                        file_list = standardize_filepaths(
                             maps.rep_id_to_paired_msa_paths[rep_id],
                         )
                         chain_msa_parser = partial(
                             parse_msas_direct,
-                            max_seq_counts=self.config.max_seq_counts,
+                            max_seq_counts=self.config.max_seq_counts.counts,
                         )
                     elif example_path.suffix == ".npz":
-                        file_list = _filepath_to_list(
+                        file_list = standardize_filepaths(
                             maps.rep_id_to_paired_msa_paths[rep_id]
                         )
                         chain_msa_parser = parse_msas_preparsed
