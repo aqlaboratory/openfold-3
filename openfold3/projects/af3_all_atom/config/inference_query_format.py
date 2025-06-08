@@ -47,10 +47,6 @@ class Chain(BaseModel):
     def serialize_enum_name(self, v: MoleculeType, _info):
         return v.name
 
-    @field_serializer("molecule_type")
-    def serialize_enum_name(self, v: MoleculeType, _info):
-        return v.name
-
     # TODO(jennifer): Add validations to this class
     # - if molecule type is protein / dna / rna - must specify sequence
     # - if molecule type is ligand - either ccd or smiles needs to be specifified
@@ -80,5 +76,6 @@ class InferenceQuerySet(BaseModel):
         return cls.model_validate_json(data)
 
     def model_post_init(self, __context: Any) -> None:
+        """Add query name to the query objects."""
         for name, query in self.queries.items():
             query.query_name = name

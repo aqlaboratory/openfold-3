@@ -77,6 +77,13 @@ class InferenceDataset(Dataset):
         self.msa_sample_processor_inference = MsaSampleProcessorInference(
             config=self.msa_settings
         )
+        self.msa_featurizer_of3 = MsaFeaturizerOF3(
+            config=MsaFeaturizerOF3Config(
+                max_rows=self.msa_settings.max_rows,
+                max_rows_paired=self.msa_settings.max_rows_paired,
+                subsample_with_bands=self.msa_settings.subsample_with_bands,
+            )
+        )
 
         # Parse CCD
         if self.query_set.ccd_file_path is not None:
@@ -180,16 +187,10 @@ class InferenceDataset(Dataset):
         input = MsaSampleProcessorInputInference.create_from_iqs(inference_query=query)
         msa_array_collection = self.msa_sample_processor_inference(input=input)
 
-        msa_featurizer_of3_config = MsaFeaturizerOF3Config(
-            max_rows=self.msa_settings.max_rows,
-            max_rows_paired=self.msa_settings.max_rows_paired,
+        msa_features = self.msa_featurizer_of3(
+            atom_array=atom_array,
+            msa_array_collection=msa_array_collection,
             n_tokens=n_tokens,
-            subsample_with_bands=self.msa_settings.subsample_with_bands,
-        )
-        msa_featurizer_of3 = MsaFeaturizerOF3(config=msa_featurizer_of3_config)
-
-        msa_features = msa_featurizer_of3(
-            atom_array=atom_array, msa_array_collection=msa_array_collection
         )
 
         return msa_features

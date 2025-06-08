@@ -117,6 +117,7 @@ class MsaFeaturizerOF3:
         self,
         atom_array: AtomArray,
         msa_array_collection: MsaArrayCollection,
+        n_tokens: int,
     ) -> dict[str, torch.Tensor]:
         """Create feature precursor for MSAs.
 
@@ -125,6 +126,8 @@ class MsaFeaturizerOF3:
                 Target structure atom array.
             msa_array_collection (MsaArrayCollection):
                 Collection of processed MSA arrays.
+            n_tokens (int):
+                Number of tokens in the target structure.
 
         Returns:
             dict[str, torch.Tensor]:
@@ -135,6 +138,7 @@ class MsaFeaturizerOF3:
             msa_array_collection=msa_array_collection,
             max_rows=self.max_rows,
             max_rows_paired=self.max_rows_paired,
+            n_tokens=n_tokens,
         )
 
     def create_features(
@@ -183,10 +187,11 @@ class MsaFeaturizerOF3:
 
         return features
 
-    def forward(
+    def __call__(
         self,
         atom_array: AtomArray,
         msa_array_collection: MsaArrayCollection,
+        n_tokens: int,
     ) -> dict[str, torch.Tensor]:
         """Featurize MSAs.
 
@@ -195,6 +200,8 @@ class MsaFeaturizerOF3:
                 Target structure atom array.
             msa_array_collection (MsaArrayCollection):
                 Collection of processed MSA arrays.
+            n_tokens (int):
+                Number of tokens in the target structure.
 
         Returns:
             dict[str, torch.Tensor]:
@@ -203,10 +210,6 @@ class MsaFeaturizerOF3:
         msa_feature_precursor = self.create_feature_precursor(
             atom_array=atom_array,
             msa_array_collection=msa_array_collection,
+            n_tokens=n_tokens,
         )
         return self.create_features(msa_feature_precursor)
-
-    def __call__(
-        self, atom_array: AtomArray, msa_array_collection: MsaArrayCollection
-    ) -> dict[str, torch.Tensor]:
-        return self.forward(atom_array, msa_array_collection)

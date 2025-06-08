@@ -356,23 +356,21 @@ def map_msas_to_tokens(
 def create_msa_feature_precursor_af3(
     atom_array: AtomArray,
     msa_array_collection: MsaArrayCollection,
+    n_tokens: int,
     max_rows: int,
     max_rows_paired: int,
-    n_tokens: int | None = None,
 ) -> MsaFeaturePrecursorAF3:
     """Creates a set of precursor arrays for AF3 MSA featurization.
 
     Args:
         atom_array (AtomArray):
             AtomArray of the cropped structure.
-        msa_processed_collection (MsaProcessedCollection):
+        msa_array_collection (MsaArrayCollection):
             Collection of processed MSA data per chain.
+        n_tokens (int):
+            Number of tokens in the atom array.
         msa_slice (MsaSlice):
             Object containing the mappings from the crop to the MSA sequences.
-        n_tokens (int | None):
-            The number of tokens in the crop during training or in the whole structure
-            to predict during inference. If None, it will be set to the number of tokens
-            in the atom array.
         max_rows_paired (int):
             The maximum number of rows to pair.
 
@@ -381,10 +379,6 @@ def create_msa_feature_precursor_af3(
             Processed MSA arrays for the crop during training or in the whole structure
             to predict during inference to featurize.
     """
-    # Set n_tokens to the number of tokens in the atom array if not provided
-    if n_tokens is None:
-        n_tokens = len(get_token_starts(atom_array))
-
     if bool(msa_array_collection.chain_id_to_query_seq):
         # fetch rowcounts
         calculate_row_counts(msa_array_collection, max_rows, max_rows_paired)

@@ -9,7 +9,7 @@ The main sections of the dataset configuration are:
 
 from typing import Annotated
 
-from pydantic import BaseModel, BeforeValidator, Field
+from pydantic import BaseModel, BeforeValidator
 
 from openfold3.core.config.config_utils import _convert_molecule_type
 from openfold3.core.data.resources.residues import MoleculeType

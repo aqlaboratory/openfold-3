@@ -752,7 +752,7 @@ class MsaSampleParserTrain(MsaSampleParser):
                     all_msas_per_chain = parse_msas_alignment_database(
                         alignment_index_entry=self.alignment_index[rep_id],
                         alignment_database_path=self.alignment_db_directory,
-                        max_seq_counts=self.config.max_seq_counts.counts,
+                        max_seq_counts=self.config.max_seq_counts,
                     )
                 else:
                     file_list = standardize_filepaths(
@@ -760,7 +760,7 @@ class MsaSampleParserTrain(MsaSampleParser):
                     )
                     all_msas_per_chain = parse_msas_direct(
                         file_list=file_list,
-                        max_seq_counts=self.config.max_seq_counts.counts,
+                        max_seq_counts=self.config.max_seq_counts,
                     )
                 maps.rep_id_to_main_msa[rep_id] = all_msas_per_chain
 
@@ -889,7 +889,7 @@ class MsaSampleParserInference(MsaSampleParser):
                         )
                         chain_msa_parser = partial(
                             parse_msas_direct,
-                            max_seq_counts=self.config.max_seq_counts.counts,
+                            max_seq_counts=self.config.max_seq_counts,
                         )
                     elif example_path.suffix == ".npz":
                         file_list = standardize_filepaths(
@@ -925,7 +925,7 @@ class MsaSampleParserInference(MsaSampleParser):
                         )
                         chain_msa_parser = partial(
                             parse_msas_direct,
-                            max_seq_counts=self.config.max_seq_counts.counts,
+                            max_seq_counts=self.config.max_seq_counts,
                         )
                     elif example_path.suffix == ".npz":
                         file_list = standardize_filepaths(
