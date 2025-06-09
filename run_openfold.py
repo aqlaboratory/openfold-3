@@ -220,17 +220,19 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
     weights_only_path = runner_args.get("weights_only_checkpoint_path")
     if ckpt_path:
         if ckpt_path == "last":
-            restore_path = (
-                Path(runner_args.output_dir)
-                / runner_args.wandb.project
-                / runner_args.wandb.id
-                / "checkpoints"
-                / "last.ckpt"
-            )
+            restore_path = None
+            if runner_args.get("wandb"):
+                restore_path = (
+                    Path(runner_args.output_dir)
+                    / str(runner_args.wandb.get("project"))
+                    / str(runner_args.wandb.get("id"))
+                    / "checkpoints"
+                    / "last.ckpt"
+                )
         else:
             restore_path = Path(ckpt_path)
 
-        if restore_path.exists():
+        if restore_path is not None and restore_path.exists():
             restore_lr_step(ckpt_path=restore_path, lightning_module=lightning_module)
         elif weights_only_path:
             ckpt_path = None
