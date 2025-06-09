@@ -19,7 +19,7 @@ dependencies = [
   "ml-collections",
   "mkl",
   "aria2",
-  "biotite",#>=1.1.0",
+  "biotite >=1.1.0, <1.3",
   "rdkit",
   "boto3",
   "memory_profiler",
