@@ -180,8 +180,6 @@ class InferenceDataset(Dataset):
 
     def create_msa_features(self, query, atom_array, n_tokens) -> dict:
         """Creates the MSA features."""
-        # NOTE: Only here for avoiding invalid syntax highlighting, but this will likely
-        # not be an argument in the future
 
         # Create MSA precursor input
         input = MsaSampleProcessorInputInference.create_from_inference_query_entry(

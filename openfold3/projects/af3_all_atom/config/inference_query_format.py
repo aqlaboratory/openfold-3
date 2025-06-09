@@ -28,6 +28,7 @@ class Bond(NamedTuple):
 
 
 class Chain(BaseModel):
+    model_config = {"use_enum_values": False}  # pydantic default override
     molecule_type: Annotated[MoleculeType, BeforeValidator(_convert_molecule_type)]
     chain_ids: Annotated[list[str], BeforeValidator(_ensure_list)]
     sequence: str | None = None
@@ -42,7 +43,7 @@ class Chain(BaseModel):
     # templates: ...
     sdf_file_path: FilePath | None = None
 
-    @field_serializer("molecule_type")
+    @field_serializer("molecule_type", return_type=str)
     def serialize_enum_name(self, v: MoleculeType, _info):
         return v.name
 
