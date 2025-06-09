@@ -108,7 +108,6 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
 
         cl = torch.randn((batch_size, n_atom, c_atom))
         plm = torch.randn((batch_size, num_blocks, n_query, n_key, c_atom_pair))
-        ql = torch.randn((batch_size, n_atom, c_atom))
 
         si_trunk = torch.randn((batch_size, n_token, c_s))
         zij_trunk = torch.randn((batch_size, n_token, n_token, c_z))
@@ -118,7 +117,6 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
             batch=batch,
             cl=cl,
             plm=plm,
-            ql=ql,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
             rl=rl,
@@ -165,7 +163,6 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
 
         cl = torch.randn((batch_size, 1, n_atom, c_atom))
         plm = torch.randn((batch_size, 1, num_blocks, n_query, n_key, c_atom_pair))
-        ql = torch.randn((batch_size, 1, n_atom, c_atom))
 
         si_trunk = torch.randn((batch_size, 1, n_token, c_s))
         zij_trunk = torch.randn((batch_size, 1, n_token, n_token, c_z))
@@ -175,7 +172,6 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
             batch=batch,
             cl=cl,
             plm=plm,
-            ql=ql,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
             rl=rl,
