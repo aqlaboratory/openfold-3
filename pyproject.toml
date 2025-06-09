@@ -26,6 +26,12 @@ dependencies = [
   "func_timeout",
   "lmdb",
   "ijson",
+  "deepspeed",
+  "dm-tree",
+  "pdbeccdutils",
+  # tests still require
+  "biopython",
+  "modelcif",
 ]
 description = "A PyTorch reimplementation of DeepMind's AlphaFold 2 & 3"
 requires-python = ">=3.10"
