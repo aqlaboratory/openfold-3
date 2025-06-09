@@ -369,8 +369,8 @@ def create_msa_feature_precursor_af3(
             Collection of processed MSA data per chain.
         n_tokens (int):
             Number of tokens in the atom array.
-        msa_slice (MsaSlice):
-            Object containing the mappings from the crop to the MSA sequences.
+        max_rows (int):
+            The maximum number of rows to use.
         max_rows_paired (int):
             The maximum number of rows to pair.
 

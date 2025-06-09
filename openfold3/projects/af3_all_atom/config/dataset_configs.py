@@ -30,6 +30,7 @@ from pydantic import ConfigDict as PydanticConfigDict
 from openfold3.core.config.config_utils import DirectoryPathOrNone, FilePathOrNone
 from openfold3.core.data.framework.data_module import DatasetMode, DatasetSpec
 from openfold3.projects.af3_all_atom.config.dataset_config_components import (
+    colabfold_msa_settings,
     CropSettings,
     LossConfig,
     MSASettings,
@@ -252,7 +253,7 @@ class TrainingDatasetSpec(DatasetSpec):
 class InferenceDatasetConfigKwargs(BaseModel):
     """Class to hold msa and temlpate kwargs for inference pipeline"""
 
-    msa: MSASettings = MSASettings()
+    msa: MSASettings = colabfold_msa_settings
     template: TemplateSettings = TemplateSettings()
 
 
