@@ -184,7 +184,9 @@ class InferenceDataset(Dataset):
         # not be an argument in the future
 
         # Create MSA precursor input
-        input = MsaSampleProcessorInputInference.create_from_iqs(inference_query=query)
+        input = MsaSampleProcessorInputInference.create_from_inference_query_entry(
+            inference_query=query
+        )
         msa_array_collection = self.msa_sample_processor_inference(input=input)
 
         msa_features = self.msa_featurizer_of3(

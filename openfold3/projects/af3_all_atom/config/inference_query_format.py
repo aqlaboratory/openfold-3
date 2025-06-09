@@ -9,7 +9,6 @@ from pydantic import (
 )
 
 from openfold3.core.config.config_utils import (
-    FilePathOrNone,
     _convert_molecule_type,
     _ensure_list,
 )
