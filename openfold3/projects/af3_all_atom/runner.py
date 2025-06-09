@@ -1,3 +1,4 @@
+import gc
 import importlib
 import itertools
 import logging
@@ -455,6 +456,12 @@ class AlphaFold3AllAtom(ModelRunner):
         # Restore the model weights to normal
         self.model.load_state_dict(self.cached_weights)
         self.cached_weights = None
+
+        # Temp fix for val dataloader worker seg fault issues
+        # TODO: Figure out why this is not being cleaned up properly
+        gc.collect()
+        torch.cuda.empty_cache()
+        self.trainer.strategy.barrier()
 
     def configure_optimizers(self) -> dict:
         optimizer_config = self.config.settings.optimizer
