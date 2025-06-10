@@ -134,7 +134,7 @@ See [Monomer Output Example](https://github.com/aqlaboratory/openfold3/tree/main
 ```
 query.json
 <output_directory_path>
- ├── <protein.
+ ├── <protein>
 	 └── seed_42
  ├── main
 	 └── <protein_msa>.npz
