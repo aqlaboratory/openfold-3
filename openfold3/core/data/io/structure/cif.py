@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal, NamedTuple
 
 from biotite.structure import AtomArray, get_chain_count
-from biotite.structure.io import pdb, pdbx
+from biotite.structure.io import pdb, pdbx, save_structure
 
 from openfold3.core.data.io.structure.atom_array import (
     read_atomarray_from_npz,
@@ -214,6 +214,35 @@ def parse_mmcif(
     return ParsedStructure(cif_file, atom_array)
 
 
+def _create_cif_file(
+    suffix: str, atom_array: AtomArray, data_block: str, include_bonds: bool
+):
+    """Helper function to create and populate CIF or BCIF files."""
+    if suffix == ".cif":
+        cif_file = pdbx.CIFFile()
+    elif suffix == ".bcif":
+        cif_file = pdbx.BinaryCIFFile()
+    else:
+        raise ValueError("Suffix must be either .cif or .bcif")
+
+    try:
+        pdbx.set_structure(
+            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
+        )
+    # This error sometimes happens in the PDB preprocessing
+    except KeyError:
+        logger.warning(
+            "KeyError while writing structure to CIF file. Retrying with "
+            "intra-residue COORDINATION bonds set to SINGLE."
+        )
+        atom_array = convert_intra_residue_dative_to_single(atom_array)
+        pdbx.set_structure(
+            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
+        )
+
+    return cif_file
+
+
 def write_structure(
     atom_array: AtomArray,
     output_path: Path,
@@ -233,41 +262,37 @@ def write_structure(
             file suffix. Allowed values are .npz, .cif, .bcif, and .pkl.
         data_block:
             Name of the data block in the CIF/BCIF file. Defaults to None. Ignored if
-            the format is pkl.
+            the format is not cif or bcif.
         include_bonds:
             Whether to include bond information. Defaults to True. Ignored if the format
             is pkl in which the entire BondList is written to the file.
     """
     suffix = output_path.suffix
-    if suffix == ".npz":
-        write_atomarray_to_npz(atom_array, output_path)
-        return
-    elif suffix == ".pkl":
-        with open(output_path, "wb") as f:
-            pickle.dump(atom_array, f)
-        return
-    elif suffix == ".cif":
-        cif_file = pdbx.CIFFile()
-    elif suffix == ".bcif":
-        cif_file = pdbx.BinaryCIFFile()
-    else:
-        raise NotImplementedError("Only .cif, .bcif, and .pkl formats are supported")
 
-    try:
-        pdbx.set_structure(
-            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
-        )
-    except KeyError:
-        logger.warning(
-            "KeyError while writing structure to CIF file. Retrying with intra-residue "
-            "COORDINATION bonds set to SINGLE."
-        )
-        atom_array = convert_intra_residue_dative_to_single(atom_array)
-        pdbx.set_structure(
-            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
-        )
+    match suffix:
+        case ".npz":
+            write_atomarray_to_npz(atom_array, output_path)
 
-    cif_file.write(output_path)
+        case ".pkl":
+            with open(output_path, "wb") as f:
+                pickle.dump(atom_array, f)
+
+        case ".cif" | ".bcif":
+            file_obj = _create_cif_file(
+                suffix=suffix,
+                atom_array=atom_array,
+                data_block=data_block,
+                include_bonds=include_bonds,
+            )
+            file_obj.write(output_path)
+
+        case ".pdb":
+            save_structure(output_path, atom_array)
+
+        case _:
+            raise NotImplementedError(
+                "Only .cif, .bcif, and .pkl formats are supported"
+            )
 
 
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-parse")

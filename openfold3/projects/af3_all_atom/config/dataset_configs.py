@@ -1,4 +1,18 @@
-""" """
+"""
+Dataset configuration for all atom project.
+
+Each dataset has a base DatasetConfig section, which includes:
+- dataset_cache_path (train) or inference_query_set (inference): Collection or Path to
+    a collection containing the dataset's contents
+- Settings for the pytorch.Dataset construction
+    e.g. MSASettings, TemplateSettings
+    For training datasets, this also includes LossConfig and CropSettings.
+
+The DatasetConfig is wrapped in a DatasetSpec model, which contains additional fields:
+    `name`, `dataset_class`, `mode`, and `weight`.
+These fields are parsed by the DataModule to create the appropriate Dataset class.
+
+"""
 
 from pathlib import Path
 from typing import Any, Optional
@@ -20,6 +34,7 @@ from openfold3.projects.af3_all_atom.config.dataset_config_components import (
     LossConfig,
     MSASettings,
     TemplateSettings,
+    colabfold_msa_settings,
 )
 from openfold3.projects.af3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
@@ -238,7 +253,7 @@ class TrainingDatasetSpec(DatasetSpec):
 class InferenceDatasetConfigKwargs(BaseModel):
     """Class to hold msa and temlpate kwargs for inference pipeline"""
 
-    msa: MSASettings = MSASettings()
+    msa: MSASettings = colabfold_msa_settings
     template: TemplateSettings = TemplateSettings()
 
 
@@ -247,7 +262,10 @@ class InferenceJobConfig(BaseModel):
 
     query_set: InferenceQuerySet
     seeds: list[int] = [42]
-    msa: MSASettings = MSASettings()
+    msa: MSASettings = MSASettings(
+        aln_order=["colabfold_main"],
+        max_seq_counts={"colabfold_main": 16384, "colabfold_paired": 8192},
+    )
     template: TemplateSettings = TemplateSettings()
 
 

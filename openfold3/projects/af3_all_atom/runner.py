@@ -3,11 +3,13 @@ import itertools
 import logging
 from pathlib import Path
 
+import pytorch_lightning as pl
 import torch
 from torchmetrics import MeanMetric, MetricCollection
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.metrics.confidence import (
+    compute_global_predicted_distance_error,
     compute_plddt,
     compute_predicted_aligned_error,
     compute_predicted_distance_error,
@@ -64,6 +66,9 @@ class AlphaFold3AllAtom(ModelRunner):
         self._setup_train_metrics()
         self._setup_val_metrics()
         self._init_metric_enabled_tracker()
+
+    def reseed(self, seed):
+        pl.seed_everything(seed)
 
     def _setup_train_metrics(self):
         """Set up training loss and metric collection objects."""
@@ -342,8 +347,13 @@ class AlphaFold3AllAtom(ModelRunner):
 
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         # TODO: Remove debug logic
-        pdb_id = batch.pop("pdb_id")
-        preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
+        pdb_id = batch.pop("pdb_id") if "pdb_id" in batch else None
+        query_id = batch.pop("query_id") if "query_id" in batch else None
+        preferred_chain_or_interface = (
+            batch.pop("preferred_chain_or_interface")
+            if "preferred_chain_or_interface" in batch
+            else None
+        )
         atom_array = batch.pop("atom_array") if "atom_array" in batch else None
 
         # This is to avoid slow loading for nested dicts in PL
@@ -354,8 +364,13 @@ class AlphaFold3AllAtom(ModelRunner):
             return t.to(device=device, non_blocking=True)
 
         batch = tensor_tree_map(to_device, batch)
-        batch["pdb_id"] = pdb_id
-        batch["preferred_chain_or_interface"] = preferred_chain_or_interface
+
+        if pdb_id:
+            batch["pdb_id"] = pdb_id
+        if query_id:
+            batch["query_id"] = query_id
+        if preferred_chain_or_interface:
+            batch["preferred_chain_or_interface"] = preferred_chain_or_interface
 
         # Add atom array back to the batch if we removed it earlier
         if atom_array:
@@ -521,6 +536,12 @@ class AlphaFold3AllAtom(ModelRunner):
                 **self.config.confidence.pde,
             )
         )
+        confidence_scores["global_predicted_distance_error"] = (
+            compute_global_predicted_distance_error(
+                pde=confidence_scores["predicted_distance_error"],
+                distogram_probs=torch.softmax(outputs["distogram_logits"], dim=-1),
+            )
+        )
 
         if self.config.architecture.heads.pae.enabled:
             confidence_scores.update(
@@ -562,10 +583,9 @@ class AlphaFold3AllAtom(ModelRunner):
 
         query_id = batch.pop("query_id")
         atom_array = batch.pop("atom_array")
-        _ = batch.pop("preferred_chain_or_interface")
 
         seed = batch.pop("seed")
-        self.reseed(seed[0])  # TODO: assuming we have bs = 1 for now, later we'd
+        self.reseed(seed[0])  # TODO: assuming we have bs = 1 for now
 
         # Probably need to change the logic
         logger.debug(
@@ -575,17 +595,9 @@ class AlphaFold3AllAtom(ModelRunner):
         try:
             batch, outputs = self(batch)
 
-            _, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
-
             batch["atom_array"] = atom_array
             batch["query_id"] = query_id
             batch["seed"] = seed
-
-            # Compute metrics:
-            metrics = self._get_metrics(batch, outputs, train=False)
-
-            outputs["metrics"] = metrics
-            outputs["losses"] = loss_breakdown
 
             # Generate confidence scores
             confidence_scores = self._compute_confidence_scores(batch, outputs)
@@ -594,5 +606,7 @@ class AlphaFold3AllAtom(ModelRunner):
             return (batch, outputs)
 
         except Exception:
-            logger.exception(f"Inference step failed with pdb id {', '.join(query_id)}")
+            logger.exception(
+                f"Inference step failed with query id {', '.join(query_id)}"
+            )
             raise

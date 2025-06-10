@@ -249,7 +249,7 @@ class TestInferenceConfigConstruction:
                             {
                                 "molecule_type": "protein",
                                 "chain_ids": "A",
-                                "sequence": "PVLSCGEWQCL",  # insert sequence for MCL-1
+                                "sequence": "PVLSCGEWQCL",
                                 "use_msas": True,
                                 "unpaired_msa_file_paths": [dummy_msa_file],
                                 "paired_msa_file_path": None,
