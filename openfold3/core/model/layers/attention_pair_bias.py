@@ -33,9 +33,10 @@ from openfold3.core.utils.tensor_utils import permute_final_dims
 
 
 class AttentionPairBias(nn.Module):
-    """Attention layer with pair bias and neighborhood mask.
+    """Attention layer with pair bias.
 
-    Implements AF3 Algorithm 24.
+    Implements AF3 Algorithm 24 for the trunk, where no sequence local
+    or adaptive layernorm are needed by default.
     """
 
     def __init__(
@@ -231,6 +232,8 @@ class AttentionPairBias(nn.Module):
 
 class CrossAttentionPairBias(nn.Module):
     """Attention layer with pair bias and neighborhood mask.
+    Unlike AttentionPairBias, inputs are blocked for sequence-local attention
+    and AdaLN is applied by default.
 
     Implements AF3 Algorithm 24.
     """

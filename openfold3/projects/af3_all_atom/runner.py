@@ -3,11 +3,13 @@ import itertools
 import logging
 from pathlib import Path
 
+import pytorch_lightning as pl
 import torch
 from torchmetrics import MeanMetric, MetricCollection
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.metrics.confidence import (
+    compute_global_predicted_distance_error,
     compute_plddt,
     compute_predicted_aligned_error,
     compute_predicted_distance_error,
@@ -26,12 +28,8 @@ from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.atomize_utils import get_token_frame_atoms
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.projects.af3_all_atom.config.base_config import (
+from openfold3.projects.af3_all_atom.config.model_config import (
     model_selection_metric_weights_config,
-    project_config,
-)
-from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
-    AF3DatasetConfigBuilder,
 )
 from openfold3.projects.af3_all_atom.constants import (
     CORRELATION_METRICS,
@@ -41,7 +39,6 @@ from openfold3.projects.af3_all_atom.constants import (
     VAL_LOSSES,
 )
 from openfold3.projects.af3_all_atom.model import AlphaFold3
-from openfold3.projects.registry import register_project
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
@@ -52,9 +49,6 @@ logger = logging.getLogger(__name__)
 REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_config.yml"
 
 
-@register_project(
-    "af3_all_atom", AF3DatasetConfigBuilder, project_config, REFERENCE_CONFIG_PATH
-)
 class AlphaFold3AllAtom(ModelRunner):
     def __init__(self, model_config, _compile=True):
         super().__init__(model_class=AlphaFold3, config=model_config, _compile=_compile)
@@ -72,6 +66,9 @@ class AlphaFold3AllAtom(ModelRunner):
         self._setup_train_metrics()
         self._setup_val_metrics()
         self._init_metric_enabled_tracker()
+
+    def reseed(self, seed):
+        pl.seed_everything(seed)
 
     def _setup_train_metrics(self):
         """Set up training loss and metric collection objects."""
@@ -350,8 +347,13 @@ class AlphaFold3AllAtom(ModelRunner):
 
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         # TODO: Remove debug logic
-        pdb_id = batch.pop("pdb_id")
-        preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
+        pdb_id = batch.pop("pdb_id") if "pdb_id" in batch else None
+        query_id = batch.pop("query_id") if "query_id" in batch else None
+        preferred_chain_or_interface = (
+            batch.pop("preferred_chain_or_interface")
+            if "preferred_chain_or_interface" in batch
+            else None
+        )
         atom_array = batch.pop("atom_array") if "atom_array" in batch else None
 
         # This is to avoid slow loading for nested dicts in PL
@@ -362,8 +364,13 @@ class AlphaFold3AllAtom(ModelRunner):
             return t.to(device=device, non_blocking=True)
 
         batch = tensor_tree_map(to_device, batch)
-        batch["pdb_id"] = pdb_id
-        batch["preferred_chain_or_interface"] = preferred_chain_or_interface
+
+        if pdb_id:
+            batch["pdb_id"] = pdb_id
+        if query_id:
+            batch["query_id"] = query_id
+        if preferred_chain_or_interface:
+            batch["preferred_chain_or_interface"] = preferred_chain_or_interface
 
         # Add atom array back to the batch if we removed it earlier
         if atom_array:
@@ -529,6 +536,12 @@ class AlphaFold3AllAtom(ModelRunner):
                 **self.config.confidence.pde,
             )
         )
+        confidence_scores["global_predicted_distance_error"] = (
+            compute_global_predicted_distance_error(
+                pde=confidence_scores["predicted_distance_error"],
+                distogram_probs=torch.softmax(outputs["distogram_logits"], dim=-1),
+            )
+        )
 
         if self.config.architecture.heads.pae.enabled:
             confidence_scores.update(
@@ -555,3 +568,45 @@ class AlphaFold3AllAtom(ModelRunner):
             confidence_scores.update(ptm_scores)
 
         return confidence_scores
+
+    def predict_step(self, batch, batch_idx):
+        # At the start of inference, load the EMA weights
+        if self.cached_weights is None:
+            # model.state_dict() contains references to model weights rather
+            # than copies. Therefore, we need to clone them before calling
+            # load_state_dict().
+            def clone_param(t):
+                return t.detach().clone()
+
+            self.cached_weights = tensor_tree_map(clone_param, self.model.state_dict())
+            self.model.load_state_dict(self.ema.state_dict()["params"])
+
+        query_id = batch.pop("query_id")
+        atom_array = batch.pop("atom_array")
+
+        seed = batch.pop("seed")
+        self.reseed(seed[0])  # TODO: assuming we have bs = 1 for now
+
+        # Probably need to change the logic
+        logger.debug(
+            f"Started inference for {', '.join(query_id)} on rank {self.global_rank} "
+            f"step {self.global_step}"
+        )
+        try:
+            batch, outputs = self(batch)
+
+            batch["atom_array"] = atom_array
+            batch["query_id"] = query_id
+            batch["seed"] = seed
+
+            # Generate confidence scores
+            confidence_scores = self._compute_confidence_scores(batch, outputs)
+            outputs["confidence_scores"] = confidence_scores
+
+            return (batch, outputs)
+
+        except Exception:
+            logger.exception(
+                f"Inference step failed with query id {', '.join(query_id)}"
+            )
+            raise

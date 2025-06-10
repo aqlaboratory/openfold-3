@@ -1,0 +1,8 @@
+train:
+  settings:
+    blocks_per_ckpt: 1
+    ckpt_intermediate_steps: True
+
+predict:
+  settings:
+    diffusion_training_enabled: False

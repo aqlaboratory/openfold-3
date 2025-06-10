@@ -36,7 +36,7 @@ class ProteinMonomerDataset(BaseAF3Dataset):
 
         # Dataset configuration
         self.apply_crop = True
-        self.crop = dataset_config["custom"]["crop"]
+        self.crop = dataset_config.crop.model_dump()
 
         # All samples are protein
         self.single_moltype = "PROTEIN"

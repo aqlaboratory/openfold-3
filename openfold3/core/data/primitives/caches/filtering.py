@@ -18,7 +18,7 @@ from tqdm import tqdm
 from openfold3.core.data.io.dataset_cache import read_datacache
 from openfold3.core.data.io.sequence.fasta import (
     consolidate_preprocessed_fastas,
-    read_multichain_fasta,
+    get_chain_id_to_seq_from_fasta,
 )
 from openfold3.core.data.primitives.caches.format import (
     ChainData,
@@ -595,7 +595,7 @@ def add_and_filter_alignment_representatives(
         The filtered cache, or the filtered cache and the unmatched entries if
         return_no_repr is True.
     """
-    repr_chain_to_seq = read_multichain_fasta(alignment_representatives_fasta)
+    repr_chain_to_seq = get_chain_id_to_seq_from_fasta(alignment_representatives_fasta)
     add_chain_representatives(structure_cache, query_chain_to_seq, repr_chain_to_seq)
 
     if return_no_repr:

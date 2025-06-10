@@ -23,10 +23,12 @@ from openfold3.core.utils.import_weights import (
     import_jax_weights_,
     import_openfold_weights_,
 )
-from openfold3.projects import registry
+from openfold3.legacy.af2_monomer.project_entry import AF2MonomerProjectEntry
+from tests import compare_utils
 from tests.config import monomer_consts
 
 
+@compare_utils.skip_of2_test()
 class TestImportWeights(unittest.TestCase):
     def test_import_jax_weights_(self):
         npz_path = (
@@ -34,13 +36,11 @@ class TestImportWeights(unittest.TestCase):
             / f"../openfold3/resources/params/params_{monomer_consts.model_preset}.npz"
         )
 
-        project_entry = registry.get_project_entry("af2_monomer")
-        c = registry.make_config_with_presets(
-            project_entry, [monomer_consts.model_preset]
-        )
+        project_entry = AF2MonomerProjectEntry()
+        c = project_entry.get_config_with_presets([monomer_consts.model_preset])
         c.globals.blocks_per_ckpt = None
 
-        model = project_entry.model_runner(c, _compile=False).model
+        model = project_entry.runner(c, _compile=False).model
         model.eval()
 
         import_jax_weights_(model, npz_path, version=monomer_consts.model_preset)
@@ -89,10 +89,10 @@ class TestImportWeights(unittest.TestCase):
         )
 
         if os.path.exists(pt_path):
-            project_entry = registry.get_project_entry("af2_monomer")
-            c = registry.make_config_with_presets(project_entry, [model_name])
+            project_entry = AF2MonomerProjectEntry()
+            c = project_entry.get_config_with_presets()
             c.globals.blocks_per_ckpt = None
-            model = project_entry.model_runner(c, _compile=False).model
+            model = project_entry.runner(c, _compile=False).model
             model.eval()
 
             d = torch.load(pt_path, weights_only=True)

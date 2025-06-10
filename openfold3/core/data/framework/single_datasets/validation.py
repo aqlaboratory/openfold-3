@@ -1,5 +1,4 @@
 import logging
-import math
 import random
 import traceback
 from typing import Optional
@@ -12,6 +11,9 @@ from openfold3.core.data.framework.single_datasets.abstract_single import (
     register_dataset,
 )
 from openfold3.core.data.framework.single_datasets.base_af3 import BaseAF3Dataset
+from openfold3.core.data.framework.single_datasets.dataset_utils import (
+    pad_to_world_size,
+)
 from openfold3.core.data.framework.single_datasets.pdb import is_invalid_feature_dict
 from openfold3.core.data.primitives.featurization.structure import (
     extract_starts_entities,
@@ -49,7 +51,7 @@ def make_chain_pair_mask_padded(
 class ValidationPDBDataset(BaseAF3Dataset):
     """Validation Dataset class."""
 
-    def __init__(self, dataset_config: dict) -> None:
+    def __init__(self, dataset_config: dict, world_size: Optional[int] = None) -> None:
         """Initializes a ValidationDataset.
 
         Args:
@@ -59,7 +61,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
         """
         super().__init__(dataset_config)
 
-        self.world_size = dataset_config.get("world_size")
+        self.world_size = world_size
 
         # Dataset/datapoint cache
         self.create_datapoint_cache()
@@ -85,31 +87,8 @@ class ValidationPDBDataset(BaseAF3Dataset):
             pdb_ids,
             key=null_safe_token_count,
         )
-
-        # To avoid the default DistributedSampler behavior of repeating samples
-        # to match the world size, artificially inflate the dataset and flag the
-        # repeated samples so that they are ignored in the metrics.
-        num_samples = len(pdb_ids)
-        repeated_samples = [False] * num_samples
-        if self.world_size is not None:
-            extra_samples = (
-                math.ceil(num_samples / self.world_size) * self.world_size
-            ) - num_samples
-            if num_samples < self.world_size:
-                num_repeats = math.ceil(self.world_size / num_samples)
-                pdb_ids *= num_repeats
-                pdb_ids = pdb_ids[: self.world_size]
-            else:
-                pdb_ids += pdb_ids[:extra_samples]
-
-            repeated_samples += [True] * extra_samples
-
-        self.datapoint_cache = pd.DataFrame(
-            {
-                "pdb_id": pdb_ids,
-                "repeated_sample": repeated_samples,
-            }
-        )
+        _datapoint_cache = pd.DataFrame({"pdb_id": pdb_ids})
+        self.datapoint_cache = pad_to_world_size(_datapoint_cache, self.world_size)
 
     def __getitem__(
         self, index: int
