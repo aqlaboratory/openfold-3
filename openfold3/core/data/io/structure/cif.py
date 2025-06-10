@@ -245,7 +245,7 @@ def _create_cif_file(
 
 def write_structure(
     atom_array: AtomArray,
-    output_path: Path,
+    output_path: Path | str,
     data_block: str = None,
     include_bonds: bool = True,
 ) -> None:
@@ -267,6 +267,9 @@ def write_structure(
             Whether to include bond information. Defaults to True. Ignored if the format
             is pkl in which the entire BondList is written to the file.
     """
+    if isinstance(output_path, str):
+        output_path = Path(output_path)
+
     suffix = output_path.suffix
 
     match suffix:
