@@ -56,7 +56,7 @@ def compute_valid_model_selection_metrics(
 
     # Find the top-1 sample per batch based on global pde
     # top1_global_pde shape: [bs]
-    top1_global_pde = torch.argmax(global_pde, dim=1)
+    top1_global_pde = torch.argmin(global_pde, dim=1)
 
     # Select the top-1 metric values (across the sample dimension) per batch
     metrics_top_1 = {}
