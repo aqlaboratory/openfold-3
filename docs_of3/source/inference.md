@@ -5,79 +5,121 @@ Welcome to the Documentation for running inference with OpenFold3, our fully ope
 This guide covers how to use OpenFold3 to make structure predictions.
 
 
-## Inference features
+## 1. Inference features
 
- OpenFold3 replicates the full set of input features described in AlphaFold 3 publication. All of these features are *fully implemented and supported in training mode*.
+OpenFold3 replicates the full set of input features described in the *AlphaFold 3* publication. All of these features are **fully implemented and supported in training mode**. We are actively working on integrating these functionalities into the inference pipeline. 
+ 
+Below is the current status of inference feature support by molecule type:
 
- However, in this preliminary release of the inference pipeline, a few of these features are not yet exposed for inference use. These include:
 
-- OpenFold3's built-in MSA generation pipeline
-- Custom user-provided MSAs
-- Nucleic acids
+### 1.1. Protein
+
+Supported:
+
+- Prediction with MSA, using ColabFold MSA pipeline
+- Prediction without MSA
+
+Coming soon:
+
+- OpenFold3's own MSA generation pipeline
+- Support for OpenFold3-style precomputed MSAs
+- Template-based prediction
+- Non-standard or covalently modified residues
+- Pocket conditioning *(requires fine-tuning)*
+
+### 1.2. DNA
+
+Supported:
+
+- Prediction without MSA (per AF3 default)
+
+Coming soon:
+
+- Non-standard or covalently modified residues
+
+
+### 1.3. RNA
+
+Supported:
+
+- Prediction without MSA
+
+Coming soon:
+
+- OpenFold3's own MSA generation pipeline
+- Support for OpenFold3-style precomputed MSAs
+- Non-standard or covalently modified residues
+
+
+### 1.4. Ligand
+
+Supported:
+
+- Non-covalently bound ligands
+
+Coming soon:
+
 - Covalently bound ligands
+- Polymeric ligands
 
-These features will be fully integrated into the inference workflow in the final codebase release.
 
-
-## Pre-requisites:
+## 2. Pre-requisites:
 
 - OpenFold3 Conda Environment. See [OpenFold3 Installation](installation.md) for instructions on how to build this environment.
 - OpenFold3 Model Parameters.
 
 
-## Running OpenFold3 Inference
+## 3. Running OpenFold3 Inference
 
 A directory containing containing multiple inference examples is provided [here](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3). These include:
 - [Single-chain protein (monomer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/monomer): Ubiquitin (PDB: 1UBQ)
 - [Multi-chain protein with identical chains (homomer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/homomer): GCN4 leucine zipper (PDB: 2ZTA)
-- [Multi-chain protein with different chains (heteromer/multimer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/multimer): Deoxy human hemoglobin (PDB: 1A3N)
+- [Multi-chain protein with different chains (multimer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/multimer): Deoxy human hemoglobin (PDB: 1A3N)
 - [Protein-ligand complex](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/protein_ligand_complex): Mcl-1 with small molecule inhibitor (PDB: 5FDR)
-- [Multiple distinct proteins]()
 
 
-### Input Data
+### 3.1. Input Data
 
 Queries can include any combination of single- or multi-chain proteins, with or without ligands, and may contain multiple such complexes. <br/>
 See [OpenFold3 input format](input_format.md) for instructions on how to specify your input data.
 
 
-### Inference without Pre-computed Alignments
+### 3.2. Inference without Pre-computed Alignments
 
-The following command performs model inference using the MMseqs server for MSA generation. <br/>
-**Note**: The current lightweight version only supports MMseqs-based MSAs, but future versions will aditionally support using pre-computed MSAs or MSAs generated via OpenFold3s internal pipeline.
+The following command performs model inference using the ColabFold server for MSA generation. <br/>
+Integration of pre-computed MSAs or OpenFold3s internal MSA generation into the inference pipeline will be supported in the full codebase release.
 
 ```
 python run_openfold predict \
     --query_json /path/to/inference/query.json \
-	--inference_ckpt_path /path/inference.ckpt
+    --inference_ckpt_path /path/inference.ckpt
     --use_msa_server \
     --output_dir /path/output \
 ```
 
 **Required arguments:**
-- `--query_json (Path)`: Path to the JSON file specifying input sequences to predict and metadata.
 
-- `--inference_ckpt_path (Path)`: Path to the model checkpoint.
+- `--query_json` *(Path)*: Path to the JSON file specifying input sequences to predict and metadata.
 
-- `--use_msa_server (bool, default = True)`: Use ColabFold MSA server to create alignments. This is required in the current preliminary inference release.
+- `--inference_ckpt_path` *(Path)*: Path to the model checkpoint.
 
-
-### Optional Inference Arguments
-
-These flags allow you to customize the inference workflow:
-
-- `--runner_yaml (Path)`: YAML config specifying model and data parameters. For full control over settings, edit this file directly. Example: [runner.yml](examples/runner.yml).
-
-- `--output_dir (Path)`: Directory where outputs will be written. Defaults to `test_train_output/`
-
-- `--num_diffusion_samples (int, default = None)`: Number of diffusion samples per query. If unspecified, defaults to 5 diffusion samples.
-
-- `--num_model_seeds (int, default = None)`: Number of model seeds to use per query. If unspecified, defaults to one seed (42).
-
-As for all OpenFold3 parameters, `num_diffusion_samples` and `num_model_seeds` can both also be updated directed via `runner.yml`.
+- `--use_msa_server` *(bool, default = True)*: Use ColabFold MSA server to create alignments. This is required in the current preliminary inference release.
 
 
-### Model Outputs
+**Optional Inference Arguments:**
+
+- `--runner_yaml` *(Path)*: YAML config specifying model and data parameters. For full control over settings, edit this file directly. Example: [runner.yml](https://github.com/aqlaboratory/openfold3/tree/main/examples/runner.yml).
+
+- `--output_dir` *(Path)*: Directory where outputs will be written. Defaults to `test_train_output/`
+
+- `--num_diffusion_samples` *(int, default = None)*: Number of diffusion samples per query. If unspecified, defaults to 5 diffusion samples.
+
+- `--num_model_seeds` *(int, default = None)*: Number of model seeds to use per query. If unspecified, defaults to one seed (42).
+
+These flags allow you to customize the inference workflow. As for all OpenFold3 parameters, `output_dir`, `num_diffusion_samples` and `num_model_seeds` can both also be updated directed via `runner.yml`.
+
+
+## 4. Model Outputs
 
 OpenFold3's output format currently follows the structure used by the ColabFold server. During processing, chain IDs are internally mapped to standardized identifiers, then re-mapped back to the original query IDs in the final outputs.
 
