@@ -18,6 +18,8 @@ Embedders for input features. Includes InputEmbedders for monomer, multimer, sol
 and all-atom models. Also includes the RecyclingEmbedder and ExtraMSAEmbedder.
 """
 
+import math
+
 import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
@@ -27,7 +29,8 @@ from openfold3.core.model.layers.sequence_local_atom_attention import (
     AtomAttentionEncoder,
 )
 from openfold3.core.model.primitives import LayerNorm, Linear, normal_init_
-from openfold3.core.utils.tensor_utils import add, binned_one_hot
+from openfold3.core.utils.relpos import relpos_complex, relpos_monomer, relpos_multimer
+from openfold3.core.utils.tensor_utils import add
 
 
 class InputEmbedder(nn.Module):
@@ -82,28 +85,6 @@ class InputEmbedder(nn.Module):
             self.no_bins, c_z, **linear_init_params.linear_relpos
         )
 
-    def relpos(self, ri: torch.Tensor):
-        """
-        Computes relative positional encodings
-
-        Implements AF2 Algorithm 4.
-
-        Args:
-            ri:
-                "residue_index" features of shape [*, N]
-        """
-        d = ri[..., None] - ri[..., None, :]
-        boundaries = torch.arange(
-            start=-self.relpos_k, end=self.relpos_k + 1, device=d.device
-        )
-        reshaped_bins = boundaries.view(((1,) * len(d.shape)) + (len(boundaries),))
-        d = d[..., None] - reshaped_bins
-        d = torch.abs(d)
-        d = torch.argmin(d, dim=-1)
-        d = nn.functional.one_hot(d, num_classes=len(boundaries)).float()
-        d = d.to(ri.dtype)
-        return self.linear_relpos(d)
-
     def forward(
         self,
         tf: torch.Tensor,
@@ -133,7 +114,9 @@ class InputEmbedder(nn.Module):
         tf_emb_j = self.linear_tf_z_j(tf)
 
         # [*, N_res, N_res, c_z]
-        pair_emb = self.relpos(ri.type(tf_emb_i.dtype))
+        ri = ri.type(tf_emb_i.dtype)
+        relpos_feats = relpos_monomer(ri=ri, relpos_k=self.relpos_k).to(ri.dtype)
+        pair_emb = self.linear_relpos(relpos_feats)
         pair_emb = add(pair_emb, tf_emb_i[..., None, :], inplace=inplace_safe)
         pair_emb = add(pair_emb, tf_emb_j[..., None, :, :], inplace=inplace_safe)
 
@@ -212,76 +195,6 @@ class InputEmbedderMultimer(nn.Module):
             self.no_bins, c_z, **linear_init_params.linear_relpos
         )
 
-    def relpos(self, batch):
-        pos = batch["residue_index"]
-        asym_id = batch["asym_id"]
-        asym_id_same = asym_id[..., None] == asym_id[..., None, :]
-        offset = pos[..., None] - pos[..., None, :]
-
-        clipped_offset = torch.clamp(
-            offset + self.max_relative_idx, 0, 2 * self.max_relative_idx
-        )
-
-        rel_feats = []
-        if self.use_chain_relative:
-            final_offset = torch.where(
-                asym_id_same,
-                clipped_offset,
-                (2 * self.max_relative_idx + 1) * torch.ones_like(clipped_offset),
-            )
-            boundaries = torch.arange(
-                start=0, end=2 * self.max_relative_idx + 2, device=final_offset.device
-            )
-            rel_pos = binned_one_hot(
-                final_offset,
-                boundaries,
-            )
-
-            rel_feats.append(rel_pos)
-
-            entity_id = batch["entity_id"]
-            entity_id_same = entity_id[..., None] == entity_id[..., None, :]
-            rel_feats.append(entity_id_same[..., None].to(dtype=rel_pos.dtype))
-
-            sym_id = batch["sym_id"]
-            rel_sym_id = sym_id[..., None] - sym_id[..., None, :]
-
-            max_rel_chain = self.max_relative_chain
-            clipped_rel_chain = torch.clamp(
-                rel_sym_id + max_rel_chain,
-                0,
-                2 * max_rel_chain,
-            )
-
-            final_rel_chain = torch.where(
-                entity_id_same,
-                clipped_rel_chain,
-                (2 * max_rel_chain + 1) * torch.ones_like(clipped_rel_chain),
-            )
-
-            boundaries = torch.arange(
-                start=0, end=2 * max_rel_chain + 2, device=final_rel_chain.device
-            )
-            rel_chain = binned_one_hot(
-                final_rel_chain,
-                boundaries,
-            )
-
-            rel_feats.append(rel_chain)
-        else:
-            boundaries = torch.arange(
-                start=0, end=2 * self.max_relative_idx + 1, device=clipped_offset.device
-            )
-            rel_pos = binned_one_hot(
-                clipped_offset,
-                boundaries,
-            )
-            rel_feats.append(rel_pos)
-
-        rel_feat = torch.cat(rel_feats, dim=-1).to(self.linear_relpos.weight.dtype)
-
-        return self.linear_relpos(rel_feat)
-
     def forward(self, batch: dict) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -303,7 +216,14 @@ class InputEmbedderMultimer(nn.Module):
 
         # [*, N_res, N_res, c_z]
         pair_emb = tf_emb_i[..., None, :] + tf_emb_j[..., None, :, :]
-        pair_emb = pair_emb + self.relpos(batch)
+
+        relpos_feats = relpos_multimer(
+            batch=batch,
+            max_relative_idx=self.max_relative_idx,
+            use_chain_relative=self.use_chain_relative,
+            max_relative_chain=self.max_relative_chain,
+        ).to(self.linear_relpos.weight.dtype)
+        pair_emb = pair_emb + self.linear_relpos(relpos_feats)
 
         # [*, N_clust, N_res, c_m]
         n_clust = msa.shape[-3]
@@ -315,119 +235,6 @@ class InputEmbedderMultimer(nn.Module):
         msa_emb = self.linear_msa_m(msa) + tf_m
 
         return msa_emb, pair_emb
-
-
-class RelposAllAtom(nn.Module):
-    """Relative Positional Encoding. Implements AF3 Algorithm 3."""
-
-    def __init__(
-        self,
-        c_z: int,
-        max_relative_idx: int,
-        max_relative_chain: int,
-        linear_init_params: ConfigDict = lin_init.relpos_emb_init,
-    ):
-        """
-        Args:
-            c_z:
-                Pair embedding dimension
-            max_relative_idx:
-                Maximum relative position and token indices clipped
-            max_relative_chain:
-                Maximum relative chain indices clipped
-            linear_init_params:
-                Linear layer initialization parameters
-        """
-        super().__init__()
-
-        self.max_relative_idx = max_relative_idx
-        self.max_relative_chain = max_relative_chain
-
-        num_rel_pos_bins = 2 * max_relative_idx + 2
-        num_rel_token_bins = 2 * max_relative_idx + 2
-        num_rel_chain_bins = 2 * max_relative_chain + 2
-        num_same_entity_features = 1
-        self.num_dims = (
-            num_rel_pos_bins
-            + num_rel_token_bins
-            + num_rel_chain_bins
-            + num_same_entity_features
-        )
-
-        self.linear_relpos = Linear(
-            self.num_dims, c_z, **linear_init_params.linear_relpos
-        )
-
-    @staticmethod
-    def relpos(
-        pos: torch.Tensor, condition: torch.BoolTensor, rel_clip_idx: int
-    ) -> torch.Tensor:
-        """
-        Args:
-            pos:
-                [*, N_token] Token index
-            condition:
-                [*, N_token, N_token] Condition for clipping
-            rel_clip_idx:
-                Max idx for clipping (max_relative_idx or max_relative_chain)
-        Returns:
-            rel_pos:
-                [*, N_token, N_token, 2 * rel_clip_idx + 2] Relative position embedding
-        """
-        offset = pos[..., None] - pos[..., None, :]
-        clipped_offset = torch.clamp(offset + rel_clip_idx, min=0, max=2 * rel_clip_idx)
-        final_offset = torch.where(
-            condition,
-            clipped_offset,
-            (2 * rel_clip_idx + 1) * torch.ones_like(clipped_offset),
-        )
-        boundaries = torch.arange(
-            start=0, end=2 * rel_clip_idx + 2, device=final_offset.device
-        )
-        rel_pos = binned_one_hot(
-            final_offset,
-            boundaries,
-        )
-
-        return rel_pos
-
-    def forward(self, batch: dict) -> torch.Tensor:
-        """
-        Args:
-            batch:
-                Input feature dictionary
-
-        Returns:
-            [*, N_token, N_token, C_z] Relative position embedding
-        """
-        res_idx = batch["residue_index"]
-        asym_id = batch["asym_id"]
-        entity_id = batch["entity_id"]
-        same_chain = asym_id[..., None] == asym_id[..., None, :]
-        same_res = res_idx[..., None] == res_idx[..., None, :]
-        same_entity = entity_id[..., None] == entity_id[..., None, :]
-
-        rel_pos = self.relpos(
-            pos=res_idx, condition=same_chain, rel_clip_idx=self.max_relative_idx
-        )
-        rel_token = self.relpos(
-            pos=batch["token_index"],
-            condition=same_chain & same_res,
-            rel_clip_idx=self.max_relative_idx,
-        )
-        rel_chain = self.relpos(
-            pos=batch["sym_id"],
-            condition=same_entity,
-            rel_clip_idx=self.max_relative_chain,
-        )
-
-        same_entity = same_entity[..., None].to(dtype=rel_pos.dtype)
-
-        rel_feat = torch.cat([rel_pos, rel_token, same_entity, rel_chain], dim=-1).to(
-            self.linear_relpos.weight.dtype
-        )
-
-        return self.linear_relpos(rel_feat)
 
 
 class InputEmbedderAllAtom(nn.Module):
@@ -467,6 +274,8 @@ class InputEmbedderAllAtom(nn.Module):
             **kwargs:
         """
         super().__init__()
+        self.max_relative_idx = max_relative_idx
+        self.max_relative_chain = max_relative_chain
 
         self.atom_attn_enc = AtomAttentionEncoder(
             **atom_attn_enc,
@@ -477,11 +286,19 @@ class InputEmbedderAllAtom(nn.Module):
         self.linear_z_i = Linear(c_s_input, c_z, **linear_init_params.linear_z_i)
         self.linear_z_j = Linear(c_s_input, c_z, **linear_init_params.linear_z_j)
 
-        self.relpos = RelposAllAtom(
-            c_z=c_z,
-            max_relative_idx=max_relative_idx,
-            max_relative_chain=max_relative_chain,
-            linear_init_params=linear_init_params.relpos_emb,
+        num_rel_pos_bins = 2 * max_relative_idx + 2
+        num_rel_token_bins = 2 * max_relative_idx + 2
+        num_rel_chain_bins = 2 * max_relative_chain + 2
+        num_same_entity_features = 1
+        num_relpos_dims = (
+            num_rel_pos_bins
+            + num_rel_token_bins
+            + num_rel_chain_bins
+            + num_same_entity_features
+        )
+
+        self.linear_relpos = Linear(
+            num_relpos_dims, c_z, **linear_init_params.linear_relpos
         )
 
         # Expecting binary feature "token_bonds" of shape [*, N_token, N_token, 1]
@@ -511,11 +328,14 @@ class InputEmbedderAllAtom(nn.Module):
             z:
                 [*, N_token, N_token, C_z] Pair representation
         """
-        a, _, _, _ = self.atom_attn_enc(
-            batch=batch,
-            atom_mask=batch["atom_mask"],
-            use_high_precision_attention=use_high_precision_attention,
-        )
+        with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+            a, _, _, _ = self.atom_attn_enc(
+                batch=batch,
+                atom_mask=batch["atom_mask"],
+                use_high_precision_attention=use_high_precision_attention,
+            )
+
+        a = a.to(dtype=self.linear_s.weight.dtype)
 
         # [*, N_token, C_s_input]
         s_input = torch.cat(
@@ -538,9 +358,16 @@ class InputEmbedderAllAtom(nn.Module):
         )
 
         # [*, N_token, N_token, C_z]
-        z = self.relpos(batch)
-        z = add(z, s_input_emb_i[..., None, :], inplace=inplace_safe)
-        z = add(z, s_input_emb_j[..., None, :, :], inplace=inplace_safe)
+        z = s_input_emb_i[..., None, :] + s_input_emb_j[..., None, :, :]
+
+        relpos_feats = relpos_complex(
+            batch=batch,
+            max_relative_idx=self.max_relative_idx,
+            max_relative_chain=self.max_relative_chain,
+        ).to(dtype=z.dtype)
+        relpos_emb = self.linear_relpos(relpos_feats)
+        z = add(z, relpos_emb, inplace=inplace_safe)
+
         z = add(z, token_bonds_emb, inplace=inplace_safe)
 
         return s_input, s, z
@@ -578,55 +405,199 @@ class MSAModuleEmbedder(nn.Module):
         )
 
     @staticmethod
-    def subsample_msa(
+    def _subsample_msa(
         msa_feat: torch.Tensor,
         msa_mask: torch.Tensor,
         num_paired_seqs: torch.Tensor,
+        asym_id: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Subsample main MSA features for a single element in the batch.
+        """Subsample main MSA features for a single sample in the batch.
+        The subsampling is independent per each chain.
 
         Args:
             msa_feat:
-                [N_seq, N_token, c_m_feats] MSA features
+                [N_msa, N_token, 32] MSA features
             msa_mask:
-                [N_seq, N_token] MSA mask
+                [N_msa, N_token] MSA mask
             num_paired_seqs:
-                Number of paired MSA sequences
+                [] Number of paired MSA sequences
+            asym_id:
+                [N_token] Id of the chain each token belongs to
         Returns:
             sampled_msa:
-                [N_seq_sampled, N_token, c_m_feats] Sampled MSA features
+                [N_seq, N_token, c_m_feats] Sampled MSA features
             msa_mask:
-                [N_seq_sampled, N_token] Sampled MSA mask
+                [N_seq, N_token] Sampled MSA mask
         """
-        total_msa_seq = msa_feat.shape[-3]
+        # Set the sequence dimension for the two tensors, the chain dimension is this +1
+        feat_seq_dim = -3
+        mask_seq_dim = -2
 
-        # Split uniprot and main MSA sequences. Only main MSA seqs will be sampled.
-        # All uniprot seqs are in the final MSA representation.
+        num_paired_seqs = int(num_paired_seqs.item())
+
+        # Separate UniProt paired sequences and main MSA (only the latter is subsampled)
+        total_msa_seq = msa_feat.shape[feat_seq_dim]
         num_main_msa_seqs = total_msa_seq - num_paired_seqs
 
-        if num_main_msa_seqs.any():
-            split_sections = [num_paired_seqs, num_main_msa_seqs]
-            uniprot_msa, main_msa = torch.split(msa_feat, split_sections, dim=-3)
-            uniprot_msa_mask, main_msa_mask = torch.split(
-                msa_mask, split_sections, dim=-2
+        if num_main_msa_seqs == 0:
+            return msa_feat, msa_mask
+
+        split_sections = [num_paired_seqs, num_main_msa_seqs]
+
+        paired_msa_feat, main_msa_feat = torch.split(
+            msa_feat, split_sections, dim=feat_seq_dim
+        )
+        paired_msa_mask, main_msa_mask = torch.split(
+            msa_mask, split_sections, dim=mask_seq_dim
+        )
+
+        # Get the length of each chain using consecutive unique asym_id
+        _, chain_splits = torch.unique_consecutive(asym_id, return_counts=True)
+
+        # Split the tensor obtaining separate tensors for each chain
+        per_chain_msa_feat = torch.split(
+            main_msa_feat, chain_splits.tolist(), dim=feat_seq_dim + 1
+        )
+        per_chain_msa_mask = torch.split(
+            main_msa_mask, chain_splits.tolist(), dim=mask_seq_dim + 1
+        )
+
+        # Get the number of main msa seqs per chain
+        # summing the ones in the seq dimension in the mask
+        # Use float32 as bf16 precision is not enough to distinguish all 16384 integers
+        per_chain_main_msa_dim = [
+            int(torch.sum(mask, dim=-2, dtype=torch.float32)[..., 0])
+            for mask in per_chain_msa_mask
+        ]
+
+        # Max number of sequences across chains
+        max_msa_seqs_across_chains = max(per_chain_main_msa_dim)
+
+        # Dimension to subsample all chains to
+        seq_subsample_dim = torch.randint(
+            low=1,
+            high=int(max_msa_seqs_across_chains + 1),
+            size=(1,),
+            device=msa_feat.device,
+        )
+
+        # Get a random permutation of the sequence indexes for each chain
+        # Pad it with padding row indexes until max_msa_seqs_across_chains
+        chain_index_permutations = [
+            torch.cat(
+                [
+                    torch.randperm(num_seqs, device=msa_feat.device),
+                    torch.arange(
+                        num_seqs, max_msa_seqs_across_chains, device=msa_feat.device
+                    ),
+                ]
+            )[:seq_subsample_dim]
+            for num_seqs in per_chain_main_msa_dim
+        ]
+
+        # Apply the permutation and keep seq_subsample_dim sequences
+        sampled_chain_feats = [
+            feat[..., perm, :, :]
+            for feat, perm in zip(per_chain_msa_feat, chain_index_permutations)
+        ]
+        sampled_chain_masks = [
+            mask[..., perm, :]
+            for mask, perm in zip(per_chain_msa_mask, chain_index_permutations)
+        ]
+
+        # Concatenate the chains back together
+        sampled_main_msa_feat = torch.cat(sampled_chain_feats, dim=feat_seq_dim + 1)
+        sampled_main_msa_mask = torch.cat(sampled_chain_masks, dim=mask_seq_dim + 1)
+
+        # Stack with the uniprot features and mask
+        sampled_msa_feat = torch.cat(
+            [paired_msa_feat, sampled_main_msa_feat], dim=feat_seq_dim
+        )
+        sampled_msa_mask = torch.cat(
+            [paired_msa_mask, sampled_main_msa_mask], dim=mask_seq_dim
+        )
+
+        return sampled_msa_feat, sampled_msa_mask
+
+    def _subsample_msa_per_batch(
+        self,
+        msa_feat: torch.Tensor,
+        msa_mask: torch.Tensor,
+        num_paired_seqs: torch.Tensor,
+        asym_id: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Subsample main MSA features for each sample in the batch.
+        Contains extra logic to unbind the batch dim prior to sampling
+        and pad/stack the output MSA features and mask.
+
+        Args:
+            msa_feat:
+                [N_msa, N_token, 32] MSA features
+            msa_mask:
+                [N_msa, N_token] MSA mask
+            num_paired_seqs:
+                [] Number of paired MSA sequences
+            asym_id:
+                [N_token] Id of the chain each token belongs to
+        Returns:
+            sampled_msa:
+                [N_seq, N_token, c_m_feats] Sampled MSA features
+            msa_mask:
+                [N_seq, N_token] Sampled MSA mask
+        """
+        # Unbind the batch dimension to get lists of samples
+        per_sample_msa_feat = torch.unbind(msa_feat, dim=0)
+        per_sample_mask = torch.unbind(msa_mask, dim=0)
+        per_sample_num_paired_seq = torch.unbind(num_paired_seqs, dim=0)
+        per_sample_asym_id = torch.unbind(asym_id, dim=0)
+
+        # Subsample the MSA for each sample in the batch
+        per_sample_subsampled_msa = []
+        per_sample_subsampled_msa_mask = []
+        for msa_feat, mask, num_paired, asym_id in zip(
+            per_sample_msa_feat,
+            per_sample_mask,
+            per_sample_num_paired_seq,
+            per_sample_asym_id,
+        ):
+            subsampled_msa, subsampled_mask = self._subsample_msa(
+                msa_feat, mask, num_paired, asym_id
             )
+            per_sample_subsampled_msa.append(subsampled_msa)
+            per_sample_subsampled_msa_mask.append(subsampled_mask)
 
-            # Sample Uniform[1, num_main_msa_seqs] sequences from the main MSA
-            n_seq_sample = torch.randint(low=1, high=num_main_msa_seqs + 1, size=(1,))
-            index_order = torch.randperm(num_main_msa_seqs, device=msa_feat.device)
-            index_order = index_order[:n_seq_sample]
+        # Number of sequences to pad to for all the batch
+        max_msa_seqs_batch = max([m.shape[-3] for m in per_sample_subsampled_msa])
 
-            main_msa = torch.index_select(main_msa, dim=-3, index=index_order)
-            main_msa_mask = torch.index_select(main_msa_mask, dim=-2, index=index_order)
+        def pad_sequences_dim(m, max_seqs, seq_dim):
+            """Pad the msa to max_seqs along seq_dim to stack them in a batch"""
 
-            # Combine uniprot and sampled main MSA sequences
-            sampled_msa = torch.cat([uniprot_msa, main_msa], dim=-3)
-            msa_mask = torch.cat([uniprot_msa_mask, main_msa_mask], dim=-2)
+            # Add zero padding at start and end for all dimensions after seq_dim
+            non_pad_dims = (0, 0) * (abs(seq_dim) - 1)
 
-        else:
-            sampled_msa = msa_feat
+            # Pad the seq_dim to max_msa_seqs length
+            pad = non_pad_dims + (0, max_seqs - m.shape[seq_dim])
 
-        return sampled_msa, msa_mask
+            return torch.nn.functional.pad(m, pad)
+
+        # Pad the sequences to same seq length and stack them in a batch
+        sampled_msa = torch.stack(
+            [
+                pad_sequences_dim(m, max_msa_seqs_batch, seq_dim=-3)
+                for m in per_sample_subsampled_msa
+            ],
+            dim=0,
+        )
+        sampled_msa_mask = torch.stack(
+            [
+                pad_sequences_dim(m, max_msa_seqs_batch, seq_dim=-2)
+                for m in per_sample_subsampled_msa_mask
+            ],
+            dim=0,
+        )
+
+        return sampled_msa, sampled_msa_mask
 
     def forward(
         self, batch: dict, s_input: torch.Tensor
@@ -640,6 +611,7 @@ class MSAModuleEmbedder(nn.Module):
                     - "deletion_value": [*, N_msa, N_token]
                     - "msa_mask": [*, N_msa, N_token]
                     - "num_paired_seqs": []
+                    - "asym_id": [*, N_token]
             s_input:
                 [*, N_token, C_s_input] single embedding
 
@@ -650,6 +622,8 @@ class MSAModuleEmbedder(nn.Module):
                 [*, N_seq, N_token] MSA mask
         """
         batch_dims = batch["msa"].shape[:-3]
+
+        # [*, N_msa, N_token, 34]
         msa_feat = torch.cat(
             [
                 batch["msa"],
@@ -658,44 +632,24 @@ class MSAModuleEmbedder(nn.Module):
             ],
             dim=-1,
         )
-        msa_mask = batch["msa_mask"]
 
-        # Unbind batch dim if it exists, and subsample msa seqs per batch
-        if len(batch_dims) > 0:
-            per_batch_msa = torch.unbind(msa_feat, dim=0)
-            per_batch_mask = torch.unbind(msa_mask, dim=0)
-            num_paired_seqs = torch.unbind(batch["num_paired_seqs"], dim=0)
+        subsample_fn = (
+            self._subsample_msa_per_batch
+            if math.prod(batch_dims) > 1
+            else self._subsample_msa
+        )
 
-            per_batch_sampled_msa = [
-                self.subsample_msa(m, mask, n)
-                for m, mask, n in zip(per_batch_msa, per_batch_mask, num_paired_seqs)
-            ]
+        msa_feat, msa_mask = subsample_fn(
+            msa_feat=msa_feat,
+            msa_mask=batch["msa_mask"],
+            num_paired_seqs=batch["num_paired_seqs"],
+            asym_id=batch["asym_id"],
+        )
 
-            sampled_msa = [m[0] for m in per_batch_sampled_msa]
-            msa_mask = [m[1] for m in per_batch_sampled_msa]
-            max_msa_seqs = max([m.shape[-3] for m in sampled_msa])
-
-            def pad_batch_msas(m: torch.Tensor, seq_dim: int) -> torch.Tensor:
-                # Pad MSA sequence dimension to max seqs in batch
-                non_pad_dims = (0,) * 2 * (abs(seq_dim) - 1)
-                return torch.nn.functional.pad(
-                    m, (*non_pad_dims, 0, max_msa_seqs - m.shape[seq_dim])
-                )
-
-            sampled_msa = torch.stack(
-                [pad_batch_msas(m, seq_dim=-3) for m in sampled_msa], dim=0
-            )
-            msa_mask = torch.stack(
-                [pad_batch_msas(m, seq_dim=-2) for m in msa_mask], dim=0
-            )
-
-        else:
-            sampled_msa, msa_mask = self.subsample_msa(
-                msa_feat, msa_mask, batch["num_paired_seqs"]
-            )
-
-        m = self.linear_m(sampled_msa)
+        # [*, N_seq, N_token, C_m]
+        m = self.linear_m(msa_feat)
         m = m + self.linear_s_input(s_input).unsqueeze(-3)
+
         return m, msa_mask
 
 

@@ -3,31 +3,33 @@ import itertools
 import logging
 from pathlib import Path
 
+import pytorch_lightning as pl
 import torch
 from torchmetrics import MeanMetric, MetricCollection
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.metrics.confidence import (
+    compute_global_predicted_distance_error,
     compute_plddt,
     compute_predicted_aligned_error,
     compute_predicted_distance_error,
     compute_weighted_ptm,
 )
-from openfold3.core.metrics.model_selection import compute_model_selection_metric
+from openfold3.core.metrics.model_selection import (
+    compute_final_model_selection_metric,
+    compute_valid_model_selection_metrics,
+)
 from openfold3.core.metrics.pearson_correlation import ZeroSafePearsonCorrCoef
 from openfold3.core.metrics.validation_all_atom import (
     get_metrics,
+    get_metrics_chunked,
 )
 from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.atomize_utils import get_token_frame_atoms
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.projects.af3_all_atom.config.base_config import (
+from openfold3.projects.af3_all_atom.config.model_config import (
     model_selection_metric_weights_config,
-    project_config,
-)
-from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
-    AF3DatasetConfigBuilder,
 )
 from openfold3.projects.af3_all_atom.constants import (
     CORRELATION_METRICS,
@@ -37,7 +39,6 @@ from openfold3.projects.af3_all_atom.constants import (
     VAL_LOSSES,
 )
 from openfold3.projects.af3_all_atom.model import AlphaFold3
-from openfold3.projects.registry import register_project
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
@@ -48,9 +49,6 @@ logger = logging.getLogger(__name__)
 REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_config.yml"
 
 
-@register_project(
-    "af3_all_atom", AF3DatasetConfigBuilder, project_config, REFERENCE_CONFIG_PATH
-)
 class AlphaFold3AllAtom(ModelRunner):
     def __init__(self, model_config, _compile=True):
         super().__init__(model_class=AlphaFold3, config=model_config, _compile=_compile)
@@ -69,6 +67,9 @@ class AlphaFold3AllAtom(ModelRunner):
         self._setup_val_metrics()
         self._init_metric_enabled_tracker()
 
+    def reseed(self, seed):
+        pl.seed_everything(seed)
+
     def _setup_train_metrics(self):
         """Set up training loss and metric collection objects."""
 
@@ -76,14 +77,14 @@ class AlphaFold3AllAtom(ModelRunner):
         #  Make consistent later
         # Initialize all training epoch metric objects
         train_losses = {
-            loss_name: MeanMetric(nan_strategy="ignore") for loss_name in TRAIN_LOSSES
+            loss_name: MeanMetric(nan_strategy="warn") for loss_name in TRAIN_LOSSES
         }
         self.train_losses = MetricCollection(
             train_losses, prefix="train/", postfix="_epoch"
         )
 
         train_metrics = {
-            metric_name: MeanMetric(nan_strategy="ignore") for metric_name in METRICS
+            metric_name: MeanMetric(nan_strategy="warn") for metric_name in METRICS
         }
 
         self.train_metrics = MetricCollection(train_metrics, prefix="train/")
@@ -93,12 +94,12 @@ class AlphaFold3AllAtom(ModelRunner):
 
         # Initialize all validation epoch metric objects
         val_losses = {
-            loss_name: MeanMetric(nan_strategy="ignore") for loss_name in VAL_LOSSES
+            loss_name: MeanMetric(nan_strategy="warn") for loss_name in VAL_LOSSES
         }
         self.val_losses = MetricCollection(val_losses, prefix="val/")
 
         val_metrics = {
-            metric_name: MeanMetric(nan_strategy="ignore")
+            metric_name: MeanMetric(nan_strategy="warn")
             for metric_name in VAL_LOGGED_METRICS
         }
         val_metrics.update(
@@ -171,20 +172,33 @@ class AlphaFold3AllAtom(ModelRunner):
                     compute_extra_val_metrics=False,
                 )
 
-            # TODO: Model selection - consider replacing this call directly with
-            #  model selection call so that we have aggregated statistics of
-            #  all the diffusion samples
-            metrics_per_sample = get_metrics(
-                batch,
-                outputs,
-                compute_extra_val_metrics=True,
+            num_samples = (
+                self.config.architecture.shared.diffusion.no_full_rollout_samples
+            )
+            num_atoms = outputs["atom_positions_predicted"].shape[-2]
+            chunk_metrics_computation = (
+                num_samples > 1
+                and self.config.settings.memory.eval.per_sample_atom_cutoff is not None
+                and num_atoms > self.config.settings.memory.eval.per_sample_atom_cutoff
             )
 
-            metrics = compute_model_selection_metric(
+            if chunk_metrics_computation:
+                metrics_per_sample = get_metrics_chunked(
+                    batch,
+                    outputs,
+                    compute_extra_val_metrics=True,
+                )
+            else:
+                metrics_per_sample = get_metrics(
+                    batch,
+                    outputs,
+                    compute_extra_val_metrics=True,
+                )
+
+            metrics = compute_valid_model_selection_metrics(
+                confidence_config=self.config.confidence,
                 outputs=outputs,
                 metrics=metrics_per_sample,
-                weights=self.model_selection_weights,
-                pdb_id=batch["pdb_id"],
             )
 
             for metric_name in CORRELATION_METRICS:
@@ -199,12 +213,6 @@ class AlphaFold3AllAtom(ModelRunner):
                     plddt = plddt.reshape((-1, 1))
                     lddt = lddt.reshape((-1, 1))
                     metrics[metric_name] = (lddt, plddt)
-
-            logger.debug(
-                f"Validation sample {', '.join(batch['pdb_id'])} on rank "
-                f"{self.global_rank} has the following metrics: "
-                f"{', '.join(list(metrics.keys()))}"
-            )
 
             return metrics
 
@@ -227,8 +235,7 @@ class AlphaFold3AllAtom(ModelRunner):
             )
 
             # Only log steps for training
-            # Ignore nan losses, where the loss was not applicable for the sample
-            if train and not torch.isnan(indiv_loss):
+            if train:
                 self.log(
                     metric_log_name,
                     indiv_loss,
@@ -252,8 +259,7 @@ class AlphaFold3AllAtom(ModelRunner):
 
             # TODO: Maybe remove this extra logging
             # Only log steps for training
-            # Ignore nan metric, where the metric was not applicable for the sample
-            if train and not torch.isnan(metric_value).any():
+            if train:
                 self.log(
                     f"{metric_log_name}_step",
                     metric_value,
@@ -315,7 +321,7 @@ class AlphaFold3AllAtom(ModelRunner):
         preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
         atom_array = batch.pop("atom_array")
 
-        is_repeated_sample = batch.get("repeated_sample")
+        is_repeated_sample = batch.get("repeated_sample").item()
         logger.debug(
             f"Started validation for {', '.join(pdb_id)} on rank {self.global_rank} "
             f"step {self.global_step}, repeated: {is_repeated_sample}"
@@ -336,13 +342,18 @@ class AlphaFold3AllAtom(ModelRunner):
                 self._log(loss_breakdown, batch, outputs, train=False)
 
         except Exception:
-            logger.exception(f"Validation step failed with pdb id {pdb_id}")
+            logger.exception(f"Validation step failed with pdb id {', '.join(pdb_id)}")
             raise
 
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         # TODO: Remove debug logic
-        pdb_id = batch.pop("pdb_id")
-        preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
+        pdb_id = batch.pop("pdb_id") if "pdb_id" in batch else None
+        query_id = batch.pop("query_id") if "query_id" in batch else None
+        preferred_chain_or_interface = (
+            batch.pop("preferred_chain_or_interface")
+            if "preferred_chain_or_interface" in batch
+            else None
+        )
         atom_array = batch.pop("atom_array") if "atom_array" in batch else None
 
         # This is to avoid slow loading for nested dicts in PL
@@ -353,8 +364,13 @@ class AlphaFold3AllAtom(ModelRunner):
             return t.to(device=device, non_blocking=True)
 
         batch = tensor_tree_map(to_device, batch)
-        batch["pdb_id"] = pdb_id
-        batch["preferred_chain_or_interface"] = preferred_chain_or_interface
+
+        if pdb_id:
+            batch["pdb_id"] = pdb_id
+        if query_id:
+            batch["query_id"] = query_id
+        if preferred_chain_or_interface:
+            batch["preferred_chain_or_interface"] = preferred_chain_or_interface
 
         # Add atom array back to the batch if we removed it earlier
         if atom_array:
@@ -392,24 +408,42 @@ class AlphaFold3AllAtom(ModelRunner):
                 f"{self.trainer.train_dataloader.dataset.indices=}"
             )
 
-    def _log_epoch_metrics(self, metrics: MetricCollection):
+    def _log_epoch_metrics(
+        self, metrics: MetricCollection, compute_model_selection: bool = False
+    ):
         """Log aggregated epoch metrics for training or validation.
 
         Args:
             metrics: MetricCollection object containing the metrics to log
         """
-        # Sync and reduce metrics across ranks
-        metrics_output = metrics.compute()
-        for name, result in metrics_output.items():
-            # Only log metrics that have been updated
-            if self.metric_enabled.get(name):
+        if not self.trainer.sanity_checking:
+            # Sync and reduce metrics across ranks
+            metrics_output = metrics.compute()
+            for name, result in metrics_output.items():
+                # Only log metrics that have been updated
+                if self.metric_enabled.get(name):
+                    self.log(
+                        name,
+                        result,
+                        on_step=False,
+                        on_epoch=True,
+                        logger=True,
+                        sync_dist=False,  # Already synced in compute()
+                    )
+
+            if compute_model_selection:
+                model_selection = compute_final_model_selection_metric(
+                    metrics=metrics_output,
+                    model_selection_weights=self.model_selection_weights,
+                )
+
                 self.log(
-                    name,
-                    result,
+                    "val/model_selection",
+                    model_selection,
                     on_step=False,
                     on_epoch=True,
                     logger=True,
-                    sync_dist=False,  # Already synced in compute()
+                    sync_dist=False,
                 )
 
         # Reset metrics for next epoch
@@ -422,21 +456,20 @@ class AlphaFold3AllAtom(ModelRunner):
 
     def on_validation_epoch_end(self):
         """Log aggregated epoch metrics for validation."""
-        if not self.trainer.sanity_checking:
-            self._log_epoch_metrics(metrics=self.val_losses)
-            self._log_epoch_metrics(metrics=self.val_metrics)
+        self._log_epoch_metrics(metrics=self.val_losses)
+        self._log_epoch_metrics(metrics=self.val_metrics, compute_model_selection=True)
 
-    def configure_optimizers(
-        self,
-        learning_rate: float = 1.8e-3,
-    ) -> dict:
-        # Ignored as long as a DeepSpeed optimizer is configured
+        # Restore the model weights to normal
+        self.model.load_state_dict(self.cached_weights)
+        self.cached_weights = None
+
+    def configure_optimizers(self) -> dict:
         optimizer_config = self.config.settings.optimizer
 
         if deepspeed_is_installed and optimizer_config.use_deepspeed_adam:
             optimizer = DeepSpeedCPUAdam(
                 self.parameters(),
-                lr=learning_rate,
+                lr=optimizer_config.learning_rate,
                 betas=(optimizer_config.beta1, optimizer_config.beta2),
                 eps=optimizer_config.eps,
                 adamw_mode=False,
@@ -444,7 +477,7 @@ class AlphaFold3AllAtom(ModelRunner):
         else:
             optimizer = torch.optim.Adam(
                 self.model.parameters(),
-                lr=learning_rate,
+                lr=optimizer_config.learning_rate,
                 betas=(optimizer_config.beta1, optimizer_config.beta2),
                 eps=optimizer_config.eps,
             )
@@ -452,10 +485,17 @@ class AlphaFold3AllAtom(ModelRunner):
         if self.last_lr_step != -1:
             for group in optimizer.param_groups:
                 if "initial_lr" not in group:
-                    group["initial_lr"] = learning_rate
+                    group["initial_lr"] = optimizer_config.learning_rate
 
+        lr_sched_config = self.config.settings.lr_scheduler
         lr_scheduler = AlphaFoldLRScheduler(
-            optimizer, last_epoch=self.last_lr_step, max_lr=learning_rate
+            optimizer,
+            last_epoch=self.last_lr_step,
+            base_lr=lr_sched_config.base_lr,
+            max_lr=optimizer_config.learning_rate,
+            warmup_no_steps=lr_sched_config.warmup_no_steps,
+            start_decay_after_n_steps=lr_sched_config.start_decay_after_n_steps,
+            decay_factor=lr_sched_config.decay_factor,
         )
 
         return {
@@ -496,6 +536,12 @@ class AlphaFold3AllAtom(ModelRunner):
                 **self.config.confidence.pde,
             )
         )
+        confidence_scores["global_predicted_distance_error"] = (
+            compute_global_predicted_distance_error(
+                pde=confidence_scores["predicted_distance_error"],
+                distogram_probs=torch.softmax(outputs["distogram_logits"], dim=-1),
+            )
+        )
 
         if self.config.architecture.heads.pae.enabled:
             confidence_scores.update(
@@ -522,3 +568,45 @@ class AlphaFold3AllAtom(ModelRunner):
             confidence_scores.update(ptm_scores)
 
         return confidence_scores
+
+    def predict_step(self, batch, batch_idx):
+        # At the start of inference, load the EMA weights
+        if self.cached_weights is None:
+            # model.state_dict() contains references to model weights rather
+            # than copies. Therefore, we need to clone them before calling
+            # load_state_dict().
+            def clone_param(t):
+                return t.detach().clone()
+
+            self.cached_weights = tensor_tree_map(clone_param, self.model.state_dict())
+            self.model.load_state_dict(self.ema.state_dict()["params"])
+
+        query_id = batch.pop("query_id")
+        atom_array = batch.pop("atom_array")
+
+        seed = batch.pop("seed")
+        self.reseed(seed[0])  # TODO: assuming we have bs = 1 for now
+
+        # Probably need to change the logic
+        logger.debug(
+            f"Started inference for {', '.join(query_id)} on rank {self.global_rank} "
+            f"step {self.global_step}"
+        )
+        try:
+            batch, outputs = self(batch)
+
+            batch["atom_array"] = atom_array
+            batch["query_id"] = query_id
+            batch["seed"] = seed
+
+            # Generate confidence scores
+            confidence_scores = self._compute_confidence_scores(batch, outputs)
+            outputs["confidence_scores"] = confidence_scores
+
+            return (batch, outputs)
+
+        except Exception:
+            logger.exception(
+                f"Inference step failed with query id {', '.join(query_id)}"
+            )
+            raise

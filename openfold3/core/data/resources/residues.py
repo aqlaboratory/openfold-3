@@ -115,11 +115,32 @@ NUCLEIC_ACID_PHOSPHATE_OXYGENS = ["OP1", "OP2", "OP3", "O1P", "O2P", "O3P"]
 TOKEN_CENTER_ATOMS = ["CA", "C1'"]
 
 # Main chain atoms - needed for modified residue tokenization
-NUCLEIC_ACID_MAIN_CHAIN_ATOMS = ["C3'", "C4'", "C5'", "O3'", "O5'", "P"]
+NUCLEIC_ACID_MAIN_CHAIN_ATOMS = [
+    "C1'",
+    "C2'",
+    "C3'",
+    "C4'",
+    "C5'",
+    "O3'",
+    "O4'",
+    "O5'",
+    "P",
+    "OP1",
+    "OP2",
+]
 PROTEIN_MAIN_CHAIN_ATOMS = ["N", "C", "CA", "O"]
+PHOSPHODIESTER_BOND_ATOMS = ["P", "O3'", "O5'"]
+PEPTIDE_BOND_ATOMS = ["N", "C"]
+
+# Which atoms are considered leaving atoms (displaced by canonical bond formation)
+MOLECULE_TYPE_TO_LEAVING_ATOMS = {
+    MoleculeType.PROTEIN: ["OXT"],
+    MoleculeType.DNA: ["OP3", "O3P"],
+    MoleculeType.RNA: ["OP3", "O3P"],
+}
 
 # Protein residue maps
-RESTYPE_1TO3 = {
+PROTEIN_RESTYPE_1TO3 = {
     "A": "ALA",
     "R": "ARG",
     "N": "ASN",
@@ -142,7 +163,25 @@ RESTYPE_1TO3 = {
     "V": "VAL",
     "X": "UNK",
 }
-RESTPYE_3TO1 = {v: k for k, v in RESTYPE_1TO3.items()}
+PROTEIN_RESTYPE_3TO1 = {v: k for k, v in PROTEIN_RESTYPE_1TO3.items()}
+
+DNA_RESTYPE_1TO3 = {
+    "A": "DA",
+    "G": "DG",
+    "C": "DC",
+    "T": "DT",
+    "N": "DN",
+}
+DNA_RESTYPE_3TO1 = {v: k for k, v in DNA_RESTYPE_1TO3.items()}
+
+RNA_RESTYPE_1TO3 = {
+    "A": "A",
+    "G": "G",
+    "C": "C",
+    "U": "U",
+    "N": "N",
+}
+RNA_RESTYPE_3TO1 = {v: k for k, v in RNA_RESTYPE_1TO3.items()}
 
 # One-hot residue mappings
 RESTYPE_INDEX_3 = {k: v for v, k in enumerate(STANDARD_RESIDUES_WITH_GAP_3)}
@@ -328,7 +367,7 @@ def get_with_unknown_3_to_1(key: str) -> str:
         np.ndarray:
             1-letter residue array.
     """
-    return RESTPYE_3TO1.get(key, RESTPYE_3TO1["UNK"])
+    return PROTEIN_RESTYPE_3TO1.get(key, PROTEIN_RESTYPE_3TO1["UNK"])
 
 
 @np.vectorize
@@ -343,7 +382,7 @@ def get_with_unknown_1_to_3(key: str) -> str:
         np.ndarray:
             1-letter residue array.
     """
-    return RESTYPE_1TO3.get(key, RESTYPE_1TO3["X"])
+    return PROTEIN_RESTYPE_1TO3.get(key, PROTEIN_RESTYPE_1TO3["X"])
 
 
 # Maximum accesible surface area for residues

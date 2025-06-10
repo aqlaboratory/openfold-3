@@ -1,0 +1,275 @@
+"""
+Inference class template for first inference pipeline prototype.
+"""
+
+import itertools
+import logging
+from typing import Optional
+
+import pandas as pd
+import torch
+from biotite.structure import AtomArray
+from biotite.structure.io import pdbx
+from torch.utils.data import Dataset
+
+from openfold3.core.config.msa_pipeline_configs import MsaSampleProcessorInputInference
+from openfold3.core.data.framework.single_datasets.abstract_single import (
+    register_dataset,
+)
+from openfold3.core.data.framework.single_datasets.dataset_utils import (
+    pad_to_world_size,
+)
+from openfold3.core.data.pipelines.featurization.conformer import (
+    featurize_reference_conformers_af3,
+)
+from openfold3.core.data.pipelines.featurization.msa import (
+    MsaFeaturizerOF3,
+    MsaFeaturizerOF3Config,
+)
+from openfold3.core.data.pipelines.featurization.structure import (
+    TOKEN_DIM_INDEX_MAP,
+    featurize_structure_af3,
+)
+from openfold3.core.data.pipelines.featurization.template import (
+    featurize_template_structures_af3,
+)
+from openfold3.core.data.pipelines.sample_processing.conformer import (
+    ProcessedReferenceMolecule,
+)
+from openfold3.core.data.pipelines.sample_processing.msa import (
+    MsaSampleProcessorInference,
+)
+from openfold3.core.data.primitives.structure.query import (
+    StructureWithReferenceMolecules,
+    structure_with_ref_mols_from_query,
+)
+from openfold3.core.data.primitives.structure.template import TemplateSliceCollection
+from openfold3.core.data.primitives.structure.tokenization import (
+    add_token_positions,
+    get_token_count,
+    tokenize_atom_array,
+)
+from openfold3.projects.af3_all_atom.config.inference_query_format import (
+    Query,
+)
+
+logger = logging.getLogger(__name__)
+
+
+@register_dataset
+class InferenceDataset(Dataset):
+    """Dataset class for running inference on a set of queries."""
+
+    # TODO: Can accept a dataset_config here if we want
+    def __init__(self, dataset_config, world_size: Optional[int] = None) -> None:
+        """Initializes the InferenceDataset."""
+        super().__init__()
+
+        self.query_set = dataset_config.query_set
+        self.query_cache = self.query_set.queries
+
+        self.seeds: list = dataset_config.seeds
+        self.world_size = world_size
+
+        self.msa_settings = dataset_config.msa
+        self.template_settings = dataset_config.template
+
+        self.msa_sample_processor_inference = MsaSampleProcessorInference(
+            config=self.msa_settings
+        )
+        self.msa_featurizer_of3 = MsaFeaturizerOF3(
+            config=MsaFeaturizerOF3Config(
+                max_rows=self.msa_settings.max_rows,
+                max_rows_paired=self.msa_settings.max_rows_paired,
+                subsample_with_bands=self.msa_settings.subsample_with_bands,
+            )
+        )
+
+        # Parse CCD
+        if self.query_set.ccd_file_path is not None:
+            logger.debug("Parsing CCD file.")
+            self.ccd = pdbx.CIFFile.read(self.query_set.ccd_file_path)
+            logger.debug("Done parsing CCD file.")
+
+        # Create individual datapoint cache (allows rerunning the same query with
+        # different seeds)
+        self.create_datapoint_cache()
+
+    # TODO: Consider sorting the datapoints by token_count
+    def create_datapoint_cache(self) -> None:
+        qids = self.query_cache.keys()
+        qid_values, seed_values = zip(
+            *[(q, s) for q, s in itertools.product(qids, self.seeds)]
+        )
+
+        _datapoint_cache = pd.DataFrame(
+            {
+                "query_id": qid_values,
+                "seed": seed_values,
+            }
+        )
+        self.datapoint_cache = pad_to_world_size(_datapoint_cache, self.world_size)
+
+    def get_structure_with_ref_mols(
+        self, query: Query
+    ) -> StructureWithReferenceMolecules:
+        """Creates a preprocessed AtomArray and reference molecules from the query.
+
+        Parses the Query object into a full AtomArray and processed reference molecules
+        (RDKit mol objects with atom names and computed conformers) matching the
+        molecule components in the query. The returned AtomArray follows the chain IDs
+        given in the Query object. If a chain specifies multiple chain IDs, repeated
+        identical chains with those IDs will be constructed and given the same entity
+        ID. Residue names will be inferred from the sequence or CCD codes. If a ligand
+        is specified through a SMILES string, it will be named as "LIG-X", where X
+        starts at 1 and is incremented for each unnamed ligand entity found in the
+        Query.
+
+        Additionally, this method adds tokenization information (token IDs) and token
+        positions to the AtomArray, which are required by other functions in the
+        featurization pipeline.
+
+        Args:
+            query (Query):
+                The Query object containing the chains to construct the structure from.
+
+        Returns:
+            StructureWithReferenceMolecules:
+                A named tuple containing the tokenized AtomArray and a list of processed
+                reference molecules.
+        """
+        # Gets AtomArray and processed reference molecules with conformers
+        atom_array, processed_reference_molecules = structure_with_ref_mols_from_query(
+            query=query,
+        )
+
+        # Add token-related IDs
+        tokenize_atom_array(atom_array)
+        add_token_positions(atom_array)
+
+        return StructureWithReferenceMolecules(
+            atom_array, processed_reference_molecules
+        )
+
+    def create_structure_features(
+        self,
+        atom_array: AtomArray,
+        processed_reference_molecules: list[ProcessedReferenceMolecule],
+        n_tokens: int,
+    ) -> dict[str, torch.Tensor]:
+        """Creates the target structure features."""
+
+        target_structure_features = featurize_structure_af3(
+            atom_array=atom_array,
+            n_tokens=n_tokens,
+            token_dim_index_map=TOKEN_DIM_INDEX_MAP,
+            is_gt=False,
+            add_perm_features=False,
+        )
+
+        # Compute reference conformer features
+        reference_conformer_features = featurize_reference_conformers_af3(
+            processed_ref_mol_list=processed_reference_molecules,
+            add_ref_space_uid_to_perm=False,
+        )
+
+        # Wrap up features
+        structure_features = target_structure_features | reference_conformer_features
+
+        return structure_features
+
+    def create_msa_features(self, query, atom_array, n_tokens) -> dict:
+        """Creates the MSA features."""
+
+        # Create MSA precursor input
+        input = MsaSampleProcessorInputInference.create_from_inference_query_entry(
+            inference_query=query
+        )
+        msa_array_collection = self.msa_sample_processor_inference(input=input)
+
+        msa_features = self.msa_featurizer_of3(
+            atom_array=atom_array,
+            msa_array_collection=msa_array_collection,
+            n_tokens=n_tokens,
+        )
+
+        return msa_features
+
+    def create_template_features(
+        self, atom_array: AtomArray, n_tokens: int, *args, **kwargs
+    ) -> dict:
+        """Creates the template features."""
+        # TODO: Implement a custom inference-adjusted function that returns
+        # template_slice_collection
+        template_slice_collection = TemplateSliceCollection(template_slices=dict())
+
+        template_features = featurize_template_structures_af3(
+            template_slice_collection=template_slice_collection,
+            n_templates=self.template_settings.n_templates,
+            n_tokens=n_tokens,
+            min_bin=self.template_settings.distogram.min_bin,
+            max_bin=self.template_settings.distogram.max_bin,
+            n_bins=self.template_settings.distogram.n_bins,
+        )
+
+        return template_features
+
+    def create_all_features(
+        self,
+        query: Query,
+    ) -> dict:
+        """Creates all features for a single datapoint."""
+
+        features = {}
+
+        # Create initial AtomArray and ReferenceMolecules from query entry
+        structure_objs = self.get_structure_with_ref_mols(
+            query=query,
+        )
+        preprocessed_atom_array, processed_reference_molecules = structure_objs
+
+        # TODO: At some point, think about a cleaner way to pass this through the model
+        # runner than as a pseudo-feature
+        features["atom_array"] = preprocessed_atom_array
+        n_tokens = get_token_count(preprocessed_atom_array)
+
+        # Target structure and conformer features
+        structure_features = self.create_structure_features(
+            atom_array=preprocessed_atom_array,
+            processed_reference_molecules=processed_reference_molecules,
+            n_tokens=n_tokens,
+        )
+        features.update(structure_features)
+
+        # MSA features
+        msa_features = self.create_msa_features(
+            query, preprocessed_atom_array, n_tokens
+        )
+        features.update(msa_features)
+
+        # Template features
+        template_features = self.create_template_features(
+            preprocessed_atom_array, n_tokens
+        )
+        features.update(template_features)
+
+        return features
+
+    def __getitem__(
+        self, index: int
+    ) -> dict[str : torch.Tensor | dict[str, torch.Tensor]]:
+        # Get query ID and seed information
+        datapoint = self.datapoint_cache.iloc[index]
+        query_id = datapoint["query_id"]
+        query = self.query_cache[query_id]
+        seed = datapoint["seed"]
+
+        # TODO: Could wrap this in try/except
+        features = self.create_all_features(query)
+        features["query_id"] = query_id
+        features["seed"] = torch.tensor([seed])
+
+        return features
+
+    def __len__(self):
+        return len(self.datapoint_cache)

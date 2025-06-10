@@ -115,7 +115,8 @@ def all_atom_distogram_loss(
 
     # Compute binned distogram
     bin_size = (bin_max - bin_min) / no_bins
-    v_bins = bin_min + torch.arange(no_bins, device=d.device) * bin_size
+    bin_min_offset = bin_min + bin_size / 2
+    v_bins = bin_min_offset + torch.arange(no_bins, device=d.device) * bin_size
     d_b = binned_one_hot(d, v_bins).to(dtype=d.dtype)
 
     pair_mask = (rep_atom_mask[..., None] * rep_atom_mask[..., None, :]).bool()
@@ -130,21 +131,21 @@ def all_atom_distogram_loss(
 
     # Calculate unweighted batch mean
     # Mask out samples where the loss is disabled
-    mean_loss_unweighted = loss_masked_batch_mean(
-        loss=loss.detach().clone(),
-        weight=distogram_weight,
-        apply_weight=False,
-        nan_zero_weights=True,
-        eps=eps,
-    )
-    loss_breakdown = {"distogram_loss": mean_loss_unweighted}
+    loss_breakdown = {}
+    if distogram_weight.any():
+        mean_loss_unweighted = loss_masked_batch_mean(
+            loss=loss.detach().clone(),
+            weight=distogram_weight,
+            apply_weight=False,
+            eps=eps,
+        )
+        loss_breakdown = {"distogram_loss": mean_loss_unweighted}
 
     # Apply loss weight in batch mean
     mean_loss = loss_masked_batch_mean(
         loss=loss,
         weight=distogram_weight,
         apply_weight=True,
-        nan_zero_weights=False,
         eps=eps,
     )
 

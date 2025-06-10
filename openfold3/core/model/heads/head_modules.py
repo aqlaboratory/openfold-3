@@ -25,7 +25,7 @@ from openfold3.core.model.heads.prediction_heads import (
     ExperimentallyResolvedHeadAllAtom,
     MaskedMSAHead,
     PairformerEmbedding,
-    PerResidueLDDAllAtom,
+    PerResidueLDDTAllAtom,
     PerResidueLDDTCaPredictor,
     PredictedAlignedErrorHead,
     PredictedDistanceErrorHead,
@@ -136,6 +136,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         super().__init__()
         self.config = config
         self.max_atoms_per_token = config.max_atoms_per_token
+        self.per_sample_token_cutoff = config.per_sample_token_cutoff
 
         self.pairformer_embedding = PairformerEmbedding(
             **self.config["pairformer_embedding"],
@@ -145,7 +146,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             **self.config["pde"],
         )
 
-        self.plddt = PerResidueLDDAllAtom(
+        self.plddt = PerResidueLDDTAllAtom(
             **self.config["lddt"],
         )
 
@@ -248,6 +249,16 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             batch=batch, x=atom_positions_predicted, atom_mask=batch["atom_mask"]
         )
 
+        # TODO: Determine if this is the best way to handle PairFormer
+        #  memory limits depending on the number of samples
+        num_samples = repr_x_pred.shape[-3]
+        apply_per_sample = (
+            not torch.is_grad_enabled()
+            and num_samples > 1
+            and self.per_sample_token_cutoff is not None
+            and repr_x_pred.shape[-2] > self.per_sample_token_cutoff
+        )
+
         # Embed trunk outputs
         si, zij = self.pairformer_embedding(
             si_input=si_input,
@@ -261,6 +272,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
+            apply_per_sample=apply_per_sample,
         )
 
         # Get atom mask padded to MAX_ATOMS_PER_TOKEN

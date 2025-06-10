@@ -18,6 +18,7 @@ Transition layers. Includes ReLUTransition, SwiGLUTransition,
 ConditionedTransitionBlock, and StructureModuleTransition.
 """
 
+from abc import ABC, abstractmethod
 from typing import Optional
 
 import torch
@@ -30,191 +31,10 @@ from openfold3.core.utils.checkpointing import checkpoint_section
 from openfold3.core.utils.chunk_utils import chunk_layer
 
 
-class ReLUTransitionLayer(nn.Module):
-    """
-    Feed-forward network applied to activations after attention.
-    """
-
-    def __init__(
-        self, num_relu_layers, c_in, n, linear_init_params=lin_init.relu_transition_init
-    ):
-        """
-        Args:
-            num_relu_layers:
-                Number of Linear+ReLU layers to apply.
-            c_in:
-                Input channel dimension
-            n:
-                Factor multiplied to c_in to obtain the hidden channel
-                dimension
-            linear_init_params:
-                Linear layer initialization parameters
-        """
-        super().__init__()
-
-        self.c_in = c_in
-        self.n = n
-        self.num_relu_layers = num_relu_layers
-
-        self.layers = nn.ModuleList(
-            [
-                nn.Sequential(
-                    Linear(self.c_in, self.n * self.c_in, **linear_init_params.layers),
-                    nn.ReLU(),
-                )
-                for _ in range(self.num_relu_layers)
-            ]
-        )
-
-        self.linear_out = Linear(self.n * self.c_in, self.c_in, init="final")
-
-    def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x:
-                [*, N, C_in] Input tensor
-            mask:
-                [*, N] Tensor mask
-        Returns:
-            x:
-                [*, N, C_in] Tensor update
-        """
-        for l in self.layers:
-            x = l(x)
-
-        x = self.linear_out(x) * mask
-        return x
-
-
-class ReLUTransition(nn.Module):
-    """
-    Feed-forward network applied after attention.
-
-    Implements AF2 Algorithm 9 and 15
-    """
-
-    def __init__(self, c_in, n, linear_init_params=lin_init.relu_transition_init):
-        """
-        Args:
-            c_in:
-                Input channel dimension
-            n:
-                Factor multiplied to c_in to obtain the hidden channel
-                dimension
-            linear_init_params:
-                Linear layer initialization parameters
-        """
-        super().__init__()
-
-        self.c_in = c_in
-        self.n = n
-
-        self.layer_norm = LayerNorm(self.c_in)
-        self.transition_mlp = ReLUTransitionLayer(
-            num_relu_layers=1,
-            c_in=self.c_in,
-            n=self.n,
-            linear_init_params=linear_init_params,
-        )
-
-    def _transition(self, x, mask):
-        x = self.layer_norm(x)
-        x = self.transition_mlp(x=x, mask=mask)
-        return x
-
-    @torch.jit.ignore
-    def _chunk(
-        self,
-        x: torch.Tensor,
-        mask: torch.Tensor,
-        chunk_size: int,
-    ) -> torch.Tensor:
-        return chunk_layer(
-            self._transition,
-            {"x": x, "mask": mask},
-            chunk_size=chunk_size,
-            no_batch_dims=len(x.shape[:-2]),
-        )
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
-    ) -> torch.Tensor:
-        """
-        Args:
-            x:
-                [*, N, C_in] Input activation
-            mask:
-                [*, N] Input mask
-            chunk_size
-                Chunk size for chunking the input tensor
-        Returns:
-            x:
-                [*, N, C_in] Activation update
-        """
-        # DISCREPANCY: DeepMind forgets to apply the mask here.
-        if mask is None:
-            mask = x.new_ones(x.shape[:-1])
-
-        mask = mask.unsqueeze(-1)
-
-        if chunk_size is not None:
-            x = self._chunk(x, mask, chunk_size)
-        else:
-            x = self._transition(x, mask)
-
-        return x
-
-
-class SwiGLUTransition(nn.Module):
-    """Feed-forward network applied after attention.
-
-    Implements AF3 Algorithm 11.
-    """
-
-    def __init__(
-        self,
-        c_in: int,
-        n: int,
-        linear_init_params: ConfigDict = lin_init.swiglu_transition_init,
-    ):
-        """
-        Args:
-            c_in:
-                Input channel dimension
-            n:
-                Factor by which c_in is multiplied to obtain hidden channel
-                dimension
-            linear_init_params:
-                Linear layer initialization parameters
-        """
-        super().__init__()
-
-        self.c_in = c_in
-        self.n = n
-
-        self.layer_norm = LayerNorm(self.c_in)
-        self.swiglu = SwiGLU(
-            self.c_in, self.n * self.c_in, linear_init_params=linear_init_params.swiglu
-        )
-        self.linear_out = Linear(
-            self.n * self.c_in, c_in, **linear_init_params.linear_out
-        )
-
+class Transition(nn.Module, ABC):
+    @abstractmethod
     def _transition(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        # [*, N, C_in]
-        x = self.layer_norm(x)
-
-        # [*, N, C_hidden]
-        x = self.swiglu(x)
-
-        # [*, N, C_in]
-        x = self.linear_out(x)
-        x = x * mask
-
-        return x
+        pass
 
     @torch.jit.ignore
     def _chunk(
@@ -286,7 +106,6 @@ class SwiGLUTransition(nn.Module):
                 Chunk size for chunking the input tensor
             ckpt_chunk_size:
                 Chunk size for activation checkpointing in the transition layer
-                (currently SwiGLU transition only)
         Returns:
             x:
                 [*, N, C_in] Activation update
@@ -307,6 +126,148 @@ class SwiGLUTransition(nn.Module):
             x = self._chunk(x=x, mask=mask, chunk_size=chunk_size)
         else:
             x = self._transition(x=x, mask=mask)
+
+        return x
+
+
+class ReLUTransitionLayer(nn.Module):
+    """
+    Feed-forward network applied to activations after attention.
+    """
+
+    def __init__(
+        self, num_relu_layers, c_in, n, linear_init_params=lin_init.relu_transition_init
+    ):
+        """
+        Args:
+            num_relu_layers:
+                Number of Linear+ReLU layers to apply.
+            c_in:
+                Input channel dimension
+            n:
+                Factor multiplied to c_in to obtain the hidden channel
+                dimension
+            linear_init_params:
+                Linear layer initialization parameters
+        """
+        super().__init__()
+
+        self.c_in = c_in
+        self.n = n
+        self.num_relu_layers = num_relu_layers
+
+        self.layers = nn.ModuleList(
+            [
+                nn.Sequential(
+                    Linear(self.c_in, self.n * self.c_in, **linear_init_params.layers),
+                    nn.ReLU(),
+                )
+                for _ in range(self.num_relu_layers)
+            ]
+        )
+
+        self.linear_out = Linear(self.n * self.c_in, self.c_in, init="final")
+
+    def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x:
+                [*, N, C_in] Input tensor
+            mask:
+                [*, N] Tensor mask
+        Returns:
+            x:
+                [*, N, C_in] Tensor update
+        """
+        for l in self.layers:
+            x = l(x)
+
+        x = self.linear_out(x) * mask
+        return x
+
+
+class ReLUTransition(Transition):
+    """
+    Feed-forward network applied after attention.
+
+    Implements AF2 Algorithm 9 and 15
+    """
+
+    def __init__(self, c_in, n, linear_init_params=lin_init.relu_transition_init):
+        """
+        Args:
+            c_in:
+                Input channel dimension
+            n:
+                Factor multiplied to c_in to obtain the hidden channel
+                dimension
+            linear_init_params:
+                Linear layer initialization parameters
+        """
+        super().__init__()
+
+        self.c_in = c_in
+        self.n = n
+
+        self.layer_norm = LayerNorm(self.c_in)
+        self.transition_mlp = ReLUTransitionLayer(
+            num_relu_layers=1,
+            c_in=self.c_in,
+            n=self.n,
+            linear_init_params=linear_init_params,
+        )
+
+    def _transition(self, x, mask):
+        x = self.layer_norm(x)
+        x = self.transition_mlp(x=x, mask=mask)
+        return x
+
+
+class SwiGLUTransition(Transition):
+    """Feed-forward network applied after attention.
+
+    Implements AF3 Algorithm 11.
+    """
+
+    def __init__(
+        self,
+        c_in: int,
+        n: int,
+        linear_init_params: ConfigDict = lin_init.swiglu_transition_init,
+    ):
+        """
+        Args:
+            c_in:
+                Input channel dimension
+            n:
+                Factor by which c_in is multiplied to obtain hidden channel
+                dimension
+            linear_init_params:
+                Linear layer initialization parameters
+        """
+        super().__init__()
+
+        self.c_in = c_in
+        self.n = n
+
+        self.layer_norm = LayerNorm(self.c_in)
+        self.swiglu = SwiGLU(
+            self.c_in, self.n * self.c_in, linear_init_params=linear_init_params.swiglu
+        )
+        self.linear_out = Linear(
+            self.n * self.c_in, c_in, **linear_init_params.linear_out
+        )
+
+    def _transition(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        # [*, N, C_in]
+        x = self.layer_norm(x)
+
+        # [*, N, C_hidden]
+        x = self.swiglu(x)
+
+        # [*, N, C_in]
+        x = self.linear_out(x)
+        x = x * mask
 
         return x
 

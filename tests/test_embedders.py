@@ -31,11 +31,15 @@ from openfold3.core.model.feature_embedders.template_embedders import (
     TemplateSingleEmbedderMonomer,
     TemplateSingleEmbedderMultimer,
 )
-from openfold3.projects import registry
+from openfold3.legacy.af2_monomer.project_entry import AF2MonomerProjectEntry
+from openfold3.legacy.af2_multimer.project_entry import AF2MultimerProjectEntry
+from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
+from tests import compare_utils
 from tests.config import consts, monomer_consts, multimer_consts
 from tests.data_utils import random_af3_features, random_asym_ids, random_template_feats
 
 
+@compare_utils.skip_of2_test()
 class TestInputEmbedder(unittest.TestCase):
     def test_shape(self):
         c_z = 5
@@ -44,9 +48,9 @@ class TestInputEmbedder(unittest.TestCase):
         n_res = 17
         n_clust = 19
 
-        monomer_project_entry = registry.get_project_entry(monomer_consts.model_name)
-        config = registry.make_config_with_presets(
-            monomer_project_entry, [monomer_consts.model_preset]
+        monomer_project_entry = AF2MonomerProjectEntry()
+        config = monomer_project_entry.get_config_with_presets(
+            [monomer_consts.model_preset]
         )
         input_emb_config = config.model.input_embedder
         input_emb_config.update({"c_z": c_z, "c_m": c_m})
@@ -65,9 +69,9 @@ class TestInputEmbedder(unittest.TestCase):
         self.assertTrue(msa_emb.shape == (b, n_clust, n_res, c_m))
         self.assertTrue(pair_emb.shape == (b, n_res, n_res, c_z))
 
-        multimer_project_entry = registry.get_project_entry(multimer_consts.model_name)
-        config = registry.make_config_with_presets(
-            multimer_project_entry, [multimer_consts.model_preset]
+        multimer_project_entry = AF2MultimerProjectEntry()
+        config = multimer_project_entry.get_config_with_presets(
+            [multimer_consts.model_preset]
         )
         input_emb_config = config.model.input_embedder
         input_emb_config.update({"c_z": c_z, "c_m": c_m})
@@ -93,9 +97,8 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
-        af3_proj = registry.get_project_entry("af3_all_atom")
-        af3_proj_config = af3_proj.get_config_with_preset()
-        af3_config = af3_proj_config.model
+        proj_entry = AF3ProjectEntry()
+        af3_config = proj_entry.get_model_config_with_presets()
 
         c_s_input = af3_config.architecture.input_embedder.c_s_input
         c_s = af3_config.architecture.input_embedder.c_s
@@ -126,12 +129,16 @@ class TestMSAModuleEmbedder(unittest.TestCase):
         c_s_input = c_token + 65
         one_hot_dim = 32
 
-        proj_entry = registry.get_project_entry("af3_all_atom")
-        af3_proj_config = proj_entry.get_config_with_preset()
-        af3_config = af3_proj_config.model
+        proj_entry = AF3ProjectEntry()
+        af3_config = proj_entry.get_model_config_with_presets()
 
         msa_emb_config = af3_config.architecture.msa.msa_module_embedder
         msa_emb_config.update({"c_s_input": c_s_input})
+
+        batch_asym_ids = [
+            torch.as_tensor(random_asym_ids(n_token)) for _ in range(batch_size)
+        ]
+        batch_asym_ids = torch.stack(batch_asym_ids)
 
         batch = {
             "msa": torch.rand((batch_size, n_total_msa_seq, n_token, one_hot_dim)),
@@ -141,6 +148,7 @@ class TestMSAModuleEmbedder(unittest.TestCase):
             "num_paired_seqs": torch.randint(
                 low=n_total_msa_seq // 4, high=n_total_msa_seq // 2, size=(batch_size,)
             ),
+            "asym_id": batch_asym_ids,
         }
 
         s_input = torch.rand(batch_size, n_token, c_s_input)
@@ -151,10 +159,10 @@ class TestMSAModuleEmbedder(unittest.TestCase):
         n_sampled_seqs = msa.shape[-3]
 
         # Check that the number of sampled sequences is between the number of
-        # uniprot seqs and the total number of sequences
+        # uniprot seqs and the total number of sequences for each sample in the batch
         max_paired_seqs = torch.max(batch["num_paired_seqs"])
         self.assertTrue(
-            (n_sampled_seqs > max_paired_seqs) & (n_sampled_seqs < n_total_msa_seq)
+            (n_sampled_seqs > max_paired_seqs) & (n_sampled_seqs <= n_total_msa_seq)
         )
         self.assertTrue(
             msa.shape == (batch_size, n_sampled_seqs, n_token, msa_emb_config.c_m)
@@ -218,16 +226,15 @@ class TestRecyclingEmbedder(unittest.TestCase):
         self.assertTrue(m_1.shape == (batch_size, n, c_m))
 
 
+@compare_utils.skip_of2_test()
 class TestTemplateSingleEmbedders(unittest.TestCase):
     def test_shape(self):
         batch_size = 4
         n_templ = 4
         n_res = 256
 
-        monomer_project_entry = registry.get_project_entry(monomer_consts.model_name)
-        c = registry.make_config_with_presets(
-            monomer_project_entry, [monomer_consts.model_preset]
-        )
+        monomer_project_entry = AF2MonomerProjectEntry()
+        c = monomer_project_entry.get_config_with_presets([monomer_consts.model_preset])
         c_m = c.model.template.template_single_embedder.c_out
 
         batch = random_template_feats(n_templ, n_res, batch_size=batch_size)
@@ -242,9 +249,9 @@ class TestTemplateSingleEmbedders(unittest.TestCase):
 
         self.assertTrue(x.shape == (batch_size, n_templ, n_res, c_m))
 
-        multimer_project_entry = registry.get_project_entry(multimer_consts.model_name)
-        c = registry.make_config_with_presets(
-            multimer_project_entry, [multimer_consts.model_preset]
+        multimer_project_entry = AF2MultimerProjectEntry()
+        c = multimer_project_entry.get_config_with_presets(
+            [multimer_consts.model_preset]
         )
         c_m = c.model.template.template_single_embedder.c_out
 
@@ -260,15 +267,14 @@ class TestTemplateSingleEmbedders(unittest.TestCase):
 
 
 class TestTemplatePairEmbedders(unittest.TestCase):
-    def test_shape(self):
+    @compare_utils.skip_of2_test()
+    def test_af2_shape(self):
         batch_size = 2
         n_templ = 4
         n_res = 5
 
-        monomer_project_entry = registry.get_project_entry(monomer_consts.model_name)
-        c = registry.make_config_with_presets(
-            monomer_project_entry, [monomer_consts.model_preset]
-        )
+        monomer_project_entry = AF2MonomerProjectEntry()
+        c = monomer_project_entry.get_config_with_presets([monomer_consts.model_preset])
         c_t = c.model.template.template_pair_embedder.c_out
 
         batch = random_template_feats(n_templ, n_res, batch_size=batch_size)
@@ -286,10 +292,11 @@ class TestTemplatePairEmbedders(unittest.TestCase):
 
         self.assertTrue(x.shape == (batch_size, n_templ, n_res, n_res, c_t))
 
-        multimer_project_entry = registry.get_project_entry(multimer_consts.model_name)
-        c = registry.make_config_with_presets(
-            multimer_project_entry, [multimer_consts.model_preset]
+        multimer_project_entry = AF2MultimerProjectEntry()
+        c = multimer_project_entry.get_config_with_presets(
+            [multimer_consts.model_preset]
         )
+
         c_z = c.model.template.template_pair_embedder.c_in
         c_t = c.model.template.template_pair_embedder.c_out
 
@@ -317,11 +324,10 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         n_templ = 3
         n_token = 10
 
-        proj_entry = registry.get_project_entry("af3_all_atom")
-        af3_proj_config = proj_entry.get_config_with_preset()
-        af3_config = af3_proj_config.model
+        proj_entry = AF3ProjectEntry()
+        af3_config = proj_entry.get_model_config_with_presets()
 
-        c_z = af3_config.architecture.template.template_pair_embedder.c_z
+        c_in = af3_config.architecture.template.template_pair_embedder.c_in
         c_t = af3_config.architecture.template.template_pair_embedder.c_out
 
         tpe = TemplatePairEmbedderAllAtom(
@@ -341,7 +347,7 @@ class TestTemplatePairEmbedders(unittest.TestCase):
             ),
         }
 
-        z = torch.ones((batch_size, n_token, n_token, c_z))
+        z = torch.ones((batch_size, n_token, n_token, c_in))
 
         emb = tpe(batch, z)
 

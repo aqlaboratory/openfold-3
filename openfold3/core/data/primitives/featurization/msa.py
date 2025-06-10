@@ -192,12 +192,10 @@ def calculate_profile_del_mean(
         tuple[np.ndarray, np.ndarray]:
             The profile and mean deletion counts for the chain.
     """
-    # TODO this function is the main runtime bottleneck in the current data pipeline
-    # add runtime optimizations
     if bool(msa_array_collection.row_counts["n_rows_main"][chain_id]):
         profile = calculate_profile(
             msa_array_collection.chain_id_to_main_msa[chain_id].msa,
-            MoleculeType[msa_array_collection.chain_id_to_mol_type[chain_id]],
+            msa_array_collection.chain_id_to_mol_type[chain_id],
             chunk_size=msa_profile_chunk_size,
         )
         del_mean = np.mean(
@@ -358,27 +356,28 @@ def map_msas_to_tokens(
 def create_msa_feature_precursor_af3(
     atom_array: AtomArray,
     msa_array_collection: MsaArrayCollection,
+    n_tokens: int,
     max_rows: int,
     max_rows_paired: int,
-    token_budget: int,
 ) -> MsaFeaturePrecursorAF3:
     """Creates a set of precursor arrays for AF3 MSA featurization.
 
     Args:
         atom_array (AtomArray):
             AtomArray of the cropped structure.
-        msa_processed_collection (MsaProcessedCollection):
+        msa_array_collection (MsaArrayCollection):
             Collection of processed MSA data per chain.
-        msa_slice (MsaSlice):
-            Object containing the mappings from the crop to the MSA sequences.
-        token_budget (int):
-            The number of tokens in the crop.
+        n_tokens (int):
+            Number of tokens in the atom array.
+        max_rows (int):
+            The maximum number of rows to use.
         max_rows_paired (int):
             The maximum number of rows to pair.
 
     Returns:
         MsaProcessed:
-            Processed MSA arrays for the crop to featurize.
+            Processed MSA arrays for the crop during training or in the whole structure
+            to predict during inference to featurize.
     """
     if bool(msa_array_collection.chain_id_to_query_seq):
         # fetch rowcounts
@@ -386,18 +385,16 @@ def create_msa_feature_precursor_af3(
 
         # Pre-allocate feature precursor container
         msa_feature_precursor = MsaFeaturePrecursorAF3(
-            msa=np.full([msa_array_collection.row_counts["n_rows"], token_budget], "-"),
-            msa_index=np.ones([msa_array_collection.row_counts["n_rows"], token_budget])
+            msa=np.full([msa_array_collection.row_counts["n_rows"], n_tokens], "-"),
+            msa_index=np.ones([msa_array_collection.row_counts["n_rows"], n_tokens])
             * np.where(np.array(STANDARD_RESIDUES_WITH_GAP_1) == "-")[0].item(),
             deletion_matrix=np.zeros(
-                [msa_array_collection.row_counts["n_rows"], token_budget]
+                [msa_array_collection.row_counts["n_rows"], n_tokens]
             ),
             n_rows_paired=msa_array_collection.row_counts["n_rows_paired_cropped"] + 1,
-            msa_mask=np.zeros(
-                [msa_array_collection.row_counts["n_rows"], token_budget]
-            ),
-            msa_profile=np.zeros([token_budget, len(STANDARD_RESIDUES_WITH_GAP_1)]),
-            deletion_mean=np.zeros(token_budget),
+            msa_mask=np.zeros([msa_array_collection.row_counts["n_rows"], n_tokens]),
+            msa_profile=np.zeros([n_tokens, len(STANDARD_RESIDUES_WITH_GAP_1)]),
+            deletion_mean=np.zeros(n_tokens),
         )
 
         # Process each chain
@@ -423,22 +420,20 @@ def create_msa_feature_precursor_af3(
                 profile=profile,
                 del_mean=del_mean,
                 msa_token_mapper=msa_token_mapper,
-                molecule_type=MoleculeType[
-                    msa_array_collection.chain_id_to_mol_type[chain_id]
-                ],
+                molecule_type=msa_array_collection.chain_id_to_mol_type[chain_id],
             )
 
     else:
         # When there are no protein or RNA chains
         msa_feature_precursor = MsaFeaturePrecursorAF3(
-            msa=np.full([1, token_budget], "-"),
-            msa_index=np.ones([1, token_budget])
+            msa=np.full([1, n_tokens], "-"),
+            msa_index=np.ones([1, n_tokens])
             * np.where(np.array(STANDARD_RESIDUES_WITH_GAP_1) == "-")[0].item(),
-            deletion_matrix=np.zeros([1, token_budget]),
+            deletion_matrix=np.zeros([1, n_tokens]),
             n_rows_paired=1,
-            msa_mask=np.zeros([1, token_budget]),
-            msa_profile=np.zeros([token_budget, len(STANDARD_RESIDUES_WITH_GAP_1)]),
-            deletion_mean=np.zeros(token_budget),
+            msa_mask=np.zeros([1, n_tokens]),
+            msa_profile=np.zeros([n_tokens, len(STANDARD_RESIDUES_WITH_GAP_1)]),
+            deletion_mean=np.zeros(n_tokens),
         )
 
     return msa_feature_precursor

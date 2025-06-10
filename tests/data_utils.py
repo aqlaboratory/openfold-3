@@ -16,6 +16,7 @@ from random import randint
 
 import numpy as np
 import torch
+from biotite.structure import Atom, AtomArray, BondList, array
 from scipy.spatial.transform import Rotation
 
 from openfold3.core.data.primitives.featurization.structure import (
@@ -29,6 +30,7 @@ from openfold3.core.np.token_atom_constants import (
     TOKEN_TYPES,
     TOKEN_TYPES_WITH_GAP,
 )
+from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from tests.config import consts
 
 
@@ -187,6 +189,13 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
     token_mask = torch.ones(n_token).float()
     atom_mask = torch.ones(n_atom).float()
 
+    rand_token_mask = torch.randint(0, 2, (n_token,)).float()
+    atom_resolved_mask = broadcast_token_feat_to_atoms(
+        token_mask=token_mask,
+        num_atoms_per_token=num_atoms_per_token,
+        token_feat=rand_token_mask,
+    )
+
     atom_to_token_index = create_atom_to_token_index(
         token_mask=token_mask,
         num_atoms_per_token=num_atoms_per_token,
@@ -221,7 +230,7 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
         "ref_element": torch.ones((batch_size, n_atom, 119)).int(),
         "ref_charge": torch.ones((batch_size, n_atom)).float(),
         "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)).int(),
-        "ref_space_uid": torch.zeros((batch_size, n_atom)).int(),
+        "ref_space_uid": atom_to_token_index.unsqueeze(0).repeat((batch_size, 1)),
         # MSA features
         "msa": torch.ones((batch_size, n_msa, n_token, 32)).int(),
         "has_deletion": torch.ones((batch_size, n_msa, n_token)).float(),
@@ -236,7 +245,7 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
         ).float(),
         "template_distogram": torch.ones(
             (batch_size, n_templ, n_token, n_token, 39)
-        ).int(),
+        ).float(),
         "template_unit_vector": torch.ones(
             (batch_size, n_templ, n_token, n_token, 3)
         ).float(),
@@ -256,7 +265,9 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
         ),
         "ground_truth": {
             "atom_positions": torch.randn((batch_size, n_atom, 3)).float(),
-            "atom_resolved_mask": torch.ones((batch_size, n_atom)).float(),
+            "atom_resolved_mask": atom_resolved_mask.unsqueeze(0).repeat(
+                (batch_size, 1)
+            ),
         },
         "loss_weights": {
             "bond": torch.Tensor([0.0]).repeat(batch_size),
@@ -271,9 +282,36 @@ def random_af3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
     }
 
     if is_eval:
-        features["use_for_intra_validation"] = torch.ones(batch_size, n_token).int()
-        features["use_for_inter_validation"] = torch.ones(
-            batch_size, n_token, n_token
+        features["ground_truth"]["intra_filter_atomized"] = torch.ones(
+            batch_size, n_atom
+        ).int()
+        features["ground_truth"]["inter_filter_atomized"] = torch.ones(
+            batch_size, n_atom, n_atom
         ).int()
 
     return features
+
+
+def create_atomarray_with_bondlist(
+    atoms: list[Atom], bondlist: BondList | np.ndarray
+) -> AtomArray:
+    """Convenience function to create an AtomArray with a BondList.
+
+    Args:
+        atoms (list[Atom]):
+            List of atoms to put in the AtomArray.
+        bondlist (BondList | np.ndarray):
+            BondList or numpy array. The numpy array has to be a valid input to
+            biotite's BondList.
+
+    Returns:
+        AtomArray:
+            AtomArray containing the atoms and BondList.
+    """
+    atom_array = array(atoms)
+
+    if isinstance(bondlist, np.ndarray):
+        bondlist = BondList(len(atom_array), bondlist)
+    atom_array.bonds = bondlist
+
+    return atom_array

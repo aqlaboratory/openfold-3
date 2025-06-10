@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal, NamedTuple
 
 from biotite.structure import AtomArray, get_chain_count
-from biotite.structure.io import pdb, pdbx
+from biotite.structure.io import pdb, pdbx, save_structure
 
 from openfold3.core.data.io.structure.atom_array import (
     read_atomarray_from_npz,
@@ -15,7 +15,10 @@ from openfold3.core.data.io.structure.atom_array import (
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
-from openfold3.core.data.primitives.structure.cleanup import get_polymer_mask
+from openfold3.core.data.primitives.structure.cleanup import (
+    convert_intra_residue_dative_to_single,
+    get_polymer_mask,
+)
 from openfold3.core.data.primitives.structure.labels import (
     assign_entity_ids,
     assign_molecule_type_ids,
@@ -126,7 +129,7 @@ def parse_mmcif(
     cif_file = _load_ciffile(file_path)
     cif_data = get_cif_block(cif_file)
 
-    # Try predetermining if the structure has too many chains
+    # Try predetermining from the CIF metadata if the structure has too many chains
     if max_polymer_chains is not None:
         n_polymers = get_first_bioassembly_polymer_count(cif_data)
 
@@ -179,34 +182,65 @@ def parse_mmcif(
             **parser_args,
         )
 
-    # Check again if the structure has too many chains
-    if max_polymer_chains is not None:
-        n_polymers = get_chain_count(
-            atom_array[get_polymer_mask(atom_array, use_molecule_type_id=False)]
-        )
-
-        if n_polymers > max_polymer_chains:
-            return SkippedStructure(cif_file, f"Too many polymer chains: {n_polymers}")
-
     # Skip structures where all atoms have zero occupancy
     if skip_all_zero_occ and atom_array.occupancy.sum() == 0:
-        return SkippedStructure(cif_file, "All atoms have zero occupancy")
+        return SkippedStructure(cif_file, "All atoms have zero occupancy.")
 
-    # Replace author-assigned IDs with PDB-assigned IDs
-    update_author_to_pdb_labels(atom_array)
+    # Replace author-assigned IDs with PDB-assigned IDs, but transfer over author
+    # residue IDs where necessary (see function documentation)
+    update_author_to_pdb_labels(atom_array, use_author_res_id_if_missing=True)
 
     # Add entity IDs
     assign_entity_ids(atom_array)
-
-    # Add molecule types for convenience
-    assign_molecule_type_ids(atom_array, cif_file)
 
     # Renumber chain IDs from 1 to avoid duplicate chain labels after bioassembly
     # expansion
     if renumber_chain_ids:
         assign_renumbered_chain_ids(atom_array)
 
+    # Add IDs for major molecular types (PROTEIN, DNA, RNA, LIGAND)
+    assign_molecule_type_ids(atom_array, cif_file)
+
+    # Check again if the structure has too many chains based on the actual structure to
+    # not only rely on earlier metadata annotation, which may not always be complete.
+    if max_polymer_chains is not None:
+        n_polymers = get_chain_count(
+            atom_array[get_polymer_mask(atom_array, use_molecule_type_id=True)]
+        )
+
+        if n_polymers > max_polymer_chains:
+            return SkippedStructure(cif_file, f"Too many polymer chains: {n_polymers}")
+
     return ParsedStructure(cif_file, atom_array)
+
+
+def _create_cif_file(
+    suffix: str, atom_array: AtomArray, data_block: str, include_bonds: bool
+):
+    """Helper function to create and populate CIF or BCIF files."""
+    if suffix == ".cif":
+        cif_file = pdbx.CIFFile()
+    elif suffix == ".bcif":
+        cif_file = pdbx.BinaryCIFFile()
+    else:
+        raise ValueError("Suffix must be either .cif or .bcif")
+
+    try:
+        pdbx.set_structure(
+            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
+        )
+    # This error sometimes happens in the PDB preprocessing
+    except KeyError:
+        logger.warning(
+            "KeyError while writing structure to CIF file. Retrying with "
+            "intra-residue COORDINATION bonds set to SINGLE."
+        )
+        atom_array = convert_intra_residue_dative_to_single(atom_array)
+        pdbx.set_structure(
+            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
+        )
+
+    return cif_file
 
 
 def write_structure(
@@ -228,31 +262,37 @@ def write_structure(
             file suffix. Allowed values are .npz, .cif, .bcif, and .pkl.
         data_block:
             Name of the data block in the CIF/BCIF file. Defaults to None. Ignored if
-            the format is pkl.
+            the format is not cif or bcif.
         include_bonds:
             Whether to include bond information. Defaults to True. Ignored if the format
             is pkl in which the entire BondList is written to the file.
     """
     suffix = output_path.suffix
-    if suffix == ".npz":
-        write_atomarray_to_npz(atom_array, output_path)
-        return
-    elif suffix == ".pkl":
-        with open(output_path, "wb") as f:
-            pickle.dump(atom_array, f)
-        return
-    elif suffix == ".cif":
-        cif_file = pdbx.CIFFile()
-    elif suffix == ".bcif":
-        cif_file = pdbx.BinaryCIFFile()
-    else:
-        raise NotImplementedError("Only .cif, .bcif, and .pkl formats are supported")
 
-    pdbx.set_structure(
-        cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
-    )
+    match suffix:
+        case ".npz":
+            write_atomarray_to_npz(atom_array, output_path)
 
-    cif_file.write(output_path)
+        case ".pkl":
+            with open(output_path, "wb") as f:
+                pickle.dump(atom_array, f)
+
+        case ".cif" | ".bcif":
+            file_obj = _create_cif_file(
+                suffix=suffix,
+                atom_array=atom_array,
+                data_block=data_block,
+                include_bonds=include_bonds,
+            )
+            file_obj.write(output_path)
+
+        case ".pdb":
+            save_structure(output_path, atom_array)
+
+        case _:
+            raise NotImplementedError(
+                "Only .cif, .bcif, and .pkl formats are supported"
+            )
 
 
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-parse")

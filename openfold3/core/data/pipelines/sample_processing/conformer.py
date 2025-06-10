@@ -2,7 +2,7 @@ import contextlib
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 import numpy as np
 from biotite.structure import AtomArray
@@ -40,9 +40,6 @@ class ProcessedReferenceMolecule:
     """Processed reference molecule instance with the reference conformer.
 
     Attributes:
-        mol_id (str):
-            Identifier like CCD ID or custom ID labeling each unique molecule. Used in
-            featurization to infer which conformers originate from the same molecule.
         mol (Mol):
             RDKit Mol object of the reference conformer instance with either a generated
             conformer, or if conformer generation is not possible, the fallback
@@ -52,26 +49,26 @@ class ProcessedReferenceMolecule:
                     Atom names
                 - "annot_used_atom_mask":
                     Mask for atoms that are not NaN in the conformer.
-        component_id (int):
-            Original component ID in the cropped AtomArray.
         in_crop_mask (np.ndarray[np.bool]):
             Mask for atoms that are within the current cropped crop's AtomArray.
+        component_id (int):
+            Original component ID in the cropped AtomArray.
         permutations (list[np.ndarray[np.int]]):
             List of symmetry-equivalent atom permutations for the reference conformer,
             adjusted to only map to in-crop atoms, and only draw from the pool of atoms
             present in the GT.
     """
 
-    mol_id: str
     mol: Mol
-    component_id: int
     in_crop_mask: np.ndarray[bool]
-    permutations: list[np.ndarray[int]]
+
+    # TODO: make optional in inference
+    component_id: Optional[int] = None
+    permutations: Optional[list[np.ndarray[int]]] = None
 
 
 @log_runtime_memory(runtime_dict_key="runtime-ref-conf-proc-fetch", multicall=True)
 def get_processed_reference_conformer(
-    mol_id: str,
     mol: Mol,
     mol_atom_array: AtomArrayView | AtomArray,
     preferred_confgen_strategy: Literal["default", "random_init", "use_fallback"],
@@ -87,8 +84,6 @@ def get_processed_reference_conformer(
     conformers which may contain NaN values.
 
     Args:
-        mol_id (str):
-            Identifier like CCD ID or custom ID labeling each unique molecule.
         mol (Mol):
             RDKit Mol object of the reference conformer instance.
         mol_atom_array (AtomArray | AtomArrayView):
@@ -203,7 +198,6 @@ def get_processed_reference_conformer(
 
     return ProcessedReferenceMolecule(
         mol=mol,
-        mol_id=mol_id,
         component_id=component_id,
         in_crop_mask=in_crop_mask,
         permutations=cropped_permutations,
@@ -261,10 +255,11 @@ def get_reference_conformer_data_af3(
 
         processed_conformers.append(
             get_processed_reference_conformer(
-                ref_mol_id,
-                mol,
-                component_array_view,
-                reference_mol_metadata[ref_mol_id].conformer_gen_strategy,
+                mol=mol,
+                mol_atom_array=component_array_view,
+                preferred_confgen_strategy=reference_mol_metadata[
+                    ref_mol_id
+                ].conformer_gen_strategy,
                 set_fallback_to_nan=reference_mol_metadata[
                     ref_mol_id
                 ].set_fallback_to_nan,

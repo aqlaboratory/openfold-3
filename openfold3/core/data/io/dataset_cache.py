@@ -162,6 +162,8 @@ def read_datacache(
     Returns:
         A fully instantiated DataCache of the appropriate type.
     """
+    if not isinstance(datacache_path, Path):
+        datacache_path = Path(datacache_path)
 
     # Determine the type of dataset cache first without reading the whole file
     if datacache_path.is_file():
@@ -194,3 +196,5 @@ def read_datacache(
             reference_molecule_data_encoding=reference_molecule_data_encoding,
         )
         return dataset_cache
+    else:
+        raise ValueError(f"Invalid datacache path: {datacache_path}")

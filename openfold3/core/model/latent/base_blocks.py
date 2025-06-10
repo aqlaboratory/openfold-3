@@ -204,6 +204,7 @@ class MSABlock(nn.Module, ABC):
         msa_mask: torch.Tensor,
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
+        transition_ckpt_chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
         use_flash: bool = False,

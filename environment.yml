@@ -6,13 +6,13 @@ channels:
   - nvidia
 dependencies:
   - python=3.10
-  - setuptools==59.5.0
+  - setuptools
   - pip
-  - openmm=7.7
+  - openmm
   - pdbfixer
   - pytorch-lightning
   - biopython
-  - numpy=1
+  - numpy
   - pandas
   - PyYAML==5.4.1
   - requests
@@ -28,8 +28,8 @@ dependencies:
   - aria2
   - git
   - ruff>=0.5.0
-  - biotite==1.1.0
-  - rdkit==2024.09.4
+  - biotite==1.2.0
+  - rdkit==2025.03.1
   - mmseqs2==15.6f452
   - bioconda::hmmer
   - bioconda::hhsuite
@@ -42,9 +42,8 @@ dependencies:
   - conda-forge::python-lmdb
   - conda-forge::ijson
   - pip:
-      - mpi4py==3.1.5
       - deepspeed==0.14.5
-      - dm-tree==0.1.6
+      - dm-tree
       - git+https://github.com/NVIDIA/dllogger.git
       - flash-attn==2.6.0.post1
       - pdbeccdutils

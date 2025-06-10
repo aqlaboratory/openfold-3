@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 @log_runtime_memory(runtime_dict_key="runtime-ref-conf-feat")
 def featurize_reference_conformers_af3(
     processed_ref_mol_list: list[ProcessedReferenceMolecule],
-) -> dict[str, torch.Tensor]:
+    add_ref_space_uid_to_perm: bool = True,
+) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
     """AF3 pipeline for creating reference conformer features.
 
     This function creates all conformer features as outlined in Table 5 of the
@@ -38,6 +39,9 @@ def featurize_reference_conformers_af3(
         processed_ref_mol_list (list[ProcessedReferenceMolecule]):
             List of RDKit Mol objects corresponding to each reference conformer
             instance.
+        add_ref_space_uid_to_perm (bool):
+            Whether to add the ref_space_uid_to_perm mapping to the features. This is
+            only required in training.
 
     Returns:
         dict[str, torch.Tensor]:
@@ -54,6 +58,9 @@ def featurize_reference_conformers_af3(
                     One-hot encoded atom names (torch.int32)
                 - ref_space_uid:
                     Unique identifier for each conformer instance (torch.int32)
+                - ref_space_uid_to_perm:
+                    Mapping of each unique conformer instance to its symmetry-equivalent
+                    permutations, dict of tensors (torch.int32)
     """
     ref_pos = []
     ref_mask = []
@@ -61,7 +68,9 @@ def featurize_reference_conformers_af3(
     ref_charge = []
     ref_atom_name_chars = []
     ref_space_uid = []  # deviation from SI! see docstring
-    ref_space_uid_to_perm = {}
+
+    if add_ref_space_uid_to_perm:
+        ref_space_uid_to_perm = {}
 
     for mol_idx, processed_mol in enumerate(processed_ref_mol_list):
         mol = processed_mol.mol
@@ -125,7 +134,10 @@ def featurize_reference_conformers_af3(
             ref_mask.append(mol_ref_mask)
 
         # Append mapping of each unique conformer instance to its permutations
-        ref_space_uid_to_perm[mol_idx] = torch.tensor(permutations, dtype=torch.int32)
+        if add_ref_space_uid_to_perm:
+            ref_space_uid_to_perm[mol_idx] = torch.tensor(
+                permutations, dtype=torch.int32
+            )
 
     ref_pos = torch.concat(ref_pos)
     ref_mask = torch.concat(ref_mask)
@@ -140,16 +152,16 @@ def featurize_reference_conformers_af3(
     )
     ref_space_uid = torch.tensor(ref_space_uid, dtype=torch.int32)
 
-    # This will get padded with 0s in the batch collator
-    atom_pad_mask = torch.ones_like(ref_mask, dtype=torch.bool)
-
-    return {
+    output_features = {
         "ref_pos": ref_pos,
         "ref_mask": ref_mask,
         "ref_element": ref_element,
         "ref_charge": ref_charge,
         "ref_atom_name_chars": ref_atom_name_chars,
         "ref_space_uid": ref_space_uid,
-        "ref_space_uid_to_perm": ref_space_uid_to_perm,
-        "atom_pad_mask": atom_pad_mask,
     }
+
+    if add_ref_space_uid_to_perm:
+        output_features["ref_space_uid_to_perm"] = ref_space_uid_to_perm
+
+    return output_features
