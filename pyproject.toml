@@ -1,12 +1,12 @@
 [build-system]
-requires = ["setuptools", "pip", "torch", "numpy"]
+requires = ["setuptools", "pip", "torch==2.5.1", "numpy"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "openfold3"
 version = "0.1.0"
 dependencies = [
-  "torch",
+  "torch==2.5.1",
   "pytorch-lightning",
   "numpy",
   "pandas",
@@ -29,9 +29,13 @@ dependencies = [
   "deepspeed",
   "dm-tree",
   "pdbeccdutils",
+  "nvidia-cutlass",
+  # additonal pins
+  "triton <3.2", # https://github.com/triton-lang/triton/issues/5919
   # tests still require
   "biopython",
   "modelcif",
+  "openmm",
 ]
 description = "A PyTorch reimplementation of DeepMind's AlphaFold 2 & 3"
 requires-python = ">=3.10"
