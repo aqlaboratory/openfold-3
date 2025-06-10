@@ -290,6 +290,11 @@ def write_structure(
             file_obj.write(output_path)
 
         case ".pdb":
+            # Ensure that residue names are 3 letters max
+            if any(len(name) > 3 for name in atom_array.res_name):
+                atom_array = atom_array.copy()
+                atom_array.res_name = atom_array.res_name.astype("<U3")
+
             save_structure(output_path, atom_array)
 
         case _:
