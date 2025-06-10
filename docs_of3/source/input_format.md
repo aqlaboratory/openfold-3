@@ -238,3 +238,9 @@ Below is a complete example of an input JSON file specifying a single bioassembl
     "ccd_file_path": "/path/to/CCD/file.cif"
 }
 ```
+
+Additional example input JSON files can be found here:
+- [Single-chain protein (monomer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/monomer/query_monomer.json): Ubiquitin (PDB: 1UBQ)
+- [Multi-chain protein with identical chains (homomer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/homomer/query_homomer.json): GCN4 leucine zipper (PDB: 2ZTA)
+- [Multi-chain protein with different chains (multimer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/multimer/query_multimer.json): Deoxy human hemoglobin (PDB: 1A3N)
+- [Protein-ligand complex](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/protein_ligand_complex/query_protein_ligand.json): Mcl-1 with small molecule inhibitor (PDB: 5FDR)
