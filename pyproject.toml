@@ -1,12 +1,13 @@
 [build-system]
-requires = ["setuptools", "pip", "torch==2.5.1", "numpy"]
+# torch used at build needs to match the one at runtime
+requires = ["setuptools", "pip", "torch ==2.5.1", "numpy"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "openfold3"
 version = "0.1.0"
 dependencies = [
-  "torch==2.5.1",
+  "torch ==2.5.1",
   "pytorch-lightning",
   "numpy",
   "pandas",
@@ -30,12 +31,18 @@ dependencies = [
   "dm-tree",
   "pdbeccdutils",
   "nvidia-cutlass",
+
   # additonal pins
-  "triton <3.2", # https://github.com/triton-lang/triton/issues/5919
+  # https://github.com/triton-lang/triton/issues/5919
+  # According to that issue, the pin may not be necessary in Python >3.13.
+  # Note that this pin has the effect of pinning torch <=2.5.1.
+  "triton <3.2;python_version<\"3.13\"",
+
   # tests still require
   "biopython",
   "modelcif",
   "openmm",
+  "pdbfixer @ https://github.com/openmm/pdbfixer/archive/refs/tags/v1.11.tar.gz"
 ]
 description = "A PyTorch reimplementation of DeepMind's AlphaFold 2 & 3"
 requires-python = ">=3.10"
