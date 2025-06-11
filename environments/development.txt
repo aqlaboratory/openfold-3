@@ -1,0 +1,4 @@
+pytest
+ruff
+awscli
+aria2

@@ -1,6 +1,6 @@
 __all__ = ["core", "projects"]
 
-import importlib
+import importlib.util
 
 if importlib.util.find_spec("deepspeed") is not None:
     import deepspeed
