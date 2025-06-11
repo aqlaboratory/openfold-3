@@ -1,4 +1,5 @@
 import copy
+import importlib.resources
 import logging
 from dataclasses import dataclass
 from typing import Optional
@@ -23,7 +24,8 @@ class AF3ProjectEntry:
     model_config_base = model_config
     runner = AlphaFold3AllAtom
     model_preset_yaml = (
-        "openfold3/projects/af3_all_atom/config/model_setting_presets.yml"
+        importlib.resources.files("openfold3.projects.af3_all_atom.config")
+        / "model_setting_presets.yml"
     )
 
     def __post_init__(self):
