@@ -29,7 +29,9 @@ class AF3ProjectEntry:
     )
 
     def __post_init__(self):
-        preset_dict = load_yaml(self.model_preset_yaml)
+        with importlib.resources.as_file(self.model_preset_yaml) as preset_path:
+            preset_dict = load_yaml(preset_path)
+
         self.model_presets = list(preset_dict.keys())
 
     def update_config_with_preset(self, config: ConfigDict, preset: str) -> ConfigDict:
