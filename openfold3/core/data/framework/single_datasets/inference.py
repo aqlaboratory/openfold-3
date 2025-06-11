@@ -110,9 +110,8 @@ class InferenceDataset(Dataset):
         )
         self.datapoint_cache = pad_to_world_size(_datapoint_cache, self.world_size)
 
-    def get_structure_with_ref_mols(
-        self, query: Query
-    ) -> StructureWithReferenceMolecules:
+    @staticmethod
+    def get_structure_with_ref_mols(query: Query) -> StructureWithReferenceMolecules:
         """Creates a preprocessed AtomArray and reference molecules from the query.
 
         Parses the Query object into a full AtomArray and processed reference molecules
