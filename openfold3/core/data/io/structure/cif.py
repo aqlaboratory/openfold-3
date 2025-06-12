@@ -245,7 +245,7 @@ def _create_cif_file(
 
 def write_structure(
     atom_array: AtomArray,
-    output_path: Path,
+    output_path: Path | str,
     data_block: str = None,
     include_bonds: bool = True,
 ) -> None:
@@ -267,6 +267,9 @@ def write_structure(
             Whether to include bond information. Defaults to True. Ignored if the format
             is pkl in which the entire BondList is written to the file.
     """
+    if isinstance(output_path, str):
+        output_path = Path(output_path)
+
     suffix = output_path.suffix
 
     match suffix:
@@ -287,6 +290,11 @@ def write_structure(
             file_obj.write(output_path)
 
         case ".pdb":
+            # Ensure that residue names are 3 letters max
+            if any(len(name) > 3 for name in atom_array.res_name):
+                atom_array = atom_array.copy()
+                atom_array.res_name = atom_array.res_name.astype("<U3")
+
             save_structure(output_path, atom_array)
 
         case _:
