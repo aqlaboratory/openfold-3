@@ -13,8 +13,8 @@ from openfold3.core.data.framework.data_module import openfold_batch_collator
 from openfold3.core.data.framework.single_datasets.abstract_single import (
     register_dataset,
 )
-from openfold3.core.data.framework.single_datasets.base_af3 import (
-    BaseAF3Dataset,
+from openfold3.core.data.framework.single_datasets.base_of3 import (
+    BaseOF3Dataset,
 )
 from openfold3.core.data.pipelines.featurization.loss_weights import (
     set_loss_weights_for_disordered_set,
@@ -251,7 +251,7 @@ class DatapointCollection:
 
 
 @register_dataset
-class WeightedPDBDataset(BaseAF3Dataset):
+class WeightedPDBDataset(BaseOF3Dataset):
     """Implements a Dataset class for the Weighted PDB training dataset for AF3."""
 
     def __init__(self, dataset_config: dict) -> None:
