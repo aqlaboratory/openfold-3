@@ -27,3 +27,12 @@ COPY run_openfold.py /opt/openfold3/
 WORKDIR /opt/openfold3
 
 RUN python3 setup.py install
+
+#Install third party dependencies and set up environment variables
+WORKDIR /opt/
+
+RUN /opt/openfold3/scripts/install_third_party_dependencies.sh
+ENV CUTLASS_PATH=/opt/cutlass
+ENV KMP_AFFINITY=none
+
+WORKDIR /opt/openfold3
