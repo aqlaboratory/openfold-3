@@ -1,6 +1,7 @@
 import copy
 import logging
 from dataclasses import dataclass
+from importlib import resources
 from typing import Optional
 
 from ml_collections import ConfigDict
@@ -22,9 +23,13 @@ class AF3ProjectEntry:
     name = "af3_all_atom"
     model_config_base = model_config
     runner = AlphaFold3AllAtom
-    model_preset_yaml = (
-        "openfold3/projects/af3_all_atom/config/model_setting_presets.yml"
-    )
+
+    @property
+    def model_preset_yaml(self):
+        files = resources.files("openfold3.projects.af3_all_atom.config")
+        yaml = files / "model_setting_presets.yml"
+        with resources.as_file(yaml) as path:
+            return path
 
     def __post_init__(self):
         preset_dict = load_yaml(self.model_preset_yaml)
