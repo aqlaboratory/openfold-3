@@ -18,9 +18,18 @@ import click
 import torch
 
 from openfold3.core.config import config_utils
-from openfold3.entry_points.experiment_runner import TrainingExperimentRunner
+from openfold3.core.data.tools.colabfold_msa_server import preprocess_colabfold_msas
+from openfold3.entry_points.experiment_runner import (
+    InferenceExperimentRunner,
+    TrainingExperimentRunner,
+)
 from openfold3.entry_points.validator import (
+    InferenceExperimentConfig,
     TrainingExperimentConfig,
+    generate_seeds,
+)
+from openfold3.projects.af3_all_atom.config.inference_query_format import (
+    InferenceQuerySet,
 )
 
 torch_versions = torch.__version__.split(".")
@@ -79,6 +88,26 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
     help="Json containing the queries for prediction.",
 )
 @click.option(
+    "--inference_ckpt_path",
+    type=click.Path(exists=True, file_okay=True, dir_okay=True, path_type=Path),
+    required=True,
+    help="Path for model checkpoint to be used for inference",
+)
+@click.option(
+    "--num_diffusion_samples",
+    type=int,
+    default=None,
+    required=False,
+    help="Number of diffusion samples to generate for each query.",
+)
+@click.option(
+    "--num_model_seeds",
+    type=int,
+    default=None,
+    required=False,
+    help="Number of model seeds to use for each query.",
+)
+@click.option(
     "--runner_yaml",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     required=False,
@@ -91,37 +120,62 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
     help="Use ColabFold MSA server to perform alignments.",
 )
 @click.option(
-    "--inference_ckpt_path",
-    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    "--output_dir",
+    type=click.Path(exists=False, file_okay=True, dir_okay=True, path_type=Path),
     required=False,
-    help="Path for model checkpoint to be used for inference",
+    help="Output directory for writing results",
 )
 def predict(
     query_json: Path,
+    inference_ckpt_path: Path,
+    num_diffusion_samples: int | None = None,
+    num_model_seeds: int | None = None,
     runner_yaml: Path | None = None,
     use_msa_server: bool = True,
-    inference_ckpt_path: Path | None = None,
+    output_dir: Path | None = None,
 ):
-    raise NotImplementedError("Prediction is not implemented yet.")
-    # Command line args should be used to overwrite the InferenceExperimentConfig
-    # exp_config = apply_command_line_args(
-    #    runner_yaml, query_json, use_msa_server, inference_ckpt_path
-    # )
+    """Perform inference on a set of queries defined in the query_json."""
+    runner_args = config_utils.load_yaml(runner_yaml) if runner_yaml else dict()
+
+    expt_config = InferenceExperimentConfig(
+        query_json=query_json, inference_ckpt_path=inference_ckpt_path, **runner_args
+    )
+    if output_dir:
+        output_dir.mkdir(exist_ok=True, parents=True)
+        expt_config.experiment_settings.output_dir = output_dir
+
+    # Overwrite number of diffusion samples in model update section
+    if num_diffusion_samples:
+        expt_config.model_update.custom[
+            "architecture.shared.diffusion.no_full_rollout_samples"
+        ] = num_diffusion_samples  # noqa: E501
+
+    if num_model_seeds:
+        start_seed = 42
+        expt_config.experiment_settings.seeds = generate_seeds(
+            start_seed, num_model_seeds
+        )
 
     # Load inference query set
-    # query_set = InferenceQuerySet.from_json(exp_config.query_json)
+    query_set = InferenceQuerySet.from_json(expt_config.query_json)
 
     # Perform MSA computation if selected
     #  update query_set with MSA paths
-    # if use_msa_server:
-    #     run_msa_server(inference_query_set)
+    if use_msa_server:
+        query_set = preprocess_colabfold_msas(
+            inference_query_set=query_set,
+            output_directory=expt_config.experiment_settings.output_dir,
+            server_settings=expt_config.msa_server_settings,
+        )
+    else:
+        logger.warning("MSA server is not used. Generating predictions without msas.")
 
     # Run the forward pass
-    # expt_runner = InferenceExperimentRunner(expt_config, query_set)
-    # expt_runner.setup()
-    # expt_runner.run()
+    expt_runner = InferenceExperimentRunner(expt_config, query_set)
+    expt_runner.setup()
+    expt_runner.run()
 
-    # Optionally run post-processing of structures
+    # TODO add post-process relaxation with openmm
 
 
 @cli.command()

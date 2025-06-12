@@ -54,6 +54,16 @@ def _convert_molecule_type(value: Any) -> Any:
                 f"Found invalid {value=} for molecule type, skipping this example."
             )
             return None
+    elif isinstance(value, int):
+        try:
+            return MoleculeType(value)
+        except ValueError:
+            logging.warning(
+                f"Found invalid {value=} for molecule type, skipping this example."
+            )
+            return None
+    elif isinstance(value, list):
+        return [_convert_molecule_type(v) for v in value]
 
 
 def is_path_none(value: Optional[Union[str, Path]]) -> Optional[Path]:

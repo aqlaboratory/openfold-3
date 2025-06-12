@@ -147,7 +147,7 @@ class DiffusionModule(nn.Module):
             "linear_init_params", lin_init.diffusion_module_init
         )
 
-        self.layer_norm_s = LayerNorm(self.c_s)
+        self.layer_norm_s = LayerNorm(self.c_s, create_offset=False)
         self.linear_s = Linear(
             self.c_s,
             self.c_token,
@@ -158,7 +158,7 @@ class DiffusionModule(nn.Module):
             **config.diffusion_transformer
         )
 
-        self.layer_norm_a = LayerNorm(self.c_token)
+        self.layer_norm_a = LayerNorm(self.c_token, create_offset=False)
 
         self.atom_attn_dec = AtomAttentionDecoder(**config.atom_attn_dec)
 
@@ -362,6 +362,8 @@ class SampleDiffusion(nn.Module):
             )
 
             xl_noisy = xl + noise
+
+            xl_noisy = xl_noisy * atom_mask.unsqueeze(-1)
 
             xl_denoised = self.diffusion_module(
                 batch=batch,

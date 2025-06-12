@@ -1,4 +1,5 @@
 import copy
+import importlib.resources
 import logging
 from dataclasses import dataclass
 from typing import Optional
@@ -23,11 +24,14 @@ class AF3ProjectEntry:
     model_config_base = model_config
     runner = AlphaFold3AllAtom
     model_preset_yaml = (
-        "openfold3/projects/af3_all_atom/config/model_setting_presets.yml"
+        importlib.resources.files("openfold3.projects.af3_all_atom.config")
+        / "model_setting_presets.yml"
     )
 
     def __post_init__(self):
-        preset_dict = load_yaml(self.model_preset_yaml)
+        with importlib.resources.as_file(self.model_preset_yaml) as preset_path:
+            preset_dict = load_yaml(preset_path)
+
         self.model_presets = list(preset_dict.keys())
 
     def update_config_with_preset(self, config: ConfigDict, preset: str) -> ConfigDict:
@@ -61,5 +65,15 @@ class AF3ProjectEntry:
     ) -> ConfigDict:
         """Returns a model config with updates applied."""
         model_config = self.get_model_config_with_presets(model_update.presets)
-        model_config.update(model_update.custom)
+        try:
+            model_config.update(model_update.custom)
+        except ValueError as e:
+            # Handle case where the argument is passed as a flattened dict
+            # N.B. if the update is a mixture of flattened key and non-flattened dicts,
+            #   the non-flattened dict may override the whole ConfigDict
+            if "dots in field names" in str(e):
+                model_config.update_from_flattened_dict(model_update.custom)
+            else:
+                raise e
+
         return model_config

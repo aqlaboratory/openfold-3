@@ -2,10 +2,11 @@ import random
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, DirectoryPath, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import FilePathOrNone
+from openfold3.core.data.tools.colabfold_msa_server import MsaServerSettings
 from openfold3.projects.af3_all_atom.config.dataset_configs import (
     InferenceDatasetConfigKwargs,
     TrainingDatasetPaths,
@@ -64,11 +65,22 @@ class PlTrainerArgs(BaseModel):
     mpi_plugin: bool = False
 
 
+class OutputWritingSettings(BaseModel):
+    structure_format: Literal["pdb", "cif"] = "cif"
+    full_confidence_output_format: Literal["json", "npz"] = "json"
+
+
 class ExperimentSettings(BaseModel):
     """General settings for all experiments"""
 
     mode: Literal["train", "predict"]
-    output_dir: Path
+    output_dir: DirectoryPath
+
+    @model_validator(mode="after")
+    def create_output_dir(cls, model):
+        if not model.output_dir.exists():
+            model.output_dir.mkdir(parents=True, exist_ok=True)
+        return model
 
 
 class TrainingExperimentSettings(ExperimentSettings):
@@ -77,18 +89,21 @@ class TrainingExperimentSettings(ExperimentSettings):
     mode: Literal["train", "predict"] = "train"
     seed: int = 42
     restart_checkpoint_path: FilePathOrNone = None
-    output_dir: Path = Path("./train_output")
+    output_dir: DirectoryPath = Path("./train_output")
+
+
+def generate_seeds(start_seed, num_seeds):
+    random.seed(start_seed)
+    return [random.randint(0, 2**32 - 1) for _ in range(num_seeds)]
 
 
 class InferenceExperimentSettings(ExperimentSettings):
     """General settings specific for training experiments"""
 
     mode: Literal["train", "predict"] = "predict"
-    query_json: Path
-    inference_ckpt_path: Path
     seeds: int | list[int] = [42]
     num_seeds: int | None = None
-    output_dir: Path = Path("./inference_output")
+    output_dir: DirectoryPath = Path("./inference_output")
 
     @model_validator(mode="after")
     def generate_seeds(cls, model):
@@ -100,8 +115,7 @@ class InferenceExperimentSettings(ExperimentSettings):
                 raise ValueError(
                     "num_seeds must be provided when seeds is a single int"
                 )
-            random.seed(model.seeds)
-            model.seeds = [random.randint(0, 2**32 - 1) for _ in range(model.num_seeds)]
+            generate_seeds(model.seeds, model.num_seeds)
         elif model.seeds is None:
             raise ValueError("seeds must be provided (either int or list[int])")
 
@@ -133,8 +147,13 @@ class TrainingExperimentConfig(ExperimentConfig):
 class InferenceExperimentConfig(ExperimentConfig):
     """Inference experiment config"""
 
+    query_json: Path
+    inference_ckpt_path: Path
+
     # TODO: Add MSA configuration settings
-    experiment_settings: InferenceExperimentSettings
+    experiment_settings: InferenceExperimentSettings = InferenceExperimentSettings()
     model_update: ModelUpdate = ModelUpdate(presets=["predict"])
     data_module_args: DataModuleArgs = DataModuleArgs()
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
+    output_writer_settings: OutputWritingSettings = OutputWritingSettings()
+    msa_server_settings: MsaServerSettings = MsaServerSettings()

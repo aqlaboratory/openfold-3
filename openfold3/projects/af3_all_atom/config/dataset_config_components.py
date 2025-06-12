@@ -7,20 +7,12 @@ The main sections of the dataset configuration are:
 - Loss
 """
 
-from pydantic import BaseModel
+from typing import Annotated
 
+from pydantic import BaseModel, BeforeValidator
 
-class MSAMaxSeqCounts(BaseModel):
-    uniref90_hits: int = 10000
-    uniprot_hits: int = 50000
-    bfd_uniclust_hits: int = 10000000
-    bfd_uniref_hits: int = 10000000
-    cfdb_uniref30: int = 10000000
-    mgnify_hits: int = 5000
-    rfam_hits: int = 10000
-    rnacentral_hits: int = 10000
-    nt_hits: int = 10000
-    concat_cfdb_uniref100_filtered: int = 10000000
+from openfold3.core.config.config_utils import _convert_molecule_type
+from openfold3.core.data.resources.residues import MoleculeType
 
 
 class MSASettings(BaseModel):
@@ -31,8 +23,23 @@ class MSASettings(BaseModel):
     subsample_with_bands: bool = False
     min_chains_paired_partial: int = 2
     pairing_mask_keys: list[str] = ["shared_by_two", "less_than_600"]
-    moltypes: list[str] = ["PROTEIN", "RNA"]
-    max_seq_counts: MSAMaxSeqCounts = MSAMaxSeqCounts()
+    moltypes: Annotated[list[MoleculeType], BeforeValidator(_convert_molecule_type)] = [
+        MoleculeType.PROTEIN,
+        MoleculeType.RNA,
+    ]
+    max_seq_counts: dict = {
+        "uniref90_hits": 10000,
+        "uniprot_hits": 50000,
+        "bfd_uniclust_hits": 10000000,
+        "bfd_uniref_hits": 10000000,
+        "cfdb_uniref30": 10000000,
+        "mgnify_hits": 5000,
+        "rfam_hits": 10000,
+        "rnacentral_hits": 10000,
+        "nt_hits": 10000,
+        "concat_cfdb_uniref100_filtered": 10000000,
+    }
+    msas_to_pair: list[str] = ["uniprot_hits", "uniprot"]
     aln_order: list = [
         "uniref90_hits",
         "bfd_uniclust_hits",
@@ -43,7 +50,21 @@ class MSASettings(BaseModel):
         "rnacentral_hits",
         "nt_hits",
         "concat_cfdb_uniref100_filtered",
+        "colabfold_main",
     ]
+    paired_msa_order: list = ["colabfold_paired"]
+
+
+colabfold_msa_settings = MSASettings(
+    max_seq_counts={"colabfold_main": 16384, "colabfold_paired": 8192},
+    moltypes=["protein", "rna"],
+    max_rows_paired=8191,
+    min_chains_paired_partial=2,
+    aln_order=["colabfold_main"],
+    paired_msa_order=["colabfold_paired"],
+    msas_to_pair=[],
+    pairing_mask_keys=["shared_by_two", "less_than_600"],
+)
 
 
 class TemplateDistogramSettings(BaseModel):

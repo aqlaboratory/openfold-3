@@ -10,7 +10,7 @@ import numpy as np
 from tqdm import tqdm
 
 from openfold3.core.data.io.s3 import download_file_from_s3
-from openfold3.core.data.io.sequence.msa import parse_msas_direct
+from openfold3.core.data.io.sequence.msa import parse_msas_direct, standardize_filepaths
 
 _worker_session = None
 
@@ -107,8 +107,9 @@ def preparse_msas(
     max_seq_counts: dict[str, int],
     rep_pdb_chain_id: str,
 ) -> None:
+    file_list = standardize_filepaths(alignments_directory / Path(rep_pdb_chain_id))
     msas = parse_msas_direct(
-        folder_path=alignments_directory / Path(rep_pdb_chain_id),
+        file_list=file_list,
         max_seq_counts=max_seq_counts,
     )
     alignment_array_directory.mkdir(parents=True, exist_ok=True)

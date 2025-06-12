@@ -3,11 +3,13 @@ import itertools
 import logging
 from pathlib import Path
 
+import pytorch_lightning as pl
 import torch
 from torchmetrics import MeanMetric, MetricCollection
 
 from openfold3.core.loss.loss_module import AlphaFold3Loss
 from openfold3.core.metrics.confidence import (
+    compute_global_predicted_distance_error,
     compute_plddt,
     compute_predicted_aligned_error,
     compute_predicted_distance_error,
@@ -64,6 +66,9 @@ class AlphaFold3AllAtom(ModelRunner):
         self._setup_train_metrics()
         self._setup_val_metrics()
         self._init_metric_enabled_tracker()
+
+    def reseed(self, seed):
+        pl.seed_everything(seed)
 
     def _setup_train_metrics(self):
         """Set up training loss and metric collection objects."""
@@ -191,6 +196,7 @@ class AlphaFold3AllAtom(ModelRunner):
                 )
 
             metrics = compute_valid_model_selection_metrics(
+                confidence_config=self.config.confidence,
                 outputs=outputs,
                 metrics=metrics_per_sample,
             )
@@ -341,8 +347,13 @@ class AlphaFold3AllAtom(ModelRunner):
 
     def transfer_batch_to_device(self, batch, device, dataloader_idx):
         # TODO: Remove debug logic
-        pdb_id = batch.pop("pdb_id")
-        preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
+        pdb_id = batch.pop("pdb_id") if "pdb_id" in batch else None
+        query_id = batch.pop("query_id") if "query_id" in batch else None
+        preferred_chain_or_interface = (
+            batch.pop("preferred_chain_or_interface")
+            if "preferred_chain_or_interface" in batch
+            else None
+        )
         atom_array = batch.pop("atom_array") if "atom_array" in batch else None
 
         # This is to avoid slow loading for nested dicts in PL
@@ -353,8 +364,13 @@ class AlphaFold3AllAtom(ModelRunner):
             return t.to(device=device, non_blocking=True)
 
         batch = tensor_tree_map(to_device, batch)
-        batch["pdb_id"] = pdb_id
-        batch["preferred_chain_or_interface"] = preferred_chain_or_interface
+
+        if pdb_id:
+            batch["pdb_id"] = pdb_id
+        if query_id:
+            batch["query_id"] = query_id
+        if preferred_chain_or_interface:
+            batch["preferred_chain_or_interface"] = preferred_chain_or_interface
 
         # Add atom array back to the batch if we removed it earlier
         if atom_array:
@@ -447,17 +463,13 @@ class AlphaFold3AllAtom(ModelRunner):
         self.model.load_state_dict(self.cached_weights)
         self.cached_weights = None
 
-    def configure_optimizers(
-        self,
-        learning_rate: float = 1.8e-3,
-    ) -> dict:
-        # Ignored as long as a DeepSpeed optimizer is configured
+    def configure_optimizers(self) -> dict:
         optimizer_config = self.config.settings.optimizer
 
         if deepspeed_is_installed and optimizer_config.use_deepspeed_adam:
             optimizer = DeepSpeedCPUAdam(
                 self.parameters(),
-                lr=learning_rate,
+                lr=optimizer_config.learning_rate,
                 betas=(optimizer_config.beta1, optimizer_config.beta2),
                 eps=optimizer_config.eps,
                 adamw_mode=False,
@@ -465,7 +477,7 @@ class AlphaFold3AllAtom(ModelRunner):
         else:
             optimizer = torch.optim.Adam(
                 self.model.parameters(),
-                lr=learning_rate,
+                lr=optimizer_config.learning_rate,
                 betas=(optimizer_config.beta1, optimizer_config.beta2),
                 eps=optimizer_config.eps,
             )
@@ -473,10 +485,17 @@ class AlphaFold3AllAtom(ModelRunner):
         if self.last_lr_step != -1:
             for group in optimizer.param_groups:
                 if "initial_lr" not in group:
-                    group["initial_lr"] = learning_rate
+                    group["initial_lr"] = optimizer_config.learning_rate
 
+        lr_sched_config = self.config.settings.lr_scheduler
         lr_scheduler = AlphaFoldLRScheduler(
-            optimizer, last_epoch=self.last_lr_step, max_lr=learning_rate
+            optimizer,
+            last_epoch=self.last_lr_step,
+            base_lr=lr_sched_config.base_lr,
+            max_lr=optimizer_config.learning_rate,
+            warmup_no_steps=lr_sched_config.warmup_no_steps,
+            start_decay_after_n_steps=lr_sched_config.start_decay_after_n_steps,
+            decay_factor=lr_sched_config.decay_factor,
         )
 
         return {
@@ -515,6 +534,12 @@ class AlphaFold3AllAtom(ModelRunner):
             compute_predicted_distance_error(
                 outputs["pde_logits"],
                 **self.config.confidence.pde,
+            )
+        )
+        confidence_scores["global_predicted_distance_error"] = (
+            compute_global_predicted_distance_error(
+                pde=confidence_scores["predicted_distance_error"],
+                distogram_probs=torch.softmax(outputs["distogram_logits"], dim=-1),
             )
         )
 
@@ -558,10 +583,9 @@ class AlphaFold3AllAtom(ModelRunner):
 
         query_id = batch.pop("query_id")
         atom_array = batch.pop("atom_array")
-        _ = batch.pop("preferred_chain_or_interface")
 
         seed = batch.pop("seed")
-        self.reseed(seed[0])  # TODO: assuming we have bs = 1 for now, later we'd
+        self.reseed(seed[0])  # TODO: assuming we have bs = 1 for now
 
         # Probably need to change the logic
         logger.debug(
@@ -571,17 +595,9 @@ class AlphaFold3AllAtom(ModelRunner):
         try:
             batch, outputs = self(batch)
 
-            _, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
-
             batch["atom_array"] = atom_array
             batch["query_id"] = query_id
             batch["seed"] = seed
-
-            # Compute metrics:
-            metrics = self._get_metrics(batch, outputs, train=False)
-
-            outputs["metrics"] = metrics
-            outputs["losses"] = loss_breakdown
 
             # Generate confidence scores
             confidence_scores = self._compute_confidence_scores(batch, outputs)
@@ -590,5 +606,7 @@ class AlphaFold3AllAtom(ModelRunner):
             return (batch, outputs)
 
         except Exception:
-            logger.exception(f"Inference step failed with pdb id {', '.join(query_id)}")
+            logger.exception(
+                f"Inference step failed with query id {', '.join(query_id)}"
+            )
             raise

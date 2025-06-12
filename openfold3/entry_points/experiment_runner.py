@@ -19,6 +19,7 @@ from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
 from openfold3.core.runners.writer import OF3OutputWriter
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
+from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.entry_points.validator import (
     ExperimentConfig,
     TrainingExperimentConfig,
@@ -35,8 +36,9 @@ class ExperimentRunner(ABC):
     """Abstract class for experiments"""
 
     def __init__(self, experiment_config: ExperimentConfig):
+        self.experiment_config = experiment_config
+
         self.mode = experiment_config.experiment_settings.mode
-        self.output_dir = experiment_config.experiment_settings.output_dir
         self.pl_trainer_args = experiment_config.pl_trainer_args
         self.deepspeed_config_path = self.pl_trainer_args.deepspeed_config_path
 
@@ -44,14 +46,15 @@ class ExperimentRunner(ABC):
         self.model_update = experiment_config.model_update
         self.compile = self.model_update.compile
 
-    @abstractmethod
     def setup(self) -> None:
         """Set up the experiment environment.
 
         This includes configuring logging, setting the random seed,
         and initializing WandB if enabled.
         """
-        pass
+
+        # Set resource limits
+        set_ulimits()
 
     ###############
     # Model and dataset setup
@@ -74,8 +77,9 @@ class ExperimentRunner(ABC):
     @cached_property
     def output_dir(self) -> Path:
         """Get or create the output directory."""
-        self.output_dir.mkdir(exist_ok=True, parents=True)
-        return self.output_dir
+        _out_dir = self.experiment_config.experiment_settings.output_dir
+        _out_dir.mkdir(exist_ok=True, parents=True)
+        return _out_dir
 
     @cached_property
     @abstractmethod
@@ -240,8 +244,6 @@ class TrainingExperimentRunner(ExperimentRunner):
     def __init__(self, experiment_config: TrainingExperimentConfig):
         super().__init__(experiment_config)
 
-        # set up of data module args
-        self.experiment_config = experiment_config
         self.seed = experiment_config.experiment_settings.seed
         self.restart_checkpoint_path = (
             experiment_config.experiment_settings.restart_checkpoint_path
@@ -258,6 +260,7 @@ class TrainingExperimentRunner(ExperimentRunner):
         This includes configuring logging, setting the random seed,
         and initializing WandB if enabled.
         """
+        super().setup()
         self._setup_logger()
         self._set_random_seed()
         if self.use_wandb:
@@ -367,24 +370,30 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.inference_query_set = inference_query_set
         self.experiment_config = experiment_config
 
-        # model path
         self.dataset_config_kwargs = experiment_config.dataset_config_kwargs
         self.inference_ckpt_path = experiment_config.inference_ckpt_path
         self.data_module_args = experiment_config.data_module_args
+        self.seeds = experiment_config.experiment_settings.seeds
+        self.output_writer_settings = experiment_config.output_writer_settings
 
-        # do we include args for msa handling here? Should be processed separately
+    def setup(self) -> None:
+        """Set up the experiment environment."""
+        super().setup()
+        self._log_inference_query_set()
 
     @cached_property
     def callbacks(self):
         """Set up prediction writer callback."""
-        _callbacks = [OF3OutputWriter(self.output_dir)]
+        _callbacks = [
+            OF3OutputWriter(self.output_dir, **self.output_writer_settings.model_dump())
+        ]
         return _callbacks
 
     @cached_property
     def data_module_config(self):
         inference_config = InferenceJobConfig(
             query_set=self.inference_query_set,
-            seeds=self.experiment_config.seeds,
+            seeds=self.seeds,
             msa=self.dataset_config_kwargs.msa,
             template=self.dataset_config_kwargs.template,
         )
@@ -398,9 +407,11 @@ class InferenceExperimentRunner(ExperimentRunner):
         """Get the checkpoint path for the model."""
         return self.inference_ckpt_path
 
-    def make_msa_config(self):
-        """Create configurations for perform MSA alignments, if selected"""
-        pass
+    def _log_inference_query_set(self):
+        """Record the inference query set used for prediction"""
+        log_path = self.output_dir / "inference_query_set.json"
+        with open(log_path, "w") as fp:
+            fp.write(self.inference_query_set.model_dump_json(indent=4))
 
 
 class WandbHandler:
