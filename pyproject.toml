@@ -54,6 +54,20 @@ dev = [
   "ruff",
 ]
 
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+exclude = ["tests", "scripts"]
+
+[tool.setuptools.package-data]
+openfold3 = [
+  "core/kernels/cuda/csrc/*",
+  "projects/*/config/*.yml"
+]
+"*" = [
+  "resources/stereo_chemical_props.txt"
+]
 
 [tool.ruff]
 line-length = 88
