@@ -5,7 +5,7 @@ from typing import Literal
 
 import click
 
-from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif_dir_af3
+from openfold3.core.data.pipelines.preprocessing.structure import preprocess_cif_dir_of3
 from openfold3.core.utils.logging_utils import ContextInjectingFilter
 
 
@@ -192,7 +192,7 @@ def main(
     try:
         main_logger.info("Starting preprocessing...")
         main_logger.info(f"Writing logs to {log_file}")
-        preprocess_cif_dir_af3(
+        preprocess_cif_dir_of3(
             cif_dir=cif_dir,
             ccd_path=ccd_path,
             biotite_ccd_path=biotite_ccd_path,

@@ -7,7 +7,7 @@ from typing import Any
 import click
 
 from openfold3.core.data.pipelines.preprocessing.structure import (
-    preprocess_pdb_disordered_af3,
+    preprocess_pdb_disordered_of3,
 )
 
 
@@ -260,7 +260,7 @@ def main(
         )
     )
 
-    preprocess_pdb_disordered_af3(
+    preprocess_pdb_disordered_of3(
         metadata_cache_file=metadata_cache_file,
         gt_structures_directory=gt_structures_directory,
         pred_structures_directory=pred_structures_directory,
