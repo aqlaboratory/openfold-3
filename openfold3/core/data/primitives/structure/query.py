@@ -212,7 +212,7 @@ def processed_reference_molecule_from_mol(
     if atom_names is not None:
         mol = set_atomwise_annotation(mol, "atom_name", atom_names)
     else:
-        elements = [atom.GetSymbol() for atom in mol.GetAtoms()]
+        elements = [atom.GetSymbol().upper() for atom in mol.GetAtoms()]
         atom_names = struc.create_atom_names(elements)
         mol = set_atomwise_annotation(mol, "atom_name", atom_names)
 
