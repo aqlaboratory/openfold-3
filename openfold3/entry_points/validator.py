@@ -15,6 +15,8 @@ from openfold3.projects.of3_all_atom.project_entry import ModelUpdate
 
 
 class CheckpointConfig(BaseModel):
+    """Settings for training checkpoint writing."""
+
     every_n_epochs: int = 1
     auto_insert_metric_name: bool = False
     save_last: bool = True
@@ -22,6 +24,8 @@ class CheckpointConfig(BaseModel):
 
 
 class WandbConfig(BaseModel):
+    """Configuration for Weights and Biases experiment result logging."""
+
     project: str = "my project"
     experiment_name: str = "expt_name"
     entity: Optional[str] = None
@@ -31,6 +35,8 @@ class WandbConfig(BaseModel):
 
 
 class LoggingConfig(BaseModel):
+    """Settings for training logging."""
+
     log_lr: bool = True
     log_level: Literal["debug", "info", "warning", "error"] | None = None
     wandb_config: WandbConfig | None = None
@@ -48,7 +54,7 @@ class DataModuleArgs(BaseModel):
 
 
 class PlTrainerArgs(BaseModel):
-    """Arguments to configure pl.Trainer"""
+    """Arguments to configure pl.Trainer, including settings for number of devices."""
 
     max_epochs: int = 1000  # pl_trainer default
     accelerator: str = "gpu"
@@ -66,6 +72,11 @@ class PlTrainerArgs(BaseModel):
 
 
 class OutputWritingSettings(BaseModel):
+    """File formats to use for writing inference prediction results.
+
+    Used by OF3OutputWriter in openfold3.core.runners.writer
+    """
+
     structure_format: Literal["pdb", "cif"] = "cif"
     full_confidence_output_format: Literal["json", "npz"] = "json"
 
@@ -93,6 +104,7 @@ class TrainingExperimentSettings(ExperimentSettings):
 
 
 def generate_seeds(start_seed, num_seeds):
+    """Helper function for generating random seeds."""
     random.seed(start_seed)
     return [random.randint(0, 2**32 - 1) for _ in range(num_seeds)]
 
@@ -147,10 +159,10 @@ class TrainingExperimentConfig(ExperimentConfig):
 class InferenceExperimentConfig(ExperimentConfig):
     """Inference experiment config"""
 
+    # Required inputs for performing inference
     query_json: Path
     inference_ckpt_path: Path
 
-    # TODO: Add MSA configuration settings
     experiment_settings: InferenceExperimentSettings = InferenceExperimentSettings()
     model_update: ModelUpdate = ModelUpdate(presets=["predict"])
     data_module_args: DataModuleArgs = DataModuleArgs()
