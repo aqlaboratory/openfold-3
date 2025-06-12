@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from openfold3.core.loss.loss_module import AlphaFold3Loss
+from openfold3.core.loss.loss_module import OpenFold3Loss
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
@@ -46,7 +46,7 @@ class TestAF3Model:
         config.architecture.loss_module.diffusion.chunk_size = 16
 
         af3 = OpenFold3AllAtom(config, _compile=False).to(device=device, dtype=dtype)
-        af3_loss = AlphaFold3Loss(config=config.architecture.loss_module)
+        af3_loss = OpenFold3Loss(config=config.architecture.loss_module)
 
         batch = random_af3_features(
             batch_size=batch_size,

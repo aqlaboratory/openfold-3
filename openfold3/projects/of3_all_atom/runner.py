@@ -7,7 +7,7 @@ import pytorch_lightning as pl
 import torch
 from torchmetrics import MeanMetric, MetricCollection
 
-from openfold3.core.loss.loss_module import AlphaFold3Loss
+from openfold3.core.loss.loss_module import OpenFold3Loss
 from openfold3.core.metrics.confidence import (
     compute_global_predicted_distance_error,
     compute_plddt,
@@ -54,9 +54,9 @@ class OpenFold3AllAtom(ModelRunner):
         super().__init__(model_class=OpenFold3, config=model_config, _compile=_compile)
 
         self.loss = (
-            torch.compile(AlphaFold3Loss(config=model_config.architecture.loss_module))
+            torch.compile(OpenFold3Loss(config=model_config.architecture.loss_module))
             if _compile
-            else AlphaFold3Loss(config=model_config.architecture.loss_module)
+            else OpenFold3Loss(config=model_config.architecture.loss_module)
         )
 
         self.model_selection_weights = model_selection_metric_weights_config[
