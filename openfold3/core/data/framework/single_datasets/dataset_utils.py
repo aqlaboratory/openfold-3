@@ -16,7 +16,7 @@ def pad_to_world_size(df: pd.DataFrame, world_size: int | None = None) -> pd.Dat
     """
     num_examples = len(df)
 
-    if world_size:
+    if world_size and world_size != num_examples:
         num_repeated_examples = world_size - num_examples % world_size
         padded_df = pd.concat([df, df.iloc[:num_repeated_examples]], ignore_index=True)
         padded_df["repeated_sample"] = [False] * num_examples + [

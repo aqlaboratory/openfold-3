@@ -181,7 +181,6 @@ def predict(
         expt_config = expt_config.model_copy(
             update={"dataset_config_kwargs": updated_dataset_config_kwargs}
         )
-        print(expt_config.dataset_config_kwargs.msa)
 
     # Run the forward pass
     expt_runner = InferenceExperimentRunner(expt_config, query_set)
