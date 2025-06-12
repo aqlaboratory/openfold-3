@@ -19,6 +19,10 @@ COPY environments/production.yml /opt/openfold3/environment.yml
 RUN mamba env update -n base --file /opt/openfold3/environment.yml
 RUN mamba clean --all
 
+# Manually update rdkit due to rdkit being downgraded from pip install pdbeccutils
+RUN pip uninstall rdkit
+RUN mamba install rdkit
+
 COPY openfold3 /opt/openfold3/openfold3
 COPY setup.py /opt/openfold3/setup.py
 COPY scripts /opt/openfold3/scripts
