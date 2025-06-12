@@ -7,11 +7,11 @@ from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import FilePathOrNone
 from openfold3.core.data.tools.colabfold_msa_server import MsaServerSettings
-from openfold3.projects.af3_all_atom.config.dataset_configs import (
+from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetConfigKwargs,
     TrainingDatasetPaths,
 )
-from openfold3.projects.af3_all_atom.project_entry import ModelUpdate
+from openfold3.projects.of3_all_atom.project_entry import ModelUpdate
 
 
 class CheckpointConfig(BaseModel):

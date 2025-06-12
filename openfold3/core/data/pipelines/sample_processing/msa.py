@@ -29,7 +29,7 @@ from openfold3.core.data.primitives.sequence.msa import (
     create_query_seqs,
     find_monomer_homomer,
 )
-from openfold3.projects.af3_all_atom.config.dataset_config_components import MSASettings
+from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
 
 
 # Functional MSA processing pipeline for training - TMP, to be replaced by the

@@ -8,8 +8,8 @@ from ml_collections import ConfigDict
 from pydantic import BaseModel
 
 from openfold3.core.config.config_utils import load_yaml
-from openfold3.projects.af3_all_atom.config.model_config import model_config
-from openfold3.projects.af3_all_atom.runner import AlphaFold3AllAtom
+from openfold3.projects.of3_all_atom.config.model_config import model_config
+from openfold3.projects.of3_all_atom.runner import OpenFold3AllAtom
 
 
 class ModelUpdate(BaseModel):
@@ -19,12 +19,12 @@ class ModelUpdate(BaseModel):
 
 
 @dataclass
-class AF3ProjectEntry:
-    name = "af3_all_atom"
+class OF3ProjectEntry:
+    name = "of3_all_atom"
     model_config_base = model_config
-    runner = AlphaFold3AllAtom
+    runner = OpenFold3AllAtom
     model_preset_yaml = (
-        importlib.resources.files("openfold3.projects.af3_all_atom.config")
+        importlib.resources.files("openfold3.projects.of3_all_atom.config")
         / "model_setting_presets.yml"
     )
 

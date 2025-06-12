@@ -19,7 +19,7 @@ from tqdm import tqdm
 
 from openfold3.core.data.io.sequence.msa import parse_a3m
 from openfold3.core.data.resources.residues import MoleculeType
-from openfold3.projects.af3_all_atom.config.inference_query_format import (
+from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
 

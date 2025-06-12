@@ -33,7 +33,7 @@ from openfold3.core.model.feature_embedders.template_embedders import (
 )
 from openfold3.legacy.af2_monomer.project_entry import AF2MonomerProjectEntry
 from openfold3.legacy.af2_multimer.project_entry import AF2MultimerProjectEntry
-from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
+from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from tests import compare_utils
 from tests.config import consts, monomer_consts, multimer_consts
 from tests.data_utils import random_af3_features, random_asym_ids, random_template_feats
@@ -97,7 +97,7 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
-        proj_entry = AF3ProjectEntry()
+        proj_entry = OF3ProjectEntry()
         af3_config = proj_entry.get_model_config_with_presets()
 
         c_s_input = af3_config.architecture.input_embedder.c_s_input
@@ -129,7 +129,7 @@ class TestMSAModuleEmbedder(unittest.TestCase):
         c_s_input = c_token + 65
         one_hot_dim = 32
 
-        proj_entry = AF3ProjectEntry()
+        proj_entry = OF3ProjectEntry()
         af3_config = proj_entry.get_model_config_with_presets()
 
         msa_emb_config = af3_config.architecture.msa.msa_module_embedder
@@ -324,7 +324,7 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         n_templ = 3
         n_token = 10
 
-        proj_entry = AF3ProjectEntry()
+        proj_entry = OF3ProjectEntry()
         af3_config = proj_entry.get_model_config_with_presets()
 
         c_in = af3_config.architecture.template.template_pair_embedder.c_in

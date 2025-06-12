@@ -49,7 +49,7 @@ from openfold3.core.data.primitives.structure.tokenization import (
     get_token_count,
     tokenize_atom_array,
 )
-from openfold3.projects.af3_all_atom.config.inference_query_format import (
+from openfold3.projects.of3_all_atom.config.inference_query_format import (
     Query,
 )
 

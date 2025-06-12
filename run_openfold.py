@@ -28,7 +28,7 @@ from openfold3.entry_points.validator import (
     TrainingExperimentConfig,
     generate_seeds,
 )
-from openfold3.projects.af3_all_atom.config.inference_query_format import (
+from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
 

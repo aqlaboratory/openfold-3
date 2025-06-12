@@ -24,12 +24,12 @@ from openfold3.entry_points.validator import (
     ExperimentConfig,
     TrainingExperimentConfig,
 )
-from openfold3.projects.af3_all_atom.config.dataset_configs import (
+from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetSpec,
     InferenceJobConfig,
     TrainingDatasetSpec,
 )
-from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
+from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 
 
 class ExperimentRunner(ABC):
@@ -60,9 +60,9 @@ class ExperimentRunner(ABC):
     # Model and dataset setup
     ###############
     @property
-    def project_entry(self) -> AF3ProjectEntry:
+    def project_entry(self) -> OF3ProjectEntry:
         """Get the project entry from the registry."""
-        return AF3ProjectEntry()
+        return OF3ProjectEntry()
 
     @property
     def model_config(self) -> mlc.ConfigDict:

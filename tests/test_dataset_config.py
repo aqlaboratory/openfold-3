@@ -4,13 +4,13 @@ import pytest  # noqa: F401  - used for pytest tmp fixture
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
-from openfold3.projects.af3_all_atom.config.dataset_configs import (
+from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetSpec,
     InferenceJobConfig,
     TrainingDatasetPaths,
     TrainingDatasetSpec,
 )
-from openfold3.projects.af3_all_atom.config.inference_query_format import (
+from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
 

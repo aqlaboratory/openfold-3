@@ -1,5 +1,5 @@
 from openfold3.core.data.framework.data_module import DataModuleConfig
-from openfold3.projects.af3_all_atom.config.dataset_configs import TrainingDatasetSpec
+from openfold3.projects.of3_all_atom.config.dataset_configs import TrainingDatasetSpec
 
 
 def _check_protein_monomer_sampled_in_order(dataset_config: TrainingDatasetSpec):
