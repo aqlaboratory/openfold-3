@@ -19,9 +19,6 @@ import torch
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.tools.colabfold_msa_server import preprocess_colabfold_msas
-from openfold3.projects.of3_all_atom.config.dataset_config_components import (
-    colabfold_msa_settings,
-)
 from openfold3.entry_points.experiment_runner import (
     InferenceExperimentRunner,
     TrainingExperimentRunner,
@@ -31,8 +28,8 @@ from openfold3.entry_points.validator import (
     TrainingExperimentConfig,
     generate_seeds,
 )
-from openfold3.projects.of3_all_atom.config.dataset_configs import (
-    InferenceDatasetConfigKwargs,
+from openfold3.projects.of3_all_atom.config.dataset_config_components import (
+    colabfold_msa_settings,
 )
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
