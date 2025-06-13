@@ -237,11 +237,13 @@ class TestDeepSpeedKernel(unittest.TestCase):
             out_repro_msa_ds = F.layer_norm(out_repro_msa_ds, c_m_shape).cpu()
             out_repro_pair_ds = F.layer_norm(out_repro_pair_ds, c_z_shape).cpu()
 
-            err = torch.mean(torch.abs(out_repro_msa - out_repro_msa_ds))
-            self.assertTrue(err < eps, f"MSA Error: {err}")
+            compare_utils.assert_mean_abs_diff_small(
+                out_repro_msa, out_repro_msa_ds, eps
+            )
 
-            err = torch.mean(torch.abs(out_repro_pair - out_repro_pair_ds))
-            self.assertTrue(err < eps, f"Pair Error {err}")
+            compare_utils.assert_mean_abs_diff_small(
+                out_repro_pair, out_repro_pair_ds, eps
+            )
 
     def test_compare_evoformer_bf16(self):
         """Run evoformer comparison test with BF16 precision."""

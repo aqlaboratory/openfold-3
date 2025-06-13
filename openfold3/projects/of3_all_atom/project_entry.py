@@ -1,15 +1,15 @@
 import copy
+import importlib.resources
 import logging
 from dataclasses import dataclass
-from importlib import resources
 from typing import Optional
 
 from ml_collections import ConfigDict
 from pydantic import BaseModel
 
 from openfold3.core.config.config_utils import load_yaml
-from openfold3.projects.af3_all_atom.config.model_config import model_config
-from openfold3.projects.af3_all_atom.runner import AlphaFold3AllAtom
+from openfold3.projects.of3_all_atom.config.model_config import model_config
+from openfold3.projects.of3_all_atom.runner import OpenFold3AllAtom
 
 
 class ModelUpdate(BaseModel):
@@ -19,20 +19,19 @@ class ModelUpdate(BaseModel):
 
 
 @dataclass
-class AF3ProjectEntry:
-    name = "af3_all_atom"
+class OF3ProjectEntry:
+    name = "of3_all_atom"
     model_config_base = model_config
-    runner = AlphaFold3AllAtom
-
-    @property
-    def model_preset_yaml(self):
-        files = resources.files("openfold3.projects.af3_all_atom.config")
-        yaml = files / "model_setting_presets.yml"
-        with resources.as_file(yaml) as path:
-            return path
+    runner = OpenFold3AllAtom
+    model_preset_yaml = (
+        importlib.resources.files("openfold3.projects.of3_all_atom.config")
+        / "model_setting_presets.yml"
+    )
 
     def __post_init__(self):
-        preset_dict = load_yaml(self.model_preset_yaml)
+        with importlib.resources.as_file(self.model_preset_yaml) as preset_path:
+            preset_dict = load_yaml(preset_path)
+
         self.model_presets = list(preset_dict.keys())
 
     def update_config_with_preset(self, config: ConfigDict, preset: str) -> ConfigDict:

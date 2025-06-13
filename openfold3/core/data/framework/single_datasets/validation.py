@@ -10,7 +10,7 @@ import torch
 from openfold3.core.data.framework.single_datasets.abstract_single import (
     register_dataset,
 )
-from openfold3.core.data.framework.single_datasets.base_af3 import BaseAF3Dataset
+from openfold3.core.data.framework.single_datasets.base_of3 import BaseOF3Dataset
 from openfold3.core.data.framework.single_datasets.dataset_utils import (
     pad_to_world_size,
 )
@@ -48,7 +48,7 @@ def make_chain_pair_mask_padded(
 
 
 @register_dataset
-class ValidationPDBDataset(BaseAF3Dataset):
+class ValidationPDBDataset(BaseOF3Dataset):
     """Validation Dataset class."""
 
     def __init__(self, dataset_config: dict, world_size: Optional[int] = None) -> None:

@@ -7,7 +7,7 @@ from typing import Any
 import click
 
 from openfold3.core.data.pipelines.preprocessing.structure import (
-    preprocess_pdb_disordered_af3,
+    preprocess_pdb_disordered_of3,
 )
 
 
@@ -18,7 +18,7 @@ from openfold3.core.data.pipelines.preprocessing.structure import (
     required=True,
     help=(
         "Metadata cache JSON file created by preprocessing the PDB using "
-        "scripts/data_preprocessing/preprocess_pdb_af3.py."
+        "scripts/data_preprocessing/preprocess_pdb_of3.py."
     ),
     type=click.Path(
         exists=True,
@@ -33,7 +33,7 @@ from openfold3.core.data.pipelines.preprocessing.structure import (
     help=(
         "Directory of preprocessed GT PDB structures. It should contain one subdir "
         "per PDB entry, with each subdir containing one or multiple structure files "
-        "of ground truth structures preprocessed using preprocess_pdb_af3.py."
+        "of ground truth structures preprocessed using preprocess_pdb_of3.py."
     ),
     type=click.Path(
         exists=True,
@@ -211,11 +211,11 @@ def main(
     Args:
         metadata_cache_file (Path):
             Parent metadata cache file created by preprocessing the PDB using
-            scripts/data_preprocessing/preprocess_pdb_af3.py.
+            scripts/data_preprocessing/preprocess_pdb_of3.py.
         gt_structures_directory (Path):
             Directory of preprocessed GT PDB structures. It should contain one subdir
             per PDB entry, with each subdir containing one or multiple structure files
-            of ground truth structures preprocessed using preprocess_pdb_af3.py.
+            of ground truth structures preprocessed using preprocess_pdb_of3.py.
         pred_structures_directory (Path):
             Directory of PDB structures predicted using AF2. It should contain one
             subdir per PDB entry, with each subdir containing one or multiple files
@@ -260,7 +260,7 @@ def main(
         )
     )
 
-    preprocess_pdb_disordered_af3(
+    preprocess_pdb_disordered_of3(
         metadata_cache_file=metadata_cache_file,
         gt_structures_directory=gt_structures_directory,
         pred_structures_directory=pred_structures_directory,

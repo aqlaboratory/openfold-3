@@ -151,7 +151,7 @@ class AlphaFoldLoss(nn.Module):
         return cum_loss, losses
 
 
-class AlphaFold3Loss(nn.Module):
+class OpenFold3Loss(nn.Module):
     """Aggregation of the various losses described in the supplement"""
 
     def __init__(self, config):
@@ -217,7 +217,7 @@ class AlphaFold3Loss(nn.Module):
                 Dict containing input tensors
             output:
                 Dict containing output tensors
-                (see openfold3/openfold3/model_implementations/af3_all_atom/model.py
+                (see openfold3/openfold3/model_implementations/of3_all_atom/model.py
                 for a list items in batch and output)
             _return_breakdown:
                 If True, also return a dictionary of individual

@@ -1,8 +1,7 @@
 __all__ = ["core", "projects"]
 
+import importlib.util
 from . import hacks
-
-import importlib
 
 if importlib.util.find_spec("deepspeed") is not None:
     import deepspeed

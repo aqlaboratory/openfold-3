@@ -1,4 +1,4 @@
-name: Ruff
+name: Linting code
 
 on: [push, pull_request]
 
@@ -10,11 +10,11 @@ jobs:
       
       # Check for linter compliance
       - name: Lint with Ruff
-        uses: astral-sh/ruff-action@v1
+        uses: astral-sh/ruff-action@v3
 
       # Check for formatter compliance
       - name: Check formatting with Ruff
         if: always()
-        uses: astral-sh/ruff-action@v1
+        uses: astral-sh/ruff-action@v3
         with:
           args: 'format --check'

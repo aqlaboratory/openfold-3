@@ -2,7 +2,7 @@
 
 Output used for preprocessing datapoints for the disordered dataset.
 
-This script is currently separate from preprocess_pdb_disordered_af3.py as it requires
+This script is currently separate from preprocess_pdb_disordered_of3.py as it requires
 OpenStructure, but will be combined with it in a future release."""
 
 import logging

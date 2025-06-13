@@ -26,7 +26,7 @@ from openfold3.core.data.primitives.sequence.msa import (
     MsaArrayCollection,
 )
 from openfold3.core.data.resources.residues import MoleculeType
-from openfold3.projects.af3_all_atom.config.dataset_config_components import MSASettings
+from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
 
 
 def standardize_filepaths(input_path: Path | list[Path]) -> list[Path]:
@@ -343,7 +343,7 @@ def parse_msas_preparsed(
     Args:
         file_list (list[Path]):
             Path a list of npz files pre-parsed using
-            openfold3.scripts.data_preprocessing.preparse_alginments_af3.
+            openfold3.scripts.data_preprocessing.preparse_alginments_of3.
 
     Returns:
         dict[str, MsaArray]:

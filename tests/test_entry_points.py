@@ -21,7 +21,7 @@ from openfold3.entry_points.validator import (
     TrainingExperimentConfig,
     WandbConfig,
 )
-from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry, ModelUpdate
+from openfold3.projects.of3_all_atom.project_entry import ModelUpdate, OF3ProjectEntry
 
 
 class TestTrainingExperiment:
@@ -145,7 +145,7 @@ class TestModelUpdate:
     def test_bad_model_update_fails(self):
         """Verify that a model update that has an invalid field is not allowed."""
         model_update = ModelUpdate(custom={"nonexistant_field": "bad"})
-        project_entry = AF3ProjectEntry()
+        project_entry = OF3ProjectEntry()
 
         with pytest.raises(KeyError, match="config is locked"):
             project_entry.get_model_config_with_update(model_update)

@@ -6,7 +6,7 @@ from typing import Literal
 import click
 
 from openfold3.core.data.pipelines.preprocessing.caches.pdb_weighted import (
-    create_pdb_training_dataset_cache_af3,
+    create_pdb_training_dataset_cache_of3,
 )
 
 
@@ -144,7 +144,7 @@ def main(
         file_handler = logging.FileHandler(log_file, mode="w")
         logger.addHandler(file_handler)
 
-    create_pdb_training_dataset_cache_af3(
+    create_pdb_training_dataset_cache_of3(
         metadata_cache_path=metadata_cache_path,
         preprocessed_dir=preprocessed_dir,
         alignment_representatives_fasta=alignment_representatives_fasta,

@@ -30,7 +30,7 @@ from openfold3.core.data.resources.residues import (
     RNA_RESTYPE_1TO3,
     MoleculeType,
 )
-from openfold3.projects.af3_all_atom.config.inference_query_format import Query
+from openfold3.projects.of3_all_atom.config.inference_query_format import Query
 
 logger = logging.getLogger(__name__)
 
@@ -212,7 +212,7 @@ def processed_reference_molecule_from_mol(
     if atom_names is not None:
         mol = set_atomwise_annotation(mol, "atom_name", atom_names)
     else:
-        elements = [atom.GetSymbol() for atom in mol.GetAtoms()]
+        elements = [atom.GetSymbol().upper() for atom in mol.GetAtoms()]
         atom_names = struc.create_atom_names(elements)
         mol = set_atomwise_annotation(mol, "atom_name", atom_names)
 
@@ -446,8 +446,7 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
     constructed and given the same entity ID.
 
     Residue names will be inferred from the sequence or CCD codes. If a ligand is
-    specified through a SMILES string, it will be named as "LIG-X", where X starts at 1
-    and is incremented for each unnamed ligand entity found in the Query.
+    specified through a SMILES string, it will be named as "LIG".
 
     Args:
         query (Query):
@@ -462,16 +461,11 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
     atom_array = None
     processed_reference_mols: list[ProcessedReferenceMolecule] = []
 
-    # Counter of chains added
-    unnamed_lig_entity_count = 1
-
     # Current entity ID
     entity_id = 1
 
     # Build the structure segment-wise from all chains in the query.
     for chain in query.chains:
-        chain_is_unnamed_lig_entity = False
-
         for chain_id in chain.chain_ids:
             match chain.molecule_type:
                 # Build polymeric segment
@@ -488,15 +482,11 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
                 case MoleculeType.LIGAND:
                     # Build ligand from SMILES
                     if chain.smiles is not None:
-                        # Mark that this is an unnamed ligand (important for tracking
-                        # number)
-                        chain_is_unnamed_lig_entity = True
-
                         segment_atom_array, segment_ref_mols = (
                             structure_with_ref_mol_from_smiles(
                                 smiles=chain.smiles,
                                 chain_id=chain_id,
-                                res_name=f"LIG-{unnamed_lig_entity_count}",
+                                res_name="LIG",
                             )
                         )
 
@@ -538,10 +528,6 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
                 atom_array = segment_atom_array
             else:
                 atom_array += segment_atom_array
-
-        # Increment count of unnamed ligand entities if applicable
-        if chain_is_unnamed_lig_entity:
-            unnamed_lig_entity_count += 1
 
         # Each entry in `query.chains` defines a new entity. If an entry has multiple
         # chains, they will all have the same entity ID.

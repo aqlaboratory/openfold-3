@@ -4,18 +4,18 @@ import pytest  # noqa: F401  - used for pytest tmp fixture
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
-from openfold3.projects.af3_all_atom.config.dataset_configs import (
+from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetSpec,
     InferenceJobConfig,
     TrainingDatasetPaths,
     TrainingDatasetSpec,
 )
-from openfold3.projects.af3_all_atom.config.inference_query_format import (
+from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
 
 
-class TestAF3DatasetConfigConstruction:
+class TestOF3DatasetConfigConstruction:
     def test_load_pdb_weighted_config(self, tmp_path):
         test_dummy_file = tmp_path / "test.json"
         test_dummy_file.write_text("test")
@@ -239,21 +239,18 @@ class TestAF3DatasetConfigConstruction:
 
 class TestInferenceConfigConstruction:
     def test_inference_config_loading(self, tmp_path):
-        dummy_msa_file = tmp_path / "msa.sto"
-        dummy_msa_file.write_text("test")
         inference_set = InferenceQuerySet.model_validate(
             {
                 "queries": {
                     "query_1": {
+                        "use_msas": False,
                         "chains": [
                             {
                                 "molecule_type": "protein",
                                 "chain_ids": "A",
                                 "sequence": "PVLSCGEWQCL",
-                                "use_msas": True,
-                                "unpaired_msa_file_paths": [dummy_msa_file],
-                                "paired_msa_file_path": None,
-                                "sdf_file_path": None,
+                                "main_msa_file_paths": None,
+                                "paired_msa_file_paths": None,
                             },
                             {
                                 "molecule_type": "ligand",
@@ -284,9 +281,10 @@ class TestInferenceConfigConstruction:
         data_module = DataModule(data_config)
 
         data_module.setup()
-        _ = data_module.predict_dataloader()
+        dataloader = data_module.predict_dataloader()
 
         # Option: Test feature generation once create_features is written
         # Would require a real msa file
-        # it = iter(dataloader)
-        # next(it)
+        assert len(dataloader) == 1
+        it = iter(dataloader)
+        next(it)

@@ -5,8 +5,8 @@ from biotite.structure import AtomArray
 from pydantic import BaseModel
 
 from openfold3.core.data.primitives.featurization.msa import (
-    MsaFeaturePrecursorAF3,
-    create_msa_feature_precursor_af3,
+    MsaFeaturePrecursorOF3,
+    create_msa_feature_precursor_of3,
 )
 from openfold3.core.data.primitives.featurization.structure import (
     encode_one_hot,
@@ -21,7 +21,7 @@ from openfold3.core.data.resources.residues import (
 
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-feat")
-def featurize_msa_af3(
+def featurize_msa_of3(
     atom_array: AtomArray,
     msa_array_collection: MsaArrayCollection,
     max_rows: int,
@@ -53,8 +53,8 @@ def featurize_msa_af3(
         dict[str, torch.Tensor]:
             Dictionary of MSA features.
     """
-    # Create MsaFeaturePrecursorAF3
-    msa_feature_precursor = create_msa_feature_precursor_af3(
+    # Create MsaFeaturePrecursorOF3
+    msa_feature_precursor = create_msa_feature_precursor_of3(
         atom_array=atom_array,
         msa_array_collection=msa_array_collection,
         max_rows=max_rows,
@@ -133,7 +133,7 @@ class MsaFeaturizerOF3:
             dict[str, torch.Tensor]:
                 Dictionary of MSA features.
         """
-        return create_msa_feature_precursor_af3(
+        return create_msa_feature_precursor_of3(
             atom_array=atom_array,
             msa_array_collection=msa_array_collection,
             max_rows=self.max_rows,
@@ -142,12 +142,12 @@ class MsaFeaturizerOF3:
         )
 
     def create_features(
-        self, msa_feature_precursor: MsaFeaturePrecursorAF3
+        self, msa_feature_precursor: MsaFeaturePrecursorOF3
     ) -> dict[str, torch.Tensor]:
         """Create features from MSA feature precursor.
 
         Args:
-            msa_feature_precursor (MsaFeaturePrecursorAF3):
+            msa_feature_precursor (MsaFeaturePrecursorOF3):
                 MSA feature precursor.
 
         Returns:

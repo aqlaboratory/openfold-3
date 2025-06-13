@@ -207,7 +207,7 @@ def get_processed_reference_conformer(
 # TODO: update the docstring here to make clearer how this is operating on the full atom
 # array but only returning in-crop conformer data
 @log_runtime_memory(runtime_dict_key="runtime-ref-conf-proc")
-def get_reference_conformer_data_af3(
+def get_reference_conformer_data_of3(
     atom_array: AtomArray,
     per_chain_metadata: DatasetChainData,
     reference_mol_metadata: DatasetReferenceMoleculeData,

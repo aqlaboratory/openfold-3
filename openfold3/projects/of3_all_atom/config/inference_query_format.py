@@ -28,7 +28,10 @@ class Bond(NamedTuple):
 
 
 class Chain(BaseModel):
-    model_config = {"use_enum_values": False}  # pydantic default override
+    model_config = {
+        "use_enum_values": False,
+        "extra": "forbid",
+    }
     molecule_type: Annotated[MoleculeType, BeforeValidator(_convert_molecule_type)]
     chain_ids: Annotated[list[str], BeforeValidator(_ensure_list)]
     sequence: str | None = None

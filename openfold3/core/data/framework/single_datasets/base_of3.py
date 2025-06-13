@@ -14,27 +14,27 @@ from openfold3.core.data.framework.single_datasets.abstract_single import (
 )
 from openfold3.core.data.io.dataset_cache import read_datacache
 from openfold3.core.data.pipelines.featurization.conformer import (
-    featurize_reference_conformers_af3,
+    featurize_reference_conformers_of3,
 )
 from openfold3.core.data.pipelines.featurization.loss_weights import set_loss_weights
-from openfold3.core.data.pipelines.featurization.msa import featurize_msa_af3
+from openfold3.core.data.pipelines.featurization.msa import featurize_msa_of3
 from openfold3.core.data.pipelines.featurization.structure import (
-    featurize_target_gt_structure_af3,
+    featurize_target_gt_structure_of3,
 )
 from openfold3.core.data.pipelines.featurization.template import (
-    featurize_template_structures_af3,
+    featurize_template_structures_of3,
 )
 from openfold3.core.data.pipelines.sample_processing.conformer import (
-    get_reference_conformer_data_af3,
+    get_reference_conformer_data_of3,
 )
 from openfold3.core.data.pipelines.sample_processing.msa import (
-    process_msas_af3,
+    process_msas_of3,
 )
 from openfold3.core.data.pipelines.sample_processing.structure import (
-    process_target_structure_af3,
+    process_target_structure_of3,
 )
 from openfold3.core.data.pipelines.sample_processing.template import (
-    process_template_structures_af3,
+    process_template_structures_of3,
 )
 from openfold3.core.data.primitives.permutation.mol_labels import (
     separate_cropped_and_gt,
@@ -49,8 +49,8 @@ logger = logging.getLogger(__name__)
 
 # TODO: update docstring with inputs
 @register_dataset
-class BaseAF3Dataset(SingleDataset, ABC):
-    """Implements a general SingleDataset for handling inputs for AF3.
+class BaseOF3Dataset(SingleDataset, ABC):
+    """Implements a general SingleDataset for handling inputs for OF3.
 
     The BaseAF3Dataset dataset
     - implements a set of general class methods for processing and featurizing inputs
@@ -156,7 +156,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
         """Creates the target structure features."""
 
         # Processed ground-truth structure with added annotations and masks
-        atom_array_gt, crop_strategy, self.n_tokens = process_target_structure_af3(
+        atom_array_gt, crop_strategy, self.n_tokens = process_target_structure_of3(
             target_structures_directory=self.target_structures_directory,
             pdb_id=pdb_id,
             apply_crop=self.apply_crop,
@@ -167,7 +167,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
         )
 
         # Processed reference conformers
-        processed_reference_molecules = get_reference_conformer_data_af3(
+        processed_reference_molecules = get_reference_conformer_data_of3(
             atom_array=atom_array_gt,
             per_chain_metadata=self.dataset_cache.structure_data[pdb_id].chains,
             reference_mol_metadata=self.dataset_cache.reference_molecule_data,
@@ -189,14 +189,14 @@ class BaseAF3Dataset(SingleDataset, ABC):
         add_token_positions(atom_array_cropped)
 
         # Compute target and ground-truth structure features
-        target_structure_features = featurize_target_gt_structure_af3(
+        target_structure_features = featurize_target_gt_structure_of3(
             atom_array=atom_array_cropped,
             atom_array_gt=atom_array_gt,
             n_tokens=self.n_tokens,
         )
 
         # Compute reference conformer features
-        reference_conformer_features = featurize_reference_conformers_af3(
+        reference_conformer_features = featurize_reference_conformers_of3(
             processed_ref_mol_list=processed_reference_molecules
         )
 
@@ -221,7 +221,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
     def create_msa_features(self, pdb_id: str, atom_array: AtomArray) -> dict:
         """Creates the MSA features."""
 
-        msa_array_collection = process_msas_af3(
+        msa_array_collection = process_msas_of3(
             atom_array=atom_array,
             assembly_data=self.fetch_fields_for_chains(
                 pdb_id=pdb_id,
@@ -239,7 +239,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
             pairing_mask_keys=self.msa.pairing_mask_keys,
             moltypes=self.msa.moltypes,
         )
-        msa_features = featurize_msa_af3(
+        msa_features = featurize_msa_of3(
             atom_array=atom_array,
             msa_array_collection=msa_array_collection,
             max_rows=self.msa.max_rows,
@@ -254,7 +254,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
     def create_template_features(self, pdb_id: str, atom_array: AtomArray) -> dict:
         """Creates the template features."""
 
-        template_slice_collection = process_template_structures_af3(
+        template_slice_collection = process_template_structures_of3(
             atom_array=atom_array,
             n_templates=self.template.n_templates,
             take_top_k=self.template.take_top_k,
@@ -270,7 +270,7 @@ class BaseAF3Dataset(SingleDataset, ABC):
             ccd=self.ccd,
         )
 
-        template_features = featurize_template_structures_af3(
+        template_features = featurize_template_structures_of3(
             template_slice_collection=template_slice_collection,
             n_templates=self.template.n_templates,
             n_tokens=self.n_tokens,

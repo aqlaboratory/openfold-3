@@ -29,14 +29,14 @@ from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import DirectoryPathOrNone, FilePathOrNone
 from openfold3.core.data.framework.data_module import DatasetMode, DatasetSpec
-from openfold3.projects.af3_all_atom.config.dataset_config_components import (
+from openfold3.projects.of3_all_atom.config.dataset_config_components import (
     CropSettings,
     LossConfig,
     MSASettings,
     TemplateSettings,
     colabfold_msa_settings,
 )
-from openfold3.projects.af3_all_atom.config.inference_query_format import (
+from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
 
@@ -262,10 +262,7 @@ class InferenceJobConfig(BaseModel):
 
     query_set: InferenceQuerySet
     seeds: list[int] = [42]
-    msa: MSASettings = MSASettings(
-        aln_order=["colabfold_main"],
-        max_seq_counts={"colabfold_main": 16384, "colabfold_paired": 8192},
-    )
+    msa: MSASettings = MSASettings()
     template: TemplateSettings = TemplateSettings()
 
 

@@ -45,7 +45,7 @@ from openfold3.core.utils.permutation_alignment import (
 from openfold3.core.utils.tensor_utils import add, tensor_tree_map
 
 
-class AlphaFold3(nn.Module):
+class OpenFold3(nn.Module):
     """
     Alphafold 3.
 
