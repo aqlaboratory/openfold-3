@@ -36,7 +36,7 @@ from openfold3.legacy.af2_multimer.project_entry import AF2MultimerProjectEntry
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from tests import compare_utils
 from tests.config import consts, monomer_consts, multimer_consts
-from tests.data_utils import random_of3_features, random_asym_ids, random_template_feats
+from tests.data_utils import random_asym_ids, random_of3_features, random_template_feats
 
 
 @compare_utils.skip_of2_test()
