@@ -88,4 +88,3 @@ def add_data_args(parser: argparse.ArgumentParser):
     )
     parser.add_argument("--obsolete_pdbs_path", type=str, default=None)
     parser.add_argument("--release_dates_path", type=str, default=None)
-

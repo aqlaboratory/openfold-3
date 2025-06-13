@@ -40,6 +40,7 @@ extra_cuda_flags = [
     "--expt-extended-lambda",
 ]
 
+
 def get_nvidia_cc():
     """
     Returns a tuple containing the Compute Capability of the first GPU
@@ -107,6 +108,7 @@ def get_nvidia_cc():
     minor = cc_minor.value
 
     return (major, minor), None
+
 
 def get_cuda_bare_metal_version(cuda_dir):
     if cuda_dir is None or torch.version.cuda is None:

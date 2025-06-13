@@ -105,6 +105,7 @@ _param_path = os.path.join(
 )
 _model = None
 
+
 def get_global_pretrained_openfold():
     global _model
     if _model is None:
