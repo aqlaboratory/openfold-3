@@ -7,7 +7,7 @@ import pytorch_lightning as pl
 import torch
 from torchmetrics import MeanMetric, MetricCollection
 
-from openfold3.core.loss.loss_module import AlphaFold3Loss
+from openfold3.core.loss.loss_module import OpenFold3Loss
 from openfold3.core.metrics.confidence import (
     compute_global_predicted_distance_error,
     compute_plddt,
@@ -28,17 +28,17 @@ from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.atomize_utils import get_token_frame_atoms
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.projects.af3_all_atom.config.model_config import (
+from openfold3.projects.of3_all_atom.config.model_config import (
     model_selection_metric_weights_config,
 )
-from openfold3.projects.af3_all_atom.constants import (
+from openfold3.projects.of3_all_atom.constants import (
     CORRELATION_METRICS,
     METRICS,
     TRAIN_LOSSES,
     VAL_LOGGED_METRICS,
     VAL_LOSSES,
 )
-from openfold3.projects.af3_all_atom.model import AlphaFold3
+from openfold3.projects.of3_all_atom.model import OpenFold3
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
@@ -49,14 +49,14 @@ logger = logging.getLogger(__name__)
 REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_config.yml"
 
 
-class AlphaFold3AllAtom(ModelRunner):
+class OpenFold3AllAtom(ModelRunner):
     def __init__(self, model_config, _compile=True):
-        super().__init__(model_class=AlphaFold3, config=model_config, _compile=_compile)
+        super().__init__(model_class=OpenFold3, config=model_config, _compile=_compile)
 
         self.loss = (
-            torch.compile(AlphaFold3Loss(config=model_config.architecture.loss_module))
+            torch.compile(OpenFold3Loss(config=model_config.architecture.loss_module))
             if _compile
-            else AlphaFold3Loss(config=model_config.architecture.loss_module)
+            else OpenFold3Loss(config=model_config.architecture.loss_module)
         )
 
         self.model_selection_weights = model_selection_metric_weights_config[

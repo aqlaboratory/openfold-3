@@ -34,7 +34,7 @@ class ProcessedTargetStructure(NamedTuple):
 
 # TODO: Update docstring
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-proc")
-def process_target_structure_af3(
+def process_target_structure_of3(
     target_structures_directory: Path,
     pdb_id: str,
     apply_crop: bool,

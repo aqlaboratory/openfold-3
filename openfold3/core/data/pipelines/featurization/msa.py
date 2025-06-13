@@ -21,7 +21,7 @@ from openfold3.core.data.resources.residues import (
 
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-feat")
-def featurize_msa_af3(
+def featurize_msa_of3(
     atom_array: AtomArray,
     msa_array_collection: MsaArrayCollection,
     max_rows: int,

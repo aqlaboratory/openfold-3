@@ -1,6 +1,6 @@
 import ml_collections as mlc
 
-from openfold3.projects.af3_all_atom.config import (
+from openfold3.projects.of3_all_atom.config import (
     linear_init_config as lin_init,
 )
 

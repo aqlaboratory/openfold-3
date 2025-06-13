@@ -35,7 +35,7 @@ from typing import Any
 import torch
 from torch.utils.data import Dataset
 
-from openfold3.core.data.framework.single_datasets.base_af3 import BaseAF3Dataset
+from openfold3.core.data.framework.single_datasets.base_of3 import BaseOF3Dataset
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +105,7 @@ class SamplerDataset(Dataset):
         return self.datasets[dataset_idx][datapoint_idx]
 
     def get_random_subset(
-        self, dataset: BaseAF3Dataset, num_examples: int, generator: torch.Generator
+        self, dataset: BaseOF3Dataset, num_examples: int, generator: torch.Generator
     ) -> torch.Tensor:
         """Selects random indices from dataset based on dataset probabilities."""
         # Retrieve datapoint probabilities for given dataset
@@ -123,7 +123,7 @@ class SamplerDataset(Dataset):
         return datapoint_indices_i
 
     def get_ordered_subset(
-        self, dataset: BaseAF3Dataset, num_examples: int
+        self, dataset: BaseOF3Dataset, num_examples: int
     ) -> torch.Tensor:
         """Selects indices based on sliced examples from the dataset."""
 

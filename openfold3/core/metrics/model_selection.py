@@ -7,7 +7,7 @@ from openfold3.core.metrics.confidence import (
     compute_global_predicted_distance_error,
     compute_predicted_distance_error,
 )
-from openfold3.projects.af3_all_atom.constants import METRICS_MAXIMIZE, METRICS_MINIMIZE
+from openfold3.projects.of3_all_atom.constants import METRICS_MAXIMIZE, METRICS_MINIMIZE
 
 logger = logging.getLogger(__name__)
 

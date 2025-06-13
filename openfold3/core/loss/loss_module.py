@@ -151,7 +151,7 @@ class AlphaFoldLoss(nn.Module):
         return cum_loss, losses
 
 
-class AlphaFold3Loss(nn.Module):
+class OpenFold3Loss(nn.Module):
     """Aggregation of the various losses described in the supplement"""
 
     def __init__(self, config):

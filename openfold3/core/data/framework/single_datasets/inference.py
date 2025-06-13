@@ -20,7 +20,7 @@ from openfold3.core.data.framework.single_datasets.dataset_utils import (
     pad_to_world_size,
 )
 from openfold3.core.data.pipelines.featurization.conformer import (
-    featurize_reference_conformers_af3,
+    featurize_reference_conformers_of3,
 )
 from openfold3.core.data.pipelines.featurization.msa import (
     MsaFeaturizerOF3,
@@ -28,10 +28,10 @@ from openfold3.core.data.pipelines.featurization.msa import (
 )
 from openfold3.core.data.pipelines.featurization.structure import (
     TOKEN_DIM_INDEX_MAP,
-    featurize_structure_af3,
+    featurize_structure_of3,
 )
 from openfold3.core.data.pipelines.featurization.template import (
-    featurize_template_structures_af3,
+    featurize_template_structures_of3,
 )
 from openfold3.core.data.pipelines.sample_processing.conformer import (
     ProcessedReferenceMolecule,
@@ -49,7 +49,7 @@ from openfold3.core.data.primitives.structure.tokenization import (
     get_token_count,
     tokenize_atom_array,
 )
-from openfold3.projects.af3_all_atom.config.inference_query_format import (
+from openfold3.projects.of3_all_atom.config.inference_query_format import (
     Query,
 )
 
@@ -158,7 +158,7 @@ class InferenceDataset(Dataset):
     ) -> dict[str, torch.Tensor]:
         """Creates the target structure features."""
 
-        target_structure_features = featurize_structure_af3(
+        target_structure_features = featurize_structure_of3(
             atom_array=atom_array,
             n_tokens=n_tokens,
             token_dim_index_map=TOKEN_DIM_INDEX_MAP,
@@ -167,7 +167,7 @@ class InferenceDataset(Dataset):
         )
 
         # Compute reference conformer features
-        reference_conformer_features = featurize_reference_conformers_af3(
+        reference_conformer_features = featurize_reference_conformers_of3(
             processed_ref_mol_list=processed_reference_molecules,
             add_ref_space_uid_to_perm=False,
         )
@@ -202,7 +202,7 @@ class InferenceDataset(Dataset):
         # template_slice_collection
         template_slice_collection = TemplateSliceCollection(template_slices=dict())
 
-        template_features = featurize_template_structures_af3(
+        template_features = featurize_template_structures_of3(
             template_slice_collection=template_slice_collection,
             n_templates=self.template_settings.n_templates,
             n_tokens=n_tokens,
