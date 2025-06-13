@@ -18,7 +18,7 @@ from openfold3.core.data.resources.residues import (
 
 
 @dataclasses.dataclass(frozen=False)
-class MsaFeaturePrecursorAF3:
+class MsaFeaturePrecursorOF3:
     """Class representing the fully processed MSA arrays of an assembly.
 
     Attributes:
@@ -298,7 +298,7 @@ def create_msa_token_mapper(atom_array: AtomArray, chain_id: str) -> MsaTokenMap
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-feat-precursor-map", multicall=True)
 def map_msas_to_tokens(
-    msa_feature_precursor: MsaFeaturePrecursorAF3,
+    msa_feature_precursor: MsaFeaturePrecursorOF3,
     msa_array_vstack: MsaArray,
     msa_array_vstack_mask: np.ndarray[int],
     profile: np.ndarray[float],
@@ -353,13 +353,13 @@ def map_msas_to_tokens(
 
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-feat-precursor")
-def create_msa_feature_precursor_af3(
+def create_msa_feature_precursor_of3(
     atom_array: AtomArray,
     msa_array_collection: MsaArrayCollection,
     n_tokens: int,
     max_rows: int,
     max_rows_paired: int,
-) -> MsaFeaturePrecursorAF3:
+) -> MsaFeaturePrecursorOF3:
     """Creates a set of precursor arrays for AF3 MSA featurization.
 
     Args:
@@ -384,7 +384,7 @@ def create_msa_feature_precursor_af3(
         calculate_row_counts(msa_array_collection, max_rows, max_rows_paired)
 
         # Pre-allocate feature precursor container
-        msa_feature_precursor = MsaFeaturePrecursorAF3(
+        msa_feature_precursor = MsaFeaturePrecursorOF3(
             msa=np.full([msa_array_collection.row_counts["n_rows"], n_tokens], "-"),
             msa_index=np.ones([msa_array_collection.row_counts["n_rows"], n_tokens])
             * np.where(np.array(STANDARD_RESIDUES_WITH_GAP_1) == "-")[0].item(),
@@ -425,7 +425,7 @@ def create_msa_feature_precursor_af3(
 
     else:
         # When there are no protein or RNA chains
-        msa_feature_precursor = MsaFeaturePrecursorAF3(
+        msa_feature_precursor = MsaFeaturePrecursorOF3(
             msa=np.full([1, n_tokens], "-"),
             msa_index=np.ones([1, n_tokens])
             * np.where(np.array(STANDARD_RESIDUES_WITH_GAP_1) == "-")[0].item(),

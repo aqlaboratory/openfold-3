@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 # TODO: update docstring with inputs
 @register_dataset
 class BaseOF3Dataset(SingleDataset, ABC):
-    """Implements a general SingleDataset for handling inputs for AF3.
+    """Implements a general SingleDataset for handling inputs for OF3.
 
     The BaseAF3Dataset dataset
     - implements a set of general class methods for processing and featurizing inputs

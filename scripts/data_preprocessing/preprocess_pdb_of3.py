@@ -151,7 +151,7 @@ def main(
         precrop_ignore_ligands_below = int(precrop_ignore_ligands_below)
 
     log_level = getattr(logging, log_level.upper())
-    log_file = out_dir / "preprocess_pdb_af3.log"
+    log_file = out_dir / "preprocess_pdb_of3.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Configure console handlers and formatters (only for main process)
