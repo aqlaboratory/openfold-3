@@ -586,7 +586,7 @@ def preprocess_structure_and_write_outputs_of3(
 class _OF3PreprocessingWrapper:
     """Wrapper class that fills in all the constant arguments and adds logging.
 
-    This wrapper around `preprocess_structure_and_write_outputs_af3` is needed for
+    This wrapper around `preprocess_structure_and_write_outputs_of3` is needed for
     multiprocessing, so that we can pass the constant arguments in a convenient way,
     catch any errors that would crash the workers, and change the function call to
     accept a single Iterable. In addition, the wrapper updates the SharedSet that is

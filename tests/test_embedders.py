@@ -36,7 +36,7 @@ from openfold3.legacy.af2_multimer.project_entry import AF2MultimerProjectEntry
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from tests import compare_utils
 from tests.config import consts, monomer_consts, multimer_consts
-from tests.data_utils import random_af3_features, random_asym_ids, random_template_feats
+from tests.data_utils import random_asym_ids, random_of3_features, random_template_feats
 
 
 @compare_utils.skip_of2_test()
@@ -98,20 +98,20 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
         n_token = consts.n_res
 
         proj_entry = OF3ProjectEntry()
-        af3_config = proj_entry.get_model_config_with_presets()
+        of3_config = proj_entry.get_model_config_with_presets()
 
-        c_s_input = af3_config.architecture.input_embedder.c_s_input
-        c_s = af3_config.architecture.input_embedder.c_s
-        c_z = af3_config.architecture.input_embedder.c_z
+        c_s_input = of3_config.architecture.input_embedder.c_s_input
+        c_s = of3_config.architecture.input_embedder.c_s
+        c_z = of3_config.architecture.input_embedder.c_z
 
-        batch = random_af3_features(
+        batch = random_of3_features(
             batch_size=batch_size,
             n_token=n_token,
             n_msa=consts.n_seq,
             n_templ=consts.n_templ,
         )
 
-        ie = InputEmbedderAllAtom(**af3_config.architecture.input_embedder)
+        ie = InputEmbedderAllAtom(**of3_config.architecture.input_embedder)
 
         s_input, s, z = ie(batch=batch)
 
@@ -130,9 +130,9 @@ class TestMSAModuleEmbedder(unittest.TestCase):
         one_hot_dim = 32
 
         proj_entry = OF3ProjectEntry()
-        af3_config = proj_entry.get_model_config_with_presets()
+        of3_config = proj_entry.get_model_config_with_presets()
 
-        msa_emb_config = af3_config.architecture.msa.msa_module_embedder
+        msa_emb_config = of3_config.architecture.msa.msa_module_embedder
         msa_emb_config.update({"c_s_input": c_s_input})
 
         batch_asym_ids = [
@@ -325,13 +325,13 @@ class TestTemplatePairEmbedders(unittest.TestCase):
         n_token = 10
 
         proj_entry = OF3ProjectEntry()
-        af3_config = proj_entry.get_model_config_with_presets()
+        of3_config = proj_entry.get_model_config_with_presets()
 
-        c_in = af3_config.architecture.template.template_pair_embedder.c_in
-        c_t = af3_config.architecture.template.template_pair_embedder.c_out
+        c_in = of3_config.architecture.template.template_pair_embedder.c_in
+        c_t = of3_config.architecture.template.template_pair_embedder.c_out
 
         tpe = TemplatePairEmbedderAllAtom(
-            **af3_config.architecture.template.template_pair_embedder
+            **of3_config.architecture.template.template_pair_embedder
         )
 
         batch = {

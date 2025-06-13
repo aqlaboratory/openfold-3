@@ -158,7 +158,7 @@ def random_attention_inputs(
     return q, kv, mask, biases
 
 
-def random_af3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
+def random_of3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
     restypes_flat = torch.randint(0, len(TOKEN_TYPES), (n_token,))
     restypes_names = [TOKEN_TYPES[token_idx] for token_idx in restypes_flat]
     restypes_one_hot = torch.nn.functional.one_hot(

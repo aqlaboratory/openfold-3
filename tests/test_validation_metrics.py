@@ -20,7 +20,7 @@ from openfold3.core.utils.geometry.kabsch_alignment import (
 )
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from tests.config import consts
-from tests.data_utils import random_af3_features
+from tests.data_utils import random_of3_features
 
 
 def random_rotation_translation(structure, factor=100.0):
@@ -353,7 +353,7 @@ class TestAllMetrics(unittest.TestCase):
     def test_all_metrics(self):
         no_samples = 5
 
-        batch = random_af3_features(
+        batch = random_of3_features(
             batch_size=consts.batch_size,
             n_token=consts.n_res,
             n_msa=consts.n_seq,

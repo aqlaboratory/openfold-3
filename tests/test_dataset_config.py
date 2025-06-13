@@ -15,7 +15,7 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
 )
 
 
-class TestAF3DatasetConfigConstruction:
+class TestOF3DatasetConfigConstruction:
     def test_load_pdb_weighted_config(self, tmp_path):
         test_dummy_file = tmp_path / "test.json"
         test_dummy_file.write_text("test")

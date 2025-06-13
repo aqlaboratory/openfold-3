@@ -343,7 +343,7 @@ def parse_msas_preparsed(
     Args:
         file_list (list[Path]):
             Path a list of npz files pre-parsed using
-            openfold3.scripts.data_preprocessing.preparse_alginments_af3.
+            openfold3.scripts.data_preprocessing.preparse_alginments_of3.
 
     Returns:
         dict[str, MsaArray]:
