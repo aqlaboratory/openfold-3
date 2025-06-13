@@ -24,15 +24,15 @@ COPY setup.py /opt/openfold3/setup.py
 COPY scripts /opt/openfold3/scripts
 COPY run_openfold.py /opt/openfold3/
 
-WORKDIR /opt/openfold3
-
-RUN python3 setup.py install
-
 #Install third party dependencies and set up environment variables
 WORKDIR /opt/
 
 RUN /opt/openfold3/scripts/install_third_party_dependencies.sh
 ENV CUTLASS_PATH=/opt/cutlass
 ENV KMP_AFFINITY=none
+ENV LIBRARY_PATH=/opt/conda/lib:$LIBRARY_PATH
+ENV LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
 
 WORKDIR /opt/openfold3
+
+RUN python3 setup.py install
