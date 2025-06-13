@@ -17,10 +17,6 @@ ENV PATH=/opt/conda/bin:$PATH
 COPY environments/production.yml /opt/openfold3/environment.yml
 # installing into the base environment since the docker container wont do anything other than run openfold
 RUN mamba env update -n base --file /opt/openfold3/environment.yml
-
-# Manually update rdkit due to rdkit being downgraded from pip install pdbeccutils
-RUN yes | pip uninstall rdkit
-RUN mamba install rdkit
 RUN mamba clean --all
 
 COPY openfold3 /opt/openfold3/openfold3
