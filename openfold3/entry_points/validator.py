@@ -58,7 +58,7 @@ class PlTrainerArgs(BaseModel):
 
     max_epochs: int = 1000  # pl_trainer default
     accelerator: str = "gpu"
-    precision: str = "bf16-mixed"
+    precision: int | str = "bf16-mixed"
     num_nodes: int = 1
     devices: int = 1  # number of GPUs per node
     profiler: Optional[str] = None
