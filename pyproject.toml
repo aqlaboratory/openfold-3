@@ -63,7 +63,8 @@ exclude = ["tests", "scripts"]
 [tool.setuptools.package-data]
 openfold3 = [
   "core/kernels/cuda/csrc/*",
-  "projects/*/config/*.yml"
+  "projects/*/config/*.yml",
+  "legacy/*/config/*.yml",
 ]
 "*" = [
   "resources/stereo_chemical_props.txt"
