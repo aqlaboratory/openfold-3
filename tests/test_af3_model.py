@@ -1,11 +1,11 @@
 import pytest
 import torch
 
-from openfold3.core.loss.loss_module import AlphaFold3Loss
+from openfold3.core.loss.loss_module import OpenFold3Loss
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
-from openfold3.projects.af3_all_atom.runner import AlphaFold3AllAtom
+from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+from openfold3.projects.of3_all_atom.runner import OpenFold3AllAtom
 from tests import compare_utils
 from tests.config import consts
 from tests.data_utils import random_af3_features
@@ -25,7 +25,7 @@ class TestAF3Model:
     ):
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        project_entry = AF3ProjectEntry()
+        project_entry = OF3ProjectEntry()
         config = project_entry.get_model_config_with_presets()
 
         if train:
@@ -45,8 +45,8 @@ class TestAF3Model:
         )
         config.architecture.loss_module.diffusion.chunk_size = 16
 
-        af3 = AlphaFold3AllAtom(config, _compile=False).to(device=device, dtype=dtype)
-        af3_loss = AlphaFold3Loss(config=config.architecture.loss_module)
+        af3 = OpenFold3AllAtom(config, _compile=False).to(device=device, dtype=dtype)
+        af3_loss = OpenFold3Loss(config=config.architecture.loss_module)
 
         batch = random_af3_features(
             batch_size=batch_size,

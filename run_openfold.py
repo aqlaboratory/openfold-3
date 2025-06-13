@@ -28,7 +28,10 @@ from openfold3.entry_points.validator import (
     TrainingExperimentConfig,
     generate_seeds,
 )
-from openfold3.projects.af3_all_atom.config.inference_query_format import (
+from openfold3.projects.of3_all_atom.config.dataset_config_components import (
+    colabfold_msa_settings,
+)
+from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
 
@@ -167,8 +170,14 @@ def predict(
             output_directory=expt_config.experiment_settings.output_dir,
             server_settings=expt_config.msa_server_settings,
         )
-    else:
-        logger.warning("MSA server is not used. Generating predictions without msas.")
+
+        # Update the msa dataset config settings
+        updated_dataset_config_kwargs = expt_config.dataset_config_kwargs.model_copy(
+            update={"msa": colabfold_msa_settings}
+        )
+        expt_config = expt_config.model_copy(
+            update={"dataset_config_kwargs": updated_dataset_config_kwargs}
+        )
 
     # Run the forward pass
     expt_runner = InferenceExperimentRunner(expt_config, query_set)

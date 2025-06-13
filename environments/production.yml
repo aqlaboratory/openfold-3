@@ -42,4 +42,4 @@ dependencies:
       - git+https://github.com/NVIDIA/dllogger.git
       - flash-attn==2.6.0.post1
       - pdbeccdutils
-      - rdkit==2025.03.3 # pdbeccdutils will install an older version of rdkit, so we need to override it
+      - rdkit==2025.03.3 # pdbeccdutils will install an older version of rdkit, so we need to override 

@@ -10,7 +10,7 @@ from openfold3.core.model.layers.sequence_local_atom_attention import (
     RefAtomFeatureEmbedder,
 )
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.projects.af3_all_atom.config.model_config import c_atom_ref
+from openfold3.projects.of3_all_atom.config.model_config import c_atom_ref
 from tests.config import consts
 from tests.data_utils import random_af3_features
 
