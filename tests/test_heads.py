@@ -17,7 +17,7 @@ from openfold3.projects.of3_all_atom.config.model_config import (
 )
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from tests.config import consts
-from tests.data_utils import random_af3_features
+from tests.data_utils import random_of3_features
 
 
 class TestPredictedAlignedErrorHead(unittest.TestCase):
@@ -175,7 +175,7 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         c_s = config.architecture.shared.c_s
         c_z = config.architecture.shared.c_z
 
-        batch = random_af3_features(
+        batch = random_of3_features(
             batch_size=batch_size, n_token=n_token, n_msa=n_msa, n_templ=n_templ
         )
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
