@@ -10,7 +10,7 @@ from openfold3.core.loss.confidence import (
     pae_loss,
     pde_loss,
 )
-from openfold3.projects.af3_all_atom.project_entry import AF3ProjectEntry
+from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 
 
 class TestConfidenceLoss(unittest.TestCase):
@@ -161,7 +161,7 @@ class TestConfidenceLoss(unittest.TestCase):
         batch_size, n_token = batch["token_mask"].shape
         n_atom = batch["ground_truth"]["atom_resolved_mask"].shape[1]
 
-        proj_entry = AF3ProjectEntry()
+        proj_entry = OF3ProjectEntry()
         config = proj_entry.get_model_config_with_presets()
 
         no_bins_plddt = config.architecture.loss_module.confidence.plddt.no_bins

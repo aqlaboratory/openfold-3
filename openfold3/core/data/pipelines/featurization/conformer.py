@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 @log_runtime_memory(runtime_dict_key="runtime-ref-conf-feat")
-def featurize_reference_conformers_af3(
+def featurize_reference_conformers_of3(
     processed_ref_mol_list: list[ProcessedReferenceMolecule],
     add_ref_space_uid_to_perm: bool = True,
 ) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:

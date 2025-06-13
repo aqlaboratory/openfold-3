@@ -46,7 +46,7 @@ TOKEN_DIM_INDEX_MAP = {
 }
 
 
-def featurize_structure_af3(
+def featurize_structure_of3(
     atom_array: AtomArray,
     n_tokens: int,
     token_dim_index_map: dict[str, int],
@@ -204,7 +204,7 @@ def featurize_structure_af3(
 
 
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-feat")
-def featurize_target_gt_structure_af3(
+def featurize_target_gt_structure_of3(
     atom_array: AtomArray,
     atom_array_gt: AtomArray,
     n_tokens: int,
@@ -230,7 +230,7 @@ def featurize_target_gt_structure_af3(
     """
     # TODO: Can probably get rid of TOKEN_DIM_INDEX_MAP because padding is already
     # handled in the BatchCollator
-    features_target = featurize_structure_af3(
+    features_target = featurize_structure_of3(
         atom_array=atom_array,
         n_tokens=n_tokens,
         token_dim_index_map=TOKEN_DIM_INDEX_MAP,
@@ -238,7 +238,7 @@ def featurize_target_gt_structure_af3(
     )
 
     # TODO: Make token budget adjustment automatic for is_gt=True
-    features_gt = featurize_structure_af3(
+    features_gt = featurize_structure_of3(
         atom_array=atom_array_gt,
         n_tokens=len(np.unique(atom_array_gt.token_id)),
         token_dim_index_map=TOKEN_DIM_INDEX_MAP,

@@ -7,9 +7,9 @@ import click
 
 from openfold3.core.data.io.s3 import parse_s3_config
 from openfold3.core.data.pipelines.preprocessing.template import (
-    create_template_cache_af3,
-    create_template_seq_cache_af3,
-    filter_template_cache_af3,
+    create_template_cache_of3,
+    create_template_seq_cache_of3,
+    filter_template_cache_of3,
 )
 
 
@@ -322,7 +322,7 @@ def main(
     # Run
     if not filter_only:
         logging.info("1/3: Creating the template sequence cache.")
-        create_template_seq_cache_af3(
+        create_template_seq_cache_of3(
             template_structures_directory=template_structures_directory,
             template_cache_directory=template_cache_directory,
             template_file_format=template_file_format,
@@ -334,7 +334,7 @@ def main(
         )
 
         logging.info("2/3: Creating the template cache.")
-        create_template_cache_af3(
+        create_template_cache_of3(
             dataset_cache_file=dataset_cache_file,
             template_alignment_directory=template_alignment_directory,
             template_alignment_filename=template_alignment_filename,
@@ -360,7 +360,7 @@ def main(
         )
 
     logging.info("3/3: Filtering the template cache.")
-    filter_template_cache_af3(
+    filter_template_cache_of3(
         dataset_cache_file=dataset_cache_file,
         updated_dataset_cache_file=updated_dataset_cache_file,
         template_cache_directory=template_cache_directory,

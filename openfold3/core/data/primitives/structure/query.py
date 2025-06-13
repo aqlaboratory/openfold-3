@@ -30,7 +30,7 @@ from openfold3.core.data.resources.residues import (
     RNA_RESTYPE_1TO3,
     MoleculeType,
 )
-from openfold3.projects.af3_all_atom.config.inference_query_format import Query
+from openfold3.projects.of3_all_atom.config.inference_query_format import Query
 
 logger = logging.getLogger(__name__)
 

@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
 RUN wget -P /tmp \
     "https://github.com/conda-forge/miniforge/releases/download/23.3.1-1/Miniforge3-Linux-x86_64.sh"
 RUN bash /tmp/Miniforge3-Linux-x86_64.sh -b -p /opt/conda
-Run rm /tmp/Miniforge3-Linux-x86_64.sh
+RUN rm /tmp/Miniforge3-Linux-x86_64.sh
 
 ENV PATH=/opt/conda/bin:$PATH
 
