@@ -20,6 +20,7 @@ implementation.
 
 import pickle
 import unittest
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -314,7 +315,8 @@ class TestDeepSpeedKernel(unittest.TestCase):
         and compare output coordinates.
         """
         eps = 0.2
-        with open("tests/test_data/sample_feats.pickle", "rb") as fp:
+        testfile = Path(__file__).parent / "test_data/sample_feats.pickle"
+        with open(testfile, "rb") as fp:
             batch = pickle.load(fp)
 
         # atom37_to_atom14 doesn't like batches

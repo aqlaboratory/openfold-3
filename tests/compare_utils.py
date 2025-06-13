@@ -98,12 +98,12 @@ def get_alphafold_config():
     return config
 
 
+# TODO: need to figure out what is actually wanted here
 dir_path = os.path.dirname(os.path.realpath(__file__))
 _param_path = os.path.join(
     dir_path, "..", f"openfold3/resources/params/params_{consts.model_preset}.npz"
 )
 _model = None
-
 
 def get_global_pretrained_openfold():
     global _model

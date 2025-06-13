@@ -10,7 +10,7 @@ from openfold3.core.data.primitives.permutation.mol_labels import (
 )
 from tests.custom_assert_utils import assert_atomarray_equal
 
-TEST_DIR = Path("tests/test_data/permutation_alignment")
+TEST_DIR = Path(__file__).parent / "test_data/permutation_alignment"
 
 
 def test_mol_symmetry_id_assignment():

@@ -1,6 +1,7 @@
 import copy
 import logging
 from dataclasses import dataclass
+from importlib import resources
 from typing import Optional
 
 from ml_collections import ConfigDict
@@ -15,7 +16,13 @@ class AF2MonomerProjectEntry:
     name = "af2_monomer"
     model_config_base = af2_config
     runner = AlphaFoldMonomer
-    model_preset_yaml = "openfold3/legacy/af2_monomer/config/reference_config.yml"
+
+    @property
+    def model_preset_yaml(self):
+        files = resources.files("openfold3.legacy.af2_monomer.config")
+        yaml = files / "reference_config.yml"
+        with resources.as_file(yaml) as path:
+            return path
 
     def __post_init__(self):
         preset_dict = load_yaml(self.model_preset_yaml)
