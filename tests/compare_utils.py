@@ -3,6 +3,8 @@ import os
 import pkgutil
 import sys
 import unittest
+import urllib.request
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -98,7 +100,39 @@ def get_alphafold_config():
     return config
 
 
-# TODO: need to figure out what is actually wanted here
+# TODO: test this
+def get_params_path(model_preset):
+    param_dir = importlib.resources.files("openfold3.resources.params")
+    param_file = f"params_{model_preset}.npz"
+    with importlib.resources.as_file(param_dir / param_file) as f:
+        param_path = f
+
+    if not os.path.exists(param_path):
+        base_url = "https://storage.googleapis.com/alphafold/"
+        tar_file  = "alphafold_params_2022-12-06.tar"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            # download tarfile
+            try:
+                with urllib.request.urlopen as resp, open(tmp / tar_file) as f:
+                    f.write(resp.read())
+            except urllib.error.URLError as e:
+                pytest.skip(f"Unable to download AlphaFold parameters: {str(e)}")
+
+            # extract param file
+            # question: should this skip if any error occurs?
+            with tarfile.open(tmp / tar_file) as tarf:
+                info = tarf.get_member(param_file)
+                tarf.extractall(path=tmp, members=[info])
+
+            # move to target dir
+            try:
+                shutil.move(tmp / param_file, param_path)
+            except OSError as e:
+                pytest.skip(f"Unable to move parameter file: {str(e)}")
+
+    return param_path
+
 dir_path = os.path.dirname(os.path.realpath(__file__))
 _param_path = os.path.join(
     dir_path, "..", f"openfold3/resources/params/params_{consts.model_preset}.npz"
