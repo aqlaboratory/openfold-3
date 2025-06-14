@@ -216,42 +216,28 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
 
     trainer = pl.Trainer(**trainer_args)
 
+    # TODO: Resuming lr scheduler is handled internally in the checkpoint in the
+    #  "lr_schedulers" dict. Handle case where we resume from a different schedule
     ckpt_path = runner_args.get("restart_checkpoint_path")
     weights_only_path = runner_args.get("weights_only_checkpoint_path")
-    if ckpt_path:
-        if ckpt_path == "last":
-            restore_path = None
-            if runner_args.get("wandb"):
-                restore_path = (
-                    Path(runner_args.output_dir)
-                    / str(runner_args.wandb.get("project"))
-                    / str(runner_args.wandb.get("id"))
-                    / "checkpoints"
-                    / "last.ckpt"
-                )
-        else:
-            restore_path = Path(ckpt_path)
+    if weights_only_path:
+        ckpt_path = None
 
-        if restore_path is not None and restore_path.exists():
-            restore_lr_step(ckpt_path=restore_path, lightning_module=lightning_module)
-        elif weights_only_path:
-            ckpt_path = None
+        ckpt_dict = torch.load(weights_only_path)
 
-            ckpt_dict = torch.load(weights_only_path)
+        logging.warning(f"Restoring weights from {weights_only_path}")
+        lightning_module.load_state_dict(ckpt_dict["state_dict"])
+        lightning_module.ema.load_state_dict(ckpt_dict["ema"])
 
-            logging.warning(f"Restoring weights from {weights_only_path}")
-            lightning_module.load_state_dict(ckpt_dict["state_dict"])
-            lightning_module.ema.load_state_dict(ckpt_dict["ema"])
+        restore_lr_step(
+            ckpt_path=Path(weights_only_path), lightning_module=lightning_module
+        )
 
-            restore_lr_step(
-                ckpt_path=Path(weights_only_path), lightning_module=lightning_module
-            )
+        logging.warning(f"Restoring datamodule state from {weights_only_path}")
+        lightning_data_module.load_state_dict(ckpt_dict["DataModule"])
 
-            logging.warning(f"Restoring datamodule state from {weights_only_path}")
-            lightning_data_module.load_state_dict(ckpt_dict["DataModule"])
-
-            logging.warning("Restoring fit loop counters")
-            trainer.fit_loop.load_state_dict(ckpt_dict["loops"]["fit_loop"])
+        logging.warning("Restoring fit loop counters")
+        trainer.fit_loop.load_state_dict(ckpt_dict["loops"]["fit_loop"])
 
     # Determine if running on rank zero process
     if wandb_logger is not None and trainer.global_rank == 0:

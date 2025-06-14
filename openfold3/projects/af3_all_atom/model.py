@@ -321,10 +321,6 @@ class AlphaFold3(nn.Module):
         mode_mem_settings = self._get_mode_mem_settings()
 
         # Determine number of rollout steps and samples depending on training/eval mode
-        mode_mem_settings = (
-            self.settings.memory.train if self.training else self.settings.memory.eval
-        )
-
         no_rollout_steps = (
             self.shared.diffusion.no_mini_rollout_steps
             if self.training
