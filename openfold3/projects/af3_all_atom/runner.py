@@ -173,6 +173,7 @@ class AlphaFold3AllAtom(ModelRunner):
                 return get_metrics(
                     batch,
                     outputs,
+                    compute_lig_diffusion_metrics=True,
                     compute_extra_val_metrics=False,
                 )
 

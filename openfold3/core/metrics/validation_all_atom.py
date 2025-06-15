@@ -1127,6 +1127,7 @@ def get_validation_lddt_metrics(
 def get_metrics(
     batch,
     outputs,
+    compute_lig_diffusion_metrics=False,
     compute_extra_val_metrics=False,
 ) -> dict[str, torch.Tensor]:
     """
@@ -1135,6 +1136,10 @@ def get_metrics(
     Args:
         batch: ground truth and permutation applied features
         outputs: model outputs
+        compute_lig_diffusion_metrics: computes ligand metrics not only for the
+            mini-rollout result, but also the diffusion training prediction. Note that
+            for computational and memory efficiency reasons, only the first of the 48
+            diffusion training samples is used here.
         compute_extra_val_metrics: computes extra lddt metrics needed
             for model selection
     Returns:
