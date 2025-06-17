@@ -1,12 +1,17 @@
 import importlib
 import os
 import pkgutil
+import shutil
 import sys
+import tarfile
+import tempfile
 import unittest
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 
 from openfold3.core.utils.import_weights import import_jax_weights_
@@ -100,43 +105,46 @@ def get_alphafold_config():
     return config
 
 
-# TODO: test this
-def get_params_path(model_preset):
-    param_dir = importlib.resources.files("openfold3.resources.params")
+def _download_file_or_skip(url, tmp_path):
+    local_name = Path(tmp_path) / url.split("/")[-1]
+    try:
+        with urllib.request.urlopen(url) as resp, open(local_name, "wb") as f:
+            f.write(resp.read())
+    except urllib.error.URLError as e:
+        msg = f"Unable to download URL {url}: {str(e)}"
+        # print(msg)
+        raise unittest.SkipTest(msg)
+
+
+def get_param_path(model_preset):
+    resource_dir = importlib.resources.files("openfold3.resources")
     param_file = f"params_{model_preset}.npz"
-    with importlib.resources.as_file(param_dir / param_file) as f:
+    with importlib.resources.as_file(resource_dir / "params" / param_file) as f:
         param_path = f
 
     if not os.path.exists(param_path):
         base_url = "https://storage.googleapis.com/alphafold/"
-        tar_file  = "alphafold_params_2022-12-06.tar"
+        tar_file = "alphafold_params_2022-12-06.tar"
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            # download tarfile
-            try:
-                with urllib.request.urlopen as resp, open(tmp / tar_file) as f:
-                    f.write(resp.read())
-            except urllib.error.URLError as e:
-                pytest.skip(f"Unable to download AlphaFold parameters: {str(e)}")
-
-            # extract param file
-            # question: should this skip if any error occurs?
+            _download_file_or_skip(base_url + tar_file, tmp)
             with tarfile.open(tmp / tar_file) as tarf:
-                info = tarf.get_member(param_file)
+                info = tarf.getmember(param_file)
                 tarf.extractall(path=tmp, members=[info])
 
-            # move to target dir
+            param_path.parent.mkdir(parents=True, exist_ok=True)
+
             try:
                 shutil.move(tmp / param_file, param_path)
             except OSError as e:
-                pytest.skip(f"Unable to move parameter file: {str(e)}")
+                msg = f"Unable to move parameter file: {str(e)}"
+                # print(msg)
+                raise unittest.SkipTest(msg)
 
     return param_path
 
-dir_path = os.path.dirname(os.path.realpath(__file__))
-_param_path = os.path.join(
-    dir_path, "..", f"openfold3/resources/params/params_{consts.model_preset}.npz"
-)
+
+# _param_path = get_param_path(consts.model_preset)
 _model = None
 
 
@@ -148,12 +156,10 @@ def get_global_pretrained_openfold():
         _model = AlphaFold(model_config)
         _model = _model.eval()
 
-        if not os.path.exists(_param_path):
-            raise FileNotFoundError(
-                """Cannot load pretrained parameters. Make sure to run the 
-                installation script before running tests."""
-            )
-        import_jax_weights_(_model, _param_path, version=consts.model_preset)
+        # print("looking for global pretrained")
+        param_path = get_param_path(consts.model_preset)
+
+        import_jax_weights_(_model, param_path, version=consts.model_preset)
         _model = _model.cuda()
 
     return _model
@@ -165,7 +171,9 @@ _orig_weights = None
 def _get_orig_weights():
     global _orig_weights
     if _orig_weights is None:
-        _orig_weights = np.load(_param_path)
+        # print("looking for orig weights")
+        param_path = get_param_path(consts.model_preset)
+        _orig_weights = np.load(param_path)
 
     return _orig_weights
 
