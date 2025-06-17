@@ -82,6 +82,7 @@ A directory containing containing multiple inference examples is provided [here]
 ### 3.1 Input Data
 
 Queries can include any combination of single- or multi-chain proteins, with or without ligands, and may contain multiple such complexes. <br/>
+Input is provided via a `query.json` file — a structured JSON document that defines each query, its constituent chains, chain types (e.g., protein, DNA, ligand) and sequences. Optionally, the query can include paths to precomputed MSAs for each chain or chain pair. <br/>
 See [OpenFold3 input format](input_format.md) for instructions on how to specify your input data.
 
 
