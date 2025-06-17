@@ -89,6 +89,8 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
   - `sequence` *(str, required)*
     - Amino acid sequence (1-letter codes), supporting standard residues, X (unknown), and U (selenocysteine).
 
+  - `non_canonical_residues` *(dict, optional)*: Maps residue positions to CCD codes for non-canonical residues.
+
   - `use_msas` *(bool, optional, default = true)*
     - Enables MSA usage. If false, a single-row MSA is constructed from the query sequence only.
 
@@ -122,7 +124,6 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     "sequence": "AGCU",
     "use_msas": true,
     "use_main_msas": true,
-    "use_paired_msas": true,
     "main_msa_file_paths": "/absolute/path/to/main_msa.sto/a3m",
   }
   ```
@@ -130,11 +131,19 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
   - `molecule_type` *(str, required)*
     - Must be "rna".
 
-  - `chain_ids`, `sequence`, `non_canonical_residues`
-    - Same as for proteins.
+  - `chain_ids` *(str | list[str], required)*
+    - One or more identifiers for this chain. Used to map sequences to structure outputs.
 
-  - `use_msas`, `use_main_msas`, `use_paired_msas`
-    - Behave the same as for proteins.
+  - `sequence` *(str, required)*
+    - Nucleic acid sequence (1-letter codes).
+
+    - `non_canonical_residues` *(dict, optional)*: Maps residue positions to CCD codes for non-canonical residues.
+
+  - `use_msas` *(bool, optional, default = true)*
+    - Enables MSA usage. If false, a single-row MSA is constructed from the query sequence only.
+
+  - `use_main_msas` *(bool, optional, default = true)*
+    - Controls whether to use unpaired MSAs. For monomers or homomers, disabling this results in using only the single sequence.
 
   - `main_msa_file_paths` *(str | list[str], optional, default = null)*
     - Path or list of paths to the MSA files for this chain. Can be `.a3m`, `.sto` or `.npz`.
@@ -153,8 +162,11 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
   - `molecule_type` *(str, required)*
     - Must be "dna".
 
-  - `chain_ids` and `sequence`
-    - As above.
+  - `chain_ids` *(str | list[str], required)*
+    - One or more identifiers for this chain. Used to map sequences to structure outputs.
+
+  - `sequence` *(str, required)*
+    - Nucleic acid sequence (1-letter codes).
 
 
   ### 3.4. Small Molecule / Ligand Chains
@@ -262,4 +274,4 @@ Additional example input JSON files can be found here:
 - [Single-chain protein (monomer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/monomer/query_monomer.json): Ubiquitin (PDB: 1UBQ)
 - [Multi-chain protein with identical chains (homomer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/homomer/query_homomer.json): GCN4 leucine zipper (PDB: 2ZTA)
 - [Multi-chain protein with different chains (multimer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/multimer/query_multimer.json): Deoxy human hemoglobin (PDB: 1A3N)
-- [Protein-ligand complex](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/protein_ligand_complex/query_protein_ligand.json): Mcl-1 with small molecule inhibitor (PDB: 5FDR)
+- [Protein-ligand complex](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/protein_ligand_complex/query_protein_ligand.json): Mcl-1 with small molecule inhibitor (PDB: 5FDR) s
