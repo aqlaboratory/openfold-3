@@ -16,13 +16,12 @@ Below is the current status of inference feature support by molecule type:
 
 Supported:
 
-- Prediction with MSA, using ColabFold MSA pipeline
+- Prediction with MSA, using ColabFold MSA pipeline or pre-computed MSAs
 - Prediction without MSA
 
 Coming soon:
 
 - OpenFold3's own MSA generation pipeline
-- Support for OpenFold3-style precomputed MSAs
 - Template-based prediction
 - Non-standard or covalently modified residues
 - Pocket conditioning *(requires fine-tuning)*
@@ -86,42 +85,72 @@ See [OpenFold3 input format](input_format.md) for instructions on how to specify
 
 ### 3.2. Default Inference settings
 
-#### Inference without Pre-computed Alignments
+OpenFold3 currently supports two inference modes:
 
-The following command performs model inference using the ColabFold server for MSA generation. <br/>
-Integration of pre-computed MSAs or OpenFold3s internal MSA generation into the inference pipeline will be supported in the full codebase release.
+- **Inference with on-the-fly MSA generation** using the ColabFold MSA server (default)
+- **Inference with precomputed MSAs** using custom `.npz` files and/or local `.a3m` alignments
 
+
+#### 3.2.1. 🚀 Inference with ColabFold MSA Server (default)
+
+Use this mode to generate MSAs automatically via the ColabFold server:
 ```
-python run_openfold predict \
+python run_openfold.py predict \
     --query_json /path/to/inference/query.json \
-    --inference_ckpt_path /path/inference.ckpt
+    --inference_ckpt_path /path/to/inference.ckpt \
     --use_msa_server \
-    --output_dir /path/output \
+    --output_dir /path/to/output/
 ```
 
-**Required arguments:**
-
-- `--query_json` *(Path)*: Path to the JSON file specifying input sequences to predict and metadata.
-
-- `--inference_ckpt_path` *(Path)*: Path to the model checkpoint.
-
-- `--use_msa_server` *(bool, default = True)*: Use ColabFold MSA server to create alignments. This is required in the current preliminary inference release.
+🧪 *Notes*: 
+- Internal OpenFold3 MSA generation will be supported in future releases.
+- Only the protein sequences that are provided are sent to the colabfold MSA server when the `--use_msa_server` option is selected
 
 
-**Optional Inference Arguments:**
+#### 3.2.2. 💾 Inference with Precomputed MSAs
 
-- `--runner_yaml` *(Path)*: YAML config specifying model and data parameters. For full control over settings, edit this file directly. Example: [runner.yml](https://github.com/aqlaboratory/openfold3/blob/inference-dev/examples/runner_inference.yml).
+Use this mode when you have manually prepared .npz and .a3m MSA files:
+```
+python run_openfold.py predict \
+    --query_json /path/to/query_precomputed_full_path.json \
+    --use_msa_server=False \
+    --inference_ckpt_path /path/to/of3_v14_79-32000_converted.ckpt.pt \
+    --output_dir /path/to/precomputed_prediction_output/ \
+    --runner_yaml /path/to/inference_precomputed.yml
+```
 
-- `--output_dir` *(Path)*: Directory where outputs will be written. Defaults to `test_train_output/`
+#### 3.2.3. ⚙️ Inference Arguments
 
-- `--num_diffusion_samples` *(int, default = None)*: Number of diffusion samples per query. If unspecified, defaults to 5 diffusion samples.
+**Required**
 
-- `--num_model_seeds` *(int, default = None)*: Number of model seeds to use per query. If unspecified, defaults to one seed (42).
+- `--query_json` *(Path)*`
+    - Path to the input query JSON file.
 
-These flags allow you to customize the inference workflow. As for all OpenFold3 parameters, `output_dir`, `num_diffusion_samples` and `num_model_seeds` can both also be updated directed via `runner.yml`.
+- `--inference_ckpt_path` *(Path)*
+    - Path to the model checkpoint file (e.g., .pt file).
 
 
-### 3.3 Customized inference settings 
+**Optional**
+- `--runner_yaml` *(Path)*
+    - YAML config for full control over model and data settings. Example: [runner.yml](https://github.com/aqlaboratory/openfold3/blob/inference-dev/examples/runner_inference.yml)
+
+- `--output_dir` *(Path)*
+    - Output directory for all results. Defaults to test_train_output/.
+
+- `--use_msa_server` *(bool, default = True)*
+    - Whether to generate MSAs via the ColabFold server.
+
+
+- `--num_diffusion_samples` *(int, default = 5)*
+    - Number of diffusion samples per query (default is `5 samples`).
+
+- `--num_model_seeds` *(int, default = 42)*
+    - Number of random seeds to use per query (default is seed `42`).
+
+🔁 These settings can also be defined in `runner_yaml`, overriding command-line defaults.
+
+
+### 3.3. Customized inference settings 
 
 You can customize inference behavior by providing a [`runner.yml`](https://github.com/aqlaboratory/openfold3/blob/inference-dev/examples/runner_inference.yml) file. This overrides the default settings defined in [`validator.py`](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/entry_points/validator.py).
 
@@ -166,42 +195,70 @@ msa_server_settings:
 
 ## 4. Model Outputs
 
-OpenFold3's output format currently follows the structure used by the ColabFold server. During processing, chain IDs are internally mapped to standardized identifiers, then re-mapped back to the original query IDs in the final outputs.
+OpenFold3 produces a structured set of outputs modeled after the ColabFold server. Each query (e.g., `query_1`) generates a dedicated output directory containing prediction results, MSAs, and intermediate files.
 
-For each unique chain, a single MSA is generated and saved as an `.npz` file. If a chain appears multiple times across different queries, it is deduplicated — the MSA will be stored under the name of its first occurrence.
+During inference, internal chain identifiers are used temporarily and then mapped back to the original query-defined `chain_ids` in the final output files.
 
-Each query results in an output directory with one subfolder per seed. A `main` directory stores MSAs and processed input features; a `raw` directory contains raw alignment and template search outputs.
+---
 
-#### Example Output Structure (Single-chain, single seed)
+### 4.1. 🔄 Output Directory Layout
 
-See [Monomer Output Example](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/monomer) for full details.
+Each query result is stored in:
 
 ```
-query.json
 <output_directory_path>
- ├── <protein>
+ ├── query_1
 	 └── seed_42
+        ├── query_1_seed_42_sample_1_model.cif
+        ├── query_1_seed_42_sample_1_confidences.json
+        └── query_1_seed_42_sample_1_confidences_aggregated.json
  ├── main
-	 └── <protein_msa>.npz
-└──  raw
+	 └── query_1.npz
+ ├──  raw
 	 └── main
 	     ├── bfd.mgnify30.metaeuk30.smag30
 	     ├── msa.sh
 	     ├── out.tar.gz
 	     ├── pdb70.m8
-         ├── uniref.a3m
-         └── templates_101
-             ├── 1dlr.cif
-             ├── 1dr5.cif
-             ├── pdb70_cs219.ffdata
-             ├── pdb70_cs219.ffindex --> pdb70_a3m.ffindex
-             ├── pdb70_a3m.ffdata
-             └── pdb70_a3m.ffindex
+         └── uniref.a3m
+ └── inference_query_set.json
 ```
+### 4.2. 📁 Output Components
 
-#### Paired MSA outputs
-When the input contains multiple distinct chains, additional paired alignment files are generated under a `paired/` directory. </br>
-See the [Multimer Output Example](examples_of3/multimer) for a complete case.
+#### **Prediction Subdirectory (`query_1/seed_42/`)**
+Each seed produces one or more sampled structure predictions and their associated confidence scores:
+
+- `*_model.cif` (or `.pdb`): Predicted 3D structure
+  - If PDB format is selected, per-atom pLDDT scores are embedded.
+  
+- `*_confidences.json`: Per-atom confidence metrics
+  - `plddt`: Predicted Local Distance Difference Test
+  - `pde`: Predicted Distance Error
+
+- `*_confidences_aggregated.json`: Summary metrics
+  - `avg_plddt`: Average pLDDT over structure
+  - `gPDE`: Global Predicted Distance Error (see Eq. 16 in AF3 SI Section 5.7)
+
+#### **MSA and Input Feature Directory (`main/`)**
+- Contains a single `.npz` file per unique chain (deduplicated across queries).
+- File is named after the first occurrence of that chain across queries.
+
+#### **Raw ColabFold MSA Outputs (`raw/main/`)**
+- Includes intermediate alignment files and scripts generated by the ColabFold MSA server.
+- Only generated if `use_msa_server=True`.
+
+#### **Query Tracking (`inference_query_set.json`)**
+- A system-generated file representing the full input query in a validated internal format.
+- Defined by [this Pydantic model](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/projects/of3_all_atom/config/inference_query_format.py).
+- If `use_msa_server` is enabled, this file includes:
+  - `main_msa_file_paths`
+  - `paired_msa_file_paths`
+  pointing to the relevant ColabFold-generated `.a3m` files.
+
+
+### 4.3. 🧬 Multimer Prediction Example
+
+When multiple chains are defined in a query, paired MSAs are also generated. These appear under a `paired/` directory:
 
 ```
 paired
@@ -210,25 +267,7 @@ paired
  └── out.tar.gz
 ```
 
-
-
-[[2025-06-12]]
-
-### Output contents
-
-- `inference_query_set.json`: This is the populated by the initial `query.json` provided by the user. You can see the Pydantic model that is used to define the inference_query_set here. (https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/projects/of3_all_atom/config/inference_query_format.py)  -- aside: this link might not work yet, it will after I submit the renaming PR
-
-	- In the case where the user runs with `use_msa_server` option, the `main_msa_file_paths` and the `paired_msa_file_paths` are populated with the paths corresponding to the parsed MSAs computed by the colabfold MSA server (like the examples in the examples directory)
-
-- `leucine_zipper_seed_42_sample_1_confidences_aggregated.json` includes two measurements
-	- Average plddt : Predicted local distance difference test
-	- gPDE: global predicted distance error (PDE) per eq. 16 in AF3 SI Section 5.7
-	
-- `leucine_zipper_seed_42_sample_1_confidences.json` includes plddt and pde per atom
-
-- Predicted structure
-	- If the pdb format is selected, the plddt score is written to each atom
-
+For a full multimer example, see: [deoxy human hemoglobin](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/multimer).
 
 
 
