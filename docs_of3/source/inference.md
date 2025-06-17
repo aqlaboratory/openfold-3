@@ -84,7 +84,9 @@ Queries can include any combination of single- or multi-chain proteins, with or 
 See [OpenFold3 input format](input_format.md) for instructions on how to specify your input data.
 
 
-### 3.2. Inference without Pre-computed Alignments
+### 3.2. Default Inference settings
+
+#### Inference without Pre-computed Alignments
 
 The following command performs model inference using the ColabFold server for MSA generation. <br/>
 Integration of pre-computed MSAs or OpenFold3s internal MSA generation into the inference pipeline will be supported in the full codebase release.
@@ -108,7 +110,7 @@ python run_openfold predict \
 
 **Optional Inference Arguments:**
 
-- `--runner_yaml` *(Path)*: YAML config specifying model and data parameters. For full control over settings, edit this file directly. Example: [runner.yml](https://github.com/aqlaboratory/openfold3/tree/main/examples/runner.yml).
+- `--runner_yaml` *(Path)*: YAML config specifying model and data parameters. For full control over settings, edit this file directly. Example: [runner.yml](https://github.com/aqlaboratory/openfold3/blob/inference-dev/examples/runner_inference.yml).
 
 - `--output_dir` *(Path)*: Directory where outputs will be written. Defaults to `test_train_output/`
 
@@ -118,6 +120,49 @@ python run_openfold predict \
 
 These flags allow you to customize the inference workflow. As for all OpenFold3 parameters, `output_dir`, `num_diffusion_samples` and `num_model_seeds` can both also be updated directed via `runner.yml`.
 
+
+### 3.3 Customized inference settings 
+
+You can customize inference behavior by providing a [`runner.yml`](https://github.com/aqlaboratory/openfold3/blob/inference-dev/examples/runner_inference.yml) file. This overrides the default settings defined in [`validator.py`](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/entry_points/validator.py).
+
+Below are common use cases and how to configure them:
+
+---
+
+#### 🖥️ Run on Multiple GPUs or Nodes
+Specify the hardware configuration under [`pl_trainer_args`](https://github.com/aqlaboratory/openfold3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L141) in `runner.yml`:
+```
+pl_trainer_args:
+  devices: 4      # Default: 1
+  num_nodes: 1    # Default: 1
+```
+
+---
+
+#### 📦 Output in PDB Format
+Change the structure output format from `cif` to `pdb` using [`output_writer_settings`](https://github.com/aqlaboratory/openfold3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L170):
+```
+output_writer_format:
+  structure_format: pdb    # Default: cif
+```
+
+---
+
+#### 🌐 Use a Privately Hosted ColabFold MSA Server
+Specify the URL of your private MSA server under [`msa_server_settings`](https://github.com/aqlaboratory/openfold3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L171):
+```
+msa_server_settings:
+  server_url: https://my.private.colabfold.server
+```
+
+---
+
+#### 💾 Save MSAs in A3M Format
+Choose the file format for saving MSAs retrieved from ColabFold:
+```
+msa_server_settings:
+  msa_file_format: a3m     # Options: a3m, npz (default: npz)
+```
 
 ## 4. Model Outputs
 
@@ -164,3 +209,28 @@ paired
  ├── pair.sh
  └── out.tar.gz
 ```
+
+
+
+[[2025-06-12]]
+
+### Output contents
+
+- `inference_query_set.json`: This is the populated by the initial `query.json` provided by the user. You can see the Pydantic model that is used to define the inference_query_set here. (https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/projects/of3_all_atom/config/inference_query_format.py)  -- aside: this link might not work yet, it will after I submit the renaming PR
+
+	- In the case where the user runs with `use_msa_server` option, the `main_msa_file_paths` and the `paired_msa_file_paths` are populated with the paths corresponding to the parsed MSAs computed by the colabfold MSA server (like the examples in the examples directory)
+
+- `leucine_zipper_seed_42_sample_1_confidences_aggregated.json` includes two measurements
+	- Average plddt : Predicted local distance difference test
+	- gPDE: global predicted distance error (PDE) per eq. 16 in AF3 SI Section 5.7
+	
+- `leucine_zipper_seed_42_sample_1_confidences.json` includes plddt and pde per atom
+
+- Predicted structure
+	- If the pdb format is selected, the plddt score is written to each atom
+
+
+
+
+
+
