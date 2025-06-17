@@ -75,6 +75,8 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     "use_msas": true,
     "use_main_msas": true,
     "use_paired_msas": true,
+    "main_msa_file_paths": "/absolute/path/to/main_msa.sto/a3m",
+    "paired_msa_file_paths": "/absolute/path/to/paired_msa.sto/a3m",
   }
   ```
 
@@ -98,6 +100,18 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     - For heteromers, paired alignments across chains are used if available.
     - For homomers, main MSAs are internally concatenated and treated as implicitly paired.
 
+  - `main_msa_file_paths` *(str | list[str], optional, default = null)*
+    - Path or list of paths to the MSA files for this chain. Can be `.a3m`, `.sto` or `.npz`.
+    - Use this field only when running inference with **precomputed MSAs**.
+    - If using the ColabFold MSA server (`--use_msa_server=True`), this field will be automatically populated and will **override any user-provided path**.
+
+  - `paired_msa_file_paths` *(str | list[str], optional, default = null)*
+    - Path or list of paths to paired MSA files involving this chain. These MSAs should be pre-paired in the context of the full complex, and can be in `.a3m`, `.sto` or `.npz` format.
+    - This field is only relevant when:
+      - Using precomputed MSAs (i.e. `--use_msa_server=False`)
+      - Predicting **multimers with distinct chains** (heteromers)
+    - If using the ColabFold MSA server, this field is automatically populated and will **override any user-provided value**.
+
 
   ### 3.2. RNA Chains
 
@@ -109,6 +123,7 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     "use_msas": true,
     "use_main_msas": true,
     "use_paired_msas": true,
+    "main_msa_file_paths": "/absolute/path/to/main_msa.sto/a3m",
   }
   ```
 
@@ -120,6 +135,10 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
 
   - `use_msas`, `use_main_msas`, `use_paired_msas`
     - Behave the same as for proteins.
+
+  - `main_msa_file_paths` *(str | list[str], optional, default = null)*
+    - Path or list of paths to the MSA files for this chain. Can be `.a3m`, `.sto` or `.npz`.
+    - Use this field only when running inference with **precomputed MSAs**.
 
 
   ### 3.3. DNA Chains
