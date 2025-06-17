@@ -137,7 +137,7 @@ python run_openfold.py predict \
 📝  *Notes*: 
 - Only protein sequences are submitted to the ColabFold server. 
 - Internal OpenFold3 MSA generation will be supported in future releases.
-- All arguments can also be set via `runner_yaml`, which overrides command-line flags (more on this [below](#33-customized-inference-settings)).
+- All arguments can also be set via `runner_yaml`, but command-line flags take precedence and will override values specified in the YAML file (see [Customized Inference Settings]() for details).
 
 
 #### 3.2.2 📂 Inference with Precomputed MSAs
@@ -156,7 +156,7 @@ python run_openfold.py predict \
 
 
 #### 3.2.3 🚫 Inference Without MSAs
-This mode skips MSA generation entirely. OpenFold3 will perform inference using only the input sequences. This is supported for proteins, DNA, and RNA inputs, though accuracy may be reduced compared to MSA-based modes.
+This mode skips MSA generation entirely. OpenFold3 will perform inference using only the input sequences. This is supported for proteins, DNA, and RNA inputs, though accuracy will be reduced compared to MSA-based modes. This inference mode is currently discouraged if the goal is to obtain the highest-accuracy structures.
 
 ```
 python run_openfold.py predict \
@@ -167,7 +167,7 @@ python run_openfold.py predict \
 ```
 
 
-### 3.3 Customized Inference Settings
+### 3.3 Customized Inference Settings Using `runner.yml`
 
 You can further customize inference behavior by providing a [`runner.yml`](https://github.com/aqlaboratory/openfold3/blob/inference-dev/examples/runner_inference.yml) file. This overrides the default settings defined in [`validator.py`](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/entry_points/validator.py).
 
