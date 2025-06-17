@@ -137,7 +137,7 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
   - `sequence` *(str, required)*
     - Nucleic acid sequence (1-letter codes).
 
-    - `non_canonical_residues` *(dict, optional)*: Maps residue positions to CCD codes for non-canonical residues.
+  - `non_canonical_residues` *(dict, optional)*: Maps residue positions to CCD codes for non-canonical residues.
 
   - `use_msas` *(bool, optional, default = true)*
     - Enables MSA usage. If false, a single-row MSA is constructed from the query sequence only.
