@@ -21,7 +21,7 @@ dependencies = [
   "mkl",
   "aria2",
   "biotite >=1.1.0, <1.3",
-  "rdkit",
+  "rdkit ==2024.9.4",
   "boto3",
   "memory_profiler",
   "func_timeout",
