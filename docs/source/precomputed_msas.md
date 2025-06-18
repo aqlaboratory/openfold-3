@@ -176,7 +176,7 @@ In the inference pipeline, we use the [MSASettings](../../openfold3/projects/of3
 
 More details on the MSASettings will be shared in the next internal release. Brief notes on settings that need to be updated when working with custom precomputed alignments are below. 
 
-It is possible to pass in an update to the MSASettings to match your alignments using the dataset_config_kwargs section in the runner.yml, for example:
+It is possible to pass in an update to the MSASettings to match your alignments using the dataset_config_kwargs section in the `runner.yml`, for example:
 
 ```
 dataset_config_kwargs:
@@ -222,7 +222,7 @@ where the up to the first 10000 sequences will be read from each `uniparc_hits.a
 
 2. *msas_to_pair*: The list of MSA filenames that contain species information that can be used for online pairing. See the [Online MSA Pairing](precomputed_msas.md#6-online-msa-pairing-from-precomputed-msas) section for details.
 
-3. *aln_order*: The order in which to vertically concatenate MSA files for each chain for main MSA features. MSA files whose names are not provided in this list *will not be used*. For example, if one has MSA files named mgnify_hits, uniprot_hits and uniparc_hits and want to vertically concatenated them for each chain in this order:
+3. *aln_order*: The order in which to vertically concatenate MSA files for each chain for main MSA features. MSA files whose names are not provided in this list *will not be used*. For example, if one has MSA files named `mgnify_hits`, `uniprot_hits` and `uniparc_hits` and want to vertically concatenate them for each chain in this order, they should update the `runner.yml` as follows:
 
 ```
 dataset_config_kwargs:
@@ -231,7 +231,6 @@ dataset_config_kwargs:
      - mgnify_hits
      - uniprot_hits
      - uniparc_hits
-     - concat_cfdb_unir
 ```
 
 ## 5. Chain Deduplication Utility
