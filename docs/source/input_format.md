@@ -25,8 +25,7 @@ The OpenFold3 inference pipeline takes a single JSON file as input, specifying t
 - `ccd_file_path` *(str, optional, default = None)*
   - Path to a [Chemical Component Dictionary (CCD)](https://www.wwpdb.org/data/ccd) mmCIF file containing definitions all ligands referenced across queries.
     - Standard ligands should be sourced from the official PDB CCD file linked above.
-    - Custom ligands must be provided as MMCIF files and appended to the end of the CCD file. Ligand definitions must exactly match the three-letter chemical component IDs used in the input queries.
-
+    - Custom ligands must be provided in MMCIF format, appended to the end of the CCD file. Identifiers of ligand definitions must exactly match the three-letter chemical component IDs used in the input queries.
 
 - `seeds` *(list of int, optional, default = None)*
   - Specifies the exact random seeds to use for stochastic components of the inference process (e.g., dropout, sampling).
@@ -92,27 +91,28 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
   - `non_canonical_residues` *(dict, optional)*: Maps residue positions to CCD codes for non-canonical residues.
 
   - `use_msas` *(bool, optional, default = true)*
-    - Enables MSA usage. If false, a single-row MSA is constructed from the query sequence only.
+    - Enables MSA usage. If false, empty MSA features are provided to the model. MSA-free inference mode is [discouraged](Inference.md#323--inference-without-msas) if the goal is to obtain the highest-accuracy structures.
 
   - `use_main_msas` *(bool, optional, default = true)*
-    - Controls whether to use unpaired MSAs. For monomers or homomers, disabling this results in using only the single sequence.
+    - Controls whether to use unpaired MSAs. 
+    - For monomers or homomers, disabling this results in using only the single sequence(s) as MSA features.
+    - For heteromers, disabling this results in using only the paired MSAs, including the query sequences, as MSA features.
 
   - `use_paired_msas` *(bool, optional, default = true)*
-    - Controls use of explicitly paired MSAs.
-    - For heteromers, paired alignments across chains are used if available.
-    - For homomers, main MSAs are internally concatenated and treated as implicitly paired.
+    - Controls the use of explicitly paired MSAs.
+    - For homomers, main MSAs are internally concatenated and treated as implicitly paired, so disabling use_paired_msas does not change their MSA features.
+    - For heteromers, paired alignments across chains are used if available and disabling use_paired_msas results in using only main MSAs as MSA features.
 
   - `main_msa_file_paths` *(str | list[str], optional, default = null)*
-    - Path or list of paths to the MSA files for this chain. Can be `.a3m`, `.sto` or `.npz`.
-    - Use this field only when running inference with **precomputed MSAs**.
+    - Path or list of paths to the MSA files for this chain.
+    - Use this field only when running inference with **precomputed MSAs**. See the [Precomputed MSA documentation](precomputed_msas.md) for details.
     - If using the ColabFold MSA server (`--use_msa_server=True`), this field will be automatically populated and will **override any user-provided path**.
 
   - `paired_msa_file_paths` *(str | list[str], optional, default = null)*
-    - Path or list of paths to paired MSA files involving this chain. These MSAs should be pre-paired in the context of the full complex, and can be in `.a3m`, `.sto` or `.npz` format.
-    - This field is only relevant when:
-      - Using precomputed MSAs (i.e. `--use_msa_server=False`)
-      - Predicting **multimers with distinct chains** (heteromers)
-    - If using the ColabFold MSA server, this field is automatically populated and will **override any user-provided value**.
+    - Path or list of paths to paired MSA files for this chain, pre-paired in the context of the full complex.
+    - Use this field only when running inference with **precomputed MSAs** and the corresponding query has at least two unique polymer chains. See the [Precomputed MSA documentation](precomputed_msas.md) for details.
+    - If not provided, online MSA pairing can still be performed for protein chains if species information is available in one or more main MSA files per chain. See [Online MSA Pairing](precomputed_msas.md#6-online-msa-pairing-from-precomputed-msas) for details.
+    - If using the ColabFold MSA server, this field is automatically populated and will **override any user-provided path**.
 
 
   ### 3.2. RNA Chains
@@ -146,8 +146,8 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     - Controls whether to use unpaired MSAs. For monomers or homomers, disabling this results in using only the single sequence.
 
   - `main_msa_file_paths` *(str | list[str], optional, default = null)*
-    - Path or list of paths to the MSA files for this chain. Can be `.a3m`, `.sto` or `.npz`.
-    - Use this field only when running inference with **precomputed MSAs**.
+    - Path or list of paths to the MSA files for this chain.
+    - Use this field only when running inference with **precomputed MSAs**. See the [Precomputed MSA documentation](precomputed_msas.md) for details.
 
 
   ### 3.3. DNA Chains
@@ -200,7 +200,8 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     - Mutually exclusive with `ccd_codes`.
 
   - `ccd_codes` *(str | list[str], required if smiles not given)*
-    - One or more three-letter CCD codes for the ligand components.
+    - Three-letter CCD code for the ligand component. 
+    - Support for providing a list of CCD codes (for instance for polymeric ligands) will be supported in a later release of the inference pipeline.
     - Mutually exclusive with `smiles`.
 
 ## 4. Example Input Json for a Single Query Complex

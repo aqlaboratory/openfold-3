@@ -1,6 +1,6 @@
 # OpenFold Inference
 
-Welcome to the Documentation for running inference with OpenFold3, our fully open source, trainable, PyTorch-based reproduction of DeepMind’s AlphaFold 3. OpenFold3 carefully implements the features described in AlphaFold 3 *Nature* paper.
+Welcome to the Documentation for running inference with OpenFold3, our fully open source, trainable, PyTorch-based reproduction of DeepMind’s AlphaFold 3. OpenFold3 carefully implements the features described in [AlphaFold 3 *Nature* paper](https://www.nature.com/articles/s41586-024-07487-w).
 
 This guide covers how to use OpenFold3 to make structure predictions.
 
@@ -25,7 +25,7 @@ Coming soon:
 
 - OpenFold3's own MSA generation pipeline
 - Template-based prediction
-- Non-standard or covalently modified residues
+- Non-standard and covalently modified residues
 - Pocket conditioning *(requires fine-tuning)*
 
 ### 1.2 DNA
@@ -36,7 +36,7 @@ Supported:
 
 Coming soon:
 
-- Non-standard or covalently modified residues
+- Non-standard and covalently modified residues
 
 
 ### 1.3 RNA
@@ -49,19 +49,19 @@ Coming soon:
 
 - OpenFold3's own MSA generation pipeline
 - Support for OpenFold3-style precomputed MSAs
-- Non-standard or covalently modified residues
+- Non-standard and covalently modified residues
 
 
 ### 1.4 Ligand
 
 Supported:
 
-- Non-covalently bound ligands
+- Non-covalent ligands
 
 Coming soon:
 
 - Covalently bound ligands
-- Polymeric ligands
+- Polymeric ligands such as glycans
 
 
 ## 2. Pre-requisites:
@@ -82,7 +82,7 @@ A directory containing containing multiple inference examples is provided [here]
 ### 3.1 Input Data
 
 Queries can include any combination of single- or multi-chain proteins, with or without ligands, and may contain multiple such complexes. <br/>
-Input is provided via a `query.json` file — a structured JSON document that defines each query, its constituent chains, chain types (e.g., protein, DNA, ligand) and sequences. Optionally, the query can include paths to precomputed MSAs for each chain or chain pair. <br/>
+Input is provided via a `query.json` file — a structured JSON document that defines each query, its constituent chains, chain types (e.g., protein, DNA, ligand) and sequences or molecular graphs. Optionally, the query can include paths to precomputed protein or RNA MSAs. <br/>
 See [OpenFold3 input format](input_format.md) for instructions on how to specify your input data.
 
 
@@ -118,30 +118,29 @@ python run_openfold.py predict \
 
 **Optional arguments**
 
-- `--use_msa_server` *(bool, default = True)*
+- `--use_msa_server` *(bool, optional, default = True)*
     - Whether to use the ColabFold server for MSA generation.
 
-- `--output_dir` *(Path, default = `test_train_output/`)*
+- `--output_dir` *(Path, optional, default = `test_train_output/`)*
     - Directory where outputs will be written.
 
-- `--num_diffusion_samples` *(int, default = 5)*
+- `--num_diffusion_samples` *(int, optional, default = 5)*
     - Number of diffusion samples per query.
 
-- `--num_model_seeds` *(int, default = 42)*
+- `--num_model_seeds` *(int, optional, default = 42)*
     - Number of random seeds to use per query.
 
-- `--runner_yaml` *(Path)*
+- `--runner_yaml` *(Path, optional, default = null)*
     - YAML config for full control over model and data parameters.
     - Example: [runner.yml](https://github.com/aqlaboratory/openfold3/blob/inference-dev/examples/runner_inference.yml)
 
 📝  *Notes*: 
-- Only protein sequences are submitted to the ColabFold server. 
-- Internal OpenFold3 MSA generation will be supported in future releases.
+- Only protein sequences are submitted to the ColabFold server so this mode only uses MSAs for protein chains.
 - All arguments can also be set via `runner_yaml`, but command-line flags take precedence and will override values specified in the YAML file (see [Customized Inference Settings]() for details).
 
 
 #### 3.2.2 📂 Inference with Precomputed MSAs
-This mode allows inference using `.npz` or `.a3m` MSA files prepared manually or by external tools.
+This mode allows inference using `.npz` or `.a3m` MSA files prepared manually or by external tools. See the [precomputed MSA documentation](precomputed_msas.md) for details.
 
 ```
 python run_openfold.py predict \
@@ -152,11 +151,11 @@ python run_openfold.py predict \
     --runner_yaml /path/to/inference_precomputed.yml
 ```
 📝  *Note:*
-- Documentation on generating OpenFold3-compatible precomputed MSAs will be published soon.
+- Our OpenFold3-style MSA generation pipeline will be supported in the next internal release.
 
 
 #### 3.2.3 🚫 Inference Without MSAs
-This mode skips MSA generation entirely. OpenFold3 will perform inference using only the input sequences. This is supported for proteins, DNA, and RNA inputs, though accuracy will be reduced compared to MSA-based modes. This inference mode is currently discouraged if the goal is to obtain the highest-accuracy structures.
+This mode skips MSA generation entirely. OpenFold3 will perform inference using only the input sequences. Prediction quality will be reduced compared to MSA-based modes. This inference mode is currently discouraged if the goal is to obtain the highest-accuracy structures.
 
 ```
 python run_openfold.py predict \
@@ -165,7 +164,8 @@ python run_openfold.py predict \
     --use_msa_server=False \
     --output_dir /path/to/output/
 ```
-
+📝  *Note:*
+- We used MSAs for RNA chains for training OpenFold3. Support for generating RNA OF3-style RNA MSAs and predicting structures of RNAs chains using MSAs during inference will be added in an upcomping release.
 
 ### 3.3 Customized Inference Settings Using `runner.yml`
 
@@ -245,18 +245,31 @@ Each seed produces one or more sampled structure predictions and their associate
   - `gpde` - Global Predicted Distance Error (see AF3 SI Section 5.7 Eq. 16)
 
 
-### 4.2 Processed MSA (`main/`)
-
-Processed MSAs for each unique chain are saved as `.npz` files. If a chain is reused across multiple queries, its MSA is only computed once and named after the first occurrence:
+### 4.2 Processed MSAs (`main/` and `paired/`)
+Only created if `--use_msa_server=True`. <br/>
+Processed MSAs for each unique chain are saved as `.npz` files used to create input features for OpenFold3. 
+If a chain is reused across multiple queries, its MSA is only computed once and named after the first occurrence. This reduces the number of queries to the ColabFold server.
 
 ```
  ├── main
-    └── <chain_id>.npz
+    └── query_1-A.npz
 ```
 
+If a query is a heteromeric protein complex (has at least two different protein chains) and `--use_msa_server` is enabled, **paired MSAs** are also generated. 
+If a set of chains with a specific stoichiometry is reused across multiple queries, for example if the same heterodimer is screened against multiple small molecule ligands, its set of paired MSAs is only computed once and named after the first occurrence. This reduces the number of queries to the ColabFold server. 
+
+```
+ ├── paired
+    └── query_1-A.query_1-B
+      ├── query_1-A.npz
+      └── query_1-B.npz
+```
+
+The MSA deduplication behavior is also present for precomputed MSAs. See the [chain deduplication utility](precomputed_msas.md#5-chain-deduplication-utility) section for details.
+
 ### 4.3 Raw ColabFold MSA Outputs (`raw/`)
-Only created if `--use_msa_server=True`. </br>
-Include intermediate alignment files and scripts generated by ColabFold MSA server:
+Only created if `--use_msa_server=True`. <br/>
+Unprocessed `.a3m` alignment files and scripts generated by ColabFold MSA server:
 
 ```
 raw/
@@ -268,6 +281,16 @@ raw/
     └── uniref.a3m
 ```
 
+If a query is a heteromeric protein complex, the raw paired MSAs returned by the ColabFold server are also saved. 
+
+```
+raw/
+└── paired/
+    └── query_1-A.query_1-B
+      ├── pair.a3m
+      ├── pair.sh
+      └── out.tar.gz
+```
 
 ### 4.4 Query Metadata (`inference_query_set.json`)
 This is a system-generated file representing the full input query in a validated internal format defined by [this Pydantic schema](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/projects/of3_all_atom/config/inference_query_format.py).
@@ -277,32 +300,7 @@ This is a system-generated file representing the full input query in a validated
 
   - `main_msa_file_paths`: Paths to single-chain `.a3m` files
 
-  - `paired_msa_file_paths`: Paths to paired `.a3m` files (if multimer input)
-
-
-### 4.5 Multimer Output
-When multiple chains are defined in a query and `--use_msa_server=True` is enabled, **paired MSAs** are generated and stored in both processed and raw forms:
-
-```
-paired/
-└── Chain-A.Chain-A.Chain-B.Chain-B
-  ├── chain-A.npz
-  └── chain-B.npz
-
-raw/
-└── paired/
-    └── Chain-A.Chain-A.Chain-B.Chain-B
-      ├── pair.a3m
-      ├── pair.sh
-      └── out.tar.gz
-```
-
-- `paired/`:
-  - Contains processed `.npz` feature files derived from ColabFold's paired MSAs.
-  - Each subdirectory is named according to the chain combination in the format: `Chain-A.Chain-A.Chain-B.Chain-B`, based on the input chain IDs provided in the query.
-
-- `raw/paired/`:
-  - Contains raw alignment output from ColabFold for each chain pair, including the original `.a3m` and associated scripts.
+  - `paired_msa_file_paths`: Paths to paired `.a3m` files (if heteromer input)
 
 **🔗 Example:**
 
