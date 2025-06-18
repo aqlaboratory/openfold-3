@@ -67,7 +67,7 @@ Coming soon:
 ## 2. Pre-requisites:
 
 - OpenFold3 Conda Environment. See [OpenFold3 Installation](installation.md) for instructions on how to build this environment.
-- OpenFold3 Model Parameters.
+- OpenFold3 Model Parameters: please find the checkpoints [in this Google Drive](https://drive.google.com/drive/folders/1PD1B-FuLF9V9wxATGh7qaF0G-WaT4j3g?usp=drive_link).
 
 
 ## 3. Running OpenFold3 Inference
