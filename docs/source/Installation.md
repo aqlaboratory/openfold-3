@@ -17,7 +17,7 @@ $ mamba env create -n openfold_env -f environments/production.yml
 
 ### Known Issue: rdkit Conflict
 
-Due to a conflict between `pip` and `conda`, `rdkit=2025` may be installed incorrectly.
+Due to a conflict between `pip` dependencies and `conda` dependencies, `rdkit=2025` may be installed incorrectly.
 
 You can check with:
 ```
@@ -25,8 +25,8 @@ mamba list | grep rdkit
 ```
 
 If you see something like:
-```l
-ibrdkit   2025.03.1     h84b0b3c_0     conda-forge
+```
+librdkit   2025.03.1     h84b0b3c_0     conda-forge
 rdkit      2023.9.6      pypi_0         pypi
 ```
 You’ll need to correct this by removing the pip version and installing the correct conda package:
