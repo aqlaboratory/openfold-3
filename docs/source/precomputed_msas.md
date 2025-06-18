@@ -25,7 +25,7 @@ GPDHMSRLEIYSPEGLRLDGRRWNELRRFESSINTHPHAADGSSYMEQGNNKIITLVKGPKEPRLKSQMDTSKALLNVSV
 ---TMSRFDFYNSQGLRIDGRRNYELKNFESSLTTTSNFNnfsrnsqSNTTYLQMGQNKILVNIDGPKEPtnANRSRIDQDKAVLDININVTKFSKVNRQVST-NSnnlpDKQTQEWEFEIQKLFEKIIILETYPKSVINVSVTVLQQDGGILASIINCVSIALMNNSIQVYDIVSACSVGIVDQkHYLLDLNHLEEQFLTSGTIAIIGNSSlqniedaNVCLLSLKDIFPLDLLDGFMMIGIKGCNTLKEIMVKQVKDMNINKLIEIQ--
 >SAMEA103904984:k141_247917_5
 ---AGGRIEFLSPEGLRVDGRRPNELRSYRAQLAVIPQA-DGSALFSLGNTTVIATVYGPRDNNNHNSSNTECSINTkIHAAAFSSTTGDRRKagSS-NTDRRLQDWSETVSHTISGVLLHDLFPRTSLDIFVEVLSADGAVLAASINAVSLALVDAGVPMRDPVVALQGVIIREHLLLDGNRLEERAGAPTTLAFTPRNGKIVGVMVDPKYPQHRFQDVCTMLQPHSESVFAHLDSEVirprLKHLYSMLK-----
-... _rest of the sequences_ ...
+... rest of the sequences ...
 ```
 
 Example `sto` for PDB entry 5k36 chain B:
@@ -37,7 +37,7 @@ Example `sto` for PDB entry 5k36 chain B:
 #=GS MGYP002782847914/1-245   DE [subseq from] FL=1
 #=GS MGYP001343290792/1-246   DE [subseq from] FL=1
 #=GS MGYP003180110455/28-272  DE [subseq from] FL=1
-... _rest of the annotation field_ ...
+... rest of the annotation field ...
 
 5k36_2|B|B|PROTEIN               GPDHMSRLEIYSP-EG-L-RLDG-RR-W-NE-LR--RF--E------SS-I-N--T---------H--------P-------H-----------A--------A------D-------GSSYMEQGN-N-K---I---I---T--L--V--------K------G----P--K--E-----P----R-----L----K--
 MGYP003365344427/1-246           ----MSRLEIYSP-EG-L-RLDG-RR-W-NE-LR--RF--E------TS-I-N--T---------H--------P-------H-----------A--------A------D-------GSSYLEQGN-N-K---I---I---T--L--V--------K------G----P--K--E-----P----R-----L----K--
@@ -45,7 +45,7 @@ MGYP003366480418/1-243           ----MSRLEIYSP-EG-L-RLDG-RR-W-NE-LR--RF--E------
 MGYP002782847914/1-245           ----MSRVEIYSP-EG-L-RLDG-RR-W-NE-LR--RF--E------SA-I-N--T---------H--------P-------H-----------A--------A------D-------GSSYLEQGN-N-K---V---I---T--L--V--------K------G----P--K--E-----P----T-----L----K--
 MGYP001343290792/1-246           ----MSRLEIYSP-EG-L-RLDG-RR-W-NE-LR--RF--E------CS-I-N--T---------H--------S-------H-----------A--------A------D-------GSSYLEQGN-N-K---V---I---T--L--V--------K------G----P--Q--E-----P----S-----S----R--
 MGYP003180110455/28-272          ----MSRLEIYSP-EG-L-RLDG-RR-W-NE-LR--RF--D------CS-I-N--T---------H--------P-------N-----------A--------A------D-------GSSYLEQGN-N-K---I---I---T--L--V--------N------G----P--Q--E-----P----A-----L----R--
-... _rest of the sequences_ ...
+... rest of the sequences ...
 ```
 
 ## 3. Precomputed MSA Directory Structure and Specifying Paths in the Inference Query
@@ -172,32 +172,21 @@ The compressed, preparsed MSA files can be generated from raw MSA data with the 
 
 ## 4. Modifying MSA Settings for Custom Precomputed MSAs
 
-Specifying MSA databses in the Inference Dataset
-The MSASettings are used to specify how the MSA data should be processed into features for the inference pipeline. For example, these settings can be used to tune the number of sequence alignments used from each database, or the number of rows to be used for each database
+In the inference pipeline, we use the [MSASettings](../../openfold3/projects/of3_all_atom/config/dataset_config_components.py) class to control MSA processing and featurization. 
 
-More details on the MSASettings are coming. Some high level notes on terminology:
+More details on the MSASettings will be shared in the next internal release. Brief notes on settings that need to be updated when working with custom precomputed alignments are below. 
 
-Main alignments: These are the alignments for each chain from each database
-Paired alignments: For protein multimer complexes with different chains, paired alignments are the combination of alignments across different chains. Multiple combination strategies are possible, but by default, the alignments are paired through concatenation.
-
-How to overwrite the MSA Settings in runner.yml:
-
-It is possible to pass in an update to the MSASettings to match your alignments using the dataset_config_kwargs section in the runner.yml
-
-The example above used alignments with the key names: cfdb_uniref, mgnify_hits, uniprot_hits, uniref90_hits. To indicate that these are the msa databases to be parsed, we can add the following to our runner.yml
+It is possible to pass in an update to the MSASettings to match your alignments using the dataset_config_kwargs section in the runner.yml, for example:
 
 ```
 dataset_config_kwargs:
   msa:
-    # specifies the number of alignments to use from each database 
     max_seq_counts:  
       uniref90_hits: 10000
       uniprot_hits: 50000
       cfdb_uniref30: 10000000
       mgnify_hits: 5000
-	# specifies which alignments should be used to create the paired alignment 
     msas_to_pair: ["uniprot_hits", "uniprot"]
-	# specifies the alignment order
     aln_order:   
       - uniref90_hits
       - cfdb_uniref30
@@ -205,7 +194,7 @@ dataset_config_kwargs:
       - concat_cfdb_uniref100_filtered
 ```
 
-This runner yaml can be passed as a command line argument to our run_openfold.py command
+This runner yaml can then be passed as a command line argument to our run_openfold.py command:
 
 ```
 python run_openfold.py predict \
@@ -215,6 +204,25 @@ python run_openfold.py predict \
 --output_dir=precomputed_prediction_output/ \
 --runner_yaml=inference_precomputed.yml 
 ```
+
+📝  *Note:*
+- The MSASettings do NOT need to be updated when using OF3-style protein MSAs.
+
+The 3 main settings to update are:
+1. *`max_seq_counts`*: A dictionary specifying how many sequences to read from each MSA file with the associated name. MSA files whose names are not provided in this dictionary *will not be parsed*. For example, if one wants `uniparc_hits.a3m` MSA files to be parsed, the following field should be specified:
+
+```
+dataset_config_kwargs:
+  msa:
+    max_seq_counts:  
+      uniparc_hits: 10000 
+```
+
+where the up to the first 10000 sequences will be read from each `uniparc_hits.a3m` file.
+
+2. *`msas_to_pair`*: The list of MSA filenames that contain species information that can be used for online pairing. See the [Online MSA Pairing](precomputed_msas.md#6-online-msa-pairing-from-precomputed-msas) section for details.
+
+3. *`aln_order`*: The order in which to vertically concatenate MSA files for each chain for main MSA features. MSA files whose names are not provided in this list *will not be used*.
 
 ## 5. Chain Deduplication Utility
 
