@@ -19,7 +19,6 @@ The OpenFold3 inference pipeline takes a single JSON file as input, specifying t
 - `queries` *(dict, required)* 
   - A dictionary containing one or more prediction targets. Each entry defines a single query (e.g., a protein or protein complex).
     - The keys (e.g., `query_1`, `query_2`, ...) uniquely identify each query and are used to name the corresponding output files.
-    - For large-scale runs, keys can be automatically generated if omitted.
     - If `n` queries are specified and `m` seeds are provided (see below), the model will perform `n × m` independent inference runs.
 
 - `ccd_file_path` *(str, optional, default = None)*
@@ -88,8 +87,6 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
   - `sequence` *(str, required)*
     - Amino acid sequence (1-letter codes), supporting standard residues, X (unknown), and U (selenocysteine).
 
-  - `non_canonical_residues` *(dict, optional)*: Maps residue positions to CCD codes for non-canonical residues.
-
   - `use_msas` *(bool, optional, default = true)*
     - Enables MSA usage. If false, empty MSA features are provided to the model. MSA-free inference mode is [discouraged](Inference.md#323--inference-without-msas) if the goal is to obtain the highest-accuracy structures.
 
@@ -136,8 +133,6 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
 
   - `sequence` *(str, required)*
     - Nucleic acid sequence (1-letter codes).
-
-  - `non_canonical_residues` *(dict, optional)*: Maps residue positions to CCD codes for non-canonical residues.
 
   - `use_msas` *(bool, optional, default = true)*
     - Enables MSA usage. If false, a single-row MSA is constructed from the query sequence only.
@@ -275,4 +270,4 @@ Additional example input JSON files can be found here:
 - [Single-chain protein (monomer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/monomer/query_monomer.json): Ubiquitin (PDB: 1UBQ)
 - [Multi-chain protein with identical chains (homomer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/homomer/query_homomer.json): GCN4 leucine zipper (PDB: 2ZTA)
 - [Multi-chain protein with different chains (multimer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/multimer/query_multimer.json): Deoxy human hemoglobin (PDB: 1A3N)
-- [Protein-ligand complex](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/protein_ligand_complex/query_protein_ligand.json): Mcl-1 with small molecule inhibitor (PDB: 5FDR) s
+- [Protein-ligand complex](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/protein_ligand_complex/query_protein_ligand.json): Mcl-1 with small molecule inhibitor (PDB: 5FDR)
