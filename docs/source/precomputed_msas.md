@@ -3,7 +3,7 @@
 OpenFold3 can utilize precomputed multiple sequence alignments (MSAs) for making predictions. Generating MSAs offline, separately from the model forward pass is the preferred practise for large batch jobs to avoid the expenditure of GPU resources for MSA creation, which is primarily a CPU-bound operation.
 
 📝  *Note:*
-- The documentation for precomputed MSAs is a preliminary version and is currently being worked on. It is a top priority item that will be shared in the next internal release.
+- The documentation for precomputed MSAs is a preliminary version and is currently being worked on. It is a top priority item that will be shared in its complete state the next internal release.
 
 ## 1. Generating OF3-Style Precomputed MSAs
 
@@ -11,7 +11,7 @@ Documentation and code on how to use our Snakemake pipeline to generate OF3-styl
 
 ## 2. Precomputed MSA File Format
 
-This section details the format of the MSA files provided by our Snakemake pipeline for generating protein MSAs. MSAs generated with a different method should follow this format:
+This section details the format of the MSA files provided by our Snakemake pipeline for generating protein MSAs. MSAs generated with a different method should follow the same format:
 - `a3m` or `sto`
 - first sequence in the MSA must be the query sequence i.e.: the protein sequence for which the structure is to be predicted
 
@@ -68,7 +68,7 @@ msas/
     └── uniprot_hits.a3m
 ```
 
-The data pipeline needs to know which MSA to use for which protein chain. This information is provided by specifying the [paths to the MSAs](input_format.md#L106) for each chain in the inference query set. There are 3 equivalent ways of specifying these paths.
+The data pipeline needs to know which MSA to use for which protein chain. This information is provided by specifying the [paths to the MSAs](input_format.md#L106) for each chain in the inference query json file. There are 3 equivalent ways of specifying these paths.
 
 ### 3.1. Direct File Paths
 
@@ -104,11 +104,11 @@ The direct paths for all alignments for each chain can be passed into the query.
 }
 ```
 
-The names of these files do need to match the msa names provided to the inference dataset pipelines. We will see an example of how to provide these msa database names to the inference dataset by overwriting the values in the runner.json
+The names of these files do need to match the msa names provided to the inference dataset pipelines. [Below](precomputed_msas.md#4-modifying-msa-settings-for-custom-precomputed-msas) is an example of how to provide these msa file names to the inference dataset by overwriting the values in the runner.json.
 
 ### 3.2. Folder Containing Alignments per Chain
 
-You may also pass in the directory containing the alignments relevant to the chain. in this case, the contents of the directory should still contain individual files that contain the msa database name.
+You may also pass in the directory containing the alignments relevant to the chain. In this case, the contents of the directory should still contain individual files that contain the msa database name.
 
 ```
 {
@@ -209,7 +209,7 @@ python run_openfold.py predict \
 - The MSASettings do NOT need to be updated when using OF3-style protein MSAs.
 
 The 3 main settings to update are:
-1. *`max_seq_counts`*: A dictionary specifying how many sequences to read from each MSA file with the associated name. MSA files whose names are not provided in this dictionary *will not be parsed*. For example, if one wants `uniparc_hits.a3m` MSA files to be parsed, the following field should be specified:
+1. *max_seq_counts*: A dictionary specifying how many sequences to read from each MSA file with the associated name. MSA files whose names are not provided in this dictionary *will not be parsed*. For example, if one wants `uniparc_hits.a3m` MSA files to be parsed, the following field should be specified:
 
 ```
 dataset_config_kwargs:
@@ -220,9 +220,19 @@ dataset_config_kwargs:
 
 where the up to the first 10000 sequences will be read from each `uniparc_hits.a3m` file.
 
-2. *`msas_to_pair`*: The list of MSA filenames that contain species information that can be used for online pairing. See the [Online MSA Pairing](precomputed_msas.md#6-online-msa-pairing-from-precomputed-msas) section for details.
+2. *msas_to_pair*: The list of MSA filenames that contain species information that can be used for online pairing. See the [Online MSA Pairing](precomputed_msas.md#6-online-msa-pairing-from-precomputed-msas) section for details.
 
-3. *`aln_order`*: The order in which to vertically concatenate MSA files for each chain for main MSA features. MSA files whose names are not provided in this list *will not be used*.
+3. *aln_order*: The order in which to vertically concatenate MSA files for each chain for main MSA features. MSA files whose names are not provided in this list *will not be used*. For example, if one has MSA files named mgnify_hits, uniprot_hits and uniparc_hits and want to vertically concatenated them for each chain in this order:
+
+```
+dataset_config_kwargs:
+  msa:
+    aln_order:   
+     - mgnify_hits
+     - uniprot_hits
+     - uniparc_hits
+     - concat_cfdb_unir
+```
 
 ## 5. Chain Deduplication Utility
 
