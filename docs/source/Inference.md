@@ -72,11 +72,11 @@ Coming soon:
 
 ## 3. Running OpenFold3 Inference
 
-A directory containing containing multiple inference examples is provided [here](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3). These include:
-- [Single-chain protein (monomer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/monomer): Ubiquitin (PDB: 1UBQ)
-- [Multi-chain protein with identical chains (homomer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/homomer): GCN4 leucine zipper (PDB: 2ZTA)
-- [Multi-chain protein with different chains (multimer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/multimer): Deoxy human hemoglobin (PDB: 1A3N)
-- [Protein-ligand complex](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/protein_ligand_complex): Mcl-1 with small molecule inhibitor (PDB: 5FDR)
+A directory containing containing multiple inference examples is provided [in this Google Drive](https://drive.google.com/drive/folders/1b4OXHxXUdSd-XYrqtblIF-64rt9Mda4Q?usp=drive_link). These include:
+- [Single-chain protein (monomer)](https://drive.google.com/drive/folders/15S0Z_EIj5JJ4eWUaMi3uhCIhl4TzIWgN?usp=drive_link): Ubiquitin (PDB: 1UBQ)
+- [Multi-chain protein with identical chains (homomer)](https://drive.google.com/drive/folders/1mxuhRij04bZu6D5UtxlEjl8n6LU5hwrA?usp=drive_link): GCN4 leucine zipper (PDB: 2ZTA)
+- [Multi-chain protein with different chains (multimer)](https://drive.google.com/drive/folders/1d0S6ueEyrUEMVeXiebDhEeTp6s-Hm_Pu?usp=drive_link): Deoxy human hemoglobin (PDB: 1A3N)
+- [Protein-ligand complex](https://drive.google.com/drive/folders/1MUYcp-EN1JizM1-xgz94qx5pcVS1A_Ap?usp=drive_link): Mcl-1 with small molecule inhibitor (PDB: 5FDR)
 
 
 ### 3.1 Input Data
@@ -304,14 +304,14 @@ This is a system-generated file representing the full input query in a validated
 
 **🔗 Example:**
 
-See the full multimer output for [Deoxy human hemoglobin](https://github.com/aqlaboratory/openfold3/tree/inference-dev/examples/examples/multimer/example_output/).
+See the full multimer output for [Deoxy human hemoglobin](https://drive.google.com/drive/folders/1d0S6ueEyrUEMVeXiebDhEeTp6s-Hm_Pu?usp=drive_link).
 
 
 When processing multimer inputs (e.g., hemoglobin α + β chains), OpenFold3 automatically:
 
 - Requests paired MSAs from the ColabFold server
-- Stores raw alignments in [`raw/paired/](https://github.com/aqlaboratory/openfold3/tree/inference-dev/examples/examples/multimer/example_output/raw/paired/)
-- Converts them into per-chain `.npz` features in [`paired/`](https://github.com/aqlaboratory/openfold3/tree/inference-dev/examples/examples/multimer/example_output/paired/)
+- Stores raw alignments in [`raw/paired/](https://drive.google.com/drive/folders/19CN9S3T060KahXj0wbJXMlfth8MFlyPf?usp=drive_link)
+- Converts them into per-chain `.npz` features in [`paired/`](https://drive.google.com/drive/folders/1VAlJ6XCtt3Y434_t_vomTeMzt7S2pQdy?usp=drive_link)
 
 
 

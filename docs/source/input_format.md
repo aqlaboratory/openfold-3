@@ -54,7 +54,7 @@ Each query entry is a dictionary with the following structure:
 
 In the current inference release, the only required field is:
   - `chains` *(list of dict, required)*
-    - A list of chain definitions, where each sub-dictionary specifies one chain in the assembly. See [See Section 3](#3-chains) for a full breakdown of chain-level fields.
+    - A list of chain definitions, where each sub-dictionary specifies one chain in the assembly. See [Section 3](#3-chains) for a full breakdown of chain-level fields.
 
 
 ## 3. Chains
@@ -267,7 +267,7 @@ Below is a complete example of an input JSON file specifying a single bioassembl
 ```
 
 Additional example input JSON files can be found here:
-- [Single-chain protein (monomer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/monomer/query_monomer.json): Ubiquitin (PDB: 1UBQ)
-- [Multi-chain protein with identical chains (homomer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/homomer/query_homomer.json): GCN4 leucine zipper (PDB: 2ZTA)
-- [Multi-chain protein with different chains (multimer)](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/multimer/query_multimer.json): Deoxy human hemoglobin (PDB: 1A3N)
-- [Protein-ligand complex](https://github.com/aqlaboratory/openfold3/tree/main/examples_of3/protein_ligand_complex/query_protein_ligand.json): Mcl-1 with small molecule inhibitor (PDB: 5FDR)
+- [Single-chain protein (monomer)](https://drive.google.com/file/d/1DtZN5jKIROVc_wd19wPWP7-lkYamInsV/view?usp=drive_link): Ubiquitin (PDB: 1UBQ)
+- [Multi-chain protein with identical chains (homomer)](https://drive.google.com/file/d/15zxPTsRYTrt_3rYfmjyC93QZUo2-M_YM/view?usp=drive_link): GCN4 leucine zipper (PDB: 2ZTA)
+- [Multi-chain protein with different chains (multimer)](https://drive.google.com/file/d/1tEakjCwaNbDAEzhnZgxToNFC1m-WmznL/view?usp=drive_link): Deoxy human hemoglobin (PDB: 1A3N)
+- [Protein-ligand complex](https://drive.google.com/file/d/1HZHuyjBOJ9gMU99kbLG_W9aUJo4IGJ0g/view?usp=drive_link): Mcl-1 with small molecule inhibitor (PDB: 5FDR)
