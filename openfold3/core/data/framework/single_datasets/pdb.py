@@ -13,8 +13,8 @@ from openfold3.core.data.framework.data_module import openfold_batch_collator
 from openfold3.core.data.framework.single_datasets.abstract_single import (
     register_dataset,
 )
-from openfold3.core.data.framework.single_datasets.base_af3 import (
-    BaseAF3Dataset,
+from openfold3.core.data.framework.single_datasets.base_of3 import (
+    BaseOF3Dataset,
 )
 from openfold3.core.data.pipelines.featurization.loss_weights import (
     set_loss_weights_for_disordered_set,
@@ -251,7 +251,7 @@ class DatapointCollection:
 
 
 @register_dataset
-class WeightedPDBDataset(BaseAF3Dataset):
+class WeightedPDBDataset(BaseOF3Dataset):
     """Implements a Dataset class for the Weighted PDB training dataset for AF3."""
 
     def __init__(self, dataset_config: dict) -> None:
@@ -266,8 +266,8 @@ class WeightedPDBDataset(BaseAF3Dataset):
 
         # Dataset configuration
         self.apply_crop = True
-        self.crop = dataset_config["custom"]["crop"]
-        self.sample_weights = dataset_config["custom"]["sample_weights"]
+        self.crop = dataset_config.crop.model_dump()
+        self.sample_weights = dataset_config.sample_weights
 
         # Datapoint cache
         self.create_datapoint_cache()
@@ -391,7 +391,9 @@ class DisorderedPDBDataset(WeightedPDBDataset):
                 an example.
         """
         super().__init__(dataset_config)
-        self.custom_settings = dataset_config["custom"]
+        self.disable_non_protein_diffusion_weights = (
+            dataset_config.disable_non_protein_diffusion_weights
+        )
 
     def create_loss_features(self, pdb_id: str) -> dict:
         """Creates the loss features for the disordered PDB set."""
@@ -400,6 +402,6 @@ class DisorderedPDBDataset(WeightedPDBDataset):
         loss_features["loss_weights"] = set_loss_weights_for_disordered_set(
             self.loss,
             self.dataset_cache.structure_data[pdb_id].resolution,
-            self.custom_settings,
+            self.disable_non_protein_diffusion_weights,
         )
         return loss_features

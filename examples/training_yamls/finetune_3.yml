@@ -1,0 +1,225 @@
+experiment_settings:
+  mode: train
+  output_dir: ./test_train_output 
+  seed: 1272025
+  restart_checkpoint_path: last
+
+data_module_args:
+  batch_size: 1
+  num_workers: 16
+  epoch_len: 128000 # Ckpt every 500 steps
+
+logging:
+  log_lr : true 
+  wandb:
+    project: <project_name>
+    entity: <entity_name> 
+    group: null
+    id: null
+    experiment_name: <experiment_name> 
+
+pl_trainer_args:
+  devices: 8
+  num_nodes: 32
+  precision: bf16-mixed
+  max_epochs: -1
+  log_every_n_steps: 50
+  
+  mpi_plugin: false
+  deepspeed_config_path: ./deepspeed_configs/ds_stage2_default.json
+
+# Checkpoint settings
+checkpoint:
+  every_n_epochs: 1
+  auto_insert_metric_name: false
+  save_last: true
+  save_top_k: -1
+
+model_update:
+  presets: 
+    - train 
+  compile : false
+  custom:
+    settings:
+      model_selection_weight_scheme: fine_tuning
+    architecture:
+      shared: 
+        diffusion:
+          no_samples: 32
+
+dataset_configs:
+  train:
+    weighted-pdb:
+      class: WeightedPDBDataset 
+      weight: 0.5
+      config:
+        debug_mode: true
+        template:
+          n_templates: 4
+          take_top_k: False
+        crop:
+          token_budget: 768
+          crop_weights:
+            contiguous: 0.2
+            spatial: 0.4
+            spatial_interface: 0.4
+        loss:
+          loss_weights:
+            bond: 4.0
+            mse: 0.0
+            smooth_lddt: 0.0
+            distogram: 0.0
+            pae: 1e-4
+
+    long-monomer-distillation:
+      class: ProteinMonomerDataset
+      weight: 0.495
+      config:
+        debug_mode: true
+        template:
+          n_templates: 4
+          take_top_k: False
+        sample_in_order: true
+        crop:
+          token_budget: 768 
+          crop_weights:
+            contiguous: 0.25
+            spatial: 0.75
+            spatial_interface: 0.0
+        loss:
+          loss_weights:
+            experimentally_resolved: 0.0
+            plddt: 0.0
+            pde: 0.0
+            smooth_lddt: 0.0
+            distogram: 0.0
+            pae: 1e-4
+
+    short-monomer-distillation:
+      class: ProteinMonomerDataset
+      weight: 0.005
+      config:
+        debug_mode: true
+        template:
+          n_templates: 4
+          take_top_k: False
+        sample_in_order: true
+        crop:
+          token_budget: 768 
+          crop_weights:
+            contiguous: 0.25
+            spatial: 0.75
+            spatial_interface: 0.0
+        loss:
+          loss_weights:
+            experimentally_resolved: 0.0
+            plddt: 0.0
+            pde: 0.0
+            smooth_lddt: 0.0
+            distogram: 0.0
+            pae: 1e-4
+
+    disordered-pdb:
+      class: DisorderedPDBDataset
+      weight: 0.02  # reset weight to initial training level
+      config:
+        debug_mode: true
+        template:
+          n_templates: 4
+          take_top_k: False
+        disable_non_protein_diffusion_weights: False  # set to F in fine tuning 
+        crop:
+          token_budget: 768
+          crop_weights:
+            contiguous: 0.2
+            spatial: 0.4
+            spatial_interface: 0.4
+        loss:
+          loss_weights:
+            bond: 4.0
+            mse: 0.0
+            smooth_lddt: 0.0
+            distogram: 0.0
+            pae: 0.0
+            plddt: 0.0
+            pde: 0.0
+
+  validation:
+    val-weighted-pdb:
+      class: ValidationPDBDataset
+      config:
+        debug_mode: true
+        template:
+          n_templates: 4
+          take_top_k: True
+
+dataset_paths:
+  weighted-pdb:
+    alignments_directory: none 
+    alignment_db_directory: none 
+    alignment_array_directory: /path/ 
+    dataset_cache_file: /path/ 
+    target_structures_directory: /path 
+    target_structure_file_format: npz
+    reference_molecule_directory: /path/ 
+    template_cache_directory: /path/ 
+    template_structure_array_directory: /path/ 
+    template_structures_directory: none
+    template_file_format: pkl
+    ccd_file: /path 
+
+  long-monomer-distillation:
+    alignments_directory: none 
+    alignment_db_directory: none 
+    alignment_array_directory: /path/ 
+    dataset_cache_file: /path/ 
+    target_structures_directory: /path 
+    target_structure_file_format: npz
+    reference_molecule_directory: /path/ 
+    template_cache_directory: /path/ 
+    template_structure_array_directory: /path/ 
+    template_structures_directory: none
+    template_file_format: pkl
+    ccd_file: /path 
+
+  short-monomer-distillation:
+    alignments_directory: none 
+    alignment_db_directory: none 
+    alignment_array_directory: /path/ 
+    dataset_cache_file: /path/ 
+    target_structures_directory: /path 
+    target_structure_file_format: npz
+    reference_molecule_directory: /path/ 
+    template_cache_directory: /path/ 
+    template_structure_array_directory: /path/ 
+    template_structures_directory: none
+    template_file_format: pkl
+    ccd_file: /path 
+
+  disordered-pdb:
+    alignments_directory: none 
+    alignment_db_directory: none 
+    alignment_array_directory: /path/ 
+    dataset_cache_file: /path/ 
+    target_structures_directory: /path 
+    target_structure_file_format: npz
+    reference_molecule_directory: /path/ 
+    template_cache_directory: /path/ 
+    template_structure_array_directory: /path/ 
+    template_structures_directory: none
+    template_file_format: pkl
+    ccd_file: /path
+
+  val-weighted-pdb:
+    alignments_directory: none 
+    alignment_db_directory: none 
+    alignment_array_directory: /path/ 
+    dataset_cache_file: /path/ 
+    target_structures_directory: /path 
+    target_structure_file_format: npz
+    reference_molecule_directory: /path/ 
+    template_cache_directory: /path/ 
+    template_structure_array_directory: /path/ 
+    template_structures_directory: none
+    template_file_format: pkl
+    ccd_file: /path

@@ -5,7 +5,7 @@ import torch
 
 from openfold3.core.data.primitives.featurization.template import (
     create_template_distogram,
-    create_template_feature_precursor_af3,
+    create_template_feature_precursor_of3,
     create_template_restype,
     create_template_unit_vector,
 )
@@ -15,7 +15,7 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
 from openfold3.core.data.primitives.structure.template import TemplateSliceCollection
 
 
-def featurize_templates_dummy_af3(n_templ, n_token):
+def featurize_templates_dummy_of3(n_templ, n_token):
     """Temporary function to generate dummy template features."""
     return {
         "template_restype": torch.ones((n_templ, n_token, 32)).int(),
@@ -27,7 +27,7 @@ def featurize_templates_dummy_af3(n_templ, n_token):
 
 
 @log_runtime_memory(runtime_dict_key="runtime-template-feat")
-def featurize_template_structures_af3(
+def featurize_template_structures_of3(
     template_slice_collection: TemplateSliceCollection,
     n_templates: int,
     n_tokens: int,
@@ -69,7 +69,7 @@ def featurize_template_structures_af3(
         dict[str, torch.Tensor]:
             The featurized template data.
     """
-    template_feature_precursor = create_template_feature_precursor_af3(
+    template_feature_precursor = create_template_feature_precursor_of3(
         template_slice_collection,
         n_templates,
         n_tokens,

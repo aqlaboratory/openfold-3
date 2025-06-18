@@ -1,0 +1,45 @@
+name: openfold3-env
+channels:
+  - conda-forge
+  - bioconda
+  - pytorch
+  - nvidia
+dependencies:
+  - librdkit==2025.03.3
+  - python=3.10
+  - setuptools
+  - pip
+  - openmm
+  - pdbfixer
+  - pytorch-lightning
+  - biopython
+  - numpy
+  - pandas
+  - PyYAML
+  - requests
+  - scipy
+  - tqdm
+  - typing-extensions
+  - wandb
+  - modelcif
+  - ml-collections
+  - mkl
+  - biotite==1.2.0
+  - mmseqs2
+  - bioconda::hmmer
+  - bioconda::hhsuite
+  - bioconda::kalign2
+  - pytorch::pytorch=2.4
+  - pytorch::pytorch-cuda=12.1
+  - memory_profiler==0.61.0
+  - func_timeout
+  - boto3
+  - conda-forge::python-lmdb
+  - conda-forge::ijson
+  - pip:
+      - deepspeed==0.14.5
+      - dm-tree
+      - git+https://github.com/NVIDIA/dllogger.git
+      - flash-attn==2.6.0.post1
+      - pdbeccdutils
+      - rdkit==2025.03.3 # pdbeccdutils will install an older version of rdkit, so we need to override 

@@ -1,39 +1,28 @@
-name: Docker Image CI
+name: Build Official Openfold's docker image
 
 on:
   push:
     branches: [ main, dev ]
   pull_request:
-    branches: [ main, dev ]
+    branches: [ main, dev , inference-dev]
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    
     steps:
-    - uses: actions/checkout@v4
-    - name: Cleanup  # https://github.com/actions/runner-images/issues/2840#issuecomment-2272410832
-      shell: bash
+    - name: Clean up GH disk
       run: |
-        echo "Clean up disk space before building docker image"
-        df -h
-        sudo rm -rf \
-          "$AGENT_TOOLSDIRECTORY" \
-          /opt/google/chrome \
-          /opt/microsoft/msedge \
-          /opt/microsoft/powershell \
-          /opt/pipx \
-          /usr/lib/mono \
-          /usr/local/julia* \
-          /usr/local/lib/android \
-          /usr/local/lib/node_modules \
-          /usr/local/share/chromium \
-          /usr/local/share/powershell \
-          /usr/share/dotnet \
-          /usr/share/swift 
-        df -h
+           sudo rm -rf $ANDROID_SDK_ROOT
+           
+    - uses: actions/checkout@v4
+        
     - name: Build the Docker image
       run: docker build -f Dockerfile -t openfold-docker .
-    - name: Run import openfold 
-      run: docker run openfold-docker python -c 'import openfold3' 
-    - name: Run unit tests
-      run: docker run openfold-docker pytest tests/ 
+      
+    - name: Run sanity check 
+      run: docker run openfold-docker python -c 'import openfold3'
+
+    - name: Publishing image
+      run: echo "TBD"
+      

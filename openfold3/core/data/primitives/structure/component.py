@@ -29,11 +29,18 @@ from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
 
+# TODO: Make this a proper class
 AnnotatedMol: TypeAlias = Mol
 """An RDKit mol object containing additional atom-wise annotations.
 
 The custom atom-wise annotations are stored as atom properties in the Mol object,
-following the schema "{property_name}_annot"
+following the schema "{property_name}_annot":
+
+- atom_annot_atom_name:
+    Canonical atom names
+- atom_annot_used_atom_mask:
+    Indicating which conformer atoms are set properly. When using CCD-derived fallback
+    conformers some coordinates might be missing, which are then set to 0 in this mask.
 """
 
 PERIODIC_TABLE = Chem.GetPeriodicTable()

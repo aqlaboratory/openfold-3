@@ -59,25 +59,23 @@ def centre_random_augmentation(
     Returns:
         Updated atom position with random global rotation and translation
     """
-    dtype = xl.dtype
-    with torch.amp.autocast("cuda", dtype=torch.float32):
-        rots = sample_rotations(shape=xl.shape[:-2], dtype=xl.dtype, device=xl.device)
+    rots = sample_rotations(shape=xl.shape[:-2], dtype=xl.dtype, device=xl.device)
 
-        trans = scale_trans * torch.randn(
-            (*xl.shape[:-2], 3), dtype=xl.dtype, device=xl.device
-        )
+    trans = scale_trans * torch.randn(
+        (*xl.shape[:-2], 3), dtype=xl.dtype, device=xl.device
+    )
 
-        mean_xl = torch.sum(
-            xl * atom_mask[..., None],
-            dim=-2,
-            keepdim=True,
-        ) / torch.sum(atom_mask[..., None], dim=-2, keepdim=True)
+    mean_xl = torch.sum(
+        xl * atom_mask[..., None],
+        dim=-2,
+        keepdim=True,
+    ) / torch.sum(atom_mask[..., None], dim=-2, keepdim=True)
 
-        # center coordinates
-        pos_centered = xl - mean_xl
-        pos_out = pos_centered @ rots.transpose(-1, -2) + trans[..., None, :]
+    # center coordinates
+    pos_centered = xl - mean_xl
+    pos_out = pos_centered @ rots.transpose(-1, -2) + trans[..., None, :]
 
-    return pos_out.to(dtype=dtype)
+    return pos_out
 
 
 # Move this somewhere else?
@@ -149,7 +147,7 @@ class DiffusionModule(nn.Module):
             "linear_init_params", lin_init.diffusion_module_init
         )
 
-        self.layer_norm_s = LayerNorm(self.c_s)
+        self.layer_norm_s = LayerNorm(self.c_s, create_offset=False)
         self.linear_s = Linear(
             self.c_s,
             self.c_token,
@@ -160,7 +158,7 @@ class DiffusionModule(nn.Module):
             **config.diffusion_transformer
         )
 
-        self.layer_norm_a = LayerNorm(self.c_token)
+        self.layer_norm_a = LayerNorm(self.c_token, create_offset=False)
 
         self.atom_attn_dec = AtomAttentionDecoder(**config.atom_attn_dec)
 
@@ -364,6 +362,8 @@ class SampleDiffusion(nn.Module):
             )
 
             xl_noisy = xl + noise
+
+            xl_noisy = xl_noisy * atom_mask.unsqueeze(-1)
 
             xl_denoised = self.diffusion_module(
                 batch=batch,

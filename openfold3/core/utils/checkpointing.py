@@ -30,10 +30,12 @@ BLOCK_ARG = Any
 BLOCK_ARGS = Sequence[BLOCK_ARG]
 
 
-def get_checkpoint_fn(
-    deepspeed_is_configured: bool, use_reentrant: Optional[bool] = None
-):
-    if deepspeed_is_configured:
+def is_deepspeed_configured() -> bool:
+    return deepspeed_is_installed and deepspeed.checkpointing.is_configured()
+
+
+def get_checkpoint_fn(use_reentrant: Optional[bool] = None):
+    if is_deepspeed_configured():
         if use_reentrant is False:
             checkpoint = ds_non_reentrant_checkpoint
         else:
@@ -96,18 +98,12 @@ def checkpoint_blocks(
     elif blocks_per_ckpt < 1 or blocks_per_ckpt > len(blocks):
         raise ValueError("blocks_per_ckpt must be between 1 and len(blocks)")
 
-    deepspeed_is_configured = (
-        deepspeed_is_installed and deepspeed.checkpointing.is_configured()
-    )
-
-    checkpoint = get_checkpoint_fn(
-        deepspeed_is_configured=deepspeed_is_configured, use_reentrant=use_reentrant
-    )
+    checkpoint = get_checkpoint_fn(use_reentrant=use_reentrant)
 
     for s in range(0, len(blocks), blocks_per_ckpt):
         e = s + blocks_per_ckpt
 
-        if deepspeed_is_configured:
+        if is_deepspeed_configured():
             args = checkpoint(chunker(s, e), *args)
         else:
             args = checkpoint(chunker(s, e), *args, use_reentrant=use_reentrant)
@@ -154,15 +150,9 @@ def checkpoint_section(
     if not apply_ckpt or not torch.is_grad_enabled():
         return exec(fn, args)
 
-    deepspeed_is_configured = (
-        deepspeed_is_installed and deepspeed.checkpointing.is_configured()
-    )
+    checkpoint = get_checkpoint_fn(use_reentrant=use_reentrant)
 
-    checkpoint = get_checkpoint_fn(
-        deepspeed_is_configured=deepspeed_is_configured, use_reentrant=use_reentrant
-    )
-
-    if deepspeed_is_configured:
+    if is_deepspeed_configured():
         args = checkpoint(fn, *args)
     else:
         args = checkpoint(fn, *args, use_reentrant=use_reentrant)

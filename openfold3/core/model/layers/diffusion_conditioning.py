@@ -3,13 +3,11 @@ from ml_collections import ConfigDict
 from torch import nn
 
 import openfold3.core.config.default_linear_init_config as lin_init
-from openfold3.core.model.feature_embedders.input_embedders import (
-    FourierEmbedding,
-    RelposAllAtom,
-)
+from openfold3.core.model.feature_embedders.input_embedders import FourierEmbedding
 from openfold3.core.model.layers.transition import SwiGLUTransition
 from openfold3.core.model.primitives.linear import Linear
 from openfold3.core.model.primitives.normalization import LayerNorm
+from openfold3.core.utils.relpos import relpos_complex
 
 
 class DiffusionConditioning(nn.Module):
@@ -53,17 +51,25 @@ class DiffusionConditioning(nn.Module):
         self.c_s = c_s
         self.c_z = c_z
         self.c_fourier_emb = c_fourier_emb
+        self.max_relative_idx = max_relative_idx
+        self.max_relative_chain = max_relative_chain
         self.sigma_data = sigma_data
 
-        self.relpos = RelposAllAtom(
-            c_z=self.c_z,
-            max_relative_idx=max_relative_idx,
-            max_relative_chain=max_relative_chain,
-            linear_init_params=linear_init_params.relpos_emb,
+        num_rel_pos_bins = 2 * max_relative_idx + 2
+        num_rel_token_bins = 2 * max_relative_idx + 2
+        num_rel_chain_bins = 2 * max_relative_chain + 2
+        num_same_entity_features = 1
+        num_relpos_dims = (
+            num_rel_pos_bins
+            + num_rel_token_bins
+            + num_rel_chain_bins
+            + num_same_entity_features
         )
 
-        self.layer_norm_z = LayerNorm(2 * self.c_z)
-        self.linear_z = Linear(2 * self.c_z, self.c_z, **linear_init_params.linear_z)
+        self.layer_norm_z = LayerNorm(num_relpos_dims + self.c_z, create_offset=False)
+        self.linear_z = Linear(
+            num_relpos_dims + self.c_z, self.c_z, **linear_init_params.linear_z
+        )
 
         self.transition_z = nn.ModuleList(
             [
@@ -76,13 +82,13 @@ class DiffusionConditioning(nn.Module):
             ]
         )
 
-        self.layer_norm_s = LayerNorm(self.c_s + self.c_s_input)
+        self.layer_norm_s = LayerNorm(self.c_s + self.c_s_input, create_offset=False)
         self.linear_s = Linear(
             self.c_s + self.c_s_input, self.c_s, **linear_init_params.linear_z
         )
 
         self.fourier_emb = FourierEmbedding(c=c_fourier_emb)
-        self.layer_norm_n = LayerNorm(self.c_fourier_emb)
+        self.layer_norm_n = LayerNorm(self.c_fourier_emb, create_offset=False)
         self.linear_n = Linear(
             self.c_fourier_emb, self.c_s, **linear_init_params.linear_n
         )
@@ -129,7 +135,12 @@ class DiffusionConditioning(nn.Module):
         pair_token_mask = token_mask.unsqueeze(-1) * token_mask.unsqueeze(-2)
 
         # Pair conditioning
-        zij = torch.cat([zij_trunk, self.relpos(batch)], dim=-1)
+        relpos_zij = relpos_complex(
+            batch=batch,
+            max_relative_idx=self.max_relative_idx,
+            max_relative_chain=self.max_relative_chain,
+        ).to(dtype=zij_trunk.dtype)
+        zij = torch.cat([zij_trunk, relpos_zij], dim=-1)
         zij = self.linear_z(self.layer_norm_z(zij))
         for l in self.transition_z:
             zij = zij + l(zij, pair_token_mask)
