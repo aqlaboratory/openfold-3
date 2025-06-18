@@ -1,0 +1,61 @@
+{
+    "seeds": [
+        42
+    ],
+    "queries": {
+        "mcl1": {
+            "chains": [
+                {
+                    "molecule_type": "PROTEIN",
+                    "chain_ids": [
+                        "A",
+                        "B",
+                        "C",
+                        "D"
+                    ],
+                    "sequence": "GDDELYRQSLEIISRYLREQATGAKDTKPMGRSGATSRKALETLRRVGDGVQRNHETAFQGMLRKLDIKNEDDVKSLSRVMIHVFSDGVTNWGRIVTLISFGAFVAKHLKTINQESCIEPLAESITDVLVRTKRDWLVKQRGWDGFVEFFHVEDLEGG",
+                    "smiles": null,
+                    "ccd_codes": null,
+                    "paired_msa_file_paths": null,
+                    "main_msa_file_paths": [
+                        "examples_inference_outputs/protein_ligand_complex_output/main/mcl1-A.npz"
+                    ],
+                    "sdf_file_path": null
+                },
+                {
+                    "molecule_type": "LIGAND",
+                    "chain_ids": [
+                        "F",
+                        "G",
+                        "H"
+                    ],
+                    "sequence": null,
+                    "smiles": null,
+                    "ccd_codes": [
+                        "ATP"
+                    ],
+                    "paired_msa_file_paths": null,
+                    "main_msa_file_paths": null,
+                    "sdf_file_path": null
+                },
+                {
+                    "molecule_type": "LIGAND",
+                    "chain_ids": [
+                        "Z"
+                    ],
+                    "sequence": null,
+                    "smiles": "CC(=O)OC1C[NH+]2CCC1CC2",
+                    "ccd_codes": null,
+                    "paired_msa_file_paths": null,
+                    "main_msa_file_paths": null,
+                    "sdf_file_path": null
+                }
+            ],
+            "use_msas": true,
+            "use_paired_msas": true,
+            "use_main_msas": true,
+            "covalent_bonds": null
+        }
+    },
+    "ccd_file_path": null
+}
