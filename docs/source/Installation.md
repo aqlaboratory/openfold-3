@@ -1,10 +1,16 @@
 # OpenFold3 Installation
 
-A Docker-based setup is coming soon (estimated week of June 16).
+## Docker Setup
 
-## Temporary Installation Instructions
+We provide a dockerfile as a recipe to build your own openfold3 environment. You may build your own docker image with the following command:
+```
+docker build -f Dockerfile -t openfold-docker .
+```
 
-In the meantime, you can manually set up the environment by following these steps:
+
+## Alternative Temporary Installation Instructions
+
+Alternative, you can manually set up the environment by following these steps:
 
 1. Follow steps 1-4 of the [OpenFold2 installation guide](https://openfold.readthedocs.io/en/latest/Installation.html), **but** replace the `environment.yml` file with `environments/production.yml` from the [OpenFold3 repository](https://github.com/aqlaboratory/openfold3/blob/inference-dev/environments/production.yml).
 2. In particular, in **step 2**, run:
