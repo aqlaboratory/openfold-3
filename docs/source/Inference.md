@@ -210,6 +210,15 @@ msa_server_settings:
   msa_file_format: a3m     # Options: a3m, npz (default: npz)
 ```
 
+#### 🧠 Low Memory Mode
+To run inference on larger queries to run on limited memory, add the following to apply the [model presets](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/projects/of3_all_atom/config/model_setting_presets.yml) to run in low memory mode.
+```
+model_update:
+  presets:
+    - predict  # required for inference
+    - low_mem
+```
+
 ## 4. Model Outputs
 
 OpenFold3 produces a structured set of outputs modeled after the ColabFold server. Each query (e.g., `query_1`) generates a dedicated output directory containing prediction results, MSAs, and intermediate files.
