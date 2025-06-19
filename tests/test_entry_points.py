@@ -169,14 +169,15 @@ class TestLowMemoryConfig:
             """)
 
         test_yaml_file = tmp_path / "runner.yml"
+        dummy_ckpt = tmp_path / "dummy.ckpt.pt"
         test_yaml_file.write_text(test_yaml_str)
 
-        expt_config = InferenceExperimentConfig.model_validate(
-            config_utils.load_yaml(test_yaml_file)
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt, **config_utils.load_yaml(test_yaml_file)
         )
 
         expt_runner = InferenceExperimentRunner(expt_config)
-        model_cfg = expt_runner.model_config()
+        model_cfg = expt_runner.model_config
 
         # check that inference mode set correctly
         assert not model_cfg.settings.diffusion_training_enabled

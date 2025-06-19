@@ -141,7 +141,7 @@ def predict(
     runner_args = config_utils.load_yaml(runner_yaml) if runner_yaml else dict()
 
     expt_config = InferenceExperimentConfig(
-        query_json=query_json, inference_ckpt_path=inference_ckpt_path, **runner_args
+        inference_ckpt_path=inference_ckpt_path, **runner_args
     )
     expt_runner = InferenceExperimentRunner(expt_config)
     expt_runner.setup()
@@ -158,7 +158,7 @@ def predict(
         expt_runner.seeds = generate_seeds(start_seed, num_model_seeds)
 
     # Load inference query set
-    query_set = InferenceQuerySet.from_json(expt_config.query_json)
+    query_set = InferenceQuerySet.from_json(query_json)
 
     # Perform MSA computation if selected
     #  update query_set with MSA paths
