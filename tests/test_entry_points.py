@@ -14,10 +14,12 @@ from pytorch_lightning.loggers import WandbLogger
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModuleConfig
 from openfold3.entry_points.experiment_runner import (
+    InferenceExperimentRunner,
     TrainingExperimentRunner,
     WandbHandler,
 )
 from openfold3.entry_points.validator import (
+    InferenceExperimentConfig,
     TrainingExperimentConfig,
     WandbConfig,
 )
@@ -149,6 +151,42 @@ class TestModelUpdate:
 
         with pytest.raises(KeyError, match="config is locked"):
             project_entry.get_model_config_with_update(model_update)
+
+
+class TestLowMemoryConfig:
+    def test_low_mem_model_config_preset(self, tmp_path):
+        test_dummy_file = tmp_path / "test.json"
+        test_dummy_file.write_text("test")
+
+        test_yaml_str = textwrap.dedent("""\
+            data_module_args:
+                data_seed: 114
+                                        
+            model_update:
+                presets:
+                    - predict
+                    - low_mem
+            """)
+
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
+
+        expt_config = InferenceExperimentConfig.model_validate(
+            config_utils.load_yaml(test_yaml_file)
+        )
+
+        expt_runner = InferenceExperimentRunner(expt_config)
+        model_cfg = expt_runner.model_config()
+
+        # check that inference mode set correctly
+        assert not model_cfg.settings.diffusion_training_enabled
+
+        # check low memory settings set correctly
+        assert model_cfg.settings.memory.eval.chunk_size == 4
+        assert model_cfg.settings.memory.eval.offload_inference.enabled
+
+        # test existing setting in experiment runner is not overwritten
+        assert not model_cfg.settings.memory.eval.use_lma
 
 
 class DummyWandbExperiment:
