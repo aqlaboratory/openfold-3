@@ -364,10 +364,9 @@ class TrainingExperimentRunner(ExperimentRunner):
 class InferenceExperimentRunner(ExperimentRunner):
     """Training experiment builder."""
 
-    def __init__(self, experiment_config, inference_query_set):
+    def __init__(self, experiment_config):
         super().__init__(experiment_config)
 
-        self.inference_query_set = inference_query_set
         self.experiment_config = experiment_config
 
         self.dataset_config_kwargs = experiment_config.dataset_config_kwargs
@@ -376,10 +375,11 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.seeds = experiment_config.experiment_settings.seeds
         self.output_writer_settings = experiment_config.output_writer_settings
 
-    def setup(self) -> None:
+    def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
-        super().setup()
+        self.inference_query_set = inference_query_set
         self._log_inference_query_set()
+        super().run()
 
     @cached_property
     def callbacks(self):
