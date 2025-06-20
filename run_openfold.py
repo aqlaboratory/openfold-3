@@ -42,8 +42,6 @@ if torch_major_version > 1 or (torch_major_version == 1 and torch_minor_version 
     # Gives a large speedup on Ampere-class GPUs
     torch.set_float32_matmul_precision("high")
 
-# torch.use_deterministic_algorithms = True
-
 logger = logging.getLogger(__name__)
 
 
