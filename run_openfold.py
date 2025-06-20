@@ -143,15 +143,18 @@ def predict(
     expt_config = InferenceExperimentConfig(
         inference_ckpt_path=inference_ckpt_path, **runner_args
     )
-    expt_runner = InferenceExperimentRunner(expt_config)
-    expt_runner.setup()
-    if output_dir:
-        output_dir.mkdir(exist_ok=True, parents=True)
-        expt_runner.output_dir = output_dir
 
     # Overwrite number of diffusion samples in model update section
     if num_diffusion_samples:
-        expt_runner.model_config.architecture.shared.diffusion.no_full_rollout_samples = num_diffusion_samples  # noqa: E501
+        print(f"Set diffusion samples to {num_diffusion_samples}")
+        expt_config.model_update.custom[
+            "architecture.shared.diffusion.no_full_rollout_samples"
+        ] = num_diffusion_samples
+
+    expt_runner = InferenceExperimentRunner(expt_config)
+    if output_dir:
+        output_dir.mkdir(exist_ok=True, parents=True)
+        expt_runner.output_dir = output_dir
 
     if num_model_seeds:
         start_seed = 42
@@ -178,6 +181,7 @@ def predict(
         )
 
     # Run the forward pass
+    expt_runner.setup()
     expt_runner.run(query_set)
 
     # TODO add post-process relaxation with openmm
