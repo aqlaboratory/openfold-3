@@ -2,6 +2,13 @@
 
 Here, we aim to provide additional explanations for the inner workings of the MSA components of the OF3 inference pipeline. If you need step-by-step instructions on how to generate MSAs using our OF3-style pipeline, refer to our [MSA Generation](msa_generation_how_to.md) document. If you need a guide on how to interface MSAs with the inference pipeline, go to the [Precomputed MSA How-To Guide](precomputed_msas_how_to.md).
 
+## 1. Main vs Paired MSAs
+
+The Openfold3 inference pipeline can create input MSA features for protein and RNA chains. We differentiate between two types of MSAs
+1. **main MSAs** can be provided for protein
+
+...
+
 
 ## 1. MSASettings
 
@@ -36,6 +43,41 @@ dataset_config_kwargs:
 ## 2. Online MSA pairing
 
 This section will contain details on the workings/behavior of our online MSA pairing algorithm. Provided in the next internal release.
+
+TODO: add uniprot sequence header explanation
+
+This formatting requirement originates from our OF3 MSA generation pipeline running jackhmmer to search sequences against UniProt and us using UniProt MSAs for cross-chain pairing as per the AF3 SI. An example `sto` format is:
+
+```
+# STOCKHOLM 1.0
+
+#=GS sp|P53859|CSL4_YEAST/1-292               DE [subseq from] Exosome complex component CSL4 OS=Saccharomyces cerevisiae (strain ATCC 204508 / S288c) OX=559292 GN=CSL4 PE=1 SV=1
+#=GS tr|A6ZRL0|A6ZRL0_YEAS7/1-292             DE [subseq from] Conserved protein OS=Saccharomyces cerevisiae (strain YJM789) OX=307796 GN=CSL4 PE=4 SV=1
+#=GS tr|C7GPC7|C7GPC7_YEAS2/1-292             DE [subseq from] Csl4p OS=Saccharomyces cerevisiae (strain JAY291) OX=574961 GN=CSL4 PE=4 SV=1
+... rest of the metadata field ...
+
+5k36_I                                           GDPHMACNFQFPEIAYPGKLICPQY--G---------T--E-NK-D-G-------E-D--IIFNYVPGPGTKL----IQ---Y----E--------H---N--G---RT-------------LEAITATL-VGTV-RC---E--E----E----K--KT-DQ-E--E---E---R--EGT-D----Q-S-T--E--E-E-
+sp|P53859|CSL4_YEAST/1-292                       ----MACNFQFPEIAYPGKLICPQY--G---------T--E-NK-D-G-------E-D--IIFNYVPGPGTKL----IQ---Y----E--------H---N--G---RT-------------LEAITATL-VGTV-RC---E--E----E----K--KT-DQ-E--E---E---R--EGT-D----Q-S-T--E--E-E-
+tr|A6ZRL0|A6ZRL0_YEAS7/1-292                     ----MACNFQFPEIAYPGKLICPQY--G---------T--E-NK-D-G-------E-D--IIFNYVPGPGTKL----IQ---Y----E--------H---N--G---RT-------------LEAITATL-VGTV-RC---E--E----E----K--KT-DQ-E--E---E---R--EGT-D----Q-S-T--E--E-E-
+tr|C7GPC7|C7GPC7_YEAS2/1-292                     ----MACNFQFPEIAYPGKLICPQY--G---------T--E-NK-D-G-------E-D--IIFNYVPGPGTKL----IQ---Y----E--------H---N--G---RT-------------LEAITATL-VGTV-RC---E--E----E----K--KT-DQ-E--E---E---R--EGT-D----Q-S-T--E--E-E-
+... rest of the alignments ...
+```
+
+and an example `a3m` format is:
+
+```
+>5k36_I
+GDPHMACNFQFPEIAYPGKLICPQY--G---------T--E-NK-D-G-------E-D--IIFNYVPGPGTKL----IQ---Y----E--------H---N--G---RT-------------LEAITATL-VGTV-RC---E--E----E----K--KT-DQ-E--E---E---R--EGT-D----Q-S-T--E--E-E-
+>sp|P53859|CSL4_YEAST/1-292
+----MACNFQFPEIAYPGKLICPQY--G---------T--E-NK-D-G-------E-D--IIFNYVPGPGTKL----IQ---Y----E--------H---N--G---RT-------------LEAITATL-VGTV-RC---E--E----E----K--KT-DQ-E--E---E---R--EGT-D----Q-S-T--E--E-E-
+>tr|A6ZRL0|A6ZRL0_YEAS7/1-292
+----MACNFQFPEIAYPGKLICPQY--G---------T--E-NK-D-G-------E-D--IIFNYVPGPGTKL----IQ---Y----E--------H---N--G---RT-------------LEAITATL-VGTV-RC---E--E----E----K--KT-DQ-E--E---E---R--EGT-D----Q-S-T--E--E-E-
+>tr|C7GPC7|C7GPC7_YEAS2/1-292
+----MACNFQFPEIAYPGKLICPQY--G---------T--E-NK-D-G-------E-D--IIFNYVPGPGTKL----IQ---Y----E--------H---N--G---RT-------------LEAITATL-VGTV-RC---E--E----E----K--KT-DQ-E--E---E---R--EGT-D----Q-S-T--E--E-E-
+... rest of the alignments ...
+```
+
+where the first sequence is the query sequence and headers `sp|P53859|CSL4_YEAST/1-292`, `tr|A6ZRL0|A6ZRL0_YEAS7/1-292` and `tr|C7GPC7|C7GPC7_YEAS2/1-292` are parsed to get species IDs `YEAST`, `YEAS7` and `YEAS2` for the three aligned sequences.
 
 ## 3. Chain Deduplication Utility
 
