@@ -20,8 +20,8 @@ low_mem:
         msa_module:
           swiglu_chunk_token_cutoff: null
           swiglu_seq_chunk_size: null
-        per_sample_token_cutoff: 750
-        per_sample_atom_cutoff: 10000
+        per_sample_token_cutoff: 0
+        per_sample_atom_cutoff: 0 
         offload_inference:
           enabled: true
   architecture:
