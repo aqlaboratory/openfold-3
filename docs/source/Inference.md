@@ -177,6 +177,8 @@ Below are common use cases and how to configure them:
 
 #### 🖥️ Run on Multiple GPUs or Nodes
 Specify the hardware configuration under [`pl_trainer_args`](https://github.com/aqlaboratory/openfold3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L141) in `runner.yml`:
+
+Note: Using multiple GPUs in combination with the `--use_msa_server` option currently launches the same ColabFold MSA server query per GPU. It may be more efficient to pre-compute the MSAs in advance using the ColabFold server or other methods, and then running distributed predictions with the [pre-computed MSA option](https://github.com/aqlaboratory/openfold3/blob/inference-dev/docs/source/precomputed_msas.md).
 ```
 pl_trainer_args:
   devices: 4      # Default: 1
