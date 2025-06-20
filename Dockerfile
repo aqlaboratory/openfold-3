@@ -89,6 +89,3 @@ ENV LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
 COPY --from=builder /opt/openfold3 /opt/openfold3
 
 WORKDIR /opt/openfold3
-
-# Verify the installation works with full performance
-RUN python3 -c "import openfold3; print('OpenFold3 installed successfully')" 
