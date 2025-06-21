@@ -84,3 +84,15 @@ where the first sequence is the query sequence and headers `sp|P53859|CSL4_YEAST
 This section will contain details on how to use the chain representative logic of the MSA pipeline for highly redundant inference datasets, such as screens of a large number of small molecule ligands against the same protein chains or antibodies against the same antigen. Provided in the next internal release.
 
 ## 4. Preparsing Raw MSAs into NPZ Format
+
+Two of the main challenges with MSAs are 
+- slow parsing of MSA `sto` or `a3m` files into a numpy array for further downstream processing
+- large storage costs associated with MSA files
+
+Preparsing raw MSA files into `npz` files addresses these issues by 
+- moving the per-example numpy array conversion step into an offline preprocessing step that happens only once for each unique MSA
+- saving the MSA arrays in a compressed format
+
+We found this step to be necessary during training to avoid the online data processing pipeline to bottleneck the model forward/backward passes and to reduce the storage costs associated with our distillation set MSAs.
+
+For inference, preparsing MSAs in to `npz` files can be useful when running large batch jobs on highly redundant datasets, for example when screening one or a few target protein against a library of small molecule ligands or antibodies. 
