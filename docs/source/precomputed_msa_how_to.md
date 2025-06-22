@@ -296,7 +296,7 @@ If you want to use your own pre-paired MSAs, perhaps pre-paired using a custom p
 
 ## 5. Modifying MSA Settings for Custom Precomputed MSAs
 
-In the inference pipeline, we use the [MSASettings](../../openfold3/projects/of3_all_atom/config/dataset_config_components.py#L18) class to control MSA processing and featurization. You can update it using the dataset_config_kwargs section in the `runner.yml`. Updates to `MSASettings` via the `runner.yml` **overwrite the corresponding default fields**. The MSASettings do **not** need to be updated when using OF3-style protein MSAs.
+In the inference pipeline, we use the [`MSASettings`](../../openfold3/projects/of3_all_atom/config/dataset_config_components.py#L18) class to control MSA processing and featurization. You can update it using the dataset_config_kwargs section in the `runner.yml`. Updates to `MSASettings` via the `runner.yml` **overwrite the corresponding default fields**. The MSASettings do **not** need to be updated when using OF3-style protein MSAs.
 
 For our running example of 3 chains with alignments stored under `uniprot_hits`, `mgnify_hits` and `custom_database_hits` files, an `MSASettings` update could look like this:
 

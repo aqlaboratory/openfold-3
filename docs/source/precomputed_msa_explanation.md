@@ -25,11 +25,11 @@ For multimeric queries, the MSA features for all chains are concatenated horizon
 
 As shown in the figure above, paired MSAs are only provided for protein chains that are part of complexes with at least **two unique protein chains**. Besides the query sequences, protein chains in monomeric and homomeric assemblies and RNA chains only get main MSA features, which are treated as implicitly paired for homomers. MSA feature columns for DNA and ligand tokens are empty and masked to prevent their contributions to model activations.
 
-## 2. MSASettings
+## 2. MSASettings Reference
 
-This section will add some clarifying points about MSASettings.
+Users can alter the way MSAs are processed in the OF3 inference pipeline by modifying the [`MSASettings`](../../openfold3/projects/of3_all_atom/config/dataset_config_components.py#L18) class via the `runner.yml` as outlined in the [Precomputed MSA How-To Guide](precomputed_msa_how_to.md#5-modifying-msa-settings-for-custom-precomputed-msas).
 
-The 3 main settings to update are:
+The 3 main settings to update when using custom precomputed MSAs are:
 1. *max_seq_counts*: A dictionary specifying how many sequences to read from each MSA file with the associated name. MSA files whose names are not provided in this dictionary *will not be parsed*. For example, if one wants `uniparc_hits.a3m` MSA files to be parsed, the following field should be specified:
 
 ```
@@ -54,6 +54,8 @@ dataset_config_kwargs:
       - mgnify_hits
       - custom_database_hits
 ```
+
+For details on the rest of the settings, see the [`MSASettings`](../../openfold3/projects/of3_all_atom/config/dataset_config_components.py#L18) class docstring.
 
 ## 3. Online MSA pairing
 
@@ -104,14 +106,73 @@ TODO: update this figure
 *Comparison of the OpenFold3 and Colabfold paired MSAs for PDB entry 5k36. The left columns in each panel show the number of chains with a paired sequence; the right columns show which chains have an associated sequence for the corresponding row, colors indicate species in the OF3 MSA, white blocks indicate sequences in the CF MSAs (no species information was available), black segments indicate gaps where no sequence was available for the corresponding chain.*
 
 
-## 4. Chain Deduplication Utility
+## 4. MSA Reusing Utility
 
-This section will contain details on how to use the chain representative logic of the MSA pipeline for highly redundant inference datasets, such as screens of a large number of small molecule ligands against the same protein chains or antibodies against the same antigen. Provided in the next internal release.
+Large-scale prediction jobs using OF3 are often done on highly redundant datasets. For example, you may be interested in co-folding a target protein of interest with a library of candidate small molecule drugs, or an antigen of interest with thousands of different antibodies. In these scenarios, the sequence of the target protein does not change across samples and hence, the main MSA for the corresponding chain also remains the same.
+
+In order to reduce the disk space necessary when running predictions, we support reusing the same MSA files for identical chains across different samples. During inference, you can just specify the path to the same MSA files for identical chains in different queries (see the [How-To Guide](precomputed_msa_how_to.md#2-precomputed-msa-directory-structure-and-file-name-conventions) for details on how to do this). For example, given a protein target and 3 different small molecule binders to screen:
+
+<details>
+<summary>Same MSA paths example ...</summary>
+<pre><code>
+```
+{
+    "queries": {
+        "G-protein-A_GTP": {
+            "chains": [
+                {
+                    "molecule_type": "protein",
+                    "chain_ids": "A",
+                    "sequence": "GCTLSAEDKAAVERSKMIDRNLREDGEKAAREVKLLLLGAGESGKSTIVKQMKIIHEAGYSEEECKQYKAVVYSNTIQSIIAIIRAMGRLKIDFGDAARADDARQLFVLAGAAEEGFMTAELAGVIKRLWKDSGVQACFNRSREYQLNDSAAYYLNDLDRIAQPNYIPTQQDVLRTRVKTTGIVETHFTFKDLHFKMFDVGAQRSERKKWIHCFEGVTAIIFCVALSDYDLVLAEDEEMNRMHESMKLFDSICNNKWFTDTSIILFLNKKDLFEEKIKKSPLTICYPEYAGSNTYEEAAAYIQCQFEDLNKRKDTKEIYTHFTCATDTKNVQFVFDAVTDVIIKNNLKDCGLF",
+                    "main_msa_file_paths": "alignments/G-protein-A"
+                },
+                {
+                    "molecule_type": "ligand",
+                    "chain_ids": "B",
+                    "ccd_codes": "GTP"
+                }
+            ]
+        },
+        "G-protein-A_GDP": {
+            "chains": [
+                {
+                    "molecule_type": "protein",
+                    "chain_ids": "A",
+                    "sequence": "GCTLSAEDKAAVERSKMIDRNLREDGEKAAREVKLLLLGAGESGKSTIVKQMKIIHEAGYSEEECKQYKAVVYSNTIQSIIAIIRAMGRLKIDFGDAARADDARQLFVLAGAAEEGFMTAELAGVIKRLWKDSGVQACFNRSREYQLNDSAAYYLNDLDRIAQPNYIPTQQDVLRTRVKTTGIVETHFTFKDLHFKMFDVGAQRSERKKWIHCFEGVTAIIFCVALSDYDLVLAEDEEMNRMHESMKLFDSICNNKWFTDTSIILFLNKKDLFEEKIKKSPLTICYPEYAGSNTYEEAAAYIQCQFEDLNKRKDTKEIYTHFTCATDTKNVQFVFDAVTDVIIKNNLKDCGLF",
+                    "main_msa_file_paths": "alignments/G-protein-A"
+                },
+                {
+                    "molecule_type": "ligand",
+                    "chain_ids": "B",
+                    "ccd_codes": "GDP"
+                }
+            ]
+        },
+        "G-protein-A_GMP": {
+            "chains": [
+                {
+                    "molecule_type": "protein",
+                    "chain_ids": "A",
+                    "sequence": "GCTLSAEDKAAVERSKMIDRNLREDGEKAAREVKLLLLGAGESGKSTIVKQMKIIHEAGYSEEECKQYKAVVYSNTIQSIIAIIRAMGRLKIDFGDAARADDARQLFVLAGAAEEGFMTAELAGVIKRLWKDSGVQACFNRSREYQLNDSAAYYLNDLDRIAQPNYIPTQQDVLRTRVKTTGIVETHFTFKDLHFKMFDVGAQRSERKKWIHCFEGVTAIIFCVALSDYDLVLAEDEEMNRMHESMKLFDSICNNKWFTDTSIILFLNKKDLFEEKIKKSPLTICYPEYAGSNTYEEAAAYIQCQFEDLNKRKDTKEIYTHFTCATDTKNVQFVFDAVTDVIIKNNLKDCGLF",
+                    "main_msa_file_paths": "alignments/G-protein-A"
+                },
+                {
+                    "molecule_type": "ligand",
+                    "chain_ids": "B",
+                    "ccd_codes": "GMP"
+                }
+            ]
+        },
+    }
+}
+```
+</code></pre>
+</details>
 
 ## 5. Preparsing Raw MSAs into NPZ Format
 
-Two of the main challenges with MSAs are 
-- slow parsing of MSA `sto` or `a3m` files into a numpy array for further downstream processing
+Two of the main challenges we faced with MSAs were 
+- slow parsing of MSA `sto` or `a3m` files, which includes the deletion matrix calculation
 - large storage costs associated with MSA files
 
 Preparsing raw MSA files into `npz` files addresses these issues by 
