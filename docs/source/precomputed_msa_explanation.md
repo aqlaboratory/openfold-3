@@ -57,15 +57,11 @@ dataset_config_kwargs:
 
 For details on the rest of the settings, see the [`MSASettings`](../../openfold3/projects/of3_all_atom/config/dataset_config_components.py#L18) class docstring.
 
-## 3. Online MSA pairing
+## 3. Online MSA Pairing
 
-This section will contain details on the workings/behavior of our online MSA pairing algorithm. Provided in the next internal release.
+Pairing rows of MSAs for heteromeric complexes based on species information improves the quality of predicted protein-protein interfaces. When running training or inference on a diverse set of protein complexes like the PDB, protein chains in different complex contexts require different paired MSAs. To avoid having to precompute paired MSAs for a large number of chain combinations, we developed a fast online pairing algorithm, which pairs sequences across MSAs of different chains in the same complex by placing sequences originating from the same species in the same row. (The OF3 inference pipeline also accepts precomputed paired MSAs.)
 
-By default, the OF3 MSA pipeline uses the UniProt MSAs for online pairing.
-
-TODO: add uniprot sequence header explanation
-
-This formatting requirement originates from our OF3 MSA generation pipeline running jackhmmer to search sequences against UniProt and us using UniProt MSAs for cross-chain pairing as per the AF3 SI. An example `sto` format is:
+By default, the our MSA pipeline uses the UniProt MSAs to generate paired MSAs and so, species information is parsed from UniProt sequence headers. An example `sto` format is:
 
 ```
 # STOCKHOLM 1.0
@@ -98,12 +94,11 @@ GDPHMACNFQFPEIAYPGKLICPQY--G---------T--E-NK-D-G-------E-D--IIFNYVPGPGTKL----IQ-
 
 where the first sequence is the query sequence and headers `sp|P53859|CSL4_YEAST/1-292`, `tr|A6ZRL0|A6ZRL0_YEAS7/1-292` and `tr|C7GPC7|C7GPC7_YEAS2/1-292` are parsed to get species IDs `YEAST`, `YEAS7` and `YEAS2` for the three aligned sequences.
 
-The OF3 pairing code prioritizes sequences that can be paired with as many chains in the complex as possible, over pairwise-pairable sequences.
+The OF3 pairing code prioritizes sequences that can be paired with as many chains in the complex as possible, over only pairwise-pairable sequences.
 
-TODO: update this figure
 ![OF3 vs Colabfold Paired MSAs](../imgs/paired_msas.png)
 
-*Comparison of the OpenFold3 and Colabfold paired MSAs for PDB entry 5k36. The left columns in each panel show the number of chains with a paired sequence; the right columns show which chains have an associated sequence for the corresponding row, colors indicate species in the OF3 MSA, white blocks indicate sequences in the CF MSAs (no species information was available), black segments indicate gaps where no sequence was available for the corresponding chain.*
+*Comparison of the Colabfold (left) and OpenFold3 (right) paired MSAs for PDB entry 5k36. The main, wide panels show which chains in the complex receive paired sequences (white in CF as no species information is available, colored in OF3) vs gapped segments (black). The narrow panels indicate how many chains have paired sequences in the corresponding row in the main panels.*
 
 
 ## 4. MSA Reusing Utility
