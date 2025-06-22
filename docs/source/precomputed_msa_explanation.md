@@ -2,6 +2,13 @@
 
 Here, we aim to provide additional explanations for the inner workings of the MSA components of the OF3 inference pipeline. If you need step-by-step instructions on how to generate MSAs using our OF3-style pipeline, refer to our [MSA Generation](msa_generation_how_to.md) document. If you need a guide on how to interface MSAs with the inference pipeline, go to the [Precomputed MSA How-To Guide](precomputed_msas_how_to.md).
 
+Specifically, we detail:
+1. [Differences in Main and Paired MSAs](precomputed_msa_explanation.md#1-main-vs-paired-msas)
+2. [MSASettings](precomputed_msa_explanation.md#2-msasettings)
+3. [Online Cross-Chain Pairing in OF3](precomputed_msa_explanation.md#3-online-msa-pairing)
+4. [Chain Deduplication Utility](precomputed_msa_explanation.md#4-chain-deduplication-utility)
+5. [Preparsing MSAs into NPZ](precomputed_msa_explanation.md#5-preparsing-raw-msas-into-npz-format)
+
 ## 1. Main vs Paired MSAs
 
 The Openfold3 inference pipeline can create input MSA features for protein and RNA chains. We differentiate between two types of MSAs
@@ -10,7 +17,7 @@ The Openfold3 inference pipeline can create input MSA features for protein and R
 ...
 
 
-## 1. MSASettings
+## 2. MSASettings
 
 This section will add some clarifying points about MSASettings.
 
@@ -40,9 +47,11 @@ dataset_config_kwargs:
       - custom_database_hits
 ```
 
-## 2. Online MSA pairing
+## 3. Online MSA pairing
 
 This section will contain details on the workings/behavior of our online MSA pairing algorithm. Provided in the next internal release.
+
+By default, the OF3 MSA pipeline uses the UniProt MSAs for online pairing.
 
 TODO: add uniprot sequence header explanation
 
@@ -79,11 +88,19 @@ GDPHMACNFQFPEIAYPGKLICPQY--G---------T--E-NK-D-G-------E-D--IIFNYVPGPGTKL----IQ-
 
 where the first sequence is the query sequence and headers `sp|P53859|CSL4_YEAST/1-292`, `tr|A6ZRL0|A6ZRL0_YEAS7/1-292` and `tr|C7GPC7|C7GPC7_YEAS2/1-292` are parsed to get species IDs `YEAST`, `YEAS7` and `YEAS2` for the three aligned sequences.
 
-## 3. Chain Deduplication Utility
+The OF3 pairing code prioritizes sequences that can be paired with as many chains in the complex as possible, over pairwise-pairable sequences.
+
+TODO: update this figure
+![OF3 vs Colabfold Paired MSAs](../imgs/paired_msas.png)
+
+*Comparison of the OpenFold3 and Colabfold paired MSAs for PDB entry 5k36. The left columns in each panel show the number of chains with a paired sequence; the right columns show which chains have an associated sequence for the corresponding row, colors indicate species in the OF3 MSA, white blocks indicate sequences in the CF MSAs (no species information was available), black segments indicate gaps where no sequence was available for the corresponding chain.*
+
+
+## 4. Chain Deduplication Utility
 
 This section will contain details on how to use the chain representative logic of the MSA pipeline for highly redundant inference datasets, such as screens of a large number of small molecule ligands against the same protein chains or antibodies against the same antigen. Provided in the next internal release.
 
-## 4. Preparsing Raw MSAs into NPZ Format
+## 5. Preparsing Raw MSAs into NPZ Format
 
 Two of the main challenges with MSAs are 
 - slow parsing of MSA `sto` or `a3m` files into a numpy array for further downstream processing
@@ -93,6 +110,20 @@ Preparsing raw MSA files into `npz` files addresses these issues by
 - moving the per-example numpy array conversion step into an offline preprocessing step that happens only once for each unique MSA
 - saving the MSA arrays in a compressed format
 
+![Direct vs Preparsed MSAs](../imgs/direct_v_preparsed_msas.png)
+
+*Comparison of `sto` and `npz` files: (left) parsing runtimes; (right) file sizes; as a function of number of sequences in the alignments of a protein sequence with 1003 residues.*
+
 We found this step to be necessary during training to avoid the online data processing pipeline to bottleneck the model forward/backward passes and to reduce the storage costs associated with our distillation set MSAs.
 
-For inference, preparsing MSAs in to `npz` files can be useful when running large batch jobs on highly redundant datasets, for example when screening one or a few target protein against a library of small molecule ligands or antibodies. 
+For inference, preparsing MSAs in to `npz` files can be useful when running large batch jobs on highly redundant datasets, for example when screening one or a few target protein against a library of small molecule ligands or antibodies.
+
+MSAs can be preparsed using the [preparse_alignments_af3.py](../../scripts/data_preprocessing/preparse_alignments_af3.py) script given that they are provided in the format outlined in the [Precomputed MSA How-To Guide](precomputed_msa_how_to.md#1-precomputed-msa-files). The resulting `npz` files will contain a dictionary mapping file names to pre-parsed [`MsaArray`](../../openfold3/core/data/primitives/sequence/msa.py#L23) objects, which store the MSAs in a numpy array format, alongside its deletion matrix and metadata required for online pairing and can be used directly by the inference data pipeline.
+
+```
+{
+  "uniprot_hits": MsaArray(...),
+  "mgnify_hits": MsaArray(...),
+  "custom_database_hits": MsaArray(...),
+}
+```
