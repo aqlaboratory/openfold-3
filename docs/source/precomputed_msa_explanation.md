@@ -3,19 +3,27 @@
 Here, we aim to provide additional explanations for the inner workings of the MSA components of the OF3 inference pipeline. If you need step-by-step instructions on how to generate MSAs using our OF3-style pipeline, refer to our [MSA Generation](msa_generation_how_to.md) document. If you need a guide on how to interface MSAs with the inference pipeline, go to the [Precomputed MSA How-To Guide](precomputed_msas_how_to.md).
 
 Specifically, we detail:
-1. [Differences in Main and Paired MSAs](precomputed_msa_explanation.md#1-main-vs-paired-msas)
+1. [MSA Input Feature Components](precomputed_msa_explanation.md#1-msa-input-feature-components)
 2. [MSASettings](precomputed_msa_explanation.md#2-msasettings)
 3. [Online Cross-Chain Pairing in OF3](precomputed_msa_explanation.md#3-online-msa-pairing)
 4. [Chain Deduplication Utility](precomputed_msa_explanation.md#4-chain-deduplication-utility)
 5. [Preparsing MSAs into NPZ](precomputed_msa_explanation.md#5-preparsing-raw-msas-into-npz-format)
 
-## 1. Main vs Paired MSAs
+## 1. MSA Input Feature Components
 
-The Openfold3 inference pipeline can create input MSA features for protein and RNA chains. We differentiate between two types of MSAs
-1. **main MSAs** can be provided for protein
+Based on the AF3 and AF2-Multimer Supplementary Materials, MSA input features for a single chain are composed of up to 3 components:
 
-...
+1. **query sequence**: the protein or RNA sequence whose structure is to be predicted
+2. **paired rows**: derived from designated MSAs by putting sequences originating from identical species in the same rows 
+3. **unpaired rows**: derived from MSAs by vertically concatenating aligned sequences from all desired sequence database searches; we term the vertical stack of such MSAs the *main MSA* of the corresponding chain
 
+For multimeric queries, the MSA features for all chains are concatenated horizontally.
+
+![Components of OF3 MSA Input Features](../imgs/msa_components.png)
+
+*Components of OF3 Input MSA features. (left) 5TDH - G protein heterotrimer with GDP, light blue segments indicate gapped parts in the paired MSA, black segments indicate masked parts; (middle) 1OGH - dCTP deaminase homotrimer; 1X1R - M-Ras in complex with GDP and Zn*
+
+As shown in the figure above, paired MSAs are only provided for protein chains that are part of complexes with at least **two unique protein chains**. Besides the query sequences, protein chains in monomeric and homomeric assemblies and RNA chains only get main MSA features, which are treated as implicitly paired for homomers. MSA feature columns for DNA and ligand tokens are empty and masked to prevent their contributions to model activations.
 
 ## 2. MSASettings
 
