@@ -1,12 +1,12 @@
 # Understanding Precomputed MSA Handling
 
-Here, we aim to provide additional explanations for the inner workings of the MSA components of the OF3 inference pipeline. If you need step-by-step instructions on how to generate MSAs using our OF3-style pipeline, refer to our [MSA Generation](msa_generation_how_to.md) document. If you need a guide on how to interface MSAs with the inference pipeline, go to the [Precomputed MSA How-To Guide](precomputed_msas_how_to.md).
+Here, we aim to provide additional explanations for the inner workings of the MSA components of the OF3 inference pipeline. If you need step-by-step instructions on how to generate MSAs using our OF3-style pipeline, refer to our [MSA Generation](precomputed_msa_generation_how_to.md) document. If you need a guide on how to interface MSAs with the inference pipeline, go to the [Precomputed MSA How-To Guide](precomputed_msa_how_to.md).
 
 Specifically, we detail:
 1. [MSA Input Feature Components](precomputed_msa_explanation.md#1-msa-input-feature-components)
-2. [MSASettings](precomputed_msa_explanation.md#2-msasettings)
+2. [MSASettings](precomputed_msa_explanation.md#2-msasettings-reference)
 3. [Online Cross-Chain Pairing in OF3](precomputed_msa_explanation.md#3-online-msa-pairing)
-4. [Chain Deduplication Utility](precomputed_msa_explanation.md#4-chain-deduplication-utility)
+4. [Chain Deduplication Utility](precomputed_msa_explanation.md#4-msa-reusing-utility)
 5. [Preparsing MSAs into NPZ](precomputed_msa_explanation.md#5-preparsing-raw-msas-into-npz-format)
 
 ## 1. MSA Input Feature Components
@@ -43,7 +43,7 @@ dataset_config_kwargs:
 
 where up to the first 10000 sequences will be read from each `uniparc_hits.a3m` file.
 
-2. *msas_to_pair*: The list of MSA filenames that contain species information that can be used for online pairing. See the [Online MSA Pairing](precomputed_msas.md#6-online-msa-pairing-from-precomputed-msas) section for details.
+2. *msas_to_pair*: The list of MSA filenames that contain species information that can be used for online pairing. See the [Online MSA Pairing](precomputed_msa_explanation.md#3-online-msa-pairing) section for details.
 
 3. *aln_order*: The order in which to vertically concatenate MSA files for each chain for main MSA features. MSA files whose names are not provided in this list *will not be used*. For example, if one has MSA files named `mgnify_hits`, `uniprot_hits` and `uniparc_hits` and want to vertically concatenate them for each chain in this order, they should update the `runner.yml` as follows:
 
@@ -180,7 +180,7 @@ We found this step to be necessary during training to avoid the online data proc
 
 For inference, preparsing MSAs in to `npz` files can be useful when running large batch jobs on highly redundant datasets, for example when screening one or a few target protein against a library of small molecule ligands or antibodies.
 
-MSAs can be preparsed using the [preparse_alignments_af3.py](../../scripts/data_preprocessing/preparse_alignments_af3.py) script given that they are provided in the format outlined in the [Precomputed MSA How-To Guide](precomputed_msa_how_to.md#1-precomputed-msa-files). The resulting `npz` files will contain a dictionary mapping file names to pre-parsed [`MsaArray`](../../openfold3/core/data/primitives/sequence/msa.py#L23) objects, which store the MSAs in a numpy array format, alongside its deletion matrix and metadata required for online pairing and can be used directly by the inference data pipeline.
+MSAs can be preparsed using the [preparse_alignments_af3.py](../../scripts/data_preprocessing/preparse_alignments_af3.py) script given that they are provided in the format outlined in the [Precomputed MSA How-To Guide](precomputed_msa_how_to.md#11-general-msa-file-format). The resulting `npz` files will contain a dictionary mapping file names to pre-parsed [`MsaArray`](../../openfold3/core/data/primitives/sequence/msa.py#L23) objects, which store the MSAs in a numpy array format, alongside its deletion matrix and metadata required for online pairing and can be used directly by the inference data pipeline.
 
 ```
 {
