@@ -124,7 +124,7 @@ GDPHMACNFQFPEIAYPGKLICP...
 ----LEAITATL-VGTV-RC---...
 ```
 
-is parsed to associate the first two aligned sequences with the species identified by `HUMAN` and the last two with `7227`. See the [Online Pairing](precomputed_msa_explanation#3-online-msa-pairing) section in the precomputed MSA explanatory document for more information on how pairing is done in the inference pipeline on-the-fly.
+is parsed to associate the first two aligned sequences with the species identified by `HUMAN` and the last two with `7227`. See the [Online Pairing](precomputed_msa_explanation.md#3-online-msa-pairing) section in the precomputed MSA explanatory document for more information on how pairing is done in the inference pipeline on-the-fly.
 
 ## 2. Precomputed MSA Directory Structure and File Name Conventions
 

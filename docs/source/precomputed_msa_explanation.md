@@ -61,7 +61,7 @@ For details on the rest of the settings, see the [`MSASettings`](../../openfold3
 
 Pairing rows of MSAs for heteromeric complexes based on species information is expected to improve the quality of predicted protein-protein interfaces (see [this](https://www.biorxiv.org/content/10.1101/2021.10.04.463034v2) and [this](https://www.biorxiv.org/content/10.1101/240754v3.abstract) publication). When running training or inference on a diverse set of protein complexes like the PDB, protein chains in different complex contexts require different paired MSAs. To avoid having to precompute paired MSAs for a large number of chain combinations, we developed a fast online pairing algorithm, which pairs sequences across MSAs of different chains in the same complex by placing sequences originating from the same species in the same row. (The OF3 inference pipeline also accepts precomputed paired MSAs.)
 
-By default, the our MSA pipeline uses the UniProt MSAs to generate paired MSAs and so, species information is parsed from UniProt sequence headers. An example `sto` format is:
+By default, our MSA pipeline uses the UniProt MSAs to generate paired MSAs and so, species information is parsed from UniProt sequence headers. An example `sto` format is:
 
 ```
 # STOCKHOLM 1.0
@@ -94,7 +94,7 @@ GDPHMACNFQFPEIAYPGKLICPQY--G---------T--E-NK-D-G-------E-D--IIFNYVPGPGTKL----IQ-
 
 where the first sequence is the query sequence and headers `sp|P53859|CSL4_YEAST/1-292`, `tr|A6ZRL0|A6ZRL0_YEAS7/1-292` and `tr|C7GPC7|C7GPC7_YEAS2/1-292` are parsed to get species IDs `YEAST`, `YEAS7` and `YEAS2` for the three aligned sequences.
 
-The OF3 pairing code prioritizes sequences that can be paired with as many chains in the complex as possible, over only pairwise-pairable sequences, which we expect provides the model with more cross-chain coevolutionary information and improve pprotein-protein interface quality.
+The OF3 pairing code prioritizes sequences that can be paired with as many chains in the complex as possible, over only pairwise-pairable sequences, which we expect provides the model with more cross-chain coevolutionary information and improve protein-protein interface quality.
 
 ![OF3 vs Colabfold Paired MSAs](../imgs/paired_msas.png)
 
@@ -178,7 +178,7 @@ Preparsing raw MSA files into `npz` files addresses these issues by
 
 We found this step to be necessary during training to avoid the online data processing pipeline to bottleneck the model forward/backward passes and to reduce the storage costs associated with our distillation set MSAs.
 
-For inference, preparsing MSAs in to `npz` files can be useful when running large batch jobs on highly redundant datasets, for example when screening one or a few target protein against a library of small molecule ligands or antibodies.
+For inference, preparsing MSAs into `npz` files can be useful when running large batch jobs on highly redundant datasets, for example when screening one or a few target protein against a library of small molecule ligands or antibodies.
 
 MSAs can be preparsed using the [preparse_alignments_af3.py](../../scripts/data_preprocessing/preparse_alignments_af3.py) script given that they are provided in the format outlined in the [Precomputed MSA How-To Guide](precomputed_msa_how_to.md#11-general-msa-file-format). The resulting `npz` files will contain a dictionary mapping file names to pre-parsed [`MsaArray`](../../openfold3/core/data/primitives/sequence/msa.py#L23) objects, which store the MSAs in a numpy array format, alongside its deletion matrix and metadata required for online pairing and can be used directly by the inference data pipeline.
 
