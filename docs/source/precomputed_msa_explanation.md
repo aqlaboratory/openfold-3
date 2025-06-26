@@ -98,7 +98,7 @@ The OF3 pairing code prioritizes sequences that can be paired with as many chain
 
 ![OF3 vs Colabfold Paired MSAs](../imgs/paired_msas.png)
 
-*PDB entry 5k36 (A) and comparison of its (B) Colabfold and (C) OpenFold3 paired MSAs. 5k36 is a nuclear exosome complex with 11 protein and 2 RNA chains. The main, wide panels in B) and C) show a simplified representation of the paired MSA, where each row corresponds to a row in the paired MSA, each column corresponds to a chain and each tile indicates which chains in the associated row receive paired sequences (white in CF as no species information is available, colored in OF3). Black tiles indicate gapped segments meaning the associated chain does not have a sequence assigned from the species that has sequences for other chains in the same row. The narrow panels indicate how many chains have paired sequences in the corresponding row in the main panels.*
+*PDB entry 5k36 (A) and comparison of its (B) Colabfold and (C) OpenFold3 paired MSAs. 5k36 is a nuclear exosome complex with 11 protein and 2 RNA chains. The main, wide panels in B) and C) show a simplified representation of the paired MSA, where each row corresponds to a row in the paired MSA, each column corresponds to a chain and each tile indicates which chains in the associated row receive paired sequences (white in CF as no species information is available, colored by species in OF3). Black tiles indicate gapped segments meaning the associated chain does not have a sequence assigned from the species that has sequences for other chains in the same row. The narrow panels indicate how many chains have paired sequences in the corresponding row in the main panels.*
 
 
 ## 4. MSA Reusing Utility
