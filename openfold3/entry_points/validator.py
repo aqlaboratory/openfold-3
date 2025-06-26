@@ -160,7 +160,6 @@ class InferenceExperimentConfig(ExperimentConfig):
     """Inference experiment config"""
 
     # Required inputs for performing inference
-    query_json: Path
     inference_ckpt_path: Path
 
     experiment_settings: InferenceExperimentSettings = InferenceExperimentSettings()

@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import sys
+import time
 from abc import ABC, abstractmethod
 from functools import cached_property
 from pathlib import Path
@@ -364,10 +365,9 @@ class TrainingExperimentRunner(ExperimentRunner):
 class InferenceExperimentRunner(ExperimentRunner):
     """Training experiment builder."""
 
-    def __init__(self, experiment_config, inference_query_set):
+    def __init__(self, experiment_config):
         super().__init__(experiment_config)
 
-        self.inference_query_set = inference_query_set
         self.experiment_config = experiment_config
 
         self.dataset_config_kwargs = experiment_config.dataset_config_kwargs
@@ -375,11 +375,16 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.data_module_args = experiment_config.data_module_args
         self.seeds = experiment_config.experiment_settings.seeds
         self.output_writer_settings = experiment_config.output_writer_settings
+        self.timer = ExperimentTimer()
 
-    def setup(self) -> None:
+    def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
-        super().setup()
+        self.timer.start("Inference")
+        self.inference_query_set = inference_query_set
         self._log_inference_query_set()
+        super().run()
+        self.timer.stop()
+        print(f"Inference Runtime: {self.timer.get('Inference')}")
 
     @cached_property
     def callbacks(self):
@@ -520,3 +525,29 @@ class WandbHandler:
         with open(model_config_path, "w") as fp:
             json.dump(model_config.to_dict(), fp, indent=4)
         wandb_experiment.save(model_config_path)
+
+
+class ExperimentTimer:
+    """Timer class that can be used to time different parts of the experiment."""
+
+    def __init__(self):
+        self.start_time = None
+        self.elapsed = {}
+
+    def start(self, label: str = "total"):
+        self.start_time = time.time()
+        self._label = label
+
+    def stop(self):
+        if self.start_time is None:
+            raise RuntimeError("Timer was not started.")
+        duration = time.time() - self.start_time
+        self.elapsed[self._label] = self.elapsed.get(self._label, 0.0) + duration
+        self.start_time = None
+        return duration
+
+    def get(self, label: str = "total"):
+        return self.elapsed.get(label, 0.0)
+
+    def summary(self):
+        return {k: round(v, 2) for k, v in self.elapsed.items()}
