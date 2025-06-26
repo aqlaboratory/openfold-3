@@ -59,7 +59,7 @@ For details on the rest of the settings, see the [`MSASettings`](../../openfold3
 
 ## 3. Online MSA Pairing
 
-Pairing rows of MSAs for heteromeric complexes based on species information improves the quality of predicted protein-protein interfaces. When running training or inference on a diverse set of protein complexes like the PDB, protein chains in different complex contexts require different paired MSAs. To avoid having to precompute paired MSAs for a large number of chain combinations, we developed a fast online pairing algorithm, which pairs sequences across MSAs of different chains in the same complex by placing sequences originating from the same species in the same row. (The OF3 inference pipeline also accepts precomputed paired MSAs.)
+Pairing rows of MSAs for heteromeric complexes based on species information is expected to improve the quality of predicted protein-protein interfaces (see [this](https://www.biorxiv.org/content/10.1101/2021.10.04.463034v2) and [this](https://www.biorxiv.org/content/10.1101/240754v3.abstract) publication). When running training or inference on a diverse set of protein complexes like the PDB, protein chains in different complex contexts require different paired MSAs. To avoid having to precompute paired MSAs for a large number of chain combinations, we developed a fast online pairing algorithm, which pairs sequences across MSAs of different chains in the same complex by placing sequences originating from the same species in the same row. (The OF3 inference pipeline also accepts precomputed paired MSAs.)
 
 By default, the our MSA pipeline uses the UniProt MSAs to generate paired MSAs and so, species information is parsed from UniProt sequence headers. An example `sto` format is:
 
