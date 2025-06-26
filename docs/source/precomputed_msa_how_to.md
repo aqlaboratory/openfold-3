@@ -9,7 +9,14 @@ The main steps detailed in this guide are:
 4. [Adding the MSA file/directory paths to the inference query json](precomputed_msa_how_to.md#4-specifying-paths-in-the-inference-query-file)
 5. [Updating the MSA pipeline settings](precomputed_msa_how_to.md#5-modifying-msa-settings-for-custom-precomputed-msas)
 
-If you intend to use your own, custom pipeline for generating MSAs, we advise consulting steps 1 and 2 beforehand. Steps 1, 2 and 5 can be skipped if using our OF3-style MSA generation pipeline. Step 3 is optional.
+IMPORTANT: 
+
+*Using your own MSAs generated with a custom workflow*: 
+- Steps 1, 2, 4, 5 are required, step 3 is optional, but recommended if your dataset is large or redundant in the number of unique sequences.
+- Make sure to **consult steps 1 and 2 beforehand**, especially if your use case requires the computation of a large number of alignments. This is to ensure that your MSAs are generated in the expected format, with the expected filenames and are organized in the expected directory structure.
+
+*Using our OF3-style MSA generation pipeline*
+- Only step 4 is required, step 3 is optional, but recommended if your dataset is large or redundant in the number of unique sequences.
 
 ## 1. Precomputed MSA Files
 
@@ -48,8 +55,6 @@ GPDHMSRLEIYSPEGLRLDGRRWNELRRFESSINTHPHAADGSSYMEQGNNKIITLVKGPKEPRLKSQMDTSKALLNVSV
 <details>
 <summary>Example `sto` for PDB entry 5k36 protein chain B ...</summary>
 <pre><code>
-
-```
 # STOCKHOLM 1.0
 
 #=GS MGYP003365344427/1-246   DE [subseq from] FL=1
@@ -66,15 +71,12 @@ MGYP002782847914/1-245           ----MSRVEIYSP-EG-L-RLDG-RR-W-NE-LR--RF--E------
 MGYP001343290792/1-246           ----MSRLEIYSP-EG-L-RLDG-RR-W-NE-LR--RF--E------CS-I-N--T---------H--------S-------H-----------A--------A------D-------GSSYLEQGN-N-K---V---I---T--L--V--------K------G----P--Q--E-----P----S-----S----R--
 MGYP003180110455/28-272          ----MSRLEIYSP-EG-L-RLDG-RR-W-NE-LR--RF--D------CS-I-N--T---------H--------P-------N-----------A--------A------D-------GSSYLEQGN-N-K---I---I---T--L--V--------N------G----P--Q--E-----P----A-----L----R--
 ... rest of the sequences ...
-```
 </code></pre>
 </details>
 
 <details>
 <summary>Example `sto` for PDB entry 7oxa RNA chain A ...</summary>
 <pre><code>
-
-```
 # STOCKHOLM 1.0
 
 #=GS 7oxa_A                           AC 7oxa_A
@@ -91,7 +93,6 @@ AP011114.1/1173965-1174054/23-68         g------------------------------------UA
 #=GC PP_cons                             ....................................6799***************************************986
 #=GC RF                                  .xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 //
-```
 </code></pre>
 </details>
 
@@ -171,7 +172,6 @@ You can list the paths for all alignments for each chain. For our example of 3 c
 <details>
 <summary>List of file paths example ...</summary>
 <pre><code>
-```
 {
     "queries": {
         "example_query": {
@@ -210,7 +210,6 @@ You can list the paths for all alignments for each chain. For our example of 3 c
         }
     }
 }
-```
 </code></pre>
 </details>
 
@@ -221,7 +220,6 @@ You may also pass in the chain-level directory containing the alignments relevan
 <details>
 <summary>Directory path example ...</summary>
 <pre><code>
-```
 {
     "queries": {
         "example_query": {
@@ -248,7 +246,6 @@ You may also pass in the chain-level directory containing the alignments relevan
         }
     }
 }
-```
 </code></pre>
 </details>
 
@@ -259,7 +256,6 @@ If you opted to preparse the raw alignment files into NPZ files, you should spec
 <details>
 <summary>NPZ file example ...</summary>
 <pre><code>
-```
 {
     "queries": {
         "example_query": {
@@ -286,7 +282,6 @@ If you opted to preparse the raw alignment files into NPZ files, you should spec
         }
     }
 }
-```
 </code></pre>
 </details>
 
@@ -298,7 +293,7 @@ If you want to use your own pre-paired MSAs, perhaps pre-paired using a custom p
 
 In the inference pipeline, we use the [`MSASettings`](../../openfold3/projects/of3_all_atom/config/dataset_config_components.py#L18) class to control MSA processing and featurization. You can update it using the dataset_config_kwargs section in the `runner.yml`. Updates to `MSASettings` via the `runner.yml` **overwrite the corresponding default fields**. The MSASettings do **not** need to be updated when using OF3-style protein MSAs.
 
-For our running example of 3 chains with alignments stored under `uniprot_hits`, `mgnify_hits` and `custom_database_hits` files, an `MSASettings` update could look like this:
+For our running example of 3 chains with alignments stored under `uniprot_hits`, `mgnify_hits` and `custom_database_hits` files, an `MSASettings` update via the `runner.yml` could look like this (refer to the [main inference document](Inference.md#33-customized-inference-settings-using-runneryml) for more details):
 
 ```
 dataset_config_kwargs:

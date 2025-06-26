@@ -94,11 +94,11 @@ GDPHMACNFQFPEIAYPGKLICPQY--G---------T--E-NK-D-G-------E-D--IIFNYVPGPGTKL----IQ-
 
 where the first sequence is the query sequence and headers `sp|P53859|CSL4_YEAST/1-292`, `tr|A6ZRL0|A6ZRL0_YEAS7/1-292` and `tr|C7GPC7|C7GPC7_YEAS2/1-292` are parsed to get species IDs `YEAST`, `YEAS7` and `YEAS2` for the three aligned sequences.
 
-The OF3 pairing code prioritizes sequences that can be paired with as many chains in the complex as possible, over only pairwise-pairable sequences.
+The OF3 pairing code prioritizes sequences that can be paired with as many chains in the complex as possible, over only pairwise-pairable sequences, which we expect provides the model with more cross-chain coevolutionary information and improve pprotein-protein interface quality.
 
 ![OF3 vs Colabfold Paired MSAs](../imgs/paired_msas.png)
 
-*Comparison of the Colabfold (left) and OpenFold3 (right) paired MSAs for PDB entry 5k36. The main, wide panels show which chains in the complex receive paired sequences (white in CF as no species information is available, colored in OF3) vs gapped segments (black). The narrow panels indicate how many chains have paired sequences in the corresponding row in the main panels.*
+*PDB entry 5k36 (A) and comparison of its (B) Colabfold and (C) OpenFold3 paired MSAs. 5k36 is a nuclear exosome complex with 11 protein and 2 RNA chains. The main, wide panels in B) and C) show a simplified representation of the paired MSA, where each row corresponds to a row in the paired MSA, each column corresponds to a chain and each tile indicates which chains in the associated row receive paired sequences (white in CF as no species information is available, colored in OF3). Black tiles indicate gapped segments meaning the associated chain does not have a sequence assigned from the species that has sequences for other chains in the same row. The narrow panels indicate how many chains have paired sequences in the corresponding row in the main panels.*
 
 
 ## 4. MSA Reusing Utility
@@ -110,7 +110,6 @@ In order to reduce the disk space necessary when running predictions, we support
 <details>
 <summary>Same MSA paths example ...</summary>
 <pre><code>
-```
 {
     "queries": {
         "G-protein-A_GTP": {
@@ -160,7 +159,6 @@ In order to reduce the disk space necessary when running predictions, we support
         },
     }
 }
-```
 </code></pre>
 </details>
 
