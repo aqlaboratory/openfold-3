@@ -418,7 +418,7 @@ rule build_rna_hmm:
 
 rule run_template_search:
     input:
-        db=f"{base_database_path}/pdb_seqres/pdb_seqres.txt",
+        db=f"{base_database_path}/pdb_seqres/pdb_seqres.fasta",
         uniref90_msa = f"{output_directory}/{{seqid}}/uniref90_hits.sto"
     output:
         template_hits = f"{output_directory}/{{seqid}}/hmm_output.sto"
