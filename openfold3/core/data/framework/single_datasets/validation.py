@@ -1,5 +1,4 @@
 import logging
-import math
 import random
 import traceback
 from typing import Optional
@@ -7,16 +6,19 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import torch
-from biotite.structure import AtomArray
 
 from openfold3.core.data.framework.single_datasets.abstract_single import (
     register_dataset,
 )
-from openfold3.core.data.framework.single_datasets.base_af3 import BaseAF3Dataset
+from openfold3.core.data.framework.single_datasets.base_of3 import BaseOF3Dataset
+from openfold3.core.data.framework.single_datasets.dataset_utils import (
+    pad_to_world_size,
+)
 from openfold3.core.data.framework.single_datasets.pdb import is_invalid_feature_dict
 from openfold3.core.data.primitives.featurization.structure import (
     extract_starts_entities,
 )
+from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +48,10 @@ def make_chain_pair_mask_padded(
 
 
 @register_dataset
-class ValidationPDBDataset(BaseAF3Dataset):
+class ValidationPDBDataset(BaseOF3Dataset):
     """Validation Dataset class."""
 
-    def __init__(self, dataset_config: dict) -> None:
+    def __init__(self, dataset_config: dict, world_size: Optional[int] = None) -> None:
         """Initializes a ValidationDataset.
 
         Args:
@@ -59,7 +61,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
         """
         super().__init__(dataset_config)
 
-        self.world_size = dataset_config.get("world_size")
+        self.world_size = world_size
 
         # Dataset/datapoint cache
         self.create_datapoint_cache()
@@ -76,28 +78,17 @@ class ValidationPDBDataset(BaseAF3Dataset):
         """
         # Order by token count so that the run times are more consistent across GPUs
         pdb_ids = list(self.dataset_cache.structure_data.keys())
+
+        def null_safe_token_count(x):
+            token_count = self.dataset_cache.structure_data[x].token_count
+            return token_count if token_count is not None else 0
+
         pdb_ids = sorted(
             pdb_ids,
-            key=lambda x: self.dataset_cache.structure_data[x].token_count,
+            key=null_safe_token_count,
         )
-
-        # To avoid the default DistributedSampler behavior of repeating samples
-        # to match the world size, artificially inflate the dataset and flag the
-        # repeated samples so that they are ignored in the metrics.
-        repeated_samples = [False] * len(pdb_ids)
-        if self.world_size is not None:
-            extra_samples = (
-                math.ceil(len(pdb_ids) / self.world_size) * self.world_size
-            ) - len(pdb_ids)
-            pdb_ids += pdb_ids[:extra_samples]
-            repeated_samples += [True] * extra_samples
-
-        self.datapoint_cache = pd.DataFrame(
-            {
-                "pdb_id": pdb_ids,
-                "repeated_sample": repeated_samples,
-            }
-        )
+        _datapoint_cache = pd.DataFrame({"pdb_id": pdb_ids})
+        self.datapoint_cache = pad_to_world_size(_datapoint_cache, self.world_size)
 
     def __getitem__(
         self, index: int
@@ -165,14 +156,12 @@ class ValidationPDBDataset(BaseAF3Dataset):
                 index = random.randint(0, len(self) - 1)
                 return self.__getitem__(index)
 
-    def get_validation_homology_features(
-        self, pdb_id: str, atom_array: AtomArray
-    ) -> dict:
+    def get_validation_homology_features(self, pdb_id: str, sample_data: dict) -> dict:
         """Create masks for validation metrics analysis.
 
         Args:
             pdb_id: PDB id for example found in dataset_cache
-            atom_array: structure data for given pdb_id
+            sample_data: dictionary containing features for the sample and atom array
         Returns:
             dict with two features:
             - use_for_intra_validation [*, n_tokens]
@@ -197,25 +186,51 @@ class ValidationPDBDataset(BaseAF3Dataset):
                 interfaces_to_include.append(interface_chains)
 
         # Create token mask for validation intra and inter metrics
+        atom_array = sample_data["atom_array"]
         token_starts_with_stop, _ = extract_starts_entities(atom_array)
         token_starts = token_starts_with_stop[:-1]
         token_chain_id = atom_array.chain_id[token_starts].astype(int)
 
-        features["use_for_intra_validation"] = torch.tensor(
+        token_mask = sample_data["features"]["token_mask"]
+        num_atoms_per_token = sample_data["features"]["num_atoms_per_token"]
+
+        use_for_intra = torch.tensor(
             np.isin(token_chain_id, chains_for_intra_metrics),
             dtype=torch.int32,
         )
+        intra_filter_atomized = broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=use_for_intra,
+        ).bool()
+
+        features["intra_filter_atomized"] = intra_filter_atomized
 
         token_chain_id = torch.tensor(token_chain_id, dtype=torch.int32)
-
         chain_mask_padded = make_chain_pair_mask_padded(
             token_chain_id, interfaces_to_include
         )
 
         # [n_token, n_token] for pairwise interactions
-        features["use_for_inter_validation"] = chain_mask_padded[
+        use_for_inter = chain_mask_padded[
             token_chain_id.unsqueeze(0), token_chain_id.unsqueeze(1)
         ]
+
+        # convert use_for_inter: [*, n_token, n_token] into [*, n_atom, n_atom]
+        inter_filter_atomized = broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=use_for_inter,
+            token_dim=-2,
+        )
+        inter_filter_atomized = broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=inter_filter_atomized.transpose(-1, -2),
+            token_dim=-2,
+        )
+        inter_filter_atomized = inter_filter_atomized.transpose(-1, -2).bool()
+        features["inter_filter_atomized"] = inter_filter_atomized
 
         return features
 
@@ -236,9 +251,9 @@ class ValidationPDBDataset(BaseAF3Dataset):
         )
 
         validation_homology_filters = self.get_validation_homology_features(
-            pdb_id, sample_data["atom_array"]
+            pdb_id, sample_data
         )
-        sample_data["features"].update(validation_homology_filters)
+        sample_data["features"]["ground_truth"].update(validation_homology_filters)
         sample_data["features"]["atom_array"] = sample_data["atom_array"]
 
         # Remove atom arrays if they are not needed

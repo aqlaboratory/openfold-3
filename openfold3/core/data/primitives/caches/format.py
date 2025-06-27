@@ -1,3 +1,5 @@
+# TODO: IMPORTANT: This file is currently broken for certain cache generation scripts
+# because of the if TYPE_CHECKING logic. This should be fixed soon!
 from __future__ import annotations
 
 import json
@@ -724,17 +726,29 @@ class ValidationDatasetChainData(ClusteredDatasetChainData):
     Additional attributes:
         low_homology (bool):
             Whether the chain has low-homology with the training data (see AF3 SI 5.8).
+        metric_eligible (bool):
+            Whether the chain is eligible for validation metrics (in our validation set
+            this is a mix between low-homology and filtering based on the SI Tables
+            9+10+12 blacklists).
         use_metrics (bool):
             Whether validation metrics should be calculated for this chain (see AF3 SI
             5.8).
         ranking_model_fit (float | None):
             The ranking model fit of this chain. Only applies to ligand chains.
+        source_subset (Literal["monomer", "multimer", "base"] | None):
+            Indicates whether this chain came from the monomer, multimer, or base (these
+            are the chains that just get added in for the structure context but were not
+            selected for metrics) subset in the validation set construction (see SI
+            5.8). This is mostly for debugging / informative purposes and not required
+            by the model.
     """
 
     # Adds the following fields:
     low_homology: bool
+    metric_eligible: bool
     use_metrics: bool
     ranking_model_fit: float | None
+    source_subset: Literal["monomer", "multimer", "base"] | None
 
 
 @dataclass
@@ -770,12 +784,19 @@ class ValidationDatasetInterfaceData(ClusteredDatasetInterfaceData):
         use_metrics (bool):
             Whether validation metrics should be calculated for this interface (see AF3
             SI 5.8).
+        source_subset (Literal["monomer", "multimer", "base"] | None):
+            Indicates whether this chain came from the monomer, multimer, or base (these
+            are the chains that just get added in for the structure context but were not
+            selected for metrics) subset in the validation set construction (see SI
+            5.8). This is mostly for debugging / informative purposes and not required
+            by the model.
     """
 
     # Adds the following fields:
     low_homology: bool
     metric_eligible: bool
     use_metrics: bool
+    source_subset: Literal["monomer", "multimer", "base"] | None
 
 
 # --- Structure data dataclasses ---

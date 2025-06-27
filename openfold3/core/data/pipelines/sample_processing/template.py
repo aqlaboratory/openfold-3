@@ -19,7 +19,7 @@ from openfold3.core.data.resources.residues import MoleculeType
 
 
 @log_runtime_memory(runtime_dict_key="runtime-template-proc")
-def process_template_structures_af3(
+def process_template_structures_of3(
     atom_array: AtomArray,
     n_templates: int,
     take_top_k: bool,

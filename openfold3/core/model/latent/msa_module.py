@@ -54,7 +54,6 @@ class MSAModuleBlock(MSABlock):
         fuse_projection_weights: bool,
         inf: float,
         eps: float,
-        transition_ckpt_chunk_size: Optional[int] = None,
         linear_init_params: ConfigDict = lin_init.msa_module_init,
         last_block: bool = False,
     ):
@@ -96,9 +95,6 @@ class MSAModuleBlock(MSABlock):
                 Large constant for masking
             eps:
                 Small constant for numerical stability
-            transition_ckpt_chunk_size:
-                Chunk size for activation checkpointing in the transition layer
-                (currently SwiGLU transition only)
             linear_init_params:
                 Parameters for linear layer initialization
             last_block:
@@ -125,7 +121,6 @@ class MSAModuleBlock(MSABlock):
             linear_init_params=linear_init_params,
         )
 
-        self.transition_ckpt_chunk_size = transition_ckpt_chunk_size
         self.skip_msa_update = last_block and opm_first
 
         if not self.skip_msa_update:
@@ -151,6 +146,7 @@ class MSAModuleBlock(MSABlock):
         msa_mask: torch.Tensor,
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
+        transition_ckpt_chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
         use_flash: bool = False,
@@ -192,6 +188,7 @@ class MSAModuleBlock(MSABlock):
                         m,
                         z=z,
                         mask=pair_mask,
+                        chunk_size=chunk_size,
                     )
                 ),
                 inplace=inplace_safe,
@@ -211,7 +208,7 @@ class MSAModuleBlock(MSABlock):
                     m,
                     mask=msa_trans_mask,
                     chunk_size=chunk_size,
-                    ckpt_chunk_size=self.transition_ckpt_chunk_size,
+                    ckpt_chunk_size=transition_ckpt_chunk_size,
                 ),
                 inplace=inplace_safe,
             )
@@ -292,7 +289,6 @@ class MSAModuleStack(MSAStack):
         blocks_per_ckpt: Optional[int],
         inf: float,
         eps: float,
-        transition_ckpt_chunk_size: Optional[int] = None,
         linear_init_params: ConfigDict = lin_init.msa_module_init,
         use_reentrant: Optional[bool] = None,
         clear_cache_between_blocks: bool = False,
@@ -341,9 +337,6 @@ class MSAModuleStack(MSAStack):
                 Large constant for masking
             eps:
                 Small constant for numerical stability
-            transition_ckpt_chunk_size:
-                Chunk size for activation checkpointing in the transition layer
-                (currently SwiGLU transition only)
             linear_init_params:
                 Parameters for linear layer initialization
             use_reentrant:
@@ -381,7 +374,6 @@ class MSAModuleStack(MSAStack):
                 fuse_projection_weights=fuse_projection_weights,
                 inf=inf,
                 eps=eps,
-                transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                 linear_init_params=linear_init_params,
                 last_block=i == no_blocks - 1,
             )

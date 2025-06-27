@@ -77,6 +77,7 @@ class MSAStack(nn.Module, ABC):
         m: torch.Tensor,
         z: torch.Tensor,
         chunk_size: Optional[int],
+        transition_ckpt_chunk_size: Optional[int],
         use_deepspeed_evo_attention: bool,
         use_lma: bool,
         use_flash: bool,
@@ -98,6 +99,7 @@ class MSAStack(nn.Module, ABC):
                 msa_mask=msa_mask,
                 pair_mask=pair_mask,
                 chunk_size=chunk_size,
+                transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
                 use_flash=use_flash,
@@ -162,6 +164,7 @@ class MSAStack(nn.Module, ABC):
         msa_mask: torch.Tensor,
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
+        transition_ckpt_chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
         use_flash: bool = False,
@@ -175,6 +178,7 @@ class MSAStack(nn.Module, ABC):
             m=input_tensors[0],
             z=input_tensors[1],
             chunk_size=chunk_size,
+            transition_ckpt_chunk_size=transition_ckpt_chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_lma=use_lma,
             use_flash=use_flash,
@@ -206,6 +210,7 @@ class MSAStack(nn.Module, ABC):
         msa_mask: torch.Tensor,
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
+        transition_ckpt_chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
         use_flash: bool = False,
@@ -225,6 +230,8 @@ class MSAStack(nn.Module, ABC):
             chunk_size:
                 Inference-time subbatch size. Acts as a minimum if
                 self.tune_chunk_size is True
+            transition_ckpt_chunk_size:
+                Chunk size for activation checkpointing in the transition layer
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
                 Mutually exclusive with use_lma and use_flash.
@@ -248,6 +255,7 @@ class MSAStack(nn.Module, ABC):
             m=m,
             z=z,
             chunk_size=chunk_size,
+            transition_ckpt_chunk_size=transition_ckpt_chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_lma=use_lma,
             use_flash=use_flash,

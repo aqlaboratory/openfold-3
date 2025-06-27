@@ -2,23 +2,20 @@ import json
 import pickle as pkl
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Generic, Literal, TypeVar
+from typing import TYPE_CHECKING, Generic, Literal, TypeVar, Union
 
 import lmdb
 from tqdm import tqdm
 
-from openfold3.core.data.io.dataset_cache import (
-    convert_dataclass_to_dict,
-    read_datacache,
-)
-from openfold3.core.data.primitives.caches.format import DatasetCache
+if TYPE_CHECKING:
+    from openfold3.core.data.primitives.caches.format import DatasetCache
 
 K = TypeVar("K")
 V = TypeVar("V")
 
 
 def convert_datacache_to_lmdb(
-    dataset_cache_file_or_obj: Path | DatasetCache,
+    dataset_cache_file_or_obj: Union[Path, "DatasetCache"],
     lmdb_directory: Path,
     map_size: int,
     mode: Literal["single-read", "iterative"] = "single-read",
@@ -51,6 +48,10 @@ def convert_datacache_to_lmdb(
             encoding saves the dataclasses directly, whereas 'utf-8' encoding requires
             re-creating the dataclasses.
     """
+    from openfold3.core.data.io.dataset_cache import (
+        convert_dataclass_to_dict,
+        read_datacache,
+    )
 
     if mode == "single-read":
         dataset_cache = read_datacache(dataset_cache_file_or_obj)

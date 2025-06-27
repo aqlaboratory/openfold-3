@@ -6,19 +6,12 @@ from typing import Literal
 import click
 
 from openfold3.core.data.pipelines.preprocessing.caches.pdb_val import (
-    create_pdb_val_dataset_cache_af3,
+    create_pdb_val_dataset_cache_of3,
 )
 
 
 # TODO: Does the disordered dataset also need to be an input to this?
 @click.command()
-@click.option(
-    "--pdb-weighted-cache",
-    "pdb_weighted_cache_path",
-    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
-    required=True,
-    help="Path to the structure train_cache.json created in preprocessing.",
-)
 @click.option(
     "--metadata-cache",
     "metadata_cache_path",
@@ -31,6 +24,22 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_val import (
     type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
     required=True,
     help="Path to directory of directories containing preprocessed mmCIF files.",
+)
+@click.option(
+    "--train-dataset-cache",
+    "train_dataset_cache_paths",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    multiple=True,
+    required=True,
+    help="Path to the structure train_cache.json created in preprocessing.",
+)
+@click.option(
+    "--train-preprocessed-dir",
+    "train_preprocessed_dirs",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
+    multiple=True,
+    required=True,
+    help="Path to preprocessed dirs matching the training caches.",
 )
 @click.option(
     "--alignment-representatives-fasta",
@@ -117,7 +126,7 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_val import (
     "--ranking-fit-threshold",
     type=float,
     default=0.5,
-    help="Model ranking fit threshold for interface filtering.",
+    help="Model ranking fit threshold for ligand-quality filtering.",
 )
 @click.option(
     "--seq-identity-threshold",
@@ -144,9 +153,10 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_val import (
     default=None,
 )
 def main(
-    pdb_weighted_cache_path: Path,
     metadata_cache_path: Path,
     preprocessed_dir: Path,
+    train_dataset_cache_paths: list[Path],
+    train_preprocessed_dirs: list[Path],
     alignment_representatives_fasta: Path,
     output_path: Path,
     dataset_name: str,
@@ -219,10 +229,11 @@ def main(
         file_handler = logging.FileHandler(log_file, mode="w")
         logger.addHandler(file_handler)
 
-    create_pdb_val_dataset_cache_af3(
-        train_cache_path=pdb_weighted_cache_path,
+    create_pdb_val_dataset_cache_of3(
         metadata_cache_path=metadata_cache_path,
         preprocessed_dir=preprocessed_dir,
+        train_cache_paths=list(train_dataset_cache_paths),
+        train_preprocessed_dirs=list(train_preprocessed_dirs),
         alignment_representatives_fasta=alignment_representatives_fasta,
         output_path=output_path,
         dataset_name=dataset_name,

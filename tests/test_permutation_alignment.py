@@ -62,7 +62,7 @@ def test_chain_connected_molecule_iter():
 
     atom_array_original = atom_array.copy()
 
-    # Normal biotite molecule_iter returns 5 molecules
+    # Normal biotite molecule_iter returns 6 molecules
     assert len(struc.get_molecule_indices(atom_array)) == 6
 
     # Chain-connected molecule_iter should return chain-slices with A merged with B

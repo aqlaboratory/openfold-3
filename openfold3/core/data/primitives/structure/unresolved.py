@@ -13,6 +13,7 @@ from openfold3.core.data.primitives.structure.component import (
 from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
     remove_atom_indices,
+    residue_view_iter,
     set_residue_hetero_values,
 )
 from openfold3.core.data.primitives.structure.metadata import (
@@ -22,6 +23,7 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_chain_to_three_letter_codes_dict,
     get_entity_to_three_letter_codes_dict,
 )
+from openfold3.core.data.resources import patches
 from openfold3.core.data.resources.patches import construct_atom_array
 from openfold3.core.data.resources.residues import (
     STANDARD_NUCLEIC_ACID_RESIDUES,
@@ -36,14 +38,14 @@ logger = logging.getLogger(__name__)
 def update_bond_list(atom_array: AtomArray) -> None:
     """Updates the bond list of the AtomArray in-place with any missing bonds.
 
-    Runs biotite's `connect_via_residue_names` on the AtomArray and merges the result
-    with the already existing bond list.
+    Runs biotite's (more specifically, a patched version of) `connect_via_residue_names`
+    on the AtomArray and merges the result with the already existing bond list.
 
     Args:
         atom_array:
             AtomArray containing the structure to update the bond list for.
     """
-    bond_list_update = struc.connect_via_residue_names(atom_array)
+    bond_list_update = patches.connect_via_residue_names(atom_array)
     atom_array.bonds = atom_array.bonds.merge(bond_list_update)
 
 
@@ -306,7 +308,7 @@ def build_unresolved_polymer_segment(
 
     # build standard connectivities
     if add_bonds:
-        bond_list = struc.connect_via_residue_names(segment_atom_array)
+        bond_list = patches.connect_via_residue_names(segment_atom_array)
         segment_atom_array.bonds = bond_list
 
     return segment_atom_array
@@ -325,8 +327,37 @@ def append_unresolved_segment(
 
     This function creates an appropriate unresolved polymer segment, then appends it to
     the end of the AtomArray. The atom indices in the AtomArray are updated to reflect
-    the eventual order of atoms, so that a final sorting operation after addition of all
-    the segments can put all atoms in the correct order.
+    the eventual order of atoms, so that, after multiple calls to this function when all
+    segments are added, one final sorting operation on the atom index can return the
+    final AtomArray.
+
+    For example, let's consider the following AtomArray consisting of two segments A and
+    B:
+
+    A A A B B B
+    1 2 3 4 5 6
+
+    If we want to insert a segment C with 3 atoms between A and B, this function will
+    give an output that has the following intermediate form:
+
+    A A A B B B C C C
+    1 2 3 7 8 9 4 5 6
+
+    Sorting the AtomArray by internal atom index will then result in the correct final
+    AtomArray:
+
+    A A A C C C B B B
+    1 2 3 4 5 6 7 8 9
+
+    The reason why it is most efficient to build up segments by appending them to the
+    end first with multiple calls to this function, followed by a final sort, is that
+    Biotite does not directly allow for insertions into AtomArrays. They are only
+    possible via slicing and concatenation like this:
+
+    atom_array_A + atom_array_C + atom_array_B
+
+    However, this does not preserve any previous bonds between the A and B segments,
+    which is solved by appending to the end and reordering.
 
     Args:
         atom_array:
@@ -397,6 +428,14 @@ def append_unresolved_segment(
         )
 
     atom_array += segment
+
+    # Log what segment was added
+    segment_start = segment.res_id[0]
+    segment_end = segment.res_id[-1]
+    logger.info(
+        f"Added unresolved segment: chain_id={reference_atom.chain_id}, "
+        f"span={segment_start}-{segment_end}, type={segment_type}"
+    )
 
     return atom_array
 
@@ -616,6 +655,8 @@ def add_unresolved_atoms_within_residue(
 
     missing_atom_list = []
 
+    modified_res_tuples = []
+
     for chain in struc.chain_iter(extended_atom_array):
         chain_id = chain.chain_id[0]
 
@@ -631,11 +672,14 @@ def add_unresolved_atoms_within_residue(
         is_nucleic_acid = chain_molecule_type in (MoleculeType.RNA, MoleculeType.DNA)
 
         # Find unresolved atoms for all residues in each chain
-        for residue in struc.residue_iter(chain):
-            res_name = residue.res_name[0]
+        for residue_view in residue_view_iter(chain):
+            res_name = residue_view.res_name[0]
+
+            # For easier identification in logging
+            res_tuple = (residue_view.chain_id[0], residue_view.res_id[0], res_name)
 
             # Atoms in the structure
-            resolved_atom_set = set(residue.atom_name.tolist())
+            resolved_atom_set = set(residue_view.atom_name.tolist())
 
             # Atoms that should be present according to the CCD
             all_atoms = ccd[res_name]["chem_comp_atom"]["atom_id"].as_array()
@@ -653,7 +697,7 @@ def add_unresolved_atoms_within_residue(
             atom_ids_to_charges = get_ccd_atom_id_to_charge_dict(ccd[res_name])
 
             if is_protein or is_nucleic_acid:
-                res_id = residue.res_id[0]
+                res_id = residue_view.res_id[0]
                 is_first_residue = res_id == 1
                 is_last_residue = res_id == chain_to_seqlen[chain_id]
 
@@ -665,7 +709,7 @@ def add_unresolved_atoms_within_residue(
                     if res_name not in std_protein_residues:
                         logger.debug(
                             "Adding unresolved atoms within protein chain for non-"
-                            f"standard protein residue: {res_name}"
+                            f"standard protein residue: {res_tuple}"
                         )
 
                     required_atoms.remove("OXT")
@@ -677,7 +721,7 @@ def add_unresolved_atoms_within_residue(
                     if res_name not in std_na_residues:
                         logger.debug(
                             "Adding unresolved atoms within NA chain for non-standard "
-                            f"NA residue: {res_name}"
+                            f"NA residue: {res_tuple}"
                         )
 
                     if "OP3" in required_atoms and "OP3" not in resolved_atom_set:
@@ -738,15 +782,6 @@ def add_unresolved_atoms_within_residue(
             # Skip if all atoms are resolved
             if len(unresolved_atom_set) == 0:
                 continue
-            else:
-                logger.debug(
-                    "Adding unresolved atoms %s to residue: (%s, %s, %s, %s)",
-                    unresolved_atom_set,
-                    residue.res_name[0],
-                    residue.res_id[0],
-                    residue.chain_id[0],
-                    residue.auth_seq_id[0],
-                )
 
             # Push up the atom indices of the subsequent atoms to account for the full
             # residue length
@@ -754,20 +789,20 @@ def add_unresolved_atoms_within_residue(
             _shift_up_atom_indices(
                 extended_atom_array,
                 n_missing_atoms,
-                greater_than=residue._atom_idx[-1],
+                greater_than=residue_view._atom_idx[-1],
             )
 
             # Rewrite atom indices and add missing atoms to end of atom list
-            residue_atom_selection_iter = iter(range(len(residue)))
-            residue_first_atom_idx = residue._atom_idx[0]
+            residue_atom_selection_iter = iter(range(len(residue_view)))
+            residue_first_atom_idx = residue_view._atom_idx[0]
 
             for atom_idx, atom_name in enumerate(
                 required_atoms, start=residue_first_atom_idx
             ):
                 if atom_name in resolved_atom_set:
-                    residue._atom_idx[next(residue_atom_selection_iter)] = atom_idx
+                    residue_view._atom_idx[next(residue_atom_selection_iter)] = atom_idx
                 else:
-                    atom_annotations = residue[0]._annot.copy()
+                    atom_annotations = residue_view.materialize()[0]._annot.copy()
                     atom_annotations["atom_name"] = atom_name
                     atom_annotations["_atom_idx"] = atom_idx
                     atom_annotations["occupancy"] = 0.0
@@ -807,6 +842,9 @@ def add_unresolved_atoms_within_residue(
                         struc.Atom([np.nan, np.nan, np.nan], **atom_annotations)
                     )
 
+            # Indicate that unresolved atoms were added for this residue
+            modified_res_tuples.append(res_tuple)
+
     if len(missing_atom_list) == 0:
         remove_atom_indices(extended_atom_array)
 
@@ -825,7 +863,10 @@ def add_unresolved_atoms_within_residue(
     # Add bonds within all the added atoms
     update_bond_list(extended_atom_array)
 
-    logger.debug("Added unresolved atoms within residues.")  # TODO: remove
+    logger.info(
+        f"Added unresolved atoms for {len(modified_res_tuples)} residues: "
+        f"{modified_res_tuples}"
+    )
 
     return extended_atom_array
 

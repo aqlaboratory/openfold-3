@@ -29,10 +29,7 @@ from openfold3.core.loss.confidence import (
 )
 from openfold3.core.loss.diffusion import diffusion_loss
 from openfold3.core.loss.distogram import all_atom_distogram_loss, cbeta_distogram_loss
-from openfold3.core.loss.loss_utils import (
-    compute_renamed_ground_truth,
-    get_cumulative_loss_log_val,
-)
+from openfold3.core.loss.loss_utils import compute_renamed_ground_truth
 from openfold3.core.loss.structure import (
     chain_center_of_mass_loss,
     fape_loss,
@@ -154,7 +151,7 @@ class AlphaFoldLoss(nn.Module):
         return cum_loss, losses
 
 
-class AlphaFold3Loss(nn.Module):
+class OpenFold3Loss(nn.Module):
     """Aggregation of the various losses described in the supplement"""
 
     def __init__(self, config):
@@ -172,9 +169,8 @@ class AlphaFold3Loss(nn.Module):
         )
         losses.update(l_confidence_breakdown)
 
-        losses["confidence_loss"] = get_cumulative_loss_log_val(
-            loss=l_confidence, loss_breakdown=l_confidence_breakdown
-        )
+        if l_confidence_breakdown:
+            losses["confidence_loss"] = l_confidence.detach().clone()
 
         # Weighted in confidence_loss()
         cum_loss = cum_loss + l_confidence
@@ -190,9 +186,8 @@ class AlphaFold3Loss(nn.Module):
             )
             losses.update(l_diffusion_breakdown)
 
-            losses["diffusion_loss"] = get_cumulative_loss_log_val(
-                loss=l_diffusion, loss_breakdown=l_diffusion_breakdown
-            )
+            if l_diffusion_breakdown:
+                losses["diffusion_loss"] = l_diffusion.detach().clone()
 
             # Weighted in diffusion_loss()
             cum_loss = cum_loss + l_diffusion
@@ -202,9 +197,8 @@ class AlphaFold3Loss(nn.Module):
         )
         losses.update(l_distogram_breakdown)
 
-        losses["scaled_distogram_loss"] = get_cumulative_loss_log_val(
-            loss=l_distogram, loss_breakdown=l_distogram_breakdown
-        )
+        if l_distogram_breakdown:
+            losses["scaled_distogram_loss"] = l_distogram.detach().clone()
 
         # Weighted in all_atom_distogram_loss()
         cum_loss = cum_loss + l_distogram
@@ -223,7 +217,7 @@ class AlphaFold3Loss(nn.Module):
                 Dict containing input tensors
             output:
                 Dict containing output tensors
-                (see openfold3/openfold3/model_implementations/af3_all_atom/model.py
+                (see openfold3/openfold3/model_implementations/of3_all_atom/model.py
                 for a list items in batch and output)
             _return_breakdown:
                 If True, also return a dictionary of individual

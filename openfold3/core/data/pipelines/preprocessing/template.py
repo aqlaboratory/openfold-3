@@ -2,7 +2,7 @@
 
 import multiprocessing as mp
 import os
-import pickle as pkl
+import random
 import traceback
 from datetime import datetime
 from functools import wraps
@@ -21,6 +21,7 @@ from openfold3.core.data.io.sequence.template import (
     parse_entry_chain_id,
     parse_hmmsearch_sto,
 )
+from openfold3.core.data.io.structure.atom_array import write_atomarray_to_npz
 from openfold3.core.data.io.structure.cif import _load_ciffile, parse_mmcif
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     PDB_ID,
@@ -99,7 +100,7 @@ def create_seq_cache_for_template(
         return
 
 
-class _AF3TemplateSequenceCacheConstructor:
+class _OF3TemplateSequenceCacheConstructor:
     def __init__(
         self,
         template_structures_directory,
@@ -143,7 +144,7 @@ class _AF3TemplateSequenceCacheConstructor:
             )
 
 
-def create_template_seq_cache_af3(
+def create_template_seq_cache_of3(
     template_structures_directory: Path,
     template_cache_directory: Path,
     template_file_format: str,
@@ -184,7 +185,7 @@ def create_template_seq_cache_af3(
         f.stem
         for f in list(template_structures_directory.glob(f"*.{template_file_format}"))
     ]
-    wrapped_template_seq_cache_constructor = _AF3TemplateSequenceCacheConstructor(
+    wrapped_template_seq_cache_constructor = _OF3TemplateSequenceCacheConstructor(
         template_structures_directory,
         template_cache_directory,
         template_file_format,
@@ -511,7 +512,7 @@ def create_template_cache_for_query(
         template_process_logger.info(f"0 valid templates found for {query.name}.")
 
 
-class _AF3TemplateCacheConstructor:
+class _OF3TemplateCacheConstructor:
     def __init__(
         self,
         template_alignment_directory: Path,
@@ -633,7 +634,7 @@ class _AF3TemplateCacheConstructor:
             )
 
 
-def create_template_cache_af3(
+def create_template_cache_of3(
     dataset_cache_file: Path,
     template_alignment_directory: Path,
     template_alignment_filename: str,
@@ -710,7 +711,7 @@ def create_template_cache_af3(
         dataset_cache, True, single_moltype
     ).entries
     # Create template cache for each query chain
-    wrapped_template_cache_constructor = _AF3TemplateCacheConstructor(
+    wrapped_template_cache_constructor = _OF3TemplateCacheConstructor(
         template_alignment_directory,
         template_alignment_filename,
         template_structures_directory,
@@ -848,7 +849,7 @@ def filter_template_cache_for_query(
     for template_id, template_date in ids_dates:
         # Apply release date filters
         if is_core_train:
-            if check_release_date_diff(
+            if not check_release_date_diff(
                 query_release_date=query_release_date,
                 template_release_date=template_date,
                 min_release_date_diff=min_release_date_diff,
@@ -856,7 +857,7 @@ def filter_template_cache_for_query(
                 data_log["n_dropped_due_to_release_date"] += 1
                 continue
         else:
-            if check_release_date_max(
+            if not check_release_date_max(
                 template_release_date=template_date, max_release_date=max_release_date
             ):
                 data_log["n_dropped_due_to_release_date"] += 1
@@ -890,7 +891,7 @@ def filter_template_cache_for_query(
         )
 
 
-class _AF3TemplateCacheFilter:
+class _OF3TemplateCacheFilter:
     def __init__(
         self,
         template_cache_directory: Path,
@@ -988,7 +989,7 @@ class _AF3TemplateCacheFilter:
                 }
 
 
-def filter_template_cache_af3(
+def filter_template_cache_of3(
     dataset_cache_file: Path,
     updated_dataset_cache_file: Path,
     template_cache_directory: Path,
@@ -1047,7 +1048,7 @@ def filter_template_cache_af3(
     data_iterator_len = len(template_query_iterator)
 
     # Filter template cache for each query chain
-    wrapped_template_cache_filter = _AF3TemplateCacheFilter(
+    wrapped_template_cache_filter = _OF3TemplateCacheFilter(
         template_cache_directory,
         max_templates_filter,
         is_core_train,
@@ -1071,10 +1072,14 @@ def filter_template_cache_af3(
             desc="3/3: Filtering template cache",
         ):
             # Update dataset cache with list of valid template representative IDs
-            for (pdb_id, chain_id), valid_template_list in valid_templates.items():
-                dataset_cache.structure_data[pdb_id].chains[
-                    chain_id
-                ].template_ids = valid_template_list
+            for grp in valid_templates.items():
+                try:
+                    (pdb_id, chain_id), valid_template_list = grp
+                    dataset_cache.structure_data[pdb_id].chains[
+                        chain_id
+                    ].template_ids = valid_template_list
+                except Exception as e:
+                    print(f"Failed to update dataset cache for {grp}: \n{e}\n")
 
             # if (idx + 1) % save_frequency == 0:
             #     with open(updated_dataset_cache_file, "w") as f:
@@ -1195,11 +1200,11 @@ def preprocess_template_structure_for_template(
             )
         if np.isin(chain_mol_type, moltypes_included).all():
             chains_included.append(chain_id)
-            with open(
-                template_assembly_directory / Path(f"{template_pdb_id}_{chain_id}.pkl"),
-                "wb",
-            ) as f:
-                pkl.dump(atom_array_chain, f)
+            write_atomarray_to_npz(
+                atom_array=atom_array_chain,
+                output_file=template_assembly_directory
+                / f"{template_pdb_id}_{chain_id}.npz",
+            )
 
     # Log as completed
     pid = os.getpid()
@@ -1208,7 +1213,7 @@ def preprocess_template_structure_for_template(
         f.write(line)
 
 
-class _AF3TemplateStructurePreprocessor:
+class _OF3TemplateStructurePreprocessor:
     def __init__(
         self,
         template_structures_directory: Path,
@@ -1352,6 +1357,10 @@ def preprocess_template_structures(
     template_pdb_ids = []
     for f in list(template_structures_directory.glob(f"*.{template_file_format}")):
         template_pdb_ids.append(f.stem.split(".")[0])
+
+    # Make sure there is no bias in ordering which could potentially affect
+    # preprocessing times
+    random.shuffle(template_pdb_ids)
     print(f"Found {len(template_pdb_ids)} template structures.")
 
     # Subset the template PDB IDs to only those that have not been preprocessed
@@ -1375,7 +1384,7 @@ def preprocess_template_structures(
     ccd = pdbx.CIFFile.read(ccd_file)
 
     # Preprocess template structures
-    wrapped_template_structure_preprocessor = _AF3TemplateStructurePreprocessor(
+    wrapped_template_structure_preprocessor = _OF3TemplateStructurePreprocessor(
         template_structures_directory,
         template_file_format,
         template_structure_array_directory,

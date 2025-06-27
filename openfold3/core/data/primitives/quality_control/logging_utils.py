@@ -97,7 +97,6 @@ F_NAME_ORDER = [
     # - structure
     "runtime-target-structure-proc-parse",  #
     "runtime-target-structure-proc-comp-id-assign",  #
-    "runtime-target-structure-proc-filter-bonds",  #
     "runtime-target-structure-proc-token",  #
     "runtime-target-structure-proc-crop",  #
     "runtime-target-structure-proc-permutation-labels",  #

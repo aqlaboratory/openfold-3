@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 # TODO: implement a more general way to interact with both local and S3 data
-def create_protein_monomer_dataset_cache_af3(
+def create_protein_monomer_dataset_cache_of3(
     data_directory: Path,
     protein_reference_molecule_data_file: Path,
     dataset_name: str,
@@ -66,7 +66,7 @@ def create_protein_monomer_dataset_cache_af3(
         chain_directories = list_bucket_entries(
             bucket_name=data_directory.parts[1],
             prefix="/".join(data_directory.parts[2:]) + "/",
-            profile=s3_client_config.get("profile", None),
+            profile=s3_client_config.get("profile"),
             max_keys=s3_client_config.get("max_keys", 1000),
             check_filename_exists=check_filename_exists,
             num_workers=num_workers,

@@ -36,11 +36,12 @@ logger = logging.getLogger(__name__)
 
 # TODO: reorganize metadata cache creation pipelines into a caches module
 # TODO: Make docstring more complete for new args
-def filter_structure_metadata_af3(
+def filter_structure_metadata_of3(
     structure_cache: PreprocessingStructureDataCache,
     max_release_date: datetime.date | str,
     min_release_date: datetime.date | str = None,
     max_resolution: float = 9.0,
+    ignore_nmr: bool = True,
     max_polymer_chains: int = 300,
     max_tokens: int | None = None,
 ) -> PreprocessingStructureDataCache:
@@ -76,10 +77,9 @@ def filter_structure_metadata_af3(
     # Removes structures that were skipped in preprocessing (skip logging here because
     # it does not work with skipped/failed structures)
     filtered_cache = filter_by_skipped_structures(structure_cache)
-    # TODO: we need to catch NMR etc. here which don't have a defined resolution and
-    # probably set resolution for them to zero
+
     filtered_cache = with_log(filter_by_resolution)(
-        filtered_cache, max_resolution, ignore_nmr=True
+        filtered_cache, max_resolution, ignore_nmr=ignore_nmr
     )
 
     filtered_cache = with_log(filter_by_release_date)(
@@ -98,7 +98,7 @@ def filter_structure_metadata_af3(
 
 
 # TODO: Add docstring!
-def create_pdb_training_dataset_cache_af3(
+def create_pdb_training_dataset_cache_of3(
     metadata_cache_path: Path,
     preprocessed_dir: Path,
     alignment_representatives_fasta: Path,
@@ -152,7 +152,7 @@ def create_pdb_training_dataset_cache_af3(
         pdb_id_to_release_date[pdb_id] = metadata.release_date
 
     # Subset the structures in the preprocessed metadata to only the desired ones
-    metadata_cache.structure_data = filter_structure_metadata_af3(
+    metadata_cache.structure_data = filter_structure_metadata_of3(
         metadata_cache.structure_data,
         max_release_date=max_release_date,
         max_resolution=max_resolution,

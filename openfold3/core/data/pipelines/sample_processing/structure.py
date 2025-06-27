@@ -14,7 +14,6 @@ from openfold3.core.data.primitives.permutation.mol_labels import (
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
-from openfold3.core.data.primitives.structure.cleanup import filter_bonds
 from openfold3.core.data.primitives.structure.component import (
     assign_component_ids_from_metadata,
 )
@@ -35,7 +34,7 @@ class ProcessedTargetStructure(NamedTuple):
 
 # TODO: Update docstring
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-proc")
-def process_target_structure_af3(
+def process_target_structure_of3(
     target_structures_directory: Path,
     pdb_id: str,
     apply_crop: bool,
@@ -79,19 +78,6 @@ def process_target_structure_af3(
 
     # Mark individual components (which get unique conformers)
     assign_component_ids_from_metadata(atom_array, per_chain_metadata)
-
-    # Remove bonds not following AF3 criteria, but keep intra-residue bonds and
-    # consecutive inter-residue bonds for now (necessary for molecule detection in
-    # permutation IDs)
-    filter_bonds(
-        atom_array=atom_array,
-        keep_consecutive=True,
-        keep_polymer_ligand=True,
-        keep_ligand_ligand=True,
-        remove_larger_than=2.4,
-        remove_metal_coordination=True,
-        mask_intra_component=True,
-    )
 
     # Tokenize
     tokenize_atom_array(atom_array=atom_array)

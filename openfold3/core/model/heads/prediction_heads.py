@@ -38,7 +38,6 @@ class PairformerEmbedding(nn.Module):
         max_bin: float,
         no_bin: int,
         inf: float,
-        per_sample_token_cutoff: Optional[int] = None,
         linear_init_params: ConfigDict = lin_init.pairformer_head_init,
     ):
         """
@@ -59,11 +58,6 @@ class PairformerEmbedding(nn.Module):
                 Number of bins (15). ibid
             inf:
                 Inf (1e8). ibid
-            per_sample_token_cutoff:
-                Token limit after which PairFormer embedding will run per sample.
-                This is a memory optimization which is only used during
-                validation/inference and will depend on the number of samples
-                in the full rollout.
             linear_init_params:
                 Linear layer initialization parameters
         """
@@ -72,7 +66,6 @@ class PairformerEmbedding(nn.Module):
         self.max_bin = max_bin
         self.no_bin = no_bin
         self.inf = inf
-        self.per_sample_token_cutoff = per_sample_token_cutoff
 
         self.linear_i = Linear(c_s_input, c_z, **linear_init_params.linear_i)
         self.linear_j = Linear(c_s_input, c_z, **linear_init_params.linear_j)
@@ -81,6 +74,35 @@ class PairformerEmbedding(nn.Module):
             self.no_bin, c_z, **linear_init_params.linear_distance
         )
         self.pairformer_stack = PairFormerStack(**pairformer)
+
+    def embed_zij(
+        self,
+        si_input: torch.Tensor,
+        zij: torch.Tensor,
+        x_pred: torch.Tensor,
+    ):
+        # si projection to zij
+        zij = (
+            zij
+            + self.linear_i(si_input.unsqueeze(-2))
+            + self.linear_j(si_input.unsqueeze(-3))
+        )
+
+        # Embed pair distances of representative atoms
+        bins = torch.linspace(
+            self.min_bin, self.max_bin, self.no_bin, device=zij.device, dtype=zij.dtype
+        )
+        squared_bins = bins**2
+        upper = torch.cat(
+            [squared_bins[1:], squared_bins.new_tensor([self.inf])], dim=-1
+        )
+        dij = torch.sum(
+            (x_pred[..., None, :] - x_pred[..., None, :, :]) ** 2, dim=-1, keepdims=True
+        )
+        dij = ((dij > squared_bins) * (dij < upper)).type(x_pred.dtype)
+        zij = zij + self.linear_distance(dij)
+
+        return zij
 
     def per_sample_pairformer_emb(
         self,
@@ -95,15 +117,16 @@ class PairformerEmbedding(nn.Module):
         _mask_trans: bool = True,
     ):
         # PairFormer embedding
-        si_chunks = []
-        zij_chunks = []
-        no_samples = zij.shape[1]
+        no_samples = zij.shape[-4]
+        si_out = torch.zeros_like(si)
+        zij_out = torch.zeros_like(zij)
+
         for i in range(no_samples):
             si_chunk, zij_chunk = self.pairformer_stack(
-                si[:, i],
-                zij[:, i],
-                single_mask[:, i],
-                pair_mask[:, i],
+                si[..., i : i + 1, :, :],
+                zij[..., i : i + 1, :, :, :],
+                single_mask[..., i : i + 1, :],
+                pair_mask[..., i : i + 1, :, :],
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
@@ -111,13 +134,10 @@ class PairformerEmbedding(nn.Module):
                 _mask_trans=_mask_trans,
             )
 
-            si_chunks.append(si_chunk)
-            zij_chunks.append(zij_chunk)
+            si_out[..., i : i + 1, :, :] = si_chunk
+            zij_out[:, i : i + 1, :, :, :] = zij_chunk
 
-        si = torch.stack(si_chunks, dim=1)
-        zij = torch.stack(zij_chunks, dim=1)
-
-        return si, zij
+        return si_out, zij_out
 
     def pairformer_emb(
         self,
@@ -125,7 +145,6 @@ class PairformerEmbedding(nn.Module):
         zij: torch.Tensor,
         single_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
@@ -146,7 +165,6 @@ class PairformerEmbedding(nn.Module):
             zij,
             single_mask,
             pair_mask,
-            chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
@@ -172,6 +190,7 @@ class PairformerEmbedding(nn.Module):
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
+        apply_per_sample: bool = False,
     ):
         """
         Args:
@@ -200,6 +219,12 @@ class PairformerEmbedding(nn.Module):
                 Whether inplace operations can be performed
             _mask_trans:
                 Whether to mask the output of the transition layers
+            apply_per_sample:
+                Run PairFormer embedding for each sample individually.
+                This is a memory optimization which is only used during
+                validation/inference and will depend on the number of samples
+                in the full rollout.
+
 
         Returns:
             si:
@@ -207,45 +232,15 @@ class PairformerEmbedding(nn.Module):
             zij:
                 [*, N_token, N_token, C_z] Updated pair representation
         """
-        # si projection to zij
-        zij = (
-            zij
-            + self.linear_i(si_input.unsqueeze(-2))
-            + self.linear_j(si_input.unsqueeze(-3))
-        )
-
-        # Embed pair distances of representative atoms
-        bins = torch.linspace(
-            self.min_bin, self.max_bin, self.no_bin, device=zij.device, dtype=zij.dtype
-        )
-        squared_bins = bins**2
-        upper = torch.cat(
-            [squared_bins[1:], squared_bins.new_tensor([self.inf])], dim=-1
-        )
-        dij = torch.sum(
-            (x_pred[..., None, :] - x_pred[..., None, :, :]) ** 2, dim=-1, keepdims=True
-        )
-        dij = ((dij > squared_bins) * (dij < upper)).type(x_pred.dtype)
-        zij = zij + self.linear_distance(dij)
+        # Embed pair rep with single rep and pairwise distances
+        zij = self.embed_zij(si_input=si_input, zij=zij, x_pred=x_pred)
 
         # Expand sample dimension
-        si = si.expand(*(zij.shape[:-3] + si.shape[-2:])).clone()
-        single_mask = single_mask.expand(*(zij.shape[:-3] + single_mask.shape[-1:]))
-        pair_mask = pair_mask.expand(*(zij.shape[:-3] + pair_mask.shape[-2:]))
+        si = si.expand(*(x_pred.shape[:-2] + si.shape[-2:])).clone()
+        single_mask = single_mask.expand(*(x_pred.shape[:-2] + single_mask.shape[-1:]))
+        pair_mask = pair_mask.expand(*(x_pred.shape[:-2] + pair_mask.shape[-2:]))
 
-        # TODO: Determine if this is the best way to handle PairFormer
-        #  memory limits depending on the number of samples
-        no_batch_dims = len(zij.shape[:-3])
-        pairformer_per_sample = all(
-            [
-                not torch.is_grad_enabled(),
-                no_batch_dims > 1,
-                self.per_sample_token_cutoff is not None,
-                zij.shape[-3] > self.per_sample_token_cutoff,
-            ]
-        )
-
-        if pairformer_per_sample:
+        if apply_per_sample:
             si, zij = self.per_sample_pairformer_emb(
                 si=si,
                 zij=zij,
@@ -258,12 +253,13 @@ class PairformerEmbedding(nn.Module):
                 _mask_trans=_mask_trans,
             )
         else:
+            # TODO: Fix chunking issues with > 1 sample
+            #  Chunking disabled for now
             si, zij = self.pairformer_emb(
                 si=si,
                 zij=zij,
                 single_mask=single_mask,
                 pair_mask=pair_mask,
-                chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
@@ -360,7 +356,7 @@ class PredictedDistanceErrorHead(nn.Module):
         return logits
 
 
-class PerResidueLDDAllAtom(nn.Module):
+class PerResidueLDDTAllAtom(nn.Module):
     """
     Implements Plddt Head (Algorithm 31, Line 7) for AF3 (subsection 4.3.1)
     """

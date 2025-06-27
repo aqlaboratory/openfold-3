@@ -10,7 +10,7 @@ import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFFile
 
-from openfold3.core.data.io.sequence.fasta import read_multichain_fasta
+from openfold3.core.data.io.sequence.fasta import get_chain_id_to_seq_from_fasta
 from openfold3.core.data.io.sequence.template import TemplateHit
 from openfold3.core.data.io.structure.cif import (
     parse_mmcif,
@@ -254,7 +254,7 @@ def match_query_chain_and_sequence(
     # TODO: rework this logic, currently only 2 options are supported
     # Get the query sequence from the structure
     if query_seq_load_logic == "fasta":
-        chain_id_seq_map = read_multichain_fasta(
+        chain_id_seq_map = get_chain_id_to_seq_from_fasta(
             query_structures_directory / Path(f"{query_pdb_id}.fasta")
         )
         query_seq_structure = chain_id_seq_map.get(query_chain_id)
@@ -478,17 +478,17 @@ def check_release_date_diff(
 
     Returns:
         bool:
-            Whether the release date difference is less than the minimum
-            required.
+            Whether the release date difference in days is equal to or greater than the
+            minimum required.
     """
-    return (query_release_date - template_release_date).days < min_release_date_diff
+    return (query_release_date - template_release_date).days >= min_release_date_diff
 
 
 def check_release_date_max(
     template_release_date: datetime,
     max_release_date: datetime,
 ) -> bool:
-    """Calc if the release date is before the maximum allowed release date.
+    """Calculates if the release date is before the maximum allowed release date.
 
     As per AF3 SI Section 2.4. Used for distillation and inference sets.
 

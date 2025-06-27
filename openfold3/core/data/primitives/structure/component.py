@@ -2,7 +2,7 @@
 import logging
 from collections import defaultdict
 from collections.abc import Generator, Iterable
-from typing import NamedTuple, TypeAlias
+from typing import Literal, NamedTuple, TypeAlias
 
 import biotite.structure as struc
 import gemmi
@@ -29,11 +29,18 @@ from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
 
+# TODO: Make this a proper class
 AnnotatedMol: TypeAlias = Mol
 """An RDKit mol object containing additional atom-wise annotations.
 
 The custom atom-wise annotations are stored as atom properties in the Mol object,
-following the schema "{property_name}_annot"
+following the schema "{property_name}_annot":
+
+- atom_annot_atom_name:
+    Canonical atom names
+- atom_annot_used_atom_mask:
+    Indicating which conformer atoms are set properly. When using CCD-derived fallback
+    conformers some coordinates might be missing, which are then set to 0 in this mask.
 """
 
 PERIODIC_TABLE = Chem.GetPeriodicTable()
@@ -177,7 +184,13 @@ def get_component_info(atom_array: AtomArray) -> PDBComponentInfo:
         # Asserts that all chains of the same entity have the exact same atoms in the
         # exact same order
         # TODO: improve atom expansion for non-standard ligands
-        assert len(chain_atom_names) == 1
+        if len(chain_atom_names) != 1:
+            raise ValueError(
+                f"Entity {entity_id} has different sets of atom names in "
+                f"different chains: {chain_atom_names}. "
+                "This may be due to the current lack of support for adding "
+                "unresolved atoms to multi-residue ligands."
+            )
 
     return PDBComponentInfo(
         residue_components=list(residue_components),
@@ -242,7 +255,9 @@ def get_covalent_component_chain_ids(atom_array: AtomArray) -> list[str]:
     return covalent_component_chains
 
 
-def pdbeccdutils_component_from_ccd(ccd_id: str, ccd: CIFFile) -> Component:
+def pdbeccdutils_component_from_ccd(
+    ccd_id: str, ccd: CIFFile, ccdutils_sanitize: bool = True
+) -> Component:
     """Creates a pdbeccdutils Component object from a CCD entry in a CIFFile.
 
     Internally uses Biotite's serialize() function to convert the CIFBlock to a string
@@ -254,7 +269,9 @@ def pdbeccdutils_component_from_ccd(ccd_id: str, ccd: CIFFile) -> Component:
             CCD ID of the component to extract.
         ccd:
             CIFFile containing the CCD entry.
-
+        ccdutils_sanitize:
+            If True, the CCD entry will be sanitized by the pdbeccdutils sanitization
+            procedure.
     Returns:
         pdbeccdutils Component object representing the CCD entry.
     """
@@ -266,7 +283,7 @@ def pdbeccdutils_component_from_ccd(ccd_id: str, ccd: CIFFile) -> Component:
     # file-path input
     doc = gemmi.cif.read_string(cif_str)
     block = doc.sole_block()
-    ccd_reader_result = ccd_reader._parse_pdb_mmcif(block)
+    ccd_reader_result = ccd_reader._parse_pdb_mmcif(block, sanitize=ccdutils_sanitize)
 
     return ccd_reader_result.component
 
@@ -395,7 +412,9 @@ def mol_from_pdbeccdutils_component(
     return mol
 
 
-def mol_from_ccd_entry(ccd_id: str, ccd: CIFFile) -> AnnotatedMol:
+def mol_from_ccd_entry(
+    ccd_id: str, ccd: CIFFile, ccdutils_sanitize: bool = True
+) -> AnnotatedMol:
     """Generates an RDKit Mol object from a CCD entry in a CIFFile.
 
     Convenience wrapper around `pdbeccdutils_component_from_ccd` and
@@ -408,6 +427,9 @@ def mol_from_ccd_entry(ccd_id: str, ccd: CIFFile) -> AnnotatedMol:
             CCD ID of the component to extract.
         ccd:
             CIFFile containing the CCD entry.
+        ccdutils_sanitize:
+            If True, the CCD entry will be sanitized by the pdbeccdutils sanitization
+            procedure.
 
     Returns:
         An RDKit Mol object representing the CCD entry. The returned Mol will have the
@@ -420,7 +442,7 @@ def mol_from_ccd_entry(ccd_id: str, ccd: CIFFile) -> AnnotatedMol:
             - the "Model" conformer under confID=1 from the original CCD entry (if not
                 removed in cleanup)
     """
-    component = pdbeccdutils_component_from_ccd(ccd_id, ccd)
+    component = pdbeccdutils_component_from_ccd(ccd_id, ccd, ccdutils_sanitize)
     mol = mol_from_pdbeccdutils_component(component)
 
     return mol
@@ -497,6 +519,31 @@ def mol_from_atomarray(atom_array: AtomArray) -> AnnotatedMol:
     mol = set_atomwise_annotation(mol, "atom_name", atom_array.atom_name)
 
     return mol
+
+
+# TODO: Better docstring
+def get_reference_molecule_metadata(
+    mol: AnnotatedMol,
+    conformer_strategy: Literal["default", "random_init", "use_fallback"],
+    residue_count: int,
+) -> dict:
+    """Convenience function to return the metadata for a reference molecule."""
+    conf_metadata = {
+        "residue_count": residue_count,
+        "conformer_gen_strategy": conformer_strategy,
+    }
+
+    if mol.HasProp("model_pdb_id"):
+        fallback_conformer_pdb_id = mol.GetProp("model_pdb_id")
+        if fallback_conformer_pdb_id == "?":
+            fallback_conformer_pdb_id = None
+    else:
+        fallback_conformer_pdb_id = None
+
+    conf_metadata["fallback_conformer_pdb_id"] = fallback_conformer_pdb_id
+    conf_metadata["canonical_smiles"] = Chem.MolToSmiles(mol)
+
+    return conf_metadata
 
 
 def component_view_iter_from_metadata(

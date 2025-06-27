@@ -514,6 +514,11 @@ def _deepspeed_evo_attn(
             "and that the deepspeed.ops.deepspeed4science package exists"
         )
 
+    # [*, Q/K, H, C_hidden]
+    q = q.transpose(-2, -3)
+    k = k.transpose(-2, -3)
+    v = v.transpose(-2, -3)
+
     def reshape_dims(x):
         no_batch_dims = len(x.shape[:-3])
         if no_batch_dims < 2:
@@ -521,11 +526,6 @@ def _deepspeed_evo_attn(
         if no_batch_dims > 2:
             return x.reshape(*((x.shape[0], -1) + x.shape[-3:]))
         return x
-
-    # [*, Q/K, H, C_hidden]
-    q = q.transpose(-2, -3)
-    k = k.transpose(-2, -3)
-    v = v.transpose(-2, -3)
 
     # Reshape tensors to match expected input shape [B, N, Q/K, H, C_hidden]
     # for DS4Sci_EvoformerAttention() by adding or flattening batch dims as needed.
@@ -536,22 +536,24 @@ def _deepspeed_evo_attn(
         v = reshape_dims(v)
         biases = [reshape_dims(b) for b in biases]
 
+    def convert_dtype(x: torch.Tensor) -> torch.Tensor:
+        if x.dtype not in [torch.bfloat16, torch.float16]:
+            return x.to(dtype=torch.bfloat16)
+        return x
+
     # DeepSpeed attn. kernel requires inputs to be type bf16 or fp16
     # Cast to bf16 so kernel can be used during inference
     orig_dtype = q.dtype
-    if orig_dtype not in [torch.bfloat16, torch.float16]:
-        o = DS4Sci_EvoformerAttention(
-            q.to(dtype=torch.bfloat16),
-            k.to(dtype=torch.bfloat16),
-            v.to(dtype=torch.bfloat16),
-            [b.to(dtype=torch.bfloat16) for b in biases],
-        )
+    q = convert_dtype(q)
+    k = convert_dtype(k)
+    v = convert_dtype(v)
+    biases = [convert_dtype(b) for b in biases]
 
-        o = o.to(dtype=orig_dtype)
-    else:
-        o = DS4Sci_EvoformerAttention(q, k, v, biases)
+    o = DS4Sci_EvoformerAttention(q, k, v, biases)
 
-    o = o.reshape(orig_shape)
+    # Convert back to original shape and dtype
+    o = o.reshape(orig_shape).to(dtype=orig_dtype)
+
     return o
 
 
