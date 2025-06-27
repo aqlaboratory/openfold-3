@@ -465,9 +465,10 @@ def diffusion_loss(
     l_bond = l_bond * bond_weight
     l_smooth_lddt = l_smooth_lddt * smooth_lddt_weight
 
-    # Note: Changed from SI, denominator (t + sigma_data) ** 2 changed
-    #  to (t * sigma_data) ** 2.
-    w = (t**2 + sigma_data**2) / (t * sigma_data) ** 2
+    # Note: Using version from SI. Previously changed from SI, denominator
+    #  (t + sigma_data) ** 2 was changed to (t * sigma_data) ** 2.
+
+    w = (t**2 + sigma_data**2) / (t + sigma_data) ** 2
     l = w * (l_mse + l_bond) + l_smooth_lddt
 
     # Mean over diffusion sample dimension
