@@ -74,6 +74,7 @@ def centre_random_augmentation(
     # center coordinates
     pos_centered = xl - mean_xl
     pos_out = pos_centered @ rots.transpose(-1, -2) + trans[..., None, :]
+    pos_out = pos_out * atom_mask[..., None]
 
     return pos_out
 
