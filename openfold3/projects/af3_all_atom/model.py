@@ -429,13 +429,11 @@ class AlphaFold3(nn.Module):
         # Sample atom positions
         xl_noisy = xl_gt + noise
 
-        token_mask = batch["token_mask"]
-
         # Run diffusion module
         xl = self.diffusion_module(
             batch=batch,
             xl_noisy=xl_noisy,
-            token_mask=token_mask,
+            token_mask=batch["token_mask"],
             atom_mask=batch["atom_mask"],
             t=t,
             si_input=si_input,
