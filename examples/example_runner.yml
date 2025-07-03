@@ -1,5 +1,5 @@
 # Model name, currently only af3_all_atom supported 
-model_name: af3_all_atom
+model_name: of3_all_atom
 # Can be found in
 # of3/model_implementations/<model_name>/configs/reference_config.yml 
 # only one preset allowed for now
