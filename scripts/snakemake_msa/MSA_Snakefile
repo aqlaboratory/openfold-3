@@ -1,0 +1,472 @@
+from pathlib import Path
+import random, string
+from Bio import SeqIO, AlignIO
+import subprocess as sp 
+import shutil
+from pathlib import Path 
+from typing import Set, List 
+from Bio.SeqRecord import SeqRecord
+from Bio.Seq import Seq
+import re
+# utility functions to for operation on stockholm files
+## converts stockholm >  fasta 
+def ungap_sequences(stockholm_file,query_seq_string,  fasta_file):
+    # Read the alignment from the Stockholm file
+    alignment = AlignIO.read(stockholm_file, 'stockholm')
+
+    # Remove gaps from each sequence
+    ungapped_sequences = []
+    for record in alignment:
+        ungapped_seq = Seq(re.sub(r'[^A-Za-z]', '', str(record.seq)))
+        ungapped_record = SeqRecord(
+            ungapped_seq,
+            id=record.id,
+            description=""
+        )
+        ungapped_sequences.append(ungapped_record)
+    
+    with open(fasta_file, 'w') as output_handle:
+        output_handle.write(query_seq_string)
+        SeqIO.write(ungapped_sequences, output_handle, 'fasta')
+
+def sanitize_rna_sequence(seq:str):
+    """
+    ensure sequence is always upper case, and only has cannonical nucleotides
+    Anything not cannonical set to N
+    """
+    chars = []
+    nucleotides = {"A", "G", "C", "U", "N"}
+    for c in seq.upper():
+        if c not in nucleotides:
+            c = "N"
+        chars.append(c)
+    return "".join(chars)
+
+
+## truncate stockholm file to desired numver of sequences 
+def _keep_line(line: str, seqnames: Set[str]) -> bool:
+    """Function to decide which lines to keep."""
+    if not line.strip():
+        return True
+    if line.strip() == '//':  # End tag
+        return True
+    if line.startswith('# STOCKHOLM'):  # Start tag
+        return True
+    if line.startswith('#=GC RF'):  # Reference Annotation Line
+        return True
+    if line[:4] == '#=GS':  # Description lines - keep if sequence in list.
+        _, seqname, _ = line.split(maxsplit=2)
+        return seqname in seqnames
+    elif line.startswith('#'):  # Other markup - filter out
+        return False
+    else:  # Alignment data - keep if sequence in list.
+        seqname = line.partition(' ')[0]
+        return seqname in seqnames
+
+def truncate_stockholm_msa(stockholm_msa_path: str, max_sequences: int) -> str:
+    """Reads + truncates a Stockholm file while preventing excessive RAM usage."""
+    seqnames = set()
+    filtered_lines = []
+
+    with open(stockholm_msa_path) as f:
+        for line in f:
+            if line.strip() and not line.startswith(('#', '//')):
+                # Ignore blank lines, markup and end symbols - remainder are alignment
+                # sequence parts.
+                seqname = line.partition(' ')[0]
+                seqnames.add(seqname)
+                if len(seqnames) >= max_sequences:
+                    break
+
+        f.seek(0)
+        for line in f:
+            if _keep_line(line, seqnames):
+                filtered_lines.append(line)
+
+    return ''.join(filtered_lines)  
+    
+# main functions to run each alignment tool
+## jackhmmer alignments for uniref90, uniprot, and mgnify 
+def run_jackhmmer(config: dict[[str, str]], wildcards: dict[[str, str]],input: dict[[str, str]], output: dict[[str, str]], resources: dict[[str, str]], threads:int) -> None:
+    ### Set up 
+    seqid = wildcards['seqid']
+    aa_sequence = input_fasta[seqid]
+    ## need to manually create tmp files. bc NamedTemporaryFile was giving me issues 
+    ### tmp fasta
+    alphanumeric = string.ascii_letters + string.digits
+    rng2 = ''.join(random.choice(alphanumeric) for i in range(16))
+    tmpfa = Path(f"{resources.tmpdir}/{seqid}_{rng2}.fa")
+    with open(tmpfa, "w+") as tmp:
+        tmp.write(f">{seqid}\n{aa_sequence}")
+        tmp.flush()
+    ### tmp msa
+    tmp_jackhmmer_path = Path(f"{resources.tmpdir}/{seqid}_{rng2}.sto")
+    ### possible outpaths by extenstion
+    outpath_sto = Path(output['msa_path']).with_suffix(".sto")
+    outpath_a3m = Path(output['msa_path']).with_suffix(".a3m")
+
+    cmd = f'''{JACKHMMER_BIN} \
+        -o /dev/null \
+        -A {tmp_jackhmmer_path} \
+        --noali \
+        -N 1 \
+        -E 0.0001 \
+        --incE 0.0001 \
+        --F1 0.0005 \
+        --F2 0.00005 \
+        --F3 0.0000005 \
+        --cpu {threads} \
+        {tmpfa} {input['db']}
+        '''
+    print(f"Running: {cmd}")
+    result = sp.run(cmd, shell=True, check=True)
+    ## truncate MSAs. Write to the same file, to make final copies over 
+    if wildcards['db'] in ["uniref90", "uniprot", "mgnify"]:
+        truncated_msa = truncate_stockholm_msa(tmp_jackhmmer_path, max_sequences = max_seq_map[wildcards['db']])
+        with open(tmp_jackhmmer_path, "w+") as ofl:
+            ofl.write(truncated_msa)
+    ### optionally convert to a3m
+    if ext == "a3m":
+        cmd = f"{REFORMAT_BIN} -l 30000 {tmp_jackhmmer_path} {outpath_a3m} > /dev/null 2>&1 "
+        sp.run(cmd, shell = True, check = True)
+    else:
+        shutil.copy(tmp_jackhmmer_path, outpath_sto)
+    
+    ## cleanup intermediate outputs
+    tmp_jackhmmer_path.unlink()
+    tmpfa.unlink()
+    return
+
+## hhblits alignments for BFD/ CFDB
+def run_hhblits(config: dict[[str, str]], wildcards: dict[[str, str]], output: dict[[str, str]], resources: dict[[str, str]], threads: int) -> None:
+    ## setup
+    seqid = wildcards['seqid']
+    aa_sequence = input_fasta[seqid]
+    base_db_path =  base_database_path
+    if wildcards["db"] == "cfdb":
+        pfx="colabfold_envdb_2023_hh"
+    else:
+        pfx="bfd_metaclust_clu_complete_id30_c90_final_seq.sorted_opt"
+
+    ## need to manually create tmp files. bc NamedTemporaryFile was giving me issues 
+    ### tmp fasta
+    alphanumeric = string.ascii_letters + string.digits
+    rng2 = ''.join(random.choice(alphanumeric) for i in range(16))
+    tmpfa = Path(f"{resources.tmpdir}/{seqid}_{rng2}.fa")
+    with open(tmpfa, "w+") as tmp:
+        tmp.write(f">{seqid}\n{aa_sequence}")
+        tmp.flush()
+    
+    cmd = f'''{HHBLITS_BIN} \
+                 -i {tmpfa} \
+                -cpu {threads} \
+                -oa3m {output['msa_path']} \
+                -o /dev/null \
+                -n 3 \
+                -e 0.001 \
+                -realign_max 100000 \
+                -maxfilt 100000 \
+                -min_prefilter_hits 1000 \
+                -p 20 -Z 500 \
+                -d {base_db_path}/{wildcards["db"]}/{pfx} \
+                -d {base_db_path}/uniref30/UniRef30_2023_02  > /dev/null 2>&1 ## keep logfiles thin
+                '''
+    sp.run(cmd, shell=True, check = True)
+    tmpfa.unlink()
+    return
+
+## run RNA alignments for rfam, rnacentral, and nucleotide collection 
+def run_nhmmer(config: dict[str, str], wildcards: dict[str, str],input: dict[str, str], output: dict[str, str],  resources: dict[str, str], threads:int):
+
+    ## setup inputs and outputs
+    log_file = sp.DEVNULL
+    seqid = wildcards['seqid']
+    gt_rna_sequence = input_fasta[seqid]
+    sani_rna_sequence = sanitize_rna_sequence(gt_rna_sequence)
+    gt_rna_sequence = sani_rna_sequence
+    alphanumeric = string.ascii_letters + string.digits
+    rng2 = ''.join(random.choice(alphanumeric) for i in range(16))
+    
+    outdir = Path(output["msa_path"]).parent
+    outdir.mkdir(exist_ok= True, parents=True)
+
+    tmpfa = Path(f"{resources.tmpdir}/{seqid}_{rng2}.fa")
+    query_hmm_file = Path(f"{outdir}/query.hmm")
+    out_file = Path(f"{resources.tmpdir}/{seqid}_{rng2}.sto")
+    reduced_out_file = Path(f"{outdir}/{wildcards.db}_hits_reduced.sto")
+    hits_fasta = Path(f"{outdir}/{wildcards.db}_hits_reduced.fa")
+    realigned_out = Path(f"{outdir}/{wildcards.db}_hits.sto")
+    with open(tmpfa, "w+") as tmp:
+        tmp.write(f">{seqid}\n{sani_rna_sequence}\n")
+        tmp.flush()
+
+
+    ## setup nhmmer flags and run using query hmm
+    nhmmer_flags = [
+        '-E', str(0.001),
+        '--incE', str(0.001),
+        '--rna',
+        '--watson',
+    ]
+
+    f3_thresh = 0.02 if len(sani_rna_sequence) < 50 else 0.00005
+    nhmmer_flags.extend(['--F3', str(f3_thresh)])
+    ## write inital stockholm to local tmp storage - these can get large and so 
+    ## writing to local storage preserves the filesystem at scale 
+    out_file = Path(f"{resources.tmpdir}/{seqid}_{rng2}.sto")
+    nhmmer_command = [
+                NHMMER_BIN,
+                *nhmmer_flags,
+                '-A', str(out_file),
+                str(tmpfa),
+                input["db"][0],
+            ]
+
+    sp.run(nhmmer_command, check=True, stdout=log_file, stderr=log_file)
+    
+    ## checkoutput filesize - if it's empty manually write out an empty sto file
+    if out_file.stat().st_size == 0:
+        print("No hits returned; generatig empty MSA")
+        with open(realigned_out, "w+") as f:
+            f.write("# STOCKHOLM 1.0\n")
+            f.write(f"#=GF SQ 1\n")
+            f.write(f"{seqid} {gt_rna_sequence}\n")
+            f.write(f"#=GS {seqid} AC {seqid}\n")
+            f.write(f"#=GS {seqid} DE {seqid}\n")
+            f.write("//\n")
+        
+        return 
+    ## truncate output to maximum number of rows as specified in AF3 SI
+    truncated_msa = truncate_stockholm_msa(out_file, max_sequences = max_seq_map[wildcards['db']])
+    with open(reduced_out_file, "w+") as ofl:
+        ofl.write(truncated_msa)
+    
+
+    ## reformat alignment to include query sequence in alignment
+    ungap_sequences(str(reduced_out_file), f">{seqid}\n{gt_rna_sequence}\n", hits_fasta)
+
+    
+    hmmalign_command = [
+        HMMALIGN_BIN,
+        '-o', str(realigned_out),
+        query_hmm_file,
+        hits_fasta,
+    ]
+    sp.run(hmmalign_command, check=True, stdout=log_file, stderr=log_file)
+    
+    ## delete intermediate files
+    tmpfa.unlink(missing_ok = True)
+    out_file.unlink(missing_ok = True)
+    reduced_out_file.unlink(missing_ok = True)
+    hits_fasta.unlink(missing_ok=True)
+    return
+
+def get_threads_from_db(db:str, config: dict[[str, str]]) -> str:
+    if db in ["cfdb", "bfd"]:
+        return config["hhblits_threads"]
+    elif db in ["rfam", "nucleotide_collection", "rnacentral"]:
+        return config["nhmmer_threads"]
+    else:
+        return config["jackhmmer_threads"]
+
+
+def get_db_path(db:str,config: dict[[str, str]]) -> str:
+    base_database_path = config["base_database_path"]
+    outpaths = []
+    if db in set(["uniref90", "uniref100", "uniprot", "mgnify",  "rfam", "nucleotide_collection", "rnacentral"]):
+        outpaths.append(f"{base_database_path}/{db}/{db}.fasta")
+    elif db in set(["cfdb", "bfd", "uniref30"]):
+        if db == "cfdb":
+            pfx="colabfold_envdb_2023_hh"
+        elif db == "uniref30":
+            pfx ="UniRef30_2023_02"
+        elif db == "bfd":
+            pfx="bfd_metaclust_clu_complete_id30_c90_final_seq.sorted_opt"
+        else:
+            raise ValueError("Invalid database name ")
+        
+        subdbs=["a3m", "cs219", "hhm"]
+        stems=["ffdata", "ffindex"]
+        for sdb in subdbs:
+            for stem in stems:
+                outpaths.append(f"{base_database_path}/{db}/{pfx}_{sdb}.{stem}")
+    if len(outpaths) == 0:
+        raise ValueError(f"{db} not found ")
+    return outpaths
+        
+
+def generate_rule_all(config: dict[[str, str]],databases:List[str], input_fasta: dict[[str, str]]) -> None:
+    output_directory = config["output_directory"]
+    assert config["jackhmmer_output_format"] in set({"sto", "a3m"}), "Output format must be one of [a3m, sto]"
+    ext = config["jackhmmer_output_format"]
+    outputs = []
+    for seqid in input_fasta.keys():
+        for db in databases:
+            if db in set(["uniref90", "uniref100", "uniprot", "mgnify"]):
+                outputs.append(
+                    f"{output_directory}/{seqid}/{db}_hits.{ext}"
+                )
+            elif db in set(["rfam", "nucleotide_collection", "rnacentral"]):
+                assert ext == "sto", "RNA alignments only support sto"
+                outputs.append(
+                    f"{output_directory}/{seqid}/{db}_hits.{ext}"
+                )
+            elif db in set(["cfdb", "bfd"]):
+                outputs.append(
+                    f"{output_directory}/{seqid}/{db}_hits.a3m"
+                )
+    if config["run_template_search"]:
+        assert ext == "sto", "Must generate uniref90 MSAs in stockholm format for template search"
+        for seqid in input_fasta.keys():
+            outputs.append(
+                f"{output_directory}/{seqid}/hmm_output.sto"
+            )
+    return outputs
+
+
+### setup and validate input databases 
+openfold_env = config["openfold_env"]
+databases = config["databases"]
+valid_databases = set(["uniref90", "cfdb","bfd", "uniref100", "uniprot", "mgnify", "rfam", "nucleotide_collection", "rnacentral"])
+base_database_path = config["base_database_path"]
+for db in databases:
+    assert db in valid_databases, f"Invalid database inputs. must be one of {valid_databases}"
+## read in inputs and setup output directories
+output_directory = config["output_directory"]
+tmpdir = config["tmpdir"]
+Path(output_directory).mkdir(exist_ok = True, parents = True)
+Path(tmpdir).mkdir(exist_ok = True, parents = True)
+
+ext = config["jackhmmer_output_format"]
+
+input_fasta = {}
+for i, record in enumerate(SeqIO.parse(config["input_fasta"], "fasta")):
+    input_fasta[record.id] = str(record.seq)
+
+## paths to tools 
+NHMMER_BIN = f"{openfold_env}/bin/nhmmer"
+HMMBUILD_BIN = f"{openfold_env}/bin/hmmbuild"
+HMMALIGN_BIN = f"{openfold_env}/bin/hmmalign"
+JACKHMMER_BIN = f"{openfold_env}/bin/jackhmmer"
+HHBLITS_BIN = f"{openfold_env}/bin/hhblits"
+REFORMAT_BIN = f"{openfold_env}/scripts/reformat.pl"
+
+## Each DB has a maximum number of sequences to keep in the alignment
+## hhblits DBs have no limit 
+max_seq_map = {
+    "uniref90":10000,
+    "uniprot":50000,
+    "mgnify": 5000,
+    "rfam":10000,
+    "nucleotide_collection":10000,
+    "rnacentral":10000
+}
+
+rule all:
+    input:
+        generate_rule_all(config, databases, input_fasta)
+
+
+rule run_alignment:
+    input:
+        db=lambda wildcards: get_db_path(wildcards['db'], config), 
+        hmm = lambda wildcards: f"{output_directory}/{{seqid}}/query.hmm" if wildcards.db in ["rfam", "nucleotide_collection", "rnacentral"] else []
+    output:
+        msa_path = f"{output_directory}/{{seqid}}/{{db}}_hits.{{ext}}" 
+    threads: lambda wildcards: get_threads_from_db(wildcards['db'], config)
+    resources:
+        tmpdir=config["tmpdir"]
+    run:
+        if wildcards['db'] in ["cfdb", "bfd"]:
+            run_hhblits(config, wildcards, output, resources, threads)
+        elif wildcards["db"] in ["rfam", "nucleotide_collection", "rnacentral"]:
+            run_nhmmer(config, wildcards, input, output, resources, threads)
+        else:
+            run_jackhmmer(config, wildcards,input, output, resources, threads)
+
+
+rule build_rna_hmm:
+    output:
+        hmm = f"{output_directory}/{{seqid}}/query.hmm"
+    run:
+        ### build hmm for query sequence 
+        log_file = sp.DEVNULL
+        seqid = wildcards['seqid']
+        gt_rna_sequence = input_fasta[seqid]
+        sani_rna_sequence = sanitize_rna_sequence(gt_rna_sequence)
+        
+        alphanumeric = string.ascii_letters + string.digits
+        rng2 = ''.join(random.choice(alphanumeric) for i in range(16))
+        
+        outdir = Path(output["hmm"]).parent
+        outdir.mkdir(exist_ok= True, parents=True)
+        query_hmm_file = Path(f"{outdir}/query.hmm")
+
+        tmpfa = Path(f"{resources.tmpdir}/{seqid}_{rng2}.fa")
+        with open(tmpfa, "w+") as tmp:
+            tmp.write(f">{seqid}\n{sani_rna_sequence}")
+            tmp.flush()
+        hmmbuild_command = [
+                    HMMBUILD_BIN,
+                    "--rna",
+                    query_hmm_file,
+                    tmpfa
+                ]
+        sp.run(hmmbuild_command, check=True, stdout=log_file, stderr=log_file)
+
+
+
+rule run_template_search:
+    input:
+        db=f"{base_database_path}/pdb_seqres/pdb_seqres.fasta",
+        uniref90_msa = f"{output_directory}/{{seqid}}/uniref90_hits.sto"
+    output:
+        template_hits = f"{output_directory}/{{seqid}}/hmm_output.sto"
+    threads: 4
+    params:
+        alnDir = lambda wildcards, input: str(Path(input.uniref90_msa).parent),
+        query_sequence = lambda wildcards: input_fasta[wildcards["seqid"]]
+    shell:
+        '''
+        alnDir={params.alnDir}
+        cd $alnDir
+        if [ -e "hmm_output.sto" ]; then
+            echo "file exists, skipping"
+            exit 0
+        fi
+
+        envDir={openfold_env}
+        binDir="$envDir/bin"
+        
+        ## guarantee that that the query sequence is in the alignment
+        ### generate the query sequence
+        mgyId=$(basename $alnDir)
+        echo ">$mgyId" > query.fa
+        echo "{params.query_sequence}" >> query.fa
+        seqlen=$(tail -n1 query.fa | awk '{{ print length($0) }}')
+        
+        ## build inital hmm output
+        $binDir/hmmbuild --hand  --amino output.hmm uniref90_hits.sto > /dev/null 2>&1
+        $binDir/hmmsearch --cpu 4 --noali --F1 0.1 --F2 0.1 --F3 0.1 -E 100 --incE 100 --domE 100 --incdomE 100 -A hmm_output_no_query.sto output.hmm {input.db} > /dev/null 2>&1
+
+
+        if [ ! -s "hmm_output_no_query.sto" ]; then
+            echo "no hits found"
+            rm -f output.hmm query.fa templates_with_query.fasta hmm_output_tmp.sto hmm_output_no_query.sto templates_no_query.tmp  hmm_output.tmp 
+            touch hmm_output.sto
+            touch EMPTY_TEMPLATE_OK
+            exit 0
+        fi
+
+        rm -f concat_cfdb_uniref100_filtered.sto
+
+        cat query.fa > templates_with_query.fasta
+        $binDir/esl-reformat -u fasta hmm_output_no_query.sto >> templates_with_query.fasta
+        $binDir/hmmalign -o hmm_output_tmp.sto output.hmm templates_with_query.fasta
+        echo "# STOCKHOLM 1.0" > hmm_output.sto
+        echo "" >> hmm_output.sto
+        echo "#=GS $mgyId/1-$seqlen     DE [subseq from] mol:protein length:$seqlen  UNKNOWN" >> hmm_output.sto
+        tail -n+3  hmm_output_tmp.sto >> hmm_output.sto
+
+        rm -f output.hmm query.fa templates_with_query.fasta hmm_output_tmp.sto hmm_output_no_query.sto templates_no_query.tmp  hmm_output.tmp
+        '''

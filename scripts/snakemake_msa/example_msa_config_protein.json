@@ -1,0 +1,12 @@
+{
+    "input_fasta":"test.fa",
+    "openfold_env":"<path/to/conda_root_prefix>/envs/openfold",
+    "databases":["uniref90", "uniprot", "mgnify", "bfd"],
+    "base_database_path":"<path/to/databases>",
+    "output_directory":"<path/to/outdir>",
+    "jackhmmer_output_format":"sto",
+    "jackhmmer_threads":4,
+    "hhblits_threads":16,
+    "tmpdir": "/tmp",
+    "run_template_search":false
+}
