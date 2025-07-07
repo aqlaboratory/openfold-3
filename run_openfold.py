@@ -241,6 +241,9 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
 
     # Determine if running on rank zero process
     if wandb_logger is not None and trainer.global_rank == 0:
+        if runner_args.get("log_grads"):
+            wandb_logger.watch(lightning_module, log="all", log_graph=False)
+
         wandb_experiment = wandb_logger.experiment
 
         # Save pip environment to wandb
