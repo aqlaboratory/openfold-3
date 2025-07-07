@@ -130,6 +130,7 @@ def process_msas_of3(
                 max_rows_paired=max_rows_paired,
                 min_chains_paired_partial=min_chains_paired_partial,
                 pairing_mask_keys=pairing_mask_keys,
+                msas_to_pair=None,
             )
         else:
             chain_id_to_paired_msa = {}
