@@ -1,6 +1,6 @@
 {
     "input_fasta":"test.fa",
-    "openfold_env":"/p/vast1/OpenFoldCollab/openfold-data/miniforge3/envs/openfold",
+    "openfold_env":"<path/to/conda_root_prefix>/envs/openfold",
     "databases":["uniref90", "uniprot", "mgnify", "bfd"],
     "base_database_path":"<path/to/databases>",
     "output_directory":"<path/to/outdir>",
