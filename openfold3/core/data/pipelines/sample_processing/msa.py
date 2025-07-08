@@ -48,6 +48,7 @@ def process_msas_of3(
     min_chains_paired_partial: int,
     pairing_mask_keys: list[str],
     moltypes: list[str],
+    msas_to_pair: list[str],
 ) -> MsaArrayCollection:
     """Prepares the arrays needed to create MSA feature tensors.
 
@@ -94,6 +95,8 @@ def process_msas_of3(
             List of keys indicating which types of masks to apply during pairing.
         moltypes (list[str]):
             List of molecule types to consider in the MSA.
+        msas_to_pair (list[str]):
+            List of MSAs to pair for online pairing. If empty, no pairing will be done
 
     Returns:
         MsaArrayCollection:
@@ -130,7 +133,7 @@ def process_msas_of3(
                 max_rows_paired=max_rows_paired,
                 min_chains_paired_partial=min_chains_paired_partial,
                 pairing_mask_keys=pairing_mask_keys,
-                msas_to_pair=None,
+                msas_to_pair=msas_to_pair,
             )
         else:
             chain_id_to_paired_msa = {}

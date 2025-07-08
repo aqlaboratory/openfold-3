@@ -238,6 +238,7 @@ class BaseOF3Dataset(SingleDataset, ABC):
             min_chains_paired_partial=self.msa.min_chains_paired_partial,
             pairing_mask_keys=self.msa.pairing_mask_keys,
             moltypes=self.msa.moltypes,
+            msas_to_pair=self.msa.msas_to_pair,
         )
         msa_features = featurize_msa_of3(
             atom_array=atom_array,
