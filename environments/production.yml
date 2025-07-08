@@ -29,6 +29,7 @@ dependencies:
   - bioconda::hmmer
   - bioconda::hhsuite
   - bioconda::kalign2
+  - bioconda::snakemake
   - pytorch::pytorch=2.4
   - pytorch::pytorch-cuda=12.1
   - memory_profiler==0.61.0
