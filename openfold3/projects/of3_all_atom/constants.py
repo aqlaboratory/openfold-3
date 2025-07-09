@@ -98,6 +98,15 @@ METRICS = [
 ]
 
 ###################################
+# Training-specific Extra Metrics
+###################################
+
+# Mirrors ligand metrics but for diffusion training output
+TRAIN_EXTRA_METRICS = [f"{k}_diffusion" for k in LIGAND_METRICS]
+
+TRAIN_LOGGED_METRICS = [*METRICS, *TRAIN_EXTRA_METRICS]
+
+###################################
 # Model Selection
 # pLDDT/LDDT Correlation Metrics
 # Superimposition Metrics
