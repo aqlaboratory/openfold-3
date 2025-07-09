@@ -33,7 +33,7 @@ class TestDiffusionTransformer(unittest.TestCase):
         no_heads = 3
         no_blocks = 2
 
-        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_entry = registry.get_project_entry("of3_all_atom")
         proj_config = proj_entry.get_config_with_preset()
         config = proj_config.model
 

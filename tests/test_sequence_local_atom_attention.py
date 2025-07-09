@@ -12,7 +12,7 @@ from openfold3.core.model.layers.sequence_local_atom_attention import (
 )
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from tests.config import consts
-from tests.data_utils import random_af3_features
+from tests.data_utils import random_of3_features
 
 C_ATOM_REF = mlc.ConfigDict(
     {
@@ -34,7 +34,7 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
             c_atom_ref=C_ATOM_REF, c_atom=c_atom, c_atom_pair=c_atom_pair
         )
 
-        batch = random_af3_features(
+        batch = random_of3_features(
             batch_size=batch_size,
             n_token=consts.n_res,
             n_msa=consts.n_seq,
@@ -63,7 +63,7 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
             c_atom_ref=C_ATOM_REF, c_atom=c_atom, c_atom_pair=c_atom_pair
         )
 
-        batch = random_af3_features(
+        batch = random_of3_features(
             batch_size=batch_size,
             n_token=consts.n_res,
             n_msa=consts.n_seq,
@@ -102,7 +102,7 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
             c_atom_pair=c_atom_pair,
         )
 
-        batch = random_af3_features(
+        batch = random_of3_features(
             batch_size=batch_size,
             n_token=n_token,
             n_msa=consts.n_seq,
@@ -155,7 +155,7 @@ class TestNoisyPositionEmbedder(unittest.TestCase):
             c_atom_pair=c_atom_pair,
         )
 
-        batch = random_af3_features(
+        batch = random_of3_features(
             batch_size=batch_size,
             n_token=n_token,
             n_msa=consts.n_seq,
@@ -224,7 +224,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
             inf=inf,
         )
 
-        batch = random_af3_features(
+        batch = random_of3_features(
             batch_size=batch_size,
             n_token=n_token,
             n_msa=consts.n_seq,
@@ -281,7 +281,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
             inf=inf,
         )
 
-        batch = random_af3_features(
+        batch = random_of3_features(
             batch_size=batch_size,
             n_token=n_token,
             n_msa=consts.n_seq,
@@ -343,7 +343,7 @@ class TestAtomAttentionDecoder(unittest.TestCase):
             inf=inf,
         )
 
-        batch = random_af3_features(
+        batch = random_of3_features(
             batch_size=batch_size,
             n_token=n_token,
             n_msa=consts.n_seq,
@@ -394,7 +394,7 @@ class TestAtomAttentionDecoder(unittest.TestCase):
             inf=inf,
         )
 
-        batch = random_af3_features(
+        batch = random_of3_features(
             batch_size=batch_size,
             n_token=n_token,
             n_msa=consts.n_seq,

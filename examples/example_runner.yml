@@ -1,4 +1,4 @@
-# Model name, currently only af3_all_atom supported 
+# Model name, currently only of3_all_atom supported
 model_name: of3_all_atom
 # Can be found in
 # of3/model_implementations/<model_name>/configs/reference_config.yml 

@@ -216,13 +216,13 @@ class TestTemplateEmbedderAllAtom(unittest.TestCase):
         n_templ = 3
         n_token = 10
 
-        af3_proj_entry = registry.get_project_entry("af3_all_atom")
-        af3_proj_config = af3_proj_entry.get_config_with_preset()
-        af3_config = af3_proj_config.model
+        of3_proj_entry = registry.get_project_entry("of3_all_atom")
+        of3_proj_config = of3_proj_entry.get_config_with_preset()
+        of3_config = of3_proj_config.model
 
-        c_in = af3_config.architecture.template.template_pair_embedder.c_in
+        c_in = of3_config.architecture.template.template_pair_embedder.c_in
 
-        embedder = TemplateEmbedderAllAtom(af3_config.architecture.template)
+        embedder = TemplateEmbedderAllAtom(of3_config.architecture.template)
 
         batch = {
             "token_mask": torch.ones((batch_size, n_token)),
