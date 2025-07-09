@@ -1,11 +1,11 @@
 train:
   settings:
     blocks_per_ckpt: 1
-    ckpt_intermediate_steps: True
+    ckpt_intermediate_steps: true
 
 predict:
   settings:
-    diffusion_training_enabled: False
+    diffusion_training_enabled: false
 
 low_mem:
   settings:

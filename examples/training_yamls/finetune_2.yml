@@ -56,7 +56,7 @@ dataset_configs:
         debug_mode: true
         template:
           n_templates: 4
-          take_top_k: False
+          take_top_k: false
         crop:
           token_budget: 768
           crop_weights:
@@ -66,7 +66,6 @@ dataset_configs:
         loss:
           loss_weights:
             bond: 4.0
-            smooth_lddt: 0.0
 
     long-monomer-distillation:
       class: ProteinMonomerDataset
@@ -75,7 +74,7 @@ dataset_configs:
         debug_mode: true
         template:
           n_templates: 4
-          take_top_k: False
+          take_top_k: false
         sample_in_order: true
         crop:
           token_budget: 768 
@@ -86,10 +85,8 @@ dataset_configs:
         loss:
           loss_weights:
             experimentally_resolved: 0.0
-            pae: 0.0
             plddt: 0.0
             pde: 0.0
-            smooth_lddt: 0.0
 
     short-monomer-distillation:
       class: ProteinMonomerDataset
@@ -98,7 +95,7 @@ dataset_configs:
         debug_mode: true
         template:
           n_templates: 4
-          take_top_k: False
+          take_top_k: false
         sample_in_order: true
         crop:
           token_budget: 768 
@@ -109,10 +106,8 @@ dataset_configs:
         loss:
           loss_weights:
             experimentally_resolved: 0.0
-            pae: 0.0
             plddt: 0.0
             pde: 0.0
-            smooth_lddt: 0.0
 
     disordered-pdb:
       class: DisorderedPDBDataset
@@ -121,8 +116,8 @@ dataset_configs:
         debug_mode: true
         template:
           n_templates: 4
-          take_top_k: False
-        disable_non_protein_diffusion_weights: False  # set to F in fine tuning 
+          take_top_k: false
+        disable_non_protein_diffusion_weights: false  # set to F in fine tuning
         crop:
           token_budget: 768
           crop_weights:
@@ -132,8 +127,7 @@ dataset_configs:
         loss:
           loss_weights:
             bond: 4.0
-            smooth_lddt: 0.0
-            pae: 0.0
+            experimentally_resolved: 0.0
             plddt: 0.0
             pde: 0.0
 
@@ -144,7 +138,7 @@ dataset_configs:
         debug_mode: true
         template:
           n_templates: 4
-          take_top_k: True
+          take_top_k: true
 
 dataset_paths:
   weighted-pdb:
