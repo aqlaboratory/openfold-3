@@ -566,9 +566,10 @@ def get_ligand_metrics(
             'lddt_inter_ligand_ligand_uha': inter ligand lddt with above threshold
 
     Notes:
-        if there exists no appropriate substrate: returns an empty dict {}
-        function is compatible with multiple samples,
-            not compatible with batch with different number of atoms/substrates
+        If there exists no appropriate substrate: returns an empty dict {}
+
+        Function is compatible with multiple samples, not compatible with batch with
+        different number of atoms/substrates
     """
     out = {}
 
@@ -1127,6 +1128,7 @@ def get_validation_lddt_metrics(
 def get_metrics(
     batch,
     outputs,
+    compute_lig_diffusion_metrics=False,
     compute_extra_val_metrics=False,
 ) -> dict[str, torch.Tensor]:
     """
@@ -1135,22 +1137,65 @@ def get_metrics(
     Args:
         batch: ground truth and permutation applied features
         outputs: model outputs
+        compute_lig_diffusion_metrics: computes ligand metrics not only for the
+            mini-rollout result, but also the diffusion training prediction. Note that
+            for computational and memory efficiency reasons, only the first of the 48
+            diffusion training samples is used here.
         compute_extra_val_metrics: computes extra lddt metrics needed
             for model selection
     Returns:
-        metrics: dict containing validation metrics across all substrates
-            'lddt_intra_protein': intra protein lddt
-            'lddt_intra_ligand': intra ligand lddt
-            'lddt_intra_dna': intra dna lddt
-            'lddt_intra_rna': intra rna lddt
-            'lddt_inter_protein_protein': inter protein protein lddt
-            'lddt_inter_protein_ligand': inter protein ligand lddt
-            'lddt_inter_protein_dna;: inter protein dna lddt
-            'lddt_inter_protein_rna': inter protein rna lddt
-            'drmsd_intra_protein': intra protein drmsd
-            'drmsd_intra_ligand': intra ligand drmsd
-            'drmsd_intra_dna': intra dna drmsd
-            'drmsd_intra_rna': intra rna drmsd
+        metrics: A dict containing validation metrics. The presence of specific
+            keys depends on the contents of the batch and the function arguments.
+
+        **Protein Metrics:**
+            'lddt_intra_protein': Intra-chain lDDT for protein.
+            'lddt_inter_protein_protein': Inter-chain lDDT between proteins.
+            'drmsd_intra_protein': Intra-chain dRMSD for protein.
+            'clash_intra_protein': Intra-chain steric clash score for protein.
+            'clash_inter_protein_protein': Inter-chain steric clash between proteins.
+
+        **Ligand Metrics:**
+            'lddt_intra_ligand': Intra-chain lDDT for ligand.
+            'lddt_inter_ligand_ligand': Inter-chain lDDT between ligands.
+            'lddt_inter_protein_ligand': Inter-chain lDDT between protein and ligand.
+            'drmsd_intra_ligand': Intra-chain dRMSD for ligand.
+            'lddt_intra_ligand_uha': Intra-ligand lDDT with tighter thresholds.
+            'lddt_inter_ligand_ligand_uha': Inter-ligand lDDT with tighter thresholds.
+            'clash_intra_ligand': Intra-chain steric clash for ligand.
+            'clash_inter_ligand_ligand': Inter-chain clash between ligands.
+            'clash_inter_protein_ligand': Inter-chain clash between protein and ligand.
+
+        **Diffusion Metrics (`compute_lig_diffusion_metrics=True`):**
+            Keys from the "Ligand Metrics" section appended with '_diffusion'.
+
+        **Nucleic Acid Metrics (rna/dna):**
+            'lddt_intra_{rna/dna}': Intra-chain lDDT.
+            'lddt_inter_{rna/dna}_{rna/dna}': Inter-chain lDDT between same NA types.
+            'drmsd_intra_{rna/dna}': Intra-chain dRMSD.
+            'lddt_inter_protein_{rna/dna}': Inter-chain lDDT between protein and NA.
+            'lddt_intra_{rna/dna}_15': Intra-chain lDDT with 15A cutoff.
+            'lddt_inter_{rna/dna}_{rna/dna}_15': Inter-chain lDDT with 15A cutoff.
+            'lddt_inter_protein_{rna/dna}_15':
+                Inter-chain lDDT between protein and NA with 15A cutoff.
+            'clash_intra_{rna/dna}': Intra-chain steric clash.
+            'clash_inter_{rna/dna}_{rna/dna}': Inter-chain clash between same NA types.
+            'clash_inter_protein_{rna/dna}': Inter-chain clash between protein and NA.
+
+        **Extra Validation Metrics (`compute_extra_val_metrics=True`):**
+            'lddt_intra_complex': lDDT for the entire complex (intra-chain only).
+            'plddt_complex': Predicted lDDT for the complex.
+            'plddt_protein': Predicted lDDT for protein atoms.
+            'plddt_ligand': Predicted lDDT for ligand atoms.
+            'plddt_rna': Predicted lDDT for RNA atoms.
+            'plddt_dna': Predicted lDDT for DNA atoms.
+            'lddt_inter_ligand_dna': Inter-chain lDDT between ligand and DNA.
+            'lddt_inter_ligand_rna': Inter-chain lDDT between ligand and RNA.
+            'lddt_intra_modified_residues': Intra-chain lDDT for modified residues.
+            'rmsd': RMSD after Kabsch alignment.
+            'gdt_ts': Global Distance Test (Total Score).
+            'gdt_ha': Global Distance Test (High Accuracy).
+            'rasa':
+                Relative accessible surface area for proteins with unresolved residues.
 
     Note:
         if no appropriate substrates, no corresponding metrics will be included
@@ -1271,6 +1316,28 @@ def get_metrics(
             is_protein_atomized=is_protein_atomized,
         )
         metrics = metrics | ligand_validation_metrics
+
+        if compute_lig_diffusion_metrics:
+            pred_coords_diffusion = outputs["atom_positions_diffusion"]
+
+            # Take only first sample for computational efficiency
+            pred_coords_diffusion = pred_coords_diffusion[:, 0, ...].unsqueeze(1)
+
+            ligand_metrics_diffusion = get_ligand_metrics(
+                is_ligand_atomized=is_ligand_atomized,
+                asym_id=asym_id_atomized,
+                intra_mask_atomized=intra_filter_atomized,
+                inter_mask_atomized=inter_filter_atomized,
+                pred_coords=pred_coords_diffusion,
+                gt_coords=gt_coords,
+                all_atom_mask=all_atom_mask,
+                is_protein_atomized=is_protein_atomized,
+            )
+            # Rename the metrics to indicate they are from diffusion sample
+            ligand_metrics_diffusion = {
+                f"{k}_diffusion": v for k, v in ligand_metrics_diffusion.items()
+            }
+            metrics = metrics | ligand_metrics_diffusion
 
     if torch.any(is_rna_atomized):
         rna_validation_metrics = get_nucleic_acid_metrics(

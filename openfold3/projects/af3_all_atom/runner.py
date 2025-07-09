@@ -36,7 +36,7 @@ from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
 )
 from openfold3.projects.af3_all_atom.constants import (
     CORRELATION_METRICS,
-    METRICS,
+    TRAIN_LOGGED_METRICS,
     TRAIN_LOSSES,
     VAL_LOGGED_METRICS,
     VAL_LOSSES,
@@ -88,7 +88,8 @@ class AlphaFold3AllAtom(ModelRunner):
         )
 
         train_metrics = {
-            metric_name: MeanMetric(nan_strategy="warn") for metric_name in METRICS
+            metric_name: MeanMetric(nan_strategy="warn")
+            for metric_name in TRAIN_LOGGED_METRICS
         }
 
         self.train_metrics = MetricCollection(train_metrics, prefix="train/")
@@ -173,6 +174,7 @@ class AlphaFold3AllAtom(ModelRunner):
                 return get_metrics(
                     batch,
                     outputs,
+                    compute_lig_diffusion_metrics=True,
                     compute_extra_val_metrics=False,
                 )
 
