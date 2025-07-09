@@ -7,7 +7,7 @@ from openfold3.core.metrics.confidence import (
     compute_global_predicted_distance_error,
     compute_predicted_distance_error,
 )
-from openfold3.projects.af3_all_atom.constants import METRICS_MAXIMIZE, METRICS_MINIMIZE
+from openfold3.projects.of3_all_atom.constants import METRICS_MAXIMIZE, METRICS_MINIMIZE
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ def compute_valid_model_selection_metrics(
 
     # Find the top-1 sample per batch based on global pde
     # top1_global_pde shape: [bs]
-    top1_global_pde = torch.argmax(global_pde, dim=1)
+    top1_global_pde = torch.argmin(global_pde, dim=1)
 
     # Select the top-1 metric values (across the sample dimension) per batch
     metrics_top_1 = {}

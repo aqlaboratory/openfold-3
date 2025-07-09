@@ -50,7 +50,7 @@ class TestDistogramLoss(unittest.TestCase):
         batch = self.setup_features()
         batch_size, n_token = batch["token_mask"].shape
 
-        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_entry = registry.get_project_entry("of3_all_atom")
         proj_config = proj_entry.get_config_with_preset()
         config = proj_config.model
 

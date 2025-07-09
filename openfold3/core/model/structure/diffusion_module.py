@@ -74,6 +74,7 @@ def centre_random_augmentation(
     # center coordinates
     pos_centered = xl - mean_xl
     pos_out = pos_centered @ rots.transpose(-1, -2) + trans[..., None, :]
+    pos_out = pos_out * atom_mask[..., None]
 
     return pos_out
 
@@ -213,6 +214,8 @@ class DiffusionModule(nn.Module):
             batch=batch, t=t, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
         )
 
+        xl_noisy = xl_noisy * atom_mask[..., None]
+
         rl_noisy = xl_noisy / torch.sqrt(t[..., None, None] ** 2 + self.sigma_data**2)
 
         ai, ql, cl, plm = self.atom_attn_enc(
@@ -261,6 +264,8 @@ class DiffusionModule(nn.Module):
             / torch.sqrt(self.sigma_data**2 + t[..., None, None] ** 2)
             * rl_update
         )
+
+        xl_out = xl_out * atom_mask[..., None]
 
         return xl_out
 
@@ -362,8 +367,6 @@ class SampleDiffusion(nn.Module):
             )
 
             xl_noisy = xl + noise
-
-            xl_noisy = xl_noisy * atom_mask.unsqueeze(-1)
 
             xl_denoised = self.diffusion_module(
                 batch=batch,

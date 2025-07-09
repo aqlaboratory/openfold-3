@@ -2,7 +2,7 @@
 # model_implementations/registry.py
 # We will read the model preset from a separate field.
 mode: train
-project_type: af3_all_atom
+project_type: of3_all_atom
 presets:
   - train
 

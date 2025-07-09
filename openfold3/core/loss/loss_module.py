@@ -151,7 +151,7 @@ class AlphaFoldLoss(nn.Module):
         return cum_loss, losses
 
 
-class AlphaFold3Loss(nn.Module):
+class OpenFold3Loss(nn.Module):
     """Aggregation of the various losses described in the supplement"""
 
     def __init__(self, config):
@@ -160,7 +160,7 @@ class AlphaFold3Loss(nn.Module):
         # Loss config
         self.config = config
 
-    def loss(self, batch, output, _return_breakdown=False):
+    def loss(self, batch, output):
         cum_loss = 0.0
         losses = {}
 
@@ -205,9 +205,6 @@ class AlphaFold3Loss(nn.Module):
 
         losses["loss"] = cum_loss.detach().clone()
 
-        if not _return_breakdown:
-            return cum_loss
-
         return cum_loss, losses
 
     def forward(self, batch, output, _return_breakdown=False):
@@ -217,7 +214,7 @@ class AlphaFold3Loss(nn.Module):
                 Dict containing input tensors
             output:
                 Dict containing output tensors
-                (see openfold3/openfold3/model_implementations/af3_all_atom/model.py
+                (see openfold3/openfold3/model_implementations/of3_all_atom/model.py
                 for a list items in batch and output)
             _return_breakdown:
                 If True, also return a dictionary of individual
@@ -226,9 +223,9 @@ class AlphaFold3Loss(nn.Module):
             cum_loss: Scalar tensor representing the total loss
             losses: Dict containing individual loss components
         """
-        if not _return_breakdown:
-            cum_loss = self.loss(batch, output, _return_breakdown)
-            return cum_loss
+        loss, loss_breakdown = self.loss(batch, output)
 
-        cum_loss, losses = self.loss(batch, output, _return_breakdown)
-        return cum_loss, losses
+        if not _return_breakdown:
+            return loss
+
+        return loss, loss_breakdown
