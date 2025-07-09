@@ -22,7 +22,7 @@ from openfold3.core.data.framework.data_module import DataModule
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.projects import registry
-from openfold3.projects.af3_all_atom.config.runner_file_checks import (
+from openfold3.projects.of3_all_atom.config.runner_file_checks import (
     _check_data_module_config,
 )
 

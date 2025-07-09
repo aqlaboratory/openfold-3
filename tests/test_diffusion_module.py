@@ -24,7 +24,7 @@ from openfold3.core.model.structure.diffusion_module import (
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects import registry
 from tests.config import consts
-from tests.data_utils import random_af3_features
+from tests.data_utils import random_of3_features
 
 
 class TestDiffusionModule(unittest.TestCase):
@@ -32,7 +32,7 @@ class TestDiffusionModule(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
-        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_entry = registry.get_project_entry("of3_all_atom")
         proj_config = proj_entry.get_config_with_preset()
         config = proj_config.model
 
@@ -42,7 +42,7 @@ class TestDiffusionModule(unittest.TestCase):
 
         dm = DiffusionModule(config=config.architecture.diffusion_module)
 
-        batch = random_af3_features(
+        batch = random_of3_features(
             batch_size=batch_size,
             n_token=n_token,
             n_msa=consts.n_seq,
@@ -75,7 +75,7 @@ class TestDiffusionModule(unittest.TestCase):
         n_token = consts.n_res
         n_sample = 3
 
-        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_entry = registry.get_project_entry("of3_all_atom")
         proj_config = proj_entry.get_config_with_preset()
         config = proj_config.model
 
@@ -85,7 +85,7 @@ class TestDiffusionModule(unittest.TestCase):
 
         dm = DiffusionModule(config=config.architecture.diffusion_module)
 
-        batch = random_af3_features(
+        batch = random_of3_features(
             batch_size=batch_size,
             n_token=n_token,
             n_msa=consts.n_seq,
@@ -120,7 +120,7 @@ class TestSampleDiffusion(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
-        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_entry = registry.get_project_entry("of3_all_atom")
         proj_config = proj_entry.get_config_with_preset()
         config = proj_config.model
 
@@ -136,7 +136,7 @@ class TestSampleDiffusion(unittest.TestCase):
         dm = DiffusionModule(config=config.architecture.diffusion_module)
         sd = SampleDiffusion(**sample_config, diffusion_module=dm)
 
-        batch = random_af3_features(
+        batch = random_of3_features(
             batch_size=batch_size,
             n_token=n_token,
             n_msa=consts.n_seq,
