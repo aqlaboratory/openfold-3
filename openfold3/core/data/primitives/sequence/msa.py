@@ -1071,6 +1071,8 @@ def create_paired(
             the number of unique chains in the crop or assembly.
         pairing_mask_keys (list[str]):
             List of strings indicating which mask to add.
+        msas_to_pair (list[str]):
+            Msas to to pair for online pairing
 
     Returns:
         dict[str, Msa]:
