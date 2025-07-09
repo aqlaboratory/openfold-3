@@ -1073,8 +1073,6 @@ def create_paired(
             List of strings indicating which mask to add.
         msas_to_pair (list[str]):
             Msas to to pair for online pairing
-        paired_msa_order: (list[str])
-            Order in which to pair msas
 
     Returns:
         dict[str, Msa]:
