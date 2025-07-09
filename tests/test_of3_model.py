@@ -48,7 +48,7 @@ class TestOF3Model(unittest.TestCase):
         config.architecture.loss_module.diffusion.chunk_size = 16
 
         of3 = OpenFold3AllAtom(config, _compile=False).to(device=device, dtype=dtype)
-        of3_loss = OpenFold3Loss(config=config.atrchitecture.loss_module)
+        of3_loss = OpenFold3Loss(config=config.architecture.loss_module)
 
         batch = random_of3_features(
             batch_size=batch_size,
