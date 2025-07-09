@@ -1,3 +1,4 @@
+import gc
 import importlib
 import itertools
 import logging
@@ -5,7 +6,7 @@ from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
-from torchmetrics import MeanMetric, MetricCollection
+from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
 
 from openfold3.core.loss.loss_module import OpenFold3Loss
 from openfold3.core.metrics.confidence import (
@@ -19,7 +20,6 @@ from openfold3.core.metrics.model_selection import (
     compute_final_model_selection_metric,
     compute_valid_model_selection_metrics,
 )
-from openfold3.core.metrics.pearson_correlation import ZeroSafePearsonCorrCoef
 from openfold3.core.metrics.validation_all_atom import (
     get_metrics,
     get_metrics_chunked,
@@ -33,7 +33,7 @@ from openfold3.projects.of3_all_atom.config.model_config import (
 )
 from openfold3.projects.of3_all_atom.constants import (
     CORRELATION_METRICS,
-    METRICS,
+    TRAIN_LOGGED_METRICS,
     TRAIN_LOSSES,
     VAL_LOGGED_METRICS,
     VAL_LOSSES,
@@ -84,7 +84,8 @@ class OpenFold3AllAtom(ModelRunner):
         )
 
         train_metrics = {
-            metric_name: MeanMetric(nan_strategy="warn") for metric_name in METRICS
+            metric_name: MeanMetric(nan_strategy="warn")
+            for metric_name in TRAIN_LOGGED_METRICS
         }
 
         self.train_metrics = MetricCollection(train_metrics, prefix="train/")
@@ -104,7 +105,7 @@ class OpenFold3AllAtom(ModelRunner):
         }
         val_metrics.update(
             {
-                metric_name: ZeroSafePearsonCorrCoef(num_outputs=1)
+                metric_name: PearsonCorrCoef(num_outputs=1)
                 for metric_name in CORRELATION_METRICS
             }
         )
@@ -169,6 +170,7 @@ class OpenFold3AllAtom(ModelRunner):
                 return get_metrics(
                     batch,
                     outputs,
+                    compute_lig_diffusion_metrics=True,
                     compute_extra_val_metrics=False,
                 )
 
@@ -462,6 +464,12 @@ class OpenFold3AllAtom(ModelRunner):
         # Restore the model weights to normal
         self.model.load_state_dict(self.cached_weights)
         self.cached_weights = None
+
+        # Temp fix for val dataloader worker seg fault issues
+        # TODO: Figure out why this is not being cleaned up properly
+        gc.collect()
+        torch.cuda.empty_cache()
+        self.trainer.strategy.barrier()
 
     def configure_optimizers(self) -> dict:
         optimizer_config = self.config.settings.optimizer
