@@ -116,6 +116,7 @@ class InferenceExperimentSettings(ExperimentSettings):
     seeds: int | list[int] = [42]
     num_seeds: int | None = None
     output_dir: DirectoryPath = Path("./inference_output")
+    template_structure_directory_path: DirectoryPath | None = None
 
     @model_validator(mode="after")
     def generate_seeds(cls, model):

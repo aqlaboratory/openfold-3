@@ -180,6 +180,8 @@ def predict(
             update={"dataset_config_kwargs": updated_dataset_config_kwargs}
         )
 
+    # Preprocess template alignments and optionally template structures
+
     # Run the forward pass
     expt_runner.setup()
     expt_runner.run(query_set)

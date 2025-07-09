@@ -3,9 +3,14 @@ Parsers for template alignments.
 """
 
 from collections.abc import Iterable
+import re
 from typing import NamedTuple
 
+import numpy as np
+import pandas as pd
+
 from openfold3.core.data.io.sequence.fasta import parse_fasta
+from openfold3.core.data.resources.residues import MoleculeType
 
 """
 Updates compared to the old OpenFold version:
@@ -320,3 +325,228 @@ def parse_hmmsearch_sto(stockholm_string: str) -> dict[int, TemplateHit]:
     a3m_string = convert_stockholm_to_a3m(stockholm_string)
     template_hits = parse_hmmsearch_a3m(a3m_string=a3m_string)
     return template_hits
+
+# New template alignment parsers for inference
+# TODO: update old parsers and pipelines for training with these
+class TemplateData(NamedTuple):
+    """Tuple storing information about a template hit in an alignment.
+
+    Attributes:
+        index (int): 
+            The index of the template hit in the alignment.
+        entry_id (str):
+            The entry ID of the template.
+        chain_id (str):
+            The chain ID of the template.
+        query_ids_hit (np.ndarray):
+            The indices of the query residues that hit the template.
+        template_ids_hit (np.ndarray):
+            The indices of the template residues that hit the query.
+        template_sequence (str):
+            The sequence of the template aligned to the query.
+        e_value (float | None):
+            The e-value of the template hit, if available. Defaults to None.
+    """
+
+    index: int
+    entry_id: str
+    chain_id: str
+    query_ids_hit: np.ndarray
+    template_ids_hit: np.ndarray
+    template_sequence: str
+    e_value: float | None
+
+def parse_hmmer_headers(hmmalign_string: str, max_sequences: int) -> tuple[pd.DataFrame, list[str]]:
+    """Parses the headers from an hmmalign MSA string in Stockholm format.
+
+    Expects the headers to be in the format:
+        #=GS <entry id>_<chain id>/<start res id>-<end res id> mol:<moltype>
+    where 
+        <entry id>: an arbitrary ID for the first row and PDB ID for all other rows
+        <chain id>: chain ID
+        <start res id>: the residue ID of the first residue of the aligned sequence segment in the full sequence
+        <end res id>: the residue ID of the last residue of the aligned sequence segment in the full sequence
+        <moltype>: the molecule type, one of "protein", "dna", "rna"
+
+    Args:
+        hmmalign_string (str):
+            The string containing the hmmalign MSA in Stockholm format.
+        max_sequences (int):
+            The maximum number of sequences to parse from the alignment.
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]:
+            A tuple containing:
+            - A DataFrame with columns "id", "start", "end", and "moltype" for each sequence.
+            - A list of sequence IDs in the order they appear in the alignment.
+    """
+    regex = re.compile(r"^#=GS\s+([^/]+)/(\d+)-(\d+).*?mol:(\w+)", re.MULTILINE)
+    headers = pd.DataFrame([list(match) for match in regex.findall(hmmalign_string)][:max_sequences + 1], 
+                        columns=["id", "start", "end", "moltype"])
+    regex = re.compile(r"^#=GS\s+(\S+)", re.MULTILINE)
+    ordered_ids = regex.findall(hmmalign_string)
+
+    return headers, ordered_ids
+
+def parse_hmmer_sequences(hmmalign_string: str) -> dict[str, str]:
+    """Parses an hmmalign MSA str in sto format into a mapping of sequence IDs to sequences.
+
+    Args:
+        hmmalign_string (str):
+            The string containing the hmmalign MSA in Stockholm format.
+
+    Returns:
+        dict[str, str]:
+            A dictionary mapping sequence IDs to their corresponding sequences.
+    """
+    sequence_map = {}
+    for line in hmmalign_string.splitlines():
+        # Ignore annotation lines and blank lines
+        if not line.strip() or line.startswith("#") or line.startswith("//"):
+            continue
+
+        # Split the line into the full ID and the sequence
+        full_id, chunk = line.split(maxsplit=1)
+
+        sequence_map[full_id] = sequence_map.get(full_id, "") + chunk.strip()
+
+    return sequence_map
+    
+def calculate_ids_hit(q: np.ndarray, t: np.ndarray, query_start: int, template_start: int) -> tuple[np.ndarray, np.ndarray]:
+    """Calculates the residue correspondences between the full query and template sequences.
+
+    Args:
+        q (np.ndarray):
+            The aligned query sequence as a numpy array of characters.
+        t (np.ndarray):
+            The aligned template sequence as a numpy array of characters.
+        query_start (int):
+            The starting index of the aligned query sequence segment in the full query sequence.
+        template_start (int):
+            The starting index of the aligned template sequence segment in the full template sequence.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: _description_
+    """
+
+    # 1. Create boolean masks to identify non-gaps
+    q_is_residue = (q != '-')
+    t_is_residue = (t != '-')
+
+    # 2. Create a mask to identify columns that should be kept
+    columns_to_keep = q_is_residue | t_is_residue
+
+    # 3. Calculate the running count of residues for each sequence
+    q_cumsum = np.cumsum(q_is_residue)
+    t_cumsum = np.cumsum(t_is_residue)
+
+    # 4.  Apply the start offset and set gap positions to 0
+    query_map = np.where(q_is_residue, q_cumsum + query_start - 1, -1)
+    template_map = np.where(t_is_residue, t_cumsum + template_start - 1, -1)
+
+    # 5. Filter out the columns where both sequences had a gap
+    return query_map[columns_to_keep], template_map[columns_to_keep]
+
+def create_template_hits(sequence_map: dict[str, str], headers: pd.DataFrame, ordered_ids: list[str], max_sequences: int) -> dict[int, TemplateData]:
+    """Parses the sequence map and headers to create TemplateHit objects.
+
+    Args:
+        sequence_map (dict[str, str]):
+            A mapping of sequence IDs to their corresponding sequences.
+        headers (pd.DataFrame):
+            A DataFrame containing the headers with columns "id", "start", "end", and "moltype".
+        ordered_ids (list[str]):
+            A list of sequence IDs in the order they appear in the alignment.
+        max_sequences (int):
+            The maximum number of sequences to consider for template hits.
+
+    Returns:
+        dict[int, TemplateHit]:
+            A dictionary mapping row indices to TemplateHit objects, containing
+            the aligned sequences and their indices in the ungapped query sequence.
+    """
+
+    # query_id should be the full ID like "1a0a_A/1-63" but is misformatted in the
+    # snakemake pipeline and only has the base ID like "1a0a_A" so trying both here
+    query_id = ordered_ids[0].split("/")[0]
+    if query_id not in sequence_map:
+        query_id = ordered_ids[0]
+
+    # Get the ungapped query sequence and its mask 
+    query_sequence_str = sequence_map[query_id]
+    query_sequence = np.fromiter(query_sequence_str, dtype='<U1', count=len(query_sequence_str))
+    query_nongap_mask = ~np.isin(query_sequence, ['-', '.'])
+    query_sequence_nongap = query_sequence[query_nongap_mask]
+    
+    query_moltype = MoleculeType[headers.iloc[0]["moltype"].upper()]
+    query_start = int(headers.iloc[0]["start"])
+
+    # Iterate over the remaining sequences up to max_sequences
+    templates = {}
+    for seq_id, row in zip(ordered_ids[1:], headers.iterrows()):
+        if seq_id in sequence_map:
+            template_sequence_str = sequence_map[seq_id]
+            template_sequence = np.fromiter(template_sequence_str, dtype='<U1', count=len(template_sequence_str))
+            # np array of the template aligned to the ungapped query sequence
+            template_sequence_nongap = template_sequence[query_nongap_mask]
+            # str of the ungapped template sequence
+            template_sequence_str_nongap = "".join(template_sequence[~np.isin(template_sequence, ['-', '.'])]).upper()
+
+            index = row[0]
+            header = row[1]
+
+            # Skip the first sequence (query) and check molecule type
+            if (index == 0) or (MoleculeType[header["moltype"].upper()] != query_moltype):
+                continue
+
+            # Get residue correspondences wrt. the full-length sequences
+            query_ids_hit, template_ids_hit = calculate_ids_hit(
+                q=query_sequence_nongap,
+                t=template_sequence_nongap,
+                query_start=query_start,
+                template_start=int(header["start"]),
+            )
+            
+            entry_id, chain_id = header["id"].split("_")
+            template_hit = TemplateData(
+                index=index,
+                entry_id=entry_id,
+                chain_id=chain_id,
+                query_ids_hit=query_ids_hit,
+                template_ids_hit=template_ids_hit,
+                template_sequence=template_sequence_str_nongap,
+                e_value=None,
+            )
+            templates[index] = template_hit
+
+        if len(templates) == max_sequences:
+            break
+
+    return templates
+
+def parse_hmmer_sto(hmm_string: str, max_sequences: int) -> dict[int, TemplateData]:
+    """Parses an hmmalign MSA in Stockholm format into a dict of query-template mappings.
+
+    Args:
+        hmm_string (str):
+            The string containing the hmmalign/hmmsearch MSA in Stockholm format.
+        max_sequences (int):
+            The maximum number of sequences to parse from the alignment.
+
+    Returns:
+        dict[int, TemplateData]:
+            A dictionary mapping row indices to TemplateData objects, containing
+            the aligned sequences and their indices in the ungapped query sequence.
+    """
+    
+    # 1. Parse headers from format "#=GS id/start-end moltype"
+    headers, ordered_ids = parse_hmmer_headers(hmm_string, max_sequences)
+
+    # 2. Create id -> sequence mapping
+    sequence_map = parse_hmmer_sequences(hmm_string)
+
+    # 3. Get subset of sequence in order, aligned to the ungapped query sequence
+    return create_template_hits(sequence_map, headers, ordered_ids, max_sequences)
+
+
+
