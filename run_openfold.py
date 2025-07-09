@@ -22,7 +22,7 @@ from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModule
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.projects import registry
-from openfold3.projects.af3_all_atom.config.runner_file_checks import (
+from openfold3.projects.of3_all_atom.config.runner_file_checks import (
     _check_data_module_config,
 )
 
@@ -241,6 +241,9 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
 
     # Determine if running on rank zero process
     if wandb_logger is not None and trainer.global_rank == 0:
+        if runner_args.get("log_grads"):
+            wandb_logger.watch(lightning_module, log="all", log_graph=False)
+
         wandb_experiment = wandb_logger.experiment
 
         # Save pip environment to wandb

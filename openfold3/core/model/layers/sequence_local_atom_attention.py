@@ -52,7 +52,7 @@ class RefAtomFeatureEmbedder(nn.Module):
 
     def __init__(
         self,
-        c_atom_ref: int,
+        c_atom_ref: ConfigDict,
         c_atom: int,
         c_atom_pair: int,
         linear_init_params: ConfigDict = lin_init.ref_atom_emb_init,
@@ -60,7 +60,7 @@ class RefAtomFeatureEmbedder(nn.Module):
         """
         Args:
             c_atom_ref:
-                Reference atom feature channel dimension (390)
+                Dict of reference atom channel dimensions per feature
             c_atom:
                 Atom single conditioning channel dimension
             c_atom_pair:
@@ -73,11 +73,12 @@ class RefAtomFeatureEmbedder(nn.Module):
         self.linear_ref_pos = Linear(3, c_atom, **linear_init_params.linear_feats)
         self.linear_ref_charge = Linear(1, c_atom, **linear_init_params.linear_feats)
         self.linear_ref_mask = Linear(1, c_atom, **linear_init_params.linear_feats)
-        self.linear_ref_element = Linear(119, c_atom, **linear_init_params.linear_feats)
-        self.linear_ref_atom_chars = Linear(
-            256, c_atom, **linear_init_params.linear_feats
+        self.linear_ref_element = Linear(
+            c_atom_ref.element, c_atom, **linear_init_params.linear_feats
         )
-
+        self.linear_ref_atom_chars = Linear(
+            c_atom_ref.name_chars, c_atom, **linear_init_params.linear_feats
+        )
         self.linear_ref_offset = Linear(
             3, c_atom_pair, **linear_init_params.linear_ref_offset
         )
@@ -275,7 +276,7 @@ class AtomAttentionEncoder(nn.Module):
 
     def __init__(
         self,
-        c_atom_ref: int,
+        c_atom_ref: ConfigDict,
         c_atom: int,
         c_atom_pair: int,
         c_token: int,
@@ -298,7 +299,7 @@ class AtomAttentionEncoder(nn.Module):
         """
         Args:
             c_atom_ref:
-                Reference atom feature channel dimension (390)
+                Dict of reference atom channel dimensions per feature
             c_atom:
                 Atom single representation channel dimension
             c_atom_pair:

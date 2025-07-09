@@ -5,7 +5,7 @@ import ml_collections as mlc
 import pytest  # noqa: F401  - used for pytest tmp fixture
 
 from openfold3.core.config import config_utils, dataset_config_builder
-from openfold3.projects.af3_all_atom.config import (
+from openfold3.projects.of3_all_atom.config import (
     dataset_config_builder as af3_dataset_config_builder,
 )
 

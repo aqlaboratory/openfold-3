@@ -38,14 +38,13 @@ from openfold3.core.model.structure.diffusion_module import (
     centre_random_augmentation,
     create_noise_schedule,
 )
-from openfold3.core.utils.atomize_utils import aggregate_atom_feat_to_tokens
 from openfold3.core.utils.permutation_alignment import (
     safe_multi_chain_permutation_alignment,
 )
 from openfold3.core.utils.tensor_utils import add, tensor_tree_map
 
 
-class AlphaFold3(nn.Module):
+class OpenFold3(nn.Module):
     """
     Alphafold 3.
 
@@ -429,29 +428,13 @@ class AlphaFold3(nn.Module):
 
         # Sample atom positions
         xl_noisy = xl_gt + noise
-        xl_noisy = xl_noisy * atom_mask_gt.unsqueeze(-1)
-
-        # Unresolved atoms are masked out for the training diffusion step
-        # Token mask used in the diffusion transformer needs to match the atom mask,
-        # where fully unresolved residues and unresolved ligands / modified residues
-        # tokenized per atom are excluded from the computation.
-        agg_atom_mask = aggregate_atom_feat_to_tokens(
-            token_mask=batch["token_mask"],
-            atom_to_token_index=batch["atom_to_token_index"],
-            atom_mask=batch["atom_mask"],
-            atom_feat=atom_mask_gt.bool(),
-            atom_dim=-1,
-            aggregate_fn="sum",
-        )
-
-        token_mask = (agg_atom_mask > 0).to(dtype=atom_mask_gt.dtype)
 
         # Run diffusion module
         xl = self.diffusion_module(
             batch=batch,
             xl_noisy=xl_noisy,
-            token_mask=token_mask,
-            atom_mask=atom_mask_gt,
+            token_mask=batch["token_mask"],
+            atom_mask=batch["atom_mask"],
             t=t,
             si_input=si_input,
             si_trunk=si_trunk,

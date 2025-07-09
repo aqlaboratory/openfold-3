@@ -11,6 +11,7 @@ import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFFile
 
+from openfold3.core.data.io.structure.atom_array import read_atomarray_from_npz
 from openfold3.core.data.io.structure.cif import parse_mmcif
 from openfold3.core.data.primitives.featurization.structure import get_token_starts
 from openfold3.core.data.primitives.quality_control.logging_utils import (
@@ -305,7 +306,9 @@ def parse_template_structure(
             with open(template_structure_array_file, "rb") as f:
                 atom_array_template_chain = pkl.load(f)
         elif template_file_format == "npz":
-            atom_array_template_chain = np.load(str(template_structure_array_file))
+            atom_array_template_chain = read_atomarray_from_npz(
+                template_structure_array_file
+            )
         else:
             raise ValueError(
                 f"Invalid template structure array format: {template_file_format}. "

@@ -1,6 +1,7 @@
 import math
 import unittest
 
+import ml_collections as mlc
 import torch
 
 from openfold3.core.model.layers.sequence_local_atom_attention import (
@@ -10,9 +11,15 @@ from openfold3.core.model.layers.sequence_local_atom_attention import (
     RefAtomFeatureEmbedder,
 )
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.projects.af3_all_atom.config.base_config import c_atom_ref
 from tests.config import consts
 from tests.data_utils import random_af3_features
+
+C_ATOM_REF = mlc.ConfigDict(
+    {
+        "element": 119,
+        "name_chars": 256,
+    }
+)
 
 
 class TestRefAtomFeatureEmbedder(unittest.TestCase):
@@ -24,7 +31,7 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
         n_key = 128
 
         embedder = RefAtomFeatureEmbedder(
-            c_atom_ref=c_atom_ref.get(), c_atom=c_atom, c_atom_pair=c_atom_pair
+            c_atom_ref=C_ATOM_REF, c_atom=c_atom, c_atom_pair=c_atom_pair
         )
 
         batch = random_af3_features(
@@ -53,7 +60,7 @@ class TestRefAtomFeatureEmbedder(unittest.TestCase):
         n_key = 128
 
         embedder = RefAtomFeatureEmbedder(
-            c_atom_ref=c_atom_ref.get(), c_atom=c_atom, c_atom_pair=c_atom_pair
+            c_atom_ref=C_ATOM_REF, c_atom=c_atom, c_atom_pair=c_atom_pair
         )
 
         batch = random_af3_features(
@@ -202,7 +209,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         inf = 1e10
 
         atom_attn_enc = AtomAttentionEncoder(
-            c_atom_ref=c_atom_ref.get(),
+            c_atom_ref=C_ATOM_REF,
             c_atom=c_atom,
             c_atom_pair=c_atom_pair,
             c_token=c_token,
@@ -259,7 +266,7 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         atom_attn_enc = AtomAttentionEncoder(
             c_s=c_s,
             c_z=c_z,
-            c_atom_ref=c_atom_ref.get(),
+            c_atom_ref=C_ATOM_REF,
             c_atom=c_atom,
             c_atom_pair=c_atom_pair,
             c_token=c_token,
