@@ -14,7 +14,6 @@ c_s = mlc.FieldReference(384, field_type=int)
 c_z = mlc.FieldReference(128, field_type=int)
 c_m = mlc.FieldReference(64, field_type=int)
 c_t = mlc.FieldReference(64, field_type=int)
-c_atom_ref = mlc.FieldReference(380, field_type=int)
 c_atom = mlc.FieldReference(128, field_type=int)
 c_atom_pair = mlc.FieldReference(16, field_type=int)
 c_token_embedder = mlc.FieldReference(384, field_type=int)
@@ -156,7 +155,10 @@ project_config = mlc.ConfigDict(
                     "atom_attn_enc": {
                         "c_s": c_s,
                         "c_z": c_z,
-                        "c_atom_ref": c_atom_ref,
+                        "c_atom_ref": {
+                            "element": 119,
+                            "name_chars": 256,
+                        },
                         "c_atom": c_atom,
                         "c_atom_pair": c_atom_pair,
                         "c_token": c_token_embedder,
@@ -280,7 +282,10 @@ project_config = mlc.ConfigDict(
                     "atom_attn_enc": {
                         "c_s": c_s,
                         "c_z": c_z,
-                        "c_atom_ref": c_atom_ref,
+                        "c_atom_ref": {
+                            "element": 119,
+                            "name_chars": 256,
+                        },
                         "c_atom": c_atom,
                         "c_atom_pair": c_atom_pair,
                         "c_token": c_token_diffusion,
