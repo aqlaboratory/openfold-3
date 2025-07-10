@@ -1,20 +1,17 @@
 name: Build Official Openfold's docker image
 
 on:
-  push:
-    branches: [ main, dev ]
-  pull_request:
-    branches: [ main, dev , inference-dev]
+  workflow_dispatch:
 
 jobs:
+  cleanup:
+    uses: ./.github/workflows/cleanup.yml
+
   build:
-    runs-on: ubuntu-latest
-    
+    runs-on: ubuntu-4core-150g-ssd 
+    needs: cleanup
+
     steps:
-    - name: Clean up GH disk
-      run: |
-           sudo rm -rf $ANDROID_SDK_ROOT
-           
     - uses: actions/checkout@v4
         
     - name: Build the Docker image
@@ -25,4 +22,3 @@ jobs:
 
     - name: Publishing image
       run: echo "TBD"
-      

@@ -160,7 +160,7 @@ class OpenFold3Loss(nn.Module):
         # Loss config
         self.config = config
 
-    def loss(self, batch, output, _return_breakdown=False):
+    def loss(self, batch, output):
         cum_loss = 0.0
         losses = {}
 
@@ -205,9 +205,6 @@ class OpenFold3Loss(nn.Module):
 
         losses["loss"] = cum_loss.detach().clone()
 
-        if not _return_breakdown:
-            return cum_loss
-
         return cum_loss, losses
 
     def forward(self, batch, output, _return_breakdown=False):
@@ -226,9 +223,9 @@ class OpenFold3Loss(nn.Module):
             cum_loss: Scalar tensor representing the total loss
             losses: Dict containing individual loss components
         """
-        if not _return_breakdown:
-            cum_loss = self.loss(batch, output, _return_breakdown)
-            return cum_loss
+        loss, loss_breakdown = self.loss(batch, output)
 
-        cum_loss, losses = self.loss(batch, output, _return_breakdown)
-        return cum_loss, losses
+        if not _return_breakdown:
+            return loss
+
+        return loss, loss_breakdown
