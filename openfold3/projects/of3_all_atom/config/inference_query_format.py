@@ -42,7 +42,7 @@ class Chain(BaseModel):
     ) = None
     main_msa_file_paths: list[FilePath | DirectoryPath] | None = None
     template_alignment_file_path: (
-        Annotated[list[FilePath], BeforeValidator(_ensure_list)] | None 
+        Annotated[list[FilePath], BeforeValidator(_ensure_list)] | None
     ) = None
     template_pdb_chain_ids: (
         Annotated[list[str], BeforeValidator(_ensure_list)] | None
@@ -67,11 +67,14 @@ class Query(BaseModel):
     # use_templates: bool = False
     covalent_bonds: list[Bond] | None = None
 
+
 class InferenceQuerySet(BaseModel):
     seeds: list[int] = [42]
     queries: dict[str, Query]
     ccd_file_path: FilePath | None = None
-    template_structure_directory_path: DirectoryPath | None = None # should be provided via the InferenceExperimentSettings
+    template_structure_directory_path: DirectoryPath | None = (
+        None  # should be provided via the InferenceExperimentSettings
+    )
     # msa_directory_path: DirectoryPathOrNone = None  # not yet supported
 
     @classmethod
