@@ -2,6 +2,7 @@
 
 import json
 import multiprocessing as mp
+import traceback
 from functools import wraps
 from pathlib import Path
 
@@ -146,6 +147,7 @@ class _MsaPreparser:
             )
         except Exception as e:
             print(f"Failed to preparse MSAs for chain {rep_pdb_chain_id}:\n{e}\n")
+            traceback.print_exc()
 
 
 if __name__ == "__main__":

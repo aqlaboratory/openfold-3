@@ -429,11 +429,10 @@ def parse_msas_sample(
     # based on the dataset config
     # TODO refactor to get the list of chains that need MSAs from the assembly_data
     # dictionary instead of the atom array - won't need atom_array as input
-    moltypes_local = [MoleculeType[moltype.upper()].value for moltype in moltypes]
     atom_array_with_alignments = atom_array[
         np.isin(
             atom_array.molecule_type_id,
-            moltypes_local,
+            moltypes,
         )
     ]
 
@@ -444,7 +443,9 @@ def parse_msas_sample(
         chain_id_to_rep_id[chain_id_in_atom_array] = chain_data[
             "alignment_representative_id"
         ]
-        chain_id_to_mol_type[chain_id_in_atom_array] = chain_data["molecule_type"]
+        chain_id_to_mol_type[chain_id_in_atom_array] = MoleculeType[
+            chain_data["molecule_type"]
+        ]
 
     # Parse MSAs for each representative ID
     rep_id_to_msa, rep_id_to_query_seq = {}, {}
@@ -486,7 +487,7 @@ def parse_msas_sample(
         chain_id_to_mol_type=chain_id_to_mol_type,
     )
     msa_array_collection.set_state_parsed(
-        rep_id_to_unpaired_msa=rep_id_to_msa, rep_id_to_query_seq=rep_id_to_query_seq
+        rep_id_to_main_msa=rep_id_to_msa, rep_id_to_query_seq=rep_id_to_query_seq
     )
     return msa_array_collection
 

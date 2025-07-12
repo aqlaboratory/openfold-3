@@ -16,7 +16,40 @@ from openfold3.core.data.resources.residues import MoleculeType
 
 
 class MSASettings(BaseModel):
-    """Settings for processing MSA features."""
+    """Settings for processing MSA features.
+
+    Attributes:
+        max_rows_paired (int):
+            Maximum number of rows for paired MSAs in heteromeric assemblies.
+        max_rows (int):
+            Maximum number of rows for MSA features including the query sequence +
+            paired rows + unpaired rows.
+        subsample_with_bands (bool):
+            Whether to perform MMSeqs2-style subsampling at different sequence identity
+            bands relative to the query sequence. Not currently supported.
+        min_chains_paired_partial (int):
+            Minimum number of chains for which to generate partially paired rows during
+            online pairing. For example, if set to 3 and the query complex has 7 unique
+            chains, then paired rows will be generated all 7 chains, any 6 of the 7
+            chains ... down to any 3 of the 7 chains.
+        pairing_mask_keys (list[str]):
+            Masks to apply during online pairing to exclude certain sequences.
+        moltypes (list[MoleculeType]):
+            Molecule types to generate MSA features for. Only "protein" and "rna" are
+            supported.
+        max_seq_counts (dict):
+            Maximum number of sequences to use from each MSA file specified by the
+            corresponding key
+        msas_to_pair (list[str]):
+            Designated MSA files to use for online pairing. Requires species information
+            to be present in the MSA files in the format outlined in the Precomputed MSA
+            How-To Guide.
+        aln_order (list):
+            The order in which to vertically concatenate the MSA files for each chain.
+        paired_msa_order (list):
+            The order in which to vertically concatenate pre-paired MSA files for each
+            chain, if provided.
+    """
 
     max_rows_paired: int = 8191
     max_rows: int = 16384

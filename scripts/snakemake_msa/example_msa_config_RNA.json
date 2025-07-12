@@ -1,0 +1,11 @@
+{
+    "input_fasta":"example_fasta_RNA.fasta",
+    "openfold_env":"<path/to/conda_root_prefix>/envs/openfold",
+    "databases":["rfam", "rnacentral", "nucleotide_collection"],
+    "base_database_path":"<path/to/databases>",
+    "output_directory":"<path/to/outdir>",
+    "nhmmer_threads":3,
+    "jackhmmer_output_format" :"sto",
+    "tmpdir": "/tmp",
+    "run_template_search":false
+}
