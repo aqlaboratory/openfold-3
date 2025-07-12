@@ -335,17 +335,19 @@ class TemplateData(NamedTuple):
 
     Attributes:
         index (int):
-            The index of the template hit in the alignment.
+            Row index of the template hit in the alignment.
         entry_id (str):
-            The entry ID of the template.
+            Query ID for the query or PDB entry ID for the other template rows.
         chain_id (str):
-            The chain ID of the template.
+            Chain ID of the chain. Uses label_asym_id for templates.
         query_ids_hit (np.ndarray):
-            The indices of the query residues that hit the template.
+            Residue indices of the query sequence aligned to the template sequence.
+            1-based.
         template_ids_hit (np.ndarray):
-            The indices of the template residues that hit the query.
-        template_sequence (str):
-            The sequence of the template aligned to the query.
+            Residue indices of the template sequence aligned to the query sequence.
+            1-based. -1 for template positions aligned to gaps in the query.
+        template_sequence (str | None):
+            The ungapped template sequence.
         e_value (float | None):
             The e-value of the template hit, if available. Defaults to None.
     """
@@ -355,7 +357,7 @@ class TemplateData(NamedTuple):
     chain_id: str
     query_ids_hit: np.ndarray
     template_ids_hit: np.ndarray
-    template_sequence: str
+    template_sequence: str | None
     e_value: float | None
 
 
@@ -390,8 +392,9 @@ def parse_hmmer_headers(hmmer_string: str, max_sequences: int) -> pd.DataFrame:
             "moltype" for each sequence.
     """
     regex = re.compile(r"^#=GS\s+([^/]+)/(\d+)-(\d+).*?mol:(\w+)", re.MULTILINE)
+    matches = [list(match) for match in regex.findall(hmmer_string)]
     headers = pd.DataFrame(
-        [list(match) for match in regex.findall(hmmer_string)][: max_sequences + 1],
+        matches[: min(max_sequences + 1, len(matches))],
         columns=["id", "start", "end", "moltype"],
     )
 
@@ -472,20 +475,23 @@ def parse_first_aln_data(
         start_index = np.argmax(is_match)
         end_index = start_index + m - 1
 
-        headers = pd.concat(
-            [
-                pd.DataFrame(
-                    {
-                        "id": ["query"],
-                        "start": [start_index + 1],
-                        "end": [end_index + 1],
-                        "moltype": [first_header["moltype"]],
-                    }
-                ),
-                headers,
-            ],
-            ignore_index=True,
-        )
+        # Prepend correctly indexed query header if not a subsequence of the query
+        # sequence itself
+        if (first_header["start"] != start_index) | (first_header["end"] != end_index):
+            headers = pd.concat(
+                [
+                    pd.DataFrame(
+                        {
+                            "id": ["query"],
+                            "start": [start_index + 1],
+                            "end": [end_index + 1],
+                            "moltype": [first_header["moltype"]],
+                        }
+                    ),
+                    headers,
+                ],
+                ignore_index=True,
+            )
 
     return headers, is_first_query, first_seq_arr, first_aln_nongap_mask
 
@@ -612,7 +618,7 @@ def parse_template_hits_hmmsearch(
     # Collect sequences
     all_sequences = f">query\n{query_seq_str}\n"
 
-    for _, row in headers.iloc[:-1].iterrows():
+    for _, row in headers.iterrows():
         full_id = row["id"] + f"/{row['start']}-{row['end']}"
         if full_id in aln_row_map:
             all_sequences += ">{}\n{}\n".format(
@@ -629,9 +635,7 @@ def parse_template_hits_hmmsearch(
     query_seq_arr = query_aln_arr[query_aln_nongap_mask]
 
     templates = {}
-    for template_aln_str, (idx, row) in zip(
-        alignments[1:], headers.iloc[:-1].iterrows()
-    ):
+    for template_aln_str, (idx, row) in zip(alignments[1:], headers.iterrows()):
         template_aln_arr = np.fromiter(
             template_aln_str, dtype="<U1", count=len(template_aln_str)
         )
@@ -647,7 +651,7 @@ def parse_template_hits_hmmsearch(
         query_ids_hit, template_ids_hit = calculate_ids_hit(
             q=query_seq_arr,
             t=template_aln_nongap_arr,
-            query_start=1,
+            query_start=1,  # kalign does global alignment
             template_start=int(row["start"]),
         )
 
@@ -666,7 +670,7 @@ def parse_template_hits_hmmsearch(
     return templates
 
 
-def parse_hmmer_sto(
+def parse_template_hits_hmmer_sto(
     hmmer_string: str, max_sequences: int, query_seq_str: str
 ) -> dict[int, TemplateData]:
     """Parses template data from an HMMER Stockholm formatted string.
@@ -797,7 +801,7 @@ def parse_template_hits_a3m(
     return templates
 
 
-def parser_template_hits_m8(
+def parse_template_hits_m8(
     m8_string: str, max_sequences: int
 ) -> dict[int, TemplateData]:
     # has cigar string -> use for residue correspondences

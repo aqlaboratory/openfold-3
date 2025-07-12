@@ -33,8 +33,9 @@ Refer to the [MSA Input Components](precomputed_msa_explanation.md#1-msa-input-f
 
 ### 1.1. General MSA File Format
 
-MSAs generated with a custom workflow should follow the same format as that of the files output by our [snakemake MSA generation pipeline](precomputed_msa_generation_how_to.md). Both main and precomputed paired MSAs
+MSAs generated with a custom workflow should follow the same format as that of the files output by our [snakemake MSA generation pipeline](precomputed_msa_generation_how_to.md). Both main and precomputed paired MSA files
 - can be in either `a3m` or `sto` format
+- need to have one multiple sequence alignment per file per chain
 - need to have the query sequence (the protein or RNA sequence for which the structure is to be predicted) as the first sequence in the MSA
 
 <details>
