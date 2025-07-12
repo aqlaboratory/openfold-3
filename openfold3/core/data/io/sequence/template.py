@@ -629,7 +629,9 @@ def parse_template_hits_hmmsearch(
     query_seq_arr = query_aln_arr[query_aln_nongap_mask]
 
     templates = {}
-    for idx, template_aln_str in enumerate(alignments):
+    for template_aln_str, (idx, row) in zip(
+        alignments[1:], headers.iloc[:-1].iterrows()
+    ):
         template_aln_arr = np.fromiter(
             template_aln_str, dtype="<U1", count=len(template_aln_str)
         )
@@ -713,18 +715,91 @@ def parse_hmmer_sto(
         )
 
 
-# TODO later add a3m parser
 def parse_template_hits_a3m(
-    a3m_string: str, max_sequences: int
+    a3m_string: str, max_sequences: int, query_seq_str: str
 ) -> dict[int, TemplateData]:
-    # First sequence has to be the query sequence
-    pass
+    # Parse a3m string
+    alignments, headers = parse_fasta(a3m_string)
+
+    # Subset assuming the first sequence is the query sequence
+    n_sequences = min(max_sequences + 1, len(alignments))
+    alignments = alignments[:n_sequences]
+    headers = headers[:n_sequences]
+
+    # Parse headers into dataframe from format ID/start-end
+    for idx, i in enumerate(headers):
+        entry_id, start_end = i.split("/")
+        chain_start, chain_end = start_end.split("-")
+        headers[idx] = (entry_id, chain_start, chain_end, MoleculeType.PROTEIN.name)
+    headers = pd.DataFrame(headers, columns=["id", "start", "end", "moltype"])
+
+    # Check if the first sequence is the query sequence
+    first_aln_str = alignments[0]
+    first_aln_arr = np.fromiter(first_aln_str, dtype="<U1", count=len(first_aln_str))
+    first_aln_nongap_mask = ~np.isin(first_aln_arr, ["-", "."])
+    first_seq_arr = first_aln_arr[first_aln_nongap_mask]
+    is_first_query = "".join(first_seq_arr) in query_seq_str
+
+    # Realign with kalign if not
+    if not is_first_query:
+        # Realign with kalign to the query sequence
+        all_sequences = f">query\n{query_seq_str}\n"
+        for seq_id, seq in zip(headers["id"], alignments[1:]):
+            all_sequences += f">{seq_id}\n{seq.replace('.', '').replace('-', '')}\n"
+
+        alignments, _ = parse_fasta(run_kalign(all_sequences))
+    else:
+        # Drop extra row
+        headers = headers.iloc[:-1]
+        alignments = alignments[:-1]
+
+    # Process query
+    query_aln_str = alignments[0]
+    query_aln_arr = np.fromiter(query_aln_str, dtype="<U1", count=len(query_aln_str))
+    query_aln_nongap_mask = ~np.isin(query_aln_arr, ["-", "."])
+    query_seq_arr = query_aln_arr[query_aln_nongap_mask]
+
+    templates = {}
+    for template_aln_str, (idx, row) in zip(
+        alignments[1:], headers.iloc[:-1].iterrows()
+    ):
+        template_aln_arr = np.fromiter(
+            template_aln_str, dtype="<U1", count=len(template_aln_str)
+        )
+
+        # np array of the template aligned to the ungapped query sequence
+        template_aln_nongap_arr = template_aln_arr[query_aln_nongap_mask]
+        # str of the ungapped template sequence
+        template_seq_str = "".join(
+            template_aln_arr[~np.isin(template_aln_arr, ["-", "."])]
+        ).upper()
+
+        # Get residue correspondences wrt. the full-length sequences
+        query_ids_hit, template_ids_hit = calculate_ids_hit(
+            q=query_seq_arr,
+            t=template_aln_nongap_arr,
+            query_start=1,
+            template_start=int(row["start"]),
+        )
+
+        entry_id, chain_id = row["id"].split("_")
+        template_hit = TemplateData(
+            index=idx,
+            entry_id=entry_id,
+            chain_id=chain_id,
+            query_ids_hit=query_ids_hit,
+            template_ids_hit=template_ids_hit,
+            template_sequence=template_seq_str,
+            e_value=None,
+        )
+        templates[idx] = template_hit
+
+    return templates
 
 
-# add m8 parser
 def parser_template_hits_m8(
     m8_string: str, max_sequences: int
 ) -> dict[int, TemplateData]:
     # has cigar string -> use for residue correspondences
-    # TODO later does not have cigar string -> use kalign for residue correspondences
+    # does not have cigar string -> use kalign for residue correspondences
     pass
