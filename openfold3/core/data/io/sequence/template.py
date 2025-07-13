@@ -539,6 +539,62 @@ def calculate_ids_hit(
     return query_map[columns_to_keep], template_map[columns_to_keep]
 
 
+def calculate_ids_hit_cigar(
+    cigar_string: str, query_start: int, template_start: int, gap_char: int = -1
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Converts a CIGAR string into 1D numpy arrays mapping alignment positions
+    to full-sequence coordinates for the query and template.
+
+    Args:
+        cigar_string (str):
+            The CIGAR string representing the alignment.
+        query_start (int):
+            The 0-indexed start position of the alignment
+                           in the full query sequence.
+        template_start (int):
+            The 0-indexed start position of the alignment
+                              in the full template sequence.
+        gap_char (int):
+            The integer value used to represent gaps in the
+                        output index arrays. Defaults to -1.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: A tuple containing two 1D NumPy arrays:
+        - query_indices: Indices of aligned query residues.
+        - template_indices: Indices of aligned template residues.
+    """
+    cigar_ops = re.findall(r"(\d+)([MIDNSHP=X])", cigar_string)
+
+    if not cigar_ops:
+        return np.array([], dtype=int), np.array([], dtype=int)
+
+    # Filter for ops that create alignment columns
+    op_details = [(int(length), op) for length, op in cigar_ops if op in "MIDN=X"]
+
+    if not op_details:
+        return np.array([], dtype=int), np.array([], dtype=int)
+
+    lengths, ops = zip(*op_details)
+    lengths = np.array(lengths, dtype=int)
+
+    def ops_to_idx(ops, lengths, start, gap_char, aln_ops):
+        # 1: consuming a base, 0: gap
+        op_deltas = np.array([int(op in aln_ops) for op in ops], dtype=np.int8)
+        # Expand deltas for each aln position
+        deltas = np.repeat(op_deltas, lengths)
+        # cumsum -> idxs
+        indices = np.cumsum(deltas) + start - 1
+        # Mark gaps
+        indices[deltas == 0] = gap_char
+        return indices
+
+    q_indices = ops_to_idx(ops, lengths, query_start, gap_char, "M=XI")
+    t_indices = ops_to_idx(ops, lengths, template_start, gap_char, "M=XDN")
+
+    return q_indices, t_indices
+
+
 def parse_template_hits_hmmalign(
     query_seq_arr: np.ndarray,
     query_aln_nongap_mask: np.ndarray,
@@ -802,8 +858,41 @@ def parse_template_hits_a3m(
 
 
 def parse_template_hits_m8(
-    m8_string: str, max_sequences: int
+    m8_df: pd.DataFrame, max_sequences: int, query_seq_str: str
 ) -> dict[int, TemplateData]:
-    # has cigar string -> use for residue correspondences
-    # does not have cigar string -> use kalign for residue correspondences
-    pass
+    # sort by e-value ascending
+    df = m8_df.sort_values("e_value", ignore_index=True)
+
+    # Subset
+    max_sequences = 300
+    df = df.iloc[: min(max_sequences, len(df))]
+    df[["template_PDB_id", "template_chain_id"]] = df["template_id"].str.split(
+        "_", expand=True
+    )
+    templates = {}
+    for idx, row in df.iterrows():
+        # Get residue correspondences from cigar if available
+        if "cigar" in row and pd.notna(row["cigar"]):
+            query_ids_hit, template_ids_hit = calculate_ids_hit_cigar(
+                cigar_string=row["cigar"],
+                query_start=row["query_start"],
+                template_start=row["template_start"],
+            )
+
+        # Otherwise skip - have to get sequences from the structure file, which is
+        # accessed later in template processing, so we delay realignment with kalign to
+        # that point to avoid re-parsing template CIF files multiple times
+        else:
+            query_ids_hit = None
+            template_ids_hit = None
+
+        template_hit = TemplateData(
+            index=idx,
+            entry_id=row["template_PDB_id"],
+            chain_id=row["template_chain_id"],
+            query_ids_hit=query_ids_hit,
+            template_ids_hit=template_ids_hit,
+            template_sequence=None,
+            e_value=row["e_value"],
+        )
+        templates[idx] = template_hit
