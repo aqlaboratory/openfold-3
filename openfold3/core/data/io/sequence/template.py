@@ -462,12 +462,17 @@ def calculate_ids_hit_cigar(
 
 
 class TemplateParser(ABC):
-    def __init__(self, query_seq_str: str, max_sequences: int):
-        self.query_seq_str = query_seq_str
+    def __init__(self, max_sequences: int):
         self.max_sequences = max_sequences
 
     @abstractmethod
-    def parse(self, alignment_source: str | pd.DataFrame) -> dict[int, TemplateData]:
+    def parse(
+        self,
+        alignment_source: str | pd.DataFrame,
+        query_seq_str: str,
+        query_entry_id: str | None = None,
+        query_chain_id: str | None = None,
+    ) -> dict[int, TemplateData]:
         """Main entry point to parse an alignment source."""
         raise NotImplementedError
 
@@ -531,7 +536,9 @@ class StoParser(TemplateParser):
             aln_row_map[full_id] = aln_row_map.get(full_id, "") + chunk.strip()
         return aln_row_map
 
-    def parse(self, alignment_source: str) -> dict[int, TemplateData]:
+    def parse(
+        self, alignment_source: str, query_seq_str: str
+    ) -> dict[int, TemplateData]:
         headers = self._parse_headers(alignment_source)
         aln_row_map = self._parse_aln_rows(alignment_source)
 
@@ -541,31 +548,29 @@ class StoParser(TemplateParser):
         first_aln_str = aln_row_map.get(first_id_full) or aln_row_map.get(first_id_base)
 
         first_seq_str = first_aln_str.replace("-", "").replace(".", "")
-        is_first_query = first_seq_str in self.query_seq_str
+        is_first_query = first_seq_str in query_seq_str
 
         if is_first_query:
             query_start_idx = int(first_header["start"])
-            # It is technically possible that the aligned subsequence in the first row
-            # is identical to a subsequence in the query sequence, but is from a
-            # different full sequence, in which case we need to reindex the start
-            # position
+            # It is possible that the aligned subsequence in the first row is identical
+            # to a subsequence in the query sequence, but is from a different full
+            # sequence, in which case we need to reindex the start position
             if query_start_idx != 1:
-                query_start_idx = self.query_seq_str.find(first_seq_str) + 1
-            template_headers = headers.iloc[1:]
+                query_start_idx = query_seq_str.find(first_seq_str) + 1
             template_alignments = [
-                aln_row_map[f"{row['id']}/{row['start']}-{row['end']}"]
-                for _, row in template_headers.iterrows()
+                aln_row_map.get(f"{row['id']}/{row['start']}-{row['end']}")
+                or aln_row_map.get(first_id_base)
+                for _, row in headers.iterrows()
             ]
             return self._process_alignment_hits(
                 query_aln_str=first_aln_str,
                 template_alignments=template_alignments,
-                headers=template_headers,
+                headers=headers,
                 query_start_idx=query_start_idx,
             )
         else:
-            all_sequences = f">query\n{self.query_seq_str}\n"
-            template_headers = headers.iloc[1:]
-            for _, row in template_headers.iterrows():
+            all_sequences = f">query\n{query_seq_str}\n"
+            for _, row in headers.iterrows():
                 full_id = f"{row['id']}/{row['start']}-{row['end']}"
                 ungapped_seq = aln_row_map[full_id].replace(".", "").replace("-", "")
                 all_sequences += f">{full_id}\n{ungapped_seq}\n"
@@ -576,14 +581,16 @@ class StoParser(TemplateParser):
             return self._process_alignment_hits(
                 query_aln_str=alignments[0],
                 template_alignments=alignments[1:],
-                headers=template_headers,
+                headers=headers,
             )
 
 
 class A3mParser(TemplateParser):
     """Parses A3M format files."""
 
-    def parse(self, alignment_source: str) -> dict[int, TemplateData]:
+    def parse(
+        self, alignment_source: str, query_seq_str: str
+    ) -> dict[int, TemplateData]:
         # 1. Parse the A3M file as a FASTA file
         alignments, headers_raw = parse_fasta(alignment_source)
 
@@ -604,19 +611,19 @@ class A3mParser(TemplateParser):
         # 4. Check if the first sequence is the query
         first_aln_str = alignments[0]
         first_seq_str = "".join(c for c in first_aln_str if c.isupper())
-        is_first_query = first_seq_str in self.query_seq_str
+        is_first_query = first_seq_str in query_seq_str
 
         # 5. Process alignments
         if is_first_query:
             # Use existing alignment if query is first
             return self._process_alignment_hits(
                 query_aln_str=alignments[0],
-                template_alignments=alignments[1:],
-                headers=headers.iloc[1:],
+                template_alignments=alignments,
+                headers=headers,
             )
         else:
             # Realign with kalign if query is not first
-            all_sequences = f">query\n{self.query_seq_str}\n"
+            all_sequences = f">query\n{query_seq_str}\n"
             for header, seq in zip(headers_raw, alignments):
                 ungapped_seq = "".join(c for c in seq if c.isupper())
                 all_sequences += f">{header}\n{ungapped_seq}\n"
