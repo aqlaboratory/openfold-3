@@ -3,6 +3,7 @@ Parsers for template alignments.
 """
 
 import re
+from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from typing import NamedTuple
 
@@ -361,141 +362,6 @@ class TemplateData(NamedTuple):
     e_value: float | None
 
 
-def parse_hmmer_headers(hmmer_string: str, max_sequences: int) -> pd.DataFrame:
-    """Parses the headers from an hmmalign MSA string in Stockholm format.
-
-    Expects the headers to be in the format:
-        #=GS <entry id>_<chain id>/<start res id>-<end res id> mol:<moltype>
-    where
-        <entry id>:
-            an arbitrary ID for the first row and PDB ID for all other rows
-        <chain id>:
-            chain ID
-        <start res id>:
-            the residue ID of the first residue of the aligned sequence segment in the
-            full sequence
-        <end res id>:
-            the residue ID of the last residue of the aligned sequence segment in the
-            full sequence
-        <moltype>:
-            the molecule type, one of "protein", "dna", "rna"
-
-    Args:
-        hmmer_string (str):
-            The string containing the HMMER MSA in Stockholm format.
-        max_sequences (int):
-            The maximum number of sequences to parse from the alignment.
-
-    Returns:
-        pd.DataFrame:
-             A DataFrame with columns "id", "start", "end", and
-            "moltype" for each sequence.
-    """
-    regex = re.compile(r"^#=GS\s+([^/]+)/(\d+)-(\d+).*?mol:(\w+)", re.MULTILINE)
-    matches = [list(match) for match in regex.findall(hmmer_string)]
-    headers = pd.DataFrame(
-        matches[: min(max_sequences + 1, len(matches))],
-        columns=["id", "start", "end", "moltype"],
-    )
-
-    return headers
-
-
-def parse_hmmer_aln_rows(hmmer_string: str) -> dict[str, str]:
-    """Parses an hmmalign MSA str in sto format into a row ID-alignment map.
-
-    Args:
-        hmmer_string (str):
-            The string containing the HMMER MSA in Stockholm format.
-
-    Returns:
-        dict[str, str]:
-            A dictionary mapping alignment row IDs to their corresponding alignments.
-    """
-    aln_row_map = {}
-    for line in hmmer_string.splitlines():
-        # Ignore annotation lines and blank lines
-        if not line.strip() or line.startswith("#") or line.startswith("//"):
-            continue
-
-        # Split the line into the full ID and the sequence
-        full_id, chunk = line.split(maxsplit=1)
-
-        aln_row_map[full_id] = aln_row_map.get(full_id, "") + chunk.strip()
-
-    return aln_row_map
-
-
-def parse_first_aln_data(
-    headers: pd.DataFrame, aln_row_map: dict[str, str], query_seq_str: str
-) -> tuple[pd.DataFrame, bool, np.ndarray, np.ndarray]:
-    first_header = headers.iloc[0]
-    first_id = first_header["id"]
-
-    # query_id should be the full ID like "1a0a_A/1-63" but is misformatted in the
-    # snakemake pipeline and only has the base ID like "1a0a_A" so trying both here
-    first_id = first_header["id"]
-    if first_id not in aln_row_map:
-        first_id = (
-            first_header["id"] + f"/{first_header['start']}-{first_header['end']}"
-        )
-
-    # Get the ungapped query sequence and its mask
-    first_aln_str = aln_row_map[first_id]
-    first_aln_arr = np.fromiter(first_aln_str, dtype="<U1", count=len(first_aln_str))
-    first_aln_nongap_mask = ~np.isin(first_aln_arr, ["-", "."])
-    first_seq_arr = first_aln_arr[first_aln_nongap_mask]
-
-    is_first_query = "".join(first_seq_arr) in query_seq_str
-
-    # Check if need to reindex wrt full query sequence if the first row is an exact
-    # subsequence of a sequence different from the query sequence
-    if is_first_query & (
-        (first_header["start"] != 1) | (first_header["end"] != len(query_seq_str))
-    ):
-        query_seq_arr = np.fromiter(
-            query_seq_str, dtype="<U1", count=len(query_seq_str)
-        )
-
-        n = query_seq_arr.size
-        m = first_seq_arr.size
-
-        # Create a 2D rolling window view of the query array
-        shape = (n - m + 1, m)
-        strides = (query_seq_arr.strides[0], query_seq_arr.strides[0])
-        windows = np.lib.stride_tricks.as_strided(
-            query_seq_arr, shape=shape, strides=strides
-        )
-
-        # Compare all windows to the subsequence array simultaneously
-        matches = windows == first_seq_arr
-
-        # Find the row where all elements match and update indices
-        is_match = np.all(matches, axis=1)
-        start_index = np.argmax(is_match)
-        end_index = start_index + m - 1
-
-        # Prepend correctly indexed query header if not a subsequence of the query
-        # sequence itself
-        if (first_header["start"] != start_index) | (first_header["end"] != end_index):
-            headers = pd.concat(
-                [
-                    pd.DataFrame(
-                        {
-                            "id": ["query"],
-                            "start": [start_index + 1],
-                            "end": [end_index + 1],
-                            "moltype": [first_header["moltype"]],
-                        }
-                    ),
-                    headers,
-                ],
-                ignore_index=True,
-            )
-
-    return headers, is_first_query, first_seq_arr, first_aln_nongap_mask
-
-
 def calculate_ids_hit(
     q: np.ndarray, t: np.ndarray, query_start: int, template_start: int
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -595,304 +461,205 @@ def calculate_ids_hit_cigar(
     return q_indices, t_indices
 
 
-def parse_template_hits_hmmalign(
-    query_seq_arr: np.ndarray,
-    query_aln_nongap_mask: np.ndarray,
-    aln_row_map: dict[str, str],
-    headers: pd.DataFrame,
-) -> dict[int, TemplateData]:
-    """Parses the sequence map and headers to create TemplateHit objects.
+class TemplateParser(ABC):
+    def __init__(self, query_seq_str: str, max_sequences: int):
+        self.query_seq_str = query_seq_str
+        self.max_sequences = max_sequences
 
-    Args:
-        query_seq_arr (np.ndarray):
-            The aligned query sequence as a numpy array of characters.
-        query_aln_nongap_mask (np.ndarray):
-            A boolean mask indicating the positions of non-gap residues in the aligned
-            query sequence.
-        aln_row_map (dict[str, str]):
-            A mapping of sequence IDs to their corresponding sequences.
-        headers (pd.DataFrame):
-            A DataFrame containing the headers with columns "id", "start", "end", and
-            "moltype".
+    @abstractmethod
+    def parse(self, alignment_source: str | pd.DataFrame) -> dict[int, TemplateData]:
+        """Main entry point to parse an alignment source."""
+        raise NotImplementedError
 
-    Returns:
-        dict[int, TemplateHit]:
-            A dictionary mapping row indices to TemplateHit objects, containing the
-            aligned sequences and their indices in the ungapped query sequence.
-    """
-    query_moltype = MoleculeType[headers.iloc[0]["moltype"].upper()]
-    query_start = int(headers.iloc[0]["start"])
+    def _process_alignment_hits(
+        self,
+        query_aln_str: str,
+        template_alignments: list[str],
+        headers: pd.DataFrame,
+        query_start_idx: int = 1,
+    ) -> dict[int, TemplateData]:
+        templates = {}
+        query_aln_arr = np.fromiter(
+            query_aln_str, dtype="<U1", count=len(query_aln_str)
+        )
 
-    # Iterate over the remaining sequences up to max_sequences
-    templates = {}
-    for idx, row in headers.iterrows():
-        # Skip the first sequence (query) and check molecule type
-        if (idx == 0) | (MoleculeType[row["moltype"].upper()] != query_moltype):
-            continue
-
-        seq_id = row["id"] + f"/{row['start']}-{row['end']}"
-        if seq_id in aln_row_map:
-            template_aln_str = aln_row_map[seq_id]
+        for template_aln_str, (_, row) in zip(template_alignments, headers.iterrows()):
             template_aln_arr = np.fromiter(
                 template_aln_str, dtype="<U1", count=len(template_aln_str)
             )
-            # np array of the template aligned to the ungapped query sequence
-            template_aln_nongap_arr = template_aln_arr[query_aln_nongap_mask]
-            # str of the ungapped template sequence
             template_seq_str = "".join(
                 template_aln_arr[~np.isin(template_aln_arr, ["-", "."])]
             ).upper()
 
-            # Get residue correspondences wrt. the full-length sequences
             query_ids_hit, template_ids_hit = calculate_ids_hit(
-                q=query_seq_arr,
-                t=template_aln_nongap_arr,
-                query_start=query_start,
+                q=query_aln_arr,
+                t=template_aln_arr,
+                query_start=query_start_idx,
                 template_start=int(row["start"]),
             )
 
             entry_id, chain_id = row["id"].split("_")
-            template_hit = TemplateData(
-                index=idx,
+            templates[row.name] = TemplateData(
+                index=row.name,
                 entry_id=entry_id,
                 chain_id=chain_id,
                 query_ids_hit=query_ids_hit,
                 template_ids_hit=template_ids_hit,
                 template_sequence=template_seq_str,
-                e_value=None,
+                e_value=row.get("e_value"),
             )
-            templates[idx] = template_hit
-
-    return templates
+        return templates
 
 
-def parse_template_hits_hmmsearch(
-    query_seq_str: np.ndarray,
-    aln_row_map: dict[str, str],
-    headers: pd.DataFrame,
-) -> dict[int, TemplateData]:
-    # Collect sequences
-    all_sequences = f">query\n{query_seq_str}\n"
+class StoParser(TemplateParser):
+    """Parses HMMER Stockholm format (.sto) files."""
 
-    for _, row in headers.iterrows():
-        full_id = row["id"] + f"/{row['start']}-{row['end']}"
-        if full_id in aln_row_map:
-            all_sequences += ">{}\n{}\n".format(
-                full_id, aln_row_map[full_id].replace(".", "").replace("-", "")
+    def _parse_headers(self, hmmer_string: str) -> pd.DataFrame:
+        regex = re.compile(r"^#=GS\s+([^/]+)/(\d+)-(\d+).*?mol:(\w+)", re.MULTILINE)
+        matches = [list(match) for match in regex.findall(hmmer_string)]
+        return pd.DataFrame(
+            matches[: min(self.max_sequences + 1, len(matches))],
+            columns=["id", "start", "end", "moltype"],
+        )
+
+    def _parse_aln_rows(self, hmmer_string: str) -> dict[str, str]:
+        aln_row_map = {}
+        for line in hmmer_string.splitlines():
+            if not line.strip() or line.startswith(("#", "//")):
+                continue
+            full_id, chunk = line.split(maxsplit=1)
+            aln_row_map[full_id] = aln_row_map.get(full_id, "") + chunk.strip()
+        return aln_row_map
+
+    def parse(self, alignment_source: str) -> dict[int, TemplateData]:
+        headers = self._parse_headers(alignment_source)
+        aln_row_map = self._parse_aln_rows(alignment_source)
+
+        first_header = headers.iloc[0]
+        first_id_base = first_header["id"]
+        first_id_full = f"{first_id_base}/{first_header['start']}-{first_header['end']}"
+        first_aln_str = aln_row_map.get(first_id_full) or aln_row_map.get(first_id_base)
+
+        first_seq_str = first_aln_str.replace("-", "").replace(".", "")
+        is_first_query = first_seq_str in self.query_seq_str
+
+        if is_first_query:
+            query_start_idx = int(first_header["start"])
+            # It is technically possible that the aligned subsequence in the first row
+            # is identical to a subsequence in the query sequence, but is from a
+            # different full sequence, in which case we need to reindex the start
+            # position
+            if query_start_idx != 1:
+                query_start_idx = self.query_seq_str.find(first_seq_str) + 1
+            template_headers = headers.iloc[1:]
+            template_alignments = [
+                aln_row_map[f"{row['id']}/{row['start']}-{row['end']}"]
+                for _, row in template_headers.iterrows()
+            ]
+            return self._process_alignment_hits(
+                query_aln_str=first_aln_str,
+                template_alignments=template_alignments,
+                headers=template_headers,
+                query_start_idx=query_start_idx,
             )
-
-    # Realign with kalign to the query sequence
-    alignments, _ = parse_fasta(run_kalign(all_sequences))
-
-    # Process query
-    query_aln_str = alignments[0]
-    query_aln_arr = np.fromiter(query_aln_str, dtype="<U1", count=len(query_aln_str))
-    query_aln_nongap_mask = ~np.isin(query_aln_arr, ["-", "."])
-    query_seq_arr = query_aln_arr[query_aln_nongap_mask]
-
-    templates = {}
-    for template_aln_str, (idx, row) in zip(alignments[1:], headers.iterrows()):
-        template_aln_arr = np.fromiter(
-            template_aln_str, dtype="<U1", count=len(template_aln_str)
-        )
-
-        # np array of the template aligned to the ungapped query sequence
-        template_aln_nongap_arr = template_aln_arr[query_aln_nongap_mask]
-        # str of the ungapped template sequence
-        template_seq_str = "".join(
-            template_aln_arr[~np.isin(template_aln_arr, ["-", "."])]
-        ).upper()
-
-        # Get residue correspondences wrt. the full-length sequences
-        query_ids_hit, template_ids_hit = calculate_ids_hit(
-            q=query_seq_arr,
-            t=template_aln_nongap_arr,
-            query_start=1,  # kalign does global alignment
-            template_start=int(row["start"]),
-        )
-
-        entry_id, chain_id = row["id"].split("_")
-        template_hit = TemplateData(
-            index=idx,
-            entry_id=entry_id,
-            chain_id=chain_id,
-            query_ids_hit=query_ids_hit,
-            template_ids_hit=template_ids_hit,
-            template_sequence=template_seq_str,
-            e_value=None,
-        )
-        templates[idx] = template_hit
-
-    return templates
-
-
-def parse_template_hits_hmmer_sto(
-    hmmer_string: str, max_sequences: int, query_seq_str: str
-) -> dict[int, TemplateData]:
-    """Parses template data from an HMMER Stockholm formatted string.
-
-    It can handle both hmmalign and hmmsearch sto outputs depending on whether the first
-    alignment row is a sequence segment from query sequence. In the latter, hmmsearch
-    case (first alignment row in not from the query), it realigns each template hit to
-    the query using kalign and hence results in slower runtime.
-
-    Args:
-        hmmer_string (str):
-            The string containing the HMMER alignment in Stockholm format.
-        max_sequences (int):
-            The maximum number of sequences to parse from the alignment.
-        query_seq_str (str):
-            The query sequence string to check against the first alignment row.
-
-    Returns:
-        dict[int, TemplateData]: _description_
-    """
-
-    # 1. Parse headers from format "#=GS id/start-end moltype"
-    headers = parse_hmmer_headers(hmmer_string, max_sequences)
-
-    # 2. Create id -> sequence mapping
-    aln_row_map = parse_hmmer_aln_rows(hmmer_string)
-
-    # 3. Get data about the first alignment row
-    headers, is_first_query, first_seq_arr, first_aln_nongap_mask = (
-        parse_first_aln_data(headers, aln_row_map, query_seq_str)
-    )
-
-    if is_first_query:
-        return parse_template_hits_hmmalign(
-            query_seq_arr=first_seq_arr,
-            query_aln_nongap_mask=first_aln_nongap_mask,
-            aln_row_map=aln_row_map,
-            headers=headers,
-        )
-
-    else:
-        return parse_template_hits_hmmsearch(
-            query_seq_str=query_seq_str,
-            aln_row_map=aln_row_map,
-            headers=headers,
-        )
-
-
-def parse_template_hits_a3m(
-    a3m_string: str, max_sequences: int, query_seq_str: str
-) -> dict[int, TemplateData]:
-    # Parse a3m string
-    alignments, headers = parse_fasta(a3m_string)
-
-    # Subset assuming the first sequence is the query sequence
-    n_sequences = min(max_sequences + 1, len(alignments))
-    alignments = alignments[:n_sequences]
-    headers = headers[:n_sequences]
-
-    # Parse headers into dataframe from format ID/start-end
-    for idx, i in enumerate(headers):
-        entry_id, start_end = i.split("/")
-        chain_start, chain_end = start_end.split("-")
-        headers[idx] = (entry_id, chain_start, chain_end, MoleculeType.PROTEIN.name)
-    headers = pd.DataFrame(headers, columns=["id", "start", "end", "moltype"])
-
-    # Check if the first sequence is the query sequence
-    first_aln_str = alignments[0]
-    first_aln_arr = np.fromiter(first_aln_str, dtype="<U1", count=len(first_aln_str))
-    first_aln_nongap_mask = ~np.isin(first_aln_arr, ["-", "."])
-    first_seq_arr = first_aln_arr[first_aln_nongap_mask]
-    is_first_query = "".join(first_seq_arr) in query_seq_str
-
-    # Realign with kalign if not
-    if not is_first_query:
-        # Realign with kalign to the query sequence
-        all_sequences = f">query\n{query_seq_str}\n"
-        for seq_id, seq in zip(headers["id"], alignments[1:]):
-            all_sequences += f">{seq_id}\n{seq.replace('.', '').replace('-', '')}\n"
-
-        alignments, _ = parse_fasta(run_kalign(all_sequences))
-    else:
-        # Drop extra row
-        headers = headers.iloc[:-1]
-        alignments = alignments[:-1]
-
-    # Process query
-    query_aln_str = alignments[0]
-    query_aln_arr = np.fromiter(query_aln_str, dtype="<U1", count=len(query_aln_str))
-    query_aln_nongap_mask = ~np.isin(query_aln_arr, ["-", "."])
-    query_seq_arr = query_aln_arr[query_aln_nongap_mask]
-
-    templates = {}
-    for template_aln_str, (idx, row) in zip(
-        alignments[1:], headers.iloc[:-1].iterrows()
-    ):
-        template_aln_arr = np.fromiter(
-            template_aln_str, dtype="<U1", count=len(template_aln_str)
-        )
-
-        # np array of the template aligned to the ungapped query sequence
-        template_aln_nongap_arr = template_aln_arr[query_aln_nongap_mask]
-        # str of the ungapped template sequence
-        template_seq_str = "".join(
-            template_aln_arr[~np.isin(template_aln_arr, ["-", "."])]
-        ).upper()
-
-        # Get residue correspondences wrt. the full-length sequences
-        query_ids_hit, template_ids_hit = calculate_ids_hit(
-            q=query_seq_arr,
-            t=template_aln_nongap_arr,
-            query_start=1,
-            template_start=int(row["start"]),
-        )
-
-        entry_id, chain_id = row["id"].split("_")
-        template_hit = TemplateData(
-            index=idx,
-            entry_id=entry_id,
-            chain_id=chain_id,
-            query_ids_hit=query_ids_hit,
-            template_ids_hit=template_ids_hit,
-            template_sequence=template_seq_str,
-            e_value=None,
-        )
-        templates[idx] = template_hit
-
-    return templates
-
-
-def parse_template_hits_m8(
-    m8_df: pd.DataFrame, max_sequences: int, query_seq_str: str
-) -> dict[int, TemplateData]:
-    # sort by e-value ascending
-    df = m8_df.sort_values("e_value", ignore_index=True)
-
-    # Subset
-    max_sequences = 300
-    df = df.iloc[: min(max_sequences, len(df))]
-    df[["template_PDB_id", "template_chain_id"]] = df["template_id"].str.split(
-        "_", expand=True
-    )
-    templates = {}
-    for idx, row in df.iterrows():
-        # Get residue correspondences from cigar if available
-        if "cigar" in row and pd.notna(row["cigar"]):
-            query_ids_hit, template_ids_hit = calculate_ids_hit_cigar(
-                cigar_string=row["cigar"],
-                query_start=row["query_start"],
-                template_start=row["template_start"],
-            )
-
-        # Otherwise skip - have to get sequences from the structure file, which is
-        # accessed later in template processing, so we delay realignment with kalign to
-        # that point to avoid re-parsing template CIF files multiple times
         else:
-            query_ids_hit = None
-            template_ids_hit = None
+            all_sequences = f">query\n{self.query_seq_str}\n"
+            template_headers = headers.iloc[1:]
+            for _, row in template_headers.iterrows():
+                full_id = f"{row['id']}/{row['start']}-{row['end']}"
+                ungapped_seq = aln_row_map[full_id].replace(".", "").replace("-", "")
+                all_sequences += f">{full_id}\n{ungapped_seq}\n"
 
-        template_hit = TemplateData(
-            index=idx,
-            entry_id=row["template_PDB_id"],
-            chain_id=row["template_chain_id"],
-            query_ids_hit=query_ids_hit,
-            template_ids_hit=template_ids_hit,
-            template_sequence=None,
-            e_value=row["e_value"],
-        )
-        templates[idx] = template_hit
+            realigned_str = run_kalign(all_sequences)
+            alignments, _ = parse_fasta(realigned_str)
+
+            return self._process_alignment_hits(
+                query_aln_str=alignments[0],
+                template_alignments=alignments[1:],
+                headers=template_headers,
+            )
+
+
+class A3mParser(TemplateParser):
+    """Parses A3M format files."""
+
+    def parse(self, alignment_source: str) -> dict[int, TemplateData]:
+        # 1. Parse the A3M file as a FASTA file
+        alignments, headers_raw = parse_fasta(alignment_source)
+
+        # 2. Subset to max_sequences
+        num_sequences = min(self.max_sequences + 1, len(alignments))
+        alignments = alignments[:num_sequences]
+        headers_raw = headers_raw[:num_sequences]
+
+        # 3. Process A3M-specific headers into a DataFrame
+        header_data = []
+        for h in headers_raw:
+            entry_id, start_end = h.split("/")
+            start, end = start_end.split("-")
+            header_data.append((entry_id, start, end, MoleculeType.PROTEIN.name))
+
+        headers = pd.DataFrame(header_data, columns=["id", "start", "end", "moltype"])
+
+        # 4. Check if the first sequence is the query
+        first_aln_str = alignments[0]
+        first_seq_str = "".join(c for c in first_aln_str if c.isupper())
+        is_first_query = first_seq_str in self.query_seq_str
+
+        # 5. Process alignments
+        if is_first_query:
+            # Use existing alignment if query is first
+            return self._process_alignment_hits(
+                query_aln_str=alignments[0],
+                template_alignments=alignments[1:],
+                headers=headers.iloc[1:],
+            )
+        else:
+            # Realign with kalign if query is not first
+            all_sequences = f">query\n{self.query_seq_str}\n"
+            for header, seq in zip(headers_raw, alignments):
+                ungapped_seq = "".join(c for c in seq if c.isupper())
+                all_sequences += f">{header}\n{ungapped_seq}\n"
+
+            realigned_str = run_kalign(all_sequences)
+            realigned_alignments, _ = parse_fasta(realigned_str)
+
+            return self._process_alignment_hits(
+                query_aln_str=realigned_alignments[0],
+                template_alignments=realigned_alignments[1:],
+                headers=headers,  # Use original headers for metadata
+            )
+
+
+class M8Parser(TemplateParser):
+    """Parses tabular format (.m8) files."""
+
+    def parse(self, alignment_source: pd.DataFrame) -> dict[int, TemplateData]:
+        df = alignment_source.sort_values("e_value", ignore_index=True)
+        df = df.iloc[: min(self.max_sequences, len(df))]
+
+        if not df.empty and "template_id" in df.columns:
+            df[["entry_id", "chain_id"]] = df["template_id"].str.split("_", expand=True)
+        else:
+            df[["entry_id", "chain_id"]] = (None, None)
+
+        templates = {}
+        for idx, row in df.iterrows():
+            query_ids_hit, template_ids_hit = None, None
+            if "cigar" in row and pd.notna(row["cigar"]):
+                query_ids_hit, template_ids_hit = calculate_ids_hit_cigar(
+                    cigar_string=row["cigar"],
+                    query_start=row["query_start"],
+                    template_start=row["template_start"],
+                )
+
+            templates[idx] = TemplateData(
+                index=idx,
+                entry_id=row["entry_id"],
+                chain_id=row["chain_id"],
+                query_ids_hit=query_ids_hit,
+                template_ids_hit=template_ids_hit,
+                template_sequence=None,  # Not available in m8
+                e_value=row["e_value"],
+            )
+        return templates
