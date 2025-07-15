@@ -642,6 +642,25 @@ class M8Parser(TemplateParser):
     """Parses tabular format (.m8) files."""
 
     def parse(self, alignment_source: pd.DataFrame) -> dict[int, TemplateData]:
+        columns = [
+            "query_id",
+            "template_id",
+            "seq_identity",
+            "aln_len",
+            "n_gaps",
+            "n_mismatches",
+            "query_start",
+            "query_end",
+            "template_start",
+            "template_end",
+            "e_value",
+            "bit_score",
+        ]
+        if len(alignment_source.columns) == 12:
+            alignment_source.columns = columns
+        elif len(alignment_source.columns) == 13:
+            alignment_source.columns = columns + ["cigar"]
+
         df = alignment_source.sort_values("e_value", ignore_index=True)
         df = df.iloc[: min(self.max_sequences, len(df))]
 
