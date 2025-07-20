@@ -15,7 +15,13 @@ import pandas as pd
 from biotite.database.rcsb import fetch
 from biotite.structure.io import pdbx
 from biotite.structure.io.pdbx import CIFFile
-from pydantic import BaseModel, BeforeValidator, DirectoryPath, FilePath
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    DirectoryPath,
+    FilePath,
+    model_validator,
+)
 from tqdm import tqdm
 
 from openfold3.core.config.config_utils import _convert_molecule_type, _ensure_list
@@ -1451,7 +1457,7 @@ class TemplatePreprocessorSettings(BaseModel):
         min_len (int | None):
             Minimum required number of aligned template residues for the template to
             pass filtering.
-        max_template_release_date (str | None):
+        max_release_date (str | None):
             Maximum allowed release date of the template structure for it to pass
             filtering.
         min_release_date_diff (int | None):
@@ -1467,57 +1473,75 @@ class TemplatePreprocessorSettings(BaseModel):
         create_precache (bool):
             Whether to cache of the template structure data (release date and sequence
             information) for template filtering.
-        preparse_template_structures (bool):
+        preparse_structures (bool):
             Whether to preparse the template structures into per-chain AtomArray .npz
             files for faster subsequent online template processing.
         n_processes (int):
             Number of processes to use template preprocessing.
         chunksize (int):
             Number of tasks per worker in multiprocessing.
-        template_structures_directory (DirectoryPath):
+        structure_directory (DirectoryPath):
             Directory containing raw template structures or where template structures
             are to be downloaded.
-        template_structures_file_format (str):
+        structure_file_format (str):
             File format of the template structures. One of "cif", "pdb".
         precache_directory (DirectoryPath | None):
             Directory containing precomputed template structure pre-caches or where new
             ones are to be saved.
-        template_structure_array_directory (DirectoryPath | None):
+        structure_array_directory (DirectoryPath | None):
             Directory containing preparsed template structures or where new ones will be
             saved.
-        template_cache_directory (DirectoryPath | None):
+        cache_directory (DirectoryPath | None):
             Directory containing template cache entry .npz files or where new ones will
             be saved.
         ccd_file_path (FilePath | None):
             Path to the Chemical Component Dictionary file. Only required if
-            `preparse_template_structures` is True.
+            `preparse_structures` is True.
     """
 
     moltypes: Annotated[
         list[MoleculeType],
         BeforeValidator(lambda v: _convert_molecule_type(_ensure_list(v))),
-    ]
+    ] = [MoleculeType.PROTEIN]
     max_sequences_parse: int = 200
     max_seq_id: float | None = None
     min_align: float | None = None
     min_len: int | None = None
-    max_template_release_date: str | None = None
+    max_release_date: str | None = None
     min_release_date_diff: int | None = None
     max_templates: int = 20
 
-    fetch_missing_template_structures: bool = False
+    fetch_missing_structures: bool = False
     create_precache: bool = False
-    preparse_template_structures: bool = False
+    preparse_structures: bool = False
     n_processes: int = 4
     chunksize: int = 1
 
-    template_structures_directory: DirectoryPath
-    template_structures_file_format: str = "cif"
+    structure_directory: DirectoryPath
+    structure_file_format: str = "cif"
     precache_directory: DirectoryPath | None = None
-    template_structure_array_directory: DirectoryPath | None = None
-    template_cache_directory: DirectoryPath
+    structure_array_directory: DirectoryPath | None = None
+    cache_directory: DirectoryPath
 
     ccd_file_path: FilePath | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_paths(cls, args: dict) -> dict:
+        """Validate and convert paths to Path objects."""
+        if args.get("create_precache") and args.get("precache_directory") is None:
+            raise ValueError(
+                "If `create_precache` is True, `precache_directory` must be specified."
+            )
+        if (
+            args.get("preparse_structures")
+            and args.get("structure_array_directory") is None
+        ):
+            raise ValueError(
+                "If `preparse_structures` is True, "
+                "`structure_array_directory` must be specified."
+            )
+        return args
 
 
 class TemplatePreprocessor:
@@ -1541,25 +1565,21 @@ class TemplatePreprocessor:
         self.max_seq_id = config.max_seq_id
         self.min_align = config.min_align
         self.min_len = config.min_len
-        self.max_template_release_date = config.max_template_release_date
+        self.max_release_date = config.max_release_date
         self.min_release_date_diff = config.min_release_date_diff
         self.max_templates = config.max_templates
 
-        self.fetch_missing_template_structures = (
-            config.fetch_missing_template_structures
-        )
+        self.fetch_missing_structures = config.fetch_missing_structures
         self.create_precache = config.create_precache
-        self.preparse_template_structures = config.preparse_template_structures
+        self.preparse_structures = config.preparse_structures
         self.n_processes = config.n_processes
         self.chunksize = config.chunksize
 
-        self.template_structures_directory = config.template_structures_directory
-        self.template_structures_file_format = config.template_structures_file_format
+        self.structure_directory = config.structure_directory
+        self.structure_file_format = config.structure_file_format
         self.precache_directory = config.precache_directory
-        self.template_structure_array_directory = (
-            config.template_structure_array_directory
-        )
-        self.template_cache_directory = config.template_cache_directory
+        self.template_structure_array_directory = config.structure_array_directory
+        self.template_cache_directory = config.cache_directory
 
         if config.ccd_file_path is not None:
             self.ccd = pdbx.CIFFile.read(config.ccd_file_path)
@@ -1663,8 +1683,8 @@ class TemplatePreprocessor:
 
                 # B. Get which files are available
                 template_structure_file = (
-                    self.template_structures_directory
-                    / f"{template.entry_id}.{self.template_structures_file_format}"
+                    self.structure_directory
+                    / f"{template.entry_id}.{self.structure_file_format}"
                 )
                 structure_available = template_structure_file.exists()
                 precache_entry_file = (
@@ -1681,11 +1701,11 @@ class TemplatePreprocessor:
 
                 # C. Fetch template if not available
                 if (not structure_available) & (not structure_arrays_available):
-                    if self.fetch_missing_template_structures:
+                    if self.fetch_missing_structures:
                         fetch(
                             pdb_ids=template.entry_id,
-                            format=self.template_structures_file_format,
-                            target_path=self.template_structures_directory,
+                            format=self.structure_file_format,
+                            target_path=self.structure_directory,
                         )
                     else:
                         continue
@@ -1702,19 +1722,17 @@ class TemplatePreprocessor:
                     # if the precache entry is not available and only the structure
                     # arrays were provided, we need to fetch the structure
                     if not structure_available:
-                        if self.fetch_missing_template_structures:
+                        if self.fetch_missing_structures:
                             fetch(
                                 pdb_ids=template.entry_id,
-                                format=self.template_structures_file_format,
-                                target_path=self.template_structures_directory,
+                                format=self.structure_file_format,
+                                target_path=self.structure_directory,
                             )
                         else:
                             continue
 
                     # Preprocess into per-chain arrays if prompted
-                    if self.preparse_template_structures & (
-                        not structure_arrays_available
-                    ):
+                    if self.preparse_structures & (not structure_arrays_available):
                         cif_file, _ = preprocess_template_structure_for_template(
                             template_structure_file,
                             template_structure_array_subdirectory,
@@ -1744,7 +1762,7 @@ class TemplatePreprocessor:
                 if run_template_release_date_checks(
                     template_release_date=release_date,
                     query_release_date=None,  # TODO: add for training logic
-                    max_template_release_date=self.max_template_release_date,
+                    max_template_release_date=self.max_release_date,
                     min_release_date_diff=self.min_release_date_diff,
                 ):
                     continue

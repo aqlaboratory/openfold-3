@@ -44,7 +44,7 @@ def test_sto_parser(file_path, output_path, max_sequences):
     with open(file_path) as f:
         sto_string = f.read()
     sto_parser = StoParser(max_sequences=max_sequences)
-    templates = sto_parser.parse(sto_string, QUERY_SEQUENCE)
+    templates = sto_parser(sto_string, QUERY_SEQUENCE)
     expected_templates = np.load(output_path, allow_pickle=True)["templates"].item()
     assert len(templates) == len(expected_templates)
     for actual, expected in zip(templates.values(), expected_templates.values()):
@@ -70,7 +70,7 @@ def test_a3m_parser(file_path, output_path, max_sequences):
     with open(file_path) as f:
         a3m_string = f.read()
     a3m_parser = A3mParser(max_sequences=max_sequences)
-    templates = a3m_parser.parse(a3m_string, query_seq_str=QUERY_SEQUENCE)
+    templates = a3m_parser(a3m_string, query_seq_str=QUERY_SEQUENCE)
     expected_templates = np.load(output_path, allow_pickle=True)["templates"].item()
     assert len(templates) == len(expected_templates)
     for actual, expected in zip(templates.values(), expected_templates.values()):
@@ -84,7 +84,7 @@ def test_m8_parser():
 
     m8_parser = M8Parser(max_sequences=max_sequences)
     m8_cigar = pd.read_csv(file_path, sep="\t", header=None)
-    templates = m8_parser.parse(m8_cigar)
+    templates = m8_parser(m8_cigar)
     expected_templates = np.load(output_path, allow_pickle=True)["templates"].item()
     assert len(templates) == len(expected_templates)
     for actual, expected in zip(templates.values(), expected_templates.values()):
@@ -92,7 +92,7 @@ def test_m8_parser():
 
     m8_no_cigar = m8_cigar.loc[:, m8_cigar.columns != "cigar"].copy()
     output_path_no_cigar = TEST_DIR / "outputs/m8_no_cigar.npz"
-    templates_no_cigar = m8_parser.parse(m8_no_cigar)
+    templates_no_cigar = m8_parser(m8_no_cigar)
     expected_templates_no_cigar = np.load(output_path_no_cigar, allow_pickle=True)[
         "templates"
     ].item()
