@@ -1519,29 +1519,55 @@ class TemplatePreprocessorSettings(BaseModel):
 
     structure_directory: DirectoryPath
     structure_file_format: str = "cif"
+    output_directory: DirectoryPath | None = None
+
     precache_directory: DirectoryPath | None = None
     structure_array_directory: DirectoryPath | None = None
-    cache_directory: DirectoryPath
+    cache_directory: DirectoryPath | None = None
 
     ccd_file_path: FilePath | None = None
 
-    @model_validator(mode="before")
-    @classmethod
-    def _validate_paths(cls, args: dict) -> dict:
-        """Validate and convert paths to Path objects."""
-        if args.get("create_precache") and args.get("precache_directory") is None:
-            raise ValueError(
-                "If `create_precache` is True, `precache_directory` must be specified."
-            )
-        if (
-            args.get("preparse_structures")
-            and args.get("structure_array_directory") is None
-        ):
-            raise ValueError(
-                "If `preparse_structures` is True, "
-                "`structure_array_directory` must be specified."
-            )
-        return args
+    @model_validator(mode="after")
+    def _prepare_output_directories(self) -> "TemplatePreprocessorSettings":
+        if self.output_directory is None:
+            for dir_path in [
+                self.precache_directory,
+                self.structure_array_directory,
+                self.cache_directory,
+            ]:
+                if dir_path is None:
+                    raise ValueError(
+                        "If `output_directory` is not specified, "
+                        "all other directories must be specified explicitly."
+                    )
+
+        if self.cache_directory is None:
+            self.cache_directory = self.output_directory / "template_cache"
+
+        if self.create_precache and (self.precache_directory is None):
+            self.precache_directory = self.output_directory / "template_precache"
+
+        if self.preparse_structures:
+            if self.structure_array_directory is None:
+                self.structure_array_directory = (
+                    self.output_directory / "template_structure_arrays"
+                )
+            if self.ccd_file_path is None:
+                raise ValueError(
+                    "If `preparse_structures` is True, `ccd_file_path` must be "
+                    "specified."
+                )
+
+        for dir_path in [
+            self.output_directory,
+            self.cache_directory,
+            self.precache_directory,
+            self.structure_array_directory,
+        ]:
+            if dir_path is not None:
+                os.makedirs(dir_path, exist_ok=True)
+
+        return self
 
 
 class TemplatePreprocessor:
@@ -1560,7 +1586,7 @@ class TemplatePreprocessor:
     ) -> None:
         self.input_set = input_set
 
-        self.moltypes = [MoleculeType[moltype.upper()] for moltype in config.moltypes]
+        self.moltypes = config.moltypes
         self.max_sequences_parse = config.max_sequences_parse
         self.max_seq_id = config.max_seq_id
         self.min_align = config.min_align
@@ -1578,34 +1604,32 @@ class TemplatePreprocessor:
         self.structure_directory = config.structure_directory
         self.structure_file_format = config.structure_file_format
         self.precache_directory = config.precache_directory
-        self.template_structure_array_directory = config.structure_array_directory
-        self.template_cache_directory = config.cache_directory
+        self.structure_array_directory = config.structure_array_directory
+        self.cache_directory = config.cache_directory
 
         if config.ccd_file_path is not None:
             self.ccd = pdbx.CIFFile.read(config.ccd_file_path)
         else:
             self.ccd = None
 
-        self.inputs = []
-        self.seq_hash_map = {}
+        self.inputs = []  # replaced below by the parsers
+        self.seq_hash_map = {}  # replaced in call by a manager dict
         if isinstance(input_set, DatasetCache):
-            self._parse_dataset_cache(input_set)
+            self._parse_dataset_cache()
         elif isinstance(input_set, InferenceQuerySet):
-            self._parse_inference_query_set(input_set)
+            self._parse_inference_query_set()
         else:
             raise ValueError(
                 "Input set must be either DatasetCache or InferenceQuerySet"
             )
 
-    def _parse_dataset_cache(self, dataset_cache: DatasetCache) -> None:
+    def _parse_dataset_cache(self) -> None:
         raise NotImplementedError
 
-    def _parse_inference_query_set(
-        self, inference_query_set: InferenceQuerySet
-    ) -> None:
+    def _parse_inference_query_set(self) -> None:
         paths_seen = set()
         inputs = []
-        for query in inference_query_set.queries.values():
+        for query in self.input_set.queries.values():
             for chain in query.chains:
                 if chain.molecule_type not in self.moltypes:
                     continue
@@ -1623,12 +1647,35 @@ class TemplatePreprocessor:
                     )
         self.inputs = inputs
 
+    def _update_dataset_cache(self) -> None:
+        raise NotImplementedError
+
+    def _update_inference_query_set(self) -> None:
+        for query_name, query in self.input_set.queries.items():
+            for idx, chain in enumerate(query.chains):
+                if chain.molecule_type not in self.moltypes:
+                    continue
+                # Add new npz file path to the chain
+                query_seq_hash = get_sequence_hash(chain.sequence)
+                template_cache_entry_file = (
+                    self.cache_directory / f"{query_seq_hash}.npz"
+                )
+                if template_cache_entry_file.exists():
+                    new_path = Path(template_cache_entry_file)
+                else:
+                    new_path = None
+
+                self.input_set.queries[query_name].chains[
+                    idx
+                ].template_alignment_file_path = new_path
+
     def __call__(self) -> None:
+        # Preprocess template alignments into template cache entries
         if len(self.inputs) == 1:
-            # Preprocess templates for a single query
             self._preprocess_templates_for_query(self.inputs[0])
         elif len(self.inputs) > 1:
-            # Preprocess templates for multiple queries in parallel
+            manager = mp.Manager()
+            self.seq_hash_map = manager.dict()
             with mp.Pool(self.n_processes) as pool:
                 for _ in tqdm(
                     pool.imap_unordered(
@@ -1642,6 +1689,13 @@ class TemplatePreprocessor:
                     pass
         else:
             return
+
+        # Update the dataset cache/inference query set with the preprocessed template
+        # data
+        if isinstance(self.input_set, DatasetCache):
+            self._update_dataset_cache()
+        elif isinstance(self.input_set, InferenceQuerySet):
+            self._update_inference_query_set()
 
     def _preprocess_templates_for_query(
         self,
@@ -1665,10 +1719,10 @@ class TemplatePreprocessor:
         # seq hash map needs to be shared across processes - should be able to do the
         # same but with representative IDs for training add check to skip based on
         # seq_hash_map to avoid race conditions?
+        if input_data.query_seq_str in self.seq_hash_map:
+            return
         self.seq_hash_map[input_data.query_seq_str] = query_seq_hash
-        template_cache_entry_file = (
-            self.template_cache_directory / f"{query_seq_hash}.npz"
-        )
+        template_cache_entry_file = self.cache_directory / f"{query_seq_hash}.npz"
         cache_entry_available = template_cache_entry_file.exists()
 
         # 5. Template consistency checks and filtering
@@ -1687,17 +1741,23 @@ class TemplatePreprocessor:
                     / f"{template.entry_id}.{self.structure_file_format}"
                 )
                 structure_available = template_structure_file.exists()
-                precache_entry_file = (
-                    self.precache_directory / f"{template.entry_id}.npz"
-                )
-                precache_entry_available = precache_entry_file.exists()
-                template_structure_array_subdirectory = (
-                    self.template_structure_array_directory / template.entry_id
-                )
-                structure_arrays_available = (
-                    template_structure_array_subdirectory.exists()
-                    and any(template_structure_array_subdirectory.iterdir())
-                )
+                if self.precache_directory is not None:
+                    precache_entry_file = (
+                        self.precache_directory / f"{template.entry_id}.npz"
+                    )
+                    precache_entry_available = precache_entry_file.exists()
+                else:
+                    precache_entry_available = False
+                if self.structure_array_directory is not None:
+                    template_structure_array_subdirectory = (
+                        self.structure_array_directory / template.entry_id
+                    )
+                    structure_arrays_available = (
+                        template_structure_array_subdirectory.exists()
+                        and any(template_structure_array_subdirectory.iterdir())
+                    )
+                else:
+                    structure_arrays_available = False
 
                 # C. Fetch template if not available
                 if (not structure_available) & (not structure_arrays_available):
