@@ -6,6 +6,9 @@ from pydantic import BaseModel, DirectoryPath, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import FilePathOrNone
+from openfold3.core.data.pipelines.preprocessing.template import (
+    TemplatePreprocessorSettings,
+)
 from openfold3.core.data.tools.colabfold_msa_server import MsaServerSettings
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetConfigKwargs,
@@ -116,7 +119,6 @@ class InferenceExperimentSettings(ExperimentSettings):
     seeds: int | list[int] = [42]
     num_seeds: int | None = None
     output_dir: DirectoryPath = Path("./inference_output")
-    template_structure_directory_path: DirectoryPath | None = None
 
     @model_validator(mode="after")
     def generate_seeds(cls, model):
@@ -169,3 +171,6 @@ class InferenceExperimentConfig(ExperimentConfig):
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
     msa_server_settings: MsaServerSettings = MsaServerSettings()
+    template_preprocessor_settings: TemplatePreprocessorSettings = (
+        TemplatePreprocessorSettings(mode="predict")
+    )

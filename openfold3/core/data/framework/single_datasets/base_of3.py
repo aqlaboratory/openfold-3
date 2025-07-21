@@ -43,6 +43,9 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
 from openfold3.core.data.primitives.structure.tokenization import add_token_positions
+from openfold3.projects.of3_all_atom.config.dataset_configs import (
+    DefaultDatasetConfigSection,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +55,7 @@ logger = logging.getLogger(__name__)
 class BaseOF3Dataset(SingleDataset, ABC):
     """Implements a general SingleDataset for handling inputs for OF3.
 
-    The BaseAF3Dataset dataset
+    The BaseOF3Dataset dataset
     - implements a set of general class methods for processing and featurizing inputs
     for AF3
     - assigns general class attributes, including the dataset_cache property
@@ -66,8 +69,8 @@ class BaseOF3Dataset(SingleDataset, ABC):
     by setting the self.apply_crop attribute.
     """
 
-    def __init__(self, dataset_config: dict) -> None:
-        """Initializes a BaseAF3Dataset.
+    def __init__(self, dataset_config: DefaultDatasetConfigSection) -> None:
+        """Initializes a BaseOF3Dataset.
 
         Args:
             dataset_config (dict):

@@ -8,7 +8,7 @@ import traceback
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 import numpy as np
 import pandas as pd
@@ -1443,6 +1443,8 @@ class TemplatePreprocessorSettings(BaseModel):
     See AF3 SI Section 2.4. for details on some of these settings.
 
     Attributes:
+        mode (Literal["train", "inference"]):
+            Whether templates are preprocessed for training or inference.
         moltypes (list[MoleculeType]):
             List of molecule types to preprocess templates for.
         max_sequences_parse (int):
@@ -1499,6 +1501,7 @@ class TemplatePreprocessorSettings(BaseModel):
             `preparse_structures` is True.
     """
 
+    mode: Literal["train", "predict"] = "predict"
     moltypes: Annotated[
         list[MoleculeType],
         BeforeValidator(lambda v: _convert_molecule_type(_ensure_list(v))),
@@ -1517,7 +1520,7 @@ class TemplatePreprocessorSettings(BaseModel):
     n_processes: int = 4
     chunksize: int = 1
 
-    structure_directory: DirectoryPath
+    structure_directory: DirectoryPath | None = None
     structure_file_format: str = "cif"
     output_directory: DirectoryPath | None = None
 
@@ -1529,43 +1532,43 @@ class TemplatePreprocessorSettings(BaseModel):
 
     @model_validator(mode="after")
     def _prepare_output_directories(self) -> "TemplatePreprocessorSettings":
-        if self.output_directory is None:
-            for dir_path in [
-                self.precache_directory,
-                self.structure_array_directory,
-                self.cache_directory,
-            ]:
-                if dir_path is None:
-                    raise ValueError(
-                        "If `output_directory` is not specified, "
-                        "all other directories must be specified explicitly."
-                    )
+        if self.preparse_structures and self.ccd_file_path is None:
+            raise ValueError(
+                "preparse_structures=True requires ccd_file_path to be set."
+            )
 
-        if self.cache_directory is None:
-            self.cache_directory = self.output_directory / "template_cache"
+        if self.output_directory is not None:
+            base = Path(self.output_directory)
+        else:
+            base = (
+                Path("./inference_output")
+                if self.mode == "predict"
+                else Path("./train_output")
+            )
 
-        if self.create_precache and (self.precache_directory is None):
-            self.precache_directory = self.output_directory / "template_precache"
-
+        # only set these if the user did not give them explicitly
+        self.structure_directory = self.structure_directory or (
+            base / "template_structures"
+        )
+        self.cache_directory = self.cache_directory or (base / "template_cache")
+        if self.create_precache:
+            self.precache_directory = self.precache_directory or (
+                base / "template_precache"
+            )
         if self.preparse_structures:
-            if self.structure_array_directory is None:
-                self.structure_array_directory = (
-                    self.output_directory / "template_structure_arrays"
-                )
-            if self.ccd_file_path is None:
-                raise ValueError(
-                    "If `preparse_structures` is True, `ccd_file_path` must be "
-                    "specified."
-                )
+            self.structure_array_directory = self.structure_array_directory or (
+                base / "template_structure_arrays"
+            )
 
-        for dir_path in [
+        for d in (
             self.output_directory,
+            self.structure_directory,
             self.cache_directory,
             self.precache_directory,
             self.structure_array_directory,
-        ]:
-            if dir_path is not None:
-                os.makedirs(dir_path, exist_ok=True)
+        ):
+            if d is not None:
+                os.makedirs(d, exist_ok=True)
 
         return self
 

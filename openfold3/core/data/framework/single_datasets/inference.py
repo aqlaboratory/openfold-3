@@ -49,6 +49,9 @@ from openfold3.core.data.primitives.structure.tokenization import (
     get_token_count,
     tokenize_atom_array,
 )
+from openfold3.projects.of3_all_atom.config.dataset_configs import (
+    DefaultDatasetConfigSection,
+)
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     Query,
 )
@@ -61,7 +64,11 @@ class InferenceDataset(Dataset):
     """Dataset class for running inference on a set of queries."""
 
     # TODO: Can accept a dataset_config here if we want
-    def __init__(self, dataset_config, world_size: Optional[int] = None) -> None:
+    def __init__(
+        self,
+        dataset_config: DefaultDatasetConfigSection,
+        world_size: Optional[int] = None,
+    ) -> None:
         """Initializes the InferenceDataset."""
         super().__init__()
 

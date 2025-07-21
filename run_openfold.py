@@ -18,6 +18,7 @@ import click
 import torch
 
 from openfold3.core.config import config_utils
+from openfold3.core.data.pipelines.preprocessing.template import TemplatePreprocessor
 from openfold3.core.data.tools.colabfold_msa_server import preprocess_colabfold_msas
 from openfold3.entry_points.experiment_runner import (
     InferenceExperimentRunner,
@@ -181,6 +182,11 @@ def predict(
         )
 
     # Preprocess template alignments and optionally template structures
+    template_preprocessor_settings = expt_config.template_preprocessor_settings
+    template_preprocessor = TemplatePreprocessor(
+        input_set=query_set, config=template_preprocessor_settings
+    )
+    template_preprocessor()
 
     # Run the forward pass
     expt_runner.setup()
