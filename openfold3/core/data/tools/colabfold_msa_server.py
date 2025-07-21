@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Literal, NamedTuple
 
 import numpy as np
+import pandas as pd
 import requests
 from pydantic import BaseModel
 from pydantic_core import Url
@@ -446,24 +447,27 @@ class ColabFoldMapper:
         query_name:
             name of the query structure in the input query cache.
         chain_id:
-            a (query_name, chain identifier) tuple, indicating a unique
-            instantiation of a protein chain.
+            a (query_name, chain identifier) tuple, indicating a unique instantiation of
+            a protein chain.
         rep_id:
-            a chain_id associated with a unique protein sequence, selected
-            upon first occurrence of that specific sequence; all subsequent
-            chain_ids with the same sequence will have this chain_id as the
-            representative.
+            a chain_id associated with a unique protein sequence, selected upon first
+            occurrence of that specific sequence; all subsequent chain_ids with the same
+            sequence will have this chain_id as the representative.
         seq:
             the actual protein sequence.
         complex_id:
-            an identifier associated with a unique SET of protein
-            sequences in the same query, consisting of the sorted
-            representative IDs of ALL chains in the complex; only used for
-            queries with more than 2 unique protein sequences.
+            an identifier associated with a unique SET of protein sequences in the same
+            query, consisting of the sorted representative IDs of ALL chains in the
+            complex; only used for queries with more than 2 unique protein sequences.
+        m:
+            a unique integer identifier for the sequence starting from 101, used to map
+            sequences to representative IDs in the MSA server queries.
 
     Attributes:
         seq_to_rep_id (dict[str, ChainID]):
             Sequence to representative ID mapping.
+        rep_id_to_m (dict[int, ChainID]):
+            Mapping from representative ID to a unique integer identifier.
         rep_id_to_seq (dict[ChainID, str]):
             Representative ID to sequence mapping.
         chain_id_to_rep_id (dict[ChainID, ChainID]):
@@ -479,6 +483,7 @@ class ColabFoldMapper:
     """
 
     seq_to_rep_id: dict[str, ChainID] = field(default_factory=dict)
+    rep_id_to_m: dict[int, ChainID] = field(default_factory=dict)
     rep_id_to_seq: dict[ChainID, str] = field(default_factory=dict)
     chain_id_to_rep_id: dict[ChainID, ChainID] = field(default_factory=dict)
     query_name_to_complex_id: dict[str, ComplexID] = field(default_factory=dict)
@@ -502,6 +507,7 @@ def collect_colabfold_msa_data(
     """
 
     colabfold_mapper = ColabFoldMapper()
+    m_i = 101
     # Get unique set of sequences for main MSAs
     for query_name, query in inference_query_set.queries.items():
         chain_ids_seen = set()
@@ -530,6 +536,8 @@ def collect_colabfold_msa_data(
                 if seq not in colabfold_mapper.seq_to_rep_id:
                     colabfold_mapper.seq_to_rep_id[seq] = chain_ids[0]
                     colabfold_mapper.rep_id_to_seq[chain_ids[0]] = seq
+                    colabfold_mapper.rep_id_to_m[chain_ids[0]] = m_i
+                    m_i += 1
                     for chain_id in chain_ids:
                         colabfold_mapper.chain_id_to_rep_id[chain_id] = chain_ids[0]
                     colabfold_mapper.seqs.append(seq)
@@ -664,9 +672,17 @@ class ColabFoldQueryRunner:
 
         main_alignments_path = self.output_directory / "main"
         main_alignments_path.mkdir(parents=True, exist_ok=True)
+        template_alignments_path = self.output_directory / "template"
+        template_alignments_path.mkdir(parents=True, exist_ok=True)
+
+        template_alignments = pd.read_csv(
+            self.output_directory / "raw/main/pdb70.m8", sep="\t", header=None
+        )
+        m_with_templates = set(template_alignments[0])
 
         for rep_id, aln in zip(self.colabfold_mapper.rep_ids, a3m_lines_main):
             rep_dir = main_alignments_path / str(rep_id)
+            template_rep_dir = template_alignments_path / str(rep_id)
 
             # TODO: add code for which format to save the MSA in
             # If save as a3m...
@@ -684,6 +700,19 @@ class ColabFoldQueryRunner:
                 for k, v in msas.items():
                     msas_preparsed[k] = v.to_dict()
                 np.savez_compressed(npz_file, **msas_preparsed)
+
+            # Format template alignments
+            m_i = self.colabfold_mapper.rep_id_to_m[rep_id]
+            if m_i in m_with_templates:
+                template_rep_dir.mkdir(parents=True, exist_ok=True)
+                template_alignment_file = template_rep_dir / "colabfold_template.m8"
+                template_alignment = template_alignments[template_alignments[0] == m_i]
+                template_alignment.to_csv(
+                    template_alignment_file,
+                    sep="\t",
+                    header=False,
+                    index=False,
+                )
 
     def query_format_paired(self):
         """Submits queries and formats the outputs for paired MSAs."""
@@ -813,6 +842,24 @@ def add_msa_paths_to_iqs(
                             stacklevel=2,
                         )
                     chain.paired_msa_file_paths = [paired_msa_file_paths]
+
+                # Add template alignment file paths
+                template_alignment_file_path = (
+                    output_directory
+                    / "template"
+                    / str(rep_id)
+                    / "colabfold_template.m8"
+                )
+                if template_alignment_file_path.exists():
+                    if chain.template_alignment_file_path is not None:
+                        warnings.warn(
+                            f"Query {query_name} chain {chain} already has its"
+                            "template_alignment_file_path set. This are now "
+                            "overwritten with a path to the template alignment file"
+                            "from the ColabFold MSA server.",
+                            stacklevel=2,
+                        )
+                    chain.template_alignment_file_path = template_alignment_file_path
 
     return inference_query_set
 
