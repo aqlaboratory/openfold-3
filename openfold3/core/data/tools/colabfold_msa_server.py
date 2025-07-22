@@ -875,7 +875,6 @@ class MsaServerSettings(BaseModel):
     save_mappings: bool = False
 
 
-# TODO use pydantic object as input
 def preprocess_colabfold_msas(
     inference_query_set: InferenceQuerySet,
     output_directory: Path,

@@ -352,6 +352,8 @@ class TemplateData(NamedTuple):
             Sequence identity of the template hit with respect to the query sequence.
             Calculated as the number of identical residues in the alignment divided by
             the number of query residues in the alignment.
+        q_cov (float | None):
+            Coverage of the full query sequence in the template alignment.
         template_sequence (str | None):
             The ungapped template sequence.
     """
@@ -359,10 +361,10 @@ class TemplateData(NamedTuple):
     index: int
     entry_id: str
     chain_id: str
-    query_aln_pos: np.ndarray
-    aln_pos: np.ndarray
+    query_aln_pos: np.ndarray | None
+    aln_pos: np.ndarray | None
     seq_id: float
-    q_cov: float
+    q_cov: float | None
     seq: str | None
 
 
@@ -605,7 +607,10 @@ class A3mParser(TemplateParser):
     """Parses A3M format files."""
 
     def __call__(
-        self, alignment_source: str, query_seq_str: str
+        self,
+        alignment_source: str,
+        query_seq_str: str,
+        realign: bool = False,
     ) -> dict[int, TemplateData]:
         # 1. Parse the A3M file as a FASTA file
         alignments, headers_raw = parse_fasta(alignment_source)
@@ -633,7 +638,7 @@ class A3mParser(TemplateParser):
         is_first_query = first_seq_str in query_seq_str
 
         # 5. Process alignments
-        if is_first_query:
+        if is_first_query and not realign:
             # Use existing alignment if query is first
             return self._process_alignment_hits(
                 query_seq_str=query_seq_str,
@@ -642,7 +647,7 @@ class A3mParser(TemplateParser):
                 headers=headers,
             )
         else:
-            # Realign with kalign if query is not first
+            # Realign with kalign if query is not first or realign is requested
             all_sequences = f">query\n{query_seq_str}\n"
             for header, seq in zip(headers_raw, alignments):
                 ungapped_seq = "".join(c for c in seq if c.isupper())
@@ -662,7 +667,9 @@ class A3mParser(TemplateParser):
 class M8Parser(TemplateParser):
     """Parses tabular format (.m8) files."""
 
-    def __call__(self, alignment_source: pd.DataFrame) -> dict[int, TemplateData]:
+    def __call__(
+        self, alignment_source: pd.DataFrame, query_seq_str: str
+    ) -> dict[int, TemplateData]:
         columns = [
             "query_id",
             "template_id",
@@ -688,21 +695,22 @@ class M8Parser(TemplateParser):
         else:
             max_sequences = min(self.max_sequences + 1, len(df))
         df = df.iloc[:max_sequences]
-
-        if not df.empty and "template_id" in df.columns:
-            df[["entry_id", "chain_id"]] = df["template_id"].str.split("_", expand=True)
-        else:
-            df[["entry_id", "chain_id"]] = (None, None)
+        df[["entry_id", "chain_id"]] = df["template_id"].str.split("_", expand=True)
 
         templates = {}
         for idx, row in df.iterrows():
-            query_ids_hit, template_ids_hit = None, None
-            if "cigar" in row and pd.notna(row["cigar"]):
-                query_ids_hit, template_ids_hit = calculate_ids_hit_cigar(
-                    cigar_string=row["cigar"],
-                    query_start=row["query_start"],
-                    template_start=row["template_start"],
-                )
+            query_ids_hit, template_ids_hit, q_cov = None, None, None
+            # For now, the cigar string is not going to be used, it is way too annoying
+            # to do the validity checks with it.
+
+            # if "cigar" in row and pd.notna(row["cigar"]):
+            #     query_ids_hit, template_ids_hit = calculate_ids_hit_cigar(
+            #         cigar_string=row["cigar"],
+            #         query_start=row["query_start"],
+            #         template_start=row["template_start"],
+            #     )
+            #     q_cov = sum((query_ids_hit != -1) & (template_ids_hit != -1)) /
+            # len(query_seq_str)
 
             templates[idx] = TemplateData(
                 index=idx,
@@ -712,6 +720,7 @@ class M8Parser(TemplateParser):
                 aln_pos=template_ids_hit,
                 seq_id=row["seq_identity"],
                 seq=None,
+                q_cov=q_cov,
             )
         return templates
 
@@ -747,7 +756,8 @@ def parse_template_alignment(
     aln_parser = TEMPLATE_PARSER_REGISTRY[ext](max_sequences=max_sequences)
     if ext == ".m8":
         parser_input = {
-            "alignment_source": pd.read_csv(aln_path, sep="\t", header=None)
+            "alignment_source": pd.read_csv(aln_path, sep="\t", header=None),
+            "query_seq_str": query_seq_str,
         }
     else:
         with open(aln_path.absolute()) as f:

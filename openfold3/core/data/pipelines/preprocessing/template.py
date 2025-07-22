@@ -28,6 +28,7 @@ from openfold3.core.config.config_utils import _convert_molecule_type, _ensure_l
 from openfold3.core.data.io.dataset_cache import read_datacache, write_datacache_to_json
 from openfold3.core.data.io.s3 import open_local_or_s3
 from openfold3.core.data.io.sequence.template import (
+    A3mParser,
     TemplateData,
     parse_entry_chain_id,
     parse_hmmsearch_sto,
@@ -1532,6 +1533,13 @@ class TemplatePreprocessorSettings(BaseModel):
 
     @model_validator(mode="after")
     def _prepare_output_directories(self) -> "TemplatePreprocessorSettings":
+        if self.structure_file_format != "cif":
+            raise NotImplementedError(
+                f"structure_file_format {self.structure_file_format} was provided but "
+                "currently, only cif file format is supported for template structure "
+                "preprocessing due to metadata requirements of the template pipeline."
+            )
+
         if self.preparse_structures and self.ccd_file_path is None:
             raise ValueError(
                 "preparse_structures=True requires ccd_file_path to be set."
@@ -1762,7 +1770,7 @@ class TemplatePreprocessor:
                 else:
                     structure_arrays_available = False
 
-                # C. Fetch template if not available
+                # C. Fetch template structure if not available
                 if (not structure_available) & (not structure_arrays_available):
                     if self.fetch_missing_structures:
                         fetch(
@@ -1819,7 +1827,29 @@ class TemplatePreprocessor:
                             },
                         )
 
-                # E. Apply release date checks
+                # E. Realign with the sequence from the template structure file if the
+                # template aligment did not contain the sequence, because why would an
+                # alignment file, whose only job is to store sequence-sequence alignment
+                # data actually contain this information? Love m8 format...
+                if not all(
+                    [
+                        template.seq,
+                        template.query_aln_pos,
+                        template.aln_pos,
+                        template.q_cov,
+                    ]
+                ):
+                    template_sequence = chain_id_seq_map.get(template.chain_id)
+                    if template_sequence is None:
+                        continue
+                    parser = A3mParser(max_sequences=None)
+                    template = parser(
+                        f">query_X/0-1\n{input_data.query_seq_str}\n>{template.entry_id}_{template.chain_id}/0-1\n{template_sequence}\n",
+                        input_data.query_seq_str,
+                        realign=True,
+                    )[1]
+
+                # F. Apply release date checks
                 if not isinstance(release_date, datetime):
                     release_date = datetime.strptime(release_date, "%Y-%m-%d")
                 if run_template_release_date_checks(
@@ -1830,7 +1860,7 @@ class TemplatePreprocessor:
                 ):
                     continue
 
-                # F. Match template sequence from alignment to template sequence in
+                # G. Match template sequence from alignment to template sequence in
                 # structure and attempt to remap chain ID if needed
                 chain_id_matched = match_template_seq_from_aln_to_struc(
                     template, chain_id_seq_map
@@ -1838,7 +1868,7 @@ class TemplatePreprocessor:
                 if chain_id_matched is None:
                     continue
 
-                # G. Add to cache entry
+                # H. Add to cache entry
                 template_cache_entry[f"{template.entry_id}_{chain_id_matched}"] = {
                     "index": template.index,
                     "release_date": release_date,
@@ -1851,7 +1881,7 @@ class TemplatePreprocessor:
                     ),
                 }
 
-                # H. Break if max templates reached
+                # I. Break if max templates reached
                 if len(template_cache_entry) == self.max_templates:
                     break
 
