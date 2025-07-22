@@ -1,19 +1,17 @@
-# TODO: IMPORTANT: This file is currently broken for certain cache generation scripts
-# because of the if TYPE_CHECKING logic. This should be fixed soon!
+# TODO: IMPORTANT: This file may currently run into problems for LMDB-related logic,
+# this needs to be fixed.
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypeAlias, TypeVar
+from typing import Literal, TypeAlias, TypeVar
 
 import lmdb
 
+from openfold3.core.data.primitives.caches.lmdb import LMDBDict
 from openfold3.core.data.resources.residues import MoleculeType
-
-if TYPE_CHECKING:
-    from openfold3.core.data.primitives.caches.lmdb import LMDBDict
 
 K = TypeVar("K")
 V = TypeVar("V")
@@ -676,13 +674,13 @@ class DatasetReferenceMoleculeData:
     set_fallback_to_nan: bool
 
 
+DictOrLMDBDict: TypeAlias = dict[K, V] | LMDBDict[K, V]
+
 # Reference molecule data should be the same for all datasets so we provide it here as a
 # general type.
-if TYPE_CHECKING:
-    DictOrLMDBDict: TypeAlias = dict[K, V] | LMDBDict[K, V]
-    DatasetReferenceMoleculeCache: TypeAlias = DictOrLMDBDict[
-        str, DatasetReferenceMoleculeData
-    ]
+DatasetReferenceMoleculeCache: TypeAlias = DictOrLMDBDict[
+    str, DatasetReferenceMoleculeData
+]
 
 
 # ==============================================================================
@@ -828,16 +826,15 @@ class ProteinMonomerStructureData:
     chains: dict[str, ProteinMonomerChainData]
 
 
-if TYPE_CHECKING:
-    ClusteredDatasetStructureDataCache: TypeAlias = DictOrLMDBDict[
-        str, ClusteredDatasetStructureData
-    ]
-    ValClusteredDatasetStructureDataCache: TypeAlias = DictOrLMDBDict[
-        str, ValidationDatasetStructureData
-    ]
-    ProteinMonomerStructureDataCache: TypeAlias = DictOrLMDBDict[
-        str, ProteinMonomerStructureData
-    ]
+ClusteredDatasetStructureDataCache: TypeAlias = DictOrLMDBDict[
+    str, ClusteredDatasetStructureData
+]
+ValClusteredDatasetStructureDataCache: TypeAlias = DictOrLMDBDict[
+    str, ValidationDatasetStructureData
+]
+ProteinMonomerStructureDataCache: TypeAlias = DictOrLMDBDict[
+    str, ProteinMonomerStructureData
+]
 
 
 # --- Reference molecule dataclasses ---
@@ -928,18 +925,15 @@ class ProteinMonomerDatasetCache(DatasetCache):
 
 
 # Grouped type-aliases for more convenient type-hinting of general-purpose functions
-if TYPE_CHECKING:
-    ChainData: TypeAlias = (
-        PreprocessingChainData | PDBChainData | ProteinMonomerChainData
-    )
-    StructureDataCache: TypeAlias = (
-        PreprocessingStructureDataCache
-        | DisorderedPreprocessingStructureDataCache
-        | ClusteredDatasetStructureDataCache
-        | ValClusteredDatasetStructureDataCache
-        | ProteinMonomerStructureDataCache
-    )
-    ReferenceMoleculeCache: TypeAlias = (
-        PreprocessingReferenceMoleculeCache | DatasetReferenceMoleculeCache
-    )
-    DataCacheType: TypeAlias = PreprocessingDataCache | DatasetCache
+ChainData: TypeAlias = PreprocessingChainData | PDBChainData | ProteinMonomerChainData
+StructureDataCache: TypeAlias = (
+    PreprocessingStructureDataCache
+    | DisorderedPreprocessingStructureDataCache
+    | ClusteredDatasetStructureDataCache
+    | ValClusteredDatasetStructureDataCache
+    | ProteinMonomerStructureDataCache
+)
+ReferenceMoleculeCache: TypeAlias = (
+    PreprocessingReferenceMoleculeCache | DatasetReferenceMoleculeCache
+)
+DataCacheType: TypeAlias = PreprocessingDataCache | DatasetCache
