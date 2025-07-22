@@ -1625,6 +1625,7 @@ class TemplatePreprocessor:
 
         self.inputs = []  # replaced below by the parsers
         self.seq_hash_map = {}  # replaced in call by a manager dict
+        self.hash_template_id_map = {}  # replaced in call by a manager dict
         if isinstance(input_set, DatasetCache):
             self._parse_dataset_cache()
         elif isinstance(input_set, InferenceQuerySet):
@@ -1671,14 +1672,21 @@ class TemplatePreprocessor:
                 template_cache_entry_file = (
                     self.cache_directory / f"{query_seq_hash}.npz"
                 )
+                # No templates for chains whose preprocessing fails
                 if template_cache_entry_file.exists():
                     new_path = Path(template_cache_entry_file)
                 else:
                     new_path = None
-
                 self.input_set.queries[query_name].chains[
                     idx
                 ].template_alignment_file_path = new_path
+
+                # Add the template entry chain IDs to the chain
+                self.input_set.queries[query_name].chains[
+                    idx
+                ].template_entry_chain_ids = list(
+                    self.hash_template_id_map.get(query_seq_hash, [])
+                )
 
     def __call__(self) -> None:
         # Preprocess template alignments into template cache entries
@@ -1687,6 +1695,7 @@ class TemplatePreprocessor:
         elif len(self.inputs) > 1:
             manager = mp.Manager()
             self.seq_hash_map = manager.dict()
+            self.hash_template_id_map = manager.dict()
             with mp.Pool(self.n_processes) as pool:
                 for _ in tqdm(
                     pool.imap_unordered(
@@ -1698,6 +1707,7 @@ class TemplatePreprocessor:
                     desc="Preprocessing templates",
                 ):
                     pass
+
         else:
             return
 
@@ -1739,6 +1749,7 @@ class TemplatePreprocessor:
         # 5. Template consistency checks and filtering
         if not cache_entry_available:  # !!! cannot do this for training!
             template_cache_entry = {}
+            template_ids = []
             for _, template in templates.items():
                 # A. Sequence checks
                 if run_template_sequence_checks(
@@ -1880,14 +1891,30 @@ class TemplatePreprocessor:
                         axis=1,
                     ),
                 }
+                template_ids.append(f"{template.entry_id}_{chain_id_matched}")
 
                 # I. Break if max templates reached
                 if len(template_cache_entry) == self.max_templates:
                     break
 
-            # 6. Save template cache entry
+            # 6. Save template cache entry and update shared dict of template IDs
             if len(template_cache_entry) > 0:
                 np.savez_compressed(template_cache_entry_file, **template_cache_entry)
+                self.hash_template_id_map[query_seq_hash] = template_ids
+
+        # Load the existing template cache entry if available to add the processed
+        # template ids into the shared hash_template_id_map and then input set
+        else:
+            if query_seq_hash in self.hash_template_id_map:
+                return
+            template_cache_entry = np.load(template_cache_entry_file, allow_pickle=True)
+            template_cache_entry = {
+                key: value.item() for key, value in template_cache_entry.items()
+            }
+
+            self.hash_template_id_map[query_seq_hash] = list(
+                template_cache_entry.keys()
+            )
 
 
 # New primitives: TODO move to primitives
