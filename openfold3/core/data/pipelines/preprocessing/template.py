@@ -1722,7 +1722,7 @@ class TemplatePreprocessor:
         self,
         input_data: TemplatePreprocessorInputTrain | TemplatePreprocessorInputInference,
     ) -> None:
-        # preprocess templates for a single query
+        # preprocess templates for a single chain
         # 1. Parse template alignment file
         templates = parse_template_alignment(
             input_data.aln_path, input_data.query_seq_str, self.max_sequences_parse
@@ -1839,9 +1839,7 @@ class TemplatePreprocessor:
                         )
 
                 # E. Realign with the sequence from the template structure file if the
-                # template aligment did not contain the sequence, because why would an
-                # alignment file, whose only job is to store sequence-sequence alignment
-                # data actually contain this information? Love m8 format...
+                # template aligment did not contain the sequence.
                 if not all(
                     [
                         template.seq,

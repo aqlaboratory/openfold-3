@@ -39,11 +39,13 @@ from openfold3.core.data.pipelines.sample_processing.conformer import (
 from openfold3.core.data.pipelines.sample_processing.msa import (
     MsaSampleProcessorInference,
 )
+from openfold3.core.data.pipelines.sample_processing.template import (
+    process_template_structures_of3,
+)
 from openfold3.core.data.primitives.structure.query import (
     StructureWithReferenceMolecules,
     structure_with_ref_mols_from_query,
 )
-from openfold3.core.data.primitives.structure.template import TemplateSliceCollection
 from openfold3.core.data.primitives.structure.tokenization import (
     add_token_positions,
     get_token_count,
@@ -202,13 +204,33 @@ class InferenceDataset(Dataset):
         return msa_features
 
     def create_template_features(
-        self, atom_array: AtomArray, n_tokens: int, *args, **kwargs
+        self, query: Query, atom_array: AtomArray, n_tokens: int, *args, **kwargs
     ) -> dict:
         """Creates the template features."""
-        # TODO: Implement a custom inference-adjusted function that returns
-        # template_slice_collection
-        template_slice_collection = TemplateSliceCollection(template_slices=dict())
 
+        # Expand pre-chain template data
+        assembly_data = {}
+        for chain in query.chains:
+            for chain_id in chain.chain_ids:
+                assembly_data[chain_id] = {
+                    "template_ids": chain.template_entry_chain_ids,
+                    "cache_entry_file_path": chain.template_alignment_file_path,
+                }
+
+        # Sample processing
+        template_slice_collection = process_template_structures_of3(
+            atom_array=atom_array,
+            n_templates=self.template_settings.n_templates,
+            take_top_k=self.template_settings.take_top_k,
+            template_cache_directory=None,
+            assembly_data=assembly_data,
+            template_structures_directory=self.query_set.template_structures_directory,
+            template_structure_array_directory=self.query_set.template_structure_array_directory,
+            template_file_format=self.query_set.template_file_format,
+            ccd=self.ccd,
+        )
+
+        # Featurization
         template_features = featurize_template_structures_of3(
             template_slice_collection=template_slice_collection,
             n_templates=self.template_settings.n_templates,
@@ -255,7 +277,7 @@ class InferenceDataset(Dataset):
 
         # Template features
         template_features = self.create_template_features(
-            preprocessed_atom_array, n_tokens
+            query, preprocessed_atom_array, n_tokens
         )
         features.update(template_features)
 

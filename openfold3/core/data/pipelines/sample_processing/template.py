@@ -23,7 +23,7 @@ def process_template_structures_of3(
     atom_array: AtomArray,
     n_templates: int,
     take_top_k: bool,
-    template_cache_directory: Path,
+    template_cache_directory: Path | None,
     assembly_data: dict[str, dict[str, Any]],
     template_structures_directory: Path | None,
     template_structure_array_directory: Path | None,
@@ -45,8 +45,11 @@ def process_template_structures_of3(
             e-value) n_templates are taken.
         take_top_k (bool):
             Whether to take the top K templates (True) or sample randomly (False).
-        template_cache_directory (Path):
-            The directory where the template cache is stored.
+        template_cache_directory (Path | None):
+            The directory where the template cache is stored during training. For
+            inference, full paths to template cache entries are provided in the
+            `template_alignment_file_path` field of the `Chain` class following template
+            preprocessing.
         assembly_data (dict[str, dict[str, Any]]):
             Dict containing the alignment representatives and template IDs for each
             chain.
@@ -73,6 +76,8 @@ def process_template_structures_of3(
         return TemplateSliceCollection(template_slices={})
 
     # Iterate over protein chains in the atom array
+    # TODO: currently, this re-processes templates identical chains, add redundancy
+    # logic if becomes a bottleneck
     template_slices = {}
     for chain_id in protein_chain_ids:
         # Sample templates and fetch their data from the cache
