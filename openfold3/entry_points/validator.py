@@ -100,7 +100,7 @@ class TrainingExperimentSettings(ExperimentSettings):
     mode: Literal["train", "predict"] = "train"
     seed: int = 42
     restart_checkpoint_path: FilePathOrNone = None
-    output_dir: DirectoryPath = Path("./train_output")
+    output_dir: DirectoryPath = Path("./")
 
 
 def generate_seeds(start_seed, num_seeds):
@@ -115,7 +115,7 @@ class InferenceExperimentSettings(ExperimentSettings):
     mode: Literal["train", "predict"] = "predict"
     seeds: int | list[int] = [42]
     num_seeds: int | None = None
-    output_dir: DirectoryPath = Path("./inference_output")
+    output_dir: DirectoryPath = Path("./")
 
     @model_validator(mode="after")
     def generate_seeds(cls, model):

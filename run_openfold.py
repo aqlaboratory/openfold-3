@@ -15,6 +15,7 @@ import logging
 from pathlib import Path
 
 import click
+import glob
 import torch
 
 from openfold3.core.config import config_utils
@@ -151,10 +152,9 @@ def predict(
             "architecture.shared.diffusion.no_full_rollout_samples"
         ] = num_diffusion_samples
 
-    expt_runner = InferenceExperimentRunner(expt_config)
     if output_dir:
-        output_dir.mkdir(exist_ok=True, parents=True)
-        expt_runner.output_dir = output_dir
+        expt_config.experiment_settings.output_dir = output_dir
+    expt_runner = InferenceExperimentRunner(expt_config)
 
     if num_model_seeds:
         start_seed = 42
