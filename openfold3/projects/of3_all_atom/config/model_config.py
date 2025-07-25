@@ -123,8 +123,8 @@ model_config = mlc.ConfigDict(
             "gradient_clipping": 10.0,
             "model_selection_weight_scheme": "initial_training",
             "msa_subsampling": {
-                "subsample_main_msa": False,
-                "subsample_all_msa": True,
+                "subsample_main_msa": True,
+                "subsample_all_msa": False,
                 "no_subsampled_all_msa": 1024
             }
         },
