@@ -125,8 +125,8 @@ model_config = mlc.ConfigDict(
             "msa_subsampling": {
                 "subsample_main_msa": True,
                 "subsample_all_msa": False,
-                "no_subsampled_all_msa": 1024
-            }
+                "no_subsampled_all_msa": 1024,
+            },
         },
         "architecture": {
             "shared": {
