@@ -561,28 +561,27 @@ class MSAModuleEmbedder(nn.Module):
         if msa_feat.shape[feat_seq_dim] <= no_subsampled_all_msa:
             return msa_feat, msa_mask
 
-        # Count valid tokens per sequence
-        seq_counts = msa_mask.sum(dim=mask_seq_dim+1)  # [N_msa]
-        valid_idx = torch.nonzero(seq_counts > 0, as_tuple=False).squeeze(-1)
-        invalid_idx = torch.nonzero(seq_counts == 0, as_tuple=False).squeeze(-1)
-
+        # Valid msa
+        valid_msa = (msa_mask.sum(dim=mask_seq_dim+1) > 0).squeeze() # [N_msa]
+        valid_idx = valid_msa.nonzero().squeeze() 
+        invalid_idx = (~valid_msa).nonzero().squeeze() 
+                
         device = msa_feat.device
         # Pick msa from the valid ones at random
         if valid_idx.numel() >= no_subsampled_all_msa:
-            perm = valid_idx[torch.randperm(valid_idx.numel(), device=device)]
-            selected = perm[:no_subsampled_all_msa]
+            permuted_idx = valid_idx[torch.randperm(valid_idx.numel(), device=device)]
+            selected = permuted_idx[:no_subsampled_all_msa]
         else:
             # Take all valid, then fill with random invalid
             take_invalid = no_subsampled_all_msa - valid_idx.numel()
             if invalid_idx.numel() > 0:
-                perm2 = invalid_idx[torch.randperm(invalid_idx.numel(), device=device)]
-                selected = torch.cat([valid_idx, perm2[:take_invalid]], dim=0)
+                permuted_idx = invalid_idx[torch.randperm(invalid_idx.numel(), device=device)]
+                selected = torch.cat([valid_idx, permuted_idx[:take_invalid]], dim=0)
             else:
                 selected = valid_idx
-
-        # gather along the seq dimension
-        feat_sub = msa_feat[..., selected, :, :]
-        mask_sub = msa_mask[..., selected, :]
+        
+        feat_sub = msa_feat.index_select(feat_seq_dim, selected)
+        mask_sub = msa_mask.index_select(mask_seq_dim, selected)
         return feat_sub, mask_sub
     
     def _apply_subsample_fn_batch(
