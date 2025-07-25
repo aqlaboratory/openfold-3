@@ -585,6 +585,7 @@ class MSAModuleEmbedder(nn.Module):
         return feat_sub, mask_sub
     
     def _apply_subsample_fn_batch(
+        self,
         fn: callable,
         **kwargs
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -607,7 +608,7 @@ class MSAModuleEmbedder(nn.Module):
                 [N_seq, N_token] Binary mask for sampled MSA entries.
         """
         
-        batch_size = kwargs.values()[0].shape[0]
+        batch_size = next(iter(kwargs.values())).shape[0]
         per_sample_kwargs_list = [
             {k: v[i] for k, v in kwargs.items()}
             for i in range(batch_size)
