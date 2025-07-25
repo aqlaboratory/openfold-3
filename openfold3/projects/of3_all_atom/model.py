@@ -228,7 +228,13 @@ class OpenFold3(nn.Module):
                     inplace=inplace_safe,
                 )
 
-                m, msa_mask = self.msa_module_embedder(batch=batch, s_input=s_input)
+                m, msa_mask = self.msa_module_embedder(
+                    batch=batch, 
+                    s_input=s_input, 
+                    subsample_main_msa=self.settings.msa_subsampling.subsample_main_msa,
+                    subsample_all_msa=self.settings.msa_subsampling.subsample_all_msa,
+                    no_subsampled_all_msa=self.settings.msa_subsampling.no_subsampled_all_msa,
+                )
 
                 # Run MSA + pair embeddings through the MsaModule
                 # m: [*, N_seq, N_token, C_m]

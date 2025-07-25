@@ -122,6 +122,11 @@ model_config = mlc.ConfigDict(
             "ema": {"decay": 0.999},
             "gradient_clipping": 10.0,
             "model_selection_weight_scheme": "initial_training",
+            "msa_subsampling": {
+                "subsample_main_msa": False,
+                "subsample_all_msa": True,
+                "no_subsampled_all_msa": 1024
+            }
         },
         "architecture": {
             "shared": {
