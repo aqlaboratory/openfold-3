@@ -416,7 +416,7 @@ class MSAModuleEmbedder(nn.Module):
 
         Args:
             msa_feat:
-                [N_msa, N_token, 32] MSA features
+                [N_msa, N_token, c_m_feats] MSA features
             msa_mask:
                 [N_msa, N_token] MSA mask
             num_paired_seqs:
@@ -533,7 +533,7 @@ class MSAModuleEmbedder(nn.Module):
 
         Args:
             msa_feat:
-                [N_msa, N_token, 32] MSA features
+                [N_msa, N_token, c_m_feats] MSA features
             msa_mask:
                 [N_msa, N_token] MSA mask
             num_paired_seqs:
