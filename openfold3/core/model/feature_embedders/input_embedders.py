@@ -419,8 +419,8 @@ class MSAModuleEmbedder(nn.Module):
                 [N_msa, N_token, c_m_feats] MSA features
             msa_mask:
                 [N_msa, N_token] Binary mask indicating valid MSA entries.
-                The MSA is padded to the maximum MSA dimension across chains, 
-                so this mask will be all zeros for any chain whose actual MSA dimension 
+                The MSA is padded to the maximum MSA dimension across chains,
+                so this mask will be all zeros for any chain whose actual MSA dimension
                 is less than the maximum.
             num_paired_seqs:
                 [] Number of paired MSA sequences
@@ -431,7 +431,7 @@ class MSAModuleEmbedder(nn.Module):
                 [N_seq, N_token, c_m_feats] Sampled MSA features
             msa_mask:
                 [N_seq, N_token] Binary mask for sampled MSA entries.
-                MSA per chain is independently subsampled and re-padded 
+                MSA per chain is independently subsampled and re-padded
                 to a shared dimension.
         """
 
@@ -538,8 +538,8 @@ class MSAModuleEmbedder(nn.Module):
                 [N_msa, N_token, c_m_feats] MSA features
             msa_mask:
                 [N_msa, N_token] Binary mask indicating valid MSA entries.
-                The MSA is padded to the maximum MSA dimension across chains, 
-                so this mask will be all zeros for any chain whose actual MSA dimension 
+                The MSA is padded to the maximum MSA dimension across chains,
+                so this mask will be all zeros for any chain whose actual MSA dimension
                 is less than the maximum.
             no_subsampled_all_msa:
                 The number of MSA sequences to retain after subsampling.
@@ -548,7 +548,7 @@ class MSAModuleEmbedder(nn.Module):
                 [N_seq, N_token, c_m_feats] Sampled MSA features
             msa_mask:
                 [N_seq, N_token] Binary mask for sampled MSA entries.
-                MSA per chain is independently subsampled and re-padded 
+                MSA per chain is independently subsampled and re-padded
                 to a shared dimension.
         """
 
@@ -677,12 +677,12 @@ class MSAModuleEmbedder(nn.Module):
             s_input:
                 [*, N_token, C_s_input] single embedding
             subsample_main_msa:
-                Whether to subsample only the main MSA to a random depth, following 
+                Whether to subsample only the main MSA to a random depth, following
                 AF3 SI Section 2.2.
             subsample_all_msa:
                 Whether to subsample all MSA (paired + main) to a random depth.
             no_subsampled_all_msa:
-                If subsample_all_msa, this specifies the number of MSA sequences 
+                If subsample_all_msa, this specifies the number of MSA sequences
                 to retain after subsampling.
 
         Returns:
