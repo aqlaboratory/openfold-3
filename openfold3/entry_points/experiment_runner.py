@@ -268,7 +268,6 @@ class TrainingExperimentRunner(ExperimentRunner):
         super().setup()
         self._setup_logger()
         self._set_random_seed()
-        print(self.is_mpi, self.is_rank_zero)
         if self.use_wandb:
             self._wandb_setup()
 
@@ -295,8 +294,7 @@ class TrainingExperimentRunner(ExperimentRunner):
         """Determine if WandB should be used.
 
         Returns:
-            True if WandB configuration is provided and either
-            not using MPI or is the MPI rank zero.
+            True if WandB configuration is provided and is rank zero
         """
         return self.logging_config.wandb_config and self.is_rank_zero
 
@@ -463,7 +461,7 @@ class WandbHandler:
             id=self.wandb_args.id,
         )
 
-        # Only initialize wandb for rank zero worker (MPI env), or else
+        # Only initialize wandb for rank zero worker
         # each worker will generate a different id
         if self.is_rank_zero:
             wandb.run = wandb.init(**wandb_init_dict)
@@ -503,7 +501,7 @@ class WandbHandler:
 
         wandb_experiment = self.logger.experiment
         # Save pip environment to wandb
-        print(type(self.logger), self.logger.experiment, type(self.logger.experiment))
+
         freeze_path = os.path.join(wandb_experiment.dir, "package_versions.txt")
         os.system(f"{sys.executable} -m pip freeze > {freeze_path}")
         wandb_experiment.save(f"{freeze_path}")
