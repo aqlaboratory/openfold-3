@@ -405,20 +405,22 @@ class MSAModuleEmbedder(nn.Module):
         )
 
     @staticmethod
-    def _subsample_msa(
+    def _subsample_main_msa(
         msa_feat: torch.Tensor,
         msa_mask: torch.Tensor,
         num_paired_seqs: torch.Tensor,
         asym_id: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Subsample main MSA features for a single sample in the batch.
+        """Subsample main MSA (unpaired MSA) features for a single sample in the batch.
         The subsampling is independent per each chain.
 
         Args:
             msa_feat:
                 [N_msa, N_token, c_m_feats] MSA features
             msa_mask:
-                [N_msa, N_token] MSA mask
+                [N_msa, N_token] Binary mask indicating valid MSA entries. 
+                The MSA is padded to the maximum MSA dimension across chains, so this mask will be all zeros 
+                for any chain whose actual MSA dimension is less than the maximum.
             num_paired_seqs:
                 [] Number of paired MSA sequences
             asym_id:
@@ -427,9 +429,11 @@ class MSAModuleEmbedder(nn.Module):
             sampled_msa:
                 [N_seq, N_token, c_m_feats] Sampled MSA features
             msa_mask:
-                [N_seq, N_token] Sampled MSA mask
+                [N_seq, N_token] Binary mask for sampled MSA entries.
+                MSA per chain is independently subsampled and re-padded to a shared dimension.
         """
-        # Set the sequence dimension for the two tensors, the chain dimension is this +1
+        
+        # Set the sequence dimension for the two tensors, the token dimension is this +1
         feat_seq_dim = -3
         mask_seq_dim = -2
 
@@ -518,52 +522,103 @@ class MSAModuleEmbedder(nn.Module):
         )
 
         return sampled_msa_feat, sampled_msa_mask
-
-    def _subsample_msa_per_batch(
-        self,
+    
+    @staticmethod
+    def _subsample_all_msa(
         msa_feat: torch.Tensor,
         msa_mask: torch.Tensor,
-        num_paired_seqs: torch.Tensor,
-        asym_id: torch.Tensor,
+        no_subsampled_all_msa: int
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
-        Subsample main MSA features for each sample in the batch.
-        Contains extra logic to unbind the batch dim prior to sampling
-        and pad/stack the output MSA features and mask.
-
+        Subsample all MSA sequences (paired + main) to a fixed number of sequences,
+        prioritizing those with at least one non-masked token.
+        
         Args:
             msa_feat:
                 [N_msa, N_token, c_m_feats] MSA features
             msa_mask:
-                [N_msa, N_token] MSA mask
-            num_paired_seqs:
-                [] Number of paired MSA sequences
-            asym_id:
-                [N_token] Id of the chain each token belongs to
+                [N_msa, N_token] Binary mask indicating valid MSA entries. 
+                The MSA is padded to the maximum MSA dimension across chains, so this mask will be all zeros 
+                for any chain whose actual MSA dimension is less than the maximum.
+            no_subsampled_all_msa:
+                The number of MSA sequences to retain after subsampling.
         Returns:
             sampled_msa:
                 [N_seq, N_token, c_m_feats] Sampled MSA features
             msa_mask:
-                [N_seq, N_token] Sampled MSA mask
+                [N_seq, N_token] Binary mask for sampled MSA entries.
+                MSA per chain is independently subsampled and re-padded to a shared dimension.
         """
-        # Unbind the batch dimension to get lists of samples
-        per_sample_msa_feat = torch.unbind(msa_feat, dim=0)
-        per_sample_mask = torch.unbind(msa_mask, dim=0)
-        per_sample_num_paired_seq = torch.unbind(num_paired_seqs, dim=0)
-        per_sample_asym_id = torch.unbind(asym_id, dim=0)
+        
+        # Set the sequence dimension for the two tensors, the token dimension is this +1
+        feat_seq_dim = -3
+        mask_seq_dim = -2
+        
+        if isinstance(no_subsampled_all_msa, torch.Tensor):
+            no_subsampled_all_msa = no_subsampled_all_msa.item()
+            
+        # If we already have <= desired, nothing to do
+        if msa_feat.shape[feat_seq_dim] <= no_subsampled_all_msa:
+            return msa_feat, msa_mask
 
-        # Subsample the MSA for each sample in the batch
+        # Count valid tokens per sequence
+        seq_counts = msa_mask.sum(dim=mask_seq_dim+1)  # [N_msa]
+        valid_idx = torch.nonzero(seq_counts > 0, as_tuple=False).squeeze(-1)
+        invalid_idx = torch.nonzero(seq_counts == 0, as_tuple=False).squeeze(-1)
+
+        device = msa_feat.device
+        # Pick msa from the valid ones at random
+        if valid_idx.numel() >= no_subsampled_all_msa:
+            perm = valid_idx[torch.randperm(valid_idx.numel(), device=device)]
+            selected = perm[:no_subsampled_all_msa]
+        else:
+            # Take all valid, then fill with random invalid
+            take_invalid = no_subsampled_all_msa - valid_idx.numel()
+            if invalid_idx.numel() > 0:
+                perm2 = invalid_idx[torch.randperm(invalid_idx.numel(), device=device)]
+                selected = torch.cat([valid_idx, perm2[:take_invalid]], dim=0)
+            else:
+                selected = valid_idx
+
+        # gather along the seq dimension
+        feat_sub = msa_feat[..., selected, :, :]
+        mask_sub = msa_mask[..., selected, :]
+        return feat_sub, mask_sub
+    
+    def _apply_subsample_fn_batch(
+        fn: callable,
+        **kwargs
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Apply a MSA subsampling function `fn` independently across a batch.
+        Contains extra logic to unbind the batch dim prior to sampling
+        and pad/stack the output MSA features and mask.        
+        All arguments are unbound and passed to `fn` per-sample.
+
+        Args:
+            fn:
+                A function that takes per-sample inputs and returns (feat, mask).
+            **kwargs:
+               Keyword arguments to forward to `fn`. Assumes each input tensor  is batched in dim=0.
+
+        Returns:
+            sampled_msa:
+                [N_seq, N_token, c_m_feats] Sampled MSA features
+            msa_mask:
+                [N_seq, N_token] Binary mask for sampled MSA entries.
+        """
+        
+        batch_size = kwargs.values()[0].shape[0]
+        per_sample_kwargs_list = [
+            {k: v[i] for k, v in kwargs.items()}
+            for i in range(batch_size)
+        ]
+        
         per_sample_subsampled_msa = []
         per_sample_subsampled_msa_mask = []
-        for msa_feat, mask, num_paired, asym_id in zip(
-            per_sample_msa_feat,
-            per_sample_mask,
-            per_sample_num_paired_seq,
-            per_sample_asym_id,
-        ):
-            subsampled_msa, subsampled_mask = self._subsample_msa(
-                msa_feat, mask, num_paired, asym_id
-            )
+
+        for kwarg in per_sample_kwargs_list:
+            subsampled_msa, subsampled_mask = fn(**kwarg)
             per_sample_subsampled_msa.append(subsampled_msa)
             per_sample_subsampled_msa_mask.append(subsampled_mask)
 
@@ -600,7 +655,12 @@ class MSAModuleEmbedder(nn.Module):
         return sampled_msa, sampled_msa_mask
 
     def forward(
-        self, batch: dict, s_input: torch.Tensor
+        self, 
+        batch: dict, 
+        s_input: torch.Tensor, 
+        subsample_main_msa: bool, 
+        subsample_all_msa: bool, 
+        no_subsampled_all_msa: int
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -614,6 +674,12 @@ class MSAModuleEmbedder(nn.Module):
                     - "asym_id": [*, N_token]
             s_input:
                 [*, N_token, C_s_input] single embedding
+            subsample_main_msa:
+                Whether to subsample only the main MSA to a random depth, following AF3 SI Section 2.2.
+            subsample_all_msa:
+                Whether to subsample all MSA sequences (paired + main) to a random depth.
+            no_subsampled_all_msa:
+                If subsample_all_msa is True, this specifies the number of MSA sequences to retain after subsampling.
 
         Returns:
             m:
@@ -632,19 +698,42 @@ class MSAModuleEmbedder(nn.Module):
             ],
             dim=-1,
         )
-
-        subsample_fn = (
-            self._subsample_msa_per_batch
-            if math.prod(batch_dims) > 1
-            else self._subsample_msa
-        )
-
-        msa_feat, msa_mask = subsample_fn(
-            msa_feat=msa_feat,
-            msa_mask=batch["msa_mask"],
-            num_paired_seqs=batch["num_paired_seqs"],
-            asym_id=batch["asym_id"],
-        )
+        
+        if subsample_main_msa:
+            if math.prod(batch_dims) > 1:
+                msa_feat, msa_mask = self._apply_subsample_fn_batch(
+                    fn=self._subsample_main_msa,
+                    msa_feat=msa_feat,
+                    msa_mask=batch["msa_mask"],
+                    num_paired_seqs=batch["num_paired_seqs"],
+                    asym_id=batch["asym_id"],
+                )
+            else:
+                msa_feat, msa_mask = self._subsample_main_msa(
+                    msa_feat=msa_feat,
+                    msa_mask=batch["msa_mask"],
+                    num_paired_seqs=batch["num_paired_seqs"],
+                    asym_id=batch["asym_id"]
+                )
+                
+        if subsample_all_msa:
+            if math.prod(batch_dims) > 1:
+                msa_feat, msa_mask = self._apply_subsample_fn_batch(
+                    fn=self._subsample_all_msa,
+                    msa_feat=msa_feat,
+                    msa_mask=msa_mask,
+                    no_subsampled_all_msa=torch.full(
+                        (msa_feat.shape[0],), 
+                        no_subsampled_all_msa, 
+                        device=msa_feat.device
+                    )
+                )
+            else:
+                msa_feat, msa_mask = self._subsample_all_msa(
+                    msa_feat=msa_feat,
+                    msa_mask=msa_mask,
+                    no_subsampled_all_msa=no_subsampled_all_msa
+                )
 
         # [*, N_seq, N_token, C_m]
         m = self.linear_m(msa_feat)
