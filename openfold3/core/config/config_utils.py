@@ -43,7 +43,7 @@ def _ensure_list(value: Any) -> Any:
         return value
 
 
-def _cast_keys_to_int(mapping: dict) -> int:
+def _cast_keys_to_int(mapping: dict) -> dict[int, Any]:
     """Casts all keys in the dictionary to integers."""
     return {int(k): v for k, v in mapping.items()}
 
