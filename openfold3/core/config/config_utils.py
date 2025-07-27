@@ -43,6 +43,11 @@ def _ensure_list(value: Any) -> Any:
         return value
 
 
+def _cast_keys_to_int(mapping: dict) -> int:
+    """Casts all keys in the dictionary to integers."""
+    return {int(k): v for k, v in mapping.items()}
+
+
 def _convert_molecule_type(value: Any) -> Any:
     if isinstance(value, MoleculeType):
         return value

@@ -55,6 +55,33 @@ get_residue_cached = lru_cache(maxsize=500)(struc.info.residue)
 """Cached residue information retrieval from Biotite to speed up preprocessing."""
 
 
+def get_leaving_atoms(ccd_code: str) -> np.ndarray[str]:
+    """Returns the leaving atoms for a given CCD code.
+
+    Args:
+        ccd_code (str):
+            The CCD code of the residue to get the leaving atoms for.
+
+    Returns:
+        np.ndarray[str]:
+            An array of leaving atom names for the given CCD code.
+    """
+    leaving_atom_flag = struc.info.get_from_ccd(
+        category_name="chem_comp_atom",
+        comp_id=ccd_code,
+        column_name="pdbx_leaving_atom_flag",
+    ).as_array()
+    atom_names = struc.info.get_from_ccd(
+        category_name="chem_comp_atom",
+        comp_id=ccd_code,
+        column_name="atom_id",
+    ).as_array()
+
+    leaving_atoms = atom_names[leaving_atom_flag == "Y"]
+
+    return leaving_atoms
+
+
 def atom_array_from_ccd_code(
     ccd_code: str,
     chain_id: str,
@@ -232,7 +259,7 @@ def processed_reference_molecule_from_mol(
 
 
 def structure_with_ref_mols_from_sequence(
-    sequence: str, poly_type: MoleculeType, chain_id: str
+    sequence: str, non_canonical_residues: dict, poly_type: MoleculeType, chain_id: str
 ) -> StructureWithReferenceMolecules:
     """Builds an AtomArray and processed reference molecules from a sequence.
 
@@ -244,6 +271,8 @@ def structure_with_ref_mols_from_sequence(
         sequence (str):
             The sequence of the polymeric molecule as a string of 1-letter residue
             codes.
+        non_canonical_residues (dict):
+            A dictionary mapping residue IDs to non-canonical residue names.
         poly_type (MoleculeType):
             The MoleculeType of the polymeric molecule. Should be one of
             MoleculeType.PROTEIN, MoleculeType.DNA, or MoleculeType.RNA.
@@ -255,6 +284,9 @@ def structure_with_ref_mols_from_sequence(
             A named tuple containing the AtomArray and a list of processed reference
             molecules, each corresponding to a residue in the sequence.
     """
+    if non_canonical_residues is None:
+        non_canonical_residues = {}
+
     # Figure out 3-letter code mapping
     match poly_type:
         case MoleculeType.PROTEIN:
@@ -268,21 +300,38 @@ def structure_with_ref_mols_from_sequence(
 
     # Figure out the unknown residue 3-letter identifier and leaving atom names
     unk_res = MOLECULE_TYPE_TO_UKNOWN_RESIDUES_3[poly_type]
-    leaving_atoms = MOLECULE_TYPE_TO_LEAVING_ATOMS[poly_type]
+    base_leaving_atoms = MOLECULE_TYPE_TO_LEAVING_ATOMS[poly_type]
 
     atom_array = None
     processed_reference_mols = []
 
     for res_id, resname_1 in enumerate(sequence, start=1):
-        # Get 3-letter code of the residue
-        if resname_1 not in resname_1_to_3:
-            logger.warning(
-                f"Unknown residue {resname_1} at position {res_id} in sequence. "
-                f"Using placeholder residue {unk_res}."
-            )
-            resname_3 = unk_res
+        # Swap to non-standard residue if necessary
+        if res_id in non_canonical_residues:
+            resname_3 = non_canonical_residues[res_id]
+            leaving_atoms = get_leaving_atoms(resname_3)
+
+            if len(leaving_atoms) == 0:
+                logger.warning(
+                    f"Non-canonical residue {resname_3} at position {res_id} has no "
+                    "leaving atoms defined. Using default leaving atoms."
+                )
+                leaving_atoms = base_leaving_atoms
+
         else:
-            resname_3 = resname_1_to_3[resname_1]
+            leaving_atoms = base_leaving_atoms
+
+            # Get 3-letter code of standard residue
+            if resname_1 in resname_1_to_3:
+                resname_3 = resname_1_to_3[resname_1]
+
+            # Set unknown placeholder residue
+            else:
+                logger.warning(
+                    f"Unknown residue {resname_1} at position {res_id} in sequence. "
+                    f"Using placeholder residue {unk_res}."
+                )
+                resname_3 = unk_res
 
         # Construct atom array for the residue
         res_array = atom_array_from_ccd_code(
@@ -299,7 +348,13 @@ def structure_with_ref_mols_from_sequence(
         processed_reference_mols.append(processed_ref_mol)
 
         # Remove the leaving atoms from the atom array
-        res_array = res_array[~np.isin(res_array.atom_name, leaving_atoms)]
+        leaving_atom_mask = np.isin(res_array.atom_name, leaving_atoms)
+        if not leaving_atom_mask.any():
+            logger.warning(
+                f"Residue {resname_3} at position {res_id} has no leaving atoms to "
+                "remove. This could cause issues with incorrect polymer linkage."
+            )
+        res_array = res_array[~leaving_atom_mask]
 
         # Initialize atom array
         if atom_array is None:
@@ -473,6 +528,7 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
                     segment_atom_array, segment_ref_mols = (
                         structure_with_ref_mols_from_sequence(
                             sequence=chain.sequence,
+                            non_canonical_residues=chain.non_canonical_residues,
                             poly_type=chain.molecule_type,
                             chain_id=chain_id,
                         )
