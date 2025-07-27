@@ -702,20 +702,21 @@ class MSAModuleEmbedder(nn.Module):
             ],
             dim=-1,
         )
+        msa_mask = batch["msa_mask"]
 
         if subsample_main_msa:
             if math.prod(batch_dims) > 1:
                 msa_feat, msa_mask = self._apply_subsample_fn_batch(
                     fn=self._subsample_main_msa,
                     msa_feat=msa_feat,
-                    msa_mask=batch["msa_mask"],
+                    msa_mask=msa_mask,
                     num_paired_seqs=batch["num_paired_seqs"],
                     asym_id=batch["asym_id"],
                 )
             else:
                 msa_feat, msa_mask = self._subsample_main_msa(
                     msa_feat=msa_feat,
-                    msa_mask=batch["msa_mask"],
+                    msa_mask=msa_mask,
                     num_paired_seqs=batch["num_paired_seqs"],
                     asym_id=batch["asym_id"],
                 )
