@@ -259,7 +259,10 @@ def processed_reference_molecule_from_mol(
 
 
 def structure_with_ref_mols_from_sequence(
-    sequence: str, non_canonical_residues: dict, poly_type: MoleculeType, chain_id: str
+    sequence: str,
+    poly_type: MoleculeType,
+    chain_id: str,
+    non_canonical_residues: dict[int, str] | None = None,
 ) -> StructureWithReferenceMolecules:
     """Builds an AtomArray and processed reference molecules from a sequence.
 
@@ -271,13 +274,14 @@ def structure_with_ref_mols_from_sequence(
         sequence (str):
             The sequence of the polymeric molecule as a string of 1-letter residue
             codes.
-        non_canonical_residues (dict):
-            A dictionary mapping residue IDs to non-canonical residue names.
         poly_type (MoleculeType):
             The MoleculeType of the polymeric molecule. Should be one of
             MoleculeType.PROTEIN, MoleculeType.DNA, or MoleculeType.RNA.
         chain_id (str):
             The chain ID to assign to the created AtomArray.
+        non_canonical_residues (dict[int, str] | None):
+            A dictionary mapping residue IDs to non-canonical residue names. Defaults to
+            None.
 
     Returns:
         StructureWithReferenceMolecules:
@@ -528,9 +532,9 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
                     segment_atom_array, segment_ref_mols = (
                         structure_with_ref_mols_from_sequence(
                             sequence=chain.sequence,
-                            non_canonical_residues=chain.non_canonical_residues,
                             poly_type=chain.molecule_type,
                             chain_id=chain_id,
+                            non_canonical_residues=chain.non_canonical_residues,
                         )
                     )
 
