@@ -225,7 +225,7 @@ class TestWandbHandler(unittest.TestCase):
     def test_init_logger(self, mock_wandb_init):
         # Test that the logger is initialized and wandb.init is called for rank-zero.
         _wandb_handler = WandbHandler(
-            self.wandb_args, is_mpi_rank_zero=True, output_dir=Path(".")
+            self.wandb_args, is_rank_zero=True, output_dir=Path(".")
         )
         _wandb_handler._init_logger()
         self.assertIsNotNone(_wandb_handler.logger)
@@ -235,7 +235,7 @@ class TestWandbHandler(unittest.TestCase):
     def test_wandb_is_called_on_logger(self, mock_wandb_init):
         # Test that the logger is initialized and wandb.init is called for rank-zero.
         _wandb_handler = WandbHandler(
-            self.wandb_args, is_mpi_rank_zero=True, output_dir=Path(".")
+            self.wandb_args, is_rank_zero=True, output_dir=Path(".")
         )
         assert isinstance(_wandb_handler.logger, WandbLogger)
         mock_wandb_init.assert_called_once()
@@ -243,7 +243,7 @@ class TestWandbHandler(unittest.TestCase):
     @patch("os.system", return_value=0)
     def test_store_configs_creates_files(self, mock_os_system):
         _wandb_handler = WandbHandler(
-            self.wandb_args, is_mpi_rank_zero=True, output_dir=Path(self.temp_dir)
+            self.wandb_args, is_rank_zero=True, output_dir=Path(self.temp_dir)
         )
 
         # Create dummy configuration objects with a to_dict() method.
