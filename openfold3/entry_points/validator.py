@@ -2,11 +2,11 @@ import random
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, DirectoryPath, model_validator
+from pydantic import BaseModel, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import FilePathOrNone
-from openfold3.core.data.tools.colabfold_msa_server import MsaServerSettings
+from openfold3.core.data.tools.colabfold_msa_server import MsaComputationSettings
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetConfigKwargs,
     TrainingDatasetPaths,
@@ -165,4 +165,4 @@ class InferenceExperimentConfig(ExperimentConfig):
     data_module_args: DataModuleArgs = DataModuleArgs()
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
-    msa_server_settings: MsaServerSettings = MsaServerSettings()
+    msa_computation_settings: MsaComputationSettings = MsaComputationSettings()

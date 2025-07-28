@@ -15,7 +15,6 @@ import logging
 from pathlib import Path
 
 import click
-import glob
 import torch
 
 from openfold3.core.config import config_utils
@@ -168,8 +167,7 @@ def predict(
     if use_msa_server:
         query_set = preprocess_colabfold_msas(
             inference_query_set=query_set,
-            output_directory=expt_config.experiment_settings.output_dir,
-            server_settings=expt_config.msa_server_settings,
+            compute_settings=expt_config.msa_computation_settings,
         )
 
         # Update the msa dataset config settings

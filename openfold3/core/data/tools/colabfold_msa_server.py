@@ -3,6 +3,7 @@ import logging
 import os
 import random
 import tarfile
+import tempfile
 import time
 import warnings
 from collections.abc import Iterator
@@ -624,7 +625,7 @@ class ColabFoldQueryRunner:
         output_directory: Path,
         msa_file_format: str | list[str],
         user_agent: str,
-        host_url: str = "https://api.colabfold.com",
+        host_url: Url = "https://api.colabfold.com",
     ):
         self.colabfold_mapper = colabfold_mapper
         self.output_directory = output_directory
@@ -817,22 +818,22 @@ def add_msa_paths_to_iqs(
     return inference_query_set
 
 
-class MsaServerSettings(BaseModel):
+class MsaComputationSettings(BaseModel):
     """Settings to run ColabFold MSA server.
 
     See preprocess_colabfold_msas for details on the parameters"""
 
     msa_file_format: Literal["npz", "a3m"] = "npz"
-    user_agent: str = "openfold"
+    server_user_agent: str = "openfold"
     server_url: Url = Url("https://api.colabfold.com")
     save_mappings: bool = False
+    msa_output_directory: Path = Path(tempfile.gettempdir()) / "of3_colabfold_msas"
 
 
 # TODO use pydantic object as input
 def preprocess_colabfold_msas(
     inference_query_set: InferenceQuerySet,
-    output_directory: Path,
-    server_settings: MsaServerSettings,
+    compute_settings: MsaComputationSettings,
 ) -> InferenceQuerySet:
     """Gathers sequences, runs the ColabFold MSA server queries, updates MSA paths.
 
@@ -841,7 +842,7 @@ def preprocess_colabfold_msas(
             The inference query set containing the queries and chains.
         output_directory (Path):
             The output directory to save the results to.
-        server settings: pydantic model with server settings, contains:
+        compute_settings: pydantic model with server settings, contains:
             msa_file_format (str):
                 The format of the MSA files to save.
                 Can be "a3m" (unprocessed MSAs for inspectable but slower parsing)
@@ -892,18 +893,21 @@ def preprocess_colabfold_msas(
     """
     # Gather MSA data
     colabfold_mapper = collect_colabfold_msa_data(inference_query_set)
+    output_directory = compute_settings.msa_output_directory
+    logger.warning(
+        f"Using output directory: {output_directory} for ColabFold MSAs.")
 
     # Save mappings to file
-    if server_settings.save_mappings:
+    if compute_settings.save_mappings:
         save_colabfold_mappings(colabfold_mapper, output_directory)
 
     # Run batch queries for main and paired MSAs
     colabfold_query_runner = ColabFoldQueryRunner(
         colabfold_mapper=colabfold_mapper,
         output_directory=output_directory,
-        msa_file_format=server_settings.msa_file_format,
-        user_agent=server_settings.user_agent,
-        host_url=server_settings.server_url,
+        msa_file_format=compute_settings.msa_file_format,
+        user_agent=compute_settings.server_user_agent,
+        host_url=compute_settings.server_url,
     )
     colabfold_query_runner.query_format_main()
     colabfold_query_runner.query_format_paired()
