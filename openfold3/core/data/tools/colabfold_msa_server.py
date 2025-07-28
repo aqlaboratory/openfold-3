@@ -5,6 +5,7 @@ import random
 import tarfile
 import tempfile
 import time
+import hashlib
 import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -487,6 +488,12 @@ class ColabFoldMapper:
     seqs: list[str] = field(default_factory=list)
     rep_ids: list[ChainID] = field(default_factory=list)
 
+def get_sequence_hash(sequence_str: str) -> str:
+    """Generates a SHA-256 hash for the given sequence string."""
+    hasher = hashlib.sha256()
+    hasher.update(sequence_str.encode("utf-8"))
+    return hasher.hexdigest()
+
 
 def collect_colabfold_msa_data(
     inference_query_set: InferenceQuerySet,
@@ -529,12 +536,13 @@ def collect_colabfold_msa_data(
 
                 # Collect mapping data and sequences for main MSAs
                 if seq not in colabfold_mapper.seq_to_rep_id:
-                    colabfold_mapper.seq_to_rep_id[seq] = chain_ids[0]
-                    colabfold_mapper.rep_id_to_seq[chain_ids[0]] = seq
+                    rep_id = get_sequence_hash(seq) 
+                    colabfold_mapper.seq_to_rep_id[seq] = rep_id 
+                    colabfold_mapper.rep_id_to_seq[rep_id] = seq
                     for chain_id in chain_ids:
-                        colabfold_mapper.chain_id_to_rep_id[chain_id] = chain_ids[0]
+                        colabfold_mapper.chain_id_to_rep_id[chain_id] = rep_id 
                     colabfold_mapper.seqs.append(seq)
-                    colabfold_mapper.rep_ids.append(chain_ids[0])
+                    colabfold_mapper.rep_ids.append(rep_id)
                 else:
                     for chain_id in chain_ids:
                         colabfold_mapper.chain_id_to_rep_id[chain_id] = (
