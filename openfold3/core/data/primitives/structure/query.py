@@ -55,7 +55,7 @@ get_residue_cached = lru_cache(maxsize=500)(struc.info.residue)
 """Cached residue information retrieval from Biotite to speed up preprocessing."""
 
 
-def get_leaving_atoms(ccd_code: str) -> np.ndarray[str]:
+def get_leaving_atoms(ccd_code: str) -> np.ndarray:
     """Returns the leaving atoms for a given CCD code.
 
     Args:
@@ -63,7 +63,7 @@ def get_leaving_atoms(ccd_code: str) -> np.ndarray[str]:
             The CCD code of the residue to get the leaving atoms for.
 
     Returns:
-        np.ndarray[str]:
+        np.ndarray:
             An array of leaving atom names for the given CCD code.
     """
     leaving_atom_flag = struc.info.get_from_ccd(
