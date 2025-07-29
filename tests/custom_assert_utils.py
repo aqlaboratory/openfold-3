@@ -19,7 +19,7 @@ def assert_atomarray_equal(
             First AtomArray to compare
         atom_array_2 (AtomArray):
             Second AtomArray to compare
-        strict_order (bool):
+        strict_annot_order (bool):
             If True, checks that annotations are in the same order. Otherwise only
             checks that annotation categories are identical.
 
