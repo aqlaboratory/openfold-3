@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import shutil
 import sys
 import time
 from abc import ABC, abstractmethod
@@ -32,6 +33,8 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
     TrainingDatasetSpec,
 )
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+
+logger = logging.getLogger(__name__)
 
 
 class ExperimentRunner(ABC):
@@ -218,7 +221,7 @@ class ExperimentRunner(ABC):
         PyTorch Lightning method is invoked.
         """
         # Run process appropriate process
-        logging.info(f"Running {self.mode} mode.")
+        logger.info(f"Running {self.mode} mode.")
         # Training + validation
         if self.mode == "train":
             target_method = self.trainer.fit
@@ -336,7 +339,7 @@ class TrainingExperimentRunner(ExperimentRunner):
                 f"seed={seed} must be an integer. Please provide a valid seed."
             )
 
-        logging.info(f"Running with seed: {seed}")
+        logger.info(f"Running with seed: {seed}")
         pl.seed_everything(seed, workers=True)
 
     @cached_property
@@ -418,6 +421,14 @@ class InferenceExperimentRunner(ExperimentRunner):
         log_path = self.output_dir / "inference_query_set.json"
         with open(log_path, "w") as fp:
             fp.write(self.inference_query_set.model_dump_json(indent=4))
+
+    def cleanup(self):
+        if self.experiment_config.msa_computation_settings.cleanup_msa_dir:
+            output_dir = (
+                self.experiment_config.msa_computation_settings.msa_output_directory
+            )
+            logger.info(f"Removing MSA output directory: {output_dir}")
+            shutil.rmtree(output_dir)
 
 
 class WandbHandler:

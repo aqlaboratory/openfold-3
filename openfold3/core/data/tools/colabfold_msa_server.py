@@ -415,7 +415,6 @@ class ChainID(NamedTuple):
         """Joins the query name and chain ID with a delimiter into a string."""
         return f"{self.query_name}{delimiter}{self.chain_id}"
 
-
 class ComplexID(tuple[ChainID, ...]):
     """A tuple of ChainIDs representing a complex."""
 
@@ -838,6 +837,7 @@ class MsaComputationSettings(BaseModel):
     server_url: Url = Url("https://api.colabfold.com")
     save_mappings: bool = False
     msa_output_directory: Path = Path(tempfile.gettempdir()) / "of3_colabfold_msas"
+    cleanup_msa_dir: bool = True
 
 
 # TODO use pydantic object as input

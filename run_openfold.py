@@ -138,6 +138,7 @@ def predict(
     output_dir: Path | None = None,
 ):
     """Perform inference on a set of queries defined in the query_json."""
+    logging.basicConfig(level=logging.INFO)
     runner_args = config_utils.load_yaml(runner_yaml) if runner_yaml else dict()
 
     expt_config = InferenceExperimentConfig(
@@ -181,6 +182,7 @@ def predict(
     # Run the forward pass
     expt_runner.setup()
     expt_runner.run(query_set)
+    expt_runner.cleanup()
 
     # TODO add post-process relaxation with openmm
 
