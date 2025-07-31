@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import os
@@ -5,7 +6,6 @@ import random
 import tarfile
 import tempfile
 import time
-import hashlib
 import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -415,6 +415,7 @@ class ChainID(NamedTuple):
         """Joins the query name and chain ID with a delimiter into a string."""
         return f"{self.query_name}{delimiter}{self.chain_id}"
 
+
 class ComplexID(tuple[ChainID, ...]):
     """A tuple of ChainIDs representing a complex."""
 
@@ -487,6 +488,7 @@ class ColabFoldMapper:
     seqs: list[str] = field(default_factory=list)
     rep_ids: list[ChainID] = field(default_factory=list)
 
+
 def get_sequence_hash(sequence_str: str) -> str:
     """Generates a SHA-256 hash for the given sequence string."""
     hasher = hashlib.sha256()
@@ -535,11 +537,11 @@ def collect_colabfold_msa_data(
 
                 # Collect mapping data and sequences for main MSAs
                 if seq not in colabfold_mapper.seq_to_rep_id:
-                    rep_id = get_sequence_hash(seq) 
-                    colabfold_mapper.seq_to_rep_id[seq] = rep_id 
+                    rep_id = get_sequence_hash(seq)
+                    colabfold_mapper.seq_to_rep_id[seq] = rep_id
                     colabfold_mapper.rep_id_to_seq[rep_id] = seq
                     for chain_id in chain_ids:
-                        colabfold_mapper.chain_id_to_rep_id[chain_id] = rep_id 
+                        colabfold_mapper.chain_id_to_rep_id[chain_id] = rep_id
                     colabfold_mapper.seqs.append(seq)
                     colabfold_mapper.rep_ids.append(rep_id)
                 else:
@@ -576,16 +578,36 @@ def save_colabfold_mappings(
 
     mapping_files_directory_path = output_directory / "mappings"
     mapping_files_directory_path.mkdir(parents=True, exist_ok=True)
+
     for mapping_name, mapping in zip(
         [
             "seq_to_rep_id",
             "rep_id_to_seq",
-            "chain_id_to_rep_id",
-            "query_name_to_complex_id",
         ],
         [
             colabfold_msa_input.seq_to_rep_id,
             colabfold_msa_input.rep_id_to_seq,
+        ],
+    ):
+        mapping_file_path = mapping_files_directory_path / f"{mapping_name}.json"
+        if os.path.exists(mapping_file_path):
+            logger.warning(
+                f"Mapping file {mapping_file_path} already exists. "
+                "Appending new sequences."
+            )
+            with open(mapping_file_path) as f:
+                old_mapping = json.load(f)
+                mapping.update(old_mapping)
+
+            with open(mapping_file_path, "w") as f:
+                json.dump(mapping, f, indent=4)
+
+    for mapping_name, mapping in zip(
+        [
+            "chain_id_to_rep_id",
+            "query_name_to_complex_id",
+        ],
+        [
             colabfold_msa_input.chain_id_to_rep_id,
             colabfold_msa_input.query_name_to_complex_id,
         ],
@@ -904,8 +926,7 @@ def preprocess_colabfold_msas(
     # Gather MSA data
     colabfold_mapper = collect_colabfold_msa_data(inference_query_set)
     output_directory = compute_settings.msa_output_directory
-    logger.warning(
-        f"Using output directory: {output_directory} for ColabFold MSAs.")
+    logger.warning(f"Using output directory: {output_directory} for ColabFold MSAs.")
 
     # Save mappings to file
     if compute_settings.save_mappings:
