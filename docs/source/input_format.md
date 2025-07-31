@@ -87,7 +87,7 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
   - `sequence` *(str, required)*
     - Amino acid sequence (1-letter codes), supporting standard residues, X (unknown), and U (selenocysteine).
 
-  - `non_canonical_residues` *(dict, optional, default = None)*
+  - `non_canonical_residues` *(dict, optional, default = null)*
     - A dictionary mapping residue indices (1-based) to non-canonical residue names.
     - Note that MSA computation will only refer to the primary `sequence`.
     - Example: `{"1": "MHO", "5": "SEP"}`
