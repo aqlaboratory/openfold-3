@@ -8,7 +8,6 @@ from openfold3.core.data.primitives.structure.query import (
     structure_with_ref_mols_from_query,
 )
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
-    InferenceQuerySet,
     Query,
 )
 from tests.custom_assert_utils import assert_atomarray_equal, assert_ref_mols_equal
@@ -16,50 +15,37 @@ from tests.custom_assert_utils import assert_atomarray_equal, assert_ref_mols_eq
 reference_data_path = Path(__file__).parent / "test_data" / "structure_from_query"
 
 # A standard peptide query
-standard_peptide_query = InferenceQuerySet.model_validate(
+standard_peptide_query = Query.model_validate(
     {
-        "queries": {
-            "query_1": {
-                "use_msas": False,
-                "chains": [
-                    {
-                        "molecule_type": "protein",
-                        "chain_ids": "A",
-                        "sequence": "MACHINELEARNING",
-                        "non_canonical_residues": None,
-                        "main_msa_file_paths": None,
-                        "paired_msa_file_paths": None,
-                    }
-                ],
+        "query_name": "std_peptide",
+        "chains": [
+            {
+                "molecule_type": "protein",
+                "chain_ids": "A",
+                "sequence": "MACHINELEARNING",
             }
-        }
+        ],
     }
-).queries["query_1"]
+)
 
 # A peptide query with non-canonical residues methionine sulfoxide (MHO) and
 # selenocysteine (SEC)
-non_canonical_peptide_query = InferenceQuerySet.model_validate(
+non_canonical_peptide_query = Query.model_validate(
     {
-        "queries": {
-            "query_1": {
-                "use_msas": False,
-                "chains": [
-                    {
-                        "molecule_type": "protein",
-                        "chain_ids": "A",
-                        "sequence": "MACHINELEARNING",
-                        "non_canonical_residues": {
-                            "1": "MHO",
-                            "3": "SEC",
-                        },
-                        "main_msa_file_paths": None,
-                        "paired_msa_file_paths": None,
-                    }
-                ],
+        "query_name": "non_std_peptide",
+        "chains": [
+            {
+                "molecule_type": "protein",
+                "chain_ids": "A",
+                "sequence": "MACHINELEARNING",
+                "non_canonical_residues": {
+                    "1": "MHO",
+                    "3": "SEC",
+                },
             }
-        }
+        ],
     }
-).queries["query_1"]
+)
 
 
 @pytest.mark.parametrize(
