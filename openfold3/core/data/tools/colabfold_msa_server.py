@@ -591,6 +591,8 @@ def save_colabfold_mappings(
             colabfold_msa_input.query_name_to_complex_id,
         ],
     ):
+        if mapping_name == "chain_id_to_rep_id":
+            mapping = {str(k): v for k, v in mapping.items()}
         mapping_file_path = mapping_files_directory_path / f"{mapping_name}.json"
         with open(mapping_file_path, "w") as f:
             json.dump(mapping, f, indent=4)
