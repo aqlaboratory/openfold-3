@@ -70,6 +70,25 @@ openfold3 = [
   "resources/stereo_chemical_props.txt"
 ]
 
+# much of the cibuildwheel config taken from benfred/implicit
+[tool.cibuildwheel]
+before-all = "devtools/install_cuda.sh"
+manylinux-x86_64-image = "manylinux2014"
+
+[tool.cibuildwheel.linux]
+repair-wheel-command = """
+AUDITWHEEL_PLAT=manylinux2014_$(uname -m) \
+auditwheel repair \
+    --exclude libc10.so \
+    --exclude libtorch.so \
+    --exclude libtorch_cpu.so \
+    --exclude libtorch_python.so \
+    -w {dest_dir} {wheel}
+"""
+
+[tool.cibuildwheel.linux.environment]
+CUDACXX = "/usr/local/cuda/bin/nvcc"
+
 [tool.ruff]
 line-length = 88
 exclude = [
