@@ -38,11 +38,11 @@ logger = logging.getLogger(__name__)
 # TODO: Make docstring more complete for new args
 def filter_structure_metadata_af3(
     structure_cache: PreprocessingStructureDataCache,
-    max_release_date: datetime.date | str,
-    min_release_date: datetime.date | str = None,
-    max_resolution: float = 9.0,
+    max_release_date: datetime.date | str | None = None,
+    min_release_date: datetime.date | str | None = None,
+    max_resolution: float | None = None,
     ignore_nmr: bool = True,
-    max_polymer_chains: int = 300,
+    max_polymer_chains: int | None = None,
     max_tokens: int | None = None,
 ) -> PreprocessingStructureDataCache:
     """Filter the structure metadata cache for training or validation.
@@ -62,7 +62,7 @@ def filter_structure_metadata_af3(
     Returns:
         Filtered structure metadata cache.
     """
-    if not isinstance(max_release_date, datetime.date):
+    if max_release_date and not isinstance(max_release_date, datetime.date):
         max_release_date = datetime.datetime.strptime(
             max_release_date, "%Y-%m-%d"
         ).date()
@@ -78,19 +78,22 @@ def filter_structure_metadata_af3(
     # it does not work with skipped/failed structures)
     filtered_cache = filter_by_skipped_structures(structure_cache)
 
-    filtered_cache = with_log(filter_by_resolution)(
-        filtered_cache, max_resolution, ignore_nmr=ignore_nmr
-    )
+    if max_resolution is not None:
+        filtered_cache = with_log(filter_by_resolution)(
+            filtered_cache, max_resolution, ignore_nmr=ignore_nmr
+        )
 
-    filtered_cache = with_log(filter_by_release_date)(
-        filtered_cache,
-        min_date=min_release_date,
-        max_date=max_release_date,
-    )
+    if max_release_date is not None or min_release_date is not None:
+        filtered_cache = with_log(filter_by_release_date)(
+            filtered_cache,
+            min_date=min_release_date,
+            max_date=max_release_date,
+        )
 
-    filtered_cache = with_log(filter_by_max_polymer_chains)(
-        filtered_cache, max_polymer_chains
-    )
+    if max_polymer_chains is not None:
+        filtered_cache = with_log(filter_by_max_polymer_chains)(
+            filtered_cache, max_polymer_chains
+        )
     if max_tokens:
         filtered_cache = with_log(filter_by_token_count)(filtered_cache, max_tokens)
 
@@ -104,9 +107,9 @@ def create_pdb_training_dataset_cache_af3(
     alignment_representatives_fasta: Path,
     output_path: Path,
     dataset_name: str,
-    max_release_date: datetime.date | str,
-    max_resolution: float = 9.0,
-    max_polymer_chains: int = 300,
+    max_release_date: datetime.date | str | None = None,
+    max_resolution: float | None = None,
+    max_polymer_chains: int | None = None,
     filter_missing_alignment: bool = True,
     missing_alignment_log: Path = None,
 ) -> None:
