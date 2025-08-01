@@ -46,6 +46,9 @@ model_update:
       shared: 
         diffusion:
           no_samples: 32
+      loss_module:
+        diffusion:
+          chunk_size: 2
 
 dataset_configs:
   train:

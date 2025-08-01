@@ -35,7 +35,7 @@ dependencies:
   - memory_profiler==0.61.0
   - func_timeout
   - boto3
-  - conda-forge::python-lmdb
+  - conda-forge::python-lmdb=1.6
   - conda-forge::ijson
   - pip:
       - deepspeed==0.14.5
