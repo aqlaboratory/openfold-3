@@ -155,9 +155,14 @@ def main(
         file_handler = logging.FileHandler(log_file, mode="w")
         logger.addHandler(file_handler)
 
-    for metadata_property in [max_release_date, max_resolution, max_polymer_chains]:
-        if metadata_property is None:
-            logger.warning(f"Skipping filter for {metadata_property} as it is None.")
+    filter_dict = {
+        "max_release_date": max_release_date,
+        "max_resolution": max_resolution,
+        "max_polymer_chains": max_polymer_chains,
+    }
+    for filter_name, filter_value in filter_dict.items():
+        if filter_value is None:
+            logger.warning(f"Skipping filter for {filter_name} as it is None.")
 
     create_pdb_training_dataset_cache_af3(
         metadata_cache_path=metadata_cache_path,
