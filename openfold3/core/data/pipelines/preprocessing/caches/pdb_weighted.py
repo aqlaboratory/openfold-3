@@ -108,6 +108,7 @@ def create_pdb_training_dataset_cache_af3(
     output_path: Path,
     dataset_name: str,
     max_release_date: datetime.date | str | None = None,
+    max_conformer_release_date: datetime.date | str | None = None,
     max_resolution: float | None = None,
     max_polymer_chains: int | None = None,
     filter_missing_alignment: bool = True,
@@ -131,6 +132,10 @@ def create_pdb_training_dataset_cache_af3(
             Name of the dataset, e.g. 'PDB-weighted'.
         max_release_date:
             Maximum release date for included structures, formatted as 'YYYY-MM-DD'.
+        max_conformer_release_date:
+            Maximum release date for the model PDB-ID associated with a conformer, in
+            the rare case that conformer coordinates have to be inferred from the CCD
+            model coordinates. If not provided, defaults to max_release_date.
         max_resolution:
             Maximum resolution for structures in the dataset in Å.
         max_polymer_chains:
@@ -143,6 +148,9 @@ def create_pdb_training_dataset_cache_af3(
             Path to write a JSON file containing all chains that were filtered out
             because they do not have a corresponding alignment.
     """
+    if max_conformer_release_date is None:
+        max_conformer_release_date = max_release_date
+
     metadata_cache = PreprocessingDataCache.from_json(metadata_cache_path)
 
     # Read in FASTAs of all sequences in the training set
@@ -191,8 +199,8 @@ def create_pdb_training_dataset_cache_af3(
                 # Convert the internal dataclasses to dict
                 unmatched_entries = {
                     pdb_id: {chain_id: asdict(chain_data)}
-                    for pdb_id, chain_data in unmatched_entries.items()
-                    for chain_id, chain_data in chain_data.items()
+                    for pdb_id, chains_data in unmatched_entries.items()
+                    for chain_id, chain_data in chains_data.items()
                 }
 
                 # Format datacache-types appropriately
@@ -221,11 +229,17 @@ def create_pdb_training_dataset_cache_af3(
     # Block usage of reference conformer coordinates from PDB-IDs that are outside the
     # training split. Needs to be run before the filtering to use the full release date
     # information in structure_data.
-    set_nan_fallback_conformer_flag(
-        pdb_id_to_release_date=pdb_id_to_release_date,
-        reference_mol_cache=dataset_cache.reference_molecule_data,
-        max_model_pdb_release_date=max_release_date,
-    )
+    if max_conformer_release_date is not None:
+        if isinstance(max_conformer_release_date, str):
+            max_conformer_release_date = datetime.datetime.strptime(
+                max_conformer_release_date, "%Y-%m-%d"
+            ).date()
+
+        set_nan_fallback_conformer_flag(
+            pdb_id_to_release_date=pdb_id_to_release_date,
+            reference_mol_cache=dataset_cache.reference_molecule_data,
+            max_model_pdb_release_date=max_conformer_release_date,
+        )
 
     # Write the final dataset cache to disk
     write_datacache_to_json(dataset_cache, output_path)
