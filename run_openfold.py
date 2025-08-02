@@ -155,6 +155,7 @@ def predict(
 
     if output_dir:
         expt_config.experiment_settings.output_dir = output_dir
+
     expt_runner = InferenceExperimentRunner(expt_config)
 
     if num_model_seeds:
@@ -181,11 +182,11 @@ def predict(
         )
 
     # Preprocess template alignments and optionally template structures
-    template_preprocessor_settings = expt_config.template_preprocessor_settings
-    template_preprocessor = TemplatePreprocessor(
-        input_set=query_set, config=template_preprocessor_settings
-    )
-    template_preprocessor()
+    if query_set.use_templates:
+        template_preprocessor = TemplatePreprocessor(
+            input_set=query_set, config=expt_config.template_preprocessor_settings
+        )
+        template_preprocessor()
 
     # Run the forward pass
     expt_runner.setup()

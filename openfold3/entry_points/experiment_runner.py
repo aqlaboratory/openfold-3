@@ -405,6 +405,7 @@ class InferenceExperimentRunner(ExperimentRunner):
             seeds=self.seeds,
             msa=self.dataset_config_kwargs.msa,
             template=self.dataset_config_kwargs.template,
+            template_preprocessor=self.experiment_config.template_preprocessor_settings,
         )
         inference_spec = InferenceDatasetSpec(config=inference_config)
         return DataModuleConfig(

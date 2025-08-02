@@ -70,11 +70,7 @@ class InferenceQuerySet(BaseModel):
     seeds: list[int] = [42]
     queries: dict[str, Query]
     ccd_file_path: FilePath | None = None
-    template_structures_directory: DirectoryPath | None = None
-    template_structure_array_directory: DirectoryPath | None = None
-    template_file_format: str = "cif"
-    # msa_directory_path: DirectoryPathOrNone = None  # not yet supported
-    # template_directory_path: DirectoryPathOrNone | None = None
+    use_templates: bool = False
 
     @classmethod
     def from_json(cls, json_path: FilePath) -> "InferenceQuerySet":

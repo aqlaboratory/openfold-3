@@ -452,15 +452,11 @@ class ColabFoldMapper:
             a (query_name, chain identifier) tuple, indicating a unique instantiation of
             a protein chain.
         rep_id:
-            a chain_id associated with a unique protein sequence, selected upon first
-            occurrence of that specific sequence; all subsequent chain_ids with the same
-            sequence will have this chain_id as the representative.
+            SHA-256 hash of the sequence.
         seq:
             the actual protein sequence.
         complex_id:
-            an identifier associated with a unique SET of protein sequences in the same
-            query, consisting of the sorted representative IDs of ALL chains in the
-            complex; only used for queries with more than 2 unique protein sequences.
+            SHA-256 hash of the set of sorted and concatenated sequences of the complex.
         m:
             a unique integer identifier for the sequence starting from 101, used to map
             sequences to representative IDs in the MSA server queries.
@@ -546,7 +542,7 @@ def collect_colabfold_msa_data(
                     rep_id = get_sequence_hash(seq)
                     colabfold_mapper.seq_to_rep_id[seq] = rep_id
                     colabfold_mapper.rep_id_to_seq[rep_id] = seq
-                    colabfold_mapper.rep_id_to_m[chain_ids[0]] = m_i
+                    colabfold_mapper.rep_id_to_m[rep_id] = m_i
                     m_i += 1
                     for chain_id in chain_ids:
                         colabfold_mapper.chain_id_to_rep_id[chain_id] = rep_id

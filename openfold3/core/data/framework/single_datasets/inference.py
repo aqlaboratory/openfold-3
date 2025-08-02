@@ -82,7 +82,7 @@ class InferenceDataset(Dataset):
 
         self.msa_settings = dataset_config.msa
         self.template_settings = dataset_config.template
-
+        self.template_preprocessor_settings = dataset_config.template_preprocessor
         self.msa_sample_processor_inference = MsaSampleProcessorInference(
             config=self.msa_settings
         )
@@ -99,6 +99,17 @@ class InferenceDataset(Dataset):
             logger.debug("Parsing CCD file.")
             self.ccd = pdbx.CIFFile.read(self.query_set.ccd_file_path)
             logger.debug("Done parsing CCD file.")
+        else:
+            # TODO: refactor with internal biotite ccd
+            if (
+                self.template_preprocessor_settings.structure_array_directory is None
+            ) & (self.template_preprocessor_settings.structure_directory is not None):
+                raise ValueError(
+                    "You are trying to process template structures from raw CIFs "
+                    "but did not provide a CCD file path in the inference query json."
+                )
+            else:
+                self.ccd = None
 
         # Create individual datapoint cache (allows rerunning the same query with
         # different seeds)
@@ -224,9 +235,9 @@ class InferenceDataset(Dataset):
             take_top_k=self.template_settings.take_top_k,
             template_cache_directory=None,
             assembly_data=assembly_data,
-            template_structures_directory=self.query_set.template_structures_directory,
-            template_structure_array_directory=self.query_set.template_structure_array_directory,
-            template_file_format=self.query_set.template_file_format,
+            template_structures_directory=self.template_preprocessor_settings.structure_directory,
+            template_structure_array_directory=self.template_preprocessor_settings.structure_array_directory,
+            template_file_format=self.template_preprocessor_settings.structure_file_format,
             ccd=self.ccd,
         )
 
@@ -297,6 +308,11 @@ class InferenceDataset(Dataset):
         features["query_id"] = query_id
         features["seed"] = torch.tensor([seed])
 
+        # save tensors
+        torch.save(
+            features,
+            "/home/u5i/gnikolenyi.u5i/scripts/openfold3/sandbox/inference/mth1/output_template_testing/features.pt",
+        )
         return features
 
     def __len__(self):

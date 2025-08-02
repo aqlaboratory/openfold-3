@@ -29,6 +29,9 @@ from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import DirectoryPathOrNone, FilePathOrNone
 from openfold3.core.data.framework.data_module import DatasetMode, DatasetSpec
+from openfold3.core.data.pipelines.preprocessing.template import (
+    TemplatePreprocessorSettings,
+)
 from openfold3.projects.of3_all_atom.config.dataset_config_components import (
     CropSettings,
     LossConfig,
@@ -255,6 +258,7 @@ class InferenceDatasetConfigKwargs(BaseModel):
 
     msa: MSASettings = colabfold_msa_settings
     template: TemplateSettings = TemplateSettings()
+    template_preprocessor_settings: TemplatePreprocessorSettings | None = None
 
 
 class InferenceJobConfig(BaseModel):
@@ -264,6 +268,7 @@ class InferenceJobConfig(BaseModel):
     seeds: list[int] = [42]
     msa: MSASettings = MSASettings()
     template: TemplateSettings = TemplateSettings()
+    template_preprocessor: TemplatePreprocessorSettings | None = None
 
 
 class InferenceDatasetSpec(DatasetSpec):

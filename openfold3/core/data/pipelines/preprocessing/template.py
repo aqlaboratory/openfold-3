@@ -4,6 +4,7 @@ import hashlib
 import multiprocessing as mp
 import os
 import random
+import tempfile
 import traceback
 from datetime import datetime
 from functools import wraps
@@ -1548,11 +1549,7 @@ class TemplatePreprocessorSettings(BaseModel):
         if self.output_directory is not None:
             base = Path(self.output_directory)
         else:
-            base = (
-                Path("./inference_output")
-                if self.mode == "predict"
-                else Path("./train_output")
-            )
+            base = Path(tempfile.gettempdir()) / "of3_template_data"
 
         # only set these if the user did not give them explicitly
         self.structure_directory = self.structure_directory or (
