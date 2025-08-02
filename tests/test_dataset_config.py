@@ -123,8 +123,9 @@ class TestOF3DatasetConfigConstruction:
                 # Verify that custom loss weights for protein monomer are supported
                 "loss": {
                     "loss_weights": {
-                        "bond_loss": 0.0,
+                        "bond": 0.0,
                         "mse": 4.0,
+                        "experimentally_resolved": 0.0,
                         "plddt": 0.0,
                         "pae": 0.0,
                         "pde": 0.0,
@@ -192,8 +193,9 @@ class TestOF3DatasetConfigConstruction:
                 },
                 "loss": {
                     "loss_weights": {
-                        "bond_loss": 0.0,
+                        "bond": 0.0,
                         "mse": 4.0,
+                        "experimentally_resolved": 0.0,
                         "plddt": 0.0,
                         "pae": 0.0,
                         "pde": 0.0,

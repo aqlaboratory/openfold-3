@@ -114,11 +114,10 @@ class TestTrainingExperiment:
             == "fine_tuning"
         )
         assert expt_runner.model_config.architecture.shared.diffusion.no_samples == 32
-        # Check that default default settings are not overwritten
+        # Check that default settings are not overwritten
         # See openfold3.projects.of3_all_atom.config.model_config
         assert (
-            expt_runner.model_config.settings.memory.eval.per_sample_token_cutoff
-            == 1500
+            expt_runner.model_config.settings.memory.eval.per_sample_token_cutoff == 750
         )
 
     def test_model(self, expt_runner):
