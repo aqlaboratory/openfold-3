@@ -6,7 +6,12 @@ train:
 predict:
   settings:
     diffusion_training_enabled: False
-
+  architecture:
+    msa:
+      msa_module_embedder:
+        subsample_main_msa: False
+        subsample_all_msa: True 
+        
 low_mem:
   settings:
     memory:
