@@ -7,42 +7,42 @@ channels:
 dependencies:
   - python=3.10
   - setuptools==59.5.0
-  - pip
-  - openmm=7.7
-  - pdbfixer
-  - pytorch-lightning
-  - biopython
-  - numpy=1
-  - pandas
+  - pip==25.1.1
+  - openmm==7.7.0
+  - pdbfixer==1.8.1
+  - pytorch-lightning==2.5.2
+  - biopython==1.85
+  - numpy==1.26.4
+  - pandas==2.3.1
   - PyYAML==5.4.1
-  - requests
-  - scipy
+  - requests==2.32.4
+  - scipy==1.15.2
   - tqdm==4.62.2
-  - typing-extensions
-  - wandb
+  - typing-extensions==4.14.1
+  - wandb==0.21.0
   - modelcif==0.7
-  - awscli
-  - pytest
-  - ml-collections
-  - mkl=2022.1
-  - aria2
-  - git
+  - awscli==2.27.50
+  - pytest==8.4.1
+  - ml-collections==1.0.0
+  - mkl==2022.1.0
+  - aria2==1.37.0 
+  - git==2.49.0
   - ruff>=0.5.0
   - biotite==1.1.0
   - rdkit==2025.03.1
   - mmseqs2==15.6f452
-  - bioconda::hmmer
-  - bioconda::hhsuite
-  - bioconda::kalign2
+  - bioconda::hmmer==3.4
+  - bioconda::hhsuite==3.3.0
+  - bioconda::kalign2==2.04
   - pytorch::pytorch=2.4
   - pytorch::pytorch-cuda=12.1
   - memory_profiler==0.61.0
-  - func_timeout
-  - boto3
-  - conda-forge::python-lmdb
-  - conda-forge::ijson
+  - func_timeout==4.3.5
+  - boto3==1.39.4
+  - conda-forge::python-lmdb==1.6.2
+  - conda-forge::ijson==3.4.0
   - pip:
       - deepspeed==0.14.5
       - dm-tree==0.1.6
       - git+https://github.com/NVIDIA/dllogger.git
-      - pdbeccdutils
+      - pdbeccdutils==0.8.6
