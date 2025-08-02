@@ -384,6 +384,10 @@ class MSAModuleEmbedder(nn.Module):
         c_m_feats: int,
         c_m: int,
         c_s_input: int,
+        subsample_main_msa: bool,
+        subsample_all_msa: bool,
+        min_subsampled_all_msa: int,
+        max_subsampled_all_msa: int,
         linear_init_params: ConfigDict = lin_init.msa_module_emb_init,
     ):
         """
@@ -394,11 +398,26 @@ class MSAModuleEmbedder(nn.Module):
                 MSA channel dimension
             c_s_input:
                 Single (s_input) channel dimension
+            subsample_main_msa:
+                Whether to subsample only the main MSA to a random depth, following
+                AF3 SI Section 2.2.
+            subsample_all_msa:
+                Whether to subsample all MSA (paired + main) to a random depth.
+            min_subsampled_all_msa:
+                If subsample_all_msa, this specifies the minimum number of MSA
+                sequences to retain after subsampling.
+            max_subsampled_all_msa:
+                If subsample_all_msa, this specifies the minimum number of MSA
+                sequences to retain after subsampling.
             linear_init_params:
                 Linear layer initialization parameters
         """
         super().__init__()
 
+        self.subsample_main_msa = subsample_main_msa
+        self.subsample_all_msa = subsample_all_msa
+        self.min_subsampled_all_msa = min_subsampled_all_msa
+        self.max_subsampled_all_msa = max_subsampled_all_msa
         self.linear_m = Linear(c_m_feats, c_m, **linear_init_params.linear_m)
         self.linear_s_input = Linear(
             c_s_input, c_m, **linear_init_params.linear_s_input
@@ -657,12 +676,7 @@ class MSAModuleEmbedder(nn.Module):
         return sampled_msa, sampled_msa_mask
 
     def forward(
-        self,
-        batch: dict,
-        s_input: torch.Tensor,
-        subsample_main_msa: bool,
-        subsample_all_msa: bool,
-        no_subsampled_all_msa: int,
+        self, batch: dict, s_input: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -676,14 +690,6 @@ class MSAModuleEmbedder(nn.Module):
                     - "asym_id": [*, N_token]
             s_input:
                 [*, N_token, C_s_input] single embedding
-            subsample_main_msa:
-                Whether to subsample only the main MSA to a random depth, following
-                AF3 SI Section 2.2.
-            subsample_all_msa:
-                Whether to subsample all MSA (paired + main) to a random depth.
-            no_subsampled_all_msa:
-                If subsample_all_msa, this specifies the number of MSA sequences
-                to retain after subsampling.
 
         Returns:
             m:
@@ -704,7 +710,7 @@ class MSAModuleEmbedder(nn.Module):
         )
         msa_mask = batch["msa_mask"]
 
-        if subsample_main_msa:
+        if self.subsample_main_msa:
             if math.prod(batch_dims) > 1:
                 msa_feat, msa_mask = self._apply_subsample_fn_batch(
                     fn=self._subsample_main_msa,
@@ -720,8 +726,13 @@ class MSAModuleEmbedder(nn.Module):
                     num_paired_seqs=batch["num_paired_seqs"],
                     asym_id=batch["asym_id"],
                 )
+        elif self.subsample_all_msa:
+            no_subsampled_all_msa = torch.randint(
+                low=self.min_subsampled_all_msa,
+                high=int(self.max_subsampled_all_msa + 1),
+                size=(1,),
+            ).item()
 
-        if subsample_all_msa:
             if math.prod(batch_dims) > 1:
                 msa_feat, msa_mask = self._apply_subsample_fn_batch(
                     fn=self._subsample_all_msa,
