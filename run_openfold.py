@@ -139,6 +139,7 @@ def predict(
     output_dir: Path | None = None,
 ):
     """Perform inference on a set of queries defined in the query_json."""
+    logging.basicConfig(level=logging.INFO)
     runner_args = config_utils.load_yaml(runner_yaml) if runner_yaml else dict()
 
     expt_config = InferenceExperimentConfig(
@@ -152,10 +153,9 @@ def predict(
             "architecture.shared.diffusion.no_full_rollout_samples"
         ] = num_diffusion_samples
 
-    expt_runner = InferenceExperimentRunner(expt_config)
     if output_dir:
-        output_dir.mkdir(exist_ok=True, parents=True)
-        expt_runner.output_dir = output_dir
+        expt_config.experiment_settings.output_dir = output_dir
+    expt_runner = InferenceExperimentRunner(expt_config)
 
     if num_model_seeds:
         start_seed = 42
@@ -169,8 +169,7 @@ def predict(
     if use_msa_server:
         query_set = preprocess_colabfold_msas(
             inference_query_set=query_set,
-            output_directory=expt_config.experiment_settings.output_dir,
-            server_settings=expt_config.msa_server_settings,
+            compute_settings=expt_config.msa_computation_settings,
         )
 
         # Update the msa dataset config settings
@@ -191,6 +190,7 @@ def predict(
     # Run the forward pass
     expt_runner.setup()
     expt_runner.run(query_set)
+    expt_runner.cleanup()
 
     # TODO add post-process relaxation with openmm
 

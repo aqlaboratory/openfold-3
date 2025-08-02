@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import shutil
 import sys
 import time
 from abc import ABC, abstractmethod
@@ -10,6 +11,7 @@ from pathlib import Path
 import ml_collections as mlc
 import pytorch_lightning as pl
 import wandb
+from lightning_fabric.utilities.rank_zero import _get_rank
 from pydantic import BaseModel
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
@@ -31,6 +33,8 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
     TrainingDatasetSpec,
 )
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+
+logger = logging.getLogger(__name__)
 
 
 class ExperimentRunner(ABC):
@@ -130,9 +134,12 @@ class ExperimentRunner(ABC):
         return self.pl_trainer_args.mpi_plugin
 
     @property
-    def is_mpi_rank_zero(self) -> bool:
+    def is_rank_zero(self) -> bool:
         """Check if the current process is rank zero in an MPI environment."""
-        return self.is_mpi and self.cluster_environment.global_rank() == 0
+        if self.is_mpi:
+            return self.cluster_environment.global_rank() == 0
+        else:
+            return _get_rank() == 0
 
     @property
     def cluster_environment(self) -> MPIEnvironment | None:
@@ -214,7 +221,7 @@ class ExperimentRunner(ABC):
         PyTorch Lightning method is invoked.
         """
         # Run process appropriate process
-        logging.info(f"Running {self.mode} mode.")
+        logger.info(f"Running {self.mode} mode.")
         # Training + validation
         if self.mode == "train":
             target_method = self.trainer.fit
@@ -290,18 +297,15 @@ class TrainingExperimentRunner(ExperimentRunner):
         """Determine if WandB should be used.
 
         Returns:
-            True if WandB configuration is provided and either
-            not using MPI or is the MPI rank zero.
+            True if WandB configuration is provided and is rank zero
         """
-        return self.logging_config.wandb_config and (
-            not self.is_mpi or self.is_mpi_rank_zero
-        )
+        return self.logging_config.wandb_config and self.is_rank_zero
 
     def _wandb_setup(self) -> None:
         """Initialize WandB logging and store configuration files."""
         self.wandb = WandbHandler(
             self.logging_config.wandb_config,
-            self.is_mpi_rank_zero,
+            self.is_rank_zero,
             self.output_dir,
         )
         self.wandb.store_configs(
@@ -335,7 +339,7 @@ class TrainingExperimentRunner(ExperimentRunner):
                 f"seed={seed} must be an integer. Please provide a valid seed."
             )
 
-        logging.info(f"Running with seed: {seed}")
+        logger.info(f"Running with seed: {seed}")
         pl.seed_everything(seed, workers=True)
 
     @cached_property
@@ -418,6 +422,14 @@ class InferenceExperimentRunner(ExperimentRunner):
         with open(log_path, "w") as fp:
             fp.write(self.inference_query_set.model_dump_json(indent=4))
 
+    def cleanup(self):
+        if self.experiment_config.msa_computation_settings.cleanup_msa_dir:
+            output_dir = (
+                self.experiment_config.msa_computation_settings.msa_output_directory
+            )
+            logger.info(f"Removing MSA output directory: {output_dir}")
+            shutil.rmtree(output_dir)
+
 
 class WandbHandler:
     """Handles WandB logger initialization and configuration storage.
@@ -429,19 +441,19 @@ class WandbHandler:
     def __init__(
         self,
         wandb_args: BaseModel | None,
-        is_mpi_rank_zero: bool,
+        is_rank_zero: bool,
         output_dir: Path,
     ):
         """Initialize the WandbHandler.
 
         Args:
             wandb_args: The WandB related configuration.
-            is_mpi_rank_zero: True if the current process is rank zero in an MPI setup.
+            is_rank_zero: True if the current process is rank zero.
             output_dir: The directory to store WandB files.
         """
         self.wandb_args = wandb_args
         self.output_dir = output_dir
-        self.is_mpi_rank_zero = is_mpi_rank_zero
+        self.is_rank_zero = is_rank_zero
         self._logger = None
 
     def _init_logger(self) -> None:
@@ -460,9 +472,9 @@ class WandbHandler:
             id=self.wandb_args.id,
         )
 
-        # Only initialize wandb for rank zero worker (MPI env), or else
+        # Only initialize wandb for rank zero worker
         # each worker will generate a different id
-        if self.is_mpi_rank_zero:
+        if self.is_rank_zero:
             wandb.run = wandb.init(**wandb_init_dict)
 
         self._logger = WandbLogger(
@@ -500,6 +512,7 @@ class WandbHandler:
 
         wandb_experiment = self.logger.experiment
         # Save pip environment to wandb
+
         freeze_path = os.path.join(wandb_experiment.dir, "package_versions.txt")
         os.system(f"{sys.executable} -m pip freeze > {freeze_path}")
         wandb_experiment.save(f"{freeze_path}")

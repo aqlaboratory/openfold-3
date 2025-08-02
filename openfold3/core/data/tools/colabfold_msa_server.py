@@ -1,8 +1,10 @@
+import hashlib
 import json
 import logging
 import os
 import random
 import tarfile
+import tempfile
 import time
 import warnings
 from collections.abc import Iterator
@@ -492,6 +494,13 @@ class ColabFoldMapper:
     rep_ids: list[ChainID] = field(default_factory=list)
 
 
+def get_sequence_hash(sequence_str: str) -> str:
+    """Generates a SHA-256 hash for the given sequence string."""
+    hasher = hashlib.sha256()
+    hasher.update(sequence_str.encode("utf-8"))
+    return hasher.hexdigest()
+
+
 def collect_colabfold_msa_data(
     inference_query_set: InferenceQuerySet,
 ) -> ColabFoldMapper:
@@ -534,14 +543,15 @@ def collect_colabfold_msa_data(
 
                 # Collect mapping data and sequences for main MSAs
                 if seq not in colabfold_mapper.seq_to_rep_id:
-                    colabfold_mapper.seq_to_rep_id[seq] = chain_ids[0]
-                    colabfold_mapper.rep_id_to_seq[chain_ids[0]] = seq
+                    rep_id = get_sequence_hash(seq)
+                    colabfold_mapper.seq_to_rep_id[seq] = rep_id
+                    colabfold_mapper.rep_id_to_seq[rep_id] = seq
                     colabfold_mapper.rep_id_to_m[chain_ids[0]] = m_i
                     m_i += 1
                     for chain_id in chain_ids:
-                        colabfold_mapper.chain_id_to_rep_id[chain_id] = chain_ids[0]
+                        colabfold_mapper.chain_id_to_rep_id[chain_id] = rep_id
                     colabfold_mapper.seqs.append(seq)
-                    colabfold_mapper.rep_ids.append(chain_ids[0])
+                    colabfold_mapper.rep_ids.append(rep_id)
                 else:
                     for chain_id in chain_ids:
                         colabfold_mapper.chain_id_to_rep_id[chain_id] = (
@@ -576,20 +586,42 @@ def save_colabfold_mappings(
 
     mapping_files_directory_path = output_directory / "mappings"
     mapping_files_directory_path.mkdir(parents=True, exist_ok=True)
+
     for mapping_name, mapping in zip(
         [
             "seq_to_rep_id",
             "rep_id_to_seq",
-            "chain_id_to_rep_id",
-            "query_name_to_complex_id",
         ],
         [
             colabfold_msa_input.seq_to_rep_id,
             colabfold_msa_input.rep_id_to_seq,
+        ],
+    ):
+        mapping_file_path = mapping_files_directory_path / f"{mapping_name}.json"
+        if os.path.exists(mapping_file_path):
+            logger.warning(
+                f"Mapping file {mapping_file_path} already exists. "
+                "Appending new sequences."
+            )
+            with open(mapping_file_path) as f:
+                old_mapping = json.load(f)
+                mapping.update(old_mapping)
+
+            with open(mapping_file_path, "w") as f:
+                json.dump(mapping, f, indent=4)
+
+    for mapping_name, mapping in zip(
+        [
+            "chain_id_to_rep_id",
+            "query_name_to_complex_id",
+        ],
+        [
             colabfold_msa_input.chain_id_to_rep_id,
             colabfold_msa_input.query_name_to_complex_id,
         ],
     ):
+        if mapping_name == "chain_id_to_rep_id":
+            mapping = {str(k): v for k, v in mapping.items()}
         mapping_file_path = mapping_files_directory_path / f"{mapping_name}.json"
         with open(mapping_file_path, "w") as f:
             json.dump(mapping, f, indent=4)
@@ -632,7 +664,7 @@ class ColabFoldQueryRunner:
         output_directory: Path,
         msa_file_format: str | list[str],
         user_agent: str,
-        host_url: str = "https://api.colabfold.com",
+        host_url: Url = "https://api.colabfold.com",
     ):
         self.colabfold_mapper = colabfold_mapper
         self.output_directory = output_directory
@@ -864,21 +896,22 @@ def add_msa_paths_to_iqs(
     return inference_query_set
 
 
-class MsaServerSettings(BaseModel):
+class MsaComputationSettings(BaseModel):
     """Settings to run ColabFold MSA server.
 
     See preprocess_colabfold_msas for details on the parameters"""
 
     msa_file_format: Literal["npz", "a3m"] = "npz"
-    user_agent: str = "openfold"
+    server_user_agent: str = "openfold"
     server_url: Url = Url("https://api.colabfold.com")
     save_mappings: bool = False
+    msa_output_directory: Path = Path(tempfile.gettempdir()) / "of3_colabfold_msas"
+    cleanup_msa_dir: bool = True
 
 
 def preprocess_colabfold_msas(
     inference_query_set: InferenceQuerySet,
-    output_directory: Path,
-    server_settings: MsaServerSettings,
+    compute_settings: MsaComputationSettings,
 ) -> InferenceQuerySet:
     """Gathers sequences, runs the ColabFold MSA server queries, updates MSA paths.
 
@@ -887,7 +920,7 @@ def preprocess_colabfold_msas(
             The inference query set containing the queries and chains.
         output_directory (Path):
             The output directory to save the results to.
-        server settings: pydantic model with server settings, contains:
+        compute_settings: pydantic model with server settings, contains:
             msa_file_format (str):
                 The format of the MSA files to save.
                 Can be "a3m" (unprocessed MSAs for inspectable but slower parsing)
@@ -938,18 +971,20 @@ def preprocess_colabfold_msas(
     """
     # Gather MSA data
     colabfold_mapper = collect_colabfold_msa_data(inference_query_set)
+    output_directory = compute_settings.msa_output_directory
+    logger.warning(f"Using output directory: {output_directory} for ColabFold MSAs.")
 
     # Save mappings to file
-    if server_settings.save_mappings:
+    if compute_settings.save_mappings:
         save_colabfold_mappings(colabfold_mapper, output_directory)
 
     # Run batch queries for main and paired MSAs
     colabfold_query_runner = ColabFoldQueryRunner(
         colabfold_mapper=colabfold_mapper,
         output_directory=output_directory,
-        msa_file_format=server_settings.msa_file_format,
-        user_agent=server_settings.user_agent,
-        host_url=server_settings.server_url,
+        msa_file_format=compute_settings.msa_file_format,
+        user_agent=compute_settings.server_user_agent,
+        host_url=compute_settings.server_url,
     )
     colabfold_query_runner.query_format_main()
     colabfold_query_runner.query_format_paired()
