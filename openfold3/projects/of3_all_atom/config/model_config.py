@@ -32,8 +32,8 @@ tune_chunk_size = mlc.FieldReference(True, field_type=bool)
 max_atoms_per_token = mlc.FieldReference(23, field_type=int)
 
 # Cutoffs for chunking ops per diffusion sample
-per_sample_token_cutoff = mlc.FieldReference(1500, field_type=int)
-per_sample_atom_cutoff = mlc.FieldReference(20000, field_type=int)
+per_sample_token_cutoff = mlc.FieldReference(750, field_type=int)
+per_sample_atom_cutoff = mlc.FieldReference(10000, field_type=int)
 
 model_selection_metric_weights_config = mlc.FrozenConfigDict(
     {
@@ -75,13 +75,13 @@ model_config = mlc.ConfigDict(
                     "chunk_size": None,
                     # Use DeepSpeed memory-efficient attention kernel. Mutually
                     # exclusive with use_lma and use_flash.
-                    "use_deepspeed_evo_attention": False,
+                    "use_deepspeed_evo_attention": True,
                     # Use Staats & Rabe's low-memory attention algorithm. Mutually
                     # exclusive with use_deepspeed_evo_attention.
                     "use_lma": False,
                     "msa_module": {
                         "swiglu_chunk_token_cutoff": None,
-                        "swiglu_seq_chunk_size": None,
+                        "swiglu_seq_chunk_size": 4000,
                     },
                 },
                 "eval": {
@@ -128,7 +128,7 @@ model_config = mlc.ConfigDict(
                 "c_s_input": c_s_input,
                 "c_s": c_s,
                 "c_z": c_z,
-                "max_cycles": 4,
+                "num_recycles": 3,
                 "diffusion": {
                     "sigma_data": sigma_data,
                     "no_samples": 48,
@@ -446,7 +446,7 @@ model_config = mlc.ConfigDict(
                     "rna_weight": 5.0,
                     "ligand_weight": 10.0,
                     "eps": eps,
-                    "chunk_size": None,  # 16 for 40GB GPUs
+                    "chunk_size": None,
                 },
                 "distogram": {
                     "no_bins": 64,

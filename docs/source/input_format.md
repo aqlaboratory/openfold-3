@@ -87,6 +87,11 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
   - `sequence` *(str, required)*
     - Amino acid sequence (1-letter codes), supporting standard residues, X (unknown), and U (selenocysteine).
 
+  - `non_canonical_residues` *(dict, optional, default = null)*
+    - A dictionary mapping residue indices (1-based) to non-canonical residue names.
+    - Note that MSA computation will only refer to the primary `sequence`.
+    - Example: `{"1": "MHO", "5": "SEP"}`
+
   - `use_msas` *(bool, optional, default = true)*
     - Enables MSA usage. If false, empty MSA features are provided to the model. MSA-free inference mode is [discouraged](Inference.md#323--inference-without-msas) if the goal is to obtain the highest-accuracy structures.
 
