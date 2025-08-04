@@ -2,7 +2,7 @@ from pathlib import Path
 
 import ml_collections as mlc
 
-from openfold3.projects.af3_all_atom.config import (
+from openfold3.projects.of3_all_atom.config import (
     linear_init_config as lin_init,
 )
 
@@ -14,7 +14,6 @@ c_s = mlc.FieldReference(384, field_type=int)
 c_z = mlc.FieldReference(128, field_type=int)
 c_m = mlc.FieldReference(64, field_type=int)
 c_t = mlc.FieldReference(64, field_type=int)
-c_atom_ref = mlc.FieldReference(380, field_type=int)
 c_atom = mlc.FieldReference(128, field_type=int)
 c_atom_pair = mlc.FieldReference(16, field_type=int)
 c_token_embedder = mlc.FieldReference(384, field_type=int)
@@ -80,6 +79,12 @@ project_config = mlc.ConfigDict(
                 "memory": {
                     "train": {
                         "chunk_size": None,
+                        # Use DeepSpeed memory-efficient attention kernel. Mutually
+                        # exclusive with use_lma and use_flash.
+                        "use_deepspeed_evo_attention": False,
+                        # Use Staats & Rabe's low-memory attention algorithm. Mutually
+                        # exclusive with use_deepspeed_evo_attention.
+                        "use_lma": False,
                         "msa_module": {
                             "swiglu_chunk_token_cutoff": None,
                             "swiglu_seq_chunk_size": None,
@@ -87,6 +92,8 @@ project_config = mlc.ConfigDict(
                     },
                     "eval": {
                         "chunk_size": None,
+                        "use_deepspeed_evo_attention": True,
+                        "use_lma": False,
                         "msa_module": {
                             "swiglu_chunk_token_cutoff": None,
                             "swiglu_seq_chunk_size": None,
@@ -103,12 +110,6 @@ project_config = mlc.ConfigDict(
                 #  to allow per-module overrides
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "ckpt_intermediate_steps": ckpt_intermediate_steps,
-                # Use DeepSpeed memory-efficient attention kernel. Mutually
-                # exclusive with use_lma and use_flash.
-                "use_deepspeed_evo_attention": False,
-                # Use Staats & Rabe's low-memory attention algorithm. Mutually
-                # exclusive with use_deepspeed_evo_attention.
-                "use_lma": False,
                 "diffusion_training_enabled": diffusion_training_enabled,
                 "optimizer": {
                     "use_deepspeed_adam": False,
@@ -116,6 +117,13 @@ project_config = mlc.ConfigDict(
                     "beta1": 0.9,
                     "beta2": 0.95,
                     "eps": 1e-8,
+                },
+                "lr_scheduler": {
+                    "base_lr": 0.0,
+                    "warmup_no_steps": 1000,
+                    "start_decay_after_n_steps": 50000,
+                    "decay_every_n_steps": 50000,
+                    "decay_factor": 0.95,
                 },
                 "ema": {"decay": 0.999},
                 "gradient_clipping": 10.0,
@@ -145,7 +153,10 @@ project_config = mlc.ConfigDict(
                     "atom_attn_enc": {
                         "c_s": c_s,
                         "c_z": c_z,
-                        "c_atom_ref": c_atom_ref,
+                        "c_atom_ref": {
+                            "element": 119,
+                            "name_chars": 256,
+                        },
                         "c_atom": c_atom,
                         "c_atom_pair": c_atom_pair,
                         "c_token": c_token_embedder,
@@ -171,14 +182,14 @@ project_config = mlc.ConfigDict(
                     "c_z": c_z,
                     "linear_init_param": lin_init.templ_module_init,
                     "template_pair_embedder": {
-                        "c_in": 108,
-                        "c_z": c_z,
+                        "c_in": c_z,
+                        "c_dgram": 39,
+                        "c_aatype": 32,
                         "c_out": c_t,
                         "linear_init_params": lin_init.templ_pair_feat_emb_init,
                     },
                     "template_pair_stack": {
                         "c_t": c_t,
-                        # TODO: Do we use pairformer attn params?
                         # DISCREPANCY: c_hidden_tri_att here is given in the supplement
                         # as 64. In the code, it's 16.
                         "c_hidden_tri_att": 16,
@@ -269,7 +280,10 @@ project_config = mlc.ConfigDict(
                     "atom_attn_enc": {
                         "c_s": c_s,
                         "c_z": c_z,
-                        "c_atom_ref": c_atom_ref,
+                        "c_atom_ref": {
+                            "element": 119,
+                            "name_chars": 256,
+                        },
                         "c_atom": c_atom,
                         "c_atom_pair": c_atom_pair,
                         "c_token": c_token_diffusion,
@@ -335,6 +349,7 @@ project_config = mlc.ConfigDict(
                 },
                 "heads": {
                     "max_atoms_per_token": max_atoms_per_token,
+                    "per_sample_token_cutoff": per_sample_token_cutoff,
                     "pairformer_embedding": {
                         "pairformer": {
                             "c_s": c_s,
@@ -359,10 +374,9 @@ project_config = mlc.ConfigDict(
                         "c_s_input": c_s_input,
                         "c_z": c_z,
                         "min_bin": 3.25,
-                        "max_bin": 20.75,
-                        "no_bin": 15,
+                        "max_bin": 50.75,
+                        "no_bin": 39,
                         "inf": inf,
-                        "per_sample_token_cutoff": per_sample_token_cutoff,
                         "linear_init_params": lin_init.pairformer_head_init,
                     },
                     "pae": {
@@ -445,6 +459,7 @@ project_config = mlc.ConfigDict(
                 },
             },
             "confidence": {
+                "per_sample_atom_cutoff": per_sample_atom_cutoff,
                 "pde": {
                     "max_bin": 31,
                     "no_bins": 64,
@@ -452,6 +467,10 @@ project_config = mlc.ConfigDict(
                 "pae": {
                     "max_bin": 31,
                     "no_bins": 64,
+                },
+                "distogram": {
+                    "min_bin": 2,
+                    "max_bin": 22,
                 },
                 "ptm": {
                     "max_bin": 31,

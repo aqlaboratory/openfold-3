@@ -1,0 +1,18 @@
+{
+  "fp16": {
+    "enabled": false,
+    "min_loss_scale": 1
+  },
+  "amp": {
+    "enabled": false,
+    "opt_level": "O2"
+  },
+  "bfloat16": {
+    "enabled": false
+  },
+  "zero_optimization": {
+    "stage": 2,
+    "overlap_comm": true,
+    "contiguous_gradients": true
+  }
+}

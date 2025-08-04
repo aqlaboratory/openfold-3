@@ -11,11 +11,11 @@ from tests import compare_utils
 class TestLoadPresets:
     def test_model_registry_loads_models(self):
         # TODO: Convert other models to new config format
-        expected_model_entries = {"af2_monomer", "af2_multimer", "af3_all_atom"}
+        expected_model_entries = {"af2_monomer", "af2_multimer", "of3_all_atom"}
         assert set(registry.PROJECT_REGISTRY.keys()) == expected_model_entries
 
     def test_config_preset_loading(self):
-        project_entry = registry.get_project_entry("af3_all_atom")
+        project_entry = registry.get_project_entry("of3_all_atom")
         project_config = registry.make_config_with_presets(
             project_entry, ["finetune1", "train"]
         )
@@ -23,12 +23,10 @@ class TestLoadPresets:
         assert project_config.model.settings.ema.decay == 0.999
         # From finetune1 preset
         assert project_config.extra_configs.loss_weight_modes.default.bond == 4.0
-        # From train preset
-        assert project_config.model.settings.use_deepspeed_evo_attention
 
     def test_yaml_overwrite_preset(self, tmp_path):
         test_yaml_str = textwrap.dedent("""\
-        project_type: af3_all_atom
+        project_type: of3_all_atom
         presets: 
           - finetune1
 
@@ -62,7 +60,7 @@ class TestLoadPresets:
 
     @compare_utils.skip_unless_cuda_available()
     def test_registry_model_loads(self):
-        project_entry = registry.get_project_entry("af3_all_atom")
+        project_entry = registry.get_project_entry("of3_all_atom")
         project_config = registry.make_config_with_presets(
             project_entry,
             ["initial_training"],

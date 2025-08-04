@@ -13,11 +13,11 @@ from openfold3.core.model.heads.prediction_heads import (
 )
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.projects import registry
-from openfold3.projects.af3_all_atom.config.base_config import (
+from openfold3.projects.of3_all_atom.config.base_config import (
     max_atoms_per_token,
 )
 from tests.config import consts
-from tests.data_utils import random_af3_features
+from tests.data_utils import random_of3_features
 
 
 class TestPredictedAlignedErrorHead(unittest.TestCase):
@@ -119,7 +119,7 @@ class TestPairformerEmbedding(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
-        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_entry = registry.get_project_entry("of3_all_atom")
         proj_config = proj_entry.get_config_with_preset()
         config = proj_config.model
 
@@ -169,7 +169,7 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         n_msa = 10
         n_templ = 3
 
-        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_entry = registry.get_project_entry("of3_all_atom")
         proj_config = proj_entry.get_config_with_preset()
         config = proj_config.model
 
@@ -177,7 +177,7 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         c_s = config.architecture.shared.c_s
         c_z = config.architecture.shared.c_z
 
-        batch = random_af3_features(
+        batch = random_of3_features(
             batch_size=batch_size, n_token=n_token, n_msa=n_msa, n_templ=n_templ
         )
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()

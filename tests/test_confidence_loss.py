@@ -161,7 +161,7 @@ class TestConfidenceLoss(unittest.TestCase):
         batch_size, n_token = batch["token_mask"].shape
         n_atom = batch["ground_truth"]["atom_resolved_mask"].shape[1]
 
-        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_entry = registry.get_project_entry("of3_all_atom")
         proj_config = proj_entry.get_config_with_preset()
         config = proj_config.model
 

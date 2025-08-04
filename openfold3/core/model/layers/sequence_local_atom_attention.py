@@ -52,7 +52,7 @@ class RefAtomFeatureEmbedder(nn.Module):
 
     def __init__(
         self,
-        c_atom_ref: int,
+        c_atom_ref: ConfigDict,
         c_atom: int,
         c_atom_pair: int,
         linear_init_params: ConfigDict = lin_init.ref_atom_emb_init,
@@ -60,7 +60,7 @@ class RefAtomFeatureEmbedder(nn.Module):
         """
         Args:
             c_atom_ref:
-                Reference atom feature channel dimension (390)
+                Dict of reference atom channel dimensions per feature
             c_atom:
                 Atom single conditioning channel dimension
             c_atom_pair:
@@ -69,8 +69,15 @@ class RefAtomFeatureEmbedder(nn.Module):
                 Linear layer initialization parameters
         """
         super().__init__()
-        self.linear_feats = Linear(
-            c_atom_ref, c_atom, **linear_init_params.linear_feats
+        # Ref conformer feats
+        self.linear_ref_pos = Linear(3, c_atom, **linear_init_params.linear_feats)
+        self.linear_ref_charge = Linear(1, c_atom, **linear_init_params.linear_feats)
+        self.linear_ref_mask = Linear(1, c_atom, **linear_init_params.linear_feats)
+        self.linear_ref_element = Linear(
+            c_atom_ref.element, c_atom, **linear_init_params.linear_feats
+        )
+        self.linear_ref_atom_chars = Linear(
+            c_atom_ref.name_chars, c_atom, **linear_init_params.linear_feats
         )
         self.linear_ref_offset = Linear(
             3, c_atom_pair, **linear_init_params.linear_ref_offset
@@ -113,20 +120,19 @@ class RefAtomFeatureEmbedder(nn.Module):
             plm:
                 [*, N_blocks, N_query, N_key, c_atom_pair] Atom pair conditioning
         """
+        dtype = batch["ref_pos"].dtype
+
         # Embed atom features
         # [*, N_atom, c_atom]
-        cl = self.linear_feats(
-            torch.cat(
-                [
-                    batch["ref_pos"],
-                    batch["ref_charge"].unsqueeze(-1),
-                    batch["ref_mask"].unsqueeze(-1),
-                    batch["ref_element"],
-                    batch["ref_atom_name_chars"].flatten(start_dim=-2),
-                ],
-                dim=-1,
-            )
-        )  # CONFIRM THIS FORMAT ONCE DATALOADER/FEATURIZER DONE
+        cl = self.linear_ref_pos(batch["ref_pos"])
+        cl = cl + self.linear_ref_charge(
+            torch.arcsinh(batch["ref_charge"].unsqueeze(-1))
+        )
+        cl = cl + self.linear_ref_mask(batch["ref_mask"].unsqueeze(-1).to(dtype=dtype))
+        cl = cl + self.linear_ref_element(batch["ref_element"].to(dtype=dtype))
+        cl = cl + self.linear_ref_atom_chars(
+            batch["ref_atom_name_chars"].flatten(start_dim=-2).to(dtype=dtype)
+        )
 
         # Embed offsets
         # Convert all atom rep to block format ahead of time due to
@@ -189,9 +195,9 @@ class NoisyPositionEmbedder(nn.Module):
                 Linear layer initialization parameters
         """
         super().__init__()
-        self.layer_norm_s = LayerNorm(c_s)
+        self.layer_norm_s = LayerNorm(c_s, create_offset=False)
         self.linear_s = Linear(c_s, c_atom, **linear_init_params.linear_s)
-        self.layer_norm_z = LayerNorm(c_z)
+        self.layer_norm_z = LayerNorm(c_z, create_offset=False)
         self.linear_z = Linear(c_z, c_atom_pair, **linear_init_params.linear_z)
         self.linear_r = Linear(3, c_atom, **linear_init_params.linear_r)
 
@@ -200,7 +206,6 @@ class NoisyPositionEmbedder(nn.Module):
         batch: TensorDict,
         cl: torch.Tensor,
         plm: torch.Tensor,
-        ql: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
         rl: torch.Tensor,
@@ -217,8 +222,6 @@ class NoisyPositionEmbedder(nn.Module):
                 [*, N_atom, c_atom] Atom single conditioning
             plm:
                 [*, N_blocks, N_query, N_key, c_atom_pair] Atom pair conditioning
-            ql:
-                [*, N_atom, c_atom] Atom single representation
             si_trunk:
                 [*, N_token, c_s] Trunk single representation
             zij_trunk:
@@ -243,26 +246,25 @@ class NoisyPositionEmbedder(nn.Module):
 
         # Broadcast trunk single representation into atom single conditioning
         # [*, N_atom, c_atom]
+        si_trunk = self.linear_s(self.layer_norm_s(si_trunk))
         si_trunk = broadcast_token_feat_to_atoms(
             token_mask=batch["token_mask"],
             num_atoms_per_token=batch["num_atoms_per_token"],
             token_feat=si_trunk,
             token_dim=-2,
         )
-        cl = cl + self.linear_s(self.layer_norm_s(si_trunk))
+        cl = cl + si_trunk
 
         # Broadcast trunk pair representation into atom pair conditioning
         zij_trunk = self.linear_z(self.layer_norm_z(zij_trunk))
-
         zij_trunk = convert_trunk_pair_rep_to_blocks(
             batch=batch, zij_trunk=zij_trunk, n_query=n_query, n_key=n_key
         )
-
         plm = plm + zij_trunk
 
         # Add noisy coordinate projection
         # [*, N_atom, c_atom]
-        ql = ql + self.linear_r(rl)
+        ql = cl + self.linear_r(rl)
 
         return cl, plm, ql
 
@@ -274,7 +276,7 @@ class AtomAttentionEncoder(nn.Module):
 
     def __init__(
         self,
-        c_atom_ref: int,
+        c_atom_ref: ConfigDict,
         c_atom: int,
         c_atom_pair: int,
         c_token: int,
@@ -297,7 +299,7 @@ class AtomAttentionEncoder(nn.Module):
         """
         Args:
             c_atom_ref:
-                Reference atom feature channel dimension (390)
+                Dict of reference atom channel dimensions per feature
             c_atom:
                 Atom single representation channel dimension
             c_atom_pair:
@@ -370,11 +372,11 @@ class AtomAttentionEncoder(nn.Module):
 
         self.pair_mlp = nn.Sequential(
             nn.ReLU(),
-            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp),
+            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp_1),
             nn.ReLU(),
-            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp),
+            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp_2),
             nn.ReLU(),
-            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp),
+            Linear(c_atom_pair, c_atom_pair, **linear_init_params.pair_mlp_3),
         )
 
         self.atom_transformer = DiffusionTransformer(
@@ -432,10 +434,6 @@ class AtomAttentionEncoder(nn.Module):
             batch=batch, n_query=self.n_query, n_key=self.n_key
         )
 
-        # Initialize atom single representation
-        # [*, N_atom, c_atom]
-        ql = cl.clone()
-
         # Embed noisy atom positions and trunk embeddings
         # cl: [*, N_atom, c_atom]
         # plm: [*, N_blocks, N_query, N_key, c_atom_pair]
@@ -445,13 +443,17 @@ class AtomAttentionEncoder(nn.Module):
                 batch=batch,
                 cl=cl,
                 plm=plm,
-                ql=ql,
                 si_trunk=si_trunk,
                 zij_trunk=zij_trunk,
                 rl=rl,
                 n_query=self.n_query,
                 n_key=self.n_key,
             )
+        else:
+            # Initialize atom single representation when trunk / noisy position
+            # inputs are not present
+            # [*, N_atom, c_atom]
+            ql = cl.clone()
 
         # Add the combined single conditioning to the pair rep (line 13 - 14)
         cl_l, cl_m, atom_mask = convert_single_rep_to_blocks(
@@ -552,12 +554,15 @@ class AtomAttentionEncoder(nn.Module):
             use_high_precision_attention=use_high_precision_attention,
         )
 
+        ql = ql * atom_mask.unsqueeze(-1)
+
         agg_args = (
             batch["token_mask"],
             batch["atom_to_token_index"],
             atom_mask,
             self.linear_q(ql),
             -2,
+            "mean",
         )
         ai = checkpoint_section(
             fn=aggregate_atom_feat_to_tokens,
@@ -648,7 +653,7 @@ class AtomAttentionDecoder(nn.Module):
             use_reentrant=use_reentrant,
         )
 
-        self.layer_norm = LayerNorm(c_in=c_atom)
+        self.layer_norm = LayerNorm(c_in=c_atom, create_offset=False)
         self.linear_q_out = Linear(c_atom, 3, **linear_init_params.linear_q_out)
 
     def forward(

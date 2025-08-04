@@ -115,7 +115,8 @@ def all_atom_distogram_loss(
 
     # Compute binned distogram
     bin_size = (bin_max - bin_min) / no_bins
-    v_bins = bin_min + torch.arange(no_bins, device=d.device) * bin_size
+    bin_min_offset = bin_min + bin_size / 2
+    v_bins = bin_min_offset + torch.arange(no_bins, device=d.device) * bin_size
     d_b = binned_one_hot(d, v_bins).to(dtype=d.dtype)
 
     pair_mask = (rep_atom_mask[..., None] * rep_atom_mask[..., None, :]).bool()

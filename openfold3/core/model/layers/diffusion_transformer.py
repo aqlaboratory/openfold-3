@@ -25,7 +25,7 @@ from ml_collections import ConfigDict
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.utils.checkpointing import checkpoint_blocks
 
-from .attention_pair_bias import AttentionPairBias
+from .attention_pair_bias import AttentionPairBias, CrossAttentionPairBias
 from .transition import ConditionedTransitionBlock
 
 
@@ -75,22 +75,38 @@ class DiffusionTransformerBlock(nn.Module):
                 Linear layer initialization parameters
         """
         super().__init__()
+        self.use_cross_attention = n_query is not None
 
-        self.attention_pair_bias = AttentionPairBias(
-            c_q=c_a,
-            c_k=c_a,
-            c_v=c_a,
-            c_s=c_s,
-            c_z=c_z,
-            c_hidden=c_hidden,
-            no_heads=no_heads,
-            use_ada_layer_norm=use_ada_layer_norm,
-            n_query=n_query,
-            n_key=n_key,
-            gating=True,
-            inf=inf,
-            linear_init_params=linear_init_params.att_pair_bias,
-        )
+        if not self.use_cross_attention:
+            self.attention_pair_bias = AttentionPairBias(
+                c_q=c_a,
+                c_k=c_a,
+                c_v=c_a,
+                c_s=c_s,
+                c_z=c_z,
+                c_hidden=c_hidden,
+                no_heads=no_heads,
+                use_ada_layer_norm=use_ada_layer_norm,
+                gating=True,
+                inf=inf,
+                linear_init_params=linear_init_params.att_pair_bias,
+            )
+        else:
+            self.attention_pair_bias = CrossAttentionPairBias(
+                c_q=c_a,
+                c_k=c_a,
+                c_v=c_a,
+                c_s=c_s,
+                c_z=c_z,
+                c_hidden=c_hidden,
+                no_heads=no_heads,
+                use_ada_layer_norm=use_ada_layer_norm,
+                n_query=n_query,
+                n_key=n_key,
+                gating=True,
+                inf=inf,
+                linear_init_params=linear_init_params.att_pair_bias,
+            )
 
         self.conditioned_transition = ConditionedTransitionBlock(
             c_a=c_a,
@@ -136,16 +152,26 @@ class DiffusionTransformerBlock(nn.Module):
                 Whether to mask the output of the transition layer
         """
         # Note: Differs from SI, residual connection added.
-        a = a + self.attention_pair_bias(
-            a=a,
-            z=z,
-            s=s,
-            mask=mask,
-            use_memory_efficient_kernel=use_memory_efficient_kernel,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_lma=use_lma,
-            use_high_precision_attention=use_high_precision_attention,
-        )
+
+        if not self.use_cross_attention:
+            a = a + self.attention_pair_bias(
+                a=a,
+                z=z,
+                s=s,
+                mask=mask,
+                use_memory_efficient_kernel=use_memory_efficient_kernel,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_lma=use_lma,
+                use_high_precision_attention=use_high_precision_attention,
+            )
+        else:
+            a = a + self.attention_pair_bias(
+                a=a,
+                z=z,
+                s=s,
+                mask=mask,
+                use_high_precision_attention=use_high_precision_attention,
+            )
 
         trans_mask = mask if _mask_trans else None
 

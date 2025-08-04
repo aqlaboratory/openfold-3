@@ -2,17 +2,17 @@ import unittest
 
 import torch
 
-from openfold3.core.loss.loss_module import AlphaFold3Loss
+from openfold3.core.loss.loss_module import OpenFold3Loss
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects import registry
-from openfold3.projects.af3_all_atom.runner import AlphaFold3AllAtom
+from openfold3.projects.of3_all_atom.runner import OpenFold3AllAtom
 from tests import compare_utils
 from tests.config import consts
-from tests.data_utils import random_af3_features
+from tests.data_utils import random_of3_features
 
 
-class TestAF3Model(unittest.TestCase):
+class TestOF3Model(unittest.TestCase):
     def run_model(
         self,
         batch_size,
@@ -26,28 +26,31 @@ class TestAF3Model(unittest.TestCase):
     ):
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        proj_entry = registry.get_project_entry("af3_all_atom")
+        proj_entry = registry.get_project_entry("of3_all_atom")
         proj_config = proj_entry.get_config_with_preset()
         config = proj_config.model
 
         if train:
             config.settings.blocks_per_ckpt = 1
             config.settings.ckpt_intermediate_steps = True
-        else:
-            config.settings.memory.eval.chunk_size = 4
 
         if reduce_model_size:
             # To avoid memory issues in CI
             config.architecture.pairformer.no_blocks = 4
             config.architecture.diffusion_module.diffusion_transformer.no_blocks = 4
 
-        config.settings.use_deepspeed_evo_attention = use_deepspeed_evo_attention
+        config.settings.memory.train.use_deepspeed_evo_attention = (
+            use_deepspeed_evo_attention
+        )
+        config.settings.memory.eval.use_deepspeed_evo_attention = (
+            use_deepspeed_evo_attention
+        )
         config.architecture.loss_module.diffusion.chunk_size = 16
 
-        af3 = AlphaFold3AllAtom(config, _compile=False).to(device=device, dtype=dtype)
-        af3_loss = AlphaFold3Loss(config=config.architecture.loss_module)
+        of3 = OpenFold3AllAtom(config, _compile=False).to(device=device, dtype=dtype)
+        of3_loss = OpenFold3Loss(config=config.architecture.loss_module)
 
-        batch = random_af3_features(
+        batch = random_of3_features(
             batch_size=batch_size,
             n_token=n_token,
             n_msa=n_msa,
@@ -71,9 +74,9 @@ class TestAF3Model(unittest.TestCase):
         batch = tensor_tree_map(to_device, batch)
 
         if train:
-            batch, outputs = af3(batch=batch)
+            batch, outputs = of3(batch=batch)
 
-            loss, loss_breakdown = af3_loss(
+            loss, loss_breakdown = of3_loss(
                 batch=batch, output=outputs, _return_breakdown=True
             )
 
@@ -89,16 +92,16 @@ class TestAF3Model(unittest.TestCase):
             assert loss.shape == ()
 
         else:
-            af3.eval()
+            of3.eval()
 
             # filters used by validation metrics
             assert "intra_filter_atomized" in batch["ground_truth"]
             assert "inter_filter_atomized" in batch["ground_truth"]
 
             with torch.no_grad():
-                batch, outputs = af3(batch=batch)
+                batch, outputs = of3(batch=batch)
 
-                loss, loss_breakdown = af3_loss(
+                loss, loss_breakdown = of3_loss(
                     batch=batch, output=outputs, _return_breakdown=True
                 )
 
@@ -176,9 +179,6 @@ class TestAF3Model(unittest.TestCase):
                 use_deepspeed_evo_attention=True,
             )
 
-    @unittest.skip(
-        "Manually enable this for now, will add flag to run slow tests later."
-    )
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
     def test_shape_large_eval(self):
@@ -199,9 +199,6 @@ class TestAF3Model(unittest.TestCase):
                 use_deepspeed_evo_attention=True,
             )
 
-    # @unittest.skip(
-    # "Manually enable this for now, will add flag to run slow tests later."
-    # )
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
     def test_shape_large_bf16_train(self):

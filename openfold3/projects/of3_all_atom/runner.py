@@ -1,12 +1,13 @@
+import gc
 import importlib
 import itertools
 import logging
 from pathlib import Path
 
 import torch
-from torchmetrics import MeanMetric, MetricCollection
+from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
 
-from openfold3.core.loss.loss_module import AlphaFold3Loss
+from openfold3.core.loss.loss_module import OpenFold3Loss
 from openfold3.core.metrics.confidence import (
     compute_plddt,
     compute_predicted_aligned_error,
@@ -17,7 +18,6 @@ from openfold3.core.metrics.model_selection import (
     compute_final_model_selection_metric,
     compute_valid_model_selection_metrics,
 )
-from openfold3.core.metrics.pearson_correlation import ZeroSafePearsonCorrCoef
 from openfold3.core.metrics.validation_all_atom import (
     get_metrics,
     get_metrics_chunked,
@@ -26,21 +26,21 @@ from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.atomize_utils import get_token_frame_atoms
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.projects.af3_all_atom.config.base_config import (
+from openfold3.projects.of3_all_atom.config.base_config import (
     model_selection_metric_weights_config,
     project_config,
 )
-from openfold3.projects.af3_all_atom.config.dataset_config_builder import (
+from openfold3.projects.of3_all_atom.config.dataset_config_builder import (
     AF3DatasetConfigBuilder,
 )
-from openfold3.projects.af3_all_atom.constants import (
+from openfold3.projects.of3_all_atom.constants import (
     CORRELATION_METRICS,
-    METRICS,
+    TRAIN_LOGGED_METRICS,
     TRAIN_LOSSES,
     VAL_LOGGED_METRICS,
     VAL_LOSSES,
 )
-from openfold3.projects.af3_all_atom.model import AlphaFold3
+from openfold3.projects.of3_all_atom.model import OpenFold3
 from openfold3.projects.registry import register_project
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
@@ -53,16 +53,16 @@ REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_conf
 
 
 @register_project(
-    "af3_all_atom", AF3DatasetConfigBuilder, project_config, REFERENCE_CONFIG_PATH
+    "of3_all_atom", AF3DatasetConfigBuilder, project_config, REFERENCE_CONFIG_PATH
 )
-class AlphaFold3AllAtom(ModelRunner):
+class OpenFold3AllAtom(ModelRunner):
     def __init__(self, model_config, _compile=True):
-        super().__init__(model_class=AlphaFold3, config=model_config, _compile=_compile)
+        super().__init__(model_class=OpenFold3, config=model_config, _compile=_compile)
 
         self.loss = (
-            torch.compile(AlphaFold3Loss(config=model_config.architecture.loss_module))
+            torch.compile(OpenFold3Loss(config=model_config.architecture.loss_module))
             if _compile
-            else AlphaFold3Loss(config=model_config.architecture.loss_module)
+            else OpenFold3Loss(config=model_config.architecture.loss_module)
         )
 
         self.model_selection_weights = model_selection_metric_weights_config[
@@ -87,7 +87,8 @@ class AlphaFold3AllAtom(ModelRunner):
         )
 
         train_metrics = {
-            metric_name: MeanMetric(nan_strategy="warn") for metric_name in METRICS
+            metric_name: MeanMetric(nan_strategy="warn")
+            for metric_name in TRAIN_LOGGED_METRICS
         }
 
         self.train_metrics = MetricCollection(train_metrics, prefix="train/")
@@ -107,7 +108,7 @@ class AlphaFold3AllAtom(ModelRunner):
         }
         val_metrics.update(
             {
-                metric_name: ZeroSafePearsonCorrCoef(num_outputs=1)
+                metric_name: PearsonCorrCoef(num_outputs=1)
                 for metric_name in CORRELATION_METRICS
             }
         )
@@ -172,6 +173,7 @@ class AlphaFold3AllAtom(ModelRunner):
                 return get_metrics(
                     batch,
                     outputs,
+                    compute_lig_diffusion_metrics=True,
                     compute_extra_val_metrics=False,
                 )
 
@@ -199,6 +201,7 @@ class AlphaFold3AllAtom(ModelRunner):
                 )
 
             metrics = compute_valid_model_selection_metrics(
+                confidence_config=self.config.confidence,
                 outputs=outputs,
                 metrics=metrics_per_sample,
             )
@@ -455,17 +458,19 @@ class AlphaFold3AllAtom(ModelRunner):
         self.model.load_state_dict(self.cached_weights)
         self.cached_weights = None
 
-    def configure_optimizers(
-        self,
-        learning_rate: float = 1.8e-3,
-    ) -> dict:
-        # Ignored as long as a DeepSpeed optimizer is configured
+        # Temp fix for val dataloader worker seg fault issues
+        # TODO: Figure out why this is not being cleaned up properly
+        gc.collect()
+        torch.cuda.empty_cache()
+        self.trainer.strategy.barrier()
+
+    def configure_optimizers(self) -> dict:
         optimizer_config = self.config.settings.optimizer
 
         if deepspeed_is_installed and optimizer_config.use_deepspeed_adam:
             optimizer = DeepSpeedCPUAdam(
                 self.parameters(),
-                lr=learning_rate,
+                lr=optimizer_config.learning_rate,
                 betas=(optimizer_config.beta1, optimizer_config.beta2),
                 eps=optimizer_config.eps,
                 adamw_mode=False,
@@ -473,7 +478,7 @@ class AlphaFold3AllAtom(ModelRunner):
         else:
             optimizer = torch.optim.Adam(
                 self.model.parameters(),
-                lr=learning_rate,
+                lr=optimizer_config.learning_rate,
                 betas=(optimizer_config.beta1, optimizer_config.beta2),
                 eps=optimizer_config.eps,
             )
@@ -481,10 +486,17 @@ class AlphaFold3AllAtom(ModelRunner):
         if self.last_lr_step != -1:
             for group in optimizer.param_groups:
                 if "initial_lr" not in group:
-                    group["initial_lr"] = learning_rate
+                    group["initial_lr"] = optimizer_config.learning_rate
 
+        lr_sched_config = self.config.settings.lr_scheduler
         lr_scheduler = AlphaFoldLRScheduler(
-            optimizer, last_epoch=self.last_lr_step, max_lr=learning_rate
+            optimizer,
+            last_epoch=self.last_lr_step,
+            base_lr=lr_sched_config.base_lr,
+            max_lr=optimizer_config.learning_rate,
+            warmup_no_steps=lr_sched_config.warmup_no_steps,
+            start_decay_after_n_steps=lr_sched_config.start_decay_after_n_steps,
+            decay_factor=lr_sched_config.decay_factor,
         )
 
         return {
