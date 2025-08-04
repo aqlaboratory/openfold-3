@@ -1,0 +1,38 @@
+name: Check Cache and Disk Space
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  cleanup-gh-disk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check overall disk usage
+        run: |
+          echo "Disk usage before cleanup:"
+          df -h /
+      
+      - name: Clean up GH disk
+        run: |
+           sudo rm -rf /usr/local/lib/android /usr/share/dotnet
+           sudo rm -rf /usr/local/share/powershell 
+           rm -rf ~/.rustup ~/.cargo
+           rm -rf ~/.dotnet
+           rm -rf /usr/share/man /usr/share/doc /usr/share/info
+           sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+           sudo rm -rf /usr/lib/jvm
+           sudo apt-get clean
+           sudo rm -rf /var/lib/apt/lists/*
+           df -h
+      
+      - name: Delete runner externals 
+        run: |
+          sudo rm -rf /home/runner/actions-runner/cached/externals/node20* \
+                      /home/runner/actions-runner/cached/bin
+
+      - name: Check space
+        run: |
+          df -h /
+          df -i /
+          du -sh /home/runner/*

@@ -1,0 +1,24 @@
+{
+	"queries": {
+		"hemoglobin": {
+			"chains": [
+				{
+					"molecule_type": "protein",
+					"chain_ids": [
+						"A",
+						"C"
+					],
+					"sequence": "VLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHFDLSHGSAQVKGHGKKVADALTNAVAHVDDMPNALSALSDLHAHKLRVDPVNFKLLSHCLLVTLAAHLPAEFTPAVHASLDKFLASVSTVLTSKYR"
+				},
+				{
+					"molecule_type": "protein",
+					"chain_ids": [
+						"B",
+						"D"
+					],
+					"sequence": "VHLTPEEKSAVTALWGKVNVDEVGGEALGRLLVVYPWTQRFFESFGDLSTPDAVMGNPKVKAHGKKVLGAFSDGLAHLDNLKGTFATLSELHCDKLHVDPENFRLLGNVLVCVLAHHFGKEFTPPVQAAYQKVVAGVANALAHKYH"
+				}
+			]
+		}
+	}
+}

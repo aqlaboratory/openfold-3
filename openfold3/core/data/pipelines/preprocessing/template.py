@@ -100,7 +100,7 @@ def create_seq_cache_for_template(
         return
 
 
-class _AF3TemplateSequenceCacheConstructor:
+class _OF3TemplateSequenceCacheConstructor:
     def __init__(
         self,
         template_structures_directory,
@@ -144,7 +144,7 @@ class _AF3TemplateSequenceCacheConstructor:
             )
 
 
-def create_template_seq_cache_af3(
+def create_template_seq_cache_of3(
     template_structures_directory: Path,
     template_cache_directory: Path,
     template_file_format: str,
@@ -185,7 +185,7 @@ def create_template_seq_cache_af3(
         f.stem
         for f in list(template_structures_directory.glob(f"*.{template_file_format}"))
     ]
-    wrapped_template_seq_cache_constructor = _AF3TemplateSequenceCacheConstructor(
+    wrapped_template_seq_cache_constructor = _OF3TemplateSequenceCacheConstructor(
         template_structures_directory,
         template_cache_directory,
         template_file_format,
@@ -512,7 +512,7 @@ def create_template_cache_for_query(
         template_process_logger.info(f"0 valid templates found for {query.name}.")
 
 
-class _AF3TemplateCacheConstructor:
+class _OF3TemplateCacheConstructor:
     def __init__(
         self,
         template_alignment_directory: Path,
@@ -634,7 +634,7 @@ class _AF3TemplateCacheConstructor:
             )
 
 
-def create_template_cache_af3(
+def create_template_cache_of3(
     dataset_cache_file: Path,
     template_alignment_directory: Path,
     template_alignment_filename: str,
@@ -711,7 +711,7 @@ def create_template_cache_af3(
         dataset_cache, True, single_moltype
     ).entries
     # Create template cache for each query chain
-    wrapped_template_cache_constructor = _AF3TemplateCacheConstructor(
+    wrapped_template_cache_constructor = _OF3TemplateCacheConstructor(
         template_alignment_directory,
         template_alignment_filename,
         template_structures_directory,
@@ -891,7 +891,7 @@ def filter_template_cache_for_query(
         )
 
 
-class _AF3TemplateCacheFilter:
+class _OF3TemplateCacheFilter:
     def __init__(
         self,
         template_cache_directory: Path,
@@ -989,7 +989,7 @@ class _AF3TemplateCacheFilter:
                 }
 
 
-def filter_template_cache_af3(
+def filter_template_cache_of3(
     dataset_cache_file: Path,
     updated_dataset_cache_file: Path,
     template_cache_directory: Path,
@@ -1048,7 +1048,7 @@ def filter_template_cache_af3(
     data_iterator_len = len(template_query_iterator)
 
     # Filter template cache for each query chain
-    wrapped_template_cache_filter = _AF3TemplateCacheFilter(
+    wrapped_template_cache_filter = _OF3TemplateCacheFilter(
         template_cache_directory,
         max_templates_filter,
         is_core_train,
@@ -1213,7 +1213,7 @@ def preprocess_template_structure_for_template(
         f.write(line)
 
 
-class _AF3TemplateStructurePreprocessor:
+class _OF3TemplateStructurePreprocessor:
     def __init__(
         self,
         template_structures_directory: Path,
@@ -1384,7 +1384,7 @@ def preprocess_template_structures(
     ccd = pdbx.CIFFile.read(ccd_file)
 
     # Preprocess template structures
-    wrapped_template_structure_preprocessor = _AF3TemplateStructurePreprocessor(
+    wrapped_template_structure_preprocessor = _OF3TemplateStructurePreprocessor(
         template_structures_directory,
         template_file_format,
         template_structure_array_directory,

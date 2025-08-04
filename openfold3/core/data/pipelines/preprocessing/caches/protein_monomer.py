@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 # TODO: implement a more general way to interact with both local and S3 data
-def create_protein_monomer_dataset_cache_af3(
+def create_protein_monomer_dataset_cache_of3(
     data_directory: Path,
     protein_reference_molecule_data_file: Path,
     dataset_name: str,

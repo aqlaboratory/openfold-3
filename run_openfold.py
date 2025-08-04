@@ -1,29 +1,38 @@
 # args TODO add license
+r"""
 
-import json
+# training
+python run_openfold.py train --runner_yaml=examples/training_new.yml \
+    --seed=42 \
+    --data_seed=1234
+
+# inference
+python run_openfold.py predict --runner_yaml=examples/inference_new.yml
+
+"""
+
 import logging
-import os
-import sys
 from pathlib import Path
 
 import click
-import pytorch_lightning as pl
 import torch
-import wandb
-from ml_collections import ConfigDict
-from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
-from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
-from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.plugins.environments import MPIEnvironment
-from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
 from openfold3.core.config import config_utils
-from openfold3.core.data.framework.data_module import DataModule
-from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
-from openfold3.core.utils.script_utils import set_ulimits
-from openfold3.projects import registry
-from openfold3.projects.of3_all_atom.config.runner_file_checks import (
-    _check_data_module_config,
+from openfold3.core.data.tools.colabfold_msa_server import preprocess_colabfold_msas
+from openfold3.entry_points.experiment_runner import (
+    InferenceExperimentRunner,
+    TrainingExperimentRunner,
+)
+from openfold3.entry_points.validator import (
+    InferenceExperimentConfig,
+    TrainingExperimentConfig,
+    generate_seeds,
+)
+from openfold3.projects.of3_all_atom.config.dataset_config_components import (
+    colabfold_msa_settings,
+)
+from openfold3.projects.of3_all_atom.config.inference_query_format import (
+    InferenceQuerySet,
 )
 
 torch_versions = torch.__version__.split(".")
@@ -36,45 +45,18 @@ if torch_major_version > 1 or (torch_major_version == 1 and torch_minor_version 
 logger = logging.getLogger(__name__)
 
 
-def _configure_wandb_logger(
-    wandb_args: ConfigDict, is_mpi_rank_zero: bool, output_dir: str
-) -> WandbLogger:
-    """Configures wandb and wandb logger."""
-
-    wandb_id = wandb_args.id if hasattr(wandb_args, "id") else None
-
-    wandb_init_dict = dict(
-        project=wandb_args.project,
-        entity=wandb_args.entity,
-        group=wandb_args.group,
-        name=wandb_args.experiment_name,
-        dir=output_dir,
-        resume="allow",
-        reinit=True,
-        id=wandb_id,
-    )
-
-    # Only initialize wandb for rank zero worker (MPI env), or else
-    # each worker will generate a different id
-    if is_mpi_rank_zero:
-        wandb.run = wandb.init(**wandb_init_dict)
-
-    run_offline = wandb_args.get("offline", False)
-    wandb_logger = WandbLogger(
-        **wandb_init_dict,
-        save_dir=output_dir,
-        log_model=False,
-        offline=run_offline,
-    )
-    return wandb_logger
+@click.group()
+def cli():
+    pass
 
 
-@click.command()
+@cli.command()
 @click.option(
     "--runner_yaml",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     required=True,
-    help="Yaml that specifies model and dataset parameters, see examples/runner.yml",
+    help="Yaml that specifies model and dataset parameters,"
+    " see examples/training_new.yml",
 )
 @click.option("--seed", type=int, help="Initial seed for all processes")
 @click.option(
@@ -82,188 +64,135 @@ def _configure_wandb_logger(
     type=int,
     help="Initial seed for data pipeline. Defaults to seed if not specified.",
 )
-def main(runner_yaml: Path, seed: int, data_seed: int):
-    runner_args = ConfigDict(config_utils.load_yaml(runner_yaml))
-
-    # Set resource limits
-    set_ulimits()
-
-    # If specified, add seeds to runner dict to save to wandb
-    if seed is not None:
-        runner_args["seed"] = seed
-
-    if data_seed is not None:
-        runner_args["data_seed"] = data_seed
-
-    if runner_args.get("log_level"):
-        log_level = runner_args.get("log_level").upper()
-
-        output_dir = Path(runner_args.get("output_dir"))
-        output_dir.mkdir(exist_ok=True)
-        log_filepath = output_dir / "console_logs.log"
-        logging.basicConfig(filename=log_filepath, level=log_level, filemode="a")
-
-    world_size = runner_args.num_gpus * runner_args.pl_trainer.num_nodes
-    is_distributed = world_size > 1
-
-    # Set seed
-    seed = runner_args.get("seed")
-    if seed is None and is_distributed:
-        raise ValueError("For distributed training, seed must be specified")
-
-    logging.info(f"Running with seed: {seed}")
-    pl.seed_everything(seed, workers=True)
-
-    project_entry = registry.get_project_entry(runner_args.project_type)
-
-    project_config = registry.make_config_with_presets(
-        project_entry, runner_args.presets
-    )
-    if runner_args.get("config_update"):
-        project_config.update(runner_args.config_update)
-
-    ckpt_path = runner_args.get("restart_checkpoint_path")
-
-    model_config = project_config.model
-    lightning_module = project_entry.model_runner(
-        model_config, _compile=runner_args.compile
+def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = None):
+    """Perform a training experiment with a preprepared dataset cache."""
+    expt_config = TrainingExperimentConfig.model_validate(
+        config_utils.load_yaml(runner_yaml)
     )
 
-    dataset_config_builder = project_entry.dataset_config_builder
-    data_module_config = registry.make_dataset_module_config(
-        runner_args,
-        dataset_config_builder,
-        project_config,
+    # overwrite seed defaults if provided:
+    expt_config.experiment_settings.seed = (
+        seed if seed else expt_config.experiment_settings.seed
     )
-    _check_data_module_config(data_module_config)
-    lightning_data_module = DataModule(data_module_config, world_size=world_size)
-
-    loggers = []
-
-    is_mpi = runner_args.get("mpi_plugin")
-    cluster_environment = MPIEnvironment() if is_mpi else None
-
-    # Select optimization strategy
-    if runner_args.get("deepspeed_config_path"):
-        strategy = DeepSpeedStrategy(
-            config=runner_args.deepspeed_config_path,
-            cluster_environment=cluster_environment,
-            precision_plugin=OF3DeepSpeedPrecision(
-                precision=runner_args.pl_trainer.precision
-            ),
-        )
-        if not model_config.settings.optimizer.use_deepspeed_adam:
-            strategy.config["zero_force_ds_cpu_optimizer"] = False
-    elif is_distributed:
-        strategy = DDPStrategy(
-            find_unused_parameters=False, cluster_environment=cluster_environment
-        )
-    else:
-        strategy = None
-
-    is_mpi_rank_zero = is_mpi and cluster_environment.global_rank() == 0
-    wandb_logger = None
-    if runner_args.get("wandb") and (not is_mpi or is_mpi_rank_zero):
-        wandb_logger = _configure_wandb_logger(
-            runner_args.wandb, is_mpi_rank_zero, runner_args.output_dir
-        )
-        loggers.append(wandb_logger)
-
-    # Set up trainer arguments and callbacks
-    callbacks = []
-
-    if runner_args.get("checkpoint"):
-        callbacks.append(ModelCheckpoint(**runner_args.checkpoint.to_dict()))
-
-    if runner_args.get("log_lr") and wandb_logger is not None:
-        callbacks.append(LearningRateMonitor(logging_interval="step"))
-
-    trainer_args = runner_args.pl_trainer.to_dict()
-    trainer_args.update(
-        {
-            "default_root_dir": runner_args.output_dir,
-            "strategy": strategy,
-            "callbacks": callbacks,
-            "logger": loggers,
-            "devices": runner_args.num_gpus,
-            # If DeepSpeed is enabled, these values will be passed to the DS config
-            "gradient_clip_val": model_config.settings.gradient_clipping,
-            "gradient_clip_algorithm": "norm",
-        }
+    expt_config.data_module_args.data_seed = (
+        data_seed if data_seed else expt_config.data_module_args.data_seed
     )
 
-    trainer = pl.Trainer(**trainer_args)
+    expt_runner = TrainingExperimentRunner(expt_config)
+    expt_runner.setup()
+    expt_runner.run()
 
-    # Determine if running on rank zero process
-    if wandb_logger is not None and trainer.global_rank == 0:
-        wandb_experiment = wandb_logger.experiment
 
-        # Save pip environment to wandb
-        freeze_path = os.path.join(wandb_experiment.dir, "package_versions.txt")
-        os.system(f"{sys.executable} -m pip freeze > {freeze_path}")
-        wandb_experiment.save(f"{freeze_path}")
+@cli.command()
+@click.option(
+    "--query_json",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="Json containing the queries for prediction.",
+)
+@click.option(
+    "--inference_ckpt_path",
+    type=click.Path(exists=True, file_okay=True, dir_okay=True, path_type=Path),
+    required=True,
+    help="Path for model checkpoint to be used for inference",
+)
+@click.option(
+    "--num_diffusion_samples",
+    type=int,
+    default=None,
+    required=False,
+    help="Number of diffusion samples to generate for each query.",
+)
+@click.option(
+    "--num_model_seeds",
+    type=int,
+    default=None,
+    required=False,
+    help="Number of model seeds to use for each query.",
+)
+@click.option(
+    "--runner_yaml",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    required=False,
+    help="Yaml that specifies model and dataset parameters, see examples/runner.yml",
+)
+@click.option(
+    "--use_msa_server",
+    type=bool,
+    default=True,
+    help="Use ColabFold MSA server to perform alignments.",
+)
+@click.option(
+    "--output_dir",
+    type=click.Path(exists=False, file_okay=True, dir_okay=True, path_type=Path),
+    required=False,
+    help="Output directory for writing results",
+)
+def predict(
+    query_json: Path,
+    inference_ckpt_path: Path,
+    num_diffusion_samples: int | None = None,
+    num_model_seeds: int | None = None,
+    runner_yaml: Path | None = None,
+    use_msa_server: bool = True,
+    output_dir: Path | None = None,
+):
+    """Perform inference on a set of queries defined in the query_json."""
+    runner_args = config_utils.load_yaml(runner_yaml) if runner_yaml else dict()
 
-        runner_yaml_path = os.path.join(wandb_experiment.dir, "runner.json")
-        with open(runner_yaml_path, "w") as fp:
-            json.dump(runner_args.to_dict(), fp, indent=4)
-        wandb_experiment.save(runner_yaml_path)
+    expt_config = InferenceExperimentConfig(
+        inference_ckpt_path=inference_ckpt_path, **runner_args
+    )
 
-        # Save data module config
-        data_config_path = os.path.join(wandb_experiment.dir, "data_config.json")
-        with open(data_config_path, "w") as fp:
-            json.dump(data_module_config.to_dict(), fp, indent=4)
-        wandb_experiment.save(data_config_path)
+    # Overwrite number of diffusion samples in model update section
+    if num_diffusion_samples:
+        print(f"Set diffusion samples to {num_diffusion_samples}")
+        expt_config.model_update.custom[
+            "architecture.shared.diffusion.no_full_rollout_samples"
+        ] = num_diffusion_samples
 
-        model_config_path = os.path.join(wandb_experiment.dir, "model_config.json")
-        with open(model_config_path, "w") as fp:
-            json.dump(model_config.to_dict(), fp, indent=4)
-        wandb_experiment.save(model_config_path)
+    expt_runner = InferenceExperimentRunner(expt_config)
+    if output_dir:
+        output_dir.mkdir(exist_ok=True, parents=True)
+        expt_runner.output_dir = output_dir
 
-        if runner_args.get("deepspeed_config_path"):
-            wandb_experiment.save(runner_args.deepspeed_config_path)
+    if num_model_seeds:
+        start_seed = 42
+        expt_runner.seeds = generate_seeds(start_seed, num_model_seeds)
 
-    # Run process appropriate process
-    logging.info(f"Running {runner_args.mode} mode.")
-    # Training + validation / profiling
-    if (runner_args.mode == "train") | (runner_args.mode == "profile"):
-        if runner_args.mode == "profile":  # TODO Implement profiling
-            raise NotImplementedError("Profiling mode not yet implemented.")
-        else:
-            trainer.fit(
-                model=lightning_module,
-                datamodule=lightning_data_module,
-                ckpt_path=ckpt_path,
-            )
+    # Load inference query set
+    query_set = InferenceQuerySet.from_json(query_json)
 
-    # Validation
-    elif runner_args.mode == "eval":
-        trainer.validate(
-            model=lightning_module,
-            datamodule=lightning_data_module,
-            ckpt_path=ckpt_path,
+    # Perform MSA computation if selected
+    #  update query_set with MSA paths
+    if use_msa_server:
+        query_set = preprocess_colabfold_msas(
+            inference_query_set=query_set,
+            output_directory=expt_config.experiment_settings.output_dir,
+            server_settings=expt_config.msa_server_settings,
         )
 
-    # Testing
-    elif runner_args.mode == "test":
-        trainer.test(
-            model=lightning_module,
-            datamodule=lightning_data_module,
-            ckpt_path=ckpt_path,
+        # Update the msa dataset config settings
+        updated_dataset_config_kwargs = expt_config.dataset_config_kwargs.model_copy(
+            update={"msa": colabfold_msa_settings}
+        )
+        expt_config = expt_config.model_copy(
+            update={"dataset_config_kwargs": updated_dataset_config_kwargs}
         )
 
-    # Prediction == inference
-    elif runner_args.mode == "predict":
-        trainer.predict(
-            model=lightning_module,
-            datamodule=lightning_data_module,
-            ckpt_path=ckpt_path,
-        )
-    else:
-        raise ValueError(
-            f"""Invalid mode argument: {runner_args.mode}. Choose one of "
-            "'train', 'test', 'predict', 'profile'."""
-        )
+    # Run the forward pass
+    expt_runner.setup()
+    expt_runner.run(query_set)
+
+    # TODO add post-process relaxation with openmm
+
+
+@cli.command()
+def align_msa_server(inference_query_set):
+    raise NotImplementedError("Alignment is not implemented yet.")
+    # run_msa_server(inference_query_set)
+    # inference_query_set.dump()
 
 
 if __name__ == "__main__":
-    main()
+    cli()

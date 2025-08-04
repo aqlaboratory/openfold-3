@@ -1,0 +1,11 @@
+name: of3-aln-env
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - snakemake==7.32.4
+  - biopython
+  - hmmer==3.3.2
+  - hhsuite==3.3.0
+  - boto3

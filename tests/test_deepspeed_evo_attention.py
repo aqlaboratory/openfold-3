@@ -104,7 +104,7 @@ class TestDeepSpeedKernel(unittest.TestCase):
         no_heads = 4
         eps = consts.eps
 
-        q, kv, mask, biases = random_attention_inputs(
+        q, kv, _, biases = random_attention_inputs(
             batch_size=batch_size,
             n_seq=n_seq,
             n=n_res,
@@ -237,11 +237,13 @@ class TestDeepSpeedKernel(unittest.TestCase):
             out_repro_msa_ds = F.layer_norm(out_repro_msa_ds, c_m_shape).cpu()
             out_repro_pair_ds = F.layer_norm(out_repro_pair_ds, c_z_shape).cpu()
 
-            err = torch.mean(torch.abs(out_repro_msa - out_repro_msa_ds))
-            self.assertTrue(err < eps, f"MSA Error: {err}")
+            compare_utils.assert_mean_abs_diff_small(
+                out_repro_msa, out_repro_msa_ds, eps
+            )
 
-            err = torch.mean(torch.abs(out_repro_pair - out_repro_pair_ds))
-            self.assertTrue(err < eps, f"Pair Error {err}")
+            compare_utils.assert_mean_abs_diff_small(
+                out_repro_pair, out_repro_pair_ds, eps
+            )
 
     def test_compare_evoformer_bf16(self):
         """Run evoformer comparison test with BF16 precision."""
@@ -344,7 +346,6 @@ class TestDeepSpeedKernel(unittest.TestCase):
         batch["template_aatype"] = batch["template_aatype"].long()
         batch["extra_msa"] = batch["extra_msa"].long()
         batch["residx_atom37_to_atom14"] = batch["residx_atom37_to_atom14"].long()
-        # print(batch["target_feat"].shape)
         batch["target_feat"] = torch.nn.functional.one_hot(
             batch["aatype"], consts.msa_logits - 1
         ).to(torch.float32)
@@ -356,7 +357,7 @@ class TestDeepSpeedKernel(unittest.TestCase):
             return t.permute(*range(len(t.shape))[1:], 0)
 
         batch = tensor_tree_map(move_dim, batch)
-        with torch.no_grad(), torch.amp.autocast("cuda", dtype=torch.bfloat16):
+        with torch.no_grad(), torch.amp.autocast("cuda", dtype=torch.float32):
             model = compare_utils.get_global_pretrained_openfold()
             model.globals.use_deepspeed_evo_attention = False
             out_repro = model(batch)

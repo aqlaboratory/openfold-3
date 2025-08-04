@@ -26,7 +26,7 @@ from openfold3.core.model.latent.template_module import (
 from openfold3.core.model.layers.template_pointwise_attention import (
     TemplatePointwiseAttention,
 )
-from openfold3.projects import registry
+from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from tests.config import consts
 from tests.data_utils import random_asym_ids, random_template_feats
 
@@ -216,9 +216,8 @@ class TestTemplateEmbedderAllAtom(unittest.TestCase):
         n_templ = 3
         n_token = 10
 
-        of3_proj_entry = registry.get_project_entry("of3_all_atom")
-        of3_proj_config = of3_proj_entry.get_config_with_preset()
-        of3_config = of3_proj_config.model
+        of3_proj_entry = OF3ProjectEntry()
+        of3_config = of3_proj_entry.get_model_config_with_presets()
 
         c_in = of3_config.architecture.template.template_pair_embedder.c_in
 

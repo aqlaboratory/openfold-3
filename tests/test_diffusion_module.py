@@ -22,7 +22,7 @@ from openfold3.core.model.structure.diffusion_module import (
     create_noise_schedule,
 )
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.projects import registry
+from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from tests.config import consts
 from tests.data_utils import random_of3_features
 
@@ -32,9 +32,8 @@ class TestDiffusionModule(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
-        proj_entry = registry.get_project_entry("of3_all_atom")
-        proj_config = proj_entry.get_config_with_preset()
-        config = proj_config.model
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
 
         c_s_input = config.architecture.shared.c_s_input
         c_s = config.architecture.shared.c_s
@@ -75,9 +74,8 @@ class TestDiffusionModule(unittest.TestCase):
         n_token = consts.n_res
         n_sample = 3
 
-        proj_entry = registry.get_project_entry("of3_all_atom")
-        proj_config = proj_entry.get_config_with_preset()
-        config = proj_config.model
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
 
         c_s_input = config.architecture.shared.c_s_input
         c_s = config.architecture.shared.c_s
@@ -120,15 +118,12 @@ class TestSampleDiffusion(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
-        proj_entry = registry.get_project_entry("of3_all_atom")
-        proj_config = proj_entry.get_config_with_preset()
-        config = proj_config.model
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
 
         c_s_input = config.architecture.shared.c_s_input
         c_s = config.architecture.shared.c_s
         c_z = config.architecture.shared.c_z
-        config.architecture.shared.no_mini_rollout_steps = 2
-        config.architecture.shared.no_full_rollout_steps = 2
         no_rollout_samples = 5
 
         sample_config = config.architecture.sample_diffusion
@@ -151,9 +146,11 @@ class TestSampleDiffusion(unittest.TestCase):
 
         with torch.no_grad():
             noise_sched_config = config.architecture.noise_schedule
-            noise_sched_config.no_rollout_steps = 2
             noise_schedule = create_noise_schedule(
-                **noise_sched_config, dtype=si_input.dtype, device=si_input.device
+                no_rollout_steps=2,
+                **noise_sched_config,
+                dtype=si_input.dtype,
+                device=si_input.device,
             )
 
             xl = sd(

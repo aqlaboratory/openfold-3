@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 # TODO: reorganize metadata cache creation pipelines into a caches module
 # TODO: Make docstring more complete for new args
-def filter_structure_metadata_af3(
+def filter_structure_metadata_of3(
     structure_cache: PreprocessingStructureDataCache,
     max_release_date: datetime.date | str | None = None,
     min_release_date: datetime.date | str | None = None,
@@ -101,7 +101,7 @@ def filter_structure_metadata_af3(
 
 
 # TODO: Add docstring!
-def create_pdb_training_dataset_cache_af3(
+def create_pdb_training_dataset_cache_of3(
     metadata_cache_path: Path,
     preprocessed_dir: Path,
     alignment_representatives_fasta: Path,
@@ -163,7 +163,7 @@ def create_pdb_training_dataset_cache_af3(
         pdb_id_to_release_date[pdb_id] = metadata.release_date
 
     # Subset the structures in the preprocessed metadata to only the desired ones
-    metadata_cache.structure_data = filter_structure_metadata_af3(
+    metadata_cache.structure_data = filter_structure_metadata_of3(
         metadata_cache.structure_data,
         max_release_date=max_release_date,
         max_resolution=max_resolution,

@@ -1,0 +1,26 @@
+train:
+  settings:
+    blocks_per_ckpt: 1
+    ckpt_intermediate_steps: true
+  architecture:
+    loss_module:
+      diffusion:
+        chunk_size: 4
+
+predict:
+  settings:
+    diffusion_training_enabled: false
+    memory:
+      eval:
+        # This chunk size is the minimum value, it will be auto-tuned by default
+        chunk_size: 4
+
+low_mem:
+  settings:
+    memory:
+      eval:
+        chunk_size: 4
+        per_sample_token_cutoff: 0
+        per_sample_atom_cutoff: 0 
+        offload_inference:
+          enabled: true

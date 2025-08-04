@@ -226,6 +226,7 @@ class TestEvoformerStack(unittest.TestCase):
 
 
 @compare_utils.skip_unless_cuda_available()
+@compare_utils.skip_unless_cuda_kernels_installed()
 class TestExtraMSAStack(unittest.TestCase):
     def test_shape(self):
         batch_size = 2

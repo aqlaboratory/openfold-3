@@ -42,7 +42,7 @@ def main(preprocessed_dir: Path, out_file: Path, uniquify: bool = False):
     >PDB_ID, renum_asym=CHAIN_ID, auth_asym=AUTH_ASYM_ID, label_asym=LABEL_ASYM_ID, mol_type=MOL_TYPE, date=RELEASE_DATE
     sequence
 
-    PREPROCESSED_DIR: Path to the directory created by preprocess_pdb_af3.py
+    PREPROCESSED_DIR: Path to the directory created by preprocess_pdb_of3.py
     OUT_FILE: Path to the output consolidated FASTA file.
     """  # noqa: E501
     metadata_cache_file = preprocessed_dir / "metadata.json"
