@@ -46,21 +46,40 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_weighted import (
 @click.option(
     "--max-release-date",
     type=str,
-    required=True,
-    default="2021-09-30",
-    help="Maximum release date for included structures, formatted as 'YYYY-MM-DD'.",
+    default=None,
+    help=(
+        "Maximum release date for included structures, formatted as 'YYYY-MM-DD'. If "
+        "not provided, no filtering by release date is performed."
+    ),
+)
+@click.option(
+    "--max-conformer-release-date",
+    type=str,
+    default=None,
+    help=(
+        "Maximum release date for the model PDB-ID associated with a conformer, in the "
+        "rare case that conformer coordinates have to be inferred from the CCD model "
+        "coordinates. Formatted as 'YYYY-MM-DD'. If not provided, defaults to "
+        "max_release_date."
+    ),
 )
 @click.option(
     "--max-resolution",
     type=float,
-    default=9.0,
-    help="Maximum resolution for structures in the dataset in Å.",
+    default=None,
+    help=(
+        "Maximum resolution for structures in the dataset in Å. If not provided, no "
+        "filtering by resolution is performed."
+    ),
 )
 @click.option(
     "--max-polymer-chains",
     type=int,
-    default=300,
-    help="Maximum number of polymer chains for included structures.",
+    default=None,
+    help=(
+        "Maximum number of polymer chains for included structures. If not provided, no "
+        "filtering by polymer chain count is performed."
+    ),
 )
 @click.option(
     "--allow-missing-alignment",
@@ -98,9 +117,10 @@ def main(
     alignment_representatives_fasta: Path,
     output_path: Path,
     dataset_name: str,
-    max_release_date: str = "2021-09-30",
-    max_resolution: float = 9.0,
-    max_polymer_chains: int = 300,
+    max_release_date: str | None = None,
+    max_conformer_release_date: str | None = None,
+    max_resolution: float | None = None,
+    max_polymer_chains: int | None = None,
     allow_missing_alignment: bool = False,
     missing_alignment_log: Path | None = None,
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
@@ -132,7 +152,17 @@ def main(
                 derived from CCD model coordinates coming from a PDB-ID that was
                 released outside of the time cutoff (see AF3 SI 2.8)
     """
-    max_release_date = datetime.strptime(max_release_date, "%Y-%m-%d").date()
+    if max_release_date is not None:
+        parsed_max_release_date = datetime.strptime(max_release_date, "%Y-%m-%d").date()
+    else:
+        parsed_max_release_date = None
+
+    if max_conformer_release_date is not None:
+        parsed_max_conformer_release_date = datetime.strptime(
+            max_conformer_release_date, "%Y-%m-%d"
+        ).date()
+    else:
+        parsed_max_conformer_release_date = parsed_max_release_date
 
     # Set up logger
     logger = logging.getLogger("openfold3")
@@ -144,13 +174,23 @@ def main(
         file_handler = logging.FileHandler(log_file, mode="w")
         logger.addHandler(file_handler)
 
+    filter_dict = {
+        "max_release_date": max_release_date,
+        "max_resolution": max_resolution,
+        "max_polymer_chains": max_polymer_chains,
+    }
+    for filter_name, filter_value in filter_dict.items():
+        if filter_value is None:
+            logger.warning(f"Skipping filter for {filter_name} as it is None.")
+
     create_pdb_training_dataset_cache_of3(
         metadata_cache_path=metadata_cache_path,
         preprocessed_dir=preprocessed_dir,
         alignment_representatives_fasta=alignment_representatives_fasta,
         output_path=output_path,
         dataset_name=dataset_name,
-        max_release_date=max_release_date,
+        max_release_date=parsed_max_release_date,
+        max_conformer_release_date=parsed_max_conformer_release_date,
         max_resolution=max_resolution,
         max_polymer_chains=max_polymer_chains,
         filter_missing_alignment=not allow_missing_alignment,
