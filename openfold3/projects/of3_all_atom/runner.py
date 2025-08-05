@@ -4,6 +4,7 @@ import itertools
 import logging
 from pathlib import Path
 
+import deepspeed
 import torch
 from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
 
@@ -26,6 +27,7 @@ from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.atomize_utils import get_token_frame_atoms
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.core.utils.tensor_utils import tensor_tree_map
+from openfold3.core.utils.timing import PerformanceTimer
 from openfold3.projects.of3_all_atom.config.base_config import (
     model_selection_metric_weights_config,
     project_config,
@@ -404,6 +406,54 @@ class OpenFold3AllAtom(ModelRunner):
                 "Sampled batch indices: "
                 f"{self.trainer.train_dataloader.dataset.indices=}"
             )
+
+    def on_before_optimizer_step(self, *args, **kwargs):
+        """Logs the single-transition layer linear_out gradients.
+
+        These gradients can be associated with instabilities, so we're logging them on
+        every single step (bypassing log_every_n_steps) for more accurate monitoring.
+        """
+        single_transition_grads = {}
+
+        # Only rank zero will actually log the gradients
+        log_grad_metrics = self.trainer.is_global_zero
+
+        # Only log 4 representative blocks to reduce overhead
+        block_idxs = [0, 16, 32, 47]
+
+        # TODO: Set this to log-level INFO and configure per-module log-levels in a more
+        # principled way
+        with PerformanceTimer(
+            "Extra-gradient fetching and calculation",
+            logger=logger,
+            level=logging.WARNING,
+        ):
+            for idx in block_idxs:
+                block = self.model.pairformer_stack.blocks[idx]
+                param = block.single_transition.linear_out.weight
+
+                # Needs to be called on every rank to avoid hanging
+                # https://github.com/deepspeedai/DeepSpeed/issues/7117#issuecomment-2717974187
+                grad = deepspeed.utils.safe_get_full_grad(param)
+
+                assert not grad.requires_grad
+
+                if log_grad_metrics:
+                    tag = (
+                        f"extra_gradients/model.pairformer_stack.blocks.{idx}."
+                        "single_transition.linear_out.weight"
+                    )
+
+                    single_transition_grads[f"{tag}_norm"] = grad.norm().item()
+                    single_transition_grads[f"{tag}_max"] = grad.abs().max().item()
+
+        if log_grad_metrics:
+            with PerformanceTimer(
+                "Extra-gradient logging", logger=logger, level=logging.WARNING
+            ):
+                # NOTE: This out-of-schedule logging might interact a bit weirdly with
+                # the WandB Step, so always plot against trainer/global_step
+                self.logger.log_metrics(single_transition_grads, step=self.global_step)
 
     def _log_epoch_metrics(
         self, metrics: MetricCollection, compute_model_selection: bool = False
