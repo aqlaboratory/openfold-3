@@ -175,9 +175,10 @@ def main(
         logger.addHandler(file_handler)
 
     filter_dict = {
-        "max_release_date": max_release_date,
+        "max_release_date": parsed_max_release_date,
         "max_resolution": max_resolution,
         "max_polymer_chains": max_polymer_chains,
+        "max_conformer_release_date": parsed_max_conformer_release_date,
     }
     for filter_name, filter_value in filter_dict.items():
         if filter_value is None:
