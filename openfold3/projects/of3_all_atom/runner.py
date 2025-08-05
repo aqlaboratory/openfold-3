@@ -2,6 +2,8 @@ import gc
 import importlib
 import itertools
 import logging
+from contextlib import nullcontext
+from functools import partial
 from pathlib import Path
 
 import deepspeed
@@ -421,13 +423,19 @@ class OpenFold3AllAtom(ModelRunner):
         # Only log 4 representative blocks to reduce overhead
         block_idxs = [0, 16, 32, 47]
 
+        # To see if this slows down training, we additionally log runtimes from the
+        # global_zero process
         # TODO: Set this to log-level INFO and configure per-module log-levels in a more
         # principled way
-        with PerformanceTimer(
-            "Extra-gradient fetching and calculation",
-            logger=logger,
-            level=logging.WARNING,
-        ):
+        timing_context = partial(PerformanceTimer, logger=logger, level=logging.WARNING)
+
+        context = (
+            timing_context("Extra-gradient fetching and calculation")
+            if log_grad_metrics
+            else nullcontext()
+        )
+
+        with context:
             for idx in block_idxs:
                 block = self.model.pairformer_stack.blocks[idx]
                 param = block.single_transition.linear_out.weight
@@ -448,9 +456,7 @@ class OpenFold3AllAtom(ModelRunner):
                     single_transition_grads[f"{tag}_max"] = grad.abs().max().item()
 
         if log_grad_metrics:
-            with PerformanceTimer(
-                "Extra-gradient logging", logger=logger, level=logging.WARNING
-            ):
+            with timing_context("Extra-gradient logging"):
                 # NOTE: This out-of-schedule logging might interact a bit weirdly with
                 # the WandB Step, so always plot against trainer/global_step
                 self.logger.log_metrics(single_transition_grads, step=self.global_step)
