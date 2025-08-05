@@ -209,10 +209,9 @@ def create_pdb_training_dataset_cache_of3(
                 json.dump(unmatched_entries, f, indent=4)
         else:
             structure_data = with_log(add_and_filter_alignment_representatives)(
-                dataset_cache.structure_data,
+                structure_cache=dataset_cache.structure_data,
                 query_chain_to_seq=id_to_sequence,
                 alignment_representatives_fasta=alignment_representatives_fasta,
-                preprocessed_dir=preprocessed_dir,
             )
 
         dataset_cache.structure_data = structure_data
