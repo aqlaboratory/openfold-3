@@ -1,4 +1,5 @@
 import random
+import warnings
 from pathlib import Path
 from typing import Any, Literal, Optional
 
@@ -112,7 +113,7 @@ def generate_seeds(start_seed, num_seeds):
 
 
 class InferenceExperimentSettings(ExperimentSettings):
-    """General settings specific for training experiments"""
+    """General settings specific for inference experiments"""
 
     mode: Literal["train", "predict"] = "predict"
     seeds: int | list[int] = [42]
@@ -172,3 +173,19 @@ class InferenceExperimentConfig(ExperimentConfig):
     template_preprocessor_settings: TemplatePreprocessorSettings = (
         TemplatePreprocessorSettings(mode="predict")
     )
+
+    @model_validator(mode="after")
+    def copy_ccd_file_path(cls, model):
+        """Copies ccd_file_path dataset_config_kwargs>template_preprocessor_settings."""
+        if model.dataset_config_kwargs.ccd_file_path is not None:
+            if model.template_preprocessor_settings.ccd_file_path is not None:
+                warnings.warn(
+                    "Overwriting ccd_file_path in template_preprocessor_settings with "
+                    "dataset_config_kwargs.ccd_file_path. We recommend specifying"
+                    "ccd_file_path only in dataset_config_kwargs.",
+                    stacklevel=2,
+                )
+            model.template_preprocessor_settings.ccd_file_path = (
+                model.dataset_config_kwargs.ccd_file_path
+            )
+        return model

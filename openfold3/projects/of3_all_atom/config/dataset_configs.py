@@ -256,6 +256,7 @@ class TrainingDatasetSpec(DatasetSpec):
 class InferenceDatasetConfigKwargs(BaseModel):
     """Class to hold msa and temlpate kwargs for inference pipeline"""
 
+    ccd_file_path: FilePathOrNone = None
     msa: MSASettings = colabfold_msa_settings
     template: TemplateSettings = TemplateSettings()
     template_preprocessor_settings: TemplatePreprocessorSettings | None = None
@@ -266,6 +267,7 @@ class InferenceJobConfig(BaseModel):
 
     query_set: InferenceQuerySet
     seeds: list[int] = [42]
+    ccd_file_path: FilePathOrNone = None
     msa: MSASettings = MSASettings()
     template: TemplateSettings = TemplateSettings()
     template_preprocessor: TemplatePreprocessorSettings | None = None

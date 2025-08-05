@@ -16,7 +16,7 @@ from typing import Literal, NamedTuple
 import numpy as np
 import pandas as pd
 import requests
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from pydantic_core import Url
 from tqdm import tqdm
 
@@ -903,6 +903,13 @@ class MsaComputationSettings(BaseModel):
     save_mappings: bool = False
     msa_output_directory: Path = Path(tempfile.gettempdir()) / "of3_colabfold_msas"
     cleanup_msa_dir: bool = True
+
+    @model_validator(mode="after")
+    def create_dif(self) -> "MsaComputationSettings":
+        """Creates the output directory if it does not exist."""
+        if not self.msa_output_directory.exists():
+            self.msa_output_directory.mkdir(parents=True, exist_ok=True)
+        return self
 
 
 def preprocess_colabfold_msas(

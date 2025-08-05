@@ -95,9 +95,9 @@ class InferenceDataset(Dataset):
         )
 
         # Parse CCD
-        if self.query_set.ccd_file_path is not None:
+        if dataset_config.ccd_file_path is not None:
             logger.debug("Parsing CCD file.")
-            self.ccd = pdbx.CIFFile.read(self.query_set.ccd_file_path)
+            self.ccd = pdbx.CIFFile.read(dataset_config.ccd_file_path)
             logger.debug("Done parsing CCD file.")
         else:
             # TODO: refactor with internal biotite ccd
@@ -308,11 +308,6 @@ class InferenceDataset(Dataset):
         features["query_id"] = query_id
         features["seed"] = torch.tensor([seed])
 
-        # save tensors
-        torch.save(
-            features,
-            "/home/u5i/gnikolenyi.u5i/scripts/openfold3/sandbox/inference/mth1/output_template_testing/features.pt",
-        )
         return features
 
     def __len__(self):

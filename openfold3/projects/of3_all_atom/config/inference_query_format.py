@@ -69,7 +69,6 @@ class Query(BaseModel):
 class InferenceQuerySet(BaseModel):
     seeds: list[int] = [42]
     queries: dict[str, Query]
-    ccd_file_path: FilePath | None = None
     use_templates: bool = False
 
     @classmethod

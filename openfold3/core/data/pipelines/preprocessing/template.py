@@ -20,12 +20,14 @@ from pydantic import (
     BaseModel,
     BeforeValidator,
     DirectoryPath,
-    FilePath,
     model_validator,
 )
 from tqdm import tqdm
 
-from openfold3.core.config.config_utils import _convert_molecule_type, _ensure_list
+from openfold3.core.config.config_utils import (
+    _convert_molecule_type,
+    _ensure_list,
+)
 from openfold3.core.data.io.dataset_cache import read_datacache, write_datacache_to_json
 from openfold3.core.data.io.s3 import open_local_or_s3
 from openfold3.core.data.io.sequence.template import (
@@ -1516,7 +1518,7 @@ class TemplatePreprocessorSettings(BaseModel):
     min_release_date_diff: int | None = None
     max_templates: int = 20
 
-    fetch_missing_structures: bool = False
+    fetch_missing_structures: bool = True
     create_precache: bool = False
     preparse_structures: bool = False
     n_processes: int = 4
@@ -1524,13 +1526,13 @@ class TemplatePreprocessorSettings(BaseModel):
 
     structure_directory: DirectoryPath | None = None
     structure_file_format: str = "cif"
-    output_directory: DirectoryPath | None = None
+    output_directory: Path | None = None
 
-    precache_directory: DirectoryPath | None = None
-    structure_array_directory: DirectoryPath | None = None
-    cache_directory: DirectoryPath | None = None
+    precache_directory: Path | None = None
+    structure_array_directory: Path | None = None
+    cache_directory: Path | None = None
 
-    ccd_file_path: FilePath | None = None
+    ccd_file_path: Path | None = None
 
     @model_validator(mode="after")
     def _prepare_output_directories(self) -> "TemplatePreprocessorSettings":
@@ -1566,6 +1568,7 @@ class TemplatePreprocessorSettings(BaseModel):
             )
 
         for d in (
+            base,
             self.output_directory,
             self.structure_directory,
             self.cache_directory,
