@@ -35,7 +35,7 @@ dependencies:
   - bioconda::hhsuite==3.3.0
   - bioconda::kalign2==2.04
   - pytorch::pytorch=2.4
-  - pytorch::pytorch-cuda=12.4
+  - pytorch::pytorch-cuda=12.1
   - memory_profiler==0.61.0
   - func_timeout==4.3.5
   - boto3==1.39.4
