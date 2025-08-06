@@ -665,7 +665,11 @@ class A3mParser(TemplateParser):
 
 
 class M8Parser(TemplateParser):
-    """Parses tabular format (.m8) files."""
+    """Parses tabular .m8 file format.
+
+    See the BLAST m8 section here for details of the expected format:
+    https://linsalrob.github.io/ComputationalGenomicsManual/SequenceFileFormats/
+    """
 
     def __call__(
         self, alignment_source: pd.DataFrame, query_seq_str: str

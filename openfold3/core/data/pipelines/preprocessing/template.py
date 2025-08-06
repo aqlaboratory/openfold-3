@@ -1782,15 +1782,26 @@ class TemplatePreprocessor:
                     structure_arrays_available = False
 
                 # C. Fetch template structure if not available
-                if (not structure_available) & (not structure_arrays_available):
-                    if self.fetch_missing_structures:
-                        fetch(
-                            pdb_ids=template.entry_id,
-                            format=self.structure_file_format,
-                            target_path=self.structure_directory,
-                        )
-                    else:
+                if not structure_available:
+                    if not self.fetch_missing_structures:
                         continue
+                    else:
+                        if not structure_arrays_available:
+                            fetch(
+                                pdb_ids=template.entry_id,
+                                format=self.structure_file_format,
+                                target_path=self.structure_directory,
+                            )
+                        else:
+                            # if the precache entry is not available and only the
+                            # structure arrays were provided, we need to fetch the
+                            # structure
+                            if not precache_entry_available:
+                                fetch(
+                                    pdb_ids=template.entry_id,
+                                    format=self.structure_file_format,
+                                    target_path=self.structure_directory,
+                                )
 
                 # D. Load template structure
                 # i. from precache if available
@@ -1801,18 +1812,6 @@ class TemplatePreprocessor:
                     release_date = precache_entry["release_date"].item()
                 # ii. from raw structure if not precached
                 else:
-                    # if the precache entry is not available and only the structure
-                    # arrays were provided, we need to fetch the structure
-                    if not structure_available:
-                        if self.fetch_missing_structures:
-                            fetch(
-                                pdb_ids=template.entry_id,
-                                format=self.structure_file_format,
-                                target_path=self.structure_directory,
-                            )
-                        else:
-                            continue
-
                     # Preprocess into per-chain arrays if prompted
                     if self.preparse_structures & (not structure_arrays_available):
                         cif_file, _ = preprocess_template_structure_for_template(
