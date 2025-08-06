@@ -378,6 +378,16 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.output_writer_settings = experiment_config.output_writer_settings
         self.timer = ExperimentTimer()
 
+    def set_num_diffusion_samples(self, num_diffusion_samples: int) -> None:
+        update_dict = {
+            "architecture": {
+                "shared": {
+                    "diffusion": {"no_full_rollout_samples": num_diffusion_samples}
+                }
+            }
+        }
+        self.experiment_config.model_update.custom.update(update_dict)
+
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
         self.timer.start("Inference")

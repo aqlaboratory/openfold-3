@@ -144,17 +144,14 @@ def predict(
         inference_ckpt_path=inference_ckpt_path, **runner_args
     )
 
-    # Overwrite number of diffusion samples in model update section
-    if num_diffusion_samples:
-        print(f"Set diffusion samples to {num_diffusion_samples}")
-        expt_config.model_update.custom[
-            "architecture.shared.diffusion.no_full_rollout_samples"
-        ] = num_diffusion_samples
-
     expt_runner = InferenceExperimentRunner(expt_config)
     if output_dir:
         output_dir.mkdir(exist_ok=True, parents=True)
         expt_runner.output_dir = output_dir
+    
+    if num_diffusion_samples:
+        logger.info(f"Set diffusion samples to {num_diffusion_samples}")
+        expt_runner.set_num_diffusion_samples(num_diffusion_samples)
 
     if num_model_seeds:
         start_seed = 42
