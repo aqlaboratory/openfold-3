@@ -425,7 +425,7 @@ class ChainInput(NamedTuple):
 
 
 class ComplexGroup(list[str]):
-    """Wrapper around a list of sequences to provide a a hash of concatenate sequences"""
+    """Wrapper around standard list to provide a a hash of concatenated sequences."""
 
     @property
     def rep_id(self):
