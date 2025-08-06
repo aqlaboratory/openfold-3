@@ -158,7 +158,7 @@ class TestModelUpdate:
               custom:
                 architecture:
                   shared:
-                    max_cycles: 1 
+                    num_recycles: 1 
         """)
         test_yaml_file = tmp_path / "runner.yml"
         test_yaml_file.write_text(test_yaml_str)
@@ -175,6 +175,8 @@ class TestModelUpdate:
             model_config.architecture.shared.diffusion.no_full_rollout_samples
             == expected_num_diffusion_samples
         )
+        # Verify settings from model_update section are also applied
+        assert model_config.architecture.shared.num_recycles == 1
 
 
 class TestLowMemoryConfig:

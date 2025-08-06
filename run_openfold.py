@@ -148,7 +148,7 @@ def predict(
     if output_dir:
         output_dir.mkdir(exist_ok=True, parents=True)
         expt_runner.output_dir = output_dir
-    
+
     if num_diffusion_samples:
         logger.info(f"Set diffusion samples to {num_diffusion_samples}")
         expt_runner.set_num_diffusion_samples(num_diffusion_samples)
