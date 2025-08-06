@@ -66,7 +66,7 @@ class ExperimentRunner(ABC):
         """Get the project entry from the registry."""
         return OF3ProjectEntry()
 
-    @property
+    @cached_property
     def model_config(self) -> mlc.ConfigDict:
         """Retrieve the model configuration."""
         return self.project_entry.get_model_config_with_update(self.model_update)
@@ -386,7 +386,8 @@ class InferenceExperimentRunner(ExperimentRunner):
                 }
             }
         }
-        self.experiment_config.model_update.custom.update(update_dict)
+        model_config = self.model_config
+        model_config.update(update_dict)
 
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
