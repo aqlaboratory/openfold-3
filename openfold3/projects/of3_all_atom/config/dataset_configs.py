@@ -270,7 +270,7 @@ class InferenceJobConfig(BaseModel):
     ccd_file_path: FilePathOrNone = None
     msa: MSASettings = MSASettings()
     template: TemplateSettings = TemplateSettings()
-    template_preprocessor: TemplatePreprocessorSettings | None = None
+    template_preprocessor: TemplatePreprocessorSettings
 
 
 class InferenceDatasetSpec(DatasetSpec):

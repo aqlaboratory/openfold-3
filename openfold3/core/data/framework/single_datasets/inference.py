@@ -106,7 +106,7 @@ class InferenceDataset(Dataset):
             ) & (self.template_preprocessor_settings.structure_directory is not None):
                 raise ValueError(
                     "You are trying to process template structures from raw CIFs "
-                    "but did not provide a CCD file path in the inference query json."
+                    "but did not provide a CCD file path in the runner.yml."
                 )
             else:
                 self.ccd = None
