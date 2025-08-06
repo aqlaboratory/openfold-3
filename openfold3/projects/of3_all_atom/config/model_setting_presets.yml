@@ -10,15 +10,15 @@ train:
 predict:
   settings:
     diffusion_training_enabled: False
+    memory:
+      eval:
+        # This chunk size is the minimum value, it will be auto-tuned by default
+        chunk_size: 4
   architecture:
     msa:
       msa_module_embedder:
         subsample_main_msa: False
         subsample_all_msa: True 
-    memory:
-      eval:
-        # This chunk size is the minimum value, it will be auto-tuned by default
-        chunk_size: 4
         
 low_mem:
   settings:
