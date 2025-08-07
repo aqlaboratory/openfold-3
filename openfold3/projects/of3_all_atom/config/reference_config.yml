@@ -9,7 +9,7 @@ finetune1:
   dataset_config_template: 
     config:
       token_budget: 640
-  extra_configs:
+  extra_configs: # updates base loss config
     loss_weight_modes:
       default:
         bond: 4.0
@@ -26,15 +26,16 @@ finetune2:
   dataset_config_template: 
     config:
       token_budget: 768
-  extra_configs: # updates base loss config
+  extra_configs:
     loss_weight_modes:
       default:
         bond: 4.0
+        smooth_lddt: 0.0
 
 finetune3:
   model:
     settings:
-      diffusion_training_enabled: False
+      diffusion_training_enabled: false
       model_selection_weight_scheme: fine_tuning
     architecture:
       shared:
@@ -42,9 +43,9 @@ finetune3:
           no_samples: 32
       heads:
         pae:
-          enabled: True
+          enabled: true
         distogram:
-          enabled: False
+          enabled: false
   extra_configs:
     loss_weight_modes:
       default:
@@ -57,9 +58,9 @@ train:
   model:
     settings:
       blocks_per_ckpt: 1
-      ckpt_intermediate_steps: True
+      ckpt_intermediate_steps: true
 
 predict:
   model:
     settings:
-      diffusion_training_enabled: False
+      diffusion_training_enabled: false

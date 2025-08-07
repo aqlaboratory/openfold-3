@@ -8,7 +8,6 @@ dependencies:
   - python=3.10
   - setuptools==59.5.0
   - pip==25.1.1
-  - openmm==7.7.0
   - pdbfixer==1.8.1
   - pytorch-lightning==2.5.2
   - biopython==1.85
@@ -35,7 +34,7 @@ dependencies:
   - bioconda::hhsuite==3.3.0
   - bioconda::kalign2==2.04
   - pytorch::pytorch=2.4
-  - pytorch::pytorch-cuda=12.1
+  - pytorch::pytorch-cuda=12.4
   - memory_profiler==0.61.0
   - func_timeout==4.3.5
   - boto3==1.39.4
