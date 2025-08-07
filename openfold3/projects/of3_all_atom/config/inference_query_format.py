@@ -9,6 +9,7 @@ from pydantic import (
 )
 
 from openfold3.core.config.config_utils import (
+    _cast_keys_to_int,
     _convert_molecule_type,
     _ensure_list,
 )
@@ -35,6 +36,9 @@ class Chain(BaseModel):
     molecule_type: Annotated[MoleculeType, BeforeValidator(_convert_molecule_type)]
     chain_ids: Annotated[list[str], BeforeValidator(_ensure_list)]
     sequence: str | None = None
+    non_canonical_residues: (
+        Annotated[dict[int, str], BeforeValidator(_cast_keys_to_int)] | None
+    ) = None
     smiles: str | None = None
     ccd_codes: Annotated[list[str], BeforeValidator(_ensure_list)] | None = None
     # Msa definition
