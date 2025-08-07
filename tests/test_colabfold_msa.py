@@ -25,7 +25,7 @@ def multimer_query_set():
                         {
                             "molecule_type": "protein",
                             "chain_ids": ["A", "C"],
-                            "sequence": "VLSPADKTNVKAAWGKVGAHAGEYGAEA", 
+                            "sequence": "VLSPADKTNVKAAWGKVGAHAGEYGAEA",
                         },
                         {
                             "molecule_type": "protein",
