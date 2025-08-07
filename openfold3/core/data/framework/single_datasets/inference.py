@@ -102,18 +102,8 @@ class InferenceDataset(Dataset):
         if dataset_config.ccd_file_path is not None:
             logger.debug("Parsing CCD file.")
             self.ccd = pdbx.CIFFile.read(dataset_config.ccd_file_path)
-            logger.debug("Done parsing CCD file.")
         else:
-            # TODO: refactor with internal biotite ccd
-            if (
-                self.template_preprocessor_settings.structure_array_directory is None
-            ) & (self.template_preprocessor_settings.structure_directory is not None):
-                raise ValueError(
-                    "You are trying to process template structures from raw CIFs "
-                    "but did not provide a CCD file path in the runner.yml."
-                )
-            else:
-                self.ccd = None
+            self.ccd = None
 
         # Create individual datapoint cache (allows rerunning the same query with
         # different seeds)

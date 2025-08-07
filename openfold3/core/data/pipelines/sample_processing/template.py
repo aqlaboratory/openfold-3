@@ -72,7 +72,10 @@ def process_template_structures_of3(
     protein_chain_ids = np.unique(
         atom_array[atom_array.molecule_type_id == MoleculeType.PROTEIN].chain_id
     )
-    if len(protein_chain_ids) == 0:
+    if (len(protein_chain_ids) == 0) | (
+        template_structure_array_directory is None
+        and template_structures_directory is None
+    ):
         return TemplateSliceCollection(template_slices={})
 
     # Iterate over protein chains in the atom array

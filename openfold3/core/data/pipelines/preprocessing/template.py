@@ -1725,10 +1725,10 @@ class TemplatePreprocessor:
             input_data.aln_path, input_data.query_seq_str, self.max_sequences_parse
         )
 
-        # 2. if template entry and chain ID list provided in the IQS - skip some below:
-        #    TODO add logic for this
+        # TODO: 2. if template entry and chain ID list provided in the IQS - skip some
+        # below:
 
-        # 3. TRAIN: match  query sequence in aln to query sequence in structure
+        # TODO: 3. TRAIN: match  query sequence in aln to query sequence in structure
 
         # 4. Representative mapping For training - core weighted PDB set, need to index
         # by entry ID, and cannot index by sequence hash due to the way filtering is
