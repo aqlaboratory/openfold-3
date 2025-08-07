@@ -168,6 +168,7 @@ def predict(
     # Perform MSA computation if selected
     #  update query_set with MSA paths
     if use_msa_server:
+        print("Using ColabFold MSA server for alignments.")
         query_set = preprocess_colabfold_msas(
             inference_query_set=query_set,
             compute_settings=expt_config.msa_computation_settings,
@@ -183,10 +184,13 @@ def predict(
 
     # Preprocess template alignments and optionally template structures
     if query_set.use_templates:
+        print("Using templates for inference.")
         template_preprocessor = TemplatePreprocessor(
             input_set=query_set, config=expt_config.template_preprocessor_settings
         )
         template_preprocessor()
+    else:
+        print("Not using templates for inference.")
 
     # Run the forward pass
     expt_runner.setup()

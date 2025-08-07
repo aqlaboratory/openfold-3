@@ -188,4 +188,13 @@ class InferenceExperimentConfig(ExperimentConfig):
             model.template_preprocessor_settings.ccd_file_path = (
                 model.dataset_config_kwargs.ccd_file_path
             )
+
+        if (
+            model.template_preprocessor_settings.preparse_structures
+            and model.template_preprocessor_settings.ccd_file_path is None
+        ):
+            raise ValueError(
+                "preparse_structures=True requires ccd_file_path to be set."
+            )
+
         return model

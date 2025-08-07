@@ -1536,16 +1536,12 @@ class TemplatePreprocessorSettings(BaseModel):
 
     @model_validator(mode="after")
     def _prepare_output_directories(self) -> "TemplatePreprocessorSettings":
+        # TODO: add .pdb support
         if self.structure_file_format != "cif":
             raise NotImplementedError(
                 f"structure_file_format {self.structure_file_format} was provided but "
                 "currently, only cif file format is supported for template structure "
                 "preprocessing due to metadata requirements of the template pipeline."
-            )
-
-        if self.preparse_structures and self.ccd_file_path is None:
-            raise ValueError(
-                "preparse_structures=True requires ccd_file_path to be set."
             )
 
         if self.output_directory is not None:
@@ -1691,6 +1687,7 @@ class TemplatePreprocessor:
     def __call__(self) -> None:
         # Preprocess template alignments into template cache entries
         if len(self.inputs) == 1:
+            print("Preprocessing templates...")
             self._preprocess_templates_for_query(self.inputs[0])
         elif len(self.inputs) > 1:
             manager = mp.Manager()
@@ -1737,9 +1734,7 @@ class TemplatePreprocessor:
         # by entry ID, and cannot index by sequence hash due to the way filtering is
         # done
         query_seq_hash = get_sequence_hash(input_data.query_seq_str)
-        # seq hash map needs to be shared across processes - should be able to do the
-        # same but with representative IDs for training add check to skip based on
-        # seq_hash_map to avoid race conditions?
+        # skip template preprocessing for chain if already done
         if input_data.query_seq_str in self.seq_hash_map:
             return
         self.seq_hash_map[input_data.query_seq_str] = query_seq_hash
@@ -1769,6 +1764,7 @@ class TemplatePreprocessor:
                     )
                     precache_entry_available = precache_entry_file.exists()
                 else:
+                    precache_entry_file = None
                     precache_entry_available = False
                 if self.structure_array_directory is not None:
                     template_structure_array_subdirectory = (
@@ -1779,29 +1775,26 @@ class TemplatePreprocessor:
                         and any(template_structure_array_subdirectory.iterdir())
                     )
                 else:
+                    template_structure_array_subdirectory = None
                     structure_arrays_available = False
 
-                # C. Fetch template structure if not available
-                if not structure_available:
+                # C. Fetch template structure if needed
+                # We need
+                # - either the raw template structure
+                # - or the precache entry and the structure arrays both
+                if not structure_available & (
+                    (not precache_entry_available) | (not structure_arrays_available)
+                ):
                     if not self.fetch_missing_structures:
+                        # TODO: add warning - missing template structure data but
+                        # fetching turned off
                         continue
                     else:
-                        if not structure_arrays_available:
-                            fetch(
-                                pdb_ids=template.entry_id,
-                                format=self.structure_file_format,
-                                target_path=self.structure_directory,
-                            )
-                        else:
-                            # if the precache entry is not available and only the
-                            # structure arrays were provided, we need to fetch the
-                            # structure
-                            if not precache_entry_available:
-                                fetch(
-                                    pdb_ids=template.entry_id,
-                                    format=self.structure_file_format,
-                                    target_path=self.structure_directory,
-                                )
+                        fetch(
+                            pdb_ids=template.entry_id,
+                            format="cif",
+                            target_path=self.structure_directory,
+                        )
 
                 # D. Load template structure
                 # i. from precache if available
@@ -1849,6 +1842,8 @@ class TemplatePreprocessor:
                 ):
                     template_sequence = chain_id_seq_map.get(template.chain_id)
                     if template_sequence is None:
+                        # TODO: add warning - the chain ID from the alignment is not
+                        # present in the structure file
                         continue
                     parser = A3mParser(max_sequences=None)
                     template = parser(
@@ -1874,6 +1869,8 @@ class TemplatePreprocessor:
                     template, chain_id_seq_map
                 )
                 if chain_id_matched is None:
+                    # TODO: add warning - could not match template sequence from
+                    # alignment to structure sequence
                     continue
 
                 # H. Add to cache entry

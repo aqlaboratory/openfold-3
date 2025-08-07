@@ -73,16 +73,14 @@ class InferenceDataset(Dataset):
     ) -> None:
         """Initializes the InferenceDataset."""
         super().__init__()
-
         self.query_set = dataset_config.query_set
         self.query_cache = self.query_set.queries
 
         self.seeds: list = dataset_config.seeds
         self.world_size = world_size
 
+        # Main alignments
         self.msa_settings = dataset_config.msa
-        self.template_settings = dataset_config.template
-        self.template_preprocessor_settings = dataset_config.template_preprocessor
         self.msa_sample_processor_inference = MsaSampleProcessorInference(
             config=self.msa_settings
         )
@@ -93,6 +91,12 @@ class InferenceDataset(Dataset):
                 subsample_with_bands=self.msa_settings.subsample_with_bands,
             )
         )
+
+        # Templates
+        self.template_settings = dataset_config.template
+        self.template_preprocessor_settings = dataset_config.template_preprocessor
+        if self.template_preprocessor_settings.preparse_structures:
+            self.template_preprocessor_settings.structure_file_format = "npz"
 
         # Parse CCD
         if dataset_config.ccd_file_path is not None:
