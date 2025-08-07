@@ -403,11 +403,12 @@ class ChainInput(NamedTuple):
     Attributes:
         query_name (str): The name of the query.
         chain_id (str): The chain ID.
+        sequence (str): sequence for the chain.
     """
 
     query_name: str
     chain_id: str
-    seq: str
+    sequence: str
 
     def __str__(self) -> str:
         return self.name()
@@ -421,7 +422,7 @@ class ChainInput(NamedTuple):
     @property
     def rep_id(self) -> str:
         """Returns the representative ID for this chain ID."""
-        return get_sequence_hash(self.seq)
+        return get_sequence_hash(self.sequence)
 
 
 class ComplexGroup(list[str]):
@@ -442,29 +443,30 @@ class ColabFoldMapper:
         query_name:
             name of the query structure in the input query cache.
         chain_id:
-            a (query_name, chain identifier) tuple, indicating a unique
-            instantiation of a protein chain.
+            a (query_name, chain identifier) tuple based on the query
         rep_id:
             a hash of th sequence id
         seq:
             the actual protein sequence.
         complex_id:
-            an identifier associated with a unique SET of protein
+            - An identifier associated with a unique SET of protein
             sequences in the same query, consisting of the sorted
             representative IDs of ALL chains in the complex; only used for
             queries with more than 2 unique protein sequences.
+            - Can be constructed using `ComplexGroup` class wrapped around the
+            set of sequences
 
     Attributes:
         seq_to_rep_id (dict[str, str]):
             Sequence to representative ID mapping (hash of input sequecne).
-        rep_id_to_seq (dict[ChainID, str]):
+        rep_id_to_seq (dict[str, str]):
             Representative ID to sequence mapping.
-        chain_id_to_rep_id (dict[ChainID, ChainID]):
+        chain_id_to_rep_id (dict[str, str]):
             Chain ID to representative ID mapping.
-        query_name_to_complex_id (dict[str, ComplexID]):
+        query_name_to_complex_id (dict[str, str]):
             Query name to complex ID mapping.
-        complex_ids (set[ComplexID]):
-            Set of complex IDs.
+        complex_id_to_complex_group (dict[str, ComplexGroup]):
+            Complex id identifier mapped to sequences that constructed the id
         seqs (list[str]):
             List of unique sequences.
         rep_ids (list[ChainID]):
@@ -547,7 +549,7 @@ def collect_colabfold_msa_data(
 
         # Only do pairing if number of unique protein sequences is > 1
         if len(set(rep_ids_query)) > 1:
-            sequences = [colabfold_mapper.rep_id_to_seq[r] for r in rep_ids_query]
+            sequences = [colabfold_mapper.rep_id_to_seq[r] for r in set(rep_ids_query)]
             complex_group = ComplexGroup(sequences)
             complex_id = complex_group.rep_id
             if complex_id not in colabfold_mapper.complex_id_to_complex_group:
@@ -595,7 +597,6 @@ def save_colabfold_mappings(
         mapping_files_dir / "rep_id_to_seq.json",
         append=True,
     )
-    print(colabfold_msa_input.chain_id_to_rep_id)
     _save_mapping(
         colabfold_msa_input.chain_id_to_rep_id,
         mapping_files_dir / "chain_id_to_rep_id.json",
