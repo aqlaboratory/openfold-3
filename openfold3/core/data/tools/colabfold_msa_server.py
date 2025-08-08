@@ -1,4 +1,3 @@
-import hashlib
 import json
 import logging
 import os
@@ -20,6 +19,7 @@ from pydantic_core import Url
 from tqdm import tqdm
 
 from openfold3.core.data.io.sequence.msa import parse_a3m
+from openfold3.core.data.primitives.sequence.hash import get_sequence_hash
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
@@ -449,8 +449,8 @@ class ColabFoldMapper:
         seq:
             the actual protein sequence.
         complex_id:
-            - An identifier associated with all protein sequences in the 
-            same query, constructed based on a hash of the sequences. 
+            - An identifier associated with all protein sequences in the
+            same query, constructed based on a hash of the sequences.
             Only used for queries with more than 2 unique protein sequences.
             - Can be constructed using `ComplexGroup` class wrapped around the
             set of sequences
@@ -479,13 +479,6 @@ class ColabFoldMapper:
     complex_id_to_complex_group: dict[str, ComplexGroup] = field(default_factory=dict)
     seqs: list[str] = field(default_factory=list)
     rep_ids: list[ChainInput] = field(default_factory=list)
-
-
-def get_sequence_hash(sequence_str: str) -> str:
-    """Generates a SHA-256 hash for the given sequence string."""
-    hasher = hashlib.sha256()
-    hasher.update(sequence_str.encode("utf-8"))
-    return hasher.hexdigest()
 
 
 def collect_colabfold_msa_data(
