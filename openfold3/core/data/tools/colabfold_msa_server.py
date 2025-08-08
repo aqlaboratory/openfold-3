@@ -838,7 +838,7 @@ class MsaComputationSettings(BaseModel):
     msa_file_format: Literal["npz", "a3m"] = "npz"
     server_user_agent: str = "openfold"
     server_url: Url = Url("https://api.colabfold.com")
-    save_mappings: bool = False
+    save_mappings: bool = True 
     msa_output_directory: Path = Path(tempfile.gettempdir()) / "of3_colabfold_msas"
     cleanup_msa_dir: bool = True
 

@@ -196,21 +196,65 @@ output_writer_format:
 
 ---
 
-#### 🌐 Use a Privately Hosted ColabFold MSA Server
-Specify the URL of your private MSA server under [`msa_server_settings`](https://github.com/aqlaboratory/openfold3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L171):
+#### 🌐 Configure ColabFold MSA server settings and output options 
+
+All settings for the ColabFold server and outputs can be set at `msa_computation_settings`](https://github.com/aqlaboratory/openfold3/blob/9d3ff681560cdd65fa92f80f08a4ab5becaebf87/openfold3/core/data/tools/colabfold_msa_server.py#L833)
+
+
+
+
+##### Saving MSA outputs
+
+By default, MSA outputs are written to a temporary directory and are deleted after prediction is complete. 
+
+
+These settings can be saved by changing the following fields:
+
 ```
-msa_server_settings:
+msa_computation_settings:
+  msa_output_directory: <custom path>
+  cleanup_msa_dir: False  # If False, msa paths will not be deleted between runs 
+  save_mappings: True 
+```
+
+MSAs per chain are saved using a file / directory name that is the hash of the sequence. Mappings between the chain name, sequence, and representative ids can be saved via the `save_mappings` field. 
+
+For a sequence with two representative chains, the final output directory would have this format:
+
+```
+<msa_output_directory>
+├── main
+│   ├── <hash of sequence A>.npz
+│   └── <hash of sequence B>.npz
+├── mappings
+│   ├── chain_id_to_rep_id.json
+│   ├── query_name_to_complex_id.json
+│   ├── README.md
+│   ├── rep_id_to_seq.json  # hash to sequence mapping
+│   └── seq_to_rep_id.json
+└── paired
+    └── <hash of concatenation of sequences A and B>
+        ├── <hash of sequence A>.npz
+        └── <hash of sequence B>.npz
+```
+
+If the same `msa_output_directory` is used between runs, the `rep_id_to_seq.json` and `seq_to_rep_id.json` mappings are updated with the new sequences, while the other mappings are overwritten.
+
+##### Use a Privately Hosted ColabFold MSA Server
+Specify the URL of your private MSA server with the `server_url` field:
+```
+msa_computation_settings:
   server_url: https://my.private.colabfold.server
 ```
 
----
-
-#### 💾 Save MSAs in A3M Format
+##### Save MSAs in A3M Format
 Choose the file format for saving MSAs retrieved from ColabFold:
 ```
-msa_server_settings:
+msa_computation_settings:
   msa_file_format: a3m     # Options: a3m, npz (default: npz)
 ```
+
+---
 
 #### 🧠 Low Memory Mode
 To run inference on larger queries to run on limited memory, add the following to apply the [model presets](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/projects/of3_all_atom/config/model_setting_presets.yml) to run in low memory mode.
