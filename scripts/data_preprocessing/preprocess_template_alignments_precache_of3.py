@@ -1,5 +1,5 @@
 """
-Script to separately preprocess template structure files into structure arrays.
+Script to preprocess template alignments separately from model training or inference.
 """
 
 from pathlib import Path
@@ -8,8 +8,8 @@ import click
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.pipelines.preprocessing.template import (
+    TemplatePrecachePreprocessor,
     TemplatePreprocessorSettings,
-    TemplateStructurePreprocessor,
 )
 
 
@@ -18,8 +18,8 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     "--runner_yaml",
     required=True,
     help=(
-        "Runner.yml file to be parsed into settings for the template structure "
-        "array preprocessor pipeline."
+        "Runner.yml file to be parsed into settings for the template precache "
+        "preprocessor pipeline."
     ),
     type=click.Path(
         file_okay=False,
@@ -39,10 +39,10 @@ def main(runner_yaml: Path):
         **template_preprocessor_kwargs
     )
 
-    template_structure_preprocessor = TemplateStructurePreprocessor(
+    template_precache_preprocessor = TemplatePrecachePreprocessor(
         config=template_preprocessor_settings
     )
-    template_structure_preprocessor()
+    template_precache_preprocessor()
 
 
 if __name__ == "__main__":

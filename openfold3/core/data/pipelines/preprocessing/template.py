@@ -1428,9 +1428,8 @@ def preprocess_template_structures(
             pass
 
 
-# New template preprocessing pipeline
-# TODO: replace above with below
-# !!! need to modularize so works with dataset cache or IQS
+# New template preprocessing pipelines
+# TODO: replace old versions from above with these new ones
 class TemplatePreprocessorInputTrain(BaseModel):
     pass
 
@@ -1909,6 +1908,145 @@ class TemplatePreprocessor:
             self.hash_template_id_map[query_seq_hash] = list(
                 template_cache_entry.keys()
             )
+
+
+class TemplatePrecachePreprocessor:
+    """Preprocessing pipeline for extracting template structure metadata."""
+
+    def __init__(
+        self,
+        config: TemplatePreprocessorSettings,
+    ) -> None:
+        self.n_processes = config.n_processes
+        self.chunksize = config.chunksize
+
+        self.structure_directory = config.structure_directory
+        self.structure_file_format = config.structure_file_format
+        self.precache_directory = config.precache_directory
+
+        # Get list of template entry IDs
+        self.template_entry_ids = [
+            f.stem
+            for f in list(
+                self.structure_directory.glob(f"*.{self.structure_file_format}")
+            )
+        ]
+
+        if not self.template_entry_ids:
+            print(
+                f"No template structure files found in {self.structure_directory} "
+                f"with format {self.structure_file_format}"
+            )
+            return
+
+        print(f"Found {len(self.template_entry_ids)} template structures to process.")
+
+    def __call__(self) -> None:
+        with mp.Pool(self.n_processes) as pool:
+            for _ in tqdm(
+                pool.imap_unordered(
+                    self._preprocess_template_precache_entry,
+                    self.template_entry_ids,
+                    chunksize=self.chunksize,
+                ),
+                total=len(self.inputs),
+                desc="Preprocessing template structures into precache entries",
+            ):
+                pass
+
+    def _preprocess_template_precache_entry(
+        self,
+        template_entry_id: str,
+    ) -> None:
+        """Create a precache entry for a single template structure.
+
+        Args:
+            template_entry_id (str):
+                Entry ID of the template structure, typically, PDB ID.
+        """
+        precache_entry_file = self.precache_directory / f"{template_entry_id}.npz"
+
+        if precache_entry_file.exists():
+            return
+
+        cif_file = _load_ciffile(
+            self.structure_directory
+            / f"{template_entry_id}.{self.structure_file_format}"
+        )
+        chain_id_seq_map = get_asym_id_to_canonical_seq_dict(cif_file)
+        release_date = get_release_date(get_cif_block(cif_file)).strftime("%Y-%m-%d")
+
+        np.savez_compressed(
+            precache_entry_file,
+            **{
+                "release_date": release_date,
+                "chain_id_seq_map": chain_id_seq_map,
+            },
+        )
+
+
+class TemplateStructurePreprocessor:
+    """Preprocessing pipeline for template structures.
+
+    Pre-parses and cleans up structure files for downstream template processing.
+    Saves per-chain AtomArray .npz files for each template structure.
+    """
+
+    def __init__(self, config: TemplatePreprocessorSettings) -> None:
+        self.moltypes = config.moltypes
+
+        self.n_processes = config.n_processes
+        self.chunksize = config.chunksize
+
+        self.structure_directory = config.structure_directory
+        self.structure_file_format = config.structure_file_format
+        self.structure_array_directory = config.structure_array_directory
+
+        if config.ccd_file_path is not None:
+            self.ccd = pdbx.CIFFile.read(config.ccd_file_path)
+        else:
+            self.ccd = None
+
+        self.template_entry_ids = [
+            f.stem
+            for f in list(
+                self.structure_directory.glob(f"*.{self.structure_file_format}")
+            )
+        ]
+
+        if not self.template_entry_ids:
+            print(
+                f"No template structure files found in {self.structure_directory} "
+                f"with format {self.structure_file_format}"
+            )
+            return
+
+        print(f"Found {len(self.template_entry_ids)} template structures to process.")
+
+    def __call__(self) -> None:
+        with mp.Pool(self.n_processes) as pool:
+            for _ in tqdm(
+                pool.imap_unordered(
+                    self._preprocess_template_structure_for_template,
+                    self.template_entry_ids,
+                    chunksize=self.chunksize,
+                ),
+                total=len(self.inputs),
+                desc="Preprocessing template structures into structure arrays",
+            ):
+                pass
+
+    def _preprocess_template_structure_for_template(
+        self,
+        template_entry_id: str,
+    ) -> None:
+        preprocess_template_structure_for_template(
+            self.structure_directory
+            / f"{template_entry_id}.{self.structure_file_format}",
+            self.structure_array_directory / f"{template_entry_id}",
+            self.ccd,
+            self.moltypes,
+        )
 
 
 # New primitives: TODO move to primitives

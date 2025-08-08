@@ -1,5 +1,11 @@
-"""Template preprocessing script for AF3 dataset."""
+"""
+Template preprocessing script for AF3 dataset for training.
 
+This script will be deprecated in the near future in favor of a new template
+preprocessing pipeline.
+"""
+
+# TODO: deprecate
 import logging
 from pathlib import Path
 
