@@ -861,8 +861,6 @@ def preprocess_colabfold_msas(
     Args:
         inference_query_set (InferenceQuerySet):
             The inference query set containing the queries and chains.
-        output_directory (Path):
-            The output directory to save the results to.
         compute_settings: pydantic model with server settings, contains:
             msa_file_format (str):
                 The format of the MSA files to save.
