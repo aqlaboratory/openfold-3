@@ -293,7 +293,7 @@ For a sequence with two representative chains, the final output directory would 
 ```
 <msa_output_directory>
 ├── main
-│   ├── 
+│   ├── <hash of sequence A>.npz
 │   └── <hash of sequence B>.npz
 ├── mappings
 │   ├── chain_id_to_rep_id.json
@@ -369,7 +369,7 @@ When processing multimer inputs (e.g., hemoglobin α + β chains), OpenFold3 aut
 
 - Requests paired MSAs from the ColabFold server
 - Stores raw alignments in [`raw/paired/](https://drive.google.com/drive/folders/19CN9S3T060KahXj0wbJXMlfth8MFlyPf?usp=drive_link)
-- Converts them into per-chain `.npz` features in [`paired/`](https://drive.google.com/drive/folders/1VAlJ6XCtt3Y434_t_vomTeMzt7S2pQdy?usp=drive_link)
+- Converts them into per-chain `.npz` alignments in [`paired/`](https://drive.google.com/drive/folders/1VAlJ6XCtt3Y434_t_vomTeMzt7S2pQdy?usp=drive_link)
 
 
 
