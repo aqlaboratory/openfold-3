@@ -255,7 +255,7 @@ def query_colabfold_msa_server(
                 out = submit(seqs_unique, mode, N)
                 while out["status"] in ["UNKNOWN", "RATELIMIT"]:
                     sleep_time = 5 + random.randint(0, 5)
-                    logger.error(f"Sleeping for {sleep_time}s. Reason: {out['status']}")
+                    logger.info(f"Sleeping for {sleep_time}s. Reason: {out['status']}")
                     time.sleep(sleep_time)
                     out = submit(seqs_unique, mode, N)
 
@@ -277,7 +277,7 @@ def query_colabfold_msa_server(
                 pbar.set_description(out["status"])
                 while out["status"] in ["UNKNOWN", "RUNNING", "PENDING"]:
                     t = 5 + random.randint(0, 5)
-                    logger.error(f"Sleeping for {t}s. Reason: {out['status']}")
+                    logger.info(f"Sleeping for {t}s. Reason: {out['status']}")
                     time.sleep(t)
                     out = status(ID)
                     pbar.set_description(out["status"])
@@ -469,12 +469,12 @@ class ColabFoldMapper:
             Complex id identifier mapped to sequences that constructed the id
         seqs (list[str]):
             List of unique sequences.
-        rep_ids (list[ChainID]):
+        rep_ids (list[str]):
             List of representative IDs.
     """
 
     seq_to_rep_id: dict[str, ChainInput] = field(default_factory=dict)
-    rep_id_to_m: dict[int, ChainID] = field(default_factory=dict)
+    rep_id_to_m: dict[int, ChainInput] = field(default_factory=dict)
     rep_id_to_seq: dict[ChainInput, str] = field(default_factory=dict)
     chain_id_to_rep_id: dict[ChainInput, ChainInput] = field(default_factory=dict)
     query_name_to_complex_id: dict[str, str] = field(default_factory=dict)
