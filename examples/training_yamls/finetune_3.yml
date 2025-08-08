@@ -41,22 +41,28 @@ model_update:
   compile : false
   custom:
     settings:
+      diffusion_training_enabled: false
       model_selection_weight_scheme: fine_tuning
     architecture:
       shared: 
         diffusion:
           no_samples: 32
+        heads:
+          pae:
+            enabled: true
+          distogram:
+            enabled: false
 
 dataset_configs:
   train:
     weighted-pdb:
       class: WeightedPDBDataset 
-      weight: 0.5
+      weight: 1.0
       config:
         debug_mode: true
         template:
           n_templates: 4
-          take_top_k: False
+          take_top_k: false
         crop:
           token_budget: 768
           crop_weights:
@@ -65,84 +71,10 @@ dataset_configs:
             spatial_interface: 0.4
         loss:
           loss_weights:
-            bond: 4.0
             mse: 0.0
             smooth_lddt: 0.0
             distogram: 0.0
             pae: 1e-4
-
-    long-monomer-distillation:
-      class: ProteinMonomerDataset
-      weight: 0.495
-      config:
-        debug_mode: true
-        template:
-          n_templates: 4
-          take_top_k: False
-        sample_in_order: true
-        crop:
-          token_budget: 768 
-          crop_weights:
-            contiguous: 0.25
-            spatial: 0.75
-            spatial_interface: 0.0
-        loss:
-          loss_weights:
-            experimentally_resolved: 0.0
-            plddt: 0.0
-            pde: 0.0
-            smooth_lddt: 0.0
-            distogram: 0.0
-            pae: 1e-4
-
-    short-monomer-distillation:
-      class: ProteinMonomerDataset
-      weight: 0.005
-      config:
-        debug_mode: true
-        template:
-          n_templates: 4
-          take_top_k: False
-        sample_in_order: true
-        crop:
-          token_budget: 768 
-          crop_weights:
-            contiguous: 0.25
-            spatial: 0.75
-            spatial_interface: 0.0
-        loss:
-          loss_weights:
-            experimentally_resolved: 0.0
-            plddt: 0.0
-            pde: 0.0
-            smooth_lddt: 0.0
-            distogram: 0.0
-            pae: 1e-4
-
-    disordered-pdb:
-      class: DisorderedPDBDataset
-      weight: 0.02  # reset weight to initial training level
-      config:
-        debug_mode: true
-        template:
-          n_templates: 4
-          take_top_k: False
-        disable_non_protein_diffusion_weights: False  # set to F in fine tuning 
-        crop:
-          token_budget: 768
-          crop_weights:
-            contiguous: 0.2
-            spatial: 0.4
-            spatial_interface: 0.4
-        loss:
-          loss_weights:
-            bond: 4.0
-            mse: 0.0
-            smooth_lddt: 0.0
-            distogram: 0.0
-            pae: 0.0
-            plddt: 0.0
-            pde: 0.0
 
   validation:
     val-weighted-pdb:
@@ -151,7 +83,7 @@ dataset_configs:
         debug_mode: true
         template:
           n_templates: 4
-          take_top_k: True
+          take_top_k: true
 
 dataset_paths:
   weighted-pdb:

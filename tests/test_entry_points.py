@@ -114,11 +114,10 @@ class TestTrainingExperiment:
             == "fine_tuning"
         )
         assert expt_runner.model_config.architecture.shared.diffusion.no_samples == 32
-        # Check that default default settings are not overwritten
+        # Check that default settings are not overwritten
         # See openfold3.projects.of3_all_atom.config.model_config
         assert (
-            expt_runner.model_config.settings.memory.eval.per_sample_token_cutoff
-            == 1500
+            expt_runner.model_config.settings.memory.eval.per_sample_token_cutoff == 750
         )
 
     def test_model(self, expt_runner):
@@ -151,6 +150,33 @@ class TestModelUpdate:
 
         with pytest.raises(KeyError, match="config is locked"):
             project_entry.get_model_config_with_update(model_update)
+
+    def test_model_update_with_diffusion_samples(self, tmp_path):
+        """Test application of model update and num_diffusion_samples cli argument."""
+        test_yaml_str = textwrap.dedent("""\
+            model_update:
+              custom:
+                architecture:
+                  shared:
+                    num_recycles: 1 
+        """)
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=tmp_path / "dummy.ckpt.pt",
+            **config_utils.load_yaml(test_yaml_file),
+        )
+        expt_runner = InferenceExperimentRunner(expt_config)
+
+        expected_num_diffusion_samples = 17
+        expt_runner.set_num_diffusion_samples(expected_num_diffusion_samples)
+        model_config = expt_runner.model_config
+        assert (
+            model_config.architecture.shared.diffusion.no_full_rollout_samples
+            == expected_num_diffusion_samples
+        )
+        # Verify settings from model_update section are also applied
+        assert model_config.architecture.shared.num_recycles == 1
 
 
 class TestLowMemoryConfig:

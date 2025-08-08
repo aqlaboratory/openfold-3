@@ -182,8 +182,8 @@ class ProteinMonomerDistillationConfig(DefaultDatasetConfigSection):
             "smooth_lddt": 4.0,
             "mse": 4.0,
             "distogram": 3e-2,
-            "experimentally_resolved": 0.0,
             # These losses are zero for the protein_monomer_distillation set
+            "experimentally_resolved": 0.0,
             "plddt": 0.0,
             "pae": 0.0,
             "pde": 0.0,
@@ -208,8 +208,8 @@ class DisorderedPDBConfig(DefaultDatasetConfigSection):
             "smooth_lddt": 4.0,
             "mse": 4.0,
             "distogram": 3e-2,
-            "experimentally_resolved": 0.0,
             # These losses are zero for distillation sets
+            "experimentally_resolved": 0.0,
             "plddt": 0.0,
             "pae": 0.0,
             "pde": 0.0,

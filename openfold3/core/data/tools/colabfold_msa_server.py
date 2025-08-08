@@ -1,13 +1,12 @@
-import hashlib
 import json
 import logging
 import os
 import random
+import shutil
 import tarfile
 import tempfile
 import time
 import warnings
-from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
@@ -21,6 +20,7 @@ from pydantic_core import Url
 from tqdm import tqdm
 
 from openfold3.core.data.io.sequence.msa import parse_a3m
+from openfold3.core.data.primitives.sequence.hash import get_sequence_hash
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
@@ -398,46 +398,41 @@ def query_colabfold_msa_server(
     return (a3m_lines, template_paths) if use_templates else a3m_lines
 
 
-class ChainID(NamedTuple):
+class ChainInput(NamedTuple):
     """A query name and chain ID tuple.
 
     Attributes:
         query_name (str): The name of the query.
         chain_id (str): The chain ID.
+        sequence (str): sequence for the chain.
     """
 
     query_name: str
     chain_id: str
+    sequence: str
 
     def __str__(self) -> str:
-        return self.stringify()
+        return self.name()
 
-    def stringify(self, delimiter: str = "-") -> str:
+    @property
+    def name(self) -> str:
         """Joins the query name and chain ID with a delimiter into a string."""
+        delimiter = "-"
         return f"{self.query_name}{delimiter}{self.chain_id}"
 
+    @property
+    def rep_id(self) -> str:
+        """Returns the representative ID for this chain ID."""
+        return get_sequence_hash(self.sequence)
 
-class ComplexID(tuple[ChainID, ...]):
-    """A tuple of ChainIDs representing a complex."""
 
-    def __new__(cls, *chain_ids: ChainID) -> "ComplexID":
-        for c in chain_ids:
-            if not isinstance(c, ChainID):
-                raise TypeError(f"Expected ChainID, got {type(c)}")
-        return super().__new__(cls, chain_ids)
+class ComplexGroup(list[str]):
+    """Wrapper around standard list to provide a a hash of concatenated sequences."""
 
-    def __iter__(self) -> Iterator[ChainID]:
-        return super().__iter__()
-
-    def stringify(
-        self,
-        inner_delimiter: str = "-",
-        outer_delimiter: str = ".",
-    ) -> str:
-        return outer_delimiter.join(c.stringify(inner_delimiter) for c in self)
-
-    def __str__(self) -> str:
-        return self.stringify()
+    @property
+    def rep_id(self):
+        seqs = sorted(s for s in self)
+        return get_sequence_hash("".join(seqs))
 
 
 # TODO rename
@@ -449,52 +444,43 @@ class ColabFoldMapper:
         query_name:
             name of the query structure in the input query cache.
         chain_id:
-            a (query_name, chain identifier) tuple, indicating a unique instantiation of
-            a protein chain.
+            a (query_name, chain identifier) tuple based on the query
         rep_id:
-            SHA-256 hash of the sequence.
+            a hash of the sequence id
         seq:
             the actual protein sequence.
         complex_id:
-            SHA-256 hash of the set of sorted and concatenated sequences of the complex.
-        m:
-            a unique integer identifier for the sequence starting from 101, used to map
-            sequences to representative IDs in the MSA server queries.
+            - An identifier associated with all protein sequences in the
+            same query, constructed based on a hash of the sequences.
+            Only used for queries with more than 2 unique protein sequences.
+            - Can be constructed using `ComplexGroup` class wrapped around the
+            set of sequences
 
     Attributes:
-        seq_to_rep_id (dict[str, ChainID]):
-            Sequence to representative ID mapping.
-        rep_id_to_m (dict[int, ChainID]):
-            Mapping from representative ID to a unique integer identifier.
-        rep_id_to_seq (dict[ChainID, str]):
+        seq_to_rep_id (dict[str, str]):
+            Sequence to representative ID mapping (hash of input sequecne).
+        rep_id_to_seq (dict[str, str]):
             Representative ID to sequence mapping.
-        chain_id_to_rep_id (dict[ChainID, ChainID]):
+        chain_id_to_rep_id (dict[str, str]):
             Chain ID to representative ID mapping.
-        query_name_to_complex_id (dict[str, ComplexID]):
+        query_name_to_complex_id (dict[str, str]):
             Query name to complex ID mapping.
-        complex_ids (set[ComplexID]):
-            Set of complex IDs.
+        complex_id_to_complex_group (dict[str, ComplexGroup]):
+            Complex id identifier mapped to sequences that constructed the id
         seqs (list[str]):
             List of unique sequences.
         rep_ids (list[ChainID]):
             List of representative IDs.
     """
 
-    seq_to_rep_id: dict[str, ChainID] = field(default_factory=dict)
+    seq_to_rep_id: dict[str, ChainInput] = field(default_factory=dict)
     rep_id_to_m: dict[int, ChainID] = field(default_factory=dict)
-    rep_id_to_seq: dict[ChainID, str] = field(default_factory=dict)
-    chain_id_to_rep_id: dict[ChainID, ChainID] = field(default_factory=dict)
-    query_name_to_complex_id: dict[str, ComplexID] = field(default_factory=dict)
-    complex_ids: set[ComplexID] = field(default_factory=set)
+    rep_id_to_seq: dict[ChainInput, str] = field(default_factory=dict)
+    chain_id_to_rep_id: dict[ChainInput, ChainInput] = field(default_factory=dict)
+    query_name_to_complex_id: dict[str, str] = field(default_factory=dict)
+    complex_id_to_complex_group: dict[str, ComplexGroup] = field(default_factory=dict)
     seqs: list[str] = field(default_factory=list)
-    rep_ids: list[ChainID] = field(default_factory=list)
-
-
-def get_sequence_hash(sequence_str: str) -> str:
-    """Generates a SHA-256 hash for the given sequence string."""
-    hasher = hashlib.sha256()
-    hasher.update(sequence_str.encode("utf-8"))
-    return hasher.hexdigest()
+    rep_ids: list[ChainInput] = field(default_factory=list)
 
 
 def collect_colabfold_msa_data(
@@ -515,57 +501,72 @@ def collect_colabfold_msa_data(
     m_i = 101
     # Get unique set of sequences for main MSAs
     for query_name, query in inference_query_set.queries.items():
-        chain_ids_seen = set()
+        chain_inputs_seen = set()
         rep_ids_query = []
 
         for chain in query.chains:
             if chain.molecule_type == MoleculeType.PROTEIN:
                 seq = chain.sequence
-                chain_ids = []
-                for chain_id in chain.chain_ids:
-                    chain_id = str(chain_id)
-
-                    chain_ids.append(ChainID(query_name, chain_id))
+                chain_inputs = [
+                    ChainInput(query_name, str(c_id), seq) for c_id in chain.chain_ids
+                ]
 
                 # Make sure there are no duplicates in the chain IDs across chains of
                 # the same query TODO: could move to pydantic model validation
-                if len(set(chain_ids) & chain_ids_seen) > 0:
+                if len(set(chain_inputs) & chain_inputs_seen) > 0:
                     raise RuntimeError(
                         f"Duplicate chain IDs found in query {query_name}: "
                         f"{chain.chain_ids}"
                     )
 
-                chain_ids_seen.update(chain_ids)
+                chain_inputs_seen.update(chain_inputs)
 
                 # Collect mapping data and sequences for main MSAs
                 if seq not in colabfold_mapper.seq_to_rep_id:
-                    rep_id = get_sequence_hash(seq)
+                    rep_id = chain_inputs[0].rep_id
                     colabfold_mapper.seq_to_rep_id[seq] = rep_id
                     colabfold_mapper.rep_id_to_seq[rep_id] = seq
                     colabfold_mapper.rep_id_to_m[rep_id] = m_i
                     m_i += 1
-                    for chain_id in chain_ids:
-                        colabfold_mapper.chain_id_to_rep_id[chain_id] = rep_id
+                    for chain_input in chain_inputs:
+                        colabfold_mapper.chain_id_to_rep_id[chain_input.name] = rep_id
                     colabfold_mapper.seqs.append(seq)
                     colabfold_mapper.rep_ids.append(rep_id)
                 else:
-                    for chain_id in chain_ids:
-                        colabfold_mapper.chain_id_to_rep_id[chain_id] = (
+                    for chain_input in chain_inputs:
+                        colabfold_mapper.chain_id_to_rep_id[chain_input.name] = (
                             colabfold_mapper.seq_to_rep_id[seq]
                         )
 
                 # Collect paired MSA data
-                for chain_id in chain_ids:
-                    rep_ids_query.append(colabfold_mapper.chain_id_to_rep_id[chain_id])
+                for chain_input in chain_inputs:
+                    rep_ids_query.append(
+                        colabfold_mapper.chain_id_to_rep_id[chain_input.name]
+                    )
 
         # Only do pairing if number of unique protein sequences is > 1
         if len(set(rep_ids_query)) > 1:
-            complex_id = ComplexID(*sorted(rep_ids_query, key=lambda c: str(c)))
-            if complex_id not in colabfold_mapper.complex_ids:
-                colabfold_mapper.complex_ids.add(complex_id)
+            sequences = [colabfold_mapper.rep_id_to_seq[r] for r in set(rep_ids_query)]
+            complex_group = ComplexGroup(sequences)
+            complex_id = complex_group.rep_id
+            if complex_id not in colabfold_mapper.complex_id_to_complex_group:
+                colabfold_mapper.complex_id_to_complex_group[complex_id] = complex_group
             colabfold_mapper.query_name_to_complex_id[query_name] = complex_id
 
     return colabfold_mapper
+
+
+def _save_mapping(mapping, save_filepath, append=False):
+    if os.path.exists(save_filepath) and append:
+        logger.warning(
+            f"Mapping file {save_filepath} already exists. Appending new sequences."
+        )
+        with open(save_filepath) as f:
+            old_mapping = json.load(f)
+            mapping.update(old_mapping)
+
+    with open(save_filepath, "w") as f:
+        json.dump(mapping, f, indent=4)
 
 
 def save_colabfold_mappings(
@@ -580,48 +581,31 @@ def save_colabfold_mappings(
             The output directory to save the JSON files.
     """
 
-    mapping_files_directory_path = output_directory / "mappings"
-    mapping_files_directory_path.mkdir(parents=True, exist_ok=True)
+    mapping_files_dir = output_directory / "mappings"
+    mapping_files_dir.mkdir(parents=True, exist_ok=True)
 
-    for mapping_name, mapping in zip(
-        [
-            "seq_to_rep_id",
-            "rep_id_to_seq",
-        ],
-        [
-            colabfold_msa_input.seq_to_rep_id,
-            colabfold_msa_input.rep_id_to_seq,
-        ],
-    ):
-        mapping_file_path = mapping_files_directory_path / f"{mapping_name}.json"
-        if os.path.exists(mapping_file_path):
-            logger.warning(
-                f"Mapping file {mapping_file_path} already exists. "
-                "Appending new sequences."
-            )
-            with open(mapping_file_path) as f:
-                old_mapping = json.load(f)
-                mapping.update(old_mapping)
+    _save_mapping(
+        colabfold_msa_input.seq_to_rep_id,
+        mapping_files_dir / "seq_to_rep_id.json",
+        append=True,
+    )
+    _save_mapping(
+        colabfold_msa_input.rep_id_to_seq,
+        mapping_files_dir / "rep_id_to_seq.json",
+        append=True,
+    )
+    _save_mapping(
+        colabfold_msa_input.chain_id_to_rep_id,
+        mapping_files_dir / "chain_id_to_rep_id.json",
+        append=False,
+    )
+    _save_mapping(
+        colabfold_msa_input.query_name_to_complex_id,
+        mapping_files_dir / "query_name_to_complex_id.json",
+        append=False,
+    )
 
-            with open(mapping_file_path, "w") as f:
-                json.dump(mapping, f, indent=4)
-
-    for mapping_name, mapping in zip(
-        [
-            "chain_id_to_rep_id",
-            "query_name_to_complex_id",
-        ],
-        [
-            colabfold_msa_input.chain_id_to_rep_id,
-            colabfold_msa_input.query_name_to_complex_id,
-        ],
-    ):
-        if mapping_name == "chain_id_to_rep_id":
-            mapping = {str(k): v for k, v in mapping.items()}
-        mapping_file_path = mapping_files_directory_path / f"{mapping_name}.json"
-        with open(mapping_file_path, "w") as f:
-            json.dump(mapping, f, indent=4)
-    with open(mapping_files_directory_path / "README.md", "w") as f:
+    with open(mapping_files_dir / "README.md", "w") as f:
         f.write(
             "# Mapping files\n"
             "These files contain mappings between the following entities:\n"
@@ -747,24 +731,20 @@ class ColabFoldQueryRunner:
         paired_alignments_directory = self.output_directory / "paired"
         paired_alignments_directory.mkdir(parents=True, exist_ok=True)
         # Submit queries for paired MSAss
+        num_complexes = len(self.colabfold_mapper.complex_id_to_complex_group)
         print(
-            f"Submitting {len(self.colabfold_mapper.complex_ids)} paired MSA queries"
+            f"Submitting {num_complexes} paired MSA queries"
             " to the Colabfold MSA server..."
         )
-        for complex_id in tqdm(
-            self.colabfold_mapper.complex_ids,
-            total=len(self.colabfold_mapper.complex_ids),
+        for complex_id, complex_group in tqdm(
+            self.colabfold_mapper.complex_id_to_complex_group.items(),
+            total=num_complexes,
             desc="Computing paired MSAs",
         ):
-            # Get the representative sequences for the query
-            seqs_query = [
-                self.colabfold_mapper.rep_id_to_seq[rep_id] for rep_id in complex_id
-            ]
-
             # Submit the query to the Colabfold MSA server
             (self.output_directory / "raw/paired").mkdir(parents=True, exist_ok=True)
             a3m_lines_paired = query_colabfold_msa_server(
-                seqs_query,
+                complex_group,
                 prefix=self.output_directory / f"raw/paired/{complex_id}",
                 use_templates=False,
                 use_pairing=True,
@@ -773,10 +753,10 @@ class ColabFoldQueryRunner:
             )
 
             # TODO: process the returned MSAs - save per representative ID
-            complex_directory = paired_alignments_directory / str(complex_id)
+            complex_directory = paired_alignments_directory / str(complex_group.rep_id)
             complex_directory.mkdir(parents=True, exist_ok=True)
-            for rep_id, aln in zip(complex_id, a3m_lines_paired):
-                rep_dir = complex_directory / str(rep_id)
+            for seq, aln in zip(complex_group, a3m_lines_paired):
+                rep_dir = complex_directory / str(get_sequence_hash(seq))
 
                 # If save as a3m...
                 if "a3m" in self.msa_file_format:
@@ -795,8 +775,12 @@ class ColabFoldQueryRunner:
                     np.savez_compressed(npz_file, **msas_preparsed)
 
     def cleanup(self):
-        """_summary_"""
-        # TODO add code to optionally clean up the raw MSA files
+        """Remove raw colabfold MSA directory.
+
+        If the same MSA output directory is used, this directory must be removed
+        to avoid using old MSAs for new inputs.
+        """
+        shutil.rmtree(self.output_directory / "raw", ignore_errors=True)
 
 
 def add_msa_paths_to_iqs(
@@ -822,9 +806,7 @@ def add_msa_paths_to_iqs(
         for chain in query.chains:
             if chain.molecule_type == MoleculeType.PROTEIN:
                 # Add main MSA file paths to the chain field
-                rep_id = colabfold_mapper.chain_id_to_rep_id[
-                    ChainID(query_name, chain.chain_ids[0])
-                ]
+                rep_id = colabfold_mapper.seq_to_rep_id[chain.sequence]
 
                 # Use npz if available, otherwise use a3m
                 main_msa_file_path = output_directory / "main" / f"{str(rep_id)}.npz"
@@ -900,7 +882,7 @@ class MsaComputationSettings(BaseModel):
     msa_file_format: Literal["npz", "a3m"] = "npz"
     server_user_agent: str = "openfold"
     server_url: Url = Url("https://api.colabfold.com")
-    save_mappings: bool = False
+    save_mappings: bool = True
     msa_output_directory: Path = Path(tempfile.gettempdir()) / "of3_colabfold_msas"
     cleanup_msa_dir: bool = True
 
@@ -921,8 +903,6 @@ def preprocess_colabfold_msas(
     Args:
         inference_query_set (InferenceQuerySet):
             The inference query set containing the queries and chains.
-        output_directory (Path):
-            The output directory to save the results to.
         compute_settings: pydantic model with server settings, contains:
             msa_file_format (str):
                 The format of the MSA files to save.
@@ -998,5 +978,8 @@ def preprocess_colabfold_msas(
         colabfold_mapper=colabfold_mapper,
         output_directory=output_directory,
     )
+
+    # Remove raw MSA directory
+    colabfold_query_runner.cleanup()
 
     return inference_query_set

@@ -356,7 +356,7 @@ class OpenFold3(nn.Module):
                 _mask_trans=True,
             )
 
-        self.clear_autocast_cache()
+            self.clear_autocast_cache()
 
         output = {
             "si_trunk": si_trunk,
@@ -583,13 +583,21 @@ class OpenFold3(nn.Module):
         # The dual condition accounts for activation checkpoints
         inplace_safe = not (self.training or torch.is_grad_enabled())
 
-        num_cycles = (
-            random.randint(1, self.shared.max_cycles)
+        # If training, we sample the number of recycles
+        # This is the additional number of iterations through the trunk
+        # TODO: Because the process seeds are set to the same initial value for all
+        #  GPUs and because the standard random library is only used here, the number
+        #  of recycles will be the same per batch.
+        #  Change to get num recycles from the process initial seed + global step
+        #  so that it's more robust.
+        num_recycles = (
+            random.randint(0, self.shared.num_recycles)
             if self.training
-            else self.shared.max_cycles
+            else self.shared.num_recycles
         )
+        num_cycles = num_recycles + 1
 
-        output = {"recycles": num_cycles}
+        output = {"recycles": num_recycles}
 
         # Compute representations
         si_input, si_trunk, zij_trunk = self.run_trunk(
@@ -633,7 +641,7 @@ class OpenFold3(nn.Module):
                     atom_positions_predicted=output["atom_positions_predicted"],
                 )
 
-            self.clear_autocast_cache()
+                self.clear_autocast_cache()
 
             if self.training:  # noqa: SIM102
                 # Run training step (if necessary)

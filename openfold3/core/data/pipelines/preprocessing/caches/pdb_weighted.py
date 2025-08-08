@@ -38,11 +38,11 @@ logger = logging.getLogger(__name__)
 # TODO: Make docstring more complete for new args
 def filter_structure_metadata_of3(
     structure_cache: PreprocessingStructureDataCache,
-    max_release_date: datetime.date | str,
-    min_release_date: datetime.date | str = None,
-    max_resolution: float = 9.0,
+    max_release_date: datetime.date | str | None = None,
+    min_release_date: datetime.date | str | None = None,
+    max_resolution: float | None = None,
     ignore_nmr: bool = True,
-    max_polymer_chains: int = 300,
+    max_polymer_chains: int | None = None,
     max_tokens: int | None = None,
 ) -> PreprocessingStructureDataCache:
     """Filter the structure metadata cache for training or validation.
@@ -62,7 +62,7 @@ def filter_structure_metadata_of3(
     Returns:
         Filtered structure metadata cache.
     """
-    if not isinstance(max_release_date, datetime.date):
+    if max_release_date and not isinstance(max_release_date, datetime.date):
         max_release_date = datetime.datetime.strptime(
             max_release_date, "%Y-%m-%d"
         ).date()
@@ -78,19 +78,22 @@ def filter_structure_metadata_of3(
     # it does not work with skipped/failed structures)
     filtered_cache = filter_by_skipped_structures(structure_cache)
 
-    filtered_cache = with_log(filter_by_resolution)(
-        filtered_cache, max_resolution, ignore_nmr=ignore_nmr
-    )
+    if max_resolution is not None:
+        filtered_cache = with_log(filter_by_resolution)(
+            filtered_cache, max_resolution, ignore_nmr=ignore_nmr
+        )
 
-    filtered_cache = with_log(filter_by_release_date)(
-        filtered_cache,
-        min_date=min_release_date,
-        max_date=max_release_date,
-    )
+    if max_release_date is not None or min_release_date is not None:
+        filtered_cache = with_log(filter_by_release_date)(
+            filtered_cache,
+            min_date=min_release_date,
+            max_date=max_release_date,
+        )
 
-    filtered_cache = with_log(filter_by_max_polymer_chains)(
-        filtered_cache, max_polymer_chains
-    )
+    if max_polymer_chains is not None:
+        filtered_cache = with_log(filter_by_max_polymer_chains)(
+            filtered_cache, max_polymer_chains
+        )
     if max_tokens:
         filtered_cache = with_log(filter_by_token_count)(filtered_cache, max_tokens)
 
@@ -104,9 +107,10 @@ def create_pdb_training_dataset_cache_of3(
     alignment_representatives_fasta: Path,
     output_path: Path,
     dataset_name: str,
-    max_release_date: datetime.date | str,
-    max_resolution: float = 9.0,
-    max_polymer_chains: int = 300,
+    max_release_date: datetime.date | str | None = None,
+    max_conformer_release_date: datetime.date | str | None = None,
+    max_resolution: float | None = None,
+    max_polymer_chains: int | None = None,
     filter_missing_alignment: bool = True,
     missing_alignment_log: Path = None,
 ) -> None:
@@ -128,6 +132,10 @@ def create_pdb_training_dataset_cache_of3(
             Name of the dataset, e.g. 'PDB-weighted'.
         max_release_date:
             Maximum release date for included structures, formatted as 'YYYY-MM-DD'.
+        max_conformer_release_date:
+            Maximum release date for the model PDB-ID associated with a conformer, in
+            the rare case that conformer coordinates have to be inferred from the CCD
+            model coordinates. If not provided, defaults to max_release_date.
         max_resolution:
             Maximum resolution for structures in the dataset in Å.
         max_polymer_chains:
@@ -140,6 +148,9 @@ def create_pdb_training_dataset_cache_of3(
             Path to write a JSON file containing all chains that were filtered out
             because they do not have a corresponding alignment.
     """
+    if max_conformer_release_date is None:
+        max_conformer_release_date = max_release_date
+
     metadata_cache = PreprocessingDataCache.from_json(metadata_cache_path)
 
     # Read in FASTAs of all sequences in the training set
@@ -188,8 +199,8 @@ def create_pdb_training_dataset_cache_of3(
                 # Convert the internal dataclasses to dict
                 unmatched_entries = {
                     pdb_id: {chain_id: asdict(chain_data)}
-                    for pdb_id, chain_data in unmatched_entries.items()
-                    for chain_id, chain_data in chain_data.items()
+                    for pdb_id, chains_data in unmatched_entries.items()
+                    for chain_id, chain_data in chains_data.items()
                 }
 
                 # Format datacache-types appropriately
@@ -198,10 +209,9 @@ def create_pdb_training_dataset_cache_of3(
                 json.dump(unmatched_entries, f, indent=4)
         else:
             structure_data = with_log(add_and_filter_alignment_representatives)(
-                dataset_cache.structure_data,
+                structure_cache=dataset_cache.structure_data,
                 query_chain_to_seq=id_to_sequence,
                 alignment_representatives_fasta=alignment_representatives_fasta,
-                preprocessed_dir=preprocessed_dir,
             )
 
         dataset_cache.structure_data = structure_data
@@ -218,11 +228,17 @@ def create_pdb_training_dataset_cache_of3(
     # Block usage of reference conformer coordinates from PDB-IDs that are outside the
     # training split. Needs to be run before the filtering to use the full release date
     # information in structure_data.
-    set_nan_fallback_conformer_flag(
-        pdb_id_to_release_date=pdb_id_to_release_date,
-        reference_mol_cache=dataset_cache.reference_molecule_data,
-        max_model_pdb_release_date=max_release_date,
-    )
+    if max_conformer_release_date is not None:
+        if isinstance(max_conformer_release_date, str):
+            max_conformer_release_date = datetime.datetime.strptime(
+                max_conformer_release_date, "%Y-%m-%d"
+            ).date()
+
+        set_nan_fallback_conformer_flag(
+            pdb_id_to_release_date=pdb_id_to_release_date,
+            reference_mol_cache=dataset_cache.reference_molecule_data,
+            max_model_pdb_release_date=max_conformer_release_date,
+        )
 
     # Write the final dataset cache to disk
     write_datacache_to_json(dataset_cache, output_path)

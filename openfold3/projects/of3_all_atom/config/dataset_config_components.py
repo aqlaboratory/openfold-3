@@ -132,7 +132,7 @@ class LossWeights(BaseModel):
     smooth_lddt: float = 4.0
     mse: float = 4.0
     distogram: float = 3e-2
-    experimentally_resolved: float = 0.0
+    experimentally_resolved: float = 1e-4
     plddt: float = 1e-4
     pae: float = 0.0
     pde: float = 1e-4

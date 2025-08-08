@@ -69,7 +69,7 @@ class ExperimentRunner(ABC):
         """Get the project entry from the registry."""
         return OF3ProjectEntry()
 
-    @property
+    @cached_property
     def model_config(self) -> mlc.ConfigDict:
         """Retrieve the model configuration."""
         return self.project_entry.get_model_config_with_update(self.model_update)
@@ -380,6 +380,17 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.seeds = experiment_config.experiment_settings.seeds
         self.output_writer_settings = experiment_config.output_writer_settings
         self.timer = ExperimentTimer()
+
+    def set_num_diffusion_samples(self, num_diffusion_samples: int) -> None:
+        update_dict = {
+            "architecture": {
+                "shared": {
+                    "diffusion": {"no_full_rollout_samples": num_diffusion_samples}
+                }
+            }
+        }
+        model_config = self.model_config
+        model_config.update(update_dict)
 
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
