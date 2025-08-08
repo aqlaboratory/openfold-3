@@ -445,14 +445,13 @@ class ColabFoldMapper:
         chain_id:
             a (query_name, chain identifier) tuple based on the query
         rep_id:
-            a hash of th sequence id
+            a hash of the sequence id
         seq:
             the actual protein sequence.
         complex_id:
-            - An identifier associated with a unique SET of protein
-            sequences in the same query, consisting of the sorted
-            representative IDs of ALL chains in the complex; only used for
-            queries with more than 2 unique protein sequences.
+            - An identifier associated with all protein sequences in the 
+            same query, constructed based on a hash of the sequences. 
+            Only used for queries with more than 2 unique protein sequences.
             - Can be constructed using `ComplexGroup` class wrapped around the
             set of sequences
 

@@ -144,7 +144,7 @@ def predict(
     expt_config = InferenceExperimentConfig(
         inference_ckpt_path=inference_ckpt_path, **runner_args
     )
-    
+
     expt_runner = InferenceExperimentRunner(expt_config)
     if output_dir:
         output_dir.mkdir(exist_ok=True, parents=True)
