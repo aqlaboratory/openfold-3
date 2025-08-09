@@ -123,7 +123,7 @@ class TestColabFoldQueryRunner:
         # dummy a3m output
         mock_query.return_value = [">seq1\nAAA\n", ">seq2\nBBBBB\n"]
         # dummy tsv output
-        mock_read_csv.return_value = pd.DataFrame()
+        mock_read_csv.return_value = pd.DataFrame({0: []})
 
         mapper = collect_colabfold_msa_data(multimer_query_set)
         runner = ColabFoldQueryRunner(
@@ -165,7 +165,7 @@ class TestColabFoldQueryRunner:
     ):
         test_sequences = ["TEST", "LONGERTEST"]
 
-        mock_read_csv.return_value = pd.DataFrame()
+        mock_read_csv.return_value = pd.DataFrame({0: []})
 
         # run a separate query with the same name for each test sequence
         for sequence in test_sequences:
@@ -210,7 +210,7 @@ class TestColabFoldQueryRunner:
     ):
         """Integration test for making predictions with fake MSA data."""
         test_sequences = ["TEST", "LONGERTEST"]
-        mock_read_csv.return_value = pd.DataFrame()
+        mock_read_csv.return_value = pd.DataFrame({0: []})
 
         for sequence in test_sequences:
             query_set = self._construct_monomer_query(sequence)
