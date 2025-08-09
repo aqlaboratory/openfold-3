@@ -4,6 +4,7 @@ import json
 import textwrap
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 
 from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
@@ -110,8 +111,10 @@ class TestColabFoldQueryRunner:
         return result
 
     @patch("openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server")
+    @patch("pandas.read_csv")
     def test_runner_on_multimer_example(
         self,
+        mock_read_csv,
         mock_query,
         tmp_path,
         multimer_query_set,
@@ -119,6 +122,8 @@ class TestColabFoldQueryRunner:
     ):
         # dummy a3m output
         mock_query.return_value = [">seq1\nAAA\n", ">seq2\nBBBBB\n"]
+        # dummy tsv output
+        mock_read_csv.return_value = pd.DataFrame()
 
         mapper = collect_colabfold_msa_data(multimer_query_set)
         runner = ColabFoldQueryRunner(
@@ -147,16 +152,20 @@ class TestColabFoldQueryRunner:
         "openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server",
         side_effect=_construct_dummy_a3m,
     )
+    @patch("pandas.read_csv")
     @pytest.mark.parametrize(
         "msa_file_format", ["a3m", "npz"], ids=lambda fmt: f"format={fmt}"
     )
     def test_msa_generation_on_multiple_queries_with_same_name(
         self,
+        mock_read_csv,
         mock_query,
         tmp_path,
         msa_file_format,
     ):
         test_sequences = ["TEST", "LONGERTEST"]
+
+        mock_read_csv.return_value = pd.DataFrame()
 
         # run a separate query with the same name for each test sequence
         for sequence in test_sequences:
@@ -188,17 +197,20 @@ class TestColabFoldQueryRunner:
         "openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server",
         side_effect=_construct_dummy_a3m,
     )
+    @patch("pandas.read_csv")
     @pytest.mark.parametrize(
         "msa_file_format", ["a3m", "npz"], ids=lambda fmt: f"{fmt}"
     )
     def test_features_on_multiple_queries_with_same_name(
         self,
+        mock_read_csv,
         mock_query,
         tmp_path,
         msa_file_format,
     ):
         """Integration test for making predictions with fake MSA data."""
         test_sequences = ["TEST", "LONGERTEST"]
+        mock_read_csv.return_value = pd.DataFrame()
 
         for sequence in test_sequences:
             query_set = self._construct_monomer_query(sequence)
