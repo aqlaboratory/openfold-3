@@ -1949,7 +1949,7 @@ class TemplatePrecachePreprocessor:
                     self.template_entry_ids,
                     chunksize=self.chunksize,
                 ),
-                total=len(self.inputs),
+                total=len(self.template_entry_ids),
                 desc="Preprocessing template structures into precache entries",
             ):
                 pass
@@ -2031,7 +2031,7 @@ class TemplateStructurePreprocessor:
                     self.template_entry_ids,
                     chunksize=self.chunksize,
                 ),
-                total=len(self.inputs),
+                total=len(self.template_entry_ids),
                 desc="Preprocessing template structures into structure arrays",
             ):
                 pass

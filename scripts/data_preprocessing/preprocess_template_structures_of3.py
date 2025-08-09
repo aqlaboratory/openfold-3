@@ -22,8 +22,8 @@ from openfold3.core.data.pipelines.preprocessing.template import (
         "array preprocessor pipeline."
     ),
     type=click.Path(
-        file_okay=False,
-        dir_okay=True,
+        file_okay=True,
+        dir_okay=False,
         path_type=Path,
     ),
 )

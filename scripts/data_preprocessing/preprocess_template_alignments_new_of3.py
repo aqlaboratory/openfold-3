@@ -26,8 +26,8 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
         "query set JSON for inference."
     ),
     type=click.Path(
-        file_okay=False,
-        dir_okay=True,
+        file_okay=True,
+        dir_okay=False,
         path_type=Path,
     ),
 )
@@ -48,8 +48,8 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
         "pipeline."
     ),
     type=click.Path(
-        file_okay=False,
-        dir_okay=True,
+        file_okay=True,
+        dir_okay=False,
         path_type=Path,
     ),
 )
@@ -62,7 +62,7 @@ def main(input_set_path: Path, input_set_type: str, runner_yaml: Path):
             "Offline template preprocessing with the new template"
             " pipeline is not yet implemented."
         )
-    elif input_set_type == "inference":
+    elif input_set_type == "predict":
         # load into InferenceQuerySet
         input_set = InferenceQuerySet.from_json(input_set_path)
 
