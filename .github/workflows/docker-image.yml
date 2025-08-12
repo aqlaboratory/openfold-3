@@ -10,7 +10,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - name: Cleanup  # https://github.com/actions/runner-images/issues/2840#issuecomment-2272410832
       shell: bash
       run: |
