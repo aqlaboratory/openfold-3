@@ -14,7 +14,6 @@ from typing import Annotated, Literal, Optional
 import numpy as np
 import pandas as pd
 from biotite.database.rcsb import fetch
-from biotite.structure import info
 from biotite.structure.io import pdbx
 from biotite.structure.io.pdbx import CIFFile
 from pydantic import (
@@ -57,6 +56,7 @@ from openfold3.core.data.primitives.sequence.template import (
     match_template_chain_and_sequence,
     parse_representatives,
 )
+from openfold3.core.data.primitives.structure.component import BiotiteCCDWrapper
 from openfold3.core.data.primitives.structure.metadata import (
     get_asym_id_to_canonical_seq_dict,
     get_cif_block,
@@ -2007,7 +2007,7 @@ class TemplateStructurePreprocessor:
         if config.ccd_file_path is not None:
             self.ccd = pdbx.CIFFile.read(config.ccd_file_path)
         else:
-            self.ccd = None
+            self.ccd = BiotiteCCDWrapper()
 
         self.template_entry_ids = [
             f.stem
@@ -2176,33 +2176,3 @@ def preprocess_template_structure_for_template(
                 / f"{template_structure_file.stem}_{chain_id}.npz",
             )
     return cif_file, atom_array
-
-
-class BiotiteCCDWrapper:
-    """
-    A stateless façade for Biotite's internal CCD.
-
-    Provides dictionary-style access: `ccd[comp_id][category][column_name]`
-    by wrapping `biotite.structure.info.get_from_ccd()`.
-    """
-
-    def __getitem__(self, comp_id: str):
-        # Return an accessor that holds the component ID
-        return self._CategoryAccessor(comp_id)
-
-    class _CategoryAccessor:
-        def __init__(self, comp_id: str):
-            self._comp_id = comp_id
-
-        def __getitem__(self, category: str):
-            # Return a final accessor holding both comp_id and category
-            return BiotiteCCDWrapper._ColumnAccessor(self._comp_id, category)
-
-    class _ColumnAccessor:
-        def __init__(self, comp_id: str, category: str):
-            self._comp_id = comp_id
-            self._category = category
-
-        def __getitem__(self, column_name: str):
-            # Perform the actual lookup using the stored information
-            return info.get_from_ccd(self._category, self._comp_id, column_name)

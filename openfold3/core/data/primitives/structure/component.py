@@ -8,7 +8,7 @@ import biotite.structure as struc
 import gemmi
 import numpy as np
 import requests
-from biotite.structure import AtomArray, BondType
+from biotite.structure import AtomArray, BondType, info
 from biotite.structure.io.pdbx import CIFFile
 from pdbeccdutils.core import ccd_reader
 from pdbeccdutils.core.ccd_reader import Component
@@ -653,3 +653,33 @@ def find_cross_chain_bonds(atom_array: AtomArray) -> np.ndarray:
     cross_chain_selector = chain_ids_atom_1 != chain_ids_atom_2
 
     return all_bonds[cross_chain_selector]
+
+
+class BiotiteCCDWrapper:
+    """
+    A stateless façade for Biotite's internal CCD.
+
+    Provides dictionary-style access: `ccd[comp_id][category][column_name]`
+    by wrapping `biotite.structure.info.get_from_ccd()`.
+    """
+
+    def __getitem__(self, comp_id: str):
+        # Return an accessor that holds the component ID
+        return self._CategoryAccessor(comp_id)
+
+    class _CategoryAccessor:
+        def __init__(self, comp_id: str):
+            self._comp_id = comp_id
+
+        def __getitem__(self, category: str):
+            # Return a final accessor holding both comp_id and category
+            return BiotiteCCDWrapper._ColumnAccessor(self._comp_id, category)
+
+    class _ColumnAccessor:
+        def __init__(self, comp_id: str, category: str):
+            self._comp_id = comp_id
+            self._category = category
+
+        def __getitem__(self, column_name: str):
+            # Perform the actual lookup using the stored information
+            return info.get_from_ccd(self._category, self._comp_id, column_name)

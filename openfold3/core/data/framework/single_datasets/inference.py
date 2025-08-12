@@ -42,6 +42,7 @@ from openfold3.core.data.pipelines.sample_processing.msa import (
 from openfold3.core.data.pipelines.sample_processing.template import (
     process_template_structures_of3,
 )
+from openfold3.core.data.primitives.structure.component import BiotiteCCDWrapper
 from openfold3.core.data.primitives.structure.query import (
     StructureWithReferenceMolecules,
     structure_with_ref_mols_from_query,
@@ -103,7 +104,7 @@ class InferenceDataset(Dataset):
             logger.debug("Parsing CCD file.")
             self.ccd = pdbx.CIFFile.read(dataset_config.ccd_file_path)
         else:
-            self.ccd = None
+            self.ccd = BiotiteCCDWrapper()
 
         # Create individual datapoint cache (allows rerunning the same query with
         # different seeds)
