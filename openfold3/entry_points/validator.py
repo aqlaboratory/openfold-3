@@ -2,11 +2,11 @@ import random
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, DirectoryPath, model_validator
+from pydantic import BaseModel, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import FilePathOrNone
-from openfold3.core.data.tools.colabfold_msa_server import MsaServerSettings
+from openfold3.core.data.tools.colabfold_msa_server import MsaComputationSettings
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetConfigKwargs,
     TrainingDatasetPaths,
@@ -88,7 +88,7 @@ class ExperimentSettings(BaseModel):
     """General settings for all experiments"""
 
     mode: ValidModeType
-    output_dir: DirectoryPath
+    output_dir: Path = Path("./")
 
     @model_validator(mode="after")
     def create_output_dir(cls, model):
@@ -103,7 +103,6 @@ class TrainingExperimentSettings(ExperimentSettings):
     mode: ValidModeType = "train"
     seed: int = 42
     restart_checkpoint_path: FilePathOrNone = None
-    output_dir: DirectoryPath = Path("./train_output")
 
 
 def generate_seeds(start_seed, num_seeds):
@@ -118,7 +117,6 @@ class InferenceExperimentSettings(ExperimentSettings):
     mode: ValidModeType = "predict"
     seeds: int | list[int] = [42]
     num_seeds: int | None = None
-    output_dir: DirectoryPath = Path("./inference_output")
 
     @model_validator(mode="after")
     def generate_seeds(cls, model):
@@ -170,4 +168,4 @@ class InferenceExperimentConfig(ExperimentConfig):
     data_module_args: DataModuleArgs = DataModuleArgs()
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
-    msa_server_settings: MsaServerSettings = MsaServerSettings()
+    msa_computation_settings: MsaComputationSettings = MsaComputationSettings()
