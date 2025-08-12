@@ -8,6 +8,9 @@ import pandas as pd
 import pytest
 
 from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
+from openfold3.core.data.pipelines.preprocessing.template import (
+    TemplatePreprocessorSettings,
+)
 from openfold3.core.data.tools.colabfold_msa_server import (
     ColabFoldQueryRunner,
     ComplexGroup,
@@ -237,6 +240,7 @@ class TestColabFoldQueryRunner:
             inference_config = InferenceJobConfig(
                 query_set=query_set,
                 msa=MSASettings(max_seq_counts={"colabfold_main": 10}),
+                template_preprocessor=TemplatePreprocessorSettings("predict"),
             )
             inference_spec = InferenceDatasetSpec(config=inference_config)
 
