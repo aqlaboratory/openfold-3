@@ -111,10 +111,8 @@ class TestColabFoldQueryRunner:
         return result
 
     @patch("openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server")
-    @patch("pandas.read_csv")
     def test_runner_on_multimer_example(
         self,
-        mock_read_csv,
         mock_query,
         tmp_path,
         multimer_query_set,
@@ -123,7 +121,11 @@ class TestColabFoldQueryRunner:
         # dummy a3m output
         mock_query.return_value = [">seq1\nAAA\n", ">seq2\nBBBBB\n"]
         # dummy tsv output
-        mock_read_csv.return_value = pd.DataFrame({0: []})
+        raw_main_dir = tmp_path / "raw" / "main"
+        raw_main_dir.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(
+            {0: [101, 101, 102], 1: ["test_A", "test_B", "test_C"], 2: [0, 1, 2]}
+        ).to_csv(raw_main_dir / "pdb70.m8", header=False, index=False, sep="\t")
 
         mapper = collect_colabfold_msa_data(multimer_query_set)
         runner = ColabFoldQueryRunner(
@@ -152,20 +154,23 @@ class TestColabFoldQueryRunner:
         "openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server",
         side_effect=_construct_dummy_a3m,
     )
-    @patch("pandas.read_csv")
     @pytest.mark.parametrize(
         "msa_file_format", ["a3m", "npz"], ids=lambda fmt: f"format={fmt}"
     )
     def test_msa_generation_on_multiple_queries_with_same_name(
         self,
-        mock_read_csv,
         mock_query,
         tmp_path,
         msa_file_format,
     ):
         test_sequences = ["TEST", "LONGERTEST"]
 
-        mock_read_csv.return_value = pd.DataFrame({0: []})
+        # dummy tsv output
+        raw_main_dir = tmp_path / "raw" / "main"
+        raw_main_dir.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(
+            {0: [101, 101, 102], 1: ["test_A", "test_B", "test_C"], 2: [0, 1, 2]}
+        ).to_csv(raw_main_dir / "pdb70.m8", header=False, index=False, sep="\t")
 
         # run a separate query with the same name for each test sequence
         for sequence in test_sequences:
@@ -197,20 +202,24 @@ class TestColabFoldQueryRunner:
         "openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server",
         side_effect=_construct_dummy_a3m,
     )
-    @patch("pandas.read_csv")
     @pytest.mark.parametrize(
         "msa_file_format", ["a3m", "npz"], ids=lambda fmt: f"{fmt}"
     )
     def test_features_on_multiple_queries_with_same_name(
         self,
-        mock_read_csv,
         mock_query,
         tmp_path,
         msa_file_format,
     ):
         """Integration test for making predictions with fake MSA data."""
         test_sequences = ["TEST", "LONGERTEST"]
-        mock_read_csv.return_value = pd.DataFrame({0: []})
+
+        # dummy tsv output
+        raw_main_dir = tmp_path / "raw" / "main"
+        raw_main_dir.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(
+            {0: [101, 101, 102], 1: ["test_A", "test_B", "test_C"], 2: [0, 1, 2]}
+        ).to_csv(raw_main_dir / "pdb70.m8", header=False, index=False, sep="\t")
 
         for sequence in test_sequences:
             query_set = self._construct_monomer_query(sequence)
