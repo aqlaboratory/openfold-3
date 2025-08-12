@@ -7,6 +7,7 @@ import time
 from abc import ABC, abstractmethod
 from functools import cached_property
 from pathlib import Path
+from typing import Any
 
 import ml_collections as mlc
 import pytorch_lightning as pl
@@ -139,7 +140,8 @@ class ExperimentRunner(ABC):
         if self.is_mpi:
             return self.cluster_environment.global_rank() == 0
         else:
-            return _get_rank() == 0
+            _rank = _get_rank()
+            return (_rank is None) or (_rank == 0)
 
     @property
     def cluster_environment(self) -> MPIEnvironment | None:
@@ -214,7 +216,7 @@ class ExperimentRunner(ABC):
 
         return pl.Trainer(**trainer_args)
 
-    def run(self):
+    def run(self) -> Any:
         """Run the experiment in the specified mode.
 
         Depending on the mode (train, eval, test, predict), the corresponding
@@ -239,7 +241,7 @@ class ExperimentRunner(ABC):
                 "'train', 'test', 'predict', 'profile'."""
             )
 
-        target_method(
+        return target_method(
             model=self.lightning_module,
             datamodule=self.lightning_data_module,
             ckpt_path=self.ckpt_path,

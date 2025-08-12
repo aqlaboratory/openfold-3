@@ -13,6 +13,8 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
 )
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate
 
+ValidModeType = Literal["train", "predict", "eval", "test"]
+
 
 class CheckpointConfig(BaseModel):
     """Settings for training checkpoint writing."""
@@ -56,6 +58,7 @@ class DataModuleArgs(BaseModel):
 class PlTrainerArgs(BaseModel):
     """Arguments to configure pl.Trainer, including settings for number of devices."""
 
+    model_config = PydanticConfigDict(extra="allow")
     max_epochs: int = 1000  # pl_trainer default
     accelerator: str = "gpu"
     precision: int | str = "bf16-mixed"
@@ -84,7 +87,7 @@ class OutputWritingSettings(BaseModel):
 class ExperimentSettings(BaseModel):
     """General settings for all experiments"""
 
-    mode: Literal["train", "predict"]
+    mode: ValidModeType
     output_dir: Path = Path("./")
 
     @model_validator(mode="after")
@@ -97,7 +100,7 @@ class ExperimentSettings(BaseModel):
 class TrainingExperimentSettings(ExperimentSettings):
     """General settings specific for training experiments"""
 
-    mode: Literal["train", "predict"] = "train"
+    mode: ValidModeType = "train"
     seed: int = 42
     restart_checkpoint_path: FilePathOrNone = None
 
@@ -111,7 +114,7 @@ def generate_seeds(start_seed, num_seeds):
 class InferenceExperimentSettings(ExperimentSettings):
     """General settings specific for training experiments"""
 
-    mode: Literal["train", "predict"] = "predict"
+    mode: ValidModeType = "predict"
     seeds: int | list[int] = [42]
     num_seeds: int | None = None
 
