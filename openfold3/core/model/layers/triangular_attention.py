@@ -107,6 +107,7 @@ class TriangleAttention(nn.Module):
         chunk_size: Optional[int] = None,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernel: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
@@ -149,6 +150,7 @@ class TriangleAttention(nn.Module):
                 use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
+                use_cueq_triangle_kernel=use_cueq_triangle_kernel,
                 inplace_safe=inplace_safe,
             )
         else:
@@ -159,6 +161,7 @@ class TriangleAttention(nn.Module):
                 use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
+                use_cueq_triangle_kernel=use_cueq_triangle_kernel,
             )
 
         if not self.starting:

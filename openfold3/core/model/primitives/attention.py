@@ -45,7 +45,7 @@ if deepspeed_is_installed:
 if ds4s_is_installed:
     from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
 
-fa_is_installed = importlib.util.find_spec("flash_attn") is not None
+fa_is_installed = False
 if fa_is_installed:
     from flash_attn.bert_padding import unpad_input
     from flash_attn.flash_attn_interface import flash_attn_varlen_kvpacked_func
@@ -54,6 +54,10 @@ if fa_is_installed:
 attn_core_is_installed = importlib.util.find_spec("attn_core_inplace_cuda") is not None
 if attn_core_is_installed:
     from openfold3.core.kernels.cuda.attention_core import attention_core
+
+cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None 
+if cueq_is_installed:
+    from cuequivariance_torch import triangle_attention
 
 DEFAULT_LMA_Q_CHUNK_SIZE = 1024
 DEFAULT_LMA_KV_CHUNK_SIZE = 4096
@@ -296,6 +300,7 @@ class Attention(nn.Module):
         biases: Optional[list[torch.Tensor]] = None,
         use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernel: bool = False,
         use_lma: bool = False,
         lma_q_chunk_size: int = DEFAULT_LMA_Q_CHUNK_SIZE,
         lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
@@ -364,6 +369,7 @@ class Attention(nn.Module):
             use_lma,
             use_flash,
             use_high_precision,
+            use_cueq_triangle_kernel
         ]
         if sum(attn_options) > 1:
             raise ValueError("Choose at most one alternative attention algorithm")
@@ -372,7 +378,7 @@ class Attention(nn.Module):
             biases = []
 
         # DeepSpeed attention kernel applies scaling internally
-        q, k, v = self._prep_qkv(q_x, kv_x, apply_scale=not use_deepspeed_evo_attention)
+        q, k, v = self._prep_qkv(q_x, kv_x, apply_scale=not (use_deepspeed_evo_attention or use_cueq_triangle_kernel ))
 
         if is_fp16_enabled():
             use_memory_efficient_kernel = False
@@ -405,9 +411,25 @@ class Attention(nn.Module):
             o = o.transpose(-2, -3)
         elif use_flash:
             o = _flash_attn(q, k, v, flash_mask)
+        elif use_cueq_triangle_kernel:
+            print("CUEQing")
+            mask_bias, triangle_bias = biases
+            scale = 1.0 / math.sqrt(self.c_hidden)
+            o = triangle_attention(
+                q,
+                k,
+                v,
+                triangle_bias,
+                mask_bias.bool(),
+                scale
+            )
+            o = o.transpose(-2, -3)
+            
+        
         else:
             o = _attention(q, k, v, biases, use_high_precision=use_high_precision)
             o = o.transpose(-2, -3)
+        
 
         o = self._wrap_up(o, q_x)
 
@@ -681,3 +703,14 @@ def _flash_attn(q, k, v, kv_mask):
     out = out.to(dtype=dtype)
 
     return out
+
+# @torch.compiler.disable
+# def _cueq_triangular_attn(
+#     q: torch.Tensor, 
+#     k: torch.Tensor, 
+#     v: torch.Tensor, 
+#     tri_bias: torch.Tensor, 
+#     mask: torch.Tensor, 
+#     scale: float):
+    
+#     return triangle_attention(q, k, v, tri_bias, mask=mask, scale=scale)
