@@ -164,7 +164,7 @@ preparsed_alignments/
 
 ## 4. Specifying Paths in the Inference Query File
 
-The data pipeline needs to know which MSA to use for which protein chain. This information is provided by specifying the [paths to the MSAs](input_format.md#31-protein-chains) for each chain in the inference query json file. There are 3 equivalent ways of specifying these paths.
+The data pipeline needs to know which MSA to use for which chain. This information is provided by specifying the [paths to the MSAs](input_format.md#31-protein-chains) for each chain in the inference query json file. There are 3 equivalent ways of specifying these paths.
 
 ### 4.1. Direct File Paths
 

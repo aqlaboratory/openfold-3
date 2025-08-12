@@ -30,9 +30,8 @@ Files in `sto` format expect the fields provided by default by hmmer alignment t
     - `ALIGNED-SEQUENCE`: the actual sequence alignment, may be split across multiple rows
 
 <details>
-<summary>Example `sto` template alignment format ...</summary>
-<pre><code>
-# STOCKHOLM 1.0
+<summary>Example sto template alignment format ...</summary>
+<pre><code># STOCKHOLM 1.0
 
 #=GS query_A/1-100 DE [subseq from] mol:protein length:100
 #=GS template_B/50-150 DE [subseq from] mol:protein length:200
@@ -57,9 +56,8 @@ Files in the `a3m` format require the standard fasta format with optional start/
     - `ALIGNED-SEQUENCE`: the actual sequence, needs to be aligned if the header contains start-end positions, otherwise the unaligned sequence
 
 <details>
-<summary>Example `a3m` template alignment format ...</summary>
-<pre><code>
->query_A/1-100
+<summary>Example a3m template alignment format ...</summary>
+<pre><code>>query_A/1-100
 MKLLVVDDA--GQGKFT
 >template_B/50-150
 MK--VVDDAaRGQGKFT
@@ -75,9 +73,8 @@ Note that the `a3m` parser attempts to derive the query-to-template residue corr
 Files in `m8` format expect the standard BLAST tabular output format with 12 tab-separated columns. We only use columns 1. (`<entry ID>_<chain ID>`), 3. (sequence identity of the template to the query) and 11. (e value). For all columns, see https://linsalrob.github.io/ComputationalGenomicsManual/SequenceFileFormats/.
 
 <details>
-<summary>Example `m8` template alignment format ...</summary>
-<pre><code>
-query_A	template_B	85.7	14	2	0	1	14	50	63	1e-05	28.1
+<summary>Example m8 template alignment format ...</summary>
+<pre><code>query_A	template_B	85.7	14	2	0	1	14	50	63	1e-05	28.1
 query_A	template_C	71.4	14	4	0	5	18	75	88	2e-03	22.3
 </code></pre>
 </details>
@@ -93,6 +90,40 @@ Template structures currently can only be provided in `cif` format. An upcoming 
 ## 2. Specifying Template Information in the Inference Query File
 
 ### 2.1. Specifying Alignments
+
+The data pipeline needs to know which template alignment to use for which chain. This information is provided by specifying the [paths to the alignments](input_format.md#31-protein-chains) for each chain's `template_alignment_file_path` field in the inference query json file.
+
+<details>
+<summary>Template alignment file path example ...</summary>
+<pre><code>
+{
+    "queries": {
+        "example_query": {
+            "chains": [
+                {
+                    "molecule_type": "protein",
+                    "chain_ids": "A",
+                    "sequence": "GCTLSAEDKAAVERSKMIDRNLREDGEKAAREVKLLLLGAGESGKSTIVKQMKIIHEAGYSEEECKQYKAVVYSNTIQSIIAIIRAMGRLKIDFGDAARADDARQLFVLAGAAEEGFMTAELAGVIKRLWKDSGVQACFNRSREYQLNDSAAYYLNDLDRIAQPNYIPTQQDVLRTRVKTTGIVETHFTFKDLHFKMFDVGAQRSERKKWIHCFEGVTAIIFCVALSDYDLVLAEDEEMNRMHESMKLFDSICNNKWFTDTSIILFLNKKDLFEEKIKKSPLTICYPEYAGSNTYEEAAAYIQCQFEDLNKRKDTKEIYTHFTCATDTKNVQFVFDAVTDVIIKNNLKDCGLF",
+                    "template_alignment_file_path": "example_chain_A.sto"
+                },
+                {
+                    "molecule_type": "protein",
+                    "chain_ids": "B",
+                    "sequence": "MSELDQLRQEAEQLKNQIRDARKACADATLSQITNNIDPVGRIQMRTRRTLRGHLAKIYAMHWGTDSRLLVSASQDGKLIIWDSYTTNKVHAIPLRSSWVMTCAYAPSGNYVACGGLDNICSIYNLKTREGNVRVSRELAGHTGYLSCCRFLDDNQIVTSSGDTTCALWDIETGQQTTTFTGHTGDVMSLSLAPDTRLFVSGACDASAKLWDVREGMCRQTFTGHESDINAICFFPNGNAFATGSDDATCRLFDLRADQELMTYSHDNIICGITSVSFSKSGRLLLAGYDDFNCNVWDALKADRAGVLAGHDNRVSCLGVTDDGMAVATGSWDSFLKIWN",
+                    "template_alignment_file_path": "example_chain_B.sto"
+                },
+                {
+                    "molecule_type": "protein",
+                    "chain_ids": "C",
+                    "sequence": "MASNNTASIAQARKLVEQLKMEANIDRIKVSKAAADLMAYCEAHAKEDPLLTPVPASENPFREKKFFSAIL",
+                    "template_alignment_file_path": "example_chain_C.sto"
+                },
+            ],
+        }
+    }
+}
+</code></pre>
+</details>
 
 ### 2.2. Using Specific Templates
 
