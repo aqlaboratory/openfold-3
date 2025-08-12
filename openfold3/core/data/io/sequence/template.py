@@ -572,7 +572,21 @@ class StoParser(TemplateParser):
             # to a subsequence in the query sequence, but is from a different full
             # sequence, in which case we need to reindex the start position
             if query_start_idx != 1:
-                query_start_idx = query_seq_str.find(first_seq_str) + 1
+                # Check if the subsequence actually exists at the claimed position
+                expected_end = query_start_idx + len(first_seq_str) - 1
+                if (
+                    expected_end <= len(query_seq_str)
+                    and query_seq_str[query_start_idx - 1 : expected_end]
+                    == first_seq_str
+                ):
+                    # Subsequence matches at claimed position - keep original coords
+                    pass
+                else:
+                    # Subsequence doesn't match at claimed position - find correct one
+                    found_pos = query_seq_str.find(first_seq_str)
+                    if found_pos != -1:
+                        query_start_idx = found_pos + 1
+
             template_alignments = [
                 aln_row_map.get(f"{row['id']}/{row['start']}-{row['end']}")
                 or aln_row_map.get(first_id_base)
@@ -625,9 +639,17 @@ class A3mParser(TemplateParser):
 
         # 3. Process A3M-specific headers into a DataFrame
         header_data = []
+        headers_have_coordinates = True
+
         for h in headers_raw:
-            entry_id, start_end = h.split("/")
-            start, end = start_end.split("-")
+            try:
+                entry_id, start_end = h.split("/")
+                start, end = start_end.split("-")
+            except ValueError:
+                headers_have_coordinates = False
+                entry_id = h
+                start, end = "1", "1"
+
             header_data.append((entry_id, start, end, MoleculeType.PROTEIN.name))
 
         headers = pd.DataFrame(header_data, columns=["id", "start", "end", "moltype"])
@@ -638,16 +660,38 @@ class A3mParser(TemplateParser):
         is_first_query = first_seq_str in query_seq_str
 
         # 5. Process alignments
-        if is_first_query and not realign:
-            # Use existing alignment if query is first
+        if is_first_query and not realign and headers_have_coordinates:
+            # Use existing alignment if query is first AND headers have coordinate info
+            query_start_idx = int(headers.iloc[0]["start"])
+            # Check if we need to validate/reindex the start position
+            if query_start_idx != 1:
+                # Check if the subsequence actually exists at the claimed position
+                expected_end = query_start_idx + len(first_seq_str) - 1
+                if (
+                    expected_end <= len(query_seq_str)
+                    and query_seq_str[query_start_idx - 1 : expected_end]
+                    == first_seq_str
+                ):
+                    # Subsequence matches at claimed position - keep original coords
+                    pass
+                else:
+                    # Subsequence doesn't match at claimed position - find correct one
+                    found_pos = query_seq_str.find(first_seq_str)
+                    if found_pos != -1:
+                        query_start_idx = found_pos + 1
+
             return self._process_alignment_hits(
                 query_seq_str=query_seq_str,
                 query_aln_str=alignments[0],
                 template_alignments=alignments,
                 headers=headers,
+                query_start_idx=query_start_idx,
             )
         else:
-            # Realign with kalign if query is not first or realign is requested
+            # Realign with kalign if:
+            # - Query is not first, OR
+            # - Realign is explicitly requested, OR
+            # - Headers lack coordinate information
             all_sequences = f">query\n{query_seq_str}\n"
             for header, seq in zip(headers_raw, alignments):
                 ungapped_seq = "".join(c for c in seq if c.isupper())

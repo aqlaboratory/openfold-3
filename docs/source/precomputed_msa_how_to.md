@@ -15,7 +15,7 @@ IMPORTANT:
 - Steps 1, 2, 4, 5 are required, step 3 is optional, but recommended if your dataset is large or redundant in the number of unique sequences.
 - Make sure to **consult steps 1 and 2 beforehand**, especially if your use case requires the computation of a large number of alignments. This is to ensure that your MSAs are generated in the expected format, with the expected filenames and are organized in the expected directory structure.
 
-*Using our OF3-style MSA generation pipeline*
+*Using our OF3-style MSA generation pipeline*:
 - Only step 4 is required, step 3 is optional, but recommended if your dataset is large or redundant in the number of unique sequences.
 
 ## 1. Precomputed MSA Files
