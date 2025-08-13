@@ -3,6 +3,7 @@
 import json
 import textwrap
 from unittest.mock import patch
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -113,6 +114,15 @@ class TestColabFoldQueryRunner:
         ]
         return result
 
+    @staticmethod 
+    def _make_dummy_template_file(path: Path):
+        raw_main_dir = path / "raw" / "main"
+        raw_main_dir.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(
+            {0: [101, 101, 102], 1: ["test_A", "test_B", "test_C"], 2: [0, 1, 2]}
+        ).to_csv(raw_main_dir / "pdb70.m8", header=False, index=False, sep="\t")
+
+
     @patch("openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server")
     def test_runner_on_multimer_example(
         self,
@@ -123,13 +133,8 @@ class TestColabFoldQueryRunner:
     ):
         # dummy a3m output
         mock_query.return_value = [">seq1\nAAA\n", ">seq2\nBBBBB\n"]
-        # dummy tsv output
-        raw_main_dir = tmp_path / "raw" / "main"
-        raw_main_dir.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(
-            {0: [101, 101, 102], 1: ["test_A", "test_B", "test_C"], 2: [0, 1, 2]}
-        ).to_csv(raw_main_dir / "pdb70.m8", header=False, index=False, sep="\t")
-
+        self._make_dummy_template_file(tmp_path)
+        
         mapper = collect_colabfold_msa_data(multimer_query_set)
         runner = ColabFoldQueryRunner(
             colabfold_mapper=mapper,
@@ -169,11 +174,7 @@ class TestColabFoldQueryRunner:
         test_sequences = ["TEST", "LONGERTEST"]
 
         # dummy tsv output
-        raw_main_dir = tmp_path / "raw" / "main"
-        raw_main_dir.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(
-            {0: [101, 101, 102], 1: ["test_A", "test_B", "test_C"], 2: [0, 1, 2]}
-        ).to_csv(raw_main_dir / "pdb70.m8", header=False, index=False, sep="\t")
+        self._make_dummy_template_file(tmp_path)
 
         # run a separate query with the same name for each test sequence
         for sequence in test_sequences:
@@ -217,15 +218,10 @@ class TestColabFoldQueryRunner:
         """Integration test for making predictions with fake MSA data."""
         test_sequences = ["TEST", "LONGERTEST"]
 
-        # dummy tsv output
-        raw_main_dir = tmp_path / "raw" / "main"
-        raw_main_dir.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(
-            {0: [101, 101, 102], 1: ["test_A", "test_B", "test_C"], 2: [0, 1, 2]}
-        ).to_csv(raw_main_dir / "pdb70.m8", header=False, index=False, sep="\t")
-
         for sequence in test_sequences:
+            # dummy tsv output
             query_set = self._construct_monomer_query(sequence)
+            self._make_dummy_template_file(tmp_path)
             msa_compute_settings = MsaComputationSettings(
                 msa_file_format=msa_file_format,
                 server_user_agent="test-agent",
@@ -253,7 +249,6 @@ class TestColabFoldQueryRunner:
 
             data_module = DataModule(data_config)
 
-            print("making prediction for sequence:", sequence)
             data_module.setup()
             dataloader = data_module.predict_dataloader()
 
