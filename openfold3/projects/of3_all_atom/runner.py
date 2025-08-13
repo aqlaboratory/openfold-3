@@ -288,13 +288,11 @@ class OpenFold3AllAtom(ModelRunner):
         pdb_id = ", ".join(batch.pop("pdb_id"))
         preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
 
-        # TODO: Remove debug logic
-        if self.global_rank == 0:
-            logger.warning(
-                f"Started model forward pass for {pdb_id} with preferred chain or "
-                f"interface {preferred_chain_or_interface} on rank {self.global_rank} "
-                f"step {self.global_step}"
-            )
+        logger.debug(
+            f"Started model forward pass for {pdb_id} with preferred chain or "
+            f"interface {preferred_chain_or_interface} on rank {self.global_rank} "
+            f"step {self.global_step}"
+        )
 
         try:
             # Run the model
