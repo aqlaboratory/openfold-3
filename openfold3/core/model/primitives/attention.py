@@ -521,10 +521,12 @@ def _deepspeed_evo_attn(
 
     def reshape_dims(x):
         no_batch_dims = len(x.shape[:-3])
-        if no_batch_dims < 2:
-            return x.reshape(*((1,) * (2 - no_batch_dims) + x.shape))
+        if no_batch_dims == 0:
+            return x.reshape(1, 1, *x.shape)
+        if no_batch_dims == 1:
+            return x.reshape(x.shape[0], 1, *x.shape[1:])
         if no_batch_dims > 2:
-            return x.reshape(*((x.shape[0], -1) + x.shape[-3:]))
+            return x.reshape(x.shape[0], -1, *x.shape[-3:])
         return x
 
     # Reshape tensors to match expected input shape [B, N, Q/K, H, C_hidden]
