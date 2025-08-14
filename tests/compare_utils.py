@@ -32,6 +32,15 @@ def skip_unless_ds4s_installed():
     )
 
 
+def skip_unless_cueq_installed():
+    cueq_is_installed = cueq_is_installed = (
+        importlib.util.find_spec("cuequivariance_torch") is not None
+    )
+    return unittest.skipUnless(
+        cueq_is_installed, "Requires CU-Equivaraince to be installed"
+    )
+
+
 def cuda_kernels_is_installed():
     attn_core_is_installed = (
         importlib.util.find_spec("attn_core_inplace_cuda") is not None

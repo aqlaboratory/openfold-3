@@ -55,9 +55,9 @@ attn_core_is_installed = importlib.util.find_spec("attn_core_inplace_cuda") is n
 if attn_core_is_installed:
     from openfold3.core.kernels.cuda.attention_core import attention_core
 
-cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None 
+cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
 if cueq_is_installed:
-    from cuequivariance_torch import triangle_attention
+    from cuequivariance_torch.primitives.triangle import triangle_attention
 
 DEFAULT_LMA_Q_CHUNK_SIZE = 1024
 DEFAULT_LMA_KV_CHUNK_SIZE = 4096
@@ -369,16 +369,19 @@ class Attention(nn.Module):
             use_lma,
             use_flash,
             use_high_precision,
-            use_cueq_triangle_kernel
+            use_cueq_triangle_kernel,
         ]
         if sum(attn_options) > 1:
             raise ValueError("Choose at most one alternative attention algorithm")
 
         if biases is None:
             biases = []
-
-        # DeepSpeed attention kernel applies scaling internally
-        q, k, v = self._prep_qkv(q_x, kv_x, apply_scale=not (use_deepspeed_evo_attention or use_cueq_triangle_kernel ))
+        # DeepSpeed attention kernel and cueqivarince kernel applies scaling internally
+        q, k, v = self._prep_qkv(
+            q_x,
+            kv_x,
+            apply_scale=not (use_deepspeed_evo_attention or use_cueq_triangle_kernel),
+        )
 
         if is_fp16_enabled():
             use_memory_efficient_kernel = False
@@ -412,24 +415,11 @@ class Attention(nn.Module):
         elif use_flash:
             o = _flash_attn(q, k, v, flash_mask)
         elif use_cueq_triangle_kernel:
-            print("CUEQing")
-            mask_bias, triangle_bias = biases
             scale = 1.0 / math.sqrt(self.c_hidden)
-            o = triangle_attention(
-                q,
-                k,
-                v,
-                triangle_bias,
-                mask_bias.bool(),
-                scale
-            )
-            o = o.transpose(-2, -3)
-            
-        
+            o = _cueq_triangle_attn(q, k, v, biases, scale=scale)
         else:
             o = _attention(q, k, v, biases, use_high_precision=use_high_precision)
             o = o.transpose(-2, -3)
-        
 
         o = self._wrap_up(o, q_x)
 
@@ -704,13 +694,45 @@ def _flash_attn(q, k, v, kv_mask):
 
     return out
 
-# @torch.compiler.disable
-# def _cueq_triangular_attn(
-#     q: torch.Tensor, 
-#     k: torch.Tensor, 
-#     v: torch.Tensor, 
-#     tri_bias: torch.Tensor, 
-#     mask: torch.Tensor, 
-#     scale: float):
-    
-#     return triangle_attention(q, k, v, tri_bias, mask=mask, scale=scale)
+
+@torch.compiler.disable
+def _cueq_triangle_attn(q, k, v, biases, scale):
+    is_batched_input = False
+    assert len(biases) == 2, (
+        "CUEQ triangle attention kernel requires two bias terms: "
+        "mask_bias and triangle_bias"
+    )
+    mask_bias, triangle_bias = biases
+
+    ##VS: the cueq attn kernel only allows up to 5 input dimensions:
+    ## (batch,*,n_head, *,c_hidden); batch here denotes multiple
+    ## structures in a single fwd pass; while this is fine for the
+    ## pairformer, in the template module we have
+    ## inputs of shape (batch, n_tmpl, n_res,n_head, n_res, c_in)
+    ## so therefore we can only support a batch dim of 1 when
+    ## running the template module.
+    if len(q.shape) > 5:
+        if q.shape[0] != 1:
+            raise ValueError("CUEQ does not support input batch dimension >1")
+        else:
+            is_batched_input = True
+            q = q.squeeze(0)
+            k = k.squeeze(0)
+            v = v.squeeze(0)
+            triangle_bias = triangle_bias.squeeze(0)
+            mask_bias = mask_bias.squeeze(0)
+    ##VS: The mask for the triangle attention kernel needs to be a
+    ## boolean mask - the default mask is an addtive mask, where
+    ## 0 means no masking and -inf means masking. so we need to
+    ## convert this to a boolean mask where positions to keep are
+    ## True, and positions to mask are False.
+    if mask_bias.dtype != torch.bool:
+        mask_bias = mask_bias == 0
+
+    o = triangle_attention(q, k, v, bias=triangle_bias, mask=mask_bias, scale=scale)
+
+    if is_batched_input:
+        o = o.unsqueeze(0)
+
+    o = o.transpose(-2, -3)
+    return o

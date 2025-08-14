@@ -18,6 +18,7 @@ Triangle multiplicative update layers. Includes TriangleMultiplicativeUpdate fro
 and FusedTriangleMultiplicativeUpdate from AF2-Multimer.
 """
 
+import importlib
 from abc import ABC, abstractmethod
 from functools import partialmethod
 from typing import Optional
@@ -29,6 +30,10 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.precision_utils import is_fp16_enabled
 from openfold3.core.utils.tensor_utils import permute_final_dims
+
+cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
+if cueq_is_installed:
+    from cuequivariance_torch import triangle_multiplicative_update
 
 
 class BaseTriangleMultiplicativeUpdate(nn.Module, ABC):
@@ -415,6 +420,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         z: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         inplace_safe: bool = False,
+        use_cueq_triangle_kernel: bool = False,
         _add_with_inplace: bool = False,
         _inplace_chunk_size: Optional[int] = 256,
     ) -> torch.Tensor:
@@ -427,6 +433,60 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         Returns:
             [*, N_res, N_res, C_z] output tensor
         """
+        if inplace_safe and use_cueq_triangle_kernel:
+            raise NotImplementedError(
+                "inplace_safe and use_cueq_triangle_kernel cannot be used together."
+            )
+        if use_cueq_triangle_kernel:
+            ##VS: the cueq trimult kernel only allows up to 4 input dimensions:
+            ## (batch,n_res,n_res,c_hidden); batch here denotes multiple
+            ## structures in a single fwd pass; while this is fine for the
+            ## pairformer, in the template module we have
+            ## inputs of shape (batch, n_tmpl, n_res, n_res, c_in)
+            ## so therefore we can only support a batch dim of 1 when
+            ## running the template module.
+            is_batched_input = False
+            if len(z.shape) > 4:
+                if z.shape[0] != 1:
+                    raise ValueError("CUEQ does not support input batch dimension >1")
+                else:
+                    is_batched_input = True
+                    z = z.squeeze(0)
+                    mask = mask.squeeze(0) if mask is not None else None
+            ## VS: The cuequivariance kernel is based on the boltz implementation
+            ## of triangle multiplicative update, which fuses the linear_*_p
+            ## projections into a single layer (similarly for linear_*_g).
+            ## this why we need to concat the projection layers here
+            g_in_weight = torch.cat(
+                [
+                    self.linear_a_g.weight,
+                    self.linear_b_g.weight,
+                ]
+            )
+            p_in_weight = torch.cat(
+                [
+                    self.linear_a_p.weight,
+                    self.linear_b_p.weight,
+                ]
+            )
+            x = triangle_multiplicative_update(
+                z,
+                direction="outgoing" if self._outgoing else "incoming",
+                mask=mask,
+                norm_in_weight=self.layer_norm_in.weight,
+                norm_in_bias=self.layer_norm_in.bias,
+                p_in_weight=p_in_weight,
+                g_in_weight=g_in_weight,
+                norm_out_weight=self.layer_norm_out.weight,
+                norm_out_bias=self.layer_norm_out.bias,
+                p_out_weight=self.linear_z.weight,
+                g_out_weight=self.linear_g.weight,
+                eps=1e-5,
+            )
+            if is_batched_input:
+                x = x.unsqueeze(0)
+            return x
+
         if inplace_safe:
             x = self._inference_forward(
                 z,
@@ -442,7 +502,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         mask = mask.unsqueeze(-1)
 
         z = self.layer_norm_in(z)
-        a = mask
+        a = mask  # (1,s, s, 1)
         a = a * self.sigmoid(self.linear_a_g(z))
         a = a * self.linear_a_p(z)
         b = mask
