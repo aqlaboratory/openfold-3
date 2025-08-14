@@ -325,7 +325,7 @@ class TestInferenceCommandLineSettings:
             expt_config, use_msa_server=use_msa_cli_arg
         )
         assert expt_runner.use_msa_server == use_msa_cli_arg
-    
+
     @pytest.mark.parametrize("use_templates_cli_arg", [True, False])
     def test_use_templates_cli(self, use_templates_cli_arg, tmp_path):
         expt_config = InferenceExperimentConfig(
