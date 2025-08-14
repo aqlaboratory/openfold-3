@@ -118,6 +118,7 @@ class InferenceExperimentSettings(ExperimentSettings):
     mode: Literal["train", "predict"] = "predict"
     seeds: int | list[int] = [42]
     num_seeds: int | None = None
+    use_msa_server: bool = False 
 
     @model_validator(mode="after")
     def generate_seeds(cls, model):

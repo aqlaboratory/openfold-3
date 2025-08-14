@@ -164,7 +164,8 @@ def predict(
 
     # Perform MSA computation if selected
     #  update query_set with MSA paths
-    if use_msa_server:
+    if use_msa_server or expt_config.experiment_settings.use_msa_server:
+        expt_config.experiment_settings.use_msa_server = True
         print("Using ColabFold MSA server for alignments.")
         query_set = preprocess_colabfold_msas(
             inference_query_set=query_set,
