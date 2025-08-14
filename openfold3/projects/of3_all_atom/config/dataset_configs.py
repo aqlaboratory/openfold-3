@@ -258,7 +258,7 @@ class InferenceDatasetConfigKwargs(BaseModel):
 
     ccd_file_path: FilePathOrNone = None
     msa: MSASettings = colabfold_msa_settings
-    template: TemplateSettings = TemplateSettings()
+    template: TemplateSettings = TemplateSettings(take_top_k=True)
     template_preprocessor_settings: TemplatePreprocessorSettings | None = None
 
 

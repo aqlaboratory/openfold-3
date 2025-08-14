@@ -403,7 +403,7 @@ def calculate_ids_hit(
     q_cumsum = np.cumsum(q_is_residue)
     t_cumsum = np.cumsum(t_is_residue)
 
-    # 4.  Apply the start offset and set gap positions to 0
+    # 4.  Apply the start offset and set gap positions to -1
     query_map = np.where(q_is_residue, q_cumsum + query_start - 1, -1)
     template_map = np.where(t_is_residue, t_cumsum + template_start - 1, -1)
 

@@ -1848,7 +1848,7 @@ class TemplatePreprocessor:
                         continue
                     parser = A3mParser(max_sequences=None)
                     template = parser(
-                        f">query_X/0-1\n{input_data.query_seq_str}\n>{template.entry_id}_{template.chain_id}/0-1\n{template_sequence}\n",
+                        f">query_X/1-{len(input_data.query_seq_str)}\n{input_data.query_seq_str}\n>{template.entry_id}_{template.chain_id}/{1}-{len(template_sequence)}\n{template_sequence}\n",
                         input_data.query_seq_str,
                         realign=True,
                     )[1]
