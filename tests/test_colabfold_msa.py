@@ -2,8 +2,8 @@
 
 import json
 import textwrap
-from unittest.mock import patch
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -114,14 +114,13 @@ class TestColabFoldQueryRunner:
         ]
         return result
 
-    @staticmethod 
+    @staticmethod
     def _make_dummy_template_file(path: Path):
         raw_main_dir = path / "raw" / "main"
         raw_main_dir.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(
             {0: [101, 101, 102], 1: ["test_A", "test_B", "test_C"], 2: [0, 1, 2]}
         ).to_csv(raw_main_dir / "pdb70.m8", header=False, index=False, sep="\t")
-
 
     @patch("openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server")
     def test_runner_on_multimer_example(
@@ -134,7 +133,7 @@ class TestColabFoldQueryRunner:
         # dummy a3m output
         mock_query.return_value = [">seq1\nAAA\n", ">seq2\nBBBBB\n"]
         self._make_dummy_template_file(tmp_path)
-        
+
         mapper = collect_colabfold_msa_data(multimer_query_set)
         runner = ColabFoldQueryRunner(
             colabfold_mapper=mapper,

@@ -29,9 +29,8 @@ from typing import Any, Optional
 
 import numpy as np
 
-from openfold3.core.data.legacy import mmcif_parsing, parsers
+from openfold3.core.data.legacy import kalign_old, mmcif_parsing, parsers
 from openfold3.core.data.legacy.errors import Error
-from openfold3.core.data.tools import kalign_old
 from openfold3.core.data.tools.utils import to_date
 from openfold3.core.np import residue_constants
 

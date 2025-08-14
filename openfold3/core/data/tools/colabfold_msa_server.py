@@ -458,7 +458,9 @@ class ColabFoldMapper:
 
     Attributes:
         seq_to_rep_id (dict[str, str]):
-            Sequence to representative ID mapping (hash of input sequecne).
+            Sequence to representative ID mapping (hash of input sequence).
+        rep_id_to_m (dict[int, str]):
+            Representative ID to Colabfold MSA server internal ID mapping.
         rep_id_to_seq (dict[str, str]):
             Representative ID to sequence mapping.
         chain_id_to_rep_id (dict[str, str]):
@@ -466,7 +468,7 @@ class ColabFoldMapper:
         query_name_to_complex_id (dict[str, str]):
             Query name to complex ID mapping.
         complex_id_to_complex_group (dict[str, ComplexGroup]):
-            Complex id identifier mapped to sequences that constructed the id
+            Complex identifier mapped to sequences that constructed the id.
         seqs (list[str]):
             List of unique sequences.
         rep_ids (list[str]):
@@ -498,6 +500,7 @@ def collect_colabfold_msa_data(
     """
 
     colabfold_mapper = ColabFoldMapper()
+    # Default Colabfold internal identifier starting from 101
     m_i = 101
     # Get unique set of sequences for main MSAs
     for query_name, query in inference_query_set.queries.items():
@@ -887,7 +890,7 @@ class MsaComputationSettings(BaseModel):
     cleanup_msa_dir: bool = True
 
     @model_validator(mode="after")
-    def create_dif(self) -> "MsaComputationSettings":
+    def create_dir(self) -> "MsaComputationSettings":
         """Creates the output directory if it does not exist."""
         if not self.msa_output_directory.exists():
             self.msa_output_directory.mkdir(parents=True, exist_ok=True)
