@@ -15,11 +15,11 @@ Template featurization requires query-to-template **alignments** and template **
 
 ### 1.1. Template Aligment File Format
 
-Template alignments can be provided in either `sto`, `a3m` or `m8` format.
+Template alignments can be provided in either `sto`, `a3m` or `m8` format. Template alignments from the Colabfold server are in `m8` format.
 
 #### 1.1.1. STO
 
-Files in `sto` format expect the fields provided by default by hmmer alignment tools (hmmsearch, hmmalign). These are:
+Files in `sto` format need to contain the fields provided by default by hmmer alignment tools (hmmsearch, hmmalign). These are:
 1. metadata headers: `#=GS <entry id>_<chain id>/<start>-<end> mol:<molecule type>`
     - `#=GS`: indicates header info
     - `<entry id>_<chain id>`: entry identifier indicating which structure file to parse (usually PDB entry ID) and chain identifier indicating which chain in this complex is to be used as the template chain
@@ -33,11 +33,11 @@ Files in `sto` format expect the fields provided by default by hmmer alignment t
 <summary>Example sto template alignment format ...</summary>
 <pre><code># STOCKHOLM 1.0
 
-#=GS query_A/1-100 DE [subseq from] mol:protein length:100
-#=GS template_B/50-150 DE [subseq from] mol:protein length:200
+#=GS entry1_A/1-100 mol:protein
+#=GS entry2_B/50-150 mol:protein
 
-query_A     MKLLVVDDA--GQKFT
-template_B  MK--VVDDARGQGKFT
+entry1_A     MKLLVVDDA--GQKFT
+entry2_B     MK--VVDDARGQGKFT
 //
 </code></pre>
 </details>
@@ -57,9 +57,9 @@ Files in the `a3m` format require the standard fasta format with optional start/
 
 <details>
 <summary>Example a3m template alignment format ...</summary>
-<pre><code>>query_A/1-100
+<pre><code>>entry1_A/1-100
 MKLLVVDDA--GQGKFT
->template_B/50-150
+>entry2_B/50-150
 MK--VVDDAaRGQGKFT
 </code></pre>
 </details>
@@ -81,7 +81,7 @@ query_A	template_C	71.4	14	4	0	5	18	75	88	2e-03	22.3
 
 <br>
 
-Note that since `m8` files do not provide actual alignments, we only use them to identify which structure files to get templates from and always realign the associated set of sequences, derived from the structure files, to the query sequence using Kalign. More on this in the [template processing explanatory document](template_explanation.md).
+Note that since `m8` files do not provide actual alignments, we only use them to identify which structure files to get templates from, retrieve sequences from these structure files and always realign them to the query sequence using Kalign. More on this in the [template processing explanatory document](template_explanation.md).
 
 ### 1.2. Template Structure File Format
 
@@ -92,6 +92,8 @@ Template structures currently can only be provided in `cif` format. An upcoming 
 ### 2.1. Specifying Alignments
 
 The data pipeline needs to know which template alignment to use for which chain. This information is provided by specifying the [paths to the alignments](input_format.md#31-protein-chains) for each chain's `template_alignment_file_path` field in the inference query json file.
+
+Note that when fetching alignments from the Colabfold server, `template_alignment_file_path` fields are automatically populated.
 
 <details>
 <summary>Template alignment file path example ...</summary>
