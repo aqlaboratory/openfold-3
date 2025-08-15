@@ -181,7 +181,7 @@ def predict(
         )
 
     # Preprocess template alignments and optionally template structures
-    if expt_runner.use_templates: 
+    if expt_runner.use_templates:
         logger.info("Using templates for inference.")
         template_preprocessor = TemplatePreprocessor(
             input_set=query_set, config=expt_config.template_preprocessor_settings
