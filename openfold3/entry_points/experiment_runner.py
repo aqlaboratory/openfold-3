@@ -393,9 +393,9 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.update_config_with_cli_args(
             num_diffusion_samples,
             num_model_seeds,
+            output_dir,
             use_msa_server,
             use_templates,
-            output_dir,
         )
 
     def set_num_diffusion_samples(self, num_diffusion_samples: int) -> None:
@@ -411,11 +411,11 @@ class InferenceExperimentRunner(ExperimentRunner):
 
     def update_config_with_cli_args(
         self,
-        num_diffusion_samples: int,
-        num_model_seeds: int,
-        use_msa_server: bool,
-        use_templates: bool,
-        output_dir: Path,
+        num_diffusion_samples: int | None,
+        num_model_seeds: int | None,
+        output_dir: Path | None,
+        use_msa_server: bool = False,
+        use_templates: bool = False,
     ):
         """Updates configuration given command line args."""
         if output_dir:
@@ -448,11 +448,11 @@ class InferenceExperimentRunner(ExperimentRunner):
         """Set up the experiment environment."""
         self.timer.start("Inference")
         self.inference_query_set = inference_query_set
-        self._log_inference_query_set()
-        self._log_experiment_config()
         super().run()
         self.timer.stop()
         print(f"Inference Runtime: {self.timer.get('Inference')}")
+        self._log_inference_query_set()
+        self._log_experiment_config()
 
     @cached_property
     def callbacks(self):

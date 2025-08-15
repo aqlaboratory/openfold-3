@@ -72,7 +72,6 @@ class Query(BaseModel):
 class InferenceQuerySet(BaseModel):
     seeds: list[int] = [42]
     queries: dict[str, Query]
-    use_templates: bool = False
 
     @classmethod
     def from_json(cls, json_path: FilePath) -> "InferenceQuerySet":
