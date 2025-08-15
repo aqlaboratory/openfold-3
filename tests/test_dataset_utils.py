@@ -23,8 +23,8 @@ fewer_examples_than_world_size = {
     ),
 }
 
-no_world_size = {
-    "label": "no_world_size",
+world_size_is_zero = {
+    "label": "world_size_is_zero",
     "dp_cache": pd.DataFrame({"a": [1]}),
     "world_size": None,
     "expected": pd.DataFrame({"a": [1], "repeated_sample": [False]}),
@@ -62,14 +62,31 @@ same_examples_as_world_size = {
     ),
 }
 
+num_examples_is_multiple_of_world_size = {
+    "label": "num_examples_is_multiple_of_world_size",
+    "dp_cache": pd.DataFrame(
+        {
+            "a": [1, 2, 3],
+        }
+    ),
+    "world_size": 1,
+    "expected": pd.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "repeated_sample": [False, False, False],
+        }
+    ),
+}
+
 
 @pytest.mark.parametrize(
     "data",
     [
         fewer_examples_than_world_size,
-        no_world_size,
+        world_size_is_zero,
         more_examples_than_world_size,
         same_examples_as_world_size,
+        num_examples_is_multiple_of_world_size,
     ],
     ids=lambda d: d["label"],
 )

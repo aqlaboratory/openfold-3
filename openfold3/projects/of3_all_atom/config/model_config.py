@@ -207,6 +207,10 @@ model_config = mlc.ConfigDict(
                     "c_m_feats": 34,
                     "c_m": c_m,
                     "c_s_input": c_s_input,
+                    "subsample_main_msa": True,
+                    "subsample_all_msa": False,
+                    "min_subsampled_all_msa": 1024,
+                    "max_subsampled_all_msa": 1024,
                     "linear_init_params": lin_init.msa_module_emb_init,
                 },
                 "msa_module": {
