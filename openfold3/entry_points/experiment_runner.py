@@ -421,6 +421,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         if output_dir:
             output_dir.mkdir(exist_ok=True, parents=True)
             self.output_dir = output_dir
+            self.experiment_config.experiment_settings.output_dir = output_dir
 
         if num_diffusion_samples:
             logger.info(f"Set diffusion samples to {num_diffusion_samples}")
