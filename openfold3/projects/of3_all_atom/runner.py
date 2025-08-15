@@ -8,6 +8,7 @@ from pathlib import Path
 
 import deepspeed
 import torch
+import wandb
 from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
 
 from openfold3.core.loss.loss_module import OpenFold3Loss
@@ -288,11 +289,12 @@ class OpenFold3AllAtom(ModelRunner):
         pdb_id = ", ".join(batch.pop("pdb_id"))
         preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
 
-        logger.debug(
-            f"Started model forward pass for {pdb_id} with preferred chain or "
-            f"interface {preferred_chain_or_interface} on rank {self.global_rank} "
-            f"step {self.global_step}"
-        )
+        if self.global_rank == 0:
+            logger.warning(
+                f"Started model forward pass for {pdb_id} with preferred chain or "
+                f"interface {preferred_chain_or_interface} on rank {self.global_rank} "
+                f"step {self.global_step}"
+            )
 
         try:
             # Run the model
@@ -406,6 +408,38 @@ class OpenFold3AllAtom(ModelRunner):
                 "Sampled batch indices: "
                 f"{self.trainer.train_dataloader.dataset.indices=}"
             )
+
+            num_short_monomer = 179173
+            num_long_monomer = 12607434
+            num_steps_warn = 500
+            est_long_monomer = num_steps_warn * 256 * 0.495
+            est_short_monomer = num_steps_warn * 256 * 0.005
+
+            next_indices = self.trainer.train_dataloader.dataset.next_dataset_indices
+
+            long_mon_next_idx = next_indices["long-monomer-distillation"]
+            short_mon_next_idx = next_indices["short-monomer-distillation"]
+            if isinstance(long_mon_next_idx, torch.Tensor):
+                long_mon_next_idx = long_mon_next_idx.item()
+                short_mon_next_idx = short_mon_next_idx.item()
+
+            est_end_long_mon = long_mon_next_idx + est_long_monomer
+            if est_end_long_mon > num_long_monomer:
+                self.logger.experiment.alert(
+                    title="Long Monomer Cache Warning",
+                    text=f"Long monomer likely reaching end of dataset soon. "
+                    f"Estimated end idx {est_end_long_mon} > {num_long_monomer}",
+                    level=wandb.AlertLevel.WARN,
+                )
+
+            est_end_short_mon = short_mon_next_idx + est_short_monomer
+            if est_end_short_mon > num_short_monomer:
+                self.logger.experiment.alert(
+                    title="Short Monomer Cache Warning",
+                    text=f"Short monomer likely reaching end of dataset soon. "
+                    f"Estimated end idx {est_end_short_mon} > {num_short_monomer}",
+                    level=wandb.AlertLevel.WARN,
+                )
 
     def on_before_optimizer_step(self, *args, **kwargs):
         """Logs the single-transition layer linear_out gradients.
