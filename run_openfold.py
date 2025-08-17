@@ -176,6 +176,8 @@ def predict(
         expt_config = expt_config.model_copy(
             update={"dataset_config_kwargs": updated_dataset_config_kwargs}
         )
+    else:
+        expt_config.msa_computation_settings.cleanup_msa_dir = False
 
     # Run the forward pass
     expt_runner.setup()
