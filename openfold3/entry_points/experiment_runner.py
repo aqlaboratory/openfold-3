@@ -440,8 +440,9 @@ class InferenceExperimentRunner(ExperimentRunner):
             output_dir = (
                 self.experiment_config.msa_computation_settings.msa_output_directory
             )
-            logger.info(f"Removing MSA output directory: {output_dir}")
-            shutil.rmtree(output_dir)
+            if os.path.exists(output_dir):
+                logger.info(f"Removing MSA output directory: {output_dir}")
+                shutil.rmtree(output_dir)
 
 
 class WandbHandler:
