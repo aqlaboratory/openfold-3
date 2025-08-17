@@ -160,6 +160,6 @@ class OF3OutputWriter(BasePredictionWriter):
                     confidence_scores=confidence_scores_sample,
                     output_prefix=file_prefix,
                 )
-                
-        del batch 
+
+        del batch
         del outputs

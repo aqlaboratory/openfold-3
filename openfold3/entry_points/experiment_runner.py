@@ -239,7 +239,7 @@ class ExperimentRunner(ABC):
                 model=self.lightning_module,
                 datamodule=self.lightning_data_module,
                 ckpt_path=self.ckpt_path,
-                return_predictions=False
+                return_predictions=False,
             )
         else:
             raise ValueError(
