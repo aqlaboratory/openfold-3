@@ -5,9 +5,9 @@ This document contains instructions on how to use template information for OF3 p
 The template pipeline currently supports monomeric templates and has been tested for protein chains only.
 
 The main steps detailed in this guide are:
-1. Providing files for template featurization
-2. Adding template information to the inference query json
-3. Modifying the template pipeline settings and high-throughput workflow support
+1. [Providing files for template featurization](template_how_to.md#1-template-files)
+2. [Adding template information to the inference query json](template_how_to.md#2-specifying-template-information-in-the-inference-query-file)
+3. [High-throughput workflow support](template_how_to.md#3-optimizations-for-high-throughput-workflows)
 
 ## 1. Template Files
 
@@ -29,9 +29,8 @@ Files in `sto` format need to contain the fields provided by default by hmmer al
     - `<entry id>_<chain id>`: to match the alignment to the header, may contain /start-end positions but these are not used
     - `ALIGNED-SEQUENCE`: the actual sequence alignment, may be split across multiple rows
 
-<details>
-<summary>Example sto template alignment format ...</summary>
-<pre><code># STOCKHOLM 1.0
+```
+# STOCKHOLM 1.0
 
 #=GS entry1_A/1-100 mol:protein
 #=GS entry2_B/50-150 mol:protein
@@ -39,10 +38,7 @@ Files in `sto` format need to contain the fields provided by default by hmmer al
 entry1_A     MKLLVVDDA--GQKFT
 entry2_B     MK--VVDDARGQGKFT
 //
-</code></pre>
-</details>
-
-<br>
+```
 
 Note that the `sto` parser attempts to derive the query-to-template residue correspondences from the existing alignment. If this is not possbile, we realign the template sequences to the provided query sequence using Kalign. More on this in the [template processing explanatory document](template_explanation.md).
 
@@ -55,16 +51,12 @@ Files in the `a3m` format require the standard fasta format with optional start/
 2. alignment rows: `ALIGNED-SEQUENCE`
     - `ALIGNED-SEQUENCE`: the actual sequence, needs to be aligned if the header contains start-end positions, otherwise the unaligned sequence
 
-<details>
-<summary>Example a3m template alignment format ...</summary>
-<pre><code>>entry1_A/1-100
+```
+>entry1_A/1-100
 MKLLVVDDA--GQGKFT
 >entry2_B/50-150
 MK--VVDDAaRGQGKFT
-</code></pre>
-</details>
-
-<br>
+```
 
 Note that the `a3m` parser attempts to derive the query-to-template residue correspondences from the existing alignment. If this is not possbile, we realign the template sequences to the provided query sequence using Kalign. More on this in the [template processing explanatory document](template_explanation.md).
 
@@ -72,14 +64,10 @@ Note that the `a3m` parser attempts to derive the query-to-template residue corr
 
 Files in `m8` format expect the standard BLAST tabular output format with 12 tab-separated columns. We only use columns 1. (`<entry ID>_<chain ID>`), 3. (sequence identity of the template to the query) and 11. (e value). For all columns, see https://linsalrob.github.io/ComputationalGenomicsManual/SequenceFileFormats/.
 
-<details>
-<summary>Example m8 template alignment format ...</summary>
-<pre><code>query_A	template_B	85.7	14	2	0	1	14	50	63	1e-05	28.1
+```
+query_A	template_B	85.7	14	2	0	1	14	50	63	1e-05	28.1
 query_A	template_C	71.4	14	4	0	5	18	75	88	2e-03	22.3
-</code></pre>
-</details>
-
-<br>
+```
 
 Note that since `m8` files do not provide actual alignments, we only use them to identify which structure files to get templates from, retrieve sequences from these structure files and always realign them to the query sequence using Kalign. More on this in the [template processing explanatory document](template_explanation.md).
 
@@ -129,6 +117,128 @@ Note that when fetching alignments from the Colabfold server, `template_alignmen
 
 ### 2.2. Using Specific Templates
 
-## 3. Modifying Template Settings and Optimizations for High-Throughput Workflows
+By default, the template pipeline automatically populates the `template_entry_chain_ids` field with [n templates](../../../openfold3/core/data/pipelines/preprocessing/template.py#L1519) from the alignment, which is then further subset to the [top k templates](../../../openfold3/projects/of3_all_atom/config/dataset_config_components.py#L112) during featurization for inference.
 
-### 3.1. 
+In an **upcoming release**, we will add support for specifying *specific templates* for the data pipeline to use for featurization. This will be possible through the `template_entry_chain_ids` field:
+
+```
+{
+    "queries": {
+        "example_query": {
+            "chains": [
+                {
+                    "molecule_type": "protein",
+                    "chain_ids": "A",
+                    "sequence": "EXAMPLEPROTEINSEQUENCE",
+                    "template_alignment_file_path": "example_chain_A.sto",
+                    "template_entry_chain_ids": ["entry1_A", "entry2_B", "entry3_A"]
+                },
+            ],
+        }
+    }
+}
+```
+
+Note that the corresponding template IDs need to be present in the provided raw alignment file, so here, IDs `"entry1_A"`, `"entry2_B"`, `"entry3_A"` and corresponding alignments need be present in `example_chain_A.sto` like so:
+
+```
+# STOCKHOLM 1.0
+
+#=GS entry1_A/1-100 mol:protein
+#=GS entry2_B/50-150 mol:protein
+
+entry1_A     MKLLVVDDA--GQKFT
+entry2_B     MK--VVDDARGQGKFT
+entry3_A     MK----DDARGQGKFT
+//
+```
+
+## 3. Optimizations for High-Throughput Workflows
+
+For high-throughput use cases, where a large number of structures are to be predicted, template processing can take a significant amount of time even with the built-in [deduplication utility](template_explanation.md) we have for template alignment and structure processing. To avoid having to spend GPU compute on data transformations, we provide separate template preprocessing scripts to generate the necessary inputs from which template featurization can run efficiently in a subsequent job without being a bottleneck to the model forward pass.
+
+### 3.1. Template Alignment Preprocessing
+
+A recommended workflow for providing template data for very large datasets is the following:
+1. compute [template alignments](template_how_to.md#311-precomputed-template-alignments)
+2. [download the PDB](../../../openfold3/scripts/download_pdb_mmcif.sh) or other template structure dataset locally
+3. precompute the [template precache](template_how_to.md#313-template-precache) from template structures to speed up template cache precomputation
+4. precompute the [template cache](template_how_to.md#312-template-cache) from template alignments and the template precache
+5. preparse the [template structures](template_how_to.md#32-template-structure-preprocessing) into template structure arrays
+
+This workflow produces a set of *template cache entries* and *preparsed template structures* for on-the-fly data processing that happens concurrently with the model forward pass. Each of these steps are detailed below.
+
+### 3.1.1. Precomputed Template Alignments
+
+Our template processing pipeline accepts MSAs generated from our [OF3-style MSA pipeline](precomputed_msa_generation_how_to.md) or from other workflows as long as they are in one of the [expected formats](template_how_to.md#11-template-aligment-file-format).
+
+### 3.1.2. Template Cache
+
+Under the hood, the OF3 inference pipeline uses a preprocessed version of the template alignments during online data processing, which we call the *template cache*. You can read more about what template cache entry files contain, how they are generated and why we do this preprocesing in the [template explanatory document](template_explanation.md). By default, the inference pipeline automatically generates the template cache entries. However, for larger datasets, we provide a [template alignment preprocesing script](../../../scripts/data_preprocessing/preprocess_template_alignments_new_of3.py), which preprocesses the template alignments (and optionally the template structures). Below is an example run script:
+
+```
+python preprocess_template_alignments_new_of3.py \
+    --input_set_path <path/to/input/query.json> \
+    --input_set_type "predict" \
+    --runner_yaml <path/to/runner.yml> \
+    --output_set_path <path/to/updated/output/query.json> \
+```
+
+where `input_set_path` is the inference query.json, `output_set_path` is the output json with the updated template information following preprocessing and `runner_yaml` contains the preprocessing configuration, for example:
+
+```
+template_preprocessor_settings:
+  n_processes: 4  
+  chunksize: 1
+  precache_directory: <path/to/precache>
+  cache_directory: <path/to/output/template/cache>
+```
+
+This script runs 4 parallel processes to preprocesse the template alignments specified under the `template_alignment_file_path` field of each chain in the inference query json, using the template structures precached at the path given by `precache_directory` and outputs the template cache to `cache_directory`. If precaching was not done, you can run processing from the raw structures by specifying them under the `structure_directory` field and dropping `precache_directory`.
+
+### 3.1.3. Template Precache
+
+We found that preprocessing template alignments for large datasets can take a long time, partly due to the requirement to parse template structures so we can correspond them to the template alignment sequences. We provide a [preprocessing script](../../../scripts/data_preprocessing/preprocess_template_alignments_precache_of3.py) that compresses template structure files into metadata files which we call *template precache entries*. 
+
+You can run this script using:
+```
+python preprocess_template_alignments_precache_of3.py \
+    --runner_yaml <path/to/runner.yml>
+```
+
+with runner.yml like this:
+
+```
+template_preprocessor_settings:
+  n_processes: 4
+  chunksize: 1
+  structure_directory: <path/to/template/structures>
+  structure_file_format: "cif"
+  precache_directory: <path/to/output/precache>
+```
+
+Using these files instead of the raw structure files during template cache creation drastically speeds up processing. For the full PDB we observed a reduction of template processing runtimes from *120 hours without a template precache* to *3 hours with a template precache* (including precache computation time) when running template cache creation on 250 parallel processes.
+
+### 3.2. Template Structure Preprocessing
+
+One of the main bottlenecks we found in template featurization is the parsing of the template cif files. More on this in the [template explanatory document](template_explanation.md). You can preprocess template structures into biotite [AtomArrays](https://www.biotite-python.org/latest/apidoc/biotite.structure.AtomArray.html) using our [template structure preprocessing script](../../../scripts/data_preprocessing/preprocess_template_structures_of3.py):
+
+```
+python preprocess_template_structures_of3.py \
+    --runner_yaml <path/to/runner.yml>
+```
+
+and runner.yml
+
+```
+template_preprocessor_settings:
+  moltypes: "protein"
+  n_processes: 4
+  chunksize: 1
+  structure_directory: <path/to/template/structures>
+  structure_file_format: "cif"
+  structure_array_directory: <path/to/output/structure/arrays>
+  ccd_file_path: <optional/path/to/ccd/file>
+```
+
+where a CCD file can be optionally provided if the template structures contain custom ligands or other chemical components.
