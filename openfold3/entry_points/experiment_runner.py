@@ -456,6 +456,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         print(f"Inference Runtime: {self.timer.get('Inference')}")
         self._log_inference_query_set()
         self._log_experiment_config()
+        self._log_model_config()
 
     @cached_property
     def callbacks(self):
@@ -496,14 +497,26 @@ class InferenceExperimentRunner(ExperimentRunner):
         log_path = self.output_dir / "experiment_config.json"
         with open(log_path, "w") as fp:
             fp.write(self.experiment_config.model_dump_json(indent=4))
+    
+    def _log_model_config(self):
+        log_path = self.output_dir / "model_config.json"
+        with open(log_path, "w") as fp:
+            fp.write(self.model_config.to_json_best_effort(indent=4))
+ 
 
     def cleanup(self):
-        if self.experiment_config.msa_computation_settings.cleanup_msa_dir:
-            output_dir = (
-                self.experiment_config.msa_computation_settings.msa_output_directory
-            )
-            logger.info(f"Removing MSA output directory: {output_dir}")
-            shutil.rmtree(output_dir)
+        if self.use_msa_server and self.is_rank_zero:
+            # Always remove raw directory
+            # TODO: Change to use ColabFoldQueryRunner.cleanup() when 
+            # msa processing is performed in `prepare_data` lightning data hook 
+            raw_colabfold_msa_path = (self.experiment_config.msa_computation_settings.msa_output_directory / "raw")
+            shutil.rmtree(raw_colabfold_msa_path)
+            if self.experiment_config.msa_computation_settings.cleanup_msa_dir:
+                output_dir = (
+                    self.experiment_config.msa_computation_settings.msa_output_directory
+                )
+                logger.info(f"Removing MSA output directory: {output_dir}")
+                shutil.rmtree(output_dir)
 
 
 class WandbHandler:
