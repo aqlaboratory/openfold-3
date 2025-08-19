@@ -143,6 +143,14 @@ setup(
         ],
         "": ["resources/stereo_chemical_props.txt"],
     },
+    extras_require={
+        "cuequivariance": [
+            "cuequivariance==0.5.1",
+            "cuequivariance-ops-torch-cu12==0.5.1"
+            "cuequivariance-torch==0.5.1",
+            "torch==2.6.0"
+            ]
+        },
     ext_modules=modules,
     cmdclass={"build_ext": BuildExtension},
     classifiers=[
