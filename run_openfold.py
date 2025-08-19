@@ -125,7 +125,7 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
 @click.option(
     "--use_templates",
     type=bool,
-    default=False,
+    default=True,
     help="Use ColabFold MSA server to perform template alignments.",
 )
 @click.option(
