@@ -36,6 +36,7 @@ class TestTrainingExperiment:
         test_yaml_str = textwrap.dedent(f"""\
             data_module_args:
                 data_seed: 114
+                num_workers: 0
                                         
             model_update:
                 presets:
@@ -312,3 +313,25 @@ class TestWandbHandler(unittest.TestCase):
                     self.assertEqual(data, dummy_data_module_config.model_dump())
                 elif fpath.endswith("model_config.json"):
                     self.assertEqual(data, dummy_model_config.to_dict())
+
+
+class TestInferenceCommandLineSettings:
+    @pytest.mark.parametrize("use_msa_cli_arg", [True, False])
+    def test_use_msa_cli(self, use_msa_cli_arg, tmp_path):
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=tmp_path / "dummy.ckpt"
+        )
+        expt_runner = InferenceExperimentRunner(
+            expt_config, use_msa_server=use_msa_cli_arg
+        )
+        assert expt_runner.use_msa_server == use_msa_cli_arg
+
+    @pytest.mark.parametrize("use_templates_cli_arg", [True, False])
+    def test_use_templates_cli(self, use_templates_cli_arg, tmp_path):
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=tmp_path / "dummy.ckpt"
+        )
+        expt_runner = InferenceExperimentRunner(
+            expt_config, use_templates=use_templates_cli_arg
+        )
+        assert expt_runner.use_templates == use_templates_cli_arg

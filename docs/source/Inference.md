@@ -191,7 +191,7 @@ pl_trainer_args:
 #### 📦 Output in PDB Format
 Change the structure output format from `cif` to `pdb` using [`output_writer_settings`](https://github.com/aqlaboratory/openfold3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L170):
 ```
-output_writer_format:
+output_writer_settings:
   structure_format: pdb    # Default: cif
 ```
 

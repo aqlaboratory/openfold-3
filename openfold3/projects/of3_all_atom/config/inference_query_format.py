@@ -66,14 +66,12 @@ class Query(BaseModel):
     use_msas: bool = True
     use_paired_msas: bool = True
     use_main_msas: bool = True
-    # use_templates: bool = False
     covalent_bonds: list[Bond] | None = None
 
 
 class InferenceQuerySet(BaseModel):
     seeds: list[int] = [42]
     queries: dict[str, Query]
-    use_templates: bool = True
 
     @classmethod
     def from_json(cls, json_path: FilePath) -> "InferenceQuerySet":

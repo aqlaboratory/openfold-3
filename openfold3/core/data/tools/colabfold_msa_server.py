@@ -982,7 +982,4 @@ def preprocess_colabfold_msas(
         output_directory=output_directory,
     )
 
-    # Remove raw MSA directory
-    colabfold_query_runner.cleanup()
-
     return inference_query_set

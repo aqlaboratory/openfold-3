@@ -27,7 +27,6 @@ from openfold3.entry_points.experiment_runner import (
 from openfold3.entry_points.validator import (
     InferenceExperimentConfig,
     TrainingExperimentConfig,
-    generate_seeds,
 )
 from openfold3.projects.of3_all_atom.config.dataset_config_components import (
     colabfold_msa_settings,
@@ -124,6 +123,12 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
     help="Use ColabFold MSA server to perform alignments.",
 )
 @click.option(
+    "--use_templates",
+    type=bool,
+    default=False,
+    help="Use ColabFold MSA server to perform template alignments.",
+)
+@click.option(
     "--output_dir",
     type=click.Path(exists=False, file_okay=True, dir_okay=True, path_type=Path),
     required=False,
@@ -136,6 +141,7 @@ def predict(
     num_model_seeds: int | None = None,
     runner_yaml: Path | None = None,
     use_msa_server: bool = True,
+    use_templates: bool = False,
     output_dir: Path | None = None,
 ):
     """Perform inference on a set of queries defined in the query_json."""
@@ -145,19 +151,14 @@ def predict(
     expt_config = InferenceExperimentConfig(
         inference_ckpt_path=inference_ckpt_path, **runner_args
     )
-
-    expt_runner = InferenceExperimentRunner(expt_config)
-    if output_dir:
-        output_dir.mkdir(exist_ok=True, parents=True)
-        expt_runner.output_dir = output_dir
-
-    if num_diffusion_samples:
-        logger.info(f"Set diffusion samples to {num_diffusion_samples}")
-        expt_runner.set_num_diffusion_samples(num_diffusion_samples)
-
-    if num_model_seeds:
-        start_seed = 42
-        expt_runner.seeds = generate_seeds(start_seed, num_model_seeds)
+    expt_runner = InferenceExperimentRunner(
+        expt_config,
+        num_diffusion_samples,
+        num_model_seeds,
+        use_msa_server,
+        use_templates,
+        output_dir,
+    )
 
     # Dump experiment runner
     import json
@@ -170,8 +171,8 @@ def predict(
 
     # Perform MSA computation if selected
     #  update query_set with MSA paths
-    if use_msa_server:
-        print("Using ColabFold MSA server for alignments.")
+    if expt_runner.use_msa_server:
+        logger.info("Using ColabFold MSA server for alignments.")
         query_set = preprocess_colabfold_msas(
             inference_query_set=query_set,
             compute_settings=expt_config.msa_computation_settings,
@@ -186,15 +187,15 @@ def predict(
         )
 
     # Preprocess template alignments and optionally template structures
-    if query_set.use_templates:
-        print("Using templates for inference.")
+    if expt_runner.use_templates:
+        logger.info("Using templates for inference.")
         template_preprocessor = TemplatePreprocessor(
             input_set=query_set,
             config=expt_config.dataset_config_kwargs.template_preprocessor,
         )
         template_preprocessor()
     else:
-        print("Not using templates for inference.")
+        logger.info("Not using templates for inference.")
 
     # Run the forward pass
     expt_runner.setup()
