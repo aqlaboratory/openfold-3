@@ -159,6 +159,12 @@ def predict(
         start_seed = 42
         expt_runner.seeds = generate_seeds(start_seed, num_model_seeds)
 
+    # Dump experiment runner
+    import json
+
+    with open(output_dir / "experiment_config.json", "w") as f:
+        json.dump(expt_config.model_dump_json(indent=2), f)
+
     # Load inference query set
     query_set = InferenceQuerySet.from_json(query_json)
 
@@ -183,7 +189,8 @@ def predict(
     if query_set.use_templates:
         print("Using templates for inference.")
         template_preprocessor = TemplatePreprocessor(
-            input_set=query_set, config=expt_config.template_preprocessor_settings
+            input_set=query_set,
+            config=expt_config.dataset_config_kwargs.template_preprocessor,
         )
         template_preprocessor()
     else:

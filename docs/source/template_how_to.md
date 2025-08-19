@@ -160,21 +160,40 @@ For high-throughput use cases, where a large number of structures are to be pred
 ### 3.1. Template Alignment Preprocessing
 
 A recommended workflow for providing template data for very large datasets is the following:
-1. compute [template alignments](template_how_to.md#311-precomputed-template-alignments)
-2. [download the PDB](../../../openfold3/scripts/download_pdb_mmcif.sh) or other template structure dataset locally
-3. precompute the [template precache](template_how_to.md#313-template-precache) from template structures to speed up template cache precomputation
-4. precompute the [template cache](template_how_to.md#312-template-cache) from template alignments and the template precache
-5. preparse the [template structures](template_how_to.md#32-template-structure-preprocessing) into template structure arrays
+1. Compute [template alignments](template_how_to.md#311-precomputed-template-alignments).
+2. [Download the PDB](../../../openfold3/scripts/download_pdb_mmcif.sh) or other template structure dataset locally.
+3. Precompute the [template precache](template_how_to.md#313-template-precache) from template structures to speed up template cache precomputation.
+4. Precompute the [template cache](template_how_to.md#312-template-cache) from template alignments and the template precache.
+5. Preparse the [template structures](template_how_to.md#32-template-structure-preprocessing) into template structure arrays.
 
 This workflow produces a set of *template cache entries* and *preparsed template structures* for on-the-fly data processing that happens concurrently with the model forward pass. Each of these steps are detailed below.
 
-### 3.1.1. Precomputed Template Alignments
+#### 3.1.1. Precomputed Template Alignments
 
 Our template processing pipeline accepts MSAs generated from our [OF3-style MSA pipeline](precomputed_msa_generation_how_to.md) or from other workflows as long as they are in one of the [expected formats](template_how_to.md#11-template-aligment-file-format).
 
-### 3.1.2. Template Cache
+#### 3.1.2. Template Cache
 
-Under the hood, the OF3 inference pipeline uses a preprocessed version of the template alignments during online data processing, which we call the *template cache*. You can read more about what template cache entry files contain, how they are generated and why we do this preprocesing in the [template explanatory document](template_explanation.md). By default, the inference pipeline automatically generates the template cache entries. However, for larger datasets, we provide a [template alignment preprocesing script](../../../scripts/data_preprocessing/preprocess_template_alignments_new_of3.py), which preprocesses the template alignments (and optionally the template structures). Below is an example run script:
+Under the hood, the OF3 inference pipeline uses a preprocessed version of the template alignments during online data processing, which we call the *template cache*. In short, each unique sequence in the inference query set gets its own template cache entry and each of these cache entries contain processed and validated template alignment data:
+
+```python
+{
+    '<template entry ID>_<template chain ID>': {
+        'index': <int>,
+        'release_date': <datetime.datetime>,
+        'idx_map': <np.array>
+    },
+    '<template entry ID>_<template chain ID>': {
+        'index': <int>,
+        'release_date': <datetime.datetime>,
+        'idx_map': <np.array>
+    },
+}
+```
+
+You can read more about what template cache entry files contain, how they are generated and why we do this preprocesing in the [template explanatory document](template_explanation.md). 
+
+By default, the inference pipeline automatically generates the template cache entries. However, for larger datasets, we provide a [template alignment preprocesing script](../../../scripts/data_preprocessing/preprocess_template_alignments_new_of3.py), which preprocesses the template alignments (and optionally the template structures). Below is an example run script:
 
 ```
 python preprocess_template_alignments_new_of3.py \
@@ -196,9 +215,21 @@ template_preprocessor_settings:
 
 This script runs 4 parallel processes to preprocesse the template alignments specified under the `template_alignment_file_path` field of each chain in the inference query json, using the template structures precached at the path given by `precache_directory` and outputs the template cache to `cache_directory`. If precaching was not done, you can run processing from the raw structures by specifying them under the `structure_directory` field and dropping `precache_directory`.
 
-### 3.1.3. Template Precache
+#### 3.1.3. Template Precache
 
-We found that preprocessing template alignments for large datasets can take a long time, partly due to the requirement to parse template structures so we can correspond them to the template alignment sequences. We provide a [preprocessing script](../../../scripts/data_preprocessing/preprocess_template_alignments_precache_of3.py) that compresses template structure files into metadata files which we call *template precache entries*. 
+We found that preprocessing template alignments for large datasets can take a long time, partly due to the requirement to parse template structures so we can correspond them to the template alignment sequences. We provide a [preprocessing script](../../../scripts/data_preprocessing/preprocess_template_alignments_precache_of3.py) that compresses template structure files into metadata files which we call *template precache entries*, containing the release date and a mapping from chain `asym_id` identifiers to their canonical sequences denoted in the structure file:
+
+```python
+{
+    'release_date': <datetime.datetime>,
+    'chain_id_seq_map': 
+    {
+        '<chain ID>': '<canonical sequence>',
+        '<chain ID>': '<canonical sequence>',
+        <...>
+    },
+}
+```
 
 You can run this script using:
 ```

@@ -1,5 +1,4 @@
 import random
-import warnings
 from pathlib import Path
 from typing import Any, Literal, Optional
 
@@ -7,9 +6,6 @@ from pydantic import BaseModel, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import FilePathOrNone
-from openfold3.core.data.pipelines.preprocessing.template import (
-    TemplatePreprocessorSettings,
-)
 from openfold3.core.data.tools.colabfold_msa_server import MsaComputationSettings
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetConfigKwargs,
@@ -170,31 +166,3 @@ class InferenceExperimentConfig(ExperimentConfig):
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
     msa_computation_settings: MsaComputationSettings = MsaComputationSettings()
-    template_preprocessor_settings: TemplatePreprocessorSettings = (
-        TemplatePreprocessorSettings(mode="predict")
-    )
-
-    @model_validator(mode="after")
-    def copy_ccd_file_path(cls, model):
-        """Copies ccd_file_path dataset_config_kwargs>template_preprocessor_settings."""
-        if model.dataset_config_kwargs.ccd_file_path is not None:
-            if model.template_preprocessor_settings.ccd_file_path is not None:
-                warnings.warn(
-                    "Overwriting ccd_file_path in template_preprocessor_settings with "
-                    "dataset_config_kwargs.ccd_file_path. We recommend specifying"
-                    "ccd_file_path only in dataset_config_kwargs.",
-                    stacklevel=2,
-                )
-            model.template_preprocessor_settings.ccd_file_path = (
-                model.dataset_config_kwargs.ccd_file_path
-            )
-
-        if (
-            model.template_preprocessor_settings.preparse_structures
-            and model.template_preprocessor_settings.ccd_file_path is None
-        ):
-            raise ValueError(
-                "preparse_structures=True requires ccd_file_path to be set."
-            )
-
-        return model

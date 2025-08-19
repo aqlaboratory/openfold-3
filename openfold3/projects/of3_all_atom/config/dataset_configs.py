@@ -14,6 +14,7 @@ These fields are parsed by the DataModule to create the appropriate Dataset clas
 
 """
 
+import warnings
 from pathlib import Path
 from typing import Any, Optional
 
@@ -259,7 +260,24 @@ class InferenceDatasetConfigKwargs(BaseModel):
     ccd_file_path: FilePathOrNone = None
     msa: MSASettings = colabfold_msa_settings
     template: TemplateSettings = TemplateSettings(take_top_k=True)
-    template_preprocessor_settings: TemplatePreprocessorSettings | None = None
+    template_preprocessor: TemplatePreprocessorSettings = TemplatePreprocessorSettings(
+        mode="predict"
+    )
+
+    @model_validator(mode="after")
+    def copy_ccd_file_path(cls, model):
+        """Copies ccd_file_path dataset_config_kwargs>template_preprocessor_settings."""
+        if model.ccd_file_path is not None:
+            if model.template_preprocessor_settings.ccd_file_path is not None:
+                warnings.warn(
+                    "Overwriting ccd_file_path in template_preprocessor_settings with "
+                    "dataset_config_kwargs.ccd_file_path. We recommend specifying"
+                    "ccd_file_path only in dataset_config_kwargs.",
+                    stacklevel=2,
+                )
+            model.template_preprocessor_settings.ccd_file_path = model.ccd_file_path
+
+        return model
 
 
 class InferenceJobConfig(BaseModel):
