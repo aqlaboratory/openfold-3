@@ -497,19 +497,21 @@ class InferenceExperimentRunner(ExperimentRunner):
         log_path = self.output_dir / "experiment_config.json"
         with open(log_path, "w") as fp:
             fp.write(self.experiment_config.model_dump_json(indent=4))
-    
+
     def _log_model_config(self):
         log_path = self.output_dir / "model_config.json"
         with open(log_path, "w") as fp:
             fp.write(self.model_config.to_json_best_effort(indent=4))
- 
 
     def cleanup(self):
         if self.use_msa_server and self.is_rank_zero:
             # Always remove raw directory
-            # TODO: Change to use ColabFoldQueryRunner.cleanup() when 
-            # msa processing is performed in `prepare_data` lightning data hook 
-            raw_colabfold_msa_path = (self.experiment_config.msa_computation_settings.msa_output_directory / "raw")
+            # TODO: Change to use ColabFoldQueryRunner.cleanup() when
+            # msa processing is performed in `prepare_data` lightning data hook
+            raw_colabfold_msa_path = (
+                self.experiment_config.msa_computation_settings.msa_output_directory
+                / "raw"
+            )
             shutil.rmtree(raw_colabfold_msa_path)
             if self.experiment_config.msa_computation_settings.cleanup_msa_dir:
                 output_dir = (
