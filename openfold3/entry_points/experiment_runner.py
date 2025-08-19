@@ -235,6 +235,12 @@ class ExperimentRunner(ABC):
             target_method = self.trainer.test
         elif self.mode == "predict":
             target_method = self.trainer.predict
+            return target_method(
+                model=self.lightning_module,
+                datamodule=self.lightning_data_module,
+                ckpt_path=self.ckpt_path,
+                return_predictions=False,
+            )
         else:
             raise ValueError(
                 f"""Invalid mode argument: {self.mode}. Choose one of "
