@@ -112,11 +112,13 @@ def generate_seeds(start_seed, num_seeds):
 
 
 class InferenceExperimentSettings(ExperimentSettings):
-    """General settings specific for training experiments"""
+    """General settings specific for inference experiments"""
 
     mode: ValidModeType = "predict"
     seeds: int | list[int] = [42]
     num_seeds: int | None = None
+    use_msa_server: bool = False
+    use_templates: bool = False
 
     @model_validator(mode="after")
     def generate_seeds(cls, model):

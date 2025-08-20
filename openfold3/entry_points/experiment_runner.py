@@ -27,6 +27,7 @@ from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.entry_points.validator import (
     ExperimentConfig,
     TrainingExperimentConfig,
+    generate_seeds,
 )
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetSpec,
@@ -377,7 +378,15 @@ class TrainingExperimentRunner(ExperimentRunner):
 class InferenceExperimentRunner(ExperimentRunner):
     """Training experiment builder."""
 
-    def __init__(self, experiment_config):
+    def __init__(
+        self,
+        experiment_config,
+        num_diffusion_samples: int | None = None,
+        num_model_seeds: int | None = None,
+        use_msa_server: bool = False,
+        use_templates: bool = False,
+        output_dir: Path | None = None,
+    ):
         super().__init__(experiment_config)
 
         self.experiment_config = experiment_config
@@ -388,6 +397,14 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.seeds = experiment_config.experiment_settings.seeds
         self.output_writer_settings = experiment_config.output_writer_settings
         self.timer = ExperimentTimer()
+
+        self.update_config_with_cli_args(
+            num_diffusion_samples,
+            num_model_seeds,
+            output_dir,
+            use_msa_server,
+            use_templates,
+        )
 
     def set_num_diffusion_samples(self, num_diffusion_samples: int) -> None:
         update_dict = {
@@ -400,14 +417,52 @@ class InferenceExperimentRunner(ExperimentRunner):
         model_config = self.model_config
         model_config.update(update_dict)
 
+    def update_config_with_cli_args(
+        self,
+        num_diffusion_samples: int | None,
+        num_model_seeds: int | None,
+        output_dir: Path | None,
+        use_msa_server: bool = False,
+        use_templates: bool = False,
+    ):
+        """Updates configuration given command line args."""
+        if output_dir:
+            output_dir.mkdir(exist_ok=True, parents=True)
+            self.output_dir = output_dir
+            self.experiment_config.experiment_settings.output_dir = output_dir
+
+        if num_diffusion_samples:
+            logger.info(f"Set diffusion samples to {num_diffusion_samples}")
+            self.set_num_diffusion_samples(num_diffusion_samples)
+
+        if num_model_seeds:
+            start_seed = 42
+            self.seeds = generate_seeds(start_seed, num_model_seeds)
+
+        if use_msa_server:
+            self.experiment_config.experiment_settings.use_msa_server = True
+
+        if use_templates:
+            self.experiment_config.experiment_settings.use_templates = True
+
+    @cached_property
+    def use_msa_server(self) -> bool:
+        return self.experiment_config.experiment_settings.use_msa_server
+
+    @cached_property
+    def use_templates(self) -> bool:
+        return self.experiment_config.experiment_settings.use_templates
+
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
         self.timer.start("Inference")
         self.inference_query_set = inference_query_set
-        self._log_inference_query_set()
         super().run()
         self.timer.stop()
         print(f"Inference Runtime: {self.timer.get('Inference')}")
+        self._log_inference_query_set()
+        self._log_experiment_config()
+        self._log_model_config()
 
     @cached_property
     def callbacks(self):
@@ -422,8 +477,10 @@ class InferenceExperimentRunner(ExperimentRunner):
         inference_config = InferenceJobConfig(
             query_set=self.inference_query_set,
             seeds=self.seeds,
+            ccd_file_path=self.dataset_config_kwargs.ccd_file_path,
             msa=self.dataset_config_kwargs.msa,
             template=self.dataset_config_kwargs.template,
+            template_preprocessor=self.dataset_config_kwargs.template_preprocessor,
         )
         inference_spec = InferenceDatasetSpec(config=inference_config)
         return DataModuleConfig(
@@ -441,14 +498,37 @@ class InferenceExperimentRunner(ExperimentRunner):
         with open(log_path, "w") as fp:
             fp.write(self.inference_query_set.model_dump_json(indent=4))
 
+    def _log_experiment_config(self):
+        """Record the experiment config used for this run."""
+        log_path = self.output_dir / "experiment_config.json"
+        with open(log_path, "w") as fp:
+            fp.write(self.experiment_config.model_dump_json(indent=4))
+
+    def _log_model_config(self):
+        log_path = self.output_dir / "model_config.json"
+        with open(log_path, "w") as fp:
+            fp.write(self.model_config.to_json_best_effort(indent=4))
+
     def cleanup(self):
-        if self.experiment_config.msa_computation_settings.cleanup_msa_dir:
-            output_dir = (
+        """Cleanup directories from colabfold MSA"""
+        if self.use_msa_server and self.is_rank_zero:
+            # Always remove raw directory
+            # TODO: Change to use ColabFoldQueryRunner.cleanup() when
+            # msa processing is performed in `prepare_data` lightning data hook
+            raw_colabfold_msa_path = (
                 self.experiment_config.msa_computation_settings.msa_output_directory
+                / "raw"
             )
-            if os.path.exists(output_dir):
+            shutil.rmtree(raw_colabfold_msa_path)
+            if self.experiment_config.msa_computation_settings.cleanup_msa_dir:
+                output_dir = (
+                    self.experiment_config.msa_computation_settings.msa_output_directory
+                )
                 logger.info(f"Removing MSA output directory: {output_dir}")
                 shutil.rmtree(output_dir)
+                if self.use_templates:
+                    template_dir = self.dataset_config_kwargs.template_preprocessor.structure_directory.parent  # noqa: E501
+                    shutil.rmtree(template_dir)
 
 
 class WandbHandler:
