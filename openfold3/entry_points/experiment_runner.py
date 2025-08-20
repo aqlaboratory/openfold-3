@@ -510,6 +510,7 @@ class InferenceExperimentRunner(ExperimentRunner):
             fp.write(self.model_config.to_json_best_effort(indent=4))
 
     def cleanup(self):
+        """Cleanup directories from colabfold MSA"""
         if self.use_msa_server and self.is_rank_zero:
             # Always remove raw directory
             # TODO: Change to use ColabFoldQueryRunner.cleanup() when
@@ -523,9 +524,11 @@ class InferenceExperimentRunner(ExperimentRunner):
                 output_dir = (
                     self.experiment_config.msa_computation_settings.msa_output_directory
                 )
-                if os.path.exists(output_dir):
-                    logger.info(f"Removing MSA output directory: {output_dir}")
-                    shutil.rmtree(output_dir)
+                logger.info(f"Removing MSA output directory: {output_dir}")
+                shutil.rmtree(output_dir)
+                if self.use_templates:
+                    template_dir = self.dataset_config_kwargs.template_preprocessor.structure_directory.parent  # noqa: E501
+                    shutil.rmtree(template_dir)
 
 
 class WandbHandler:
