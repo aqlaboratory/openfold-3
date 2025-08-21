@@ -31,6 +31,7 @@ from openfold3.entry_points.validator import (
 from openfold3.projects.of3_all_atom.config.dataset_config_components import (
     colabfold_msa_settings,
 )
+from openfold3.core.data.tools.colabfold_msa_server import MsaComputationSettings
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
@@ -208,10 +209,31 @@ def predict(
 
 
 @cli.command()
-def align_msa_server(inference_query_set):
-    raise NotImplementedError("Alignment is not implemented yet.")
-    # run_msa_server(inference_query_set)
-    # inference_query_set.dump()
+@click.option(
+    "--query_json",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="Json containing the queries for prediction.",
+)
+@click.option(
+    "--output_dir",
+    type=click.Path(exists=False, file_okay=False, dir_okay=True, path_type=Path),
+    required=True,
+    help="Output directory for writing alignments",
+)
+def align_msa_server(
+    query_json: Path,
+    output_dir: Path
+):
+    query_set = InferenceQuerySet.from_json(query_json)
+
+    query_set = preprocess_colabfold_msas(
+        inference_query_set=query_set,
+        compute_settings=MsaComputationSettings(msa_output_directory=output_dir),
+    )
+
+    with open(output_dir / 'query_msa.json', "w") as fp:
+        fp.write(query_set.model_dump_json(indent=4))
 
 
 if __name__ == "__main__":
