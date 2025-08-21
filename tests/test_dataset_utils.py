@@ -78,6 +78,22 @@ num_examples_is_multiple_of_world_size = {
     ),
 }
 
+num_examples_one_world_size_four = {
+    "label": "num_examples_is_one",
+    "dp_cache": pd.DataFrame(
+        {
+            "a": [1],
+        }
+    ),
+    "world_size": 4,
+    "expected": pd.DataFrame(
+        {
+            "a": [1, 1, 1, 1],
+            "repeated_sample": [False, True, True, True],
+        }
+    ),
+}
+
 
 @pytest.mark.parametrize(
     "data",
@@ -87,6 +103,7 @@ num_examples_is_multiple_of_world_size = {
         more_examples_than_world_size,
         same_examples_as_world_size,
         num_examples_is_multiple_of_world_size,
+        num_examples_one_world_size_four,
     ],
     ids=lambda d: d["label"],
 )
