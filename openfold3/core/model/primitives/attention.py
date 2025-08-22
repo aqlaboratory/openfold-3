@@ -709,18 +709,23 @@ def _cueq_triangle_attn(q, k, v, biases, scale):
     ## structures in a single fwd pass; while this is fine for the
     ## pairformer, in the template module we have
     ## inputs of shape (batch, n_tmpl, n_res,n_head, n_res, c_in)
-    ## so therefore we can only support a batch dim of 1 when
-    ## running the template module.
+    ## so therefore we need to reshape the input to remove the
+    ## extra batch dimension, then reshape it back to the original
     if len(q.shape) > 5:
-        if q.shape[0] != 1:
-            raise ValueError("CUEQ does not support input batch dimension >1")
-        else:
-            is_batched_input = True
-            q = q.squeeze(0)
-            k = k.squeeze(0)
-            v = v.squeeze(0)
-            triangle_bias = triangle_bias.squeeze(0)
-            mask_bias = mask_bias.squeeze(0)
+        assert len(q.shape) == 6, (
+            "max number of dimensions for CUEQ triangle attention kernel is 6"
+        )
+        is_batched_input = True
+        batch, n_tmpl, n_res, n_head, c_hidden = q.shape[:5]
+        q = q.view(batch * n_tmpl, *q.shape[2:])
+        k = k.view(batch * n_tmpl, *k.shape[2:])
+        v = v.view(batch * n_tmpl, *v.shape[2:])
+        mask_bias = mask_bias.view(
+            batch * n_tmpl, *mask_bias.shape[2:]
+        )
+        triangle_bias = triangle_bias.view(
+            batch * n_tmpl, *triangle_bias.shape[2:]
+        )
     ##VS: The mask for the triangle attention kernel needs to be a
     ## boolean mask - the default mask is an addtive mask, where
     ## 0 means no masking and -inf means masking. so we need to
@@ -732,7 +737,7 @@ def _cueq_triangle_attn(q, k, v, biases, scale):
     o = triangle_attention(q, k, v, bias=triangle_bias, mask=mask_bias, scale=scale)
 
     if is_batched_input:
-        o = o.unsqueeze(0)
+        o = o.view(batch, n_tmpl, *o.shape[1:])
 
     o = o.transpose(-2, -3)
     return o

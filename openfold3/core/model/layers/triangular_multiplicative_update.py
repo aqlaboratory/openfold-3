@@ -438,21 +438,21 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
                 "inplace_safe and use_cueq_triangle_kernel cannot be used together."
             )
         if use_cueq_triangle_kernel:
-            ##VS: the cueq trimult kernel only allows up to 4 input dimensions:
-            ## (batch,n_res,n_res,c_hidden); batch here denotes multiple
-            ## structures in a single fwd pass; while this is fine for the
-            ## pairformer, in the template module we have
-            ## inputs of shape (batch, n_tmpl, n_res, n_res, c_in)
-            ## so therefore we can only support a batch dim of 1 when
-            ## running the template module.
+            ##VS: similar issue here as to the cueq triangle attention
+            ## kernel, we need to reshape the input so that batch and 
+            ## n_tmpl are combined into a single dimension.
             is_batched_input = False
             if len(z.shape) > 4:
-                if z.shape[0] != 1:
-                    raise ValueError("CUEQ does not support input batch dimension >1")
-                else:
-                    is_batched_input = True
-                    z = z.squeeze(0)
-                    mask = mask.squeeze(0) if mask is not None else None
+                assert len(z.shape) == 5, (
+                    "CUEQ triangle multiplicative update only supports "
+                    f"max 5 input dimensions, got: {len(z.shape)}"
+                )
+                is_batched_input = True
+                batch, n_tmpl, n_res, _, c_in = z.shape
+                z = z.view(batch*n_tmpl, *z.shape[2:])
+                mask = mask.view(
+                    batch * n_tmpl, *mask.shape[2:]
+                    ) if mask is not None else None
             ## VS: The cuequivariance kernel is based on the boltz implementation
             ## of triangle multiplicative update, which fuses the linear_*_p
             ## projections into a single layer (similarly for linear_*_g).
@@ -484,7 +484,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
                 eps=1e-5,
             )
             if is_batched_input:
-                x = x.unsqueeze(0)
+                x = x.view(batch, n_tmpl, *x.shape[1:])
             return x
 
         if inplace_safe:

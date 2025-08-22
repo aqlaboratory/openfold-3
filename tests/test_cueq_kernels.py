@@ -36,15 +36,18 @@ from tests.config import consts
 class TestCuEqKernels(unittest.TestCase):
     def test_cueq_tri_attn_fwd(self):
         """test cueq triangle attn forward pass."""
+        ## NOTE: this tests the forwards pass as seen in 
+        ## the template module
         batch_size = consts.batch_size
+        n_tmpl = 20
         n_res = 64
         c_in = 128
         c_hidden = 32
         no_heads = 4
         eps = 2e-2
-        x = torch.randn(batch_size, n_res, n_res, c_in).to("cuda")
-        mask_bias = torch.zeros(batch_size, n_res, 1, 1, n_res).to("cuda")
-        triangle_bias = torch.randn(batch_size, 1, no_heads, n_res, n_res).to("cuda")
+        x = torch.randn(batch_size, n_tmpl, n_res, n_res, c_in).to("cuda")
+        mask_bias = torch.zeros(batch_size,n_tmpl, n_res, 1, 1, n_res).to("cuda")
+        triangle_bias = torch.randn(batch_size,n_tmpl, 1, no_heads, n_res, n_res).to("cuda")
         biases = [mask_bias, triangle_bias]
 
         a = Attention(
@@ -71,10 +74,11 @@ class TestCuEqKernels(unittest.TestCase):
 
     def test_cueq_tri_attn_bwd(self):
         """
-        test cu eq triangle attention backward pass
+        test cu eq triangle attention backward pass. Right now
+        only bf16 is supported
         """
         batch_size = consts.batch_size
-
+        n_tmpl = 20
         n_res = 64
         c_in = 128
         c_hidden = 32
@@ -82,15 +86,16 @@ class TestCuEqKernels(unittest.TestCase):
         eps = consts.eps
 
         x = torch.randn(
-            batch_size, n_res, n_res, c_in, dtype=torch.bfloat16, requires_grad=True
+            batch_size,n_tmpl, n_res, n_res, c_in, dtype=torch.bfloat16, requires_grad=True
         ).to("cuda")
         q = x.clone()
         kv = x.clone()
         mask_bias = torch.zeros(
-            batch_size, n_res, 1, 1, n_res, dtype=torch.bfloat16
+            batch_size,n_tmpl,n_res, 1, 1, n_res, dtype=torch.bfloat16
         ).to("cuda")
         triangle_bias = torch.randn(
             batch_size,
+            n_tmpl,
             1,
             no_heads,
             n_res,
@@ -172,7 +177,8 @@ class TestCuEqKernels(unittest.TestCase):
             self.assertTrue(err < eps, f"Error item {name}: {err}")
 
     def test_cueq_tri_mult_fwd(self):
-        batch = 1
+        batch = consts.batch_size
+        n_tmpl = 20
         seq_len = 84
         c_z = 128
         c_hidden = 128
@@ -182,8 +188,8 @@ class TestCuEqKernels(unittest.TestCase):
             c_hidden=c_hidden,
             _outgoing=outgoing,
         ).to("cuda")
-        z = torch.randn(1, batch, seq_len, seq_len, c_z).to("cuda")
-        mask = torch.ones(1, batch, seq_len, seq_len).to("cuda")
+        z = torch.randn(batch,n_tmpl, seq_len, seq_len, c_z).to("cuda")
+        mask = torch.ones(batch,n_tmpl, seq_len, seq_len).to("cuda")
         with torch.no_grad():
             lecun_normal_init_(tm.linear_g.weight)
             lecun_normal_init_(tm.linear_z.weight)
@@ -208,7 +214,8 @@ class TestCuEqKernels(unittest.TestCase):
         self.assertTrue(err < eps, f"Error: {err}")
 
     def test_cueq_tri_mult_bwd(self):
-        batch = 1
+        batch = 2
+        n_tmpl = 20
         seq_len = 84
         c_z = 128
         c_hidden = 128
@@ -220,8 +227,8 @@ class TestCuEqKernels(unittest.TestCase):
             c_hidden=c_hidden,
             _outgoing=outgoing,
         ).to("cuda")
-        z = torch.randn(1, batch, seq_len, seq_len, c_z, requires_grad=True).to("cuda")
-        mask = torch.ones(1, batch, seq_len, seq_len, requires_grad=False).to("cuda")
+        z = torch.randn(batch,n_tmpl, seq_len, seq_len, c_z, requires_grad=True).to("cuda")
+        mask = torch.ones(batch,n_tmpl, seq_len, seq_len, requires_grad=False).to("cuda")
         with torch.no_grad():
             lecun_normal_init_(tm.linear_g.weight)
             lecun_normal_init_(tm.linear_z.weight)
