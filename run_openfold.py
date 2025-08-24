@@ -224,7 +224,9 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
     #  "lr_schedulers" dict. Handle case where we resume from a different schedule
     ckpt_path = runner_args.get("restart_checkpoint_path")
     weights_only_path = runner_args.get("weights_only_checkpoint_path")
-    if weights_only_path:
+    wandb_ckpt_dir = Path(runner_args.output_dir) / "openfold3" / runner_args.wandb.id
+    run_exists = wandb_ckpt_dir.is_dir() and any(wandb_ckpt_dir.iterdir())
+    if weights_only_path and not run_exists:
         ckpt_path = None
 
         ckpt_dict = torch.load(weights_only_path)
@@ -233,9 +235,13 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
         lightning_module.load_state_dict(ckpt_dict["state_dict"])
         lightning_module.ema.load_state_dict(ckpt_dict["ema"])
 
-        restore_lr_step(
-            ckpt_path=Path(weights_only_path), lightning_module=lightning_module
-        )
+        reset_scheduler = runner_args.get("reset_scheduler")
+        if not reset_scheduler:
+            restore_lr_step(
+                ckpt_path=Path(weights_only_path), lightning_module=lightning_module
+            )
+        else:
+            logging.warning("Resetting LR scheduler")
 
         logging.warning(f"Restoring datamodule state from {weights_only_path}")
         lightning_data_module.load_state_dict(ckpt_dict["DataModule"])
