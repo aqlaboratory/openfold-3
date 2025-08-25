@@ -1,10 +1,8 @@
 """Utility function for retrieving compute capability of GPUs.
 Only used for custom CUDA kernel in openfold3/core/kernels/cuda/csrc/"""
 
-import argparse
 import ctypes
 import os
-from datetime import date
 from pathlib import Path
 
 if "CONDA_PREFIX" in os.environ:
