@@ -224,7 +224,6 @@ class DiffusionModule(nn.Module):
             rl=rl_noisy,
             si_trunk=si_trunk,
             zij_trunk=zij,  # Use conditioned trunk representation
-            chunk_size=chunk_size,
             use_high_precision_attention=use_high_precision_attention,
         )
 
@@ -251,7 +250,6 @@ class DiffusionModule(nn.Module):
             ql=ql,
             cl=cl,
             plm=plm,
-            chunk_size=chunk_size,
             use_high_precision_attention=use_high_precision_attention,
         )
 
