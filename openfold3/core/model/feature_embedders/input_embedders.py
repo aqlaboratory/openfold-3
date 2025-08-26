@@ -578,10 +578,6 @@ class MSAModuleEmbedder(nn.Module):
         if isinstance(no_subsampled_all_msa, torch.Tensor):
             no_subsampled_all_msa = no_subsampled_all_msa.item()
 
-        # If we already have <= desired, nothing to do
-        if msa_feat.shape[feat_seq_dim] <= no_subsampled_all_msa:
-            return msa_feat, msa_mask
-
         # Valid msa
         valid_msa = (msa_mask.sum(dim=mask_seq_dim + 1) > 0).squeeze()  # [N_msa]
         valid_idx = valid_msa.nonzero().squeeze()
