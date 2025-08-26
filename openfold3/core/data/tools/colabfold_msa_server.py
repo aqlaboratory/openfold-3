@@ -896,6 +896,35 @@ class MsaComputationSettings(BaseModel):
             self.msa_output_directory.mkdir(parents=True, exist_ok=True)
         return self
 
+    @classmethod
+    def from_config_with_cli_override(
+        cls, config_dict: dict, cli_output_dir: Path
+    ) -> "MsaComputationSettings":
+        """Create settings from config dict with CLI output directory override.
+
+        Args:
+            config_dict: Configuration dictionary (from JSON/YAML file)
+            cli_output_dir: Output directory from CLI argument
+
+        Raises:
+            ValueError: If config specifies a different output directory than CLI
+        """
+        if (
+            "msa_output_directory" in config_dict
+            and Path(config_dict["msa_output_directory"]) != cli_output_dir
+        ):
+            raise ValueError(
+                f"Output directory mismatch: CLI argument '{cli_output_dir}' "
+                f"vs settings file '{config_dict['msa_output_directory']}'. "
+                f"Please ensure they match or omit 'msa_output_directory' "
+                "from your settings file."
+            )
+
+        config_dict = config_dict.copy()
+        config_dict["msa_output_directory"] = str(cli_output_dir)
+
+        return cls.model_validate(config_dict)
+
 
 def preprocess_colabfold_msas(
     inference_query_set: InferenceQuerySet,
