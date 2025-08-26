@@ -223,24 +223,31 @@ def predict(
     help="Output directory for writing alignments",
 )
 @click.option(
-    "--msa_computation_settings",
-    type=click.Path(exists=True, file_okay=False, dir_okay=False, path_type=Path),
+    "--msa_computation_settings_yaml",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     required=False,
-    help="Json file to customize Colabfold MSA settings,"
+    help="Yaml file to customize Colabfold MSA settings,"
     " see MsaComputationSettings for options.",
 )
 def align_msa_server(
-    query_json: Path, output_dir: Path, msa_computation_settings: Path | None = None
+    query_json: Path,
+    output_dir: Path,
+    msa_computation_settings_yaml: Path | None = None,
 ):
+    """Run MSA server alignment only with ColabFold MSA server.
+    
+    Example command:
+    python run_openfold.py align-msa-server \
+        --query_json query_example.json \
+        --output_dir output/msa_server_test \
+    
+    More settings can be specified using the `msa_computation_settings_yaml` flag
+    An example yaml file is provided in `examples/msa_server.yml`
+    """
     query_set = InferenceQuerySet.from_json(query_json)
-    settings_config = (
-        config_utils.load_yaml(msa_computation_settings)
-        if msa_computation_settings
-        else dict()
-    )
 
     msa_settings = MsaComputationSettings.from_config_with_cli_override(
-        settings_config, output_dir
+        output_dir, msa_computation_settings_yaml
     )
     query_set = preprocess_colabfold_msas(
         inference_query_set=query_set,
