@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 # args TODO add license
 r"""
 
