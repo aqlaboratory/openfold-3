@@ -580,13 +580,13 @@ class MSAModuleEmbedder(nn.Module):
 
         # Valid msa
         valid_msa = (msa_mask.sum(dim=mask_seq_dim + 1) > 0).squeeze()  # [N_msa]
-        
+
         if valid_msa.ndim == 0:
             valid_msa = valid_msa.unsqueeze(0)
-            
+
         valid_idx = valid_msa.nonzero().squeeze()
         invalid_idx = (~valid_msa).nonzero().squeeze()
-        
+
         if valid_idx.ndim == 0:
             valid_idx = valid_idx.unsqueeze(0)
         if invalid_idx.ndim == 0:
