@@ -151,6 +151,5 @@ setup(
         "Programming Language :: Python :: 3.10,"
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
-    # not recommended way (use entry_points instead) but needs to be inside package AFAIK
-    scripts=["run_openfold.py"]
+    entry_points={"console_scripts": ["run_openfold=run_openfold:cli"]}
 )
