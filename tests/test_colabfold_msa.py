@@ -261,3 +261,44 @@ class TestColabFoldQueryRunner:
             assert set(json.load(f).keys()) == set(test_sequences), (
                 "Expected all test sequences to be present in the mapping file"
             )
+
+
+class TestMsaComputationSettings:
+    def test_cli_output_dir_overrides_config(self, tmp_path):
+        """Test that CLI output directory overrides config file setting."""
+        test_yaml_str = textwrap.dedent("""\
+            msa_file_format: a3m 
+            server_user_agent: test-agent
+            server_url: https://dummy.url
+        """)
+        cli_output_dir = tmp_path / "cli_dir"
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
+
+        msa_settings = MsaComputationSettings.from_config_with_cli_override(
+            cli_output_dir, test_yaml_file
+        )
+
+        assert Path(msa_settings.msa_output_directory) == cli_output_dir, (
+            "Expected CLI output directory to override default settings"
+        )
+
+    def test_cli_output_dir_conflict_raises(self, tmp_path):
+        """Test that conflict between CLI and config output dirs raises ValueError."""
+        test_yaml_str = textwrap.dedent(f"""\
+            msa_file_format: a3m 
+            msa_output_directory: {tmp_path / "other_dir"}
+        """)
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
+
+        cli_output_dir = tmp_path / "cli_dir"
+
+        with pytest.raises(ValueError) as exc_info:
+            MsaComputationSettings.from_config_with_cli_override(
+                cli_output_dir, test_yaml_file
+            )
+
+        assert "Output directory mismatch" in str(exc_info.value), (
+            "Expected ValueError on output directory conflict"
+        )

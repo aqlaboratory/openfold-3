@@ -13,6 +13,7 @@ python run_openfold.py predict --runner_yaml=examples/inference_new.yml
 
 """
 
+import json
 import logging
 from pathlib import Path
 
@@ -21,7 +22,10 @@ import torch
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.pipelines.preprocessing.template import TemplatePreprocessor
-from openfold3.core.data.tools.colabfold_msa_server import preprocess_colabfold_msas
+from openfold3.core.data.tools.colabfold_msa_server import (
+    MsaComputationSettings,
+    preprocess_colabfold_msas,
+)
 from openfold3.entry_points.experiment_runner import (
     InferenceExperimentRunner,
     TrainingExperimentRunner,
@@ -163,8 +167,6 @@ def predict(
     )
 
     # Dump experiment runner
-    import json
-
     with open(output_dir / "experiment_config.json", "w") as f:
         json.dump(expt_config.model_dump_json(indent=2), f)
 
@@ -210,10 +212,52 @@ def predict(
 
 
 @cli.command()
-def align_msa_server(inference_query_set):
-    raise NotImplementedError("Alignment is not implemented yet.")
-    # run_msa_server(inference_query_set)
-    # inference_query_set.dump()
+@click.option(
+    "--query_json",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="Json containing the queries for prediction.",
+)
+@click.option(
+    "--output_dir",
+    type=click.Path(exists=False, file_okay=False, dir_okay=True, path_type=Path),
+    required=True,
+    help="Output directory for writing alignments",
+)
+@click.option(
+    "--msa_computation_settings_yaml",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    required=False,
+    help="Yaml file to customize Colabfold MSA settings,"
+    " see MsaComputationSettings for options.",
+)
+def align_msa_server(
+    query_json: Path,
+    output_dir: Path,
+    msa_computation_settings_yaml: Path | None = None,
+):
+    """Run MSA server alignment only with ColabFold MSA server.
+    
+    Example command:
+    python run_openfold.py align-msa-server \
+        --query_json query_example.json \
+        --output_dir output/msa_server_test \
+    
+    More settings can be specified using the `msa_computation_settings_yaml` flag
+    An example yaml file is provided in `examples/msa_server.yml`
+    """
+    query_set = InferenceQuerySet.from_json(query_json)
+
+    msa_settings = MsaComputationSettings.from_config_with_cli_override(
+        output_dir, msa_computation_settings_yaml
+    )
+    query_set = preprocess_colabfold_msas(
+        inference_query_set=query_set,
+        compute_settings=msa_settings,
+    )
+
+    with open(output_dir / "query_msa.json", "w") as fp:
+        fp.write(query_set.model_dump_json(indent=4))
 
 
 if __name__ == "__main__":

@@ -148,6 +148,8 @@ class ExperimentConfig(BaseModel):
 class TrainingExperimentConfig(ExperimentConfig):
     """Training experiment config"""
 
+    # pydantic model setting to prevent extra fields in main experiment config
+    model_config = PydanticConfigDict(extra="forbid")
     # required arguments for training experiment
     dataset_paths: dict[str, TrainingDatasetPaths]
     dataset_configs: dict[str, Any]
@@ -162,6 +164,8 @@ class TrainingExperimentConfig(ExperimentConfig):
 class InferenceExperimentConfig(ExperimentConfig):
     """Inference experiment config"""
 
+    # pydantic model setting to prevent extra fields in main experiment config
+    model_config = PydanticConfigDict(extra="forbid")
     # Required inputs for performing inference
     inference_ckpt_path: Path
 
