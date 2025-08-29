@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import requests
 from pydantic import BaseModel, model_validator
+from pydantic import ConfigDict as PydanticConfigDict
 from pydantic_core import Url
 from tqdm import tqdm
 
@@ -883,6 +884,7 @@ class MsaComputationSettings(BaseModel):
 
     See preprocess_colabfold_msas for details on the parameters"""
 
+    model_config = PydanticConfigDict(extra="forbid")
     msa_file_format: Literal["npz", "a3m"] = "npz"
     server_user_agent: str = "openfold"
     server_url: Url = Url("https://api.colabfold.com")
