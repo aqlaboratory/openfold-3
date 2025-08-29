@@ -5,12 +5,13 @@ import shutil
 import sys
 import time
 from abc import ABC, abstractmethod
-from functools import cached_property
+from functools import cached_property, wraps
 from pathlib import Path
 from typing import Any
 
 import ml_collections as mlc
 import pytorch_lightning as pl
+import torch.distributed as dist
 import wandb
 from lightning_fabric.utilities.rank_zero import _get_rank
 from pydantic import BaseModel
@@ -39,8 +40,23 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
     TrainingDatasetSpec,
 )
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+from openfold3.projects.of3_all_atom.config.dataset_config_components import (
+    colabfold_msa_settings,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def rank_zero_only(fn):
+    """Decorator to ensure a function is only executed on rank zero."""
+
+    @wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        if self.is_rank_zero:
+            return fn(self, *args, **kwargs)
+        return None
+
+    return wrapper
 
 
 class ExperimentRunner(ABC):
@@ -459,8 +475,8 @@ class InferenceExperimentRunner(ExperimentRunner):
 
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
-        self.timer.start("Inference")
         self.inference_query_set = inference_query_set
+        self.timer.start("Inference")
         super().run()
         self.timer.stop()
         print(f"Inference Runtime: {self.timer.get('Inference')}")
@@ -476,8 +492,17 @@ class InferenceExperimentRunner(ExperimentRunner):
         ]
         return _callbacks
 
+    def _maybe_update_dataset_kwargs_for_colabfold_msas(self):
+        """Updates MSA kwargs if colabfold msas are used."""
+        if self.use_msa_server:
+            self.dataset_config_kwargs = self.dataset_config_kwargs.model_copy(
+                update={"msa": colabfold_msa_settings}
+            )
+
     @cached_property
     def data_module_config(self):
+        self._maybe_update_dataset_kwargs_for_colabfold_msas()
+
         inference_config = InferenceJobConfig(
             query_set=self.inference_query_set,
             seeds=self.seeds,
@@ -506,19 +531,23 @@ class InferenceExperimentRunner(ExperimentRunner):
         """Get the checkpoint path for the model."""
         return self.inference_ckpt_path
 
+    @rank_zero_only
     def _log_inference_query_set(self):
         """Record the inference query set used for prediction"""
         log_path = self.output_dir / "inference_query_set.json"
         with open(log_path, "w") as fp:
             fp.write(self.inference_query_set.model_dump_json(indent=4))
 
+    @rank_zero_only
     def _log_experiment_config(self):
         """Record the experiment config used for this run."""
         log_path = self.output_dir / "experiment_config.json"
         with open(log_path, "w") as fp:
             fp.write(self.experiment_config.model_dump_json(indent=4))
 
+    @rank_zero_only
     def _log_model_config(self):
+        """Records the mlc.ConfigDict of the model configuration."""
         log_path = self.output_dir / "model_config.json"
         with open(log_path, "w") as fp:
             fp.write(self.model_config.to_json_best_effort(indent=4))
@@ -526,6 +555,10 @@ class InferenceExperimentRunner(ExperimentRunner):
     def cleanup(self):
         """Cleanup directories from colabfold MSA"""
         if self.use_msa_server and self.is_rank_zero:
+            if self.world_size > 1:
+                dist.barrier()
+            print("Cleaning up MSA directories...")
+
             # Always remove raw directory
             # TODO: Change to use ColabFoldQueryRunner.cleanup() when
             # msa processing is performed in `prepare_data` lightning data hook
