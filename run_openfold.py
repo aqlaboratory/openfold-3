@@ -173,36 +173,6 @@ def predict(
     # Load inference query set
     query_set = InferenceQuerySet.from_json(query_json)
 
-    # Perform MSA computation if selected
-    #  update query_set with MSA paths
-    if expt_runner.use_msa_server:
-        logger.info("Using ColabFold MSA server for alignments.")
-        query_set = preprocess_colabfold_msas(
-            inference_query_set=query_set,
-            compute_settings=expt_config.msa_computation_settings,
-        )
-
-        # Update the msa dataset config settings
-        updated_dataset_config_kwargs = expt_config.dataset_config_kwargs.model_copy(
-            update={"msa": colabfold_msa_settings}
-        )
-        expt_config = expt_config.model_copy(
-            update={"dataset_config_kwargs": updated_dataset_config_kwargs}
-        )
-    else:
-        expt_config.msa_computation_settings.cleanup_msa_dir = False
-
-    # Preprocess template alignments and optionally template structures
-    if expt_runner.use_templates:
-        logger.info("Using templates for inference.")
-        template_preprocessor = TemplatePreprocessor(
-            input_set=query_set,
-            config=expt_config.dataset_config_kwargs.template_preprocessor,
-        )
-        template_preprocessor()
-    else:
-        logger.info("Not using templates for inference.")
-
     # Run the forward pass
     expt_runner.setup()
     expt_runner.run(query_set)

@@ -20,7 +20,11 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
-from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
+from openfold3.core.data.framework.data_module import (
+    DataModule,
+    DataModuleConfig,
+    InferenceDataModule,
+)
 from openfold3.core.runners.writer import OF3OutputWriter
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
@@ -485,6 +489,16 @@ class InferenceExperimentRunner(ExperimentRunner):
         inference_spec = InferenceDatasetSpec(config=inference_config)
         return DataModuleConfig(
             datasets=[inference_spec], **self.data_module_args.model_dump()
+        )
+
+    @cached_property
+    def lightning_data_module(self):
+        return InferenceDataModule(
+            self.data_module_config,
+            world_size=self.world_size,
+            use_msa_server=self.use_msa_server,
+            use_templates=self.use_templates,
+            msa_computation_settings=self.experiment_config.msa_computation_settings,
         )
 
     @cached_property
