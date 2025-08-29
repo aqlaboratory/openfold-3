@@ -480,19 +480,16 @@ class InferenceDataModule(DataModule):
         # Colabfold msa preparation
         _configs = self.multi_dataset_config.get_config_for_mode(DatasetMode.prediction)
         inference_config = _configs.configs[0]
-        query_set = inference_config.query_set
 
         if self.use_msa_server:
-            query_set = preprocess_colabfold_msas(
-                inference_query_set=query_set,
+            inference_config.query_set = preprocess_colabfold_msas(
+                inference_query_set=inference_config.query_set,
                 compute_settings=self.msa_computation_settings,
             )
-        # if use_templates:
-        # Template preparation
 
         if self.use_templates:
             template_preprocessor = TemplatePreprocessor(
-                input_set=query_set,
+                input_set=inference_config.query_set,
                 config=inference_config.template_preprocessor,
             )
             template_preprocessor()
