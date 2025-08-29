@@ -31,6 +31,11 @@ import random
 import warnings
 from typing import Any, Optional, Union
 
+from openfold3.core.data.pipelines.preprocessing.template import TemplatePreprocessor
+from openfold3.core.data.tools.colabfold_msa_server import (
+    MsaComputationSettings,
+    preprocess_colabfold_msas,
+)
 import pytorch_lightning as pl
 import torch
 import torch.utils
@@ -142,20 +147,20 @@ class DataModule(pl.LightningDataModule):
     """A LightningDataModule class for organizing Datasets and DataLoaders."""
 
     def __init__(
-        self, data_config: DataModuleConfig, world_size: Optional[int] = None
+        self, data_module_config: DataModuleConfig, world_size: Optional[int] = None
     ) -> None:
         super().__init__()
 
         # Possibly initialize directly from DataModuleConfig
-        self.batch_size = data_config.batch_size
-        self.num_workers = data_config.num_workers
-        self.data_seed = data_config.data_seed
-        self.epoch_len = data_config.epoch_len
-        self.num_epochs = data_config.num_epochs
+        self.batch_size = data_module_config.batch_size
+        self.num_workers = data_module_config.num_workers
+        self.data_seed = data_module_config.data_seed
+        self.epoch_len = data_module_config.epoch_len
+        self.num_epochs = data_module_config.num_epochs
         self.world_size = world_size
 
         # Parse datasets
-        self.multi_dataset_config = self.parse_data_config(data_config.datasets)
+        self.multi_dataset_config = self.parse_data_config(data_module_config.datasets)
         self._initialize_next_dataset_indices()
 
     def _initialize_next_dataset_indices(self):
@@ -451,6 +456,46 @@ class DataModule(pl.LightningDataModule):
                 f"Current {current_index_keys} Checkpoint {loaded_index_keys}"
             )
         self.next_dataset_indices = state_dict["next_dataset_indices"]
+
+
+class InferenceDataModule(DataModule):
+    """LightnigngDataModule that contains a prepare_data hook for inference."""
+
+    def __init__(
+        self,
+        data_module_config: DataModuleConfig,
+        world_size: int | None = None,
+        use_msa_server: bool = False,
+        use_templates: bool = False,
+        msa_computation_settings: MsaComputationSettings | None = None,
+    ):
+        # get information about msas from the experiment runner
+        # probably should add to the config
+        super().__init__(data_module_config, world_size)
+        self.use_msa_server = use_msa_server
+        self.use_templates = use_templates
+        self.msa_computation_settings = msa_computation_settings
+
+    def prepare_data(self) -> None:
+        # Colabfold msa preparation
+        _configs = self.multi_dataset_config.get_config_for_mode(DatasetMode.prediction)
+        inference_config = _configs.configs[0]
+        query_set = inference_config.query_set
+
+        if self.use_msa_server:
+            query_set = preprocess_colabfold_msas(
+                inference_query_set=query_set,
+                compute_settings=self.msa_computation_settings,
+            )
+        # if use_templates:
+        # Template preparation
+
+        if self.use_templates:
+            template_preprocessor = TemplatePreprocessor(
+                input_set=query_set,
+                config=inference_config.template_preprocessor,
+            )
+            template_preprocessor()
 
 
 # TODO: Remove debug logic and improve handlingi of training only features
