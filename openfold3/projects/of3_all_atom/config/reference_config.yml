@@ -35,7 +35,7 @@ finetune2:
 finetune3:
   model:
     settings:
-      diffusion_training_enabled: false
+      train_confidence_only: true
       model_selection_weight_scheme: fine_tuning
     architecture:
       shared:
@@ -44,23 +44,16 @@ finetune3:
       heads:
         pae:
           enabled: true
-        distogram:
-          enabled: false
   extra_configs:
     loss_weight_modes:
       default:
         mse: 0.0
         smooth_lddt: 0.0
         distogram: 0.0
-        pae: 1e-4
+        pae: 0.0001
 
 train:
   model:
     settings:
       blocks_per_ckpt: 1
       ckpt_intermediate_steps: true
-
-predict:
-  model:
-    settings:
-      diffusion_training_enabled: false
