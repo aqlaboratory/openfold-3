@@ -24,7 +24,7 @@ c_s_input = mlc.FieldReference(c_token_embedder + 65, field_type=int)
 sigma_data = mlc.FieldReference(16, field_type=int)
 max_relative_idx = mlc.FieldReference(32, field_type=int)
 max_relative_chain = mlc.FieldReference(2, field_type=int)
-diffusion_training_enabled = mlc.FieldReference(True, field_type=bool)
+train_confidence_only = mlc.FieldReference(False, field_type=bool)
 n_query = mlc.FieldReference(32, field_type=int)
 n_key = mlc.FieldReference(128, field_type=int)
 
@@ -110,7 +110,7 @@ project_config = mlc.ConfigDict(
                 #  to allow per-module overrides
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "ckpt_intermediate_steps": ckpt_intermediate_steps,
-                "diffusion_training_enabled": diffusion_training_enabled,
+                "train_confidence_only": train_confidence_only,
                 "optimizer": {
                     "use_deepspeed_adam": False,
                     "learning_rate": 1.8e-3,

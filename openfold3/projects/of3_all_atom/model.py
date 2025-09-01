@@ -205,7 +205,11 @@ class OpenFold3(nn.Module):
             is_final_iter = cycle_no == (num_cycles - 1)
 
             # Enable grad when we're training, only enable grad on the last cycle
-            enable_grad = is_grad_enabled and is_final_iter
+            enable_grad = (
+                is_grad_enabled
+                and is_final_iter
+                and not self.settings.train_confidence_only
+            )
             with torch.set_grad_enabled(enable_grad):
                 if is_final_iter:
                     self.clear_autocast_cache()
@@ -635,17 +639,16 @@ class OpenFold3(nn.Module):
 
             self.clear_autocast_cache()
 
-            if self.training:  # noqa: SIM102
+            if self.training and not self.settings.train_confidence_only:
                 # Run training step (if necessary)
-                if self.settings.diffusion_training_enabled:
-                    with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
-                        diffusion_output = self._train_diffusion(
-                            batch=batch,
-                            si_input=si_input,
-                            si_trunk=si_trunk,
-                            zij_trunk=zij_trunk,
-                        )
+                with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+                    diffusion_output = self._train_diffusion(
+                        batch=batch,
+                        si_input=si_input,
+                        si_trunk=si_trunk,
+                        zij_trunk=zij_trunk,
+                    )
 
-                        output.update(diffusion_output)
+                    output.update(diffusion_output)
 
         return batch, output
