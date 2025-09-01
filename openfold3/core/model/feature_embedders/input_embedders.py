@@ -578,29 +578,12 @@ class MSAModuleEmbedder(nn.Module):
         if isinstance(no_subsampled_all_msa, torch.Tensor):
             no_subsampled_all_msa = no_subsampled_all_msa.item()
 
-        # Valid msa
-        valid_msa = (msa_mask.sum(dim=mask_seq_dim + 1) > 0).squeeze()  # [N_msa]
-        valid_idx = valid_msa.nonzero().squeeze()
-        invalid_idx = (~valid_msa).nonzero().squeeze()
+        index_order = torch.randperm(msa_feat.shape[-3], device=msa_feat.device)
+        index_order = index_order[:no_subsampled_all_msa]
 
-        device = msa_feat.device
-        # Pick msa from the valid ones at random
-        if valid_idx.numel() >= no_subsampled_all_msa:
-            permuted_idx = valid_idx[torch.randperm(valid_idx.numel(), device=device)]
-            selected = permuted_idx[:no_subsampled_all_msa]
-        else:
-            # Take all valid, then fill with random invalid
-            take_invalid = no_subsampled_all_msa - valid_idx.numel()
-            if invalid_idx.numel() > 0:
-                permuted_idx = invalid_idx[
-                    torch.randperm(invalid_idx.numel(), device=device)
-                ]
-                selected = torch.cat([valid_idx, permuted_idx[:take_invalid]], dim=0)
-            else:
-                selected = valid_idx
+        feat_sub = msa_feat.index_select(feat_seq_dim, index_order)
+        mask_sub = msa_mask.index_select(mask_seq_dim, index_order)
 
-        feat_sub = msa_feat.index_select(feat_seq_dim, selected)
-        mask_sub = msa_mask.index_select(mask_seq_dim, selected)
         return feat_sub, mask_sub
 
     def _apply_subsample_fn_batch(
@@ -706,7 +689,8 @@ class MSAModuleEmbedder(nn.Module):
         )
         msa_mask = batch["msa_mask"]
 
-        if self.subsample_main_msa:
+        subsample_main_msa = self.subsample_main_msa if self.training else True
+        if subsample_main_msa:
             if math.prod(batch_dims) > 1:
                 msa_feat, msa_mask = self._apply_subsample_fn_batch(
                     fn=self._subsample_main_msa,

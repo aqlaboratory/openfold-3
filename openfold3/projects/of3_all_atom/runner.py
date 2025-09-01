@@ -8,7 +8,6 @@ from pathlib import Path
 
 import deepspeed
 import torch
-import wandb
 from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
 
 from openfold3.core.loss.loss_module import OpenFold3Loss
@@ -409,44 +408,15 @@ class OpenFold3AllAtom(ModelRunner):
                 f"{self.trainer.train_dataloader.dataset.indices=}"
             )
 
-            num_short_monomer = 179173
-            num_long_monomer = 12607434
-            num_steps_warn = 500
-            est_long_monomer = num_steps_warn * 256 * 0.495
-            est_short_monomer = num_steps_warn * 256 * 0.005
-
-            next_indices = self.trainer.train_dataloader.dataset.next_dataset_indices
-
-            long_mon_next_idx = next_indices["long-monomer-distillation"]
-            short_mon_next_idx = next_indices["short-monomer-distillation"]
-            if isinstance(long_mon_next_idx, torch.Tensor):
-                long_mon_next_idx = long_mon_next_idx.item()
-                short_mon_next_idx = short_mon_next_idx.item()
-
-            est_end_long_mon = long_mon_next_idx + est_long_monomer
-            if est_end_long_mon > num_long_monomer:
-                self.logger.experiment.alert(
-                    title="Long Monomer Cache Warning",
-                    text=f"Long monomer likely reaching end of dataset soon. "
-                    f"Estimated end idx {est_end_long_mon} > {num_long_monomer}",
-                    level=wandb.AlertLevel.WARN,
-                )
-
-            est_end_short_mon = short_mon_next_idx + est_short_monomer
-            if est_end_short_mon > num_short_monomer:
-                self.logger.experiment.alert(
-                    title="Short Monomer Cache Warning",
-                    text=f"Short monomer likely reaching end of dataset soon. "
-                    f"Estimated end idx {est_end_short_mon} > {num_short_monomer}",
-                    level=wandb.AlertLevel.WARN,
-                )
-
     def on_before_optimizer_step(self, *args, **kwargs):
         """Logs the single-transition layer linear_out gradients.
 
         These gradients can be associated with instabilities, so we're logging them on
         every single step (bypassing log_every_n_steps) for more accurate monitoring.
         """
+        if self.logger is None:
+            return
+
         single_transition_grads = {}
 
         # Only rank zero will actually log the gradients
