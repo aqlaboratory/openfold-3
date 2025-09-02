@@ -34,6 +34,9 @@ from openfold3.core.utils.tensor_utils import flatten_final_dims
 
 from .linear import Linear
 
+import warnings 
+warnings.filterwarnings('once')
+
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 ds4s_is_installed = (
     deepspeed_is_installed
@@ -416,7 +419,7 @@ class Attention(nn.Module):
             o = _flash_attn(q, k, v, flash_mask)
         elif use_cueq_triangle_kernel:
             scale = 1.0 / math.sqrt(self.c_hidden)
-            o = _cueq_triangle_attn(q, k, v, biases, scale=scale)
+            o = _cueq_triangle_attn(q, k, v, biases, scale=scale, training=self.training)
         else:
             o = _attention(q, k, v, biases, use_high_precision=use_high_precision)
             o = o.transpose(-2, -3)
@@ -696,13 +699,27 @@ def _flash_attn(q, k, v, kv_mask):
 
 
 @torch.compiler.disable
-def _cueq_triangle_attn(q, k, v, biases, scale):
+def _cueq_triangle_attn(q, k, v, biases, scale, training = False):
     is_batched_input = False
     assert len(biases) == 2, (
         "CUEQ triangle attention kernel requires two bias terms: "
         "mask_bias and triangle_bias"
     )
     mask_bias, triangle_bias = biases
+    
+    ## FP32 is not supported for the cueq kernel in training 
+    input_dtype = q.dtype
+    if (training) and (input_dtype == torch.float32):
+        warnings.warn(
+            "\n*FP32 is not supported for the cueq"
+            " triangle attention kernel in training. "
+            "Casting to bfloat16.*\n"
+        )
+        q = q.to(torch.bfloat16)
+        k = k.to(torch.bfloat16)
+        v = v.to(torch.bfloat16)
+        mask_bias = mask_bias.to(torch.bfloat16)
+        triangle_bias = triangle_bias.to(torch.bfloat16)
 
     ##VS: the cueq attn kernel only allows up to 5 input dimensions:
     ## (batch,*,n_head, *,c_hidden); batch here denotes multiple
@@ -727,7 +744,7 @@ def _cueq_triangle_attn(q, k, v, biases, scale):
             batch * n_tmpl, *triangle_bias.shape[2:]
         )
     ##VS: The mask for the triangle attention kernel needs to be a
-    ## boolean mask - the default mask is an addtive mask, where
+    ## boolean mask - the default mask is an additive mask, where
     ## 0 means no masking and -inf means masking. so we need to
     ## convert this to a boolean mask where positions to keep are
     ## True, and positions to mask are False.
@@ -740,4 +757,8 @@ def _cueq_triangle_attn(q, k, v, biases, scale):
         o = o.view(batch, n_tmpl, *o.shape[1:])
 
     o = o.transpose(-2, -3)
+    
+    if o.dtype != input_dtype:
+        o = o.to(input_dtype)
+    
     return o
