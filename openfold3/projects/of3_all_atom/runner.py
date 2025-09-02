@@ -417,13 +417,18 @@ class OpenFold3AllAtom(ModelRunner):
         if self.logger is None:
             return
 
+        train_confidence_only = self.config.settings.train_confidence_only
+
         single_transition_grads = {}
 
         # Only rank zero will actually log the gradients
         log_grad_metrics = self.trainer.is_global_zero
 
         # Only log 4 representative blocks to reduce overhead
-        block_idxs = [0, 16, 32, 47]
+        if train_confidence_only:
+            block_idxs = [0, 1, 2, 3]
+        else:
+            block_idxs = [0, 16, 32, 47]
 
         # To see if this slows down training, we additionally log runtimes from the
         # global_zero process
@@ -437,9 +442,15 @@ class OpenFold3AllAtom(ModelRunner):
             else nullcontext()
         )
 
+        stack = (
+            self.model.pairformer_stack
+            if not train_confidence_only
+            else self.model.aux_heads.pairformer_embedding.pairformer_stack
+        )
+
         with context:
             for idx in block_idxs:
-                block = self.model.pairformer_stack.blocks[idx]
+                block = stack.blocks[idx]
                 param = block.single_transition.linear_out.weight
 
                 # Needs to be called on every rank to avoid hanging
@@ -449,8 +460,13 @@ class OpenFold3AllAtom(ModelRunner):
                 assert not grad.requires_grad
 
                 if log_grad_metrics:
+                    stack_path = (
+                        "pairformer_stack"
+                        if not train_confidence_only
+                        else "aux_heads.pairformer_embedding.pairformer_stack"
+                    )
                     tag = (
-                        f"extra_gradients/model.pairformer_stack.blocks.{idx}."
+                        f"extra_gradients/model.{stack_path}.blocks.{idx}."
                         "single_transition.linear_out.weight"
                     )
 
