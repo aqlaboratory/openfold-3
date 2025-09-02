@@ -438,53 +438,33 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
                 "inplace_safe and use_cueq_triangle_kernel cannot be used together."
             )
         if use_cueq_triangle_kernel:
-            ##VS: similar issue here as to the cueq triangle attention
-            ## kernel, we need to reshape the input so that batch and 
-            ## n_tmpl are combined into a single dimension.
-            is_batched_input = False
-            if len(z.shape) > 4:
-                assert len(z.shape) == 5, (
-                    "CUEQ triangle multiplicative update only supports "
-                    f"max 5 input dimensions, got: {len(z.shape)}"
-                )
-                is_batched_input = True
-                batch, n_tmpl, n_res, _, c_in = z.shape
-                z = z.view(batch*n_tmpl, *z.shape[2:])
-                mask = mask.view(
-                    batch * n_tmpl, *mask.shape[2:]
-                    ) if mask is not None else None
             ## VS: The cuequivariance kernel is based on the boltz implementation
             ## of triangle multiplicative update, which fuses the linear_*_p
             ## projections into a single layer (similarly for linear_*_g).
             ## this why we need to concat the projection layers here
-            g_in_weight = torch.cat(
-                [
-                    self.linear_a_g.weight,
-                    self.linear_b_g.weight,
-                ]
-            )
-            p_in_weight = torch.cat(
-                [
-                    self.linear_a_p.weight,
-                    self.linear_b_p.weight,
-                ]
-            )
-            x = triangle_multiplicative_update(
-                z,
-                direction="outgoing" if self._outgoing else "incoming",
+            x = _cueq_triangle_mult(
+                z=z, 
+                g_in_weight =torch.cat(
+                    [
+                        self.linear_a_g.weight,
+                        self.linear_b_g.weight,
+                    ]
+                ),
+                p_in_weight = torch.cat(
+                    [
+                        self.linear_a_p.weight,
+                        self.linear_b_p.weight,
+                    ]
+                ),
+                _outgoing=self._outgoing,
                 mask=mask,
-                norm_in_weight=self.layer_norm_in.weight,
-                norm_in_bias=self.layer_norm_in.bias,
-                p_in_weight=p_in_weight,
-                g_in_weight=g_in_weight,
-                norm_out_weight=self.layer_norm_out.weight,
-                norm_out_bias=self.layer_norm_out.bias,
-                p_out_weight=self.linear_z.weight,
-                g_out_weight=self.linear_g.weight,
-                eps=1e-5,
+                norm_in_weight = self.layer_norm_in.weight,
+                norm_in_bias = self.layer_norm_in.bias,
+                norm_out_weight = self.layer_norm_out.weight,
+                norm_out_bias = self.layer_norm_out.bias,
+                p_out_weight = self.linear_z.weight,
+                g_out_weight = self.linear_g.weight
             )
-            if is_batched_input:
-                x = x.view(batch, n_tmpl, *x.shape[1:])
             return x
 
         if inplace_safe:
@@ -551,6 +531,8 @@ class TriangleMultiplicationIncoming(TriangleMultiplicativeUpdate):
 class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
     """
     Implements AF2-Multimer version of AF2 Algorithm 11 and 12.
+    Not compatible with AF3 - Linear layers here are instantiated with 
+    biases, compared to AF3 version which uses LinearNoBias 
     """
 
     def __init__(
@@ -652,6 +634,7 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         Returns:
             [*, N_res, N_res, C_z] output tensor
         """
+
         if inplace_safe:
             x = self._inference_forward(
                 z,
@@ -700,6 +683,7 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
 class FusedTriangleMultiplicationOutgoing(FusedTriangleMultiplicativeUpdate):
     """
     Implements AF2-Multimer version of AF2 Algorithm 11.
+    Not compatible with AF3
     """
 
     __init__ = partialmethod(FusedTriangleMultiplicativeUpdate.__init__, _outgoing=True)
@@ -708,8 +692,66 @@ class FusedTriangleMultiplicationOutgoing(FusedTriangleMultiplicativeUpdate):
 class FusedTriangleMultiplicationIncoming(FusedTriangleMultiplicativeUpdate):
     """
     Implements AF2-Multimer version of AF2 Algorithm 12.
+    Not compatible with AF3
     """
 
     __init__ = partialmethod(
         FusedTriangleMultiplicativeUpdate.__init__, _outgoing=False
     )
+
+
+def _cueq_triangle_mult(
+    z: torch.Tensor, 
+    g_in_weight: torch.Tensor,
+    p_in_weight: torch.Tensor,
+    _outgoing: bool,
+    mask: Optional[torch.Tensor],
+    norm_in_weight: torch.Tensor,
+    norm_in_bias: torch.Tensor,
+    norm_out_weight: torch.Tensor,
+    norm_out_bias: torch.Tensor,
+    p_out_weight: torch.Tensor,
+    g_out_weight: torch.Tensor
+) -> torch.Tensor:
+    ##VS: similar issue here as to the cueq triangle attention
+    ## kernel, we need to reshape the input so that batch and 
+    ## n_tmpl are combined into a single dimension.
+    
+    ## only hidden dimension multiple of 32 is supported for now
+    if z.shape[-1] % 32 != 0:
+        raise ValueError(
+            "CUEQ triangle multiplicative update only supports "
+            "channel dimension multiple of 32, got: "
+            f"{z.shape[-1]}"
+        )
+    
+    is_batched_input = False
+    if len(z.shape) > 4:
+        assert len(z.shape) == 5, (
+            "CUEQ triangle multiplicative update only supports "
+            f"max 5 input dimensions, got: {len(z.shape)}"
+        )
+        is_batched_input = True
+        batch, n_tmpl, n_res, _, c_in = z.shape
+        z = z.view(batch*n_tmpl, *z.shape[2:])
+        mask = mask.view(
+            batch * n_tmpl, *mask.shape[2:]
+            ) if mask is not None else None
+
+    x = triangle_multiplicative_update(
+        z,
+        direction="outgoing" if _outgoing else "incoming",
+        mask=mask,
+        norm_in_weight=norm_in_weight,
+        norm_in_bias=norm_in_bias,
+        g_in_weight=g_in_weight,
+        p_in_weight=p_in_weight,
+        norm_out_weight=norm_out_weight,
+        norm_out_bias=norm_out_bias,
+        p_out_weight=p_out_weight,
+        g_out_weight=g_out_weight,
+        eps=1e-5,
+    )
+    if is_batched_input:
+        x = x.view(batch, n_tmpl, *x.shape[1:])
+    return x
