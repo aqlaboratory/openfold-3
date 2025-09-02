@@ -9,6 +9,7 @@ from pydantic import (
 )
 
 from openfold3.core.config.config_utils import (
+    _cast_keys_to_int,
     _convert_molecule_type,
     _ensure_list,
 )
@@ -35,15 +36,19 @@ class Chain(BaseModel):
     molecule_type: Annotated[MoleculeType, BeforeValidator(_convert_molecule_type)]
     chain_ids: Annotated[list[str], BeforeValidator(_ensure_list)]
     sequence: str | None = None
+    non_canonical_residues: (
+        Annotated[dict[int, str], BeforeValidator(_cast_keys_to_int)] | None
+    ) = None
     smiles: str | None = None
     ccd_codes: Annotated[list[str], BeforeValidator(_ensure_list)] | None = None
-    # Msa definition
     paired_msa_file_paths: (
         Annotated[list[FilePath | DirectoryPath], BeforeValidator(_ensure_list)] | None
     ) = None
     main_msa_file_paths: list[FilePath | DirectoryPath] | None = None
-    # # Template definition
-    # templates: ...
+    template_alignment_file_path: FilePath | None = None
+    template_entry_chain_ids: (
+        Annotated[list[str], BeforeValidator(_ensure_list)] | None
+    ) = None
     sdf_file_path: FilePath | None = None
 
     @field_serializer("molecule_type", return_type=str)
@@ -61,15 +66,12 @@ class Query(BaseModel):
     use_msas: bool = True
     use_paired_msas: bool = True
     use_main_msas: bool = True
-    # use_templates: bool = False
     covalent_bonds: list[Bond] | None = None
 
 
 class InferenceQuerySet(BaseModel):
     seeds: list[int] = [42]
     queries: dict[str, Query]
-    ccd_file_path: FilePath | None = None
-    # msa_directory_path: DirectoryPathOrNone = None  # not yet supported
 
     @classmethod
     def from_json(cls, json_path: FilePath) -> "InferenceQuerySet":

@@ -2,16 +2,18 @@ import random
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, DirectoryPath, model_validator
+from pydantic import BaseModel, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import FilePathOrNone
-from openfold3.core.data.tools.colabfold_msa_server import MsaServerSettings
+from openfold3.core.data.tools.colabfold_msa_server import MsaComputationSettings
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetConfigKwargs,
     TrainingDatasetPaths,
 )
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate
+
+ValidModeType = Literal["train", "predict", "eval", "test"]
 
 
 class CheckpointConfig(BaseModel):
@@ -56,6 +58,7 @@ class DataModuleArgs(BaseModel):
 class PlTrainerArgs(BaseModel):
     """Arguments to configure pl.Trainer, including settings for number of devices."""
 
+    model_config = PydanticConfigDict(extra="allow")
     max_epochs: int = 1000  # pl_trainer default
     accelerator: str = "gpu"
     precision: int | str = "bf16-mixed"
@@ -84,8 +87,8 @@ class OutputWritingSettings(BaseModel):
 class ExperimentSettings(BaseModel):
     """General settings for all experiments"""
 
-    mode: Literal["train", "predict"]
-    output_dir: DirectoryPath
+    mode: ValidModeType
+    output_dir: Path = Path("./")
 
     @model_validator(mode="after")
     def create_output_dir(cls, model):
@@ -97,10 +100,9 @@ class ExperimentSettings(BaseModel):
 class TrainingExperimentSettings(ExperimentSettings):
     """General settings specific for training experiments"""
 
-    mode: Literal["train", "predict"] = "train"
+    mode: ValidModeType = "train"
     seed: int = 42
     restart_checkpoint_path: FilePathOrNone = None
-    output_dir: DirectoryPath = Path("./train_output")
 
 
 def generate_seeds(start_seed, num_seeds):
@@ -110,12 +112,13 @@ def generate_seeds(start_seed, num_seeds):
 
 
 class InferenceExperimentSettings(ExperimentSettings):
-    """General settings specific for training experiments"""
+    """General settings specific for inference experiments"""
 
-    mode: Literal["train", "predict"] = "predict"
+    mode: ValidModeType = "predict"
     seeds: int | list[int] = [42]
     num_seeds: int | None = None
-    output_dir: DirectoryPath = Path("./inference_output")
+    use_msa_server: bool = False
+    use_templates: bool = False
 
     @model_validator(mode="after")
     def generate_seeds(cls, model):
@@ -145,6 +148,8 @@ class ExperimentConfig(BaseModel):
 class TrainingExperimentConfig(ExperimentConfig):
     """Training experiment config"""
 
+    # pydantic model setting to prevent extra fields in main experiment config
+    model_config = PydanticConfigDict(extra="forbid")
     # required arguments for training experiment
     dataset_paths: dict[str, TrainingDatasetPaths]
     dataset_configs: dict[str, Any]
@@ -159,6 +164,8 @@ class TrainingExperimentConfig(ExperimentConfig):
 class InferenceExperimentConfig(ExperimentConfig):
     """Inference experiment config"""
 
+    # pydantic model setting to prevent extra fields in main experiment config
+    model_config = PydanticConfigDict(extra="forbid")
     # Required inputs for performing inference
     inference_ckpt_path: Path
 
@@ -167,4 +174,4 @@ class InferenceExperimentConfig(ExperimentConfig):
     data_module_args: DataModuleArgs = DataModuleArgs()
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
-    msa_server_settings: MsaServerSettings = MsaServerSettings()
+    msa_computation_settings: MsaComputationSettings = MsaComputationSettings()

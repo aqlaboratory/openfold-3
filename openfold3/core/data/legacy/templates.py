@@ -29,9 +29,8 @@ from typing import Any, Optional
 
 import numpy as np
 
-from openfold3.core.data.legacy import mmcif_parsing, parsers
+from openfold3.core.data.legacy import kalign_old, mmcif_parsing, parsers
 from openfold3.core.data.legacy.errors import Error
-from openfold3.core.data.tools import kalign
 from openfold3.core.data.tools.utils import to_date
 from openfold3.core.np import residue_constants
 
@@ -391,7 +390,7 @@ def _realign_pdb_template_to_query(
         * Or if the actual template sequence differs by more than 10% from the
             old_template_sequence.
     """
-    aligner = kalign.Kalign(binary_path=kalign_binary_path)
+    aligner = kalign_old.Kalign(binary_path=kalign_binary_path)
     new_template_sequence = mmcif_object.chain_to_seqres.get(template_chain_id, "")
 
     # Sometimes the template chain id is unknown. But if there is only a single

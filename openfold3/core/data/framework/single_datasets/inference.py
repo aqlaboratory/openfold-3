@@ -39,15 +39,21 @@ from openfold3.core.data.pipelines.sample_processing.conformer import (
 from openfold3.core.data.pipelines.sample_processing.msa import (
     MsaSampleProcessorInference,
 )
+from openfold3.core.data.pipelines.sample_processing.template import (
+    process_template_structures_of3,
+)
+from openfold3.core.data.primitives.structure.component import BiotiteCCDWrapper
 from openfold3.core.data.primitives.structure.query import (
     StructureWithReferenceMolecules,
     structure_with_ref_mols_from_query,
 )
-from openfold3.core.data.primitives.structure.template import TemplateSliceCollection
 from openfold3.core.data.primitives.structure.tokenization import (
     add_token_positions,
     get_token_count,
     tokenize_atom_array,
+)
+from openfold3.projects.of3_all_atom.config.dataset_configs import (
+    DefaultDatasetConfigSection,
 )
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     Query,
@@ -61,19 +67,21 @@ class InferenceDataset(Dataset):
     """Dataset class for running inference on a set of queries."""
 
     # TODO: Can accept a dataset_config here if we want
-    def __init__(self, dataset_config, world_size: Optional[int] = None) -> None:
+    def __init__(
+        self,
+        dataset_config: DefaultDatasetConfigSection,
+        world_size: Optional[int] = None,
+    ) -> None:
         """Initializes the InferenceDataset."""
         super().__init__()
-
         self.query_set = dataset_config.query_set
         self.query_cache = self.query_set.queries
 
         self.seeds: list = dataset_config.seeds
         self.world_size = world_size
 
+        # Main alignments
         self.msa_settings = dataset_config.msa
-        self.template_settings = dataset_config.template
-
         self.msa_sample_processor_inference = MsaSampleProcessorInference(
             config=self.msa_settings
         )
@@ -85,11 +93,18 @@ class InferenceDataset(Dataset):
             )
         )
 
+        # Templates
+        self.template_settings = dataset_config.template
+        self.template_preprocessor_settings = dataset_config.template_preprocessor
+        if self.template_preprocessor_settings.preparse_structures:
+            self.template_preprocessor_settings.structure_file_format = "npz"
+
         # Parse CCD
-        if self.query_set.ccd_file_path is not None:
+        if dataset_config.ccd_file_path is not None:
             logger.debug("Parsing CCD file.")
-            self.ccd = pdbx.CIFFile.read(self.query_set.ccd_file_path)
-            logger.debug("Done parsing CCD file.")
+            self.ccd = pdbx.CIFFile.read(dataset_config.ccd_file_path)
+        else:
+            self.ccd = BiotiteCCDWrapper()
 
         # Create individual datapoint cache (allows rerunning the same query with
         # different seeds)
@@ -195,13 +210,33 @@ class InferenceDataset(Dataset):
         return msa_features
 
     def create_template_features(
-        self, atom_array: AtomArray, n_tokens: int, *args, **kwargs
+        self, query: Query, atom_array: AtomArray, n_tokens: int, *args, **kwargs
     ) -> dict:
         """Creates the template features."""
-        # TODO: Implement a custom inference-adjusted function that returns
-        # template_slice_collection
-        template_slice_collection = TemplateSliceCollection(template_slices=dict())
 
+        # Expand pre-chain template data
+        assembly_data = {}
+        for chain in query.chains:
+            for chain_id in chain.chain_ids:
+                assembly_data[chain_id] = {
+                    "template_ids": chain.template_entry_chain_ids,
+                    "cache_entry_file_path": chain.template_alignment_file_path,
+                }
+
+        # Sample processing
+        template_slice_collection = process_template_structures_of3(
+            atom_array=atom_array,
+            n_templates=self.template_settings.n_templates,
+            take_top_k=self.template_settings.take_top_k,
+            template_cache_directory=None,
+            assembly_data=assembly_data,
+            template_structures_directory=self.template_preprocessor_settings.structure_directory,
+            template_structure_array_directory=self.template_preprocessor_settings.structure_array_directory,
+            template_file_format=self.template_preprocessor_settings.structure_file_format,
+            ccd=self.ccd,
+        )
+
+        # Featurization
         template_features = featurize_template_structures_of3(
             template_slice_collection=template_slice_collection,
             n_templates=self.template_settings.n_templates,
@@ -248,7 +283,7 @@ class InferenceDataset(Dataset):
 
         # Template features
         template_features = self.create_template_features(
-            preprocessed_atom_array, n_tokens
+            query, preprocessed_atom_array, n_tokens
         )
         features.update(template_features)
 

@@ -15,7 +15,7 @@ IMPORTANT:
 - Steps 1, 2, 4, 5 are required, step 3 is optional, but recommended if your dataset is large or redundant in the number of unique sequences.
 - Make sure to **consult steps 1 and 2 beforehand**, especially if your use case requires the computation of a large number of alignments. This is to ensure that your MSAs are generated in the expected format, with the expected filenames and are organized in the expected directory structure.
 
-*Using our OF3-style MSA generation pipeline*
+*Using our OF3-style MSA generation pipeline*:
 - Only step 4 is required, step 3 is optional, but recommended if your dataset is large or redundant in the number of unique sequences.
 
 ## 1. Precomputed MSA Files
@@ -33,8 +33,9 @@ Refer to the [MSA Input Components](precomputed_msa_explanation.md#1-msa-input-f
 
 ### 1.1. General MSA File Format
 
-MSAs generated with a custom workflow should follow the same format as that of the files output by our [snakemake MSA generation pipeline](precomputed_msa_generation_how_to.md). Both main and precomputed paired MSAs
+MSAs generated with a custom workflow should follow the same format as that of the files output by our [snakemake MSA generation pipeline](precomputed_msa_generation_how_to.md). Both main and precomputed paired MSA files
 - can be in either `a3m` or `sto` format
+- need to have one multiple sequence alignment per file per chain
 - need to have the query sequence (the protein or RNA sequence for which the structure is to be predicted) as the first sequence in the MSA
 
 <details>
@@ -163,7 +164,7 @@ preparsed_alignments/
 
 ## 4. Specifying Paths in the Inference Query File
 
-The data pipeline needs to know which MSA to use for which protein chain. This information is provided by specifying the [paths to the MSAs](input_format.md#31-protein-chains) for each chain in the inference query json file. There are 3 equivalent ways of specifying these paths.
+The data pipeline needs to know which MSA to use for which chain. This information is provided by specifying the [paths to the MSAs](input_format.md#31-protein-chains) for each chain in the inference query json file. There are 3 equivalent ways of specifying these paths.
 
 ### 4.1. Direct File Paths
 

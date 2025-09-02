@@ -94,7 +94,7 @@ GDPHMACNFQFPEIAYPGKLICPQY--G---------T--E-NK-D-G-------E-D--IIFNYVPGPGTKL----IQ-
 
 where the first sequence is the query sequence and headers `sp|P53859|CSL4_YEAST/1-292`, `tr|A6ZRL0|A6ZRL0_YEAS7/1-292` and `tr|C7GPC7|C7GPC7_YEAS2/1-292` are parsed to get species IDs `YEAST`, `YEAS7` and `YEAS2` for the three aligned sequences.
 
-The OF3 pairing code prioritizes sequences that can be paired with as many chains in the complex as possible, over only pairwise-pairable sequences, which we expect provides the model with more cross-chain coevolutionary information and improve protein-protein interface quality.
+The OF3 pairing code prioritizes sequences that can be paired with as many chains in the complex as possible, over only pairwise-pairable sequences.
 
 ![OF3 vs Colabfold Paired MSAs](../imgs/paired_msas.png)
 

@@ -1,11 +1,13 @@
 import json
 import logging
 import os
+import shutil
 import sys
 import time
 from abc import ABC, abstractmethod
 from functools import cached_property
 from pathlib import Path
+from typing import Any
 
 import ml_collections as mlc
 import pytorch_lightning as pl
@@ -25,6 +27,7 @@ from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.entry_points.validator import (
     ExperimentConfig,
     TrainingExperimentConfig,
+    generate_seeds,
 )
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetSpec,
@@ -32,6 +35,8 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
     TrainingDatasetSpec,
 )
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+
+logger = logging.getLogger(__name__)
 
 
 class ExperimentRunner(ABC):
@@ -66,7 +71,7 @@ class ExperimentRunner(ABC):
         """Get the project entry from the registry."""
         return OF3ProjectEntry()
 
-    @property
+    @cached_property
     def model_config(self) -> mlc.ConfigDict:
         """Retrieve the model configuration."""
         return self.project_entry.get_model_config_with_update(self.model_update)
@@ -136,7 +141,8 @@ class ExperimentRunner(ABC):
         if self.is_mpi:
             return self.cluster_environment.global_rank() == 0
         else:
-            return _get_rank() == 0
+            _rank = _get_rank()
+            return (_rank is None) or (_rank == 0)
 
     @property
     def cluster_environment(self) -> MPIEnvironment | None:
@@ -211,14 +217,14 @@ class ExperimentRunner(ABC):
 
         return pl.Trainer(**trainer_args)
 
-    def run(self):
+    def run(self) -> Any:
         """Run the experiment in the specified mode.
 
         Depending on the mode (train, eval, test, predict), the corresponding
         PyTorch Lightning method is invoked.
         """
         # Run process appropriate process
-        logging.info(f"Running {self.mode} mode.")
+        logger.info(f"Running {self.mode} mode.")
         # Training + validation
         if self.mode == "train":
             target_method = self.trainer.fit
@@ -230,13 +236,19 @@ class ExperimentRunner(ABC):
             target_method = self.trainer.test
         elif self.mode == "predict":
             target_method = self.trainer.predict
+            return target_method(
+                model=self.lightning_module,
+                datamodule=self.lightning_data_module,
+                ckpt_path=self.ckpt_path,
+                return_predictions=False,
+            )
         else:
             raise ValueError(
                 f"""Invalid mode argument: {self.mode}. Choose one of "
                 "'train', 'test', 'predict', 'profile'."""
             )
 
-        target_method(
+        return target_method(
             model=self.lightning_module,
             datamodule=self.lightning_data_module,
             ckpt_path=self.ckpt_path,
@@ -336,7 +348,7 @@ class TrainingExperimentRunner(ExperimentRunner):
                 f"seed={seed} must be an integer. Please provide a valid seed."
             )
 
-        logging.info(f"Running with seed: {seed}")
+        logger.info(f"Running with seed: {seed}")
         pl.seed_everything(seed, workers=True)
 
     @cached_property
@@ -366,7 +378,15 @@ class TrainingExperimentRunner(ExperimentRunner):
 class InferenceExperimentRunner(ExperimentRunner):
     """Training experiment builder."""
 
-    def __init__(self, experiment_config):
+    def __init__(
+        self,
+        experiment_config,
+        num_diffusion_samples: int | None = None,
+        num_model_seeds: int | None = None,
+        use_msa_server: bool = False,
+        use_templates: bool = False,
+        output_dir: Path | None = None,
+    ):
         super().__init__(experiment_config)
 
         self.experiment_config = experiment_config
@@ -378,14 +398,71 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.output_writer_settings = experiment_config.output_writer_settings
         self.timer = ExperimentTimer()
 
+        self.update_config_with_cli_args(
+            num_diffusion_samples,
+            num_model_seeds,
+            output_dir,
+            use_msa_server,
+            use_templates,
+        )
+
+    def set_num_diffusion_samples(self, num_diffusion_samples: int) -> None:
+        update_dict = {
+            "architecture": {
+                "shared": {
+                    "diffusion": {"no_full_rollout_samples": num_diffusion_samples}
+                }
+            }
+        }
+        model_config = self.model_config
+        model_config.update(update_dict)
+
+    def update_config_with_cli_args(
+        self,
+        num_diffusion_samples: int | None,
+        num_model_seeds: int | None,
+        output_dir: Path | None,
+        use_msa_server: bool = False,
+        use_templates: bool = False,
+    ):
+        """Updates configuration given command line args."""
+        if output_dir:
+            output_dir.mkdir(exist_ok=True, parents=True)
+            self.output_dir = output_dir
+            self.experiment_config.experiment_settings.output_dir = output_dir
+
+        if num_diffusion_samples:
+            logger.info(f"Set diffusion samples to {num_diffusion_samples}")
+            self.set_num_diffusion_samples(num_diffusion_samples)
+
+        if num_model_seeds:
+            start_seed = 42
+            self.seeds = generate_seeds(start_seed, num_model_seeds)
+
+        if use_msa_server:
+            self.experiment_config.experiment_settings.use_msa_server = True
+
+        if use_templates:
+            self.experiment_config.experiment_settings.use_templates = True
+
+    @cached_property
+    def use_msa_server(self) -> bool:
+        return self.experiment_config.experiment_settings.use_msa_server
+
+    @cached_property
+    def use_templates(self) -> bool:
+        return self.experiment_config.experiment_settings.use_templates
+
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
         self.timer.start("Inference")
         self.inference_query_set = inference_query_set
-        self._log_inference_query_set()
         super().run()
         self.timer.stop()
         print(f"Inference Runtime: {self.timer.get('Inference')}")
+        self._log_inference_query_set()
+        self._log_experiment_config()
+        self._log_model_config()
 
     @cached_property
     def callbacks(self):
@@ -400,8 +477,10 @@ class InferenceExperimentRunner(ExperimentRunner):
         inference_config = InferenceJobConfig(
             query_set=self.inference_query_set,
             seeds=self.seeds,
+            ccd_file_path=self.dataset_config_kwargs.ccd_file_path,
             msa=self.dataset_config_kwargs.msa,
             template=self.dataset_config_kwargs.template,
+            template_preprocessor=self.dataset_config_kwargs.template_preprocessor,
         )
         inference_spec = InferenceDatasetSpec(config=inference_config)
         return DataModuleConfig(
@@ -418,6 +497,38 @@ class InferenceExperimentRunner(ExperimentRunner):
         log_path = self.output_dir / "inference_query_set.json"
         with open(log_path, "w") as fp:
             fp.write(self.inference_query_set.model_dump_json(indent=4))
+
+    def _log_experiment_config(self):
+        """Record the experiment config used for this run."""
+        log_path = self.output_dir / "experiment_config.json"
+        with open(log_path, "w") as fp:
+            fp.write(self.experiment_config.model_dump_json(indent=4))
+
+    def _log_model_config(self):
+        log_path = self.output_dir / "model_config.json"
+        with open(log_path, "w") as fp:
+            fp.write(self.model_config.to_json_best_effort(indent=4))
+
+    def cleanup(self):
+        """Cleanup directories from colabfold MSA"""
+        if self.use_msa_server and self.is_rank_zero:
+            # Always remove raw directory
+            # TODO: Change to use ColabFoldQueryRunner.cleanup() when
+            # msa processing is performed in `prepare_data` lightning data hook
+            raw_colabfold_msa_path = (
+                self.experiment_config.msa_computation_settings.msa_output_directory
+                / "raw"
+            )
+            shutil.rmtree(raw_colabfold_msa_path)
+            if self.experiment_config.msa_computation_settings.cleanup_msa_dir:
+                output_dir = (
+                    self.experiment_config.msa_computation_settings.msa_output_directory
+                )
+                logger.info(f"Removing MSA output directory: {output_dir}")
+                shutil.rmtree(output_dir)
+                if self.use_templates:
+                    template_dir = self.dataset_config_kwargs.template_preprocessor.structure_directory.parent  # noqa: E501
+                    shutil.rmtree(template_dir)
 
 
 class WandbHandler:
