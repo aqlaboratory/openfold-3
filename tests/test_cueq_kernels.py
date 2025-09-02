@@ -24,7 +24,7 @@ import torch
 
 import tests.compare_utils as compare_utils
 from openfold3.core.model.layers.triangular_multiplicative_update import (
-    TriangleMultiplicativeUpdate,
+    TriangleMultiplicativeUpdate
 )
 from openfold3.core.model.primitives.attention import Attention
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
@@ -84,14 +84,17 @@ class TestCuEqKernels(unittest.TestCase):
         c_hidden = 32
         no_heads = 4
         eps = consts.eps
-
+        # NOTE: fp32 is not supported for the cueq kernel
+        # this is intentionally placed to trigger a warning 
+        # that types get auto converted to bf16
+        dtype = torch.float32
         x = torch.randn(
-            batch_size,n_tmpl, n_res, n_res, c_in, dtype=torch.bfloat16, requires_grad=True
+            batch_size,n_tmpl, n_res, n_res, c_in, dtype=dtype, requires_grad=True
         ).to("cuda")
         q = x.clone()
         kv = x.clone()
         mask_bias = torch.zeros(
-            batch_size,n_tmpl,n_res, 1, 1, n_res, dtype=torch.bfloat16
+            batch_size,n_tmpl,n_res, 1, 1, n_res, dtype=dtype
         ).to("cuda")
         triangle_bias = torch.randn(
             batch_size,
@@ -100,7 +103,7 @@ class TestCuEqKernels(unittest.TestCase):
             no_heads,
             n_res,
             n_res,
-            dtype=torch.bfloat16,
+            dtype=dtype,
             requires_grad=True,
         ).to("cuda")
         biases = [mask_bias, triangle_bias]
@@ -143,6 +146,10 @@ class TestCuEqKernels(unittest.TestCase):
         biases_repro = [clone(b) for b in biases]
 
         a_repro = init_attn()
+        
+        attn.train()
+        a_repro.train()
+        
         out_repro = a_repro(
             q_repro, kv_repro, biases=biases_repro, use_cueq_triangle_kernel=True
         )
@@ -214,7 +221,7 @@ class TestCuEqKernels(unittest.TestCase):
         self.assertTrue(err < eps, f"Error: {err}")
 
     def test_cueq_tri_mult_bwd(self):
-        batch = 2
+        batch = consts.batch_size
         n_tmpl = 20
         seq_len = 84
         c_z = 128
@@ -284,7 +291,8 @@ class TestCuEqKernels(unittest.TestCase):
             t_gt = tm_gt_params[name]
             err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))
             self.assertTrue(err < eps, f"Error item {name}: {err}")
-
+    
+    
 
 if __name__ == "__main__":
     unittest.main()
