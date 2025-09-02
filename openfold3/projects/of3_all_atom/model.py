@@ -17,6 +17,7 @@
 The main inference and training loops for AlphaFold3.
 """
 
+import gc
 import random
 
 import torch
@@ -650,5 +651,9 @@ class OpenFold3(nn.Module):
                     )
 
                     output.update(diffusion_output)
+
+        if self.settings.clear_cache_between_steps:
+            gc.collect()
+            torch.cuda.empty_cache()
 
         return batch, output
