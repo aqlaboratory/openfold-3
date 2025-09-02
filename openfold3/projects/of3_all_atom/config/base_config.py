@@ -110,6 +110,7 @@ project_config = mlc.ConfigDict(
                 #  to allow per-module overrides
                 "blocks_per_ckpt": blocks_per_ckpt,
                 "ckpt_intermediate_steps": ckpt_intermediate_steps,
+                "clear_cache_between_steps": False,
                 "train_confidence_only": train_confidence_only,
                 "optimizer": {
                     "use_deepspeed_adam": False,
