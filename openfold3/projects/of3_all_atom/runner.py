@@ -14,11 +14,16 @@ from openfold3.core.metrics.confidence import (
     compute_plddt,
     compute_predicted_aligned_error,
     compute_predicted_distance_error,
-    compute_weighted_ptm,
 )
 from openfold3.core.metrics.model_selection import (
     compute_final_model_selection_metric,
     compute_valid_model_selection_metrics,
+)
+from openfold3.core.metrics.sample_ranking import (
+    build_all_interface_ipTM_and_rankings,
+    compute_all_pTM,
+    full_complex_sample_ranking_metric,
+    compute_modified_residue_plddt,
 )
 from openfold3.core.metrics.validation_all_atom import (
     get_metrics,
@@ -567,13 +572,40 @@ class OpenFold3AllAtom(ModelRunner):
 
             # Compute weighted pTM score
             # Uses pae_logits (SI pg. 27)
-            ptm_scores = compute_weighted_ptm(
-                logits=outputs["pae_logits"],
-                asym_id=batch["asym_id"],
-                mask=valid_frame_mask,
+            sample_ranking = full_complex_sample_ranking_metric(
+                batch=batch,
+                output=outputs,
+                has_frame=valid_frame_mask,
+                **self.config.confidence.sample_ranking.full_complex,
                 **self.config.confidence.ptm,
             )
-            confidence_scores.update(ptm_scores)
+            confidence_scores.update(sample_ranking)
+
+            if self.config.confidence.sample_ranking.all_ipTM.enabled:
+                ipTM_scores = build_all_interface_ipTM_and_rankings(
+                    batch=batch,
+                    output=outputs,
+                    has_frame=valid_frame_mask,
+                    **self.config.confidence.ptm,
+                )
+                confidence_scores.update(ipTM_scores)
+
+            if self.config.confidence.sample_ranking.all_pTM.enabled:
+                pTM_scores = compute_all_pTM(
+                    batch=batch,
+                    outputs=outputs,
+                    has_frame=valid_frame_mask,
+                    **self.config.confidence.ptm,
+                )
+                confidence_scores.update(pTM_scores)
+
+            if self.config.confidence.sample_ranking.modified_residue.enabled:
+                modified_residue_scores = compute_modified_residue_plddt(
+                    batch=batch,
+                    outputs=outputs,
+                    plddt=confidence_scores["plddt"],
+                )
+                confidence_scores.update(modified_residue_scores)
 
         return confidence_scores
 

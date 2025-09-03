@@ -136,57 +136,94 @@ def compute_global_predicted_distance_error(
 
 def compute_ptm(
     logits: torch.Tensor,
-    asym_id: Optional[torch.Tensor] = None,
-    interface: bool = False,
     max_bin: int = 31,
     no_bins: int = 64,
-    mask: Optional[torch.Tensor] = None,
-    residue_weights: Optional[torch.Tensor] = None,
+    has_frame: Optional[torch.Tensor] = None, 
+    D_mask: Optional[torch.Tensor] = None,  # [*, N] bool – membership set D
+    asym_id: Optional[torch.Tensor] = None,  # [*, N] int – required if interface=True
+    interface: bool = False,  # False=pTM, True=ipTM
     eps: float = 1e-8,
-    **kwargs,
 ) -> torch.Tensor:
-    if residue_weights is None:
-        residue_weights = logits.new_ones(logits.shape[-2])
+    """
+    Predicted TM (pTM) / interface predicted TM (ipTM) per sample.
 
-    boundaries = torch.linspace(0, max_bin, steps=(no_bins - 1), device=logits.device)
+    Args:
+        logits:
+            Pair-distance logits with bins in either layout:
+            - [*, N, N, B]  (bins last), or
+            - [*, B, N, N]  (bins first)
+        max_bin:
+            Upper bound (Å) for the distance bins (AF3: 31 → covers up to ~32Å).
+        no_bins:
+            Number of distance bins (AF3: 64).
+        has_frame:
+            [*, N] boolean mask of tokens with valid frames (outer max over i).
+            If None, all tokens are considered valid.
+        D_mask:
+            [*, N] boolean mask selecting the set D to average over.
+            If None, D = all tokens.
+        asym_id:
+            [*, N] chain IDs. Required when `interface=True` to exclude same-chain
+            pairs for the inner average over j.
+        interface:
+            If True, compute ipTM (exclude same-chain pairs); otherwise pTM.
+        eps:
+            Numerical stability epsilon used in denominators.
 
-    bin_centers = _calculate_bin_centers(boundaries)
-    clipped_n = max(torch.sum(residue_weights), 19)
+    Returns:
+        score: [*] tensor with the pTM/ipTM score per leading index (batch/sample).
 
-    d0 = 1.24 * (clipped_n - 15) ** (1.0 / 3) - 1.8
+    Notes:
+        Implements AF3 Supp. §5.9.1, Eqs. (17–18).
+    """
+    x = logits
+    device, dtype = x.device, x.dtype
+    *leading, N, N2, B = x.shape
 
-    probs = torch.nn.functional.softmax(logits, dim=-1)
+    if D_mask is None:
+        D_mask = torch.ones(*leading, N, device=device, dtype=torch.bool)
+    else:
+        D_mask = D_mask.to(device=device, dtype=torch.bool)
 
-    tm_per_bin = 1.0 / (1 + (bin_centers**2) / (d0**2))
-    predicted_tm_term = torch.sum(probs * tm_per_bin, dim=-1)
+    if has_frame is None:
+        has_frame = torch.ones(*leading, N, device=device, dtype=torch.bool)
+    else:
+        has_frame = has_frame.to(device=device, dtype=torch.bool)
 
-    n = residue_weights.shape[-1]
-    pair_mask = residue_weights.new_ones((n, n), dtype=torch.int32)
-    if interface and (asym_id is not None):
-        if len(asym_id.shape) > 1:
-            assert len(asym_id.shape) <= 2
-            batch_size = asym_id.shape[0]
-            pair_mask = residue_weights.new_ones((batch_size, n, n), dtype=torch.int32)
-        pair_mask *= (asym_id[..., None] != asym_id[..., None, :]).to(
-            dtype=pair_mask.dtype
-        )
+    if interface and asym_id is None:
+        raise ValueError("asym_id is required when interface=True")
+    if asym_id is not None:
+        asym_id = asym_id.to(device=device)
 
-    predicted_tm_term *= pair_mask
+    D_size = D_mask.sum(dim=-1).clamp_min(1).to(dtype)  
+    clipped = torch.maximum(D_size, torch.tensor(19.0, device=device, dtype=dtype))
+    d0 = 1.24 * (clipped - 15.0).clamp_min(0).pow(1.0 / 3.0) - 1.8  
+    d0_sq = (d0**2).view(*leading, 1, 1, 1)  
 
-    pair_residue_weights = pair_mask * (
-        residue_weights[..., None, :] * residue_weights[..., :, None]
+    boundaries = torch.linspace(
+        0.0, float(max_bin), steps=no_bins - 1, device=device, dtype=dtype
     )
-    denom = eps + torch.sum(pair_residue_weights, dim=-1, keepdims=True)
-    normed_residue_mask = pair_residue_weights / denom
-    per_alignment = torch.sum(predicted_tm_term * normed_residue_mask, dim=-1)
+    bin_centers = _calculate_bin_centers(boundaries).view(*([1] * (x.dim() - 1)), B)
+    tm_per_bin = 1.0 / (1.0 + (bin_centers**2) / d0_sq)  
 
-    weighted = per_alignment * residue_weights
+    probs = torch.softmax(x, dim=-1) 
+    exp_tm_ij = torch.sum(probs * tm_per_bin, dim=-1)  
 
-    if mask is not None:
-        weighted = weighted * mask
+    if interface:
+        same_chain = asym_id.unsqueeze(-1) == asym_id.unsqueeze(-2) 
+        M_ij = (~same_chain) & D_mask.unsqueeze(-2)  
+    else:
+        M_ij = D_mask.unsqueeze(-2).expand(*leading, N, N)  
 
-    argmax = (weighted == torch.max(weighted)).nonzero()[0]
-    return per_alignment[tuple(argmax)]
+    M_ij_f = M_ij.to(exp_tm_ij.dtype)
+    exp_tm_ij = exp_tm_ij * M_ij_f
+
+    denom_j = M_ij_f.sum(dim=-1).clamp_min(eps)  
+    per_i = exp_tm_ij.sum(dim=-1) / denom_j  
+
+    valid_i = has_frame & D_mask  
+    per_i_masked = torch.where(valid_i, per_i, torch.full_like(per_i, float("-inf")))
+    return per_i_masked.max(dim=-1).values  
 
 
 def compute_weighted_ptm(
