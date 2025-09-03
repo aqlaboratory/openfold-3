@@ -31,13 +31,9 @@ import random
 import warnings
 from typing import Any, Optional, Union
 
-from openfold3.core.data.pipelines.preprocessing.template import TemplatePreprocessor
-from openfold3.core.data.tools.colabfold_msa_server import (
-    MsaComputationSettings,
-    preprocess_colabfold_msas,
-)
 import pytorch_lightning as pl
 import torch
+import torch.distributed as dist
 import torch.utils
 import torch.utils.data
 from lightning_fabric.utilities.rank_zero import (
@@ -54,6 +50,11 @@ from openfold3.core.data.framework.single_datasets.abstract_single import (
 )
 from openfold3.core.data.framework.stochastic_sampler_dataset import (
     SamplerDataset,
+)
+from openfold3.core.data.pipelines.preprocessing.template import TemplatePreprocessor
+from openfold3.core.data.tools.colabfold_msa_server import (
+    MsaComputationSettings,
+    preprocess_colabfold_msas,
 )
 from openfold3.core.utils.tensor_utils import dict_multimap
 
@@ -475,24 +476,34 @@ class InferenceDataModule(DataModule):
         self.use_msa_server = use_msa_server
         self.use_templates = use_templates
         self.msa_computation_settings = msa_computation_settings
+        _configs = self.multi_dataset_config.get_config_for_mode(DatasetMode.prediction)
+        self.inference_config = _configs.configs[0]
 
     def prepare_data(self) -> None:
         # Colabfold msa preparation
-        _configs = self.multi_dataset_config.get_config_for_mode(DatasetMode.prediction)
-        inference_config = _configs.configs[0]
-
         if self.use_msa_server:
-            inference_config.query_set = preprocess_colabfold_msas(
-                inference_query_set=inference_config.query_set,
+            self.inference_config.query_set = preprocess_colabfold_msas(
+                inference_query_set=self.inference_config.query_set,
                 compute_settings=self.msa_computation_settings,
             )
 
         if self.use_templates:
             template_preprocessor = TemplatePreprocessor(
-                input_set=inference_config.query_set,
-                config=inference_config.template_preprocessor,
+                input_set=self.inference_config.query_set,
+                config=self.inference_config.template_preprocessor,
             )
             template_preprocessor()
+
+    def setup(self, stage=None):
+        """Broadcast updated query set to all ranks if multiple GPUs are used."""
+        if self.world_size and self.world_size > 1:
+            if dist.get_rank() == 0:
+                placeholder = [self.inference_config.query_set]
+            else:
+                placeholder = [None]
+            dist.broadcast_object_list(placeholder, src=0)
+            self.inference_config.query_set = placeholder[0]
+        super().setup()
 
 
 # TODO: Remove debug logic and improve handlingi of training only features
