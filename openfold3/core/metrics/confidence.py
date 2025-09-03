@@ -23,6 +23,7 @@ def _calculate_bin_centers(boundaries: torch.Tensor):
     bin_centers = torch.cat(
         [bin_centers, (bin_centers[-1] + step).unsqueeze(-1)], dim=0
     )
+
     return bin_centers
 
 
@@ -138,7 +139,7 @@ def compute_ptm(
     logits: torch.Tensor,
     max_bin: int = 31,
     no_bins: int = 64,
-    has_frame: Optional[torch.Tensor] = None, 
+    has_frame: Optional[torch.Tensor] = None,
     D_mask: Optional[torch.Tensor] = None,  # [*, N] bool – membership set D
     asym_id: Optional[torch.Tensor] = None,  # [*, N] int – required if interface=True
     interface: bool = False,  # False=pTM, True=ipTM
@@ -195,35 +196,35 @@ def compute_ptm(
     if asym_id is not None:
         asym_id = asym_id.to(device=device)
 
-    D_size = D_mask.sum(dim=-1).clamp_min(1).to(dtype)  
+    D_size = D_mask.sum(dim=-1).clamp_min(1).to(dtype)
     clipped = torch.maximum(D_size, torch.tensor(19.0, device=device, dtype=dtype))
-    d0 = 1.24 * (clipped - 15.0).clamp_min(0).pow(1.0 / 3.0) - 1.8  
-    d0_sq = (d0**2).view(*leading, 1, 1, 1)  
+    d0 = 1.24 * (clipped - 15.0).clamp_min(0).pow(1.0 / 3.0) - 1.8
+    d0_sq = (d0**2).view(*leading, 1, 1, 1)
 
     boundaries = torch.linspace(
         0.0, float(max_bin), steps=no_bins - 1, device=device, dtype=dtype
     )
     bin_centers = _calculate_bin_centers(boundaries).view(*([1] * (x.dim() - 1)), B)
-    tm_per_bin = 1.0 / (1.0 + (bin_centers**2) / d0_sq)  
+    tm_per_bin = 1.0 / (1.0 + (bin_centers**2) / d0_sq)
 
-    probs = torch.softmax(x, dim=-1) 
-    exp_tm_ij = torch.sum(probs * tm_per_bin, dim=-1)  
+    probs = torch.softmax(x, dim=-1)
+    exp_tm_ij = torch.sum(probs * tm_per_bin, dim=-1)
 
     if interface:
-        same_chain = asym_id.unsqueeze(-1) == asym_id.unsqueeze(-2) 
-        M_ij = (~same_chain) & D_mask.unsqueeze(-2)  
+        same_chain = asym_id.unsqueeze(-1) == asym_id.unsqueeze(-2)
+        M_ij = (~same_chain) & D_mask.unsqueeze(-2)
     else:
-        M_ij = D_mask.unsqueeze(-2).expand(*leading, N, N)  
+        M_ij = D_mask.unsqueeze(-2).expand(*leading, N, N)
 
     M_ij_f = M_ij.to(exp_tm_ij.dtype)
     exp_tm_ij = exp_tm_ij * M_ij_f
 
-    denom_j = M_ij_f.sum(dim=-1).clamp_min(eps)  
-    per_i = exp_tm_ij.sum(dim=-1) / denom_j  
+    denom_j = M_ij_f.sum(dim=-1).clamp_min(eps)
+    per_i = exp_tm_ij.sum(dim=-1) / denom_j
 
-    valid_i = has_frame & D_mask  
+    valid_i = has_frame & D_mask
     per_i_masked = torch.where(valid_i, per_i, torch.full_like(per_i, float("-inf")))
-    return per_i_masked.max(dim=-1).values  
+    return per_i_masked.max(dim=-1).values
 
 
 def compute_weighted_ptm(

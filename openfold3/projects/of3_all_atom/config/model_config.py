@@ -480,18 +480,12 @@ model_config = mlc.ConfigDict(
                     "iptm_weight": 0.8,
                     "disorder_weight": 0.5,
                     "has_clash_weight": -100.0,
-                    "disorder_threshold": 0.581
+                    "disorder_threshold": 0.581,
                 },
-                "all_ipTM": {
-                    "enabled": True
-                    },
-                "all_pTM": {
-                    "enabled": True
-                    },
-                "modified_residue_plddt": {
-                    "enabled": True
-                    },
-                },
+                "all_ipTM": {"enabled": True},
+                "all_pTM": {"enabled": True},
+                "modified_residue_plddt": {"enabled": True},
+            },
             "clash": {
                 "min_distance": 1.1,
                 "clash_cutoff_num": 100,

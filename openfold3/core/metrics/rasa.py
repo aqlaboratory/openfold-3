@@ -357,6 +357,7 @@ def compute_rasa_batch(
 
     return unresolved_rasas
 
+
 def process_disorder(
     struct_array: AtomArray,
     disorder_threshold: float = 0.581,
@@ -432,7 +433,8 @@ def process_disorder(
     if not all_residues_rasa:
         return float("nan")
     all_residues_rasa = np.array(all_residues_rasa)
-    return np.mean((all_residues_rasa)>disorder_threshold)
+    return np.mean((all_residues_rasa) > disorder_threshold)
+
 
 def compute_disorder(
     batch: dict,
