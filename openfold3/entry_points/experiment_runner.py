@@ -11,7 +11,6 @@ from typing import Any
 
 import ml_collections as mlc
 import pytorch_lightning as pl
-import torch.distributed as dist
 import wandb
 from lightning_fabric.utilities.rank_zero import _get_rank
 from pydantic import BaseModel
@@ -34,15 +33,15 @@ from openfold3.entry_points.validator import (
     TrainingExperimentConfig,
     generate_seeds,
 )
+from openfold3.projects.of3_all_atom.config.dataset_config_components import (
+    colabfold_msa_settings,
+)
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetSpec,
     InferenceJobConfig,
     TrainingDatasetSpec,
 )
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
-from openfold3.projects.of3_all_atom.config.dataset_config_components import (
-    colabfold_msa_settings,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -555,8 +554,6 @@ class InferenceExperimentRunner(ExperimentRunner):
     def cleanup(self):
         """Cleanup directories from colabfold MSA"""
         if self.use_msa_server and self.is_rank_zero:
-            if self.world_size > 1:
-                dist.barrier()
             print("Cleaning up MSA directories...")
 
             # Always remove raw directory
