@@ -24,7 +24,7 @@ import torch
 
 import tests.compare_utils as compare_utils
 from openfold3.core.model.layers.triangular_multiplicative_update import (
-    TriangleMultiplicativeUpdate
+    TriangleMultiplicativeUpdate,
 )
 from openfold3.core.model.primitives.attention import Attention
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
@@ -36,7 +36,7 @@ from tests.config import consts
 class TestCuEqKernels(unittest.TestCase):
     def test_cueq_tri_attn_fwd(self):
         """test cueq triangle attn forward pass."""
-        ## NOTE: this tests the forwards pass as seen in 
+        ## NOTE: this tests the forwards pass as seen in
         ## the template module
         batch_size = consts.batch_size
         n_tmpl = 20
@@ -46,8 +46,10 @@ class TestCuEqKernels(unittest.TestCase):
         no_heads = 4
         eps = 2e-2
         x = torch.randn(batch_size, n_tmpl, n_res, n_res, c_in).to("cuda")
-        mask_bias = torch.zeros(batch_size,n_tmpl, n_res, 1, 1, n_res).to("cuda")
-        triangle_bias = torch.randn(batch_size,n_tmpl, 1, no_heads, n_res, n_res).to("cuda")
+        mask_bias = torch.zeros(batch_size, n_tmpl, n_res, 1, 1, n_res).to("cuda")
+        triangle_bias = torch.randn(batch_size, n_tmpl, 1, no_heads, n_res, n_res).to(
+            "cuda"
+        )
         biases = [mask_bias, triangle_bias]
 
         a = Attention(
@@ -85,17 +87,17 @@ class TestCuEqKernels(unittest.TestCase):
         no_heads = 4
         eps = consts.eps
         # NOTE: fp32 is not supported for the cueq kernel
-        # this is intentionally placed to trigger a warning 
+        # this is intentionally placed to trigger a warning
         # that types get auto converted to bf16
         dtype = torch.float32
         x = torch.randn(
-            batch_size,n_tmpl, n_res, n_res, c_in, dtype=dtype, requires_grad=True
+            batch_size, n_tmpl, n_res, n_res, c_in, dtype=dtype, requires_grad=True
         ).to("cuda")
         q = x.clone()
         kv = x.clone()
-        mask_bias = torch.zeros(
-            batch_size,n_tmpl,n_res, 1, 1, n_res, dtype=dtype
-        ).to("cuda")
+        mask_bias = torch.zeros(batch_size, n_tmpl, n_res, 1, 1, n_res, dtype=dtype).to(
+            "cuda"
+        )
         triangle_bias = torch.randn(
             batch_size,
             n_tmpl,
@@ -146,10 +148,10 @@ class TestCuEqKernels(unittest.TestCase):
         biases_repro = [clone(b) for b in biases]
 
         a_repro = init_attn()
-        
+
         attn.train()
         a_repro.train()
-        
+
         out_repro = a_repro(
             q_repro, kv_repro, biases=biases_repro, use_cueq_triangle_kernel=True
         )
@@ -195,8 +197,8 @@ class TestCuEqKernels(unittest.TestCase):
             c_hidden=c_hidden,
             _outgoing=outgoing,
         ).to("cuda")
-        z = torch.randn(batch,n_tmpl, seq_len, seq_len, c_z).to("cuda")
-        mask = torch.ones(batch,n_tmpl, seq_len, seq_len).to("cuda")
+        z = torch.randn(batch, n_tmpl, seq_len, seq_len, c_z).to("cuda")
+        mask = torch.ones(batch, n_tmpl, seq_len, seq_len).to("cuda")
         with torch.no_grad():
             lecun_normal_init_(tm.linear_g.weight)
             lecun_normal_init_(tm.linear_z.weight)
@@ -234,8 +236,12 @@ class TestCuEqKernels(unittest.TestCase):
             c_hidden=c_hidden,
             _outgoing=outgoing,
         ).to("cuda")
-        z = torch.randn(batch,n_tmpl, seq_len, seq_len, c_z, requires_grad=True).to("cuda")
-        mask = torch.ones(batch,n_tmpl, seq_len, seq_len, requires_grad=False).to("cuda")
+        z = torch.randn(batch, n_tmpl, seq_len, seq_len, c_z, requires_grad=True).to(
+            "cuda"
+        )
+        mask = torch.ones(batch, n_tmpl, seq_len, seq_len, requires_grad=False).to(
+            "cuda"
+        )
         with torch.no_grad():
             lecun_normal_init_(tm.linear_g.weight)
             lecun_normal_init_(tm.linear_z.weight)
@@ -291,8 +297,7 @@ class TestCuEqKernels(unittest.TestCase):
             t_gt = tm_gt_params[name]
             err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))
             self.assertTrue(err < eps, f"Error item {name}: {err}")
-    
-    
+
 
 if __name__ == "__main__":
     unittest.main()

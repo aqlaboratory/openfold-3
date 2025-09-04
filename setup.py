@@ -148,9 +148,9 @@ setup(
             "cuequivariance==0.5.1",
             "cuequivariance-ops-torch-cu12==0.5.1",
             "cuequivariance-torch==0.5.1",
-            "torch==2.6.0"
-            ]
-        },
+            "torch==2.7.1",
+        ]
+    },
     ext_modules=modules,
     cmdclass={"build_ext": BuildExtension},
     classifiers=[
@@ -159,5 +159,5 @@ setup(
         "Programming Language :: Python :: 3.10,"
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
-    entry_points={"console_scripts": ["run_openfold=run_openfold:cli"]}
+    entry_points={"console_scripts": ["run_openfold=run_openfold:cli"]},
 )

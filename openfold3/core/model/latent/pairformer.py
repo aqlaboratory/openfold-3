@@ -125,6 +125,7 @@ class PairFormerBlock(nn.Module):
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernel: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -146,6 +147,11 @@ class PairFormerBlock(nn.Module):
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
                 Mutually exclusive with use_lma.
+            use_cueq_triangle_kernel:
+                Whether to use cuEquivariance triangle multiplicative
+                update kernel and attention kernel. When both this and
+                use_deepspeed_evo_attention are True, the cuEquivariance
+                kernel is only used for triangle attention
             use_lma:
                 Whether to use low-memory attention during inference.
                 Mutually exclusive with use_deepspeed_evo_attention.
@@ -169,6 +175,7 @@ class PairFormerBlock(nn.Module):
             pair_mask=pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernel=use_cueq_triangle_kernel,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
@@ -313,6 +320,7 @@ class PairFormerStack(nn.Module):
         pair_mask: Optional[torch.Tensor],
         chunk_size: Optional[int],
         use_deepspeed_evo_attention: bool,
+        use_cueq_triangle_kernel: bool,
         use_lma: bool,
         inplace_safe: bool,
         _mask_trans: bool,
@@ -332,6 +340,7 @@ class PairFormerStack(nn.Module):
                 pair_mask=pair_mask,
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernel=use_cueq_triangle_kernel,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
@@ -379,6 +388,7 @@ class PairFormerStack(nn.Module):
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernel: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -419,6 +429,7 @@ class PairFormerStack(nn.Module):
             pair_mask=pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernel=use_cueq_triangle_kernel,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,

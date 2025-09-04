@@ -118,6 +118,12 @@ class TriangleAttention(nn.Module):
         Returns:
             [*, I, J, C_in] output tensor
         """
+
+        if use_cueq_triangle_kernel and use_deepspeed_evo_attention:
+            # VS: Upstream in the Pairformer, its valid for both to be
+            # true. This would trigger an error in Attention, so we
+            # assume here if both are true, we just use cueq
+            use_deepspeed_evo_attention = False
         if mask is None:
             # [*, I, J]
             mask = x.new_ones(

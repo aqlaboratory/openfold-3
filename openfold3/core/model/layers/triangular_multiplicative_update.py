@@ -35,6 +35,10 @@ cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
 if cueq_is_installed:
     from cuequivariance_torch import triangle_multiplicative_update
 
+import warnings
+
+warnings.filterwarnings("once")
+
 
 class BaseTriangleMultiplicativeUpdate(nn.Module, ABC):
     """
@@ -433,24 +437,24 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         Returns:
             [*, N_res, N_res, C_z] output tensor
         """
-        if inplace_safe and use_cueq_triangle_kernel:
-            raise NotImplementedError(
-                "inplace_safe and use_cueq_triangle_kernel cannot be used together."
-            )
+        ## NOTE: valid for inplace safe and use_cueq_triangle_kernel to be enabled
+        ## inplace safe is used across the codebase and so should not
+        ## be disabled. So if use_cueq_triangle_kernel is True, it will always
+        ## supersede inplace_safe
         if use_cueq_triangle_kernel:
             ## VS: The cuequivariance kernel is based on the boltz implementation
             ## of triangle multiplicative update, which fuses the linear_*_p
             ## projections into a single layer (similarly for linear_*_g).
             ## this why we need to concat the projection layers here
             x = _cueq_triangle_mult(
-                z=z, 
-                g_in_weight =torch.cat(
+                z=z,
+                g_in_weight=torch.cat(
                     [
                         self.linear_a_g.weight,
                         self.linear_b_g.weight,
                     ]
                 ),
-                p_in_weight = torch.cat(
+                p_in_weight=torch.cat(
                     [
                         self.linear_a_p.weight,
                         self.linear_b_p.weight,
@@ -458,12 +462,12 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
                 ),
                 _outgoing=self._outgoing,
                 mask=mask,
-                norm_in_weight = self.layer_norm_in.weight,
-                norm_in_bias = self.layer_norm_in.bias,
-                norm_out_weight = self.layer_norm_out.weight,
-                norm_out_bias = self.layer_norm_out.bias,
-                p_out_weight = self.linear_z.weight,
-                g_out_weight = self.linear_g.weight
+                norm_in_weight=self.layer_norm_in.weight,
+                norm_in_bias=self.layer_norm_in.bias,
+                norm_out_weight=self.layer_norm_out.weight,
+                norm_out_bias=self.layer_norm_out.bias,
+                p_out_weight=self.linear_z.weight,
+                g_out_weight=self.linear_g.weight,
             )
             return x
 
@@ -531,8 +535,8 @@ class TriangleMultiplicationIncoming(TriangleMultiplicativeUpdate):
 class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
     """
     Implements AF2-Multimer version of AF2 Algorithm 11 and 12.
-    Not compatible with AF3 - Linear layers here are instantiated with 
-    biases, compared to AF3 version which uses LinearNoBias 
+    Not compatible with AF3 - Linear layers here are instantiated with
+    biases, compared to AF3 version which uses LinearNoBias
     """
 
     def __init__(
@@ -622,6 +626,7 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         z: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         inplace_safe: bool = False,
+        use_cueq_triangle_kernel: bool = False,
         _add_with_inplace: bool = False,
         _inplace_chunk_size: Optional[int] = 256,
     ) -> torch.Tensor:
@@ -634,6 +639,12 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         Returns:
             [*, N_res, N_res, C_z] output tensor
         """
+        if use_cueq_triangle_kernel:
+            raise NotImplementedError(
+                "CUEQ triangle multiplicative update kernel not"
+                "supported for FusedTriangleMultiplicativeUpdate."
+                "\nPlease change config"
+            )
 
         if inplace_safe:
             x = self._inference_forward(
@@ -701,7 +712,7 @@ class FusedTriangleMultiplicationIncoming(FusedTriangleMultiplicativeUpdate):
 
 
 def _cueq_triangle_mult(
-    z: torch.Tensor, 
+    z: torch.Tensor,
     g_in_weight: torch.Tensor,
     p_in_weight: torch.Tensor,
     _outgoing: bool,
@@ -711,12 +722,13 @@ def _cueq_triangle_mult(
     norm_out_weight: torch.Tensor,
     norm_out_bias: torch.Tensor,
     p_out_weight: torch.Tensor,
-    g_out_weight: torch.Tensor
+    g_out_weight: torch.Tensor,
 ) -> torch.Tensor:
+    warnings.warn("\n\n ** CUEQ tri mult active ** \n\n")
     ##VS: similar issue here as to the cueq triangle attention
-    ## kernel, we need to reshape the input so that batch and 
+    ## kernel, we need to reshape the input so that batch and
     ## n_tmpl are combined into a single dimension.
-    
+
     ## only hidden dimension multiple of 32 is supported for now
     if z.shape[-1] % 32 != 0:
         raise ValueError(
@@ -724,7 +736,7 @@ def _cueq_triangle_mult(
             "channel dimension multiple of 32, got: "
             f"{z.shape[-1]}"
         )
-    
+
     is_batched_input = False
     if len(z.shape) > 4:
         assert len(z.shape) == 5, (
@@ -733,10 +745,8 @@ def _cueq_triangle_mult(
         )
         is_batched_input = True
         batch, n_tmpl, n_res, _, c_in = z.shape
-        z = z.view(batch*n_tmpl, *z.shape[2:])
-        mask = mask.view(
-            batch * n_tmpl, *mask.shape[2:]
-            ) if mask is not None else None
+        z = z.view(batch * n_tmpl, *z.shape[2:])
+        mask = mask.view(batch * n_tmpl, *mask.shape[2:]) if mask is not None else None
 
     x = triangle_multiplicative_update(
         z,

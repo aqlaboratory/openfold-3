@@ -206,8 +206,8 @@ class MSABlock(nn.Module, ABC):
         chunk_size: Optional[int] = None,
         transition_ckpt_chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernel: bool = False,
         use_lma: bool = False,
-        use_flash: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
         _attn_chunk_size: Optional[int] = None,
@@ -306,7 +306,11 @@ class PairBlock(nn.Module):
         self.ps_dropout_row_layer = DropoutRowwise(pair_dropout)
 
     def tri_mul_out_in(
-        self, z: torch.Tensor, pair_mask: torch.Tensor, inplace_safe: bool
+        self,
+        z: torch.Tensor,
+        pair_mask: torch.Tensor,
+        inplace_safe: bool,
+        use_cueq_triangle_kernel: bool = False,
     ) -> torch.Tensor:
         """Perform the outgoing and incoming triangular multiplicative updates."""
         tmu_update = self.tri_mul_out(
@@ -314,6 +318,7 @@ class PairBlock(nn.Module):
             mask=pair_mask,
             inplace_safe=inplace_safe,
             _add_with_inplace=True,
+            use_cueq_triangle_kernel=use_cueq_triangle_kernel,
         )
         if not inplace_safe:
             z = z + self.ps_dropout_row_layer(tmu_update)
@@ -330,6 +335,7 @@ class PairBlock(nn.Module):
             mask=pair_mask,
             inplace_safe=inplace_safe,
             _add_with_inplace=True,
+            use_cueq_triangle_kernel=use_cueq_triangle_kernel,
         )
         if not inplace_safe:
             z = z + self.ps_dropout_row_layer(tmu_update)
@@ -344,6 +350,7 @@ class PairBlock(nn.Module):
         _attn_chunk_size: Optional[int],
         pair_mask: torch.Tensor,
         use_deepspeed_evo_attention: bool,
+        use_cueq_triangle_kernel: bool,
         use_lma: bool,
         inplace_safe: bool,
     ) -> torch.Tensor:
@@ -357,6 +364,7 @@ class PairBlock(nn.Module):
                     chunk_size=_attn_chunk_size,
                     use_memory_efficient_kernel=False,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_cueq_triangle_kernel=use_cueq_triangle_kernel,
                     use_lma=use_lma,
                     inplace_safe=inplace_safe,
                 )
@@ -379,6 +387,7 @@ class PairBlock(nn.Module):
                     chunk_size=_attn_chunk_size,
                     use_memory_efficient_kernel=False,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_cueq_triangle_kernel=use_cueq_triangle_kernel,
                     use_lma=use_lma,
                     inplace_safe=inplace_safe,
                 )
@@ -398,6 +407,7 @@ class PairBlock(nn.Module):
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernel: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -413,10 +423,13 @@ class PairBlock(nn.Module):
                 Inference-time subbatch size
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma and use_flash.
+                Mutually exclusive with use_lma
+            use_cueq_triangle_kernel:
+                Whether to use cuEquivariance triangle multiplicative
+                update kernel and attention kernel.
             use_lma:
                 Whether to use low-memory attention during inference.
-                Mutually exclusive with use_flash and use_deepspeed_evo_attention.
+                Mutually exclusive with and use_deepspeed_evo_attention.
             inplace_safe:
                 Whether inplace operations can be performed
             _mask_trans:
@@ -436,13 +449,19 @@ class PairBlock(nn.Module):
         if _attn_chunk_size is None:
             _attn_chunk_size = chunk_size
 
-        z = self.tri_mul_out_in(z=z, pair_mask=pair_mask, inplace_safe=inplace_safe)
+        z = self.tri_mul_out_in(
+            z=z,
+            pair_mask=pair_mask,
+            inplace_safe=inplace_safe,
+            use_cueq_triangle_kernel=use_cueq_triangle_kernel,
+        )
 
         z = self.tri_att_start_end(
             z=z,
             _attn_chunk_size=_attn_chunk_size,
             pair_mask=pair_mask,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernel=use_cueq_triangle_kernel,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
         )
