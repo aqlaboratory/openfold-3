@@ -569,6 +569,7 @@ class OpenFold3AllAtom(ModelRunner):
                 x=outputs["atom_positions_predicted"],
                 atom_mask=batch["atom_mask"],
             )
+            valid_frame_mask = valid_frame_mask.bool()
 
             # Compute weighted pTM score
             # Uses pae_logits (SI pg. 27)

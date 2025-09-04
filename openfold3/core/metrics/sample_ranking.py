@@ -67,7 +67,7 @@ def full_complex_sample_ranking_metric(
 
     # aggregated ipTM / pTM (Eqs. 17–18)
     iptm = compute_ptm(
-        logits=output["pde_logits"],
+        logits=output["pae_logits"],
         has_frame=has_frame,
         D_mask=token_mask,
         asym_id=asym_id,
@@ -75,7 +75,7 @@ def full_complex_sample_ranking_metric(
         **kwargs,
     )
     ptm = compute_ptm(
-        logits=output["pde_logits"],
+        logits=output["pae_logits"],
         has_frame=has_frame,
         D_mask=token_mask,
         asym_id=asym_id,
@@ -98,7 +98,6 @@ def full_complex_sample_ranking_metric(
     ).bool()
 
     is_polymer = is_protein_atomized | is_rna_atomized | is_dna_atomized
-    print("I am here")
     has_clash = compute_has_clash(
         asym_id=asym_id_atomized,
         all_atom_pred_pos=pred_pos,
@@ -157,7 +156,7 @@ def compute_chain_pTM(
     d_mask = _expand_sample_dim(d_mask, no_samples)
 
     return compute_ptm(
-        outputs["pde_logits"],
+        outputs["pae_logits"],
         has_frame=has_frame,
         D_mask=d_mask,
         interface=False,
@@ -187,7 +186,7 @@ def compute_all_pTM(
     for asym_id in batch["asym_id"].unique():
         D_mask = token_mask & (batch["asym_id"] == asym_id)
         ptm_by_asym_id[asym_id.item()] = compute_ptm(
-            outputs["pde_logits"],
+            outputs["pae_logits"],
             has_frame=has_frame,
             D_mask=D_mask,
             asym_id=batch["asym_id"],
@@ -232,7 +231,7 @@ def compute_interface_pTM(
     asym_id = _expand_sample_dim(asym_id, no_samples)
 
     return compute_ptm(
-        outputs["pde_logits"],
+        outputs["pae_logits"],
         has_frame=has_frame,
         D_mask=d_mask,
         asym_id=asym_id,
@@ -336,13 +335,12 @@ def build_all_interface_ipTM_and_rankings(
     Returns:
       {
         "M":       [B, S, C_max, C_max]  (NaN padded),
-        "R":       [B, S, C_max]         (NaN for padded chains),
         "score":   [B, S, C_max, C_max],
         "ranking": [B, C_max, C_max, S],  # per-pair argsort over samples
         "chains":  list[Tensor],          # per-batch chain IDs (length C_b)
       }
     """
-    logits = output["pde_logits"]  # [B, (S), N, N, Bins] or [B, N, N, Bins]
+    logits = output["pae_logits"]  # [B, (S), N, N, Bins] or [B, N, N, Bins]
     has_frame = has_frame.bool()  # [B, (S), N]
     B, S, N, N2, Bins = logits.shape
 
@@ -461,11 +459,22 @@ def build_all_interface_ipTM_and_rankings(
         score[b, :, :C_b, :C_b] = torch.where(
             nonpoly_pair.unsqueeze(0), R_sel, base_score
         )
-    all_iptm_scores = {
-        "ipTM(all_interfaces)": M,
-        "score(all_interfaces)": score,
-        "chains": chains,
-    }
+    all_iptm_scores = {}
+    for b in range(B):
+        chains_b = chains[b]
+        C_b = int(chains_b.numel())
+        if C_b <= 1:
+            all_iptm_scores[b] = {}
+            continue
+        all_iptm_scores[b] = {}
+        for i in range(C_b):
+            for j in range(i + 1, C_b):
+                all_iptm_scores[b][
+                    (int(chains_b[i].item()), int(chains_b[j].item()))
+                ] = {
+                    "ipTM": M[b, :, i, j],  # [S]
+                    "score": score[b, :, i, j],  # [S]
+                }
     return {"all_ipTM_scores": all_iptm_scores}
 
 
