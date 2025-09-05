@@ -388,6 +388,15 @@ class OpenFold3AllAtom(ModelRunner):
             self.trainer.datamodule.next_dataset_indices
         )
 
+    def _freeze_model_params(self, exempt_layers: list[torch.nn.Module]):
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+        # Unfreeze only the exempt parameters
+        for layer in exempt_layers:
+            for param in layer.parameters():
+                param.requires_grad = True
+
     def on_train_start(self):
         # Reload state from datamodule in case checkpoint has been used
         self._load_train_dataset_state_from_datamodule()
@@ -396,6 +405,17 @@ class OpenFold3AllAtom(ModelRunner):
                 f"Train start, setting up "
                 f"{self.trainer.train_dataloader.dataset.next_dataset_indices=}"
             )
+
+        if self.config.settings.train_confidence_only:
+            # Keep grads enabled for confidence head parameters
+            exempt_layers = [
+                self.model.aux_heads.pairformer_embedding,
+                self.model.aux_heads.pde,
+                self.model.aux_heads.plddt,
+                self.model.aux_heads.experimentally_resolved,
+                self.model.aux_heads.pae,
+            ]
+            self._freeze_model_params(exempt_layers=exempt_layers)
 
     def on_train_epoch_start(self):
         # At the start of each virtual epoch we want to resample the set of
@@ -414,10 +434,8 @@ class OpenFold3AllAtom(ModelRunner):
         These gradients can be associated with instabilities, so we're logging them on
         every single step (bypassing log_every_n_steps) for more accurate monitoring.
         """
-        if self.logger is None:
+        if self.logger is None or self.config.settings.train_confidence_only:
             return
-
-        train_confidence_only = self.config.settings.train_confidence_only
 
         single_transition_grads = {}
 
@@ -425,10 +443,7 @@ class OpenFold3AllAtom(ModelRunner):
         log_grad_metrics = self.trainer.is_global_zero
 
         # Only log 4 representative blocks to reduce overhead
-        if train_confidence_only:
-            block_idxs = [0, 1, 2, 3]
-        else:
-            block_idxs = [0, 16, 32, 47]
+        block_idxs = [0, 16, 32, 47]
 
         # To see if this slows down training, we additionally log runtimes from the
         # global_zero process
@@ -442,15 +457,9 @@ class OpenFold3AllAtom(ModelRunner):
             else nullcontext()
         )
 
-        stack = (
-            self.model.pairformer_stack
-            if not train_confidence_only
-            else self.model.aux_heads.pairformer_embedding.pairformer_stack
-        )
-
         with context:
             for idx in block_idxs:
-                block = stack.blocks[idx]
+                block = self.model.pairformer_stack.blocks[idx]
                 param = block.single_transition.linear_out.weight
 
                 # Needs to be called on every rank to avoid hanging
@@ -460,13 +469,8 @@ class OpenFold3AllAtom(ModelRunner):
                 assert not grad.requires_grad
 
                 if log_grad_metrics:
-                    stack_path = (
-                        "pairformer_stack"
-                        if not train_confidence_only
-                        else "aux_heads.pairformer_embedding.pairformer_stack"
-                    )
                     tag = (
-                        f"extra_gradients/model.{stack_path}.blocks.{idx}."
+                        f"extra_gradients/model.pairformer_stack.blocks.{idx}."
                         "single_transition.linear_out.weight"
                     )
 
