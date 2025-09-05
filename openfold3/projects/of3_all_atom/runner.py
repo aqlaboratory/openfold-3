@@ -73,9 +73,32 @@ class OpenFold3AllAtom(ModelRunner):
             self.config.settings.model_selection_weight_scheme
         ]
 
+    def setup(self, stage: str):
+        # Setup metrics
         self._setup_train_metrics()
         self._setup_val_metrics()
         self._init_metric_enabled_tracker()
+
+        # Keep grads enabled for confidence head parameters only
+        if stage == "fit" and self.config.settings.train_confidence_only:
+            exempt_submodule = [
+                self.model.aux_heads.pairformer_embedding,
+                self.model.aux_heads.pde,
+                self.model.aux_heads.plddt,
+                self.model.aux_heads.experimentally_resolved,
+                self.model.aux_heads.pae,
+            ]
+            self._freeze_model_params(exempt_submodule=exempt_submodule)
+
+    def _freeze_model_params(self, exempt_submodule: list[torch.nn.Module]):
+        """Freeze all model parameters excluding those specified in exempt_submodule."""
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+        # Unfreeze only the exempt parameters
+        for layer in exempt_submodule:
+            for param in layer.parameters():
+                param.requires_grad = True
 
     def _setup_train_metrics(self):
         """Set up training loss and metric collection objects."""
@@ -388,15 +411,6 @@ class OpenFold3AllAtom(ModelRunner):
             self.trainer.datamodule.next_dataset_indices
         )
 
-    def _freeze_model_params(self, exempt_submodule: list[torch.nn.Module]):
-        for param in self.model.parameters():
-            param.requires_grad = False
-
-        # Unfreeze only the exempt parameters
-        for layer in exempt_submodule:
-            for param in layer.parameters():
-                param.requires_grad = True
-
     def on_train_start(self):
         # Reload state from datamodule in case checkpoint has been used
         self._load_train_dataset_state_from_datamodule()
@@ -405,17 +419,6 @@ class OpenFold3AllAtom(ModelRunner):
                 f"Train start, setting up "
                 f"{self.trainer.train_dataloader.dataset.next_dataset_indices=}"
             )
-
-        if self.config.settings.train_confidence_only:
-            # Keep grads enabled for confidence head parameters
-            exempt_submodule = [
-                self.model.aux_heads.pairformer_embedding,
-                self.model.aux_heads.pde,
-                self.model.aux_heads.plddt,
-                self.model.aux_heads.experimentally_resolved,
-                self.model.aux_heads.pae,
-            ]
-            self._freeze_model_params(exempt_submodule=exempt_submodule)
 
     def on_train_epoch_start(self):
         # At the start of each virtual epoch we want to resample the set of
