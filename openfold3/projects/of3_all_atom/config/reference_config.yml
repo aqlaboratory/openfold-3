@@ -37,6 +37,13 @@ finetune3:
     settings:
       train_confidence_only: true
       model_selection_weight_scheme: fine_tuning
+      ema:
+        submodule_enabled_subset:
+          - aux_heads.pairformer_embedding
+          - aux_heads.pde
+          - aux_heads.plddt
+          - aux_heads.experimentally_resolved
+          - aux_heads.pae
     architecture:
       shared:
         diffusion:

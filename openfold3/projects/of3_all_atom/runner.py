@@ -388,12 +388,12 @@ class OpenFold3AllAtom(ModelRunner):
             self.trainer.datamodule.next_dataset_indices
         )
 
-    def _freeze_model_params(self, exempt_layers: list[torch.nn.Module]):
+    def _freeze_model_params(self, exempt_submodule: list[torch.nn.Module]):
         for param in self.model.parameters():
             param.requires_grad = False
 
         # Unfreeze only the exempt parameters
-        for layer in exempt_layers:
+        for layer in exempt_submodule:
             for param in layer.parameters():
                 param.requires_grad = True
 
@@ -408,14 +408,14 @@ class OpenFold3AllAtom(ModelRunner):
 
         if self.config.settings.train_confidence_only:
             # Keep grads enabled for confidence head parameters
-            exempt_layers = [
+            exempt_submodule = [
                 self.model.aux_heads.pairformer_embedding,
                 self.model.aux_heads.pde,
                 self.model.aux_heads.plddt,
                 self.model.aux_heads.experimentally_resolved,
                 self.model.aux_heads.pae,
             ]
-            self._freeze_model_params(exempt_layers=exempt_layers)
+            self._freeze_model_params(exempt_submodule=exempt_submodule)
 
     def on_train_epoch_start(self):
         # At the start of each virtual epoch we want to resample the set of

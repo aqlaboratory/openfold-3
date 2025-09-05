@@ -238,8 +238,17 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
         ckpt_dict = torch.load(weights_only_path)
 
         logging.warning(f"Restoring weights from {weights_only_path}")
-        lightning_module.load_state_dict(ckpt_dict["state_dict"], strict=False)
-        lightning_module.ema.load_state_dict(ckpt_dict["ema"])
+
+        init_model_from_ema_weights = runner_args.get("init_model_from_ema_weights")
+        if init_model_from_ema_weights:
+            lightning_module.load_state_dict(ckpt_dict["ema"]["params"], strict=False)
+            # These won't get updated if "submodule_enabled_subset" in the ema config
+            # is set and does not include these pretrained layers. This is just so the
+            # final ema weights are in one dict
+            lightning_module.ema.load_state_dict(ckpt_dict["ema"])
+        else:
+            lightning_module.load_state_dict(ckpt_dict["state_dict"], strict=False)
+            lightning_module.ema.load_state_dict(ckpt_dict["ema"])
 
         reset_scheduler = runner_args.get("reset_scheduler")
         if not reset_scheduler:

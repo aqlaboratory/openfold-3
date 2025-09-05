@@ -129,7 +129,7 @@ project_config = mlc.ConfigDict(
                     "decay_every_n_steps": 50000,
                     "decay_factor": 0.95,
                 },
-                "ema": {"decay": 0.999},
+                "ema": {"decay": 0.999, "submodule_enabled_subset": None},
                 "gradient_clipping": 10.0,
                 "model_selection_weight_scheme": "initial_training",
             },
