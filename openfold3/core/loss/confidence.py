@@ -780,7 +780,7 @@ def confidence_loss(
                 loss_fn=pae_loss,
                 batch=batch,
                 x=output["atom_positions_predicted"],
-                logits=output["plddt_logits"],
+                logits=output["pae_logits"],
                 kwargs={**pae, "eps": eps, "inf": inf},
             )
         else:
