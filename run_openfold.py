@@ -242,7 +242,9 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
         init_model_from_ema_weights = runner_args.get("init_model_from_ema_weights")
         if init_model_from_ema_weights:
             logger.info("Loading model from ema weights")
-            lightning_module.load_state_dict(ckpt_dict["ema"]["params"], strict=False)
+            lightning_module.model.load_state_dict(
+                ckpt_dict["ema"]["params"], strict=False
+            )
             # These won't get updated if "submodule_enabled_subset" in the ema config
             # is set and does not include these pretrained layers. This is just so the
             # final ema weights are in one dict
