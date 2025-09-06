@@ -136,6 +136,14 @@ class OpenFold3(nn.Module):
         )
         return mode_mem_settings
 
+    def _enable_trunk_eval_mode(self):
+        """Put trunk components in eval mode"""
+        self.input_embedder.eval()
+        self.template_embedder.eval()
+        self.msa_module_embedder.eval()
+        self.msa_module.eval()
+        self.pairformer_stack.eval()
+
     def _do_inference_offload(self, seq_len: int) -> bool:
         if self.training:
             return False
@@ -595,6 +603,10 @@ class OpenFold3(nn.Module):
         )
 
         output = {"recycles": num_cycles}
+
+        # Put trunk components in eval mode (finetuning stage 3)
+        if self.settings.train_confidence_only:
+            self._enable_trunk_eval_mode()
 
         # Compute representations
         si_input, si_trunk, zij_trunk = self.run_trunk(

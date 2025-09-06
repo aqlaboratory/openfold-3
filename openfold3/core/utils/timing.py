@@ -3,12 +3,16 @@
 import logging
 import time
 
+logger = logging.getLogger(__name__)
+
 
 class PerformanceTimer:
     # https://stackoverflow.com/questions/33987060/python-context-manager-that-measures-time
 
-    def __init__(self, msg):
+    def __init__(self, msg, logger=logger, level=logging.INFO):
         self.msg = msg
+        self.logger = logger
+        self.level = level
 
     def __enter__(self):
         self.start = time.perf_counter()
@@ -18,4 +22,4 @@ class PerformanceTimer:
         self.time = time.perf_counter() - self.start
         self.time_in_ms = self.time * 1000
         self.readout = f"{self.msg}... Time: {self.time:.6f} seconds"
-        logging.warning(self.readout)
+        self.logger.log(self.level, self.readout)

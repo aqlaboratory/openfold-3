@@ -716,6 +716,7 @@ def confidence_loss(
                 "no_bins": Number of bins
                 "bin_min": Minimum bin value
                 "bin_max": Maximum bin value
+                "enabled": Whether the PAE head is enabled or not
         per_sample_atom_cutoff:
             Atom seq len for which to start chunking all atom plddt
         eps:
@@ -785,8 +786,7 @@ def confidence_loss(
         "experimentally_resolved": l_resolved,
     }
 
-    pae_weight = loss_weights["pae"]
-    if pae_weight.any():
+    if pae["enabled"]:
         l_pae = pae_loss(
             batch=batch,
             x=output["atom_positions_predicted"],

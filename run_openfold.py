@@ -93,7 +93,7 @@ def restore_lr_step(ckpt_path: Path, lightning_module: pl.LightningModule):
         sd = torch.load(str(ckpt_path))
     last_global_step = int(sd["global_step"])
 
-    logging.warning(f"Restoring last lr step {last_global_step} from {ckpt_path}")
+    logger.info(f"Restoring last lr step {last_global_step} from {ckpt_path}")
     lightning_module.resume_last_lr_step(last_global_step)
 
 
@@ -139,7 +139,7 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
     if seed is None and is_distributed:
         raise ValueError("For distributed training, seed must be specified")
 
-    logging.info(f"Running with seed: {seed}")
+    logger.info(f"Running with seed: {seed}")
     pl.seed_everything(seed, workers=True)
 
     project_entry = registry.get_project_entry(runner_args.project_type)
@@ -224,23 +224,45 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
     #  "lr_schedulers" dict. Handle case where we resume from a different schedule
     ckpt_path = runner_args.get("restart_checkpoint_path")
     weights_only_path = runner_args.get("weights_only_checkpoint_path")
-    if weights_only_path:
+
+    run_exists = False
+    if runner_args.get("wandb") and runner_args.wandb.get("id"):
+        wandb_ckpt_dir = (
+            Path(runner_args.output_dir) / "openfold3" / runner_args.wandb.id
+        )
+        run_exists = wandb_ckpt_dir.is_dir() and any(wandb_ckpt_dir.iterdir())
+
+    if weights_only_path and not run_exists:
         ckpt_path = None
 
         ckpt_dict = torch.load(weights_only_path)
 
-        logging.warning(f"Restoring weights from {weights_only_path}")
-        lightning_module.load_state_dict(ckpt_dict["state_dict"])
-        lightning_module.ema.load_state_dict(ckpt_dict["ema"])
+        logger.info(f"Restoring weights from {weights_only_path}")
 
-        restore_lr_step(
-            ckpt_path=Path(weights_only_path), lightning_module=lightning_module
-        )
+        init_model_from_ema_weights = runner_args.get("init_model_from_ema_weights")
+        if init_model_from_ema_weights:
+            logger.info("Loading model from ema weights")
+            lightning_module.load_state_dict(ckpt_dict["ema"]["params"], strict=False)
+            # These won't get updated if "submodule_enabled_subset" in the ema config
+            # is set and does not include these pretrained layers. This is just so the
+            # final ema weights are in one dict
+            lightning_module.ema.load_state_dict(ckpt_dict["ema"])
+        else:
+            lightning_module.load_state_dict(ckpt_dict["state_dict"], strict=False)
+            lightning_module.ema.load_state_dict(ckpt_dict["ema"])
 
-        logging.warning(f"Restoring datamodule state from {weights_only_path}")
+        reset_scheduler = runner_args.get("reset_scheduler")
+        if not reset_scheduler:
+            restore_lr_step(
+                ckpt_path=Path(weights_only_path), lightning_module=lightning_module
+            )
+        else:
+            logger.info("Resetting LR scheduler")
+
+        logger.info(f"Restoring datamodule state from {weights_only_path}")
         lightning_data_module.load_state_dict(ckpt_dict["DataModule"])
 
-        logging.warning("Restoring fit loop counters")
+        logger.info("Restoring fit loop counters")
         trainer.fit_loop.load_state_dict(ckpt_dict["loops"]["fit_loop"])
 
     # Determine if running on rank zero process
@@ -275,7 +297,7 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
             wandb_experiment.save(runner_args.deepspeed_config_path)
 
     # Run process appropriate process
-    logging.info(f"Running {runner_args.mode} mode.")
+    logger.info(f"Running {runner_args.mode} mode.")
     # Training + validation / profiling
     if (runner_args.mode == "train") | (runner_args.mode == "profile"):
         if runner_args.mode == "profile":  # TODO Implement profiling

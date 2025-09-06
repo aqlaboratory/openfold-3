@@ -175,12 +175,12 @@ class OpenFold3Loss(nn.Module):
         # Weighted in confidence_loss()
         cum_loss = cum_loss + l_confidence
 
-        # Run diffusion loss only if diffusion training and losses are enabled
-        atom_positions_diffusion = output.get("atom_positions_diffusion")
-        if atom_positions_diffusion is not None:
+        # Do not compute diffusion/distogram losses if only training confidence heads
+        if not self.config.train_confidence_only:
+            # Compute diffusion losses
             l_diffusion, l_diffusion_breakdown = diffusion_loss(
                 batch=batch,
-                x=atom_positions_diffusion,
+                x=output["atom_positions_diffusion"],
                 t=output["noise_level"],
                 **self.config.diffusion,
             )
@@ -192,16 +192,17 @@ class OpenFold3Loss(nn.Module):
             # Weighted in diffusion_loss()
             cum_loss = cum_loss + l_diffusion
 
-        l_distogram, l_distogram_breakdown = all_atom_distogram_loss(
-            batch=batch, logits=output["distogram_logits"], **self.config.distogram
-        )
-        losses.update(l_distogram_breakdown)
+            # Compute distogram loss
+            l_distogram, l_distogram_breakdown = all_atom_distogram_loss(
+                batch=batch, logits=output["distogram_logits"], **self.config.distogram
+            )
+            losses.update(l_distogram_breakdown)
 
-        if l_distogram_breakdown:
-            losses["scaled_distogram_loss"] = l_distogram.detach().clone()
+            if l_distogram_breakdown:
+                losses["scaled_distogram_loss"] = l_distogram.detach().clone()
 
-        # Weighted in all_atom_distogram_loss()
-        cum_loss = cum_loss + l_distogram
+            # Weighted in all_atom_distogram_loss()
+            cum_loss = cum_loss + l_distogram
 
         losses["loss"] = cum_loss.detach().clone()
 

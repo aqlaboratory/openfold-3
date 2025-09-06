@@ -230,10 +230,8 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         atom_positions_predicted = output["atom_positions_predicted"]
 
         # Distogram head: Main loop (Algorithm 1), line 17
-        # Not enabled in finetuning 3 stage
-        if self.config["distogram"]["enabled"]:
-            distogram_logits = self.distogram(z=zij_trunk)
-            aux_out["distogram_logits"] = distogram_logits
+        distogram_logits = self.distogram(z=zij_trunk)
+        aux_out["distogram_logits"] = distogram_logits
 
         # Stop grad
         si_input = si_input.detach().clone()

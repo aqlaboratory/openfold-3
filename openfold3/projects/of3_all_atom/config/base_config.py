@@ -24,11 +24,14 @@ c_s_input = mlc.FieldReference(c_token_embedder + 65, field_type=int)
 sigma_data = mlc.FieldReference(16, field_type=int)
 max_relative_idx = mlc.FieldReference(32, field_type=int)
 max_relative_chain = mlc.FieldReference(2, field_type=int)
-train_confidence_only = mlc.FieldReference(False, field_type=bool)
 n_query = mlc.FieldReference(32, field_type=int)
 n_key = mlc.FieldReference(128, field_type=int)
 
+# Model components
+train_confidence_only = mlc.FieldReference(False, field_type=bool)
+pae_head_enabled = mlc.FieldReference(False, field_type=bool)
 # templates_enabled = mlc.FieldReference(True, field_type=bool)
+
 eps = mlc.FieldReference(1e-8, field_type=float)
 inf = mlc.FieldReference(1e9, field_type=float)
 blocks_per_ckpt = mlc.FieldReference(None, field_type=int)
@@ -126,9 +129,13 @@ project_config = mlc.ConfigDict(
                     "decay_every_n_steps": 50000,
                     "decay_factor": 0.95,
                 },
-                "ema": {"decay": 0.999},
+                "ema": {"decay": 0.999, "submodule_enabled_subset": None},
                 "gradient_clipping": 10.0,
                 "model_selection_weight_scheme": "initial_training",
+                "debug": {
+                    "log_extra_grad_metrics": False,
+                    "profile_grad_logging": False,
+                },
             },
             "architecture": {
                 "shared": {
@@ -214,6 +221,10 @@ project_config = mlc.ConfigDict(
                         "c_m_feats": 34,
                         "c_m": c_m,
                         "c_s_input": c_s_input,
+                        "subsample_main_msa": True,
+                        "subsample_all_msa": False,
+                        "min_subsampled_all_msa": 1,
+                        "max_subsampled_all_msa": 16384,
                         "linear_init_params": lin_init.msa_module_emb_init,
                     },
                     "msa_module": {
@@ -384,7 +395,7 @@ project_config = mlc.ConfigDict(
                         "c_z": c_z,
                         "c_out": 64,
                         "linear_init_params": lin_init.pae_init,
-                        "enabled": False,
+                        "enabled": pae_head_enabled,
                     },
                     "pde": {
                         "c_z": c_z,
@@ -401,7 +412,6 @@ project_config = mlc.ConfigDict(
                         "c_z": c_z,
                         "c_out": 64,
                         "linear_init_params": lin_init.distogram_init,
-                        "enabled": True,
                     },
                     "experimentally_resolved": {
                         "c_s": c_s,
@@ -411,6 +421,7 @@ project_config = mlc.ConfigDict(
                     },
                 },
                 "loss_module": {
+                    "train_confidence_only": train_confidence_only,
                     "confidence_loss_names": [
                         "plddt",
                         "pde",
@@ -438,6 +449,7 @@ project_config = mlc.ConfigDict(
                             "no_bins": 64,
                             "bin_min": 0.0,
                             "bin_max": 32.0,
+                            "enabled": pae_head_enabled,
                         },
                         "per_sample_atom_cutoff": per_sample_atom_cutoff,
                         "eps": eps,
