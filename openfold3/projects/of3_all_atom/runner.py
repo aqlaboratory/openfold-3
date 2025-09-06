@@ -437,7 +437,12 @@ class OpenFold3AllAtom(ModelRunner):
         These gradients can be associated with instabilities, so we're logging them on
         every single step (bypassing log_every_n_steps) for more accurate monitoring.
         """
-        if self.logger is None or self.config.settings.train_confidence_only:
+        debug_settings = self.config.settings.debug
+        should_log_extra_metrics = debug_settings.log_extra_grad_metrics
+        is_logging_disabled = self.logger is None
+        has_frozen_params = self.config.settings.train_confidence_only
+
+        if is_logging_disabled or has_frozen_params or not should_log_extra_metrics:
             return
 
         single_transition_grads = {}
@@ -456,7 +461,7 @@ class OpenFold3AllAtom(ModelRunner):
 
         context = (
             timing_context("Extra-gradient fetching and calculation")
-            if log_grad_metrics
+            if log_grad_metrics and debug_settings.profile_grad_logging
             else nullcontext()
         )
 

@@ -93,7 +93,7 @@ def restore_lr_step(ckpt_path: Path, lightning_module: pl.LightningModule):
         sd = torch.load(str(ckpt_path))
     last_global_step = int(sd["global_step"])
 
-    logging.warning(f"Restoring last lr step {last_global_step} from {ckpt_path}")
+    logger.info(f"Restoring last lr step {last_global_step} from {ckpt_path}")
     lightning_module.resume_last_lr_step(last_global_step)
 
 
@@ -139,7 +139,7 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
     if seed is None and is_distributed:
         raise ValueError("For distributed training, seed must be specified")
 
-    logging.info(f"Running with seed: {seed}")
+    logger.info(f"Running with seed: {seed}")
     pl.seed_everything(seed, workers=True)
 
     project_entry = registry.get_project_entry(runner_args.project_type)
@@ -237,10 +237,11 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
 
         ckpt_dict = torch.load(weights_only_path)
 
-        logging.warning(f"Restoring weights from {weights_only_path}")
+        logger.info(f"Restoring weights from {weights_only_path}")
 
         init_model_from_ema_weights = runner_args.get("init_model_from_ema_weights")
         if init_model_from_ema_weights:
+            logger.info("Loading model from ema weights")
             lightning_module.load_state_dict(ckpt_dict["ema"]["params"], strict=False)
             # These won't get updated if "submodule_enabled_subset" in the ema config
             # is set and does not include these pretrained layers. This is just so the
@@ -256,12 +257,12 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
                 ckpt_path=Path(weights_only_path), lightning_module=lightning_module
             )
         else:
-            logging.warning("Resetting LR scheduler")
+            logger.info("Resetting LR scheduler")
 
-        logging.warning(f"Restoring datamodule state from {weights_only_path}")
+        logger.info(f"Restoring datamodule state from {weights_only_path}")
         lightning_data_module.load_state_dict(ckpt_dict["DataModule"])
 
-        logging.warning("Restoring fit loop counters")
+        logger.info("Restoring fit loop counters")
         trainer.fit_loop.load_state_dict(ckpt_dict["loops"]["fit_loop"])
 
     # Determine if running on rank zero process
@@ -296,7 +297,7 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
             wandb_experiment.save(runner_args.deepspeed_config_path)
 
     # Run process appropriate process
-    logging.info(f"Running {runner_args.mode} mode.")
+    logger.info(f"Running {runner_args.mode} mode.")
     # Training + validation / profiling
     if (runner_args.mode == "train") | (runner_args.mode == "profile"):
         if runner_args.mode == "profile":  # TODO Implement profiling
