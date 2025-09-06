@@ -177,20 +177,22 @@ class OpenFold3Loss(nn.Module):
 
         # Do not compute diffusion/distogram losses if only training confidence heads
         if not self.config.train_confidence_only:
-            # Compute diffusion losses
-            l_diffusion, l_diffusion_breakdown = diffusion_loss(
-                batch=batch,
-                x=output["atom_positions_diffusion"],
-                t=output["noise_level"],
-                **self.config.diffusion,
-            )
-            losses.update(l_diffusion_breakdown)
+            atom_positions_diffusion = output.get("atom_positions_diffusion")
+            if atom_positions_diffusion is not None:
+                # Compute diffusion losses
+                l_diffusion, l_diffusion_breakdown = diffusion_loss(
+                    batch=batch,
+                    x=atom_positions_diffusion,
+                    t=output["noise_level"],
+                    **self.config.diffusion,
+                )
+                losses.update(l_diffusion_breakdown)
 
-            if l_diffusion_breakdown:
-                losses["diffusion_loss"] = l_diffusion.detach().clone()
+                if l_diffusion_breakdown:
+                    losses["diffusion_loss"] = l_diffusion.detach().clone()
 
-            # Weighted in diffusion_loss()
-            cum_loss = cum_loss + l_diffusion
+                # Weighted in diffusion_loss()
+                cum_loss = cum_loss + l_diffusion
 
             # Compute distogram loss
             l_distogram, l_distogram_breakdown = all_atom_distogram_loss(

@@ -6,7 +6,6 @@ from contextlib import nullcontext
 from functools import partial
 from pathlib import Path
 
-import deepspeed
 import torch
 from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
 
@@ -49,6 +48,7 @@ from openfold3.projects.registry import register_project
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
+    import deepspeed
     from deepspeed.ops.adam import DeepSpeedCPUAdam
 
 logger = logging.getLogger(__name__)
@@ -431,6 +431,10 @@ class OpenFold3AllAtom(ModelRunner):
                 f"{self.trainer.train_dataloader.dataset.indices=}"
             )
 
+    @property
+    def deepspeed_is_initialized(self):
+        return deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
+
     def on_before_optimizer_step(self, *args, **kwargs):
         """Logs the single-transition layer linear_out gradients.
 
@@ -470,9 +474,12 @@ class OpenFold3AllAtom(ModelRunner):
                 block = self.model.pairformer_stack.blocks[idx]
                 param = block.single_transition.linear_out.weight
 
-                # Needs to be called on every rank to avoid hanging
-                # https://github.com/deepspeedai/DeepSpeed/issues/7117#issuecomment-2717974187
-                grad = deepspeed.utils.safe_get_full_grad(param)
+                if self.deepspeed_is_initialized:
+                    # Needs to be called on every rank to avoid hanging
+                    # https://github.com/deepspeedai/DeepSpeed/issues/7117#issuecomment-2717974187
+                    grad = deepspeed.utils.safe_get_full_grad(param)
+                else:
+                    grad = param.grad
 
                 assert not grad.requires_grad
 
