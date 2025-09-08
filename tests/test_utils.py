@@ -15,10 +15,8 @@
 import math
 import unittest
 
-import numpy as np
 import torch
 
-import tests.compare_utils as compare_utils
 from openfold3.core.model.primitives import Linear
 from openfold3.core.utils.chunk_utils import _chunk_slice, chunk_layer
 from openfold3.core.utils.rigid_utils import (
@@ -27,10 +25,7 @@ from openfold3.core.utils.rigid_utils import (
     quat_to_rot,
     rot_to_quat,
 )
-from tests.config import consts
 
-if compare_utils.alphafold_is_installed():
-    alphafold = compare_utils.import_alphafold()
 
 X_90_ROT = torch.tensor(
     [
@@ -202,27 +197,3 @@ class TestUtils(unittest.TestCase):
                 chunked_flattened = x_flat[i:j]
 
                 self.assertTrue(torch.all(chunked == chunked_flattened))
-
-    @compare_utils.skip_unless_alphafold_installed()
-    def test_pre_compose_compare(self):
-        quat = np.random.rand(20, 4)
-        trans = [np.random.rand(20) for _ in range(3)]
-        quat_affine = alphafold.model.quat_affine.QuatAffine(quat, translation=trans)
-
-        update_vec = np.random.rand(20, 6)
-        new_gt = quat_affine.pre_compose(update_vec)
-
-        quat_t = torch.tensor(quat)
-        trans_t = torch.stack([torch.tensor(t) for t in trans], dim=-1)
-        rigid = Rigid(Rotation(quats=quat_t), trans_t)
-        new_repro = rigid.compose_q_update_vec(torch.tensor(update_vec))
-
-        new_gt_q = torch.tensor(np.array(new_gt.quaternion))
-        new_gt_t = torch.stack(
-            [torch.tensor(np.array(t)) for t in new_gt.translation], dim=-1
-        )
-        new_repro_q = new_repro.get_rots().get_quats()
-        new_repro_t = new_repro.get_trans()
-
-        self.assertTrue(torch.max(torch.abs(new_gt_q - new_repro_q)) < consts.eps)
-        self.assertTrue(torch.max(torch.abs(new_gt_t - new_repro_t)) < consts.eps)

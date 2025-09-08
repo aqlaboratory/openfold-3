@@ -58,11 +58,6 @@ from openfold3.core.utils.tensor_utils import (
 from tests.config import consts
 from tests.data_utils import random_affines_4x4, random_affines_vector, random_asym_ids
 
-if compare_utils.alphafold_is_installed():
-    alphafold = compare_utils.import_alphafold()
-    import haiku as hk
-    import jax
-
 
 def affine_vector_to_4x4(affine):
     r = Rigid.from_tensor_7(affine)
