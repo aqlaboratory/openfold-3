@@ -15,20 +15,12 @@
 import re
 import unittest
 
-import numpy as np
 import torch
 
-import tests.compare_utils as compare_utils
 from openfold3.core.model.latent.evoformer import EvoformerStack
 from openfold3.core.model.latent.extra_msa import ExtraMSAStack
 from openfold3.core.model.layers.transition import ReLUTransition
-from openfold3.core.utils.tensor_utils import tree_map
 from tests.config import consts
-
-if compare_utils.alphafold_is_installed():
-    alphafold = compare_utils.import_alphafold()
-    import haiku as hk
-    import jax
 
 
 class TestEvoformerStack(unittest.TestCase):
@@ -154,79 +146,7 @@ class TestEvoformerStack(unittest.TestCase):
         self.assertTrue(z.shape == shape_z_before)
         self.assertTrue(s.shape == (batch_size, n_res, c_s))
 
-    @compare_utils.skip_unless_alphafold_installed()
-    def test_compare(self):
-        def run_ei(activations, masks):
-            config = compare_utils.get_alphafold_config()
-            c_e = config.model.embeddings_and_evoformer.evoformer
-            ei = alphafold.model.modules.EvoformerIteration(
-                c_e, config.model.global_config, is_extra_msa=False
-            )
-            return ei(activations, masks, is_training=False)
 
-        f = hk.transform(run_ei)
-
-        n_res = consts.n_res
-        n_seq = consts.n_seq
-
-        activations = {
-            "msa": np.random.rand(n_seq, n_res, consts.c_m).astype(np.float32),
-            "pair": np.random.rand(n_res, n_res, consts.c_z).astype(np.float32),
-        }
-
-        masks = {
-            "msa": np.random.randint(0, 2, (n_seq, n_res)).astype(np.float32),
-            "pair": np.random.randint(0, 2, (n_res, n_res)).astype(np.float32),
-        }
-
-        params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/evoformer/evoformer_iteration"
-        )
-        params = tree_map(lambda n: n[0], params, jax.Array)
-
-        key = jax.random.PRNGKey(42)
-        out_gt = f.apply(params, key, activations, masks)
-        jax.tree_map(lambda x: x.block_until_ready(), out_gt)
-        out_gt_msa = torch.as_tensor(np.array(out_gt["msa"]))
-        out_gt_pair = torch.as_tensor(np.array(out_gt["pair"]))
-
-        model = compare_utils.get_global_pretrained_openfold()
-        out_repro_msa, out_repro_pair = model.evoformer.blocks[0](
-            torch.as_tensor(activations["msa"]).cuda(),
-            torch.as_tensor(activations["pair"]).cuda(),
-            torch.as_tensor(masks["msa"]).cuda(),
-            torch.as_tensor(masks["pair"]).cuda(),
-            chunk_size=4,
-            _mask_trans=False,
-            inplace_safe=False,
-        )
-
-        out_repro_msa = out_repro_msa.cpu()
-        out_repro_pair = out_repro_pair.cpu()
-
-        compare_utils.assert_mean_abs_diff_small(out_gt_msa, out_repro_msa, consts.eps)
-        compare_utils.assert_max_abs_diff_small(out_gt_pair, out_repro_pair, consts.eps)
-
-        # Inplace version
-        out_repro_msa, out_repro_pair = model.evoformer.blocks[0](
-            torch.as_tensor(activations["msa"]).cuda(),
-            torch.as_tensor(activations["pair"]).cuda(),
-            torch.as_tensor(masks["msa"]).cuda(),
-            torch.as_tensor(masks["pair"]).cuda(),
-            chunk_size=4,
-            _mask_trans=False,
-            inplace_safe=True,
-        )
-
-        out_repro_msa = out_repro_msa.cpu()
-        out_repro_pair = out_repro_pair.cpu()
-
-        compare_utils.assert_mean_abs_diff_small(out_gt_msa, out_repro_msa, consts.eps)
-        compare_utils.assert_max_abs_diff_small(out_gt_pair, out_repro_pair, consts.eps)
-
-
-@compare_utils.skip_unless_cuda_available()
-@compare_utils.skip_unless_cuda_kernels_installed()
 class TestExtraMSAStack(unittest.TestCase):
     def test_shape(self):
         batch_size = 2
@@ -324,50 +244,6 @@ class TestMSATransition(unittest.TestCase):
         shape_after = m.shape
 
         self.assertTrue(shape_before == shape_after)
-
-    @compare_utils.skip_unless_alphafold_installed()
-    def test_compare(self):
-        def run_msa_transition(msa_act, msa_mask):
-            config = compare_utils.get_alphafold_config()
-            c_e = config.model.embeddings_and_evoformer.evoformer
-            msa_trans = alphafold.model.modules.Transition(
-                c_e.msa_transition,
-                config.model.global_config,
-                name="msa_transition",
-            )
-            act = msa_trans(act=msa_act, mask=msa_mask)
-            return act
-
-        f = hk.transform(run_msa_transition)
-
-        n_res = consts.n_res
-        n_seq = consts.n_seq
-
-        msa_act = np.random.rand(n_seq, n_res, consts.c_m).astype(np.float32)
-        msa_mask = np.ones((n_seq, n_res)).astype(np.float32)  # no mask here either
-
-        # Fetch pretrained parameters (but only from one block)]
-        params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/evoformer/evoformer_iteration/"
-            + "msa_transition"
-        )
-        params = tree_map(lambda n: n[0], params, jax.Array)
-
-        out_gt = f.apply(params, None, msa_act, msa_mask).block_until_ready()
-        out_gt = torch.as_tensor(np.array(out_gt))
-
-        model = compare_utils.get_global_pretrained_openfold()
-
-        out_repro = (
-            model.evoformer.blocks[0]
-            .msa_transition(
-                torch.as_tensor(msa_act, dtype=torch.float32).cuda(),
-                mask=torch.as_tensor(msa_mask, dtype=torch.float32).cuda(),
-            )
-            .cpu()
-        )
-
-        compare_utils.assert_max_abs_diff_small(out_gt, out_repro, consts.eps)
 
 
 if __name__ == "__main__":

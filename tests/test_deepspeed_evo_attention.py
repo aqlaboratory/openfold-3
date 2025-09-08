@@ -18,23 +18,16 @@ attention kernel, DS4Sci_EvoformerAttention vs. a stock PyTorch attention
 implementation.
 """
 
-import pickle
 import unittest
 
-import numpy as np
 import torch
-from torch.nn import functional as F
 
 import tests.compare_utils as compare_utils
-from openfold3.core.data.legacy import data_transforms
 from openfold3.core.model.primitives.attention import Attention
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
-from openfold3.core.utils.tensor_utils import tensor_tree_map
 from tests.config import consts
 from tests.data_utils import (
-    random_asym_ids,
     random_attention_inputs,
-    random_template_feats,
 )
 
 
@@ -183,196 +176,6 @@ class TestDeepSpeedKernel(unittest.TestCase):
             t_gt = a_gt_params[name]
             err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))
             self.assertTrue(err < eps, f"Error item {name}: {err}")
-
-    def compare_evoformer(self, dtype, eps):
-        """
-        Compare Evoformer output with and without using DeepSpeed Evoformer attention
-        kernel. Set dtype to confirm the kernel can be used during both training (BF16)
-        and inference (FP32), since the kernel itself can run with either BF16 or FP16
-        precision.
-        """
-        n_res = 20
-        n_seq = 18
-        c_m_shape = (consts.c_m,)
-        c_z_shape = (consts.c_z,)
-
-        activations = {
-            "msa": torch.rand(n_seq, n_res, consts.c_m, device="cuda", dtype=dtype),
-            "pair": torch.rand(n_res, n_res, consts.c_z, device="cuda", dtype=dtype),
-        }
-
-        masks = {
-            "msa": torch.randint(0, 2, (n_seq, n_res), device="cuda", dtype=dtype),
-            "pair": torch.randint(0, 2, (n_res, n_res), device="cuda", dtype=dtype),
-        }
-
-        with torch.amp.autocast("cuda", dtype=dtype):
-            model = compare_utils.get_global_pretrained_openfold()
-            out_repro_msa, out_repro_pair = model.evoformer.blocks[0](
-                activations["msa"],
-                activations["pair"],
-                masks["msa"],
-                masks["pair"],
-                use_deepspeed_evo_attention=False,
-                chunk_size=4,
-                _mask_trans=False,
-                inplace_safe=False,
-            )
-
-            # In practice, layer norms applied later in the network make any
-            # kernel rounding errors negligible
-            out_repro_msa = F.layer_norm(out_repro_msa, c_m_shape).cpu()
-            out_repro_pair = F.layer_norm(out_repro_pair, c_z_shape).cpu()
-
-            out_repro_msa_ds, out_repro_pair_ds = model.evoformer.blocks[0](
-                activations["msa"],
-                activations["pair"],
-                masks["msa"],
-                masks["pair"],
-                use_deepspeed_evo_attention=True,
-                chunk_size=4,
-                _mask_trans=False,
-                inplace_safe=False,
-            )
-            out_repro_msa_ds = F.layer_norm(out_repro_msa_ds, c_m_shape).cpu()
-            out_repro_pair_ds = F.layer_norm(out_repro_pair_ds, c_z_shape).cpu()
-
-            compare_utils.assert_mean_abs_diff_small(
-                out_repro_msa, out_repro_msa_ds, eps
-            )
-
-            compare_utils.assert_mean_abs_diff_small(
-                out_repro_pair, out_repro_pair_ds, eps
-            )
-
-    def test_compare_evoformer_bf16(self):
-        """Run evoformer comparison test with BF16 precision."""
-        self.compare_evoformer(dtype=torch.bfloat16, eps=4e-2)
-
-    def test_compare_evoformer_fp32(self):
-        """Run evoformer comparison test with FP32 precision."""
-        self.compare_evoformer(dtype=torch.float32, eps=2e-2)
-
-    def test_compare_template_stack(self):
-        """
-        Compare Template Stack output with and without using DeepSpeed Evoformer
-        attention kernel. Kernel can be used for Triangle Attention in the Template Pair
-        Stack.
-        """
-        n_templ = consts.n_templ
-        n_res = 20
-        eps = 2e-2
-
-        batch = random_template_feats(n_templ, n_res)
-        batch["template_all_atom_masks"] = batch["template_all_atom_mask"]
-        if consts.is_multimer:
-            batch["asym_id"] = random_asym_ids(n_res)
-
-        pair_act = np.random.rand(n_res, n_res, consts.c_z).astype(np.float32)
-        pair_mask = np.random.randint(0, 2, (n_res, n_res)).astype(np.float32)
-
-        batch = {k: torch.as_tensor(v).cuda() for k, v in batch.items()}
-        template_feats = {k: v for k, v in batch.items() if k.startswith("template_")}
-
-        with torch.no_grad():
-            model = compare_utils.get_global_pretrained_openfold()
-            model.globals.use_deepspeed_evo_attention = False
-            if consts.is_multimer:
-                args = (
-                    template_feats,
-                    batch,
-                    torch.as_tensor(pair_act).cuda(),
-                    torch.as_tensor(pair_mask).cuda(),
-                )
-            else:
-                args = (
-                    batch,
-                    torch.as_tensor(pair_act).cuda(),
-                    torch.as_tensor(pair_mask).cuda(),
-                )
-
-            out_repro = model.embed_templates(
-                *args,
-                templ_dim=0,
-                inplace_safe=False,
-            )
-            out_repro = out_repro["template_pair_embedding"].cpu()
-
-            model.globals.use_deepspeed_evo_attention = True
-            out_repro_ds = model.embed_templates(
-                *args,
-                templ_dim=0,
-                inplace_safe=False,
-            )
-            out_repro_ds = out_repro_ds["template_pair_embedding"].cpu()
-
-            compare_utils.assert_max_abs_diff_small(out_repro, out_repro_ds, eps)
-
-    def test_compare_model(self):
-        """
-        Run full model with and without using DeepSpeed Evoformer attention kernel
-        and compare output coordinates.
-        """
-        eps = 0.2
-        with open("tests/test_data/sample_feats.pickle", "rb") as fp:
-            batch = pickle.load(fp)
-
-        # atom37_to_atom14 doesn't like batches
-        batch["residx_atom14_to_atom37"] = batch["residx_atom14_to_atom37"][0]
-        batch["atom14_atom_exists"] = batch["atom14_atom_exists"][0]
-
-        batch["no_recycling_iters"] = np.array(
-            [
-                3.0,
-                3.0,
-                3.0,
-                3.0,
-            ]
-        )
-
-        if consts.is_multimer:
-            n_res = batch["aatype"].shape[1]
-            n_extra_seq = batch["extra_msa"].shape[1]
-            batch["asym_id"] = np.ones((4, n_res))
-            batch["entity_id"] = np.ones((4, n_res))
-            batch["sym_id"] = np.ones((4, n_res))
-            batch["extra_deletion_matrix"] = np.random.randint(
-                0, 2, size=(4, n_extra_seq, n_res)
-            )
-
-        batch = {k: torch.as_tensor(v).cuda() for k, v in batch.items()}
-
-        batch["aatype"] = batch["aatype"].long()
-        batch["template_aatype"] = batch["template_aatype"].long()
-        batch["extra_msa"] = batch["extra_msa"].long()
-        batch["residx_atom37_to_atom14"] = batch["residx_atom37_to_atom14"].long()
-        batch["target_feat"] = torch.nn.functional.one_hot(
-            batch["aatype"], consts.msa_logits - 1
-        ).to(torch.float32)
-        batch["template_all_atom_mask"] = batch["template_all_atom_masks"]
-        batch.update(data_transforms.atom37_to_torsion_angles("template_")(batch))
-
-        # Move the recycling dimension to the end
-        def move_dim(t):
-            return t.permute(*range(len(t.shape))[1:], 0)
-
-        batch = tensor_tree_map(move_dim, batch)
-        with torch.no_grad(), torch.amp.autocast("cuda", dtype=torch.float32):
-            model = compare_utils.get_global_pretrained_openfold()
-            model.globals.use_deepspeed_evo_attention = False
-            out_repro = model(batch)
-
-            # Enable kernel
-            model.globals.use_deepspeed_evo_attention = True
-            out_repro_ds = model(batch)
-
-            out_repro = tensor_tree_map(lambda t: t.cpu(), out_repro)
-            out_repro_ds = tensor_tree_map(lambda t: t.cpu(), out_repro_ds)
-
-            out_repro = out_repro["sm"]["positions"][-1].squeeze(0)
-            out_repro_ds = out_repro_ds["sm"]["positions"][-1].squeeze(0)
-
-            compare_utils.assert_mean_abs_diff_small(out_repro, out_repro_ds, eps)
 
 
 if __name__ == "__main__":

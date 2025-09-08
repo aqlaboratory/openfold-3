@@ -18,79 +18,17 @@ import pytest
 import torch
 
 from openfold3.core.model.feature_embedders.input_embedders import (
-    InputEmbedder,
     InputEmbedderAllAtom,
-    InputEmbedderMultimer,
     MSAModuleEmbedder,
     PreembeddingEmbedder,
     RecyclingEmbedder,
 )
 from openfold3.core.model.feature_embedders.template_embedders import (
     TemplatePairEmbedderAllAtom,
-    TemplatePairEmbedderMonomer,
-    TemplatePairEmbedderMultimer,
-    TemplateSingleEmbedderMonomer,
-    TemplateSingleEmbedderMultimer,
 )
-from openfold3.legacy.af2_monomer.project_entry import AF2MonomerProjectEntry
-from openfold3.legacy.af2_multimer.project_entry import AF2MultimerProjectEntry
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
-from tests import compare_utils
-from tests.config import consts, monomer_consts, multimer_consts
-from tests.data_utils import random_asym_ids, random_of3_features, random_template_feats
-
-
-@compare_utils.skip_of2_test()
-class TestInputEmbedder(unittest.TestCase):
-    def test_shape(self):
-        c_z = 5
-        c_m = 7
-        b = 13
-        n_res = 17
-        n_clust = 19
-
-        monomer_project_entry = AF2MonomerProjectEntry()
-        config = monomer_project_entry.get_config_with_presets(
-            [monomer_consts.model_preset]
-        )
-        input_emb_config = config.model.input_embedder
-        input_emb_config.update({"c_z": c_z, "c_m": c_m})
-
-        tf = torch.rand((b, n_res, input_emb_config.tf_dim))
-        ri = torch.rand((b, n_res))
-        msa = torch.rand((b, n_clust, n_res, input_emb_config.msa_dim))
-        asym_ids_flat = torch.Tensor(random_asym_ids(n_res))
-        asym_id = torch.tile(asym_ids_flat.unsqueeze(0), (b, 1))
-        entity_id = asym_id
-        sym_id = torch.zeros_like(entity_id)
-
-        ie = InputEmbedder(**input_emb_config)
-        msa_emb, pair_emb = ie(tf=tf, ri=ri, msa=msa, inplace_safe=False)
-
-        self.assertTrue(msa_emb.shape == (b, n_clust, n_res, c_m))
-        self.assertTrue(pair_emb.shape == (b, n_res, n_res, c_z))
-
-        multimer_project_entry = AF2MultimerProjectEntry()
-        config = multimer_project_entry.get_config_with_presets(
-            [multimer_consts.model_preset]
-        )
-        input_emb_config = config.model.input_embedder
-        input_emb_config.update({"c_z": c_z, "c_m": c_m})
-
-        ie = InputEmbedderMultimer(**input_emb_config)
-
-        batch = {
-            "target_feat": torch.rand((b, n_res, input_emb_config.tf_dim)),
-            "residue_index": ri,
-            "msa_feat": torch.rand((b, n_clust, n_res, input_emb_config.msa_dim)),
-            "asym_id": asym_id,
-            "entity_id": entity_id,
-            "sym_id": sym_id,
-        }
-        msa_emb, pair_emb = ie(batch)
-
-        self.assertTrue(msa_emb.shape == (b, n_clust, n_res, c_m))
-        self.assertTrue(pair_emb.shape == (b, n_res, n_res, c_z))
+from tests.config import consts
+from tests.data_utils import random_asym_ids, random_of3_features
 
 
 class TestInputEmbedderAllAtom(unittest.TestCase):
@@ -250,99 +188,7 @@ class TestRecyclingEmbedder(unittest.TestCase):
         self.assertTrue(m_1.shape == (batch_size, n, c_m))
 
 
-@compare_utils.skip_of2_test()
-class TestTemplateSingleEmbedders(unittest.TestCase):
-    def test_shape(self):
-        batch_size = 4
-        n_templ = 4
-        n_res = 256
-
-        monomer_project_entry = AF2MonomerProjectEntry()
-        c = monomer_project_entry.get_config_with_presets([monomer_consts.model_preset])
-        c_m = c.model.template.template_single_embedder.c_out
-
-        batch = random_template_feats(n_templ, n_res, batch_size=batch_size)
-        batch = {k: torch.as_tensor(v) for k, v in batch.items()}
-
-        tae = TemplateSingleEmbedderMonomer(
-            c.model.template.template_single_embedder.c_in,
-            c_m,
-        )
-
-        x = tae(batch)
-
-        self.assertTrue(x.shape == (batch_size, n_templ, n_res, c_m))
-
-        multimer_project_entry = AF2MultimerProjectEntry()
-        c = multimer_project_entry.get_config_with_presets(
-            [multimer_consts.model_preset]
-        )
-        c_m = c.model.template.template_single_embedder.c_out
-
-        tae = TemplateSingleEmbedderMultimer(
-            c.model.template.template_single_embedder.c_in,
-            c_m,
-        )
-
-        x = tae(batch)
-        x = x["template_single_embedding"]
-
-        self.assertTrue(x.shape == (batch_size, n_templ, n_res, c_m))
-
-
 class TestTemplatePairEmbedders(unittest.TestCase):
-    @compare_utils.skip_of2_test()
-    def test_af2_shape(self):
-        batch_size = 2
-        n_templ = 4
-        n_res = 5
-
-        monomer_project_entry = AF2MonomerProjectEntry()
-        c = monomer_project_entry.get_config_with_presets([monomer_consts.model_preset])
-        c_t = c.model.template.template_pair_embedder.c_out
-
-        batch = random_template_feats(n_templ, n_res, batch_size=batch_size)
-        batch = {k: torch.as_tensor(v) for k, v in batch.items()}
-
-        tpe = TemplatePairEmbedderMonomer(**c.model.template.template_pair_embedder)
-
-        x = tpe(
-            batch=batch,
-            distogram_config=c.model.template.distogram,
-            use_unit_vector=False,
-            inf=monomer_consts.inf,
-            eps=monomer_consts.eps,
-        )
-
-        self.assertTrue(x.shape == (batch_size, n_templ, n_res, n_res, c_t))
-
-        multimer_project_entry = AF2MultimerProjectEntry()
-        c = multimer_project_entry.get_config_with_presets(
-            [multimer_consts.model_preset]
-        )
-
-        c_z = c.model.template.template_pair_embedder.c_in
-        c_t = c.model.template.template_pair_embedder.c_out
-
-        z = torch.rand((batch_size, n_res, n_res, c_z))
-        asym_ids = torch.as_tensor(random_asym_ids(n_res))
-        asym_ids = torch.tile(asym_ids[None, :], (batch_size, 1))
-        multichain_mask_2d = (asym_ids[..., None] == asym_ids[..., None, :]).to(
-            dtype=z.dtype
-        )
-
-        tpe = TemplatePairEmbedderMultimer(**c.model.template.template_pair_embedder)
-
-        x = tpe(
-            batch=batch,
-            distogram_config=c.model.template.distogram,
-            query_embedding=z,
-            multichain_mask_2d=multichain_mask_2d,
-            inf=multimer_consts.inf,
-        )
-
-        self.assertTrue(x.shape == (batch_size, n_templ, n_res, n_res, c_t))
-
     def test_all_atom(self):
         batch_size = 2
         n_templ = 3
