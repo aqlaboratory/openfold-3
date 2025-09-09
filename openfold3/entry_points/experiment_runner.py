@@ -33,9 +33,6 @@ from openfold3.entry_points.validator import (
     TrainingExperimentConfig,
     generate_seeds,
 )
-from openfold3.projects.of3_all_atom.config.dataset_config_components import (
-    colabfold_msa_settings,
-)
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetSpec,
     InferenceJobConfig,
@@ -491,17 +488,8 @@ class InferenceExperimentRunner(ExperimentRunner):
         ]
         return _callbacks
 
-    def _maybe_update_dataset_kwargs_for_colabfold_msas(self):
-        """Updates MSA kwargs if colabfold msas are used."""
-        if self.use_msa_server:
-            self.dataset_config_kwargs = self.dataset_config_kwargs.model_copy(
-                update={"msa": colabfold_msa_settings}
-            )
-
     @cached_property
     def data_module_config(self):
-        self._maybe_update_dataset_kwargs_for_colabfold_msas()
-
         inference_config = InferenceJobConfig(
             query_set=self.inference_query_set,
             seeds=self.seeds,
