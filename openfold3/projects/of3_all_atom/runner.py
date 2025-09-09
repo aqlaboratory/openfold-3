@@ -600,7 +600,7 @@ class OpenFold3AllAtom(ModelRunner):
                 )
                 confidence_scores.update(pTM_scores)
 
-            if self.config.confidence.sample_ranking.modified_residue.enabled:
+            if self.config.confidence.sample_ranking.modified_residue_plddt.enabled:
                 modified_residue_scores = compute_modified_residue_plddt(
                     batch=batch,
                     outputs=outputs,
