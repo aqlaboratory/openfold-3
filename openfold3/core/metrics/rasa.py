@@ -409,7 +409,7 @@ def process_disorder(
     filtered = struct_array[struct_array.molecule_type_id == MoleculeType.PROTEIN]
 
     if len(filtered) == 0:
-        logger.debug(f"No protein chains found")
+        logger.debug("No protein chains found")
         return float("nan")
 
     # Set a default max_acc for fallback residues

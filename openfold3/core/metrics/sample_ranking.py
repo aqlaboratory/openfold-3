@@ -465,7 +465,7 @@ def build_all_interface_ipTM_and_rankings(
         all_iptm_scores["iptm"][pair] = M[:, :, i, j]
         all_iptm_scores["bespoke_iptm"][pair] = score[:, :, i, j]
 
-    return all_iptm_scores
+    return {"all_ipTM_scores": all_iptm_scores}
 
 
 def compute_modified_residue_plddt(
@@ -475,10 +475,12 @@ def compute_modified_residue_plddt(
     eps: Optional[float] = 1e-10,
 ) -> list[dict[tuple[int, int], torch.Tensor]]:
     """
-    For every modified residue (is_atomized & ~is_ligand), compute the mean per-atom pLDDT per sample.
+    For every modified residue (is_atomized & ~is_ligand),
+    compute the mean per-atom pLDDT per sample.
 
     Returns:
-        A list of length B. For each batch item: {(chain_id, residue_id): Tensor[S] in [0,1] or NaN if no atoms}
+        A list of length B. For each batch item:
+            {(chain_id, residue_id): Tensor[S] in [0,1] or NaN if no atoms}
     """
 
     plddt_atom_01 = plddt / 100
