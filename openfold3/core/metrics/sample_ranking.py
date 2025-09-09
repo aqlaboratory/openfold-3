@@ -112,15 +112,19 @@ def full_complex_sample_ranking_metric(
         disorder = 0.0
 
     scores = {}
-    scores["iptm"] = iptm
-    scores["ptm"] = ptm
+    scores["iptm"] = iptm.detach().clone()
+    scores["ptm"] = ptm.detach().clone()
     scores["disorder"] = disorder
     scores["has_clash"] = has_clash
     scores["sample_ranking_score"] = (
-        iptm_weight * iptm
-        + ptm_weight * ptm
-        + disorder_weight * disorder
-        - has_clash_weight * has_clash
+        (
+            iptm_weight * iptm
+            + ptm_weight * ptm
+            + disorder_weight * disorder
+            - has_clash_weight * has_clash
+        )
+        .detach()
+        .clone()
     )
 
     return scores
@@ -155,12 +159,16 @@ def compute_chain_pTM(
     d_mask = d_mask & token_mask
     d_mask = _expand_sample_dim(d_mask, no_samples)
 
-    return compute_ptm(
-        outputs["pae_logits"],
-        has_frame=has_frame,
-        D_mask=d_mask,
-        interface=False,
-        **kwargs,
+    return (
+        compute_ptm(
+            outputs["pae_logits"],
+            has_frame=has_frame,
+            D_mask=d_mask,
+            interface=False,
+            **kwargs,
+        )
+        .detach()
+        .clone()
     )
 
 
@@ -185,13 +193,17 @@ def compute_all_pTM(
     ptm_by_asym_id = {}
     for asym_id in batch["asym_id"].unique():
         D_mask = token_mask & (batch["asym_id"] == asym_id)
-        ptm_by_asym_id[asym_id.item()] = compute_ptm(
-            outputs["pae_logits"],
-            has_frame=has_frame,
-            D_mask=D_mask,
-            asym_id=batch["asym_id"],
-            interface=False,
-            **kwargs,
+        ptm_by_asym_id[asym_id.item()] = (
+            compute_ptm(
+                outputs["pae_logits"],
+                has_frame=has_frame,
+                D_mask=D_mask,
+                asym_id=batch["asym_id"],
+                interface=False,
+                **kwargs,
+            )
+            .detach()
+            .clone()
         )
 
     return {"pTM_by_asym_id": ptm_by_asym_id}
@@ -230,13 +242,17 @@ def compute_interface_pTM(
     d_mask = _expand_sample_dim(d_mask, no_samples)
     asym_id = _expand_sample_dim(asym_id, no_samples)
 
-    return compute_ptm(
-        outputs["pae_logits"],
-        has_frame=has_frame,
-        D_mask=d_mask,
-        asym_id=asym_id,
-        interface=True,
-        **kwargs,
+    return (
+        compute_ptm(
+            outputs["pae_logits"],
+            has_frame=has_frame,
+            D_mask=d_mask,
+            asym_id=asym_id,
+            interface=True,
+            **kwargs,
+        )
+        .detach()
+        .clone()
     )
 
 
@@ -320,7 +336,7 @@ def compute_has_clash(
 def build_all_interface_ipTM_and_rankings(
     batch: dict[str, torch.Tensor],
     output: dict[str, torch.Tensor],
-    has_frame: torch.Tensor,
+    has_frame: Optional[torch.Tensor] = None,
     **kwargs,
 ) -> dict[str, torch.Tensor]:
     """
@@ -341,9 +357,8 @@ def build_all_interface_ipTM_and_rankings(
       }
     """
     logits = output["pae_logits"]  # [B, (S), N, N, Bins] or [B, N, N, Bins]
-    has_frame = has_frame.bool()  # [B, (S), N]
+    has_frame = has_frame.bool() if has_frame is not None else None
     B, S, N, N2, Bins = logits.shape
-
     device, dtype = logits.device, logits.dtype
 
     asym_id = _expand_sample_dim(batch["asym_id"], S).long()  # [B,S,N]
@@ -394,12 +409,14 @@ def build_all_interface_ipTM_and_rankings(
         # batched ipTM over L = P*S
         log_PS = logits[b].unsqueeze(0).expand(P, S, N, N, Bins)
         aid_PS = asym_id[b].unsqueeze(0).expand(P, S, N)
-        hfr_PS = has_frame[b].unsqueeze(0).expand(P, S, N)
+        hfr_PS = (
+            has_frame[b].unsqueeze(0).expand(P, S, N) if has_frame is not None else None
+        )
 
         L = P * S
         iptm_PS = compute_ptm(
             logits=log_PS.reshape(L, N, N, Bins),
-            has_frame=hfr_PS.reshape(L, N),
+            has_frame=hfr_PS.reshape(L, N) if hfr_PS is not None else None,
             D_mask=D_pairs.reshape(L, N),
             asym_id=aid_PS.reshape(L, N),
             interface=True,
@@ -420,7 +437,10 @@ def build_all_interface_ipTM_and_rankings(
         valid_sc = torch.zeros(S, C_b, dtype=torch.bool, device=device)
         for c in range(C_b):
             cmask = (asym_id[b] == chains_b[c]) & token_mask[b]  # [S,N]
-            valid_sc[:, c] = (has_frame[b] & cmask).any(dim=-1)
+            if has_frame is None:
+                valid_sc[:, c] = cmask.any(dim=-1)
+            else:
+                valid_sc[:, c] = (has_frame[b] & cmask).any(dim=-1)
 
         Mb = M[b, :, :C_b, :C_b]  # [S,C_b,C_b]
         self_mask = eye_b.unsqueeze(0).expand(S, C_b, C_b)
@@ -462,10 +482,15 @@ def build_all_interface_ipTM_and_rankings(
     all_iptm_scores = {"iptm": {}, "bespoke_iptm": {}}
     for pair in [(i, j) for i in range(C_max) for j in range(C_max) if i < j]:
         i, j = pair
-        all_iptm_scores["iptm"][pair] = M[:, :, i, j]
-        all_iptm_scores["bespoke_iptm"][pair] = score[:, :, i, j]
+        pair = str((chains[0][i].item(), chains[0][j].item()))
+        all_iptm_scores["iptm"][pair] = (
+            M[:, :, i, j].detach().clone()
+        )
+        all_iptm_scores["bespoke_iptm"][pair] = (
+            score[:, :, i, j].detach().clone()
+        )
 
-    return all_iptm_scores
+    return {"all_iptm_scores": all_iptm_scores}
 
 
 def compute_modified_residue_plddt(
