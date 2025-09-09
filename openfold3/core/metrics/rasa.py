@@ -366,7 +366,6 @@ def process_disorder(
     default_max_acc: float = 113.0,
     vdw_radii: str = "ProtOr",
     residue_sasa_scale: str = None,
-    pdb_id: str = None,
 ) -> float:
     """
     Process protein chains in a Biotite structure array and compute the average
@@ -410,7 +409,7 @@ def process_disorder(
     filtered = struct_array[struct_array.molecule_type_id == MoleculeType.PROTEIN]
 
     if len(filtered) == 0:
-        logger.debug(f"No protein chains found in pdb_id={pdb_id}")
+        logger.debug(f"No protein chains found")
         return float("nan")
 
     # Set a default max_acc for fallback residues
@@ -429,7 +428,7 @@ def process_disorder(
             # Extend the list with RASA values for all unresolved residues in this chain
             all_residues_rasa.extend(res_rasa[unresolved_residues])
         except Exception as e:
-            logger.warning(f"RASA computation failed for pdb_id={pdb_id}: {e}")
+            logger.warning(f"RASA computation failed: {e}")
     if not all_residues_rasa:
         return float("nan")
     all_residues_rasa = np.array(all_residues_rasa)
@@ -477,7 +476,6 @@ def compute_disorder(
         If any chain in the structure fails during RASA computation, a warning is logged
         and NaN is returned.
     """
-    pdb_ids = batch.get("pdb_id")
     struct_arrays = batch["atom_array"]
     atom_positions_predicted = outputs["atom_positions_predicted"]
 
@@ -505,7 +503,6 @@ def compute_disorder(
                 default_max_acc=default_max_acc,
                 vdw_radii=vdw_radii,
                 residue_sasa_scale=residue_sasa_scale,
-                pdb_id=pdb_ids[k],
             )
 
     return disorder
