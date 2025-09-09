@@ -724,7 +724,7 @@ def _cueq_triangle_mult(
     p_out_weight: torch.Tensor,
     g_out_weight: torch.Tensor,
 ) -> torch.Tensor:
-    warnings.warn("\n\n ** CUEQ tri mult active ** \n\n")
+
     ##VS: similar issue here as to the cueq triangle attention
     ## kernel, we need to reshape the input so that batch and
     ## n_tmpl are combined into a single dimension.

@@ -513,7 +513,7 @@ def _deepspeed_evo_attn(
         biases:
             List of biases that broadcast to [*, H, Q, K]
     """
-    warnings.warn("\n\n** DEEPSPEED KERNEL active **\n\n")
+
     if not ds4s_is_installed:
         raise ValueError(
             "_deepspeed_evo_attn requires that DeepSpeed be installed "
@@ -627,7 +627,7 @@ def _lma(
 
 @torch.compiler.disable
 def _cueq_triangle_attn(q, k, v, biases, scale, training=False):
-    warnings.warn("\n\n** CUEQ TRIANGLE ATTENTION KERNEL active **\n\n")
+
 
     is_batched_input = False
     assert len(biases) == 2, (
