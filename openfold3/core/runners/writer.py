@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 
 import numpy as np
+import torch
 from biotite import structure
 from pytorch_lightning.callbacks import BasePredictionWriter
 
@@ -25,6 +26,29 @@ class NumpyEncoder(json.JSONEncoder):
         elif isinstance(obj, np.generic):
             return obj.item()
         return super().default(obj)
+
+
+def _take_batch_dim(x, b: int):
+    if isinstance(x, torch.Tensor):
+        if len(x.shape) > 1:
+            return x[b].cpu().float().numpy()
+        else:
+            return x
+    if isinstance(x, dict):
+        return {k: _take_batch_dim(v, b) for k, v in x.items()}
+    return x
+
+
+def _take_sample_dim(x, s: int):
+    if isinstance(x, np.ndarray):
+        if x.ndim == 0:
+            return x.item()
+        if x.shape[0] == 1:
+            return x[0]
+        return x[s]
+    if isinstance(x, dict):
+        return {k: _take_sample_dim(v, s) for k, v in x.items()}
+    return x
 
 
 class OF3OutputWriter(BasePredictionWriter):
@@ -68,12 +92,31 @@ class OF3OutputWriter(BasePredictionWriter):
         plddt = confidence_scores["plddt"]
         pde = confidence_scores["predicted_distance_error"]
         gpde = confidence_scores["global_predicted_distance_error"]
+        single_value_keys = [
+            "iptm",
+            "ptm",
+            "disorder",
+            "has_clash",
+            "sample_ranking_score",
+        ]
 
         # Single-valued aggregated confidence scores
-        aggregated_confidence_scores = {
-            "avg_plddt": np.mean(plddt),
-            "gpde": gpde,
+        aggregated_confidence_scores = {"avg_plddt": np.mean(plddt), "gpde": gpde}
+
+        for key in single_value_keys:
+            aggregated_confidence_scores[key] = confidence_scores[key]
+
+        aggregated_confidence_scores["ptm_by_asym_id"] = confidence_scores[
+            "pTM_by_asym_id"
+        ]
+        aggregated_confidence_scores["iptm_by_asym_id_pair"] = {
+            str(k): v for k, v in confidence_scores["all_ipTM_scores"]["iptm"].items()
         }
+        aggregated_confidence_scores["bespoke_iptm_by_asym_id_pair"] = {
+            str(k): v
+            for k, v in confidence_scores["all_ipTM_scores"]["bespoke_iptm"].items()
+        }
+
         out_file_agg = Path(f"{output_prefix}_confidences_aggregated.json")
         out_file_agg.write_text(
             json.dumps(aggregated_confidence_scores, indent=4, cls=NumpyEncoder)
@@ -125,25 +168,14 @@ class OF3OutputWriter(BasePredictionWriter):
             predicted_coords_batch = (
                 outputs["atom_positions_predicted"][b].cpu().float().numpy()
             )
-            confidence_scores_batch = {
-                key: value[b].cpu().float().numpy() if len(value.shape) > 1 else value
-                for key, value in confidence_scores.items()
-            }
+            confidence_scores_batch = _take_batch_dim(confidence_scores, b)
 
             # Iterate over all diffusion samples
             for s in range(sample_size):
                 file_prefix = output_subdir / f"{query_id}_seed_{seed}_sample_{s + 1}"
                 file_prefix.parent.mkdir(parents=True, exist_ok=True)
 
-                confidence_scores_sample = {}
-                for key, value in confidence_scores_batch.items():
-                    if len(value.shape) < 1:
-                        confidence_scores_sample[key] = value.item()
-                    elif value.shape[0] == 1:
-                        confidence_scores_sample[key] = value[0]
-                    else:
-                        confidence_scores_sample[key] = value[s]
-
+                confidence_scores_sample = _take_sample_dim(confidence_scores_batch, s)
                 predicted_coords_sample = predicted_coords_batch[s]
 
                 # Save predicted structure
