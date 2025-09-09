@@ -37,7 +37,6 @@ if cueq_is_installed:
     from cuequivariance_torch import triangle_multiplicative_update
 
 
-
 warnings.filterwarnings("once")
 
 

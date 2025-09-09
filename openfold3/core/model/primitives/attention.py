@@ -641,7 +641,7 @@ def _cueq_triangle_attn(q, k, v, biases, scale, training=False):
             "\n*FP32 is not supported for the cueq"
             " triangle attention kernel in training. "
             "Casting to bfloat16.*\n",
-            stacklevel=2
+            stacklevel=2,
         )
         q = q.to(torch.bfloat16)
         k = k.to(torch.bfloat16)
