@@ -167,7 +167,7 @@ def compute_chain_pTM(
 def compute_all_pTM(
     batch: dict[str, torch.Tensor],
     outputs: dict[str, torch.Tensor],
-    has_frame: torch.Tensor,
+    has_frame: Optional[torch.Tensor] = None,
     **kwargs,
 ) -> torch.Tensor:
     """
@@ -459,23 +459,13 @@ def build_all_interface_ipTM_and_rankings(
         score[b, :, :C_b, :C_b] = torch.where(
             nonpoly_pair.unsqueeze(0), R_sel, base_score
         )
-    all_iptm_scores = {}
-    for b in range(B):
-        chains_b = chains[b]
-        C_b = int(chains_b.numel())
-        if C_b <= 1:
-            all_iptm_scores[b] = {}
-            continue
-        all_iptm_scores[b] = {}
-        for i in range(C_b):
-            for j in range(i + 1, C_b):
-                all_iptm_scores[b][
-                    (int(chains_b[i].item()), int(chains_b[j].item()))
-                ] = {
-                    "ipTM": M[b, :, i, j],  # [S]
-                    "score": score[b, :, i, j],  # [S]
-                }
-    return {"all_ipTM_scores": all_iptm_scores}
+    all_iptm_scores = {"iptm": {}, "bespoke_iptm": {}}
+    for pair in [(i, j) for i in range(C_max) for j in range(C_max) if i < j]:
+        i, j = pair
+        all_iptm_scores["iptm"][pair] = M[:, :, i, j]
+        all_iptm_scores["bespoke_iptm"][pair] = score[:, :, i, j]
+
+    return all_iptm_scores
 
 
 def compute_modified_residue_plddt(
