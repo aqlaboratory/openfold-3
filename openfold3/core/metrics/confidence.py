@@ -175,7 +175,7 @@ def compute_ptm(
         score: [*] tensor with the pTM/ipTM score per leading index (batch/sample).
 
     Notes:
-        Implements AF3 Supp. §5.9.1, Eqs. (17–18).
+        Implements AF3 Supp. §5.9.1, Eqs. (17-18).
     """
     x = logits
     device, dtype = x.device, x.dtype
@@ -184,6 +184,7 @@ def compute_ptm(
     if D_mask is None:
         D_mask = torch.ones(*leading, N, device=device, dtype=torch.bool)
     else:
+        D_mask = D_mask.expand(*leading, -1)
         D_mask = D_mask.to(device=device, dtype=torch.bool)
 
     if has_frame is None:
