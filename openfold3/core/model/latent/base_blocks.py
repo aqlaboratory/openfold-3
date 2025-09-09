@@ -314,12 +314,12 @@ class PairBlock(nn.Module):
     ) -> torch.Tensor:
         """Perform the outgoing and incoming triangular multiplicative updates."""
         inplace_safe = inplace_safe and (not use_cueq_triangle_kernel)
-        ## VS: having both inplace_safe and use_cueq_triangle_kernel set to 
+        ## VS: having both inplace_safe and use_cueq_triangle_kernel set to
         ## true causes `z = z + self.ps_dropout_row_layer(tmu_update)` below
         ## to be skipped, as this is the expected output of tri_mult w/ inplace
-        ## safe, creating an error. So disable inplace_safe if 
-        ## use_cueq_triangle_kernel is true. Ideally could be refactored to use 
-        ## _add_with_inplace=False, then wrap with add as done elsewhere 
+        ## safe, creating an error. So disable inplace_safe if
+        ## use_cueq_triangle_kernel is true. Ideally could be refactored to use
+        ## _add_with_inplace=False, then wrap with add as done elsewhere
         tmu_update = self.tri_mul_out(
             z,
             mask=pair_mask,

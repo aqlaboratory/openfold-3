@@ -19,6 +19,7 @@ and FusedTriangleMultiplicativeUpdate from AF2-Multimer.
 """
 
 import importlib
+import warnings
 from abc import ABC, abstractmethod
 from functools import partialmethod
 from typing import Optional
@@ -35,7 +36,7 @@ cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
 if cueq_is_installed:
     from cuequivariance_torch import triangle_multiplicative_update
 
-import warnings
+
 
 warnings.filterwarnings("once")
 
@@ -724,7 +725,6 @@ def _cueq_triangle_mult(
     p_out_weight: torch.Tensor,
     g_out_weight: torch.Tensor,
 ) -> torch.Tensor:
-
     ##VS: similar issue here as to the cueq triangle attention
     ## kernel, we need to reshape the input so that batch and
     ## n_tmpl are combined into a single dimension.

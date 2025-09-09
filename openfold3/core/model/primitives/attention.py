@@ -627,8 +627,6 @@ def _lma(
 
 @torch.compiler.disable
 def _cueq_triangle_attn(q, k, v, biases, scale, training=False):
-
-
     is_batched_input = False
     assert len(biases) == 2, (
         "CUEQ triangle attention kernel requires two bias terms: "
@@ -642,7 +640,8 @@ def _cueq_triangle_attn(q, k, v, biases, scale, training=False):
         warnings.warn(
             "\n*FP32 is not supported for the cueq"
             " triangle attention kernel in training. "
-            "Casting to bfloat16.*\n"
+            "Casting to bfloat16.*\n",
+            stacklevel=2
         )
         q = q.to(torch.bfloat16)
         k = k.to(torch.bfloat16)
