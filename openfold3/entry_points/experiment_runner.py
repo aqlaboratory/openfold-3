@@ -3,7 +3,6 @@ import logging
 import os
 import shutil
 import sys
-import time
 from abc import ABC, abstractmethod
 from functools import cached_property, wraps
 from pathlib import Path
@@ -25,7 +24,7 @@ from openfold3.core.data.framework.data_module import (
     DataModuleConfig,
     InferenceDataModule,
 )
-from openfold3.core.runners.writer import OF3OutputWriter
+from openfold3.core.runners.writer import OF3OutputWriter, PredictTimer
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.entry_points.validator import (
@@ -412,7 +411,6 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.data_module_args = experiment_config.data_module_args
         self.seeds = experiment_config.experiment_settings.seeds
         self.output_writer_settings = experiment_config.output_writer_settings
-        self.timer = ExperimentTimer()
 
         self.update_config_with_cli_args(
             num_diffusion_samples,
@@ -472,10 +470,7 @@ class InferenceExperimentRunner(ExperimentRunner):
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
         self.inference_query_set = inference_query_set
-        self.timer.start("Inference")
         super().run()
-        self.timer.stop()
-        print(f"Inference Runtime: {self.timer.get('Inference')}")
         self._log_inference_query_set()
         self._log_experiment_config()
         self._log_model_config()
@@ -484,7 +479,10 @@ class InferenceExperimentRunner(ExperimentRunner):
     def callbacks(self):
         """Set up prediction writer callback."""
         _callbacks = [
-            OF3OutputWriter(self.output_dir, **self.output_writer_settings.model_dump())
+            OF3OutputWriter(
+                self.output_dir, **self.output_writer_settings.model_dump()
+            ),
+            PredictTimer(),
         ]
         return _callbacks
 
@@ -670,29 +668,3 @@ class WandbHandler:
         with open(model_config_path, "w") as fp:
             json.dump(model_config.to_dict(), fp, indent=4)
         wandb_experiment.save(model_config_path)
-
-
-class ExperimentTimer:
-    """Timer class that can be used to time different parts of the experiment."""
-
-    def __init__(self):
-        self.start_time = None
-        self.elapsed = {}
-
-    def start(self, label: str = "total"):
-        self.start_time = time.time()
-        self._label = label
-
-    def stop(self):
-        if self.start_time is None:
-            raise RuntimeError("Timer was not started.")
-        duration = time.time() - self.start_time
-        self.elapsed[self._label] = self.elapsed.get(self._label, 0.0) + duration
-        self.start_time = None
-        return duration
-
-    def get(self, label: str = "total"):
-        return self.elapsed.get(label, 0.0)
-
-    def summary(self):
-        return {k: round(v, 2) for k, v in self.elapsed.items()}
