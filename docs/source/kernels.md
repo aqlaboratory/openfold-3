@@ -4,7 +4,7 @@ OF3 supports the CUEquivariance [triangle_multiplicative_update](https://docs.nv
 
 ```bash
 cd openfold3/
-pip install .['cuequivarience'] --no-build-isolation
+pip install .['cuequivariance'] --no-build-isolation
 python setup.py install 
 ```
 
@@ -18,7 +18,6 @@ model_update:
     settings:
       memory:
         eval:
-          use_deepspeed_evo_attention: false
           use_cueq_triangle_kernel: true
 ```
 
