@@ -10,27 +10,18 @@ from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
 
 from openfold3.core.loss.loss_module import OpenFold3Loss
 from openfold3.core.metrics.confidence import (
-    compute_global_predicted_distance_error,
-    compute_plddt,
-    compute_predicted_aligned_error,
-    compute_predicted_distance_error,
+    get_confidence_scores,
+    get_confidence_scores_chunked,
 )
 from openfold3.core.metrics.model_selection import (
     compute_final_model_selection_metric,
     compute_valid_model_selection_metrics,
-)
-from openfold3.core.metrics.sample_ranking import (
-    build_all_interface_ipTM_and_rankings,
-    compute_all_pTM,
-    full_complex_sample_ranking_metric,
-    compute_modified_residue_plddt,
 )
 from openfold3.core.metrics.validation_all_atom import (
     get_metrics,
     get_metrics_chunked,
 )
 from openfold3.core.runners.model_runner import ModelRunner
-from openfold3.core.utils.atomize_utils import get_token_frame_atoms
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects.of3_all_atom.config.model_config import (
@@ -540,73 +531,26 @@ class OpenFold3AllAtom(ModelRunner):
                 Dict containing the following confidence measures:
                 pLDDT, PDE, PAE, pTM, iPTM, weighted pTM
         """
-        # Used in modified residue ranking
-        confidence_scores = {}
-        confidence_scores["plddt"] = compute_plddt(outputs["plddt_logits"])
-        confidence_scores.update(
-            compute_predicted_distance_error(
-                outputs["pde_logits"],
-                **self.config.confidence.pde,
-            )
-        )
-        confidence_scores["global_predicted_distance_error"] = (
-            compute_global_predicted_distance_error(
-                pde=confidence_scores["predicted_distance_error"],
-                distogram_probs=torch.softmax(outputs["distogram_logits"], dim=-1),
-            )
+        num_samples = self.config.architecture.shared.diffusion.no_full_rollout_samples
+        num_atoms = outputs["atom_positions_predicted"].shape[-2]
+        chunk_computation = (
+            num_samples > 1
+            and self.config.settings.memory.eval.per_sample_atom_cutoff is not None
+            and num_atoms > self.config.settings.memory.eval.per_sample_atom_cutoff
         )
 
-        if self.config.architecture.heads.pae.enabled:
-            confidence_scores.update(
-                compute_predicted_aligned_error(
-                    outputs["pae_logits"],
-                    **self.config.confidence.pae,
-                )
-            )
-
-            _, valid_frame_mask = get_token_frame_atoms(
+        if chunk_computation:
+            confidence_scores = get_confidence_scores_chunked(
                 batch=batch,
-                x=outputs["atom_positions_predicted"],
-                atom_mask=batch["atom_mask"],
+                outputs=outputs,
+                config=self.config,
             )
-            valid_frame_mask = valid_frame_mask.bool()
-
-            # Compute weighted pTM score
-            # Uses pae_logits (SI pg. 27)
-            sample_ranking = full_complex_sample_ranking_metric(
+        else:
+            confidence_scores = get_confidence_scores(
                 batch=batch,
-                output=outputs,
-                has_frame=valid_frame_mask,
-                **self.config.confidence.sample_ranking.full_complex,
-                **self.config.confidence.ptm,
+                outputs=outputs,
+                config=self.config,
             )
-            confidence_scores.update(sample_ranking)
-
-            if self.config.confidence.sample_ranking.all_ipTM.enabled:
-                ipTM_scores = build_all_interface_ipTM_and_rankings(
-                    batch=batch,
-                    output=outputs,
-                    has_frame=valid_frame_mask,
-                    **self.config.confidence.ptm,
-                )
-                confidence_scores.update(ipTM_scores)
-
-            if self.config.confidence.sample_ranking.all_pTM.enabled:
-                pTM_scores = compute_all_pTM(
-                    batch=batch,
-                    outputs=outputs,
-                    has_frame=valid_frame_mask,
-                    **self.config.confidence.ptm,
-                )
-                confidence_scores.update(pTM_scores)
-
-            if self.config.confidence.sample_ranking.modified_residue_plddt.enabled:
-                modified_residue_scores = compute_modified_residue_plddt(
-                    batch=batch,
-                    outputs=outputs,
-                    plddt=confidence_scores["plddt"],
-                )
-                confidence_scores.update(modified_residue_scores)
 
         return confidence_scores
 

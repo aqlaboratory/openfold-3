@@ -151,5 +151,5 @@ setup(
         "Programming Language :: Python :: 3.10,"
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
-    entry_points={"console_scripts": ["run_openfold=run_openfold:cli"]}
+    entry_points={"console_scripts": ["run_openfold=run_openfold:cli"]},
 )

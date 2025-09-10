@@ -483,12 +483,8 @@ def build_all_interface_ipTM_and_rankings(
     for pair in [(i, j) for i in range(C_max) for j in range(C_max) if i < j]:
         i, j = pair
         pair = str((chains[0][i].item(), chains[0][j].item()))
-        all_iptm_scores["iptm"][pair] = (
-            M[:, :, i, j].detach().clone()
-        )
-        all_iptm_scores["bespoke_iptm"][pair] = (
-            score[:, :, i, j].detach().clone()
-        )
+        all_iptm_scores["iptm"][pair] = M[:, :, i, j].detach().clone()
+        all_iptm_scores["bespoke_iptm"][pair] = score[:, :, i, j].detach().clone()
 
     return {"all_ipTM_scores": all_iptm_scores}
 
@@ -587,4 +583,3 @@ def compute_modified_residue_plddt(
         per_batch_results.append(result_b)
 
     return {"modified_residues_plddts": per_batch_results}
-
