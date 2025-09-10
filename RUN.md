@@ -12,3 +12,5 @@ python run_openfold.py predict-batch-dict \
   --runner_yaml inference_1gpu.yml \
   --output_dir $YOUR_OUTPUT_DIR
 ```
+
+`inference_1gpu.yml` sets `num_recycles=0` for fast testing. 

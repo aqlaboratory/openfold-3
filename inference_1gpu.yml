@@ -15,7 +15,7 @@ model_update:
         pae:
           enabled: true 
       shared:
-        num_recycles: 10
+        num_recycles: 0
       msa:
         msa_module_embedder:
           subsample_main_msa: False
