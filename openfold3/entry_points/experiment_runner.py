@@ -24,7 +24,8 @@ from openfold3.core.data.framework.data_module import (
     DataModuleConfig,
     InferenceDataModule,
 )
-from openfold3.core.runners.writer import OF3OutputWriter, PredictTimer
+from openfold3.core.runners.writer import OF3OutputWriter
+from openfold3.core.utils.callbacks import PredictTimer
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.entry_points.validator import (
