@@ -104,12 +104,15 @@ def full_complex_sample_ranking_metric(
         atom_mask=atom_mask,
         is_polymer=is_polymer,
     )
+
     if torch.any(is_protein):
         disorder = compute_disorder(
             batch=batch, outputs=output, disorder_threshold=disorder_threshold
         )
     else:
-        disorder = 0.0
+        disorder = torch.zeros(
+            pred_pos.shape[:-2], device=pred_pos.device, dtype=pred_pos.dtype
+        )
 
     scores = {}
     scores["iptm"] = iptm.detach().clone()
