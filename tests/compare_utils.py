@@ -62,7 +62,7 @@ def _assert_abs_diff_small_base(compare_func, expected, actual, eps):
     # Helper function for comparing absolute differences of two torch tensors.
     abs_diff = torch.abs(expected - actual)
     err = compare_func(abs_diff)
-    zero_tensor = torch.tensor(0, dtype=err.dtype)
+    zero_tensor = torch.tensor(0, device=err.device, dtype=err.dtype)
     rtol = 1.6e-2 if err.dtype == torch.bfloat16 else 1.3e-6
     torch.testing.assert_close(err, zero_tensor, atol=eps, rtol=rtol)
 
