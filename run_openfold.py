@@ -13,12 +13,15 @@ python run_openfold.py predict --runner_yaml=examples/inference_new.yml
 
 """
 
+import os
 import json
 import logging
 from pathlib import Path
 
 import click
 import torch
+import torch.distributed as dist
+from torch.utils.data import Dataset, DataLoader
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.pipelines.preprocessing.template import TemplatePreprocessor
@@ -209,6 +212,110 @@ def predict(
     expt_runner.cleanup()
 
     # TODO add post-process relaxation with openmm
+
+
+@cli.command()
+@click.option(
+    "--batch_dir",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
+    required=True,
+    help="Directory containing the precomputed batches for prediction.",
+)
+@click.option(
+    "--inference_ckpt_path",
+    type=click.Path(exists=True, file_okay=True, dir_okay=True, path_type=Path),
+    required=True,
+    help="Path for model checkpoint to be used for inference",
+)
+@click.option(
+    "--num_diffusion_samples",
+    type=int,
+    default=5,
+    required=False,
+    help="Number of diffusion samples to generate for each query.",
+)
+@click.option(
+    "--min_seed",
+    type=int,
+    default=1,
+    required=False,
+    help="Seed",
+)
+@click.option(
+    "--max_seed",
+    type=int,
+    default=1,
+    required=False,
+    help="Seed",
+)
+@click.option(
+    "--runner_yaml",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    required=False,
+    help="Yaml that specifies model and dataset parameters, see examples/runner.yml",
+)
+@click.option(
+    "--output_dir",
+    type=click.Path(exists=False, file_okay=True, dir_okay=True, path_type=Path),
+    required=False,
+    help="Output directory for writing results",
+)
+def predict_batch_dict(
+    batch_dir: Path,
+    inference_ckpt_path: Path,
+    num_diffusion_samples: int = 5,
+    min_seed: int = 1,
+    max_seed: int = 1,
+    runner_yaml: Path | None = None,
+    output_dir: Path | None = None,
+):
+    """Perform inference on a set of queries defined in the query_json."""
+    logging.basicConfig(level=logging.INFO)
+    runner_args = config_utils.load_yaml(runner_yaml) if runner_yaml else dict()
+
+    expt_config = InferenceExperimentConfig(
+        inference_ckpt_path=inference_ckpt_path, **runner_args
+    )
+
+    expt_runner = InferenceExperimentRunner(expt_config)
+    if output_dir:
+        output_dir.mkdir(exist_ok=True, parents=True)
+        expt_runner.output_dir = output_dir
+
+    if num_diffusion_samples:
+        logger.info(f"Set diffusion samples to {num_diffusion_samples}")
+        expt_runner.set_num_diffusion_samples(num_diffusion_samples)
+    class BatchDictRestartDataset(Dataset):
+        def __init__(self, output_dir: Path, batch_dir: Path, min_seed: int, max_seed: int):
+            problems = os.listdir(batch_dir)
+            self.seeds = []
+            self.filepaths = []
+            for seed in range(min_seed, max_seed):
+                for problem in problems:
+                    if not os.path.exists(os.path.join(output_dir, problem.replace('.pt', ''), f'seed_{seed}')):
+                        self.seeds.append(seed)
+                        self.filepaths.append(os.path.join(batch_dir, problem))
+            self.seeds = self.seeds
+            self.filepaths = self.filepaths
+
+        def __len__(self):
+            return len(self.filepaths)
+
+        def __getitem__(self, idx):
+            batch = torch.load(self.filepaths[idx], weights_only=False)
+            batch['seed'] = torch.tensor([self.seeds[idx]])
+            return batch
+    
+    dataset = BatchDictRestartDataset(output_dir, batch_dir, min_seed=min_seed, max_seed=max_seed)
+    expt_runner.setup()
+    expt_runner.timer.start("Inference (Restart)")
+    expt_runner.trainer.predict(
+        model=expt_runner.lightning_module,
+        dataloaders=DataLoader(dataset, batch_size=1, num_workers=1, collate_fn=lambda x: x[0]),
+        ckpt_path=expt_runner.ckpt_path,
+        return_predictions=False
+    )
+    dist.barrier()
 
 
 @cli.command()
