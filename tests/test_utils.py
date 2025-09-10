@@ -26,7 +26,6 @@ from openfold3.core.utils.rigid_utils import (
     rot_to_quat,
 )
 
-
 X_90_ROT = torch.tensor(
     [
         [1, 0, 0],
