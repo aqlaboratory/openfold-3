@@ -5,8 +5,7 @@ channels:
   - pytorch
   - nvidia
 dependencies:
-  - librdkit==2025.03.3
-  - python=3.10
+  - python
   - setuptools
   - pip
   - openmm
@@ -24,6 +23,7 @@ dependencies:
   - modelcif
   - ml-collections
   - mkl
+  - rdkit
   - biotite==1.2.0
   - mmseqs2
   - bioconda::hmmer
@@ -43,4 +43,3 @@ dependencies:
       - git+https://github.com/NVIDIA/dllogger.git
       - flash-attn==2.6.0.post1
       - pdbeccdutils
-      - rdkit==2025.03.3 # pdbeccdutils will install an older version of rdkit, so we need to override 
