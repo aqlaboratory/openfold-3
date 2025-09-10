@@ -41,23 +41,23 @@ $ mamba env create -n openfold_env -f environments/production.yml
 
 **Note:** You’ll need to have mamba installed; see the [mamba documentation](https://mamba.readthedocs.io/en/latest/) if needed.
 
+### Running OpenFold Tests
 
-### Known Issue: rdkit Conflict
+OpenFold tests require the additional packages listed in `environments/development.txt`
 
-Due to a conflict between `pip` dependencies and `conda` dependencies, `rdkit=2025` may be installed incorrectly.
+These packages can be installed via the following steps:
 
-You can check with:
+1. Activate your Openfold mamba environment, e.g.
 ```
-$ mamba list | grep rdkit
+$ mamba activate openfold_env
 ```
 
-If you see something like:
+2. Use `pip` to install the development dependencies 
 ```
-librdkit   2025.03.1     h84b0b3c_0     conda-forge
-rdkit      2023.9.6      pypi_0         pypi
+$ pip install environments/development.txt
 ```
-You’ll need to correct this by removing the pip version and installing the correct conda package:
+
+To run the tests, you may use `pytest` or `unittest`, e.g.
 ```
-pip uninstall rdkit
-mamba install rdkit
+$ pytest tests/
 ```
