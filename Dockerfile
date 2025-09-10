@@ -23,8 +23,7 @@ ENV PATH=/opt/conda/bin:$PATH
 # Copy and install dependencies with aggressive cleanup
 COPY environments/production.yml /opt/openfold3/environment.yml
 RUN mamba env update -n base --file /opt/openfold3/environment.yml \
-    && mamba clean --all --yes \
-    && conda clean --all --yes
+    && mamba clean --all --yes
 
 # Copy the entire source tree
 COPY . /opt/openfold3/
