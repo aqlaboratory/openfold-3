@@ -32,9 +32,6 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.feature_embedders.template_embedders import (
     TemplatePairEmbedderAllAtom,
 )
-from openfold3.core.model.layers.template_pointwise_attention import (
-    TemplatePointwiseAttention,
-)
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.checkpointing import checkpoint_blocks
 from openfold3.core.utils.chunk_utils import ChunkSizeTuner
