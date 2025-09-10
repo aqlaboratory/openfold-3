@@ -44,7 +44,9 @@ class Chain(BaseModel):
     paired_msa_file_paths: (
         Annotated[list[FilePath | DirectoryPath], BeforeValidator(_ensure_list)] | None
     ) = None
-    main_msa_file_paths: list[FilePath | DirectoryPath] | None = None
+    main_msa_file_paths: (
+        Annotated[list[FilePath | DirectoryPath], BeforeValidator(_ensure_list)] | None
+    ) = None
     template_alignment_file_path: FilePath | None = None
     template_entry_chain_ids: (
         Annotated[list[str], BeforeValidator(_ensure_list)] | None

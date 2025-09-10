@@ -4,6 +4,7 @@ import time
 
 import dllogger as logger
 import numpy as np
+import pytorch_lightning as pl
 from dllogger import JSONStreamBackend, StdOutBackend, Verbosity
 from pytorch_lightning import Callback
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
@@ -91,3 +92,12 @@ class PerformanceLoggingCallback(Callback):
 
     def on_epoch_end(self, trainer, pl_module):
         self._log()
+
+
+class PredictTimer(pl.Callback):
+    def on_predict_start(self, trainer, pl_module):
+        self.start_time = time.time()
+
+    def on_predict_end(self, trainer, pl_module):
+        elapsed = time.time() - self.start_time
+        print(f"Inference runtime: {elapsed} seconds")
