@@ -586,4 +586,5 @@ def compute_modified_residue_plddt(
 
         per_batch_results.append(result_b)
 
-    return {"modified residues plddts": per_batch_results}
+    return {"modified_residues_plddts": per_batch_results}
+
