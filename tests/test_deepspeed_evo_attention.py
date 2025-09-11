@@ -20,7 +20,6 @@ implementation.
 
 import unittest
 
-import pytest
 import torch
 from torch.nn import functional as F
 
@@ -189,16 +188,19 @@ class TestDeepSpeedKernel(unittest.TestCase):
         kernel. Set dtype to confirm the kernel can be used during both training (BF16)
         and inference (FP32), since the kernel itself can run with either BF16 or FP16
         precision.
+
+        TODO: Change the test to use a loaded Pairformer block from the trained model
+          instead of a newly initialized block.
         """
         batch_size = consts.batch_size
         n_res = consts.n_res
         c_s = consts.c_s
         c_z = consts.c_z
-        c_hidden_pair_bias = 12
-        no_heads_pair_bias = 3
-        c_hidden_mul = 19
-        c_hidden_pair_att = 14
-        no_heads_pair = 7
+        c_hidden_pair_bias = 24
+        no_heads_pair_bias = 16
+        c_hidden_mul = 128
+        c_hidden_pair_att = 32
+        no_heads_pair = 4
         no_blocks = 2
         transition_type = "swiglu"
         transition_n = 2
@@ -226,64 +228,50 @@ class TestDeepSpeedKernel(unittest.TestCase):
             .to(device="cuda", dtype=dtype)
         )
 
-        c_s_shape = (batch_size, n_res, consts.c_s)
-        c_z_shape = (batch_size, n_res, n_res, consts.c_z)
-        activations = {
-            "msa": torch.rand(*c_s_shape, device="cuda", dtype=dtype),
-            "pair": torch.rand(*c_z_shape, device="cuda", dtype=dtype),
-        }
+        s = torch.rand(batch_size, n_res, consts.c_s, device="cuda", dtype=dtype)
+        z = torch.rand(batch_size, n_res, n_res, consts.c_z, device="cuda", dtype=dtype)
 
-        masks = {
-            "msa": torch.randint(0, 2, (batch_size, n_res), device="cuda", dtype=dtype),
-            "pair": torch.randint(
-                0, 2, (batch_size, n_res, n_res), device="cuda", dtype=dtype
-            ),
-        }
+        s_mask = torch.randint(0, 2, (batch_size, n_res), device="cuda", dtype=dtype)
+        z_mask = torch.randint(
+            0, 2, (batch_size, n_res, n_res), device="cuda", dtype=dtype
+        )
 
         with torch.amp.autocast("cuda", dtype=dtype):
-            out_repro_msa, out_repro_pair = block(
-                s=activations["msa"],
-                z=activations["pair"],
-                single_mask=masks["msa"],
-                pair_mask=masks["pair"],
+            out_repro_single, out_repro_pair = block(
+                s=s,
+                z=z,
+                single_mask=s_mask,
+                pair_mask=z_mask,
                 use_deepspeed_evo_attention=False,
-                chunk_size=4,
             )
 
             # In practice, layer norms applied later in the network make any
             # kernel rounding errors negligible
-            out_repro_msa = F.layer_norm(out_repro_msa, c_s_shape).cpu()
-            out_repro_pair = F.layer_norm(out_repro_pair, c_z_shape).cpu()
+            out_repro_single = F.layer_norm(out_repro_single, (consts.c_s,)).cpu()
+            out_repro_pair = F.layer_norm(out_repro_pair, (consts.c_z,)).cpu()
 
-            out_repro_msa_ds, out_repro_pair_ds = block(
-                s=activations["msa"],
-                z=activations["pair"],
-                single_mask=masks["msa"],
-                pair_mask=masks["pair"],
+            out_repro_single_ds, out_repro_pair_ds = block(
+                s=s,
+                z=z,
+                single_mask=s_mask,
+                pair_mask=z_mask,
                 use_deepspeed_evo_attention=True,
-                chunk_size=4,
             )
-            out_repro_msa_ds = F.layer_norm(out_repro_msa_ds, c_s_shape).cpu()
-            out_repro_pair_ds = F.layer_norm(out_repro_pair_ds, c_z_shape).cpu()
+            out_repro_single_ds = F.layer_norm(out_repro_single_ds, (consts.c_s,)).cpu()
+            out_repro_pair_ds = F.layer_norm(out_repro_pair_ds, (consts.c_z,)).cpu()
 
             compare_utils.assert_mean_abs_diff_small(
-                out_repro_msa, out_repro_msa_ds, eps
+                out_repro_single, out_repro_single_ds, eps
             )
 
             compare_utils.assert_mean_abs_diff_small(
                 out_repro_pair, out_repro_pair_ds, eps
             )
 
-    @pytest.mark.skip(
-        reason="Issue with pairformer standalone call with deepspeed_evo_attention"
-    )
     def test_compare_pairformer_bf16(self):
         """Run evoformer comparison test with BF16 precision."""
         self.compare_pairformer(dtype=torch.bfloat16, eps=4e-2)
 
-    @pytest.mark.skip(
-        reason="Issue with pairformer standalone call with deepspeed_evo_attention"
-    )
     def test_compare_pairformer_fp32(self):
         """Run evoformer comparison test with FP32 precision."""
         self.compare_pairformer(dtype=torch.float32, eps=2e-2)
