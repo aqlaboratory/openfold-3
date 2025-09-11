@@ -16,9 +16,11 @@ import numpy as np
 import pandas as pd
 import requests
 from pydantic import BaseModel, model_validator
+from pydantic import ConfigDict as PydanticConfigDict
 from pydantic_core import Url
 from tqdm import tqdm
 
+from openfold3.core.config import config_utils
 from openfold3.core.data.io.sequence.msa import parse_a3m
 from openfold3.core.data.primitives.sequence.hash import get_sequence_hash
 from openfold3.core.data.resources.residues import MoleculeType
@@ -670,6 +672,9 @@ class ColabFoldQueryRunner:
         # Submit query for main MSAs
         # TODO: add template alignments fetching code here by setting use_templates=True
         # TODO: replace prints with proper logging
+        if len(self.colabfold_mapper.seqs) == 0:
+            print("No protein sequences found for main MSA generation. Skipping...")
+            return
         print(
             f"Submitting {len(self.colabfold_mapper.seqs)} sequences to the Colabfold"
             " MSA server for main MSAs..."
@@ -735,6 +740,9 @@ class ColabFoldQueryRunner:
         paired_alignments_directory.mkdir(parents=True, exist_ok=True)
         # Submit queries for paired MSAss
         num_complexes = len(self.colabfold_mapper.complex_id_to_complex_group)
+        if num_complexes == 0:
+            print("No complexes found for paired MSA generation. Skipping...")
+            return
         print(
             f"Submitting {num_complexes} paired MSA queries"
             " to the Colabfold MSA server..."
@@ -882,6 +890,7 @@ class MsaComputationSettings(BaseModel):
 
     See preprocess_colabfold_msas for details on the parameters"""
 
+    model_config = PydanticConfigDict(extra="forbid")
     msa_file_format: Literal["npz", "a3m"] = "npz"
     server_user_agent: str = "openfold"
     server_url: Url = Url("https://api.colabfold.com")
@@ -895,6 +904,42 @@ class MsaComputationSettings(BaseModel):
         if not self.msa_output_directory.exists():
             self.msa_output_directory.mkdir(parents=True, exist_ok=True)
         return self
+
+    @classmethod
+    def from_config_with_cli_override(
+        cls,
+        cli_output_dir: Path,
+        config_yaml: Path | None = None,
+    ) -> "MsaComputationSettings":
+        """Create settings from config dict with CLI output directory override.
+
+        Args:
+            cli_output_dir: Output directory from CLI argument
+            config_yaml: Configuration YAML file
+
+        Raises:
+            ValueError: If config specifies a different output directory than CLI
+        """
+        config_dict = config_utils.load_yaml(config_yaml) if config_yaml else dict()
+
+        if (
+            "msa_output_directory" in config_dict
+            and Path(config_dict["msa_output_directory"]) != cli_output_dir
+        ):
+            raise ValueError(
+                f"Output directory mismatch: CLI argument '{cli_output_dir}' "
+                f"vs settings file '{config_dict['msa_output_directory']}'. "
+                f"Please ensure they match or omit 'msa_output_directory' "
+                "from your settings file."
+            )
+
+        config_dict = config_dict.copy()
+        config_dict["msa_output_directory"] = str(cli_output_dir)
+
+        # Disable cleanup assuming this mode is used for the run_msa_server option.
+        config_dict["cleanup_msa_dir"] = False
+
+        return cls.model_validate(config_dict)
 
 
 def preprocess_colabfold_msas(

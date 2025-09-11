@@ -71,6 +71,8 @@ class MSASettings(BaseModel):
         "rnacentral_hits": 10000,
         "nt_hits": 10000,
         "concat_cfdb_uniref100_filtered": 10000000,
+        "colabfold_main": 16384,
+        "colabfold_paired": 8192,
     }
     msas_to_pair: list[str] = ["uniprot_hits", "uniprot"]
     aln_order: list = [
@@ -86,18 +88,6 @@ class MSASettings(BaseModel):
         "colabfold_main",
     ]
     paired_msa_order: list = ["colabfold_paired"]
-
-
-colabfold_msa_settings = MSASettings(
-    max_seq_counts={"colabfold_main": 16384, "colabfold_paired": 8192},
-    moltypes=["protein", "rna"],
-    max_rows_paired=8191,
-    min_chains_paired_partial=2,
-    aln_order=["colabfold_main"],
-    paired_msa_order=["colabfold_paired"],
-    msas_to_pair=[],
-    pairing_mask_keys=["shared_by_two", "less_than_600"],
-)
 
 
 class TemplateDistogramSettings(BaseModel):

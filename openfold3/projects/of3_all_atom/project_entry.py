@@ -60,10 +60,22 @@ class OF3ProjectEntry:
                 config = self.update_config_with_preset(config, preset)
         return config
 
+    def validate_model_config(self, model_config: ConfigDict) -> ConfigDict:
+        msa_embedder_config = model_config.architecture.msa.msa_module_embedder
+        assert not (
+            msa_embedder_config.subsample_main_msa
+            and msa_embedder_config.subsample_all_msa
+        ), (
+            "Invalid configuration: both `subsample_main_msa` and `subsample_all_msa` "
+            "are set to True. At most one subsampling strategy can be enabled."
+        )
+
     def get_model_config_with_update(
         self, model_update: Optional[ModelUpdate] = None
     ) -> ConfigDict:
         """Returns a model config with updates applied."""
         model_config = self.get_model_config_with_presets(model_update.presets)
         model_config.update(model_update.custom)
+        self.validate_model_config(model_config)
+
         return model_config
