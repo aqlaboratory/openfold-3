@@ -485,6 +485,7 @@ model_config = mlc.ConfigDict(
                 "all_ipTM": {"enabled": True},
                 "all_pTM": {"enabled": True},
                 "modified_residue_plddt": {"enabled": True},
+                "pair_chunk": 32
             },
             "clash": {
                 "min_distance": 1.1,
