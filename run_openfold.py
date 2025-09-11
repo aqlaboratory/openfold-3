@@ -292,9 +292,9 @@ def predict_batch_dict(
             self.filepaths = []
             for seed in range(min_seed, max_seed):
                 for problem in problems:
-                    if not os.path.exists(os.path.join(output_dir, problem.replace('.pt', ''), f'seed_{seed}')):
-                        self.seeds.append(seed)
-                        self.filepaths.append(os.path.join(batch_dir, problem))
+                    # if not os.path.exists(os.path.join(output_dir, problem.replace('.pt', ''), f'seed_{seed}')):
+                    self.seeds.append(seed)
+                    self.filepaths.append(os.path.join(batch_dir, problem))
             self.seeds = self.seeds
             self.filepaths = self.filepaths
 

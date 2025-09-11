@@ -32,9 +32,11 @@ def _calculate_binned_predicted_error(
     distance_error_probs: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     bin_centers = _calculate_bin_centers(boundaries)
+    binned_predicted_error = torch.sum(distance_error_probs * bin_centers, dim=-1)
+    max_err_shape = [None] * len(binned_predicted_error.shape[:-2]) + [...]
     return (
-        torch.sum(distance_error_probs * bin_centers, dim=-1),
-        bin_centers[-1],
+        binned_predicted_error,
+        bin_centers[-1][max_err_shape].expand(binned_predicted_error.shape[:-2]),
     )
 
 
@@ -74,6 +76,7 @@ def compute_predicted_aligned_error(
     logits: torch.Tensor,
     max_bin: int = 31,
     no_bins: int = 64,
+    return_probs: bool = False,
     **kwargs,
 ) -> dict[str, torch.Tensor]:
     """Computes aligned confidence metrics from PredictedAlignedErrorHead logits"""
@@ -81,17 +84,23 @@ def compute_predicted_aligned_error(
         compute_binned_predicted_error(logits=logits, max_bin=max_bin, no_bins=no_bins)
     )
 
-    return {
-        "aligned_confidence_probs": confidence_probs,
-        "predicted_aligned_error": predicted_error,
-        "max_predicted_aligned_error": max_predicted_error,
-    }
+    output = {"predicted_aligned_error": predicted_error}
+    if return_probs:
+        output.update(
+            {
+                "aligned_confidence_probs": confidence_probs,
+                "max_predicted_aligned_error": max_predicted_error,
+            }
+        )
+
+    return output
 
 
 def compute_predicted_distance_error(
     logits: torch.Tensor,
     max_bin: int = 31,
     no_bins: int = 64,
+    return_probs: bool = False,
     **kwargs,
 ) -> dict[str, torch.Tensor]:
     """Computes aligned confidence metrics from PredictedDistanceErrorHead logits"""
@@ -99,11 +108,16 @@ def compute_predicted_distance_error(
         compute_binned_predicted_error(logits=logits, max_bin=max_bin, no_bins=no_bins)
     )
 
-    return {
-        "distance_confidence_probs": confidence_probs,
-        "predicted_distance_error": predicted_error,
-        "max_predicted_distance_error": max_predicted_error,
-    }
+    output = {"predicted_distance_error": predicted_error}
+    if return_probs:
+        output.update(
+            {
+                "distance_confidence_probs": confidence_probs,
+                "max_predicted_distance_error": max_predicted_error,
+            }
+        )
+
+    return output
 
 
 def compute_global_predicted_distance_error(
