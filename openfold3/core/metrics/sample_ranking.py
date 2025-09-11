@@ -581,7 +581,7 @@ def compute_modified_residue_plddt(
             valid = atom_counts > 0
             values[valid] = plddt_sum[valid] / (atom_counts[valid].to(dtype) + eps)
 
-            result_b[(chain_id, residue_id)] = values
+            result_b[(chain_id, residue_id)] = values.unsqueeze(0)
 
         per_batch_results.append(result_b)
 
