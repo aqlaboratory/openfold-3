@@ -20,8 +20,6 @@ import torch
 from openfold3.core.model.feature_embedders.input_embedders import (
     InputEmbedderAllAtom,
     MSAModuleEmbedder,
-    PreembeddingEmbedder,
-    RecyclingEmbedder,
 )
 from openfold3.core.model.feature_embedders.template_embedders import (
     TemplatePairEmbedderAllAtom,
@@ -130,62 +128,6 @@ def test_msa_module_embedder_shape_and_sampling(n_total_msa_seq, subsample_all_m
             assert (n_sampled_seqs > max_paired_seqs) and (
                 n_sampled_seqs <= n_total_msa_seq
             )
-
-
-class TestPreembeddingEmbedder(unittest.TestCase):
-    def test_shape(self):
-        tf_dim = 22
-        preembedding_dim = 1280
-        c_z = 4
-        c_m = 6
-        relpos_k = 10
-
-        batch_size = 4
-        num_res = 20
-
-        tf = torch.rand((batch_size, num_res, tf_dim))
-        ri = torch.rand((batch_size, num_res))
-        preemb = torch.rand((batch_size, num_res, preembedding_dim))
-
-        pe = PreembeddingEmbedder(
-            tf_dim,
-            preembedding_dim,
-            c_z,
-            c_m,
-            relpos_k,
-        )
-
-        seq_emb, pair_emb = pe(tf, ri, preemb)
-        self.assertTrue(seq_emb.shape == (batch_size, 1, num_res, c_m))
-        self.assertTrue(pair_emb.shape == (batch_size, num_res, num_res, c_z))
-
-
-class TestRecyclingEmbedder(unittest.TestCase):
-    def test_shape(self):
-        batch_size = 2
-        n = 3
-        c_z = 5
-        c_m = 7
-        min_bin = 0
-        max_bin = 10
-        no_bins = 9
-
-        re = RecyclingEmbedder(
-            c_m,
-            c_z,
-            min_bin,
-            max_bin,
-            no_bins,
-        )
-
-        m_1 = torch.rand((batch_size, n, c_m))
-        z = torch.rand((batch_size, n, n, c_z))
-        x = torch.rand((batch_size, n, 3))
-
-        m_1, z = re(m_1, z, x)
-
-        self.assertTrue(z.shape == (batch_size, n, n, c_z))
-        self.assertTrue(m_1.shape == (batch_size, n, c_m))
 
 
 class TestTemplatePairEmbedders(unittest.TestCase):
