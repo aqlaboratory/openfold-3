@@ -236,40 +236,6 @@ diffusion_cond_init = ConfigDict(
 # Feature Embedders
 ########################
 
-# AF2-Monomer
-monomer_input_emb_init = ConfigDict(
-    {
-        "linear_tf_z_i": {"bias": True, "init": "default"},
-        "linear_tf_z_j": {"bias": True, "init": "default"},
-        "linear_tf_m": {"bias": True, "init": "default"},
-        "linear_msa_m": {"bias": True, "init": "default"},
-        "linear_relpos": {"bias": True, "init": "default"},
-    }
-)
-
-# Solo-Seq (AF2-Monomer)
-preembed_init = ConfigDict(
-    {
-        "linear_tf_m": {"bias": True, "init": "default"},
-        "linear_preemb_m": {"bias": True, "init": "default"},
-        "linear_preemb_z_i": {"bias": True, "init": "default"},
-        "linear_preemb_z_j": {"bias": True, "init": "default"},
-        "linear_relpos": {"bias": True, "init": "default"},
-    }
-)
-
-# AF2-Multimer
-multimer_input_emb_init = ConfigDict(
-    {
-        "linear_tf_z_i": {"bias": True, "init": "default"},
-        "linear_tf_z_j": {"bias": True, "init": "default"},
-        "linear_tf_m": {"bias": True, "init": "default"},
-        "linear_msa_m": {"bias": True, "init": "default"},
-        "linear_relpos": {"bias": True, "init": "default"},
-    }
-)
-
-# AF3
 all_atom_input_emb_init = ConfigDict(
     {
         "linear_s": {"bias": False, "init": "default"},
@@ -279,12 +245,6 @@ all_atom_input_emb_init = ConfigDict(
         "linear_token_bonds": {"bias": False, "init": "default"},
     }
 )
-
-# AF2
-recycling_emb_init = ConfigDict({"linear": {"bias": True, "init": "default"}})
-
-# AF2
-extra_msa_emb_init = ConfigDict({"linear": {"bias": True, "init": "default"}})
 
 # AF3
 msa_module_emb_init = ConfigDict(
