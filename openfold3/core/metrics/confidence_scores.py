@@ -67,6 +67,7 @@ def get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> dic
                 batch=batch,
                 output=outputs,
                 has_frame=valid_frame_mask,
+                pair_chunk = config.confidence.sample_ranking.pair_chunk,
                 **config.confidence.ptm,
             )
             confidence_scores.update(ipTM_scores)

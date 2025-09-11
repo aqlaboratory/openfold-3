@@ -9,7 +9,7 @@ model_update:
       diffusion_training_enabled: False
       memory:
         eval:
-          chunk_size: 4
+          chunk_size: 1
     architecture:
       heads:
         pae:
@@ -22,6 +22,9 @@ model_update:
           subsample_all_msa: True
           min_subsampled_all_msa: 1024
           max_subsampled_all_msa: 1024
-        
+    confidence:
+      sample_ranking:
+        pair_chunk: 32
+
 output_writer_settings:
-  structure_format: pdb
+  structure_format: cif
