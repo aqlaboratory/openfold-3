@@ -18,7 +18,6 @@ import unittest
 import torch
 
 from openfold3.core.model.latent.evoformer import EvoformerStack
-from openfold3.core.model.latent.extra_msa import ExtraMSAStack
 from openfold3.core.model.layers.transition import ReLUTransition
 from tests.config import consts
 
@@ -145,86 +144,6 @@ class TestEvoformerStack(unittest.TestCase):
         self.assertTrue(m.shape == shape_m_before)
         self.assertTrue(z.shape == shape_z_before)
         self.assertTrue(s.shape == (batch_size, n_res, c_s))
-
-
-class TestExtraMSAStack(unittest.TestCase):
-    def test_shape(self):
-        batch_size = 2
-        s_t = 23
-        n_res = 5
-        c_m = 7
-        c_z = 11
-        c_hidden_msa_att = 12
-        c_hidden_opm = 17
-        c_hidden_mul = 19
-        c_hidden_tri_att = 16
-        no_heads_msa = 3
-        no_heads_pair = 8
-        no_blocks = 2
-        transition_type = "relu"
-        transition_n = 5
-        msa_dropout = 0.15
-        pair_stack_dropout = 0.25
-        opm_first = consts.is_multimer
-        fuse_projection_weights = bool(
-            re.fullmatch("^model_[1-5]_multimer_v3$", consts.model_preset)
-        )
-        inf = 1e9
-        eps = 1e-10
-
-        es = (
-            ExtraMSAStack(
-                c_m,
-                c_z,
-                c_hidden_msa_att,
-                c_hidden_opm,
-                c_hidden_mul,
-                c_hidden_tri_att,
-                no_heads_msa,
-                no_heads_pair,
-                no_blocks,
-                transition_type,
-                transition_n,
-                msa_dropout,
-                pair_stack_dropout,
-                opm_first,
-                fuse_projection_weights,
-                ckpt=False,
-                inf=inf,
-                eps=eps,
-            )
-            .eval()
-            .cuda()
-        )
-
-        m = torch.rand((batch_size, s_t, n_res, c_m), device="cuda")
-        z = torch.rand((batch_size, n_res, n_res, c_z), device="cuda")
-        msa_mask = torch.randint(
-            0,
-            2,
-            size=(
-                batch_size,
-                s_t,
-                n_res,
-            ),
-            device="cuda",
-        ).float()
-        pair_mask = torch.randint(
-            0,
-            2,
-            size=(
-                batch_size,
-                n_res,
-                n_res,
-            ),
-            device="cuda",
-        ).float()
-
-        shape_z_before = z.shape
-
-        z = es(m, z, chunk_size=4, msa_mask=msa_mask, pair_mask=pair_mask)
-
-        self.assertTrue(z.shape == shape_z_before)
 
 
 class TestMSATransition(unittest.TestCase):
