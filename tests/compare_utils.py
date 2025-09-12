@@ -24,22 +24,6 @@ def skip_unless_ds4s_installed():
     )
 
 
-def cuda_kernels_is_installed():
-    attn_core_is_installed = (
-        importlib.util.find_spec("attn_core_inplace_cuda") is not None
-    )
-    kernels_installed = attn_core_is_installed and (
-        importlib.util.find_spec("attention_core") is not None
-    )
-    return kernels_installed
-
-
-def skip_unless_cuda_kernels_installed():
-    return unittest.skipUnless(
-        cuda_kernels_is_installed(), "Requires kernel installation"
-    )
-
-
 def skip_of2_test():
     return unittest.skipUnless(RUN_OF_TESTS, "OpenFold legacy model test")
 
