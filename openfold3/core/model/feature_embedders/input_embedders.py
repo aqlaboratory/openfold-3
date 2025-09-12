@@ -28,7 +28,7 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers.sequence_local_atom_attention import (
     AtomAttentionEncoder,
 )
-from openfold3.core.model.primitives import LayerNorm, Linear, normal_init_
+from openfold3.core.model.primitives import Linear, normal_init_
 from openfold3.core.utils.relpos import relpos_complex
 from openfold3.core.utils.tensor_utils import add
 
