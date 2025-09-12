@@ -1,16 +1,7 @@
 import importlib
-import os
 import unittest
 
 import torch
-
-# Give JAX some GPU memory discipline
-# (by default it hogs 90% of GPU memory. This disables that behavior and also
-# forces it to proactively free memory that it allocates)
-os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
-os.environ["JAX_PLATFORM_NAME"] = "gpu"
-# TODO: Replace this with commandline flag
-RUN_OF_TESTS = False
 
 
 def skip_unless_ds4s_installed():
@@ -22,10 +13,6 @@ def skip_unless_ds4s_installed():
     return unittest.skipUnless(
         ds4s_is_installed, "Requires DeepSpeed with version ≥ 0.10.4"
     )
-
-
-def skip_of2_test():
-    return unittest.skipUnless(RUN_OF_TESTS, "OpenFold legacy model test")
 
 
 def skip_unless_flash_attn_installed():
