@@ -546,7 +546,9 @@ class MSAModuleEmbedder(nn.Module):
 
     @staticmethod
     def _subsample_all_msa(
-        msa_feat: torch.Tensor, msa_mask: torch.Tensor, no_subsampled_all_msa: int
+        msa_feat: torch.Tensor,
+        msa_mask: torch.Tensor,
+        no_subsampled_all_msa: int | torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Subsample all MSA sequences (paired + main) to a fixed number of sequences,

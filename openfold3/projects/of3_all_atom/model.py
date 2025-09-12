@@ -599,7 +599,7 @@ class OpenFold3(nn.Module):
         inplace_safe = not (self.training or torch.is_grad_enabled())
 
         num_cycles = (
-            self.synced_generator.integers(low=1, high=self.shared.max_cycles + 1)
+            int(self.synced_generator.integers(low=1, high=self.shared.max_cycles + 1))
             if self.training
             else self.shared.max_cycles
         )
