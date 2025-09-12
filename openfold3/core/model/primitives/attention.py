@@ -29,7 +29,6 @@ from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.utils.checkpointing import get_checkpoint_fn
-from openfold3.core.utils.precision_utils import is_fp16_enabled
 from openfold3.core.utils.tensor_utils import flatten_final_dims
 
 from .linear import Linear
@@ -53,7 +52,7 @@ if fa_is_installed:
 # To avoid errors if memory-efficient attention kernel is not installed
 attn_core_is_installed = importlib.util.find_spec("attn_core_inplace_cuda") is not None
 if attn_core_is_installed:
-    from openfold3.core.kernels.cuda.attention_core import attention_core
+    pass
 
 DEFAULT_LMA_Q_CHUNK_SIZE = 1024
 DEFAULT_LMA_KV_CHUNK_SIZE = 4096
@@ -294,7 +293,6 @@ class Attention(nn.Module):
         q_x: torch.Tensor,
         kv_x: torch.Tensor,
         biases: Optional[list[torch.Tensor]] = None,
-        use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
         lma_q_chunk_size: int = DEFAULT_LMA_Q_CHUNK_SIZE,
@@ -311,11 +309,6 @@ class Attention(nn.Module):
                 [*, K, C_k] key data
             biases:
                 List of biases that broadcast to [*, H, Q, K]
-            use_memory_efficient_kernel:
-                Whether to use a custom memory-efficient attention kernel.
-                This should be the default choice for most. If none of the
-                "use_<...>" flags are True, a stock PyTorch implementation
-                is used instead
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory-efficient attention kernel.
                 If none of the "use_<...>" flags are True, a stock PyTorch
@@ -359,7 +352,6 @@ class Attention(nn.Module):
             use_deepspeed_evo_attention = False
 
         attn_options = [
-            use_memory_efficient_kernel,
             use_deepspeed_evo_attention,
             use_lma,
             use_flash,
@@ -374,22 +366,7 @@ class Attention(nn.Module):
         # DeepSpeed attention kernel applies scaling internally
         q, k, v = self._prep_qkv(q_x, kv_x, apply_scale=not use_deepspeed_evo_attention)
 
-        if is_fp16_enabled():
-            use_memory_efficient_kernel = False
-
-        if use_memory_efficient_kernel:
-            if not attn_core_is_installed:
-                raise ValueError(
-                    "Memory-efficient kernel attention_core must be installed"
-                )
-            if len(biases) > 2:
-                raise ValueError(
-                    "If use_memory_efficient_kernel is True, you may only "
-                    "provide up to two bias terms"
-                )
-            o = attention_core(q, k, v, *((biases + [None] * 2)[:2]))
-            o = o.transpose(-2, -3)
-        elif use_deepspeed_evo_attention:
+        if use_deepspeed_evo_attention:
             if len(biases) > 2:
                 raise ValueError(
                     "If use_deepspeed_evo_attention is True, you may only "
