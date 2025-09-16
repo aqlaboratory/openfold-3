@@ -15,12 +15,4 @@ output_writer_settings:
 model_update:
   presets: 
     - predict
-  compile : false
-  custom:
-    settings:
-      memory:
-        eval:
-          use_deepspeed_evo_attention: true
-          chunk_size: 4
-          per_sample_token_cutoff: 750
-          per_sample_atom_cutoff: 10000
+    - low_mem
