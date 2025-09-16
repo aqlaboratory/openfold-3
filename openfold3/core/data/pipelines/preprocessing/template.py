@@ -22,6 +22,7 @@ from pydantic import (
     DirectoryPath,
     model_validator,
 )
+from pydantic import ConfigDict as PydanticConfigDict
 from tqdm import tqdm
 
 from openfold3.core.config.config_utils import (
@@ -1505,6 +1506,7 @@ class TemplatePreprocessorSettings(BaseModel):
             `preparse_structures` is True.
     """
 
+    model_config = PydanticConfigDict(extra="forbid")
     mode: Literal["train", "predict"] = "predict"
     moltypes: Annotated[
         list[MoleculeType],

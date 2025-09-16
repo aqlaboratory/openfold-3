@@ -3,7 +3,10 @@ import textwrap
 import pytest  # noqa: F401  - used for pytest tmp fixture
 
 from openfold3.core.config import config_utils
-from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
+from openfold3.core.data.framework.data_module import (
+    DataModuleConfig,
+    InferenceDataModule,
+)
 from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessorSettings,
 )
@@ -286,9 +289,17 @@ class TestInferenceConfigConstruction:
             epoch_len=1,
             num_epochs=1,
         )
-        data_module = DataModule(data_config)
 
+        # DO NOT SUBMIT: Remove the actual colab call
+        data_module = InferenceDataModule(
+            data_config,
+            use_msa_server=False,
+            use_templates=False,
+        )
+
+        data_module.prepare_data()
         data_module.setup()
+
         dataloader = data_module.predict_dataloader()
 
         # Option: Test feature generation once create_features is written
