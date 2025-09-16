@@ -1,9 +1,9 @@
 import math
 from typing import Literal, Optional
 
-from openfold3.core.data.resources.residues import STANDARD_PROTEIN_RESIDUES_ORDER
 import torch
 
+from openfold3.core.data.resources.residues import STANDARD_PROTEIN_RESIDUES_ORDER
 from openfold3.core.np.token_atom_constants import (
     TOKEN_TYPES_WITH_GAP,
     atom_name_to_index_by_restype,
