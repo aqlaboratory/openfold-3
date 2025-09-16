@@ -94,7 +94,6 @@ class EvoformerBlock(MSABlock):
         transition_ckpt_chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
-        use_flash: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
         _attn_chunk_size: Optional[int] = None,
@@ -158,7 +157,6 @@ class EvoformerBlock(MSABlock):
                     chunk_size=chunk_size,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                     use_lma=use_lma,
-                    use_flash=use_flash,
                 ),
                 inplace=inplace_safe,
             )

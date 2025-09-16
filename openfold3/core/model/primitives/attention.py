@@ -15,8 +15,7 @@
 
 """
 Attention layers. Includes standard multi-head attention and global attention.
-Optimizations such as Openfold's Low-Memory Attention Kernel, LMA,
-DeepSpeed EvoformerAttention, and FlashAttention are also included.
+Optimizations such as LMA and DeepSpeed EvoformerAttention are included.
 """
 
 import importlib
@@ -43,16 +42,6 @@ if deepspeed_is_installed:
 
 if ds4s_is_installed:
     from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
-
-fa_is_installed = importlib.util.find_spec("flash_attn") is not None
-if fa_is_installed:
-    from flash_attn.bert_padding import unpad_input
-    from flash_attn.flash_attn_interface import flash_attn_varlen_kvpacked_func
-
-# To avoid errors if memory-efficient attention kernel is not installed
-attn_core_is_installed = importlib.util.find_spec("attn_core_inplace_cuda") is not None
-if attn_core_is_installed:
-    pass
 
 DEFAULT_LMA_Q_CHUNK_SIZE = 1024
 DEFAULT_LMA_KV_CHUNK_SIZE = 4096
@@ -297,8 +286,6 @@ class Attention(nn.Module):
         use_lma: bool = False,
         lma_q_chunk_size: int = DEFAULT_LMA_Q_CHUNK_SIZE,
         lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
-        use_flash: bool = False,
-        flash_mask: Optional[torch.Tensor] = None,
         use_high_precision: bool = False,
     ) -> torch.Tensor:
         """
@@ -321,12 +308,6 @@ class Attention(nn.Module):
                 Query chunk size (for LMA)
             lma_kv_chunk_size:
                 Key/Value chunk size (for LMA)
-            use_flash:
-                Whether to use FlashAttention. If none of the "use_<...>"
-                flags are True, a stock PyTorch implementation is used instead
-            flash_mask:
-                Mask for flash attention. Use instead of bias option since flash
-                attention is incompatible with bias terms.
             use_high_precision:
                 Whether to use high precision up until and including softmax.
                 This requires using the default implementation and cannot be
@@ -340,12 +321,6 @@ class Attention(nn.Module):
                 "lma_kv_chunk_size must be provided"
             )
 
-        if use_flash and biases is not None:
-            raise ValueError(
-                "use_flash is incompatible with the bias option. For masking, "
-                "use flash_mask instead"
-            )
-
         # TODO: Make this more explicit
         # The EvoformerAttention kernel can only be used for sequence lengths > 16
         if use_deepspeed_evo_attention and q_x.shape[-2] <= 16:
@@ -354,7 +329,6 @@ class Attention(nn.Module):
         attn_options = [
             use_deepspeed_evo_attention,
             use_lma,
-            use_flash,
             use_high_precision,
         ]
         if sum(attn_options) > 1:
@@ -380,8 +354,6 @@ class Attention(nn.Module):
             ]
             o = _lma(q, k, v, biases, lma_q_chunk_size, lma_kv_chunk_size)
             o = o.transpose(-2, -3)
-        elif use_flash:
-            o = _flash_attn(q, k, v, flash_mask)
         else:
             o = _attention(q, k, v, biases, use_high_precision=use_high_precision)
             o = o.transpose(-2, -3)
@@ -594,67 +566,3 @@ def _lma(
         o[..., q_s : q_s + q_chunk_size, :] = q_chunk_out
 
     return o
-
-
-@torch.jit.ignore
-def _flash_attn(q, k, v, kv_mask):
-    if not fa_is_installed:
-        raise ValueError("_flash_attn requires that FlashAttention be installed")
-
-    batch_dims = q.shape[:-3]
-    no_heads, n, c = q.shape[-3:]
-    dtype = q.dtype
-
-    q = q.half()
-    k = k.half()
-    v = v.half()
-    kv_mask = kv_mask.half()
-
-    # [*, B, N, H, C]
-    q = q.transpose(-2, -3)
-    k = k.transpose(-2, -3)
-    v = v.transpose(-2, -3)
-
-    # [B_flat, N, H, C]
-    q = q.reshape(-1, *q.shape[-3:])
-    k = k.reshape(-1, *k.shape[-3:])
-    v = v.reshape(-1, *v.shape[-3:])
-
-    # Flattened batch size
-    batch_size = q.shape[0]
-
-    # [B_flat * N, H, C]
-    q = q.reshape(-1, *q.shape[-2:])
-
-    q_max_s = n
-    q_cu_seqlens = torch.arange(
-        0, (batch_size + 1) * n, step=n, dtype=torch.int32, device=q.device
-    )
-
-    # [B_flat, N, 2, H, C]
-    kv = torch.stack([k, v], dim=-3)
-    kv_shape = kv.shape
-
-    # [B_flat, N, 2 * H * C]
-    kv = kv.reshape(*kv.shape[:-3], -1)
-
-    kv_unpad, _, kv_cu_seqlens, kv_max_s = unpad_input(kv, kv_mask)
-    kv_unpad = kv_unpad.reshape(-1, *kv_shape[-3:])
-
-    out = flash_attn_varlen_kvpacked_func(
-        q,
-        kv_unpad,
-        q_cu_seqlens,
-        kv_cu_seqlens,
-        q_max_s,
-        kv_max_s,
-        dropout_p=0.0,
-        softmax_scale=1.0,  # q has been scaled already
-    )
-
-    # [*, B, N, H, C]
-    out = out.reshape(*batch_dims, n, no_heads, c)
-
-    out = out.to(dtype=dtype)
-
-    return out

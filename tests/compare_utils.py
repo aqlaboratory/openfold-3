@@ -15,11 +15,6 @@ def skip_unless_ds4s_installed():
     )
 
 
-def skip_unless_flash_attn_installed():
-    fa_is_installed = importlib.util.find_spec("flash_attn") is not None
-    return unittest.skipUnless(fa_is_installed, "Requires Flash Attention")
-
-
 def skip_unless_triton_installed():
     triton_is_installed = importlib.util.find_spec("triton") is not None
     return unittest.skipUnless(triton_is_installed, "Requires Triton")

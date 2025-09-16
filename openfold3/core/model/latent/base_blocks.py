@@ -207,7 +207,6 @@ class MSABlock(nn.Module, ABC):
         transition_ckpt_chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
-        use_flash: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
         _attn_chunk_size: Optional[int] = None,
@@ -411,10 +410,10 @@ class PairBlock(nn.Module):
                 Inference-time subbatch size
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma and use_flash.
+                Mutually exclusive with use_lma.
             use_lma:
                 Whether to use low-memory attention during inference.
-                Mutually exclusive with use_flash and use_deepspeed_evo_attention.
+                Mutually exclusive with and use_deepspeed_evo_attention.
             inplace_safe:
                 Whether inplace operations can be performed
             _mask_trans:

@@ -39,7 +39,7 @@ from tests.data_utils import (
 @compare_utils.skip_unless_ds4s_installed()
 @compare_utils.skip_unless_cuda_available()
 class TestDeepSpeedKernel(unittest.TestCase):
-    def compare_attention_types(self, use_flash=False):
+    def test_ds_kernel_vs_attention_forward(self):
         """Compare attention with and without using DeepSpeed Evoformer kernel."""
         batch_size = consts.batch_size
         n_seq = 18
@@ -70,26 +70,12 @@ class TestDeepSpeedKernel(unittest.TestCase):
             lecun_normal_init_(a.linear_g.weight)
             lecun_normal_init_(a.linear_o.weight)
 
-            if use_flash:
-                biases = [biases[0]]
-                flash_mask = mask.reshape(batch_size * n_seq, n_res)
-                real_out = a(q, kv, use_flash=True, flash_mask=flash_mask).cpu()
-            else:
-                real_out = a(q, kv, biases=biases).cpu()
+            real_out = a(q, kv, biases=biases).cpu()
 
             ds_out = a(q, kv, biases=biases, use_deepspeed_evo_attention=True).cpu()
 
         err = torch.max(torch.abs(ds_out - real_out))
         self.assertTrue(err < eps, f"Error: {err}")
-
-    def test_ds_kernel_vs_attention_forward(self):
-        """Compare regular attention vs. DeepSpeed Evoformer kernel."""
-        self.compare_attention_types(use_flash=False)
-
-    @compare_utils.skip_unless_flash_attn_installed()
-    def test_ds_kernel_vs_flash_attn_forward(self):
-        """Compare Flash Attention vs. DeepSpeed Evoformer kernel."""
-        self.compare_attention_types(use_flash=True)
 
     def test_ds_kernel_vs_attention_backward(self):
         """

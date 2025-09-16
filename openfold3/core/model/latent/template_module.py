@@ -122,10 +122,10 @@ class TemplatePairBlock(PairBlock):
                 Inference-time subbatch size
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma and use_flash.
+                Mutually exclusive with use_lma.
             use_lma:
                 Whether to use low-memory attention during inference.
-                Mutually exclusive with use_flash and use_deepspeed_evo_attention.
+                Mutually exclusive with use_deepspeed_evo_attention.
             inplace_safe:
                 Whether inplace operations can be performed
             _mask_trans:
@@ -300,10 +300,10 @@ class TemplatePairStack(nn.Module):
                 Inference-time subbatch size
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma and use_flash.
+                Mutually exclusive with use_lma.
             use_lma:
                 Whether to use low-memory attention during inference.
-                Mutually exclusive with use_flash and use_deepspeed_evo_attention.
+                Mutually exclusive with use_deepspeed_evo_attention.
             inplace_safe:
                 Whether inplace operations can be performed
             _mask_trans:
@@ -407,10 +407,10 @@ class TemplateEmbedderAllAtom(nn.Module):
                 Whether to mask the output of the transition layers
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma and use_flash.
+                Mutually exclusive with use_lma.
             use_lma:
                 Whether to use low-memory attention during inference.
-                Mutually exclusive with use_flash and use_deepspeed_evo_attention.
+                Mutually exclusive with and use_deepspeed_evo_attention.
             inplace_safe:
                 Whether inplace operations can be performed
 
