@@ -61,3 +61,10 @@ To run the tests, you may use `pytest` or `unittest`, e.g.
 ```
 $ pytest tests/
 ```
+
+Note: To build deepspeed, it may be necessary to include the environment `$LD_LIBRARY_PATH` and `$LIBRARY_PATH`, which can be done via the following
+
+```
+export LIBRARY_PATH=$CONDA_PREFIX/lib:$LIBRARY_PATH
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+```
