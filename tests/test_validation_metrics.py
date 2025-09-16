@@ -4,9 +4,11 @@ import unittest
 import numpy as np
 import torch
 
-from openfold3.core.metrics.validation import gdt_ha, gdt_ts, rmsd
 from openfold3.core.metrics.validation_all_atom import (
     drmsd,
+    gdt_ha,
+    gdt_ts,
+    rmsd,
     get_metrics,
     get_metrics_chunked,
     get_superimpose_metrics,
