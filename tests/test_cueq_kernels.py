@@ -21,13 +21,19 @@ implementation.
 import unittest
 
 import torch
+from torch.nn import functional as F
 
 import tests.compare_utils as compare_utils
 from openfold3.core.model.layers.triangular_multiplicative_update import (
     TriangleMultiplicativeUpdate,
 )
+from openfold3.core.model.latent.pairformer import PairFormerStack
+from openfold3.core.model.latent.template_module import TemplateEmbedderAllAtom
 from openfold3.core.model.primitives.attention import Attention
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
+from openfold3.core.utils.tensor_utils import tensor_tree_map
+from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+
 from tests.config import consts
 
 
@@ -297,6 +303,167 @@ class TestCuEqKernels(unittest.TestCase):
             t_gt = tm_gt_params[name]
             err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))
             self.assertTrue(err < eps, f"Error item {name}: {err}")
+    def compare_pairformer(self, dtype, eps):
+        """
+        Compare Pairformer output with and without using cueq kernels 
+        kernel. Set dtype to confirm the kernel can be used during both training (BF16)
+        and inference (FP32), since the kernel itself can run with either BF16 or FP16
+        precision.
+
+        TODO: Change the test to use a loaded Pairformer block from the trained model
+          instead of a newly initialized block.
+        """
+        batch_size = consts.batch_size
+        n_res = consts.n_res
+        c_s = consts.c_s
+        c_z = consts.c_z
+        c_hidden_pair_bias = 24
+        no_heads_pair_bias = 16
+        c_hidden_mul = 128
+        c_hidden_pair_att = 32
+        no_heads_pair = 4
+        no_blocks = 2
+        transition_type = "swiglu"
+        transition_n = 2
+        pair_dropout = 0.25
+        inf = 1e9
+
+        block = (
+            PairFormerStack(
+                c_s=c_s,
+                c_z=c_z,
+                c_hidden_pair_bias=c_hidden_pair_bias,
+                no_heads_pair_bias=no_heads_pair_bias,
+                c_hidden_mul=c_hidden_mul,
+                c_hidden_pair_att=c_hidden_pair_att,
+                no_heads_pair=no_heads_pair,
+                no_blocks=no_blocks,
+                transition_type=transition_type,
+                transition_n=transition_n,
+                pair_dropout=pair_dropout,
+                fuse_projection_weights=False,
+                blocks_per_ckpt=None,
+                inf=inf,
+            )
+            .eval()
+            .to(device="cuda", dtype=dtype)
+        )
+
+        s = torch.rand(batch_size, n_res, consts.c_s, device="cuda", dtype=dtype)
+        z = torch.rand(batch_size, n_res, n_res, consts.c_z, device="cuda", dtype=dtype)
+
+        s_mask = torch.randint(0, 2, (batch_size, n_res), device="cuda", dtype=dtype)
+        z_mask = torch.randint(
+            0, 2, (batch_size, n_res, n_res), device="cuda", dtype=dtype
+        )
+        block.eval()
+        with torch.amp.autocast("cuda", dtype=dtype):
+            out_repro_single, out_repro_pair = block(
+                s=s.clone(),
+                z=z.clone(),
+                single_mask=s_mask.clone(),
+                pair_mask=z_mask.clone(),
+                use_deepspeed_evo_attention=False,
+                use_cueq_triangle_kernel = False
+            )
+
+            # In practice, layer norms applied later in the network make any
+            # kernel rounding errors negligible
+            out_repro_single = F.layer_norm(out_repro_single, (consts.c_s,)).cpu()
+            out_repro_pair = F.layer_norm(out_repro_pair, (consts.c_z,)).cpu()
+
+            out_repro_single_ds, out_repro_pair_ds = block(
+                s=s.clone(),
+                z=z.clone(),
+                single_mask=s_mask.clone(),
+                pair_mask=z_mask.clone(),
+                use_deepspeed_evo_attention=False,
+                use_cueq_triangle_kernel = True
+            )
+            out_repro_single_ds = F.layer_norm(out_repro_single_ds, (consts.c_s,)).cpu()
+            out_repro_pair_ds = F.layer_norm(out_repro_pair_ds, (consts.c_z,)).cpu()
+
+            compare_utils.assert_mean_abs_diff_small(
+                out_repro_single, out_repro_single_ds, eps
+            )
+
+            compare_utils.assert_mean_abs_diff_small(
+                out_repro_pair, out_repro_pair_ds, eps
+            )
+
+    def test_compare_pairformer_bf16(self):
+        """Run evoformer comparison test with BF16 precision."""
+        self.compare_pairformer(dtype=torch.bfloat16, eps=4e-2)
+
+    def test_compare_pairformer_fp32(self):
+        """Run evoformer comparison test with FP32 precision."""
+        self.compare_pairformer(dtype=torch.float32, eps=2e-2)
+
+    def test_compare_template_stack(self):
+        """
+        Compare Template Stack output with and without using DeepSpeed Evoformer
+        attention kernel. Kernel can be used for Triangle Attention in the Template Pair
+        Stack.
+        """
+        batch_size = 1
+        n_templ = 3
+        n_token = 10
+
+        of3_proj_entry = OF3ProjectEntry()
+        of3_config = of3_proj_entry.get_model_config_with_presets()
+        c_in = of3_config.architecture.template.template_pair_embedder.c_in
+
+        embedder = TemplateEmbedderAllAtom(of3_config.architecture.template).to(
+            device="cuda"
+        )
+
+        batch = {
+            "token_mask": torch.ones((batch_size, n_token)),
+            "asym_id": torch.ones((batch_size, n_token)),
+            "template_restype": torch.ones((batch_size, n_templ, n_token, 32)),
+            "template_pseudo_beta_mask": torch.ones((batch_size, n_templ, n_token)),
+            "template_backbone_frame_mask": torch.ones((batch_size, n_templ, n_token)),
+            "template_distogram": torch.ones(
+                (batch_size, n_templ, n_token, n_token, 39)
+            ),
+            "template_unit_vector": torch.ones(
+                (batch_size, n_templ, n_token, n_token, 3)
+            ),
+        }
+
+        def to_device(t):
+            return t.to(device=torch.device("cuda"))
+
+        batch = tensor_tree_map(to_device, batch)
+
+        z = torch.ones((batch_size, n_token, n_token, c_in))
+        pair_mask = torch.randint(0, 2, size=(batch_size, n_token, n_token))
+
+        with torch.no_grad():
+            args = (
+                batch,
+                torch.as_tensor(z).cuda(),
+                torch.as_tensor(pair_mask).cuda(),
+            )
+
+            out_repro = embedder(
+                *args,
+                inplace_safe=False,
+                chunk_size=None,
+                use_deepspeed_evo_attention=False,
+                use_cueq_triangle_kernel = False
+            )
+
+            out_repro_ds = embedder(
+                *args,
+                inplace_safe=False,
+                chunk_size=None,
+                use_deepspeed_evo_attention=False,
+                use_cueq_triangle_kernel= True
+            )
+
+            compare_utils.assert_max_abs_diff_small(out_repro.cpu(), out_repro_ds.cpu(), 2e-2)
+
 
 
 if __name__ == "__main__":
