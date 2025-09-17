@@ -480,7 +480,7 @@ def compute_disorder(
     atom_positions_predicted = outputs["atom_positions_predicted"]
 
     # (N_batch, N_samples, N_atoms, 3)
-    n_batch, n_samples = atom_positions_predicted.shape[:2]
+    n_batch, n_samples, n_atoms = atom_positions_predicted.shape[:3]
 
     disorder = torch.zeros(
         (n_batch, n_samples),
@@ -489,7 +489,7 @@ def compute_disorder(
     )
     for k, atom_arr in enumerate(struct_arrays):
         atom_arr.set_annotation(
-            "atom_resolved_mask", np.zeros_like(atom_arr.occupancy, dtype=bool)
+            "atom_resolved_mask", np.zeros(n_atoms, dtype=bool)
         )
         for sample in range(n_samples):
             atom_positions = atom_positions_predicted[k, sample]
