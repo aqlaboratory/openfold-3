@@ -2,8 +2,8 @@
 
 import json
 import logging
-from pathlib import Path
 import time
+from pathlib import Path
 
 import numpy as np
 from biotite import structure
@@ -41,7 +41,7 @@ class OF3OutputWriter(BasePredictionWriter):
         self.output_dir = output_dir
         self.structure_format = structure_format
         self.full_confidence_format = full_confidence_output_format
-        self.start_time=time.time()
+        self.start_time = time.time()
 
     @staticmethod
     def write_structure_prediction(
@@ -76,7 +76,7 @@ class OF3OutputWriter(BasePredictionWriter):
         aggregated_confidence_scores = {
             "avg_plddt": np.mean(plddt),
             "gpde": gpde,
-            "runtime":runtime
+            "runtime": runtime,
         }
         out_file_agg = Path(f"{output_prefix}_confidences_aggregated.json")
         out_file_agg.write_text(
@@ -101,7 +101,7 @@ class OF3OutputWriter(BasePredictionWriter):
 
     def on_predict_batch_start(self, trainer, pl_module, batch, batch_idx):
         self.start_time = time.time()
-    
+
     def on_predict_batch_end(
         self,
         trainer,
@@ -110,13 +110,12 @@ class OF3OutputWriter(BasePredictionWriter):
         batch,
         batch_idx,
     ):
-        
         is_repeated_sample = batch.get("repeated_sample")
         if outputs is None or is_repeated_sample:
             return
 
         run_time = time.time() - self.start_time
-        
+
         batch, outputs = outputs
         confidence_scores = outputs["confidence_scores"]
 

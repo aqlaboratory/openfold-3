@@ -24,16 +24,15 @@ import torch
 from torch.nn import functional as F
 
 import tests.compare_utils as compare_utils
+from openfold3.core.model.latent.pairformer import PairFormerStack
+from openfold3.core.model.latent.template_module import TemplateEmbedderAllAtom
 from openfold3.core.model.layers.triangular_multiplicative_update import (
     TriangleMultiplicativeUpdate,
 )
-from openfold3.core.model.latent.pairformer import PairFormerStack
-from openfold3.core.model.latent.template_module import TemplateEmbedderAllAtom
 from openfold3.core.model.primitives.attention import Attention
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
-
 from tests.config import consts
 
 
@@ -303,9 +302,10 @@ class TestCuEqKernels(unittest.TestCase):
             t_gt = tm_gt_params[name]
             err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))
             self.assertTrue(err < eps, f"Error item {name}: {err}")
+
     def compare_pairformer(self, dtype, eps):
         """
-        Compare Pairformer output with and without using cueq kernels 
+        Compare Pairformer output with and without using cueq kernels
         kernel. Set dtype to confirm the kernel can be used during both training (BF16)
         and inference (FP32), since the kernel itself can run with either BF16 or FP16
         precision.
@@ -364,7 +364,7 @@ class TestCuEqKernels(unittest.TestCase):
                 single_mask=s_mask.clone(),
                 pair_mask=z_mask.clone(),
                 use_deepspeed_evo_attention=False,
-                use_cueq_triangle_kernel = False
+                use_cueq_triangle_kernel=False,
             )
 
             # In practice, layer norms applied later in the network make any
@@ -378,7 +378,7 @@ class TestCuEqKernels(unittest.TestCase):
                 single_mask=s_mask.clone(),
                 pair_mask=z_mask.clone(),
                 use_deepspeed_evo_attention=False,
-                use_cueq_triangle_kernel = True
+                use_cueq_triangle_kernel=True,
             )
             out_repro_single_ds = F.layer_norm(out_repro_single_ds, (consts.c_s,)).cpu()
             out_repro_pair_ds = F.layer_norm(out_repro_pair_ds, (consts.c_z,)).cpu()
@@ -451,7 +451,7 @@ class TestCuEqKernels(unittest.TestCase):
                 inplace_safe=False,
                 chunk_size=None,
                 use_deepspeed_evo_attention=False,
-                use_cueq_triangle_kernel = False
+                use_cueq_triangle_kernel=False,
             )
 
             out_repro_ds = embedder(
@@ -459,11 +459,12 @@ class TestCuEqKernels(unittest.TestCase):
                 inplace_safe=False,
                 chunk_size=None,
                 use_deepspeed_evo_attention=False,
-                use_cueq_triangle_kernel= True
+                use_cueq_triangle_kernel=True,
             )
 
-            compare_utils.assert_max_abs_diff_small(out_repro.cpu(), out_repro_ds.cpu(), 2e-2)
-
+            compare_utils.assert_max_abs_diff_small(
+                out_repro.cpu(), out_repro_ds.cpu(), 2e-2
+            )
 
 
 if __name__ == "__main__":
