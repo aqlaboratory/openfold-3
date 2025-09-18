@@ -38,7 +38,6 @@ from openfold3.projects.of3_all_atom.config.dataset_config_components import (
     LossConfig,
     MSASettings,
     TemplateSettings,
-    colabfold_msa_settings,
 )
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
@@ -258,7 +257,7 @@ class InferenceDatasetConfigKwargs(BaseModel):
     """Class to hold msa and template kwargs for inference pipeline"""
 
     ccd_file_path: FilePathOrNone = None
-    msa: MSASettings = colabfold_msa_settings
+    msa: MSASettings = MSASettings()
     template: TemplateSettings = TemplateSettings(take_top_k=True)
     template_preprocessor: TemplatePreprocessorSettings = TemplatePreprocessorSettings(
         mode="predict"

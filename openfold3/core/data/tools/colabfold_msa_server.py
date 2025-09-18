@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import requests
 from pydantic import BaseModel, model_validator
+from pydantic import ConfigDict as PydanticConfigDict
 from pydantic_core import Url
 from tqdm import tqdm
 
@@ -671,6 +672,9 @@ class ColabFoldQueryRunner:
         # Submit query for main MSAs
         # TODO: add template alignments fetching code here by setting use_templates=True
         # TODO: replace prints with proper logging
+        if len(self.colabfold_mapper.seqs) == 0:
+            print("No protein sequences found for main MSA generation. Skipping...")
+            return
         print(
             f"Submitting {len(self.colabfold_mapper.seqs)} sequences to the Colabfold"
             " MSA server for main MSAs..."
@@ -736,6 +740,9 @@ class ColabFoldQueryRunner:
         paired_alignments_directory.mkdir(parents=True, exist_ok=True)
         # Submit queries for paired MSAss
         num_complexes = len(self.colabfold_mapper.complex_id_to_complex_group)
+        if num_complexes == 0:
+            print("No complexes found for paired MSA generation. Skipping...")
+            return
         print(
             f"Submitting {num_complexes} paired MSA queries"
             " to the Colabfold MSA server..."
@@ -883,6 +890,7 @@ class MsaComputationSettings(BaseModel):
 
     See preprocess_colabfold_msas for details on the parameters"""
 
+    model_config = PydanticConfigDict(extra="forbid")
     msa_file_format: Literal["npz", "a3m"] = "npz"
     server_user_agent: str = "openfold"
     server_url: Url = Url("https://api.colabfold.com")
