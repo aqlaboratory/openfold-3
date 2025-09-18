@@ -29,7 +29,6 @@ setup(
         "openfold3": [
             "projects/*/config/*.yml",
         ],
-        "": ["resources/stereo_chemical_props.txt"],
     },
     classifiers=[
         "License :: OSI Approved :: Apache Software License",
