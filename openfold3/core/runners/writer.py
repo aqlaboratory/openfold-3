@@ -57,11 +57,13 @@ class OF3OutputWriter(BasePredictionWriter):
     def __init__(
         self,
         output_dir: Path,
+        pae_enabled: bool = False,
         structure_format: str = "pdb",
         full_confidence_output_format: str = "json",
     ):
         super().__init__(write_interval="batch")
         self.output_dir = output_dir
+        self.pae_enabled = pae_enabled
         self.structure_format = structure_format
         self.full_confidence_format = full_confidence_output_format
 
@@ -85,13 +87,8 @@ class OF3OutputWriter(BasePredictionWriter):
         logger.info(f"Writing predicted structure to {output_file}")
         write_structure(atom_array, output_file, include_bonds=True)
 
-    def write_confidence_scores(
-        self, confidence_scores: dict[str, np.ndarray], output_prefix: Path
-    ):
-        """Writes confidence scores to disk"""
-        plddt = confidence_scores["plddt"]
-        pde = confidence_scores["predicted_distance_error"]
-        gpde = confidence_scores["global_predicted_distance_error"]
+    def get_pae_confidence_scores(self, confidence_scores):
+        pae_confidence_scores = {}
         single_value_keys = [
             "iptm",
             "ptm",
@@ -100,22 +97,33 @@ class OF3OutputWriter(BasePredictionWriter):
             "sample_ranking_score",
         ]
 
-        # Single-valued aggregated confidence scores
-        aggregated_confidence_scores = {"avg_plddt": np.mean(plddt), "gpde": gpde}
-
         for key in single_value_keys:
-            aggregated_confidence_scores[key] = confidence_scores[key]
+            pae_confidence_scores[key] = confidence_scores[key]
 
-        aggregated_confidence_scores["ptm_by_asym_id"] = confidence_scores[
-            "pTM_by_asym_id"
-        ]
-        aggregated_confidence_scores["iptm_by_asym_id_pair"] = {
+        pae_confidence_scores["ptm_by_asym_id"] = confidence_scores["pTM_by_asym_id"]
+        pae_confidence_scores["iptm_by_asym_id_pair"] = {
             str(k): v for k, v in confidence_scores["all_ipTM_scores"]["iptm"].items()
         }
-        aggregated_confidence_scores["bespoke_iptm_by_asym_id_pair"] = {
+        pae_confidence_scores["bespoke_iptm_by_asym_id_pair"] = {
             str(k): v
             for k, v in confidence_scores["all_ipTM_scores"]["bespoke_iptm"].items()
         }
+        return pae_confidence_scores
+
+    def write_confidence_scores(
+        self, confidence_scores: dict[str, np.ndarray], output_prefix: Path
+    ):
+        """Writes confidence scores to disk"""
+        plddt = confidence_scores["plddt"]
+        pde = confidence_scores["predicted_distance_error"]
+        gpde = confidence_scores["global_predicted_distance_error"]
+        aggregated_confidence_scores = {"avg_plddt": np.mean(plddt), "gpde": gpde}
+
+        if self.pae_enabled:
+            logger.info("Recording PAE confidence outputs")
+            aggregated_confidence_scores |= self.get_pae_confidence_scores(
+                confidence_scores
+            )
 
         out_file_agg = Path(f"{output_prefix}_confidences_aggregated.json")
         out_file_agg.write_text(
