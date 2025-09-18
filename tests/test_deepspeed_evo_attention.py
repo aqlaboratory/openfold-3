@@ -214,6 +214,12 @@ class TestDeepSpeedKernel(unittest.TestCase):
             .to(device="cuda", dtype=dtype)
         )
 
+        # initialize parameters in pairformer block
+        for module in block.modules():
+            if isinstance(module, torch.nn.Linear):
+                with torch.no_grad():
+                    lecun_normal_init_(module.weight)
+
         s = torch.rand(batch_size, n_res, consts.c_s, device="cuda", dtype=dtype)
         z = torch.rand(batch_size, n_res, n_res, consts.c_z, device="cuda", dtype=dtype)
 
@@ -315,6 +321,8 @@ class TestDeepSpeedKernel(unittest.TestCase):
                 chunk_size=None,
                 use_deepspeed_evo_attention=False,
             )
+            print("Template embedder mean output:", torch.mean(out_repro))
+            print("Template embedder std output:", torch.std(out_repro))
 
             out_repro_ds = embedder(
                 *args,
