@@ -488,9 +488,7 @@ def compute_disorder(
         dtype=atom_positions_predicted.dtype,
     )
     for k, atom_arr in enumerate(struct_arrays):
-        atom_arr.set_annotation(
-            "atom_resolved_mask", np.zeros(n_atoms, dtype=bool)
-        )
+        atom_arr.set_annotation("atom_resolved_mask", np.zeros(n_atoms, dtype=bool))
         for sample in range(n_samples):
             atom_positions = atom_positions_predicted[k, sample]
             atom_arr.coord = atom_positions.float().detach().cpu().numpy()
