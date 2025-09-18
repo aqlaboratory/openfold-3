@@ -259,7 +259,15 @@ class OpenFold3Loss(nn.Module):
             cum_loss: Scalar tensor representing the total loss
             losses: Dict containing individual loss components
         """
-        if not torch.is_grad_enabled() and self.config.per_sample_val_loss:
+        num_samples = output["atom_positions_predicted"].shape[-3]
+        num_atoms = output["atom_positions_predicted"].shape[-2]
+        apply_per_sample = (
+            not torch.is_grad_enabled()
+            and num_samples > 1
+            and self.config.per_sample_atom_cutoff is not None
+            and num_atoms > self.config.per_sample_atom_cutoff
+        )
+        if not torch.is_grad_enabled() and apply_per_sample:
             loss, loss_breakdown = self.loss_chunked(batch, output)
         else:
             loss, loss_breakdown = self.loss(batch, output)
