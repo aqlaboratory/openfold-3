@@ -81,28 +81,36 @@ class PairformerEmbedding(nn.Module):
         zij: torch.Tensor,
         x_pred: torch.Tensor,
     ):
-        # si projection to zij
-        zij = (
-            zij
-            + self.linear_i(si_input.unsqueeze(-2))
-            + self.linear_j(si_input.unsqueeze(-3))
-        )
+        orig_dtype = zij.dtype
+        with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+            # si projection to zij
+            zij = (
+                zij
+                + self.linear_i(si_input.unsqueeze(-2))
+                + self.linear_j(si_input.unsqueeze(-3))
+            )
 
-        # Embed pair distances of representative atoms
-        bins = torch.linspace(
-            self.min_bin, self.max_bin, self.no_bin, device=zij.device, dtype=zij.dtype
-        )
-        squared_bins = bins**2
-        upper = torch.cat(
-            [squared_bins[1:], squared_bins.new_tensor([self.inf])], dim=-1
-        )
-        dij = torch.sum(
-            (x_pred[..., None, :] - x_pred[..., None, :, :]) ** 2, dim=-1, keepdims=True
-        )
-        dij = ((dij > squared_bins) * (dij < upper)).type(x_pred.dtype)
-        zij = zij + self.linear_distance(dij)
+            # Embed pair distances of representative atoms
+            bins = torch.linspace(
+                self.min_bin,
+                self.max_bin,
+                self.no_bin,
+                device=zij.device,
+                dtype=zij.dtype,
+            )
+            squared_bins = bins**2
+            upper = torch.cat(
+                [squared_bins[1:], squared_bins.new_tensor([self.inf])], dim=-1
+            )
+            dij = torch.sum(
+                (x_pred[..., None, :] - x_pred[..., None, :, :]) ** 2,
+                dim=-1,
+                keepdims=True,
+            )
+            dij = ((dij > squared_bins) * (dij < upper)).type(x_pred.dtype)
+            zij = zij + self.linear_distance(dij)
 
-        return zij
+        return zij.to(dtype=orig_dtype)
 
     def per_sample_pairformer_emb(
         self,
@@ -314,16 +322,42 @@ class PredictedAlignedErrorHead(nn.Module):
         self.layer_norm = LayerNorm(self.c_z)
         self.linear = Linear(self.c_z, self.c_out, **linear_init_params.linear)
 
-    def forward(self, zij):
+    def _compute_logits(self, zij: torch.Tensor):
+        logits = self.linear(self.layer_norm(zij))
+        return logits
+
+    def _chunk(
+        self,
+        zij: torch.Tensor,
+    ) -> torch.Tensor:
+        zij_out = torch.zeros(
+            (*zij.shape[:-1], self.c_out), device=zij.device, dtype=zij.dtype
+        )
+        no_samples = zij.shape[-4]
+        for i in range(no_samples):
+            zij_out[:, i : i + 1] = self._compute_logits(zij[:, i : i + 1])
+
+        return zij_out
+
+    def forward(self, zij, apply_per_sample: bool = False):
         """
         Args:
             zij:
                 [*, N, N, C_z] Pair embedding
+            apply_per_sample:
+                Run PAE head for each sample individually.
+                This is a memory optimization which is only used during
+                validation/inference and will depend on the number of samples
+                in the full rollout.
         Returns:
             logits:
                 [*, N, N, C_out] Logits
         """
-        logits = self.linear(self.layer_norm(zij))
+        if apply_per_sample:
+            logits = self._chunk(zij=zij)
+        else:
+            logits = self._compute_logits(zij=zij)
+
         return logits
 
 

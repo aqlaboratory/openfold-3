@@ -411,6 +411,7 @@ model_config = mlc.ConfigDict(
                 },
             },
             "loss_module": {
+                "per_sample_atom_cutoff": per_sample_atom_cutoff,
                 "confidence_loss_names": [
                     "plddt",
                     "pde",

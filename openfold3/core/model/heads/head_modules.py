@@ -225,9 +225,12 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         """
         aux_out = {}
 
+        out_dtype = output["atom_positions_predicted"].dtype
         si_trunk = output["si_trunk"]
         zij_trunk = output["zij_trunk"]
-        atom_positions_predicted = output["atom_positions_predicted"]
+        atom_positions_predicted = output["atom_positions_predicted"].to(
+            dtype=si_trunk.dtype
+        )
 
         # Distogram head: Main loop (Algorithm 1), line 17
         # Not enabled in finetuning 3 stage
@@ -297,6 +300,8 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         aux_out["pde_logits"] = self.pde(zij, apply_per_sample=apply_per_sample)
 
         if self.config.pae.enabled:
-            aux_out["pae_logits"] = self.pae(zij)
+            aux_out["pae_logits"] = self.pae(zij, apply_per_sample=apply_per_sample)
+
+        aux_out = {k: v.to(dtype=out_dtype) for k, v in aux_out.items()}
 
         return aux_out
