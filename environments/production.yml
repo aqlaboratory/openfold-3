@@ -31,13 +31,13 @@ dependencies:
   - bioconda::kalign2
   - bioconda::snakemake
   - pytorch::pytorch
-  - pytorch::pytorch-cuda=12.1
+  - pytorch::pytorch-cuda
   - memory_profiler
   - func_timeout
   - boto3
-  - conda-forge::python-lmdb
+  - conda-forge::python-lmdb=1.6
   - conda-forge::ijson
   - pip:
-      - deepspeed==0.14.5
+      - deepspeed
       - dm-tree
       - pdbeccdutils
