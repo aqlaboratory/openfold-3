@@ -112,11 +112,13 @@ def generate_seeds(start_seed, num_seeds):
 
 
 class InferenceExperimentSettings(ExperimentSettings):
-    """General settings specific for training experiments"""
+    """General settings specific for inference experiments"""
 
     mode: ValidModeType = "predict"
     seeds: int | list[int] = [42]
     num_seeds: int | None = None
+    use_msa_server: bool = False
+    use_templates: bool = False
 
     @model_validator(mode="after")
     def generate_seeds(cls, model):
@@ -146,6 +148,8 @@ class ExperimentConfig(BaseModel):
 class TrainingExperimentConfig(ExperimentConfig):
     """Training experiment config"""
 
+    # pydantic model setting to prevent extra fields in main experiment config
+    model_config = PydanticConfigDict(extra="forbid")
     # required arguments for training experiment
     dataset_paths: dict[str, TrainingDatasetPaths]
     dataset_configs: dict[str, Any]
@@ -160,6 +164,8 @@ class TrainingExperimentConfig(ExperimentConfig):
 class InferenceExperimentConfig(ExperimentConfig):
     """Inference experiment config"""
 
+    # pydantic model setting to prevent extra fields in main experiment config
+    model_config = PydanticConfigDict(extra="forbid")
     # Required inputs for performing inference
     inference_ckpt_path: Path
 

@@ -11,7 +11,7 @@ We use the workflow manager [snakemake](https://snakemake.readthedocs.io/en/stab
         - `--download-bfd` downloads **BFD** (Deepmind) - requires an additional *2.3TB* of disk space
         - `--download-cfdb` downloads **ColabFold** database (OF3 and the Steinneger lab, intended to replace BFD)  - requires an additional *1.5TB* of disk space
         - `--download-rna-dbs` downloads **Rfam, RNACentral, Nucleotide Collection** (RNA alignments) - requires an additional *27GB* disk space
-3. Modify the example [protein](../../scripts/openfold3/scripts/snakemake_msa/example_msa_config_protein.json) or [RNA](../../scripts/openfold3/scripts/snakemake_msa/example_msa_config_RNA.json) configs so that the paths to databases and environments match the downloaded databases on your system. A detailed description of the config fields is listed below: 
+3. Modify the example [protein](../../scripts/snakemake_msa/example_msa_config_protein.json) or [RNA](../../scripts/snakemake_msa/example_msa_config_RNA.json) configs so that the paths to databases and environments match the downloaded databases on your system. A detailed description of the config fields is listed below: 
 
 - `input_fasta` *(Path)*
     - Absolute or relative path to input fasta.
