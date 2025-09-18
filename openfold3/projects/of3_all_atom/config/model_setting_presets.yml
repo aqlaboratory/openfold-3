@@ -19,7 +19,13 @@ predict:
       msa_module_embedder:
         subsample_main_msa: False
         subsample_all_msa: True 
-        
+
+pae_enabled:
+  architecture:
+    heads:
+      pae: 
+        enabled: True
+
 low_mem:
   settings:
     memory:

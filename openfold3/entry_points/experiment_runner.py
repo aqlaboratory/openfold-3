@@ -453,6 +453,10 @@ class InferenceExperimentRunner(ExperimentRunner):
     def use_templates(self) -> bool:
         return self.experiment_config.experiment_settings.use_templates
 
+    @cached_property
+    def pae_enabled(self) -> bool:
+        return self.model_config.architecture.heads.pae.enabled
+
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
         self.timer.start("Inference")
@@ -468,7 +472,11 @@ class InferenceExperimentRunner(ExperimentRunner):
     def callbacks(self):
         """Set up prediction writer callback."""
         _callbacks = [
-            OF3OutputWriter(self.output_dir, **self.output_writer_settings.model_dump())
+            OF3OutputWriter(
+                output_dir=self.output_dir,
+                pae_enabled=self.pae_enabled,
+                **self.output_writer_settings.model_dump(),
+            )
         ]
         return _callbacks
 
