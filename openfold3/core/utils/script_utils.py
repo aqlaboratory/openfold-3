@@ -4,7 +4,7 @@ import resource
 
 logging.basicConfig()
 logger = logging.getLogger(__file__)
-logger.setLevel(level=logging.INFO)
+logger.setLevel(level=logging.WARNING)
 
 
 def set_ulimits():
