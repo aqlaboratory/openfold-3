@@ -29,7 +29,7 @@ from tests.config import consts
 from tests.data_utils import random_asym_ids, random_of3_features
 
 
-class TestInputEmbedderAllAtom(unittest.TestCase):
+class TestInputEmbedderAllAtom:
     def test_shape(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
@@ -52,85 +52,88 @@ class TestInputEmbedderAllAtom(unittest.TestCase):
 
         s_input, s, z = ie(batch=batch)
 
-        self.assertTrue(s_input.shape == (batch_size, n_token, c_s_input))
-        self.assertTrue(s.shape == (batch_size, n_token, c_s))
-        self.assertTrue(z.shape == (batch_size, n_token, n_token, c_z))
+        assert s_input.shape == (batch_size, n_token, c_s_input)
+        assert s.shape == (batch_size, n_token, c_s)
+        assert z.shape == (batch_size, n_token, n_token, c_z)
 
 
-@pytest.mark.parametrize(
-    "n_total_msa_seq,subsample_all_msa",
-    [(200, False), (1, False), (15000, True), (100, True), (1, True)],
-)
-def test_msa_module_embedder_shape_and_sampling(n_total_msa_seq, subsample_all_msa):
-    batch_size = consts.batch_size
-    n_token = consts.n_res
-    c_token = 768
-    c_s_input = c_token + 65
-    one_hot_dim = 32
+class TestMSAModuleEmbedder:
+    @pytest.mark.parametrize(
+        "n_total_msa_seq,subsample_all_msa",
+        [(200, False), (1, False), (15000, True), (100, True), (1, True)],
+    )
+    def test_msa_module_embedder_shape_and_sampling(
+        self, n_total_msa_seq, subsample_all_msa
+    ):
+        batch_size = consts.batch_size
+        n_token = consts.n_res
+        c_token = 768
+        c_s_input = c_token + 65
+        one_hot_dim = 32
 
-    proj_entry = OF3ProjectEntry()
-    of3_config = proj_entry.get_model_config_with_presets()
+        proj_entry = OF3ProjectEntry()
+        of3_config = proj_entry.get_model_config_with_presets()
 
-    msa_emb_config = of3_config.architecture.msa.msa_module_embedder
-    msa_emb_config.update({"c_s_input": c_s_input})
+        msa_emb_config = of3_config.architecture.msa.msa_module_embedder
+        msa_emb_config.update({"c_s_input": c_s_input})
 
-    if subsample_all_msa:
-        msa_emb_config.update(
-            {
-                "subsample_main_msa": False,
-                "subsample_all_msa": True,
-                "min_subsampled_all_msa": 1024,
-                "max_subsampled_all_msa": 1024,
-            }
-        )
-
-    batch_asym_ids = [
-        torch.as_tensor(random_asym_ids(n_token)) for _ in range(batch_size)
-    ]
-    batch_asym_ids = torch.stack(batch_asym_ids)
-
-    if n_total_msa_seq > 0:
-        num_paired = torch.randint(
-            low=max(0, n_total_msa_seq // 4),
-            high=max(1, n_total_msa_seq // 2),
-            size=(batch_size,),
-        )
-    else:
-        num_paired = torch.zeros((batch_size,), dtype=torch.long)
-
-    batch = {
-        "msa": torch.rand((batch_size, n_total_msa_seq, n_token, one_hot_dim)),
-        "has_deletion": torch.ones((batch_size, n_total_msa_seq, n_token)),
-        "deletion_value": torch.rand((batch_size, n_total_msa_seq, n_token)),
-        "msa_mask": torch.ones((batch_size, n_total_msa_seq, n_token)),
-        "num_paired_seqs": num_paired,
-        "asym_id": batch_asym_ids,
-    }
-
-    s_input = torch.rand(batch_size, n_token, c_s_input)
-
-    ie = MSAModuleEmbedder(**msa_emb_config)
-    msa, msa_mask = ie(batch=batch, s_input=s_input)
-
-    n_sampled_seqs = msa.shape[-3]
-
-    assert msa.shape == (batch_size, n_sampled_seqs, n_token, msa_emb_config.c_m)
-    assert msa_mask.shape == (batch_size, n_sampled_seqs, n_token)
-
-    if subsample_all_msa:
-        expected = min(n_total_msa_seq, 1024)
-        assert n_sampled_seqs == expected
-    else:
-        if n_total_msa_seq == 0:
-            assert n_sampled_seqs == 0
-        else:
-            max_paired_seqs = torch.max(batch["num_paired_seqs"])
-            assert (n_sampled_seqs > max_paired_seqs) and (
-                n_sampled_seqs <= n_total_msa_seq
+        if subsample_all_msa:
+            msa_emb_config.update(
+                {
+                    "subsample_main_msa": False,
+                    "subsample_all_msa": True,
+                    "min_subsampled_all_msa": 1024,
+                    "max_subsampled_all_msa": 1024,
+                }
             )
 
+        batch_asym_ids = [
+            torch.as_tensor(random_asym_ids(n_token)) for _ in range(batch_size)
+        ]
+        batch_asym_ids = torch.stack(batch_asym_ids)
 
-class TestTemplatePairEmbedders(unittest.TestCase):
+        if n_total_msa_seq > 0:
+            num_paired = torch.randint(
+                low=max(0, n_total_msa_seq // 4),
+                high=max(1, n_total_msa_seq // 2),
+                size=(batch_size,),
+            )
+        else:
+            num_paired = torch.zeros((batch_size,), dtype=torch.long)
+
+        batch = {
+            "msa": torch.rand((batch_size, n_total_msa_seq, n_token, one_hot_dim)),
+            "has_deletion": torch.ones((batch_size, n_total_msa_seq, n_token)),
+            "deletion_value": torch.rand((batch_size, n_total_msa_seq, n_token)),
+            "msa_mask": torch.ones((batch_size, n_total_msa_seq, n_token)),
+            "num_paired_seqs": num_paired,
+            "asym_id": batch_asym_ids,
+        }
+
+        s_input = torch.rand(batch_size, n_token, c_s_input)
+
+        ie = MSAModuleEmbedder(**msa_emb_config)
+        msa, msa_mask = ie(batch=batch, s_input=s_input)
+
+        n_sampled_seqs = msa.shape[-3]
+
+        assert msa.shape == (batch_size, n_sampled_seqs, n_token, msa_emb_config.c_m)
+        assert msa_mask.shape == (batch_size, n_sampled_seqs, n_token)
+
+        if subsample_all_msa:
+            expected = min(n_total_msa_seq, 1024)
+            assert n_sampled_seqs == expected
+        else:
+            if n_total_msa_seq == 0:
+                assert n_sampled_seqs == 0
+            else:
+                max_paired_seqs = torch.max(batch["num_paired_seqs"])
+                assert (n_sampled_seqs > max_paired_seqs) and (
+                    n_sampled_seqs <= n_total_msa_seq
+                )
+
+
+class TestTemplatePairEmbedders:
     def test_all_atom(self):
         batch_size = 2
         n_templ = 3
@@ -163,7 +166,7 @@ class TestTemplatePairEmbedders(unittest.TestCase):
 
         emb = tpe(batch, z)
 
-        self.assertTrue(emb.shape == (batch_size, n_templ, n_token, n_token, c_t))
+        assert emb.shape == (batch_size, n_templ, n_token, n_token, c_t)
 
 
 if __name__ == "__main__":
