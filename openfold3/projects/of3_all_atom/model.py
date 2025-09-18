@@ -364,7 +364,8 @@ class OpenFold3(nn.Module):
             "atom_positions_predicted": atom_positions_predicted,
         }
 
-        with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+        cast_dtype = torch.float32 if self.training else si_trunk.dtype
+        with torch.amp.autocast(device_type="cuda", dtype=cast_dtype):
             # Compute confidence logits
             output.update(
                 self.aux_heads(
