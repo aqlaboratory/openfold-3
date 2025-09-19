@@ -18,8 +18,8 @@ The main inference and training loops for AlphaFold3.
 """
 
 import gc
-import random
 
+import numpy as np
 import torch
 from ml_collections import ConfigDict
 from torch import nn
@@ -62,6 +62,8 @@ class OpenFold3(nn.Module):
         self.config = config
         self.settings = self.config.settings
         self.shared = self.config.architecture.shared
+
+        self.synced_generator = np.random.default_rng(seed=self.config.get("seed", 0))
 
         self.input_embedder = InputEmbedderAllAtom(
             **self.config.architecture.input_embedder
@@ -597,7 +599,7 @@ class OpenFold3(nn.Module):
         inplace_safe = not (self.training or torch.is_grad_enabled())
 
         num_cycles = (
-            random.randint(1, self.shared.max_cycles)
+            int(self.synced_generator.integers(low=1, high=self.shared.max_cycles + 1))
             if self.training
             else self.shared.max_cycles
         )

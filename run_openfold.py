@@ -20,6 +20,7 @@ from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModule
+from openfold3.core.utils.callbacks import RankSpecificSeedCallback
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.projects import registry
@@ -134,13 +135,20 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
     world_size = runner_args.num_gpus * runner_args.pl_trainer.num_nodes
     is_distributed = world_size > 1
 
-    # Set seed
     seed = runner_args.get("seed")
     if seed is None and is_distributed:
         raise ValueError("For distributed training, seed must be specified")
 
+    callbacks = []
+
     logger.info(f"Running with seed: {seed}")
+    # The datamodule is reseeded with the data_seed, and the model will be
+    # reseeded per rank with the RankSpecificSeedCallback, so most of the
+    # seed_everything() initialization does not matter. This does still
+    # seed the distributed sampler, which will otherwise default to seed 0.
     pl.seed_everything(seed, workers=True)
+    seed_callback = RankSpecificSeedCallback(base_seed=seed)
+    callbacks.append(seed_callback)
 
     project_entry = registry.get_project_entry(runner_args.project_type)
 
@@ -151,8 +159,11 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
         project_config.update(runner_args.config_update)
 
     model_config = project_config.model
+    model_config["seed"] = seed
+
     lightning_module = project_entry.model_runner(
-        model_config, _compile=runner_args.compile
+        model_config,
+        _compile=runner_args.compile,
     )
 
     dataset_config_builder = project_entry.dataset_config_builder
@@ -196,8 +207,6 @@ def main(runner_yaml: Path, seed: int, data_seed: int):
         loggers.append(wandb_logger)
 
     # Set up trainer arguments and callbacks
-    callbacks = []
-
     if runner_args.get("checkpoint"):
         callbacks.append(ModelCheckpoint(**runner_args.checkpoint.to_dict()))
 

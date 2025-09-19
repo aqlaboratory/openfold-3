@@ -546,7 +546,9 @@ class MSAModuleEmbedder(nn.Module):
 
     @staticmethod
     def _subsample_all_msa(
-        msa_feat: torch.Tensor, msa_mask: torch.Tensor, no_subsampled_all_msa: int
+        msa_feat: torch.Tensor,
+        msa_mask: torch.Tensor,
+        no_subsampled_all_msa: int | torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Subsample all MSA sequences (paired + main) to a fixed number of sequences,
@@ -707,14 +709,12 @@ class MSAModuleEmbedder(nn.Module):
                     asym_id=batch["asym_id"],
                 )
         elif self.subsample_all_msa:
-            max_subsampled_all_msa = min(
-                msa_feat.shape[-3], self.max_subsampled_all_msa
-            )
             no_subsampled_all_msa = torch.randint(
                 low=self.min_subsampled_all_msa,
-                high=int(max_subsampled_all_msa + 1),
+                high=int(self.max_subsampled_all_msa + 1),
                 size=(1,),
-            ).item()
+                device=msa_feat.device,
+            )
 
             if math.prod(batch_dims) > 1:
                 msa_feat, msa_mask = self._apply_subsample_fn_batch(
@@ -723,7 +723,7 @@ class MSAModuleEmbedder(nn.Module):
                     msa_mask=msa_mask,
                     no_subsampled_all_msa=torch.full(
                         (msa_feat.shape[0],),
-                        no_subsampled_all_msa,
+                        no_subsampled_all_msa.item(),
                         device=msa_feat.device,
                     ),
                 )
