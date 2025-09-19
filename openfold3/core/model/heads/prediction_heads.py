@@ -126,18 +126,21 @@ class PairformerEmbedding(nn.Module):
         inplace_safe: bool = False,
         _mask_trans: bool = True,
     ):
-        # PairFormer embedding
+        batch_dims = x_pred.shape[:-2]
         no_samples = x_pred.shape[-3]
-        si_out = torch.zeros_like(si.expand(*(x_pred.shape[:-2] + si.shape[-2:])))
-        zij_out = torch.zeros_like(zij.expand(*(x_pred.shape[:-2] + zij.shape[-3:])))
 
+        # Prepare output tensors
+        si_out = torch.zeros_like(si.expand(*(batch_dims + si.shape[-2:])))
+        zij_out = torch.zeros_like(zij.expand(*(batch_dims + zij.shape[-3:])))
+
+        # TODO: Refactor to support inplace ops
         for i in range(no_samples):
             zij_sample = self.embed_zij(
                 si_input=si_input, zij=zij, x_pred=x_pred[:, i : i + 1]
             )
 
             si_chunk, zij_chunk = self.pairformer_stack(
-                si,
+                si.clone(),  # Avoid inplace ops on si for now
                 zij_sample,
                 single_mask,
                 pair_mask,
@@ -169,13 +172,13 @@ class PairformerEmbedding(nn.Module):
         zij = self.embed_zij(si_input=si_input, zij=zij, x_pred=x_pred)
 
         # Expand sample dimension
-        si = si.expand(*(x_pred.shape[:-2] + si.shape[-2:])).clone()
-        single_mask = single_mask.expand(*(x_pred.shape[:-2] + single_mask.shape[-1:]))
-        pair_mask = pair_mask.expand(*(x_pred.shape[:-2] + pair_mask.shape[-2:]))
+        batch_dims = x_pred.shape[:-2]
+        si = si.expand(*(batch_dims + si.shape[-2:])).clone()
+        single_mask = single_mask.expand(*(batch_dims + single_mask.shape[-1:]))
+        pair_mask = pair_mask.expand(*(batch_dims + pair_mask.shape[-2:]))
 
         # TODO: Make this less awkward, DS kernel has strict shape asserts
         #  and expects batch and seq dims to exist, but no sample dim
-        batch_dims = si.shape[:-2]
         if use_deepspeed_evo_attention:
             si = si.reshape(-1, *si.shape[-2:])
             zij = zij.reshape(-1, *zij.shape[-3:])
