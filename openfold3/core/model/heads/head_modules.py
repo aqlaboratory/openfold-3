@@ -265,6 +265,8 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         out_device = atom_positions_predicted.device
 
         # Embed trunk outputs
+        # If offload_inference is enabled, si and zij will be returned on the CPU
+        # TODO: Add inplace ops where possible to avoid offloading
         si, zij = self.pairformer_embedding(
             si_input=si_input,
             si=si,
@@ -281,6 +283,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             apply_per_sample=apply_per_sample,
         )
 
+        # TODO: Refactor this to minimize memory usage
         # Get atom mask padded to MAX_ATOMS_PER_TOKEN
         # Required to extract pLDDT and experimentally resolved logits for
         # the flat atom representation
@@ -301,14 +304,20 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         )
         aux_out["experimentally_resolved_logits"] = experimentally_resolved_logits
 
+        # zij is moved back to GPU after the single rep confidence heads
+        # because building the max_atom_per_token_mask uses a lot of memory
         zij = zij.to(device=out_device)
-        offload_device = "cpu" if offload_inference else out_device
-        pde_logits = self.pde(zij, apply_per_sample=apply_per_sample).to(
-            device=offload_device
-        )
+
+        pde_logits = self.pde(zij, apply_per_sample=apply_per_sample)
 
         if self.config.pae.enabled:
+            # Offload pde logits to not keep all three pairwise tensors
+            # in GPU memory at once
+            offload_device = "cpu" if offload_inference else out_device
+            pde_logits = pde_logits.to(device=offload_device)
             aux_out["pae_logits"] = self.pae(zij, apply_per_sample=apply_per_sample)
+
+        del zij
 
         aux_out["pde_logits"] = pde_logits.to(device=out_device)
 

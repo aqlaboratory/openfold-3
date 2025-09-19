@@ -161,6 +161,7 @@ class PairformerEmbedding(nn.Module):
             si_out[..., i : i + 1, :, :] = si_chunk.to(device=device)
             zij_out[..., i : i + 1, :, :, :] = zij_chunk.to(device=device)
 
+        # If offloading, do not return to device for now and let caller handle it
         return si_out, zij_out
 
     def pairformer_emb(

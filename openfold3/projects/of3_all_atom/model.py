@@ -141,11 +141,11 @@ class OpenFold3(nn.Module):
 
         offload_settings = self.settings.memory.eval.offload_inference
 
-        is_within_cutoff = (
+        is_above_cutoff = (
             offload_settings.token_cutoff is None
             or seq_len > offload_settings.token_cutoff
         )
-        offload_inference = offload_settings[module_name] and is_within_cutoff
+        offload_inference = offload_settings[module_name] and is_above_cutoff
 
         return offload_inference
 
