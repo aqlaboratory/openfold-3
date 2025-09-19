@@ -262,6 +262,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             and self.per_sample_token_cutoff is not None
             and repr_x_pred.shape[-2] > self.per_sample_token_cutoff
         )
+        out_device = atom_positions_predicted.device
 
         # Embed trunk outputs
         si, zij = self.pairformer_embedding(
@@ -290,7 +291,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             max_num_atoms_per_token=self.max_atoms_per_token,
         )
 
-        si = si.to(device=atom_positions_predicted.device)
+        si = si.to(device=out_device)
         aux_out["plddt_logits"] = self.plddt(
             s=si, max_atom_per_token_mask=max_atom_per_token_mask
         )
@@ -300,8 +301,8 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         )
         aux_out["experimentally_resolved_logits"] = experimentally_resolved_logits
 
-        zij = zij.to(device=atom_positions_predicted.device)
-        offload_device = "cpu" if offload_inference else atom_positions_predicted.device
+        zij = zij.to(device=out_device)
+        offload_device = "cpu" if offload_inference else out_device
         pde_logits = self.pde(zij, apply_per_sample=apply_per_sample).to(
             device=offload_device
         )
@@ -309,7 +310,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         if self.config.pae.enabled:
             aux_out["pae_logits"] = self.pae(zij, apply_per_sample=apply_per_sample)
 
-        aux_out["pde_logits"] = pde_logits.to(device=atom_positions_predicted.device)
+        aux_out["pde_logits"] = pde_logits.to(device=out_device)
 
         aux_out = {k: v.to(dtype=out_dtype) for k, v in aux_out.items()}
 

@@ -133,11 +133,11 @@ class PairformerEmbedding(nn.Module):
         device = "cpu" if offload_inference else x_pred.device
 
         # Prepare output tensors
-        si_out = torch.zeros_like(si.expand(*(batch_dims + si.shape[-2:]))).to(
-            device=device
+        si_out = torch.zeros_like(
+            si.expand(*(batch_dims + si.shape[-2:])), device=device
         )
-        zij_out = torch.zeros_like(zij.expand(*(batch_dims + zij.shape[-3:]))).to(
-            device=device
+        zij_out = torch.zeros_like(
+            zij.expand(*(batch_dims + zij.shape[-3:])), device=device
         )
 
         # TODO: Refactor to support inplace ops
