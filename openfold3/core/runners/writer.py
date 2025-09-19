@@ -164,7 +164,7 @@ class OF3OutputWriter(BasePredictionWriter):
             def fetch_cur_batch(t):
                 # Get tensor for current batch dim
                 # Remove expanded sample dim if it exists to get original tensor shapes
-                cur_feats = t[b : b + 1].squeeze(1)
+                cur_feats = t[b : b + 1].squeeze(1)  # noqa: B023
                 return cur_feats.detach().clone().cpu()
 
             file_prefix = output_subdir / f"{query_id}_seed_{seed}"
@@ -216,7 +216,8 @@ class OF3OutputWriter(BasePredictionWriter):
             self.failed_count += 1
             self.failed_queries.extend(batch["query_id"])
             logger.error(
-                f"Failed to write predictions for query_id(s) {', '.join(batch['query_id'])}: {e}"
+                f"Failed to write predictions for query_id(s) "
+                f"{', '.join(batch['query_id'])}: {e}"
             )
 
         del batch, outputs
