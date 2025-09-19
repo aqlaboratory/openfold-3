@@ -1,5 +1,6 @@
 """A module for containing writing tools and callbacks for model outputs."""
 
+import torch
 import json
 import logging
 from pathlib import Path
@@ -7,6 +8,7 @@ from pathlib import Path
 import numpy as np
 from biotite import structure
 from pytorch_lightning.callbacks import BasePredictionWriter
+from openfold3.core.utils.tensor_utils import tensor_tree_map
 
 from openfold3.core.data.io.structure.cif import write_structure
 
@@ -35,11 +37,21 @@ class OF3OutputWriter(BasePredictionWriter):
         output_dir: Path,
         structure_format: str = "pdb",
         full_confidence_output_format: str = "json",
+        write_features: bool = False,
+        write_latent_outputs: bool = False,
     ):
         super().__init__(write_interval="batch")
         self.output_dir = output_dir
         self.structure_format = structure_format
         self.full_confidence_format = full_confidence_output_format
+        self.write_features = write_features
+        self.write_latent_outputs = write_latent_outputs
+
+        # Track successfully predicted samples
+        self.success_count = 0
+        self.failed_count = 0
+        self.failed_queries = []
+        self.total_queries = 0
 
     @staticmethod
     def write_structure_prediction(
@@ -95,20 +107,8 @@ class OF3OutputWriter(BasePredictionWriter):
         elif out_fmt == "npz":
             np.savez_compressed(out_file_full, **full_confidence_scores)
 
-    def on_predict_batch_end(
-        self,
-        trainer,
-        pl_module,
-        outputs,
-        batch,
-        batch_idx,
-    ):
-        is_repeated_sample = batch.get("repeated_sample")
-        if outputs is None or is_repeated_sample:
-            return
-
-        batch, outputs = outputs
-        confidence_scores = outputs["confidence_scores"]
+    def write_all_outputs(self, batch: dict, outputs: dict, confidence_scores:dict):
+        """Writes all outputs for a given batch."""
 
         batch_size = len(batch["atom_array"])
         sample_size = outputs["atom_positions_predicted"].shape[1]
@@ -161,5 +161,70 @@ class OF3OutputWriter(BasePredictionWriter):
                     output_prefix=file_prefix,
                 )
 
-        del batch
-        del outputs
+            def fetch_cur_batch(t):
+                # Get tensor for current batch dim
+                # Remove expanded sample dim if it exists to get original tensor shapes
+                cur_feats = t[b: b + 1].squeeze(1)
+                return cur_feats.detach().clone().cpu()
+
+            file_prefix = output_subdir / f"{query_id}_seed_{seed}"
+            if self.write_features:
+                out_file = Path(f"{file_prefix}_batch.pt")
+                cur_batch = tensor_tree_map(fetch_cur_batch, batch, strict_type=False)
+                torch.save(cur_batch, out_file)
+                del cur_batch
+
+            if self.write_latent_outputs:
+                out_file = Path(f"{file_prefix}_latent_output.pt")
+                cur_output = tensor_tree_map(fetch_cur_batch, outputs, strict_type=False)
+                torch.save(cur_output, out_file)
+                del cur_output
+
+    def on_predict_batch_end(
+        self,
+        trainer,
+        pl_module,
+        outputs,
+        batch,
+        batch_idx,
+    ):
+
+        # Skip repeated samples
+        if batch.get("repeated_sample"):
+            return
+
+        self.total_queries += 1
+
+        # Skip and track failed samples
+        if outputs is None:
+            self.failed_count += 1
+            self.failed_queries.extend(batch["query_id"])
+            return
+
+        batch, outputs = outputs
+        confidence_scores = outputs["confidence_scores"]
+
+        # Write predictions and confidence scores
+        # Optionally write out input features and latent outputs
+        try:
+            self.write_all_outputs(batch=batch, outputs=outputs, confidence_scores=confidence_scores)
+            self.success_count += 1
+        except Exception as e:
+            self.failed_count += 1
+            self.failed_queries.extend(batch["query_id"])
+            logger.error(f"Failed to write predictions for query_id(s) {', '.join(batch['query_id'])}: {e}")
+
+        del batch, outputs
+
+    def on_predict_end(self, trainer, pl_module):
+        """Print summary of inference run."""
+        print("\n" + "=" * 50)
+        print("    PREDICTION SUMMARY    ")
+        print("=" * 50)
+        print(f"Total Queries Processed: {self.total_queries}")
+        print(f"  - Successful Queries:  {self.success_count}")
+        print(f"  - Failed Queries:      {self.failed_count}")
+
+        if self.failed_queries:
+            print(f"\nFailed Queries: {sorted(self.failed_queries)}")
+        print("=" * 50 + "\n")

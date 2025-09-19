@@ -347,39 +347,6 @@ class OpenFold3AllAtom(ModelRunner):
             logger.exception(f"Validation step failed with pdb id {', '.join(pdb_id)}")
             raise
 
-    def transfer_batch_to_device(self, batch, device, dataloader_idx):
-        # TODO: Remove debug logic
-        pdb_id = batch.pop("pdb_id") if "pdb_id" in batch else None
-        query_id = batch.pop("query_id") if "query_id" in batch else None
-        preferred_chain_or_interface = (
-            batch.pop("preferred_chain_or_interface")
-            if "preferred_chain_or_interface" in batch
-            else None
-        )
-        atom_array = batch.pop("atom_array") if "atom_array" in batch else None
-
-        # This is to avoid slow loading for nested dicts in PL
-        # Less frequent hanging when non_blocking=True on H200
-        # TODO: Determine if this is really needed given other
-        #  recent hanging fixes
-        def to_device(t):
-            return t.to(device=device, non_blocking=True)
-
-        batch = tensor_tree_map(to_device, batch)
-
-        if pdb_id:
-            batch["pdb_id"] = pdb_id
-        if query_id:
-            batch["query_id"] = query_id
-        if preferred_chain_or_interface:
-            batch["preferred_chain_or_interface"] = preferred_chain_or_interface
-
-        # Add atom array back to the batch if we removed it earlier
-        if atom_array:
-            batch["atom_array"] = atom_array
-
-        return batch
-
     def _save_train_dataset_state_to_datamodule(self):
         self.trainer.datamodule.next_dataset_indices = (
             self.trainer.train_dataloader.dataset.next_dataset_indices
@@ -519,7 +486,6 @@ class OpenFold3AllAtom(ModelRunner):
         ema = checkpoint["ema"]
         self.ema.load_state_dict(ema)
 
-    # TODO: Integrate with prediction step
     def _compute_confidence_scores(self, batch: dict, outputs: dict) -> dict:
         """Compute confidence metrics. This function is called during inference.
 
@@ -611,10 +577,21 @@ class OpenFold3AllAtom(ModelRunner):
             confidence_scores = self._compute_confidence_scores(batch, outputs)
             outputs["confidence_scores"] = confidence_scores
 
-            return (batch, outputs)
+            return batch, outputs
 
-        except Exception:
+        except torch.OutOfMemoryError:
             logger.exception(
-                f"Inference step failed with query id {', '.join(query_id)}"
+                f"Predict step failed with OOM for query_id(s) {', '.join(query_id)}, "
+                f"skipping batch."
             )
-            raise
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+            return None
+
+        except Exception as e:
+            logger.exception(
+                f"Predict step failed for query_id(s) {', '.join(query_id)}: {e}"
+            )
+            return None
