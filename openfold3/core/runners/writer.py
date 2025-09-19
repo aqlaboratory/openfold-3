@@ -1,16 +1,16 @@
 """A module for containing writing tools and callbacks for model outputs."""
 
-import torch
 import json
 import logging
 from pathlib import Path
 
 import numpy as np
+import torch
 from biotite import structure
 from pytorch_lightning.callbacks import BasePredictionWriter
-from openfold3.core.utils.tensor_utils import tensor_tree_map
 
 from openfold3.core.data.io.structure.cif import write_structure
+from openfold3.core.utils.tensor_utils import tensor_tree_map
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +107,7 @@ class OF3OutputWriter(BasePredictionWriter):
         elif out_fmt == "npz":
             np.savez_compressed(out_file_full, **full_confidence_scores)
 
-    def write_all_outputs(self, batch: dict, outputs: dict, confidence_scores:dict):
+    def write_all_outputs(self, batch: dict, outputs: dict, confidence_scores: dict):
         """Writes all outputs for a given batch."""
 
         batch_size = len(batch["atom_array"])
@@ -164,7 +164,7 @@ class OF3OutputWriter(BasePredictionWriter):
             def fetch_cur_batch(t):
                 # Get tensor for current batch dim
                 # Remove expanded sample dim if it exists to get original tensor shapes
-                cur_feats = t[b: b + 1].squeeze(1)
+                cur_feats = t[b : b + 1].squeeze(1)
                 return cur_feats.detach().clone().cpu()
 
             file_prefix = output_subdir / f"{query_id}_seed_{seed}"
@@ -176,7 +176,9 @@ class OF3OutputWriter(BasePredictionWriter):
 
             if self.write_latent_outputs:
                 out_file = Path(f"{file_prefix}_latent_output.pt")
-                cur_output = tensor_tree_map(fetch_cur_batch, outputs, strict_type=False)
+                cur_output = tensor_tree_map(
+                    fetch_cur_batch, outputs, strict_type=False
+                )
                 torch.save(cur_output, out_file)
                 del cur_output
 
@@ -188,7 +190,6 @@ class OF3OutputWriter(BasePredictionWriter):
         batch,
         batch_idx,
     ):
-
         # Skip repeated samples
         if batch.get("repeated_sample"):
             return
@@ -207,12 +208,16 @@ class OF3OutputWriter(BasePredictionWriter):
         # Write predictions and confidence scores
         # Optionally write out input features and latent outputs
         try:
-            self.write_all_outputs(batch=batch, outputs=outputs, confidence_scores=confidence_scores)
+            self.write_all_outputs(
+                batch=batch, outputs=outputs, confidence_scores=confidence_scores
+            )
             self.success_count += 1
         except Exception as e:
             self.failed_count += 1
             self.failed_queries.extend(batch["query_id"])
-            logger.error(f"Failed to write predictions for query_id(s) {', '.join(batch['query_id'])}: {e}")
+            logger.error(
+                f"Failed to write predictions for query_id(s) {', '.join(batch['query_id'])}: {e}"
+            )
 
         del batch, outputs
 
