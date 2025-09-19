@@ -33,4 +33,4 @@ low_mem:
       eval:
         offload_inference:
           confidence_heads: true
-          token_cutoff: None
+          token_cutoff: 0
