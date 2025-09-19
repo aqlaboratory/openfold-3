@@ -81,7 +81,7 @@ model_config = mlc.ConfigDict(
                     "use_lma": False,
                     "msa_module": {
                         "swiglu_chunk_token_cutoff": None,
-                        "swiglu_seq_chunk_size": 4000,
+                        "swiglu_seq_chunk_size": None,
                     },
                 },
                 "eval": {
@@ -90,7 +90,7 @@ model_config = mlc.ConfigDict(
                     "use_lma": False,
                     "msa_module": {
                         "swiglu_chunk_token_cutoff": None,
-                        "swiglu_seq_chunk_size": 4000,
+                        "swiglu_seq_chunk_size": None,
                     },
                     "per_sample_token_cutoff": per_sample_token_cutoff,
                     "per_sample_atom_cutoff": per_sample_atom_cutoff,
